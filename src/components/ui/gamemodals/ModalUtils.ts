@@ -95,7 +95,6 @@ export class ModalUtils {
   static normalizeUnitKey(key: string): string {
     // Handle legacy mappings
     const legacyMap: Record<string, string> = {
-      'militia': 'warrior',
       'phalang': 'archer', // assuming typo
       // Add other mappings as needed
     };

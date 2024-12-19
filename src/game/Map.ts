@@ -453,7 +453,7 @@ export class GameMap {
 
                 // Create starting units
                 const settler = new Unit(Constants.UNIT_TYPES.SETTLER, civ, pos.col, pos.row);
-                const warrior = new Unit(Constants.UNIT_TYPES.MILITIA, civ, pos.col, pos.row);
+                const warrior = new Unit(Constants.UNIT_TYPES.WARRIOR, civ, pos.col, pos.row);
 
                 // Move warrior to adjacent tile if possible
                 const neighbors = this.grid.getNeighbors(pos.col, pos.row);

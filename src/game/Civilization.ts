@@ -398,7 +398,7 @@ export class Civilization {
         }
 
         // Default to basic military unit
-        return { type: 'unit', unitType: Constants.UNIT_TYPES.MILITIA };
+        return { type: 'unit', unitType: Constants.UNIT_TYPES.WARRIOR };
     }
 
     // Evaluate military strength needs
@@ -521,7 +521,7 @@ export class Civilization {
     // Get best available military unit
     getBestMilitaryUnit(): string {
         // Check what units are available based on tech
-        const availableUnits: string[] = [Constants.UNIT_TYPES.MILITIA];
+        const availableUnits: string[] = [Constants.UNIT_TYPES.WARRIOR];
 
         if (this.technologies.has('bronze_working')) {
             availableUnits.push(Constants.UNIT_TYPES.PHALANX);

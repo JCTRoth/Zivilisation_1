@@ -5,20 +5,23 @@ import { UnitProperties } from './GameConstants';
 export const UNIT_TYPES = {
     // Military Units
     WARRIOR: 'warrior',
-    MILITIA: 'militia',
+    SCOUT: 'scout',
     ARCHER: 'archer',
     PHALANX: 'phalanx',
     CHARIOT: 'chariot',
+    KNIGHTS: 'knights',
     LEGION: 'legion',
     CATAPULT: 'catapult',
     MUSKETEER: 'musketeer',
+    RIFLEMEN: 'riflemen',
     CAVALRY: 'cavalry',
+    MECH_INF: 'mech_inf',
     CANNON: 'cannon',
     ARTILLERY: 'artillery',
     TANK: 'tank',
 
     // Naval Units
-    GALLEY: 'galley',
+    SAIL: 'sail',
     TRIREME: 'trireme',
     CARAVEL: 'caravel',
     FRIGATE: 'frigate',
@@ -27,6 +30,8 @@ export const UNIT_TYPES = {
     CRUISER: 'cruiser',
     BATTLESHIP: 'battleship',
     SUBMARINE: 'submarine',
+    CARRIER: 'carrier',
+    TRANSPORT: 'transport',
 
     // Civilian Units
     SETTLER: 'settler',
@@ -34,8 +39,10 @@ export const UNIT_TYPES = {
     CARAVAN: 'caravan',
     FERRY: 'ferry',
     
-    // Scout Units
-    SCOUT: 'scout'
+    // Air Units
+    FIGHTER: 'fighter',
+    BOMBER: 'bomber',
+    NUCLEAR: 'nuclear'
 } as const;
 
 export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
@@ -65,20 +72,6 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canWork: false,
         naval: false,
         icon: ' 🔦',
-        type: 'military'
-    },
-    [UNIT_TYPES.MILITIA]: {
-        name: 'Militia',
-        attack: 1,
-        defense: 2,
-        movement: 1,
-        sightRange: 1,
-        cost: 20,
-        maintenance: 1,
-        canSettle: false,
-        canWork: false,
-        naval: false,
-        icon: '💪',
         type: 'military'
     },
     [UNIT_TYPES.ARCHER]: {
@@ -123,6 +116,20 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         icon: '𓌝',
         type: 'military'
     },
+    [UNIT_TYPES.KNIGHTS]: {
+        name: 'Knights',
+        attack: 4,
+        defense: 2,
+        movement: 2,
+        sightRange: 1,
+        cost: 40,
+        maintenance: 1,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '🏇',
+        type: 'military'
+    },
     [UNIT_TYPES.LEGION]: {
         name: 'Legion',
         attack: 3,
@@ -165,6 +172,20 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         icon: '💂',
         type: 'military'
     },
+    [UNIT_TYPES.RIFLEMEN]: {
+        name: 'Riflemen',
+        attack: 3,
+        defense: 5,
+        movement: 1,
+        sightRange: 1,
+        cost: 30,
+        maintenance: 1,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '🪖',
+        type: 'military'
+    },
     [UNIT_TYPES.CAVALRY]: {
         name: 'Cavalry',
         attack: 5,
@@ -177,6 +198,20 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canWork: false,
         naval: false,
         icon: '🐎',
+        type: 'military'
+    },
+    [UNIT_TYPES.MECH_INF]: {
+        name: 'Mech. Inf.',
+        attack: 6,
+        defense: 6,
+        movement: 3,
+        sightRange: 1,
+        cost: 50,
+        maintenance: 2,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '🚐',
         type: 'military'
     },
     [UNIT_TYPES.CANNON]: {
@@ -221,8 +256,8 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         icon: '🚂',
         type: 'military'
     },
-    [UNIT_TYPES.GALLEY]: {
-        name: 'Galley',
+    [UNIT_TYPES.SAIL]: {
+        name: 'Sail',
         attack: 1,
         defense: 1,
         movement: 3,
@@ -347,6 +382,20 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         icon: '🔱',
         type: 'naval'
     },
+    [UNIT_TYPES.CARRIER]: {
+        name: 'Carrier',
+        attack: 1,
+        defense: 12,
+        movement: 5,
+        sightRange: 2,
+        cost: 160,
+        maintenance: 5,
+        canSettle: false,
+        canWork: false,
+        naval: true,
+        icon: '🛳️',
+        type: 'naval'
+    },
     [UNIT_TYPES.SETTLER]: {
         name: 'Settler',
         attack: 0,
@@ -402,6 +451,48 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         naval: true,
         icon: '⛴️',
         type: 'civilian'
+    },
+    [UNIT_TYPES.FIGHTER]: {
+        name: 'Fighter',
+        attack: 4,
+        defense: 2,
+        movement: 10,
+        sightRange: 1,
+        cost: 60,
+        maintenance: 2,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '✈️',
+        type: 'air'
+    },
+    [UNIT_TYPES.BOMBER]: {
+        name: 'Bomber',
+        attack: 12,
+        defense: 1,
+        movement: 8,
+        sightRange: 2,
+        cost: 120,
+        maintenance: 3,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '🛩️',
+        type: 'air'
+    },
+    [UNIT_TYPES.NUCLEAR]: {
+        name: 'Nuclear',
+        attack: 99,
+        defense: 0,
+        movement: 16,
+        sightRange: 1,
+        cost: 160,
+        maintenance: 5,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '☢️',
+        type: 'air'
     }
 };
 
@@ -414,18 +505,20 @@ export const UNIT_MAINTENANCE_COSTS = {
 export const UNIT_PRODUCTION_REQUIREMENTS = {
     [UNIT_TYPES.WARRIOR]: { shields: 10 },
     [UNIT_TYPES.SCOUT]: { shields: 15 },
-    [UNIT_TYPES.MILITIA]: { shields: 20 },
     [UNIT_TYPES.ARCHER]: { shields: 30 },
     [UNIT_TYPES.PHALANX]: { shields: 50 },
     [UNIT_TYPES.CHARIOT]: { shields: 40 },
+    [UNIT_TYPES.KNIGHTS]: { shields: 40 },
     [UNIT_TYPES.LEGION]: { shields: 60 },
     [UNIT_TYPES.CATAPULT]: { shields: 70 },
     [UNIT_TYPES.MUSKETEER]: { shields: 80 },
+    [UNIT_TYPES.RIFLEMEN]: { shields: 30 },
     [UNIT_TYPES.CAVALRY]: { shields: 100 },
+    [UNIT_TYPES.MECH_INF]: { shields: 50 },
     [UNIT_TYPES.CANNON]: { shields: 120 },
     [UNIT_TYPES.ARTILLERY]: { shields: 150 },
     [UNIT_TYPES.TANK]: { shields: 200 },
-    [UNIT_TYPES.GALLEY]: { shields: 40 },
+    [UNIT_TYPES.SAIL]: { shields: 40 },
     [UNIT_TYPES.TRIREME]: { shields: 80 },
     [UNIT_TYPES.CARAVEL]: { shields: 60 },
     [UNIT_TYPES.FRIGATE]: { shields: 80 },
@@ -434,10 +527,15 @@ export const UNIT_PRODUCTION_REQUIREMENTS = {
     [UNIT_TYPES.CRUISER]: { shields: 200 },
     [UNIT_TYPES.BATTLESHIP]: { shields: 280 },
     [UNIT_TYPES.SUBMARINE]: { shields: 240 },
+    [UNIT_TYPES.CARRIER]: { shields: 160 },
+    [UNIT_TYPES.TRANSPORT]: { shields: 50 },
     [UNIT_TYPES.SETTLER]: { shields: 40 },
     [UNIT_TYPES.DIPLOMAT]: { shields: 30 },
     [UNIT_TYPES.CARAVAN]: { shields: 50 },
-    [UNIT_TYPES.FERRY]: { shields: 30 }
+    [UNIT_TYPES.FERRY]: { shields: 30 },
+    [UNIT_TYPES.FIGHTER]: { shields: 60 },
+    [UNIT_TYPES.BOMBER]: { shields: 120 },
+    [UNIT_TYPES.NUCLEAR]: { shields: 160 }
 } as const;
 
 // Create GameData-compatible format: Record<string, UnitDataObject>

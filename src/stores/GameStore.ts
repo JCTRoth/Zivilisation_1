@@ -417,7 +417,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           continue;
         }
 
-        // Resolve unit sight range robustly. Unit.type is usually an id like 'warrior' or 'militia'.
+        // Resolve unit sight range robustly. Unit.type is usually an id like 'warrior' or 'scout'.
         const unitTypeId = unit.type ? String(unit.type).toLowerCase() : null;
 
         // Try to find the game data UNIT_TYPES entry by matching its inner `id` field

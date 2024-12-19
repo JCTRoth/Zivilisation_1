@@ -77,11 +77,11 @@ export function getUnitIcon(unitType: string): HTMLImageElement | string | null 
  */
 export async function preloadAllUnitIcons(): Promise<void> {
   const unitTypes = [
-    'warrior', 'scout', 'militia', 'archer', 'phalanx', 'chariot',
-    'legion', 'catapult', 'musketeer', 'cavalry', 'cannon', 'artillery', 'tank',
-    'galley', 'trireme', 'caravel', 'frigate', 'ironclad', 'destroyer',
-    'cruiser', 'battleship', 'submarine',
-    'settler', 'diplomat', 'caravan', 'ferry'
+    'warrior', 'scout', 'archer', 'phalanx', 'chariot', 'knights',
+    'legion', 'catapult', 'musketeer', 'riflemen', 'cavalry', 'mech_inf', 'cannon', 'artillery', 'tank',
+    'sail', 'trireme', 'caravel', 'frigate', 'ironclad', 'destroyer',
+    'cruiser', 'battleship', 'submarine', 'carrier', 'transport',
+    'settler', 'diplomat', 'caravan', 'ferry', 'fighter', 'bomber', 'nuclear'
   ];
 
   await Promise.allSettled(unitTypes.map(type => loadUnitIcon(type)));

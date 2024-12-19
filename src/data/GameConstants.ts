@@ -24,7 +24,7 @@ export interface UnitProperties {
     canWork: boolean;
     naval?: boolean;
     icon?: string;
-    type?: 'civilian' | 'military' | 'siege' | 'naval' | 'scout';
+    type?: 'civilian' | 'military' | 'siege' | 'naval' | 'scout' | 'air';
 }
 
 export interface BuildingProperties {
