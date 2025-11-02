@@ -9,6 +9,7 @@ const TopBar = ({ gameEngine }) => {
   const actions = useGameStore(state => state.actions);
 
   const handleNextTurn = () => {
+    console.log('[CLICK] Next Turn button');
     actions.nextTurn();
     if (gameEngine) {
       gameEngine.processTurn();
@@ -16,18 +17,22 @@ const TopBar = ({ gameEngine }) => {
   };
 
   const handleShowMenu = () => {
+    console.log('[CLICK] Show Game Menu button');
     actions.showDialog('game-menu');
   };
 
   const handleShowTechTree = () => {
+    console.log('[CLICK] Show Tech Tree button');
     actions.showDialog('tech');
   };
 
   const handleShowDiplomacy = () => {
+    console.log('[CLICK] Show Diplomacy button');
     actions.showDialog('diplomacy');
   };
 
   const handleToggleSidePanel = () => {
+    console.log('[CLICK] Toggle Side Panel button');
     actions.toggleUI('sidebarCollapsed');
   };
 

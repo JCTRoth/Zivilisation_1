@@ -27,7 +27,10 @@ const SidePanel = ({ gameEngine }) => {
       {/* Mobile backdrop */}
       <div 
         className={`mobile-menu-backdrop ${!uiState.sidebarCollapsed ? 'show' : ''} d-md-none`}
-        onClick={() => actions.toggleUI('sidebarCollapsed')}
+        onClick={() => {
+          console.log('[CLICK] SidePanel mobile backdrop - closing sidebar');
+          actions.toggleUI('sidebarCollapsed');
+        }}
       />
       
       <div className={`game-side-panel ${!uiState.sidebarCollapsed ? 'show' : ''}`}>
@@ -36,7 +39,10 @@ const SidePanel = ({ gameEngine }) => {
           <Button 
             variant="outline-light" 
             size="sm"
-            onClick={() => actions.toggleUI('sidebarCollapsed')}
+            onClick={() => {
+              console.log('[CLICK] SidePanel close button');
+              actions.toggleUI('sidebarCollapsed');
+            }}
           >
             <i className="bi bi-x-lg"></i> Close
           </Button>

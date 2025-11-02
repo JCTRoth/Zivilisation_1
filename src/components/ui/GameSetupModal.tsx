@@ -12,18 +12,21 @@ function GameSetupModal({ show, onStart }) {
   const totalSteps = 2;
 
   const nextStep = () => {
+    console.log(`[CLICK] GameSetup next step (${currentStep} -> ${currentStep + 1})`);
     if (currentStep < totalSteps) {
       setCurrentStep(currentStep + 1);
     }
   };
 
   const prevStep = () => {
+    console.log(`[CLICK] GameSetup previous step (${currentStep} -> ${currentStep - 1})`);
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     }
   };
 
   const handleStart = () => {
+    console.log('[CLICK] GameSetup start game button');
     const settings = {
       playerCivilization: selectedCiv,
       difficulty: difficulty,
@@ -70,7 +73,10 @@ function GameSetupModal({ show, onStart }) {
             {CIVILIZATIONS.map((civ, idx) => (
               <Col key={idx} xs={6} md={4} lg={3} className="mb-3">
                 <div
-                  onClick={() => setSelectedCiv(idx)}
+                  onClick={() => {
+                    console.log(`[CLICK] GameSetup select civilization: ${CIVILIZATIONS[idx].name} (${idx})`);
+                    setSelectedCiv(idx);
+                  }}
                   style={{
                     padding: '12px',
                     border: selectedCiv === idx ? '3px solid #ffd700' : '2px solid #555',

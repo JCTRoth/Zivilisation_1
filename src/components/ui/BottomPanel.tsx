@@ -37,7 +37,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
         gameEngine.unitFortify(selectedUnit.id);
         break;
       case 'found_city':
-        if (selectedUnit.type === 'settler') {
+        if (selectedUnit.type === 'settlers') {
           gameEngine.foundCityWithSettler(selectedUnit.id);
         }
         break;
@@ -324,7 +324,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
                   <Button 
                     variant="outline-warning" 
                     size="sm"
-                    onClick={() => actions.showDialog('city-details')}
+                    onClick={() => {
+                      console.log(`[CLICK] City details for city ${selectedCity.id} (${selectedCity.name})`);
+                      actions.showDialog('city-details');
+                    }}
                   >
                     <i className="bi bi-info-circle"></i> City Details
                   </Button>
@@ -364,6 +367,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
       <div 
         className={`mobile-menu-backdrop ${showPanel ? 'show' : ''} d-md-none`}
         onClick={() => {
+          console.log('[CLICK] Mobile backdrop - deselecting unit and city');
           actions.selectUnit(null);
           actions.selectCity(null);
         }}

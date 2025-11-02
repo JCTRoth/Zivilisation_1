@@ -5,6 +5,7 @@ import Civ1GameCanvas from './components/game/Civ1GameCanvas';
 import HexDetailModal from './components/ui/HexDetailModal';
 import SettingsModal from './components/ui/SettingsModal';
 import GameSetupModal from './components/ui/GameSetupModal';
+import TurnConfirmationModal from './components/ui/TurnConfirmationModal';
 import { useGameEngine } from './hooks/useGameEngine';
 
 function Civ1App() {
@@ -296,6 +297,7 @@ function Civ1App() {
                     fontWeight: civ.name === '(Player)' ? 'bold' : 'normal'
                   }}
                   onClick={() => {
+                    console.log('Civ1App: Civilization selected:', civ.name);
                     console.log(`[CLICK] Selected civilization: ${civ.name}`);
                     setSelectedCity(civ.name);
                   }}
@@ -371,6 +373,7 @@ function Civ1App() {
                   (e.target as HTMLElement).style.background = 'transparent';
                   (e.target as HTMLElement).style.paddingLeft = '16px';
                 }}
+                onClick={() => console.log('Civ1App: Save Game clicked')}
               >
                 💾 Save Game
               </button>
@@ -391,6 +394,7 @@ function Civ1App() {
                   (e.target as HTMLElement).style.background = 'transparent';
                   (e.target as HTMLElement).style.paddingLeft = '16px';
                 }}
+                onClick={() => console.log('Civ1App: Load Game clicked')}
               >
                 📁 Load Game
               </button>
@@ -412,6 +416,7 @@ function Civ1App() {
                   (e.target as HTMLElement).style.paddingLeft = '16px';
                 }}
                 onClick={() => {
+                  console.log('Civ1App: Settings button clicked');
                   setShowSettings(true);
                   setActiveMenu(null);
                 }}
@@ -434,6 +439,7 @@ function Civ1App() {
                   (e.target as HTMLElement).style.background = 'transparent';
                   (e.target as HTMLElement).style.paddingLeft = '16px';
                 }}
+                onClick={() => console.log('Civ1App: Quit clicked')}
               >
                 🚪 Quit
               </button>
@@ -459,6 +465,77 @@ function Civ1App() {
                   onMouseLeave={(e) => {
                     (e.target as HTMLElement).style.background = 'transparent';
                     (e.target as HTMLElement).style.paddingLeft = '16px';
+                  }}
+                  onClick={() => {
+                    console.log(`Civ1App: ORDERS - ${item} clicked`);
+                    
+                    // Handle different ORDERS menu actions
+                    if (item === '🏰 Build City') {
+                      const selectedUnitId = gameState.selectedUnit;
+                      if (selectedUnitId && gameEngine) {
+                        const selectedUnit = gameEngine.units.find(u => u.id === selectedUnitId);
+                        if (selectedUnit && selectedUnit.type === 'settlers') {
+                          console.log(`Civ1App: Founding city with settler ${selectedUnit.id}`);
+                          gameEngine.foundCityWithSettler(selectedUnit.id);
+                        } else {
+                          console.log('Civ1App: No settler selected for city founding');
+                        }
+                      } else {
+                        console.log('Civ1App: No unit selected for city founding');
+                      }
+                    } else if (item === '🛣️ Build Road') {
+                      const selectedUnitId = gameState.selectedUnit;
+                      if (selectedUnitId && gameEngine) {
+                        const selectedUnit = gameEngine.units.find(u => u.id === selectedUnitId);
+                        if (selectedUnit) {
+                          console.log(`Civ1App: Building road with unit ${selectedUnit.id}`);
+                          gameEngine.buildImprovement(selectedUnit.id, 'road');
+                        } else {
+                          console.log('Civ1App: No unit found for road building');
+                        }
+                      } else {
+                        console.log('Civ1App: No unit selected for road building');
+                      }
+                    } else if (item === '🌾 Irrigate') {
+                      const selectedUnitId = gameState.selectedUnit;
+                      if (selectedUnitId && gameEngine) {
+                        const selectedUnit = gameEngine.units.find(u => u.id === selectedUnitId);
+                        if (selectedUnit) {
+                          console.log(`Civ1App: Irrigating with unit ${selectedUnit.id}`);
+                          gameEngine.buildImprovement(selectedUnit.id, 'irrigation');
+                        } else {
+                          console.log('Civ1App: No unit found for irrigation');
+                        }
+                      } else {
+                        console.log('Civ1App: No unit selected for irrigation');
+                      }
+                    } else if (item === '🗿 Mine') {
+                      const selectedUnitId = gameState.selectedUnit;
+                      if (selectedUnitId && gameEngine) {
+                        const selectedUnit = gameEngine.units.find(u => u.id === selectedUnitId);
+                        if (selectedUnit) {
+                          console.log(`Civ1App: Mining with unit ${selectedUnit.id}`);
+                          gameEngine.buildImprovement(selectedUnit.id, 'mine');
+                        } else {
+                          console.log('Civ1App: No unit found for mining');
+                        }
+                      } else {
+                        console.log('Civ1App: No unit selected for mining');
+                      }
+                    } else if (item === '🏹 Fortify') {
+                      const selectedUnitId = gameState.selectedUnit;
+                      if (selectedUnitId && gameEngine) {
+                        const selectedUnit = gameEngine.units.find(u => u.id === selectedUnitId);
+                        if (selectedUnit) {
+                          console.log(`Civ1App: Fortifying unit ${selectedUnit.id}`);
+                          gameEngine.unitFortify(selectedUnit.id);
+                        } else {
+                          console.log('Civ1App: No unit found for fortification');
+                        }
+                      } else {
+                        console.log('Civ1App: No unit selected for fortification');
+                      }
+                    }
                   }}
                 >
                   {item}
@@ -487,6 +564,7 @@ function Civ1App() {
                     (e.target as HTMLElement).style.background = 'transparent';
                     (e.target as HTMLElement).style.paddingLeft = '16px';
                   }}
+                  onClick={() => console.log(`Civ1App: ADVISORS - ${item} clicked`)}
                 >
                   {item}
                 </button>

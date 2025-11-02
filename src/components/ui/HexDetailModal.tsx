@@ -296,13 +296,16 @@ const HexDetailModal = ({ show, onHide, hex, terrain, adjacentTiles }) => {
       </Modal.Body>
       
       <Modal.Footer className="bg-dark border-light">
-        <button className="btn btn-secondary btn-sm" onClick={onHide}>
+        <button className="btn btn-secondary btn-sm" onClick={() => {
+          console.log('[CLICK] HexDetailModal close button');
+          onHide();
+        }}>
           Close
         </button>
-        <button className="btn btn-primary btn-sm">
+        <button className="btn btn-primary btn-sm" onClick={() => console.log('[CLICK] HexDetailModal center view button (not implemented)')}>
           Center View
         </button>
-        <button className="btn btn-info btn-sm">
+        <button className="btn btn-info btn-sm" onClick={() => console.log('[CLICK] HexDetailModal move unit here button (not implemented)')}>
           Move Unit Here
         </button>
       </Modal.Footer>

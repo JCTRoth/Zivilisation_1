@@ -13,6 +13,7 @@ const GameModals = ({ gameEngine }) => {
   };
 
   const handleNewGame = () => {
+    console.log('[CLICK] New Game button');
     if (gameEngine) {
       gameEngine.newGame();
     }
@@ -20,6 +21,7 @@ const GameModals = ({ gameEngine }) => {
   };
 
   const handleResearchTechnology = (techId) => {
+    console.log(`[CLICK] Research technology: ${techId}`);
     if (gameEngine && currentPlayer) {
       gameEngine.setResearch(currentPlayer.id, techId);
     }
@@ -40,22 +42,25 @@ const GameModals = ({ gameEngine }) => {
             <i className="bi bi-plus-circle"></i> New Game
           </Button>
           
-          <Button variant="info" size="lg">
+          <Button variant="info" size="lg" onClick={() => console.log('[CLICK] Save Game button (not implemented)')}>
             <i className="bi bi-download"></i> Save Game
           </Button>
           
-          <Button variant="warning" size="lg">
+          <Button variant="warning" size="lg" onClick={() => console.log('[CLICK] Load Game button (not implemented)')}>
             <i className="bi bi-upload"></i> Load Game
           </Button>
           
-          <Button variant="secondary" size="lg">
+          <Button variant="secondary" size="lg" onClick={() => console.log('[CLICK] Settings button (not implemented)')}>
             <i className="bi bi-gear"></i> Settings
           </Button>
           
           <Button 
             variant="outline-light" 
             size="lg"
-            onClick={() => actions.showDialog('help')}
+            onClick={() => {
+              console.log('[CLICK] Help button');
+              actions.showDialog('help');
+            }}
           >
             <i className="bi bi-question-circle"></i> Help
           </Button>

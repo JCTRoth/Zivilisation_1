@@ -13,6 +13,7 @@ function SettingsModal({ show, onHide }) {
   };
 
   const resetDefaults = () => {
+    console.log('SettingsModal: Reset to Defaults clicked');
     actions.updateSettings({
       uiScale: 1.0,
       menuFontSize: 12,
@@ -119,7 +120,7 @@ function SettingsModal({ show, onHide }) {
         <Button variant="warning" onClick={resetDefaults}>
           🔄 Reset to Defaults
         </Button>
-        <Button variant="primary" onClick={onHide}>
+        <Button variant="primary" onClick={() => { console.log('SettingsModal: Apply & Close clicked'); onHide(); }}>
           ✓ Apply & Close
         </Button>
       </Modal.Footer>

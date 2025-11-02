@@ -190,6 +190,7 @@ const MiniMap = ({ gameEngine }) => {
 
   // Handle minimap clicks to move camera
   const handleMinimapClick = (event) => {
+    console.log('MiniMap: Minimap clicked');
     const canvas = canvasRef.current;
     if (!canvas) return;
 
