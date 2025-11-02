@@ -290,6 +290,90 @@ export class HexGrid {
     static hexToKey(col: number, row: number): string {
         return `${col},${row}`;
     }
+
+    // Check if a screen position is inside a hexagon
+    isPointInHex(screenX: number, screenY: number, hexCol: number, hexRow: number): boolean {
+        const vertices = this.getHexVertices(hexCol, hexRow);
+        return this.isPointInPolygon(screenX, screenY, vertices);
+    }
+
+    // Check if a point is inside a polygon using ray casting algorithm
+    private isPointInPolygon(x: number, y: number, vertices: ScreenPosition[]): boolean {
+        let inside = false;
+        const n = vertices.length;
+
+        for (let i = 0, j = n - 1; i < n; j = i++) {
+            const xi = vertices[i].x, yi = vertices[i].y;
+            const xj = vertices[j].x, yj = vertices[j].y;
+
+            if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+                inside = !inside;
+            }
+        }
+
+        return inside;
+    }
+
+    // Get the hex that contains the world position (precise hit detection)
+    // Note: this expects world coordinates (same space as `hexToScreen` / `getHexVertices`)
+    getHexAtPosition(worldX: number, worldY: number): HexCoordinate | null {
+        // First, get the approximate hex using the existing method
+        const approxHex = this.screenToHex(worldX, worldY);
+
+        // Build a candidate list: approx, neighbors, and neighbors-of-neighbors
+        const candidates: HexCoordinate[] = [approxHex];
+
+        const neighbors = this.getNeighbors(approxHex.col, approxHex.row);
+        for (const n of neighbors) candidates.push(n);
+
+        // also include neighbors of neighbors to handle clicks near corners/gaps
+        for (const n of neighbors) {
+            const nn = this.getNeighbors(n.col, n.row);
+            for (const m of nn) candidates.push(m);
+        }
+
+        // Deduplicate candidates
+        const seen = new Set<string>();
+        const uniqueCandidates: HexCoordinate[] = [];
+        for (const c of candidates) {
+            const key = `${c.col},${c.row}`;
+            if (!seen.has(key) && this.isValidHex(c.col, c.row)) {
+                seen.add(key);
+                uniqueCandidates.push(c);
+            }
+        }
+
+        // First pass: precise polygon hit test
+        for (const c of uniqueCandidates) {
+            if (this.isPointInHex(worldX, worldY, c.col, c.row)) {
+                return c;
+            }
+        }
+
+        // Fallback: choose candidate whose center is closest to the point
+        let best: HexCoordinate | null = null;
+        let bestDist = Infinity;
+
+        for (const c of uniqueCandidates) {
+            const center = this.hexToScreen(c.col, c.row);
+            const dx = center.x - worldX;
+            const dy = center.y - worldY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = c;
+            }
+        }
+
+        // If the closest center is reasonably near (within hexSize), pick it
+        if (best && bestDist <= this.hexSize * 1.1) {
+            return best;
+        }
+
+        // As a last resort, return the approximate hex
+        return approxHex;
+    }
 }
 
 // Utility functions for hex operations

@@ -467,7 +467,7 @@ export default class GameEngine {
    * Convert screen coordinates to hex coordinates
    */
   screenToHex(screenX, screenY) {
-    return this.hexGrid.screenToHex(screenX, screenY);
+    return this.hexGrid.getHexAtPosition(screenX, screenY);
   }
 
   /**

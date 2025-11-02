@@ -231,9 +231,9 @@ export class InputManager extends EventEmitter {
     // Handle left click
     handleClick(): void {
         const worldPos = this.renderer.screenToWorld(this.mousePos);
-        const hexCoords = this.renderer.grid.screenToHex(worldPos.x, worldPos.y);
+        const hexCoords = this.renderer.grid.getHexAtPosition(worldPos.x, worldPos.y);
 
-        if (this.renderer.grid.isValidHex(hexCoords.col, hexCoords.row)) {
+        if (hexCoords && this.renderer.grid.isValidHex(hexCoords.col, hexCoords.row)) {
             this.handleHexClick(hexCoords.col, hexCoords.row);
         }
     }
@@ -266,9 +266,9 @@ export class InputManager extends EventEmitter {
     // Handle mouse hover
     handleHover(): void {
         const worldPos = this.renderer.screenToWorld(this.mousePos);
-        const hexCoords = this.renderer.grid.screenToHex(worldPos.x, worldPos.y);
+        const hexCoords = this.renderer.grid.getHexAtPosition(worldPos.x, worldPos.y);
 
-        if (this.renderer.grid.isValidHex(hexCoords.col, hexCoords.row)) {
+        if (hexCoords && this.renderer.grid.isValidHex(hexCoords.col, hexCoords.row)) {
             this.emit('hexHover', { col: hexCoords.col, row: hexCoords.row });
         }
     }
@@ -339,7 +339,7 @@ export class InputManager extends EventEmitter {
     // Get hex coordinates at screen position
     getHexAtScreen(screenX: number, screenY: number): any {
         const worldPos = this.renderer.screenToWorld({ x: screenX, y: screenY });
-        return this.renderer.grid.screenToHex(worldPos.x, worldPos.y);
+        return this.renderer.grid.getHexAtPosition(worldPos.x, worldPos.y);
     }
 
     // Get screen position of hex
