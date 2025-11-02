@@ -5,7 +5,7 @@ import Civ1GameCanvas from './components/game/Civ1GameCanvas';
 import HexDetailModal from './components/ui/HexDetailModal';
 import SettingsModal from './components/ui/SettingsModal';
 import GameSetupModal from './components/ui/GameSetupModal';
-import TurnConfirmationModal from './components/ui/TurnConfirmationModal';
+import EndTurnConfirmModal from './components/ui/EndTurnConfirmModal';
 import { useGameEngine } from './hooks/useGameEngine';
 
 function Civ1App() {
@@ -22,6 +22,8 @@ function Civ1App() {
   const [showHexDetail, setShowHexDetail] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showGameSetup, setShowGameSetup] = useState(true);
+  const [showEndTurnConfirm, setShowEndTurnConfirm] = useState(false);
+  const [isEndTurnAutomatic, setIsEndTurnAutomatic] = useState(false);
   const [detailHex, setDetailHex] = useState(null);
   const [terrainData, setTerrainData] = useState(null);
   const menuRefs = React.useRef({});
@@ -94,6 +96,23 @@ function Civ1App() {
   useEffect(() => {
     // Game initialization now happens in handleGameStart after setup modal
     // No auto-initialization
+
+    // Listen for end turn confirmation requests
+    const handleShowEndTurnConfirmation = () => {
+      console.log('[Civ1App] Received showEndTurnConfirmation event - automatic trigger');
+      setIsEndTurnAutomatic(true);
+      setShowEndTurnConfirm(true);
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('showEndTurnConfirmation', handleShowEndTurnConfirmation);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('showEndTurnConfirmation', handleShowEndTurnConfirmation);
+      }
+    };
   }, []);
 
   // Handle menu actions
@@ -134,6 +153,31 @@ function Civ1App() {
     } else {
       console.log(`[CLICK] New game cancelled`);
     }
+  };
+
+  // Handle end turn request - show modal
+  const handleEndTurnRequest = () => {
+    console.log('[Civ1App] End turn requested manually - showing confirmation modal');
+    setIsEndTurnAutomatic(false);
+    setShowEndTurnConfirm(true);
+  };
+
+  // Handle end turn confirmation
+  const handleEndTurnConfirm = () => {
+    console.log('[Civ1App] End turn confirmed');
+    setShowEndTurnConfirm(false);
+    setIsEndTurnAutomatic(false);
+    actions.nextTurn();
+    if (gameEngine) {
+      gameEngine.processTurn();
+    }
+  };
+
+  // Handle end turn cancellation
+  const handleEndTurnCancel = () => {
+    console.log('[Civ1App] End turn cancelled');
+    setShowEndTurnConfirm(false);
+    setIsEndTurnAutomatic(false);
   };
 
   if (error) {
@@ -241,6 +285,27 @@ function Civ1App() {
               )}
             </button>
           ))}
+        </div>
+
+        {/* Right side - Turn info and End Turn button */}
+        <div className="d-flex align-items-center ms-auto pe-3">
+          <div className="text-white me-3" style={{ fontSize: `${settings.menuFontSize * 1.2}px` }}>
+            <span className="me-2">Turn {gameState.currentTurn}</span>
+            <span className="text-muted">|</span>
+            <span className="ms-2">{gameState.currentYear || 4000} BC</span>
+          </div>
+          <button
+            className="btn btn-success"
+            style={{
+              fontSize: `${settings.menuFontSize * 1.1}px`,
+              padding: '8px 16px',
+              fontWeight: 'bold'
+            }}
+            onClick={handleEndTurnRequest}
+          >
+            <i className="bi bi-skip-end-fill me-1"></i>
+            End Turn
+          </button>
         </div>
       </div>
 
@@ -587,6 +652,16 @@ function Civ1App() {
       <SettingsModal
         show={showSettings}
         onHide={() => setShowSettings(false)}
+      />
+
+      {/* End Turn Confirmation Modal */}
+      <EndTurnConfirmModal
+        show={showEndTurnConfirm}
+        onConfirm={handleEndTurnConfirm}
+        onCancel={handleEndTurnCancel}
+        currentTurn={gameState.currentTurn}
+        currentYear={gameState.currentYear || 4000}
+        isAutomatic={isEndTurnAutomatic}
       />
     </div>
   );

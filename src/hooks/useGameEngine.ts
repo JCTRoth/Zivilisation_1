@@ -78,6 +78,21 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
           actions.focusOnNextUnit();
           break;
 
+        case 'AUTO_END_TURN':
+          console.log('[useGameEngine] AUTO_END_TURN: All units moved, ending turn automatically');
+          // Automatically end the turn
+          actions.nextTurn();
+          gameEngine.processTurn();
+          break;
+
+        case 'TURN_END_CONFIRMATION_NEEDED':
+          console.log('[useGameEngine] TURN_END_CONFIRMATION_NEEDED: Human player has no moves left, asking for confirmation');
+          // Trigger the end turn confirmation modal for human players
+          if (typeof window !== 'undefined' && window.dispatchEvent) {
+            window.dispatchEvent(new CustomEvent('showEndTurnConfirmation'));
+          }
+          break;
+
         default:
           console.log('Unhandled game engine event:', eventType, eventData);
       }

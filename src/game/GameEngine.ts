@@ -81,6 +81,131 @@ export default class GameEngine {
     this.onStateChange = null;
   }
 
+  // Small helper: sleep for ms milliseconds
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // Highlight AI target on renderer if available
+  private highlightAITarget(col: number, row: number, color: string = 'rgba(255,0,0,0.4)') {
+    if (!this.renderer || !this.renderer.setHighlightedHexes) return;
+    // Set a single highlighted hex for a short time
+    try {
+      this.renderer.setHighlightedHexes([{ col, row }]);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Choose a target for AI unit: prefer unexplored nearby tiles, then enemy units, then random neighbor
+  private chooseAITarget(unit: any): { col: number; row: number } | null {
+    if (!this.map || !this.hexGrid) return null;
+    // 1) Nearby unexplored tile
+  const unexplored = this.findNearbyUnexplored(unit);
+    if (unexplored) return { col: unexplored.col, row: unexplored.row };
+
+    // 2) Nearby enemy unit
+  const enemy = this.findNearbyEnemy(unit);
+    if (enemy) return { col: enemy.col, row: enemy.row };
+
+    // 3) Random valid neighbor
+    const neighbors = this.hexGrid.getNeighbors(unit.col, unit.row);
+    for (const n of neighbors) {
+      if (!this.isValidHex(n.col, n.row)) continue;
+      const tile = this.getTileAt(n.col, n.row);
+      if (!tile) continue;
+      if (TERRAIN_PROPS[tile.type]?.passable === false) continue;
+      const other = this.getUnitAt(n.col, n.row);
+      if (other && other.civilizationId === unit.civilizationId) continue;
+      return { col: n.col, row: n.row };
+    }
+
+    return null;
+  }
+
+  // Find nearby unexplored tile (uses GameEngine's map representation)
+  private findNearbyUnexplored(unit: any, searchRadius: number = 8): any {
+    if (!this.map || !this.hexGrid) return null;
+    const nearbyTiles = this.hexGrid.getHexesInRange(unit.col, unit.row, searchRadius);
+    for (const tilePos of nearbyTiles) {
+      const tile = this.getTileAt(tilePos.col, tilePos.row);
+      if (tile && !tile.explored) {
+        return tilePos;
+      }
+    }
+    return null;
+  }
+
+  // Find nearby enemy unit
+  private findNearbyEnemy(unit: any, searchRadius: number = 5): any {
+    if (!this.hexGrid) return null;
+    const nearbyTiles = this.hexGrid.getHexesInRange(unit.col, unit.row, searchRadius);
+    for (const tilePos of nearbyTiles) {
+      const enemyUnit = this.getUnitAt(tilePos.col, tilePos.row);
+      if (enemyUnit && enemyUnit.civilizationId !== unit.civilizationId) {
+        return enemyUnit;
+      }
+    }
+    return null;
+  }
+
+  // Run an asynchronous AI turn for civilizationId
+  async runAITurn(civilizationId: number) {
+    // Small delay before AI starts so player can observe
+    await this.sleep(250);
+
+    const aiUnits = this.units.filter(u => u.civilizationId === civilizationId && (u.movesRemaining || 0) > 0);
+
+    for (const unit of aiUnits) {
+      // While this unit can move, pick targets and attempt actions
+      while ((unit.movesRemaining || 0) > 0) {
+        const target = this.chooseAITarget(unit);
+        if (!target) break;
+
+        // Highlight chosen target
+        this.highlightAITarget(target.col, target.row);
+
+        // If target is adjacent, try to move or attack
+        const dist = this.hexGrid.hexDistance(unit.col, unit.row, target.col, target.row);
+        if (dist === 1) {
+          const targetUnit = this.getUnitAt(target.col, target.row);
+          if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
+            // Attack
+            console.log(`[AI] Unit ${unit.id} attacking unit at (${target.col},${target.row})`);
+            this.moveUnit(unit.id, target.col, target.row);
+          } else {
+            // Move into the tile
+            this.moveUnit(unit.id, target.col, target.row);
+          }
+        } else {
+          // Pathfind towards target and take next step
+          const path = this.hexGrid.findPath(unit.col, unit.row, target.col, target.row, new Set());
+          if (path.length > 1) {
+            const next = path[1];
+            this.moveUnit(unit.id, next.col, next.row);
+          } else {
+            // Couldn't find path, break
+            break;
+          }
+        }
+
+        // Wait a little so moves are visible
+        await this.sleep(200);
+      }
+    }
+
+    // Clear highlights and signal turn end for AI
+    if (this.renderer && this.renderer.setHighlightedHexes) {
+      try { this.renderer.setHighlightedHexes([]); } catch (e) {}
+    }
+
+    // Check if turn should end automatically after AI moves
+    this.checkAndEndTurnIfNoMoves();
+
+    // After AI finished its units, auto-advance to next player
+    this.onStateChange && this.onStateChange('AI_FINISHED', { civilizationId });
+  }
+
   /**
    * Initialize the game engine with settings
    */
@@ -555,6 +680,9 @@ export default class GameEngine {
         this.onStateChange('UNIT_MOVED', { unit, targetCol, targetRow });
       }
 
+      // Check if turn should end automatically
+      this.checkAndEndTurnIfNoMoves();
+
       return true;
     }
 
@@ -588,6 +716,9 @@ export default class GameEngine {
       if (this.onStateChange) {
         this.onStateChange('COMBAT_VICTORY', { attacker, defender });
       }
+
+      // Check if turn should end automatically
+      this.checkAndEndTurnIfNoMoves();
       
       return true;
     } else {
@@ -602,6 +733,9 @@ export default class GameEngine {
       if (this.onStateChange) {
         this.onStateChange('COMBAT_DEFEAT', { attacker, defender });
       }
+
+      // Check if turn should end automatically
+      this.checkAndEndTurnIfNoMoves();
       
       return false;
     }
@@ -654,6 +788,9 @@ export default class GameEngine {
 
     this.cities.push(city);
     
+    // Consume the settler's movement (founding a city costs one turn)
+    settler.movesRemaining = 0;
+    
     // Remove settler
     this.units = this.units.filter(u => u.id !== settlerId);
 
@@ -664,17 +801,49 @@ export default class GameEngine {
       this.onStateChange('CITY_FOUNDED', { city, settler });
     }
 
+    // Check if turn should end automatically after founding city
+    this.checkAndEndTurnIfNoMoves();
+
     return true;
+  }
+
+  /**
+   * Check if current player has any units with moves remaining, and end turn if not
+   */
+  checkAndEndTurnIfNoMoves() {
+    const currentCiv = this.civilizations[this.activePlayer];
+    if (!currentCiv) return; // Apply to both human and AI players
+
+    const hasMovesLeft = this.units.some(u => u.civilizationId === this.activePlayer && (u.movesRemaining || 0) > 0);
+    if (!hasMovesLeft) {
+      console.log('[TURN] All units moved for player', this.activePlayer, currentCiv.isHuman ? '(human)' : '(AI)');
+      
+      if (currentCiv.isHuman) {
+        // For human players, ask for confirmation instead of auto-ending
+        console.log('[TURN] Human player has no moves left - asking for confirmation');
+        if (this.onStateChange) {
+          this.onStateChange('TURN_END_CONFIRMATION_NEEDED', { civilizationId: this.activePlayer });
+        }
+      } else {
+        // For AI players, auto-end the turn
+        console.log('[TURN] AI player has no moves left - auto-ending turn');
+        if (this.onStateChange) {
+          this.onStateChange('AUTO_END_TURN', { civilizationId: this.activePlayer });
+        }
+      }
+    }
   }
 
   /**
    * Process end of turn
    */
   processTurn() {
+    // Advance to next player
+    this.activePlayer = (this.activePlayer + 1) % this.civilizations.length;
     const currentCiv = this.civilizations[this.activePlayer];
     if (!currentCiv) return;
 
-    // Reset unit moves
+    // Reset unit moves for the new active player
     this.units
       .filter(u => u.civilizationId === this.activePlayer)
       .forEach(unit => {
@@ -682,7 +851,7 @@ export default class GameEngine {
         unit.movesRemaining = unitProps ? unitProps.movement : 1;
       });
 
-    // Process cities
+    // Process cities for the active player
     this.cities
       .filter(c => c.civilizationId === this.activePlayer)
       .forEach(city => {
@@ -700,27 +869,44 @@ export default class GameEngine {
           if (city.productionStored >= city.currentProduction.cost) {
             // Complete production
             city.productionStored = 0;
-            // Handle completed unit/building
+            // Handle completed unit/building (left simple for now)
           }
         }
       });
 
-    // Add resources to civilization
-    currentCiv.resources.science += this.calculateCivScience(currentCiv.id);
-    currentCiv.resources.gold += this.calculateCivGold(currentCiv.id);
-
-    // Process research
-    if (currentCiv.currentResearch && currentCiv.resources.science > 0) {
-      currentCiv.researchProgress += currentCiv.resources.science;
-      if (currentCiv.researchProgress >= currentCiv.currentResearch.cost) {
-        // Complete research
-        currentCiv.technologies.push(currentCiv.currentResearch.id);
-        currentCiv.researchProgress = 0;
-        currentCiv.currentResearch = null;
-        
-        // Update technology availability
-        this.updateTechnologyAvailability();
+    // Add resources to civilization (if civilization object follows the same structure)
+    try {
+      if (currentCiv.resources) {
+        currentCiv.resources.science += this.calculateCivScience(currentCiv.id);
+        currentCiv.resources.gold += this.calculateCivGold(currentCiv.id);
       }
+    } catch (e) {
+      // Defensive: some civ objects are plain and may not have resources structured as expected
+    }
+
+    // Process research if fields exist
+    try {
+      if (currentCiv.currentResearch && currentCiv.resources && currentCiv.resources.science > 0) {
+        currentCiv.researchProgress = (currentCiv.researchProgress || 0) + currentCiv.resources.science;
+        const techCost = typeof currentCiv.currentResearch === 'object' && currentCiv.currentResearch.cost ? currentCiv.currentResearch.cost : (TECHNOLOGIES?.[currentCiv.currentResearch]?.cost || 0);
+        if (currentCiv.researchProgress >= techCost && techCost > 0) {
+          // Mark research complete (best-effort)
+          if (Array.isArray(currentCiv.technologies)) {
+            currentCiv.technologies.push(currentCiv.currentResearch.id || currentCiv.currentResearch);
+          }
+          currentCiv.researchProgress = 0;
+          currentCiv.currentResearch = null;
+          this.updateTechnologyAvailability();
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // If this civilization is an AI, run its turn asynchronously so UI can update between moves
+    if (!currentCiv.isHuman) {
+      // fire-and-forget AI routine
+      this.runAITurn(this.activePlayer).catch(err => console.error('AI turn error', err));
     }
 
     if (this.onStateChange) {

@@ -2,7 +2,12 @@ import React from 'react';
 import { Navbar, Nav, Button, Badge } from 'react-bootstrap';
 import { useGameStore } from '../../stores/gameStore';
 
-const TopBar = ({ gameEngine }) => {
+interface TopBarProps {
+  gameEngine: any;
+  onEndTurnRequest?: () => void;
+}
+
+const TopBar: React.FC<TopBarProps> = ({ gameEngine, onEndTurnRequest }) => {
   const resources = useGameStore(state => state.playerResources);
   const gameStats = useGameStore(state => state.gameStats);
   const uiState = useGameStore(state => state.uiState);
@@ -10,9 +15,15 @@ const TopBar = ({ gameEngine }) => {
 
   const handleNextTurn = () => {
     console.log('[CLICK] Next Turn button');
-    actions.nextTurn();
-    if (gameEngine) {
-      gameEngine.processTurn();
+    // Trigger the modal instead of directly ending turn
+    if (onEndTurnRequest) {
+      onEndTurnRequest();
+    } else {
+      // Fallback to direct turn end if no handler provided
+      actions.nextTurn();
+      if (gameEngine) {
+        gameEngine.processTurn();
+      }
     }
   };
 
