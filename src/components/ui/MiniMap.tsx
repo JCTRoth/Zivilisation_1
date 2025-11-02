@@ -1,5 +1,14 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useGameStore } from '../../stores/gameStore';
+
+// Declare window properties
+declare global {
+  interface Window {
+    __MINIMAP_FILE_EVALUATED?: number;
+    __MINIMAP_MISSED_TYPE_REPORTED?: boolean;
+    __MINIMAP_DRAWN_ONCE?: boolean;
+  }
+}
 import { CONSTANTS } from '../../utils/constants';
 import { UNIT_TYPES } from '../../game/gameData.js';
 

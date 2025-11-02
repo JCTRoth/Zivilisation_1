@@ -6,7 +6,7 @@ import MiniMap from './MiniMap';
 const SidePanel = ({ gameEngine }) => {
   const currentPlayer = useGameStore(state => state.currentPlayer);
   const playerUnits = useGameStore(state => state.playerUnits);
-  const [playerCities] = useAtom(playerCitiesAtom);
+  const playerCities = useGameStore(state => state.playerCities);
   const uiState = useGameStore(state => state.uiState);
   const actions = useGameStore(state => state.actions);
 

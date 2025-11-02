@@ -164,12 +164,9 @@ const GameCanvas = ({ gameEngine }) => {
       const deltaX = (pos.x - mouseState.current.lastX) / camera.zoom;
       const deltaY = (pos.y - mouseState.current.lastY) / camera.zoom;
       
-      gameActions({
-        type: 'UPDATE_CAMERA',
-        payload: {
-          x: camera.x - deltaX,
-          y: camera.y - deltaY
-        }
+      actions.updateCamera({
+        x: camera.x - deltaX,
+        y: camera.y - deltaY
       });
       
       mouseState.current.lastX = pos.x;

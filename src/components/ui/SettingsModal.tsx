@@ -13,7 +13,7 @@ function SettingsModal({ show, onHide }) {
   };
 
   const resetDefaults = () => {
-    setSettings({
+    actions.updateSettings({
       uiScale: 1.0,
       menuFontSize: 12,
       sidebarWidth: 140,

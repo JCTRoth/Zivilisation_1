@@ -207,14 +207,14 @@ function Civ1App() {
               }}
               onMouseEnter={(e) => {
                 if (activeMenu !== item) {
-                  e.target.style.background = '#2a2a2a';
-                  e.target.style.transform = 'none';
+                  (e.target as HTMLElement).style.background = '#2a2a2a';
+                  (e.target as HTMLElement).style.transform = 'none';
                 }
               }}
               onMouseLeave={(e) => {
                 if (activeMenu !== item) {
-                  e.target.style.background = 'transparent';
-                  e.target.style.transform = 'none';
+                  (e.target as HTMLElement).style.background = 'transparent';
+                  (e.target as HTMLElement).style.transform = 'none';
                 }
               }}
               onClick={(e) => handleMenuClick(item, e)}
@@ -261,7 +261,7 @@ function Civ1App() {
               height: `${settings.minimapHeight * 2}px`
             }}
           >
-            <Civ1GameCanvas minimap={true} />
+            <Civ1GameCanvas minimap={true} onExamineHex={handleExamineHex} gameEngine={gameEngine} />
           </div>
 
           {/* Civilizations List */}
@@ -335,12 +335,12 @@ function Civ1App() {
                   borderBottom: '1px solid rgba(255,255,255,0.1)'
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.background = 'linear-gradient(90deg, #3182ce 0%, #2c5aa0 100%)';
-                  e.target.style.paddingLeft = '24px';
+                  (e.target as HTMLElement).style.background = 'linear-gradient(90deg, #3182ce 0%, #2c5aa0 100%)';
+                  (e.target as HTMLElement).style.paddingLeft = '24px';
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.background = 'transparent';
-                  e.target.style.paddingLeft = '16px';
+                  (e.target as HTMLElement).style.background = 'transparent';
+                  (e.target as HTMLElement).style.paddingLeft = '16px';
                 }}
                 onClick={handleNewGame}
               >
@@ -356,12 +356,12 @@ function Civ1App() {
                   borderBottom: '1px solid rgba(255,255,255,0.1)'
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.background = 'linear-gradient(90deg, #3182ce 0%, #2c5aa0 100%)';
-                  e.target.style.paddingLeft = '24px';
+                  (e.target as HTMLElement).style.background = 'linear-gradient(90deg, #3182ce 0%, #2c5aa0 100%)';
+                  (e.target as HTMLElement).style.paddingLeft = '24px';
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.background = 'transparent';
-                  e.target.style.paddingLeft = '16px';
+                  (e.target as HTMLElement).style.background = 'transparent';
+                  (e.target as HTMLElement).style.paddingLeft = '16px';
                 }}
               >
                 💾 Save Game
@@ -376,12 +376,12 @@ function Civ1App() {
                   borderBottom: '1px solid rgba(255,255,255,0.1)'
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.background = 'linear-gradient(90deg, #3182ce 0%, #2c5aa0 100%)';
-                  e.target.style.paddingLeft = '24px';
+                  (e.target as HTMLElement).style.background = 'linear-gradient(90deg, #3182ce 0%, #2c5aa0 100%)';
+                  (e.target as HTMLElement).style.paddingLeft = '24px';
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.background = 'transparent';
-                  e.target.style.paddingLeft = '16px';
+                  (e.target as HTMLElement).style.background = 'transparent';
+                  (e.target as HTMLElement).style.paddingLeft = '16px';
                 }}
               >
                 📁 Load Game
@@ -396,12 +396,12 @@ function Civ1App() {
                   borderBottom: '1px solid rgba(255,255,255,0.1)'
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.background = 'linear-gradient(90deg, #3182ce 0%, #2c5aa0 100%)';
-                  e.target.style.paddingLeft = '24px';
+                  (e.target as HTMLElement).style.background = 'linear-gradient(90deg, #3182ce 0%, #2c5aa0 100%)';
+                  (e.target as HTMLElement).style.paddingLeft = '24px';
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.background = 'transparent';
-                  e.target.style.paddingLeft = '16px';
+                  (e.target as HTMLElement).style.background = 'transparent';
+                  (e.target as HTMLElement).style.paddingLeft = '16px';
                 }}
                 onClick={() => {
                   setShowSettings(true);
@@ -419,12 +419,12 @@ function Civ1App() {
                   transition: 'all 0.2s ease'
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.background = 'linear-gradient(90deg, #e53e3e 0%, #c53030 100%)';
-                  e.target.style.paddingLeft = '24px';
+                  (e.target as HTMLElement).style.background = 'linear-gradient(90deg, #e53e3e 0%, #c53030 100%)';
+                  (e.target as HTMLElement).style.paddingLeft = '24px';
                 }}
                 onMouseLeave={(e) => {
-                  e.target.style.background = 'transparent';
-                  e.target.style.paddingLeft = '16px';
+                  (e.target as HTMLElement).style.background = 'transparent';
+                  (e.target as HTMLElement).style.paddingLeft = '16px';
                 }}
               >
                 🚪 Quit
@@ -445,12 +445,12 @@ function Civ1App() {
                     borderBottom: idx < arr.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none'
                   }}
                   onMouseEnter={(e) => {
-                    e.target.style.background = 'linear-gradient(90deg, #38a169 0%, #2f855a 100%)';
-                    e.target.style.paddingLeft = '24px';
+                    (e.target as HTMLElement).style.background = 'linear-gradient(90deg, #38a169 0%, #2f855a 100%)';
+                    (e.target as HTMLElement).style.paddingLeft = '24px';
                   }}
                   onMouseLeave={(e) => {
-                    e.target.style.background = 'transparent';
-                    e.target.style.paddingLeft = '16px';
+                    (e.target as HTMLElement).style.background = 'transparent';
+                    (e.target as HTMLElement).style.paddingLeft = '16px';
                   }}
                 >
                   {item}
@@ -472,12 +472,12 @@ function Civ1App() {
                     borderBottom: idx < arr.length - 1 ? '1px solid rgba(255,255,255,0.1)' : 'none'
                   }}
                   onMouseEnter={(e) => {
-                    e.target.style.background = 'linear-gradient(90deg, #9f7aea 0%, #805ad5 100%)';
-                    e.target.style.paddingLeft = '24px';
+                    (e.target as HTMLElement).style.background = 'linear-gradient(90deg, #9f7aea 0%, #805ad5 100%)';
+                    (e.target as HTMLElement).style.paddingLeft = '24px';
                   }}
                   onMouseLeave={(e) => {
-                    e.target.style.background = 'transparent';
-                    e.target.style.paddingLeft = '16px';
+                    (e.target as HTMLElement).style.background = 'transparent';
+                    (e.target as HTMLElement).style.paddingLeft = '16px';
                   }}
                 >
                   {item}
@@ -494,6 +494,7 @@ function Civ1App() {
         onHide={() => setShowHexDetail(false)}
         hex={detailHex}
         terrain={terrainData}
+        adjacentTiles={[]}
       />
 
       {/* Settings Modal */}

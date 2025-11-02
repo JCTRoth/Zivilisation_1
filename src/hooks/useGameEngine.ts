@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
 import { useGameStore } from '../stores/gameStore';
+import type { GameEngine } from '../../types/game';
 
 /**
  * Custom hook to integrate GameEngine with Zustand state
  */
-export const useGameEngine = (gameEngine) => {
+export const useGameEngine = (gameEngine: GameEngine | null) => {
   const actions = useGameStore(state => state.actions);
 
   useEffect(() => {
@@ -118,7 +119,7 @@ export const useGameEngine = (gameEngine) => {
 /**
  * Custom hook for game controls
  */
-export const useGameControls = (gameEngine) => {
+export const useGameControls = (gameEngine: GameEngine | null) => {
   const actions = useGameStore(state => state.actions);
 
   const controls = {
