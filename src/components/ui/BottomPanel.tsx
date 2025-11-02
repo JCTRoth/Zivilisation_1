@@ -24,6 +24,8 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
   const handleUnitAction = (action: string) => {
     if (!selectedUnit || !gameEngine) return;
 
+    console.log(`[CLICK] Unit action: ${action} for unit ${selectedUnit.id} (${selectedUnit.type})`);
+
     switch (action) {
       case 'move':
         // Unit movement is handled by canvas clicks
@@ -52,6 +54,8 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
 
   const handleCityAction = (action) => {
     if (!selectedCity || !gameEngine) return;
+
+    console.log(`[CLICK] City action: ${action} for city ${selectedCity.id} (${selectedCity.name})`);
 
     switch (action) {
       case 'change_production':
@@ -88,7 +92,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
           <Button 
             variant="outline-secondary" 
             size="sm"
-            onClick={() => actions.selectUnit(null)}
+            onClick={() => {
+              console.log(`[CLICK] Deselect unit ${selectedUnit.id} (${selectedUnit.type})`);
+              actions.selectUnit(null);
+            }}
           >
             <i className="bi bi-x"></i>
           </Button>
@@ -217,7 +224,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
           <Button 
             variant="outline-secondary" 
             size="sm"
-            onClick={() => actions.selectCity(null)}
+            onClick={() => {
+              console.log(`[CLICK] Deselect city ${selectedCity.id} (${selectedCity.name})`);
+              actions.selectCity(null);
+            }}
           >
             <i className="bi bi-x"></i>
           </Button>

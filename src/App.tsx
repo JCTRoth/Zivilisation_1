@@ -60,7 +60,10 @@ function App() {
         <div className="text-center">
           <h2>Error Loading Game</h2>
           <p>{error}</p>
-          <button className="btn btn-primary" onClick={() => window.location.reload()}>
+          <button className="btn btn-primary" onClick={() => {
+            console.log(`[CLICK] Reload page button clicked`);
+            window.location.reload();
+          }}>
             Reload Page
           </button>
         </div>

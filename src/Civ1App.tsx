@@ -97,6 +97,7 @@ function Civ1App() {
 
   // Handle menu actions
   const handleMenuClick = (menu, event) => {
+    console.log(`[CLICK] Menu click: ${menu}`);
     if (activeMenu === menu) {
       setActiveMenu(null);
     } else {
@@ -118,6 +119,7 @@ function Civ1App() {
 
   // Handle new game
   const handleNewGame = () => {
+    console.log(`[CLICK] New game button clicked`);
     const confirmed = window.confirm(
       '🏛️ Start a New Game?\n\n' +
       'Are you sure you want to end the current game and start over?\n\n' +
@@ -125,8 +127,11 @@ function Civ1App() {
     );
     
     if (confirmed) {
+      console.log(`[CLICK] New game confirmed - reloading page`);
       // Reload the page to start fresh
       window.location.reload();
+    } else {
+      console.log(`[CLICK] New game cancelled`);
     }
   };
 
@@ -290,7 +295,10 @@ function Civ1App() {
                     color: civ.color,
                     fontWeight: civ.name === '(Player)' ? 'bold' : 'normal'
                   }}
-                  onClick={() => setSelectedCity(civ.name)}
+                  onClick={() => {
+                    console.log(`[CLICK] Selected civilization: ${civ.name}`);
+                    setSelectedCity(civ.name);
+                  }}
                 >
                   {civ.name}
                 </div>

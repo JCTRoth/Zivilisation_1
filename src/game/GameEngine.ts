@@ -274,6 +274,9 @@ export default class GameEngine {
         };
 
         this.units.push(settler);
+
+        // Log initial unit placement
+        console.log(`[INITIAL PLACEMENT] ${settler.type} (${settlerId}) for ${civ.name} placed at (${startPos.col},${startPos.row})`);
         
         // Note: Starting area reveal is now handled in useGameEngine hook after map sync
         // this.revealArea(startPos.col, startPos.row, 2);
@@ -535,17 +538,23 @@ export default class GameEngine {
     // Move the unit
     const distance = this.hexGrid.hexDistance(unit.col, unit.row, targetCol, targetRow);
     const moveCost = TERRAIN_PROPS[targetTile.type]?.movement || 1;
-    
+
     if (distance <= unit.movesRemaining / moveCost) {
+      const fromCol = unit.col;
+      const fromRow = unit.row;
+
       unit.col = targetCol;
       unit.row = targetRow;
       unit.movesRemaining -= distance * moveCost;
-      
+
+      // Log movement
+      console.log(`[MOVEMENT] ${unit.type} (${unit.id}) moved from (${fromCol},${fromRow}) to (${targetCol},${targetRow}), distance: ${distance}, moves remaining: ${unit.movesRemaining}`);
+
       // Trigger state update
       if (this.onStateChange) {
         this.onStateChange('UNIT_MOVED', { unit, targetCol, targetRow });
       }
-      
+
       return true;
     }
 
@@ -563,10 +572,16 @@ export default class GameEngine {
     
     if (attackerWins) {
       // Attacker wins - move to defender's position
+      const fromCol = attacker.col;
+      const fromRow = attacker.row;
+
       attacker.col = defender.col;
       attacker.row = defender.row;
       attacker.movesRemaining = 0;
-      
+
+      // Log combat movement
+      console.log(`[COMBAT MOVEMENT] ${attacker.type} (${attacker.id}) defeated ${defender.type} (${defender.id}) and moved from (${fromCol},${fromRow}) to (${defender.col},${defender.row})`);
+
       // Remove defeated unit
       this.units = this.units.filter(u => u.id !== defender.id);
       
@@ -641,6 +656,9 @@ export default class GameEngine {
     
     // Remove settler
     this.units = this.units.filter(u => u.id !== settlerId);
+
+    // Log settler removal (effectively a movement off the map)
+    console.log(`[SETTLER REMOVAL] ${settler.type} (${settlerId}) founded city "${cityName}" at (${settler.col},${settler.row}) and was removed from the map`);
     
     if (this.onStateChange) {
       this.onStateChange('CITY_FOUNDED', { city, settler });

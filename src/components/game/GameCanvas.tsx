@@ -214,6 +214,8 @@ const GameCanvas = ({ gameEngine }) => {
     // Get hex coordinates
     const hex = gameEngine.screenToHex(worldX, worldY);
     
+    console.log(`[CLICK] Canvas click at screen (${pos.x}, ${pos.y}) -> world (${worldX.toFixed(1)}, ${worldY.toFixed(1)}) -> hex (${hex.col}, ${hex.row})`);
+    
     if (gameEngine.isValidHex(hex.col, hex.row)) {
       // Handle hex selection
       actions.selectHex(hex);
@@ -223,15 +225,22 @@ const GameCanvas = ({ gameEngine }) => {
       const city = gameEngine.getCityAt(hex.col, hex.row);
       
       if (unit) {
+        console.log(`[CLICK] Selected unit ${unit.id} (${unit.type}) at (${hex.col}, ${hex.row})`);
         actions.selectUnit(unit.id);
       } else if (city) {
+        console.log(`[CLICK] Selected city ${city.id} (${city.name}) at (${hex.col}, ${hex.row})`);
         actions.selectCity(city.id);
       } else {
         // Try to move selected unit
         if (gameState.selectedUnit) {
+          console.log(`[CLICK] Attempting to move selected unit ${gameState.selectedUnit} to (${hex.col}, ${hex.row})`);
           gameEngine.moveUnit(gameState.selectedUnit, hex.col, hex.row);
+        } else {
+          console.log(`[CLICK] Empty hex clicked at (${hex.col}, ${hex.row}) - no unit or city selected`);
         }
       }
+    } else {
+      console.log(`[CLICK] Invalid hex clicked at (${hex.col}, ${hex.row})`);
     }
   }, [gameEngine, camera, actions, gameState.selectedUnit]);
 

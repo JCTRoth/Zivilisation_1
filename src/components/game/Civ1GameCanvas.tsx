@@ -184,7 +184,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         }
       }
       setTerrain(updatedTerrain);
-      console.log('[Civ1GameCanvas] Terrain visibility updated');
+      // console.log('[Civ1GameCanvas] Terrain visibility updated');
     } else {
       console.log('[Civ1GameCanvas] Skipping terrain visibility update - missing data');
     }
@@ -640,6 +640,8 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         const clickedCol = Math.floor(x / tileWidth);
         const clickedRow = Math.floor(y / tileHeight);
         
+        console.log(`[CLICK] Minimap click at (${clickedCol}, ${clickedRow})`);
+        
         // Center camera on clicked position
         actions.updateCamera({
           x: clickedCol * HEX_WIDTH - (canvas.width / camera.zoom) / 2,
@@ -649,6 +651,8 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         const hex = screenToHex(x, y);
         setSelectedHex(hex);
         setContextMenu(null); // Hide context menu on left click
+
+        console.log(`[CLICK] Map click at hex (${hex.col}, ${hex.row})`);
 
         // If we have a gameEngine available, try to select unit/city or move selected unit
         if (gameEngine) {
@@ -663,18 +667,24 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
 
           if (unitAt) {
             // Select the clicked unit
+            console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type}) at (${hex.col}, ${hex.row})`);
             if (actions && typeof actions.selectUnit === 'function') actions.selectUnit(unitAt.id);
           } else if (cityAt) {
+            console.log(`[CLICK] Selected city ${cityAt.id} (${cityAt.name}) at (${hex.col}, ${hex.row})`);
             if (actions && typeof actions.selectCity === 'function') actions.selectCity(cityAt.id);
           } else if (gameState.selectedUnit) {
             // Attempt to move the currently selected unit to the clicked hex
+            console.log(`[CLICK] Attempting to move selected unit ${gameState.selectedUnit} to (${hex.col}, ${hex.row})`);
             const moved = gameEngine.moveUnit(gameState.selectedUnit, hex.col, hex.row);
             if (!moved) {
+              console.log(`[CLICK] Move failed: invalid destination or no moves remaining`);
               // Provide feedback when move failed
               if (actions && typeof actions.addNotification === 'function') {
                 actions.addNotification({ type: 'warning', message: 'Move failed: invalid destination or no moves remaining' });
               }
             }
+          } else {
+            console.log(`[CLICK] Empty hex clicked at (${hex.col}, ${hex.row}) - no unit or city selected`);
           }
         }
       }
