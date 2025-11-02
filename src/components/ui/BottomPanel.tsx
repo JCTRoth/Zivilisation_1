@@ -1,9 +1,14 @@
 import React from 'react';
 import { Card, Button, ButtonGroup, ProgressBar, ListGroup } from 'react-bootstrap';
 import { useGameStore } from '../../stores/gameStore';
-import { UNIT_PROPS, BUILDING_PROPS } from '../../utils/constants';
+import { UNIT_PROPS, BUILDING_PROPS, UnitProperties } from '../../utils/constants';
+import type { GameEngine } from '../../../types/game';
 
-const BottomPanel = ({ gameEngine }) => {
+interface BottomPanelProps {
+  gameEngine: GameEngine | null;
+}
+
+const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
   const selectedUnit = useGameStore(state => state.selectedUnit);
   const selectedCity = useGameStore(state => state.selectedCity);
   const uiState = useGameStore(state => state.uiState);
@@ -16,7 +21,7 @@ const BottomPanel = ({ gameEngine }) => {
 
   const showPanel = uiState.showUnitPanel || uiState.showCityPanel;
 
-  const handleUnitAction = (action) => {
+  const handleUnitAction = (action: string) => {
     if (!selectedUnit || !gameEngine) return;
 
     switch (action) {
@@ -31,7 +36,7 @@ const BottomPanel = ({ gameEngine }) => {
         break;
       case 'found_city':
         if (selectedUnit.type === 'settler') {
-          gameEngine.foundCity(selectedUnit.id);
+          gameEngine.foundCityWithSettler(selectedUnit.id);
         }
         break;
       case 'build_road':
@@ -66,7 +71,7 @@ const BottomPanel = ({ gameEngine }) => {
   const renderUnitPanel = () => {
     if (!selectedUnit) return null;
 
-    const unitProps = UNIT_PROPS[selectedUnit.type] || {};
+    const unitProps: Partial<UnitProperties> = UNIT_PROPS[selectedUnit.type] || {};
 
     return (
       <Card bg="dark" text="white" className="m-2">

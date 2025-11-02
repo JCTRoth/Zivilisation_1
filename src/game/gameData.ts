@@ -3,8 +3,79 @@
  * Historical civilizations, leaders, technologies, wonders, and units
  */
 
+export interface Civilization {
+  name: string;
+  leader: string;
+  color: string;
+  cityNames: string[];
+}
+
+export interface Technology {
+  id: string;
+  name: string;
+  era: string;
+  cost: number;
+  prerequisites: string[];
+  enables: string[];
+  description: string;
+}
+
+export interface Wonder {
+  id: string;
+  name: string;
+  cost: number;
+  requires: string;
+  effect: string;
+  description: string;
+}
+
+export interface UnitType {
+  id: string;
+  name: string;
+  cost: number;
+  attack: number;
+  defense: number;
+  movement: number;
+  sightRange: number;
+  icon: string;
+  requires: string | null;
+  description: string;
+}
+
+export interface Building {
+  id: string;
+  name: string;
+  cost: number;
+  maintenance: number;
+  requires: string | null;
+  effect: string;
+  description: string;
+}
+
+export interface Government {
+  id: string;
+  name: string;
+  requires: string | null;
+  corruption: string;
+  unitSupport: string;
+  description: string;
+}
+
+export interface VictoryCondition {
+  id: string;
+  name: string;
+  description: string;
+  requires?: string[];
+}
+
+export interface DifficultyLevel {
+  name: string;
+  aiBonus: number;
+  barbarianFrequency: number;
+}
+
 // Civilizations from original Civ1
-export const CIVILIZATIONS = [
+export const CIVILIZATIONS: Civilization[] = [
   {
     name: 'Americans',
     leader: 'Abraham Lincoln',
@@ -92,7 +163,7 @@ export const CIVILIZATIONS = [
 ];
 
 // Technology Tree (simplified from Civ1)
-export const TECHNOLOGIES = {
+export const TECHNOLOGIES: Record<string, Technology> = {
   // Ancient Era
   POTTERY: {
     id: 'pottery',
@@ -305,7 +376,7 @@ export const TECHNOLOGIES = {
 };
 
 // Wonders of the World
-export const WONDERS = {
+export const WONDERS: Record<string, Wonder> = {
   PYRAMIDS: {
     id: 'pyramids',
     name: 'Pyramids',
@@ -389,7 +460,7 @@ export const WONDERS = {
 };
 
 // Unit Types
-export const UNIT_TYPES = {
+export const UNIT_TYPES: Record<string, UnitType> = {
   // Non-combat units
   SETTLERS: {
     id: 'settlers',
@@ -742,7 +813,7 @@ export const UNIT_TYPES = {
 };
 
 // City Improvements/Buildings
-export const BUILDINGS = {
+export const BUILDINGS: Record<string, Building> = {
   PALACE: {
     id: 'palace',
     name: 'Palace',
@@ -953,7 +1024,7 @@ export const BUILDINGS = {
 };
 
 // Government Types
-export const GOVERNMENTS = {
+export const GOVERNMENTS: Record<string, Government> = {
   DESPOTISM: {
     id: 'despotism',
     name: 'Despotism',
@@ -997,7 +1068,7 @@ export const GOVERNMENTS = {
 };
 
 // Victory Conditions
-export const VICTORY_CONDITIONS = {
+export const VICTORY_CONDITIONS: Record<string, VictoryCondition> = {
   CONQUEST: {
     id: 'conquest',
     name: 'Conquest Victory',
@@ -1017,7 +1088,7 @@ export const VICTORY_CONDITIONS = {
 };
 
 // Game difficulty levels
-export const DIFFICULTY_LEVELS = {
+export const DIFFICULTY_LEVELS: Record<string, DifficultyLevel> = {
   CHIEFTAIN: { name: 'Chieftain', aiBonus: 0, barbarianFrequency: 0.3 },
   WARLORD: { name: 'Warlord', aiBonus: 0.5, barbarianFrequency: 0.5 },
   PRINCE: { name: 'Prince', aiBonus: 1, barbarianFrequency: 0.7 },

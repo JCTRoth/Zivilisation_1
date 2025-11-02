@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 
 import { create } from 'zustand';
-import { CONSTANTS } from '../utils/constants.js';
-import { HexGrid } from '../game/hexGrid.js';
+import { CONSTANTS } from '../utils/constants';
+import { HexGrid } from '../game/hexGrid';
 import { UNIT_TYPES } from '../game/gameData.js';
 import type { GameStoreState, GameState, MapState, CameraState, Unit, City, Civilization, UIState, Settings, Technology, GameActions } from '../../types/game';
 

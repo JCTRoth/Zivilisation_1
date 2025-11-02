@@ -54,6 +54,11 @@ export interface Unit {
   status?: string;
   name?: string;
   isVeteran?: boolean;
+  maxMoves?: number;
+  attack?: number;
+  defense?: number;
+  orders?: any;
+  isFortified?: boolean;
 }
 
 export interface City {
@@ -75,12 +80,13 @@ export interface City {
   };
   foodStored?: number;
   foodNeeded?: number;
-  currentProduction?: {
-    name: string;
-    cost: number;
-  };
+  foodRequired?: number;
+  currentProduction?: any;
   productionStored?: number;
-  buildings?: string[];
+  buildings?: any[];
+  shields?: number;
+  productionQueue?: any[];
+  output?: any;
 }
 
 export interface Civilization {
@@ -96,14 +102,13 @@ export interface Civilization {
     gold: number;
   };
   leader?: string;
-  currentResearch?: {
-    id: string;
-    name: string;
-    cost: number;
-  };
+  cityNames?: string[];
+  nextCityNameIndex?: number;
+  currentResearch?: any;
   researchProgress?: number;
+  technologies?: any[];
   score?: number;
-  technologies?: Technology[];
+  isHuman?: boolean;
 }
 
 export interface UIState {
@@ -211,7 +216,8 @@ export interface GameEngine {
   newGame(): void;
   processTurn(): void;
   moveUnit(unitId: string, col: number, row: number): boolean;
-  foundCity(settlerId: string): boolean;
+  foundCity(col: number, row: number, civilizationId: number, customName?: string | null): any;
+  foundCityWithSettler(settlerId: string): boolean;
   setResearch(civId: number, techId: string): void;
   unitSleep(unitId: string): void;
   unitFortify(unitId: string): void;

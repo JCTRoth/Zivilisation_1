@@ -153,7 +153,7 @@ export const useGameControls = (gameEngine: GameEngine | null) => {
 
     foundCity: (settlerId) => {
       if (gameEngine) {
-        return gameEngine.foundCity(settlerId);
+        return gameEngine.foundCityWithSettler(settlerId);
       }
       return false;
     },

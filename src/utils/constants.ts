@@ -1,14 +1,105 @@
+// Game Constants - TypeScript Definitions
+
+export interface TerrainProperties {
+    movement: number;
+    defense: number;
+    food: number;
+    production: number;
+    trade: number;
+    color: string;
+    passable: boolean;
+}
+
+export interface UnitProperties {
+    name: string;
+    attack: number;
+    defense: number;
+    movement: number;
+    cost: number;
+    type: 'civilian' | 'military' | 'siege' | 'naval';
+    icon: string;
+    canFound?: boolean;
+}
+
+export interface BuildingProperties {
+    name: string;
+    cost: number;
+    maintenance: number;
+    effect: string;
+    description: string;
+}
+
+export interface GameSettings {
+    MAX_CIVILIZATIONS: number;
+    STARTING_UNITS: number;
+    STARTING_TECHNOLOGIES: number;
+    INITIAL_GOLD: number;
+    TECH_COST_BASE: number;
+    CITY_GROWTH_BASE: number;
+}
+
+export interface UIConstants {
+    SIDEBAR_WIDTH: number;
+    TOPBAR_HEIGHT: number;
+    BOTTOM_PANEL_HEIGHT: number;
+    ANIMATION_DURATION: number;
+}
+
+export interface GameConstants {
+    // Hex Grid Configuration
+    HEX_SIZE: number;
+    HEX_WIDTH: number;
+    HEX_HEIGHT: number;
+
+    // Map Dimensions
+    MAP_WIDTH: number;
+    MAP_HEIGHT: number;
+
+    // Terrain Types
+    TERRAIN: Record<string, string>;
+
+    // Terrain Properties
+    TERRAIN_PROPS: Record<string, TerrainProperties>;
+
+    // Unit Types
+    UNIT_TYPES: Record<string, string>;
+
+    // Unit Properties
+    UNIT_PROPS: Record<string, UnitProperties>;
+
+    // Building Types
+    BUILDING_TYPES: Record<string, string>;
+
+    // Building Properties
+    BUILDING_PROPS: Record<string, BuildingProperties>;
+
+    // Resource Types
+    RESOURCES: Record<string, string>;
+
+    // Technology Categories
+    TECH_CATEGORIES: Record<string, string>;
+
+    // Civilization Colors
+    CIVILIZATION_COLORS: string[];
+
+    // Game Settings
+    GAME: GameSettings;
+
+    // UI Constants
+    UI: UIConstants;
+}
+
 // Game Constants
-export const CONSTANTS = {
+export const CONSTANTS: GameConstants = {
     // Hex Grid Configuration
     HEX_SIZE: 32,
     HEX_WIDTH: 56,  // HEX_SIZE * Math.sqrt(3)
     HEX_HEIGHT: 64, // HEX_SIZE * 2
-    
+
     // Map Dimensions
     MAP_WIDTH: 80,
     MAP_HEIGHT: 50,
-    
+
     // Terrain Types
     TERRAIN: {
         OCEAN: 'ocean',
@@ -20,80 +111,80 @@ export const CONSTANTS = {
         MOUNTAINS: 'mountains',
         FOREST: 'forest'
     },
-    
+
     // Terrain Properties
     TERRAIN_PROPS: {
-        ocean: { 
-            movement: 1, 
-            defense: 0, 
-            food: 1, 
-            production: 0, 
+        ocean: {
+            movement: 1,
+            defense: 0,
+            food: 1,
+            production: 0,
             trade: 2,
             color: '#1e3a8a',
-            passable: false 
+            passable: false
         },
-        grassland: { 
-            movement: 1, 
-            defense: 0, 
-            food: 2, 
-            production: 0, 
+        grassland: {
+            movement: 1,
+            defense: 0,
+            food: 2,
+            production: 0,
             trade: 0,
             color: '#22c55e',
-            passable: true 
+            passable: true
         },
-        plains: { 
-            movement: 1, 
-            defense: 0, 
-            food: 1, 
-            production: 1, 
+        plains: {
+            movement: 1,
+            defense: 0,
+            food: 1,
+            production: 1,
             trade: 0,
             color: '#84cc16',
-            passable: true 
+            passable: true
         },
-        desert: { 
-            movement: 1, 
-            defense: 0, 
-            food: 0, 
-            production: 1, 
+        desert: {
+            movement: 1,
+            defense: 0,
+            food: 0,
+            production: 1,
             trade: 0,
             color: '#fbbf24',
-            passable: true 
+            passable: true
         },
-        tundra: { 
-            movement: 1, 
-            defense: 0, 
-            food: 1, 
-            production: 0, 
+        tundra: {
+            movement: 1,
+            defense: 0,
+            food: 1,
+            production: 0,
             trade: 0,
             color: '#e5e7eb',
-            passable: true 
+            passable: true
         },
-        hills: { 
-            movement: 2, 
-            defense: 2, 
-            food: 1, 
-            production: 2, 
+        hills: {
+            movement: 2,
+            defense: 2,
+            food: 1,
+            production: 2,
             trade: 0,
             color: '#a78bfa',
-            passable: true 
+            passable: true
         },
-        mountains: { 
-            movement: 3, 
-            defense: 3, 
-            food: 0, 
-            production: 1, 
+        mountains: {
+            movement: 3,
+            defense: 3,
+            food: 0,
+            production: 1,
             trade: 0,
             color: '#6b7280',
-            passable: true 
+            passable: true
         },
-        forest: { 
-            movement: 2, 
-            defense: 1, 
-            food: 1, 
-            production: 2, 
+        forest: {
+            movement: 2,
+            defense: 1,
+            food: 1,
+            production: 2,
             trade: 0,
             color: '#059669',
-            passable: true 
+            passable: true
         }
     },
 

@@ -1,13 +1,55 @@
-import { HexGrid } from './hexGrid.js';
-import { CONSTANTS, TERRAIN_PROPS, UNIT_PROPS } from '../utils/constants.js';
+import { HexGrid } from './hexGrid';
+import { CONSTANTS, TERRAIN_PROPS, UNIT_PROPS } from '../utils/constants';
 import { CIVILIZATIONS, TECHNOLOGIES, UNIT_TYPES } from './gameData.js';
+import type { GameActions, Unit, City, Civilization } from '../../types/game';
+
+interface GameSettings {
+  difficulty: string;
+  mapType: string;
+  numberOfCivilizations: number;
+  playerCivilization: number;
+  startingYear: number;
+  startingGold: number;
+}
+
+interface MapTile {
+  terrain: string;
+  resource?: string;
+  improvement?: string;
+  visible: boolean;
+  explored: boolean;
+  col: number;
+  row: number;
+  type?: string;
+}
+
+interface MapData {
+  width: number;
+  height: number;
+  tiles: MapTile[];
+}
 
 /**
  * Main Game Engine for React Civilization Clone
  * Manages all game systems and state
  */
 export default class GameEngine {
-  constructor(storeActions = null) {
+  storeActions: GameActions | null;
+  hexGrid: HexGrid | null;
+  map: MapData | null;
+  units: Unit[];
+  cities: City[];
+  civilizations: Civilization[];
+  technologies: any[];
+  gameSettings: GameSettings;
+  renderer: any;
+  isInitialized: boolean;
+  currentTurn: number;
+  currentYear: number;
+  activePlayer: number;
+  onStateChange: ((eventType: string, eventData?: any) => void) | null;
+
+  constructor(storeActions: GameActions | null = null) {
     this.storeActions = storeActions;
     this.hexGrid = null;
     this.map = null;
@@ -227,6 +269,7 @@ export default class GameEngine {
           isVeteran: false,
           attack: 0,
           defense: 1,
+          icon: '👷',
           orders: null // 'fortify', 'sentry', 'goto', etc.
         };
 
@@ -335,6 +378,10 @@ export default class GameEngine {
       col: col,
       row: row,
       population: 1,
+      production: 0,
+      food: 0,
+      gold: 0,
+      science: 0,
       foodStored: 0,
       foodRequired: 20, // Food needed for next population
       shields: 0, // Production shields
@@ -548,7 +595,7 @@ export default class GameEngine {
   /**
    * Found a city with settler
    */
-  foundCity(settlerId) {
+  foundCityWithSettler(settlerId) {
     const settler = this.units.find(u => u.id === settlerId);
     if (!settler || settler.type !== 'settlers') return false;
 
@@ -577,6 +624,10 @@ export default class GameEngine {
       col: settler.col,
       row: settler.row,
       population: 1,
+      production: 0,
+      food: 0,
+      gold: 0,
+      science: 0,
       isCapital: this.cities.filter(c => c.civilizationId === civId).length === 0,
       buildings: [],
       yields: { food: 2, production: 1, trade: 0 },
