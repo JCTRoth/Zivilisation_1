@@ -1,6 +1,5 @@
-// Game Constants - TypeScript Definitions
-
-export interface TerrainProperties {
+// Game Constants - Legacy JavaScript Implementation (Converted to TypeScript)
+interface TerrainProperties {
     movement: number;
     defense: number;
     food: number;
@@ -10,42 +9,27 @@ export interface TerrainProperties {
     passable: boolean;
 }
 
-export interface UnitProperties {
+interface UnitProperties {
     name: string;
     attack: number;
     defense: number;
     movement: number;
     cost: number;
-    type: 'civilian' | 'military' | 'siege' | 'naval';
-    icon: string;
-    canFound?: boolean;
+    canSettle: boolean;
+    canWork: boolean;
+    naval?: boolean;
+    icon?: string;
+    type?: 'civilian' | 'military' | 'siege' | 'naval';
 }
 
-export interface BuildingProperties {
+interface BuildingProperties {
     name: string;
     cost: number;
     maintenance: number;
-    effect: string;
-    description: string;
+    effects: Record<string, any>;
 }
 
-export interface GameSettings {
-    MAX_CIVILIZATIONS: number;
-    STARTING_UNITS: number;
-    STARTING_TECHNOLOGIES: number;
-    INITIAL_GOLD: number;
-    TECH_COST_BASE: number;
-    CITY_GROWTH_BASE: number;
-}
-
-export interface UIConstants {
-    SIDEBAR_WIDTH: number;
-    TOPBAR_HEIGHT: number;
-    BOTTOM_PANEL_HEIGHT: number;
-    ANIMATION_DURATION: number;
-}
-
-export interface GameConstants {
+interface GameConstants {
     // Hex Grid Configuration
     HEX_SIZE: number;
     HEX_WIDTH: number;
@@ -56,40 +40,73 @@ export interface GameConstants {
     MAP_HEIGHT: number;
 
     // Terrain Types
-    TERRAIN: Record<string, string>;
+    TERRAIN: {
+        OCEAN: string;
+        GRASSLAND: string;
+        PLAINS: string;
+        DESERT: string;
+        TUNDRA: string;
+        HILLS: string;
+        MOUNTAINS: string;
+        FOREST: string;
+    };
 
     // Terrain Properties
-    TERRAIN_PROPS: Record<string, TerrainProperties>;
+    TERRAIN_PROPS: Record<string, any>;
 
     // Unit Types
-    UNIT_TYPES: Record<string, string>;
+    UNIT_TYPES: {
+        SETTLER: string;
+        MILITIA: string;
+        PHALANX: string;
+        LEGION: string;
+        CATAPULT: string;
+        TRIREME: string;
+        CAVALRY: string;
+        CHARIOT: string;
+    };
 
     // Unit Properties
-    UNIT_PROPS: Record<string, UnitProperties>;
+    UNIT_PROPS: Record<string, any>;
 
-    // Building Types
-    BUILDING_TYPES: Record<string, string>;
+    // City Buildings
+    BUILDINGS: {
+        GRANARY: string;
+        BARRACKS: string;
+        TEMPLE: string;
+        MARKETPLACE: string;
+        LIBRARY: string;
+        WALLS: string;
+        AQUEDUCT: string;
+        BANK: string;
+    };
 
     // Building Properties
-    BUILDING_PROPS: Record<string, BuildingProperties>;
+    BUILDING_PROPS: Record<string, any>;
 
-    // Resource Types
-    RESOURCES: Record<string, string>;
-
-    // Technology Categories
-    TECH_CATEGORIES: Record<string, string>;
-
-    // Civilization Colors
-    CIVILIZATION_COLORS: string[];
+    // Improvement Properties
+    IMPROVEMENT_PROPS: Record<string, any>;
 
     // Game Settings
-    GAME: GameSettings;
+    INITIAL_GOLD: number;
+    INITIAL_SCIENCE: number;
+    TURNS_PER_YEAR: number;
+    STARTING_YEAR: number;
 
-    // UI Constants
-    UI: UIConstants;
+    // Colors
+    COLORS: {
+        PLAYER: string;
+        AI_1: string;
+        AI_2: string;
+        AI_3: string;
+        AI_4: string;
+        AI_5: string;
+        NEUTRAL: string;
+        SELECTED: string;
+        HIGHLIGHT: string;
+    };
 }
 
-// Game Constants
 export const CONSTANTS: GameConstants = {
     // Hex Grid Configuration
     HEX_SIZE: 32,
@@ -147,7 +164,7 @@ export const CONSTANTS: GameConstants = {
             food: 0,
             production: 1,
             trade: 0,
-            color: '#fbbf24',
+            color: '#f59e0b',
             passable: true
         },
         tundra: {
@@ -156,16 +173,16 @@ export const CONSTANTS: GameConstants = {
             food: 1,
             production: 0,
             trade: 0,
-            color: '#e5e7eb',
+            color: '#64748b',
             passable: true
         },
         hills: {
             movement: 2,
             defense: 2,
             food: 1,
-            production: 2,
+            production: 0,
             trade: 0,
-            color: '#a78bfa',
+            color: '#a3a3a3',
             passable: true
         },
         mountains: {
@@ -174,16 +191,16 @@ export const CONSTANTS: GameConstants = {
             food: 0,
             production: 1,
             trade: 0,
-            color: '#6b7280',
+            color: '#525252',
             passable: true
         },
         forest: {
             movement: 2,
             defense: 1,
             food: 1,
-            production: 2,
+            production: 1,
             trade: 0,
-            color: '#059669',
+            color: '#166534',
             passable: true
         }
     },
@@ -191,20 +208,13 @@ export const CONSTANTS: GameConstants = {
     // Unit Types
     UNIT_TYPES: {
         SETTLER: 'settler',
-        WARRIOR: 'warrior',
+        MILITIA: 'militia',
         PHALANX: 'phalanx',
-        ARCHER: 'archer',
         LEGION: 'legion',
         CATAPULT: 'catapult',
-        CAVALRY: 'cavalry',
-        KNIGHT: 'knight',
-        CANNON: 'cannon',
-        MUSKETEER: 'musketeer',
-        RIFLEMAN: 'rifleman',
-        CAVALRY_II: 'cavalry_ii',
-        BATTLESHIP: 'battleship',
         TRIREME: 'trireme',
-        CARAVEL: 'caravel'
+        CAVALRY: 'cavalry',
+        CHARIOT: 'chariot'
     },
 
     // Unit Properties
@@ -215,16 +225,19 @@ export const CONSTANTS: GameConstants = {
             defense: 1,
             movement: 1,
             cost: 40,
-            canFound: true,
+            canSettle: true,
+            canWork: true,
             type: 'civilian',
             icon: '🏘️'
         },
-        warrior: {
-            name: 'Warrior',
+        militia: {
+            name: 'Militia',
             attack: 1,
-            defense: 1,
+            defense: 2,
             movement: 1,
             cost: 10,
+            canSettle: false,
+            canWork: false,
             type: 'military',
             icon: '⚔️'
         },
@@ -234,53 +247,32 @@ export const CONSTANTS: GameConstants = {
             defense: 2,
             movement: 1,
             cost: 20,
+            canSettle: false,
+            canWork: false,
             type: 'military',
             icon: '🛡️'
         },
-        archer: {
-            name: 'Archer',
+        legion: {
+            name: 'Legion',
             attack: 3,
             defense: 2,
             movement: 1,
-            cost: 30,
-            type: 'military',
-            icon: '🏹'
-        },
-        legion: {
-            name: 'Legion',
-            attack: 4,
-            defense: 2,
-            movement: 1,
             cost: 40,
+            canSettle: false,
+            canWork: false,
             type: 'military',
-            icon: '🗡️'
+            icon: '⚔️'
         },
         catapult: {
             name: 'Catapult',
-            attack: 6,
+            attack: 4,
             defense: 1,
             movement: 1,
             cost: 40,
+            canSettle: false,
+            canWork: false,
             type: 'siege',
             icon: '💥'
-        },
-        cavalry: {
-            name: 'Cavalry',
-            attack: 2,
-            defense: 1,
-            movement: 2,
-            cost: 20,
-            type: 'military',
-            icon: '🐎'
-        },
-        knight: {
-            name: 'Knight',
-            attack: 4,
-            defense: 2,
-            movement: 2,
-            cost: 40,
-            type: 'military',
-            icon: '♞'
         },
         trireme: {
             name: 'Trireme',
@@ -288,120 +280,177 @@ export const CONSTANTS: GameConstants = {
             defense: 1,
             movement: 3,
             cost: 40,
+            canSettle: false,
+            canWork: false,
+            naval: true,
             type: 'naval',
             icon: '⛵'
+        },
+        cavalry: {
+            name: 'Cavalry',
+            attack: 2,
+            defense: 1,
+            movement: 2,
+            cost: 30,
+            canSettle: false,
+            canWork: false,
+            type: 'military',
+            icon: '🐎'
+        },
+        chariot: {
+            name: 'Chariot',
+            attack: 3,
+            defense: 1,
+            movement: 2,
+            cost: 30,
+            canSettle: false,
+            canWork: false,
+            type: 'military',
+            icon: '🏇'
         }
     },
 
-    // Building Types
-    BUILDING_TYPES: {
-        BARRACKS: 'barracks',
+    // City Buildings
+    BUILDINGS: {
         GRANARY: 'granary',
+        BARRACKS: 'barracks',
         TEMPLE: 'temple',
         MARKETPLACE: 'marketplace',
         LIBRARY: 'library',
         WALLS: 'walls',
         AQUEDUCT: 'aqueduct',
-        COLOSSEUM: 'colosseum',
-        COURTHOUSE: 'courthouse',
-        UNIVERSITY: 'university',
-        CATHEDRAL: 'cathedral',
         BANK: 'bank'
     },
 
     // Building Properties
     BUILDING_PROPS: {
-        barracks: {
-            name: 'Barracks',
-            cost: 40,
-            maintenance: 1,
-            effect: 'Veteran units',
-            description: 'All land units built here are veterans'
-        },
         granary: {
             name: 'Granary',
             cost: 60,
             maintenance: 1,
-            effect: 'Food storage',
-            description: 'Retains half food when city grows'
+            effects: { foodStorage: 2 }
+        },
+        barracks: {
+            name: 'Barracks',
+            cost: 40,
+            maintenance: 1,
+            effects: { unitExperience: 1 }
         },
         temple: {
             name: 'Temple',
             cost: 40,
             maintenance: 1,
-            effect: 'Makes 1 unhappy citizen content',
-            description: 'Increases happiness in the city'
+            effects: { happiness: 1 }
         },
         marketplace: {
             name: 'Marketplace',
             cost: 80,
             maintenance: 1,
-            effect: '+50% trade',
-            description: 'Increases trade output'
+            effects: { tradeBonus: 0.5 }
         },
         library: {
             name: 'Library',
             cost: 80,
             maintenance: 1,
-            effect: '+50% science',
-            description: 'Increases science output'
+            effects: { scienceBonus: 0.5 }
         },
         walls: {
             name: 'City Walls',
             cost: 80,
             maintenance: 2,
-            effect: 'Triples defense vs land units',
-            description: 'Greatly increases city defense'
+            effects: { defense: 3 }
+        },
+        aqueduct: {
+            name: 'Aqueduct',
+            cost: 80,
+            maintenance: 2,
+            effects: { maxPopulation: 8 }
+        },
+        bank: {
+            name: 'Bank',
+            cost: 120,
+            maintenance: 3,
+            effects: { goldBonus: 0.5 }
         }
     },
 
-    // Resource Types
-    RESOURCES: {
-        FOOD: 'food',
-        PRODUCTION: 'production',
-        TRADE: 'trade',
-        SCIENCE: 'science',
-        GOLD: 'gold'
+    // Improvement Properties
+    IMPROVEMENT_PROPS: {
+        road: {
+            name: 'Road',
+            food: 0,
+            production: 0,
+            trade: 1,
+            buildTurns: 3,
+            allowedTerrain: null,
+            requiresResource: null
+        },
+        railroad: {
+            name: 'Railroad',
+            food: 0,
+            production: 1,
+            trade: 0,
+            buildTurns: 6,
+            allowedTerrain: null,
+            requiresResource: null,
+            prerequisite: 'road'
+        },
+        irrigation: {
+            name: 'Irrigation',
+            food: 1,
+            production: 0,
+            trade: 0,
+            buildTurns: 5,
+            allowedTerrain: ['grassland', 'plains', 'desert'],
+            requiresResource: null
+        },
+        mine: {
+            name: 'Mine',
+            food: 0,
+            production: 1,
+            trade: 0,
+            buildTurns: 5,
+            allowedTerrain: ['hills', 'mountains'],
+            requiresResource: null
+        },
+        fortress: {
+            name: 'Fortress',
+            food: 0,
+            production: 0,
+            trade: 0,
+            buildTurns: 8,
+            allowedTerrain: null,
+            requiresResource: null,
+            defenseBonus: 2
+        },
+        airbase: {
+            name: 'Airbase',
+            food: 0,
+            production: 0,
+            trade: 0,
+            buildTurns: 10,
+            allowedTerrain: null,
+            requiresResource: null
+        }
     },
-
-    // Technology Categories
-    TECH_CATEGORIES: {
-        ANCIENT: 'ancient',
-        CLASSICAL: 'classical',
-        MEDIEVAL: 'medieval',
-        RENAISSANCE: 'renaissance',
-        INDUSTRIAL: 'industrial',
-        MODERN: 'modern'
-    },
-
-    // Civilization Colors
-    CIVILIZATION_COLORS: [
-        '#e74c3c', // Red (Roman)
-        '#3498db', // Blue (Greek)
-        '#f39c12', // Orange (Egyptian)
-        '#27ae60', // Green (Chinese)
-        '#9b59b6', // Purple (Babylonian)
-        '#e67e22', // Orange-Red (Indian)
-        '#1abc9c', // Turquoise (Aztec)
-        '#34495e'  // Dark Blue-Gray (German)
-    ],
 
     // Game Settings
-    GAME: {
-        MAX_CIVILIZATIONS: 8,
-        STARTING_UNITS: 2, // Settler + Warrior
-        STARTING_TECHNOLOGIES: 1,
-        INITIAL_GOLD: 50,
-        TECH_COST_BASE: 20,
-        CITY_GROWTH_BASE: 20
-    },
+    INITIAL_GOLD: 50,
+    INITIAL_SCIENCE: 2,
+    TURNS_PER_YEAR: 20,
+    STARTING_YEAR: -4000,
 
-    // UI Constants
-    UI: {
-        SIDEBAR_WIDTH: 300,
-        TOPBAR_HEIGHT: 60,
-        BOTTOM_PANEL_HEIGHT: 200,
-        ANIMATION_DURATION: 300
+    // Colors
+    COLORS: {
+        PLAYER: '#ff0000',
+        AI_1: '#0000ff',
+        AI_2: '#00ff00',
+        AI_3: '#ffff00',
+        AI_4: '#ff00ff',
+        AI_5: '#00ffff',
+        NEUTRAL: '#808080',
+        SELECTED: '#ffffff',
+        HIGHLIGHT: '#ffff80'
     }
 };
 
@@ -411,11 +460,11 @@ export const {
     TERRAIN_PROPS,
     UNIT_TYPES,
     UNIT_PROPS,
-    BUILDING_TYPES,
+    BUILDINGS,
     BUILDING_PROPS,
-    RESOURCES,
-    TECH_CATEGORIES,
-    CIVILIZATION_COLORS
+    IMPROVEMENT_PROPS
 } = CONSTANTS;
 
-export default CONSTANTS;
+export type { UnitProperties, BuildingProperties };
+
+export { CONSTANTS as default };

@@ -1,220 +1,256 @@
-// Rendering Engine
-class Renderer {
-    constructor(canvas, miniMapCanvas) {
+import { CONSTANTS } from '../utils/constants.js';
+import { MathUtils } from '../utils/helpers.js';
+import type { HexGrid } from '../game/hexGrid.js';
+import type { GameMap } from '../game/map.js';
+import type { Unit } from '../game/unit.js';
+import type { City } from '../game/city.js';
+
+interface Camera {
+    x: number;
+    y: number;
+    zoom: number;
+}
+
+interface SelectedHex {
+    col: number;
+    row: number;
+}
+
+interface HighlightedHex {
+    col: number;
+    row: number;
+}
+
+interface VisibleArea {
+    startCol: number;
+    endCol: number;
+    startRow: number;
+    endRow: number;
+}
+
+interface WorldPosition {
+    x: number;
+    y: number;
+}
+
+interface ScreenPosition {
+    x: number;
+    y: number;
+}
+
+interface Vertex {
+    x: number;
+    y: number;
+}
+
+export class Renderer {
+    private canvas: HTMLCanvasElement;
+    private ctx: CanvasRenderingContext2D;
+    private miniMapCanvas: HTMLCanvasElement;
+    private miniMapCtx: CanvasRenderingContext2D;
+    private camera: Camera;
+    private grid: HexGrid | null;
+    private selectedHex: SelectedHex | null;
+    private highlightedHexes: HighlightedHex[];
+
+    constructor(canvas: HTMLCanvasElement, miniMapCanvas: HTMLCanvasElement) {
         this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
         this.miniMapCanvas = miniMapCanvas;
-        this.miniMapCtx = miniMapCanvas.getContext('2d');
-        
-        this.camera = {
-            x: 0,
-            y: 0,
-            zoom: 1
-        };
-        
+        this.camera = { x: 0, y: 0, zoom: 1 };
         this.grid = null;
         this.selectedHex = null;
         this.highlightedHexes = [];
-        
+
         this.setupCanvas();
     }
-    
-    setupCanvas() {
-        // Set up main canvas
-        this.canvas.width = this.canvas.offsetWidth;
-        this.canvas.height = this.canvas.offsetHeight;
-        
-        // Set up mini-map canvas
-        this.miniMapCanvas.width = this.miniMapCanvas.offsetWidth;
-        this.miniMapCanvas.height = this.miniMapCanvas.offsetHeight;
-        
-        // Enable crisp pixel rendering
-        this.ctx.imageSmoothingEnabled = false;
-        this.miniMapCtx.imageSmoothingEnabled = false;
-        
-        // Handle high DPI displays
-        const dpr = window.devicePixelRatio || 1;
-        if (dpr > 1) {
-            this.canvas.width *= dpr;
-            this.canvas.height *= dpr;
-            this.ctx.scale(dpr, dpr);
-            
-            this.miniMapCanvas.width *= dpr;
-            this.miniMapCanvas.height *= dpr;
-            this.miniMapCtx.scale(dpr, dpr);
+
+    private setupCanvas(): void {
+        const ctx = this.canvas.getContext('2d');
+        const miniCtx = this.miniMapCanvas.getContext('2d');
+
+        if (!ctx || !miniCtx) {
+            throw new Error('Failed to get canvas contexts');
         }
+
+        this.ctx = ctx;
+        this.miniMapCtx = miniCtx;
+
+        // Set canvas size
+        this.canvas.width = this.canvas.clientWidth;
+        this.canvas.height = this.canvas.clientHeight;
+        this.miniMapCanvas.width = this.miniMapCanvas.clientWidth;
+        this.miniMapCanvas.height = this.miniMapCanvas.clientHeight;
+
+        // Enable image smoothing for better graphics
+        this.ctx.imageSmoothingEnabled = true;
+        this.miniMapCtx.imageSmoothingEnabled = false; // Pixelated for mini-map
     }
-    
-    setGrid(grid) {
+
+    setGrid(grid: HexGrid): void {
         this.grid = grid;
     }
-    
-    // Main render function
-    render(gameMap, units, cities) {
-        this.clearCanvas();
-        
-        if (!this.grid || !gameMap) return;
-        
+
+    render(gameMap: GameMap, units: Unit[], cities: City[]): void {
+        if (!this.grid) return;
+
+        // Clear canvas
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
         // Calculate visible area
-        const visibleArea = this.getVisibleArea();
-        
-        // Render terrain
+        const visibleArea = this.calculateVisibleArea();
+
+        // Render in order: terrain, grid, cities, units, selection, highlights
         this.renderTerrain(gameMap, visibleArea);
-        
-        // Render grid lines
         this.renderGridLines(visibleArea);
-        
-        // Render cities
         this.renderCities(cities, visibleArea);
-        
-        // Render units
         this.renderUnits(units, visibleArea);
-        
-        // Render selection and highlights
         this.renderSelection();
         this.renderHighlights();
-        
+
         // Render mini-map
         this.renderMiniMap(gameMap, units, cities);
     }
-    
-    clearCanvas() {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.fillStyle = '#1a1a1a';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    private calculateVisibleArea(): VisibleArea {
+        if (!this.grid) {
+            return { startCol: 0, endCol: 0, startRow: 0, endRow: 0 };
+        }
+
+        const margin = 2; // Extra hexes to render outside viewport
+
+        // Convert screen corners to world coordinates
+        const topLeft = this.screenToWorld({ x: 0, y: 0 });
+        const bottomRight = this.screenToWorld({ x: this.canvas.width, y: this.canvas.height });
+
+        // Convert world coordinates to hex coordinates
+        const topLeftHex = this.grid.screenToHex(topLeft.x, topLeft.y);
+        const bottomRightHex = this.grid.screenToHex(bottomRight.x, bottomRight.y);
+
+        return {
+            startCol: Math.max(0, Math.floor(topLeftHex.col) - margin),
+            endCol: Math.min(this.grid.width - 1, Math.ceil(bottomRightHex.col) + margin),
+            startRow: Math.max(0, Math.floor(topLeftHex.row) - margin),
+            endRow: Math.min(this.grid.height - 1, Math.ceil(bottomRightHex.row) + margin)
+        };
     }
-    
-    getVisibleArea() {
-        const margin = 2; // Add margin to ensure smooth scrolling
-        
-        const startCol = Math.max(0, Math.floor(-this.camera.x / (this.grid.hexWidth * this.camera.zoom)) - margin);
-        const endCol = Math.min(this.grid.width - 1, 
-            Math.ceil((this.canvas.width - this.camera.x) / (this.grid.hexWidth * this.camera.zoom)) + margin);
-        
-        const startRow = Math.max(0, Math.floor(-this.camera.y / (this.grid.vertDistance * this.camera.zoom)) - margin);
-        const endRow = Math.min(this.grid.height - 1, 
-            Math.ceil((this.canvas.height - this.camera.y) / (this.grid.vertDistance * this.camera.zoom)) + margin);
-        
-        return { startCol, endCol, startRow, endRow };
-    }
-    
-    renderTerrain(gameMap, visibleArea) {
+
+    private renderTerrain(gameMap: GameMap, visibleArea: VisibleArea): void {
         for (let row = visibleArea.startRow; row <= visibleArea.endRow; row++) {
             for (let col = visibleArea.startCol; col <= visibleArea.endCol; col++) {
-                if (!this.grid.isValidHex(col, row)) continue;
-                
+                if (!this.grid!.isValidHex(col, row)) continue;
+
                 const tile = gameMap.getTile(col, row);
                 if (!tile) continue;
-                
+
                 this.drawHex(col, row, tile.terrain);
             }
         }
     }
-    
-    renderGridLines(visibleArea) {
+
+    private renderGridLines(visibleArea: VisibleArea): void {
         this.ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
         this.ctx.lineWidth = 1;
-        
+
         for (let row = visibleArea.startRow; row <= visibleArea.endRow; row++) {
             for (let col = visibleArea.startCol; col <= visibleArea.endCol; col++) {
-                if (!this.grid.isValidHex(col, row)) continue;
-                
+                if (!this.grid!.isValidHex(col, row)) continue;
+
                 this.drawHexOutline(col, row);
             }
         }
     }
-    
-    renderCities(cities, visibleArea) {
+
+    private renderCities(cities: City[], visibleArea: VisibleArea): void {
         if (!cities) return;
-        
+
         cities.forEach(city => {
             if (this.isHexVisible(city.col, city.row, visibleArea)) {
                 this.drawCity(city);
             }
         });
     }
-    
-    renderUnits(units, visibleArea) {
+
+    private renderUnits(units: Unit[], visibleArea: VisibleArea): void {
         if (!units) return;
-        
+
         units.forEach(unit => {
             if (this.isHexVisible(unit.col, unit.row, visibleArea)) {
                 this.drawUnit(unit);
             }
         });
     }
-    
-    renderSelection() {
+
+    private renderSelection(): void {
         if (this.selectedHex) {
             this.ctx.strokeStyle = CONSTANTS.COLORS.SELECTED;
             this.ctx.lineWidth = 3;
             this.drawHexOutline(this.selectedHex.col, this.selectedHex.row);
         }
     }
-    
-    renderHighlights() {
+
+    private renderHighlights(): void {
         if (this.highlightedHexes.length > 0) {
             this.ctx.fillStyle = 'rgba(255, 255, 128, 0.3)';
-            
+
             this.highlightedHexes.forEach(hex => {
                 this.fillHex(hex.col, hex.row);
             });
         }
     }
-    
-    drawHex(col, row, terrainType) {
+
+    private drawHex(col: number, row: number, terrainType: string): void {
         const terrainProps = CONSTANTS.TERRAIN_PROPS[terrainType];
         if (!terrainProps) return;
-        
+
         this.ctx.fillStyle = terrainProps.color;
         this.fillHex(col, row);
-        
+
         // Add texture or pattern based on terrain type
         this.addTerrainTexture(col, row, terrainType);
     }
-    
-    fillHex(col, row) {
+
+    private fillHex(col: number, row: number): void {
         const vertices = this.getTransformedVertices(col, row);
-        
+
         this.ctx.beginPath();
         this.ctx.moveTo(vertices[0].x, vertices[0].y);
-        
+
         for (let i = 1; i < vertices.length; i++) {
             this.ctx.lineTo(vertices[i].x, vertices[i].y);
         }
-        
+
         this.ctx.closePath();
         this.ctx.fill();
     }
-    
-    drawHexOutline(col, row) {
+
+    private drawHexOutline(col: number, row: number): void {
         const vertices = this.getTransformedVertices(col, row);
-        
+
         this.ctx.beginPath();
         this.ctx.moveTo(vertices[0].x, vertices[0].y);
-        
+
         for (let i = 1; i < vertices.length; i++) {
             this.ctx.lineTo(vertices[i].x, vertices[i].y);
         }
-        
+
         this.ctx.closePath();
         this.ctx.stroke();
     }
-    
-    getTransformedVertices(col, row) {
-        const vertices = this.grid.getHexVertices(col, row);
+
+    private getTransformedVertices(col: number, row: number): Vertex[] {
+        const vertices = this.grid!.getHexVertices(col, row);
         return vertices.map(vertex => ({
             x: (vertex.x + this.camera.x) * this.camera.zoom,
             y: (vertex.y + this.camera.y) * this.camera.zoom
         }));
     }
-    
-    addTerrainTexture(col, row, terrainType) {
-        const center = this.worldToScreen(this.grid.hexToScreen(col, row));
-        const size = this.grid.hexSize * this.camera.zoom * 0.5;
-        
+
+    private addTerrainTexture(col: number, row: number, terrainType: string): void {
+        const center = this.worldToScreen(this.grid!.hexToScreen(col, row));
+        const size = this.grid!.hexSize * this.camera.zoom * 0.5;
+
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-        
+
         switch (terrainType) {
             case CONSTANTS.TERRAIN.FOREST:
                 // Draw simple trees
@@ -222,13 +258,13 @@ class Renderer {
                     const angle = (i / 3) * Math.PI * 2;
                     const x = center.x + Math.cos(angle) * size * 0.3;
                     const y = center.y + Math.sin(angle) * size * 0.3;
-                    
+
                     this.ctx.beginPath();
                     this.ctx.arc(x, y, size * 0.2, 0, Math.PI * 2);
                     this.ctx.fill();
                 }
                 break;
-                
+
             case CONSTANTS.TERRAIN.HILLS:
                 // Draw hill bumps
                 this.ctx.beginPath();
@@ -236,7 +272,7 @@ class Renderer {
                 this.ctx.arc(center.x + size * 0.2, center.y, size * 0.3, 0, Math.PI, true);
                 this.ctx.fill();
                 break;
-                
+
             case CONSTANTS.TERRAIN.MOUNTAINS:
                 // Draw mountain peaks
                 this.ctx.beginPath();
@@ -247,39 +283,39 @@ class Renderer {
                 break;
         }
     }
-    
-    drawUnit(unit) {
-        const center = this.worldToScreen(this.grid.hexToScreen(unit.col, unit.row));
-        const size = this.grid.hexSize * this.camera.zoom * 0.6;
-        
+
+    private drawUnit(unit: Unit): void {
+        const center = this.worldToScreen(this.grid!.hexToScreen(unit.col, unit.row));
+        const size = this.grid!.hexSize * this.camera.zoom * 0.6;
+
         // Unit background
         this.ctx.fillStyle = unit.civilization.color;
         this.ctx.beginPath();
         this.ctx.arc(center.x, center.y, size, 0, Math.PI * 2);
         this.ctx.fill();
-        
+
         // Unit border
         this.ctx.strokeStyle = '#000';
         this.ctx.lineWidth = 2;
         this.ctx.stroke();
-        
+
         // Unit type indicator (simple shape for now)
         this.ctx.fillStyle = '#fff';
         this.ctx.font = `${size * 0.8}px Arial`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
-        
+
         const unitChar = this.getUnitCharacter(unit.type);
         this.ctx.fillText(unitChar, center.x, center.y);
-        
+
         // Health bar
         if (unit.health < unit.maxHealth) {
             this.drawHealthBar(center.x, center.y - size - 5, size * 1.5, unit.health / unit.maxHealth);
         }
     }
-    
-    getUnitCharacter(unitType) {
-        const chars = {
+
+    private getUnitCharacter(unitType: string): string {
+        const chars: Record<string, string> = {
             [CONSTANTS.UNIT_TYPES.SETTLER]: 'S',
             [CONSTANTS.UNIT_TYPES.MILITIA]: 'M',
             [CONSTANTS.UNIT_TYPES.PHALANX]: 'P',
@@ -291,151 +327,151 @@ class Renderer {
         };
         return chars[unitType] || '?';
     }
-    
-    drawCity(city) {
-        const center = this.worldToScreen(this.grid.hexToScreen(city.col, city.row));
-        const size = this.grid.hexSize * this.camera.zoom * 0.8;
-        
+
+    private drawCity(city: City): void {
+        const center = this.worldToScreen(this.grid!.hexToScreen(city.col, city.row));
+        const size = this.grid!.hexSize * this.camera.zoom * 0.8;
+
         // City background
         this.ctx.fillStyle = city.civilization.color;
         this.ctx.fillRect(center.x - size, center.y - size, size * 2, size * 2);
-        
+
         // City border
         this.ctx.strokeStyle = '#000';
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(center.x - size, center.y - size, size * 2, size * 2);
-        
+
         // City name
         this.ctx.fillStyle = '#fff';
         this.ctx.font = `${size * 0.3}px Arial`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(city.name, center.x, center.y + size + 15);
-        
+
         // Population indicator
         this.ctx.fillText(`Pop: ${city.population}`, center.x, center.y);
     }
-    
-    drawHealthBar(x, y, width, healthPercent) {
+
+    private drawHealthBar(x: number, y: number, width: number, healthPercent: number): void {
         const height = 4;
-        
+
         // Background
         this.ctx.fillStyle = '#444';
         this.ctx.fillRect(x - width/2, y, width, height);
-        
+
         // Health
-        this.ctx.fillStyle = healthPercent > 0.5 ? '#0f0' : 
+        this.ctx.fillStyle = healthPercent > 0.5 ? '#0f0' :
                            healthPercent > 0.25 ? '#ff0' : '#f00';
         this.ctx.fillRect(x - width/2, y, width * healthPercent, height);
-        
+
         // Border
         this.ctx.strokeStyle = '#000';
         this.ctx.lineWidth = 1;
         this.ctx.strokeRect(x - width/2, y, width, height);
     }
-    
-    isHexVisible(col, row, visibleArea) {
+
+    private isHexVisible(col: number, row: number, visibleArea: VisibleArea): boolean {
         return col >= visibleArea.startCol && col <= visibleArea.endCol &&
                row >= visibleArea.startRow && row <= visibleArea.endRow;
     }
-    
-    worldToScreen(worldPos) {
+
+    private worldToScreen(worldPos: WorldPosition): ScreenPosition {
         return {
             x: (worldPos.x + this.camera.x) * this.camera.zoom,
             y: (worldPos.y + this.camera.y) * this.camera.zoom
         };
     }
-    
-    screenToWorld(screenPos) {
+
+    private screenToWorld(screenPos: ScreenPosition): WorldPosition {
         return {
             x: screenPos.x / this.camera.zoom - this.camera.x,
             y: screenPos.y / this.camera.zoom - this.camera.y
         };
     }
-    
-    setCamera(x, y, zoom) {
+
+    setCamera(x: number, y: number, zoom: number): void {
         this.camera.x = x;
         this.camera.y = y;
         this.camera.zoom = MathUtils.clamp(zoom, 0.5, 3.0);
     }
-    
-    moveCamera(deltaX, deltaY) {
+
+    moveCamera(deltaX: number, deltaY: number): void {
         this.camera.x += deltaX;
         this.camera.y += deltaY;
     }
-    
-    zoomCamera(delta, centerX, centerY) {
+
+    zoomCamera(delta: number, centerX: number, centerY: number): void {
         const oldZoom = this.camera.zoom;
         const newZoom = MathUtils.clamp(oldZoom + delta, 0.5, 3.0);
-        
+
         if (newZoom !== oldZoom) {
             // Zoom towards the center point
             const worldCenter = this.screenToWorld({ x: centerX, y: centerY });
             this.camera.zoom = newZoom;
             const newWorldCenter = this.screenToWorld({ x: centerX, y: centerY });
-            
+
             this.camera.x += newWorldCenter.x - worldCenter.x;
             this.camera.y += newWorldCenter.y - worldCenter.y;
         }
     }
-    
-    setSelectedHex(col, row) {
+
+    setSelectedHex(col: number | null, row: number | null): void {
         this.selectedHex = (col !== null && row !== null) ? { col, row } : null;
     }
-    
-    setHighlightedHexes(hexes) {
+
+    setHighlightedHexes(hexes: HighlightedHex[]): void {
         this.highlightedHexes = hexes || [];
     }
-    
-    renderMiniMap(gameMap, units, cities) {
+
+    private renderMiniMap(gameMap: GameMap, units: Unit[], cities: City[]): void {
         const miniCtx = this.miniMapCtx;
         const miniWidth = this.miniMapCanvas.width;
         const miniHeight = this.miniMapCanvas.height;
-        
+
         // Clear mini-map
         miniCtx.clearRect(0, 0, miniWidth, miniHeight);
         miniCtx.fillStyle = '#1a1a1a';
         miniCtx.fillRect(0, 0, miniWidth, miniHeight);
-        
+
         if (!gameMap) return;
-        
+
         // Scale factors
-        const scaleX = miniWidth / this.grid.width;
-        const scaleY = miniHeight / this.grid.height;
-        
+        const scaleX = miniWidth / this.grid!.width;
+        const scaleY = miniHeight / this.grid!.height;
+
         // Draw terrain
-        for (let row = 0; row < this.grid.height; row++) {
-            for (let col = 0; col < this.grid.width; col++) {
+        for (let row = 0; row < this.grid!.height; row++) {
+            for (let col = 0; col < this.grid!.width; col++) {
                 const tile = gameMap.getTile(col, row);
                 if (!tile) continue;
-                
+
                 const terrainProps = CONSTANTS.TERRAIN_PROPS[tile.terrain];
                 miniCtx.fillStyle = terrainProps.color;
                 miniCtx.fillRect(col * scaleX, row * scaleY, scaleX, scaleY);
             }
         }
-        
+
         // Draw cities
         if (cities) {
             miniCtx.fillStyle = '#fff';
             cities.forEach(city => {
                 miniCtx.fillRect(
-                    city.col * scaleX - 1, 
-                    city.row * scaleY - 1, 
+                    city.col * scaleX - 1,
+                    city.row * scaleY - 1,
                     3, 3
                 );
             });
         }
-        
+
         // Draw viewport indicator
         miniCtx.strokeStyle = '#ff0';
         miniCtx.lineWidth = 1;
-        
-        const viewX = (-this.camera.x / this.grid.hexWidth) * scaleX;
-        const viewY = (-this.camera.y / this.grid.vertDistance) * scaleY;
-        const viewW = (this.canvas.width / (this.grid.hexWidth * this.camera.zoom)) * scaleX;
-        const viewH = (this.canvas.height / (this.grid.vertDistance * this.camera.zoom)) * scaleY;
-        
+
+        const viewX = (-this.camera.x / this.grid!.hexWidth) * scaleX;
+        const viewY = (-this.camera.y / this.grid!.vertDistance) * scaleY;
+        const viewW = (this.canvas.width / (this.grid!.hexWidth * this.camera.zoom)) * scaleX;
+        const viewH = (this.canvas.height / (this.grid!.vertDistance * this.camera.zoom)) * scaleY;
+
         miniCtx.strokeRect(viewX, viewY, viewW, viewH);
     }
 }

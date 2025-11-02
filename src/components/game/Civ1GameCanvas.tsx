@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../../stores/gameStore';
 import { UNIT_TYPES } from '../../game/gameData.js';
+import { CONSTANTS } from '../../utils/constants';
 import type { Tile } from '../../../types/game';
 
 const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {

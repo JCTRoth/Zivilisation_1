@@ -232,21 +232,6 @@ export class HexGrid {
         return []; // No path found
     }
 
-    // Get all hexes within a certain range
-    getHexesInRange(centerCol: number, centerRow: number, range: number): HexCoordinate[] {
-        const hexes: HexCoordinate[] = [];
-
-        for (let col = Math.max(0, centerCol - range); col <= Math.min(this.width - 1, centerCol + range); col++) {
-            for (let row = Math.max(0, centerRow - range); row <= Math.min(this.height - 1, centerRow + range); row++) {
-                if (this.hexDistance(centerCol, centerRow, col, row) <= range) {
-                    hexes.push({ col, row });
-                }
-            }
-        }
-
-        return hexes;
-    }
-
     // Get hexes in a ring at specific distance
     getHexRing(centerCol: number, centerRow: number, radius: number): HexCoordinate[] {
         if (radius === 0) {
@@ -277,6 +262,22 @@ export class HexGrid {
             col: Math.floor(Math.random() * this.width),
             row: Math.floor(Math.random() * this.height)
         };
+    }
+
+    // Get all hexes within a certain range of a center hex
+    getHexesInRange(centerCol: number, centerRow: number, range: number): HexCoordinate[] {
+        const hexes: HexCoordinate[] = [];
+
+        for (let col = centerCol - range; col <= centerCol + range; col++) {
+            for (let row = centerRow - range; row <= centerRow + range; row++) {
+                if (this.isValidHex(col, row) &&
+                    this.hexDistance(centerCol, centerRow, col, row) <= range) {
+                    hexes.push({ col, row });
+                }
+            }
+        }
+
+        return hexes;
     }
 
     // Convert hex key to coordinates
