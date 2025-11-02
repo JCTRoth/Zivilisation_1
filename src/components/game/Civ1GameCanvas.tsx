@@ -168,6 +168,42 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       revealedTrueCount: mapData.revealed?.filter(r => r).length || 0
     });
 
+    // Defensive check: ensure terrain grid matches map dimensions
+    const ensureTerrainMatchesMap = () => {
+      if (!terrain) return false;
+      if (!mapData || !mapData.width || !mapData.height) return false;
+      if (terrain.length !== mapData.height) return false;
+      for (let r = 0; r < mapData.height; r++) {
+        if (!terrain[r] || terrain[r].length !== mapData.width) return false;
+      }
+      return true;
+    };
+
+    if (!ensureTerrainMatchesMap()) {
+      console.warn('[Civ1GameCanvas] Terrain grid mismatch detected. Rebuilding terrain from mapData.tiles');
+      // Rebuild terrain synchronously from mapData.tiles (best-effort)
+      if (mapData && Array.isArray(mapData.tiles) && mapData.tiles.length === mapData.width * mapData.height) {
+        const rebuilt = new Array(mapData.height);
+        for (let row = 0; row < mapData.height; row++) {
+          rebuilt[row] = new Array(mapData.width);
+          for (let col = 0; col < mapData.width; col++) {
+            const idx = row * mapData.width + col;
+            const tile: any = (mapData.tiles[idx] as any) || {};
+            rebuilt[row][col] = {
+              type: tile.type || 'OCEAN',
+              resource: tile.resource ?? null,
+              improvement: tile.improvement ?? null,
+              visible: mapData.visibility?.[idx] ?? tile.visible ?? false,
+              explored: mapData.revealed?.[idx] ?? tile.explored ?? false
+            };
+          }
+        }
+        setTerrain(rebuilt);
+      } else {
+        console.warn('[Civ1GameCanvas] Cannot rebuild terrain: invalid mapData.tiles length');
+      }
+    }
+
     if (terrain && mapData.visibility && mapData.revealed) {
       // Update visibility without recreating the entire grid
       const updatedTerrain = [...terrain];
@@ -305,7 +341,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     
     // City size
     ctx.fillStyle = '#FFF';
-    ctx.fillText(city.size.toString(), centerX + 10, centerY - 10);
+    ctx.fillText((city.population || 1).toString(), centerX + 10, centerY - 10);
   };
 
   // Draw unit (alpha optional for blinking)

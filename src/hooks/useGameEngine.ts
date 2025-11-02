@@ -59,6 +59,12 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
           break;
 
         case 'CITY_FOUNDED':
+          console.log('[useGameEngine] CITY_FOUNDED:', {
+            mapWidth: gameEngine.map?.width,
+            mapHeight: gameEngine.map?.height,
+            tilesLength: gameEngine.map?.tiles?.length,
+            eventData
+          });
           actions.updateCities(gameEngine.getAllCities());
           actions.updateUnits(gameEngine.getAllUnits());
           actions.updateVisibility();

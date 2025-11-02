@@ -359,6 +359,14 @@ body {
   margin: 0.5rem;
 }
 
+/* Ensure modals are centered on larger screens (horizontal centering) */
+@media (min-width: 576px) {
+  .modal-dialog {
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
 .modal-content {
   border-radius: 0.5rem;
 }

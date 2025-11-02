@@ -150,7 +150,7 @@ const HexDetailModal = ({ show, onHide, hex, terrain, adjacentTiles }) => {
               <div className="border-top border-dark pt-2 mt-2" style={{ fontSize: '9px' }}>
                 <strong>City:</strong><br/>
                 <span>{centerTile.city.name}</span><br/>
-                <span>Size: {centerTile.city.size}</span>
+                <span>Size: {centerTile.city.population || 1}</span>
               </div>
             )}
           </div>
