@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../../stores/gameStore';
 
 // Declare window properties
@@ -23,54 +23,58 @@ if (typeof window !== 'undefined') {
 
 const MiniMap = ({ gameEngine }) => {
   const canvasRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [sizeKey, setSizeKey] = useState(0); // bump to force redraw on resize
   const camera = useGameStore(state => state.camera);
   const actions = useGameStore(state => state.actions);
   const mapData = useGameStore(state => state.map);
   const cities = useGameStore(state => state.cities);
   const units = useGameStore(state => state.units);
 
-  const MINIMAP_WIDTH = 200;
+  const MINIMAP_WIDTH = 200; // aspect ratio baseline
   const MINIMAP_HEIGHT = 150;
 
   // Render minimap
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      return;
-    }
+    const canvas: HTMLCanvasElement | null = canvasRef.current;
+    const container: HTMLDivElement | null = containerRef.current;
+    if (!canvas || !container) return;
 
     // Use map data from store for consistent visibility data
     const dataSource = mapData;
-
-    if (!dataSource) {
-      return;
-    }
-    if (!dataSource.tiles || !dataSource.tiles.length) {
-      return;
-    }
+    if (!dataSource || !dataSource.tiles || !dataSource.tiles.length) return;
 
     const ctx = canvas.getContext('2d');
-    canvas.width = MINIMAP_WIDTH;
-    canvas.height = MINIMAP_HEIGHT;
+    if (!ctx) return;
 
-    // Clear canvas
-    // Defensive reset of context state (HMR/other renders can leave globalCompositeOperation or globalAlpha changed)
+    // Measure CSS size from container (fill width)
+    const cssWidth = Math.max(1, Math.floor(container.clientWidth));
+    const cssHeight = Math.max(1, Math.floor((cssWidth * MINIMAP_HEIGHT) / MINIMAP_WIDTH));
+
+    // Device pixel ratio backing store for crisp rendering
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.style.width = cssWidth + 'px';
+    canvas.style.height = cssHeight + 'px';
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+
+    // Reset transform and scale so drawing uses CSS pixels coordinates
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Defensive reset of context state
     try {
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1.0;
       ctx.imageSmoothingEnabled = false;
-    } catch (e) {
-      // some browsers may be read-only for certain properties on certain contexts
-    }
+    } catch (e) {}
 
-    ctx.clearRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
     // Fill a neutral background so any fully-transparent drawing doesn't show as black
     ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+    ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-    // Calculate scale factors
-    const scaleX = MINIMAP_WIDTH / dataSource.width;
-    const scaleY = MINIMAP_HEIGHT / dataSource.height;
+    // Calculate scale factors (in CSS pixels)
+    const scaleX = cssWidth / dataSource.width;
+    const scaleY = cssHeight / dataSource.height;
 
   // Cache fog state so the minimap still works if arrays are missing/empty early on
   const hasRevealedData = Array.isArray(dataSource.revealed) && dataSource.revealed.length === dataSource.tiles.length;
@@ -171,22 +175,47 @@ const MiniMap = ({ gameEngine }) => {
       }
     }
 
-    // Draw viewport indicator
-  const viewportX = (camera.x / (dataSource.width * 32)) * MINIMAP_WIDTH;
-  const viewportY = (camera.y / (dataSource.height * 24)) * MINIMAP_HEIGHT;
-  const viewportW = (window.innerWidth / camera.zoom / (dataSource.width * 32)) * MINIMAP_WIDTH;
-  const viewportH = (window.innerHeight / camera.zoom / (dataSource.height * 24)) * MINIMAP_HEIGHT;
+  // Draw viewport indicator (convert world camera to minimap CSS coordinates)
+  const tilePixelWidth = CONSTANTS.HEX_WIDTH; // horizontal spacing per column
+  const tilePixelVert = CONSTANTS.HEX_HEIGHT * 0.75; // vertical spacing per row (vertDistance)
+  const mapPixelWidth = dataSource.width * tilePixelWidth;
+  const mapPixelHeight = dataSource.height * tilePixelVert;
+
+  const viewportX = (camera.x / mapPixelWidth) * cssWidth;
+  const viewportY = (camera.y / mapPixelHeight) * cssHeight;
+  const viewportW = ((window.innerWidth / camera.zoom) / mapPixelWidth) * cssWidth;
+  const viewportH = ((window.innerHeight / camera.zoom) / mapPixelHeight) * cssHeight;
 
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
     ctx.strokeRect(
       Math.max(0, viewportX),
       Math.max(0, viewportY),
-      Math.min(MINIMAP_WIDTH - viewportX, viewportW),
-      Math.min(MINIMAP_HEIGHT - viewportY, viewportH)
+      Math.min(cssWidth - viewportX, viewportW),
+      Math.min(cssHeight - viewportY, viewportH)
     );
 
-  }, [camera, mapData, mapData?.tiles?.length, cities, units, gameEngine?.currentTurn, gameEngine?.isInitialized]);
+    // end draw
+
+  }, [camera, mapData, mapData?.tiles?.length, cities, units, gameEngine?.currentTurn, gameEngine?.isInitialized, sizeKey]);
+
+  // Resize observer to redraw when container width changes
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver(() => {
+      // bump key to re-run drawing effect
+      setSizeKey(k => k + 1);
+    });
+    ro.observe(container);
+    // also observe window resizes for safety
+    const onWin = () => setSizeKey(k => k + 1);
+    window.addEventListener('resize', onWin);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', onWin);
+    };
+  }, []);
 
   // Handle minimap clicks to move camera
   const handleMinimapClick = (event) => {
@@ -198,9 +227,14 @@ const MiniMap = ({ gameEngine }) => {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
-    // Convert minimap coordinates to world coordinates
-    const worldX = (x / MINIMAP_WIDTH) * mapData.width * 32;
-    const worldY = (y / MINIMAP_HEIGHT) * mapData.height * 24;
+  // Convert minimap coordinates (CSS pixels) to world coordinates using map pixel sizes
+  const tilePixelWidth = CONSTANTS.HEX_WIDTH;
+  const tilePixelVert = CONSTANTS.HEX_HEIGHT * 0.75;
+  const mapPixelWidth = mapData.width * tilePixelWidth;
+  const mapPixelHeight = mapData.height * tilePixelVert;
+
+  const worldX = (x / rect.width) * mapPixelWidth;
+  const worldY = (y / rect.height) * mapPixelHeight;
 
     // Center camera on clicked position
     actions.updateCamera({
@@ -210,17 +244,16 @@ const MiniMap = ({ gameEngine }) => {
   };
 
   return (
-    <div className="minimap-container">
+    <div className="minimap-container" ref={containerRef} style={{ width: '100%', height: 'auto' }}>
       <canvas
         ref={canvasRef}
-        width={MINIMAP_WIDTH}
-        height={MINIMAP_HEIGHT}
         className="border border-secondary"
-        style={{ 
-          width: '100%', 
-          height: '100%',
+        style={{
+          width: '100%',
+          height: 'auto',
           cursor: 'pointer',
-          imageRendering: 'pixelated' 
+          imageRendering: 'pixelated',
+          display: 'block'
         }}
         onClick={handleMinimapClick}
       />
