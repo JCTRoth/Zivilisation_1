@@ -1,205 +1,150 @@
 import React from 'react';
-import { Card, ListGroup, Badge, Button } from 'react-bootstrap';
+import { Button } from 'react-bootstrap';
 import { useGameStore } from '../../stores/gameStore';
 import MiniMap from './MiniMap';
 
-const SidePanel = ({ gameEngine }) => {
-  const currentPlayer = useGameStore(state => state.currentPlayer);
-  const playerUnits = useGameStore(state => state.playerUnits);
-  const playerCities = useGameStore(state => state.playerCities);
-  const uiState = useGameStore(state => state.uiState);
-  const actions = useGameStore(state => state.actions);
+// New side panel matching the provided mockup image
+const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
+  const currentPlayer = useGameStore((s) => s.currentPlayer);
+  const civilizations = useGameStore((s) => s.civilizations);
+  const playerUnits = useGameStore((s) => s.playerUnits);
+  const playerCities = useGameStore((s) => s.playerCities);
+  const selectedUnit = useGameStore((s) => s.selectedUnit);
+  const selectedCity = useGameStore((s) => s.selectedCity);
+  const playerResources = useGameStore((s) => s.playerResources);
+  const uiState = useGameStore((s) => s.uiState);
+  const actions = useGameStore((s) => s.actions);
 
-  if (!currentPlayer) {
-    return (
-      <div className="game-side-panel">
-        <Card bg="dark" text="white" className="m-2">
-          <Card.Body>
-            <Card.Text>Loading...</Card.Text>
-          </Card.Body>
-        </Card>
-      </div>
-    );
-  }
+  // Compute a display player so the panel renders meaningful placeholders
+  const displayPlayer = currentPlayer || (civilizations && civilizations.length > 0 ? civilizations[0] : {
+    id: -1,
+    name: 'Name Of Player',
+    leader: 'Name of Civilisation',
+    color: '#4b8b3b'
+  });
+
+  // Inline styles chosen to closely match the screenshot (dark pane, white text, left column)
+  const panelStyle: React.CSSProperties = {
+    width: '100%',
+    background: '#222831',
+    color: '#ffffff',
+    minHeight: '100vh',
+    boxSizing: 'border-box',
+    paddingTop: 6,
+    display: 'grid',
+    gridTemplateRows: 'auto 1fr 1fr'
+  };
+
+  const headerStyle: React.CSSProperties = {
+    padding: '10px 12px',
+    borderBottom: '2px solid rgba(255,255,255,0.06)'
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    padding: '12px',
+    borderBottom: '2px solid rgba(255,255,255,0.04)',
+    minHeight: 120
+  };
+
+  const smallMuted: React.CSSProperties = { color: 'rgba(255,255,255,0.7)', fontSize: 12 };
 
   return (
     <>
       {/* Mobile backdrop */}
-      <div 
+      <div
         className={`mobile-menu-backdrop ${!uiState.sidebarCollapsed ? 'show' : ''} d-md-none`}
-        onClick={() => {
-          console.log('[CLICK] SidePanel mobile backdrop - closing sidebar');
-          actions.toggleUI('sidebarCollapsed');
-        }}
+        onClick={() => actions.toggleUI('sidebarCollapsed')}
       />
-      
-      <div className={`game-side-panel ${!uiState.sidebarCollapsed ? 'show' : ''}`}>
-        {/* Mobile close button */}
-        <div className="d-md-none p-2 border-bottom border-secondary">
-          <Button 
-            variant="outline-light" 
-            size="sm"
-            onClick={() => {
-              console.log('[CLICK] SidePanel close button');
-              actions.toggleUI('sidebarCollapsed');
-            }}
-          >
-            <i className="bi bi-x-lg"></i> Close
-          </Button>
-        </div>
-        
-        {/* Civilization Info */}
-        <Card bg="dark" text="white" className="m-2">
-        <Card.Header className="d-flex align-items-center">
-          <div 
-            className="civ-flag me-2"
-            style={{ backgroundColor: currentPlayer.color }}
-          ></div>
-          <strong>{currentPlayer.name}</strong>
-        </Card.Header>
-        <Card.Body>
-          <div className="civilization-info">
-            <div>Leader: {currentPlayer.leader}</div>
-            <div>Cities: {playerCities.length}</div>
-            <div>Units: {playerUnits.length}</div>
-            <div>Population: {playerCities.reduce((sum, city) => sum + (city.population || 1), 0)}</div>
-          </div>
-        </Card.Body>
-      </Card>
 
-      {/* Mini Map */}
-      {uiState.showMinimap && (
-        <Card bg="dark" text="white" className="m-2">
-          <Card.Header>
-            <i className="bi bi-map"></i> Mini Map
-          </Card.Header>
-          <Card.Body className="p-2">
+
+        {uiState.showMinimap && (
+          <div style={{ width: '100%' }}>
             <MiniMap gameEngine={gameEngine} />
-          </Card.Body>
-        </Card>
-      )}
+          </div>
+        )}
 
-      {/* Cities List */}
-      <Card bg="dark" text="white" className="m-2">
-        <Card.Header>
-          <i className="bi bi-buildings"></i> Cities ({playerCities.length})
-        </Card.Header>
-        <Card.Body className="p-0" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-          <ListGroup variant="flush">
-            {playerCities.map(city => (
-              <ListGroup.Item 
-                key={city.id}
-                className="bg-dark text-white border-secondary d-flex justify-content-between align-items-center"
-                style={{ cursor: 'pointer' }}
-              >
-                <div>
-                  <strong>{city.name}</strong>
-                  <br />
-                  <small className="text-muted">
-                    Pop: {city.population} | 
-                    Food: {city.yields?.food || 0} | 
-                    Prod: {city.yields?.production || 0}
-                  </small>
-                </div>
-                {city.isCapital && (
-                  <Badge bg="warning" text="dark">
-                    <i className="bi bi-star-fill"></i>
-                  </Badge>
-                )}
-              </ListGroup.Item>
-            ))}
-            {playerCities.length === 0 && (
-              <ListGroup.Item className="bg-dark text-muted text-center">
-                No cities founded yet
-              </ListGroup.Item>
-            )}
-          </ListGroup>
-        </Card.Body>
-      </Card>
-
-      {/* Units List */}
-      <Card bg="dark" text="white" className="m-2">
-        <Card.Header>
-          <i className="bi bi-people-fill"></i> Units ({playerUnits.length})
-        </Card.Header>
-        <Card.Body className="p-0" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-          <ListGroup variant="flush">
-            {playerUnits.map(unit => (
-              <ListGroup.Item 
-                key={unit.id}
-                className="bg-dark text-white border-secondary d-flex justify-content-between align-items-center"
-                style={{ cursor: 'pointer' }}
-              >
-                <div>
-                  <span className="me-2">{unit.icon || '🔸'}</span>
-                  <strong>{unit.name}</strong>
-                  <br />
-                  <small className="text-muted">
-                    {unit.col}, {unit.row} | 
-                    HP: {unit.health || 100} | 
-                    Moves: {unit.movesRemaining || 0}
-                  </small>
-                </div>
-                {unit.isVeteran && (
-                  <Badge bg="success">
-                    <i className="bi bi-shield-check"></i>
-                  </Badge>
-                )}
-              </ListGroup.Item>
-            ))}
-            {playerUnits.length === 0 && (
-              <ListGroup.Item className="bg-dark text-muted text-center">
-                No units available
-              </ListGroup.Item>
-            )}
-          </ListGroup>
-        </Card.Body>
-      </Card>
-
-      {/* Current Research */}
-      {currentPlayer.currentResearch && (
-        <Card bg="dark" text="white" className="m-2">
-          <Card.Header>
-            <i className="bi bi-lightbulb"></i> Research
-          </Card.Header>
-          <Card.Body>
-            <div>
-              <strong>{currentPlayer.currentResearch.name}</strong>
+      <aside className={`game-side-panel ${!uiState.sidebarCollapsed ? 'show' : ''}`} style={panelStyle}>
+        <div style={headerStyle}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 6,
+                background: displayPlayer.color || '#4b8b3b',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 0 0 4px rgba(0,0,0,0.6) inset'
+              }}
+            >
+              <span style={{ fontSize: 22 }}>{(displayPlayer as any)?.icon ?? '🏛️'}</span>
             </div>
-            <div className="progress mt-2" style={{ height: '10px' }}>
-              <div 
-                className="progress-bar bg-info" 
-                style={{ 
-                  width: `${(currentPlayer.researchProgress / currentPlayer.currentResearch.cost) * 100}%` 
-                }}
-              ></div>
-            </div>
-            <small className="text-muted">
-              {currentPlayer.researchProgress} / {currentPlayer.currentResearch.cost} science
-            </small>
-          </Card.Body>
-        </Card>
-      )}
 
-      {/* Quick Stats */}
-      <Card bg="dark" text="white" className="m-2">
-        <Card.Header>
-          <i className="bi bi-graph-up"></i> Statistics
-        </Card.Header>
-        <Card.Body>
-          <div className="row text-center">
-            <div className="col-6">
-              <div className="h6 mb-0">{currentPlayer.score || 0}</div>
-              <small className="text-muted">Score</small>
-            </div>
-            <div className="col-6">
-              <div className="h6 mb-0">{currentPlayer.technologies?.length || 0}</div>
-              <small className="text-muted">Techs</small>
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{displayPlayer.name}</div>
+              <div style={{ ...smallMuted, marginTop: 2 }}>{(displayPlayer as any)?.civilizationName || displayPlayer.leader || 'Unknown Civilization'}</div>
+              <div style={{ marginTop: 8 }}>
+                <strong style={{ color: '#9be6a8', fontSize: 15 }}>{(playerResources.gold ?? 0)} €</strong>
+              </div>
             </div>
           </div>
-        </Card.Body>
-      </Card>
-      </div>
+        </div>
+
+        {/* Middle: selected unit/building summary */}
+        <div style={{ ...sectionStyle, minHeight: 140 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}> {selectedUnit || selectedCity ? 'Selected' : 'No Selection'}</div>
+
+          {selectedUnit ? (
+            <div>
+              <div style={{ fontWeight: 700 }}>{selectedUnit.name}</div>
+              <div style={smallMuted}>{selectedUnit.type}</div>
+              <div style={{ marginTop: 8, ...smallMuted }}>
+                HP: {selectedUnit.health ?? 100} • Moves: {selectedUnit.movesRemaining ?? 0}
+              </div>
+            </div>
+          ) : selectedCity ? (
+            <div>
+              <div style={{ fontWeight: 700 }}>{selectedCity.name}</div>
+              <div style={smallMuted}>Population: {selectedCity.population ?? 1}</div>
+              <div style={{ marginTop: 8, ...smallMuted }}>Production: {selectedCity.yields?.production ?? 0}</div>
+            </div>
+          ) : (
+            <div style={smallMuted}>
+              Type of currently selected unit or building*
+              <br />
+              *Multiple / Stats / of / the / Unit*
+            </div>
+          )}
+        </div>
+
+        {/* Bottom: Large detail box (big, mostly empty in screenshot) */}
+        <div style={{ ...sectionStyle, minHeight: 340 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Details</div>
+
+          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>
+            {/* Use selected unit/city for details when available, otherwise show player summary */}
+            {selectedUnit ? (
+              <>
+                <div style={{ marginBottom: 6 }}><strong>{selectedUnit.name}</strong> — {selectedUnit.type}</div>
+                <div style={smallMuted}>Location: {selectedUnit.col}, {selectedUnit.row}</div>
+                <div style={{ marginTop: 8 }}>{(selectedUnit as any)?.description || 'No additional info available.'}</div>
+              </>
+            ) : selectedCity ? (
+              <>
+                <div style={{ marginBottom: 6 }}><strong>{selectedCity.name}</strong></div>
+                <div style={smallMuted}>Pop: {selectedCity.population}</div>
+                <div style={{ marginTop: 8 }}>{(selectedCity as any)?.description || 'City details will appear here.'}</div>
+              </>
+            ) : (
+              <>
+                <div style={{ marginBottom: 6 }}>Type of currently selected unit or Building*</div>
+                <div style={smallMuted}>*Multiple / Stats / of / the / Unit*</div>
+              </>
+            )}
+          </div>
+        </div>
+      </aside>
     </>
   );
 };

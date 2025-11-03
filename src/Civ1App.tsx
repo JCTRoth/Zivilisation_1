@@ -7,6 +7,7 @@ import SettingsModal from './components/ui/SettingsModal';
 import GameSetupModal from './components/ui/GameSetupModal';
 import EndTurnConfirmModal from './components/ui/EndTurnConfirmModal';
 import { useGameEngine } from './hooks/useGameEngine';
+import SidePanel from './components/ui/SidePanel';
 
 function Civ1App() {
   const gameState = useGameStore(state => state.gameState);
@@ -311,67 +312,9 @@ function Civ1App() {
 
       {/* Main Game Area */}
       <div className="flex-grow-1 d-flex">
-        {/* Left Sidebar with CSS Grid */}
-        <div 
-          className="text-dark border-end border-dark"
-          style={{ 
-            width: `${settings.sidebarWidth * 2}px`,
-            display: 'grid',
-            gridTemplateRows: `${settings.minimapHeight * 2}px 1fr`,
-            gridTemplateColumns: '1fr',
-            height: '100%',
-            backgroundColor: '#A9A9A9'
-          }}
-        >
-          {/* Minimap */}
-          <div 
-            className="border-bottom border-dark bg-dark"
-            style={{ 
-              gridRow: '1',
-              overflow: 'hidden',
-              height: `${settings.minimapHeight * 2}px`
-            }}
-          >
-            <Civ1GameCanvas minimap={true} onExamineHex={handleExamineHex} gameEngine={gameEngine} />
-          </div>
-
-          {/* Civilizations List */}
-          <div 
-            className="p-2" 
-            style={{ 
-              backgroundColor: '#A9A9A9',
-              gridRow: '2',
-              overflowY: 'auto'
-            }}
-          >
-            <div style={{ fontSize: `${settings.civListFontSize * 2}px`, fontFamily: 'monospace', lineHeight: '1.5' }}>
-              {[
-                { name: 'Americans', color: '#4169E1' },
-                { name: 'German Settlers', color: '#8B4513' },
-                { name: 'Romans', color: '#DC143C' },
-                { name: 'Newest', color: '#228B22' },
-                { name: 'Bretons', color: '#FFD700' },
-                { name: '(Player)', color: '#000000' }
-              ].map((civ, idx) => (
-                <div 
-                  key={idx}
-                  className="py-1"
-                  style={{ 
-                    cursor: 'pointer',
-                    color: civ.color,
-                    fontWeight: civ.name === '(Player)' ? 'bold' : 'normal'
-                  }}
-                  onClick={() => {
-                    console.log('Civ1App: Civilization selected:', civ.name);
-                    console.log(`[CLICK] Selected civilization: ${civ.name}`);
-                    setSelectedCity(civ.name);
-                  }}
-                >
-                  {civ.name}
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* Left Sidebar - use centralized SidePanel component */}
+        <div style={{ width: `${settings.sidebarWidth * 2}px` }}>
+          <SidePanel gameEngine={gameEngine} />
         </div>
 
         {/* Main Map Area */}

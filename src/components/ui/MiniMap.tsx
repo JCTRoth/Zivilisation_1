@@ -106,7 +106,7 @@ const MiniMap = ({ gameEngine }) => {
 
         if (hasRevealedData && anyRevealed) {
           if (!isExplored) {
-            ctx.fillStyle = 'rgba(6, 9, 14, 0.55)';
+            ctx.fillStyle = '#000000';
             ctx.fillRect(x, y, scaleX + 1, scaleY + 1);
           } else if (!isVisible) {
             ctx.fillStyle = 'rgba(9, 13, 20, 0.25)';
