@@ -140,12 +140,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       const candidate = state.units.find(u => u.civilizationId === activeId && (u.movesRemaining || 0) > 0);
       if (!candidate) return state;
 
-      // Calculate camera center to place the unit in screen center
-      const HEX_WIDTH = 32 * Math.sqrt(3);
-      const VERT_DISTANCE = 64 * 0.75;
+      // Calculate camera center to place the unit in screen center (square grid)
+      const TILE_SIZE = CONSTANTS.HEX_SIZE || 32; // world pixels per tile
       const zoom = state.camera.zoom || 2.0;
-      const startX = candidate.col * HEX_WIDTH + (candidate.row % 2) * (HEX_WIDTH / 2);
-      const startY = candidate.row * VERT_DISTANCE;
+      const startX = candidate.col * TILE_SIZE;
+      const startY = candidate.row * TILE_SIZE;
 
       const newCamera = {
         x: startX - (typeof window !== 'undefined' ? (window.innerWidth / 2) / zoom : 0),

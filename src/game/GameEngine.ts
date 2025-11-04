@@ -172,20 +172,81 @@ export default class GameEngine {
           if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
             // Attack
             console.log(`[AI] Unit ${unit.id} attacking unit at (${target.col},${target.row})`);
-            this.moveUnit(unit.id, target.col, target.row);
+            // Check move cost before attempting attack
+            const tt = this.getTileAt(target.col, target.row);
+            const attackCost = Math.max(1, TERRAIN_PROPS[tt?.type]?.movement || 1);
+            if ((unit.movesRemaining || 0) >= attackCost) {
+              this.moveUnit(unit.id, target.col, target.row);
+            } else {
+              // Not enough movement points to attack, break out for this unit
+              break;
+            }
           } else {
             // Move into the tile
-            this.moveUnit(unit.id, target.col, target.row);
+            const tt = this.getTileAt(target.col, target.row);
+            const moveCost = Math.max(1, TERRAIN_PROPS[tt?.type]?.movement || 1);
+            if ((unit.movesRemaining || 0) >= moveCost) {
+              this.moveUnit(unit.id, target.col, target.row);
+            } else {
+              break;
+            }
           }
         } else {
           // Pathfind towards target and take next step
           const path = this.squareGrid.findPath(unit.col, unit.row, target.col, target.row, new Set());
-          if (path.length > 1) {
+            if (path.length > 1) {
             const next = path[1];
-            this.moveUnit(unit.id, next.col, next.row);
+            // Check move cost for next step
+            const tt = this.getTileAt(next.col, next.row);
+            const nextCost = Math.max(1, TERRAIN_PROPS[tt?.type]?.movement || 1);
+            if ((unit.movesRemaining || 0) < nextCost) {
+              // Not enough movement for next step — end this unit's moves
+              break;
+            }
+
+            // Attempt the move and inspect structured result
+            const result = this.moveUnit(unit.id, next.col, next.row);
+            if (!result || !result.success) {
+              const reason = result?.reason || 'unknown';
+              // Treat certain reasons as terminal for this unit for this turn
+              const terminalReasons = new Set(['insufficient_moves', 'no_moves_left', 'terrain_impassable', 'invalid_target']);
+              if (terminalReasons.has(reason)) {
+                // Log once and stop trying further moves for this unit
+                console.warn(`[AI] moveUnit terminal failure for ${unit.id} -> (${next.col},${next.row}): ${reason}`);
+                break;
+              } else {
+                // Non-terminal failure (e.g., combat defeat or other transient) - log and break to avoid tight loop
+                console.warn(`[AI] moveUnit non-terminal failure for ${unit.id} -> (${next.col},${next.row}): ${reason}`);
+                break;
+              }
+            }
+            // If success, continue the while loop (unit.movesRemaining updated)
           } else {
-            // Couldn't find path, break
-            break;
+            // Couldn't find path, try moving to any valid neighbor as fallback
+            console.warn(`[AI] No path found for unit ${unit.id} to target (${target.col},${target.row})`);
+            const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
+            let moved = false;
+            for (const n of neighbors) {
+              if (!this.squareGrid.isValidSquare(n.col, n.row)) continue;
+              const tile = this.getTileAt(n.col, n.row);
+              if (!tile) continue;
+              if (TERRAIN_PROPS[tile.type]?.passable === false) continue;
+              const other = this.getUnitAt(n.col, n.row);
+              if (other && other.civilizationId === unit.civilizationId) continue;
+              const r = this.moveUnit(unit.id, n.col, n.row);
+              if (r && r.success) { moved = true; break; }
+              // If move failed for a terminal reason, stop trying neighbors for this unit
+              const reason = r?.reason || 'unknown';
+              const terminalReasons = new Set(['insufficient_moves', 'no_moves_left', 'terrain_impassable', 'invalid_target']);
+              if (terminalReasons.has(reason)) {
+                console.warn(`[AI] Neighbor move terminal failure for ${unit.id} -> (${n.col},${n.row}): ${reason}`);
+                break;
+              }
+            }
+            if (!moved) {
+              // No valid neighbor found, break to next unit
+              break;
+            }
           }
         }
 

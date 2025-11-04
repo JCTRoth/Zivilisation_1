@@ -721,65 +721,53 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     const tile = terrain[hex.row]?.[hex.col];
     if (!tile) return;
 
+    // Only show right-click options when clicking a human player's unit
+    let unitAtEngine = null;
+    try {
+      if (gameEngine && typeof gameEngine.getUnitAt === 'function') {
+        unitAtEngine = gameEngine.getUnitAt(hex.col, hex.row);
+      }
+    } catch (e) {
+      unitAtEngine = null;
+    }
+
+    const unitInfo = unitAtEngine || tile.unit || null;
+    const civId = unitInfo ? (unitInfo.civilizationId ?? unitInfo.owner ?? null) : null;
+    let civIsHuman = false;
+    if (civId !== null && typeof gameEngine?.civilizations !== 'undefined') {
+      const civ = gameEngine.civilizations?.[civId];
+      civIsHuman = civ ? !!civ.isHuman : false;
+    }
+
+    // If no unit or unit is not a human player's, do not show context menu
+    if (!unitInfo || civIsHuman !== true) {
+      return;
+    }
+
     // Generate context menu options based on tile content
     const menuOptions = [];
 
-    // Basic terrain actions
-    if (tile.type !== 'OCEAN' && tile.type !== 'MOUNTAINS') {
-      if (!tile.hasRoad) {
-        menuOptions.push({
-          label: '🛣️ Build Road',
-          action: 'buildRoad',
-          enabled: true,
-          description: 'Construct a road to improve movement'
-        });
-      }
-      
-      if (tile.type === 'PLAINS' || tile.type === 'GRASSLAND') {
-        if (!tile.improvement) {
-          menuOptions.push({
-            label: '🌾 Irrigate',
-            action: 'irrigate',
-            enabled: true,
-            description: 'Increase food production'
-          });
-        }
-      }
-      
-      if (tile.type === 'HILLS' || tile.type === 'MOUNTAINS') {
-        if (!tile.improvement) {
-          menuOptions.push({
-            label: '⛏️ Mine',
-            action: 'mine',
-            enabled: true,
-            description: 'Increase shield production'
-          });
-        }
-      }
-    }
+    // Unit actions only (we limit options to player's units here)
+    menuOptions.push({
+      label: `⚔️ ${unitInfo.type} Orders`,
+      action: 'unitOrders',
+      enabled: true,
+      submenu: [
+        { label: '🏰 Fortify', action: 'fortify' },
+        { label: '👁️ Sentry', action: 'sentry' },
+        { label: '💤 Skip Turn', action: 'skipTurn' },
+        { label: '🏠 Go to Home City', action: 'goHome' }
+      ]
+    });
 
-    // Unit actions
-    if (tile.unit && tile.unit.owner === 0) {
+    const isSettler = (unitInfo.type === 'settlers' || unitInfo.type === 'settler');
+    if (isSettler && civId === 0) {
       menuOptions.push({
-        label: `⚔️ ${tile.unit.type} Orders`,
-        action: 'unitOrders',
-        enabled: true,
-        submenu: [
-          { label: '🏰 Fortify', action: 'fortify' },
-          { label: '👁️ Sentry', action: 'sentry' },
-          { label: '💤 Skip Turn', action: 'skipTurn' },
-          { label: '🏠 Go to Home City', action: 'goHome' }
-        ]
+        label: '🏙️ Build City',
+        action: 'buildCity',
+        enabled: !tile.city && tile.type !== 'OCEAN',
+        description: 'Found a new city here'
       });
-      
-      if (tile.unit.type === 'settlers') {
-        menuOptions.push({
-          label: '🏙️ Build City',
-          action: 'buildCity',
-          enabled: !tile.city && tile.type !== 'OCEAN',
-          description: 'Found a new city here'
-        });
-      }
     }
 
     // City actions
@@ -851,16 +839,37 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         break;
         
       case 'buildCity':
-        // Build a new city
-        const cityTerrain = [...terrain];
-        cityTerrain[contextMenu.hex.row][contextMenu.hex.col].city = {
-          name: 'New City',
-          size: 1,
-          owner: 0
-        };
-        // Remove the settler unit
-        cityTerrain[contextMenu.hex.row][contextMenu.hex.col].unit = null;
-        setTerrain(cityTerrain);
+        // Build a new city via the game engine if available
+        if (gameEngine && typeof gameEngine.foundCityWithSettler === 'function') {
+          // Try to find the settler unit at this location
+          const unit = gameEngine.getUnitAt(contextMenu.hex.col, contextMenu.hex.row) || contextMenu.tile.unit;
+          if (unit && (unit.type === 'settlers' || unit.type === 'settler')) {
+            const ok = gameEngine.foundCityWithSettler(unit.id);
+            if (ok) {
+              // Sync store
+              if (typeof actions.updateCities === 'function') actions.updateCities(gameEngine.getAllCities());
+              if (typeof actions.updateUnits === 'function') actions.updateUnits(gameEngine.getAllUnits());
+              if (typeof actions.updateMap === 'function') actions.updateMap(gameEngine.map);
+              if (typeof actions.addNotification === 'function') actions.addNotification({ type: 'success', message: 'City founded!' });
+            } else {
+              if (typeof actions.addNotification === 'function') actions.addNotification({ type: 'warning', message: 'Failed to found city' });
+            }
+          } else {
+            if (typeof actions.addNotification === 'function') actions.addNotification({ type: 'warning', message: 'No settler present to found a city' });
+          }
+        } else {
+          // Fallback visual: add city to terrain
+          const cityTerrain = [...terrain];
+          cityTerrain[contextMenu.hex.row][contextMenu.hex.col].city = {
+            name: 'New City',
+            size: 1,
+            owner: 0
+          };
+          // Remove the settler unit visually
+          cityTerrain[contextMenu.hex.row][contextMenu.hex.col].unit = null;
+          setTerrain(cityTerrain);
+          if (typeof actions.addNotification === 'function') actions.addNotification({ type: 'info', message: 'City placed (visual only)' });
+        }
         break;
         
       case 'centerView':
