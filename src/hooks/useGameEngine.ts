@@ -84,6 +84,15 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
           actions.focusOnNextUnit();
           break;
 
+        case 'AI_FINISHED':
+          // AI finished its moves for the given civilization
+          actions.updateUnits(gameEngine.getAllUnits());
+          actions.updateVisibility();
+          actions.addNotification({ type: 'info', message: 'AI finished its turn' });
+          // Focus on the next player/unit if appropriate
+          actions.focusOnNextUnit();
+          break;
+
         case 'AUTO_END_TURN':
           console.log('[useGameEngine] AUTO_END_TURN: All units moved, ending turn automatically');
           // Automatically end the turn
@@ -169,7 +178,7 @@ export const useGameControls = (gameEngine: GameEngine | null) => {
       if (gameEngine) {
         return gameEngine.moveUnit(unitId, col, row);
       }
-      return false;
+      return { success: false, reason: 'engine_unavailable' };
     },
 
     foundCity: (settlerId) => {

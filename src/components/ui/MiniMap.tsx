@@ -175,16 +175,25 @@ const MiniMap = ({ gameEngine }) => {
       }
     }
 
-  // Draw viewport indicator (convert world camera to minimap CSS coordinates)
-  const tilePixelWidth = CONSTANTS.HEX_WIDTH; // horizontal spacing per column
-  const tilePixelVert = CONSTANTS.HEX_HEIGHT * 0.75; // vertical spacing per row (vertDistance)
-  const mapPixelWidth = dataSource.width * tilePixelWidth;
-  const mapPixelHeight = dataSource.height * tilePixelVert;
+  // Draw viewport indicator in tile-space so it aligns to square tiles
+  const tileSize = CONSTANTS.HEX_SIZE || 32; // world pixels per tile (square tiles)
+  // scaleX/Y maps tiles -> CSS pixels per tile
+  const cssPerTileX = cssWidth / dataSource.width;
+  const cssPerTileY = cssHeight / dataSource.height;
 
-  const viewportX = (camera.x / mapPixelWidth) * cssWidth;
-  const viewportY = (camera.y / mapPixelHeight) * cssHeight;
-  const viewportW = ((window.innerWidth / camera.zoom) / mapPixelWidth) * cssWidth;
-  const viewportH = ((window.innerHeight / camera.zoom) / mapPixelHeight) * cssHeight;
+  // Camera.world x/y are in world pixels; convert to tile coordinates
+  const cameraTileX = camera.x / tileSize;
+  const cameraTileY = camera.y / tileSize;
+
+  // World viewport size in tiles
+  const viewportTilesW = (window.innerWidth / camera.zoom) / tileSize;
+  const viewportTilesH = (window.innerHeight / camera.zoom) / tileSize;
+
+  // Convert to CSS pixels on the minimap
+  const viewportX = cameraTileX * cssPerTileX;
+  const viewportY = cameraTileY * cssPerTileY;
+  const viewportW = viewportTilesW * cssPerTileX;
+  const viewportH = viewportTilesH * cssPerTileY;
 
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
@@ -227,11 +236,10 @@ const MiniMap = ({ gameEngine }) => {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
-  // Convert minimap coordinates (CSS pixels) to world coordinates using map pixel sizes
-  const tilePixelWidth = CONSTANTS.HEX_WIDTH;
-  const tilePixelVert = CONSTANTS.HEX_HEIGHT * 0.75;
-  const mapPixelWidth = mapData.width * tilePixelWidth;
-  const mapPixelHeight = mapData.height * tilePixelVert;
+  // Convert minimap coordinates (CSS pixels) to world coordinates using square tile sizes
+  const tileSize = 32; // Same as TILE_SIZE in Civ1GameCanvas
+  const mapPixelWidth = mapData.width * tileSize;
+  const mapPixelHeight = mapData.height * tileSize;
 
   const worldX = (x / rect.width) * mapPixelWidth;
   const worldY = (y / rect.height) * mapPixelHeight;

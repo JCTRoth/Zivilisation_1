@@ -234,7 +234,17 @@ const GameCanvas = ({ gameEngine }) => {
         // Try to move selected unit
         if (gameState.selectedUnit) {
           console.log(`[CLICK] Attempting to move selected unit ${gameState.selectedUnit} to (${hex.col}, ${hex.row})`);
-          gameEngine.moveUnit(gameState.selectedUnit, hex.col, hex.row);
+          const result = gameEngine.moveUnit(gameState.selectedUnit, hex.col, hex.row);
+          if (!result || !result.success) {
+            const reason = result?.reason || 'unknown';
+            console.log('[GameCanvas] Move failed:', reason);
+            actions.addNotification({ type: 'warning', message: 
+              reason === 'no_moves_left' ? 'Move failed: no moves left' :
+              reason === 'terrain_impassable' ? 'Move failed: terrain is impassable' :
+              reason === 'insufficient_moves' ? 'Move failed: insufficient movement points' :
+              'Move failed'
+            });
+          }
         } else {
           console.log(`[CLICK] Empty hex clicked at (${hex.col}, ${hex.row}) - no unit or city selected`);
         }

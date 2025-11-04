@@ -2,7 +2,7 @@
 
 import { CONSTANTS } from '../utils/constants';
 import { GameUtils, EventEmitter, MathUtils } from '../utils/helpers';
-import { HexGrid } from './hexGrid';
+import { SquareGrid } from './hexGrid';
 import { TerrainGenerator } from './terrain';
 import { UnitManager } from './unit';
 import { CityManager } from './city';
@@ -48,7 +48,7 @@ export class GameMap extends EventEmitter {
     public seed: number;
 
     // Grid system
-    public grid: HexGrid;
+    public grid: SquareGrid;
 
     // Terrain
     public tiles: any[][];
@@ -71,7 +71,7 @@ export class GameMap extends EventEmitter {
         this.seed = seed || Math.random();
 
         // Initialize grid system
-        this.grid = new HexGrid(width, height);
+        this.grid = new SquareGrid(width, height);
 
         // Generate terrain
         const terrainGenerator = new TerrainGenerator(width, height, this.seed);
@@ -175,7 +175,7 @@ export class GameMap extends EventEmitter {
         // Check minimum distance from other cities
         const minDistance = 2;
         const existingCity = this.findNearestCity(col, row);
-        if (existingCity && this.grid.hexDistance(col, row, existingCity.col, existingCity.row) < minDistance) {
+        if (existingCity && this.grid.squareDistance(col, row, existingCity.col, existingCity.row) < minDistance) {
             return null;
         }
 
@@ -223,7 +223,7 @@ export class GameMap extends EventEmitter {
         let minDistance = Infinity;
 
         for (const city of cities) {
-            const distance = this.grid.hexDistance(col, row, city.col, city.row);
+            const distance = this.grid.squareDistance(col, row, city.col, city.row);
             if (distance < minDistance) {
                 minDistance = distance;
                 nearest = city;
@@ -307,7 +307,7 @@ export class GameMap extends EventEmitter {
     // Visibility and exploration
     updateVisibility(unit: any): void {
         const sightRange = 2; // Base sight range
-        const visibleTiles = this.grid.getHexesInRange(unit.col, unit.row, sightRange);
+        const visibleTiles = this.grid.getSquaresInRange(unit.col, unit.row, sightRange);
 
         for (const tilePos of visibleTiles) {
             const tile = this.getTile(tilePos.col, tilePos.row);
@@ -320,7 +320,7 @@ export class GameMap extends EventEmitter {
 
     updateCityVisibility(city: any): void {
         const sightRange = 2; // Cities can see 2 tiles away
-        const visibleTiles = this.grid.getHexesInRange(city.col, city.row, sightRange);
+        const visibleTiles = this.grid.getSquaresInRange(city.col, city.row, sightRange);
 
         for (const tilePos of visibleTiles) {
             const tile = this.getTile(tilePos.col, tilePos.row);
@@ -487,7 +487,7 @@ export class GameMap extends EventEmitter {
                 // Check distance from other starting positions
                 let tooClose = false;
                 for (const existingPos of positions) {
-                    if (this.grid.hexDistance(col, row, existingPos.col, existingPos.row) < minDistance) {
+                    if (this.grid.squareDistance(col, row, existingPos.col, existingPos.row) < minDistance) {
                         tooClose = true;
                         break;
                     }

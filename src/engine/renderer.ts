@@ -1,6 +1,6 @@
 import { CONSTANTS } from '../utils/constants.js';
 import { MathUtils } from '../utils/helpers.js';
-import type { HexGrid } from '../game/hexGrid.js';
+import type { SquareGrid } from '../game/hexGrid.js';
 import type { GameMap } from '../game/map.js';
 import type { Unit } from '../game/unit.js';
 import type { City } from '../game/city.js';
@@ -49,7 +49,7 @@ export class Renderer {
     private miniMapCanvas: HTMLCanvasElement;
     private miniMapCtx: CanvasRenderingContext2D;
     private camera: Camera;
-    private grid: HexGrid | null;
+    private grid: SquareGrid | null;
     private selectedHex: SelectedHex | null;
     private highlightedHexes: HighlightedHex[];
 
@@ -86,7 +86,7 @@ export class Renderer {
         this.miniMapCtx.imageSmoothingEnabled = false; // Pixelated for mini-map
     }
 
-    setGrid(grid: HexGrid): void {
+    setGrid(grid: SquareGrid): void {
         this.grid = grid;
     }
 
@@ -123,8 +123,8 @@ export class Renderer {
         const bottomRight = this.screenToWorld({ x: this.canvas.width, y: this.canvas.height });
 
         // Convert world coordinates to hex coordinates
-        const topLeftHex = this.grid.screenToHex(topLeft.x, topLeft.y);
-        const bottomRightHex = this.grid.screenToHex(bottomRight.x, bottomRight.y);
+        const topLeftHex = this.grid.screenToSquare(topLeft.x, topLeft.y);
+        const bottomRightHex = this.grid.screenToSquare(bottomRight.x, bottomRight.y);
 
         return {
             startCol: Math.max(0, Math.floor(topLeftHex.col) - margin),
@@ -137,7 +137,7 @@ export class Renderer {
     private renderTerrain(gameMap: GameMap, visibleArea: VisibleArea): void {
         for (let row = visibleArea.startRow; row <= visibleArea.endRow; row++) {
             for (let col = visibleArea.startCol; col <= visibleArea.endCol; col++) {
-                if (!this.grid!.isValidHex(col, row)) continue;
+                if (!this.grid!.isValidSquare(col, row)) continue;
 
                 const tile = gameMap.getTile(col, row);
                 if (!tile) continue;
@@ -153,7 +153,7 @@ export class Renderer {
 
         for (let row = visibleArea.startRow; row <= visibleArea.endRow; row++) {
             for (let col = visibleArea.startCol; col <= visibleArea.endCol; col++) {
-                if (!this.grid!.isValidHex(col, row)) continue;
+                if (!this.grid!.isValidSquare(col, row)) continue;
 
                 this.drawHexOutline(col, row);
             }
@@ -238,7 +238,7 @@ export class Renderer {
     }
 
     private getTransformedVertices(col: number, row: number): Vertex[] {
-        const vertices = this.grid!.getHexVertices(col, row);
+        const vertices = this.grid!.getSquareVertices(col, row);
         return vertices.map(vertex => ({
             x: (vertex.x + this.camera.x) * this.camera.zoom,
             y: (vertex.y + this.camera.y) * this.camera.zoom
@@ -246,8 +246,8 @@ export class Renderer {
     }
 
     private addTerrainTexture(col: number, row: number, terrainType: string): void {
-        const center = this.worldToScreen(this.grid!.hexToScreen(col, row));
-        const size = this.grid!.hexSize * this.camera.zoom * 0.5;
+        const center = this.worldToScreen(this.grid!.squareToScreen(col, row));
+        const size = this.grid!.tileSize * this.camera.zoom * 0.5;
 
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
 
@@ -285,8 +285,8 @@ export class Renderer {
     }
 
     private drawUnit(unit: Unit): void {
-        const center = this.worldToScreen(this.grid!.hexToScreen(unit.col, unit.row));
-        const size = this.grid!.hexSize * this.camera.zoom * 0.6;
+        const center = this.worldToScreen(this.grid!.squareToScreen(unit.col, unit.row));
+        const size = this.grid!.tileSize * this.camera.zoom * 0.6;
 
         // Unit background
         this.ctx.fillStyle = unit.civilization.color;
@@ -329,8 +329,8 @@ export class Renderer {
     }
 
     private drawCity(city: City): void {
-        const center = this.worldToScreen(this.grid!.hexToScreen(city.col, city.row));
-        const size = this.grid!.hexSize * this.camera.zoom * 0.8;
+        const center = this.worldToScreen(this.grid!.squareToScreen(city.col, city.row));
+        const size = this.grid!.tileSize * this.camera.zoom * 0.8;
 
         // City background
         this.ctx.fillStyle = city.civilization.color;
@@ -467,10 +467,13 @@ export class Renderer {
         miniCtx.strokeStyle = '#ff0';
         miniCtx.lineWidth = 1;
 
-        const viewX = (-this.camera.x / this.grid!.hexWidth) * scaleX;
-        const viewY = (-this.camera.y / this.grid!.vertDistance) * scaleY;
-        const viewW = (this.canvas.width / (this.grid!.hexWidth * this.camera.zoom)) * scaleX;
-        const viewH = (this.canvas.height / (this.grid!.vertDistance * this.camera.zoom)) * scaleY;
+    // Camera.x/y represent the world coordinate at the left/top of the screen
+    // Convert those world pixel coordinates to minimap CSS pixels by
+    // converting to tile indices (divide by tileSize) then multiply by scale.
+    const viewX = (this.camera.x / this.grid!.tileSize) * scaleX;
+    const viewY = (this.camera.y / this.grid!.tileSize) * scaleY;
+        const viewW = (this.canvas.width / (this.grid!.tileSize * this.camera.zoom)) * scaleX;
+        const viewH = (this.canvas.height / (this.grid!.tileSize * this.camera.zoom)) * scaleY;
 
         miniCtx.strokeRect(viewX, viewY, viewW, viewH);
     }

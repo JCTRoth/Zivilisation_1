@@ -18,11 +18,8 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const animationFrameRef = useRef(null);
   const renderTimeoutRef = useRef(null);
 
-  // Hex grid constants
-  const HEX_SIZE = 32;
-  const HEX_WIDTH = HEX_SIZE * Math.sqrt(3);
-  const HEX_HEIGHT = HEX_SIZE * 2;
-  const VERT_DISTANCE = HEX_HEIGHT * 0.75;
+  // Square grid constants
+  const TILE_SIZE = 32;
 
   // Terrain types and colors (classic Civ1 style)
   const TERRAIN_TYPES = {
@@ -237,53 +234,36 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     }
   }, [gameEngine?.units, gameState.isGameStarted]);
 
-  // Convert hex coordinates to screen position
-  const hexToScreen = (col, row) => {
-    const x = (HEX_WIDTH * (col + 0.5 * (row & 1)) - camera.x) * camera.zoom;
-    const y = (VERT_DISTANCE * row - camera.y) * camera.zoom;
+  // Convert square coordinates to screen position
+  const squareToScreen = (col, row) => {
+    const x = (col * TILE_SIZE - camera.x) * camera.zoom;
+    const y = (row * TILE_SIZE - camera.y) * camera.zoom;
     return { x, y };
   };
 
-  // Convert screen position to hex coordinates (improved accuracy)
-  const screenToHex = (screenX, screenY) => {
+  // Convert screen position to square coordinates
+  const screenToSquare = (screenX, screenY) => {
     // Adjust for camera position and zoom
     const worldX = (screenX / camera.zoom) + camera.x;
     const worldY = (screenY / camera.zoom) + camera.y;
-    
-    // Axial to cube coordinate conversion for hexagons
-    const q = (worldX * (2/3)) / HEX_SIZE;
-    const r = ((-worldX / 3) + (Math.sqrt(3)/3) * worldY) / HEX_SIZE;
-    
-    // Convert to offset coordinates
-    let col = Math.round(q);
-    let row = Math.round(r + q / 2);
-    
-    // Alternative accurate method using vertical distance
-    const approxRow = worldY / VERT_DISTANCE;
-    const approxCol = (worldX - (HEX_WIDTH * 0.5 * (Math.floor(approxRow) & 1))) / HEX_WIDTH;
-    
-    col = Math.round(approxCol);
-    row = Math.round(approxRow);
-    
+
+    // Simple square coordinate conversion
+    let col = Math.round(worldX / TILE_SIZE);
+    let row = Math.round(worldY / TILE_SIZE);
+
     // Clamp to map bounds
     col = Math.max(0, Math.min(mapData.width - 1, col));
     row = Math.max(0, Math.min(mapData.height - 1, row));
-    
+
     return { col, row };
   };
 
-  // Draw hexagon
-  const drawHex = (ctx, centerX, centerY, size, fillColor, strokeColor = '#000') => {
+  // Draw square
+  const drawSquare = (ctx, centerX, centerY, size, fillColor, strokeColor = '#000') => {
+    const halfSize = size / 2;
     ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const angle = (i * Math.PI) / 3;
-      const x = centerX + size * Math.cos(angle);
-      const y = centerY + size * Math.sin(angle);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    
+    ctx.rect(centerX - halfSize, centerY - halfSize, size, size);
+
     ctx.fillStyle = fillColor;
     ctx.fill();
     ctx.strokeStyle = strokeColor;
@@ -461,10 +441,10 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     }
     
     // Draw viewport rectangle
-    const viewportStartCol = Math.floor(camera.x / HEX_WIDTH);
-    const viewportStartRow = Math.floor(camera.y / VERT_DISTANCE);
-    const viewportWidth = Math.ceil(canvas.width / camera.zoom / HEX_WIDTH);
-    const viewportHeight = Math.ceil(canvas.height / camera.zoom / VERT_DISTANCE);
+    const viewportStartCol = Math.floor(camera.x / TILE_SIZE);
+    const viewportStartRow = Math.floor(camera.y / TILE_SIZE);
+    const viewportWidth = Math.ceil(canvas.width / camera.zoom / TILE_SIZE);
+    const viewportHeight = Math.ceil(canvas.height / camera.zoom / TILE_SIZE);
     
     ctx.strokeStyle = '#FFFF00';
     ctx.lineWidth = 2;
@@ -509,19 +489,19 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     }
     
     // Calculate visible bounds for culling (performance optimization)
-    const startCol = Math.max(0, Math.floor(camera.x / HEX_WIDTH) - 2);
-    const endCol = Math.min(mapData.width, Math.ceil((camera.x + canvas.width / camera.zoom) / HEX_WIDTH) + 2);
-    const startRow = Math.max(0, Math.floor(camera.y / VERT_DISTANCE) - 2);
-    const endRow = Math.min(mapData.height, Math.ceil((camera.y + canvas.height / camera.zoom) / VERT_DISTANCE) + 2);
+    const startCol = Math.max(0, Math.floor(camera.x / TILE_SIZE) - 2);
+    const endCol = Math.min(mapData.width, Math.ceil((camera.x + canvas.width / camera.zoom) / TILE_SIZE) + 2);
+    const startRow = Math.max(0, Math.floor(camera.y / TILE_SIZE) - 2);
+    const endRow = Math.min(mapData.height, Math.ceil((camera.y + canvas.height / camera.zoom) / TILE_SIZE) + 2);
     
     // Draw hexes (only visible ones)
     for (let row = startRow; row < endRow; row++) {
       for (let col = startCol; col < endCol; col++) {
-        const { x, y } = hexToScreen(col, row);
+        const { x, y } = squareToScreen(col, row);
         
         // Additional viewport check
-        if (x < -HEX_SIZE * 2 || x > canvas.width + HEX_SIZE * 2 || 
-            y < -HEX_SIZE * 2 || y > canvas.height + HEX_SIZE * 2) {
+        if (x < -TILE_SIZE * 2 || x > canvas.width + TILE_SIZE * 2 || 
+            y < -TILE_SIZE * 2 || y > canvas.height + TILE_SIZE * 2) {
           continue;
         }
         
@@ -531,11 +511,11 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         // Fog of War: Only render explored tiles
         if (!tile.explored) {
           // Draw completely black hex for unexplored areas
-          drawHex(
+          drawSquare(
             ctx,
             x,
             y,
-            HEX_SIZE * camera.zoom,
+            TILE_SIZE * camera.zoom,
             '#000000',
             '#000000'
           );
@@ -546,11 +526,11 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         const isSelected = selectedHex.col === col && selectedHex.row === row;
         
         // Draw hex background
-        drawHex(
+        drawSquare(
           ctx, 
           x, 
           y, 
-          HEX_SIZE * camera.zoom, 
+          TILE_SIZE * camera.zoom, 
           terrainInfo.color,
           isSelected ? '#FF0000' : '#333'
         );
@@ -594,16 +574,8 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         // Apply fog overlay for explored but not currently visible tiles
         if (!isVisible) {
           ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-          ctx.beginPath();
-          for (let i = 0; i < 6; i++) {
-            const angle = (Math.PI / 3) * i;
-            const hx = x + (HEX_SIZE * camera.zoom) * Math.cos(angle);
-            const hy = y + (HEX_SIZE * camera.zoom) * Math.sin(angle);
-            if (i === 0) ctx.moveTo(hx, hy);
-            else ctx.lineTo(hx, hy);
-          }
-          ctx.closePath();
-          ctx.fill();
+          const halfSize = TILE_SIZE * camera.zoom / 2;
+          ctx.fillRect(x - halfSize, y - halfSize, TILE_SIZE * camera.zoom, TILE_SIZE * camera.zoom);
         }
         
         // Draw coordinates only when zoomed in
@@ -611,7 +583,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
           ctx.fillStyle = '#000';
           ctx.font = '8px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(`${col},${row}`, x, y + HEX_SIZE + 10);
+          ctx.fillText(`${col},${row}`, x, y + TILE_SIZE + 10);
         }
       }
     }
@@ -681,11 +653,11 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         
         // Center camera on clicked position
         actions.updateCamera({
-          x: clickedCol * HEX_WIDTH - (canvas.width / camera.zoom) / 2,
-          y: clickedRow * VERT_DISTANCE - (canvas.height / camera.zoom) / 2
+          x: clickedCol * TILE_SIZE - (canvas.width / camera.zoom) / 2,
+          y: clickedRow * TILE_SIZE - (canvas.height / camera.zoom) / 2
         });
       } else {
-        const hex = screenToHex(x, y);
+        const hex = screenToSquare(x, y);
         setSelectedHex(hex);
         setContextMenu(null); // Hide context menu on left click
 
@@ -712,12 +684,22 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
           } else if (gameState.selectedUnit) {
             // Attempt to move the currently selected unit to the clicked hex
             console.log(`[CLICK] Attempting to move selected unit ${gameState.selectedUnit} to (${hex.col}, ${hex.row})`);
-            const moved = gameEngine.moveUnit(gameState.selectedUnit, hex.col, hex.row);
-            if (!moved) {
-              console.log(`[CLICK] Move failed: invalid destination or no moves remaining`);
-              // Provide feedback when move failed
+            const result = gameEngine.moveUnit(gameState.selectedUnit, hex.col, hex.row);
+            if (!result || !result.success) {
+              const reason = result?.reason || 'unknown';
+              console.log(`[CLICK] Move failed: ${reason}`);
               if (actions && typeof actions.addNotification === 'function') {
-                actions.addNotification({ type: 'warning', message: 'Move failed: invalid destination or no moves remaining' });
+                let msg = 'Move failed';
+                switch (reason) {
+                  case 'unit_not_found': msg = 'Move failed: unit not found'; break;
+                  case 'invalid_target': msg = 'Move failed: invalid destination'; break;
+                  case 'no_moves_left': msg = 'Move failed: no moves left'; break;
+                  case 'terrain_impassable': msg = 'Move failed: terrain is impassable'; break;
+                  case 'insufficient_moves': msg = 'Move failed: insufficient movement points'; break;
+                  case 'combat_defeat': msg = 'Move resulted in combat and the attacker was defeated'; break;
+                  default: msg = 'Move failed';
+                }
+                actions.addNotification({ type: 'warning', message: msg });
               }
             }
           } else {
@@ -733,7 +715,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const hex = screenToHex(x, y);
+    const hex = screenToSquare(x, y);
     
     if (!terrain) return;
     const tile = terrain[hex.row]?.[hex.col];
@@ -883,10 +865,10 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         
       case 'centerView':
         // Center camera on selected hex
-        const { x, y } = hexToScreen(contextMenu.hex.col, contextMenu.hex.row);
+        const { x, y } = squareToScreen(contextMenu.hex.col, contextMenu.hex.row);
         actions.updateCamera({
-          x: contextMenu.hex.col * HEX_WIDTH - canvasRef.current.width / 2,
-          y: contextMenu.hex.row * VERT_DISTANCE - canvasRef.current.height / 2
+          x: contextMenu.hex.col * TILE_SIZE - canvasRef.current.width / 2,
+          y: contextMenu.hex.row * TILE_SIZE - canvasRef.current.height / 2
         });
         break;
         

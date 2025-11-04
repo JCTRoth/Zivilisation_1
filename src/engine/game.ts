@@ -337,7 +337,7 @@ export class Game extends EventEmitter {
         const minDistance = 3;
 
         for (const city of cities) {
-            if (this.gameMap.grid.hexDistance(col, row, city.col, city.row) < minDistance) {
+            if (this.gameMap.grid.squareDistance(col, row, city.col, city.row) < minDistance) {
                 return false;
             }
         }

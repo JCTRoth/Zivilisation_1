@@ -1,11 +1,11 @@
 import { CONSTANTS } from '../utils/constants';
 
 /**
- * Hexagonal Grid System for React
- * Handles coordinate conversion, pathfinding, and hex math
+ * Square Grid System for React
+ * Handles coordinate conversion, pathfinding, and square math
  */
 
-export interface HexCoordinate {
+export interface SquareCoordinate {
     col: number;
     row: number;
 }
@@ -15,100 +15,64 @@ export interface ScreenPosition {
     y: number;
 }
 
-export interface HexDirection {
+export interface SquareDirection {
     col: number;
     row: number;
 }
 
-export class HexGrid {
+export class SquareGrid {
     width: number;
     height: number;
-    hexSize: number;
-    hexWidth: number;
-    hexHeight: number;
-    vertDistance: number;
+    tileSize: number;
 
     constructor(width: number, height: number) {
         this.width = width;
         this.height = height;
-        this.hexSize = CONSTANTS.HEX_SIZE;
-        this.hexWidth = this.hexSize * Math.sqrt(3);
-        this.hexHeight = this.hexSize * 2;
-        this.vertDistance = this.hexHeight * 0.75;
+        this.tileSize = CONSTANTS.HEX_SIZE * 2; // Use hex size as base, but make squares larger for similar visual density
     }
 
-    // Convert hex coordinates to screen position
-    hexToScreen(col: number, row: number): ScreenPosition {
-        const x = this.hexWidth * (col + 0.5 * (row & 1));
-        const y = this.vertDistance * row;
+    // Convert square coordinates to screen position
+    squareToScreen(col: number, row: number): ScreenPosition {
+        const x = col * this.tileSize;
+        const y = row * this.tileSize;
         return { x, y };
     }
 
-    // Convert screen position to hex coordinates
-    screenToHex(screenX: number, screenY: number): HexCoordinate {
-        // Adjust for hex grid offset
-        const x = screenX / this.hexWidth;
-        const y = screenY / this.vertDistance;
-
-        // Convert to cube coordinates
-        const q = x - 0.5 * (y & 1);
-        const r = y;
-        const s = -q - r;
-
-        // Round to nearest integer coordinates
-        let rq = Math.round(q);
-        let rr = Math.round(r);
-        let rs = Math.round(s);
-
-        const qDiff = Math.abs(rq - q);
-        const rDiff = Math.abs(rr - r);
-        const sDiff = Math.abs(rs - s);
-
-        if (qDiff > rDiff && qDiff > sDiff) {
-            rq = -rr - rs;
-        } else if (rDiff > sDiff) {
-            rr = -rq - rs;
-        } else {
-            rs = -rq - rr;
-        }
-
-        // Convert back to offset coordinates
-        const col = Math.floor(rq + (rr - (rr & 1)) / 2);
-        const row = Math.floor(rr);
-
+    // Convert screen position to square coordinates
+    screenToSquare(screenX: number, screenY: number): SquareCoordinate {
+        const col = Math.floor(screenX / this.tileSize);
+        const row = Math.floor(screenY / this.tileSize);
         return { col, row };
     }
 
-    // Get hex vertices for drawing
-    getHexVertices(col: number, row: number): ScreenPosition[] {
-        const center = this.hexToScreen(col, row);
-        const vertices: ScreenPosition[] = [];
+    // Get square vertices for drawing (4 corners)
+    getSquareVertices(col: number, row: number): ScreenPosition[] {
+        const center = this.squareToScreen(col, row);
+        const halfSize = this.tileSize / 2;
 
-        for (let i = 0; i < 6; i++) {
-            const angle = (Math.PI / 180) * (60 * i - 30);
-            const x = center.x + this.hexSize * Math.cos(angle);
-            const y = center.y + this.hexSize * Math.sin(angle);
-            vertices.push({ x, y });
-        }
-
-        return vertices;
+        return [
+            { x: center.x - halfSize, y: center.y - halfSize }, // top-left
+            { x: center.x + halfSize, y: center.y - halfSize }, // top-right
+            { x: center.x + halfSize, y: center.y + halfSize }, // bottom-right
+            { x: center.x - halfSize, y: center.y + halfSize }  // bottom-left
+        ];
     }
 
     // Check if coordinates are within grid bounds
-    isValidHex(col: number, row: number): boolean {
+    isValidSquare(col: number, row: number): boolean {
         return col >= 0 && col < this.width && row >= 0 && row < this.height;
     }
 
-    // Get neighboring hex coordinates
-    getNeighbors(col: number, row: number): HexCoordinate[] {
-        const neighbors: HexCoordinate[] = [];
-        const directions = this.getNeighborDirections(row);
+    // Get neighboring square coordinates (4-way: up, down, left, right)
+    getNeighbors(col: number, row: number): SquareCoordinate[] {
+        const neighbors: SquareCoordinate[] = [];
+        const directions = this.getNeighborDirections();
 
         for (const dir of directions) {
             const neighborCol = col + dir.col;
             const neighborRow = row + dir.row;
 
-            if (this.isValidHex(neighborCol, neighborRow)) {
+            if (this.isValidSquare(neighborCol, neighborRow)) {
                 neighbors.push({ col: neighborCol, row: neighborRow });
             }
         }
@@ -116,42 +80,24 @@ export class HexGrid {
         return neighbors;
     }
 
-    // Get direction vectors for neighbors (depends on row parity)
-    getNeighborDirections(row: number): HexDirection[] {
-        const isEven = (row & 1) === 0;
-
-        if (isEven) {
-            return [
-                { col: -1, row: -1 }, { col: 0, row: -1 },
-                { col: -1, row: 0 },  { col: 1, row: 0 },
-                { col: -1, row: 1 },  { col: 0, row: 1 }
-            ];
-        } else {
-            return [
-                { col: 0, row: -1 },  { col: 1, row: -1 },
-                { col: -1, row: 0 },  { col: 1, row: 0 },
-                { col: 0, row: 1 },   { col: 1, row: 1 }
-            ];
-        }
+    // Get direction vectors for neighbors (4 cardinal directions)
+    getNeighborDirections(): SquareDirection[] {
+        return [
+            { col: 0, row: -1 },  // up
+            { col: 1, row: 0 },   // right
+            { col: 0, row: 1 },   // down
+            { col: -1, row: 0 }   // left
+        ];
     }
 
-    // Calculate distance between two hexes
-    hexDistance(col1: number, row1: number, col2: number, row2: number): number {
-        // Convert to cube coordinates
-        const q1 = col1 - (row1 - (row1 & 1)) / 2;
-        const r1 = row1;
-        const s1 = -q1 - r1;
-
-        const q2 = col2 - (row2 - (row2 & 1)) / 2;
-        const r2 = row2;
-        const s2 = -q2 - r2;
-
-        return (Math.abs(q1 - q2) + Math.abs(r1 - r2) + Math.abs(s1 - s2)) / 2;
+    // Calculate Manhattan distance between two squares
+    squareDistance(col1: number, row1: number, col2: number, row2: number): number {
+        return Math.abs(col1 - col2) + Math.abs(row1 - row2);
     }
 
-    // A* pathfinding algorithm for hexes
-    findPath(startCol: number, startRow: number, endCol: number, endRow: number, obstacles: Set<string> = new Set()): HexCoordinate[] {
-        if (!this.isValidHex(startCol, startRow) || !this.isValidHex(endCol, endRow)) {
+    // A* pathfinding algorithm for squares
+    findPath(startCol: number, startRow: number, endCol: number, endRow: number, obstacles: Set<string> = new Set()): SquareCoordinate[] {
+        if (!this.isValidSquare(startCol, startRow) || !this.isValidSquare(endCol, endRow)) {
             return [];
         }
 
@@ -170,7 +116,7 @@ export class HexGrid {
 
         openSet.add(startKey);
         gScore.set(startKey, 0);
-        fScore.set(startKey, this.hexDistance(startCol, startRow, endCol, endRow));
+        fScore.set(startKey, this.squareDistance(startCol, startRow, endCol, endRow));
 
         while (openSet.size > 0) {
             // Find node with lowest fScore
@@ -187,7 +133,7 @@ export class HexGrid {
 
             if (current === endKey) {
                 // Reconstruct path
-                const path: HexCoordinate[] = [];
+                const path: SquareCoordinate[] = [];
                 let curr = current;
 
                 while (curr) {
@@ -225,75 +171,75 @@ export class HexGrid {
 
                 cameFrom.set(neighborKey, current);
                 gScore.set(neighborKey, tentativeG);
-                fScore.set(neighborKey, tentativeG + this.hexDistance(neighbor.col, neighbor.row, endCol, endRow));
+                fScore.set(neighborKey, tentativeG + this.squareDistance(neighbor.col, neighbor.row, endCol, endRow));
             }
         }
 
         return []; // No path found
     }
 
-    // Get hexes in a ring at specific distance
-    getHexRing(centerCol: number, centerRow: number, radius: number): HexCoordinate[] {
+    // Get squares in a ring at specific Manhattan distance
+    getSquareRing(centerCol: number, centerRow: number, radius: number): SquareCoordinate[] {
         if (radius === 0) {
             return [{ col: centerCol, row: centerRow }];
         }
 
-        const hexes: HexCoordinate[] = [];
+        const squares: SquareCoordinate[] = [];
 
         for (let col = Math.max(0, centerCol - radius); col <= Math.min(this.width - 1, centerCol + radius); col++) {
             for (let row = Math.max(0, centerRow - radius); row <= Math.min(this.height - 1, centerRow + radius); row++) {
-                if (this.hexDistance(centerCol, centerRow, col, row) === radius) {
-                    hexes.push({ col, row });
+                if (this.squareDistance(centerCol, centerRow, col, row) === radius) {
+                    squares.push({ col, row });
                 }
             }
         }
 
-        return hexes;
+        return squares;
     }
 
-    // Check if a hex is adjacent to another
+    // Check if a square is adjacent to another (Manhattan distance = 1)
     areAdjacent(col1: number, row1: number, col2: number, row2: number): boolean {
-        return this.hexDistance(col1, row1, col2, row2) === 1;
+        return this.squareDistance(col1, row1, col2, row2) === 1;
     }
 
-    // Get random hex coordinates
-    getRandomHex(): HexCoordinate {
+    // Get random square coordinates
+    getRandomSquare(): SquareCoordinate {
         return {
             col: Math.floor(Math.random() * this.width),
             row: Math.floor(Math.random() * this.height)
         };
     }
 
-    // Get all hexes within a certain range of a center hex
-    getHexesInRange(centerCol: number, centerRow: number, range: number): HexCoordinate[] {
-        const hexes: HexCoordinate[] = [];
+    // Get all squares within a certain Manhattan distance of a center square
+    getSquaresInRange(centerCol: number, centerRow: number, range: number): SquareCoordinate[] {
+        const squares: SquareCoordinate[] = [];
 
         for (let col = centerCol - range; col <= centerCol + range; col++) {
             for (let row = centerRow - range; row <= centerRow + range; row++) {
-                if (this.isValidHex(col, row) &&
-                    this.hexDistance(centerCol, centerRow, col, row) <= range) {
-                    hexes.push({ col, row });
+                if (this.isValidSquare(col, row) &&
+                    this.squareDistance(centerCol, centerRow, col, row) <= range) {
+                    squares.push({ col, row });
                 }
             }
         }
 
-        return hexes;
+        return squares;
     }
 
-    // Convert hex key to coordinates
-    static keyToHex(key: string): HexCoordinate {
+    // Convert square key to coordinates
+    static keyToSquare(key: string): SquareCoordinate {
         const [col, row] = key.split(',').map(Number);
         return { col, row };
     }
 
-    // Convert hex coordinates to key
-    static hexToKey(col: number, row: number): string {
+    // Convert square coordinates to key
+    static squareToKey(col: number, row: number): string {
         return `${col},${row}`;
     }
 
-    // Check if a screen position is inside a hexagon
-    isPointInHex(screenX: number, screenY: number, hexCol: number, hexRow: number): boolean {
-        const vertices = this.getHexVertices(hexCol, hexRow);
+    // Check if a screen position is inside a square
+    isPointInSquare(screenX: number, screenY: number, squareCol: number, squareRow: number): boolean {
+        const vertices = this.getSquareVertices(squareCol, squareRow);
         return this.isPointInPolygon(screenX, screenY, vertices);
     }
 
@@ -314,90 +260,41 @@ export class HexGrid {
         return inside;
     }
 
-    // Get the hex that contains the world position (precise hit detection)
-    // Note: this expects world coordinates (same space as `hexToScreen` / `getHexVertices`)
-    getHexAtPosition(worldX: number, worldY: number): HexCoordinate | null {
-        // First, get the approximate hex using the existing method
-        const approxHex = this.screenToHex(worldX, worldY);
+    // Get the square that contains the world position (precise hit detection)
+    getSquareAtPosition(worldX: number, worldY: number): SquareCoordinate | null {
+        // For squares, we can use the simple conversion since squares don't have complex boundaries
+        const square = this.screenToSquare(worldX, worldY);
 
-        // Build a candidate list: approx, neighbors, and neighbors-of-neighbors
-        const candidates: HexCoordinate[] = [approxHex];
-
-        const neighbors = this.getNeighbors(approxHex.col, approxHex.row);
-        for (const n of neighbors) candidates.push(n);
-
-        // also include neighbors of neighbors to handle clicks near corners/gaps
-        for (const n of neighbors) {
-            const nn = this.getNeighbors(n.col, n.row);
-            for (const m of nn) candidates.push(m);
+        if (this.isValidSquare(square.col, square.row)) {
+            return square;
         }
 
-        // Deduplicate candidates
-        const seen = new Set<string>();
-        const uniqueCandidates: HexCoordinate[] = [];
-        for (const c of candidates) {
-            const key = `${c.col},${c.row}`;
-            if (!seen.has(key) && this.isValidHex(c.col, c.row)) {
-                seen.add(key);
-                uniqueCandidates.push(c);
-            }
-        }
-
-        // First pass: precise polygon hit test
-        for (const c of uniqueCandidates) {
-            if (this.isPointInHex(worldX, worldY, c.col, c.row)) {
-                return c;
-            }
-        }
-
-        // Fallback: choose candidate whose center is closest to the point
-        let best: HexCoordinate | null = null;
-        let bestDist = Infinity;
-
-        for (const c of uniqueCandidates) {
-            const center = this.hexToScreen(c.col, c.row);
-            const dx = center.x - worldX;
-            const dy = center.y - worldY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-
-            if (dist < bestDist) {
-                bestDist = dist;
-                best = c;
-            }
-        }
-
-        // If the closest center is reasonably near (within hexSize), pick it
-        if (best && bestDist <= this.hexSize * 1.1) {
-            return best;
-        }
-
-        // As a last resort, return the approximate hex
-        return approxHex;
+        return null;
     }
 }
 
-// Utility functions for hex operations
-export const HexUtils = {
-    // Create hex key from coordinates
+// Utility functions for square operations
+export const SquareUtils = {
+    // Create square key from coordinates
     makeKey: (col: number, row: number): string => `${col},${row}`,
 
     // Parse key to coordinates
-    parseKey: (key: string): HexCoordinate => {
+    parseKey: (key: string): SquareCoordinate => {
         const [col, row] = key.split(',').map(Number);
         return { col, row };
     },
 
-    // Check if two hexes are the same
-    isEqual: (hex1: HexCoordinate, hex2: HexCoordinate): boolean => hex1.col === hex2.col && hex1.row === hex2.row,
+    // Check if two squares are the same
+    isEqual: (square1: SquareCoordinate, square2: SquareCoordinate): boolean => square1.col === square2.col && square1.row === square2.row,
 
-    // Create a set of hex keys from coordinates array
-    coordsToSet: (coords: HexCoordinate[]): Set<string> => new Set(coords.map(coord => HexUtils.makeKey(coord.col, coord.row))),
+    // Create a set of square keys from coordinates array
+    coordsToSet: (coords: SquareCoordinate[]): Set<string> => new Set(coords.map(coord => SquareUtils.makeKey(coord.col, coord.row))),
 
-    // Get hex at offset from another hex
-    getHexAt: (hex: HexCoordinate, offsetCol: number, offsetRow: number): HexCoordinate => ({
-        col: hex.col + offsetCol,
-        row: hex.row + offsetRow
+    // Get square at offset from another square
+    getSquareAt: (square: SquareCoordinate, offsetCol: number, offsetRow: number): SquareCoordinate => ({
+        col: square.col + offsetCol,
+        row: square.row + offsetRow
     })
 };
 
-export default HexGrid;
+export default SquareGrid;

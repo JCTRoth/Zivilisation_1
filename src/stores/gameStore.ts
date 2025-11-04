@@ -2,19 +2,19 @@
 
 import { create } from 'zustand';
 import { CONSTANTS } from '../utils/constants';
-import { HexGrid } from '../game/hexGrid';
+import { SquareGrid } from '../game/hexGrid';
 import { UNIT_TYPES } from '../game/gameData.js';
 import type { GameStoreState, GameState, MapState, CameraState, Unit, City, Civilization, UIState, Settings, Technology, GameActions } from '../../types/game';
 
 // Helper function for visibility calculations
 const setVisibilityAreaInternal = (visibility, revealed, centerCol, centerRow, radius, mapWidth, mapHeight) => {
-  const hexGrid = new HexGrid(mapWidth, mapHeight);
+  const squareGrid = new SquareGrid(mapWidth, mapHeight);
 
   for (let row = centerRow - radius; row <= centerRow + radius; row++) {
     for (let col = centerCol - radius; col <= centerCol + radius; col++) {
       if (row >= 0 && row < mapHeight && col >= 0 && col < mapWidth) {
         const index = row * mapWidth + col;
-        if (hexGrid.hexDistance(centerCol, centerRow, col, row) <= radius) {
+        if (squareGrid.squareDistance(centerCol, centerRow, col, row) <= radius) {
           visibility[index] = true;
           // Also mark as explored when first seen
           revealed[index] = true;

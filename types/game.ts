@@ -215,7 +215,7 @@ export interface GameEngine {
   onStateChange: ((eventType: string, eventData: any) => void) | null;
   newGame(): void;
   processTurn(): void;
-  moveUnit(unitId: string, col: number, row: number): boolean;
+  moveUnit(unitId: string, col: number, row: number): { success: boolean; reason?: string };
   foundCity(col: number, row: number, civilizationId: number, customName?: string | null): any;
   foundCityWithSettler(settlerId: string): boolean;
   setResearch(civId: number, techId: string): void;

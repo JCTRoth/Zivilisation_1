@@ -1,4 +1,4 @@
-import { HexGrid } from './hexGrid';
+import { SquareGrid } from './hexGrid';
 import { CONSTANTS, TERRAIN_PROPS, UNIT_PROPS } from '../utils/constants';
 import { CIVILIZATIONS, TECHNOLOGIES, UNIT_TYPES } from './gameData.js';
 import type { GameActions, Unit, City, Civilization } from '../../types/game';
@@ -35,7 +35,7 @@ interface MapData {
  */
 export default class GameEngine {
   storeActions: GameActions | null;
-  hexGrid: HexGrid | null;
+  squareGrid: SquareGrid | null;
   map: MapData | null;
   units: Unit[];
   cities: City[];
@@ -51,7 +51,7 @@ export default class GameEngine {
 
   constructor(storeActions: GameActions | null = null) {
     this.storeActions = storeActions;
-    this.hexGrid = null;
+    this.squareGrid = null;
     this.map = null;
     this.units = [];
     this.cities = [];
@@ -99,7 +99,7 @@ export default class GameEngine {
 
   // Choose a target for AI unit: prefer unexplored nearby tiles, then enemy units, then random neighbor
   private chooseAITarget(unit: any): { col: number; row: number } | null {
-    if (!this.map || !this.hexGrid) return null;
+    if (!this.map || !this.squareGrid) return null;
     // 1) Nearby unexplored tile
   const unexplored = this.findNearbyUnexplored(unit);
     if (unexplored) return { col: unexplored.col, row: unexplored.row };
@@ -109,9 +109,9 @@ export default class GameEngine {
     if (enemy) return { col: enemy.col, row: enemy.row };
 
     // 3) Random valid neighbor
-    const neighbors = this.hexGrid.getNeighbors(unit.col, unit.row);
+    const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
     for (const n of neighbors) {
-      if (!this.isValidHex(n.col, n.row)) continue;
+      if (!this.squareGrid.isValidSquare(n.col, n.row)) continue;
       const tile = this.getTileAt(n.col, n.row);
       if (!tile) continue;
       if (TERRAIN_PROPS[tile.type]?.passable === false) continue;
@@ -125,8 +125,8 @@ export default class GameEngine {
 
   // Find nearby unexplored tile (uses GameEngine's map representation)
   private findNearbyUnexplored(unit: any, searchRadius: number = 8): any {
-    if (!this.map || !this.hexGrid) return null;
-    const nearbyTiles = this.hexGrid.getHexesInRange(unit.col, unit.row, searchRadius);
+    if (!this.map || !this.squareGrid) return null;
+    const nearbyTiles = this.squareGrid.getSquaresInRange(unit.col, unit.row, searchRadius);
     for (const tilePos of nearbyTiles) {
       const tile = this.getTileAt(tilePos.col, tilePos.row);
       if (tile && !tile.explored) {
@@ -138,8 +138,8 @@ export default class GameEngine {
 
   // Find nearby enemy unit
   private findNearbyEnemy(unit: any, searchRadius: number = 5): any {
-    if (!this.hexGrid) return null;
-    const nearbyTiles = this.hexGrid.getHexesInRange(unit.col, unit.row, searchRadius);
+    if (!this.squareGrid) return null;
+    const nearbyTiles = this.squareGrid.getSquaresInRange(unit.col, unit.row, searchRadius);
     for (const tilePos of nearbyTiles) {
       const enemyUnit = this.getUnitAt(tilePos.col, tilePos.row);
       if (enemyUnit && enemyUnit.civilizationId !== unit.civilizationId) {
@@ -166,7 +166,7 @@ export default class GameEngine {
         this.highlightAITarget(target.col, target.row);
 
         // If target is adjacent, try to move or attack
-        const dist = this.hexGrid.hexDistance(unit.col, unit.row, target.col, target.row);
+        const dist = this.squareGrid.squareDistance(unit.col, unit.row, target.col, target.row);
         if (dist === 1) {
           const targetUnit = this.getUnitAt(target.col, target.row);
           if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
@@ -179,7 +179,7 @@ export default class GameEngine {
           }
         } else {
           // Pathfind towards target and take next step
-          const path = this.hexGrid.findPath(unit.col, unit.row, target.col, target.row, new Set());
+          const path = this.squareGrid.findPath(unit.col, unit.row, target.col, target.row, new Set());
           if (path.length > 1) {
             const next = path[1];
             this.moveUnit(unit.id, next.col, next.row);
@@ -223,7 +223,7 @@ export default class GameEngine {
     }
     
     // Create hex grid system
-    this.hexGrid = new HexGrid(CONSTANTS.MAP_WIDTH, CONSTANTS.MAP_HEIGHT);
+    this.squareGrid = new SquareGrid(CONSTANTS.MAP_WIDTH, CONSTANTS.MAP_HEIGHT);
     
     // Generate initial game state
     await this.generateWorld();
@@ -363,7 +363,7 @@ export default class GameEngine {
           for (const otherCiv of this.civilizations) {
             const otherUnits = this.units.filter(u => u.civilizationId === otherCiv.id);
             for (const unit of otherUnits) {
-              if (this.hexGrid.hexDistance(col, row, unit.col, unit.row) < 12) {
+              if (this.squareGrid.squareDistance(col, row, unit.col, unit.row) < 12) {
                 validPosition = false;
                 break;
               }
@@ -444,7 +444,7 @@ export default class GameEngine {
     for (let row = centerRow - radius; row <= centerRow + radius; row++) {
       for (let col = centerCol - radius; col <= centerCol + radius; col++) {
         const tile = this.getTileAt(col, row);
-        if (tile && this.hexGrid.hexDistance(centerCol, centerRow, col, row) <= radius) {
+        if (tile && this.squareGrid.squareDistance(centerCol, centerRow, col, row) <= radius) {
           tile.visible = true;
           // Also mark as explored when first seen
           if (!tile.explored) {
@@ -592,21 +592,21 @@ export default class GameEngine {
    * Convert screen coordinates to hex coordinates
    */
   screenToHex(screenX, screenY) {
-    return this.hexGrid.getHexAtPosition(screenX, screenY);
+    return this.squareGrid.getSquareAtPosition(screenX, screenY);
   }
 
   /**
    * Check if hex coordinates are valid
    */
   isValidHex(col, row) {
-    return this.hexGrid.isValidHex(col, row);
+    return this.squareGrid.isValidSquare(col, row);
   }
 
   /**
    * Get tile at coordinates
    */
   getTileAt(col, row) {
-    if (!this.isValidHex(col, row)) return null;
+    if (!this.squareGrid.isValidSquare(col, row)) return null;
     const index = row * this.map.width + col;
     return this.map.tiles[index] || null;
   }
@@ -644,33 +644,39 @@ export default class GameEngine {
    */
   moveUnit(unitId, targetCol, targetRow) {
     const unit = this.units.find(u => u.id === unitId);
-    if (!unit || !this.isValidHex(targetCol, targetRow)) return false;
+    if (!unit) return { success: false, reason: 'unit_not_found' };
+    if (!this.squareGrid.isValidSquare(targetCol, targetRow)) return { success: false, reason: 'invalid_target' };
 
     // Check if unit has moves remaining
-    if (unit.movesRemaining <= 0) return false;
+    if ((unit.movesRemaining || 0) <= 0) return { success: false, reason: 'no_moves_left' };
 
     // Check if target tile is passable
     const targetTile = this.getTileAt(targetCol, targetRow);
-    if (!targetTile || !TERRAIN_PROPS[targetTile.type]?.passable) return false;
+    if (!targetTile) return { success: false, reason: 'invalid_target' };
+    if (TERRAIN_PROPS[targetTile.type]?.passable === false) return { success: false, reason: 'terrain_impassable' };
 
     // Check if there's another unit at target (combat or stacking rules)
     const targetUnit = this.getUnitAt(targetCol, targetRow);
     if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
       // Combat logic here
-      return this.combatUnit(unit, targetUnit);
+      const combatResult = this.combatUnit(unit, targetUnit);
+      // combatUnit returns boolean success currently; normalize
+      const success = !!combatResult;
+      return { success, reason: success ? 'combat_victory' : 'combat_defeat' };
     }
 
     // Move the unit
-    const distance = this.hexGrid.hexDistance(unit.col, unit.row, targetCol, targetRow);
-    const moveCost = TERRAIN_PROPS[targetTile.type]?.movement || 1;
+    const distance = this.squareGrid.squareDistance(unit.col, unit.row, targetCol, targetRow);
+    const moveCost = Math.max(1, TERRAIN_PROPS[targetTile.type]?.movement || 1);
 
-    if (distance <= unit.movesRemaining / moveCost) {
+    // Require that unit has enough remaining moves to cover the distance * cost
+    if ((unit.movesRemaining || 0) >= distance * moveCost) {
       const fromCol = unit.col;
       const fromRow = unit.row;
 
       unit.col = targetCol;
       unit.row = targetRow;
-      unit.movesRemaining -= distance * moveCost;
+      unit.movesRemaining = (unit.movesRemaining || 0) - distance * moveCost;
 
       // Log movement
       console.log(`[MOVEMENT] ${unit.type} (${unit.id}) moved from (${fromCol},${fromRow}) to (${targetCol},${targetRow}), distance: ${distance}, moves remaining: ${unit.movesRemaining}`);
@@ -683,10 +689,10 @@ export default class GameEngine {
       // Check if turn should end automatically
       this.checkAndEndTurnIfNoMoves();
 
-      return true;
+      return { success: true };
     }
 
-    return false;
+    return { success: false, reason: 'insufficient_moves' };
   }
 
   /**
@@ -754,7 +760,7 @@ export default class GameEngine {
 
     // Check if too close to another city
     for (const city of this.cities) {
-      if (this.hexGrid.hexDistance(settler.col, settler.row, city.col, city.row) < 3) {
+      if (this.squareGrid.squareDistance(settler.col, settler.row, city.col, city.row) < 3) {
         return false;
       }
     }
@@ -1035,7 +1041,7 @@ export default class GameEngine {
    * Render a terrain tile
    */
   renderTile(ctx, tile, col, row) {
-    const vertices = this.hexGrid.getHexVertices(col, row);
+    const vertices = this.squareGrid.getSquareVertices(col, row);
     const terrainProps = TERRAIN_PROPS[tile.type];
     
     // Fill tile
@@ -1059,7 +1065,7 @@ export default class GameEngine {
    * Render a city
    */
   renderCity(ctx, city) {
-    const center = this.hexGrid.hexToScreen(city.col, city.row);
+    const center = this.squareGrid.squareToScreen(city.col, city.row);
     const civ = this.civilizations[city.civilizationId];
     
     // Draw city circle
@@ -1082,7 +1088,7 @@ export default class GameEngine {
    * Render a unit
    */
   renderUnit(ctx, unit) {
-    const center = this.hexGrid.hexToScreen(unit.col, unit.row);
+    const center = this.squareGrid.squareToScreen(unit.col, unit.row);
     const civ = this.civilizations[unit.civilizationId];
   const unitProps = UNIT_PROPS[unit.type];
   const unitTypeDef = UNIT_TYPES[unit.type?.toUpperCase()] || null;
