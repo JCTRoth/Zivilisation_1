@@ -3,12 +3,14 @@
  * Historical civilizations, leaders, technologies, wonders, and units
  */
 
+import React from 'react';
+
 export interface Civilization {
   name: string;
   leader: string;
   color: string;
   cityNames: string[];
-  icon: string;
+  icon: React.ReactNode;
 }
 
 export interface Technology {
@@ -110,7 +112,7 @@ export const CIVILIZATIONS: Civilization[] = [
     leader: 'Ramesses II',
     color: '#F0E68C',
     cityNames: ['Thebes', 'Memphis', 'Heliopolis', 'Alexandria', 'Giza', 'Luxor', 'Aswan', 'Karnak'],
-    icon: '𓂀'
+    icon: <span style={{ fontSize: '36px', color: '#000000' }}>𓂀</span>
   },
   {
     name: 'English',

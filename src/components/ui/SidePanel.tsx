@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button } from 'react-bootstrap';
 import { useGameStore } from '../../stores/gameStore';
+import { CIVILIZATIONS } from '../../game/gameData';
 import MiniMap from './MiniMap';
 
 // New side panel matching the provided mockup image
@@ -22,6 +23,9 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
     leader: 'Name of Civilisation',
     color: '#4b8b3b'
   });
+
+  // Find the static civilization data to get the icon
+  const staticCiv = CIVILIZATIONS.find(civ => civ.name === displayPlayer.name);
 
   // Inline styles chosen to closely match the screenshot (dark pane, white text, left column)
   const panelStyle: React.CSSProperties = {
@@ -78,7 +82,7 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
                 boxShadow: '0 0 0 4px rgba(0,0,0,0.6) inset'
               }}
             >
-              <span style={{ fontSize: 22 }}>{(displayPlayer as any)?.icon ?? '🏛️'}</span>
+              <span style={{ fontSize: 22 }}>{staticCiv?.icon ?? '🏛️'}</span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -102,6 +106,9 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
               <div style={{ marginTop: 8, ...smallMuted }}>
                 HP: {selectedUnit.health ?? 100} • Moves: {selectedUnit.movesRemaining ?? 0}
               </div>
+              <div style={{ marginTop: 4, ...smallMuted }}>
+                Attack: {(selectedUnit as any)?.attack ?? 0} • Defense: {(selectedUnit as any)?.defense ?? 0}
+              </div>
             </div>
           ) : selectedCity ? (
             <div>
@@ -111,9 +118,12 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
             </div>
           ) : (
             <div style={smallMuted}>
-              Type of currently selected unit or building*
-              <br />
-              *Multiple / Stats / of / the / Unit*
+              <div>Units: {playerUnits?.length ?? 0}</div>
+              <div>Cities: {playerCities?.length ?? 0}</div>
+              <div style={{ marginTop: 8 }}>
+                Food: {playerResources?.food ?? 0} • Production: {playerResources?.production ?? 0}
+              </div>
+              <div>Trade: {playerResources?.trade ?? 0} • Science: {playerResources?.science ?? 0}</div>
             </div>
           )}
         </div>
@@ -128,18 +138,39 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
               <>
                 <div style={{ marginBottom: 6 }}><strong>{selectedUnit.name}</strong> — {selectedUnit.type}</div>
                 <div style={smallMuted}>Location: {selectedUnit.col}, {selectedUnit.row}</div>
-                <div style={{ marginTop: 8 }}>{(selectedUnit as any)?.description || 'No additional info available.'}</div>
+                <div style={{ marginTop: 8 }}>
+                  <div>Health: {selectedUnit.health ?? 100}/100</div>
+                  <div>Moves: {selectedUnit.movesRemaining ?? 0}/{(selectedUnit as any)?.maxMoves ?? 1}</div>
+                  <div>Attack: {(selectedUnit as any)?.attack ?? 0}</div>
+                  <div>Defense: {(selectedUnit as any)?.defense ?? 0}</div>
+                </div>
               </>
             ) : selectedCity ? (
               <>
                 <div style={{ marginBottom: 6 }}><strong>{selectedCity.name}</strong></div>
-                <div style={smallMuted}>Pop: {selectedCity.population}</div>
-                <div style={{ marginTop: 8 }}>{(selectedCity as any)?.description || 'City details will appear here.'}</div>
+                <div style={smallMuted}>Location: {selectedCity.col}, {selectedCity.row}</div>
+                <div style={{ marginTop: 8 }}>
+                  <div>Population: {selectedCity.population ?? 1}</div>
+                  <div>Food: {selectedCity.yields?.food ?? 0}</div>
+                  <div>Production: {selectedCity.yields?.production ?? 0}</div>
+                  <div>Trade: {selectedCity.yields?.trade ?? 0}</div>
+                  <div>Science: {selectedCity.science ?? 0}</div>
+                  <div>Gold: {selectedCity.gold ?? 0}</div>
+                </div>
               </>
             ) : (
               <>
-                <div style={{ marginBottom: 6 }}>Type of currently selected unit or Building*</div>
-                <div style={smallMuted}>*Multiple / Stats / of / the / Unit*</div>
+                <div style={{ marginBottom: 6 }}>Player Summary</div>
+                <div style={smallMuted}>
+                  <div>Units: {playerUnits?.length ?? 0}</div>
+                  <div>Cities: {playerCities?.length ?? 0}</div>
+                  <div style={{ marginTop: 8 }}>Resources:</div>
+                  <div>Gold: {playerResources?.gold ?? 0}</div>
+                  <div>Food: {playerResources?.food ?? 0}</div>
+                  <div>Production: {playerResources?.production ?? 0}</div>
+                  <div>Trade: {playerResources?.trade ?? 0}</div>
+                  <div>Science: {playerResources?.science ?? 0}</div>
+                </div>
               </>
             )}
           </div>
