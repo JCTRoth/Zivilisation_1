@@ -6,6 +6,9 @@ ReactJs, Vite, Zustand, and Bootstrap.
 
 ![](doc/2025-11-01_18-00.png)
 ![](doc/2025-11-01_18-00_1.png)
+![](doc/1.png)
+![](doc/2.png)
+![](doc/3.png)
 
 
 
