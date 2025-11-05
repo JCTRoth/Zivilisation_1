@@ -6,6 +6,7 @@ import HexDetailModal from './components/ui/HexDetailModal';
 import SettingsModal from './components/ui/SettingsModal';
 import GameSetupModal from './components/ui/GameSetupModal';
 import EndTurnConfirmModal from './components/ui/EndTurnConfirmModal';
+import GameModals from './components/ui/GameModals';
 import { useGameEngine } from './hooks/useGameEngine';
 import SidePanel from './components/ui/SidePanel';
 
@@ -59,32 +60,11 @@ function Civ1App() {
       console.log('Game started with units:', engine.units);
       console.log('Player settler at:', playerSettler);
 
-      // Center camera on player's starting settler with a small delay to ensure rendering is ready
+      // Focus camera on player's starting unit using the store action so the same
+      // centering logic is used everywhere (keeps canvas and minimap in sync).
       if (playerSettler) {
-        setTimeout(() => {
-          const HEX_WIDTH = 32 * Math.sqrt(3);
-          const VERT_DISTANCE = 64 * 0.75;
-          const zoom = 2.0;
-          
-          // Calculate world position of the settler
-          const startX = playerSettler.col * HEX_WIDTH + (playerSettler.row % 2) * (HEX_WIDTH / 2);
-          const startY = playerSettler.row * VERT_DISTANCE;
-          
-          // Camera offset needs to account for zoom - we want the settler at screen center
-          const newCamera = {
-            x: startX - (window.innerWidth / 2) / zoom,
-            y: startY - (window.innerHeight / 2) / zoom,
-            zoom: zoom,
-            minZoom: 0.5,
-            maxZoom: 3.0
-          };
-          
-          console.log('Camera centered on player settler at hex:', playerSettler.col, playerSettler.row);
-          console.log('Settler world position:', { startX, startY });
-          console.log('Camera position:', newCamera);
-          
-          setCamera(newCamera);
-        }, 100);
+        // This will select/focus the next unit for the active player and update camera
+        actions.focusOnNextUnit();
       }
       
     } catch (error) {
@@ -606,6 +586,9 @@ function Civ1App() {
         currentYear={gameState.currentYear || 4000}
         isAutomatic={isEndTurnAutomatic}
       />
+
+      {/* Game Modals */}
+      <GameModals gameEngine={gameEngine} />
     </div>
   );
 }

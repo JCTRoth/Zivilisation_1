@@ -3,10 +3,15 @@ import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import { useGameStore } from '../../stores/gameStore';
 
 const GameModals = ({ gameEngine }) => {
+  console.log('[GameModals] Component rendering, gameEngine present:', !!gameEngine);
   const uiState = useGameStore(state => state.uiState);
   const actions = useGameStore(state => state.actions);
+  const selectedCityId: string | null = useGameStore(state => state.gameState.selectedCity);
+  const cities = useGameStore(state => state.cities);
   const technologies = useGameStore(state => state.technologies);
   const currentPlayer = useGameStore(state => state.currentPlayer);
+
+  const selectedCity = cities.find(c => c.id === selectedCityId);
 
   const handleCloseDialog = () => {
     actions.hideDialog();
@@ -283,12 +288,74 @@ const GameModals = ({ gameEngine }) => {
     </Modal>
   );
 
+  // City Details Modal (70% height, close button top-right)
+  const renderCityDetails = () => {
+    return (
+      <Modal
+        show={uiState.activeDialog === 'city-details'}
+        onHide={handleCloseDialog}
+        centered
+        size="lg"
+        dialogClassName="city-details-modal"
+        style={{ maxWidth: '90vw', zIndex: 9999 }}
+      >
+        <Modal.Header className="bg-dark text-white" style={{ borderBottom: 'none' }}>
+          <Modal.Title>
+            <i className="bi bi-building"></i> {selectedCity?.name || 'City Details'}
+          </Modal.Title>
+          <Button variant="outline-light" size="sm" onClick={handleCloseDialog} style={{ marginLeft: 'auto' }}>
+            <i className="bi bi-x-lg"></i>
+          </Button>
+        </Modal.Header>
+        <Modal.Body className="bg-dark text-white" style={{ height: '70vh', overflowY: 'auto' }}>
+          <Tabs defaultActiveKey="overview" id="city-details-tabs" className="mb-3">
+            <Tab eventKey="overview" title="Overview">
+              {selectedCity ? (
+                <div style={{ color: '#f5f5f5' }}>
+                  <h5 style={{ color: '#ffffff' }}>{selectedCity.name}</h5>
+                  <p style={{ color: '#e6e6e6' }}><strong>Population:</strong> {selectedCity.population ?? 1}</p>
+                  <p style={{ color: '#e6e6e6' }}><strong>Location:</strong> ({selectedCity.col}, {selectedCity.row})</p>
+                  <div className="mb-3">
+                    <strong>Yields</strong>
+                    <ul>
+                      <li>Food: {selectedCity.yields?.food ?? selectedCity.food ?? 0}</li>
+                      <li>Production: {selectedCity.yields?.production ?? selectedCity.production ?? 0}</li>
+                      <li>Trade: {selectedCity.yields?.trade ?? 0}</li>
+                      <li>Science: {selectedCity.science ?? 0}</li>
+                      <li>Gold: {selectedCity.gold ?? 0}</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h6 style={{ color: '#ffffff' }}>Buildings</h6>
+                    {selectedCity.buildings && selectedCity.buildings.length > 0 ? (
+                      <ul style={{ color: '#e6e6e6' }}>
+                        {selectedCity.buildings.map((building: any, i: number) => <li key={i}>{building}</li>)}
+                      </ul>
+                    ) : <p style={{ color: '#e6e6e6' }}>No buildings</p>}
+                  </div>
+                </div>
+              ) : (
+                <p style={{ color: '#e6e6e6' }}>No city selected</p>
+              )}
+            </Tab>
+            <Tab eventKey="raw" title="Raw JSON">
+              <pre style={{ whiteSpace: 'pre-wrap', color: '#ccc', background: '#0b0b0b', padding: 8 }}>
+                {JSON.stringify(selectedCity, null, 2)}
+              </pre>
+            </Tab>
+          </Tabs>
+        </Modal.Body>
+      </Modal>
+    );
+  };
+
   return (
     <>
       {renderGameMenu()}
       {renderTechTree()}
       {renderDiplomacy()}
       {renderHelp()}
+      {renderCityDetails()}
     </>
   );
 };

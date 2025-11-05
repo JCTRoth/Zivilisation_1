@@ -11,10 +11,13 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
   const playerUnits = useGameStore((s) => s.playerUnits);
   const playerCities = useGameStore((s) => s.playerCities);
   const selectedUnit = useGameStore((s) => s.selectedUnit);
-  const selectedCity = useGameStore((s) => s.selectedCity);
+  const selectedCityId: string | null = useGameStore((s) => s.gameState.selectedCity);
+  const cities = useGameStore((s) => s.cities);
   const playerResources = useGameStore((s) => s.playerResources);
   const uiState = useGameStore((s) => s.uiState);
   const actions = useGameStore((s) => s.actions);
+
+  const selectedCity = cities.find(c => c.id === selectedCityId);
 
   // Compute a display player so the panel renders meaningful placeholders
   const displayPlayer = currentPlayer || (civilizations && civilizations.length > 0 ? civilizations[0] : {

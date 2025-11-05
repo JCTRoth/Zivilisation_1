@@ -10,9 +10,12 @@ interface BottomPanelProps {
 
 const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
   const selectedUnit = useGameStore(state => state.selectedUnit);
-  const selectedCity = useGameStore(state => state.selectedCity);
+  const selectedCityId: string | null = useGameStore(state => state.gameState.selectedCity);
+  const cities = useGameStore(state => state.cities);
   const uiState = useGameStore(state => state.uiState);
   const actions = useGameStore(state => state.actions);
+
+  const selectedCity = cities.find(c => c.id === selectedCityId);
 
   // Don't show panel if nothing is selected
   if (!uiState.showUnitPanel && !uiState.showCityPanel) {

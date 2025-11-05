@@ -68,6 +68,9 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
           actions.updateCities(gameEngine.getAllCities());
           actions.updateUnits(gameEngine.getAllUnits());
           actions.updateVisibility();
+          if (eventData.city.civilizationId === 0) {
+            actions.selectCity(eventData.city.id);
+          }
           actions.addNotification({
             type: 'info',
             message: `${eventData.city.name} founded!`
