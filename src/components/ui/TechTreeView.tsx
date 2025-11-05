@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Technology } from '../../../types/game';
 import { TECHNOLOGIES_DATA } from '../../game/technologyData';
+import '../../styles/TechTreeView.css';
 
 // Very small, dependency-free tree renderer using SVG.
 // It lays out nodes in levels based on prerequisite depth and draws straight links.
@@ -57,10 +58,88 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
 
   const svgHeight = Math.max(200, (depths.length) * (nodeHeight + verticalSpacing) + 40);
   const svgWidth = Math.max(width, maxRowWidth + 40);
+  // selected path state and helpers for finding path from roots
+  const [selectedPath, setSelectedPath] = useState<string[] | null>(null);
+  const [animatingNodes, setAnimatingNodes] = useState<Set<string>>(new Set());
+
+  const childrenMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    techs.forEach(t => {
+      (t.prerequisites || []).forEach(p => {
+        if (!map[p]) map[p] = [];
+        map[p].push(t.id);
+      });
+    });
+    return map;
+  }, [techs]);
+
+  const findPathTo = (targetId: string): string[] | null => {
+    const roots = techs.filter(t => !t.prerequisites || t.prerequisites.length === 0).map(t => t.id);
+    const visited = new Set<string>();
+    const stack: string[] = [];
+
+    const dfs = (nodeId: string): boolean => {
+      if (visited.has(nodeId)) return false;
+      visited.add(nodeId);
+      stack.push(nodeId);
+      if (nodeId === targetId) return true;
+      const children = childrenMap[nodeId] || [];
+      for (const c of children) {
+        if (dfs(c)) return true;
+      }
+      stack.pop();
+      return false;
+    };
+
+    for (const r of roots) {
+      visited.clear();
+      stack.length = 0;
+      if (dfs(r)) return [...stack];
+    }
+    return null;
+  };
+
+  const handleNodeClick = (techId: string) => {
+    const path = findPathTo(techId);
+    if (path) setSelectedPath(path);
+    else setSelectedPath([techId]);
+  };
+
+  useEffect(() => {
+    if (selectedPath) {
+      const unresearchedInPath = selectedPath.filter(id => {
+        const tech = techs.find(t => t.id === id);
+        return tech && !tech.researched;
+      });
+      setAnimatingNodes(new Set(unresearchedInPath));
+      const timer = setTimeout(() => setAnimatingNodes(new Set()), 3000); // 3 seconds for 5 pulses
+      return () => clearTimeout(timer);
+    } else {
+      setAnimatingNodes(new Set());
+    }
+  }, [selectedPath, techs]);
+
+  const isLinkOnPath = (fromId: string, toId: string) => {
+    if (!selectedPath) return false;
+    const fromIndex = selectedPath.indexOf(fromId);
+    const toIndex = selectedPath.indexOf(toId);
+    return fromIndex !== -1 && toIndex !== -1 && Math.abs(fromIndex - toIndex) === 1;
+  };
 
   return (
     <div style={{ overflow: 'auto' }}>
-  <svg width={svgWidth} height={svgHeight} style={{ background: 'transparent' }}>
+      {selectedPath && (
+        <div style={{ padding: 8, color: '#fff', textAlign: 'center', fontSize: '14px' }}>
+          <strong>Path:</strong> {selectedPath.map(id => techs.find(t => t.id === id)?.name || id).join(' > ')}
+        </div>
+      )}
+      <svg width={svgWidth} height={svgHeight} style={{ background: 'transparent' }}>
+        <defs>
+          <pattern id="unresearchedPattern" patternUnits="userSpaceOnUse" width="10" height="10">
+            <rect width="10" height="10" fill="transparent"/>
+            <line x1="0" y1="0" x2="10" y2="10" stroke="lightblue" strokeWidth="2"/>
+          </pattern>
+        </defs>
         {/* links */}
         {techs.map(tech => (
           tech.prerequisites?.map(pr => {
@@ -71,8 +150,9 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
             const y1 = from.y + nodeHeight;
             const x2 = to.x + nodeWidth / 2;
             const y2 = to.y;
+            const onPath = isLinkOnPath(pr, tech.id);
             return (
-              <line key={`${pr}-${tech.id}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(255,255,255,0.2)" strokeWidth={2} />
+              <line key={`${pr}-${tech.id}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={onPath ? 'red' : 'rgba(255,255,255,0.1)'} strokeWidth={2} />
             );
           })
         ))}
@@ -81,9 +161,11 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
         {techs.map(tech => {
           const pos = positions[tech.id];
           if (!pos) return null;
+          const isAnimating = animatingNodes.has(tech.id);
+          const fill = isAnimating ? 'url(#unresearchedPattern)' : (tech.researched ? '#2f855a' : tech.available ? '#1e90ff' : '#444');
           return (
-            <g key={tech.id} transform={`translate(${pos.x},${pos.y})`}>
-              <rect width={nodeWidth} height={nodeHeight} rx={6} ry={6} fill={tech.researched ? '#2f855a' : tech.available ? '#1e90ff' : '#444'} stroke="#0b00a4ff" />
+            <g key={tech.id} transform={`translate(${pos.x},${pos.y})`} onClick={() => handleNodeClick(tech.id)} style={{ cursor: 'pointer' }} className={isAnimating ? 'pulse' : ''}>
+              <rect width={nodeWidth} height={nodeHeight} rx={6} ry={6} fill={fill} stroke="#0b00a4ff" />
               <text x={12} y={20} style={{ fill: '#fff', fontSize: 14, fontWeight: 600 }}>{tech.name}</text>
               <text x={12} y={36} style={{ fill: '#ddd', fontSize: 12 }}>{tech.cost} sci</text>
             </g>
