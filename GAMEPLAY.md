@@ -211,7 +211,7 @@ Have the highest civilization score when the game ends in 2100 AD.
 - **M** - Mine
 - **R** - Build road
 - **Ctrl+S** - Quick save
-- **F1** - Civilopedia
+- **F1** - Info Menu (Tech Tree)
 - **F2** - City list
 - **F3** - Technology tree
 
@@ -321,7 +321,7 @@ Have the highest civilization score when the game ends in 2100 AD.
 
 ### Planned Features
 - 📋 Save/load game system
-- 📋 Full civilopedia
+- 📋 Full tech tree
 - 📋 Animated unit combat
 - 📋 Sound effects and music
 - 📋 Multiplayer support (hot-seat)

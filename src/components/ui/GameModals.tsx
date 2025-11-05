@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
+import TechTreeView from './TechTreeView';
 import { useGameStore } from '../../stores/gameStore';
 
 const GameModals = ({ gameEngine }) => {
@@ -9,6 +10,7 @@ const GameModals = ({ gameEngine }) => {
   const selectedCityId: string | null = useGameStore(state => state.gameState.selectedCity);
   const cities = useGameStore(state => state.cities);
   const technologies = useGameStore(state => state.technologies);
+  const playerResources = useGameStore(state => state.playerResources);
   const currentPlayer = useGameStore(state => state.currentPlayer);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
@@ -31,6 +33,35 @@ const GameModals = ({ gameEngine }) => {
       gameEngine.setResearch(currentPlayer.id, techId);
     }
     handleCloseDialog();
+  };
+
+  // Helpers: compute prerequisite depth (used to infer era) and group by era
+  const getPrerequisiteDepth = (techId: string, visited = new Set()): number => {
+    const tech = technologies?.find(t => t.id === techId);
+    if (!tech || visited.has(techId)) return 0;
+    visited.add(techId);
+    if (!tech.prerequisites || tech.prerequisites.length === 0) return 0;
+    const depths = tech.prerequisites.map(pr => getPrerequisiteDepth(pr, new Set(visited)));
+    return Math.max(...depths) + 1;
+  };
+
+  const eraFromDepth = (depth: number) => {
+    if (depth === 0) return 'Ancient';
+    if (depth === 1) return 'Classical';
+    if (depth === 2) return 'Medieval';
+    if (depth === 3) return 'Renaissance';
+    return 'Industrial';
+  };
+
+  const groupByEra = (list) => {
+    const groups: Record<string, typeof list> = {};
+    (list || []).forEach(tech => {
+      const depth = getPrerequisiteDepth(tech.id);
+      const era = eraFromDepth(depth);
+      if (!groups[era]) groups[era] = [];
+      groups[era].push(tech);
+    });
+    return groups;
   };
 
   // Game Menu Modal
@@ -80,35 +111,56 @@ const GameModals = ({ gameEngine }) => {
       show={uiState.activeDialog === 'tech'} 
       onHide={handleCloseDialog} 
       centered
-      size="lg"
+      fullscreen={true}
+      dialogClassName="tech-tree-modal"
     >
       <Modal.Header closeButton className="bg-dark text-white">
         <Modal.Title>
           <i className="bi bi-lightbulb"></i> Technology Tree
         </Modal.Title>
       </Modal.Header>
-      <Modal.Body className="bg-dark text-white" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-        <Tabs defaultActiveKey="available" className="mb-3">
+      <Modal.Body className="bg-dark text-white" style={{ maxHeight: '88vh', overflowY: 'auto', padding: '1.5rem' }}>
+  <Tabs defaultActiveKey="tree" className="mb-3">
+          {/* Tree tab first for immediate visual overview */}
+          <Tab eventKey="tree" title="Tree">
+            <div style={{ height: '80vh', overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+              <React.Suspense fallback={<div className="text-white p-3">Loading tree...</div>}>
+                <TechTreeView technologies={technologies} width={Math.max(window.innerWidth - 200, 800)} />
+              </React.Suspense>
+            </div>
+          </Tab>
           <Tab eventKey="available" title="Available">
             <div className="tech-tree">
-              {technologies.filter(tech => tech.available && !tech.researched).map(tech => (
-                <Card 
-                  key={tech.id} 
-                  className="tech-node available mb-2"
-                  onClick={() => handleResearchTechnology(tech.id)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <Card.Body>
-                    <Card.Title className="h6">{tech.name}</Card.Title>
-                    <Card.Text className="small">{tech.description}</Card.Text>
-                    <div className="d-flex justify-content-between">
-                      <small>Cost: {tech.cost} science</small>
-                      {currentPlayer?.currentResearch?.id === tech.id && (
-                        <small className="text-warning">Researching...</small>
-                      )}
-                    </div>
-                  </Card.Body>
-                </Card>
+              {Object.entries(groupByEra(technologies.filter(tech => tech.available && !tech.researched))).map(([era, techs]) => (
+                <div key={era} className="mb-3">
+                  <h6 className="text-white">{era}</h6>
+                  {techs.map(tech => {
+                    const affordable = (playerResources?.science || 0) >= (tech.cost || 0);
+                    const isResearching = currentPlayer?.currentResearch?.id === tech.id;
+                    return (
+                      <Card key={tech.id} className="tech-node available mb-2">
+                        <Card.Body className="d-flex align-items-center justify-content-between">
+                          <div>
+                            <Card.Title className="h6 mb-1">{tech.name}</Card.Title>
+                            <Card.Text className="small mb-0">{tech.description}</Card.Text>
+                            <small className="text-muted">Cost: {tech.cost} science</small>
+                          </div>
+                          <div>
+                            {isResearching && <small className="text-warning me-2">Researching...</small>}
+                            <Button
+                              size="sm"
+                              variant={affordable ? 'primary' : 'secondary'}
+                              disabled={!affordable || !tech.available || isResearching}
+                              onClick={() => handleResearchTechnology(tech.id)}
+                            >
+                              {affordable ? 'Research' : 'Need Science'}
+                            </Button>
+                          </div>
+                        </Card.Body>
+                      </Card>
+                    );
+                  })}
+                </div>
               ))}
             </div>
           </Tab>
@@ -131,19 +183,23 @@ const GameModals = ({ gameEngine }) => {
           
           <Tab eventKey="locked" title="Future">
             <div className="tech-tree">
-              {technologies.filter(tech => !tech.available && !tech.researched).map(tech => (
-                <Card key={tech.id} className="tech-node locked mb-2">
-                  <Card.Body>
-                    <Card.Title className="h6">{tech.name}</Card.Title>
-                    <Card.Text className="small">{tech.description}</Card.Text>
-                    <small className="text-muted">
-                      Prerequisites: {tech.prerequisites?.join(', ') || 'None'}
-                    </small>
-                  </Card.Body>
-                </Card>
+              {Object.entries(groupByEra(technologies.filter(tech => !tech.available && !tech.researched))).map(([era, techs]) => (
+                <div key={era} className="mb-3">
+                  <h6 className="text-white">{era}</h6>
+                  {techs.map(tech => (
+                    <Card key={tech.id} className="tech-node locked mb-2">
+                      <Card.Body>
+                        <Card.Title className="h6">{tech.name}</Card.Title>
+                        <Card.Text className="small">{tech.description}</Card.Text>
+                        <small className="text-muted">Prerequisites: {tech.prerequisites?.join(', ') || 'None'}</small>
+                      </Card.Body>
+                    </Card>
+                  ))}
+                </div>
               ))}
             </div>
           </Tab>
+          
         </Tabs>
       </Modal.Body>
     </Modal>

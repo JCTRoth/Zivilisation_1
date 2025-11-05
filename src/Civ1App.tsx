@@ -215,7 +215,7 @@ function Civ1App() {
       >
         {/* Menu items */}
         <div className="d-flex flex-grow-1 h-100 justify-content-center align-items-center">
-          {['GAME', 'ORDERS', 'ADVISORS', 'WORLD', 'CIVILOPEDIA'].map((item) => (
+          {['GAME', 'ORDERS', 'ADVISORS', 'WORLD', 'INFO'].map((item) => (
             <button
               key={item}
               ref={(el) => menuRefs.current[item] = el}
@@ -430,6 +430,34 @@ function Civ1App() {
                 onClick={() => console.log('Civ1App: Quit clicked')}
               >
                 🚪 Quit
+              </button>
+            </div>
+          )}
+          {activeMenu === 'INFO' && (
+            <div>
+              <button 
+                className="btn btn-dark text-start w-100 border-0"
+                style={{
+                  fontSize: `${settings.menuFontSize * 1.1}px`,
+                  padding: '12px 16px',
+                  fontWeight: '600',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  (e.target as HTMLElement).style.background = 'linear-gradient(90deg, #3182ce 0%, #2c5aa0 100%)';
+                  (e.target as HTMLElement).style.paddingLeft = '24px';
+                }}
+                onMouseLeave={(e) => {
+                  (e.target as HTMLElement).style.background = 'transparent';
+                  (e.target as HTMLElement).style.paddingLeft = '16px';
+                }}
+                onClick={() => {
+                  console.log('Civ1App: Tech Tree clicked');
+                  actions.showDialog('tech');
+                  setActiveMenu(null);
+                }}
+              >
+                🌳 Tech Tree
               </button>
             </div>
           )}
