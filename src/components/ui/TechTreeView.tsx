@@ -61,6 +61,8 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
   // selected path state and helpers for finding path from roots
   const [selectedPath, setSelectedPath] = useState<string[] | null>(null);
   const [animatingNodes, setAnimatingNodes] = useState<Set<string>>(new Set());
+  const [hoveredTech, setHoveredTech] = useState<Technology | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
 
   const childrenMap = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -103,6 +105,16 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
     const path = findPathTo(techId);
     if (path) setSelectedPath(path);
     else setSelectedPath([techId]);
+  };
+
+  const handleNodeMouseEnter = (tech: Technology, event: React.MouseEvent) => {
+    setHoveredTech(tech);
+    setTooltipPosition({ x: event.clientX + 10, y: event.clientY + 10 });
+  };
+
+  const handleNodeMouseLeave = () => {
+    setHoveredTech(null);
+    setTooltipPosition(null);
   };
 
   useEffect(() => {
@@ -164,7 +176,15 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
           const isAnimating = animatingNodes.has(tech.id);
           const fill = isAnimating ? 'url(#unresearchedPattern)' : (tech.researched ? '#2f855a' : tech.available ? '#1e90ff' : '#444');
           return (
-            <g key={tech.id} transform={`translate(${pos.x},${pos.y})`} onClick={() => handleNodeClick(tech.id)} style={{ cursor: 'pointer' }} className={isAnimating ? 'pulse' : ''}>
+            <g 
+              key={tech.id} 
+              transform={`translate(${pos.x},${pos.y})`} 
+              onClick={() => handleNodeClick(tech.id)} 
+              onMouseEnter={(e) => handleNodeMouseEnter(tech, e)}
+              onMouseLeave={handleNodeMouseLeave}
+              style={{ cursor: 'pointer' }} 
+              className={isAnimating ? 'pulse' : ''}
+            >
               <rect width={nodeWidth} height={nodeHeight} rx={6} ry={6} fill={fill} stroke="#0b00a4ff" />
               <text x={12} y={20} style={{ fill: '#fff', fontSize: 14, fontWeight: 600 }}>{tech.name}</text>
               <text x={12} y={36} style={{ fill: '#ddd', fontSize: 12 }}>{tech.cost} sci</text>
@@ -177,6 +197,43 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
           </g>
         )}
       </svg>
+      
+      {/* Bootstrap-styled tooltip */}
+      {hoveredTech && tooltipPosition && (
+        <div 
+          className="tooltip show" 
+          style={{
+            position: 'fixed',
+            left: tooltipPosition.x,
+            top: tooltipPosition.y,
+            zIndex: 1000,
+            pointerEvents: 'none'
+          }}
+        >
+          <div className="tooltip-inner bg-dark text-light p-2 border border-warning rounded">
+            <div className="fw-bold">{hoveredTech.name}</div>
+            <div className="small text-warning">Cost: {hoveredTech.cost} science</div>
+            {hoveredTech.description && (
+              <div className="small mt-1">{hoveredTech.description}</div>
+            )}
+            {hoveredTech.prerequisites && hoveredTech.prerequisites.length > 0 && (
+              <div className="small mt-1 text-muted">
+                Prerequisites: {hoveredTech.prerequisites.map(id => 
+                  techs.find(t => t.id === id)?.name || id
+                ).join(', ')}
+              </div>
+            )}
+            <div className="small mt-1">
+              Status: {hoveredTech.researched ? 
+                <span className="text-success">✓ Researched</span> : 
+                hoveredTech.available ? 
+                  <span className="text-info">Available</span> : 
+                  <span className="text-secondary">Locked</span>
+              }
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
