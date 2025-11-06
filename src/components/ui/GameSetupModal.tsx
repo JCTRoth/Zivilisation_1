@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, Button, Form, Row, Col } from 'react-bootstrap';
 import { CIVILIZATIONS, DIFFICULTY_LEVELS } from '../../game/gameData';
+import '../../styles/gameSetupModal.css';
 
 function GameSetupModal({ show, onStart }) {
   const [currentStep, setCurrentStep] = useState(1);
@@ -38,53 +39,34 @@ function GameSetupModal({ show, onStart }) {
 
   return (
     <Modal show={show} centered size="xl" backdrop="static" keyboard={false} fullscreen>
-      <Modal.Header style={{ backgroundColor: '#1a1a1a', color: 'white', borderBottom: '2px solid #ffd700' }}>
+      <Modal.Header className="modal-header-custom">
         <Modal.Title className="w-100 text-center">
-          <h2 style={{ fontSize: '32px', marginBottom: '8px' }}>🏛️ Zivilisation 1 - Game Setup</h2>
-          <small style={{ fontSize: '18px', color: '#aaa' }}>Step {currentStep} of {totalSteps}</small>
+          <h2 className="modal-title">🏛️ Zivilisation 1 - Game Setup</h2>
+          <small className="modal-subtitle">Step {currentStep} of {totalSteps}</small>
         </Modal.Title>
       </Modal.Header>
       
-      <Modal.Body style={{ 
-        backgroundColor: '#2a2a2a', 
-        color: 'white', 
-        padding: '0',
-        display: 'grid',
-        gridTemplateRows: '1fr',
-        overflow: 'auto'
-      }}>
-        <div style={{ 
-          maxWidth: '1400px', 
-          width: '100%', 
-          margin: '0 auto',
-          padding: '40px',
-          display: 'grid',
-          gridTemplateRows: 'auto',
-          alignContent: 'start'
-        }}>
+      <Modal.Body className="modal-body-custom">
+        <div className="modal-content">
         {/* Step 1: Civilization Selection */}
         {currentStep === 1 && (
           <>
         <div className="mb-4">
-          <h4 style={{ color: '#ffd700', borderBottom: '1px solid #444', paddingBottom: '8px', fontSize: '24px', marginTop: '-30px' }}>
+          <h4 className="step-title">
             Choose Your Civilization
           </h4>
           <Row className="mt-3">
             {CIVILIZATIONS.map((civ, idx) => (
               <Col key={idx} xs={6} md={4} lg={3} className="mb-3">
                 <div
+                  className="civ-card"
                   onClick={() => {
                     console.log(`[CLICK] GameSetup select civilization: ${CIVILIZATIONS[idx].name} (${idx})`);
                     setSelectedCiv(idx);
                   }}
                   style={{
-                    padding: '12px',
                     border: selectedCiv === idx ? '3px solid #ffd700' : '2px solid #555',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    backgroundColor: selectedCiv === idx ? '#3a3a3a' : '#333',
-                    transition: 'all 0.2s',
-                    textAlign: 'center'
+                    backgroundColor: selectedCiv === idx ? '#3a3a3a' : '#333'
                   }}
                   onMouseEnter={(e) => {
                     if (selectedCiv !== idx) {
@@ -97,26 +79,26 @@ function GameSetupModal({ show, onStart }) {
                     }
                   }}
                 >
-                  <div style={{ fontSize: '28px', marginBottom: '4px', minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div className="civ-icon-container">
                     {civ.name === 'Americans' && '🦅'}
                     {civ.name === 'Aztecs' && '🐆'}
                     {civ.name === 'Babylonians' && '🏺'}
                     {civ.name === 'Chinese' && '🐉'}
                     {civ.name === 'Germans' && '✠'}
-                    {civ.name === 'Egyptians' && <span style={{ fontSize: '36px', color: '#FFD700' }}>𓂀</span>}
+                    {civ.name === 'Egyptians' && <span className="civ-icon-egypt">𓂀</span>}
                     {civ.name === 'English' && '🇬🇧'}
                     {civ.name === 'French' && '🇫🇷🥖'}
                     {civ.name === 'Greeks' && '🏛️'}
                     {civ.name === 'Indians' && '🇮🇳'}
                     {civ.name === 'Mongols' && '🏹🐎'}
                     {civ.name === 'Romans' && '⚔️'}
-                    {civ.name === 'Russians' && <span style={{ fontSize: '36px', color: '#DC143C' }}>☭</span>}
-                    {civ.name === 'Zulus' && <span style={{ fontSize: '32px' }}>🛡️</span>}
+                    {civ.name === 'Russians' && <span className="civ-icon-russia">☭</span>}
+                    {civ.name === 'Zulus' && <span className="civ-icon-zulu">🛡️</span>}
                   </div>
-                  <div style={{ fontWeight: 'bold', fontSize: '16px', color: civ.color }}>
+                  <div className="civ-name" style={{ color: civ.color }}>
                     {civ.name}
                   </div>
-                  <div style={{ fontSize: '14px', color: '#aaa' }}>
+                  <div className="civ-leader">
                     {civ.leader}
                   </div>
                 </div>
@@ -127,14 +109,14 @@ function GameSetupModal({ show, onStart }) {
 
         {/* Selected Civilization Info */}
         {selectedCiv !== null && (
-          <div className="p-2" style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', border: '1px solid #444' }}>
-            <span style={{ color: CIVILIZATIONS[selectedCiv].color, fontSize: '16px', fontWeight: 'bold' }}>
+          <div className="p-2 selected-civ-display">
+            <span className="selected-civ-name" style={{ color: CIVILIZATIONS[selectedCiv].color }}>
               {CIVILIZATIONS[selectedCiv].name}
             </span>
-            <span style={{ fontSize: '14px', marginLeft: '12px' }}>
+            <span className="selected-civ-leader">
               <strong>Leader:</strong> {CIVILIZATIONS[selectedCiv].leader}
             </span>
-            <span style={{ fontSize: '14px', color: '#aaa', marginLeft: '12px' }}>
+            <span className="selected-civ-color">
               <strong>Cities:</strong> {CIVILIZATIONS[selectedCiv].cityNames.slice(0, 3).join(', ')}...
             </span>
           </div>
@@ -145,22 +127,16 @@ function GameSetupModal({ show, onStart }) {
         {/* Step 2: Game Settings & Summary */}
         {currentStep === 2 && (
           <>
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(3, 1fr)', 
-          gap: '30px',
-          marginBottom: '30px'
-        }}>
+        <div className="controls-container">
           {/* Difficulty Level */}
           <div>
-            <h4 style={{ color: '#ffd700', borderBottom: '1px solid #444', paddingBottom: '8px', fontSize: '24px', marginTop: '0' }}>
+            <h4 className="controls-title">
               Difficulty Level
             </h4>
             <Form.Select
               value={difficulty}
               onChange={(e) => setDifficulty(e.target.value)}
-              style={{ backgroundColor: '#333', color: 'white', border: '1px solid #555', fontSize: '16px', padding: '10px' }}
-              className="mt-2"
+              className="mt-2 control-select"
             >
               <option value="CHIEFTAIN">Chieftain (Easiest)</option>
               <option value="WARLORD">Warlord (Easy)</option>
@@ -168,14 +144,14 @@ function GameSetupModal({ show, onStart }) {
               <option value="KING">King (Hard)</option>
               <option value="EMPEROR">Emperor (Very Hard)</option>
             </Form.Select>
-            <small style={{ color: '#aaa', fontSize: '14px', display: 'block', marginTop: '8px' }}>
+            <small className="control-description">
               Difficulty affects AI advantages, barbarian frequency, and game balance
             </small>
           </div>
 
           {/* Number of Civilizations */}
           <div>
-            <h4 style={{ color: '#ffd700', borderBottom: '1px solid #444', paddingBottom: '8px', fontSize: '24px', marginTop: '0' }}>
+            <h4 className="controls-title">
               Number of Civilizations
             </h4>
             <div className="d-flex align-items-center gap-3 mt-2">
@@ -197,14 +173,13 @@ function GameSetupModal({ show, onStart }) {
 
           {/* Map Type */}
           <div>
-            <h4 style={{ color: '#ffd700', borderBottom: '1px solid #444', paddingBottom: '8px', fontSize: '24px', marginTop: '0' }}>
+            <h4 className="controls-title">
               Map Type
             </h4>
             <Form.Select
               value={mapType}
               onChange={(e) => setMapType(e.target.value)}
-              style={{ backgroundColor: '#333', color: 'white', border: '1px solid #555', fontSize: '16px', padding: '10px' }}
-              className="mt-2"
+              className="mt-2 control-select"
             >
               <option value="EARTH">Earth (Realistic)</option>
               <option value="RANDOM">Random (Procedural)</option>
@@ -215,8 +190,8 @@ function GameSetupModal({ show, onStart }) {
         </div>
 
         {/* Game Summary */}
-        <div className="p-3" style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', border: '1px solid #444' }}>
-          <h6 style={{ color: '#ffd700', marginBottom: '12px', fontSize: '20px' }}>Game Summary</h6>
+        <div className="p-3 game-summary">
+          <h6 className="game-summary-title">Game Summary</h6>
           <Row>
             <Col md={6}>
               <p style={{ fontSize: '16px', marginBottom: '8px' }}>

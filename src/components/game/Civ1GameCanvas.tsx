@@ -3,6 +3,7 @@ import { useGameStore } from '../../stores/gameStore';
 import { UNIT_TYPES } from '../../game/gameData.js';
 import { CONSTANTS } from '../../utils/constants';
 import type { Tile } from '../../../types/game';
+import '../../styles/civ1GameCanvas.css';
 
 const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const canvasRef = useRef(null);
@@ -1047,7 +1048,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
                contextMenu.tile.unit ? `${contextMenu.tile.unit.type}` :
                `${TERRAIN_TYPES[contextMenu.tile.type]?.name}`}
             </strong>
-            <div style={{ fontSize: '10px', opacity: 0.8 }}>
+            <div className="context-menu-coords">
               ({contextMenu.hex.col}, {contextMenu.hex.row})
             </div>
           </div>
@@ -1055,12 +1056,11 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
           {contextMenu.options.map((option, index) => (
             <div key={index}>
               <button
-                className={`btn btn-sm w-100 text-start border-0 rounded-0 ${
+                className={`btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button ${
                   option.enabled ? 'btn-dark text-white' : 'btn-secondary text-muted'
                 }`}
                 disabled={!option.enabled}
                 onClick={() => option.submenu ? null : executeContextAction(option.action)}
-                style={{ fontSize: '11px' }}
               >
                 {option.label}
                 {option.submenu && ' ▶'}
@@ -1071,9 +1071,8 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
                   {option.submenu.map((subOption, subIndex) => (
                     <button
                       key={subIndex}
-                      className="btn btn-sm btn-dark text-white w-100 text-start border-0 rounded-0"
+                      className="btn btn-sm btn-dark text-white w-100 text-start border-0 rounded-0 context-menu-sub-button"
                       onClick={() => executeContextAction(subOption.action)}
-                      style={{ fontSize: '10px', paddingLeft: '20px' }}
                     >
                       {subOption.label}
                     </button>
@@ -1082,7 +1081,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
               )}
               
               {option.description && (
-                <div className="px-2 py-1 bg-info text-dark" style={{ fontSize: '9px' }}>
+                <div className="px-2 py-1 bg-info text-dark context-menu-description">
                   {option.description}
                 </div>
               )}

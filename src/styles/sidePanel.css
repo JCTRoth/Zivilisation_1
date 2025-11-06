@@ -1,0 +1,146 @@
+/* SidePanel styles */
+
+.side-panel {
+  width: 100%;
+  background: #222831;
+  color: #ffffff;
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding-top: 6px;
+  display: grid;
+  grid-template-rows: auto 1fr 1fr;
+}
+
+.side-panel-header {
+  padding: 10px 12px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.06);
+}
+
+.side-panel-section {
+  padding: 12px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.04);
+  min-height: 120px;
+}
+
+.side-panel-small-muted {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
+
+.minimap-container {
+  width: 100%;
+}
+
+.header-flex {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.avatar-div {
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  background: var(--player-color, #4b8b3b);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.6) inset;
+}
+
+.icon-span {
+  font-size: 22px;
+}
+
+.name-div {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.player-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.player-leader {
+  margin-top: 2px;
+}
+
+.gold-div {
+  margin-top: 8px;
+}
+
+.gold-strong {
+  color: #9be6a8;
+  font-size: 15px;
+}
+
+.middle-section {
+  min-height: 140px;
+}
+
+.selected-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.unit-name {
+  font-weight: 700;
+}
+
+.unit-stats {
+  margin-top: 8px;
+}
+
+.unit-attack-defense {
+  margin-top: 4px;
+}
+
+.city-name {
+  font-weight: 700;
+}
+
+.city-production {
+  margin-top: 8px;
+}
+
+.no-selection-summary {
+  margin-top: 8px;
+}
+
+.bottom-section {
+  min-height: 340px;
+}
+
+.details-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.details-content {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+}
+
+.unit-name-details {
+  margin-bottom: 6px;
+}
+
+.location {
+  margin-top: 8px;
+}
+
+.stats-div {
+  margin-top: 8px;
+}
+
+.player-summary-title {
+  margin-bottom: 6px;
+}
+
+.summary-resources {
+  margin-top: 8px;
+}

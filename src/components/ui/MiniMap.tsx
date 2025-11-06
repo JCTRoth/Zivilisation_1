@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../../stores/gameStore';
+import '../../styles/miniMap.css';
 
 // Declare window properties
 declare global {
@@ -252,17 +253,10 @@ const MiniMap = ({ gameEngine }) => {
   };
 
   return (
-    <div className="minimap-container" ref={containerRef} style={{ width: '100%', height: 'auto' }}>
+    <div className="minimap-container" ref={containerRef}>
       <canvas
         ref={canvasRef}
-        className="border border-secondary"
-        style={{
-          width: '100%',
-          height: 'auto',
-          cursor: 'pointer',
-          imageRendering: 'pixelated',
-          display: 'block'
-        }}
+        className="border border-secondary minimap-canvas"
         onClick={handleMinimapClick}
       />
     </div>

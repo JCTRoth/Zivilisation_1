@@ -1,0 +1,9 @@
+/* LoadingScreen styles */
+
+.loading-progress {
+  max-width: 400px;
+}
+
+.loading-bar {
+  height: 12px;
+}

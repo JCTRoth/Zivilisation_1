@@ -1,0 +1,14 @@
+/* MiniMap styles */
+
+.minimap-container {
+  width: 100%;
+  height: auto;
+}
+
+.minimap-canvas {
+  width: 100%;
+  height: auto;
+  cursor: pointer;
+  image-rendering: pixelated;
+  display: block;
+}

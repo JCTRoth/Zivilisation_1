@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ProgressBar } from 'react-bootstrap';
+import '../../styles/loadingScreen.css';
 
 const LoadingScreen = () => {
   const [progress, setProgress] = useState(0);
@@ -42,13 +43,12 @@ const LoadingScreen = () => {
           <span className="d-block d-sm-inline"> Browser</span>
         </h1>
         
-        <div className="loading-progress mb-3 mx-auto" style={{ maxWidth: '400px' }}>
+        <div className="loading-progress mb-3 mx-auto">
           <ProgressBar 
             now={progress} 
             variant="warning"
             animated
-            className="loading-progress-bar"
-            style={{ height: '12px' }}
+            className="loading-progress-bar loading-bar"
           />
         </div>
         

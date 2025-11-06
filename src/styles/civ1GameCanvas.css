@@ -1,0 +1,19 @@
+/* Civ1GameCanvas styles */
+
+.context-menu-coords {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.context-menu-button {
+  font-size: 11px;
+}
+
+.context-menu-sub-button {
+  font-size: 10px;
+  padding-left: 20px;
+}
+
+.context-menu-description {
+  font-size: 9px;
+}
