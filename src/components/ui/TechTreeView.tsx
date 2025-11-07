@@ -139,13 +139,13 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
   };
 
   return (
-    <div style={{ overflow: 'auto' }}>
+    <div className="tech-tree-container">
       {selectedPath && (
-        <div style={{ padding: 8, color: '#fff', textAlign: 'center', fontSize: '14px' }}>
+        <div className="tech-tree-path">
           <strong>Path:</strong> {selectedPath.map(id => techs.find(t => t.id === id)?.name || id).join(' > ')}
         </div>
       )}
-      <svg width={svgWidth} height={svgHeight} style={{ background: 'transparent' }}>
+      <svg width={svgWidth} height={svgHeight} className="tech-tree-svg">
         <defs>
           <pattern id="unresearchedPattern" patternUnits="userSpaceOnUse" width="10" height="10">
             <rect width="10" height="10" fill="transparent"/>
@@ -182,18 +182,17 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
               onClick={() => handleNodeClick(tech.id)} 
               onMouseEnter={(e) => handleNodeMouseEnter(tech, e)}
               onMouseLeave={handleNodeMouseLeave}
-              style={{ cursor: 'pointer' }} 
-              className={isAnimating ? 'pulse' : ''}
+              className={`tech-tree-node ${isAnimating ? 'pulse' : ''}`}
             >
               <rect width={nodeWidth} height={nodeHeight} rx={6} ry={6} fill={fill} stroke="#0b00a4ff" />
-              <text x={12} y={20} style={{ fill: '#fff', fontSize: 14, fontWeight: 600 }}>{tech.name}</text>
-              <text x={12} y={36} style={{ fill: '#ddd', fontSize: 12 }}>{tech.cost} sci</text>
+              <text x={12} y={20} className="tech-tree-node-text">{tech.name}</text>
+              <text x={12} y={36} className="tech-tree-node-cost">{tech.cost} sci</text>
             </g>
           );
         })}
         {techs.length === 0 && (
           <g>
-            <text x={20} y={30} style={{ fill: '#fff' }}>No technologies available</text>
+            <text x={20} y={30} className="tech-tree-no-tech">No technologies available</text>
           </g>
         )}
       </svg>

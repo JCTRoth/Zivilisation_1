@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import { useGameStore } from '../../stores/gameStore';
+import '../../styles/gameModals.css';
 
 const GameModals = ({ gameEngine }) => {
   console.log('[GameModals] Component rendering, gameEngine present:', !!gameEngine);
@@ -119,11 +120,11 @@ const GameModals = ({ gameEngine }) => {
           <i className="bi bi-lightbulb"></i> Technology Tree
         </Modal.Title>
       </Modal.Header>
-      <Modal.Body className="bg-dark text-white" style={{ maxHeight: '88vh', overflowY: 'auto', padding: '1.5rem' }}>
+      <Modal.Body className="bg-dark text-white tech-tree-modal-body">
   <Tabs defaultActiveKey="tree" className="mb-3">
           {/* Tree tab first for immediate visual overview */}
           <Tab eventKey="tree" title="Tree">
-            <div style={{ height: '80vh', overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+            <div className="tech-tree-container">
               <React.Suspense fallback={<div className="text-white p-3">Loading tree...</div>}>
                 <TechTreeView technologies={technologies} width={Math.max(window.innerWidth - 200, 800)} />
               </React.Suspense>
@@ -245,7 +246,7 @@ const GameModals = ({ gameEngine }) => {
           <i className="bi bi-question-circle"></i> Help & Controls
         </Modal.Title>
       </Modal.Header>
-      <Modal.Body className="bg-dark text-white" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+      <Modal.Body className="bg-dark text-white city-detail-modal-body">
         <Tabs defaultActiveKey="controls" className="mb-3">
           <Tab eventKey="controls" title="Controls">
             <h6>Mouse Controls:</h6>
@@ -352,25 +353,24 @@ const GameModals = ({ gameEngine }) => {
         onHide={handleCloseDialog}
         centered
         size="lg"
-        dialogClassName="city-details-modal"
-        style={{ maxWidth: '90vw', zIndex: 9999 }}
+        dialogClassName="city-details-modal hex-detail-modal"
       >
-        <Modal.Header className="bg-dark text-white" style={{ borderBottom: 'none' }}>
+        <Modal.Header className="bg-dark text-white hex-detail-modal-header">
           <Modal.Title>
             <i className="bi bi-building"></i> {selectedCity?.name || 'City Details'}
           </Modal.Title>
-          <Button variant="outline-light" size="sm" onClick={handleCloseDialog} style={{ marginLeft: 'auto' }}>
+          <Button variant="outline-light" size="sm" onClick={handleCloseDialog} className="hex-detail-close-button">
             <i className="bi bi-x-lg"></i>
           </Button>
         </Modal.Header>
-        <Modal.Body className="bg-dark text-white" style={{ height: '70vh', overflowY: 'auto' }}>
+        <Modal.Body className="bg-dark text-white hex-detail-modal-body">
           <Tabs defaultActiveKey="overview" id="city-details-tabs" className="mb-3">
             <Tab eventKey="overview" title="Overview">
               {selectedCity ? (
-                <div style={{ color: '#f5f5f5' }}>
-                  <h5 style={{ color: '#ffffff' }}>{selectedCity.name}</h5>
-                  <p style={{ color: '#e6e6e6' }}><strong>Population:</strong> {selectedCity.population ?? 1}</p>
-                  <p style={{ color: '#e6e6e6' }}><strong>Location:</strong> ({selectedCity.col}, {selectedCity.row})</p>
+                <div className="hex-detail-content">
+                  <h5 className="hex-detail-city-name">{selectedCity.name}</h5>
+                  <p className="hex-detail-city-info"><strong>Population:</strong> {selectedCity.population ?? 1}</p>
+                  <p className="hex-detail-city-info"><strong>Location:</strong> ({selectedCity.col}, {selectedCity.row})</p>
                   <div className="mb-3">
                     <strong>Yields</strong>
                     <ul>
@@ -382,20 +382,20 @@ const GameModals = ({ gameEngine }) => {
                     </ul>
                   </div>
                   <div>
-                    <h6 style={{ color: '#ffffff' }}>Buildings</h6>
+                    <h6 className="hex-detail-buildings-title">Buildings</h6>
                     {selectedCity.buildings && selectedCity.buildings.length > 0 ? (
-                      <ul style={{ color: '#e6e6e6' }}>
+                      <ul className="hex-detail-buildings-list">
                         {selectedCity.buildings.map((building: any, i: number) => <li key={i}>{building}</li>)}
                       </ul>
-                    ) : <p style={{ color: '#e6e6e6' }}>No buildings</p>}
+                    ) : <p className="hex-detail-no-buildings">No buildings</p>}
                   </div>
                 </div>
               ) : (
-                <p style={{ color: '#e6e6e6' }}>No city selected</p>
+                <p className="hex-detail-no-city">No city selected</p>
               )}
             </Tab>
             <Tab eventKey="raw" title="Raw JSON">
-              <pre style={{ whiteSpace: 'pre-wrap', color: '#ccc', background: '#0b0b0b', padding: 8 }}>
+              <pre className="hex-detail-debug">
                 {JSON.stringify(selectedCity, null, 2)}
               </pre>
             </Tab>

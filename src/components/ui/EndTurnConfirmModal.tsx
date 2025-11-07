@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, Button } from 'react-bootstrap';
+import '../../styles/endTurnConfirmModal.css';
 
 interface EndTurnConfirmModalProps {
   show: boolean;
@@ -30,13 +31,13 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
 
   return (
     <Modal show={show} onHide={handleCancel} centered>
-      <Modal.Header closeButton style={{ backgroundColor: '#2c3e50', color: 'white' }}>
+      <Modal.Header closeButton className="end-turn-modal-header">
         <Modal.Title>
           <i className="bi bi-skip-end-fill me-2"></i>
           End Turn?
         </Modal.Title>
       </Modal.Header>
-      <Modal.Body style={{ backgroundColor: '#34495e', color: 'white' }}>
+      <Modal.Body className="end-turn-modal-body">
         <div className="text-center mb-3">
           <h5>{isAutomatic ? 'All Your Units Have Moved!' : 'Are you ready to end your turn?'}</h5>
           <p className="text-muted mb-1">
@@ -52,7 +53,7 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
           }
         </div>
       </Modal.Body>
-      <Modal.Footer style={{ backgroundColor: '#2c3e50' }}>
+      <Modal.Footer className="end-turn-modal-footer">
         <Button variant="secondary" onClick={handleCancel}>
           <i className="bi bi-x-circle me-2"></i>
           Cancel

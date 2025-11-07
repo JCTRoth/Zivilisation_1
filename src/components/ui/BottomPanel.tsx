@@ -3,6 +3,7 @@ import { Card, Button, ButtonGroup, ProgressBar, ListGroup } from 'react-bootstr
 import { useGameStore } from '../../stores/gameStore';
 import { UNIT_PROPS, BUILDING_PROPS, UnitProperties } from '../../utils/constants';
 import type { GameEngine } from '../../../types/game';
+import '../../styles/bottomPanel.css';
 
 interface BottomPanelProps {
   gameEngine: GameEngine | null;
@@ -84,7 +85,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
       <Card bg="dark" text="white" className="m-2">
         <Card.Header className="d-flex justify-content-between align-items-center">
           <div className="d-flex align-items-center">
-            <span className="me-2" style={{ fontSize: '1.2em' }}>
+            <span className="me-2 bottom-panel-unit-icon">
               {unitProps.icon || '🔸'}
             </span>
             <strong>{unitProps.name || selectedUnit.type}</strong>
