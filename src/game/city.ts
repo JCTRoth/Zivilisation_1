@@ -44,6 +44,8 @@ interface CityInfo {
     gold: number;
     buildings: string[];
     civilization: string;
+    supportedUnits: string[];
+    garrisonedUnits: string[];
 }
 
 interface SerializedCity {
@@ -60,6 +62,8 @@ interface SerializedCity {
     productionProgress: number;
     workingTiles: string[];
     founded: number;
+    supportedUnitIds: string[];
+    garrisonedUnitIds: string[];
 }
 
 // City System
@@ -99,6 +103,10 @@ export class City extends EventEmitter {
     public unhappiness: number;
     public disorder: boolean;
 
+    // Unit support and garrison
+    public supportedUnitIds: Set<string>;
+    public garrisonedUnitIds: Set<string>;
+
     constructor(name: string, civilization: Civilization, col: number, row: number) {
         super();
 
@@ -137,6 +145,10 @@ export class City extends EventEmitter {
         this.unhappiness = 0;
         this.disorder = false;
 
+        // Unit support and garrison
+        this.supportedUnitIds = new Set();
+        this.garrisonedUnitIds = new Set();
+
         // Initialize with city center
         this.workingTiles.add(`${col},${row}`);
     }
@@ -147,10 +159,13 @@ export class City extends EventEmitter {
         this.calculateYields(gameMap);
 
         // Process food
-        this.processFood();
+        this.processFood(gameMap);
 
         // Process production
         this.processProduction();
+
+        // Process unit support and maintenance
+        this.processUnitSupport(gameMap);
 
         // Calculate happiness
         this.calculateHappiness();
@@ -239,7 +254,7 @@ export class City extends EventEmitter {
     }
 
     // Process food consumption and growth
-    processFood(): void {
+    processFood(gameMap: any): void {
         const foodNeeded = this.population * 2;
         const foodSurplus = this.food - foodNeeded;
 
@@ -249,7 +264,7 @@ export class City extends EventEmitter {
 
             const growthThreshold = this.getGrowthThreshold();
             if (this.foodStorage >= growthThreshold && this.population < this.maxPopulation) {
-                this.grow();
+                this.grow(gameMap);
             }
         } else if (foodSurplus < 0) {
             // City is starving
@@ -270,7 +285,7 @@ export class City extends EventEmitter {
     }
 
     // Grow city population
-    grow(): void {
+    grow(gameMap: any): void {
         this.population++;
         this.foodStorage = 0;
 
@@ -278,7 +293,7 @@ export class City extends EventEmitter {
         this.updateMaxPopulation();
 
         // Automatically assign new citizen to work best available tile
-        this.autoAssignWorker();
+        this.autoAssignWorker(gameMap);
 
         this.emit('grown', { city: this, newPopulation: this.population });
     }
@@ -344,6 +359,10 @@ export class City extends EventEmitter {
     produceUnit(unitType: string): void {
         const unit = new (require('./unit').Unit)(unitType, this.civilization, this.col, this.row);
 
+        // Set this city as the unit's home city
+        unit.homeCityId = this.id;
+        this.supportedUnitIds.add(unit.id);
+
         const gameMap = this.civilization.gameMap;
         const existingUnit = gameMap.getUnitAt(this.col, this.row);
 
@@ -379,6 +398,142 @@ export class City extends EventEmitter {
         }
 
         this.emit('buildingCompleted', { city: this, buildingType });
+    }
+
+    // Process unit support and maintenance costs
+    processUnitSupport(gameMap: any): void {
+        const maintenanceCost = this.calculateUnitMaintenanceCost(gameMap);
+
+        // Check if city can afford to support all units
+        if (this.production < maintenanceCost) {
+            // City cannot support all units - disband excess units
+            this.disbandUnits(gameMap, maintenanceCost);
+        }
+    }
+
+    // Calculate total maintenance cost for all supported units
+    calculateUnitMaintenanceCost(gameMap: any): number {
+        let totalCost = 0;
+
+        for (const unitId of this.supportedUnitIds) {
+            const unit = gameMap.unitManager.getUnit(unitId);
+            if (unit && unit.homeCityId === this.id) {
+                totalCost += unit.maintenance;
+            }
+        }
+
+        return totalCost;
+    }
+
+    // Disband units when city cannot afford maintenance
+    disbandUnits(gameMap: any, maxAffordableCost: number): void {
+        let currentCost = 0;
+        const unitsToKeep: string[] = [];
+        const unitsToDisband: string[] = [];
+
+        // Sort units by maintenance cost (cheapest first to keep)
+        const supportedUnits = Array.from(this.supportedUnitIds)
+            .map(unitId => gameMap.unitManager.getUnit(unitId))
+            .filter(unit => unit && unit.homeCityId === this.id)
+            .sort((a, b) => a!.maintenance - b!.maintenance);
+
+        for (const unit of supportedUnits) {
+            if (unit && currentCost + unit.maintenance <= maxAffordableCost) {
+                currentCost += unit.maintenance;
+                unitsToKeep.push(unit.id);
+            } else {
+                unitsToDisband.push(unit.id);
+            }
+        }
+
+        // Update supported units list
+        this.supportedUnitIds = new Set(unitsToKeep);
+
+        // Disband excess units
+        for (const unitId of unitsToDisband) {
+            const unit = gameMap.unitManager.getUnit(unitId);
+            if (unit) {
+                // Remove garrison status if unit was garrisoned
+                if (unit.garrisoned) {
+                    this.garrisonedUnitIds.delete(unitId);
+                }
+
+                gameMap.unitManager.removeUnit(unitId);
+                this.emit('unitDisbanded', { city: this, unit });
+            }
+        }
+    }
+
+    // Re-home a unit to this city
+    rehomeUnit(unitId: string, gameMap: any): boolean {
+        const unit = gameMap.unitManager.getUnit(unitId);
+        if (!unit || unit.civilization.id !== this.civilization.id) {
+            return false; // Can only re-home own civilization's units
+        }
+
+        // Remove from old home city
+        if (unit.homeCityId) {
+            // Find old home city in civilization's cities
+            const oldHomeCity = this.civilization.cities.find((city: any) => city.id === unit.homeCityId);
+            if (oldHomeCity && oldHomeCity !== this) {
+                oldHomeCity.supportedUnitIds.delete(unitId);
+            }
+        }
+
+        // Set new home city
+        unit.homeCityId = this.id;
+        this.supportedUnitIds.add(unitId);
+
+        this.emit('unitRehomed', { city: this, unit, oldHomeCityId: unit.homeCityId });
+        return true;
+    }
+
+    // Garrison a unit in this city
+    garrisonUnit(unitId: string, gameMap: any): boolean {
+        const unit = gameMap.unitManager.getUnit(unitId);
+        if (!unit || unit.homeCityId !== this.id || unit.garrisoned) {
+            return false;
+        }
+
+        // Check if unit is at city location
+        if (unit.col !== this.col || unit.row !== this.row) {
+            return false;
+        }
+
+        unit.garrisoned = true;
+        this.garrisonedUnitIds.add(unitId);
+
+        this.emit('unitGarrisoned', { city: this, unit });
+        return true;
+    }
+
+    // Ungarrison a unit from this city
+    ungarrisonUnit(unitId: string, gameMap: any): boolean {
+        const unit = gameMap.unitManager.getUnit(unitId);
+        if (!unit || !unit.garrisoned || !this.garrisonedUnitIds.has(unitId)) {
+            return false;
+        }
+
+        unit.garrisoned = false;
+        this.garrisonedUnitIds.delete(unitId);
+
+        this.emit('unitUngarrisoned', { city: this, unit });
+        return true;
+    }
+
+    // Get city defense bonus from garrisoned units
+    getGarrisonDefenseBonus(): number {
+        let bonus = 0;
+
+        // Base defense bonus from garrisoned units
+        bonus += this.garrisonedUnitIds.size * 0.5; // 50% defense per garrisoned unit
+
+        // Additional bonus from city walls
+        if (this.buildings.has('walls')) {
+            bonus += 3; // City walls provide +3 defense
+        }
+
+        return bonus;
     }
 
     // Start next production from queue
@@ -438,23 +593,8 @@ export class City extends EventEmitter {
     }
 
     // Auto-assign worker to best available tile
-    autoAssignWorker(): void {
-        const availableTiles = this.getAvailableTiles();
-        if (availableTiles.length === 0) return;
-
-        // Find tile with best food yield
-        let bestTile = availableTiles[0];
-        let bestScore = this.getTileScore(bestTile);
-
-        for (const tile of availableTiles) {
-            const score = this.getTileScore(tile);
-            if (score > bestScore) {
-                bestTile = tile;
-                bestScore = score;
-            }
-        }
-
-        this.assignWorker(bestTile);
+    autoAssignWorker(gameMap: any): void {
+        this.optimizeWorkerAssignment(gameMap);
     }
 
     // Remove worker from least productive tile
@@ -481,24 +621,201 @@ export class City extends EventEmitter {
         this.unassignWorker(worstTile);
     }
 
-    // Get available tiles for working
-    getAvailableTiles(): any[] {
+    // Get available tiles for working (tiles in radius that aren't already worked)
+    getAvailableTiles(gameMap: any): any[] {
         const availableTiles: any[] = [];
-        const cityRadius = 2;
+        const radiusTiles = this.getCityRadiusTiles(gameMap);
 
-        // This would need gameMap parameter in real implementation
-        // const tilesInRange = gameMap.grid.getHexesInRange(this.col, this.row, cityRadius);
-        // for (const tilePos of tilesInRange) {
-        //     const tile = gameMap.getTile(tilePos.col, tilePos.row);
-        //     const tileKey = `${tilePos.col},${tilePos.row}`;
-        //
-        //     if (tile && !this.workingTiles.has(tileKey) && tile.isExplored(this.civilization.id)) {
-        //         availableTiles.push(tile);
-        //     }
-        // }
+        for (const { col, row, tile } of radiusTiles) {
+            const tileKey = `${col},${row}`;
+
+            // Check if tile can be worked and isn't already assigned
+            if (this.canWorkTile(col, row, gameMap) && !this.workingTiles.has(tileKey)) {
+                availableTiles.push(tile);
+            }
+        }
 
         return availableTiles;
     }
+
+    // Get all tiles within city radius (2 squares in every direction except diagonally)
+    getCityRadiusTiles(gameMap: any): Array<{col: number, row: number, tile: any}> {
+        const radiusTiles: Array<{col: number, row: number, tile: any}> = [];
+
+        // City radius extends 2 squares in every direction except diagonally
+        // This creates a diamond-shaped area around the city
+        for (let dCol = -2; dCol <= 2; dCol++) {
+            for (let dRow = -2; dRow <= 2; dRow++) {
+                // Skip diagonals (only orthogonal and diagonal-adjacent tiles)
+                const manhattanDistance = Math.abs(dCol) + Math.abs(dRow);
+                if (manhattanDistance > 2 || manhattanDistance === 0) continue;
+
+                const tileCol = this.col + dCol;
+                const tileRow = this.row + dRow;
+
+                // Check bounds
+                if (tileCol >= 0 && tileCol < CONSTANTS.MAP_WIDTH &&
+                    tileRow >= 0 && tileRow < CONSTANTS.MAP_HEIGHT) {
+
+                    const tile = gameMap.getTile(tileCol, tileRow);
+                    if (tile) {
+                        radiusTiles.push({ col: tileCol, row: tileRow, tile });
+                    }
+                }
+            }
+        }
+
+        return radiusTiles;
+    }
+
+    // Check if a tile can be worked by this city
+    canWorkTile(tileCol: number, tileRow: number, gameMap: any): boolean {
+        const tile = gameMap.getTile(tileCol, tileRow);
+        if (!tile) return false;
+
+        // Check if tile is within city radius
+        const radiusTiles = this.getCityRadiusTiles(gameMap);
+        const isInRadius = radiusTiles.some(t => t.col === tileCol && t.row === tileRow);
+        if (!isInRadius) return false;
+
+        // Check if tile is already worked by another city
+        const tileKey = `${tileCol},${tileRow}`;
+        if (this.workingTiles.has(tileKey)) return false;
+
+        // Check if tile is explored by this civilization
+        if (!tile.explored) return false;
+
+        // Ocean tiles can only be worked if they have fish or are coastal
+        const terrainType = tile.type;
+        if (terrainType === 'ocean') {
+            return tile.resource === 'fish' || this.isCoastalTile(tileCol, tileRow, gameMap);
+        }
+
+        return true;
+    }
+
+    // Check if a tile is coastal (adjacent to land)
+    private isCoastalTile(tileCol: number, tileRow: number, gameMap: any): boolean {
+        const neighbors = gameMap.grid.getNeighbors(tileCol, tileRow);
+        return neighbors.some((neighbor: any) => {
+            const neighborTile = gameMap.getTile(neighbor.col, neighbor.row);
+            return neighborTile && neighborTile.type !== 'ocean';
+        });
+    }
+
+    // Evaluate city site quality based on resources and terrain
+    evaluateCitySite(gameMap: any): {
+        foodPotential: number;
+        productionPotential: number;
+        tradePotential: number;
+        resourceScore: number;
+        riverBonus: boolean;
+        overallScore: number;
+    } {
+        const radiusTiles = this.getCityRadiusTiles(gameMap);
+        let foodPotential = 0;
+        let productionPotential = 0;
+        let tradePotential = 0;
+        let resourceScore = 0;
+        let hasRiver = false;
+
+        for (const { tile } of radiusTiles) {
+            const yields = tile.getYields();
+
+            // Accumulate yields
+            foodPotential += yields.food;
+            productionPotential += yields.production;
+            tradePotential += yields.trade;
+
+            // Check for special resources
+            if (tile.resource) {
+                const resourceValue = this.getResourceValue(tile.resource);
+                resourceScore += resourceValue;
+            }
+
+            // Check for river
+            if (tile.hasRiver) {
+                hasRiver = true;
+                tradePotential += 1; // Rivers provide trade bonus
+            }
+
+            // Bonus for hills and forests (important resources)
+            if (tile.type === 'hills' || tile.type === 'forest') {
+                productionPotential += 0.5;
+            }
+        }
+
+        // Calculate overall score
+        // Cities need food to grow, production for buildings/units, trade for gold/science
+        const overallScore = (foodPotential * 2) + productionPotential + (tradePotential * 1.5) + (resourceScore * 3) + (hasRiver ? 2 : 0);
+
+        return {
+            foodPotential,
+            productionPotential,
+            tradePotential,
+            resourceScore,
+            riverBonus: hasRiver,
+            overallScore
+        };
+    }
+
+    // Get value of special resource
+    private getResourceValue(resource: string): number {
+        const resourceValues: Record<string, number> = {
+            'wheat': 1,
+            'fish': 2,
+            'game': 1,
+            'gems': 3,
+            'gold': 4,
+            'horses': 2,
+            'coal': 3,
+            'oil': 3,
+            'iron': 1,
+            'silk': 2
+        };
+
+        return resourceValues[resource] || 0;
+    }
+
+    // Get tiles that can be worked (considering population limit)
+    getWorkableTiles(gameMap: any): Array<{col: number, row: number, tile: any, yields: any}> {
+        const workableTiles: Array<{col: number, row: number, tile: any, yields: any}> = [];
+        const radiusTiles = this.getCityRadiusTiles(gameMap);
+
+        for (const { col, row, tile } of radiusTiles) {
+            if (this.canWorkTile(col, row, gameMap)) {
+                const yields = tile.getYields();
+                workableTiles.push({ col, row, tile, yields });
+            }
+        }
+
+        // Sort by food production (most important for growth)
+        workableTiles.sort((a, b) => b.yields.food - a.yields.food);
+
+        return workableTiles;
+    }
+
+    // Auto-assign workers to best available tiles
+    optimizeWorkerAssignment(gameMap: any): void {
+        // Reset all assignments except city center
+        const cityCenter = `${this.col},${this.row}`;
+        this.workingTiles.clear();
+        this.workingTiles.add(cityCenter);
+
+        const workableTiles = this.getWorkableTiles(gameMap);
+        const maxWorkers = Math.min(this.population, workableTiles.length + 1); // +1 for city center
+
+        // Assign workers to best tiles (prioritize food for growth)
+        for (let i = 0; i < maxWorkers - 1; i++) { // -1 because city center is already assigned
+            if (i < workableTiles.length) {
+                const tile = workableTiles[i];
+                const tileKey = `${tile.col},${tile.row}`;
+                this.workingTiles.add(tileKey);
+            }
+        }
+    }
+
+    // Serialize city for saving
 
     // Get score for tile (food priority for growth)
     getTileScore(tile: any): number {
@@ -537,7 +854,9 @@ export class City extends EventEmitter {
             science: this.science,
             gold: this.gold,
             buildings: Array.from(this.buildings),
-            civilization: this.civilization.name
+            civilization: this.civilization.name,
+            supportedUnits: Array.from(this.supportedUnitIds),
+            garrisonedUnits: Array.from(this.garrisonedUnitIds)
         };
     }
 
@@ -556,7 +875,9 @@ export class City extends EventEmitter {
             currentProduction: this.currentProduction,
             productionProgress: this.productionProgress,
             workingTiles: Array.from(this.workingTiles),
-            founded: this.founded
+            founded: this.founded,
+            supportedUnitIds: Array.from(this.supportedUnitIds),
+            garrisonedUnitIds: Array.from(this.garrisonedUnitIds)
         };
     }
 
@@ -572,6 +893,8 @@ export class City extends EventEmitter {
         city.productionProgress = data.productionProgress;
         city.workingTiles = new Set(data.workingTiles);
         city.founded = data.founded;
+        city.supportedUnitIds = new Set(data.supportedUnitIds || []);
+        city.garrisonedUnitIds = new Set(data.garrisonedUnitIds || []);
         return city;
     }
 }

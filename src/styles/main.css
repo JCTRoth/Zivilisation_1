@@ -5,27 +5,43 @@
     box-sizing: border-box;
 }
 
+:root {
+    /* Dark mode palette */
+    --bg: #07121a; /* deep page background */
+    --accent: #d4af37; /* gold highlight (kept) */
+    --heading: #f1c40f; /* brighter yellow for headings */
+    --panel-bg: #243b48; /* blue-gray inner panel */
+    --panel-bg-2: #2f4a5b; /* slightly lighter secondary panel */
+    --panel-inner: rgba(212,175,55,0.06);
+    --panel-border: rgba(212,175,55,0.14);
+    --topbar-start: #121315; /* dark charcoal for topbar */
+    --topbar-end: #1b2328;
+    --game-canvas-bg: #071010; /* near-black canvas background */
+    --side-start: #15242e;
+    --side-end: #263d48;
+}
+
 body {
     font-family: 'Arial', sans-serif;
-    background: #2c1810;
-    color: #d4af37;
+    background: var(--bg);
+    color: var(--accent);
     overflow: hidden;
 }
 
-#gameContainer {
+#gameContainer, .game-container {
     display: flex;
     flex-direction: column;
     height: 100vh;
 }
 
 /* Top Bar */
-#topBar {
+#topBar, .game-top-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: linear-gradient(135deg, #8B4513 0%, #654321 100%);
+    background: linear-gradient(135deg, var(--topbar-start) 0%, var(--topbar-end) 100%);
     padding: 10px 20px;
-    border-bottom: 2px solid #d4af37;
+    border-bottom: 2px solid var(--accent);
     box-shadow: 0 2px 5px rgba(0,0,0,0.3);
 }
 
@@ -40,7 +56,7 @@ body {
 }
 
 #gameControls button {
-    background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, #b81f1f 100%);
     border: 2px solid #8b7355;
     color: #2c1810;
     padding: 8px 16px;
@@ -52,58 +68,58 @@ body {
 }
 
 #gameControls button:hover {
-    background: linear-gradient(135deg, #e6c547 0%, #d4af37 100%);
+    background: linear-gradient(135deg, #e6c547 0%, var(--accent) 100%);
     transform: translateY(-1px);
 }
 
 /* Game Area */
-#gameArea {
+#gameArea, .game-area {
     display: flex;
     flex: 1;
-    background: #1a1a1a;
+    background: var(--panel-bg);
 }
 
-#gameCanvas {
-    background: #2c5f2d;
-    border-right: 2px solid #d4af37;
+#gameCanvas, .game-canvas {
+    background: var(--game-canvas-bg);
+    border-right: 2px solid var(--accent);
     cursor: crosshair;
 }
 
 /* Side Panel */
-#sidePanel {
+#sidePanel, .game-side-panel {
     width: 300px;
-    background: linear-gradient(180deg, #654321 0%, #8B4513 100%);
+    background: linear-gradient(180deg, var(--side-start) 0%, var(--side-end) 100%);
     padding: 15px;
     overflow-y: auto;
-    border-left: 2px solid #d4af37;
+    border-left: 2px solid var(--accent);
 }
 
 .panel {
-    background: rgba(212, 175, 55, 0.1);
-    border: 1px solid #d4af37;
+    background: var(--panel-inner);
+    border: 1px solid var(--panel-border);
     border-radius: 8px;
     padding: 15px;
     margin-bottom: 15px;
 }
 
 .panel h3 {
-    color: #d4af37;
-    border-bottom: 1px solid #d4af37;
+    color: var(--heading);
+    border-bottom: 1px solid var(--accent);
     padding-bottom: 5px;
     margin-bottom: 10px;
 }
 
 #miniMapCanvas {
-    background: #2c5f2d;
-    border: 1px solid #d4af37;
+    background: var(--game-canvas-bg);
+    border: 1px solid var(--accent);
     border-radius: 4px;
 }
 
 /* Status Bar */
-#statusBar {
-    background: linear-gradient(135deg, #8B4513 0%, #654321 100%);
+#statusBar, .status-bar {
+    background: linear-gradient(135deg, var(--topbar-start) 0%, var(--topbar-end) 100%);
     padding: 8px 20px;
-    border-top: 2px solid #d4af37;
+    border-top: 2px solid var(--accent);
     font-weight: bold;
 }
 
@@ -119,26 +135,26 @@ body {
 
 /* Responsive Design */
 @media (max-width: 1400px) {
-    #sidePanel {
+    .game-side-panel {
         width: 250px;
     }
     
-    #gameCanvas {
+    .game-canvas {
         width: calc(100vw - 250px);
     }
 }
 
 @media (max-width: 1200px) {
-    #topBar {
+    .game-top-bar {
         flex-direction: column;
         padding: 10px;
     }
     
-    #civInfo, #resources, #gameControls {
+    .civ-info, .resources, .game-controls {
         margin: 5px 0;
     }
     
-    #sidePanel {
+    .game-side-panel {
         width: 200px;
     }
 }

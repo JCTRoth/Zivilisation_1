@@ -318,7 +318,7 @@ export default class GameEngine {
     // Simple terrain generation - can be enhanced with noise functions
     for (let row = 0; row < CONSTANTS.MAP_HEIGHT; row++) {
       for (let col = 0; col < CONSTANTS.MAP_WIDTH; col++) {
-        let terrainType = CONSTANTS.TERRAIN.GRASSLAND;
+        let terrainType: string = CONSTANTS.TERRAIN.GRASSLAND;
         
         // Ocean around edges
         if (row === 0 || row === CONSTANTS.MAP_HEIGHT - 1 || 

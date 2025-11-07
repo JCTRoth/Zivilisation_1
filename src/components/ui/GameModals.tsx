@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import { useGameStore } from '../../stores/gameStore';
+import { CityUtils } from '../../utils/helpers';
 import '../../styles/gameModals.css';
 
 const GameModals = ({ gameEngine }) => {
@@ -345,6 +346,137 @@ const GameModals = ({ gameEngine }) => {
     </Modal>
   );
 
+  // City Resources Modal Tab
+  const renderCityResources = (city: any, currentPlayer: any) => {
+    // Get calculated resource data
+    const resources = CityUtils.calculateCityResources(city, currentPlayer);
+
+    return (
+      <div className="city-resources-grid">
+        {/* Food Section */}
+        <div className="resource-section">
+          <h6 className="resource-title">
+            <i className="bi bi-apple"></i> Food
+          </h6>
+          <div className="resource-values">
+            <div className="resource-line">
+              <span className="resource-amount">{resources.food.produced}</span>
+              <span className="resource-break">|</span>
+              <span className={`resource-surplus ${resources.food.surplus >= 0 ? 'positive' : 'negative'}`}>
+                {resources.food.surplus >= 0 ? `+${resources.food.surplus}` : resources.food.surplus}
+              </span>
+            </div>
+            <small className="resource-desc">
+              Needs {resources.food.needed} food per turn. {resources.food.surplus >= 0 ? 'Surplus stored for growth.' : 'Shortfall - population may starve.'}
+            </small>
+          </div>
+        </div>
+
+        {/* Production Section */}
+        <div className="resource-section">
+          <h6 className="resource-title">
+            <i className="bi bi-gear"></i> Production
+          </h6>
+          <div className="resource-values">
+            <div className="resource-line">
+              <span className="resource-amount">{resources.production.produced}</span>
+              <span className="resource-break">|</span>
+              <span className="resource-surplus positive">
+                +{resources.production.surplus}
+              </span>
+            </div>
+            <small className="resource-desc">
+              Available for building units and city improvements.
+            </small>
+          </div>
+        </div>
+
+        {/* Trade Section */}
+        <div className="resource-section">
+          <h6 className="resource-title">
+            <i className="bi bi-arrow-left-right"></i> Trade
+          </h6>
+          <div className="resource-values">
+            <div className="resource-line">
+              <span className="resource-amount">{resources.trade.total}</span>
+              <span className="resource-break">|</span>
+              <span className="resource-corruption negative">
+                -{resources.trade.corruption}
+              </span>
+            </div>
+            <small className="resource-desc">
+              {resources.trade.afterCorruption} trade after corruption. Distributed as luxuries, taxes, and science.
+            </small>
+          </div>
+        </div>
+
+        {/* Luxuries Section */}
+        <div className="resource-section">
+          <h6 className="resource-title">
+            <i className="bi bi-gem"></i> Luxuries
+          </h6>
+          <div className="resource-values">
+            <div className="resource-line">
+              <span className="resource-amount">{resources.luxuries.amount}</span>
+              <span className="resource-unit">diamonds</span>
+            </div>
+            <small className="resource-desc">
+              Makes citizens content. Trade rate: {resources.luxuries.rate}%
+            </small>
+          </div>
+        </div>
+
+        {/* Taxes Section */}
+        <div className="resource-section">
+          <h6 className="resource-title">
+            <i className="bi bi-coin"></i> Taxes
+          </h6>
+          <div className="resource-values">
+            <div className="resource-line">
+              <span className="resource-amount">{resources.taxes.amount}</span>
+              <span className="resource-unit">coins</span>
+            </div>
+            <small className="resource-desc">
+              Added to treasury. Trade rate: {resources.taxes.rate}%
+            </small>
+          </div>
+        </div>
+
+        {/* Science Section */}
+        <div className="resource-section">
+          <h6 className="resource-title">
+            <i className="bi bi-lightbulb"></i> Science
+          </h6>
+          <div className="resource-values">
+            <div className="resource-line">
+              <span className="resource-amount">{resources.science.amount}</span>
+              <span className="resource-unit">bulbs</span>
+            </div>
+            <small className="resource-desc">
+              Research progress. Trade rate: {resources.science.rate}%
+            </small>
+          </div>
+        </div>
+
+        {/* Corruption Section */}
+        <div className="resource-section corruption-section">
+          <h6 className="resource-title">
+            <i className="bi bi-exclamation-triangle"></i> Corruption
+          </h6>
+          <div className="resource-values">
+            <div className="resource-line">
+              <span className="resource-amount corruption-amount">{resources.trade.corruption}</span>
+              <span className="resource-unit">trade lost</span>
+            </div>
+            <small className="resource-desc">
+              Lost to corruption. Distance from capital increases corruption.
+            </small>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // City Details Modal (70% height, close button top-right)
   const renderCityDetails = () => {
     return (
@@ -389,6 +521,15 @@ const GameModals = ({ gameEngine }) => {
                       </ul>
                     ) : <p className="hex-detail-no-buildings">No buildings</p>}
                   </div>
+                </div>
+              ) : (
+                <p className="hex-detail-no-city">No city selected</p>
+              )}
+            </Tab>
+            <Tab eventKey="resources" title="Resources">
+              {selectedCity ? (
+                <div className="city-resources-content">
+                  {renderCityResources(selectedCity, currentPlayer)}
                 </div>
               ) : (
                 <p className="hex-detail-no-city">No city selected</p>

@@ -1,380 +1,98 @@
-// Game Constants - Legacy JavaScript Implementation (Converted to TypeScript)
-interface TerrainProperties {
-    movement: number;
-    defense: number;
-    food: number;
-    production: number;
-    trade: number;
-    color: string;
-    passable: boolean;
-}
+// Main constants file - imports and re-exports all game constants
+// This file maintains backward compatibility while organizing constants into logical modules
 
-interface UnitProperties {
-    name: string;
-    attack: number;
-    defense: number;
-    movement: number;
-    cost: number;
-    canSettle: boolean;
-    canWork: boolean;
-    naval?: boolean;
-    icon?: string;
-    type?: 'civilian' | 'military' | 'siege' | 'naval';
-}
+// Game Constants
+export * from './gameConstants';
 
-interface BuildingProperties {
-    name: string;
-    cost: number;
-    maintenance: number;
-    effects: Record<string, any>;
-}
+// Terrain Constants
+export * from './terrainConstants';
 
-interface GameConstants {
+// Unit Constants
+export * from './unitConstants';
+
+// Building Constants
+export * from './buildingConstants';
+
+// Improvement Constants
+export * from './improvementConstants';
+
+// Legacy CONSTANTS object for backward compatibility
+import { GAME_CONSTANTS } from './gameConstants';
+import { TERRAIN_TYPES as T_TYPES, TERRAIN_PROPERTIES as T_PROPS, SPECIAL_RESOURCES as S_RESOURCES } from './terrainConstants';
+import { UNIT_TYPES as U_TYPES, UNIT_PROPERTIES as U_PROPS } from './unitConstants';
+import { BUILDING_TYPES as B_TYPES, BUILDING_PROPERTIES as B_PROPS } from './buildingConstants';
+import { IMPROVEMENT_TYPES as I_TYPES, IMPROVEMENT_PROPERTIES as I_PROPS } from './improvementConstants';
+
+export const CONSTANTS = {
     // Hex Grid Configuration
-    HEX_SIZE: number;
-    HEX_WIDTH: number;
-    HEX_HEIGHT: number;
+    HEX_SIZE: GAME_CONSTANTS.HEX_SIZE,
+    HEX_WIDTH: GAME_CONSTANTS.HEX_WIDTH,
+    HEX_HEIGHT: GAME_CONSTANTS.HEX_HEIGHT,
 
     // Map Dimensions
-    MAP_WIDTH: number;
-    MAP_HEIGHT: number;
+    MAP_WIDTH: GAME_CONSTANTS.MAP_WIDTH,
+    MAP_HEIGHT: GAME_CONSTANTS.MAP_HEIGHT,
 
-    // Terrain Types
+    // Terrain Types (legacy format)
     TERRAIN: {
-        OCEAN: string;
-        GRASSLAND: string;
-        PLAINS: string;
-        DESERT: string;
-        TUNDRA: string;
-        HILLS: string;
-        MOUNTAINS: string;
-        FOREST: string;
-    };
+        OCEAN: T_TYPES.OCEAN,
+        GRASSLAND: T_TYPES.GRASSLAND,
+        PLAINS: T_TYPES.PLAINS,
+        DESERT: T_TYPES.DESERT,
+        TUNDRA: T_TYPES.TUNDRA,
+        HILLS: T_TYPES.HILLS,
+        MOUNTAINS: T_TYPES.MOUNTAINS,
+        FOREST: T_TYPES.FOREST
+    },
 
-    // Terrain Properties
-    TERRAIN_PROPS: Record<string, any>;
+    // Terrain Properties (legacy format)
+    TERRAIN_PROPS: T_PROPS,
 
-    // Unit Types
+    // Special Resources (legacy format)
+    RESOURCE_PROPS: S_RESOURCES.reduce((acc, resource) => {
+        acc[resource.name.toLowerCase()] = {
+            name: resource.name,
+            food: resource.food,
+            production: resource.production,
+            trade: resource.trade,
+            terrain: [resource.terrain],
+            description: resource.description,
+            icon: '📦' // Default icon
+        };
+        return acc;
+    }, {} as Record<string, any>),
+
+    // Unit Types (legacy format)
     UNIT_TYPES: {
-        SETTLER: string;
-        MILITIA: string;
-        PHALANX: string;
-        LEGION: string;
-        CATAPULT: string;
-        TRIREME: string;
-        CAVALRY: string;
-        CHARIOT: string;
-    };
+        SETTLER: U_TYPES.SETTLER,
+        MILITIA: U_TYPES.WARRIOR,
+        PHALANX: U_TYPES.ARCHER,
+        LEGION: U_TYPES.LEGION,
+        CATAPULT: U_TYPES.CANNON,
+        TRIREME: U_TYPES.GALLEY,
+        CAVALRY: U_TYPES.CAVALRY,
+        CHARIOT: U_TYPES.CHARIOT
+    },
 
-    // Unit Properties
-    UNIT_PROPS: Record<string, any>;
+    // Unit Properties (legacy format)
+    UNIT_PROPS: U_PROPS,
 
-    // City Buildings
+    // City Buildings (legacy format)
     BUILDINGS: {
-        GRANARY: string;
-        BARRACKS: string;
-        TEMPLE: string;
-        MARKETPLACE: string;
-        LIBRARY: string;
-        WALLS: string;
-        AQUEDUCT: string;
-        BANK: string;
-    };
-
-    // Building Properties
-    BUILDING_PROPS: Record<string, any>;
-
-    // Improvement Properties
-    IMPROVEMENT_PROPS: Record<string, any>;
-
-    // Game Settings
-    INITIAL_GOLD: number;
-    INITIAL_SCIENCE: number;
-    TURNS_PER_YEAR: number;
-    STARTING_YEAR: number;
-
-    // Colors
-    COLORS: {
-        PLAYER: string;
-        AI_1: string;
-        AI_2: string;
-        AI_3: string;
-        AI_4: string;
-        AI_5: string;
-        NEUTRAL: string;
-        SELECTED: string;
-        HIGHLIGHT: string;
-    };
-}
-
-export const CONSTANTS: GameConstants = {
-    // Hex Grid Configuration
-    HEX_SIZE: 32,
-    HEX_WIDTH: 56,  // HEX_SIZE * Math.sqrt(3)
-    HEX_HEIGHT: 64, // HEX_SIZE * 2
-
-    // Map Dimensions
-    MAP_WIDTH: 80,
-    MAP_HEIGHT: 50,
-
-    // Terrain Types
-    TERRAIN: {
-        OCEAN: 'ocean',
-        GRASSLAND: 'grassland',
-        PLAINS: 'plains',
-        DESERT: 'desert',
-        TUNDRA: 'tundra',
-        HILLS: 'hills',
-        MOUNTAINS: 'mountains',
-        FOREST: 'forest'
+        GRANARY: B_TYPES.GRANARY,
+        BARRACKS: B_TYPES.BARRACKS,
+        TEMPLE: B_TYPES.TEMPLE,
+        MARKETPLACE: B_TYPES.MARKETPLACE,
+        LIBRARY: B_TYPES.LIBRARY,
+        WALLS: B_TYPES.CITY_WALLS,
+        AQUEDUCT: B_TYPES.AQUEDUCT,
+        BANK: B_TYPES.BANK
     },
 
-    // Terrain Properties
-    TERRAIN_PROPS: {
-        ocean: {
-            movement: 1,
-            defense: 0,
-            food: 1,
-            production: 0,
-            trade: 2,
-            color: '#1e3a8a',
-            passable: false
-        },
-        grassland: {
-            movement: 1,
-            defense: 0,
-            food: 2,
-            production: 0,
-            trade: 0,
-            color: '#22c55e',
-            passable: true
-        },
-        plains: {
-            movement: 1,
-            defense: 0,
-            food: 1,
-            production: 1,
-            trade: 0,
-            color: '#84cc16',
-            passable: true
-        },
-        desert: {
-            movement: 1,
-            defense: 0,
-            food: 0,
-            production: 1,
-            trade: 0,
-            color: '#f59e0b',
-            passable: true
-        },
-        tundra: {
-            movement: 1,
-            defense: 0,
-            food: 1,
-            production: 0,
-            trade: 0,
-            color: '#64748b',
-            passable: true
-        },
-        hills: {
-            movement: 2,
-            defense: 2,
-            food: 1,
-            production: 0,
-            trade: 0,
-            color: '#a3a3a3',
-            passable: true
-        },
-        mountains: {
-            movement: 3,
-            defense: 3,
-            food: 0,
-            production: 1,
-            trade: 0,
-            color: '#525252',
-            passable: true
-        },
-        forest: {
-            movement: 2,
-            defense: 1,
-            food: 1,
-            production: 1,
-            trade: 0,
-            color: '#166534',
-            passable: true
-        }
-    },
+    // Building Properties (legacy format)
+    BUILDING_PROPS: B_PROPS,
 
-    // Unit Types
-    UNIT_TYPES: {
-        SETTLER: 'settler',
-        MILITIA: 'militia',
-        PHALANX: 'phalanx',
-        LEGION: 'legion',
-        CATAPULT: 'catapult',
-        TRIREME: 'trireme',
-        CAVALRY: 'cavalry',
-        CHARIOT: 'chariot'
-    },
-
-    // Unit Properties
-    UNIT_PROPS: {
-        settler: {
-            name: 'Settler',
-            attack: 0,
-            defense: 1,
-            movement: 1,
-            cost: 40,
-            canSettle: true,
-            canWork: true,
-            type: 'civilian',
-            icon: '🏘️'
-        },
-        militia: {
-            name: 'Militia',
-            attack: 1,
-            defense: 2,
-            movement: 1,
-            cost: 10,
-            canSettle: false,
-            canWork: false,
-            type: 'military',
-            icon: '⚔️'
-        },
-        phalanx: {
-            name: 'Phalanx',
-            attack: 1,
-            defense: 2,
-            movement: 1,
-            cost: 20,
-            canSettle: false,
-            canWork: false,
-            type: 'military',
-            icon: '🛡️'
-        },
-        legion: {
-            name: 'Legion',
-            attack: 3,
-            defense: 2,
-            movement: 1,
-            cost: 40,
-            canSettle: false,
-            canWork: false,
-            type: 'military',
-            icon: '⚔️'
-        },
-        catapult: {
-            name: 'Catapult',
-            attack: 4,
-            defense: 1,
-            movement: 1,
-            cost: 40,
-            canSettle: false,
-            canWork: false,
-            type: 'siege',
-            icon: '💥'
-        },
-        trireme: {
-            name: 'Trireme',
-            attack: 1,
-            defense: 1,
-            movement: 3,
-            cost: 40,
-            canSettle: false,
-            canWork: false,
-            naval: true,
-            type: 'naval',
-            icon: '⛵'
-        },
-        cavalry: {
-            name: 'Cavalry',
-            attack: 2,
-            defense: 1,
-            movement: 2,
-            cost: 30,
-            canSettle: false,
-            canWork: false,
-            type: 'military',
-            icon: '🐎'
-        },
-        chariot: {
-            name: 'Chariot',
-            attack: 3,
-            defense: 1,
-            movement: 2,
-            cost: 30,
-            canSettle: false,
-            canWork: false,
-            type: 'military',
-            icon: '🏇'
-        }
-    },
-
-    // City Buildings
-    BUILDINGS: {
-        GRANARY: 'granary',
-        BARRACKS: 'barracks',
-        TEMPLE: 'temple',
-        MARKETPLACE: 'marketplace',
-        LIBRARY: 'library',
-        WALLS: 'walls',
-        AQUEDUCT: 'aqueduct',
-        BANK: 'bank'
-    },
-
-    // Building Properties
-    BUILDING_PROPS: {
-        granary: {
-            name: 'Granary',
-            cost: 60,
-            maintenance: 1,
-            effects: { foodStorage: 2 }
-        },
-        barracks: {
-            name: 'Barracks',
-            cost: 40,
-            maintenance: 1,
-            effects: { unitExperience: 1 }
-        },
-        temple: {
-            name: 'Temple',
-            cost: 40,
-            maintenance: 1,
-            effects: { happiness: 1 }
-        },
-        marketplace: {
-            name: 'Marketplace',
-            cost: 80,
-            maintenance: 1,
-            effects: { tradeBonus: 0.5 }
-        },
-        library: {
-            name: 'Library',
-            cost: 80,
-            maintenance: 1,
-            effects: { scienceBonus: 0.5 }
-        },
-        walls: {
-            name: 'City Walls',
-            cost: 80,
-            maintenance: 2,
-            effects: { defense: 3 }
-        },
-        aqueduct: {
-            name: 'Aqueduct',
-            cost: 80,
-            maintenance: 2,
-            effects: { maxPopulation: 8 }
-        },
-        bank: {
-            name: 'Bank',
-            cost: 120,
-            maintenance: 3,
-            effects: { goldBonus: 0.5 }
-        }
-    },
-
-    // Improvement Properties
+    // Improvement Properties (legacy format)
     IMPROVEMENT_PROPS: {
         road: {
             name: 'Road',
@@ -435,36 +153,28 @@ export const CONSTANTS: GameConstants = {
     },
 
     // Game Settings
-    INITIAL_GOLD: 50,
-    INITIAL_SCIENCE: 2,
-    TURNS_PER_YEAR: 20,
-    STARTING_YEAR: -4000,
+    INITIAL_GOLD: GAME_CONSTANTS.INITIAL_GOLD,
+    INITIAL_SCIENCE: GAME_CONSTANTS.INITIAL_SCIENCE,
+    TURNS_PER_YEAR: GAME_CONSTANTS.TURNS_PER_YEAR,
+    STARTING_YEAR: GAME_CONSTANTS.STARTING_YEAR,
 
     // Colors
-    COLORS: {
-        PLAYER: '#ff0000',
-        AI_1: '#0000ff',
-        AI_2: '#00ff00',
-        AI_3: '#ffff00',
-        AI_4: '#ff00ff',
-        AI_5: '#00ffff',
-        NEUTRAL: '#808080',
-        SELECTED: '#ffffff',
-        HIGHLIGHT: '#ffff80'
-    }
+    COLORS: GAME_CONSTANTS.COLORS
 };
 
-// Export individual constants for convenience
+// Export individual constants for convenience (legacy)
 export const {
     TERRAIN,
     TERRAIN_PROPS,
-    UNIT_TYPES,
+    RESOURCE_PROPS,
+    UNIT_TYPES: LEGACY_UNIT_TYPES,
     UNIT_PROPS,
     BUILDINGS,
     BUILDING_PROPS,
     IMPROVEMENT_PROPS
 } = CONSTANTS;
 
-export type { UnitProperties, BuildingProperties };
+// Re-export with legacy names to avoid conflicts
+export { LEGACY_UNIT_TYPES as UNIT_TYPES };
 
 export { CONSTANTS as default };

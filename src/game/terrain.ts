@@ -28,16 +28,19 @@ interface ImprovementProperties {
     requiresResource: string | null;
     prerequisite?: string;
     defenseBonus?: number;
+    convertsTo?: string;
 }
 
 interface TerrainConstants {
     TERRAIN_PROPS: Record<string, any>;
+    RESOURCE_PROPS: Record<string, any>;
     IMPROVEMENT_PROPS: Record<string, ImprovementProperties>;
 }
 
 // Extend CONSTANTS with terrain-specific properties
 const TERRAIN_CONSTANTS: TerrainConstants = {
     TERRAIN_PROPS: CONSTANTS.TERRAIN_PROPS,
+    RESOURCE_PROPS: CONSTANTS.RESOURCE_PROPS,
     IMPROVEMENT_PROPS: {
         road: {
             name: 'Road',
@@ -94,6 +97,37 @@ const TERRAIN_CONSTANTS: TerrainConstants = {
             buildTurns: 10,
             allowedTerrain: null,
             requiresResource: null
+        },
+        // Terrain conversion improvements
+        convertToGrassland: {
+            name: 'Convert to Grassland',
+            food: 0,
+            production: 0,
+            trade: 0,
+            buildTurns: 8,
+            allowedTerrain: ['jungle', 'swamp'],
+            requiresResource: null,
+            convertsTo: 'grassland'
+        },
+        convertToForest: {
+            name: 'Convert to Forest',
+            food: 0,
+            production: 0,
+            trade: 0,
+            buildTurns: 8,
+            allowedTerrain: ['jungle', 'swamp', 'grassland'],
+            requiresResource: null,
+            convertsTo: 'forest'
+        },
+        convertToPlains: {
+            name: 'Convert to Plains',
+            food: 0,
+            production: 0,
+            trade: 0,
+            buildTurns: 8,
+            allowedTerrain: ['forest'],
+            requiresResource: null,
+            convertsTo: 'plains'
         }
     }
 };
@@ -127,6 +161,30 @@ export class Tile {
 
         // Calculate base yields
         this.calculateYields();
+
+        // Generate special resources
+        this.generateSpecialResource();
+    }
+
+    // Generate special resources based on terrain type
+    generateSpecialResource(): void {
+        // Check each resource type to see if it can appear on this terrain
+        for (const [resourceType, resourceProps] of Object.entries(TERRAIN_CONSTANTS.RESOURCE_PROPS)) {
+            if (resourceProps.terrain.includes(this.terrain)) {
+                // Random chance for resource to appear (adjust probability as needed)
+                const probability = 0.15; // 15% chance for any resource
+                if (Math.random() < probability) {
+                    this.resources = {
+                        type: resourceType,
+                        food: resourceProps.food,
+                        production: resourceProps.production,
+                        trade: resourceProps.trade,
+                        terrain: resourceProps.terrain
+                    };
+                    break; // Only one special resource per tile
+                }
+            }
+        }
     }
 
     calculateYields(): void {
@@ -210,6 +268,57 @@ export class Tile {
 
         this.improvements.push(improvement);
         return true;
+    }
+
+    // Complete an improvement on this tile
+    completeImprovement(improvementType: string): boolean {
+        const improvement = this.improvements.find(imp => imp.type === improvementType && !imp.complete);
+        if (!improvement) return false;
+
+        improvement.complete = true;
+        improvement.turns = TERRAIN_CONSTANTS.IMPROVEMENT_PROPS[improvementType].buildTurns;
+
+        // Handle terrain conversion if this is a conversion improvement
+        const improvementProps = TERRAIN_CONSTANTS.IMPROVEMENT_PROPS[improvementType];
+        if (improvementProps.convertsTo) {
+            this.convertTerrain(improvementProps.convertsTo);
+        }
+
+        return true;
+    }
+
+    // Convert terrain to a new type
+    convertTerrain(newTerrainType: string): void {
+        // Check if the new terrain type exists
+        if (!TERRAIN_CONSTANTS.TERRAIN_PROPS[newTerrainType]) {
+            console.warn(`Unknown terrain type for conversion: ${newTerrainType}`);
+            return;
+        }
+
+        // Store old terrain for potential resource loss
+        const oldTerrain = this.terrain;
+
+        // Convert terrain
+        this.terrain = newTerrainType;
+
+        // Recalculate yields for new terrain
+        this.calculateYields();
+
+        // Check if special resource is still valid on new terrain
+        if (this.resources) {
+            const resourceProps = TERRAIN_CONSTANTS.RESOURCE_PROPS[this.resources.type!];
+            if (!resourceProps.terrain.includes(newTerrainType)) {
+                // Resource is lost when terrain is converted
+                this.resources = null;
+            }
+        }
+
+        // Remove incompatible improvements
+        this.improvements = this.improvements.filter(improvement => {
+            const improvementProps = TERRAIN_CONSTANTS.IMPROVEMENT_PROPS[improvement.type];
+            if (!improvementProps.allowedTerrain) return true; // Improvement works on any terrain
+            return improvementProps.allowedTerrain.includes(newTerrainType);
+        });
     }
 
     // Check if tile has specific improvement

@@ -163,7 +163,7 @@ function Civ1App() {
 
   if (error) {
     return (
-      <div className="vh-100 bg-danger text-white d-flex align-items-center justify-content-center">
+      <div id="gameContainer" className="vh-100 d-flex align-items-center justify-content-center text-white">
         <div className="text-center">
           <h1>🚨 Game Error</h1>
           <p>{error}</p>
@@ -175,7 +175,7 @@ function Civ1App() {
   // Show game setup modal before game engine is created
   if (!gameEngine && showGameSetup) {
     return (
-      <div className="vh-100 bg-dark text-white d-flex align-items-center justify-content-center">
+      <div id="gameContainer" className="vh-100 d-flex align-items-center justify-content-center text-white">
         <GameSetupModal
           show={showGameSetup}
           onStart={handleGameStart}
@@ -187,7 +187,7 @@ function Civ1App() {
   // Show loading only during actual initialization
   if (!gameEngine && !showGameSetup) {
     return (
-      <div className="vh-100 bg-primary text-white d-flex align-items-center justify-content-center">
+      <div id="gameContainer" className="vh-100 d-flex align-items-center justify-content-center text-white">
         <div className="text-center">
           <div className="spinner-border mb-3"></div>
           <h2>🏛️ Loading Civilization...</h2>
@@ -198,7 +198,7 @@ function Civ1App() {
 
   return (
     <div 
-      className="vh-100 d-flex flex-column bg-dark text-white" 
+      className="game-container vh-100 d-flex flex-column text-white" 
       style={{ 
         fontFamily: 'monospace',
         fontSize: `${settings.uiScale}rem`
@@ -206,10 +206,9 @@ function Civ1App() {
     >
       {/* Top Menu Bar */}
       <div 
-        className="border-bottom border-light d-flex" 
+        className="game-top-bar border-bottom border-light d-flex" 
         style={{ 
           height: `${48 * settings.uiScale}px`,
-          background: '#1a1a1a',
           boxShadow: 'none'
         }}
       >
@@ -291,22 +290,22 @@ function Civ1App() {
       </div>
 
       {/* Main Game Area */}
-      <div className="flex-grow-1 d-flex">
+  <div className="game-area flex-grow-1 d-flex">
         {/* Left Sidebar - use centralized SidePanel component */}
-        <div style={{ width: `${settings.sidebarWidth * 2}px` }}>
+  <div className="game-side-panel" style={{ width: `${settings.sidebarWidth * 2}px` }}>
           <SidePanel gameEngine={gameEngine} />
         </div>
 
         {/* Main Map Area */}
-        <div className="flex-grow-1 position-relative bg-dark">
+  <div className="game-canvas flex-grow-1 position-relative">
           <Civ1GameCanvas 
             onExamineHex={handleExamineHex} 
             gameEngine={gameEngine}
           />
         </div>
-      </div>
+  </div>
 
-      {/* Dropdown Menus */}
+  {/* Dropdown Menus */}
       {activeMenu && (
         <div 
           className="position-fixed border border-light"

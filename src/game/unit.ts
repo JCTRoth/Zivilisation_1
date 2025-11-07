@@ -36,6 +36,8 @@ interface UnitInfo {
     workTarget: string | null;
     workTurns: number;
     civilization: string;
+    homeCityId: string | null;
+    garrisoned: boolean;
 }
 
 interface SerializedUnit {
@@ -53,6 +55,8 @@ interface SerializedUnit {
     workTurns: number;
     moved: boolean;
     active: boolean;
+    homeCityId: string | null;
+    garrisoned: boolean;
 }
 
 interface MoveData {
@@ -110,9 +114,14 @@ export class Unit extends EventEmitter {
     public defense: number;
     public maxMovement: number;
     public cost: number;
+    public maintenance: number;
     public canSettle: boolean;
     public canWork: boolean;
     public naval: boolean;
+
+    // City relationship
+    public homeCityId: string | null;
+    public garrisoned: boolean;
 
     // Current state
     public health: number;
@@ -149,9 +158,14 @@ export class Unit extends EventEmitter {
         this.defense = unitProps.defense;
         this.maxMovement = unitProps.movement;
         this.cost = unitProps.cost;
+        this.maintenance = unitProps.maintenance || 0;
         this.canSettle = unitProps.canSettle || false;
         this.canWork = unitProps.canWork || false;
         this.naval = unitProps.naval || false;
+
+        // City relationship
+        this.homeCityId = null; // Will be set when produced by a city
+        this.garrisoned = false;
 
         // Current state
         this.health = 100;
@@ -553,7 +567,9 @@ export class Unit extends EventEmitter {
             fortified: this.fortified,
             workTarget: this.workTarget,
             workTurns: this.workTurns,
-            civilization: this.civilization.name
+            civilization: this.civilization.name,
+            homeCityId: this.homeCityId,
+            garrisoned: this.garrisoned
         };
     }
 
@@ -573,7 +589,9 @@ export class Unit extends EventEmitter {
             workTarget: this.workTarget,
             workTurns: this.workTurns,
             moved: this.moved,
-            active: this.active
+            active: this.active,
+            homeCityId: this.homeCityId,
+            garrisoned: this.garrisoned
         };
     }
 
@@ -590,6 +608,8 @@ export class Unit extends EventEmitter {
         unit.workTurns = data.workTurns;
         unit.moved = data.moved;
         unit.active = data.active;
+        unit.homeCityId = data.homeCityId;
+        unit.garrisoned = data.garrisoned;
         return unit;
     }
 }

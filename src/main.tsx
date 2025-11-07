@@ -10,6 +10,7 @@ import Civ1App from './Civ1App.jsx'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap-icons/font/bootstrap-icons.css'
 import './styles/index.css'
+import './styles/main.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

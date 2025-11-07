@@ -516,7 +516,7 @@ export class Civilization extends EventEmitter {
     // Get best available military unit
     getBestMilitaryUnit(): string {
         // Check what units are available based on tech
-        const availableUnits = [CONSTANTS.UNIT_TYPES.MILITIA];
+        const availableUnits: string[] = [CONSTANTS.UNIT_TYPES.MILITIA];
 
         if (this.technologies.has('bronze_working')) {
             availableUnits.push(CONSTANTS.UNIT_TYPES.PHALANX);

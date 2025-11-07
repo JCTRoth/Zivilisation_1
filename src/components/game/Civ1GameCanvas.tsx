@@ -501,9 +501,8 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       canvas.height = rect.height;
     }
     
-    // Clear canvas
-    ctx.fillStyle = '#000080'; // Ocean blue background
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Clear canvas and allow CSS background to show through for the game area
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Use cached terrain
     if (!terrain) return;

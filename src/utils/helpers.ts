@@ -336,3 +336,98 @@ export const Performance = {
         return result;
     }
 };
+
+// City Utilities
+export const CityUtils = {
+    // Calculate corruption based on distance from capital and government
+    calculateCorruption: (city: any, currentPlayer: any, totalTrade: number): number => {
+        if (!currentPlayer || !city) return 0;
+
+        // Find the capital city
+        const capital = currentPlayer.capital;
+        if (!capital) return 0;
+
+        // If this is the capital, no corruption
+        if (city.id === capital.id) return 0;
+
+        // Calculate distance from capital
+        const distance = Math.sqrt(
+            Math.pow(city.col - capital.col, 2) +
+            Math.pow(city.row - capital.row, 2)
+        );
+
+        // Base corruption rate depends on government type
+        // For now, assume despotism (high corruption)
+        let baseCorruptionRate = 0.3; // 30% base corruption for despotism
+
+        // Distance increases corruption
+        const distanceMultiplier = Math.min(distance / 10, 2); // Max 2x at distance 10+
+        const corruptionRate = baseCorruptionRate * distanceMultiplier;
+
+        // Apply building reductions (Courthouse reduces corruption)
+        let finalCorruptionRate = corruptionRate;
+        if (city.buildings?.includes('courthouse')) {
+            finalCorruptionRate *= 0.5; // Courthouse reduces corruption by 50%
+        }
+
+        return Math.floor(totalTrade * finalCorruptionRate);
+    },
+
+    // Calculate city resource data
+    calculateCityResources: (city: any, currentPlayer: any) => {
+        // Calculate food surplus/shortfall
+        const foodNeeded = (city.population ?? 1) * 2;
+        const foodProduced = city.yields?.food ?? city.food ?? 0;
+        const foodSurplus = foodProduced - foodNeeded;
+
+        // Calculate production surplus/shortfall (simplified - assuming no unit maintenance for now)
+        const productionProduced = city.yields?.production ?? city.production ?? 0;
+        const productionSurplus = productionProduced; // Simplified - no maintenance cost calculation yet
+
+        // Calculate trade and its distribution
+        const totalTrade = city.yields?.trade ?? city.trade ?? 0;
+
+        // For now, use simple 50/50/0 split (can be enhanced with actual trade rates later)
+        const luxuryRate = 50; // percentage
+        const taxRate = 0;     // percentage
+        const scienceRate = 50; // percentage
+
+        // Calculate corruption based on distance from capital and government
+        const corruption = CityUtils.calculateCorruption(city, currentPlayer, totalTrade);
+        const tradeAfterCorruption = totalTrade - corruption;
+
+        // Distribute trade after corruption
+        const actualLuxuries = Math.floor(tradeAfterCorruption * (luxuryRate / 100));
+        const actualTaxes = Math.floor(tradeAfterCorruption * (taxRate / 100));
+        const actualScience = Math.floor(tradeAfterCorruption * (scienceRate / 100));
+
+        return {
+            food: {
+                produced: foodProduced,
+                needed: foodNeeded,
+                surplus: foodSurplus
+            },
+            production: {
+                produced: productionProduced,
+                surplus: productionSurplus
+            },
+            trade: {
+                total: totalTrade,
+                afterCorruption: tradeAfterCorruption,
+                corruption: corruption
+            },
+            luxuries: {
+                amount: actualLuxuries,
+                rate: luxuryRate
+            },
+            taxes: {
+                amount: actualTaxes,
+                rate: taxRate
+            },
+            science: {
+                amount: actualScience,
+                rate: scienceRate
+            }
+        };
+    }
+};
