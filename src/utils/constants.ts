@@ -4,8 +4,8 @@
 // Game Constants
 export * from './gameConstants';
 
-// Terrain Constants
-export * from './terrainConstants';
+// Terrain Constants (canonical)
+export * from '../game/terrainConstants';
 
 // Unit Constants
 export * from './unitConstants';
@@ -18,7 +18,7 @@ export * from './improvementConstants';
 
 // Legacy CONSTANTS object for backward compatibility
 import { GAME_CONSTANTS } from './gameConstants';
-import { TERRAIN_TYPES as T_TYPES, TERRAIN_PROPERTIES as T_PROPS, SPECIAL_RESOURCES as S_RESOURCES } from './terrainConstants';
+import { TERRAIN_TYPES as T_TYPES, TERRAIN_PROPERTIES as T_PROPS, SPECIAL_RESOURCES as S_RESOURCES } from '../game/terrainConstants';
 import { UNIT_TYPES as U_TYPES, UNIT_PROPERTIES as U_PROPS } from './unitConstants';
 import { BUILDING_TYPES as B_TYPES, BUILDING_PROPERTIES as B_PROPS } from './buildingConstants';
 import { IMPROVEMENT_TYPES as I_TYPES, IMPROVEMENT_PROPERTIES as I_PROPS } from './improvementConstants';

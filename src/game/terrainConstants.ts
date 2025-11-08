@@ -1,0 +1,232 @@
+// Terrain logic constants (yields, movement, resources) — game-facing data
+
+import { TerrainProperties } from '../utils/gameConstants';
+
+export interface SpecialResource {
+    name: string;
+    terrain: string;
+    food: number;
+    production: number;
+    trade: number;
+    description: string;
+}
+
+export const TERRAIN_TYPES = {
+    OCEAN: 'ocean',
+    COAST: 'coast',
+    GRASSLAND: 'grassland',
+    PLAINS: 'plains',
+    TUNDRA: 'tundra',
+    DESERT: 'desert',
+    FOREST: 'forest',
+    JUNGLE: 'jungle',
+    MOUNTAINS: 'mountains',
+    HILLS: 'hills',
+    SWAMP: 'swamp',
+    ARCTIC: 'arctic'
+} as const;
+
+export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
+    [TERRAIN_TYPES.OCEAN]: {
+        movement: 1,
+        defense: 0,
+        food: 1,
+        production: 0,
+        trade: 2,
+        color: '#1e3a8a',
+        passable: false,
+        description: 'Deep ocean waters'
+    },
+    [TERRAIN_TYPES.COAST]: {
+        movement: 1,
+        defense: 0,
+        food: 2,
+        production: 0,
+        trade: 1,
+        color: '#3b82f6',
+        passable: false,
+        description: 'Coastal waters'
+    },
+    [TERRAIN_TYPES.GRASSLAND]: {
+        movement: 1,
+        defense: 0,
+        food: 3,
+        production: 0,
+        trade: 0,
+        color: '#22c55e',
+        passable: true,
+        description: 'Fertile grassland'
+    },
+    [TERRAIN_TYPES.PLAINS]: {
+        movement: 1,
+        defense: 0,
+        food: 1,
+        production: 1,
+        trade: 0,
+        color: '#eab308',
+        passable: true,
+        description: 'Open plains'
+    },
+    [TERRAIN_TYPES.TUNDRA]: {
+        movement: 1,
+        defense: 0,
+        food: 1,
+        production: 0,
+        trade: 0,
+        color: '#94a3b8',
+        passable: true,
+        description: 'Cold tundra'
+    },
+    [TERRAIN_TYPES.DESERT]: {
+        movement: 1,
+        defense: 0,
+        food: 0,
+        production: 1,
+        trade: 0,
+        color: '#f59e0b',
+        passable: true,
+        description: 'Arid desert'
+    },
+    [TERRAIN_TYPES.FOREST]: {
+        movement: 2,
+        defense: 1,
+        food: 1,
+        production: 2,
+        trade: 0,
+        color: '#166534',
+        passable: true,
+        description: 'Dense forest'
+    },
+    [TERRAIN_TYPES.JUNGLE]: {
+        movement: 3,
+        defense: 0,
+        food: 0,
+        production: 0,
+        trade: 0,
+        color: '#15803d',
+        passable: true,
+        description: 'Impassable jungle'
+    },
+    [TERRAIN_TYPES.MOUNTAINS]: {
+        movement: 3,
+        defense: 2,
+        food: 0,
+        production: 1,
+        trade: 0,
+        color: '#78716c',
+        passable: false,
+        description: 'Impassable mountains'
+    },
+    [TERRAIN_TYPES.HILLS]: {
+        movement: 2,
+        defense: 1,
+        food: 0,
+        production: 1,
+        trade: 0,
+        color: '#a3a3a3',
+        passable: true,
+        description: 'Rolling hills'
+    },
+    [TERRAIN_TYPES.SWAMP]: {
+        movement: 2,
+        defense: 0,
+        food: 0,
+        production: 0,
+        trade: 0,
+        color: '#7c2d12',
+        passable: true,
+        description: 'Muddy swamp'
+    },
+    [TERRAIN_TYPES.ARCTIC]: {
+        movement: 1,
+        defense: 0,
+        food: 0,
+        production: 0,
+        trade: 0,
+        color: '#f1f5f9',
+        passable: true,
+        description: 'Frozen arctic'
+    }
+};
+
+export const SPECIAL_RESOURCES: SpecialResource[] = [
+    {
+        name: 'Wheat',
+        terrain: TERRAIN_TYPES.PLAINS,
+        food: 1,
+        production: 0,
+        trade: 0,
+        description: 'Increases food production'
+    },
+    {
+        name: 'Silk',
+        terrain: TERRAIN_TYPES.JUNGLE,
+        food: 0,
+        production: 0,
+        trade: 2,
+        description: 'Increases trade'
+    },
+    {
+        name: 'Gems',
+        terrain: TERRAIN_TYPES.JUNGLE,
+        food: 0,
+        production: 0,
+        trade: 3,
+        description: 'High trade value'
+    },
+    {
+        name: 'Gold',
+        terrain: TERRAIN_TYPES.MOUNTAINS,
+        food: 0,
+        production: 0,
+        trade: 4,
+        description: 'Very high trade value'
+    },
+    {
+        name: 'Iron',
+        terrain: TERRAIN_TYPES.HILLS,
+        food: 0,
+        production: 1,
+        trade: 0,
+        description: 'Increases production'
+    },
+    {
+        name: 'Coal',
+        terrain: TERRAIN_TYPES.MOUNTAINS,
+        food: 0,
+        production: 2,
+        trade: 0,
+        description: 'Increases production'
+    },
+    {
+        name: 'Oil',
+        terrain: TERRAIN_TYPES.DESERT,
+        food: 0,
+        production: 3,
+        trade: 0,
+        description: 'High production value'
+    },
+    {
+        name: 'Fish',
+        terrain: TERRAIN_TYPES.OCEAN,
+        food: 2,
+        production: 0,
+        trade: 1,
+        description: 'Food and trade from sea'
+    }
+];
+
+export const TERRAIN_CONVERSIONS = {
+    [TERRAIN_TYPES.FOREST]: TERRAIN_TYPES.PLAINS,
+    [TERRAIN_TYPES.JUNGLE]: TERRAIN_TYPES.PLAINS,
+    [TERRAIN_TYPES.SWAMP]: TERRAIN_TYPES.GRASSLAND,
+    [TERRAIN_TYPES.TUNDRA]: TERRAIN_TYPES.PLAINS,
+    [TERRAIN_TYPES.ARCTIC]: TERRAIN_TYPES.TUNDRA
+} as const;
+
+export default {
+    TERRAIN_TYPES,
+    TERRAIN_PROPERTIES,
+    SPECIAL_RESOURCES,
+    TERRAIN_CONVERSIONS
+};

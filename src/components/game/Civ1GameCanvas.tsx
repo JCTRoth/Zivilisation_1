@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../../stores/gameStore';
 import { UNIT_TYPES } from '../../game/gameData.js';
 import { CONSTANTS } from '../../utils/constants';
+import { TERRAIN_TYPES, getTerrainInfo, TILE_SIZE } from '../../game/terrain/terrainData';
 import type { Tile } from '../../../types/game';
 import '../../styles/civ1GameCanvas.css';
 
@@ -22,36 +23,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const renderTimeoutRef = useRef(null);
 
   // Square grid constants
-  const TILE_SIZE = 32;
-
-  // Terrain types and colors (classic Civ1 style)
-  const TERRAIN_TYPES = {
-    OCEAN: { color: '#4169E1', char: '~', name: 'Ocean' },
-    PLAINS: { color: '#90EE90', char: '=', name: 'Plains' },
-    GRASSLAND: { color: '#32CD32', char: '"', name: 'Grassland' },
-    FOREST: { color: '#228B22', char: '♦', name: 'Forest' },
-    HILLS: { color: '#8FBC8F', char: '^', name: 'Hills' },
-    MOUNTAINS: { color: '#696969', char: '▲', name: 'Mountains' },
-    DESERT: { color: '#F4A460', char: '~', name: 'Desert' },
-    TUNDRA: { color: '#B0C4DE', char: '.', name: 'Tundra' },
-    ARCTIC: { color: '#F0F8FF', char: '*', name: 'Arctic' },
-    RIVER: { color: '#0000FF', char: '~', name: 'River' }
-  };
-
-  // Helper to resolve terrain info from either uppercase or lowercase type strings
-  const getTerrainInfo = (type) => {
-    if (!type) return null;
-    if (typeof type !== 'string') return null;
-    // Try exact key, then uppercase, then lowercase
-    if (TERRAIN_TYPES[type]) return TERRAIN_TYPES[type];
-    const up = type.toUpperCase();
-    if (TERRAIN_TYPES[up]) return TERRAIN_TYPES[up];
-    const low = type.toLowerCase();
-    if (TERRAIN_TYPES[low]) return TERRAIN_TYPES[low];
-    // Last resort: try to match by name
-    const found = Object.values(TERRAIN_TYPES).find(t => t.name && t.name.toLowerCase() === type.toLowerCase());
-    return found || null;
-  };
+  // TILE_SIZE imported from centralized terrain data
 
   // Generate terrain map (initialize once)
   const generateTerrain = (width, height) => {

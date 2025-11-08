@@ -51,12 +51,12 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
     const startX = Math.max(0, (Math.max(width, totalWidth) - totalWidth) / 2);
     row.forEach((tech, j) => {
       const x = startX + j * (nodeWidth + horizontalSpacing);
-      const y = i * (nodeHeight + verticalSpacing);
+      const y = 40 + i * (nodeHeight + verticalSpacing);
       positions[tech.id] = { x, y };
     });
   });
 
-  const svgHeight = Math.max(200, (depths.length) * (nodeHeight + verticalSpacing) + 40);
+  const svgHeight = Math.max(200, (depths.length) * (nodeHeight + verticalSpacing) + 80);
   const svgWidth = Math.max(width, maxRowWidth + 40);
   // selected path state and helpers for finding path from roots
   const [selectedPath, setSelectedPath] = useState<string[] | null>(null);
@@ -140,11 +140,6 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
 
   return (
     <div className="tech-tree-container">
-      {selectedPath && (
-        <div className="tech-tree-path">
-          <strong>Path:</strong> {selectedPath.map(id => techs.find(t => t.id === id)?.name || id).join(' > ')}
-        </div>
-      )}
       <svg width={svgWidth} height={svgHeight} className="tech-tree-svg">
         <defs>
           <pattern id="unresearchedPattern" patternUnits="userSpaceOnUse" width="10" height="10">
@@ -152,6 +147,12 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
             <line x1="0" y1="0" x2="10" y2="10" stroke="lightblue" strokeWidth="2"/>
           </pattern>
         </defs>
+        {/* Path display as first row */}
+        {selectedPath && (
+          <text x={svgWidth / 2} y={30} className="tech-tree-path-text" fill="#fff" fontSize="16" fontWeight="bold" textAnchor="middle">
+            Path: {selectedPath.map(id => techs.find(t => t.id === id)?.name || id).join(' > ')}
+          </text>
+        )}
         {/* links */}
         {techs.map(tech => (
           tech.prerequisites?.map(pr => {

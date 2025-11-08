@@ -4,7 +4,7 @@
 }
 
 .pulse {
-  animation: pulse 0.2s ease-in-out 1;
+  animation: pulse 0.5s ease-in-out 1;
 }
 
 /* TechTreeView styles */

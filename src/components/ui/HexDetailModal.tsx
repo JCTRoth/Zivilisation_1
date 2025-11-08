@@ -1,20 +1,9 @@
 import React from 'react';
 import { Modal } from 'react-bootstrap';
+import { TERRAIN_TYPES } from '../../game/terrain/terrainData';
 
 const HexDetailModal = ({ show, onHide, hex, terrain, adjacentTiles }) => {
   if (!hex || !terrain) return null;
-
-  const TERRAIN_TYPES = {
-    OCEAN: { name: 'Ocean', char: '~', color: '#4169E1' },
-    PLAINS: { name: 'Plains', char: '=', color: '#90EE90' },
-    GRASSLAND: { name: 'Grassland', char: '"', color: '#32CD32' },
-    FOREST: { name: 'Forest', char: '♦', color: '#228B22' },
-    HILLS: { name: 'Hills', char: '^', color: '#8FBC8F' },
-    MOUNTAINS: { name: 'Mountains', char: '▲', color: '#696969' },
-    DESERT: { name: 'Desert', char: '~', color: '#F4A460' },
-    TUNDRA: { name: 'Tundra', char: '.', color: '#B0C4DE' },
-    ARCTIC: { name: 'Arctic', char: '*', color: '#F0F8FF' },
-  };
 
   const centerTile = terrain[hex.row]?.[hex.col];
   if (!centerTile) return null;
