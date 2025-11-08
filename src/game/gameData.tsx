@@ -150,10 +150,10 @@ export const CIVILIZATIONS: Civilization[] = [
     icon: '🇮🇳'
   },
   {
-    name: 'Mongols',
-    leader: 'Genghis Khan',
-    color: '#8B4513',
-    cityNames: ['Samarkand', 'Karakorum', 'Bokhara', 'Nishapur', 'Kashgar', 'Tabriz', 'Aleppo', 'Kabul'],
+    name: 'Kazakhs',
+    leader: 'Dschingis Khan',
+    color: '#00AFCA',
+    cityNames: ['Almaty', 'Shymkent', 'Karaganda', 'Taraz', 'Aktobe', 'Pavlodar', 'Oskemen', 'Semey', 'Oral', 'Astana'],
     icon: '🏹🐎'
   },
   {
@@ -173,11 +173,13 @@ export const CIVILIZATIONS: Civilization[] = [
   {
     name: 'Zulus',
     leader: 'Shaka',
-    color: '#2F4F4F',
+    color: '#8B4513',
     cityNames: ['Zimbabwe', 'Ulundi', 'Bapedi', 'Hlobane', 'Isandhlwana', 'Intombe', 'Mpondo', 'Swazi'],
-    icon: ''
+    icon: '🐘'
   }
 ];
+
+// Technology Tree (simplified from Civ1)
 
 // Technology Tree (simplified from Civ1)
 export const TECHNOLOGIES: Record<string, Technology> = {

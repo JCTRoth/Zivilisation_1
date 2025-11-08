@@ -101,35 +101,35 @@ export const CIVILIZATIONS: Civilization[] = [
   {
     name: 'Chinese',
     leader: 'Mao Tse Tung',
-    color: '#FF4500',
+    color: '#ff4400ff',
     cityNames: ['Beijing', 'Shanghai', 'Guangzhou', 'Nanjing', 'Xian', 'Chengdu', 'Hangzhou', 'Tianjin', 'Wuhan'],
     icon: '🐉'
   },
   {
     name: 'Egyptians',
     leader: 'Ramesses II',
-    color: '#F0E68C',
+    color: '#ffe600ff',
     cityNames: ['Thebes', 'Memphis', 'Heliopolis', 'Alexandria', 'Giza', 'Luxor', 'Aswan', 'Karnak'],
     icon: '𓂀'
   },
   {
     name: 'English',
     leader: 'Elizabeth I',
-    color: '#8B0000',
+    color: '#e30202ff',
     cityNames: ['London', 'York', 'Nottingham', 'Oxford', 'Cambridge', 'Canterbury', 'Coventry', 'Warwick', 'Newcastle'],
     icon: '🇬🇧'
   },
   {
     name: 'Germans',
     leader: 'Frederick the Great',
-    color: '#696969',
-    cityNames: ['Berlin', 'Leipzig', 'Hamburg', 'Bremen', 'Frankfurt', 'Bonn', 'Nuremberg', 'Cologne', 'Munich'],
+    color: '#949494ff',
+    cityNames: ['Berlin', 'Leipzig', 'Hamburg', 'Bremen', 'Frankfurt', 'Bonn', 'Nuremberg', 'Cologne', 'Munich', 'Darmstadt', 'Mannheim','Heidelberg'],
     icon: '✠'
   },
   {
     name: 'French',
     leader: 'Napoleon Bonaparte',
-    color: '#0000CD',
+    color: '#edededff',
     cityNames: ['Paris', 'Orleans', 'Lyon', 'Tours', 'Marseille', 'Chartres', 'Avignon', 'Rouen', 'Grenoble'],
     icon: '🇫🇷🥖'
   },
@@ -148,11 +148,11 @@ export const CIVILIZATIONS: Civilization[] = [
     icon: '🇮🇳'
   },
   {
-    name: 'Mongols',
-    leader: 'Genghis Khan',
-    color: '#8B4513',
-    cityNames: ['Samarkand', 'Karakorum', 'Bokhara', 'Nishapur', 'Kashgar', 'Tabriz', 'Aleppo', 'Kabul'],
-    icon: '🏹🐎'
+    name: 'Kazakhs',
+    leader: 'Dschingis Khan',
+    color: '#00AFCA',
+    cityNames: ['Almaty', 'Shymkent', 'Karaganda', 'Taraz', 'Aktobe', 'Pavlodar', 'Oskemen', 'Semey', 'Oral', 'Astana'],
+    icon: '🐎🏹'
   },
   {
     name: 'Romans',
@@ -166,14 +166,14 @@ export const CIVILIZATIONS: Civilization[] = [
     leader: 'Joseph Stalin',
     color: '#B22222',
     cityNames: ['Moscow', 'Leningrad', 'Kiev', 'Minsk', 'Smolensk', 'Odessa', 'Sevastopol', 'Tula', 'Stalingrad'],
-    icon: ''
+    icon: '☭'
   },
   {
     name: 'Zulus',
     leader: 'Shaka',
-    color: '#2F4F4F',
+    color: '#8d3b00ff',
     cityNames: ['Zimbabwe', 'Ulundi', 'Bapedi', 'Hlobane', 'Isandhlwana', 'Intombe', 'Mpondo', 'Swazi'],
-    icon: ''
+    icon: '🛡️'
   }
 ];
 

@@ -23,22 +23,16 @@ function GameSetupModal({ show, onStart }) {
     Object.entries(DIFFICULTY_LEVELS).map(([id, data]) => ({ id, label: data.name }))
   ), []);
 
-  const civIcons = useMemo<Record<string, React.ReactNode>>(() => ({
-    Americans: '🦅',
-    Aztecs: '🐆',
-    Babylonians: '🏺',
-    Chinese: '🐉',
-    Germans: '✠',
-    Egyptians: <span className="civ-icon-egypt">𓂀</span>,
-    English: '🇬🇧',
-    French: '🇫🇷',
-    Greeks: '🏛️',
-    Indians: '🇮🇳',
-    Mongols: '🏹',
-    Romans: '⚔️',
-    Russians: <span className="civ-icon-russia">☭</span>,
-    Zulus: <span className="civ-icon-zulu">🛡️</span>
-  }), []);
+  const civIcons = useMemo<Record<string, React.ReactNode>>(() =>
+    CIVILIZATIONS.reduce((acc, civ) => {
+      let icon: React.ReactNode = civ.icon;
+      if (civ.name === 'Egyptians') icon = <span className="civ-icon-egypt">{civ.icon}</span>;
+      if (civ.name === 'Russians') icon = <span className="civ-icon-russia">{civ.icon}</span>;
+      if (civ.name === 'Zulus') icon = <span className="civ-icon-zulu">{civ.icon}</span>;
+      acc[civ.name] = icon;
+      return acc;
+    }, {} as Record<string, React.ReactNode>)
+  , []);
 
   const nextStep = () => {
     console.log(`[CLICK] GameSetup next step (${currentStep} -> ${currentStep + 1})`);
@@ -118,8 +112,6 @@ function GameSetupModal({ show, onStart }) {
                       </div>
                       <span className="setup-civ-card__leader">{civ.leader}</span>
                       <span className="setup-civ-card__cities">
-                        {civ.cityNames.slice(0, 3).join(', ')}
-                        {civ.cityNames.length > 3 ? '…' : ''}
                       </span>
                     </button>
                   );

@@ -20,7 +20,7 @@ Choose from 14 historical civilizations:
 - **Germans** (Frederick the Great)
 - **Greeks** (Alexander the Great)
 - **Indians** (Mahatma Gandhi)
-- **Mongols** (Genghis Khan)
+- **Kazakhs** (Dschingis Khan)
 - **Romans** (Julius Caesar)
 - **Russians** (Joseph Stalin)
 - **Zulus** (Shaka)

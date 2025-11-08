@@ -914,7 +914,7 @@ export const CITY_NAMES: Record<string, string[]> = {
     aztecs: ['Tenochtitlan', 'Texcoco', 'Tlatelolco', 'Teotihuacan', 'Tlaxcala', 'Calixtlahuaca', 'Xochicalco', 'Tula'],
     chinese: ['Beijing', 'Shanghai', 'Guangzhou', 'Xian', 'Nanjing', 'Chengdu', 'Luoyang', 'Tianjin'],
     english: ['London', 'York', 'Nottingham', 'Hastings', 'Canterbury', 'Coventry', 'Warwick', 'Dover'],
-    mongols: ['Samarkand', 'Bokhara', 'Nishapur', 'Karakorum', 'Kashgar', 'Tabriz', 'Otrar', 'Bukhara']
+    kazakhs: ['Almaty', 'Shymkent', 'Karaganda', 'Taraz', 'Aktobe', 'Pavlodar', 'Oskemen', 'Semey', 'Oral', 'Astana']
 };
 
 // City Manager - handles collections of cities
