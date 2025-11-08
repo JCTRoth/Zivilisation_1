@@ -72,6 +72,14 @@ export interface City {
   food: number;
   gold: number;
   science: number;
+  // Current production progress (0..1 or absolute depending on implementation)
+  productionProgress?: number;
+  // Queue of production items (units/buildings)
+  buildQueue?: Array<any>;
+  // Currently active production item
+  currentProduction?: any | null;
+  // Production carried over from previous completed item
+  carriedOverProgress?: number;
   isCapital?: boolean;
   yields?: {
     food: number;
@@ -81,7 +89,6 @@ export interface City {
   foodStored?: number;
   foodNeeded?: number;
   foodRequired?: number;
-  currentProduction?: any;
   productionStored?: number;
   buildings?: any[];
   shields?: number;

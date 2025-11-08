@@ -77,6 +77,15 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
           });
           break;
 
+        case 'CITY_PRODUCTION_CHANGED':
+          // Sync cities (engine is authoritative)
+          actions.updateCities(gameEngine.getAllCities());
+          if (eventData && eventData.item) {
+            const name = eventData.item.name || eventData.item.itemType || 'Production';
+            actions.addNotification({ type: 'success', message: eventData.queued ? `Queued ${name}` : `Started production: ${name}` });
+          }
+          break;
+
         case 'TURN_PROCESSED':
           actions.updateCivilizations(gameEngine.civilizations);
           actions.updateCities(gameEngine.getAllCities());

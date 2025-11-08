@@ -60,6 +60,7 @@ interface SerializedCity {
     buildQueue: ProductionItem[];
     currentProduction: ProductionItem | null;
     productionProgress: number;
+    carriedOverProgress: number;
     workingTiles: string[];
     founded: number;
     supportedUnitIds: string[];
@@ -92,6 +93,7 @@ export class City extends EventEmitter {
     public buildQueue: ProductionItem[];
     public currentProduction: ProductionItem | null;
     public productionProgress: number;
+    public carriedOverProgress: number;
 
     // Working tiles
     public workingTiles: Set<string>;
@@ -134,6 +136,7 @@ export class City extends EventEmitter {
         this.buildQueue = [];
         this.currentProduction = null;
         this.productionProgress = 0;
+        this.carriedOverProgress = 0;
 
         // Working tiles
         this.workingTiles = new Set();
@@ -346,8 +349,8 @@ export class City extends EventEmitter {
             this.buildBuilding(item.itemType);
         }
 
-        // Carry over excess production
-        this.productionProgress = excessProduction;
+        // Store excess production for next item
+        this.carriedOverProgress = Math.max(0, excessProduction);
 
         // Start next item in queue
         this.startNextProduction();
@@ -540,15 +543,19 @@ export class City extends EventEmitter {
     startNextProduction(): void {
         if (this.buildQueue.length > 0) {
             this.currentProduction = this.buildQueue.shift()!;
+            this.productionProgress = this.carriedOverProgress;
+            this.carriedOverProgress = 0;
         } else {
             this.currentProduction = null;
+            this.productionProgress = 0;
         }
     }
 
     // Set production target
     setProduction(item: ProductionItem): void {
         this.currentProduction = item;
-        this.productionProgress = 0;
+        this.productionProgress = this.carriedOverProgress;
+        this.carriedOverProgress = 0;
         this.emit('productionChanged', { city: this, item });
     }
 
@@ -874,6 +881,7 @@ export class City extends EventEmitter {
             buildQueue: this.buildQueue,
             currentProduction: this.currentProduction,
             productionProgress: this.productionProgress,
+            carriedOverProgress: this.carriedOverProgress,
             workingTiles: Array.from(this.workingTiles),
             founded: this.founded,
             supportedUnitIds: Array.from(this.supportedUnitIds),
@@ -891,6 +899,7 @@ export class City extends EventEmitter {
         city.buildQueue = data.buildQueue;
         city.currentProduction = data.currentProduction;
         city.productionProgress = data.productionProgress;
+        city.carriedOverProgress = data.carriedOverProgress || 0;
         city.workingTiles = new Set(data.workingTiles);
         city.founded = data.founded;
         city.supportedUnitIds = new Set(data.supportedUnitIds || []);

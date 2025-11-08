@@ -81,6 +81,176 @@ export default class GameEngine {
     this.onStateChange = null;
   }
 
+  /**
+   * Set or queue production for a city by id.
+   * If queue=true the item will be added to city's build queue, otherwise it will become current production.
+   */
+  setCityProduction(cityId: string, item: any, queue: boolean = false) {
+    console.log('[GameEngine] setCityProduction called', { cityId, item, queue });
+    // Try city manager if available
+    try {
+      if ((this as any).map && (this as any).map.getCity) {
+        const cityRaw = (this as any).map.getCity(cityId) || this.cities.find((c: any) => c.id === cityId);
+          if (!cityRaw) return false;
+          const city: any = cityRaw;
+
+          // Ensure buildQueue exists on the city instance (defensive)
+          if (!Array.isArray(city.buildQueue)) city.buildQueue = [];
+          console.log('[GameEngine] After buildQueue init', { cityId, buildQueue: city.buildQueue, city });
+
+          if (queue && typeof city.queueProduction === 'function') {
+            city.queueProduction(item);
+            console.log('[GameEngine] city.queueProduction executed', { cityId, buildQueue: city.buildQueue });
+            // If no current production, start the first queued item with carried over progress
+            if (!city.currentProduction && city.buildQueue.length > 0) {
+              city.currentProduction = city.buildQueue[0];
+              city.productionProgress = city.carriedOverProgress || 0;
+              city.carriedOverProgress = 0;
+              console.log('[GameEngine] started queued item as currentProduction', { cityId, currentProduction: city.currentProduction, productionProgress: city.productionProgress });
+            }
+          } else if (!queue && typeof city.setProduction === 'function') {
+            city.setProduction(item);
+          } else if (queue && Array.isArray(city.buildQueue)) {
+            city.buildQueue.push(item);
+            console.log('[GameEngine] pushed to city.buildQueue', { cityId, buildQueue: city.buildQueue });
+            // If no current production, start the first queued item with carried over progress
+            if (!city.currentProduction && city.buildQueue.length === 1) {
+              city.currentProduction = item;
+              city.productionProgress = city.carriedOverProgress || 0;
+              city.carriedOverProgress = 0;
+              console.log('[GameEngine] started single queued item as currentProduction', { cityId, currentProduction: city.currentProduction, productionProgress: city.productionProgress });
+            }
+          } else if (!queue) {
+            city.currentProduction = item;
+            city.productionProgress = city.carriedOverProgress || 0;
+            city.carriedOverProgress = 0;
+          }
+
+        // Emit state change for React
+        if (this.onStateChange) this.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item, queued: !!queue });
+        return { success: true, city };
+      }
+
+      // Fallback: find in this.cities
+      const cityRaw2 = this.cities.find(c => c.id === cityId);
+      if (!cityRaw2) return { success: false, reason: 'city_not_found' };
+      const city2: any = cityRaw2;
+
+      // Ensure buildQueue exists on the fallback city
+      if (!Array.isArray(city2.buildQueue)) city2.buildQueue = [];
+
+      if (queue && Array.isArray(city2.buildQueue)) {
+        city2.buildQueue.push(item);
+        console.log('[GameEngine] fallback pushed to city2.buildQueue', { cityId, buildQueue: city2.buildQueue });
+        // If no current production, start the first queued item with carried over progress
+        if (!city2.currentProduction && city2.buildQueue.length === 1) {
+          city2.currentProduction = item;
+          city2.productionProgress = city2.carriedOverProgress || 0;
+          city2.carriedOverProgress = 0;
+          console.log('[GameEngine] fallback started queued item as currentProduction', { cityId, currentProduction: city2.currentProduction, productionProgress: city2.productionProgress });
+        }
+      } else {
+        city2.currentProduction = item;
+        city2.productionProgress = city2.carriedOverProgress || 0;
+        city2.carriedOverProgress = 0;
+        console.log('[GameEngine] fallback set currentProduction', { cityId, currentProduction: city2.currentProduction, productionProgress: city2.productionProgress });
+      }
+
+      if (this.onStateChange) this.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item, queued: !!queue });
+      return { success: true, city: city2 };
+    } catch (e) {
+      console.error('[GameEngine] setCityProduction error', e);
+      return { success: false, reason: 'exception' };
+    }
+  }
+
+  purchaseCityProduction(cityId: string, item: any, civId?: number) {
+    try {
+      console.log('[GameEngine] purchaseCityProduction called', { cityId, item, civId });
+      const city = this.cities.find(c => c.id === cityId) || ((this as any).map && (this as any).map.getCity(cityId));
+      if (!city) return { success: false, reason: 'city_not_found' };
+
+      // Find civilization / owner
+      const civ = civId !== undefined ? this.civilizations[civId] : this.civilizations[city.civilizationId] || this.civilizations[city.civId] || null;
+      if (!civ || !civ.resources) return { success: false, reason: 'civ_not_found' };
+
+      const cost = item.cost || (item.shields || 0);
+      if ((civ.resources.gold || 0) < cost) return { success: false, reason: 'insufficient_gold' };
+
+      // Deduct gold
+      civ.resources.gold -= cost;
+
+      // If unit, create immediately on city tile
+      if (item.type === 'unit') {
+        const unitType = item.itemType;
+        const unit = {
+          id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+          type: unitType,
+          civilizationId: city.civilizationId || civ.id || 0,
+          col: city.col,
+          row: city.row,
+          health: 100,
+          movement: 0
+        };
+
+        if ((this as any).map && typeof (this as any).map.addUnit === 'function') {
+          (this as any).map.addUnit(unit);
+        } else {
+          this.units.push(unit as any);
+        }
+
+        if (this.onStateChange) this.onStateChange('CITY_UNIT_PURCHASED', { cityId, unit });
+        console.log('[GameEngine] purchase created unit', { cityId, unit });
+        return { success: true, unit };
+      }
+
+      // Buildings purchase: add to city's buildings directly
+      if (item.type === 'building') {
+        if (!city.buildings) city.buildings = city.buildings || [];
+        city.buildings.push(item.itemType);
+        console.log('[GameEngine] purchase added building', { cityId, building: item.itemType, buildings: city.buildings });
+        if (this.onStateChange) this.onStateChange('CITY_BUILDING_PURCHASED', { cityId, building: item.itemType });
+        return { success: true };
+      }
+
+      return { success: false, reason: 'unknown_item_type' };
+    } catch (e) {
+      console.error('[GameEngine] purchaseCityProduction error', e);
+      return { success: false, reason: 'exception' };
+    }
+  }
+
+  /**
+   * Remove an item from a city's build queue by index.
+   */
+  removeCityQueueItem(cityId: string, index: number) {
+    try {
+      console.log('[GameEngine] removeCityQueueItem called', { cityId, index });
+      const city = this.cities.find(c => c.id === cityId) || ((this as any).map && (this as any).map.getCity(cityId));
+      if (!city) return { success: false, reason: 'city_not_found' };
+
+      if (!Array.isArray(city.buildQueue)) return { success: false, reason: 'no_queue' };
+      if (index < 0 || index >= city.buildQueue.length) return { success: false, reason: 'index_out_of_bounds' };
+
+      const removed = city.buildQueue.splice(index, 1)[0];
+  console.log('[GameEngine] removed from buildQueue', { cityId, removed, buildQueue: city.buildQueue });
+
+      // If we removed the first item in queue and there's no current production,
+      // the carried over progress should be applied to the new first item
+      if (index === 0 && !city.currentProduction && city.buildQueue.length > 0) {
+        city.currentProduction = city.buildQueue.shift()!;
+        city.productionProgress = city.carriedOverProgress || 0;
+        city.carriedOverProgress = 0;
+      }
+
+      if (this.onStateChange) this.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, removedIndex: index, removed });
+      return { success: true, removed };
+    } catch (e) {
+      console.error('[GameEngine] removeCityQueueItem error', e);
+      return { success: false, reason: 'exception' };
+    }
+  }
+
   // Small helper: sleep for ms milliseconds
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -690,6 +860,14 @@ export default class GameEngine {
    * Get all units
    */
   getAllUnits() {
+    // Prefer units managed by the map/unitManager when available
+    try {
+      if ((this as any).map && typeof (this as any).map.getAllUnits === 'function') {
+        return (this as any).map.getAllUnits();
+      }
+    } catch (e) {
+      // fall back
+    }
     return [...this.units];
   }
 
@@ -697,6 +875,17 @@ export default class GameEngine {
    * Get all cities
    */
   getAllCities() {
+    // Prefer cities managed by the map/cityManager when available
+    try {
+      if ((this as any).map && typeof (this as any).map.getCities === 'function') {
+        return (this as any).map.getCities();
+      }
+      if ((this as any).map && typeof (this as any).map.getAllCities === 'function') {
+        return (this as any).map.getAllCities();
+      }
+    } catch (e) {
+      // fall back
+    }
     return [...this.cities];
   }
 

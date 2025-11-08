@@ -1,5 +1,9 @@
 /* GameModals styles */
 
+.tech-tree-modal .btn-close {
+  color: #f5f5f5;
+}
+
 .tech-tree-modal-body {
   max-height: 88vh;
   overflow-y: auto;

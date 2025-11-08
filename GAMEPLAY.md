@@ -55,6 +55,14 @@ Have the highest civilization score when the game ends in 2100 AD.
 - Production rate depends on terrain, population, and improvements
 - Granary building reduces food needed for growth by 50%
 
+### City: Production Basics
+
+- Resource: Shields (production points) — used to build units and improvements.
+- Rule: Each city can construct one unit or improvement at a time.
+- Shield Accumulation: At the end of each turn, the city adds its total production (shields) to the current project's progress.
+- Completion: When accumulated shields >= project cost, the unit or improvement is completed and spawned/applied in the city. Any excess shields carry over to the next project.
+
+
 **Happiness**
 - Citizens can be Happy, Content, or Unhappy
 - Too many unhappy citizens cause disorder (city produces nothing)

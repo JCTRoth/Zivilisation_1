@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import { useGameStore } from '../../stores/gameStore';
 import { CityUtils } from '../../utils/helpers';
+import { UNIT_PROPS } from '../../utils/constants';
 import '../../styles/gameModals.css';
 
 const GameModals = ({ gameEngine }) => {
@@ -122,87 +123,11 @@ const GameModals = ({ gameEngine }) => {
         </Modal.Title>
       </Modal.Header>
       <Modal.Body className="bg-dark text-white tech-tree-modal-body">
-  <Tabs defaultActiveKey="tree" className="mb-3">
-          {/* Tree tab first for immediate visual overview */}
-          <Tab eventKey="tree" title="Tree">
-            <div className="tech-tree-container">
-              <React.Suspense fallback={<div className="text-white p-3">Loading tree...</div>}>
-                <TechTreeView technologies={technologies} width={Math.max(window.innerWidth - 200, 800)} />
-              </React.Suspense>
-            </div>
-          </Tab>
-          <Tab eventKey="available" title="Available">
-            <div className="tech-tree">
-              {Object.entries(groupByEra(technologies.filter(tech => tech.available && !tech.researched))).map(([era, techs]) => (
-                <div key={era} className="mb-3">
-                  <h6 className="text-white">{era}</h6>
-                  {techs.map(tech => {
-                    const affordable = (playerResources?.science || 0) >= (tech.cost || 0);
-                    const isResearching = currentPlayer?.currentResearch?.id === tech.id;
-                    return (
-                      <Card key={tech.id} className="tech-node available mb-2">
-                        <Card.Body className="d-flex align-items-center justify-content-between">
-                          <div>
-                            <Card.Title className="h6 mb-1">{tech.name}</Card.Title>
-                            <Card.Text className="small mb-0">{tech.description}</Card.Text>
-                            <small className="text-muted">Cost: {tech.cost} science</small>
-                          </div>
-                          <div>
-                            {isResearching && <small className="text-warning me-2">Researching...</small>}
-                            <Button
-                              size="sm"
-                              variant={affordable ? 'primary' : 'secondary'}
-                              disabled={!affordable || !tech.available || isResearching}
-                              onClick={() => handleResearchTechnology(tech.id)}
-                            >
-                              {affordable ? 'Research' : 'Need Science'}
-                            </Button>
-                          </div>
-                        </Card.Body>
-                      </Card>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </Tab>
-          
-          <Tab eventKey="researched" title="Researched">
-            <div className="tech-tree">
-              {technologies.filter(tech => tech.researched).map(tech => (
-                <Card key={tech.id} className="tech-node researched mb-2">
-                  <Card.Body>
-                    <Card.Title className="h6">{tech.name}</Card.Title>
-                    <Card.Text className="small">{tech.description}</Card.Text>
-                    <small className="text-success">
-                      <i className="bi bi-check-circle"></i> Complete
-                    </small>
-                  </Card.Body>
-                </Card>
-              ))}
-            </div>
-          </Tab>
-          
-          <Tab eventKey="locked" title="Future">
-            <div className="tech-tree">
-              {Object.entries(groupByEra(technologies.filter(tech => !tech.available && !tech.researched))).map(([era, techs]) => (
-                <div key={era} className="mb-3">
-                  <h6 className="text-white">{era}</h6>
-                  {techs.map(tech => (
-                    <Card key={tech.id} className="tech-node locked mb-2">
-                      <Card.Body>
-                        <Card.Title className="h6">{tech.name}</Card.Title>
-                        <Card.Text className="small">{tech.description}</Card.Text>
-                        <small className="text-muted">Prerequisites: {tech.prerequisites?.join(', ') || 'None'}</small>
-                      </Card.Body>
-                    </Card>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </Tab>
-          
-        </Tabs>
+        <div className="tech-tree-container">
+          <React.Suspense fallback={<div className="text-white p-3">Loading tree...</div>}>
+            <TechTreeView technologies={technologies} width={Math.max(window.innerWidth - 200, 800)} />
+          </React.Suspense>
+        </div>
       </Modal.Body>
     </Modal>
   );
@@ -521,6 +446,154 @@ const GameModals = ({ gameEngine }) => {
                       </ul>
                     ) : <p className="hex-detail-no-buildings">No buildings</p>}
                   </div>
+                  {/* Production selector moved here (Overview tab) */}
+                  <div className="mt-3">
+                    <h6>Production</h6>
+                    <div className="d-flex gap-2 align-items-center">
+                      <select
+                        className="form-select bg-secondary text-white"
+                        value={selectedProductionKey || ''}
+                        onChange={(e) => setSelectedProductionKey(e.target.value || null)}
+                        style={{maxWidth: '420px'}}
+                        disabled={!availableProductionKeys || availableProductionKeys.length === 0}
+                      >
+                        {(availableProductionKeys.length === 0) && <option value="">(No available items)</option>}
+                        {availableProductionKeys.map(k => (
+                          <option key={k} value={k}>{UNIT_PROPS[k].name} ({UNIT_PROPS[k].cost} shields)</option>
+                        ))}
+                      </select>
+
+                      <div className="d-flex gap-2">
+                        <Button
+                          variant="light"
+                          disabled={!selectedProductionKey || !gameEngine || !selectedCity}
+                          onClick={() => {
+                            if (!selectedProductionKey) return;
+                            console.log('[GameModals] Add to Queue clicked', { cityId: selectedCity?.id, productionKey: selectedProductionKey });
+                            console.log('[GameModals] Before queue', { buildQueue: selectedCity?.buildQueue });
+                            handleQueueProduction(selectedProductionKey); // Add to queue
+                            console.log('[GameModals] After queue (will re-sync from engine)');
+                          }}
+                        >
+                          Add to Queue
+                        </Button>
+                        <Button
+                          variant="danger"
+                          disabled={selectedQueueIndex === null || selectedQueueIndex === undefined || !Array.isArray(selectedCity?.buildQueue) || selectedCity.buildQueue.length === 0 || !gameEngine}
+                          onClick={async () => {
+                            if (selectedQueueIndex === null || selectedQueueIndex === undefined) return;
+                            if (!gameEngine || typeof gameEngine.removeCityQueueItem !== 'function') return;
+                            const res = (gameEngine as any).removeCityQueueItem(selectedCity.id, selectedQueueIndex);
+                            if (res && res.success) {
+                              actions.addNotification({ type: 'success', message: `Removed from queue: ${res.removed?.name || 'item'}` });
+                              if (gameEngine.getAllCities) actions.updateCities(gameEngine.getAllCities());
+                              setSelectedQueueIndex(null);
+                            } else {
+                              actions.addNotification({ type: 'warning', message: `Failed to remove: ${res?.reason || 'unknown'}` });
+                            }
+                          }}
+                        >
+                          Remove
+                        </Button>
+                        <Button
+                          variant="success"
+                          disabled={!selectedProductionKey || !gameEngine || !selectedCity || (currentPlayer?.resources?.gold || 0) < (UNIT_PROPS[selectedProductionKey]?.cost || 0)}
+                          onClick={() => {
+                            if (!selectedProductionKey) return;
+                            console.log('[GameModals] Buy Now clicked', { cityId: selectedCity?.id, productionKey: selectedProductionKey });
+                            console.log('[GameModals] Player gold before buy', currentPlayer?.resources?.gold);
+                            handleBuyNow(selectedProductionKey);
+                            console.log('[GameModals] Buy Now finished');
+                          }}
+                        >
+                          Buy Now ({UNIT_PROPS[selectedProductionKey]?.cost || 0} gold)
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Current Production Indicator */}
+                    <div className="mt-3">
+                      <h6>Current Production</h6>
+                      {selectedCity.currentProduction ? (
+                        <div className="bg-secondary text-white p-2 rounded">
+                          <strong>{selectedCity.currentProduction.name}</strong>
+                          <div className="small text-muted">Progress: {Math.round((selectedCity.productionProgress || 0) * 100)}%</div>
+                        </div>
+                      ) : (
+                        <div className="text-muted">No active production</div>
+                      )}
+                    </div>
+
+                    {/* Queue Display */}
+                    <div className="mt-3">
+                      <div className="d-flex align-items-center mb-1">
+                        <h6 className="me-2">Queue</h6>
+                        <Button
+                          variant="outline-light"
+                          size="sm"
+                          className="me-1"
+                          style={{lineHeight: 1, padding: '2px 6px'}}
+                          disabled={selectedQueueIndex === null || selectedQueueIndex <= 0 || !selectedCity || !Array.isArray(selectedCity.buildQueue) || selectedCity.buildQueue.length < 2}
+                          onClick={() => {
+                            if (selectedQueueIndex === null || selectedQueueIndex <= 0) return;
+                            const queue = [...selectedCity.buildQueue];
+                            [queue[selectedQueueIndex - 1], queue[selectedQueueIndex]] = [queue[selectedQueueIndex], queue[selectedQueueIndex - 1]];
+                            // Update queue in engine and UI
+                            if (gameEngine && typeof gameEngine.setCityQueue === 'function') {
+                              gameEngine.setCityQueue(selectedCity.id, queue);
+                            } else {
+                              selectedCity.buildQueue = queue;
+                            }
+                            actions.updateCities(cities.map(c => c.id === selectedCity.id ? {...c, buildQueue: queue} : c));
+                            setSelectedQueueIndex(selectedQueueIndex - 1);
+                          }}
+                        >
+                          ▲
+                        </Button>
+                        <Button
+                          variant="outline-light"
+                          size="sm"
+                          style={{lineHeight: 1, padding: '2px 6px'}}
+                          disabled={selectedQueueIndex === null || selectedQueueIndex === selectedCity.buildQueue.length - 1 || !selectedCity || !Array.isArray(selectedCity.buildQueue) || selectedCity.buildQueue.length < 2}
+                          onClick={() => {
+                            if (selectedQueueIndex === null || selectedQueueIndex === selectedCity.buildQueue.length - 1) return;
+                            const queue = [...selectedCity.buildQueue];
+                            [queue[selectedQueueIndex + 1], queue[selectedQueueIndex]] = [queue[selectedQueueIndex], queue[selectedQueueIndex + 1]];
+                            // Update queue in engine and UI
+                            if (gameEngine && typeof gameEngine.setCityQueue === 'function') {
+                              gameEngine.setCityQueue(selectedCity.id, queue);
+                            } else {
+                              selectedCity.buildQueue = queue;
+                            }
+                            actions.updateCities(cities.map(c => c.id === selectedCity.id ? {...c, buildQueue: queue} : c));
+                            setSelectedQueueIndex(selectedQueueIndex + 1);
+                          }}
+                        >
+                          ▼
+                        </Button>
+                      </div>
+                      <div className="queue-box bg-dark border border-secondary rounded p-2" style={{maxHeight: '220px', overflowY: 'auto'}}>
+                        {Array.isArray(selectedCity.buildQueue) && selectedCity.buildQueue.length > 0 ? (
+                          selectedCity.buildQueue.map((q: any, i: number) => (
+                            <div
+                              key={i}
+                              className={`queue-item p-2 mb-1 rounded ${selectedQueueIndex === i ? 'bg-secondary text-white' : 'text-white'}`}
+                              style={{cursor: 'pointer'}}
+                              onClick={() => setSelectedQueueIndex(i)}
+                            >
+                              <div className="d-flex justify-content-between">
+                                <div><strong>{q.name}</strong></div>
+                                <div className="text-white">{q.cost} shields</div>
+                              </div>
+                              <div className="small text-white">#{i + 1} in queue</div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-white">Queue is empty</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <p className="hex-detail-no-city">No city selected</p>
@@ -546,6 +619,412 @@ const GameModals = ({ gameEngine }) => {
     );
   };
 
+  // City Production Modal
+  const handleStartProduction = (unitKey: string) => {
+    if (!selectedCity) return;
+    const unitDef = UNIT_PROPS[unitKey];
+    if (!unitDef) return;
+
+    const item = {
+      type: 'unit',
+      itemType: unitKey,
+      name: unitDef.name,
+      cost: unitDef.cost
+    };
+
+    if (gameEngine && typeof gameEngine.setCityProduction === 'function') {
+      gameEngine.setCityProduction(selectedCity.id, item, false);
+      actions.addNotification({ type: 'success', message: `Started production: ${item.name}` });
+    }
+
+    // Close dialog after selecting
+    actions.hideDialog();
+  };
+
+  const handleQueueProduction = (unitKey: string) => {
+    if (!selectedCity) {
+      console.warn('[GameModals] handleQueueProduction: No city selected');
+      return;
+    }
+    const unitDef = UNIT_PROPS[unitKey];
+    if (!unitDef) {
+      console.warn('[GameModals] handleQueueProduction: Invalid unit key', unitKey);
+      return;
+    }
+
+    const item = {
+      type: 'unit',
+      itemType: unitKey,
+      name: unitDef.name,
+      cost: unitDef.cost
+    };
+
+    console.log('[GameModals] handleQueueProduction: gameEngine object', gameEngine);
+    if (gameEngine && typeof gameEngine.getAllCities === 'function') {
+      console.log('[GameModals] handleQueueProduction: gameEngine.getAllCities()', gameEngine.getAllCities());
+    }
+
+    if (gameEngine) {
+      const hasMethod = typeof (gameEngine as any).setCityProduction === 'function';
+      console.log('[GameModals] handleQueueProduction: engine method present?', { hasMethod });
+      let ok: any = null;
+      try {
+        if (hasMethod) ok = (gameEngine as any).setCityProduction(selectedCity.id, item, true);
+        else console.warn('[GameModals] handleQueueProduction: setCityProduction not available on engine');
+      } catch (e) {
+        console.error('[GameModals] handleQueueProduction: exception calling setCityProduction', e);
+      }
+
+      console.log('[GameModals] handleQueueProduction: setCityProduction returned', ok);
+
+      // Always try to inspect engine city list for debugging
+      try {
+        if ((gameEngine as any).getAllCities) {
+          const allCities = (gameEngine as any).getAllCities();
+          console.log('[GameModals] handleQueueProduction: engine.getAllCities()', allCities.map(c => ({ id: c.id, buildQueue: c.buildQueue })));
+          actions.updateCities(allCities);
+          const updated = allCities.find((c: any) => c.id === selectedCity.id);
+          console.log('[GameModals] handleQueueProduction: updated selectedCity from engine', { id: updated?.id, buildQueue: updated?.buildQueue });
+        }
+      } catch (e) {
+        console.error('[GameModals] handleQueueProduction: error reading engine cities', e);
+      }
+
+      const success = ok && (ok.success === true || ok === true);
+      if (success) {
+        actions.addNotification({ type: 'info', message: `Queued production: ${item.name}` });
+      } else {
+        actions.addNotification({ type: 'warning', message: `Failed to queue: ${item.name}` });
+      }
+    }
+
+    console.log('[GameModals] handleQueueProduction: After queue', {
+      cityId: selectedCity.id,
+      buildQueue: selectedCity.buildQueue
+    });
+  };
+
+  // New: track a single selected production item for the select box
+  const [selectedProductionKey, setSelectedProductionKey] = useState<string | null>(null);
+  // Track selected index in the queue (for removal)
+  const [selectedQueueIndex, setSelectedQueueIndex] = useState<number | null>(null);
+
+  // Helper function to check if a city is coastal (has water tiles adjacent or on its position)
+  const checkIfCityIsCoastal = (city: any, gameEngine: any): boolean => {
+    if (!gameEngine || !gameEngine.map || !gameEngine.map.getTile) return false;
+    
+    const directions = [
+      { col: 0, row: 0 }, // city tile itself
+      { col: -1, row: -1 }, { col: 0, row: -1 }, { col: 1, row: -1 },
+      { col: -1, row: 0 }, { col: 1, row: 0 },
+      { col: -1, row: 1 }, { col: 0, row: 1 }, { col: 1, row: 1 }
+    ];
+    
+    for (const dir of directions) {
+      const tile = gameEngine.map.getTile(city.col + dir.col, city.row + dir.row);
+      if (tile && (tile.terrain === 'ocean' || tile.terrain === 'coast')) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Build available items list (filtered) using same logic as render list
+  const availableProductionKeys = useMemo(() => {
+    return Object.keys(UNIT_PROPS).filter((key) => {
+      const u = UNIT_PROPS[key];
+      const req = (u as any).requires || null;
+      if (req && currentPlayer && Array.isArray(currentPlayer.technologies)) {
+        // Handle both single requirement and array of requirements
+        const requirements = Array.isArray(req) ? req : [req];
+        const hasAllRequiredTechs = requirements.every((tech: string) => currentPlayer.technologies.includes(tech));
+        if (!hasAllRequiredTechs) return false;
+      }
+
+      if (u.naval && selectedCity) {
+        // Check if city has harbor or is coastal (tile or adjacent tiles are water)
+        const hasHarbor = selectedCity.buildings && selectedCity.buildings.includes('harbor');
+        if (!hasHarbor) {
+          const isCoastal = checkIfCityIsCoastal(selectedCity, gameEngine);
+          if (!isCoastal) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [currentPlayer, selectedCity, gameEngine]);
+
+  // Ensure there is a default selection when modal opens or available list changes
+  useEffect(() => {
+    if (!selectedProductionKey && availableProductionKeys && availableProductionKeys.length > 0) {
+      setSelectedProductionKey(availableProductionKeys[0]);
+    }
+    // Clear selection if nothing available
+    if (availableProductionKeys.length === 0) setSelectedProductionKey(null);
+    // Log available production options for debugging
+    console.log('[GameModals] availableProductionKeys', availableProductionKeys);
+  }, [availableProductionKeys]);
+
+  // Reset queue selection when the selected city changes
+  useEffect(() => {
+    setSelectedQueueIndex(null);
+    if (selectedCity) console.log('[GameModals] selectedCity changed', { id: selectedCity.id, name: selectedCity.name, buildQueue: selectedCity.buildQueue });
+  }, [selectedCityId]);
+
+  const renderCityProduction = () => (
+    <Modal
+      show={uiState.activeDialog === 'city-production'}
+      onHide={handleCloseDialog}
+      centered
+      size="lg"
+      dialogClassName="city-production-modal"
+    >
+      <Modal.Header closeButton className="bg-dark text-white">
+        <Modal.Title>
+          <i className="bi bi-gear"></i> {selectedCity?.name || 'City Production'}
+        </Modal.Title>
+      </Modal.Header>
+      <Modal.Body className="bg-dark text-white">
+        <div className="row">
+          <div className="col-md-12 mb-2">
+            <p>Select a unit to produce in this city. Production cost is shown in shields.</p>
+          </div>
+        </div>
+        {renderProductionContent()}
+      </Modal.Body>
+    </Modal>
+  );
+
+  // Reusable production list content (used both in modal and city details tab)
+  // Render production summary: current production and queued items
+  const renderProductionContent = () => (
+    <div>
+      {selectedCity ? (
+        <div>
+          <div className="mb-3">
+            <h6>Current Production</h6>
+            {selectedCity.currentProduction ? (
+              <div className="bg-secondary text-white p-2 rounded">
+                <strong>{selectedCity.currentProduction.name}</strong>
+                <div className="small text-muted">Progress: {Math.round((selectedCity.productionProgress || 0) * 100)}%</div>
+              </div>
+            ) : (
+              <div className="text-muted">No active production</div>
+            )}
+          </div>
+
+          <div>
+            <h6>Queue</h6>
+            <div className="d-flex align-items-center mb-1">
+              <Button
+                variant="outline-light"
+                size="sm"
+                className="me-1"
+                style={{lineHeight: 1, padding: '2px 6px'}}
+                disabled={selectedQueueIndex === null || selectedQueueIndex <= 0 || !selectedCity || !Array.isArray(selectedCity.buildQueue) || selectedCity.buildQueue.length < 2}
+                onClick={() => {
+                  if (selectedQueueIndex === null || selectedQueueIndex <= 0) return;
+                  const queue = [...selectedCity.buildQueue];
+                  [queue[selectedQueueIndex - 1], queue[selectedQueueIndex]] = [queue[selectedQueueIndex], queue[selectedQueueIndex - 1]];
+                  // Update queue in engine and UI
+                  if (gameEngine && typeof gameEngine.setCityQueue === 'function') {
+                    gameEngine.setCityQueue(selectedCity.id, queue);
+                  } else {
+                    selectedCity.buildQueue = queue;
+                  }
+                  actions.updateCities(cities.map(c => c.id === selectedCity.id ? {...c, buildQueue: queue} : c));
+                  setSelectedQueueIndex(selectedQueueIndex - 1);
+                }}
+              >
+                ▲
+              </Button>
+              <Button
+                variant="outline-light"
+                size="sm"
+                style={{lineHeight: 1, padding: '2px 6px'}}
+                disabled={selectedQueueIndex === null || selectedQueueIndex === selectedCity.buildQueue.length - 1 || !selectedCity || !Array.isArray(selectedCity.buildQueue) || selectedCity.buildQueue.length < 2}
+                onClick={() => {
+                  if (selectedQueueIndex === null || selectedQueueIndex === selectedCity.buildQueue.length - 1) return;
+                  const queue = [...selectedCity.buildQueue];
+                  [queue[selectedQueueIndex + 1], queue[selectedQueueIndex]] = [queue[selectedQueueIndex], queue[selectedQueueIndex + 1]];
+                  // Update queue in engine and UI
+                  if (gameEngine && typeof gameEngine.setCityQueue === 'function') {
+                    gameEngine.setCityQueue(selectedCity.id, queue);
+                  } else {
+                    selectedCity.buildQueue = queue;
+                  }
+                  actions.updateCities(cities.map(c => c.id === selectedCity.id ? {...c, buildQueue: queue} : c));
+                  setSelectedQueueIndex(selectedQueueIndex + 1);
+                }}
+              >
+                ▼
+              </Button>
+            </div>
+            <div className="queue-box bg-dark border border-secondary rounded p-2" style={{maxHeight: '220px', overflowY: 'auto'}}>
+              {Array.isArray(selectedCity.buildQueue) && selectedCity.buildQueue.length > 0 ? (
+                selectedCity.buildQueue.map((q: any, i: number) => (
+                  <div
+                    key={i}
+                    className={`queue-item p-2 mb-1 rounded ${selectedQueueIndex === i ? 'bg-secondary text-white' : 'text-white'}`}
+                    style={{cursor: 'pointer'}}
+                    onClick={() => setSelectedQueueIndex(i)}
+                  >
+                    <div className="d-flex justify-content-between">
+                      <div><strong>{q.name}</strong></div>
+                      <div className="text-white">{q.cost} shields</div>
+                    </div>
+                    <div className="small text-white">#{i + 1} in queue</div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-white">Queue is empty</div>
+              )}
+            </div>
+
+            <div className="mt-2 d-flex gap-2">
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={!selectedProductionKey || !gameEngine || !selectedCity}
+                onClick={() => {
+                  if (!selectedProductionKey) return;
+                  // Add to queue (inline)
+                  const unitDef = UNIT_PROPS[selectedProductionKey];
+                  const item = { type: 'unit', itemType: selectedProductionKey, name: unitDef.name, cost: unitDef.cost };
+                  if (gameEngine) {
+                    const hasMethod = typeof (gameEngine as any).setCityProduction === 'function';
+                    console.log('[GameModals] Inline Add to Queue: engine method?', { hasMethod });
+                    let ok: any = null;
+                    try {
+                      if (hasMethod) ok = (gameEngine as any).setCityProduction(selectedCity.id, item, true);
+                    } catch (e) {
+                      console.error('[GameModals] Inline Add to Queue: setCityProduction exception', e);
+                    }
+                    console.log('[GameModals] Inline Add to Queue: setCityProduction returned', ok);
+                    if ((gameEngine as any).getAllCities) {
+                      const allCities = (gameEngine as any).getAllCities();
+                      console.log('[GameModals] Inline Add to Queue: engine.getAllCities()', allCities.map((c: any) => ({ id: c.id, buildQueue: c.buildQueue })));
+                      actions.updateCities(allCities);
+                      const updated = allCities.find((c: any) => c.id === selectedCity.id);
+                      console.log('[GameModals] Inline Add to Queue: updated selectedCity', { id: updated?.id, buildQueue: updated?.buildQueue });
+                    }
+                    if (ok) {
+                      actions.addNotification({ type: 'info', message: `Added to queue: ${item.name}` });
+                    } else {
+                      actions.addNotification({ type: 'warning', message: `Failed to add to queue: ${item.name}` });
+                    }
+                  }
+                }}
+              >
+                Add to Queue
+              </Button>
+
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={selectedQueueIndex === null || selectedQueueIndex === undefined || !Array.isArray(selectedCity?.buildQueue) || selectedCity.buildQueue.length === 0 || !gameEngine}
+                onClick={async () => {
+                  if (selectedQueueIndex === null || selectedQueueIndex === undefined) return;
+                  if (!gameEngine || typeof gameEngine.removeCityQueueItem !== 'function') return;
+                  const res = (gameEngine as any).removeCityQueueItem(selectedCity.id, selectedQueueIndex);
+                  if (res && res.success) {
+                    actions.addNotification({ type: 'success', message: `Removed from queue: ${res.removed?.name || 'item'}` });
+                    // Refresh cities data from engine if available
+                    if (gameEngine.getAllCities) actions.updateCities(gameEngine.getAllCities());
+                    setSelectedQueueIndex(null);
+                  } else {
+                    actions.addNotification({ type: 'warning', message: `Failed to remove: ${res?.reason || 'unknown'}` });
+                  }
+                }}
+              >
+                Remove
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div>No city selected</div>
+      )}
+    </div>
+  );
+
+  // City Purchase Modal (Buy Now)
+  const handleBuyNow = (unitKey: string) => {
+    if (!selectedCity) return;
+    const unitDef = UNIT_PROPS[unitKey];
+    if (!unitDef) return;
+
+    const item = { type: 'unit', itemType: unitKey, name: unitDef.name, cost: unitDef.cost };
+    if (gameEngine && typeof gameEngine.purchaseCityProduction === 'function') {
+      const res = gameEngine.purchaseCityProduction(selectedCity.id, item);
+      if (res && res.success) {
+        actions.addNotification({ type: 'success', message: `Purchased ${item.name}` });
+        actions.updateCities(gameEngine.getAllCities());
+        actions.updateUnits(gameEngine.getAllUnits());
+      } else {
+        actions.addNotification({ type: 'warning', message: `Purchase failed: ${res?.reason || 'unknown'}` });
+      }
+    }
+
+    actions.hideDialog();
+  };
+
+  const renderCityPurchase = () => (
+    <Modal
+      show={uiState.activeDialog === 'city-purchase'}
+      onHide={handleCloseDialog}
+      centered
+      size="lg"
+      dialogClassName="city-purchase-modal"
+    >
+      <Modal.Header closeButton className="bg-dark text-white">
+        <Modal.Title>
+          <i className="bi bi-cart"></i> Purchase in {selectedCity?.name || 'City'}
+        </Modal.Title>
+      </Modal.Header>
+      <Modal.Body className="bg-dark text-white">
+        <div className="mb-2">Your gold: {currentPlayer?.resources?.gold ?? 0}</div>
+        {renderPurchaseContent()}
+      </Modal.Body>
+    </Modal>
+  );
+
+  // Reusable purchase list content (used in purchase modal and city details tab)
+  const renderPurchaseContent = () => (
+    <div>
+      <div className="mb-2">Your gold: {currentPlayer?.resources?.gold ?? 0}</div>
+      <div className="row">
+        {Object.keys(UNIT_PROPS).filter(k => {
+          const u = UNIT_PROPS[k];
+          const req = (u as any).requires || null;
+          if (req && currentPlayer && Array.isArray(currentPlayer.technologies)) {
+            if (!currentPlayer.technologies.includes(req)) return false;
+          }
+          return true;
+        }).map(k => {
+          const u = UNIT_PROPS[k];
+          return (
+            <div key={k} className="col-12 col-sm-6 col-md-4 mb-2">
+              <Card className="bg-secondary text-white h-100">
+                <Card.Body className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <div className="h6 mb-0">{u.name} <small className="text-muted">({u.type})</small></div>
+                    <small className="text-muted">Cost: {u.cost} gold</small>
+                  </div>
+                  <div>
+                    <Button size="sm" variant="success" onClick={() => handleBuyNow(k)} disabled={(currentPlayer?.resources?.gold || 0) < u.cost}>
+                      Buy Now
+                    </Button>
+                  </div>
+                </Card.Body>
+              </Card>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <>
       {renderGameMenu()}
@@ -553,6 +1032,8 @@ const GameModals = ({ gameEngine }) => {
       {renderDiplomacy()}
       {renderHelp()}
       {renderCityDetails()}
+      {renderCityProduction()}
+      {renderCityPurchase()}
     </>
   );
 };
