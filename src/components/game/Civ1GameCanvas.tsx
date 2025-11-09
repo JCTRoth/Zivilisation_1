@@ -1110,7 +1110,29 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
 
   // Trigger render when camera changes (pan/zoom)
   useEffect(() => {
-    triggerRender();
+    // Reset render state to avoid stale/overly-large draws after zoom/pan
+    needsRender.current = true;
+    lastRenderTime.current = 0;
+    // Clear last known game state so hasGameStateChanged will re-evaluate fully
+    lastGameState.current = null;
+
+    // Cancel any pending render timeout that may have been scheduled
+    if (renderTimeoutRef.current) {
+      clearTimeout(renderTimeoutRef.current);
+      renderTimeoutRef.current = null;
+    }
+
+    // Force a quick refresh on the next animation frame (safe no-op if render not ready)
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame((t) => {
+        try {
+          render(t);
+        } catch (e) {
+          // swallow errors here - render will run in the main loop as well
+          // console.debug('[Civ1GameCanvas] render() initial call failed after camera change', e);
+        }
+      });
+    }
   }, [camera.x, camera.y, camera.zoom]);
 
   // Trigger render when selection changes
