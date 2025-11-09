@@ -19,20 +19,41 @@
   color: rgba(255, 255, 255, 0.65);
 }
 
+.modal-header-content {
+  margin-top: 16px;
+}
+
+.modal-civilization-heading {
+  font-size: clamp(1.35rem, 2.5vw, 1.9rem);
+  font-weight: 600;
+  color: var(--heading);
+  margin-bottom: 8px;
+}
+
+.modal-civilization-subheading {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.5;
+  margin: 0;
+}
+
 .modal-body-custom {
   background: linear-gradient(180deg, var(--panel-bg) 0%, var(--panel-bg-2) 100%);
   color: #f7f9fc;
   padding: 0;
+  overflow: hidden;
 }
 
 .setup-content {
   width: 100%;
   max-width: 1150px;
   margin: 0 auto;
-  padding: 24px clamp(16px, 4vw, 52px);
+  padding: 0 clamp(16px, 4vw, 52px) 24px clamp(16px, 4vw, 52px);
   display: flex;
   flex-direction: column;
   gap: 24px;
+  max-height: 80vh;
+  overflow: hidden;
 }
 
 .setup-progress {
@@ -68,12 +89,6 @@
   gap: 20px;
 }
 
-.setup-section-header {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .setup-section-heading {
   font-size: clamp(1.35rem, 2.5vw, 1.9rem);
   font-weight: 600;
@@ -89,14 +104,45 @@
 .setup-civ-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 16px;
+  gap: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Force each civ card to align icon/name consistently using a small grid */
+.setup-civ-card__header {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.setup-civ-card__icon {
+  width: 64px;
+  height: 64px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px; /* uniform icon size */
+}
+
+/* If civ icon is wrapped in special classes, scale them to the same size */
+.civ-icon-egypt,
+.civ-icon-russia,
+.civ-icon-zulu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  font-size: 32px;
 }
 
 .setup-civ-card {
   all: unset;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 5px;
   padding: 18px;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -207,6 +253,52 @@
   .setup-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* Stacked layout for civilization cards: icons on first row, name on second, leader on third */
+.setup-civ-card {
+  display: grid !important;
+  grid-template-rows: auto 1fr auto;
+  align-items: center;
+  justify-items: center;
+  gap: 6px;
+}
+
+.setup-civ-card__icons-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.setup-civ-card__icon,
+.civ-icon-egypt,
+.civ-icon-russia,
+.civ-icon-zulu {
+  width: 64px !important;
+  height: 64px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 32px !important;
+}
+
+.setup-civ-card__name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-align: center;
+}
+
+.setup-civ-card__leader {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.75);
+  text-align: center;
+}
+
+/* Reduce padding slightly to better fit the stacked layout */
+.setup-civ-card {
+  padding: 14px;
 }
 
 @media (min-width: 1024px) {
@@ -385,6 +477,27 @@
 .setup-footer__button--success {
   background: linear-gradient(135deg, #28a745 0%, #148336 100%);
   box-shadow: 0 14px 26px rgba(40, 167, 69, 0.3);
+}
+
+.setup-footer__selected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.setup-footer__selected-label {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.setup-footer__selected-value {
+  font-weight: 600;
+}
+
+.setup-footer__selected-leader {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 @media (min-width: 640px) {

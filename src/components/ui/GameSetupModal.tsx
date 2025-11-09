@@ -26,14 +26,30 @@ function GameSetupModal({ show, onStart }) {
 
   const civIcons = useMemo<Record<string, React.ReactNode>>(() =>
     CIVILIZATIONS.reduce((acc, civ) => {
-      let icon: React.ReactNode = civ.icon;
-      if (civ.name === 'Egyptians') icon = <span className="civ-icon-egypt">{civ.icon}</span>;
-      if (civ.name === 'Russians') icon = <span className="civ-icon-russia">{civ.icon}</span>;
-      if (civ.name === 'Zulus') icon = <span className="civ-icon-zulu">{civ.icon}</span>;
-      acc[civ.name] = icon;
+      let iconNode: React.ReactNode = civ.icon;
+
+      // If icon is a plain string (emoji/text), shrink it when it contains multiple glyphs
+      if (typeof civ.icon === 'string') {
+        // Array.from handles Unicode code points better than .length
+        const glyphCount = Array.from(civ.icon).length;
+        const fontSize = glyphCount > 1 ? '24px' : '36px';
+        iconNode = <span style={{ fontSize }}>{civ.icon}</span>;
+      }
+
+      // Preserve existing special-case class wrappers (they may provide colors/styles)
+      if (civ.name === 'Egyptians') iconNode = <span className="civ-icon-egypt">{iconNode}</span>;
+      if (civ.name === 'Russians') iconNode = <span className="civ-icon-russia">{iconNode}</span>;
+      if (civ.name === 'Zulus') iconNode = <span className="civ-icon-zulu">{iconNode}</span>;
+
+      acc[civ.name] = iconNode;
       return acc;
     }, {} as Record<string, React.ReactNode>)
   , []);
+
+  // Keep a sorted order for display (alphabetical by civilization name)
+  const sortedCivilizations = useMemo(() => {
+    return [...CIVILIZATIONS].sort((a, b) => a.name.localeCompare(b.name));
+  }, []);
 
   const nextStep = () => {
     console.log(`[CLICK] GameSetup next step (${currentStep} -> ${currentStep + 1})`);
@@ -66,6 +82,12 @@ function GameSetupModal({ show, onStart }) {
         <Modal.Title className="w-100 text-center">
           <h2 className="modal-title">🏛️ Zivilisation 1</h2>
           <small className="modal-subtitle">Step {currentStep} of {totalSteps}</small>
+          {currentStep === 1 && (
+            <div className="modal-header-content">
+              <h3 className="modal-civilization-heading">Choose Your Civilization</h3>
+              <p className="modal-civilization-subheading">Tap a card to select your starting civilization. Each one comes with a distinct color palette and legendary leader.</p>
+            </div>
+          )}
         </Modal.Title>
       </Modal.Header>
       
@@ -75,13 +97,8 @@ function GameSetupModal({ show, onStart }) {
           {/* Step 1: Civilization Selection */}
           {currentStep === 1 && (
             <section className="setup-section" aria-labelledby="setup-step-civilization">
-              <div className="setup-section-header">
-                <h3 id="setup-step-civilization" className="setup-section-heading">Choose Your Civilization</h3>
-                <p className="setup-section-subheading">Tap a card to select your starting civilization. Each one comes with a distinct color palette and legendary leader.</p>
-              </div>
-
               <div className="setup-civ-list" role="list">
-                {CIVILIZATIONS.map((civ, idx) => {
+                {sortedCivilizations.map((civ, idx) => {
                   const isSelected = selectedCiv === idx;
                   const icon = civIcons[civ.name] ?? civ.name.charAt(0);
                   return (
@@ -95,30 +112,28 @@ function GameSetupModal({ show, onStart }) {
                       }}
                       aria-pressed={isSelected}
                     >
-                      <div className="setup-civ-card__header">
+                      {/* Row 1: Icons (one or more) */}
+                      <div className="setup-civ-card__icons-row">
                         <span className="setup-civ-card__icon">{icon}</span>
+                      </div>
+
+                      {/* Row 2: Civilization name */}
+                      <div className="setup-civ-card__name-row">
                         <span className="setup-civ-card__name" style={{ color: civ.color }}>
                           {civ.name}
                         </span>
                       </div>
-                      <span className="setup-civ-card__leader">{civ.leader}</span>
-                      <span className="setup-civ-card__cities">
-                      </span>
+
+                      {/* Row 3: Leader name */}
+                      <div className="setup-civ-card__leader-row">
+                        <span className="setup-civ-card__leader">{civ.leader}</span>
+                      </div>
+
+                      <span className="setup-civ-card__cities" aria-hidden />
                     </button>
                   );
                 })}
               </div>
-
-              <aside className="setup-selected" aria-live="polite">
-                <span className="setup-selected__label">Selected:</span>
-                <span
-                  className="setup-selected__value"
-                  style={{ color: CIVILIZATIONS[selectedCiv].color }}
-                >
-                  {CIVILIZATIONS[selectedCiv].name}
-                </span>
-                <span className="setup-selected__leader">Lead by {CIVILIZATIONS[selectedCiv].leader}</span>
-              </aside>
             </section>
           )}
 
@@ -227,6 +242,19 @@ function GameSetupModal({ show, onStart }) {
       </Modal.Body>
       
   <Modal.Footer className={`setup-footer ${(currentStep === 1 || isFinalStep) ? 'setup-footer--center' : ''}`}>
+        {currentStep === 1 && (
+          <div className="setup-footer__selected">
+            <span className="setup-footer__selected-label">Selected:</span>
+            <span
+              className="setup-footer__selected-value"
+              style={{ color: CIVILIZATIONS[selectedCiv].color }}
+            >
+              {CIVILIZATIONS[selectedCiv].name}
+            </span>
+            <span className="setup-footer__selected-leader">Lead by {CIVILIZATIONS[selectedCiv].leader}</span>
+          </div>
+        )}
+        
         {currentStep > 1 && (
           <Button 
             variant="secondary" 

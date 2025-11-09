@@ -357,11 +357,6 @@ body {
   max-width: 300px;
 }
 
-/* Modal improvements for mobile */
-.modal-dialog {
-  margin: 0.5rem;
-}
-
 /* Ensure modals are centered on larger screens (horizontal centering) */
 @media (min-width: 576px) {
   .modal-dialog {
