@@ -8,6 +8,7 @@ import '../../styles/civ1GameCanvas.css';
 
 const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const canvasRef = useRef(null);
+  const terrainCanvasRef = useRef(null);
   const gameState = useGameStore(state => state.gameState);
   const mapData = useGameStore(state => state.map);
   const camera = useGameStore(state => state.camera);
@@ -21,9 +22,33 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const [terrain, setTerrain] = useState(null);
   const animationFrameRef = useRef(null);
   const renderTimeoutRef = useRef(null);
+  const lastRenderTime = useRef(0);
+  const needsRender = useRef(true); // Flag to track if re-render is needed
+  const lastGameState = useRef(null); // Track game state changes
 
-  // Square grid constants
-  // TILE_SIZE imported from centralized terrain data
+  // Trigger re-render when game state changes (turn-based optimization)
+  const triggerRender = () => {
+    needsRender.current = true;
+  };
+
+  // Check if game state has changed significantly
+  const hasGameStateChanged = () => {
+    const currentState = {
+      activePlayer: gameState.activePlayer,
+      currentTurn: gameState.currentTurn,
+      units: units.length,
+      cities: cities.length,
+      selectedHex: selectedHex,
+      camera: camera
+    };
+
+    if (!lastGameState.current ||
+        JSON.stringify(currentState) !== JSON.stringify(lastGameState.current)) {
+      lastGameState.current = currentState;
+      return true;
+    }
+    return false;
+  };
 
   // Generate terrain map (initialize once)
   const generateTerrain = (width, height) => {
@@ -61,16 +86,61 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       }
     }
 
-    // Add some cities
-    newTerrain[5][5] = { ...newTerrain[5][5], city: { name: 'Washington', size: 3, owner: 0 } };
-    newTerrain[8][12] = { ...newTerrain[8][12], city: { name: 'New York', size: 2, owner: 0 } };
-    newTerrain[15][8] = { ...newTerrain[15][8], city: { name: 'Boston', size: 1, owner: 0 } };
-
-    // Add some units
-    newTerrain[6][6] = { ...newTerrain[6][6], unit: { type: 'Archer', owner: 0, moves: 1 } };
-    newTerrain[7][5] = { ...newTerrain[7][5], unit: { type: 'Warrior', owner: 0, moves: 1 } };
-
     return newTerrain;
+  };
+
+  // Render static terrain (background + fog) to offscreen canvas
+  const renderTerrainToOffscreen = (terrainGrid) => {
+    if (!terrainGrid || !mapData) return;
+    
+    const offscreenCanvas = terrainCanvasRef.current;
+    if (!offscreenCanvas) return;
+    
+    const ctx = offscreenCanvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Set offscreen canvas size to match map dimensions (scaled)
+    const mapWidth = mapData.width * TILE_SIZE;
+    const mapHeight = mapData.height * TILE_SIZE;
+    if (offscreenCanvas.width !== mapWidth || offscreenCanvas.height !== mapHeight) {
+      offscreenCanvas.width = mapWidth;
+      offscreenCanvas.height = mapHeight;
+    }
+    
+    // Clear offscreen canvas
+    ctx.clearRect(0, 0, mapWidth, mapHeight);
+    
+    // Draw all tiles (static terrain + fog)
+    for (let row = 0; row < mapData.height; row++) {
+      for (let col = 0; col < mapData.width; col++) {
+        const tile = terrainGrid[row]?.[col];
+        if (!tile) continue;
+        
+        const x = col * TILE_SIZE;
+        const y = row * TILE_SIZE;
+        
+        // Fog of War: Only render explored tiles
+        if (!tile.explored) {
+          // Draw completely black square for unexplored areas
+          drawSquare(ctx, x, y, TILE_SIZE, '#000000', '#000000');
+          continue;
+        }
+        
+        const terrainInfo = TERRAIN_TYPES[tile.type] || TERRAIN_TYPES[tile.type?.toUpperCase()] || TERRAIN_TYPES.GRASSLAND;
+        
+        // Draw square background
+        drawSquare(ctx, x, y, TILE_SIZE, terrainInfo.color, '#333');
+        
+        // Draw terrain details
+        drawTerrainSymbol(ctx, x, y, tile);
+        
+        // Apply fog overlay for explored but not currently visible tiles
+        if (!tile.visible) {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
   };
 
   // Initialize terrain from game engine
@@ -97,6 +167,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         }
       }
       setTerrain(terrainGrid);
+      renderTerrainToOffscreen(terrainGrid);
 
     } else if (gameEngine && gameEngine.map && Array.isArray(gameEngine.map.tiles) && gameEngine.map.tiles.length > 0) {
       // Older fallback: use engine's map if available
@@ -121,10 +192,13 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         }
       }
       setTerrain(terrainGrid);
+      renderTerrainToOffscreen(terrainGrid);
 
     } else if (!terrain) {
       // Last-resort fallback to procedural generation
-      setTerrain(generateTerrain(mapData.width || CONSTANTS.MAP_WIDTH, mapData.height || CONSTANTS.MAP_HEIGHT));
+      const generatedTerrain = generateTerrain(mapData.width || CONSTANTS.MAP_WIDTH, mapData.height || CONSTANTS.MAP_HEIGHT);
+      setTerrain(generatedTerrain);
+      renderTerrainToOffscreen(generatedTerrain);
     }
   }, [gameEngine, gameEngine?.map, gameEngine?.units, mapData.width, mapData.height]);
 
@@ -193,7 +267,8 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         }
       }
       setTerrain(updatedTerrain);
-      // console.log('[Civ1GameCanvas] Terrain visibility updated');
+      renderTerrainToOffscreen(updatedTerrain);
+      console.log('[Civ1GameCanvas] Terrain visibility updated');
     } else {
       console.log('[Civ1GameCanvas] Skipping terrain visibility update - missing data');
     }
@@ -490,56 +565,104 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     const endCol = Math.min(mapData.width, Math.ceil((camera.x + canvas.width / camera.zoom) / TILE_SIZE) + 2);
     const startRow = Math.max(0, Math.floor(camera.y / TILE_SIZE) - 2);
     const endRow = Math.min(mapData.height, Math.ceil((camera.y + canvas.height / camera.zoom) / TILE_SIZE) + 2);
-    
-    // Draw hexes (only visible ones)
-    for (let row = startRow; row < endRow; row++) {
-      for (let col = startCol; col < endCol; col++) {
-        const { x, y } = squareToScreen(col, row);
-        
-        // Additional viewport check
-        if (x < -TILE_SIZE * 2 || x > canvas.width + TILE_SIZE * 2 || 
-            y < -TILE_SIZE * 2 || y > canvas.height + TILE_SIZE * 2) {
-          continue;
-        }
-        
-        const tile = terrain[row]?.[col];
-        if (!tile) continue;
-        
-        // Fog of War: Only render explored tiles
-        if (!tile.explored) {
-          // Draw completely black hex for unexplored areas
+
+    // Copy visible portion of terrain from offscreen canvas
+    if (terrainCanvasRef.current) {
+      const terrainCanvas = terrainCanvasRef.current;
+      const terrainCtx = terrainCanvas.getContext('2d');
+
+      // Calculate source rectangle from offscreen canvas (world coordinates)
+      const srcX = camera.x;
+      const srcY = camera.y;
+      const srcWidth = canvas.width / camera.zoom;
+      const srcHeight = canvas.height / camera.zoom;
+
+      // Destination rectangle on main canvas (screen coordinates)
+      const destX = 0;
+      const destY = 0;
+      const destWidth = canvas.width;
+      const destHeight = canvas.height;
+
+      // Copy terrain layer
+      ctx.drawImage(
+        terrainCanvas,
+        srcX, srcY, srcWidth, srcHeight,
+        destX, destY, destWidth, destHeight
+      );
+    } else {
+      // Fallback: draw terrain directly if offscreen canvas not available
+      for (let row = startRow; row < endRow; row++) {
+        for (let col = startCol; col < endCol; col++) {
+          const { x, y } = squareToScreen(col, row);
+
+          // Additional viewport check
+          if (x < -TILE_SIZE * 2 || x > canvas.width + TILE_SIZE * 2 ||
+              y < -TILE_SIZE * 2 || y > canvas.height + TILE_SIZE * 2) {
+            continue;
+          }
+
+          const tile = terrain[row]?.[col];
+          if (!tile) continue;
+
+          // Fog of War: Only render explored tiles
+          if (!tile.explored) {
+            // Draw completely black hex for unexplored areas
+            drawSquare(
+              ctx,
+              x,
+              y,
+              TILE_SIZE * camera.zoom,
+              '#000000',
+              '#000000'
+            );
+            continue;
+          }
+
+          const terrainInfo = TERRAIN_TYPES[tile.type] || TERRAIN_TYPES[tile.type?.toUpperCase()] || TERRAIN_TYPES.GRASSLAND;
+          const isSelected = selectedHex.col === col && selectedHex.row === row;
+
+          // Draw hex background
           drawSquare(
             ctx,
             x,
             y,
             TILE_SIZE * camera.zoom,
-            '#000000',
-            '#000000'
+            terrainInfo.color,
+            isSelected ? '#FF0000' : '#333'
           );
+
+          // Draw terrain details only at reasonable zoom levels
+          if (camera.zoom > 0.5) {
+            drawTerrainSymbol(ctx, x, y, tile);
+          }
+
+          // Apply fog overlay for explored but not currently visible tiles
+          if (!tile.visible) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            const halfSize = TILE_SIZE * camera.zoom / 2;
+            ctx.fillRect(x - halfSize, y - halfSize, TILE_SIZE * camera.zoom, TILE_SIZE * camera.zoom);
+          }
+        }
+      }
+    }
+
+    // Draw dynamic elements on top (cities, units, selection highlights)
+    for (let row = startRow; row < endRow; row++) {
+      for (let col = startCol; col < endCol; col++) {
+        const { x, y } = squareToScreen(col, row);
+
+        // Additional viewport check
+        if (x < -TILE_SIZE * 2 || x > canvas.width + TILE_SIZE * 2 ||
+            y < -TILE_SIZE * 2 || y > canvas.height + TILE_SIZE * 2) {
           continue;
         }
-        
-        const terrainInfo = TERRAIN_TYPES[tile.type] || TERRAIN_TYPES[tile.type?.toUpperCase()] || TERRAIN_TYPES.GRASSLAND;
-        const isSelected = selectedHex.col === col && selectedHex.row === row;
-        
-        // Draw hex background
-        drawSquare(
-          ctx, 
-          x, 
-          y, 
-          TILE_SIZE * camera.zoom, 
-          terrainInfo.color,
-          isSelected ? '#FF0000' : '#333'
-        );
-        
-        // Draw terrain details only at reasonable zoom levels
-        if (camera.zoom > 0.5) {
-          drawTerrainSymbol(ctx, x, y, tile);
-        }
-        
+
+        const tile = terrain[row]?.[col];
+        if (!tile || !tile.explored) continue;
+
         // Only draw units and cities if tile is currently visible (not just explored)
         const isVisible = tile.visible;
-        
+
         // Draw city from game engine
         if (gameEngine && camera.zoom > 0.3 && isVisible) {
           const city = cities.find(c => c.col === col && c.row === row);
@@ -547,7 +670,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
             drawCity(ctx, x, y, city);
           }
         }
-        
+
         // Draw unit from game engine
         if (gameEngine && camera.zoom > 0.3 && isVisible) {
           const unit = units.find(u => u.col === col && u.row === row);
@@ -567,14 +690,15 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
             drawUnit(ctx, x, y, unit, alpha);
           }
         }
-        
-        // Apply fog overlay for explored but not currently visible tiles
-        if (!isVisible) {
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-          const halfSize = TILE_SIZE * camera.zoom / 2;
-          ctx.fillRect(x - halfSize, y - halfSize, TILE_SIZE * camera.zoom, TILE_SIZE * camera.zoom);
+
+        // Draw selection highlight (red border)
+        const isSelected = selectedHex.col === col && selectedHex.row === row;
+        if (isSelected) {
+          ctx.strokeStyle = '#FF0000';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(x - TILE_SIZE * camera.zoom / 2, y - TILE_SIZE * camera.zoom / 2, TILE_SIZE * camera.zoom, TILE_SIZE * camera.zoom);
         }
-        
+
         // Draw coordinates only when zoomed in
         if (camera.zoom > 1.5) {
           ctx.fillStyle = '#000';
@@ -609,6 +733,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const handleMouseDown = (e) => {
     setIsDragging(true);
     setLastMousePos({ x: e.clientX, y: e.clientY });
+    triggerRender(); // Immediate render for visual feedback
   };
 
   const handleMouseMove = (e) => {
@@ -622,11 +747,13 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       });
       
       setLastMousePos({ x: e.clientX, y: e.clientY });
+      // Camera changes will trigger render via useEffect
     }
   };
 
   const handleMouseUp = () => {
     setIsDragging(false);
+    triggerRender(); // Render to update cursor state
   };
 
   const handleClick = (e) => {
@@ -949,35 +1076,64 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     });
   };
 
-  // Optimized animation loop with frame throttling
+  // Optimized animation loop for turn-based game (always 10 FPS)
   useEffect(() => {
     let lastFrameTime = 0;
-    const targetFPS = 60;
+    const targetFPS = 10; // Always 10 FPS for turn-based game
     const frameInterval = 1000 / targetFPS;
-    
+
     const animate = (currentTime) => {
       animationFrameRef.current = requestAnimationFrame(animate);
 
-      // Throttle rendering to target FPS
+      // Check if game state changed (trigger immediate render)
+      if (hasGameStateChanged()) {
+        needsRender.current = true;
+      }
+
+      // Always render at 10 FPS for turn-based gameplay
       const elapsed = currentTime - lastFrameTime;
       if (elapsed > frameInterval) {
         lastFrameTime = currentTime - (elapsed % frameInterval);
         render(currentTime);
+        needsRender.current = false; // Reset flag after rendering
       }
     };
-    
+
     animationFrameRef.current = requestAnimationFrame(animate);
-    
+
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [camera, selectedHex, mapData, terrain]);
+  }, [camera, selectedHex, mapData, terrain, gameState, units, cities]);
+
+  // Trigger render when camera changes (pan/zoom)
+  useEffect(() => {
+    triggerRender();
+  }, [camera.x, camera.y, camera.zoom]);
+
+  // Trigger render when selection changes
+  useEffect(() => {
+    triggerRender();
+  }, [selectedHex]);
+
+  // Trigger render when terrain changes
+  useEffect(() => {
+    triggerRender();
+  }, [terrain]);
+
+  // Trigger render when game state changes significantly
+  useEffect(() => {
+    triggerRender();
+  }, [gameState.activePlayer, gameState.currentTurn, units.length, cities.length]);
 
   // Close context menu when clicking outside
   useEffect(() => {
-    const handleClickOutside = () => setContextMenu(null);
+    const handleClickOutside = () => {
+      setContextMenu(null);
+      triggerRender(); // Render to hide context menu
+    };
     if (contextMenu) {
       document.addEventListener('click', handleClickOutside);
       return () => document.removeEventListener('click', handleClickOutside);
