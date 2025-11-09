@@ -12,10 +12,11 @@ function GameSetupModal({ show, onStart }) {
 
   const totalSteps = 2;
   const isFinalStep = currentStep === totalSteps;
+  // Keep step keys for internal logic but remove visible labels
   const steps = useMemo(() => (
     [
-      { key: 1, label: 'Civilization' },
-      { key: 2, label: 'Game Settings' }
+      { key: 1, label: '' },
+      { key: 2, label: '' }
     ]
   ), []);
 
@@ -70,16 +71,6 @@ function GameSetupModal({ show, onStart }) {
       
       <Modal.Body className="modal-body-custom">
         <div className="setup-content">
-          <div className="setup-progress" role="status" aria-live="polite">
-            {steps.map(({ key, label }) => (
-              <span
-                key={key}
-                className={`setup-progress-step ${currentStep === key ? 'is-active' : ''}`}
-              >
-                {label}
-              </span>
-            ))}
-          </div>
 
           {/* Step 1: Civilization Selection */}
           {currentStep === 1 && (
@@ -235,7 +226,7 @@ function GameSetupModal({ show, onStart }) {
         </div>
       </Modal.Body>
       
-      <Modal.Footer className={`setup-footer ${isFinalStep ? 'setup-footer--center' : ''}`}>
+  <Modal.Footer className={`setup-footer ${(currentStep === 1 || isFinalStep) ? 'setup-footer--center' : ''}`}>
         {currentStep > 1 && (
           <Button 
             variant="secondary" 
