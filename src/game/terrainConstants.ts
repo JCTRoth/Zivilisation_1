@@ -114,8 +114,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         production: 1,
         trade: 0,
         color: '#78716c',
-        passable: false,
-        description: 'Impassable mountains'
+        passable: true,
+        description: 'Rugged mountains'
     },
     [TERRAIN_TYPES.HILLS]: {
         movement: 2,

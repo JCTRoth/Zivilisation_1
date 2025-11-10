@@ -94,6 +94,7 @@ export interface City {
   shields?: number;
   productionQueue?: any[];
   output?: any;
+  processTurn?: (gameMap: any, turn: number) => void;
 }
 
 export interface Civilization {
@@ -101,6 +102,7 @@ export interface Civilization {
   name: string;
   color: string;
   isAlive: boolean;
+  capital?: any; // Reference to the capital city
   resources: {
     food: number;
     production: number;

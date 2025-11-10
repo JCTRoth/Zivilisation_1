@@ -31,6 +31,10 @@ const MiniMap = ({ gameEngine }) => {
   const mapData = useGameStore(state => state.map);
   const cities = useGameStore(state => state.cities);
   const units = useGameStore(state => state.units);
+  const civilizations = useGameStore(state => state.civilizations);
+  // Also get civilizations from gameEngine if available (more reliable)
+  const gameEngineCivilizations = gameEngine?.civilizations || [];
+  const effectiveCivilizations = gameEngineCivilizations.length > 0 ? gameEngineCivilizations : civilizations;
 
   const MINIMAP_WIDTH = 200; // aspect ratio baseline
   const MINIMAP_HEIGHT = 150;
@@ -151,7 +155,7 @@ const MiniMap = ({ gameEngine }) => {
     }
 
     // Draw units (simplified)
-    if (units && units.length > 0) {
+    if (units && units.length > 0 && effectiveCivilizations && effectiveCivilizations.length > 0) {
       
       for (const unit of units) {
         const tileIndex = unit.row * dataSource.width + unit.col;
@@ -164,12 +168,9 @@ const MiniMap = ({ gameEngine }) => {
           const x = unit.col * scaleX;
           const y = unit.row * scaleY;
           
-          // Different colors for different players
-          if (unit.civilizationId === 0) {
-            ctx.fillStyle = '#00ff00'; // Player units in green
-          } else {
-            ctx.fillStyle = '#ff0000'; // AI units in red
-          }
+          // Use civilization color for units
+          const civilization = effectiveCivilizations.find(c => c.id === unit.civilizationId);
+          ctx.fillStyle = civilization?.color || '#ff0000';
           
           ctx.fillRect(x, y, Math.max(1, scaleX/2), Math.max(1, scaleY/2));
         }
@@ -207,7 +208,7 @@ const MiniMap = ({ gameEngine }) => {
 
     // end draw
 
-  }, [camera, mapData, mapData?.tiles?.length, cities, units, gameEngine?.currentTurn, gameEngine?.isInitialized, sizeKey]);
+  }, [camera, mapData, mapData?.tiles?.length, cities, units, civilizations, gameEngine, gameEngine?.currentTurn, gameEngine?.isInitialized, sizeKey]);
 
   // Resize observer to redraw when container width changes
   useEffect(() => {

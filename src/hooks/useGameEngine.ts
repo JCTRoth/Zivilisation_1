@@ -16,11 +16,11 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
       switch (eventType) {
         case 'NEW_GAME':
           console.log('[useGameEngine] NEW_GAME: Updating map and initial visibility');
-          // Update all game state
+          // Update civilizations FIRST so unit colors work
+          actions.updateCivilizations(eventData.civilizations);
           actions.updateMap(eventData.map);
           actions.updateUnits(eventData.units);
           actions.updateCities(eventData.cities);
-          actions.updateCivilizations(eventData.civilizations);
           actions.updateTechnologies(eventData.technologies);
           actions.updateVisibility(); // Calculate initial visibility around starting units
           actions.startGame();
@@ -99,10 +99,9 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
         case 'AI_FINISHED':
           // AI finished its moves for the given civilization
           actions.updateUnits(gameEngine.getAllUnits());
-          actions.updateVisibility();
+          // Note: updateVisibility is handled by TURN_PROCESSED event
           actions.addNotification({ type: 'info', message: 'AI finished its turn' });
-          // Focus on the next player/unit if appropriate
-          actions.focusOnNextUnit();
+          // Note: focusOnNextUnit is handled by TURN_PROCESSED event
           break;
 
         case 'AUTO_END_TURN':

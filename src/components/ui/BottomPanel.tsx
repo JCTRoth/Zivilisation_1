@@ -287,10 +287,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
                 <div className="mb-3">
                   <div className="d-flex justify-content-between align-items-center mb-1">
                     <small>{selectedCity.currentProduction.name}</small>
-                    <small>{selectedCity.productionStored || 0}/{selectedCity.currentProduction.cost}</small>
+                    <small>{selectedCity.productionProgress || 0}/{selectedCity.currentProduction.cost}</small>
                   </div>
                   <ProgressBar 
-                    now={((selectedCity.productionStored || 0) / selectedCity.currentProduction.cost) * 100} 
+                    now={((selectedCity.productionProgress || 0) / selectedCity.currentProduction.cost) * 100} 
                     variant="warning"
                   />
                 </div>

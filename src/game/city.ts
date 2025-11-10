@@ -83,6 +83,7 @@ export class City extends EventEmitter {
     public trade: number;
     public science: number;
     public gold: number;
+    public yields: { food: number; production: number; trade: number };
 
     // Storage
     public foodStorage: number;
@@ -126,6 +127,7 @@ export class City extends EventEmitter {
         this.trade = 0;
         this.science = 0;
         this.gold = 0;
+        this.yields = { food: 0, production: 0, trade: 0 };
 
         // Storage
         this.foodStorage = 10;
@@ -206,6 +208,13 @@ export class City extends EventEmitter {
         this.food = totalFood;
         this.production = totalProduction;
         this.trade = totalTrade;
+
+        // Set yields object for external access
+        this.yields = {
+            food: totalFood,
+            production: totalProduction,
+            trade: totalTrade
+        };
 
         // Split trade between gold and science
         this.gold = Math.floor(totalTrade * 0.5);

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import { useGameStore } from '../../stores/gameStore';
@@ -7,7 +7,7 @@ import { UNIT_PROPS } from '../../utils/constants';
 import '../../styles/gameModals.css';
 
 const GameModals = ({ gameEngine }) => {
-  console.log('[GameModals] Component rendering, gameEngine present:', !!gameEngine);
+  // console.log('[GameModals] Component rendering, gameEngine present:', !!gameEngine);
   const uiState = useGameStore(state => state.uiState);
   const actions = useGameStore(state => state.actions);
   const selectedCityId: string | null = useGameStore(state => state.gameState.selectedCity);
@@ -17,6 +17,9 @@ const GameModals = ({ gameEngine }) => {
   const currentPlayer = useGameStore(state => state.currentPlayer);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
+
+  // Memoize selectedCity to prevent unnecessary recalculations
+  const memoizedSelectedCity = useMemo(() => selectedCity, [selectedCityId, cities]);
 
   const handleCloseDialog = () => {
     actions.hideDialog();
@@ -710,7 +713,7 @@ const GameModals = ({ gameEngine }) => {
   const [selectedQueueIndex, setSelectedQueueIndex] = useState<number | null>(null);
 
   // Helper function to check if a city is coastal (has water tiles adjacent or on its position)
-  const checkIfCityIsCoastal = (city: any, gameEngine: any): boolean => {
+  const checkIfCityIsCoastal = useCallback((city: any, gameEngine: any): boolean => {
     if (!gameEngine || !gameEngine.map || !gameEngine.map.getTile) return false;
     
     const directions = [
@@ -727,7 +730,7 @@ const GameModals = ({ gameEngine }) => {
       }
     }
     return false;
-  };
+  }, []);
 
   // Build available items list (filtered) using same logic as render list
   const availableProductionKeys = useMemo(() => {
@@ -741,18 +744,18 @@ const GameModals = ({ gameEngine }) => {
         if (!hasAllRequiredTechs) return false;
       }
 
-      if (u.naval && selectedCity) {
+      if (u.naval && memoizedSelectedCity) {
         // Check if city has harbor or is coastal (tile or adjacent tiles are water)
-        const hasHarbor = selectedCity.buildings && selectedCity.buildings.includes('harbor');
+        const hasHarbor = memoizedSelectedCity.buildings && memoizedSelectedCity.buildings.includes('harbor');
         if (!hasHarbor) {
-          const isCoastal = checkIfCityIsCoastal(selectedCity, gameEngine);
+          const isCoastal = checkIfCityIsCoastal(memoizedSelectedCity, gameEngine);
           if (!isCoastal) return false;
         }
       }
 
       return true;
     });
-  }, [currentPlayer, selectedCity, gameEngine]);
+  }, [currentPlayer, memoizedSelectedCity, checkIfCityIsCoastal]);
 
   // Ensure there is a default selection when modal opens or available list changes
   useEffect(() => {
@@ -762,7 +765,7 @@ const GameModals = ({ gameEngine }) => {
     // Clear selection if nothing available
     if (availableProductionKeys.length === 0) setSelectedProductionKey(null);
     // Log available production options for debugging
-    console.log('[GameModals] availableProductionKeys', availableProductionKeys);
+    // console.log('[GameModals] availableProductionKeys', availableProductionKeys);
   }, [availableProductionKeys]);
 
   // Reset queue selection when the selected city changes
