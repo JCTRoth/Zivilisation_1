@@ -135,30 +135,110 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     }),
 
     focusOnNextUnit: () => set(state => {
+      // Prevent multiple calls in quick succession
+      const now = Date.now();
+      if (state._lastFocusCall && now - state._lastFocusCall < 100) {
+        console.log('[Store] focusOnNextUnit: Throttled call, ignoring');
+        return state;
+      }
+
       // Find next unit belonging to active player that still has moves
       const activeId = state.gameState.activePlayer;
       const candidate = state.units.find(u => u.civilizationId === activeId && (u.movesRemaining || 0) > 0);
-      if (!candidate) return state;
 
-      // Calculate camera center to place the unit in screen center (square grid)
-      const TILE_SIZE = CONSTANTS.HEX_SIZE || 32; // world pixels per tile
-      const zoom = state.camera.zoom || 2.0;
-      const startX = candidate.col * TILE_SIZE;
-      const startY = candidate.row * TILE_SIZE;
+      if (candidate) {
+        // Focus on the unit
+        const TILE_SIZE = CONSTANTS.HEX_SIZE || 32; // world pixels per tile
+        const zoom = Math.max(0.1, state.camera.zoom || 2.0); // Prevent division by zero
 
-      const newCamera = {
-        x: startX - (typeof window !== 'undefined' ? (window.innerWidth / 2) / zoom : 0),
-        y: startY - (typeof window !== 'undefined' ? (window.innerHeight / 2) / zoom : 0),
-        zoom: zoom
-      };
+        // Safe window dimension access with fallbacks
+        const windowWidth = (typeof window !== 'undefined' && window.innerWidth) || 800;
+        const windowHeight = (typeof window !== 'undefined' && window.innerHeight) || 600;
 
-      console.log('[Store] focusOnNextUnit: Focusing camera on unit', { unitId: candidate.id, col: candidate.col, row: candidate.row });
+        const startX = candidate.col * TILE_SIZE;
+        const startY = candidate.row * TILE_SIZE;
 
-      return {
-        ...state,
-        gameState: { ...state.gameState, selectedUnit: candidate.id, activeUnit: candidate.id },
-        camera: { ...state.camera, ...newCamera }
-      };
+        // Calculate camera position with bounds checking
+        const centerOffsetX = windowWidth / 2 / zoom;
+        const centerOffsetY = windowHeight / 2 / zoom;
+
+        const newCameraX = startX - centerOffsetX;
+        const newCameraY = startY - centerOffsetY;
+
+        // Ensure camera position is valid (not NaN or infinite)
+        const safeCameraX = isFinite(newCameraX) ? newCameraX : 0;
+        const safeCameraY = isFinite(newCameraY) ? newCameraY : 0;
+
+        const newCamera = {
+          x: safeCameraX,
+          y: safeCameraY,
+          zoom: zoom
+        };
+
+        console.log('[Store] focusOnNextUnit: Focusing camera on unit', {
+          unitId: candidate.id,
+          col: candidate.col,
+          row: candidate.row,
+          camera: newCamera
+        });
+
+        return {
+          ...state,
+          _lastFocusCall: now,
+          gameState: { ...state.gameState, selectedUnit: candidate.id, activeUnit: candidate.id, selectedCity: null },
+          camera: { ...state.camera, ...newCamera }
+        };
+      } else {
+        // No unit found, focus on the capital city of the active player
+        const activeCivilization = state.civilizations.find(c => c.id === activeId);
+        const capitalCity = activeCivilization?.capital;
+
+        if (capitalCity) {
+          const TILE_SIZE = CONSTANTS.HEX_SIZE || 32; // world pixels per tile
+          const zoom = Math.max(0.1, state.camera.zoom || 2.0); // Prevent division by zero
+
+          // Safe window dimension access with fallbacks
+          const windowWidth = (typeof window !== 'undefined' && window.innerWidth) || 800;
+          const windowHeight = (typeof window !== 'undefined' && window.innerHeight) || 600;
+
+          const startX = capitalCity.col * TILE_SIZE;
+          const startY = capitalCity.row * TILE_SIZE;
+
+          // Calculate camera position with bounds checking
+          const centerOffsetX = windowWidth / 2 / zoom;
+          const centerOffsetY = windowHeight / 2 / zoom;
+
+          const newCameraX = startX - centerOffsetX;
+          const newCameraY = startY - centerOffsetY;
+
+          // Ensure camera position is valid (not NaN or infinite)
+          const safeCameraX = isFinite(newCameraX) ? newCameraX : 0;
+          const safeCameraY = isFinite(newCameraY) ? newCameraY : 0;
+
+          const newCamera = {
+            x: safeCameraX,
+            y: safeCameraY,
+            zoom: zoom
+          };
+
+          console.log('[Store] focusOnNextUnit: No units available, focusing camera on capital city', {
+            cityId: capitalCity.id,
+            col: capitalCity.col,
+            row: capitalCity.row,
+            camera: newCamera
+          });
+
+          return {
+            ...state,
+            _lastFocusCall: now,
+            gameState: { ...state.gameState, selectedUnit: null, activeUnit: null, selectedCity: capitalCity.id },
+            camera: { ...state.camera, ...newCamera }
+          };
+        }
+      }
+
+      // No unit or capital found, return unchanged state
+      return state;
     }),
 
     updateCamera: (cameraUpdate) => set(state => ({

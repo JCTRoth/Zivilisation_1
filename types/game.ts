@@ -188,6 +188,8 @@ export interface GameStoreState {
     aliveCivilizations: number;
     gameStarted: boolean;
   };
+  // Internal state for preventing rapid focus calls
+  _lastFocusCall?: number;
 }
 
 export interface GameActions {
