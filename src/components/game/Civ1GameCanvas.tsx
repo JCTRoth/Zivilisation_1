@@ -15,6 +15,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const actions = useGameStore(state => state.actions);
   const cities = useGameStore(state => state.cities);
   const units = useGameStore(state => state.units);
+  const currentPlayer = useGameStore(state => state.currentPlayer);
   const [isDragging, setIsDragging] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [selectedHex, setSelectedHex] = useState({ col: 5, row: 5 });
@@ -785,65 +786,64 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
 
         console.log(`[CLICK] Map click at hex (${hex.col}, ${hex.row})`);
 
-        // If we have a gameEngine available, try to select unit/city or move selected unit
-        if (gameEngine) {
-          // Prefer engine helper methods when present
-          const unitAt = units.find(u => u.col === hex.col && u.row === hex.row) || null;
+        // Select the hex in the global store
+        if (actions && typeof actions.selectHex === 'function') {
+          actions.selectHex(hex);
+        }
 
-          const cityAt = cities.find(c => c.col === hex.col && c.row === hex.row) || null;
+        // Check for unit or city at this location
+        let unitAt = null;
+        let cityAt = null;
+        try {
+          if (gameEngine && typeof gameEngine.getUnitAt === 'function') {
+            unitAt = gameEngine.getUnitAt(hex.col, hex.row);
+          }
+          if (gameEngine && typeof gameEngine.getCityAt === 'function') {
+            cityAt = gameEngine.getCityAt(hex.col, hex.row);
+          }
+        } catch (e) {
+          unitAt = null;
+          cityAt = null;
+        }
 
-          if (unitAt) {
-            // Select the clicked unit
-            console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type}) at (${hex.col}, ${hex.row})`);
-            if (actions && typeof actions.selectUnit === 'function') actions.selectUnit(unitAt.id);
-          } else if (cityAt) {
-            console.log(`[CLICK] Selected city ${cityAt.id} (${cityAt.name}) at (${hex.col}, ${hex.row})`);
-
-            const storeState = useGameStore.getState();
-            const storeCity = storeState.cities.find(c => c.id === cityAt.id) || storeState.cities.find(c => c.col === hex.col && c.row === hex.row);
-            const cityData = cityAt || storeCity || null;
-            const cityId = cityData?.id || storeCity?.id || null;
-
-            console.log(`[CLICK] City data:`, { cityAt, storeCity, cityData, cityId });
-
-            if (actions && typeof actions.selectCity === 'function') {
-              actions.selectCity(cityId ?? null);
-            }
-
-            const humanCiv = storeState.civilizations.find(c => c.isHuman);
-            const humanCivId = humanCiv?.id ?? gameEngine?.gameSettings?.playerCivilization ?? 0;
-            const cityOwnerId = cityData?.civilizationId ?? null;
-            const isOwnedByPlayer = humanCivId != null && cityOwnerId != null && Number(cityOwnerId) === Number(humanCivId);
-
-            console.log(`[CLICK] Ownership check: humanCivId=${humanCivId}, cityOwnerId=${cityOwnerId}, isOwnedByPlayer=${isOwnedByPlayer}`);
-
-            if (isOwnedByPlayer && actions && typeof actions.showDialog === 'function') {
-              console.log(`[CLICK] Opening city-details modal`);
-              actions.showDialog('city-details');
-            }
-          } else if (gameState.selectedUnit) {
-            // Attempt to move the currently selected unit to the clicked hex
-            console.log(`[CLICK] Attempting to move selected unit ${gameState.selectedUnit} to (${hex.col}, ${hex.row})`);
-            const result = gameEngine.moveUnit(gameState.selectedUnit, hex.col, hex.row);
-            if (!result || !result.success) {
-              const reason = result?.reason || 'unknown';
-              console.log(`[CLICK] Move failed: ${reason}`);
-              if (actions && typeof actions.addNotification === 'function') {
-                let msg = 'Move failed';
-                switch (reason) {
-                  case 'unit_not_found': msg = 'Move failed: unit not found'; break;
-                  case 'invalid_target': msg = 'Move failed: invalid destination'; break;
-                  case 'no_moves_left': msg = 'Move failed: no moves left'; break;
-                  case 'terrain_impassable': msg = 'Move failed: terrain is impassable'; break;
-                  case 'insufficient_moves': msg = 'Move failed: insufficient movement points'; break;
-                  case 'combat_defeat': msg = 'Move resulted in combat and the attacker was defeated'; break;
-                  default: msg = 'Move failed';
+        if (unitAt && currentPlayer && unitAt.civilizationId === currentPlayer.id) {
+          console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type}) at (${hex.col}, ${hex.row})`);
+          if (actions && typeof actions.selectUnit === 'function') {
+            actions.selectUnit(unitAt.id);
+          }
+        } else if (cityAt && currentPlayer && cityAt.civilizationId === currentPlayer.id) {
+          console.log(`[CLICK] Selected city ${cityAt.id} (${cityAt.name}) at (${hex.col}, ${hex.row})`);
+          if (actions && typeof actions.selectCity === 'function') {
+            actions.selectCity(cityAt.id);
+          }
+        } else {
+          // Check if we have a selected unit and try to move it
+          const selectedUnitId = gameState?.selectedUnit;
+          if (selectedUnitId) {
+            console.log(`[CLICK] Attempting to move selected unit ${selectedUnitId} to (${hex.col}, ${hex.row})`);
+            try {
+              if (gameEngine && typeof gameEngine.moveUnit === 'function') {
+                const result = gameEngine.moveUnit(selectedUnitId, hex.col, hex.row);
+                if (!result || !result.success) {
+                  const reason = result?.reason || 'unknown';
+                  console.log(`[CLICK] Move failed: ${reason}`);
+                  if (actions && typeof actions.addNotification === 'function') {
+                    let msg = 'Move failed';
+                    switch (reason) {
+                      case 'no_moves_left': msg = 'Move failed: no moves left'; break;
+                      case 'terrain_impassable': msg = 'Move failed: terrain is impassable'; break;
+                      case 'insufficient_moves': msg = 'Move failed: insufficient movement points'; break;
+                      default: msg = 'Move failed';
+                    }
+                    actions.addNotification({ type: 'warning', message: msg });
+                  }
                 }
-                actions.addNotification({ type: 'warning', message: msg });
               }
+            } catch (e) {
+              console.log(`[CLICK] Move error:`, e);
             }
           } else {
-            console.log(`[CLICK] Empty hex clicked at (${hex.col}, ${hex.row}) - no unit or city selected`);
+            console.log(`[CLICK] Empty hex clicked at (${hex.col}, ${hex.row})`);
           }
         }
       }

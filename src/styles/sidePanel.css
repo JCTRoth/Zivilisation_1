@@ -144,3 +144,20 @@
 .summary-resources {
   margin-top: 8px;
 }
+
+.terrain-info-section {
+  margin-bottom: 12px;
+}
+
+.terrain-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.details-separator {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 12px 0;
+}

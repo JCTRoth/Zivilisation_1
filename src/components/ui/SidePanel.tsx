@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from 'react-bootstrap';
 import { useGameStore } from '../../stores/gameStore';
 import { CIVILIZATIONS } from '../../game/gameData';
+import { TERRAIN_PROPERTIES } from '../../game/terrainConstants';
 import MiniMap from './MiniMap';
 import '../../styles/sidePanel.css';
 
@@ -14,12 +15,53 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
   const selectedUnit = useGameStore((s) => s.selectedUnit);
   const selectedCityId: string | null = useGameStore((s) => s.gameState.selectedCity);
   const cities = useGameStore((s) => s.cities);
+  const units = useGameStore((s) => s.units);
   const playerResources = useGameStore((s) => s.playerResources);
   const uiState = useGameStore((s) => s.uiState);
   const actions = useGameStore((s) => s.actions);
+  const selectedHex = useGameStore((s) => s.gameState.selectedHex);
+  const map = useGameStore((s) => s.map);
+  const gameState = useGameStore((s) => s.gameState);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
 
+  // Get unit at selected tile (if any)
+  const getUnitAtSelectedTile = () => {
+    if (!selectedHex || !units) return null;
+    const unit = units.find(u => u.col === selectedHex.col && u.row === selectedHex.row);
+    // Don't show if it's the selected unit (already shown above)
+    if (unit && selectedUnit && unit.id === selectedUnit.id) return null;
+    return unit || null;
+  };
+
+  const unitAtSelectedTile = getUnitAtSelectedTile();
+
+  // Get tile information for selected hex
+  const getSelectedTileInfo = () => {
+    if (!selectedHex || !map.tiles) return null;
+    
+    const tileIndex = selectedHex.row * map.width + selectedHex.col;
+    const tile = map.tiles[tileIndex];
+    
+    if (!tile) return null;
+    
+    const terrainProps = TERRAIN_PROPERTIES[tile.type] || {} as any;
+    
+    // Check visibility and exploration from the map arrays
+    const isVisible = map.visibility?.[tileIndex] ?? false;
+    const isExplored = map.revealed?.[tileIndex] ?? false;
+    
+    return {
+      ...tile,
+      movementCost: terrainProps.movement ?? 1,
+      terrainName: tile.type || 'Unknown',
+      visible: isVisible,
+      explored: isExplored
+    };
+  };
+
+  const selectedTile = getSelectedTileInfo();
+  
   // Compute a display player so the panel renders meaningful placeholders
   const displayPlayer = currentPlayer || (civilizations && civilizations.length > 0 ? civilizations[0] : {
     id: -1,
@@ -68,7 +110,9 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
 
         {/* Middle: selected unit/building summary */}
         <div className="side-panel-section middle-section">
-          <div className="selected-title"> {selectedUnit || selectedCity ? 'Selected' : 'No Selection'}</div>
+          <div className="selected-title"> 
+            {selectedUnit ? 'Selected Unit' : selectedCity ? 'Selected City' : unitAtSelectedTile ? 'Unit on Tile' : selectedTile ? 'Selected Tile' : 'No Selection'}
+          </div>
 
           {selectedUnit ? (
             <div>
@@ -87,6 +131,32 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
               <div className="side-panel-small-muted">Population: {selectedCity.population ?? 1}</div>
               <div className="side-panel-small-muted city-production">Production: {selectedCity.yields?.production ?? 0}</div>
             </div>
+          ) : unitAtSelectedTile ? (
+            <div>
+              <div className="unit-name">{unitAtSelectedTile.name}</div>
+              <div className="side-panel-small-muted">{unitAtSelectedTile.type}</div>
+              {unitAtSelectedTile.civilizationId === currentPlayer?.id ? (
+                <div className="side-panel-small-muted unit-stats">
+                  HP: {unitAtSelectedTile.health ?? 100} • Moves: {unitAtSelectedTile.movesRemaining ?? 0}
+                </div>
+              ) : (
+                <div className="side-panel-small-muted unit-attack-defense">
+                  Attack: {(unitAtSelectedTile as any)?.attack ?? 0} • Defense: {(unitAtSelectedTile as any)?.defense ?? 0}
+                </div>
+              )}
+            </div>
+          ) : selectedTile ? (
+            <div>
+              <div className="tile-type">{selectedTile.terrainName}</div>
+              <div className="side-panel-small-muted">Coordinates: ({selectedTile.col}, {selectedTile.row})</div>
+              <div className="side-panel-small-muted">Movement Cost: {selectedTile.movementCost}</div>
+              {selectedTile.resource && (
+                <div className="side-panel-small-muted">Resource: {selectedTile.resource}</div>
+              )}
+              {selectedTile.improvement && (
+                <div className="side-panel-small-muted">Improvement: {selectedTile.improvement}</div>
+              )}
+            </div>
           ) : (
             <div className="side-panel-small-muted">
               <div>Units: {playerUnits?.length ?? 0}</div>
@@ -104,7 +174,26 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
           <div className="details-title">Details</div>
 
           <div className="details-content">
-            {/* Use selected unit/city for details when available, otherwise show player summary */}
+            {/* Always show terrain information if a tile is selected */}
+            {selectedTile && (
+              <>
+                <div className="terrain-info-section">
+                  <div className="terrain-title">Terrain Information</div>
+                  <div className="stats-div">
+                    <div>Type: {selectedTile.terrainName}</div>
+                    <div>Coordinates: ({selectedTile.col}, {selectedTile.row})</div>
+                    <div>Movement Cost: {selectedTile.movementCost}</div>
+                    {selectedTile.resource && <div>Resource: {selectedTile.resource}</div>}
+                    {selectedTile.improvement && <div>Improvement: {selectedTile.improvement}</div>}
+                    <div>Visible: {selectedTile.visible ? 'Yes' : 'No'}</div>
+                    <div>Explored: {selectedTile.explored ? 'Yes' : 'No'}</div>
+                  </div>
+                </div>
+                <hr className="details-separator" />
+              </>
+            )}
+
+            {/* Show selected item details */}
             {selectedUnit ? (
               <>
                 <div className="unit-name-details"><strong>{selectedUnit.name}</strong> — {selectedUnit.type}</div>
@@ -129,7 +218,22 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
                   <div>Gold: {selectedCity.gold ?? 0}</div>
                 </div>
               </>
-            ) : (
+            ) : unitAtSelectedTile ? (
+              <>
+                <div className="unit-name-details"><strong>{unitAtSelectedTile.name}</strong> — {unitAtSelectedTile.type}</div>
+                <div className="side-panel-small-muted">Location: {unitAtSelectedTile.col}, {unitAtSelectedTile.row}</div>
+                <div className="stats-div">
+                  {unitAtSelectedTile.civilizationId === currentPlayer?.id ? (
+                    <>
+                      <div>Health: {unitAtSelectedTile.health ?? 100}/100</div>
+                      <div>Moves: {unitAtSelectedTile.movesRemaining ?? 0}/{(unitAtSelectedTile as any)?.maxMoves ?? 1}</div>
+                    </>
+                  ) : null}
+                  <div>Attack: {(unitAtSelectedTile as any)?.attack ?? 0}</div>
+                  <div>Defense: {(unitAtSelectedTile as any)?.defense ?? 0}</div>
+                </div>
+              </>
+            ) : !selectedTile ? (
               <>
                 <div className="player-summary-title">Player Summary</div>
                 <div className="side-panel-small-muted">
@@ -143,7 +247,7 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
                   <div>Science: {playerResources?.science ?? 0}</div>
                 </div>
               </>
-            )}
+            ) : null}
           </div>
         </div>
       </aside>

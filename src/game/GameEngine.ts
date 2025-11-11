@@ -270,15 +270,23 @@ export default class GameEngine {
   // Choose a target for AI unit: prefer unexplored nearby tiles, then enemy units, then random neighbor
   private chooseAITarget(unit: any): { col: number; row: number } | null {
     if (!this.map || !this.squareGrid) return null;
+    console.log(`[AI] Choosing target for unit ${unit.id} (${unit.type}) at (${unit.col},${unit.row})`);
     // 1) Nearby unexplored tile
   const unexplored = this.findNearbyUnexplored(unit);
-    if (unexplored) return { col: unexplored.col, row: unexplored.row };
+    if (unexplored) {
+      console.log(`[AI] Chose unexplored tile at (${unexplored.col},${unexplored.row})`);
+      return { col: unexplored.col, row: unexplored.row };
+    }
 
     // 2) Nearby enemy unit
   const enemy = this.findNearbyEnemy(unit);
-    if (enemy) return { col: enemy.col, row: enemy.row };
+    if (enemy) {
+      console.log(`[AI] Chose enemy unit at (${enemy.col},${enemy.row})`);
+      return { col: enemy.col, row: enemy.row };
+    }
 
     // 3) Random valid neighbor
+    console.log(`[AI] No unexplored or enemy targets found, choosing random neighbor`);
     const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
     for (const n of neighbors) {
       if (!this.squareGrid.isValidSquare(n.col, n.row)) continue;
@@ -287,9 +295,11 @@ export default class GameEngine {
       if (TERRAIN_PROPS[tile.type]?.passable === false) continue;
       const other = this.getUnitAt(n.col, n.row);
       if (other && other.civilizationId === unit.civilizationId) continue;
+      console.log(`[AI] Chose random neighbor at (${n.col},${n.row})`);
       return { col: n.col, row: n.row };
     }
 
+    console.log(`[AI] No valid target found for unit ${unit.id}`);
     return null;
   }
 
@@ -321,12 +331,15 @@ export default class GameEngine {
 
   // Run an asynchronous AI turn for civilizationId
   async runAITurn(civilizationId: number) {
+    console.log(`[AI] Starting AI turn for civilization ${civilizationId}`);
     // Small delay before AI starts so player can observe
     await this.sleep(250);
 
     const aiUnits = this.units.filter(u => u.civilizationId === civilizationId && (u.movesRemaining || 0) > 0);
+    console.log(`[AI] Found ${aiUnits.length} units with moves remaining for civilization ${civilizationId}`);
 
     for (const unit of aiUnits) {
+      console.log(`[AI] Processing unit ${unit.id} (${unit.type}) at (${unit.col},${unit.row}) with ${unit.movesRemaining} moves remaining`);
       // While this unit can move, pick targets and attempt actions
       while ((unit.movesRemaining || 0) > 0) {
         const target = this.chooseAITarget(unit);
@@ -337,6 +350,7 @@ export default class GameEngine {
 
         // If target is adjacent, try to move or attack
         const dist = this.squareGrid.squareDistance(unit.col, unit.row, target.col, target.row);
+        console.log(`[AI] Target distance: ${dist} for unit ${unit.id} to (${target.col},${target.row})`);
         if (dist === 1) {
           const targetUnit = this.getUnitAt(target.col, target.row);
           if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
@@ -346,8 +360,10 @@ export default class GameEngine {
             const tt = this.getTileAt(target.col, target.row);
             const attackCost = Math.max(1, TERRAIN_PROPS[tt?.type]?.movement || 1);
             if ((unit.movesRemaining || 0) >= attackCost) {
+              console.log(`[AI] Attack cost: ${attackCost}, unit has ${unit.movesRemaining} moves - proceeding with attack`);
               this.moveUnit(unit.id, target.col, target.row);
             } else {
+              console.log(`[AI] Not enough moves for attack (cost: ${attackCost}, has: ${unit.movesRemaining})`);
               // Not enough movement points to attack, break out for this unit
               break;
             }
@@ -356,24 +372,30 @@ export default class GameEngine {
             const tt = this.getTileAt(target.col, target.row);
             const moveCost = Math.max(1, TERRAIN_PROPS[tt?.type]?.movement || 1);
             if ((unit.movesRemaining || 0) >= moveCost) {
+              console.log(`[AI] Moving to adjacent tile (${target.col},${target.row}), cost: ${moveCost}, remaining moves: ${unit.movesRemaining}`);
               this.moveUnit(unit.id, target.col, target.row);
             } else {
+              console.log(`[AI] Not enough moves for adjacent move (cost: ${moveCost}, has: ${unit.movesRemaining})`);
               break;
             }
           }
         } else {
           // Pathfind towards target and take next step
+          console.log(`[AI] Pathfinding to non-adjacent target (${target.col},${target.row})`);
           const path = this.squareGrid.findPath(unit.col, unit.row, target.col, target.row, new Set());
             if (path.length > 1) {
             const next = path[1];
+            console.log(`[AI] Path found, next step to (${next.col},${next.row}), path length: ${path.length}`);
             // Check move cost for next step
             const tt = this.getTileAt(next.col, next.row);
             const nextCost = Math.max(1, TERRAIN_PROPS[tt?.type]?.movement || 1);
             if ((unit.movesRemaining || 0) < nextCost) {
+              console.log(`[AI] Not enough moves for path step (cost: ${nextCost}, has: ${unit.movesRemaining})`);
               // Not enough movement for next step — end this unit's moves
               break;
             }
 
+            console.log(`[AI] Moving along path to (${next.col},${next.row}), cost: ${nextCost}`);
             // Attempt the move and inspect structured result
             const result = this.moveUnit(unit.id, next.col, next.row);
             if (!result || !result.success) {
@@ -390,10 +412,11 @@ export default class GameEngine {
                 break;
               }
             }
+            console.log(`[AI] Path step successful, ${unit.movesRemaining} moves remaining`);
             // If success, continue the while loop (unit.movesRemaining updated)
           } else {
             // Couldn't find path, try moving to any valid neighbor as fallback
-            console.warn(`[AI] No path found for unit ${unit.id} to target (${target.col},${target.row})`);
+            console.log(`[AI] No path found, trying fallback to random neighbor`);
             const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
             let moved = false;
             for (const n of neighbors) {
@@ -403,8 +426,12 @@ export default class GameEngine {
               if (TERRAIN_PROPS[tile.type]?.passable === false) continue;
               const other = this.getUnitAt(n.col, n.row);
               if (other && other.civilizationId === unit.civilizationId) continue;
+              console.log(`[AI] Trying fallback move to (${n.col},${n.row})`);
               const r = this.moveUnit(unit.id, n.col, n.row);
-              if (r && r.success) { moved = true; break; }
+              if (r && r.success) { 
+                console.log(`[AI] Fallback move successful`);
+                moved = true; break; 
+              }
               // If move failed for a terminal reason, stop trying neighbors for this unit
               const reason = r?.reason || 'unknown';
               const terminalReasons = new Set(['insufficient_moves', 'no_moves_left', 'terrain_impassable', 'invalid_target']);
@@ -414,6 +441,7 @@ export default class GameEngine {
               }
             }
             if (!moved) {
+              console.log(`[AI] No valid fallback neighbor found`);
               // No valid neighbor found, break to next unit
               break;
             }
@@ -423,8 +451,10 @@ export default class GameEngine {
         // Wait a little so moves are visible
         await this.sleep(200);
       }
+      console.log(`[AI] Finished processing unit ${unit.id}, final moves remaining: ${unit.movesRemaining}`);
     }
 
+    console.log(`[AI] Finished all units for civilization ${civilizationId}`);
     // Clear highlights and signal turn end for AI
     if (this.renderer && this.renderer.setHighlightedHexes) {
       try { this.renderer.setHighlightedHexes([]); } catch (e) {}
@@ -434,6 +464,7 @@ export default class GameEngine {
     this.checkAndEndTurnIfNoMoves();
 
     // After AI finished its units, auto-advance to next player
+    console.log(`[AI] AI turn completed for civilization ${civilizationId}, advancing to next player`);
     this.onStateChange && this.onStateChange('AI_FINISHED', { civilizationId });
   }
 
@@ -560,7 +591,7 @@ export default class GameEngine {
         cityNames: [...civData.cityNames],
         nextCityNameIndex: 0,
         isAlive: true,
-        isHuman: i === 0, // First civ is human player
+        isHuman: i === 0, // First civ is human
         resources: {
           food: 0,
           production: 0,
@@ -1102,6 +1133,7 @@ export default class GameEngine {
     settler.movesRemaining = 0;
     
     // Remove settler
+    // NOT CHANGE THIS TO === THAN SETTLER NOT DISAPPEARS
     this.units = this.units.filter(u => u.id !== settlerId);
 
     // Log settler removal (effectively a movement off the map)

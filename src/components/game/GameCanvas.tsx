@@ -218,6 +218,7 @@ const GameCanvas = ({ gameEngine }) => {
     
     if (gameEngine.isValidHex(hex.col, hex.row)) {
       // Handle hex selection
+      console.log(`[CLICK] Selecting hex (${hex.col}, ${hex.row})`);
       actions.selectHex(hex);
       
       // Check for unit or city at this location
@@ -231,6 +232,7 @@ const GameCanvas = ({ gameEngine }) => {
         console.log(`[CLICK] Selected city ${city.id} (${city.name}) at (${hex.col}, ${hex.row})`);
         actions.selectCity(city.id);
       } else {
+        console.log(`[CLICK] Empty hex clicked at (${hex.col}, ${hex.row}) - hex should be selected`);
         // Try to move selected unit
         if (gameState.selectedUnit) {
           console.log(`[CLICK] Attempting to move selected unit ${gameState.selectedUnit} to (${hex.col}, ${hex.row})`);
