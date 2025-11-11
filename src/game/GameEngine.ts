@@ -775,7 +775,7 @@ export default class GameEngine {
       foodStored: 0,
       foodRequired: 20, // Food needed for next population
       shields: 0, // Production shields
-      currentProduction: 'settlers', // Start building a settler
+      currentProduction: 'warrior', // Start building a settler
       productionQueue: [],
       buildings: [],
       wonders: [],
@@ -1124,7 +1124,8 @@ export default class GameEngine {
       foodStored: 0,
       foodNeeded: 20,
       productionStored: 0,
-      currentProduction: null
+      currentProduction: 'warrior', // Default to first unit
+      buildQueue: [{ type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }] // Default production queue
     };
 
     this.cities.push(city);

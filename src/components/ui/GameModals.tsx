@@ -14,9 +14,12 @@ const GameModals = ({ gameEngine }) => {
   const cities = useGameStore(state => state.cities);
   const technologies = useGameStore(state => state.technologies);
   const playerResources = useGameStore(state => state.playerResources);
-  const currentPlayer = useGameStore(state => state.currentPlayer);
+  const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
+
+  // Check if the selected city belongs to the current player
+  const isPlayerCity = selectedCity && currentPlayer && selectedCity.civilizationId === currentPlayer.id;
 
   // Memoize selectedCity to prevent unnecessary recalculations
   const memoizedSelectedCity = useMemo(() => selectedCity, [selectedCityId, cities]);
@@ -449,72 +452,76 @@ const GameModals = ({ gameEngine }) => {
                       </ul>
                     ) : <p className="hex-detail-no-buildings">No buildings</p>}
                   </div>
-                  {/* Production selector moved here (Overview tab) */}
-                  <div className="mt-3">
-                    <h6>Production</h6>
-                    <div className="d-flex gap-2 align-items-center">
-                      <select
-                        className="form-select bg-secondary text-white"
-                        value={selectedProductionKey || ''}
-                        onChange={(e) => setSelectedProductionKey(e.target.value || null)}
-                        style={{maxWidth: '420px'}}
-                        disabled={!availableProductionKeys || availableProductionKeys.length === 0}
-                      >
-                        {(availableProductionKeys.length === 0) && <option value="">(No available items)</option>}
-                        {availableProductionKeys.map(k => (
-                          <option key={k} value={k}>{UNIT_PROPS[k].name} ({UNIT_PROPS[k].cost} shields)</option>
-                        ))}
-                      </select>
+                  {/* Production selector moved here (Overview tab) - only show for player cities */}
+                  {isPlayerCity && (
+                    <div className="mt-3">
+                      <h6>Production</h6>
+                      <div className="d-flex gap-2 align-items-center">
+                        <select
+                          className="form-select bg-secondary text-white"
+                          value={selectedProductionKey || ''}
+                          onChange={(e) => setSelectedProductionKey(e.target.value || null)}
+                          style={{maxWidth: '420px'}}
+                          disabled={!availableProductionKeys || availableProductionKeys.length === 0}
+                        >
+                          {(availableProductionKeys.length === 0) && <option value="">(No available items)</option>}
+                          {availableProductionKeys.map(k => (
+                            <option key={k} value={k}>{UNIT_PROPS[k].name} ({UNIT_PROPS[k].cost} shields)</option>
+                          ))}
+                        </select>
 
-                      <div className="d-flex gap-2">
-                        <Button
-                          variant="light"
-                          disabled={!selectedProductionKey || !gameEngine || !selectedCity}
-                          onClick={() => {
-                            if (!selectedProductionKey) return;
-                            console.log('[GameModals] Add to Queue clicked', { cityId: selectedCity?.id, productionKey: selectedProductionKey });
-                            console.log('[GameModals] Before queue', { buildQueue: selectedCity?.buildQueue });
-                            handleQueueProduction(selectedProductionKey); // Add to queue
-                            console.log('[GameModals] After queue (will re-sync from engine)');
-                          }}
-                        >
-                          Add to Queue
-                        </Button>
-                        <Button
-                          variant="danger"
-                          disabled={selectedQueueIndex === null || selectedQueueIndex === undefined || !Array.isArray(selectedCity?.buildQueue) || selectedCity.buildQueue.length === 0 || !gameEngine}
-                          onClick={async () => {
-                            if (selectedQueueIndex === null || selectedQueueIndex === undefined) return;
-                            if (!gameEngine || typeof gameEngine.removeCityQueueItem !== 'function') return;
-                            const res = (gameEngine as any).removeCityQueueItem(selectedCity.id, selectedQueueIndex);
-                            if (res && res.success) {
-                              actions.addNotification({ type: 'success', message: `Removed from queue: ${res.removed?.name || 'item'}` });
-                              if (gameEngine.getAllCities) actions.updateCities(gameEngine.getAllCities());
-                              setSelectedQueueIndex(null);
-                            } else {
-                              actions.addNotification({ type: 'warning', message: `Failed to remove: ${res?.reason || 'unknown'}` });
-                            }
-                          }}
-                        >
-                          Remove
-                        </Button>
-                        <Button
-                          variant="success"
-                          disabled={!selectedProductionKey || !gameEngine || !selectedCity || (currentPlayer?.resources?.gold || 0) < (UNIT_PROPS[selectedProductionKey]?.cost || 0)}
-                          onClick={() => {
-                            if (!selectedProductionKey) return;
-                            console.log('[GameModals] Buy Now clicked', { cityId: selectedCity?.id, productionKey: selectedProductionKey });
-                            console.log('[GameModals] Player gold before buy', currentPlayer?.resources?.gold);
-                            handleBuyNow(selectedProductionKey);
-                            console.log('[GameModals] Buy Now finished');
-                          }}
-                        >
-                          Buy Now ({UNIT_PROPS[selectedProductionKey]?.cost || 0} gold)
-                        </Button>
+                        <div className="d-flex gap-2">
+                          <Button
+                            variant="light"
+                            disabled={!selectedProductionKey || !gameEngine || !selectedCity}
+                            onClick={() => {
+                              if (!selectedProductionKey) return;
+                              console.log('[GameModals] Add to Queue clicked', { cityId: selectedCity?.id, productionKey: selectedProductionKey });
+                              console.log('[GameModals] Before queue', { buildQueue: selectedCity?.buildQueue });
+                              handleQueueProduction(selectedProductionKey); // Add to queue
+                              console.log('[GameModals] After queue (will re-sync from engine)');
+                            }}
+                          >
+                            Add to Queue
+                          </Button>
+                          <Button
+                            variant="danger"
+                            disabled={selectedQueueIndex === null || selectedQueueIndex === undefined || !Array.isArray(selectedCity?.buildQueue) || selectedCity.buildQueue.length === 0 || !gameEngine}
+                            onClick={async () => {
+                              if (selectedQueueIndex === null || selectedQueueIndex === undefined) return;
+                              if (!gameEngine || typeof gameEngine.removeCityQueueItem !== 'function') return;
+                              const res = (gameEngine as any).removeCityQueueItem(selectedCity.id, selectedQueueIndex);
+                              if (res && res.success) {
+                                actions.addNotification({ type: 'success', message: `Removed from queue: ${res.removed?.name || 'item'}` });
+                                if (gameEngine.getAllCities) actions.updateCities(gameEngine.getAllCities());
+                                setSelectedQueueIndex(null);
+                              } else {
+                                actions.addNotification({ type: 'warning', message: `Failed to remove: ${res?.reason || 'unknown'}` });
+                              }
+                            }}
+                          >
+                            Remove
+                          </Button>
+                          <Button
+                            variant="success"
+                            disabled={!selectedProductionKey || !gameEngine || !selectedCity || (currentPlayer?.resources?.gold || 0) < (UNIT_PROPS[selectedProductionKey]?.cost || 0)}
+                            onClick={() => {
+                              if (!selectedProductionKey) return;
+                              console.log('[GameModals] Buy Now clicked', { cityId: selectedCity?.id, productionKey: selectedProductionKey });
+                              console.log('[GameModals] Player gold before buy', currentPlayer?.resources?.gold);
+                              handleBuyNow(selectedProductionKey);
+                              console.log('[GameModals] Buy Now finished');
+                            }}
+                          >
+                            Buy Now ({UNIT_PROPS[selectedProductionKey]?.cost || 0} gold)
+                          </Button>
+                        </div>
                       </div>
                     </div>
+                  )}
 
-                    {/* Current Production Indicator */}
+                  {/* Current Production Indicator - only show for player cities */}
+                  {isPlayerCity && (
                     <div className="mt-3">
                       <h6>Current Production</h6>
                       {selectedCity.currentProduction ? (
@@ -526,8 +533,10 @@ const GameModals = ({ gameEngine }) => {
                         <div className="text-muted">No active production</div>
                       )}
                     </div>
+                  )}
 
-                    {/* Queue Display */}
+                  {/* Queue Display - only show for player cities */}
+                  {isPlayerCity && (
                     <div className="mt-3">
                       <div className="d-flex align-items-center mb-1">
                         <h6 className="me-2">Queue</h6>
@@ -596,7 +605,7 @@ const GameModals = ({ gameEngine }) => {
                         )}
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ) : (
                 <p className="hex-detail-no-city">No city selected</p>

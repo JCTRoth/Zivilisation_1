@@ -15,7 +15,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const actions = useGameStore(state => state.actions);
   const cities = useGameStore(state => state.cities);
   const units = useGameStore(state => state.units);
-  const currentPlayer = useGameStore(state => state.currentPlayer);
+  const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
   const [isDragging, setIsDragging] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [selectedHex, setSelectedHex] = useState({ col: 5, row: 5 });
@@ -374,16 +374,16 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const drawCity = (ctx, centerX, centerY, city) => {
     // City background
     ctx.fillStyle = city.owner === 0 ? '#FFD700' : '#FF6347';
-    ctx.fillRect(centerX - 12, centerY - 12, 24, 24);
+    ctx.fillRect(centerX - 16, centerY - 16, 32, 32);
     
     // City border
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
-    ctx.strokeRect(centerX - 12, centerY - 12, 24, 24);
+    ctx.strokeRect(centerX - 16, centerY - 16, 32, 32);
     
     // City symbol
     ctx.fillStyle = '#000';
-    ctx.font = 'bold 16px monospace';
+    ctx.font = 'bold 24px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🏛️', centerX, centerY);
@@ -391,11 +391,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     // City name
     ctx.font = '10px monospace';
     ctx.fillStyle = '#000';
-    ctx.fillText(city.name, centerX, centerY + 20);
-    
-    // City size
-    ctx.fillStyle = '#FFF';
-    ctx.fillText((city.population || 1).toString(), centerX + 10, centerY - 10);
+    ctx.fillText(city.name, centerX, centerY + 24);
   };
 
   // Draw unit (alpha optional for blinking)
@@ -811,10 +807,19 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
           if (actions && typeof actions.selectUnit === 'function') {
             actions.selectUnit(unitAt.id);
           }
-        } else if (cityAt && currentPlayer && cityAt.civilizationId === currentPlayer.id) {
+        } else if (cityAt) {
           console.log(`[CLICK] Selected city ${cityAt.id} (${cityAt.name}) at (${hex.col}, ${hex.row})`);
+          console.log(`[CLICK] City debug - currentPlayer:`, currentPlayer, `cityAt.civilizationId:`, cityAt.civilizationId);
           if (actions && typeof actions.selectCity === 'function') {
             actions.selectCity(cityAt.id);
+          }
+          // Only open modal for player cities
+          console.log(`[CLICK] Modal check - currentPlayer exists:`, !!currentPlayer, `civilizationId match:`, currentPlayer?.id === cityAt.civilizationId, `actions.showDialog exists:`, !!(actions && typeof actions.showDialog === 'function'));
+          if (currentPlayer && cityAt.civilizationId === currentPlayer.id && actions && typeof actions.showDialog === 'function') {
+            console.log(`[CLICK] Opening city modal for player city`);
+            actions.showDialog('city-details');
+          } else {
+            console.log(`[CLICK] Not opening city modal - condition not met`);
           }
         } else {
           // Check if we have a selected unit and try to move it
