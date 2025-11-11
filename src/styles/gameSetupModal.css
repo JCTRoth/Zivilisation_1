@@ -164,9 +164,9 @@
 }
 
 .setup-civ-card.is-selected {
-  background: rgba(212, 175, 55, 0.14);
+  background: rgba(212, 175, 55, 0.25);
   border-color: var(--accent);
-  box-shadow: 0 16px 32px rgba(212, 175, 55, 0.15);
+  box-shadow: 0 16px 32px rgba(212, 175, 55, 0.25);
 }
 
 .setup-civ-card__header {

@@ -5,7 +5,7 @@ import '../../styles/gameSetupModal.css';
 
 function GameSetupModal({ show, onStart }) {
   const [currentStep, setCurrentStep] = useState(1);
-  const [selectedCiv, setSelectedCiv] = useState(0);
+  const [selectedCiv, setSelectedCiv] = useState(7); // Default to Germans (index 7 in sorted list)
   const [difficulty, setDifficulty] = useState('PRINCE');
   const [numCivilizations, setNumCivilizations] = useState(7);
   const [mapType, setMapType] = useState('EARTH');

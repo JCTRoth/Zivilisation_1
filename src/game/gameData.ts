@@ -80,98 +80,98 @@ export const CIVILIZATIONS: Civilization[] = [
   {
     name: 'Americans',
     leader: 'Abraham Lincoln',
-    color: '#4169E1',
+    color: '#0000FF', // Blue - stars and stripes
     cityNames: ['Washington', 'New York', 'Boston', 'Philadelphia', 'Atlanta', 'Chicago', 'Seattle', 'San Francisco', 'Los Angeles', 'Detroit'],
     icon: '🦅'
   },
   {
     name: 'Aztecs',
     leader: 'Montezuma',
-    color: '#DC143C',
+    color: '#00c42aff', // Teal - Jungle gree
     cityNames: ['Tenochtitlan', 'Texcoco', 'Tlatelolco', 'Teotihuacan', 'Tlaxcala', 'Cholula', 'Xochicalco', 'Tula'],
     icon: '🐆'
   },
   {
     name: 'Babylonians',
     leader: 'Hammurabi',
-    color: '#FFD700',
+    color: '#ff954fff', // Lime - ancient Mesopotamian gold/yellow-green
     cityNames: ['Babylon', 'Ur', 'Nineveh', 'Ashur', 'Eridu', 'Uruk', 'Lagash', 'Nippur'],
     icon: '🏺'
   },
   {
     name: 'Chinese',
     leader: 'Mao Tse Tung',
-    color: '#ff4400ff',
+    color: '#fbff00ff', // Green - traditional Chinese color
     cityNames: ['Beijing', 'Shanghai', 'Guangzhou', 'Nanjing', 'Xian', 'Chengdu', 'Hangzhou', 'Tianjin', 'Wuhan'],
     icon: '🐉'
   },
   {
     name: 'Egyptians',
     leader: 'Ramesses II',
-    color: '#ffe600ff',
+    color: '#ffbb00ff', // Yellow - Egyptian gold/sand
     cityNames: ['Thebes', 'Memphis', 'Heliopolis', 'Alexandria', 'Giza', 'Luxor', 'Aswan', 'Karnak'],
     icon: '𓂀'
   },
   {
     name: 'English',
     leader: 'Elizabeth I',
-    color: '#e30202ff',
+    color: '#ff0000ff', // Red was on two of their historical flags
     cityNames: ['London', 'York', 'Nottingham', 'Oxford', 'Cambridge', 'Canterbury', 'Coventry', 'Warwick', 'Newcastle'],
     icon: '🇬🇧'
   },
   {
     name: 'Germans',
     leader: 'Frederick the Great',
-    color: '#949494ff',
+    color: '#949494', // Gray - as specified
     cityNames: ['Berlin', 'Leipzig', 'Hamburg', 'Bremen', 'Frankfurt', 'Bonn', 'Nuremberg', 'Cologne', 'Munich', 'Darmstadt', 'Mannheim','Heidelberg'],
     icon: '✠'
   },
   {
     name: 'French',
     leader: 'Napoleon Bonaparte',
-    color: '#edededff',
+    color: '#ebebebff', // White - as specified
     cityNames: ['Paris', 'Orleans', 'Lyon', 'Tours', 'Marseille', 'Chartres', 'Avignon', 'Rouen', 'Grenoble'],
     icon: '🇫🇷🥖'
   },
   {
     name: 'Greeks',
     leader: 'Alexander the Great',
-    color: '#4682B4',
+    color: '#1269c5', 
     cityNames: ['Athens', 'Sparta', 'Corinth', 'Delphi', 'Thebes', 'Ephesus', 'Rhodes', 'Byzantium', 'Pergamon'],
     icon: '🏛️'
   },
   {
     name: 'Indians',
     leader: 'Mahatma Gandhi',
-    color: '#FF8C00',
+    color: '#ff681a',
     cityNames: ['Delhi', 'Bombay', 'Madras', 'Bangalore', 'Calcutta', 'Lahore', 'Karachi', 'Hyderabad'],
     icon: '🇮🇳'
   },
   {
-    name: 'Kazakhs',
+    name: 'Huns',
     leader: 'Dschingis Khan',
-    color: '#00AFCA',
+    color: '#00ADC3',
     cityNames: ['Almaty', 'Shymkent', 'Karaganda', 'Taraz', 'Aktobe', 'Pavlodar', 'Oskemen', 'Semey', 'Oral', 'Astana'],
     icon: '🐎🏹'
   },
   {
     name: 'Romans',
     leader: 'Julius Caesar',
-    color: '#DC143C',
+    color: '#d100d1ff', //PurPur
     cityNames: ['Rome', 'Capua', 'Veii', 'Pompeii', 'Antium', 'Cumae', 'Neapolis', 'Ravenna', 'Verona'],
     icon: '⚔️'
   },
   {
     name: 'Russians',
     leader: 'Joseph Stalin',
-    color: '#B22222',
+    color: '#D00000',
     cityNames: ['Moscow', 'Leningrad', 'Kiev', 'Minsk', 'Smolensk', 'Odessa', 'Sevastopol', 'Tula', 'Stalingrad'],
     icon: '☭'
   },
   {
     name: 'Zulus',
     leader: 'Shaka',
-    color: '#8d3b00ff',
+    color: '#8B4513',
     cityNames: ['Zimbabwe', 'Ulundi', 'Bapedi', 'Hlobane', 'Isandhlwana', 'Intombe', 'Mpondo', 'Swazi'],
     icon: '🛡️'
   }

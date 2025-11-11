@@ -890,6 +890,60 @@ export default class GameEngine {
   }
 
   /**
+   * Check if a unit can move to a specific position
+   */
+  canUnitMoveTo(unitId, targetCol, targetRow) {
+    const unit = this.units.find(u => u.id === unitId);
+    if (!unit) {
+      console.log(`[canUnitMoveTo] Invalid unitId: ${unitId}`);
+      return false;
+    }
+    if (!this.squareGrid.isValidSquare(targetCol, targetRow)) {
+      console.log(`[canUnitMoveTo] Invalid target square: (${targetCol}, ${targetRow})`);
+      return false;
+    }
+
+    // Check if unit has moves remaining
+    if ((unit.movesRemaining || 0) <= 0) {
+      console.log(`[canUnitMoveTo] Unit ${unitId} has no moves remaining.`);
+      return false;
+    }
+
+    // Check if target tile is passable
+    const targetTile = this.getTileAt(targetCol, targetRow);
+    if (!targetTile) {
+      console.log(`[canUnitMoveTo] Target tile does not exist at (${targetCol}, ${targetRow}).`);
+      return false;
+    }
+    if (TERRAIN_PROPS[targetTile.type]?.passable === false) {
+      console.log(`[canUnitMoveTo] Target tile at (${targetCol}, ${targetRow}) is not passable.`);
+      return false;
+    }
+
+    // Check if there's another unit at target (combat or stacking rules)
+    const targetUnit = this.getUnitAt(targetCol, targetRow);
+    if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
+      console.log(`[canUnitMoveTo] Target occupied by enemy unit. Allowing attack.`);
+      return true;
+    }
+    if (targetUnit && targetUnit.civilizationId === unit.civilizationId) {
+      console.log(`[canUnitMoveTo] Target occupied by allied unit. Movement not allowed.`);
+      return false;
+    }
+
+    // Calculate move cost
+    const distance = this.squareGrid.squareDistance(unit.col, unit.row, targetCol, targetRow);
+    const moveCost = Math.max(1, TERRAIN_PROPS[targetTile.type]?.movement || 1);
+
+    // Check if unit has enough moves
+    const hasEnoughMoves = (unit.movesRemaining || 0) >= distance * moveCost;
+    if (!hasEnoughMoves) {
+      console.log(`[canUnitMoveTo] Insufficient moves for unit ${unitId}. Distance: ${distance}, MoveCost: ${moveCost}, MovesRemaining: ${unit.movesRemaining}`);
+    }
+    return hasEnoughMoves;
+  }
+
+  /**
    * Move unit to new position
    */
   moveUnit(unitId, targetCol, targetRow) {
