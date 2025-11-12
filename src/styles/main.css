@@ -41,7 +41,6 @@ body {
     align-items: center;
     background: linear-gradient(135deg, var(--topbar-start) 0%, var(--topbar-end) 100%);
     padding: 10px 20px;
-    border-bottom: 2px solid var(--accent);
     box-shadow: 0 2px 5px rgba(0,0,0,0.3);
 }
 
@@ -81,7 +80,6 @@ body {
 
 #gameCanvas, .game-canvas {
     background: var(--game-canvas-bg);
-    border-right: 2px solid var(--accent);
     cursor: crosshair;
 }
 
@@ -91,7 +89,6 @@ body {
     background: linear-gradient(180deg, var(--side-start) 0%, var(--side-end) 100%);
     padding: 15px;
     overflow-y: auto;
-    border-left: 2px solid var(--accent);
 }
 
 .panel {
@@ -119,7 +116,6 @@ body {
 #statusBar, .status-bar {
     background: linear-gradient(135deg, var(--topbar-start) 0%, var(--topbar-end) 100%);
     padding: 8px 20px;
-    border-top: 2px solid var(--accent);
     font-weight: bold;
 }
 

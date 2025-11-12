@@ -159,7 +159,6 @@
 }
 
 .setup-civ-card:focus-visible {
-  outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
 
@@ -464,7 +463,6 @@
 }
 
 .setup-footer__button:focus-visible {
-  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 

@@ -8,7 +8,8 @@
   box-sizing: border-box;
   padding-top: 6px;
   display: grid;
-  grid-template-rows: auto 1fr 1fr;
+  /* Header, middle, bottom. Make bottom flexible for the minimap/board */
+  grid-template-rows: auto 1fr 2fr;
 }
 
 .side-panel-header {
@@ -46,6 +47,10 @@
   align-items: center;
   justify-content: center;
   box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.6) inset;
+}
+
+.avatar-div.avatar-two-icons {
+  width: 79px;
 }
 
 .icon-span {
@@ -111,7 +116,17 @@
 }
 
 .bottom-section {
-  min-height: 340px;
+  /* Allow bottom section to expand and host the minimap board */
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.minimap-container {
+  flex: 1 1 auto;
+  display: block;
+  width: 100%;
 }
 
 .details-title {

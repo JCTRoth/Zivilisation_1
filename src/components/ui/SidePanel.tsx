@@ -72,6 +72,9 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
 
   // Find the static civilization data to get the icon
   const staticCiv = CIVILIZATIONS.find(civ => civ.name === displayPlayer.name);
+  // Detect multi-codepoint icons (e.g. two emoji characters) and adjust avatar sizing
+  const civIcon = staticCiv?.icon ?? '🏛️';
+  const isTwoIcon = civIcon ? Array.from(civIcon).length > 1 : false;
 
   return (
     <>
@@ -92,10 +95,10 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
         <div className="side-panel-header">
           <div className="header-flex">
             <div
-              className="avatar-div"
+              className={`avatar-div ${isTwoIcon ? 'avatar-two-icons' : ''}`}
               style={{ background: displayPlayer.color || '#4b8b3b' }}
             >
-              <span className="icon-span">{staticCiv?.icon ?? '🏛️'}</span>
+              <span className="icon-span">{civIcon}</span>
             </div>
 
             <div className="name-div">

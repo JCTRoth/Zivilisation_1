@@ -2,13 +2,18 @@
 
 .minimap-container {
   width: 100%;
-  height: auto;
+  height: 100%; /* allow parent to size the container */
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
 }
 
 .minimap-canvas {
   width: 100%;
-  height: auto;
+  height: 100%;
   cursor: pointer;
   image-rendering: pixelated;
   display: block;
+  object-fit: contain;
 }

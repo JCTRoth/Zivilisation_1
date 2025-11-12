@@ -5,7 +5,9 @@ import '../../styles/gameSetupModal.css';
 
 function GameSetupModal({ show, onStart }) {
   const [currentStep, setCurrentStep] = useState(1);
-  const [selectedCiv, setSelectedCiv] = useState(7); // Default to Germans (index 7 in sorted list)
+  // Default to Germans (find in original CIVILIZATIONS array)
+  const defaultCivIndex = CIVILIZATIONS.findIndex(c => c.name === 'Germans');
+  const [selectedCiv, setSelectedCiv] = useState(defaultCivIndex >= 0 ? defaultCivIndex : 0);
   const [difficulty, setDifficulty] = useState('PRINCE');
   const [numCivilizations, setNumCivilizations] = useState(7);
   const [mapType, setMapType] = useState('EARTH');
@@ -99,7 +101,9 @@ function GameSetupModal({ show, onStart }) {
             <section className="setup-section" aria-labelledby="setup-step-civilization">
               <div className="setup-civ-list" role="list">
                 {sortedCivilizations.map((civ, idx) => {
-                  const isSelected = selectedCiv === idx;
+                  // Map sorted item back to original index so selection maps to CIVILIZATIONS[] indexes
+                  const originalIndex = CIVILIZATIONS.findIndex(orig => orig.name === civ.name);
+                  const isSelected = selectedCiv === originalIndex;
                   const icon = civIcons[civ.name] ?? civ.name.charAt(0);
                   return (
                     <button
@@ -107,8 +111,8 @@ function GameSetupModal({ show, onStart }) {
                       type="button"
                       className={`setup-civ-card ${isSelected ? 'is-selected' : ''}`}
                       onClick={() => {
-                        console.log(`[CLICK] GameSetup select civilization: ${civ.name} (${idx})`);
-                        setSelectedCiv(idx);
+                        console.log(`[CLICK] GameSetup select civilization: ${civ.name} (original idx ${originalIndex})`);
+                        if (originalIndex >= 0) setSelectedCiv(originalIndex);
                       }}
                       aria-pressed={isSelected}
                     >

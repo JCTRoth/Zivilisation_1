@@ -52,14 +52,18 @@ const MiniMap = ({ gameEngine }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Measure CSS size from container (fill width)
-    const cssWidth = Math.max(1, Math.floor(container.clientWidth));
-    const cssHeight = Math.max(1, Math.floor((cssWidth * MINIMAP_HEIGHT) / MINIMAP_WIDTH));
+  // Measure CSS size from container (fill both width and height)
+  // Prefer filling the container's height if available so minimap can fill a "board" area.
+  const cssWidth = Math.max(1, Math.floor(container.clientWidth));
+  // Use container.clientHeight when provided; fallback to aspect ratio if height is 0
+  const cssHeightFromContainer = Math.max(0, Math.floor(container.clientHeight || 0));
+  const cssHeight = cssHeightFromContainer > 32 ? cssHeightFromContainer : Math.max(1, Math.floor((cssWidth * MINIMAP_HEIGHT) / MINIMAP_WIDTH));
 
     // Device pixel ratio backing store for crisp rendering
     const dpr = Math.max(1, window.devicePixelRatio || 1);
-    canvas.style.width = cssWidth + 'px';
-    canvas.style.height = cssHeight + 'px';
+  // Apply full-size CSS so canvas stretches to container
+  canvas.style.width = cssWidth + 'px';
+  canvas.style.height = cssHeight + 'px';
     canvas.width = Math.round(cssWidth * dpr);
     canvas.height = Math.round(cssHeight * dpr);
 
