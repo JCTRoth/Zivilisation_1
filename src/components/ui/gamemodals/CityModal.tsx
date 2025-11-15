@@ -116,9 +116,7 @@ const CityModal: React.FC<CityModalProps> = ({
           <Tabs defaultActiveKey="overview" id="city-details-tabs" className="mb-3">
             <Tab eventKey="overview" title="Overview">
               <div className="hex-detail-content">
-                <h5 className="hex-detail-city-name">{selectedCity.name}</h5>
                 <p className="hex-detail-city-info"><strong>Population:</strong> {selectedCity.population ?? 1}</p>
-                <p className="hex-detail-city-info"><strong>Location:</strong> ({selectedCity.col}, {selectedCity.row})</p>
                 <div className="mb-3">
                   <strong>Yields</strong>
                   <ul>
@@ -130,12 +128,6 @@ const CityModal: React.FC<CityModalProps> = ({
                   </ul>
                 </div>
                 <div>
-                  <h6>Buildings</h6>
-                  {selectedCity.buildings && selectedCity.buildings.length > 0 ? (
-                    <ul>
-                      {selectedCity.buildings.map((building: any, i: number) => <li key={i}>{building}</li>)}
-                    </ul>
-                  ) : <p>No buildings</p>}
                 </div>
                 {isPlayerCity && (
                   <>
@@ -172,7 +164,6 @@ const CityModal: React.FC<CityModalProps> = ({
                         return null;
                       })()}
                       <div className="d-flex gap-2 align-items-center">
-                        {/* ProductionSelectionModal.js */}
                         {/* This button opens a modal with Units and Buildings tabs, listing all items. */}
                         <button
                           className="btn btn-secondary text-white"
@@ -243,6 +234,49 @@ const CityModal: React.FC<CityModalProps> = ({
                       </div>
                     </div>
                   </>
+                )}
+              </div>
+            </Tab>
+            <Tab eventKey="buildings" title="Buildings">
+              <div className="city-buildings-content">
+                {selectedCity.buildings && selectedCity.buildings.length > 0 ? (
+                  <div className="buildings-grid">
+                    {selectedCity.buildings.map((buildingKey: string, index: number) => {
+                      const buildingProps = BUILDING_PROPERTIES[buildingKey];
+                      return (
+                        <div key={index} className="building-card bg-secondary text-white p-3 rounded mb-2">
+                          <div className="d-flex justify-content-between align-items-start">
+                            <div>
+                              <h6 className="building-name mb-1">{buildingProps?.name || buildingKey}</h6>
+                              <div className="building-details small">
+                                <div>Cost: {buildingProps?.cost || 0} shields</div>
+                                <div>Maintenance: {buildingProps?.maintenance || 0} gold/turn</div>
+                              </div>
+                            </div>
+                          </div>
+                          {buildingProps?.description && (
+                            <div className="building-description small text-muted mt-2">
+                              {buildingProps.description}
+                            </div>
+                          )}
+                          {buildingProps?.effects && (
+                            <div className="building-effects small mt-2">
+                              <strong>Effects:</strong>
+                              <ul className="mb-0 mt-1">
+                                {Object.entries(buildingProps.effects).map(([effect, value]) => (
+                                  <li key={effect}>
+                                    {effect.replace(/([A-Z])/g, ' $1').toLowerCase()}: {String(value)}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-muted">No buildings constructed yet</div>
                 )}
               </div>
             </Tab>
@@ -377,49 +411,6 @@ const CityModal: React.FC<CityModalProps> = ({
                     </div>
                   );
                 })()}
-              </div>
-            </Tab>
-            <Tab eventKey="buildings" title="Buildings">
-              <div className="city-buildings-content">
-                {selectedCity.buildings && selectedCity.buildings.length > 0 ? (
-                  <div className="buildings-grid">
-                    {selectedCity.buildings.map((buildingKey: string, index: number) => {
-                      const buildingProps = BUILDING_PROPERTIES[buildingKey];
-                      return (
-                        <div key={index} className="building-card bg-secondary text-white p-3 rounded mb-2">
-                          <div className="d-flex justify-content-between align-items-start">
-                            <div>
-                              <h6 className="building-name mb-1">{buildingProps?.name || buildingKey}</h6>
-                              <div className="building-details small">
-                                <div>Cost: {buildingProps?.cost || 0} shields</div>
-                                <div>Maintenance: {buildingProps?.maintenance || 0} gold/turn</div>
-                              </div>
-                            </div>
-                          </div>
-                          {buildingProps?.description && (
-                            <div className="building-description small text-muted mt-2">
-                              {buildingProps.description}
-                            </div>
-                          )}
-                          {buildingProps?.effects && (
-                            <div className="building-effects small mt-2">
-                              <strong>Effects:</strong>
-                              <ul className="mb-0 mt-1">
-                                {Object.entries(buildingProps.effects).map(([effect, value]) => (
-                                  <li key={effect}>
-                                    {effect.replace(/([A-Z])/g, ' $1').toLowerCase()}: {String(value)}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-muted">No buildings constructed yet</div>
-                )}
               </div>
             </Tab>
             <Tab eventKey="raw" title="Raw JSON">

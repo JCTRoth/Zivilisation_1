@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from 'react-bootstrap';
 import { useGameStore } from '../../stores/gameStore';
 import { CIVILIZATIONS } from '../../data/gameData';
-import { TERRAIN_PROPERTIES } from '../../data/terrainConstants';
+import { TERRAIN_TYPES, getTerrainInfo, TILE_SIZE } from '../../data/terrainData';
 import MiniMap from './MiniMap';
 import '../../styles/sidePanel.css';
 
@@ -45,7 +45,7 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
     
     if (!tile) return null;
     
-    const terrainProps = TERRAIN_PROPERTIES[tile.type] || {} as any;
+    const terrainProps = TERRAIN_TYPES[tile.type] || {} as any;
     
     // Check visibility and exploration from the map arrays
     const isVisible = map.visibility?.[tileIndex] ?? false;
@@ -76,6 +76,41 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
   const civIcon = staticCiv?.icon ?? '🏛️';
   const isTwoIcon = civIcon ? Array.from(civIcon).length > 1 : false;
 
+  // Handle clicking on the avatar to center camera on capital city
+  const handleAvatarClick = () => {
+    console.log('[SidePanel] Avatar clicked');
+    console.log('[SidePanel] displayPlayer:', displayPlayer);
+    console.log('[SidePanel] displayPlayer.capital:', (displayPlayer as any)?.capital);
+    
+    let capitalCity = (displayPlayer as any)?.capital;
+    
+    // Fallback: if no capital is set, find the first city of this civilization
+    if (!capitalCity && displayPlayer && 'id' in displayPlayer) {
+      capitalCity = cities.find(c => c.civilizationId === displayPlayer.id);
+      console.log('[SidePanel] Using fallback capital city:', capitalCity);
+    }
+    
+    if (capitalCity) {
+      console.log('[SidePanel] Capital city found:', capitalCity);
+      
+      const centerX = capitalCity.col * TILE_SIZE;
+      const centerY = capitalCity.row * TILE_SIZE;
+      console.log('[SidePanel] Calculated center position:', { centerX, centerY });
+      
+      // Center the camera on the capital city
+      const cameraUpdate = {
+        x: centerX - (window.innerWidth/5), // Center horizontally
+        y: centerY - (window.innerHeight/4) // Center vertically
+      };
+      console.log('[SidePanel] Camera update:', cameraUpdate);
+      
+      actions.updateCamera(cameraUpdate);
+      console.log('[SidePanel] Camera update called');
+    } else {
+      console.log('[SidePanel] No capital city found for civilization', displayPlayer?.id);
+    }
+  };
+
   return (
     <>
       {/* Mobile backdrop */}
@@ -96,7 +131,9 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
           <div className="header-flex">
             <div
               className={`avatar-div ${isTwoIcon ? 'avatar-two-icons' : ''}`}
-              style={{ background: displayPlayer.color || '#4b8b3b' }}
+              style={{ background: displayPlayer.color || '#4b8b3b', cursor: 'pointer' }}
+              onClick={handleAvatarClick} // Add click handler here
+              title="Click to center on capital city"
             >
               <span className="icon-span">{civIcon}</span>
             </div>

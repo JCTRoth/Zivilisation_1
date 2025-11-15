@@ -16,6 +16,18 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
       switch (eventType) {
         case 'NEW_GAME':
           console.log('[useGameEngine] NEW_GAME: Updating map and initial visibility');
+          
+          // Ensure capitals are set for all civilizations
+          eventData.civilizations.forEach((civ, index) => {
+            if (!civ.capital) {
+              const firstCity = eventData.cities.find(c => c.civilizationId === index);
+              if (firstCity) {
+                civ.capital = firstCity;
+                console.log('[useGameEngine] Set capital for civilization', index, 'to city', firstCity.name);
+              }
+            }
+          });
+          
           // Update civilizations FIRST so unit colors work
           actions.updateCivilizations(eventData.civilizations);
           actions.updateMap(eventData.map);
@@ -65,8 +77,22 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
             tilesLength: gameEngine.map?.tiles?.length,
             eventData
           });
+          
+          // Ensure capital is set for the civilization that founded the city
+          const civId = eventData.city.civilizationId;
+          const civ = gameEngine.civilizations[civId];
+          if (civ && !civ.capital) {
+            // Find the first city of this civilization
+            const firstCity = gameEngine.getAllCities().find(c => c.civilizationId === civId);
+            if (firstCity) {
+              civ.capital = firstCity;
+              console.log('[useGameEngine] Set capital for civilization', civId, 'to city', firstCity.name);
+            }
+          }
+          
           actions.updateCities(gameEngine.getAllCities());
           actions.updateUnits(gameEngine.getAllUnits());
+          actions.updateCivilizations(gameEngine.civilizations);
           actions.updateVisibility();
           if (eventData.city.civilizationId === 0) {
             actions.selectCity(eventData.city.id);

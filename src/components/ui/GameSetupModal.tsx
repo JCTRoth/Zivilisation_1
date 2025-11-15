@@ -9,7 +9,7 @@ function GameSetupModal({ show, onStart }) {
   const defaultCivIndex = CIVILIZATIONS.findIndex(c => c.name === 'Germans');
   const [selectedCiv, setSelectedCiv] = useState(defaultCivIndex >= 0 ? defaultCivIndex : 0);
   const [difficulty, setDifficulty] = useState('PRINCE');
-  const [numCivilizations, setNumCivilizations] = useState(7);
+  const [numCivilizations, setNumCivilizations] = useState(2);
   const [mapType, setMapType] = useState('EARTH');
 
   const totalSteps = 2;

@@ -16,6 +16,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const cities = useGameStore(state => state.cities);
   const units = useGameStore(state => state.units);
   const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
+  const civilizations = useGameStore(state => state.civilizations);
   const [isDragging, setIsDragging] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [selectedHex, setSelectedHex] = useState({ col: 5, row: 5 });
@@ -372,8 +373,9 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
 
   // Draw city
   const drawCity = (ctx, centerX, centerY, city) => {
-    // City background
-    ctx.fillStyle = city.owner === 0 ? '#FFD700' : '#FF6347';
+    // City background - use civilization color if available
+    const civColor = (civilizations && civilizations[city.owner] && civilizations[city.owner].color) || (city.owner === 0 ? '#FFD700' : '#FF6347');
+    ctx.fillStyle = civColor;
     ctx.fillRect(centerX - 16, centerY - 16, 32, 32);
     
     // City border
@@ -382,8 +384,8 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     ctx.strokeRect(centerX - 16, centerY - 16, 32, 32);
     
     // City symbol
-    ctx.fillStyle = '#000';
-    ctx.font = 'bold 24px monospace';
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 24px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🏛️', centerX, centerY);
@@ -399,33 +401,44 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    // Scale factor for icon - make everything 5x bigger
-    const scale = 4;
-    const baseRadius = 10; // previous radius
-    const radius = baseRadius * scale;
+    // Unit marker
+    const zoomFactor = typeof camera?.zoom === 'number' ? Math.min(Math.max(camera.zoom, 0.5), 1.5) : 1;
+    const baseRadius = 20;
+    const radius = Math.round(baseRadius * zoomFactor);
 
-    // Unit background
-    ctx.fillStyle = unit.owner === 0 ? '#4169E1' : '#DC143C';
+    // Unit background - use civilization color if available
+    const civColor = (civilizations && civilizations[unit.civilizationId ?? unit.owner] && civilizations[unit.civilizationId ?? unit.owner].color) || (unit.owner === 0 ? '#4169E1' : '#DC143C');
+    ctx.fillStyle = civColor;
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
     ctx.fill();
 
-    // Unit border (scale stroke width a bit)
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = Math.max(2, 0.5 * scale);
-    ctx.stroke();
 
-    // Unit icon (prefer unit.icon, then UNIT_TYPES lookup)
-    ctx.fillStyle = '#FFF';
-    // Scale font size by same factor
-    const fontSize = 12 * scale;
+    // Determine icon color (contrast with civColor)
+    const hexToRgb = (hex) => {
+      if (!hex) return { r: 0, g: 0, b: 0 };
+      const normalized = hex.replace('#', '');
+      const bigint = parseInt(normalized.length === 3 ? normalized.split('').map(c => c + c).join('') : normalized, 16);
+      return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
+    };
+    const rgb = hexToRgb(civColor);
+    const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+    const iconColor = luminance > 0.6 ? '#111' : '#FFF';
+    ctx.fillStyle = iconColor;
+    const unitTypeKey = unit.type?.toUpperCase();
+    const typeDef = unitTypeKey ? (UNIT_TYPES[unitTypeKey] || null) : null;
+    const icon = unit.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : null) || '⚔️';
+  const fontSize = Math.max(10, Math.round(radius * 1.1));
     ctx.font = `bold ${fontSize}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const unitTypeKey = unit.type?.toUpperCase();
-    const typeDef = unitTypeKey ? (UNIT_TYPES[unitTypeKey] || null) : null;
-    const icon = unit.icon || typeDef?.icon || '⚔️';
-    ctx.fillText(icon, centerX, centerY);
+    try {
+      ctx.fillText(icon, centerX, centerY);
+    } catch (err) {
+      // Fallback to first letter if emoji/text can't be drawn
+      const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
+      ctx.fillText(fallback, centerX, centerY);
+    }
 
     ctx.restore();
   };
