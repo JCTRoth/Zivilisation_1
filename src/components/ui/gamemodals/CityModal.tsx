@@ -3,6 +3,7 @@ import { Modal, Button, Tab, Tabs } from 'react-bootstrap';
 import { CityModalLogic } from './CityModalLogic';
 import { ModalUtils } from './ModalUtils';
 import { UNIT_PROPS } from '../../../utils/constants';
+import { BUILDING_PROPERTIES } from '../../../utils/buildingConstants';
 
 interface CityModalProps {
   show: boolean;
@@ -116,6 +117,17 @@ const CityModal: React.FC<CityModalProps> = ({
                   </div>
                   <div className="mt-3">
                     <h6>Production</h6>
+                    {(() => {
+                      const purchasedThisTurn = (selectedCity as any).purchasedThisTurn || [];
+                      if (purchasedThisTurn.length > 0) {
+                        return (
+                          <div className="alert alert-warning small mb-2">
+                            <i className="bi bi-exclamation-triangle"></i> Already purchased an item this turn. Purchase will be available next turn.
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     <div className="d-flex gap-2 align-items-center">
                       <select
                         className="form-select bg-secondary text-white"
@@ -327,6 +339,50 @@ const CityModal: React.FC<CityModalProps> = ({
                   </div>
                 );
               })()}
+            </div>
+          </Tab>
+          <Tab eventKey="buildings" title="Buildings">
+            <div className="city-buildings-content">
+              <h5>City Buildings</h5>
+              {selectedCity.buildings && selectedCity.buildings.length > 0 ? (
+                <div className="buildings-grid">
+                  {selectedCity.buildings.map((buildingKey: string, index: number) => {
+                    const buildingProps = BUILDING_PROPERTIES[buildingKey];
+                    return (
+                      <div key={index} className="building-card bg-secondary text-white p-3 rounded mb-2">
+                        <div className="d-flex justify-content-between align-items-start">
+                          <div>
+                            <h6 className="building-name mb-1">{buildingProps?.name || buildingKey}</h6>
+                            <div className="building-details small">
+                              <div>Cost: {buildingProps?.cost || 0} shields</div>
+                              <div>Maintenance: {buildingProps?.maintenance || 0} gold/turn</div>
+                            </div>
+                          </div>
+                        </div>
+                        {buildingProps?.description && (
+                          <div className="building-description small text-muted mt-2">
+                            {buildingProps.description}
+                          </div>
+                        )}
+                        {buildingProps?.effects && (
+                          <div className="building-effects small mt-2">
+                            <strong>Effects:</strong>
+                            <ul className="mb-0 mt-1">
+                              {Object.entries(buildingProps.effects).map(([effect, value]) => (
+                                <li key={effect}>
+                                  {effect.replace(/([A-Z])/g, ' $1').toLowerCase()}: {value}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-muted">No buildings constructed yet</div>
+              )}
             </div>
           </Tab>
           <Tab eventKey="raw" title="Raw JSON">

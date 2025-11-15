@@ -170,6 +170,11 @@ export default class GameEngine {
       const city = this.cities.find(c => c.id === cityId) || ((this as any).map && (this as any).map.getCity(cityId));
       if (!city) return { success: false, reason: 'city_not_found' };
 
+      // Check if city has already purchased something this turn
+      if ((city as any).purchasedThisTurn && (city as any).purchasedThisTurn.length > 0) {
+        return { success: false, reason: 'already_purchased_this_turn' };
+      }
+
       // Find civilization / owner
       const civ = civId !== undefined ? this.civilizations[civId] : this.civilizations[city.civilizationId] || this.civilizations[city.civId] || null;
       if (!civ || !civ.resources) return { success: false, reason: 'civ_not_found' };
@@ -180,40 +185,18 @@ export default class GameEngine {
       // Deduct gold
       civ.resources.gold -= cost;
 
-      // If unit, create immediately on city tile
-      if (item.type === 'unit') {
-        const unitType = item.itemType;
-        const unit = {
-          id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
-          type: unitType,
-          civilizationId: city.civilizationId || civ.id || 0,
-          col: city.col,
-          row: city.row,
-          health: 100,
-          movement: 0
-        };
+      // Queue the purchase for next turn instead of creating immediately
+      if (!(city as any).purchasedThisTurn) (city as any).purchasedThisTurn = [];
+      (city as any).purchasedThisTurn.push({
+        type: item.type,
+        itemType: item.itemType,
+        name: item.name,
+        cost: cost
+      });
 
-        if ((this as any).map && typeof (this as any).map.addUnit === 'function') {
-          (this as any).map.addUnit(unit);
-        } else {
-          this.units.push(unit as any);
-        }
-
-        if (this.onStateChange) this.onStateChange('CITY_UNIT_PURCHASED', { cityId, unit });
-        console.log('[GameEngine] purchase created unit', { cityId, unit });
-        return { success: true, unit };
-      }
-
-      // Buildings purchase: add to city's buildings directly
-      if (item.type === 'building') {
-        if (!city.buildings) city.buildings = city.buildings || [];
-        city.buildings.push(item.itemType);
-        console.log('[GameEngine] purchase added building', { cityId, building: item.itemType, buildings: city.buildings });
-        if (this.onStateChange) this.onStateChange('CITY_BUILDING_PURCHASED', { cityId, building: item.itemType });
-        return { success: true };
-      }
-
-      return { success: false, reason: 'unknown_item_type' };
+      console.log('[GameEngine] queued purchase for next turn', { cityId, item: item.itemType });
+      if (this.onStateChange) this.onStateChange('CITY_ITEM_PURCHASED', { cityId, item: item.itemType });
+      return { success: true };
     } catch (e) {
       console.error('[GameEngine] purchaseCityProduction error', e);
       return { success: false, reason: 'exception' };
@@ -1124,7 +1107,8 @@ export default class GameEngine {
       foodStored: 0,
       foodNeeded: 20,
       productionStored: 0,
-      currentProduction: 'warrior', // Default to first unit
+      productionProgress: 0, // Initialize progress display
+      currentProduction: { type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }, // Default to first unit
       buildQueue: [{ type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }] // Default production queue
     };
 
@@ -1194,6 +1178,51 @@ export default class GameEngine {
         unit.movesRemaining = unitProps ? unitProps.movement : 1;
       });
 
+    // Process purchased items from previous turn
+    this.cities.forEach(city => {
+      if ((city as any).purchasedThisTurn && (city as any).purchasedThisTurn.length > 0) {
+        (city as any).purchasedThisTurn.forEach((item: any) => {
+          if (item.type === 'unit') {
+            // Create unit at city location
+            const unitType = item.itemType;
+            const unit = {
+              id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+              type: unitType,
+              civilizationId: city.civilizationId,
+              col: city.col,
+              row: city.row,
+              health: 100,
+              movement: 0, // Start with no movement remaining
+              movesRemaining: 0,
+              homeCityId: city.id
+            };
+
+            // Add unit to game
+            this.units.push(unit as any);
+            console.log(`[PURCHASE] Created purchased unit ${unit.type} at city ${city.name} (${city.id})`);
+
+            // Notify state change
+            if (this.onStateChange) {
+              this.onStateChange('UNIT_PURCHASED', { cityId: city.id, unit });
+            }
+          } else if (item.type === 'building') {
+            // Add building to city
+            const buildingType = item.itemType;
+            if (!city.buildings) city.buildings = [];
+            city.buildings.push(buildingType);
+            console.log(`[PURCHASE] Added purchased building ${buildingType} to city ${city.name} (${city.id})`);
+
+            // Notify state change
+            if (this.onStateChange) {
+              this.onStateChange('BUILDING_PURCHASED', { cityId: city.id, buildingType });
+            }
+          }
+        });
+        // Clear purchased items for this turn
+        (city as any).purchasedThisTurn = [];
+      }
+    });
+
     // Process cities for the active player
     this.cities
       .filter(c => c.civilizationId === this.activePlayer)
@@ -1220,16 +1249,58 @@ export default class GameEngine {
         if (city.currentProduction) {
            const before = city.productionStored;
            city.productionStored += city.yields.production;
+           city.productionProgress = city.productionStored; // Keep in sync for UI
            if (city.productionStored > before) {
              console.log(`[PRODUCTION] City ${city.name} (${city.id}) productionStored increased: ${before} -> ${city.productionStored}`);
            }
           if (city.productionStored >= city.currentProduction.cost) {
             // Complete production
+            console.log(`[PRODUCTION] City ${city.name} completed production: ${city.currentProduction.type} ${city.currentProduction.itemType}`);
             city.productionStored = 0;
-            // Handle completed unit/building (left simple for now)
+            city.productionProgress = 0; // Reset progress display
+
+            // Handle completed production
+            if (city.currentProduction.type === 'unit') {
+              // Create unit at city location
+              const unitType = city.currentProduction.itemType;
+              const unit = {
+                id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+                type: unitType,
+                civilizationId: city.civilizationId,
+                col: city.col,
+                row: city.row,
+                health: 100,
+                movement: 0, // Start with no movement remaining
+                movesRemaining: 0,
+                homeCityId: city.id
+              };
+
+              // Add unit to game
+              this.units.push(unit as any);
+              console.log(`[PRODUCTION] Created unit ${unit.type} at city ${city.name} (${city.id})`);
+
+              // Notify state change
+              if (this.onStateChange) {
+                this.onStateChange('UNIT_PRODUCED', { cityId: city.id, unit });
+              }
+            } else if (city.currentProduction.type === 'building') {
+              // Add building to city
+              const buildingType = city.currentProduction.itemType;
+              if (!city.buildings) city.buildings = [];
+              city.buildings.push(buildingType);
+              console.log(`[PRODUCTION] Added building ${buildingType} to city ${city.name} (${city.id})`);
+
+              // Notify state change
+              if (this.onStateChange) {
+                this.onStateChange('BUILDING_COMPLETED', { cityId: city.id, buildingType });
+              }
+            }
+
             // Advance queue if present
             if (Array.isArray(city.buildQueue) && city.buildQueue.length > 0) {
               city.currentProduction = city.buildQueue.shift();
+              // Reset production progress for new item
+              city.productionProgress = 0;
             } else {
               city.currentProduction = null;
             }

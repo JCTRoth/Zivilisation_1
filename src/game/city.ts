@@ -97,6 +97,7 @@ export class City extends EventEmitter {
     public currentProduction: ProductionItem | null;
     public productionProgress: number;
     public carriedOverProgress: number;
+    public purchasedThisTurn: ProductionItem[];
 
     // Working tiles
     public workingTiles: Set<string>;
@@ -141,6 +142,7 @@ export class City extends EventEmitter {
         this.currentProduction = null;
         this.productionProgress = 0;
         this.carriedOverProgress = 0;
+        this.purchasedThisTurn = [];
 
         // Working tiles
         this.workingTiles = new Set();

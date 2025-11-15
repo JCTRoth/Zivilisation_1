@@ -62,8 +62,18 @@ export class CityModalLogic {
   }
 
   canPurchase(item: any): boolean {
-    // Logic for purchasing
-    return false; // Placeholder
+    // Check if city has already purchased something this turn
+    const purchasedThisTurn = (this.city as any).purchasedThisTurn || [];
+    if (purchasedThisTurn.length > 0) {
+      return false;
+    }
+    
+    // Check if civilization has enough gold
+    const civ = this.gameEngine?.civilizations?.[this.city.civilizationId];
+    if (!civ || !civ.resources) return false;
+    
+    const cost = item.cost || (item.shields || 0);
+    return (civ.resources.gold || 0) >= cost;
   }
 
   purchaseProduction(item: any): void {
@@ -128,6 +138,12 @@ export class CityModalLogic {
   }
 
   canAffordBuyNow(itemType: string): boolean {
+    // Check if city has already purchased something this turn
+    const purchasedThisTurn = (this.city as any).purchasedThisTurn || [];
+    if (purchasedThisTurn.length > 0) {
+      return false;
+    }
+    
     const item = { itemType };
     const cost = ModalUtils.getProductionCost(item);
     const playerGold = this.currentPlayer?.resources?.gold || 0;
