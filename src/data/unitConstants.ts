@@ -5,9 +5,12 @@ import { UnitProperties } from './gameConstants';
 export const UNIT_TYPES = {
     // Military Units
     WARRIOR: 'warrior',
+    MILITIA: 'militia',
     ARCHER: 'archer',
+    PHALANX: 'phalanx',
     CHARIOT: 'chariot',
     LEGION: 'legion',
+    CATAPULT: 'catapult',
     MUSKETEER: 'musketeer',
     CAVALRY: 'cavalry',
     CANNON: 'cannon',
@@ -16,6 +19,7 @@ export const UNIT_TYPES = {
 
     // Naval Units
     GALLEY: 'galley',
+    TRIREME: 'trireme',
     CARAVEL: 'caravel',
     FRIGATE: 'frigate',
     IRONCLAD: 'ironclad',
@@ -43,7 +47,20 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '⚔️',
+        icon: '🗡️',
+        type: 'military'
+    },
+    [UNIT_TYPES.MILITIA]: {
+        name: 'Militia',
+        attack: 1,
+        defense: 2,
+        movement: 1,
+        cost: 20,
+        maintenance: 1,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '🛡️',
         type: 'military'
     },
     [UNIT_TYPES.ARCHER]: {
@@ -59,6 +76,19 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         icon: '🏹',
         type: 'military'
     },
+    [UNIT_TYPES.PHALANX]: {
+        name: 'Phalanx',
+        attack: 2,
+        defense: 3,
+        movement: 1,
+        cost: 50,
+        maintenance: 1,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '🛡️',
+        type: 'military'
+    },
     [UNIT_TYPES.CHARIOT]: {
         name: 'Chariot',
         attack: 3,
@@ -69,7 +99,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '🏇',
+        icon: '🐎',
         type: 'military'
     },
     [UNIT_TYPES.LEGION]: {
@@ -84,6 +114,19 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         naval: false,
         icon: '⚔️',
         type: 'military'
+    },
+    [UNIT_TYPES.CATAPULT]: {
+        name: 'Catapult',
+        attack: 5,
+        defense: 1,
+        movement: 1,
+        cost: 70,
+        maintenance: 1,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '🎯',
+        type: 'siege'
     },
     [UNIT_TYPES.MUSKETEER]: {
         name: 'Musketeer',
@@ -108,7 +151,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '🐎',
+        icon: '🏇',
         type: 'military'
     },
     [UNIT_TYPES.CANNON]: {
@@ -121,7 +164,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '💥',
+        icon: '💣',
         type: 'siege'
     },
     [UNIT_TYPES.ARTILLERY]: {
@@ -147,7 +190,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '🚗',
+        icon: '🚜',
         type: 'military'
     },
     [UNIT_TYPES.GALLEY]: {
@@ -161,6 +204,19 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canWork: false,
         naval: true,
         icon: '⛵',
+        type: 'naval'
+    },
+    [UNIT_TYPES.TRIREME]: {
+        name: 'Trireme',
+        attack: 3,
+        defense: 2,
+        movement: 4,
+        cost: 80,
+        maintenance: 2,
+        canSettle: false,
+        canWork: false,
+        naval: true,
+        icon: '🚢',
         type: 'naval'
     },
     [UNIT_TYPES.CARAVEL]: {
@@ -329,15 +385,19 @@ export const UNIT_MAINTENANCE_COSTS = {
 
 export const UNIT_PRODUCTION_REQUIREMENTS = {
     [UNIT_TYPES.WARRIOR]: { shields: 10 },
+    [UNIT_TYPES.MILITIA]: { shields: 20 },
     [UNIT_TYPES.ARCHER]: { shields: 30 },
+    [UNIT_TYPES.PHALANX]: { shields: 50 },
     [UNIT_TYPES.CHARIOT]: { shields: 40 },
     [UNIT_TYPES.LEGION]: { shields: 60 },
+    [UNIT_TYPES.CATAPULT]: { shields: 70 },
     [UNIT_TYPES.MUSKETEER]: { shields: 80 },
     [UNIT_TYPES.CAVALRY]: { shields: 100 },
     [UNIT_TYPES.CANNON]: { shields: 120 },
     [UNIT_TYPES.ARTILLERY]: { shields: 150 },
     [UNIT_TYPES.TANK]: { shields: 200 },
     [UNIT_TYPES.GALLEY]: { shields: 40 },
+    [UNIT_TYPES.TRIREME]: { shields: 80 },
     [UNIT_TYPES.CARAVEL]: { shields: 60 },
     [UNIT_TYPES.FRIGATE]: { shields: 80 },
     [UNIT_TYPES.IRONCLAD]: { shields: 120 },

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal } from 'react-bootstrap';
-import { TERRAIN_TYPES } from '../../game/terrain/terrainData';
+import { TERRAIN_TYPES } from '../../data/terrainData';
 
 const HexDetailModal = ({ show, onHide, hex, terrain, adjacentTiles }) => {
   if (!hex || !terrain) return null;

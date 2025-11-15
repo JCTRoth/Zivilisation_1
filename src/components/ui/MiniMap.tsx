@@ -11,7 +11,7 @@ declare global {
   }
 }
 import { CONSTANTS } from '../../utils/constants';
-import { UNIT_TYPES } from '../../game/gameData.js';
+import { UNIT_TYPES } from '../../data/gameData';
 
 // Top-level evaluation marker for debugging whether this module is actually loaded by Vite/React
 if (typeof window !== 'undefined') {

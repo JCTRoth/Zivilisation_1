@@ -1,15 +1,6 @@
 // Terrain logic constants (yields, movement, resources) — game-facing data
 
-export interface TerrainProperties {
-    movement: number;
-    defense: number;
-    food: number;
-    production: number;
-    trade: number;
-    color: string;
-    passable: boolean;
-    description: string;
-}
+import { TerrainProperties } from './gameConstants';
 
 export interface SpecialResource {
     name: string;

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../stores/gameStore';
-import GameEngine from '../game/GameEngine.js';
+import GameEngine from '../engine/GameEngine.js';
 
 const MinimalApp = () => {
   console.log('MinimalApp rendering...');

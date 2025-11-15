@@ -3,7 +3,7 @@ import { Modal, Button, Tab, Tabs } from 'react-bootstrap';
 import { CityModalLogic } from './CityModalLogic';
 import { ModalUtils } from './ModalUtils';
 import { UNIT_PROPS } from '../../../utils/constants';
-import { BUILDING_PROPERTIES } from '../../../utils/buildingConstants';
+import { BUILDING_PROPERTIES } from '../../../utils/constants';
 
 interface CityModalProps {
   show: boolean;
@@ -343,7 +343,6 @@ const CityModal: React.FC<CityModalProps> = ({
           </Tab>
           <Tab eventKey="buildings" title="Buildings">
             <div className="city-buildings-content">
-              <h5>City Buildings</h5>
               {selectedCity.buildings && selectedCity.buildings.length > 0 ? (
                 <div className="buildings-grid">
                   {selectedCity.buildings.map((buildingKey: string, index: number) => {

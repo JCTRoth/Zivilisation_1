@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore } from './stores/gameStore';
-import GameEngine from './game/GameEngine';
+import GameEngine from './engine/GameEngine';
 import Civ1GameCanvas from './components/game/Civ1GameCanvas';
 import HexDetailModal from './components/ui/HexDetailModal';
 import SettingsModal from './components/ui/SettingsModal';

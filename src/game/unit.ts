@@ -454,7 +454,7 @@ export class Unit extends EventEmitter {
         }
 
         this.workTarget = improvementType;
-        this.workTurns = improvementProps.buildTurns;
+        this.workTurns = improvementProps.turns;
 
         this.emit('startedWork', { unit: this, improvementType, turns: this.workTurns } as WorkData);
 

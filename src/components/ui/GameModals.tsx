@@ -6,7 +6,7 @@ import HexDetailModal from './gamemodals/HexDetailModal';
 import { useGameStore } from '../../stores/gameStore';
 import { CityUtils } from '../../utils/helpers';
 import { UNIT_PROPS } from '../../utils/constants';
-import { BUILDING_PROPERTIES } from '../../utils/buildingConstants';
+import { BUILDING_PROPERTIES } from '../../data/buildingConstants';
 import '../../styles/gameModals.css';
 
 const GameModals = ({ gameEngine }) => {

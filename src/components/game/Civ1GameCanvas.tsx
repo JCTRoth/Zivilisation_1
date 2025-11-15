@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../../stores/gameStore';
-import { UNIT_TYPES } from '../../game/gameData.js';
+import { UNIT_TYPES } from '../../data/gameData';
 import { CONSTANTS } from '../../utils/constants';
-import { TERRAIN_TYPES, getTerrainInfo, TILE_SIZE } from '../../game/terrain/terrainData';
+import { TERRAIN_TYPES, getTerrainInfo, TILE_SIZE } from '../../data/terrainData';
 import type { Tile } from '../../../types/game';
 import '../../styles/civ1GameCanvas.css';
 

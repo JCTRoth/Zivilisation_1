@@ -3,4 +3,4 @@
 - Ensure one class per file for logic layers
 - Create/extend utilities for shared logic across components
 - CSS -> src/styles
-- Static Data -> create/extend a file that ends with data.ts
+- Static Data -> create/extend -> src/data

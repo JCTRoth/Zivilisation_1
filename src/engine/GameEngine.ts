@@ -1,6 +1,7 @@
-import { SquareGrid } from './hexGrid';
+import { SquareGrid } from '../game/hexGrid';
 import { CONSTANTS, TERRAIN_PROPS, UNIT_PROPS } from '../utils/constants';
-import { CIVILIZATIONS, TECHNOLOGIES, UNIT_TYPES } from './gameData.js';
+import { CIVILIZATIONS, TECHNOLOGIES, UNIT_TYPES } from '../data/gameData';
+import { ProductionManager } from './ProductionManager';
 import type { GameActions, Unit, City, Civilization } from '../../types/game';
 
 interface GameSettings {
@@ -48,6 +49,7 @@ export default class GameEngine {
   currentYear: number;
   activePlayer: number;
   onStateChange: ((eventType: string, eventData?: any) => void) | null;
+  productionManager: ProductionManager;
 
   constructor(storeActions: GameActions | null = null) {
     this.storeActions = storeActions;
@@ -79,6 +81,7 @@ export default class GameEngine {
     
     // Callbacks for React state updates
     this.onStateChange = null;
+    this.productionManager = new ProductionManager(this);
   }
 
   /**
@@ -86,152 +89,18 @@ export default class GameEngine {
    * If queue=true the item will be added to city's build queue, otherwise it will become current production.
    */
   setCityProduction(cityId: string, item: any, queue: boolean = false) {
-    console.log('[GameEngine] setCityProduction called', { cityId, item, queue });
-    // Try city manager if available
-    try {
-      if ((this as any).map && (this as any).map.getCity) {
-        const cityRaw = (this as any).map.getCity(cityId) || this.cities.find((c: any) => c.id === cityId);
-          if (!cityRaw) return false;
-          const city: any = cityRaw;
-
-          // Ensure buildQueue exists on the city instance (defensive)
-          if (!Array.isArray(city.buildQueue)) city.buildQueue = [];
-          console.log('[GameEngine] After buildQueue init', { cityId, buildQueue: city.buildQueue, city });
-
-          if (queue && typeof city.queueProduction === 'function') {
-            city.queueProduction(item);
-            console.log('[GameEngine] city.queueProduction executed', { cityId, buildQueue: city.buildQueue });
-            // If no current production, start the first queued item with carried over progress
-            if (!city.currentProduction && city.buildQueue.length > 0) {
-              city.currentProduction = city.buildQueue[0];
-              city.productionProgress = city.carriedOverProgress || 0;
-              city.carriedOverProgress = 0;
-              console.log('[GameEngine] started queued item as currentProduction', { cityId, currentProduction: city.currentProduction, productionProgress: city.productionProgress });
-            }
-          } else if (!queue && typeof city.setProduction === 'function') {
-            city.setProduction(item);
-          } else if (queue && Array.isArray(city.buildQueue)) {
-            city.buildQueue.push(item);
-            console.log('[GameEngine] pushed to city.buildQueue', { cityId, buildQueue: city.buildQueue });
-            // If no current production, start the first queued item with carried over progress
-            if (!city.currentProduction && city.buildQueue.length === 1) {
-              city.currentProduction = item;
-              city.productionProgress = city.carriedOverProgress || 0;
-              city.carriedOverProgress = 0;
-              console.log('[GameEngine] started single queued item as currentProduction', { cityId, currentProduction: city.currentProduction, productionProgress: city.productionProgress });
-            }
-          } else if (!queue) {
-            city.currentProduction = item;
-            city.productionProgress = city.carriedOverProgress || 0;
-            city.carriedOverProgress = 0;
-          }
-
-        // Emit state change for React
-        if (this.onStateChange) this.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item, queued: !!queue });
-        return { success: true, city };
-      }
-
-      // Fallback: find in this.cities
-      const cityRaw2 = this.cities.find(c => c.id === cityId);
-      if (!cityRaw2) return { success: false, reason: 'city_not_found' };
-      const city2: any = cityRaw2;
-
-      // Ensure buildQueue exists on the fallback city
-      if (!Array.isArray(city2.buildQueue)) city2.buildQueue = [];
-
-      if (queue && Array.isArray(city2.buildQueue)) {
-        city2.buildQueue.push(item);
-        console.log('[GameEngine] fallback pushed to city2.buildQueue', { cityId, buildQueue: city2.buildQueue });
-        // If no current production, start the first queued item with carried over progress
-        if (!city2.currentProduction && city2.buildQueue.length === 1) {
-          city2.currentProduction = item;
-          city2.productionProgress = city2.carriedOverProgress || 0;
-          city2.carriedOverProgress = 0;
-          console.log('[GameEngine] fallback started queued item as currentProduction', { cityId, currentProduction: city2.currentProduction, productionProgress: city2.productionProgress });
-        }
-      } else {
-        city2.currentProduction = item;
-        city2.productionProgress = city2.carriedOverProgress || 0;
-        city2.carriedOverProgress = 0;
-        console.log('[GameEngine] fallback set currentProduction', { cityId, currentProduction: city2.currentProduction, productionProgress: city2.productionProgress });
-      }
-
-      if (this.onStateChange) this.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item, queued: !!queue });
-      return { success: true, city: city2 };
-    } catch (e) {
-      console.error('[GameEngine] setCityProduction error', e);
-      return { success: false, reason: 'exception' };
-    }
+    return this.productionManager.setCityProduction(cityId, item, queue);
   }
 
   purchaseCityProduction(cityId: string, item: any, civId?: number) {
-    try {
-      console.log('[GameEngine] purchaseCityProduction called', { cityId, item, civId });
-      const city = this.cities.find(c => c.id === cityId) || ((this as any).map && (this as any).map.getCity(cityId));
-      if (!city) return { success: false, reason: 'city_not_found' };
-
-      // Check if city has already purchased something this turn
-      if ((city as any).purchasedThisTurn && (city as any).purchasedThisTurn.length > 0) {
-        return { success: false, reason: 'already_purchased_this_turn' };
-      }
-
-      // Find civilization / owner
-      const civ = civId !== undefined ? this.civilizations[civId] : this.civilizations[city.civilizationId] || this.civilizations[city.civId] || null;
-      if (!civ || !civ.resources) return { success: false, reason: 'civ_not_found' };
-
-      const cost = item.cost || (item.shields || 0);
-      if ((civ.resources.gold || 0) < cost) return { success: false, reason: 'insufficient_gold' };
-
-      // Deduct gold
-      civ.resources.gold -= cost;
-
-      // Queue the purchase for next turn instead of creating immediately
-      if (!(city as any).purchasedThisTurn) (city as any).purchasedThisTurn = [];
-      (city as any).purchasedThisTurn.push({
-        type: item.type,
-        itemType: item.itemType,
-        name: item.name,
-        cost: cost
-      });
-
-      console.log('[GameEngine] queued purchase for next turn', { cityId, item: item.itemType });
-      if (this.onStateChange) this.onStateChange('CITY_ITEM_PURCHASED', { cityId, item: item.itemType });
-      return { success: true };
-    } catch (e) {
-      console.error('[GameEngine] purchaseCityProduction error', e);
-      return { success: false, reason: 'exception' };
-    }
+    return this.productionManager.purchaseCityProduction(cityId, item, civId);
   }
 
   /**
    * Remove an item from a city's build queue by index.
    */
   removeCityQueueItem(cityId: string, index: number) {
-    try {
-      console.log('[GameEngine] removeCityQueueItem called', { cityId, index });
-      const city = this.cities.find(c => c.id === cityId) || ((this as any).map && (this as any).map.getCity(cityId));
-      if (!city) return { success: false, reason: 'city_not_found' };
-
-      if (!Array.isArray(city.buildQueue)) return { success: false, reason: 'no_queue' };
-      if (index < 0 || index >= city.buildQueue.length) return { success: false, reason: 'index_out_of_bounds' };
-
-      const removed = city.buildQueue.splice(index, 1)[0];
-  console.log('[GameEngine] removed from buildQueue', { cityId, removed, buildQueue: city.buildQueue });
-
-      // If we removed the first item in queue and there's no current production,
-      // the carried over progress should be applied to the new first item
-      if (index === 0 && !city.currentProduction && city.buildQueue.length > 0) {
-        city.currentProduction = city.buildQueue.shift()!;
-        city.productionProgress = city.carriedOverProgress || 0;
-        city.carriedOverProgress = 0;
-      }
-
-      if (this.onStateChange) this.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, removedIndex: index, removed });
-      return { success: true, removed };
-    } catch (e) {
-      console.error('[GameEngine] removeCityQueueItem error', e);
-      return { success: false, reason: 'exception' };
-    }
+    return this.productionManager.removeCityQueueItem(cityId, index);
   }
 
   // Small helper: sleep for ms milliseconds
@@ -405,15 +274,15 @@ export default class GameEngine {
             for (const n of neighbors) {
               if (!this.squareGrid.isValidSquare(n.col, n.row)) continue;
               const tile = this.getTileAt(n.col, n.row);
-              if (!tile || !tile.type) continue;
+              if (!tile) continue;
               if (TERRAIN_PROPS[tile.type]?.passable === false) continue;
               const other = this.getUnitAt(n.col, n.row);
               if (other && other.civilizationId === unit.civilizationId) continue;
               console.log(`[AI] Trying fallback move to (${n.col},${n.row})`);
               const r = this.moveUnit(unit.id, n.col, n.row);
-              if (r && r.success) {
+              if (r && r.success) { 
                 console.log(`[AI] Fallback move successful`);
-                moved = true; break;
+                moved = true; break; 
               }
               // If move failed for a terminal reason, stop trying neighbors for this unit
               const reason = r?.reason || 'unknown';
@@ -1107,7 +976,7 @@ export default class GameEngine {
       foodStored: 0,
       foodNeeded: 20,
       productionStored: 0,
-      productionProgress: 0, // Initialize progress display
+      productionProgress: 0, // Initialize production display
       currentProduction: { type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }, // Default to first unit
       buildQueue: [{ type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }] // Default production queue
     };
@@ -1257,7 +1126,7 @@ export default class GameEngine {
             // Complete production
             console.log(`[PRODUCTION] City ${city.name} completed production: ${city.currentProduction.type} ${city.currentProduction.itemType}`);
             city.productionStored = 0;
-            city.productionProgress = 0; // Reset progress display
+            city.productionProgress = 0; // Reset production progress display
 
             // Handle completed production
             if (city.currentProduction.type === 'unit') {
@@ -1420,161 +1289,15 @@ export default class GameEngine {
     await this.createCivilizations();
     await this.createTechnologies();
     
-    if (this.onStateChange) {
-      this.onStateChange('NEW_GAME', {
-        map: this.map,
-        units: this.units,
-        cities: this.cities,
-        civilizations: this.civilizations,
-        technologies: this.technologies
-      });
-    }
-    
-    console.log('New game started!');
-  }
-
-  /**
-   * Render the game world
-   */
-  render(ctx, camera) {
-    if (!this.isInitialized || !this.map) return;
-
-    // Calculate visible tiles
-    const startCol = Math.max(0, Math.floor(camera.x / CONSTANTS.HEX_WIDTH) - 2);
-    const endCol = Math.min(this.map.width, Math.ceil((camera.x + ctx.canvas.width / camera.zoom) / CONSTANTS.HEX_WIDTH) + 2);
-    const startRow = Math.max(0, Math.floor(camera.y / CONSTANTS.HEX_HEIGHT) - 2);
-    const endRow = Math.min(this.map.height, Math.ceil((camera.y + ctx.canvas.height / camera.zoom) / CONSTANTS.HEX_HEIGHT) + 2);
-
-    // Render terrain tiles
-    for (let row = startRow; row < endRow; row++) {
-      for (let col = startCol; col < endCol; col++) {
-        const tile = this.getTileAt(col, row);
-        if (tile) {
-          this.renderTile(ctx, tile, col, row);
-        }
-      }
+    if (this.storeActions) {
+      this.storeActions.updateMap(this.map);
+      this.storeActions.updateUnits(this.units);
+      this.storeActions.updateCities(this.cities);
+      this.storeActions.updateCivilizations(this.civilizations);
+      this.storeActions.updateTechnologies(this.technologies);
     }
 
-    // Render cities
-    for (const city of this.cities) {
-      if (city.col >= startCol && city.col < endCol && city.row >= startRow && city.row < endRow) {
-        this.renderCity(ctx, city);
-      }
-    }
-
-    // Render units
-    for (const unit of this.units) {
-      if (unit.col >= startCol && unit.col < endCol && unit.row >= startRow && unit.row < endRow) {
-        this.renderUnit(ctx, unit);
-      }
-    }
-  }
-
-  /**
-   * Render a terrain tile
-   */
-  renderTile(ctx, tile, col, row) {
-    const vertices = this.squareGrid.getSquareVertices(col, row);
-    const terrainProps = TERRAIN_PROPS[tile.type];
-    
-    // Fill tile
-    ctx.beginPath();
-    ctx.moveTo(vertices[0].x, vertices[0].y);
-    for (let i = 1; i < vertices.length; i++) {
-      ctx.lineTo(vertices[i].x, vertices[i].y);
-    }
-    ctx.closePath();
-    
-    ctx.fillStyle = terrainProps ? terrainProps.color : '#666666';
-    ctx.fill();
-    
-    // Draw border
-    ctx.strokeStyle = '#444444';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-
-  /**
-   * Render a city
-   */
-  renderCity(ctx, city) {
-    const center = this.squareGrid.squareToScreen(city.col, city.row);
-    const civ = this.civilizations[city.civilizationId];
-    
-    // Draw city circle
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, 12, 0, Math.PI * 2);
-    ctx.fillStyle = civ ? civ.color : '#ffffff';
-    ctx.fill();
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    
-    // Draw city name
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '12px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(city.name, center.x, center.y - 20);
-  }
-
-  /**
-   * Render a unit
-   */
-  renderUnit(ctx, unit) {
-    const center = this.squareGrid.squareToScreen(unit.col, unit.row);
-    const civ = this.civilizations[unit.civilizationId];
-  const unitProps = UNIT_PROPS[unit.type];
-  const unitTypeDef = UNIT_TYPES[unit.type?.toUpperCase()] || null;
-    
-    // Draw unit background
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, 8, 0, Math.PI * 2);
-    ctx.fillStyle = civ ? civ.color : '#888888';
-    ctx.fill();
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    
-    // Draw unit icon/text
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '10px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(unitTypeDef?.icon || unitProps?.icon || '?', center.x, center.y + 3);
-  }
-
-  /**
-   * Unit actions
-   */
-  unitSleep(unitId) {
-    const unit = this.units.find(u => u.id === unitId);
-    if (unit) {
-      unit.movesRemaining = 0;
-    }
-  }
-
-  unitFortify(unitId) {
-    const unit = this.units.find(u => u.id === unitId);
-    if (unit) {
-      unit.isFortified = true;
-      unit.movesRemaining = 0;
-    }
-  }
-
-  skipUnit(unitId) {
-    const unit = this.units.find(u => u.id === unitId);
-    if (unit) {
-      unit.movesRemaining = 0;
-    }
-  }
-
-  buildImprovement(unitId, improvementType) {
-    const unit = this.units.find(u => u.id === unitId);
-    if (unit) {
-      const tile = this.getTileAt(unit.col, unit.row);
-      if (tile) {
-        tile.improvement = improvementType;
-        unit.movesRemaining = 0;
-      }
-    }
+    // Initialize fog of war visibility
+    this.updateVisibility();
   }
 }

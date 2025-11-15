@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { CONSTANTS } from '../utils/constants';
 import { SquareGrid } from '../game/hexGrid';
-import { UNIT_TYPES } from '../game/gameData.js';
+import { UNIT_TYPES } from '../data/gameData';
 import type { GameStoreState, GameState, MapState, CameraState, Unit, City, Civilization, UIState, Settings, Technology, GameActions } from '../../types/game';
 
 // Helper function for visibility calculations

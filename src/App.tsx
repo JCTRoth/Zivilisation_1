@@ -13,7 +13,7 @@ import GameModals from './components/ui/GameModals';
 import { useGameStore } from './stores/gameStore';
 
 // Game Engine
-import GameEngine from './game/GameEngine';
+import GameEngine from './engine/GameEngine';
 import { useGameEngine } from './hooks/useGameEngine';
 
 function App() {
