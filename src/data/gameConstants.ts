@@ -31,6 +31,7 @@ export interface BuildingProperties {
     maintenance: number;
     effects: Record<string, any>;
     description?: string;
+    requiredTechnology?: string;
 }
 
 export interface GameConstants {

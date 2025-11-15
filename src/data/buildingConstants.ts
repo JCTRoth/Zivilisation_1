@@ -49,6 +49,7 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         name: 'Barracks',
         cost: 40,
         maintenance: 1,
+        requiredTechnology: 'bronze_working',
         effects: {
             unitProduction: 1,
             veteranUnits: true
@@ -59,6 +60,7 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         name: 'Granary',
         cost: 60,
         maintenance: 1,
+        requiredTechnology: 'pottery',
         effects: {
             foodStorage: 2,
             growthBonus: 1
@@ -69,6 +71,7 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         name: 'Temple',
         cost: 40,
         maintenance: 1,
+        requiredTechnology: 'ceremonial_burial',
         effects: {
             happiness: 1,
             culture: 1
@@ -79,6 +82,7 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         name: 'Marketplace',
         cost: 80,
         maintenance: 1,
+        requiredTechnology: 'currency',
         effects: {
             trade: 1,
             corruptionReduction: 0.5
@@ -89,6 +93,7 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         name: 'Library',
         cost: 80,
         maintenance: 1,
+        requiredTechnology: 'writing',
         effects: {
             science: 1,
             culture: 1
@@ -99,6 +104,7 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         name: 'Courthouse',
         cost: 80,
         maintenance: 1,
+        requiredTechnology: 'code_of_laws',
         effects: {
             corruptionReduction: 0.8,
             happiness: 1
@@ -109,6 +115,7 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         name: 'City Walls',
         cost: 120,
         maintenance: 2,
+        requiredTechnology: 'masonry',
         effects: {
             defense: 2,
             happiness: -1
@@ -119,6 +126,7 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         name: 'Aqueduct',
         cost: 120,
         maintenance: 1,
+        requiredTechnology: 'construction',
         effects: {
             health: 2,
             growthBonus: 1

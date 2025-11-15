@@ -40,9 +40,49 @@
   z-index: 10;
 }
 
+/* Slightly lighter background for production selection than the city modal */
+.production-selection-modal .modal-content {
+  background-color: rgba(60, 64, 68, 0.95); /* a touch lighter than default */
+}
+
+.production-selection-modal .modal-header {
+  padding-right: 3rem; /* allow space for absolute-positioned close button */
+}
+
+.city-details-modal .modal-content {
+  background-color: rgba(28, 30, 32, 0.95);
+}
+
 .hex-detail-modal-body {
-  height: 70vh;
+  max-height: 88vh;
+  min-height: 88vh;
+  height: auto;
   overflow-y: auto;
+}
+
+/* Make city and production modals take more vertical space while staying centered */
+.city-details-modal .modal-dialog,
+.production-selection-modal .modal-dialog,
+.hex-detail-modal .modal-dialog {
+  max-height: 100vh;
+  min-height: 88vh;
+  display: flex;
+  align-items: center;
+}
+
+.city-details-modal .modal-content,
+.production-selection-modal .modal-content {
+  max-height: 100vh;
+  min-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.city-details-modal .modal-body,
+.production-selection-modal .modal-body {
+  max-height: calc(100vh - 120px); /* subtract header/footer approx */
+  overflow-y: auto;
+  flex: 1 1 auto; /* allow body to stretch to fill the modal content */
 }
 
 .hex-detail-content {

@@ -144,6 +144,7 @@ export interface Settings {
   sidebarWidth: number;
   minimapHeight: number;
   civListFontSize: number;
+  skipEndTurnConfirmation: boolean;
 }
 
 export interface Technology {

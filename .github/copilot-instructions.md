@@ -4,3 +4,4 @@
 - Create/extend utilities for shared logic across components
 - CSS -> src/styles
 - Static Data -> create/extend -> src/data
+- Not start any npm server assume that on port 3000 an instance is running

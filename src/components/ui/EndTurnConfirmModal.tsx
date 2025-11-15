@@ -1,5 +1,6 @@
-import React from 'react';
-import { Modal, Button } from 'react-bootstrap';
+import React, { useState } from 'react';
+import { Modal, Button, Form } from 'react-bootstrap';
+import { useGameStore } from '../../stores/gameStore';
 import '../../styles/endTurnConfirmModal.css';
 
 interface EndTurnConfirmModalProps {
@@ -19,8 +20,16 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
   currentYear,
   isAutomatic = false
 }) => {
+  const settings = useGameStore(state => state.settings);
+  const actions = useGameStore(state => state.actions);
+  const [skipNextTime, setSkipNextTime] = useState(settings.skipEndTurnConfirmation);
+
   const handleConfirm = () => {
     console.log('EndTurnConfirmModal: Confirmed end turn');
+    // Update the setting if the checkbox was checked
+    if (skipNextTime !== settings.skipEndTurnConfirmation) {
+      actions.updateSettings({ skipEndTurnConfirmation: skipNextTime });
+    }
     onConfirm();
   };
 
@@ -52,6 +61,15 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
             : 'This will allow other civilizations to take their turns.'
           }
         </div>
+        
+        <Form.Check
+          type="checkbox"
+          id="skip-end-turn-confirmation"
+          label="Don't show this confirmation next time"
+          checked={skipNextTime}
+          onChange={(e) => setSkipNextTime(e.target.checked)}
+          className="mt-2"
+        />
       </Modal.Body>
       <Modal.Footer className="end-turn-modal-footer">
         <Button variant="secondary" onClick={handleCancel}>

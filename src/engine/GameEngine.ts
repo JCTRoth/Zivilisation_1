@@ -381,7 +381,7 @@ export default class GameEngine {
         // Random terrain generation
         else {
           const rand = Math.random();
-          if (rand < 0.1) terrainType = CONSTANTS.TERRAIN.MOUNTAINS;
+          if (rand < 0.05) terrainType = CONSTANTS.TERRAIN.MOUNTAINS;
           else if (rand < 0.2) terrainType = CONSTANTS.TERRAIN.HILLS;
           else if (rand < 0.3) terrainType = CONSTANTS.TERRAIN.FOREST;
           else if (rand < 0.4) terrainType = CONSTANTS.TERRAIN.DESERT;

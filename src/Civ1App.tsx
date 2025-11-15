@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useGameStore } from './stores/gameStore';
 import GameEngine from './engine/GameEngine';
 import Civ1GameCanvas from './components/game/Civ1GameCanvas';
@@ -82,7 +82,12 @@ function Civ1App() {
     const handleShowEndTurnConfirmation = () => {
       console.log('[Civ1App] Received showEndTurnConfirmation event - automatic trigger');
       setIsEndTurnAutomatic(true);
-      setShowEndTurnConfirm(true);
+      if (settings.skipEndTurnConfirmation) {
+        console.log('[Civ1App] Skipping end turn confirmation due to user preference');
+        handleEndTurnConfirm();
+      } else {
+        setShowEndTurnConfirm(true);
+      }
     };
 
     if (typeof window !== 'undefined') {
@@ -136,13 +141,6 @@ function Civ1App() {
     }
   };
 
-  // Handle end turn request - show modal
-  const handleEndTurnRequest = () => {
-    console.log('[Civ1App] End turn requested manually - showing confirmation modal');
-    setIsEndTurnAutomatic(false);
-    setShowEndTurnConfirm(true);
-  };
-
   // Handle end turn confirmation
   const handleEndTurnConfirm = () => {
     console.log('[Civ1App] End turn confirmed');
@@ -154,12 +152,302 @@ function Civ1App() {
     }
   };
 
+  // Handle end turn request - show modal
+  const handleEndTurnRequest = useCallback(() => {
+    console.log('[Civ1App] End turn requested manually - showing confirmation modal');
+    setIsEndTurnAutomatic(false);
+    if (settings.skipEndTurnConfirmation) {
+      console.log('[Civ1App] Skipping end turn confirmation due to user preference');
+      handleEndTurnConfirm();
+    } else {
+      setShowEndTurnConfirm(true);
+    }
+  }, [settings.skipEndTurnConfirmation]);
+
   // Handle end turn cancellation
   const handleEndTurnCancel = () => {
     console.log('[Civ1App] End turn cancelled');
     setShowEndTurnConfirm(false);
     setIsEndTurnAutomatic(false);
   };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Don't handle shortcuts if user is typing in an input field
+      if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.contentEditable === 'true') {
+        return;
+      }
+
+      const { key, shiftKey, ctrlKey, altKey } = event;
+
+      // Prevent default browser behavior for our shortcuts
+      const shouldPreventDefault = [
+        'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+        'Enter', ' ', 's', 'f', 'r', 'c', 'd', 'a', 'w', 'g', 'b', 'i', 'm', 'p',
+        't', 'Escape', 'F1', 'F2', 'F3', 'F4', 'F11', 'h'
+      ].includes(key) ||
+      (ctrlKey && ['1','2','3','4','5','6','7','8','9','s','l','z'].includes(key)) ||
+      (key === '+' || key === '-');
+
+      if (shouldPreventDefault) {
+        event.preventDefault();
+      }
+
+      // Navigation shortcuts
+      if (!ctrlKey && !altKey) {
+        switch (key) {
+          case 'ArrowUp':
+            if (shiftKey) {
+              // Shift + Arrow: Scroll map
+              setCamera({ y: camera.y - 50 });
+            } else {
+              // Arrow Keys: Move cursor
+              if (gameEngine && gameEngine.moveCursor) {
+                gameEngine.moveCursor(0, -1);
+              }
+            }
+            break;
+          case 'ArrowDown':
+            if (shiftKey) {
+              setCamera({ y: camera.y + 50 });
+            } else {
+              if (gameEngine && gameEngine.moveCursor) {
+                gameEngine.moveCursor(0, 1);
+              }
+            }
+            break;
+          case 'ArrowLeft':
+            if (shiftKey) {
+              setCamera({ x: camera.x - 50 });
+            } else {
+              if (gameEngine && gameEngine.moveCursor) {
+                gameEngine.moveCursor(-1, 0);
+              }
+            }
+            break;
+          case 'ArrowRight':
+            if (shiftKey) {
+              setCamera({ x: camera.x + 50 });
+            } else {
+              if (gameEngine && gameEngine.moveCursor) {
+                gameEngine.moveCursor(1, 0);
+              }
+            }
+            break;
+          case '+':
+          case '=':
+            // Zoom in
+            setCamera({ zoom: Math.min(camera.zoom * 1.2, 3.0) });
+            break;
+          case '-':
+            // Zoom out
+            setCamera({ zoom: Math.max(camera.zoom / 1.2, 0.5) });
+            break;
+        }
+      }
+
+      // Action shortcuts
+      if (!ctrlKey && !altKey && !shiftKey) {
+        switch (key) {
+          case 'Enter':
+            // End turn
+            handleEndTurnRequest();
+            break;
+          case ' ':
+            // Cycle through units in a tile
+            if (gameEngine && gameEngine.cycleUnitsInTile) {
+              gameEngine.cycleUnitsInTile();
+            }
+            break;
+          case 's':
+          case 'S':
+            // Skip current unit's turn
+            if (gameEngine && gameEngine.skipUnitTurn) {
+              gameEngine.skipUnitTurn();
+            }
+            break;
+          case 'f':
+          case 'F':
+            // Fortify selected unit
+            if (gameEngine && gameEngine.fortifyUnit) {
+              gameEngine.fortifyUnit();
+            }
+            break;
+          case 'r':
+          case 'R':
+            // Rush production in a city
+            if (gameEngine && gameEngine.rushCityProduction) {
+              gameEngine.rushCityProduction();
+            }
+            break;
+          case 'c':
+          case 'C':
+            // Center map on selected city
+            if (gameEngine && gameEngine.centerOnCity) {
+              gameEngine.centerOnCity();
+            }
+            break;
+          case 'd':
+          case 'D':
+            // Disband selected unit
+            if (gameEngine && gameEngine.disbandUnit) {
+              gameEngine.disbandUnit();
+            }
+            break;
+          case 'a':
+          case 'A':
+            // Automate worker
+            if (gameEngine && gameEngine.automateWorker) {
+              gameEngine.automateWorker();
+            }
+            break;
+          case 'w':
+          case 'W':
+            // Wait (unit stays in place)
+            if (gameEngine && gameEngine.waitUnit) {
+              gameEngine.waitUnit();
+            }
+            break;
+          case 'g':
+          case 'G':
+            // Move unit to specific location (enter goto mode)
+            if (gameEngine && gameEngine.enterGotoMode) {
+              gameEngine.enterGotoMode();
+            }
+            break;
+          case 'b':
+          case 'B':
+            // Build road
+            if (gameEngine && gameEngine.buildRoad) {
+              gameEngine.buildRoad();
+            }
+            break;
+          case 'i':
+          case 'I':
+            // Irrigate
+            if (gameEngine && gameEngine.irrigage) {
+              gameEngine.irrigage();
+            }
+            break;
+          case 'm':
+          case 'M':
+            // Mine
+            if (gameEngine && gameEngine.mine) {
+              gameEngine.mine();
+            }
+            break;
+          case 'p':
+          case 'P':
+            // Clean pollution
+            if (gameEngine && gameEngine.cleanPollution) {
+              gameEngine.cleanPollution();
+            }
+            break;
+          case 't':
+          case 'T':
+            // Open tax/science/luxury slider
+            setShowSettings(true);
+            break;
+          case 'Escape':
+            // Cancel action or close menus
+            setActiveMenu(null);
+            setShowHexDetail(false);
+            setShowSettings(false);
+            // Add more modal closures as needed
+            break;
+          case 'F1':
+            // Open Civilopedia
+            if (gameEngine && gameEngine.openCivilopedia) {
+              gameEngine.openCivilopedia();
+            }
+            break;
+          case 'F2':
+            // Open city report
+            if (gameEngine && gameEngine.openCityReport) {
+              gameEngine.openCityReport();
+            }
+            break;
+          case 'F3':
+            // Open unit report
+            if (gameEngine && gameEngine.openUnitReport) {
+              gameEngine.openUnitReport();
+            }
+            break;
+          case 'F4':
+            // Open diplomacy report
+            if (gameEngine && gameEngine.openDiplomacyReport) {
+              gameEngine.openDiplomacyReport();
+            }
+            break;
+          case 'F11':
+            // Toggle fullscreen
+            if (document.fullscreenElement) {
+              document.exitFullscreen();
+            } else {
+              document.documentElement.requestFullscreen();
+            }
+            break;
+          case 'h':
+          case 'H':
+            // Highlight happy/unhappy cities
+            if (gameEngine && gameEngine.highlightCities) {
+              gameEngine.highlightCities();
+            }
+            break;
+        }
+      }
+
+      // Ctrl shortcuts
+      if (ctrlKey && !altKey && !shiftKey) {
+        switch (key) {
+          case '1':
+          case '2':
+          case '3':
+          case '4':
+          case '5':
+          case '6':
+          case '7':
+          case '8':
+          case '9':
+            // Select specific city
+            const cityIndex = parseInt(key) - 1;
+            if (gameEngine && gameEngine.selectCityByIndex) {
+              gameEngine.selectCityByIndex(cityIndex);
+            }
+            break;
+          case 's':
+            // Save game
+            if (gameEngine && gameEngine.saveGame) {
+              gameEngine.saveGame();
+            }
+            break;
+          case 'l':
+            // Load game
+            if (gameEngine && gameEngine.loadGame) {
+              gameEngine.loadGame();
+            }
+            break;
+          case 'z':
+            // Undo last action
+            if (gameEngine && gameEngine.undoLastAction) {
+              gameEngine.undoLastAction();
+            }
+            break;
+        }
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+  }, [gameEngine, camera, setCamera, handleEndTurnRequest, activeMenu, showHexDetail, showSettings]);
 
   if (error) {
     return (
@@ -185,7 +473,9 @@ function Civ1App() {
   }
 
   // Show loading only during actual initialization
-  if (!gameEngine && !showGameSetup) {
+  const isInitializing = !gameEngine && !showGameSetup;
+
+  if (isInitializing) {
     return (
       <div id="gameContainer" className="vh-100 d-flex align-items-center justify-content-center text-white">
         <div className="text-center">

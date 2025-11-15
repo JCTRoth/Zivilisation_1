@@ -87,7 +87,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     menuFontSize: 12,    // Top menu font size in pixels
     sidebarWidth: 140,   // Left sidebar width in pixels
     minimapHeight: 120,  // Minimap height in pixels
-    civListFontSize: 10  // Civilization list font size
+    civListFontSize: 10, // Civilization list font size
+    skipEndTurnConfirmation: false // Skip showing end turn confirmation modal
   },
 
   // Technology State

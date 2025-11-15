@@ -1,6 +1,6 @@
 import { SquareGrid } from './hexGrid';
 import { CONSTANTS, TERRAIN_PROPS, UNIT_PROPS } from '../utils/constants';
-import { CIVILIZATIONS, TECHNOLOGIES, UNIT_TYPES } from './gameData.js';
+import { CIVILIZATIONS, TECHNOLOGIES, UNIT_TYPES } from '../data/gameData';
 import type { GameActions, Unit, City, Civilization } from '../../types/game';
 
 interface GameSettings {
