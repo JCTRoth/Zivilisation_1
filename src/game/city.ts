@@ -930,23 +930,6 @@ export class City extends EventEmitter {
     }
 }
 
-// City Names for different civilizations
-export const CITY_NAMES: Record<string, string[]> = {
-    romans: ['Rome', 'Antium', 'Cumae', 'Neapolis', 'Ravenna', 'Arretium', 'Mediolanum', 'Arpinum'],
-    babylonians: ['Babylon', 'Ur', 'Nineveh', 'Ashur', 'Ellipi', 'Akkad', 'Eridu', 'Kish'],
-    germans: ['Berlin', 'Leipzig', 'Hamburg', 'Munich', 'Cologne', 'Frankfurt', 'Nuremberg', 'Dresden'],
-    egyptians: ['Thebes', 'Memphis', 'Oryx', 'Elephantine', 'Alexandria', 'Cairo', 'Coptos', 'Edfu'],
-    americans: ['Washington', 'New York', 'Boston', 'Philadelphia', 'Atlanta', 'Chicago', 'Seattle', 'San Francisco'],
-    greeks: ['Athens', 'Sparta', 'Corinth', 'Thebes', 'Argos', 'Delphi', 'Olympia', 'Mycenae'],
-    indians: ['Delhi', 'Bombay', 'Madras', 'Bangalore', 'Hyderabad', 'Ahmedabad', 'Calcutta', 'Lucknow'],
-    russians: ['Moscow', 'St. Petersburg', 'Kiev', 'Minsk', 'Smolensk', 'Odessa', 'Sevastopol', 'Tula'],
-    zuluids: ['Zimbabwe', 'Ulundi', 'Bapedi', 'Hlobane', 'Isandhlwana', 'Intombe', 'Mpondo', 'Ngome'],
-    french: ['Paris', 'Orleans', 'Lyon', 'Tours', 'Marseilles', 'Chartres', 'Avignon', 'Rouen'],
-    aztecs: ['Tenochtitlan', 'Texcoco', 'Tlatelolco', 'Teotihuacan', 'Tlaxcala', 'Calixtlahuaca', 'Xochicalco', 'Tula'],
-    chinese: ['Beijing', 'Shanghai', 'Guangzhou', 'Xian', 'Nanjing', 'Chengdu', 'Luoyang', 'Tianjin'],
-    english: ['London', 'York', 'Nottingham', 'Hastings', 'Canterbury', 'Coventry', 'Warwick', 'Dover'],
-    kazakhs: ['Almaty', 'Shymkent', 'Karaganda', 'Taraz', 'Aktobe', 'Pavlodar', 'Oskemen', 'Semey', 'Oral', 'Astana']
-};
 
 // City Manager - handles collections of cities
 export class CityManager extends EventEmitter {

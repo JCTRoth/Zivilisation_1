@@ -87,7 +87,7 @@ export const CIVILIZATIONS: Civilization[] = [
   {
     name: 'Aztecs',
     leader: 'Montezuma',
-    color: '#00c42aff', // Teal - Jungle gree
+    color: '#009220ff', // Teal - Jungle gree
     cityNames: ['Tenochtitlan', 'Texcoco', 'Tlatelolco', 'Teotihuacan', 'Tlaxcala', 'Cholula', 'Xochicalco', 'Tula'],
     icon: '🐆'
   },
@@ -122,14 +122,14 @@ export const CIVILIZATIONS: Civilization[] = [
   {
     name: 'Germans',
     leader: 'Frederick the Great',
-    color: '#949494', // Gray - as specified
+    color: '#949494',
     cityNames: ['Berlin', 'Leipzig', 'Hamburg', 'Bremen', 'Frankfurt', 'Bonn', 'Nuremberg', 'Cologne', 'Munich', 'Darmstadt', 'Mannheim','Heidelberg'],
     icon: '✠'
   },
   {
     name: 'French',
     leader: 'Napoleon Bonaparte',
-    color: '#ebebebff', // White - as specified
+    color: '#fffffff6', // capitulation white
     cityNames: ['Paris', 'Orleans', 'Lyon', 'Tours', 'Marseille', 'Chartres', 'Avignon', 'Rouen', 'Grenoble'],
     icon: '🇫🇷🥖'
   },
@@ -157,7 +157,7 @@ export const CIVILIZATIONS: Civilization[] = [
   {
     name: 'Romans',
     leader: 'Julius Caesar',
-    color: '#d100d1ff', //PurPur
+    color: '#080308ff',
     cityNames: ['Rome', 'Capua', 'Veii', 'Pompeii', 'Antium', 'Cumae', 'Neapolis', 'Ravenna', 'Verona'],
     icon: '⚔️'
   },
@@ -165,7 +165,7 @@ export const CIVILIZATIONS: Civilization[] = [
     name: 'Russians',
     leader: 'Joseph Stalin',
     color: '#D00000',
-    cityNames: ['Moscow', 'Leningrad', 'Kiev', 'Minsk', 'Smolensk', 'Odessa', 'Sevastopol', 'Tula', 'Stalingrad'],
+    cityNames: ['Kiev','Novgorod','Chernigov','Smolensk','Moscow', 'Leningrad', 'Minsk', 'Odessa', 'Sevastopol', 'Tula', 'Stalingrad'],
     icon: '☭'
   },
   {
