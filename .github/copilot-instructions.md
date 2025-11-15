@@ -1,0 +1,5 @@
+- Extract business and data logic from TSX components into dedicated TypeScript classes
+- Only keep presentational logic and JSX in TSX/React components
+- Ensure one class per file for logic layers
+- Create/Extend utilities for shared logic across components
+- CSS -> src/styles

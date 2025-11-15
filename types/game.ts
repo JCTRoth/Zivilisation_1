@@ -127,7 +127,7 @@ export interface UIState {
   showTechTree: boolean;
   showDiplomacy: boolean;
   showGameMenu: boolean;
-  activeDialog: 'city' | 'tech' | 'diplomacy' | 'game-menu' | 'help' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | null;
+  activeDialog: 'city' | 'tech' | 'diplomacy' | 'game-menu' | 'help' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
 }

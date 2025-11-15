@@ -1,28 +1,100 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
+import CityModal from './gamemodals/CityModal';
+import HexDetailModal from './gamemodals/HexDetailModal';
 import { useGameStore } from '../../stores/gameStore';
 import { CityUtils } from '../../utils/helpers';
 import { UNIT_PROPS } from '../../utils/constants';
+import { BUILDING_PROPERTIES } from '../../utils/buildingConstants';
 import '../../styles/gameModals.css';
 
 const GameModals = ({ gameEngine }) => {
   // console.log('[GameModals] Component rendering, gameEngine present:', !!gameEngine);
   const uiState = useGameStore(state => state.uiState);
   const actions = useGameStore(state => state.actions);
+  const gameState = useGameStore(state => state.gameState);
   const selectedCityId: string | null = useGameStore(state => state.gameState.selectedCity);
   const cities = useGameStore(state => state.cities);
   const technologies = useGameStore(state => state.technologies);
   const playerResources = useGameStore(state => state.playerResources);
   const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
 
+  const units = useGameStore(state => state.units);
+  const map = gameEngine?.map;
+
   const selectedCity = cities.find(c => c.id === selectedCityId);
 
   // Check if the selected city belongs to the current player
   const isPlayerCity = selectedCity && currentPlayer && selectedCity.civilizationId === currentPlayer.id;
 
-  // Memoize selectedCity to prevent unnecessary recalculations
-  const memoizedSelectedCity = useMemo(() => selectedCity, [selectedCityId, cities]);
+  // Always use fresh selectedCity from Zustand
+
+  const capitalizeName = (value?: string | null) => {
+    if (!value) return '';
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  };
+
+  const getProductionPerTurn = (city: any): number => {
+    if (!city) return 0;
+    if (typeof city?.yields?.production === 'number') return city.yields.production;
+    if (typeof city?.production === 'number') return city.production;
+    if (typeof city?.output?.production === 'number') return city.output.production;
+    return 0;
+  };
+
+  const getProductionProgressValue = (city: any): number => {
+  if (!city) return 0;
+  // Prefer productionStored for progress
+  if (typeof city?.productionStored === 'number') return city.productionStored;
+  if (typeof city?.productionProgress === 'number') return city.productionProgress;
+  if (typeof city?.shields === 'number') return city.shields;
+  return 0;
+  };
+
+  const getProductionCost = (item: any): number => {
+    if (!item) return 0;
+    if (typeof item === 'number') return item;
+    if (typeof item === 'string') {
+      const unitDef = UNIT_PROPS[item];
+      if (unitDef && typeof unitDef.cost === 'number') return unitDef.cost;
+      const buildingDef = BUILDING_PROPERTIES[item];
+      if (buildingDef && typeof buildingDef.cost === 'number') return buildingDef.cost;
+      return 0;
+    }
+    if (typeof item.cost === 'number') return item.cost;
+    if (item.itemType) {
+      const unitDef = UNIT_PROPS[item.itemType];
+      if (unitDef && typeof unitDef.cost === 'number') return unitDef.cost;
+      const buildingDef = BUILDING_PROPERTIES[item.itemType];
+      if (buildingDef && typeof buildingDef.cost === 'number') return buildingDef.cost;
+    }
+    if (item.type) {
+      const buildingDef = BUILDING_PROPERTIES[item.type];
+      if (buildingDef && typeof buildingDef.cost === 'number') return buildingDef.cost;
+    }
+    if (item.name && typeof item.name === 'string') {
+      const normalizedName = item.name.toLowerCase().replace(/\s+/g, '_');
+      const buildingDef = BUILDING_PROPERTIES[normalizedName];
+      if (buildingDef && typeof buildingDef.cost === 'number') return buildingDef.cost;
+    }
+    return 0;
+  };
+
+  const getProductionName = (item: any): string => {
+    if (!item) return 'Unknown';
+    if (typeof item === 'string') {
+      return UNIT_PROPS[item]?.name || BUILDING_PROPERTIES[item]?.name || capitalizeName(item);
+    }
+    if (item.name) return item.name;
+    if (item.itemType) {
+      return UNIT_PROPS[item.itemType]?.name || BUILDING_PROPERTIES[item.itemType]?.name || capitalizeName(item.itemType);
+    }
+    if (item.type) {
+      return BUILDING_PROPERTIES[item.type]?.name || capitalizeName(item.type);
+    }
+    return 'Unknown';
+  };
 
   const handleCloseDialog = () => {
     actions.hideDialog();
@@ -277,360 +349,6 @@ const GameModals = ({ gameEngine }) => {
     </Modal>
   );
 
-  // City Resources Modal Tab
-  const renderCityResources = (city: any, currentPlayer: any) => {
-    // Get calculated resource data
-    const resources = CityUtils.calculateCityResources(city, currentPlayer);
-
-    return (
-      <div className="city-resources-grid">
-        {/* Food Section */}
-        <div className="resource-section">
-          <h6 className="resource-title">
-            <i className="bi bi-apple"></i> Food
-          </h6>
-          <div className="resource-values">
-            <div className="resource-line">
-              <span className="resource-amount">{resources.food.produced}</span>
-              <span className="resource-break">|</span>
-              <span className={`resource-surplus ${resources.food.surplus >= 0 ? 'positive' : 'negative'}`}>
-                {resources.food.surplus >= 0 ? `+${resources.food.surplus}` : resources.food.surplus}
-              </span>
-            </div>
-            <small className="resource-desc">
-              Needs {resources.food.needed} food per turn. {resources.food.surplus >= 0 ? 'Surplus stored for growth.' : 'Shortfall - population may starve.'}
-            </small>
-          </div>
-        </div>
-
-        {/* Production Section */}
-        <div className="resource-section">
-          <h6 className="resource-title">
-            <i className="bi bi-gear"></i> Production
-          </h6>
-          <div className="resource-values">
-            <div className="resource-line">
-              <span className="resource-amount">{resources.production.produced}</span>
-              <span className="resource-break">|</span>
-              <span className="resource-surplus positive">
-                +{resources.production.surplus}
-              </span>
-            </div>
-            <small className="resource-desc">
-              Available for building units and city improvements.
-            </small>
-          </div>
-        </div>
-
-        {/* Trade Section */}
-        <div className="resource-section">
-          <h6 className="resource-title">
-            <i className="bi bi-arrow-left-right"></i> Trade
-          </h6>
-          <div className="resource-values">
-            <div className="resource-line">
-              <span className="resource-amount">{resources.trade.total}</span>
-              <span className="resource-break">|</span>
-              <span className="resource-corruption negative">
-                -{resources.trade.corruption}
-              </span>
-            </div>
-            <small className="resource-desc">
-              {resources.trade.afterCorruption} trade after corruption. Distributed as luxuries, taxes, and science.
-            </small>
-          </div>
-        </div>
-
-        {/* Luxuries Section */}
-        <div className="resource-section">
-          <h6 className="resource-title">
-            <i className="bi bi-gem"></i> Luxuries
-          </h6>
-          <div className="resource-values">
-            <div className="resource-line">
-              <span className="resource-amount">{resources.luxuries.amount}</span>
-              <span className="resource-unit">diamonds</span>
-            </div>
-            <small className="resource-desc">
-              Makes citizens content. Trade rate: {resources.luxuries.rate}%
-            </small>
-          </div>
-        </div>
-
-        {/* Taxes Section */}
-        <div className="resource-section">
-          <h6 className="resource-title">
-            <i className="bi bi-coin"></i> Taxes
-          </h6>
-          <div className="resource-values">
-            <div className="resource-line">
-              <span className="resource-amount">{resources.taxes.amount}</span>
-              <span className="resource-unit">coins</span>
-            </div>
-            <small className="resource-desc">
-              Added to treasury. Trade rate: {resources.taxes.rate}%
-            </small>
-          </div>
-        </div>
-
-        {/* Science Section */}
-        <div className="resource-section">
-          <h6 className="resource-title">
-            <i className="bi bi-lightbulb"></i> Science
-          </h6>
-          <div className="resource-values">
-            <div className="resource-line">
-              <span className="resource-amount">{resources.science.amount}</span>
-              <span className="resource-unit">bulbs</span>
-            </div>
-            <small className="resource-desc">
-              Research progress. Trade rate: {resources.science.rate}%
-            </small>
-          </div>
-        </div>
-
-        {/* Corruption Section */}
-        <div className="resource-section corruption-section">
-          <h6 className="resource-title">
-            <i className="bi bi-exclamation-triangle"></i> Corruption
-          </h6>
-          <div className="resource-values">
-            <div className="resource-line">
-              <span className="resource-amount corruption-amount">{resources.trade.corruption}</span>
-              <span className="resource-unit">trade lost</span>
-            </div>
-            <small className="resource-desc">
-              Lost to corruption. Distance from capital increases corruption.
-            </small>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // City Details Modal (70% height, close button top-right)
-  const renderCityDetails = () => {
-    return (
-      <Modal
-        show={uiState.activeDialog === 'city-details'}
-        onHide={handleCloseDialog}
-        centered
-        size="lg"
-        dialogClassName="city-details-modal hex-detail-modal"
-      >
-        <Modal.Header className="bg-dark text-white hex-detail-modal-header">
-          <Modal.Title>
-            <i className="bi bi-building"></i> {selectedCity?.name || 'City Details'}
-          </Modal.Title>
-          <Button variant="outline-light" size="sm" onClick={handleCloseDialog} className="hex-detail-close-button">
-            <i className="bi bi-x-lg"></i>
-          </Button>
-        </Modal.Header>
-        <Modal.Body className="bg-dark text-white hex-detail-modal-body">
-          <Tabs defaultActiveKey="overview" id="city-details-tabs" className="mb-3">
-            <Tab eventKey="overview" title="Overview">
-              {selectedCity ? (
-                <div className="hex-detail-content">
-                  <h5 className="hex-detail-city-name">{selectedCity.name}</h5>
-                  <p className="hex-detail-city-info"><strong>Population:</strong> {selectedCity.population ?? 1}</p>
-                  <p className="hex-detail-city-info"><strong>Location:</strong> ({selectedCity.col}, {selectedCity.row})</p>
-                  <div className="mb-3">
-                    <strong>Yields</strong>
-                    <ul>
-                      <li>Food: {selectedCity.yields?.food ?? selectedCity.food ?? 0}</li>
-                      <li>Production: {selectedCity.yields?.production ?? selectedCity.production ?? 0}</li>
-                      <li>Trade: {selectedCity.yields?.trade ?? 0}</li>
-                      <li>Science: {selectedCity.science ?? 0}</li>
-                      <li>Gold: {selectedCity.gold ?? 0}</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <h6 className="hex-detail-buildings-title">Buildings</h6>
-                    {selectedCity.buildings && selectedCity.buildings.length > 0 ? (
-                      <ul className="hex-detail-buildings-list">
-                        {selectedCity.buildings.map((building: any, i: number) => <li key={i}>{building}</li>)}
-                      </ul>
-                    ) : <p className="hex-detail-no-buildings">No buildings</p>}
-                  </div>
-                  {/* Production selector moved here (Overview tab) - only show for player cities */}
-                  {isPlayerCity && (
-                    <div className="mt-3">
-                      <h6>Production</h6>
-                      <div className="d-flex gap-2 align-items-center">
-                        <select
-                          className="form-select bg-secondary text-white"
-                          value={selectedProductionKey || ''}
-                          onChange={(e) => setSelectedProductionKey(e.target.value || null)}
-                          style={{maxWidth: '420px'}}
-                          disabled={!availableProductionKeys || availableProductionKeys.length === 0}
-                        >
-                          {(availableProductionKeys.length === 0) && <option value="">(No available items)</option>}
-                          {availableProductionKeys.map(k => (
-                            <option key={k} value={k}>{UNIT_PROPS[k].name} ({UNIT_PROPS[k].cost} shields)</option>
-                          ))}
-                        </select>
-
-                        <div className="d-flex gap-2">
-                          <Button
-                            variant="light"
-                            disabled={!selectedProductionKey || !gameEngine || !selectedCity}
-                            onClick={() => {
-                              if (!selectedProductionKey) return;
-                              console.log('[GameModals] Add to Queue clicked', { cityId: selectedCity?.id, productionKey: selectedProductionKey });
-                              console.log('[GameModals] Before queue', { buildQueue: selectedCity?.buildQueue });
-                              handleQueueProduction(selectedProductionKey); // Add to queue
-                              console.log('[GameModals] After queue (will re-sync from engine)');
-                            }}
-                          >
-                            Add to Queue
-                          </Button>
-                          <Button
-                            variant="danger"
-                            disabled={selectedQueueIndex === null || selectedQueueIndex === undefined || !Array.isArray(selectedCity?.buildQueue) || selectedCity.buildQueue.length === 0 || !gameEngine}
-                            onClick={async () => {
-                              if (selectedQueueIndex === null || selectedQueueIndex === undefined) return;
-                              if (!gameEngine || typeof gameEngine.removeCityQueueItem !== 'function') return;
-                              const res = (gameEngine as any).removeCityQueueItem(selectedCity.id, selectedQueueIndex);
-                              if (res && res.success) {
-                                actions.addNotification({ type: 'success', message: `Removed from queue: ${res.removed?.name || 'item'}` });
-                                if (gameEngine.getAllCities) actions.updateCities(gameEngine.getAllCities());
-                                setSelectedQueueIndex(null);
-                              } else {
-                                actions.addNotification({ type: 'warning', message: `Failed to remove: ${res?.reason || 'unknown'}` });
-                              }
-                            }}
-                          >
-                            Remove
-                          </Button>
-                          <Button
-                            variant="success"
-                            disabled={!selectedProductionKey || !gameEngine || !selectedCity || (currentPlayer?.resources?.gold || 0) < (UNIT_PROPS[selectedProductionKey]?.cost || 0)}
-                            onClick={() => {
-                              if (!selectedProductionKey) return;
-                              console.log('[GameModals] Buy Now clicked', { cityId: selectedCity?.id, productionKey: selectedProductionKey });
-                              console.log('[GameModals] Player gold before buy', currentPlayer?.resources?.gold);
-                              handleBuyNow(selectedProductionKey);
-                              console.log('[GameModals] Buy Now finished');
-                            }}
-                          >
-                            Buy Now ({UNIT_PROPS[selectedProductionKey]?.cost || 0} gold)
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Current Production Indicator - only show for player cities */}
-                  {isPlayerCity && (
-                    <div className="mt-3">
-                      <h6>Current Production</h6>
-                      {selectedCity.currentProduction ? (
-                        <div className="bg-secondary text-white p-2 rounded">
-                          <strong>{selectedCity.currentProduction.name}</strong>
-                          <div className="small text-muted">Progress: {Math.round((selectedCity.productionProgress || 0) * 100)}%</div>
-                        </div>
-                      ) : (
-                        <div className="text-muted">No active production</div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Queue Display - only show for player cities */}
-                  {isPlayerCity && (
-                    <div className="mt-3">
-                      <div className="d-flex align-items-center mb-1">
-                        <h6 className="me-2">Queue</h6>
-                        <Button
-                          variant="outline-light"
-                          size="sm"
-                          className="me-1"
-                          style={{lineHeight: 1, padding: '2px 6px'}}
-                          disabled={selectedQueueIndex === null || selectedQueueIndex <= 0 || !selectedCity || !Array.isArray(selectedCity.buildQueue) || selectedCity.buildQueue.length < 2}
-                          onClick={() => {
-                            if (selectedQueueIndex === null || selectedQueueIndex <= 0) return;
-                            const queue = [...selectedCity.buildQueue];
-                            [queue[selectedQueueIndex - 1], queue[selectedQueueIndex]] = [queue[selectedQueueIndex], queue[selectedQueueIndex - 1]];
-                            // Update queue in engine and UI
-                            if (gameEngine && typeof gameEngine.setCityQueue === 'function') {
-                              gameEngine.setCityQueue(selectedCity.id, queue);
-                            } else {
-                              selectedCity.buildQueue = queue;
-                            }
-                            actions.updateCities(cities.map(c => c.id === selectedCity.id ? {...c, buildQueue: queue} : c));
-                            setSelectedQueueIndex(selectedQueueIndex - 1);
-                          }}
-                        >
-                          ▲
-                        </Button>
-                        <Button
-                          variant="outline-light"
-                          size="sm"
-                          style={{lineHeight: 1, padding: '2px 6px'}}
-                          disabled={selectedQueueIndex === null || selectedQueueIndex === selectedCity.buildQueue.length - 1 || !selectedCity || !Array.isArray(selectedCity.buildQueue) || selectedCity.buildQueue.length < 2}
-                          onClick={() => {
-                            if (selectedQueueIndex === null || selectedQueueIndex === selectedCity.buildQueue.length - 1) return;
-                            const queue = [...selectedCity.buildQueue];
-                            [queue[selectedQueueIndex + 1], queue[selectedQueueIndex]] = [queue[selectedQueueIndex], queue[selectedQueueIndex + 1]];
-                            // Update queue in engine and UI
-                            if (gameEngine && typeof gameEngine.setCityQueue === 'function') {
-                              gameEngine.setCityQueue(selectedCity.id, queue);
-                            } else {
-                              selectedCity.buildQueue = queue;
-                            }
-                            actions.updateCities(cities.map(c => c.id === selectedCity.id ? {...c, buildQueue: queue} : c));
-                            setSelectedQueueIndex(selectedQueueIndex + 1);
-                          }}
-                        >
-                          ▼
-                        </Button>
-                      </div>
-                      <div className="queue-box bg-dark border border-secondary rounded p-2" style={{maxHeight: '220px', overflowY: 'auto'}}>
-                        {Array.isArray(selectedCity.buildQueue) && selectedCity.buildQueue.length > 0 ? (
-                          selectedCity.buildQueue.map((q: any, i: number) => (
-                            <div
-                              key={i}
-                              className={`queue-item p-2 mb-1 rounded ${selectedQueueIndex === i ? 'bg-secondary text-white' : 'text-white'}`}
-                              style={{cursor: 'pointer'}}
-                              onClick={() => setSelectedQueueIndex(i)}
-                            >
-                              <div className="d-flex justify-content-between">
-                                <div><strong>{q.name}</strong></div>
-                                <div className="text-white">{q.cost} shields</div>
-                              </div>
-                              <div className="small text-white">#{i + 1} in queue</div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-white">Queue is empty</div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="hex-detail-no-city">No city selected</p>
-              )}
-            </Tab>
-            <Tab eventKey="resources" title="Resources">
-              {selectedCity ? (
-                <div className="city-resources-content">
-                  {renderCityResources(selectedCity, currentPlayer)}
-                </div>
-              ) : (
-                <p className="hex-detail-no-city">No city selected</p>
-              )}
-            </Tab>
-            <Tab eventKey="raw" title="Raw JSON">
-              <pre className="hex-detail-debug">
-                {JSON.stringify(selectedCity, null, 2)}
-              </pre>
-            </Tab>
-          </Tabs>
-        </Modal.Body>
-      </Modal>
-    );
-  };
-
   // City Production Modal
   const handleStartProduction = (unitKey: string) => {
     if (!selectedCity) return;
@@ -753,18 +471,18 @@ const GameModals = ({ gameEngine }) => {
         if (!hasAllRequiredTechs) return false;
       }
 
-      if (u.naval && memoizedSelectedCity) {
+      if (u.naval && selectedCity) {
         // Check if city has harbor or is coastal (tile or adjacent tiles are water)
-        const hasHarbor = memoizedSelectedCity.buildings && memoizedSelectedCity.buildings.includes('harbor');
+        const hasHarbor = selectedCity.buildings && selectedCity.buildings.includes('harbor');
         if (!hasHarbor) {
-          const isCoastal = checkIfCityIsCoastal(memoizedSelectedCity, gameEngine);
+          const isCoastal = checkIfCityIsCoastal(selectedCity, gameEngine);
           if (!isCoastal) return false;
         }
       }
 
       return true;
     });
-  }, [currentPlayer, memoizedSelectedCity, checkIfCityIsCoastal]);
+  }, [currentPlayer, selectedCity, checkIfCityIsCoastal]);
 
   // Ensure there is a default selection when modal opens or available list changes
   useEffect(() => {
@@ -809,25 +527,65 @@ const GameModals = ({ gameEngine }) => {
 
   // Reusable production list content (used both in modal and city details tab)
   // Render production summary: current production and queued items
-  const renderProductionContent = () => (
-    <div>
-      {selectedCity ? (
-        <div>
-          <div className="mb-3">
-            <h6>Current Production</h6>
-            {selectedCity.currentProduction ? (
-              <div className="bg-secondary text-white p-2 rounded">
-                <strong>{selectedCity.currentProduction.name}</strong>
-                <div className="small text-muted">Progress: {Math.round((selectedCity.productionProgress || 0) * 100)}%</div>
-              </div>
-            ) : (
-              <div className="text-muted">No active production</div>
-            )}
-          </div>
+  const renderProductionContent = () => {
+    if (!selectedCity) {
+      return <div>No city selected</div>;
+    }
 
-          <div>
-            <h6>Queue</h6>
-            <div className="d-flex align-items-center mb-1">
+    const productionPerTurn = getProductionPerTurn(selectedCity);
+    // Always use productionStored for current production progress
+    const productionProgressValue = typeof selectedCity.productionStored === 'number'
+      ? selectedCity.productionStored
+      : 0;
+    const currentProductionItem = selectedCity.currentProduction;
+    const currentProductionCost = getProductionCost(currentProductionItem);
+    const currentProductionName = getProductionName(currentProductionItem);
+    const clampedProgress = currentProductionCost > 0
+      ? Math.min(Math.max(productionProgressValue, 0), currentProductionCost)
+      : Math.max(productionProgressValue, 0);
+    const progressPercent = currentProductionCost > 0
+      ? Math.min(100, Math.round((clampedProgress / currentProductionCost) * 100))
+      : 0;
+    const remainingShields = currentProductionCost > 0
+      ? Math.max(0, currentProductionCost - productionProgressValue)
+      : 0;
+    const turnsRemaining = currentProductionItem && currentProductionCost > 0 && productionPerTurn > 0
+      ? Math.max(0, Math.ceil(remainingShields / productionPerTurn))
+      : null;
+    const formatTurns = (value: number | null) => {
+      if (value === null) return '—';
+      if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+      return value;
+    };
+    const hasQueueItems = Array.isArray(selectedCity.buildQueue) && selectedCity.buildQueue.length > 0;
+
+    return (
+      <div>
+        <div className="mb-3">
+          <h6>Current Production</h6>
+          {currentProductionItem ? (
+            <div className="bg-secondary text-white p-2 rounded">
+              <strong>{currentProductionName}</strong>
+              <div className="small text-muted">
+                {currentProductionCost > 0
+                  ? `Progress: ${Math.round(clampedProgress)} / ${currentProductionCost} (${progressPercent}%)`
+                  : `Progress: ${Math.round(clampedProgress)} shields`}
+              </div>
+              <div className="small text-muted">
+                Production per turn: {productionPerTurn}
+              </div>
+              <div className="small text-muted">
+                Turns remaining: {formatTurns(turnsRemaining)}
+              </div>
+            </div>
+          ) : (
+            <div className="text-muted">No active production</div>
+          )}
+        </div>
+
+        <div>
+          <h6>Queue</h6>
+          <div className="d-flex align-items-center mb-1">
               <Button
                 variant="outline-light"
                 size="sm"
@@ -872,9 +630,16 @@ const GameModals = ({ gameEngine }) => {
                 ▼
               </Button>
             </div>
-            <div className="queue-box bg-dark border border-secondary rounded p-2" style={{maxHeight: '220px', overflowY: 'auto'}}>
-              {Array.isArray(selectedCity.buildQueue) && selectedCity.buildQueue.length > 0 ? (
-                selectedCity.buildQueue.map((q: any, i: number) => (
+          <div className="queue-box bg-dark border border-secondary rounded p-2" style={{maxHeight: '220px', overflowY: 'auto'}}>
+            {hasQueueItems ? (
+              selectedCity.buildQueue.map((q: any, i: number) => {
+                const queueItemName = getProductionName(q);
+                const queueItemCost = getProductionCost(q);
+                const queueTurns = productionPerTurn > 0 && queueItemCost > 0
+                  ? Math.max(0, Math.ceil(queueItemCost / productionPerTurn))
+                  : null;
+
+                return (
                   <div
                     key={i}
                     className={`queue-item p-2 mb-1 rounded ${selectedQueueIndex === i ? 'bg-secondary text-white' : 'text-white'}`}
@@ -882,18 +647,19 @@ const GameModals = ({ gameEngine }) => {
                     onClick={() => setSelectedQueueIndex(i)}
                   >
                     <div className="d-flex justify-content-between">
-                      <div><strong>{q.name}</strong></div>
-                      <div className="text-white">{q.cost} shields</div>
+                      <div><strong>{queueItemName}</strong></div>
+                      <div className="text-white">{queueItemCost > 0 ? `${queueItemCost} shields` : '—'}</div>
                     </div>
                     <div className="small text-white">#{i + 1} in queue</div>
+                    <div className="small text-muted">Turns: {formatTurns(queueTurns)}</div>
                   </div>
-                ))
-              ) : (
-                <div className="text-white">Queue is empty</div>
-              )}
-            </div>
-
-            <div className="mt-2 d-flex gap-2">
+                );
+              })
+            ) : (
+              <div className="text-white">Queue is empty</div>
+            )}
+          </div>
+          <div className="mt-2 d-flex gap-2">
               <Button
                 size="sm"
                 variant="primary"
@@ -952,13 +718,10 @@ const GameModals = ({ gameEngine }) => {
                 Remove
               </Button>
             </div>
-          </div>
         </div>
-      ) : (
-        <div>No city selected</div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  };
 
   // City Purchase Modal (Buy Now)
   const handleBuyNow = (unitKey: string) => {
@@ -1043,7 +806,8 @@ const GameModals = ({ gameEngine }) => {
       {renderTechTree()}
       {renderDiplomacy()}
       {renderHelp()}
-      {renderCityDetails()}
+      <CityModal show={uiState.activeDialog === 'city-details'} onHide={handleCloseDialog} selectedCity={selectedCity} gameEngine={gameEngine} actions={actions} currentPlayer={currentPlayer} isPlayerCity={isPlayerCity} />
+      <HexDetailModal show={uiState.activeDialog === 'hex-details'} onHide={handleCloseDialog} selectedHex={gameState.selectedHex} map={map} units={units} cities={cities} />
       {renderCityProduction()}
       {renderCityPurchase()}
     </>

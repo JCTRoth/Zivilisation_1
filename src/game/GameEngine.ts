@@ -1198,6 +1198,16 @@ export default class GameEngine {
     this.cities
       .filter(c => c.civilizationId === this.activePlayer)
       .forEach(city => {
+        // Check if we need to start production from queue
+        if (!city.currentProduction && city.buildQueue && city.buildQueue.length > 0) {
+          const nextItem = city.buildQueue.shift();
+          if (nextItem) {
+            city.currentProduction = nextItem;
+            city.productionProgress = city.carriedOverProgress || 0;
+            city.carriedOverProgress = 0;
+          }
+        }
+
         // Add food for growth
         city.foodStored += city.yields.food;
         if (city.foodStored >= city.foodNeeded) {
@@ -1206,17 +1216,26 @@ export default class GameEngine {
           city.foodNeeded = city.population * 20;
         }
 
-        // Add production
+        // Add production (with bonus if actively producing)
         if (city.currentProduction) {
-          city.productionStored += city.yields.production;
+           const before = city.productionStored;
+           city.productionStored += city.yields.production;
+           if (city.productionStored > before) {
+             console.log(`[PRODUCTION] City ${city.name} (${city.id}) productionStored increased: ${before} -> ${city.productionStored}`);
+           }
           if (city.productionStored >= city.currentProduction.cost) {
             // Complete production
             city.productionStored = 0;
             // Handle completed unit/building (left simple for now)
+            // Advance queue if present
+            if (Array.isArray(city.buildQueue) && city.buildQueue.length > 0) {
+              city.currentProduction = city.buildQueue.shift();
+            } else {
+              city.currentProduction = null;
+            }
           }
         }
       });
-
     // Add resources to civilization (if civilization object follows the same structure)
     try {
       if (currentCiv.resources) {
@@ -1244,6 +1263,12 @@ export default class GameEngine {
       }
     } catch (e) {
       // ignore
+    }
+
+    // Update the store with the processed state
+    if (this.storeActions) {
+      this.storeActions.updateCities([...this.cities]);
+      this.storeActions.updateCivilizations([...this.civilizations]);
     }
 
     // If this civilization is an AI, run its turn asynchronously so UI can update between moves

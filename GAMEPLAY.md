@@ -61,6 +61,8 @@ Have the highest civilization score when the game ends in 2100 AD.
 - Rule: Each city can construct one unit or improvement at a time.
 - Shield Accumulation: At the end of each turn, the city adds its total production (shields) to the current project's progress.
 - Completion: When accumulated shields >= project cost, the unit or improvement is completed and spawned/applied in the city. Any excess shields carry over to the next project.
+- Surplus Completion: If the city produces sufficient surplus resources to complete the item the city is producing, that item is added to the city.
+- Unit Support: If your city does not produce sufficient resources to support all of the existing units for which it is the home city, units are destroyed until enough support is available. Units farthest away from the city are destroyed first.
 
 
 **Happiness**

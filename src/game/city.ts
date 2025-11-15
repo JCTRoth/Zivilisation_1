@@ -29,6 +29,8 @@ interface Building {
 interface ProductionItem {
     type: 'unit' | 'building';
     itemType: string;
+    name?: string;
+    cost?: number;
 }
 
 interface CityInfo {
@@ -162,6 +164,11 @@ export class City extends EventEmitter {
     processTurn(gameMap: any, turn: number): void {
         // Calculate yields from worked tiles
         this.calculateYields(gameMap);
+
+        // Check if we need to start production from queue
+        if (!this.currentProduction && this.buildQueue.length > 0) {
+            this.startNextProduction();
+        }
 
         // Process food
         this.processFood(gameMap);
@@ -443,11 +450,15 @@ export class City extends EventEmitter {
         const unitsToKeep: string[] = [];
         const unitsToDisband: string[] = [];
 
-        // Sort units by maintenance cost (cheapest first to keep)
+        // Sort units by distance from city (farthest first to disband)
         const supportedUnits = Array.from(this.supportedUnitIds)
             .map(unitId => gameMap.unitManager.getUnit(unitId))
             .filter(unit => unit && unit.homeCityId === this.id)
-            .sort((a, b) => a!.maintenance - b!.maintenance);
+            .sort((a, b) => {
+                const distA = gameMap.grid.squareDistance(this.col, this.row, a!.col, a!.row);
+                const distB = gameMap.grid.squareDistance(this.col, this.row, b!.col, b!.row);
+                return distB - distA; // Farthest first
+            });
 
         for (const unit of supportedUnits) {
             if (unit && currentCost + unit.maintenance <= maxAffordableCost) {
