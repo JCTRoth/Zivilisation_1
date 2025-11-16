@@ -430,9 +430,30 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
     const iconColor = luminance > 0.6 ? '#111' : '#FFF';
     ctx.fillStyle = iconColor;
-    const unitTypeKey = unit.type?.toUpperCase();
-    const typeDef = unitTypeKey ? (UNIT_PROPERTIES[unitTypeKey] || null) : null;
-    const icon = unit.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : null) || '⚔️';
+    // Resolve unit type definitions from multiple data sources.
+    // unit.type in the engine is usually the id (e.g. 'settler', 'warrior').
+    const unitTypeId = unit.type ? String(unit.type) : null;
+
+    // Prefer a direct lookup into the exported UNIT_TYPES from gameData.
+    // Keys in UNIT_TYPES may be inconsistent (pluralization), so match by the inner `id` where possible.
+    let gameTypeDef = null;
+    if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
+      try {
+        gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === String(unitTypeId).toLowerCase()) || null;
+      } catch (e) {
+        gameTypeDef = null;
+      }
+    }
+
+    // Fallback to UNIT_PROPERTIES (unitConstants) which uses lowercase ids as keys
+    const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
+
+    // Choose icon priority:
+    // 1) explicit runtime unit.icon (engine may set this)
+    // 2) game data UNIT_TYPES icon
+    // 3) unit constants icon
+    // 4) first letter of type name
+    const icon = unit.icon || gameTypeDef?.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
     const fontSize = Math.max(10, Math.round(innerRadius * 1.1));
     ctx.font = `bold ${fontSize}px monospace`;
     ctx.textAlign = 'center';

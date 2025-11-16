@@ -3,6 +3,7 @@
 import { CONSTANTS } from '../utils/constants';
 import { GameUtils, MathUtils, EventEmitter } from '../utils/helpers';
 import type { Civilization } from './civilization';
+import { CIVILIZATIONS } from '../data/gameData';
 
 // Type definitions
 
@@ -18,6 +19,25 @@ interface BuildingEffects {
     defense?: number;
     maxPopulation?: number;
 }
+
+// Provide a CITY_NAMES export for legacy modules. Prefer names from `CIVILIZATIONS` data if present.
+export const CITY_NAMES: Record<string, string[]> = (() => {
+    const mapping: Record<string, string[]> = {};
+    try {
+        if (Array.isArray(CIVILIZATIONS) && CIVILIZATIONS.length > 0) {
+            CIVILIZATIONS.forEach((civ, idx) => {
+                const names = Array.isArray(civ.cityNames) ? civ.cityNames : [];
+                // numeric key (stringified index)
+                mapping[String(idx)] = names;
+                // key by civilization name lowercased
+                if (civ.name) mapping[civ.name.toLowerCase()] = names;
+            });
+        }
+    } catch (e) {
+        // ignore and return whatever mapping we have
+    }
+    return mapping;
+})();
 
 interface Building {
     name: string;

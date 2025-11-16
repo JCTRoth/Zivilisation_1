@@ -539,6 +539,18 @@ export const UNIT_TYPES: Record<string, UnitType> = {
     requires: null,
     description: 'Basic early infantry'
   },
+  WARRIOR: {
+    id: 'warrior',
+    name: 'Warrior',
+    cost: 10,
+    attack: 1,
+    defense: 1,
+    movement: 1,
+    sightRange: 1,
+    icon: '🗡️',
+    requires: null,
+    description: 'Basic early warrior'
+  },
   PHALANX: {
     id: 'phalanx',
     name: 'Phalanx',
@@ -550,6 +562,18 @@ export const UNIT_TYPES: Record<string, UnitType> = {
     icon: '🛡️',
     requires: 'bronze_working',
     description: 'Defensive ancient infantry'
+  },
+  ARCHER: {
+    id: 'archer',
+    name: 'Archer',
+    cost: 30,
+    attack: 3,
+    defense: 2,
+    movement: 1,
+    sightRange: 1,
+    icon: '🏹',
+    requires: 'warrior_code',
+    description: 'Ranged infantry unit'
   },
   LEGION: {
     id: 'legion',
@@ -676,6 +700,18 @@ export const UNIT_TYPES: Record<string, UnitType> = {
     requires: 'metallurgy',
     description: 'Improved artillery'
   },
+  CATAPULT: {
+    id: 'catapult',
+    name: 'Catapult',
+    cost: 40,
+    attack: 6,
+    defense: 1,
+    movement: 1,
+    sightRange: 1,
+    icon: '🏹',
+    requires: 'mathematics',
+    description: 'Early siege weapon'
+  },
   
   // Naval units
   TRIREME: {
@@ -796,7 +832,7 @@ export const UNIT_TYPES: Record<string, UnitType> = {
     attack: 4,
     defense: 2,
     movement: 10,
-    sightRange: 3,
+    sightRange: 6,
     icon: '🛩️',
     requires: 'flight',
     description: 'Late game fast air unit'
@@ -808,7 +844,7 @@ export const UNIT_TYPES: Record<string, UnitType> = {
     attack: 12,
     defense: 1,
     movement: 8,
-    sightRange: 2,
+    sightRange: 6,
     icon: '✈️',
     requires: 'advanced_flight',
     description: 'Heavy air attack unit'

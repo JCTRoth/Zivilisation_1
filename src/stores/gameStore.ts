@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { CONSTANTS } from '../utils/constants';
 import { SquareGrid } from '../game/hexGrid';
 import { UNIT_TYPES } from '../data/gameData';
+import { UNIT_PROPERTIES } from '../data/unitConstants';
 import type { GameStoreState, GameState, MapState, CameraState, Unit, City, Civilization, UIState, Settings, Technology, GameActions } from '../../types/game';
 
 // Helper function for visibility calculations
@@ -347,10 +348,23 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           continue;
         }
 
-        // Check if unit has sight range > 0
-        const unitTypeKey = unit.type?.toUpperCase();
-        const unitType = unitTypeKey ? UNIT_TYPES[unitTypeKey] : null;
-        const sightRange = unitType?.sightRange || 0;
+        // Resolve unit sight range robustly. Unit.type is usually an id like 'warrior' or 'militia'.
+        const unitTypeId = unit.type ? String(unit.type).toLowerCase() : null;
+
+        // Try to find the game data UNIT_TYPES entry by matching its inner `id` field
+        let gameTypeDef: any = null;
+        if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
+          try {
+            gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === unitTypeId) || null;
+          } catch (e) {
+            gameTypeDef = null;
+          }
+        }
+
+        // Fallback to UNIT_PROPERTIES (unitConstants) keyed by lowercase id
+        const constDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
+
+  const sightRange = (typeof (unit as any).sightRange === 'number') ? (unit as any).sightRange : (gameTypeDef?.sightRange ?? 0);
         
         if (sightRange > 0) {
           console.log('[Store] updateVisibility: Processing unit with sight', {
@@ -440,12 +454,31 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     }),
 
     updateUnits: (units) => set(state => {
-      // Enrich units with icon from UNIT_TYPES if available
+      // Enrich units with canonical data (icon, attack, defense, movement) when engine
+      // provides only a minimal unit object. Prefer engine values when present.
       const enriched = (units || []).map(u => {
-        const key = u.type?.toUpperCase();
-        const typeDef = key ? (UNIT_TYPES[key] || null) : null;
-        const icon = typeDef?.icon || u.icon || '🔸';
-        return { ...u, icon };
+        const unitTypeId = u.type ? String(u.type) : null;
+
+        // Try to find gameData UNIT_TYPES entry by its inner `id` field
+        let gameTypeDef: any = null;
+        if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
+          try {
+            gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === String(unitTypeId).toLowerCase()) || null;
+          } catch (e) {
+            gameTypeDef = null;
+          }
+        }
+
+        // Fallback to UNIT_PROPERTIES (unitConstants) keyed by lowercase id
+        const constDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
+
+        const icon = u.icon || gameTypeDef?.icon || constDef?.icon || '🔸';
+        const attack = (typeof u.attack === 'number') ? u.attack : (gameTypeDef?.attack ?? constDef?.attack ?? 0);
+        const defense = (typeof u.defense === 'number') ? u.defense : (gameTypeDef?.defense ?? constDef?.defense ?? 0);
+      const movesRemaining = (typeof u.movesRemaining === 'number') ? u.movesRemaining : (typeof (u as any).movement === 'number' ? (u as any).movement : (constDef?.movement ?? 0));
+  const maxMoves = (typeof u.maxMoves === 'number') ? u.maxMoves : (constDef?.movement ?? gameTypeDef?.movement ?? movesRemaining);
+
+        return { ...u, icon, attack, defense, movesRemaining, maxMoves };
       });
       return { units: enriched };
     }),
