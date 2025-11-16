@@ -4,8 +4,8 @@ A modern browser-based recreation of the first Civilization game (1991), built w
 ReactJs, Vite, Zustand, and Bootstrap.
 
 
-![](doc/2025-11-01_18-00.png)
-![](doc/2025-11-01_18-00_1.png)
+![](doc/2025-11-16_21-36.png)
+![](doc/2025-11-16_21-36_1.png)
 ![](doc/1.png)
 ![](doc/2.png)
 ![](doc/3.png)
