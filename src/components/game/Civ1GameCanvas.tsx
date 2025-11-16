@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../../stores/gameStore';
 import { UNIT_TYPES } from '../../data/gameData';
+import { UNIT_PROPERTIES } from '../../data/unitConstants';
 import { CONSTANTS } from '../../utils/constants';
 import { TERRAIN_TYPES, getTerrainInfo, TILE_SIZE } from '../../data/terrainData';
 import type { Tile } from '../../../types/game';
@@ -407,11 +408,15 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     const radius = Math.round(baseRadius * zoomFactor);
 
     // Unit background - use civilization color if available
-    const civColor = (civilizations && civilizations[unit.civilizationId ?? unit.owner] && civilizations[unit.civilizationId ?? unit.owner].color) || (unit.owner === 0 ? '#4169E1' : '#DC143C');
-    ctx.fillStyle = civColor;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-    ctx.fill();
+    const civIndex = unit.civilizationId ?? unit.owner;
+    const civColor = (civilizations && civilizations[civIndex] && civilizations[civIndex].color) || (civIndex === 0 ? '#4169E1' : '#DC143C');
+
+  // Draw civ-colored disc as unit marker (no outer halo)
+  const innerRadius = Math.max(8, Math.round(radius * 0.95));
+  ctx.beginPath();
+  ctx.fillStyle = civColor;
+  ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+  ctx.fill();
 
 
     // Determine icon color (contrast with civColor)
@@ -426,9 +431,9 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     const iconColor = luminance > 0.6 ? '#111' : '#FFF';
     ctx.fillStyle = iconColor;
     const unitTypeKey = unit.type?.toUpperCase();
-    const typeDef = unitTypeKey ? (UNIT_TYPES[unitTypeKey] || null) : null;
+    const typeDef = unitTypeKey ? (UNIT_PROPERTIES[unitTypeKey] || null) : null;
     const icon = unit.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : null) || '⚔️';
-  const fontSize = Math.max(10, Math.round(radius * 1.1));
+    const fontSize = Math.max(10, Math.round(innerRadius * 1.1));
     ctx.font = `bold ${fontSize}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
