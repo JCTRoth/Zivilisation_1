@@ -1054,6 +1054,7 @@ export default class GameEngine {
           if (item.type === 'unit') {
             // Create unit at city location
             const unitType = item.itemType;
+            const unitProps = UNIT_PROPS[unitType] || { movement: 1 };
             const unit = {
               id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
               type: unitType,
@@ -1061,8 +1062,8 @@ export default class GameEngine {
               col: city.col,
               row: city.row,
               health: 100,
-              movement: 0, // Start with no movement remaining
-              movesRemaining: 0,
+              movement: unitProps.movement, // Full movement points
+              movesRemaining: unitProps.movement, // Full movement points
               homeCityId: city.id
             };
 
@@ -1132,6 +1133,7 @@ export default class GameEngine {
             if (city.currentProduction.type === 'unit') {
               // Create unit at city location
               const unitType = city.currentProduction.itemType;
+              const unitProps = UNIT_PROPS[unitType] || { movement: 1 };
               const unit = {
                 id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
                 type: unitType,
@@ -1139,8 +1141,8 @@ export default class GameEngine {
                 col: city.col,
                 row: city.row,
                 health: 100,
-                movement: 0, // Start with no movement remaining
-                movesRemaining: 0,
+                movement: unitProps.movement, // Full movement points
+                movesRemaining: unitProps.movement, // Full movement points
                 homeCityId: city.id
               };
 

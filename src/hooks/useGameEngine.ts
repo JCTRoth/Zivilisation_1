@@ -70,6 +70,32 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
           });
           break;
 
+        case 'UNIT_PRODUCED':
+          actions.updateUnits(gameEngine.getAllUnits());
+          actions.updateVisibility();
+          // Select the newly produced unit immediately
+          if (eventData && eventData.unit) {
+            actions.selectUnit(eventData.unit.id);
+            actions.addNotification({
+              type: 'success',
+              message: `${eventData.unit.type} produced and ready to move!`
+            });
+          }
+          break;
+
+        case 'UNIT_PURCHASED':
+          actions.updateUnits(gameEngine.getAllUnits());
+          actions.updateVisibility();
+          // Select the newly purchased unit immediately
+          if (eventData && eventData.unit) {
+            actions.selectUnit(eventData.unit.id);
+            actions.addNotification({
+              type: 'success',
+              message: `${eventData.unit.type} purchased and ready to move!`
+            });
+          }
+          break;
+
         case 'CITY_FOUNDED':
           console.log('[useGameEngine] CITY_FOUNDED:', {
             mapWidth: gameEngine.map?.width,

@@ -374,14 +374,14 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   // Draw city
   const drawCity = (ctx, centerX, centerY, city) => {
     // City background - use civilization color if available
-    const civColor = (civilizations && civilizations[city.owner] && civilizations[city.owner].color) || (city.owner === 0 ? '#FFD700' : '#FF6347');
+    const civColor = (civilizations && civilizations[city.civilizationId] && civilizations[city.civilizationId].color) || (city.civilizationId === 0 ? '#FFD700' : '#FF6347');
     ctx.fillStyle = civColor;
-    ctx.fillRect(centerX - 16, centerY - 16, 32, 32);
+    ctx.fillRect(centerX - 21, centerY - 21, 42, 42);
     
     // City border
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
-    ctx.strokeRect(centerX - 16, centerY - 16, 32, 32);
+    ctx.strokeRect(centerX - 21, centerY - 21, 42, 42);
     
     // City symbol
   ctx.fillStyle = '#000';
@@ -490,7 +490,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         
         // Draw cities as bright dots (only if visible)
         if (tile.city && isVisible) {
-          ctx.fillStyle = tile.city.owner === 0 ? '#FFD700' : '#FF6347';
+          ctx.fillStyle = tile.city.civilizationId === 0 ? '#FFD700' : '#FF6347';
           ctx.fillRect(
             col * tileWidth,
             row * tileHeight,
@@ -929,7 +929,7 @@ const Civ1GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     }
 
     // City actions
-    if (tile.city && tile.city.owner === 0) {
+    if (tile.city && tile.city.civilizationId === 0) {
       menuOptions.push({
         label: `🏛️ ${tile.city.name}`,
         action: 'cityOrders',
