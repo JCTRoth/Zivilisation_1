@@ -1,8 +1,7 @@
 import React from 'react';
-import { Button } from 'react-bootstrap';
-import { useGameStore } from '../../stores/GameStore';
-import { CIVILIZATIONS } from '../../data/GameData';
-import { TERRAIN_TYPES, getTerrainInfo, TILE_SIZE } from '../../data/TerrainData';
+import { useGameStore } from '@/stores/GameStore';
+import { CIVILIZATIONS } from '@/data/GameData';
+import { TERRAIN_TYPES, TILE_SIZE } from '@/data/TerrainData';
 import MiniMap from './MiniMap';
 import '../../styles/sidePanel.css';
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useGameStore } from '../stores/GameStore';
+import { useGameStore } from '@/stores/GameStore';
 import GameEngine from '@/game/engine/GameEngine.js';
 
 const MinimalApp = () => {

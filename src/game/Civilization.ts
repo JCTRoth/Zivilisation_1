@@ -1,7 +1,7 @@
 // Civilization System - Legacy Implementation (Converted to TypeScript)
 
 import { Constants } from '../utils/Constants';
-import { GameUtils, MathUtils, EventEmitter } from '../utils/Helpers';
+import { MathUtils, EventEmitter } from '../utils/Helpers';
 import { CITY_NAMES } from './City';
 
 // Type definitions

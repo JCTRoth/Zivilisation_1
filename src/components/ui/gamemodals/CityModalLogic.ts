@@ -1,14 +1,14 @@
 /// <reference types="vite/client" />
 
 import { ModalUtils } from './ModalUtils';
-import { UNIT_PROPS } from '../../../utils/Constants';
-import { CityUtils } from '../../../utils/Helpers';
+import { UNIT_PROPS } from '@/utils/Constants';
+import { CityUtils } from '@/utils/Helpers';
 
 export class CityModalLogic {
-  private city: any;
-  private gameEngine: any;
+  private readonly city: any;
+  private readonly gameEngine: any;
   private actions: any;
-  private currentPlayer: any;
+  private readonly currentPlayer: any;
 
   constructor(city: any, gameEngine: any, actions: any, currentPlayer: any) {
     this.city = city;

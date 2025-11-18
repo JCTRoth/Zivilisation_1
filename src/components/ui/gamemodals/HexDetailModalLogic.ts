@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 
 export class HexDetailModalLogic {
-  private selectedHex: any;
-  private map: any;
+  private readonly selectedHex: any;
+  private readonly map: any;
   private units: any[];
   private cities: any[];
 

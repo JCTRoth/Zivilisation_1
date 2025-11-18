@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Button, ButtonGroup, ProgressBar, ListGroup } from 'react-bootstrap';
+import { Card, Button, ButtonGroup, ProgressBar } from 'react-bootstrap';
 import { useGameStore } from '../../stores/GameStore';
 import { UNIT_PROPS, BUILDING_PROPS, UnitProperties } from '../../utils/Constants';
 import type { GameEngine } from '../../../types/game';

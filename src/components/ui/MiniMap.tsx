@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../../stores/GameStore';
+import { Constants } from '../../utils/Constants';
+import { UNIT_TYPES } from '../../data/GameData';
 import '../../styles/miniMap.css';
 
 // Declare window properties
@@ -10,8 +12,6 @@ declare global {
     __MINIMAP_DRAWN_ONCE?: boolean;
   }
 }
-import { Constants } from '../../utils/Constants';
-import { UNIT_TYPES } from '../../data/GameData';
 
 // Top-level evaluation marker for debugging whether this module is actually loaded by Vite/React
 if (typeof window !== 'undefined') {

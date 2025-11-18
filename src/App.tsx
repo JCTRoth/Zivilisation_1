@@ -18,7 +18,6 @@ function App() {
   const setCamera = useGameStore(state => state.actions.updateCamera);
   const [gameEngine, setGameEngine] = useState(null);
   const [error, setError] = useState(null);
-  const [selectedCity, setSelectedCity] = useState(null);
   const [activeMenu, setActiveMenu] = useState(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [showHexDetail, setShowHexDetail] = useState(false);

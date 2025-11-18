@@ -1,5 +1,5 @@
-import { Constants } from '../../utils/Constants.js';
-import { MathUtils } from '../../utils/Helpers.js';
+import { Constants } from '@/utils/Constants';
+import { MathUtils } from '@/utils/Helpers';
 import type { SquareGrid } from '../HexGrid.js';
 import type { GameMap } from '../Map.js';
 import type { Unit } from '../Unit.js';
@@ -43,7 +43,7 @@ interface Vertex {
     y: number;
 }
 
-export class Renderer {
+class Renderer {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
     private miniMapCanvas: HTMLCanvasElement;
@@ -193,7 +193,7 @@ export class Renderer {
             this.ctx.fillStyle = 'rgba(255, 255, 128, 0.3)';
 
             this.highlightedHexes.forEach(hex => {
-                this.fillHex(hex.col, hex.row);
+                this.drawHexOutline(hex.col, hex.row);
             });
         }
     }
@@ -203,26 +203,18 @@ export class Renderer {
         if (!terrainProps) return;
 
         this.ctx.fillStyle = terrainProps.color;
-        this.fillHex(col, row);
+        this.drawHexOutline(col, row);
 
         // Add texture or pattern based on terrain type
         this.addTerrainTexture(col, row, terrainType);
     }
 
-    private fillHex(col: number, row: number): void {
-        const vertices = this.getTransformedVertices(col, row);
-
-        this.ctx.beginPath();
-        this.ctx.moveTo(vertices[0].x, vertices[0].y);
-
-        for (let i = 1; i < vertices.length; i++) {
-            this.ctx.lineTo(vertices[i].x, vertices[i].y);
-        }
-
-        this.ctx.closePath();
-        this.ctx.fill();
-    }
-
+    /**
+     * Draw the outline of a hex at the given column and row.
+     * @param col
+     * @param row
+     * @private
+     */
     private drawHexOutline(col: number, row: number): void {
         const vertices = this.getTransformedVertices(col, row);
 
@@ -237,6 +229,12 @@ export class Renderer {
         this.ctx.stroke();
     }
 
+    /**
+     * Get the transformed vertices of a hex at the given column and row.
+     * @param col
+     * @param row
+     * @private
+     */
     private getTransformedVertices(col: number, row: number): Vertex[] {
         const vertices = this.grid!.getSquareVertices(col, row);
         return vertices.map(vertex => ({
@@ -245,6 +243,13 @@ export class Renderer {
         }));
     }
 
+    /**
+     * Add texture or pattern to a terrain type at the given column and row.
+     * @param col
+     * @param row
+     * @param terrainType
+     * @private
+     */
     private addTerrainTexture(col: number, row: number, terrainType: string): void {
         const center = this.worldToScreen(this.grid!.squareToScreen(col, row));
         const size = this.grid!.tileSize * this.camera.zoom * 0.5;
@@ -478,3 +483,5 @@ export class Renderer {
         miniCtx.strokeRect(viewX, viewY, viewW, viewH);
     }
 }
+
+export default Renderer

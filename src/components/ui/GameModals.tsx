@@ -3,10 +3,9 @@ import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import CityModal from './gamemodals/CityModal';
 import HexDetailModal from './gamemodals/HexDetailModal';
-import { useGameStore } from '../../stores/GameStore';
-import { CityUtils } from '../../utils/Helpers';
-import { UNIT_PROPS } from '../../utils/Constants';
-import { BUILDING_PROPERTIES } from '../../data/BuildingConstants';
+import { useGameStore } from '@/stores/GameStore';
+import { UNIT_PROPS } from '@/utils/Constants';
+import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
 import '../../styles/gameModals.css';
 
 const GameModals = ({ gameEngine }) => {
@@ -17,7 +16,7 @@ const GameModals = ({ gameEngine }) => {
   const selectedCityId: string | null = useGameStore(state => state.gameState.selectedCity);
   const cities = useGameStore(state => state.cities);
   const technologies = useGameStore(state => state.technologies);
-  const playerResources = useGameStore(state => state.playerResources);
+  useGameStore(state => state.playerResources);
   const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
 
   const units = useGameStore(state => state.units);

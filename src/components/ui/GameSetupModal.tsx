@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
-import { CIVILIZATIONS, DIFFICULTY_LEVELS } from '../../data/GameData';
+import { CIVILIZATIONS, DIFFICULTY_LEVELS } from '@/data/GameData';
 import '../../styles/gameSetupModal.css';
 
 function GameSetupModal({ show, onStart }) {

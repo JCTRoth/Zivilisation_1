@@ -1,6 +1,6 @@
 import React from 'react';
 import { Navbar, Nav, Button, Badge } from 'react-bootstrap';
-import { useGameStore } from '../../stores/GameStore';
+import { useGameStore } from '@/stores/GameStore';
 
 interface TopBarProps {
   gameEngine: any;

@@ -1,5 +1,5 @@
 import { Technology } from '../../types/game';
-import { TECHNOLOGIES_DATA } from '../data/TechnologyData';
+import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 
 export class TechnologyManager {
   private technologies: Technology[];

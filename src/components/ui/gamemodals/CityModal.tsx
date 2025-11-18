@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Modal, Button, Tab, Tabs } from 'react-bootstrap';
 import { CityModalLogic } from './CityModalLogic';
 import { ModalUtils } from './ModalUtils';
-import { UNIT_PROPS, BUILDING_PROPS } from '../../../utils/Constants';
-import { BUILDING_PROPERTIES } from '../../../data/BuildingConstants';
+import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
+import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
 import ProductionSelectionModal from './ProductionSelectionModal';
 
 interface CityModalProps {

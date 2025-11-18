@@ -357,14 +357,6 @@ export class UIManager extends EventEmitter {
             </div>
         `;
     }    // Get production item name
-    private getProductionName(production: ProductionItem): string {
-        if (production.type === 'unit') {
-            return Constants.UNIT_PROPS[production.unitType!]?.name || production.unitType!;
-        } else if (production.type === 'building') {
-            return Constants.BUILDING_PROPS[production.buildingType!]?.name || production.buildingType!;
-        }
-        return 'Unknown';
-    }
 
     // Calculate production progress percentage
     private getProductionProgress(cityInfo: CityInfo): number {
