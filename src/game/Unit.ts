@@ -1,8 +1,8 @@
 // Unit System - Legacy Implementation (Converted to TypeScript)
 
-import { CONSTANTS } from '../utils/constants';
-import { GameUtils, EventEmitter } from '../utils/helpers';
-import type { Civilization } from './civilization';
+import { Constants } from '../utils/Constants';
+import { GameUtils, EventEmitter } from '../utils/Helpers';
+import type { Civilization } from './Civilization';
 
 // Type definitions
 interface Position {
@@ -148,7 +148,7 @@ export class Unit extends EventEmitter {
         this.row = row;
 
         // Initialize unit properties from constants
-        const unitProps = CONSTANTS.UNIT_PROPS[type];
+        const unitProps = Constants.UNIT_PROPS[type];
         if (!unitProps) {
             throw new Error(`Unknown unit type: ${type}`);
         }
@@ -419,7 +419,7 @@ export class Unit extends EventEmitter {
 
     // Check if unit can settle at current location
     canSettleAt(tile: any, gameMap: any): boolean {
-        if (!tile || tile.terrain === CONSTANTS.TERRAIN.OCEAN) {
+        if (!tile || tile.terrain === Constants.TERRAIN.OCEAN) {
             return false;
         }
 
@@ -448,7 +448,7 @@ export class Unit extends EventEmitter {
             return false;
         }
 
-        const improvementProps = CONSTANTS.IMPROVEMENT_PROPS[improvementType];
+        const improvementProps = Constants.IMPROVEMENT_PROPS[improvementType];
         if (!improvementProps) {
             return false;
         }

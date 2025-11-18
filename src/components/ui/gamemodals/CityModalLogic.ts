@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 
 import { ModalUtils } from './ModalUtils';
-import { UNIT_PROPS } from '../../../utils/constants';
-import { CityUtils } from '../../../utils/helpers';
+import { UNIT_PROPS } from '../../../utils/Constants';
+import { CityUtils } from '../../../utils/Helpers';
 
 export class CityModalLogic {
   private city: any;

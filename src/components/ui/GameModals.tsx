@@ -3,10 +3,10 @@ import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import CityModal from './gamemodals/CityModal';
 import HexDetailModal from './gamemodals/HexDetailModal';
-import { useGameStore } from '../../stores/gameStore';
-import { CityUtils } from '../../utils/helpers';
-import { UNIT_PROPS } from '../../utils/constants';
-import { BUILDING_PROPERTIES } from '../../data/buildingConstants';
+import { useGameStore } from '../../stores/GameStore';
+import { CityUtils } from '../../utils/Helpers';
+import { UNIT_PROPS } from '../../utils/Constants';
+import { BUILDING_PROPERTIES } from '../../data/BuildingConstants';
 import '../../styles/gameModals.css';
 
 const GameModals = ({ gameEngine }) => {

@@ -1,8 +1,8 @@
-import { SquareGrid } from '../game/hexGrid';
-import { CONSTANTS, TERRAIN_PROPS, UNIT_PROPS } from '../utils/constants';
-import { CIVILIZATIONS, TECHNOLOGIES, UNIT_TYPES } from '../data/gameData';
+import { SquareGrid } from '../HexGrid';
+import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '../../utils/Constants';
+import { CIVILIZATIONS, TECHNOLOGIES, UNIT_TYPES } from '../../data/GameData';
 import { ProductionManager } from './ProductionManager';
-import type { GameActions, Unit, City, Civilization } from '../../types/game';
+import type { GameActions, Unit, City, Civilization } from '../../../types/game';
 
 interface GameSettings {
   difficulty: string;
@@ -337,7 +337,7 @@ export default class GameEngine {
     }
     
     // Create hex grid system
-    this.squareGrid = new SquareGrid(CONSTANTS.MAP_WIDTH, CONSTANTS.MAP_HEIGHT);
+    this.squareGrid = new SquareGrid(Constants.MAP_WIDTH, Constants.MAP_HEIGHT);
     
     // Generate initial game state
     await this.generateWorld();
@@ -369,25 +369,25 @@ export default class GameEngine {
     const tiles = [];
     
     // Simple terrain generation - can be enhanced with noise functions
-    for (let row = 0; row < CONSTANTS.MAP_HEIGHT; row++) {
-      for (let col = 0; col < CONSTANTS.MAP_WIDTH; col++) {
-        let terrainType: string = CONSTANTS.TERRAIN.GRASSLAND;
+    for (let row = 0; row < Constants.MAP_HEIGHT; row++) {
+      for (let col = 0; col < Constants.MAP_WIDTH; col++) {
+        let terrainType: string = Constants.TERRAIN.GRASSLAND;
         
         // Ocean around edges
-        if (row === 0 || row === CONSTANTS.MAP_HEIGHT - 1 || 
-            col === 0 || col === CONSTANTS.MAP_WIDTH - 1) {
-          terrainType = CONSTANTS.TERRAIN.OCEAN;
+        if (row === 0 || row === Constants.MAP_HEIGHT - 1 ||
+            col === 0 || col === Constants.MAP_WIDTH - 1) {
+          terrainType = Constants.TERRAIN.OCEAN;
         }
         // Random terrain generation
         else {
           const rand = Math.random();
-          if (rand < 0.05) terrainType = CONSTANTS.TERRAIN.MOUNTAINS;
-          else if (rand < 0.2) terrainType = CONSTANTS.TERRAIN.HILLS;
-          else if (rand < 0.3) terrainType = CONSTANTS.TERRAIN.FOREST;
-          else if (rand < 0.4) terrainType = CONSTANTS.TERRAIN.DESERT;
-          else if (rand < 0.5) terrainType = CONSTANTS.TERRAIN.PLAINS;
-          else if (rand < 0.6) terrainType = CONSTANTS.TERRAIN.TUNDRA;
-          else terrainType = CONSTANTS.TERRAIN.GRASSLAND;
+          if (rand < 0.05) terrainType = Constants.TERRAIN.MOUNTAINS;
+          else if (rand < 0.2) terrainType = Constants.TERRAIN.HILLS;
+          else if (rand < 0.3) terrainType = Constants.TERRAIN.FOREST;
+          else if (rand < 0.4) terrainType = Constants.TERRAIN.DESERT;
+          else if (rand < 0.5) terrainType = Constants.TERRAIN.PLAINS;
+          else if (rand < 0.6) terrainType = Constants.TERRAIN.TUNDRA;
+          else terrainType = Constants.TERRAIN.GRASSLAND;
         }
         
         tiles.push({
@@ -403,8 +403,8 @@ export default class GameEngine {
     }
     
     this.map = {
-      width: CONSTANTS.MAP_WIDTH,
-      height: CONSTANTS.MAP_HEIGHT,
+      width: Constants.MAP_WIDTH,
+      height: Constants.MAP_HEIGHT,
       tiles
     };
     
@@ -466,12 +466,12 @@ export default class GameEngine {
       let startPos = null;
       let attempts = 0;
       while (!startPos && attempts < 100) {
-        const col = Math.floor(Math.random() * (CONSTANTS.MAP_WIDTH - 20)) + 10;
-        const row = Math.floor(Math.random() * (CONSTANTS.MAP_HEIGHT - 20)) + 10;
+        const col = Math.floor(Math.random() * (Constants.MAP_WIDTH - 20)) + 10;
+        const row = Math.floor(Math.random() * (Constants.MAP_HEIGHT - 20)) + 10;
         
         const tile = this.getTileAt(col, row);
-        if (tile && tile.type !== CONSTANTS.TERRAIN.OCEAN && 
-            tile.type !== CONSTANTS.TERRAIN.MOUNTAINS) {
+        if (tile && tile.type !== Constants.TERRAIN.OCEAN &&
+            tile.type !== Constants.TERRAIN.MOUNTAINS) {
           // Check if position is far enough from other civs
           let validPosition = true;
           for (const otherCiv of this.civilizations) {
@@ -943,7 +943,7 @@ export default class GameEngine {
 
     // Check if location is valid for city
     const tile = this.getTileAt(settler.col, settler.row);
-    if (!tile || tile.type === CONSTANTS.TERRAIN.OCEAN) return false;
+    if (!tile || tile.type === Constants.TERRAIN.OCEAN) return false;
 
     // Check if too close to another city
     for (const city of this.cities) {

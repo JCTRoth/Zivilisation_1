@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, Button, Tab, Tabs } from 'react-bootstrap';
-import { UNIT_PROPS, BUILDING_PROPS } from '../../../utils/constants';
+import { UNIT_PROPS, BUILDING_PROPS } from '../../../utils/Constants';
 
 interface ProductionSelectionModalProps {
   show: boolean;

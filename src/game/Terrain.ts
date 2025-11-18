@@ -1,7 +1,7 @@
 // Terrain and Tile System - Legacy Implementation (Converted to TypeScript)
 
-import { CONSTANTS } from '../../utils/constants';
-import { ArrayUtils, MathUtils } from '../../utils/helpers';
+import { Constants } from '../utils/Constants';
+import { ArrayUtils, MathUtils } from '../utils/Helpers';
 
 // Type definitions
 interface Improvement {
@@ -37,10 +37,10 @@ interface TerrainConstants {
     IMPROVEMENT_PROPS: Record<string, ImprovementProperties>;
 }
 
-// Extend CONSTANTS with terrain-specific properties
+// Extend Constants with terrain-specific properties
 const TERRAIN_CONSTANTS: TerrainConstants = {
-    TERRAIN_PROPS: CONSTANTS.TERRAIN_PROPS,
-    RESOURCE_PROPS: CONSTANTS.RESOURCE_PROPS,
+    TERRAIN_PROPS: Constants.TERRAIN_PROPS,
+    RESOURCE_PROPS: Constants.RESOURCE_PROPS,
     IMPROVEMENT_PROPS: {
         road: {
             name: 'Road',
@@ -356,12 +356,12 @@ export class Tile {
         let cost = this.movementCost;
 
         // Apply unit-specific modifiers
-        const unitProps = CONSTANTS.UNIT_PROPS[unit.type];
-        if (unitProps.naval && this.terrain !== CONSTANTS.TERRAIN.OCEAN) {
+        const unitProps = Constants.UNIT_PROPS[unit.type];
+        if (unitProps.naval && this.terrain !== Constants.TERRAIN.OCEAN) {
             return Infinity; // Naval units can't enter land
         }
 
-        if (!unitProps.naval && this.terrain === CONSTANTS.TERRAIN.OCEAN) {
+        if (!unitProps.naval && this.terrain === Constants.TERRAIN.OCEAN) {
             return Infinity; // Land units can't enter ocean
         }
 
@@ -470,40 +470,40 @@ export class TerrainGenerator {
 
         // Ocean (lowest elevation)
         if (elevation < -0.3) {
-            return CONSTANTS.TERRAIN.OCEAN;
+            return Constants.TERRAIN.OCEAN;
         }
 
         // Mountains (highest elevation)
         if (elevation > 0.4) {
-            return CONSTANTS.TERRAIN.MOUNTAINS;
+            return Constants.TERRAIN.MOUNTAINS;
         }
 
         // Hills (high elevation)
         if (elevation > 0.2) {
-            return CONSTANTS.TERRAIN.HILLS;
+            return Constants.TERRAIN.HILLS;
         }
 
         // Temperature and humidity based terrain
         if (temperature < -0.2) {
-            return CONSTANTS.TERRAIN.TUNDRA;
+            return Constants.TERRAIN.TUNDRA;
         }
 
         if (temperature > 0.3 && humidity < -0.2) {
-            return CONSTANTS.TERRAIN.DESERT;
+            return Constants.TERRAIN.DESERT;
         }
 
         // Forest (moderate temperature and high humidity)
         if (humidity > 0.2 && temperature > -0.1 && temperature < 0.3) {
-            return CONSTANTS.TERRAIN.FOREST;
+            return Constants.TERRAIN.FOREST;
         }
 
         // Plains (moderate conditions)
         if (humidity < 0.1) {
-            return CONSTANTS.TERRAIN.PLAINS;
+            return Constants.TERRAIN.PLAINS;
         }
 
         // Default to grassland
-        return CONSTANTS.TERRAIN.GRASSLAND;
+        return Constants.TERRAIN.GRASSLAND;
     }
 
     private postProcessTerrain(tiles: Tile[][]): void {
@@ -531,7 +531,7 @@ export class TerrainGenerator {
 
                         if (newRow >= 0 && newRow < this.height &&
                             newCol >= 0 && newCol < this.width) {
-                            if (tiles[newRow][newCol].terrain === CONSTANTS.TERRAIN.OCEAN) {
+                            if (tiles[newRow][newCol].terrain === Constants.TERRAIN.OCEAN) {
                                 oceanNeighbors++;
                             } else {
                                 landNeighbors++;
@@ -541,10 +541,10 @@ export class TerrainGenerator {
                 }
 
                 // Smooth isolated tiles
-                if (currentTile.terrain === CONSTANTS.TERRAIN.OCEAN && oceanNeighbors < 3) {
-                    newTiles[row][col] = new Tile(col, row, CONSTANTS.TERRAIN.GRASSLAND);
-                } else if (currentTile.terrain !== CONSTANTS.TERRAIN.OCEAN && landNeighbors < 3) {
-                    newTiles[row][col] = new Tile(col, row, CONSTANTS.TERRAIN.OCEAN);
+                if (currentTile.terrain === Constants.TERRAIN.OCEAN && oceanNeighbors < 3) {
+                    newTiles[row][col] = new Tile(col, row, Constants.TERRAIN.GRASSLAND);
+                } else if (currentTile.terrain !== Constants.TERRAIN.OCEAN && landNeighbors < 3) {
+                    newTiles[row][col] = new Tile(col, row, Constants.TERRAIN.OCEAN);
                 } else {
                     newTiles[row][col] = currentTile;
                 }
@@ -566,7 +566,7 @@ export class TerrainGenerator {
         // Find potential river sources (mountains)
         for (let row = 0; row < this.height; row++) {
             for (let col = 0; col < this.width; col++) {
-                if (tiles[row][col].terrain === CONSTANTS.TERRAIN.MOUNTAINS) {
+                if (tiles[row][col].terrain === Constants.TERRAIN.MOUNTAINS) {
                     riverSources.push({ col, row });
                 }
             }

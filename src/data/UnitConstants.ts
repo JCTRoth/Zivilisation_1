@@ -1,6 +1,6 @@
 // Unit Constants - Unit types and properties
 
-import { UnitProperties } from './gameConstants';
+import { UnitProperties } from './GameConstants';
 
 export const UNIT_TYPES = {
     // Military Units

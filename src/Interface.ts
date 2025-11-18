@@ -1,9 +1,9 @@
-import { CONSTANTS } from '../utils/constants.js';
-import { DomUtils, GameUtils, EventEmitter } from '../utils/helpers.js';
-import type { GameMap } from '../game/map.js';
-import type { Unit } from '../game/unit.js';
-import type { City } from '../game/city.js';
-import type { Civilization } from '../game/civilization.js';
+import { Constants } from './utils/Constants.js';
+import { DomUtils, GameUtils, EventEmitter } from './utils/Helpers.js';
+import type { GameMap } from './game/Map.js';
+import type { Unit } from './game/Unit.js';
+import type { City } from './game/City.js';
+import type { Civilization } from './game/Civilization.js';
 
 interface UIElement {
     civilizationName: HTMLElement;
@@ -359,9 +359,9 @@ export class UIManager extends EventEmitter {
     }    // Get production item name
     private getProductionName(production: ProductionItem): string {
         if (production.type === 'unit') {
-            return CONSTANTS.UNIT_PROPS[production.unitType!]?.name || production.unitType!;
+            return Constants.UNIT_PROPS[production.unitType!]?.name || production.unitType!;
         } else if (production.type === 'building') {
-            return CONSTANTS.BUILDING_PROPS[production.buildingType!]?.name || production.buildingType!;
+            return Constants.BUILDING_PROPS[production.buildingType!]?.name || production.buildingType!;
         }
         return 'Unknown';
     }
@@ -375,9 +375,9 @@ export class UIManager extends EventEmitter {
     // Get production cost
     private getProductionCost(production: ProductionItem): number {
         if (production.type === 'unit') {
-            return CONSTANTS.UNIT_PROPS[production.unitType!]?.cost || 0;
+            return Constants.UNIT_PROPS[production.unitType!]?.cost || 0;
         } else if (production.type === 'building') {
-            return CONSTANTS.BUILDING_PROPS[production.buildingType!]?.cost || 0;
+            return Constants.BUILDING_PROPS[production.buildingType!]?.cost || 0;
         }
         return 0;
     }
@@ -456,7 +456,7 @@ export class UIManager extends EventEmitter {
 
         // Units
         content += '<h5>Units</h5>';
-        for (const [unitType, props] of Object.entries(CONSTANTS.UNIT_PROPS)) {
+        for (const [unitType, props] of Object.entries(Constants.UNIT_PROPS)) {
             if (this.canProduceUnit(unitType, activeCiv)) {
                 content += `
                     <div class="production-option" onclick="game.ui.addToQueue('unit', '${unitType}')">
@@ -469,7 +469,7 @@ export class UIManager extends EventEmitter {
 
         // Buildings
         content += '<h5>Buildings</h5>';
-        for (const [buildingType, props] of Object.entries(CONSTANTS.BUILDING_PROPS)) {
+        for (const [buildingType, props] of Object.entries(Constants.BUILDING_PROPS)) {
             if (this.canProduceBuilding(buildingType, activeCiv)) {
                 content += `
                     <div class="production-option" onclick="game.ui.addToQueue('building', '${buildingType}')">
@@ -511,7 +511,7 @@ export class UIManager extends EventEmitter {
 
         let content = '<div class="buildings-list">';
         for (const buildingType of buildings) {
-            const props = CONSTANTS.BUILDING_PROPS[buildingType];
+            const props = Constants.BUILDING_PROPS[buildingType];
             if (props) {
                 content += `
                     <div class="building-item">

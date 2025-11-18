@@ -1,9 +1,9 @@
-import { CONSTANTS } from '../utils/constants.js';
-import { MathUtils } from '../utils/helpers.js';
-import type { SquareGrid } from '../game/hexGrid.js';
-import type { GameMap } from '../game/map.js';
-import type { Unit } from '../game/unit.js';
-import type { City } from '../game/city.js';
+import { Constants } from '../../utils/Constants.js';
+import { MathUtils } from '../../utils/Helpers.js';
+import type { SquareGrid } from '../HexGrid.js';
+import type { GameMap } from '../Map.js';
+import type { Unit } from '../Unit.js';
+import type { City } from '../City.js';
 
 interface Camera {
     x: number;
@@ -182,7 +182,7 @@ export class Renderer {
 
     private renderSelection(): void {
         if (this.selectedHex) {
-            this.ctx.strokeStyle = CONSTANTS.COLORS.SELECTED;
+            this.ctx.strokeStyle = Constants.COLORS.SELECTED;
             this.ctx.lineWidth = 3;
             this.drawHexOutline(this.selectedHex.col, this.selectedHex.row);
         }
@@ -199,7 +199,7 @@ export class Renderer {
     }
 
     private drawHex(col: number, row: number, terrainType: string): void {
-        const terrainProps = CONSTANTS.TERRAIN_PROPS[terrainType];
+        const terrainProps = Constants.TERRAIN_PROPS[terrainType];
         if (!terrainProps) return;
 
         this.ctx.fillStyle = terrainProps.color;
@@ -252,7 +252,7 @@ export class Renderer {
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
 
         switch (terrainType) {
-            case CONSTANTS.TERRAIN.FOREST:
+            case Constants.TERRAIN.FOREST:
                 // Draw simple trees
                 for (let i = 0; i < 3; i++) {
                     const angle = (i / 3) * Math.PI * 2;
@@ -265,7 +265,7 @@ export class Renderer {
                 }
                 break;
 
-            case CONSTANTS.TERRAIN.HILLS:
+            case Constants.TERRAIN.HILLS:
                 // Draw hill bumps
                 this.ctx.beginPath();
                 this.ctx.arc(center.x - size * 0.2, center.y, size * 0.3, 0, Math.PI, true);
@@ -273,7 +273,7 @@ export class Renderer {
                 this.ctx.fill();
                 break;
 
-            case CONSTANTS.TERRAIN.MOUNTAINS:
+            case Constants.TERRAIN.MOUNTAINS:
                 // Draw mountain peaks
                 this.ctx.beginPath();
                 this.ctx.moveTo(center.x - size * 0.3, center.y + size * 0.2);
@@ -316,14 +316,14 @@ export class Renderer {
 
     private getUnitCharacter(unitType: string): string {
         const chars: Record<string, string> = {
-            [CONSTANTS.UNIT_TYPES.SETTLER]: 'S',
-            [CONSTANTS.UNIT_TYPES.MILITIA]: 'M',
-            [CONSTANTS.UNIT_TYPES.PHALANX]: 'P',
-            [CONSTANTS.UNIT_TYPES.LEGION]: 'L',
-            [CONSTANTS.UNIT_TYPES.CATAPULT]: 'C',
-            [CONSTANTS.UNIT_TYPES.TRIREME]: 'T',
-            [CONSTANTS.UNIT_TYPES.CAVALRY]: 'H',
-            [CONSTANTS.UNIT_TYPES.CHARIOT]: 'R'
+            [Constants.UNIT_TYPES.SETTLER]: 'S',
+            [Constants.UNIT_TYPES.MILITIA]: 'M',
+            [Constants.UNIT_TYPES.PHALANX]: 'P',
+            [Constants.UNIT_TYPES.LEGION]: 'L',
+            [Constants.UNIT_TYPES.CATAPULT]: 'C',
+            [Constants.UNIT_TYPES.TRIREME]: 'T',
+            [Constants.UNIT_TYPES.CAVALRY]: 'H',
+            [Constants.UNIT_TYPES.CHARIOT]: 'R'
         };
         return chars[unitType] || '?';
     }
@@ -445,7 +445,7 @@ export class Renderer {
                 const tile = gameMap.getTile(col, row);
                 if (!tile) continue;
 
-                const terrainProps = CONSTANTS.TERRAIN_PROPS[tile.terrain];
+                const terrainProps = Constants.TERRAIN_PROPS[tile.terrain];
                 miniCtx.fillStyle = terrainProps.color;
                 miniCtx.fillRect(col * scaleX, row * scaleY, scaleX, scaleY);
             }

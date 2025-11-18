@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useGameStore } from '../stores/gameStore';
+import { useGameStore } from '../stores/GameStore';
 import type { GameEngine } from '../../types/game';
 
 /**

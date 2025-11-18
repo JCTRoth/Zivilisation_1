@@ -1,4 +1,4 @@
-import { CONSTANTS } from '../utils/constants';
+import { Constants } from '../utils/Constants';
 
 /**
  * Square Grid System for React
@@ -28,7 +28,7 @@ export class SquareGrid {
     constructor(width: number, height: number) {
         this.width = width;
         this.height = height;
-        this.tileSize = CONSTANTS.HEX_SIZE * 2; // Use hex size as base, but make squares larger for similar visual density
+        this.tileSize = Constants.HEX_SIZE * 2; // Use hex size as base, but make squares larger for similar visual density
     }
 
     // Convert square coordinates to screen position

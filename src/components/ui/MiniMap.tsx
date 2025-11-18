@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useGameStore } from '../../stores/gameStore';
+import { useGameStore } from '../../stores/GameStore';
 import '../../styles/miniMap.css';
 
 // Declare window properties
@@ -10,8 +10,8 @@ declare global {
     __MINIMAP_DRAWN_ONCE?: boolean;
   }
 }
-import { CONSTANTS } from '../../utils/constants';
-import { UNIT_TYPES } from '../../data/gameData';
+import { Constants } from '../../utils/Constants';
+import { UNIT_TYPES } from '../../data/GameData';
 
 // Top-level evaluation marker for debugging whether this module is actually loaded by Vite/React
 if (typeof window !== 'undefined') {
@@ -102,7 +102,7 @@ const MiniMap = ({ gameEngine }) => {
         const y = row * scaleY;
 
         const typeKey = (tile.type || '').toLowerCase();
-  const terrainProps = CONSTANTS.TERRAIN_PROPS[typeKey];
+  const terrainProps = Constants.TERRAIN_PROPS[typeKey];
         if (!terrainProps && !window.__MINIMAP_MISSED_TYPE_REPORTED) {
           console.warn('[MiniMap] Missing terrain props for type:', tile.type);
           window.__MINIMAP_MISSED_TYPE_REPORTED = true;
@@ -182,7 +182,7 @@ const MiniMap = ({ gameEngine }) => {
     }
 
   // Draw viewport indicator in tile-space so it aligns to square tiles
-  const tileSize = CONSTANTS.HEX_SIZE || 32; // world pixels per tile (square tiles)
+  const tileSize = Constants.HEX_SIZE || 32; // world pixels per tile (square tiles)
   // scaleX/Y maps tiles -> CSS pixels per tile
   const cssPerTileX = cssWidth / dataSource.width;
   const cssPerTileY = cssHeight / dataSource.height;
@@ -243,7 +243,7 @@ const MiniMap = ({ gameEngine }) => {
     const y = event.clientY - rect.top;
 
   // Convert minimap coordinates (CSS pixels) to world coordinates using square tile sizes
-  const tileSize = 32; // Same as TILE_SIZE in Civ1GameCanvas
+  const tileSize = 32; // Same as TILE_SIZE in GameCanvas
   const mapPixelWidth = mapData.width * tileSize;
   const mapPixelHeight = mapData.height * tileSize;
 

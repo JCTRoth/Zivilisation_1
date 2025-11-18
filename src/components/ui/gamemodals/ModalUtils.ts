@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
-import { UNIT_PROPS } from '../../../utils/constants';
-import { BUILDING_PROPERTIES } from '../../../data/buildingConstants';
+import { UNIT_PROPS } from '../../../utils/Constants';
+import { BUILDING_PROPERTIES } from '../../../data/BuildingConstants';
 
 // Shared utilities for modal logic
 export class ModalUtils {

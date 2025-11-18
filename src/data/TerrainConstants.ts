@@ -1,6 +1,6 @@
 // Terrain logic constants (yields, movement, resources) — game-facing data
 
-import { TerrainProperties } from './gameConstants';
+import { TerrainProperties } from './GameConstants';
 
 export interface SpecialResource {
     name: string;

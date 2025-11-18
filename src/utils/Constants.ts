@@ -2,28 +2,28 @@
 // This file maintains backward compatibility while organizing constants into logical modules
 
 // Game Constants
-export * from '../data/gameConstants';
+export * from '../data/GameConstants';
 
 // Terrain Constants (canonical)
-export * from '../data/terrainConstants';
+export * from '../data/TerrainConstants';
 
 // Unit Constants
-export * from '../data/unitConstants';
+export * from '../data/UnitConstants';
 
 // Building Constants
-export * from '../data/buildingConstants';
+export * from '../data/BuildingConstants';
 
 // Improvement Constants
-export * from '../data/improvementConstants';
+export * from '../data/ImprovementConstants';
 
-// Legacy CONSTANTS object for backward compatibility
-import { GAME_CONSTANTS } from '../data/gameConstants';
-import { TERRAIN_TYPES as T_TYPES, TERRAIN_PROPERTIES as T_PROPS, SPECIAL_RESOURCES as S_RESOURCES } from '../data/terrainConstants';
-import { UNIT_TYPES as U_TYPES, UNIT_PROPERTIES as U_PROPS } from '../data/unitConstants';
-import { BUILDING_TYPES as B_TYPES, BUILDING_PROPERTIES as B_PROPS } from '../data/buildingConstants';
-import { IMPROVEMENT_TYPES as I_TYPES, IMPROVEMENT_PROPERTIES as I_PROPS } from '../data/improvementConstants';
+// Legacy Constants object for backward compatibility
+import { GAME_CONSTANTS } from '../data/GameConstants';
+import { TERRAIN_TYPES as T_TYPES, TERRAIN_PROPERTIES as T_PROPS, SPECIAL_RESOURCES as S_RESOURCES } from '../data/TerrainConstants';
+import { UNIT_TYPES as U_TYPES, UNIT_PROPERTIES as U_PROPS } from '../data/UnitConstants';
+import { BUILDING_TYPES as B_TYPES, BUILDING_PROPERTIES as B_PROPS } from '../data/BuildingConstants';
+import { IMPROVEMENT_TYPES as I_TYPES, IMPROVEMENT_PROPERTIES as I_PROPS } from '../data/ImprovementConstants';
 
-export const CONSTANTS = {
+export const Constants = {
     // Hex Grid Configuration
     HEX_SIZE: GAME_CONSTANTS.HEX_SIZE,
     HEX_WIDTH: GAME_CONSTANTS.HEX_WIDTH,
@@ -69,4 +69,4 @@ export const BUILDING_PROPS = B_PROPS;
 export const IMPROVEMENT_PROPS = I_PROPS;
 
 // Legacy exports for backward compatibility
-export { CONSTANTS as default };
+export { Constants as default };

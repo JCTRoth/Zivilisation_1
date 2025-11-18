@@ -1,5 +1,5 @@
-import { CONSTANTS } from '../utils/constants';
-import type { City } from '../../types/game';
+import { Constants } from '../../utils/Constants';
+import type { City } from '../../../types/game';
 
 /**
  * Production Manager - Handles city production, purchasing, and queuing

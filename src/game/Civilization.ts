@@ -1,8 +1,8 @@
 // Civilization System - Legacy Implementation (Converted to TypeScript)
 
-import { CONSTANTS } from '../utils/constants';
-import { GameUtils, MathUtils, EventEmitter } from '../utils/helpers';
-import { CITY_NAMES } from './city';
+import { Constants } from '../utils/Constants';
+import { GameUtils, MathUtils, EventEmitter } from '../utils/Helpers';
+import { CITY_NAMES } from './City';
 
 // Type definitions
 interface Personality {
@@ -103,8 +103,8 @@ export class Civilization extends EventEmitter {
         this.isHuman = isHuman;
 
         // Resources
-        this.gold = CONSTANTS.INITIAL_GOLD;
-        this.science = CONSTANTS.INITIAL_SCIENCE;
+        this.gold = Constants.INITIAL_GOLD;
+        this.science = Constants.INITIAL_SCIENCE;
 
         // Technologies
         this.technologies = new Set();
@@ -201,7 +201,7 @@ export class Civilization extends EventEmitter {
 
             // Subtract building maintenance
             for (const buildingType of city.buildings) {
-                const building = CONSTANTS.BUILDING_PROPS[buildingType];
+                const building = Constants.BUILDING_PROPS[buildingType];
                 if (building && building.maintenance) {
                     totalGold -= building.maintenance;
                 }
@@ -375,7 +375,7 @@ export class Civilization extends EventEmitter {
         // Evaluate expansion needs
         const expansionNeed = this.evaluateExpansionNeed(gameMap);
         if (expansionNeed > 30) {
-            priorities.push({ type: 'unit', unitType: CONSTANTS.UNIT_TYPES.SETTLER, priority: expansionNeed });
+            priorities.push({ type: 'unit', unitType: Constants.UNIT_TYPES.SETTLER, priority: expansionNeed });
         }
 
         // Evaluate infrastructure needs
@@ -393,7 +393,7 @@ export class Civilization extends EventEmitter {
         }
 
         // Default to basic military unit
-        return { type: 'unit', unitType: CONSTANTS.UNIT_TYPES.MILITIA };
+        return { type: 'unit', unitType: Constants.UNIT_TYPES.MILITIA };
     }
 
     // Evaluate military strength needs
@@ -459,7 +459,7 @@ export class Civilization extends EventEmitter {
     // Check if location is good for settlement
     isGoodSettlementSite(col: number, row: number, gameMap: any): boolean {
         const tile = gameMap.getTile(col, row);
-        if (!tile || tile.terrain === CONSTANTS.TERRAIN.OCEAN) return false;
+        if (!tile || tile.terrain === Constants.TERRAIN.OCEAN) return false;
 
         // Check minimum distance from other cities
         const minDistance = 3;
@@ -491,23 +491,23 @@ export class Civilization extends EventEmitter {
         const needs = new Map<string, number>();
 
         // Granary for growing cities
-        if (!city.hasBuilding(CONSTANTS.BUILDINGS.GRANARY) && city.population >= 3) {
-            needs.set(CONSTANTS.BUILDINGS.GRANARY, 40);
+        if (!city.hasBuilding(Constants.BUILDINGS.GRANARY) && city.population >= 3) {
+            needs.set(Constants.BUILDINGS.GRANARY, 40);
         }
 
         // Barracks for military production
-        if (!city.hasBuilding(CONSTANTS.BUILDINGS.BARRACKS) && this.personality.military > 5) {
-            needs.set(CONSTANTS.BUILDINGS.BARRACKS, 30);
+        if (!city.hasBuilding(Constants.BUILDINGS.BARRACKS) && this.personality.military > 5) {
+            needs.set(Constants.BUILDINGS.BARRACKS, 30);
         }
 
         // Temple for happiness
-        if (!city.hasBuilding(CONSTANTS.BUILDINGS.TEMPLE) && city.unhappiness > 20) {
-            needs.set(CONSTANTS.BUILDINGS.TEMPLE, 35);
+        if (!city.hasBuilding(Constants.BUILDINGS.TEMPLE) && city.unhappiness > 20) {
+            needs.set(Constants.BUILDINGS.TEMPLE, 35);
         }
 
         // Marketplace for trade
-        if (!city.hasBuilding(CONSTANTS.BUILDINGS.MARKETPLACE) && city.trade > 3) {
-            needs.set(CONSTANTS.BUILDINGS.MARKETPLACE, 25);
+        if (!city.hasBuilding(Constants.BUILDINGS.MARKETPLACE) && city.trade > 3) {
+            needs.set(Constants.BUILDINGS.MARKETPLACE, 25);
         }
 
         return needs;
@@ -516,18 +516,18 @@ export class Civilization extends EventEmitter {
     // Get best available military unit
     getBestMilitaryUnit(): string {
         // Check what units are available based on tech
-        const availableUnits: string[] = [CONSTANTS.UNIT_TYPES.MILITIA];
+        const availableUnits: string[] = [Constants.UNIT_TYPES.MILITIA];
 
         if (this.technologies.has('bronze_working')) {
-            availableUnits.push(CONSTANTS.UNIT_TYPES.PHALANX);
+            availableUnits.push(Constants.UNIT_TYPES.PHALANX);
         }
 
         if (this.technologies.has('iron_working')) {
-            availableUnits.push(CONSTANTS.UNIT_TYPES.LEGION);
+            availableUnits.push(Constants.UNIT_TYPES.LEGION);
         }
 
         if (this.technologies.has('horseback_riding')) {
-            availableUnits.push(CONSTANTS.UNIT_TYPES.CAVALRY);
+            availableUnits.push(Constants.UNIT_TYPES.CAVALRY);
         }
 
         // Return strongest available unit
@@ -867,42 +867,42 @@ export const CIVILIZATION_TEMPLATES: Record<string, CivilizationTemplate> = {
     romans: {
         name: 'Romans',
         leaderName: 'Caesar',
-        color: CONSTANTS.COLORS.PLAYER,
+        color: Constants.COLORS.PLAYER,
         cityNames: CITY_NAMES.romans,
         bonuses: { military: 1, construction: 1 }
     },
     babylonians: {
         name: 'Babylonians',
         leaderName: 'Hammurabi',
-        color: CONSTANTS.COLORS.AI_1,
+        color: Constants.COLORS.AI_1,
         cityNames: CITY_NAMES.babylonians,
         bonuses: { science: 1, agriculture: 1 }
     },
     germans: {
         name: 'Germans',
         leaderName: 'Frederick',
-        color: CONSTANTS.COLORS.AI_2,
+        color: Constants.COLORS.AI_2,
         cityNames: CITY_NAMES.germans,
         bonuses: { production: 1, military: 1 }
     },
     egyptians: {
         name: 'Egyptians',
         leaderName: 'Cleopatra',
-        color: CONSTANTS.COLORS.AI_3,
+        color: Constants.COLORS.AI_3,
         cityNames: CITY_NAMES.egyptians,
         bonuses: { construction: 1, trade: 1 }
     },
     americans: {
         name: 'Americans',
         leaderName: 'Lincoln',
-        color: CONSTANTS.COLORS.AI_4,
+        color: Constants.COLORS.AI_4,
         cityNames: CITY_NAMES.americans,
         bonuses: { expansion: 1, democracy: 1 }
     },
     greeks: {
         name: 'Greeks',
         leaderName: 'Alexander',
-        color: CONSTANTS.COLORS.AI_5,
+        color: Constants.COLORS.AI_5,
         cityNames: CITY_NAMES.greeks,
         bonuses: { military: 1, philosophy: 1 }
     }

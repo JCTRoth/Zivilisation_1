@@ -1,6 +1,6 @@
 // Helper Functions and Utilities - Legacy Implementation (Converted to TypeScript)
 
-import { CONSTANTS } from './constants';
+import { Constants } from './Constants';
 
 // Type definitions
 interface Point {
@@ -83,15 +83,15 @@ export const HexUtils = {
 
     // Convert hex coordinates to pixel position
     hexToPixel: (col: number, row: number): Point => {
-        const x = CONSTANTS.HEX_SIZE * Math.sqrt(3) * (col + 0.5 * (row & 1));
-        const y = CONSTANTS.HEX_SIZE * 1.5 * row;
+        const x = Constants.HEX_SIZE * Math.sqrt(3) * (col + 0.5 * (row & 1));
+        const y = Constants.HEX_SIZE * 1.5 * row;
         return { x, y };
     },
 
     // Convert pixel position to hex coordinates
     pixelToHex: (x: number, y: number): OffsetCoordinate => {
-        const q = (x * Math.sqrt(3) / 3 - y / 3) / CONSTANTS.HEX_SIZE;
-        const r = y * 2 / 3 / CONSTANTS.HEX_SIZE;
+        const q = (x * Math.sqrt(3) / 3 - y / 3) / Constants.HEX_SIZE;
+        const r = y * 2 / 3 / Constants.HEX_SIZE;
         return HexUtils.roundHex(q, r);
     },
 
@@ -264,12 +264,12 @@ export const GameUtils = {
 
     // Calculate turns between years
     yearToTurn: (year: number): number => {
-        return Math.floor((year - CONSTANTS.STARTING_YEAR) / CONSTANTS.TURNS_PER_YEAR) + 1;
+        return Math.floor((year - Constants.STARTING_YEAR) / Constants.TURNS_PER_YEAR) + 1;
     },
 
     // Calculate year from turn number
     turnToYear: (turn: number): number => {
-        return CONSTANTS.STARTING_YEAR + (turn - 1) * CONSTANTS.TURNS_PER_YEAR;
+        return Constants.STARTING_YEAR + (turn - 1) * Constants.TURNS_PER_YEAR;
     }
 };
 

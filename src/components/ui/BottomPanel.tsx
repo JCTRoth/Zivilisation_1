@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, Button, ButtonGroup, ProgressBar, ListGroup } from 'react-bootstrap';
-import { useGameStore } from '../../stores/gameStore';
-import { UNIT_PROPS, BUILDING_PROPS, UnitProperties } from '../../utils/constants';
+import { useGameStore } from '../../stores/GameStore';
+import { UNIT_PROPS, BUILDING_PROPS, UnitProperties } from '../../utils/Constants';
 import type { GameEngine } from '../../../types/game';
 import '../../styles/bottomPanel.css';
 

@@ -1,9 +1,9 @@
 // City System - Legacy Implementation (Converted to TypeScript)
 
-import { CONSTANTS } from '../utils/constants';
-import { GameUtils, MathUtils, EventEmitter } from '../utils/helpers';
-import type { Civilization } from './civilization';
-import { CIVILIZATIONS } from '../data/gameData';
+import { Constants } from '../utils/Constants';
+import { GameUtils, MathUtils, EventEmitter } from '../utils/Helpers';
+import type { Civilization } from './Civilization';
+import { CIVILIZATIONS } from '../data/GameData';
 
 // Type definitions
 
@@ -259,7 +259,7 @@ export class City extends EventEmitter {
         let modifiedYield = baseYield;
 
         for (const buildingType of this.buildings) {
-            const building = CONSTANTS.BUILDING_PROPS[buildingType];
+            const building = Constants.BUILDING_PROPS[buildingType];
             if (!building || !building.effects) continue;
 
             switch (yieldType) {
@@ -367,9 +367,9 @@ export class City extends EventEmitter {
     // Get production cost for item
     getProductionCost(item: ProductionItem): number {
         if (item.type === 'unit') {
-            return CONSTANTS.UNIT_PROPS[item.itemType].cost;
+            return Constants.UNIT_PROPS[item.itemType].cost;
         } else if (item.type === 'building') {
-            return CONSTANTS.BUILDING_PROPS[item.itemType].cost;
+            return Constants.BUILDING_PROPS[item.itemType].cost;
         }
         return 0;
     }
@@ -398,7 +398,7 @@ export class City extends EventEmitter {
 
     // Produce a unit
     produceUnit(unitType: string): void {
-        const unit = new (require('./unit').Unit)(unitType, this.civilization, this.col, this.row);
+        const unit = new (require('./Unit').Unit)(unitType, this.civilization, this.col, this.row);
 
         // Set this city as the unit's home city
         unit.homeCityId = this.id;
@@ -428,7 +428,7 @@ export class City extends EventEmitter {
         this.buildings.add(buildingType);
 
         // Apply building effects
-        const building = CONSTANTS.BUILDING_PROPS[buildingType];
+        const building = Constants.BUILDING_PROPS[buildingType];
         if (building && building.effects) {
             if ((building.effects as any).maxPopulation) {
                 this.maxPopulation += (building.effects as any).maxPopulation;
@@ -614,7 +614,7 @@ export class City extends EventEmitter {
         let unhappiness = this.population; // 1 unhappiness per citizen
 
         for (const buildingType of this.buildings) {
-            const building = CONSTANTS.BUILDING_PROPS[buildingType];
+            const building = Constants.BUILDING_PROPS[buildingType];
             if (building && building.effects && (building.effects as any).happiness) {
                 happiness += (building.effects as any).happiness;
             }
@@ -634,7 +634,7 @@ export class City extends EventEmitter {
         this.maxPopulation = 4; // Base
 
         for (const buildingType of this.buildings) {
-            const building = CONSTANTS.BUILDING_PROPS[buildingType];
+            const building = Constants.BUILDING_PROPS[buildingType];
             if (building && building.effects && (building.effects as any).maxPopulation) {
                 this.maxPopulation += (building.effects as any).maxPopulation;
             }
@@ -703,8 +703,8 @@ export class City extends EventEmitter {
                 const tileRow = this.row + dRow;
 
                 // Check bounds
-                if (tileCol >= 0 && tileCol < CONSTANTS.MAP_WIDTH &&
-                    tileRow >= 0 && tileRow < CONSTANTS.MAP_HEIGHT) {
+                if (tileCol >= 0 && tileCol < Constants.MAP_WIDTH &&
+                    tileRow >= 0 && tileRow < Constants.MAP_HEIGHT) {
 
                     const tile = gameMap.getTile(tileCol, tileRow);
                     if (tile) {

@@ -1,6 +1,6 @@
 // Building Constants - Building types and properties
 
-import { BuildingProperties } from './gameConstants';
+import { BuildingProperties } from './GameConstants';
 
 export const BUILDING_TYPES = {
     // Ancient Era

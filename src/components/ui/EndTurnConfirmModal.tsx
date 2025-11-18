@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
-import { useGameStore } from '../../stores/gameStore';
+import { useGameStore } from '../../stores/GameStore';
 import '../../styles/endTurnConfirmModal.css';
 
 interface EndTurnConfirmModalProps {

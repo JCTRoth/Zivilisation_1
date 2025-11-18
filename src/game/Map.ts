@@ -1,14 +1,14 @@
 // Game Map - Central game state manager (Converted to TypeScript)
 
-import { CONSTANTS } from '../utils/constants';
-import { GameUtils, EventEmitter, MathUtils } from '../utils/helpers';
-import { SquareGrid } from './hexGrid';
-import { TerrainGenerator } from './terrain';
-import { UnitManager } from './unit';
-import { CityManager } from './city';
-import { Civilization, CIVILIZATION_TEMPLATES } from './civilization';
-import { City, CITY_NAMES } from './city';
-import { Unit } from './unit';
+import { Constants } from '../utils/Constants';
+import { GameUtils, EventEmitter, MathUtils } from '../utils/Helpers';
+import { SquareGrid } from './HexGrid';
+import { TerrainGenerator } from './Terrain';
+import { UnitManager } from './Unit';
+import { CityManager } from './City';
+import { Civilization, CIVILIZATION_TEMPLATES } from './Civilization';
+import { City, CITY_NAMES } from './City';
+import { Unit } from './Unit';
 
 // Type definitions
 interface GameOptions {
@@ -84,7 +84,7 @@ export class GameMap extends EventEmitter {
 
         // Game state
         this.currentTurn = 1;
-        this.currentYear = CONSTANTS.STARTING_YEAR;
+        this.currentYear = Constants.STARTING_YEAR;
         this.activeCivilization = null;
 
         // Setup event listeners
@@ -168,7 +168,7 @@ export class GameMap extends EventEmitter {
     foundCity(col: number, row: number, civilization: Civilization, name: string | null = null): any {
         // Check if location is valid for city
         const tile = this.getTile(col, row);
-        if (!tile || tile.terrain === CONSTANTS.TERRAIN.OCEAN) {
+        if (!tile || tile.terrain === Constants.TERRAIN.OCEAN) {
             return null;
         }
 
@@ -389,8 +389,8 @@ export class GameMap extends EventEmitter {
     // Game initialization
     static createGame(options: GameOptions = {}): GameMap {
         const {
-            mapWidth = CONSTANTS.MAP_WIDTH,
-            mapHeight = CONSTANTS.MAP_HEIGHT,
+            mapWidth = Constants.MAP_WIDTH,
+            mapHeight = Constants.MAP_HEIGHT,
             civilizations = ['romans', 'babylonians', 'germans', 'egyptians'],
             humanPlayer = 'romans',
             seed = null
@@ -444,14 +444,14 @@ export class GameMap extends EventEmitter {
                 const city = this.foundCity(pos.col, pos.row, civ, cityName);
 
                 // Create starting units
-                const settler = new Unit(CONSTANTS.UNIT_TYPES.SETTLER, civ, pos.col, pos.row);
-                const warrior = new Unit(CONSTANTS.UNIT_TYPES.MILITIA, civ, pos.col, pos.row);
+                const settler = new Unit(Constants.UNIT_TYPES.SETTLER, civ, pos.col, pos.row);
+                const warrior = new Unit(Constants.UNIT_TYPES.MILITIA, civ, pos.col, pos.row);
 
                 // Move warrior to adjacent tile if possible
                 const neighbors = this.grid.getNeighbors(pos.col, pos.row);
                 for (const neighbor of neighbors) {
                     const tile = this.getTile(neighbor.col, neighbor.row);
-                    if (tile && tile.terrain !== CONSTANTS.TERRAIN.OCEAN) {
+                    if (tile && tile.terrain !== Constants.TERRAIN.OCEAN) {
                         warrior.col = neighbor.col;
                         warrior.row = neighbor.row;
                         break;
@@ -478,8 +478,8 @@ export class GameMap extends EventEmitter {
                 const row = MathUtils.randomInt(5, this.height - 5);
 
                 const tile = this.getTile(col, row);
-                if (!tile || tile.terrain === CONSTANTS.TERRAIN.OCEAN ||
-                    tile.terrain === CONSTANTS.TERRAIN.MOUNTAINS) {
+                if (!tile || tile.terrain === Constants.TERRAIN.OCEAN ||
+                    tile.terrain === Constants.TERRAIN.MOUNTAINS) {
                     attempt++;
                     continue;
                 }
@@ -507,7 +507,7 @@ export class GameMap extends EventEmitter {
                 do {
                     col = MathUtils.randomInt(0, this.width - 1);
                     row = MathUtils.randomInt(0, this.height - 1);
-                } while (this.getTile(col, row)?.terrain === CONSTANTS.TERRAIN.OCEAN);
+                } while (this.getTile(col, row)?.terrain === Constants.TERRAIN.OCEAN);
 
                 positions.push({ col, row });
             }

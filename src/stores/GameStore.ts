@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 
 import { create } from 'zustand';
-import { CONSTANTS } from '../utils/constants';
-import { SquareGrid } from '../game/hexGrid';
-import { UNIT_TYPES } from '../data/gameData';
-import { UNIT_PROPERTIES } from '../data/unitConstants';
+import { Constants } from '../utils/Constants';
+import { SquareGrid } from '../game/HexGrid';
+import { UNIT_TYPES } from '../data/GameData';
+import { UNIT_PROPERTIES } from '../data/UnitConstants';
 import type { GameStoreState, GameState, MapState, CameraState, Unit, City, Civilization, UIState, Settings, Technology, GameActions } from '../../types/game';
 
 // Helper function for visibility calculations
@@ -44,8 +44,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   // Map State
   map: {
-    width: CONSTANTS.MAP_WIDTH,
-    height: CONSTANTS.MAP_HEIGHT,
+    width: Constants.MAP_WIDTH,
+    height: Constants.MAP_HEIGHT,
     tiles: [],
     visibility: [], // Fog of war
     revealed: []    // Permanently revealed tiles
@@ -150,7 +150,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
       if (candidate) {
         // Focus on the unit
-        const TILE_SIZE = CONSTANTS.HEX_SIZE || 32; // world pixels per tile
+        const TILE_SIZE = Constants.HEX_SIZE || 32; // world pixels per tile
         const zoom = Math.max(0.1, state.camera.zoom || 2.0); // Prevent division by zero
 
         // Safe window dimension access with fallbacks
@@ -196,7 +196,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         const capitalCity = activeCivilization?.capital;
 
         if (capitalCity) {
-          const TILE_SIZE = CONSTANTS.HEX_SIZE || 32; // world pixels per tile
+          const TILE_SIZE = Constants.HEX_SIZE || 32; // world pixels per tile
           const zoom = Math.max(0.1, state.camera.zoom || 2.0); // Prevent division by zero
 
           // Safe window dimension access with fallbacks
