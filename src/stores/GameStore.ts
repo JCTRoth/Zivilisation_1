@@ -144,9 +144,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         return state;
       }
 
-      // Find next unit belonging to active player that still has moves
+      // Find next unit belonging to active player that still has moves and is not sleeping
       const activeId = state.gameState.activePlayer;
-      const candidate = state.units.find(u => u.civilizationId === activeId && (u.movesRemaining || 0) > 0);
+      const candidate = state.units.find(u => u.civilizationId === activeId && (u.movesRemaining || 0) > 0 && !u.isSleeping);
 
       if (candidate) {
         // Focus on the unit

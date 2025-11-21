@@ -465,6 +465,17 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       ctx.fillText(fallback, centerX, centerY);
     }
 
+    // Draw sleeping indicator (💤) at bottom center if unit is sleeping
+    if (unit.isSleeping) {
+      const sleepIcon = '💤';
+      const sleepFontSize = Math.max(8, Math.round(innerRadius * 0.7));
+      ctx.font = `${sleepFontSize}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = iconColor; // Use same color as main icon
+      ctx.fillText(sleepIcon, centerX, centerY + 22);
+    }
+
     ctx.restore();
   };
 
@@ -948,14 +959,24 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         break;
 
       case 'sleep':
-        if (unit && gameEngine?.unitSleep) {
-          console.log(`[ContextMenu] Sleep action for unit ${unit.id}`);
-          gameEngine.unitSleep(unit.id);
-          if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
-          if (actions?.addNotification) actions.addNotification({
-            type: 'success',
-            message: `${unit.type} sleeping`
-          });
+        if (unit && gameEngine) {
+          if (unit.isSleeping && gameEngine.unitWake) {
+            console.log(`[ContextMenu] Wake action for unit ${unit.id}`);
+            gameEngine.unitWake(unit.id);
+            if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+            if (actions?.addNotification) actions.addNotification({
+              type: 'success',
+              message: `${unit.type} woke up`
+            });
+          } else if (gameEngine.unitSleep) {
+            console.log(`[ContextMenu] Sleep action for unit ${unit.id}`);
+            gameEngine.unitSleep(unit.id);
+            if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+            if (actions?.addNotification) actions.addNotification({
+              type: 'success',
+              message: `${unit.type} sleeping`
+            });
+          }
         }
         break;
 
@@ -1216,7 +1237,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
                 className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
                 onClick={() => executeContextAction('sleep')}
               >
-                😴 Sleep
+                {contextMenu.unit.isSleeping ? '🌅 Wake Up' : '😴 Sleep'}
               </button>
 
               {(contextMenu.unit.type === 'warriors' || contextMenu.unit.type === 'archer' || contextMenu.unit.type === 'chariot') && (

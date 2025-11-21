@@ -234,6 +234,7 @@ export interface GameEngine {
   foundCityWithSettler(settlerId: string): boolean;
   setResearch(civId: number, techId: string): void;
   unitSleep(unitId: string): void;
+  unitWake(unitId: string): void;
   unitFortify(unitId: string): void;
   skipUnit(unitId: string): void;
   buildImprovement(unitId: string, improvement: string): void;

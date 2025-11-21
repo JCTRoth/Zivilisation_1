@@ -31,11 +31,11 @@ export class UnitActionManager {
       return false;
     }
 
-    unit.movesRemaining = 0;
+    // Sleeping units retain their movement points but are not selected in unit cycle
     unit.isSleeping = true;
     unit.isSkipped = false;
 
-    console.log(`[UnitActionManager] Unit ${unit.id} (${unit.type}) went to sleep. Moves: 0`);
+    console.log(`[UnitActionManager] Unit ${unit.id} (${unit.type}) went to sleep. Moves remaining: ${unit.movesRemaining}`);
     return true;
   }
 

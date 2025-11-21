@@ -2,7 +2,7 @@ import { Technology } from '../../types/game';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 
 export class TechnologyManager {
-  private technologies: Technology[];
+  private readonly technologies: Technology[];
 
   constructor() {
     // Deep copy the technology data to avoid modifying the original

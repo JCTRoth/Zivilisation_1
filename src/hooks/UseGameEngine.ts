@@ -264,6 +264,9 @@ export const useGameControls = (gameEngine: GameEngine | null) => {
         case 'sleep':
           gameEngine.unitSleep(unitId);
           break;
+        case 'wake':
+          gameEngine.unitWake(unitId);
+          break;
         case 'fortify':
           gameEngine.unitFortify(unitId);
           break;

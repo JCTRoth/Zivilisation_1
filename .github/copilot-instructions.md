@@ -1,4 +1,5 @@
 - Extract business and data logic from TSX components into dedicated TypeScript classes
+- Move "static" functions into helper classes.
 - Only keep presentational logic and JSX in TSX/React components
 - Ensure one class per file for logic layers
 - Create/extend utilities for shared logic across components

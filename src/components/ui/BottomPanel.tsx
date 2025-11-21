@@ -35,7 +35,11 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
         // Unit movement is handled by canvas clicks
         break;
       case 'sleep':
-        gameEngine.unitSleep(selectedUnit.id);
+        if (selectedUnit.isSleeping) {
+          gameEngine.unitWake(selectedUnit.id);
+        } else {
+          gameEngine.unitSleep(selectedUnit.id);
+        }
         break;
       case 'fortify':
         gameEngine.unitFortify(selectedUnit.id);
@@ -172,7 +176,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
                     size="sm"
                     onClick={() => handleUnitAction('sleep')}
                   >
-                    <i className="bi bi-moon"></i> Sleep
+                    <i className={selectedUnit.isSleeping ? "bi bi-sun" : "bi bi-moon"}></i> {selectedUnit.isSleeping ? 'Wake Up' : 'Sleep'}
                   </Button>
                   
                   {unitProps.type === 'military' && (
