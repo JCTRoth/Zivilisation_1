@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useGameStore } from '../../stores/GameStore';
-import { Constants } from '../../utils/Constants';
-import { UNIT_TYPES } from '../../data/GameData';
+import { useGameStore } from '@/stores/GameStore';
+import { Constants } from '@/utils/Constants';
+import { UNIT_TYPES } from '@/data/GameData';
 import '../../styles/miniMap.css';
 
 // Declare window properties

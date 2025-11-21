@@ -1,7 +1,9 @@
 import { SquareGrid } from '../HexGrid';
-import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '../../utils/Constants';
-import { CIVILIZATIONS, TECHNOLOGIES, UNIT_TYPES } from '../../data/GameData';
+import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
+import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
 import { ProductionManager } from './ProductionManager';
+import { AIUtility } from './AIUtility';
+import { UnitActionManager } from './UnitActionManager';
 import type { GameActions, Unit, City, Civilization } from '../../../types/game';
 
 interface GameSettings {
@@ -122,33 +124,43 @@ export default class GameEngine {
   // Choose a target for AI unit: prefer unexplored nearby tiles, then enemy units, then random neighbor
   private chooseAITarget(unit: any): { col: number; row: number } | null {
     if (!this.map || !this.squareGrid) return null;
-    console.log(`[AI] Choosing target for unit ${unit.id} (${unit.type}) at (${unit.col},${unit.row})`);
+
     // 1) Nearby unexplored tile
-  const unexplored = this.findNearbyUnexplored(unit);
+    const unexplored = this.findNearbyUnexplored(unit);
     if (unexplored) {
       console.log(`[AI] Chose unexplored tile at (${unexplored.col},${unexplored.row})`);
       return { col: unexplored.col, row: unexplored.row };
     }
 
     // 2) Nearby enemy unit
-  const enemy = this.findNearbyEnemy(unit);
+    const enemy = this.findNearbyEnemy(unit);
     if (enemy) {
       console.log(`[AI] Chose enemy unit at (${enemy.col},${enemy.row})`);
       return { col: enemy.col, row: enemy.row };
     }
 
-    // 3) Random valid neighbor
-    console.log(`[AI] No unexplored or enemy targets found, choosing random neighbor`);
+    // 3) Choose best neighbor based on terrain cost
+    console.log(`[AI] No unexplored or enemy targets found, choosing best neighbor`);
+
     const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
-    for (const n of neighbors) {
-      if (!this.squareGrid.isValidSquare(n.col, n.row)) continue;
-      const tile = this.getTileAt(n.col, n.row);
-      if (!tile) continue;
-      if (TERRAIN_PROPS[tile.type]?.passable === false) continue;
-      const other = this.getUnitAt(n.col, n.row);
-      if (other && other.civilizationId === unit.civilizationId) continue;
-      console.log(`[AI] Chose random neighbor at (${n.col},${n.row})`);
-      return { col: n.col, row: n.row };
+    const terrainAnalysis = AIUtility.analyzeSurroundingTerrain(
+      unit.col,
+      unit.row,
+      neighbors,
+      (col, row) => this.getTileAt(col, row),
+      (col, row) => this.getUnitAt(col, row),
+      (col, row) => this.squareGrid!.isValidSquare(col, row)
+    );
+
+    if (terrainAnalysis.passableMoves.length > 0) {
+      console.log(`[AI] Terrain analysis: ${terrainAnalysis.passableMoves.length} passable tiles, min cost: ${terrainAnalysis.minCost}, avg cost: ${terrainAnalysis.averageCost.toFixed(1)}`);
+
+      const bestMove = AIUtility.chooseBestMove(terrainAnalysis);
+      if (bestMove) {
+        const terrainName = AIUtility.getTerrainName(bestMove.terrainType);
+        console.log(`[AI] Chose best neighbor at (${bestMove.col},${bestMove.row}) - ${terrainName} (cost: ${bestMove.moveCost})`);
+        return { col: bestMove.col, row: bestMove.row };
+      }
     }
 
     console.log(`[AI] No valid target found for unit ${unit.id}`);
@@ -156,10 +168,10 @@ export default class GameEngine {
   }
 
   // Find nearby unexplored tile (uses GameEngine's map representation)
-  private findNearbyUnexplored(unit: any, searchRadius: number = 8): any {
+  private findNearbyUnexplored(unit: any): any {
     if (!this.map || !this.squareGrid) return null;
-    const nearbyTiles = this.squareGrid.getSquaresInRange(unit.col, unit.row, searchRadius);
-    for (const tilePos of nearbyTiles) {
+    const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
+    for (const tilePos of neighbors) {
       const tile = this.getTileAt(tilePos.col, tilePos.row);
       if (tile && !tile.explored) {
         return tilePos;
@@ -169,10 +181,10 @@ export default class GameEngine {
   }
 
   // Find nearby enemy unit
-  private findNearbyEnemy(unit: any, searchRadius: number = 5): any {
+  private findNearbyEnemy(unit: any): any {
     if (!this.squareGrid) return null;
-    const nearbyTiles = this.squareGrid.getSquaresInRange(unit.col, unit.row, searchRadius);
-    for (const tilePos of nearbyTiles) {
+    const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
+    for (const tilePos of neighbors) {
       const enemyUnit = this.getUnitAt(tilePos.col, tilePos.row);
       if (enemyUnit && enemyUnit.civilizationId !== unit.civilizationId) {
         return enemyUnit;
@@ -235,7 +247,7 @@ export default class GameEngine {
           // Pathfind towards target and take next step
           console.log(`[AI] Pathfinding to non-adjacent target (${target.col},${target.row})`);
           const path = this.squareGrid.findPath(unit.col, unit.row, target.col, target.row, new Set());
-            if (path.length > 1) {
+          if (path.length > 1) {
             const next = path[1];
             console.log(`[AI] Path found, next step to (${next.col},${next.row}), path length: ${path.length}`);
             // Check move cost for next step
@@ -255,46 +267,84 @@ export default class GameEngine {
               // Treat certain reasons as terminal for this unit for this turn
               const terminalReasons = new Set(['insufficient_moves', 'no_moves_left', 'terrain_impassable', 'invalid_target']);
               if (terminalReasons.has(reason)) {
-                // Log once and stop trying further moves for this unit
-                console.warn(`[AI] moveUnit terminal failure for ${unit.id} -> (${next.col},${next.row}): ${reason}`);
+                console.log(`[AI] Path step failed with terminal reason: ${reason}, ending unit movement`);
                 break;
+              }
+              // Non-terminal failure, try fallback to any valid neighbor
+              console.log(`[AI] Path step failed with non-terminal reason: ${reason}, trying fallback`);
+
+              const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
+
+              const terrainAnalysis = AIUtility.analyzeSurroundingTerrain(
+                unit.col,
+                unit.row,
+                neighbors,
+                (col, row) => this.getTileAt(col, row),
+                (col, row) => this.getUnitAt(col, row),
+                (col, row) => this.squareGrid!.isValidSquare(col, row)
+              );
+
+              if (terrainAnalysis.passableMoves.length > 0) {
+                // Prefer moves we can afford with current moves remaining
+                const affordableMoves = terrainAnalysis.passableMoves.filter(m =>
+                  AIUtility.canAffordMove(unit.movesRemaining || 0, m.moveCost)
+                );
+
+                if (affordableMoves.length > 0) {
+                  // Pick cheapest affordable move
+                  const moveOption = affordableMoves.reduce((best, current) =>
+                    current.moveCost < best.moveCost ? current : best
+                  );
+                  console.log(`[AI] Found affordable fallback move to (${moveOption.col},${moveOption.row}) - cost: ${moveOption.moveCost}, remaining: ${unit.movesRemaining}`);
+                  const r = this.moveUnit(unit.id, moveOption.col, moveOption.row);
+                  if (!r || !r.success) {
+                    console.log(`[AI] Fallback move failed, ending unit movement`);
+                    break;
+                  }
+                } else {
+                  console.log(`[AI] Cannot afford any neighbor move, ending unit movement`);
+                  break;
+                }
               } else {
-                // Non-terminal failure (e.g., combat defeat or other transient) - log and break to avoid tight loop
-                console.warn(`[AI] moveUnit non-terminal failure for ${unit.id} -> (${next.col},${next.row}): ${reason}`);
+                console.log(`[AI] No passable moves available, ending unit movement`);
                 break;
               }
             }
-            console.log(`[AI] Path step successful, ${unit.movesRemaining} moves remaining`);
-            // If success, continue the while loop (unit.movesRemaining updated)
           } else {
-            // Couldn't find path, try moving to any valid neighbor as fallback
-            console.log(`[AI] No path found, trying fallback to random neighbor`);
+            console.log(`[AI] No path found to target, trying fallback to any valid neighbor`);
+            // No path found, try moving to any valid neighbor as fallback
             const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
-            let moved = false;
-            for (const n of neighbors) {
-              if (!this.squareGrid.isValidSquare(n.col, n.row)) continue;
-              const tile = this.getTileAt(n.col, n.row);
-              if (!tile) continue;
-              if (TERRAIN_PROPS[tile.type]?.passable === false) continue;
-              const other = this.getUnitAt(n.col, n.row);
-              if (other && other.civilizationId === unit.civilizationId) continue;
-              console.log(`[AI] Trying fallback move to (${n.col},${n.row})`);
-              const r = this.moveUnit(unit.id, n.col, n.row);
-              if (r && r.success) { 
-                console.log(`[AI] Fallback move successful`);
-                moved = true; break; 
-              }
-              // If move failed for a terminal reason, stop trying neighbors for this unit
-              const reason = r?.reason || 'unknown';
-              const terminalReasons = new Set(['insufficient_moves', 'no_moves_left', 'terrain_impassable', 'invalid_target']);
-              if (terminalReasons.has(reason)) {
-                console.warn(`[AI] Neighbor move terminal failure for ${unit.id} -> (${n.col},${n.row}): ${reason}`);
+            const terrainAnalysis = AIUtility.analyzeSurroundingTerrain(
+              unit.col,
+              unit.row,
+              neighbors,
+              (col, row) => this.getTileAt(col, row),
+              (col, row) => this.getUnitAt(col, row),
+              (col, row) => this.squareGrid!.isValidSquare(col, row)
+            );
+            if (terrainAnalysis.passableMoves.length > 0) {
+              // Prefer moves we can afford with current moves remaining
+              const affordableMoves = terrainAnalysis.passableMoves.filter(m =>
+                AIUtility.canAffordMove(unit.movesRemaining || 0, m.moveCost)
+              );
+
+              if (affordableMoves.length > 0) {
+                // Pick cheapest affordable move
+                const moveOption = affordableMoves.reduce((best, current) =>
+                  current.moveCost < best.moveCost ? current : best
+                );
+                console.log(`[AI] Found affordable fallback move to (${moveOption.col},${moveOption.row}) - cost: ${moveOption.moveCost}, remaining: ${unit.movesRemaining}`);
+                const r = this.moveUnit(unit.id, moveOption.col, moveOption.row);
+                if (!r || !r.success) {
+                  console.log(`[AI] Fallback move failed, ending unit movement`);
+                  break;
+                }
+              } else {
+                console.log(`[AI] Cannot afford any neighbor move, ending unit movement`);
                 break;
               }
-            }
-            if (!moved) {
-              console.log(`[AI] No valid fallback neighbor found`);
-              // No valid neighbor found, break to next unit
+            } else {
+              console.log(`[AI] No passable moves available, ending unit movement`);
               break;
             }
           }
@@ -503,13 +553,13 @@ export default class GameEngine {
           col: startPos.col,
           row: startPos.row,
           health: 100,
-          movesRemaining: 1,
+          movesRemaining: 2,
           maxMoves: 1,
           isVeteran: false,
           attack: 0,
           defense: 1,
           icon: '👷',
-          orders: null // 'fortify', 'sentry', 'goto', etc.
+          orders: null // 'fortify', etc.
         };
 
         this.units.push(settler);
@@ -606,7 +656,7 @@ export default class GameEngine {
   /**
    * Found a new city
    */
-  foundCity(col, row, civilizationId, customName = null) {
+  foundCity(col: number, row: number, civilizationId: number, customName = null) {
     const civ = this.civilizations[civilizationId];
     if (!civ) return null;
 
@@ -712,14 +762,14 @@ export default class GameEngine {
   /**
    * Check if hex coordinates are valid
    */
-  isValidHex(col, row) {
+  isValidHex(col: number, row: number) {
     return this.squareGrid.isValidSquare(col, row);
   }
 
   /**
    * Get tile at coordinates
    */
-  getTileAt(col, row) {
+  getTileAt(col: number, row: number) {
     if (!this.squareGrid.isValidSquare(col, row)) return null;
     const index = row * this.map.width + col;
     return this.map.tiles[index] || null;
@@ -728,14 +778,14 @@ export default class GameEngine {
   /**
    * Get unit at coordinates
    */
-  getUnitAt(col, row) {
+  getUnitAt(col: number, row: number) {
     return this.units.find(unit => unit.col === col && unit.row === row) || null;
   }
 
   /**
    * Get city at coordinates
    */
-  getCityAt(col, row) {
+  getCityAt(col: number, row: number) {
     return this.cities.find(city => city.col === col && city.row === row) || null;
   }
 
@@ -775,7 +825,7 @@ export default class GameEngine {
   /**
    * Check if a unit can move to a specific position
    */
-  canUnitMoveTo(unitId, targetCol, targetRow) {
+  canUnitMoveTo(unitId: string, targetCol: number, targetRow: number) {
     const unit = this.units.find(u => u.id === unitId);
     if (!unit) {
       console.log(`[canUnitMoveTo] Invalid unitId: ${unitId}`);
@@ -815,7 +865,7 @@ export default class GameEngine {
     }
 
     // Calculate move cost
-    const distance = this.squareGrid.squareDistance(unit.col, unit.row, targetCol, targetRow);
+    const distance = this.squareGrid.chebyshevDistance(unit.col, unit.row, targetCol, targetRow);
     const moveCost = Math.max(1, TERRAIN_PROPS[targetTile.type]?.movement || 1);
 
     // Check if unit has enough moves
@@ -829,7 +879,12 @@ export default class GameEngine {
   /**
    * Move unit to new position
    */
-  moveUnit(unitId, targetCol, targetRow) {
+  moveUnit(unitId: string, targetCol: number, targetRow: number) {
+    // First check if the move is possible
+    if (!this.canUnitMoveTo(unitId, targetCol, targetRow)) {
+      return { success: false, reason: 'cannot_move' };
+    }
+
     const unit = this.units.find(u => u.id === unitId);
     if (!unit) return { success: false, reason: 'unit_not_found' };
     if (!this.squareGrid.isValidSquare(targetCol, targetRow)) return { success: false, reason: 'invalid_target' };
@@ -853,7 +908,7 @@ export default class GameEngine {
     }
 
     // Move the unit
-    const distance = this.squareGrid.squareDistance(unit.col, unit.row, targetCol, targetRow);
+    const distance = this.squareGrid.chebyshevDistance(unit.col, unit.row, targetCol, targetRow);
     const moveCost = Math.max(1, TERRAIN_PROPS[targetTile.type]?.movement || 1);
 
     // Require that unit has enough remaining moves to cover the distance * cost
@@ -885,7 +940,7 @@ export default class GameEngine {
   /**
    * Combat between units
    */
-  combatUnit(attacker, defender) {
+  combatUnit(attacker: Unit, defender: Unit) {
     const attackerStrength = attacker.attack * (attacker.health / 100);
     const defenderStrength = defender.defense * (defender.health / 100);
     
@@ -903,9 +958,14 @@ export default class GameEngine {
       // Log combat movement
       console.log(`[COMBAT MOVEMENT] ${attacker.type} (${attacker.id}) defeated ${defender.type} (${defender.id}) and moved from (${fromCol},${fromRow}) to (${defender.col},${defender.row})`);
 
-      // Remove defeated unit
-      this.units = this.units.filter(u => u.id !== defender.id);
-      
+      // Emit defeat event and delay removal
+      if (this.onStateChange) {
+        this.onStateChange('UNIT_DEFEATED', { unit: defender });
+      }
+      setTimeout(() => {
+        this.units = this.units.filter(u => u.id !== defender.id);
+      }, 3000);
+
       if (this.onStateChange) {
         this.onStateChange('COMBAT_VICTORY', { attacker, defender });
       }
@@ -920,7 +980,13 @@ export default class GameEngine {
       attacker.movesRemaining = 0;
       
       if (attacker.health <= 0) {
-        this.units = this.units.filter(u => u.id !== attacker.id);
+        // Emit defeat event and delay removal
+        if (this.onStateChange) {
+          this.onStateChange('UNIT_DEFEATED', { unit: attacker });
+        }
+        setTimeout(() => {
+          this.units = this.units.filter(u => u.id !== attacker.id);
+        }, 3000);
       }
       
       if (this.onStateChange) {
@@ -937,7 +1003,7 @@ export default class GameEngine {
   /**
    * Found a city with settler
    */
-  foundCityWithSettler(settlerId) {
+  foundCityWithSettler(settlerId: string) {
     const settler = this.units.find(u => u.id === settlerId);
     if (!settler || settler.type !== 'settlers') return false;
 
@@ -1270,7 +1336,7 @@ export default class GameEngine {
       civ.currentResearch = tech;
       civ.researchProgress = 0;
     }
-  }
+}
 
   /**
    * Start a new game
@@ -1301,5 +1367,153 @@ export default class GameEngine {
 
     // Initialize fog of war visibility
     this.updateVisibility();
+  }
+
+  /**
+   * Skip a unit's turn - sets movement to 0
+   */
+  skipUnit(unitId: string): boolean {
+    const unit = this.units.find(u => u.id === unitId);
+    if (!unit) {
+      console.warn(`[GameEngine] Skip: Unit ${unitId} not found`);
+      return false;
+    }
+
+    const success = UnitActionManager.skipUnit(unit);
+
+    if (success) {
+      // Check if this was the last unit with moves, and end turn if so
+      this.checkAndEndTurnIfNoMoves();
+
+      if (this.onStateChange) {
+        this.onStateChange('UNIT_SKIPPED', { unit });
+      }
+    }
+
+    return success;
+  }
+
+  /**
+   * Put a unit to sleep
+   */
+  unitSleep(unitId: string): boolean {
+    const unit = this.units.find(u => u.id === unitId);
+    if (!unit) {
+      console.warn(`[GameEngine] Sleep: Unit ${unitId} not found`);
+      return false;
+    }
+
+    UnitActionManager.sleepUnit(unit);
+
+    if (this.onStateChange) {
+      this.onStateChange('UNIT_SLEPT', { unit });
+    }
+
+    return true;
+  }
+
+  /**
+   * Fortify a unit
+   */
+  unitFortify(unitId: string): boolean {
+    const unit = this.units.find(u => u.id === unitId);
+    if (!unit) {
+      console.warn(`[GameEngine] Fortify: Unit ${unitId} not found`);
+      return false;
+    }
+
+    UnitActionManager.fortifyUnit(unit);
+
+    if (this.onStateChange) {
+      this.onStateChange('UNIT_FORTIFIED', { unit });
+    }
+
+    return true;
+  }
+
+  /**
+   * Build an improvement (road, farm, etc.)
+   */
+  buildImprovement(unitId: string, improvementType: string): boolean {
+    const unit = this.units.find(u => u.id === unitId);
+    if (!unit) {
+      console.warn(`[GameEngine] Build: Unit ${unitId} not found`);
+      return false;
+    }
+
+    // Check if unit can perform this action
+    if (!UnitActionManager.canPerformAction(unit, 'build_improvement', 1)) {
+      return false;
+    }
+
+    const tile = this.getTileAt(unit.col, unit.row);
+    if (!tile) {
+      console.warn(`[GameEngine] Build: No tile at (${unit.col},${unit.row})`);
+      return false;
+    }
+
+    // Check if improvement already exists
+    if (tile.improvement) {
+      console.log(`[GameEngine] Build: Tile already has improvement: ${tile.improvement}`);
+      return false;
+    }
+
+    // Build the improvement
+    tile.improvement = improvementType;
+    unit.movesRemaining = (unit.movesRemaining || 0) - 1;
+
+    console.log(`[GameEngine] Unit ${unit.id} built ${improvementType} at (${unit.col},${unit.row}). Moves remaining: ${unit.movesRemaining}`);
+
+    if (this.onStateChange) {
+      this.onStateChange('IMPROVEMENT_BUILT', { unit, tile, improvementType });
+    }
+
+    // Check if turn should end
+    this.checkAndEndTurnIfNoMoves();
+
+    return true;
+  }
+
+  /**
+   * Attach a unit to another unit (deletes the attaching unit)
+   */
+  attachUnit(unitId: string, targetUnitId: string): boolean {
+    const unit = this.units.find(u => u.id === unitId);
+    if (!unit) {
+      console.warn(`[GameEngine] Attach: Unit ${unitId} not found`);
+      return false;
+    }
+
+    const targetUnit = this.units.find(u => u.id === targetUnitId);
+    if (!targetUnit) {
+      console.warn(`[GameEngine] Attach: Target unit ${targetUnitId} not found`);
+      return false;
+    }
+
+    if (unit.civilizationId !== targetUnit.civilizationId) {
+      console.warn(`[GameEngine] Attach: Cannot attach to enemy unit`);
+      return false;
+    }
+
+    if (unit.id === targetUnit.id) {
+      console.warn(`[GameEngine] Attach: Cannot attach to self`);
+      return false;
+    }
+
+    // Move the unit to the target's position and delete it
+    unit.col = targetUnit.col;
+    unit.row = targetUnit.row;
+    this.units = this.units.filter(u => u.id !== unitId);
+
+    console.log(`[ATTACH] Unit ${unit.type} (${unitId}) attached to ${targetUnit.type} (${targetUnitId}) at (${targetUnit.col},${targetUnit.row}) and was deleted`);
+
+    if (this.onStateChange) {
+      this.onStateChange('UNIT_ATTACHED', { unit, targetUnit });
+    }
+
+    // Check if turn should end automatically
+    this.checkAndEndTurnIfNoMoves();
+
+    return true;
   }
 }

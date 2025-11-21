@@ -80,19 +80,29 @@ export class SquareGrid {
         return neighbors;
     }
 
-    // Get direction vectors for neighbors (4 cardinal directions)
+    // Get direction vectors for neighbors (8 directions: 4 cardinal + 4 diagonal)
     getNeighborDirections(): SquareDirection[] {
         return [
             { col: 0, row: -1 },  // up
             { col: 1, row: 0 },   // right
             { col: 0, row: 1 },   // down
-            { col: -1, row: 0 }   // left
+            { col: -1, row: 0 },  // left
+            { col: 1, row: -1 },  // up-right
+            { col: 1, row: 1 },   // down-right
+            { col: -1, row: 1 },  // down-left
+            { col: -1, row: -1 }  // up-left
         ];
     }
 
     // Calculate Manhattan distance between two squares
     squareDistance(col1: number, row1: number, col2: number, row2: number): number {
         return Math.abs(col1 - col2) + Math.abs(row1 - row2);
+    }
+
+    // Calculate Chebyshev distance (optimal distance for 8-way movement)
+    // Used for unit movement with diagonal support
+    chebyshevDistance(col1: number, row1: number, col2: number, row2: number): number {
+        return Math.max(Math.abs(col1 - col2), Math.abs(row1 - row2));
     }
 
     // A* pathfinding algorithm for squares
@@ -116,7 +126,7 @@ export class SquareGrid {
 
         openSet.add(startKey);
         gScore.set(startKey, 0);
-        fScore.set(startKey, this.squareDistance(startCol, startRow, endCol, endRow));
+        fScore.set(startKey, this.chebyshevDistance(startCol, startRow, endCol, endRow));
 
         while (openSet.size > 0) {
             // Find node with lowest fScore
@@ -171,7 +181,7 @@ export class SquareGrid {
 
                 cameFrom.set(neighborKey, current);
                 gScore.set(neighborKey, tentativeG);
-                fScore.set(neighborKey, tentativeG + this.squareDistance(neighbor.col, neighbor.row, endCol, endRow));
+                fScore.set(neighborKey, tentativeG + this.chebyshevDistance(neighbor.col, neighbor.row, endCol, endRow));
             }
         }
 

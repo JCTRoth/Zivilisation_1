@@ -59,6 +59,8 @@ export interface Unit {
   defense?: number;
   orders?: any;
   isFortified?: boolean;
+  isSkipped?: boolean;
+  isSleeping?: boolean;
 }
 
 export interface City {

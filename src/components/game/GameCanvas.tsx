@@ -743,25 +743,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         }
       }
     }
-    
-    // Draw selected hex info
-    if (selectedHex && terrain && gameEngine) {
-      const tile = terrain[selectedHex.row]?.[selectedHex.col];
-      if (tile) {
-      const unit = units.find(u => u.col === selectedHex.col && u.row === selectedHex.row);
-      const city = cities.find(c => c.col === selectedHex.col && c.row === selectedHex.row);        ctx.fillStyle = 'rgba(0,0,0,0.8)';
-        ctx.fillRect(10, 10, 200, 80);
-        
-        ctx.fillStyle = '#FFF';
-        ctx.font = '12px monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(`Hex: ${selectedHex.col}, ${selectedHex.row}`, 15, 25);
-        ctx.fillText(`Terrain: ${TERRAIN_TYPES[tile.type]?.name}`, 15, 40);
-        if (city) ctx.fillText(`City: ${city.name}`, 15, 55);
-        if (unit) ctx.fillText(`Unit: ${unit.name || unit.type}`, 15, 70);
-        if (tile.hasRiver) ctx.fillText(`🌊 River`, 15, 85);
-      }
-    }
+
   };
 
   // Handle mouse events
@@ -901,194 +883,175 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     const hex = screenToSquare(x, y);
     
     if (!terrain) return;
-    const tile = terrain[hex.row]?.[hex.col];
-    if (!tile) return;
 
-    // Only show right-click options when clicking a human player's unit
-    let unitAtEngine = null;
+    // Get unit at this location from gameEngine first (most reliable)
+    let unitAtHex = null;
     try {
       if (gameEngine && typeof gameEngine.getUnitAt === 'function') {
-        unitAtEngine = gameEngine.getUnitAt(hex.col, hex.row);
+        unitAtHex = gameEngine.getUnitAt(hex.col, hex.row);
       }
     } catch (e) {
-      unitAtEngine = null;
+      console.error('[ContextMenu] Error getting unit from gameEngine:', e);
     }
 
-    const unitInfo = unitAtEngine || tile.unit || null;
-    const civId = unitInfo ? (unitInfo.civilizationId ?? unitInfo.owner ?? null) : null;
-    let civIsHuman = false;
-    if (civId !== null && typeof gameEngine?.civilizations !== 'undefined') {
-      const civ = gameEngine.civilizations?.[civId];
-      civIsHuman = civ ? !!civ.isHuman : false;
-    }
-
-    // If no unit or unit is not a human player's, do not show context menu
-    if (!unitInfo || civIsHuman !== true) {
+    // Check if it's a player's unit
+    if (!unitAtHex || unitAtHex.civilizationId !== currentPlayer?.id) {
+      console.log('[ContextMenu] Not player unit, skipping menu');
       return;
     }
 
-    // Generate context menu options based on tile content
-    const menuOptions = [];
+    console.log(`[ContextMenu] Right-clicked player unit ${unitAtHex.id} (${unitAtHex.type})`);
 
-    // Unit actions only (we limit options to player's units here)
-    menuOptions.push({
-      label: `⚔️ ${unitInfo.type} Orders`,
-      action: 'unitOrders',
-      enabled: true,
-      submenu: [
-        { label: '🏰 Fortify', action: 'fortify' },
-        { label: '👁️ Sentry', action: 'sentry' },
-        { label: '💤 Skip Turn', action: 'skipTurn' },
-        { label: '🏠 Go to Home City', action: 'goHome' }
-      ]
-    });
-
-    const isSettler = (unitInfo.type === 'settlers' || unitInfo.type === 'settler');
-    if (isSettler && civId === 0) {
-      menuOptions.push({
-        label: '🏙️ Build City',
-        action: 'buildCity',
-        enabled: !tile.city && tile.type !== 'OCEAN',
-        description: 'Found a new city here'
-      });
+    // Get city at this location
+    let cityAtHex = null;
+    try {
+      if (gameEngine && typeof gameEngine.getCityAt === 'function') {
+        cityAtHex = gameEngine.getCityAt(hex.col, hex.row);
+      }
+    } catch (e) {
+      // City not found, that's OK
     }
 
-    // City actions
-    if (tile.city && tile.city.civilizationId === 0) {
-      menuOptions.push({
-        label: `🏛️ ${tile.city.name}`,
-        action: 'cityOrders',
-        enabled: true,
-        submenu: [
-          { label: '🏭 Production', action: 'viewProduction' },
-          { label: '👥 Citizens', action: 'viewCitizens' },
-          { label: '📊 Info', action: 'cityInfo' },
-          { label: '🏗️ Buy Building', action: 'buyBuilding' }
-        ]
-      });
-    }
+    const tile = terrain[hex.row]?.[hex.col];
 
-    // General actions
-    menuOptions.push({
-      label: '📍 Center View',
-      action: 'centerView',
-      enabled: true,
-      description: 'Center camera on this tile'
-    });
-
-    if (tile.type !== 'OCEAN') {
-      menuOptions.push({
-        label: '🔍 Examine Terrain',
-        action: 'examineHex',
-        enabled: true,
-        description: 'Get detailed terrain information'
-      });
-    }
-
+    // Set context menu with the actual unit/city objects
     setContextMenu({
       x: e.clientX,
       y: e.clientY,
       hex: hex,
       tile: tile,
-      options: menuOptions
+      unit: unitAtHex,
+      city: cityAtHex
     });
   };
 
-  const executeContextAction = (action, data = null) => {
-    console.log(`Executing action: ${action}`, data);
-    
-    if (!terrain) return;
+  const executeContextAction = (action: string, data = null) => {
+    console.log(`[ContextMenu] Executing action: ${action}`, { contextMenu });
+
+    if (!contextMenu) return;
+
+    const unit = contextMenu.unit;
+    const city = contextMenu.city;
 
     switch (action) {
-      case 'buildRoad':
-        // Update terrain to add road
-        const newTerrain = [...terrain];
-        newTerrain[contextMenu.hex.row][contextMenu.hex.col].hasRoad = true;
-        setTerrain(newTerrain);
-        break;
-        
-      case 'irrigate':
-        // Add irrigation improvement
-        const irrigatedTerrain = [...terrain];
-        irrigatedTerrain[contextMenu.hex.row][contextMenu.hex.col].improvement = 'irrigation';
-        setTerrain(irrigatedTerrain);
-        break;
-        
-      case 'mine':
-        // Add mine improvement
-        const minedTerrain = [...terrain];
-        minedTerrain[contextMenu.hex.row][contextMenu.hex.col].improvement = 'mine';
-        setTerrain(minedTerrain);
-        break;
-        
-      case 'buildCity':
-        // Build a new city via the game engine if available
-        if (gameEngine && typeof gameEngine.foundCityWithSettler === 'function') {
-          // Try to find the settler unit at this location
-          const unit = gameEngine.getUnitAt(contextMenu.hex.col, contextMenu.hex.row) || contextMenu.tile.unit;
-          if (unit && (unit.type === 'settlers' || unit.type === 'settler')) {
-            const ok = gameEngine.foundCityWithSettler(unit.id);
-            if (ok) {
-              // Sync store
-              if (typeof actions.updateCities === 'function') actions.updateCities(gameEngine.getAllCities());
-              if (typeof actions.updateUnits === 'function') actions.updateUnits(gameEngine.getAllUnits());
-              if (typeof actions.updateMap === 'function') actions.updateMap(gameEngine.map);
-              if (typeof actions.addNotification === 'function') actions.addNotification({ type: 'success', message: 'City founded!' });
-            } else {
-              if (typeof actions.addNotification === 'function') actions.addNotification({ type: 'warning', message: 'Failed to found city' });
-            }
-          } else {
-            if (typeof actions.addNotification === 'function') actions.addNotification({ type: 'warning', message: 'No settler present to found a city' });
-          }
-        } else {
-          // Fallback visual: add city to terrain
-          const cityTerrain = [...terrain];
-          cityTerrain[contextMenu.hex.row][contextMenu.hex.col].city = {
-            name: 'New City',
-            size: 1,
-            owner: 0
-          };
-          // Remove the settler unit visually
-          cityTerrain[contextMenu.hex.row][contextMenu.hex.col].unit = null;
-          setTerrain(cityTerrain);
-          if (typeof actions.addNotification === 'function') actions.addNotification({ type: 'info', message: 'City placed (visual only)' });
+      // ===== UNIT ACTIONS =====
+      case 'fortify':
+        if (unit && gameEngine?.unitFortify) {
+          console.log(`[ContextMenu] Fortifying unit ${unit.id}`);
+          gameEngine.unitFortify(unit.id);
+          if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+          if (actions?.addNotification) actions.addNotification({
+            type: 'success',
+            message: `${unit.type} fortified`
+          });
         }
         break;
-        
+
+      case 'sleep':
+        if (unit && gameEngine?.unitSleep) {
+          console.log(`[ContextMenu] Sleep action for unit ${unit.id}`);
+          gameEngine.unitSleep(unit.id);
+          if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+          if (actions?.addNotification) actions.addNotification({
+            type: 'success',
+            message: `${unit.type} sleeping`
+          });
+        }
+        break;
+
+      case 'skip_turn':
+        if (unit && gameEngine?.skipUnit) {
+          console.log(`[ContextMenu] Skipping turn for unit ${unit.id}`);
+          gameEngine.skipUnit(unit.id);
+          if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+          if (actions?.addNotification) actions.addNotification({
+            type: 'info',
+            message: `${unit.type} turn skipped`
+          });
+          if (actions?.selectUnit) actions.selectUnit(null);
+        }
+        break;
+
+      case 'found_city':
+        if (unit && gameEngine?.foundCityWithSettler) {
+          console.log(`[ContextMenu] Found city action for unit ${unit.id}`);
+          const result = gameEngine.foundCityWithSettler(unit.id);
+          if (result) {
+            if (actions?.updateCities) actions.updateCities(gameEngine.cities);
+            if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+            if (actions?.updateMap) actions.updateMap(gameEngine.map);
+            if (actions?.addNotification) actions.addNotification({
+              type: 'success',
+              message: 'City founded!'
+            });
+          } else {
+            if (actions?.addNotification) actions.addNotification({
+              type: 'warning',
+              message: 'Cannot found city here'
+            });
+          }
+        }
+        break;
+
+      case 'build_road':
+        if (unit && gameEngine?.buildImprovement) {
+          console.log(`[ContextMenu] Build road action for unit ${unit.id}`);
+          const result = gameEngine.buildImprovement(unit.id, 'road');
+          if (result) {
+            if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+            if (actions?.updateMap) actions.updateMap(gameEngine.map);
+            if (actions?.addNotification) actions.addNotification({
+              type: 'success',
+              message: 'Road built'
+            });
+          } else {
+            if (actions?.addNotification) actions.addNotification({
+              type: 'warning',
+              message: 'Cannot build road here'
+            });
+          }
+        }
+        break;
+
+      // ===== CITY ACTIONS =====
+      case 'viewProduction':
+        if (city) {
+          console.log(`[ContextMenu] View production for city ${city.id}`);
+          if (actions?.selectCity) actions.selectCity(city.id);
+          if (actions?.showDialog) actions.showDialog('city-production');
+        }
+        break;
+
+      case 'cityInfo':
+        if (city) {
+          console.log(`[ContextMenu] View info for city ${city.id}`);
+          if (actions?.selectCity) actions.selectCity(city.id);
+          if (actions?.showDialog) actions.showDialog('city-details');
+        }
+        break;
+
+      // ===== GENERAL ACTIONS =====
       case 'centerView':
-        // Center camera on selected hex
-        const { x, y } = squareToScreen(contextMenu.hex.col, contextMenu.hex.row);
+        console.log(`[ContextMenu] Centering view on (${contextMenu.hex.col}, ${contextMenu.hex.row})`);
         actions.updateCamera({
-          x: contextMenu.hex.col * TILE_SIZE - canvasRef.current.width / 2,
-          y: contextMenu.hex.row * TILE_SIZE - canvasRef.current.height / 2
+          x: contextMenu.hex.col * TILE_SIZE - canvasRef.current.width / (2 * camera.zoom),
+          y: contextMenu.hex.row * TILE_SIZE - canvasRef.current.height / (2 * camera.zoom)
         });
         break;
-        
-      case 'fortify':
-      case 'sentry':
-      case 'skipTurn':
-      case 'goHome':
-        // Unit order actions
-        console.log(`Unit ${contextMenu.tile.unit?.type} executing: ${action}`);
-        break;
-        
-      case 'viewProduction':
-      case 'viewCitizens':
-      case 'cityInfo':
-      case 'buyBuilding':
-        // City management actions
-        console.log(`City ${contextMenu.tile.city?.name} action: ${action}`);
-        break;
-        
+
       case 'examineHex':
-        // Show detailed hex information modal
+        console.log(`[ContextMenu] Examining hex (${contextMenu.hex.col}, ${contextMenu.hex.row})`);
         if (onExamineHex) {
-          onExamineHex(contextMenu.hex, terrain);
+          onExamineHex(contextMenu.hex, contextMenu.tile);
         }
         break;
+
+      default:
+        console.warn(`[ContextMenu] Unknown action: ${action}`);
     }
     
     setContextMenu(null);
+    triggerRender();
   };
 
   const handleWheel = (e) => {
@@ -1225,60 +1188,131 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         <div
           className="position-fixed bg-dark border border-light text-white"
           style={{
-            left: contextMenu.x,
-            top: contextMenu.y,
+            left: `${Math.min(contextMenu.x, window.innerWidth - 250)}px`,
+            top: `${Math.min(contextMenu.y, window.innerHeight - 400)}px`,
             zIndex: 1000,
-            minWidth: '200px',
+            minWidth: '180px',
             fontSize: '12px',
             fontFamily: 'monospace'
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Header */}
           <div className="bg-secondary p-2 border-bottom border-light">
             <strong>
-              {contextMenu.tile.city ? `${contextMenu.tile.city.name}` : 
-               contextMenu.tile.unit ? `${contextMenu.tile.unit.type}` :
-               `${TERRAIN_TYPES[contextMenu.tile.type]?.name}`}
+              {contextMenu.unit ? `${contextMenu.unit.type}` :
+               contextMenu.city ? `${contextMenu.city.name}` :
+               'Menu'}
             </strong>
-            <div className="context-menu-coords">
+            <div className="context-menu-coords" style={{ fontSize: '10px', color: '#aaa' }}>
               ({contextMenu.hex.col}, {contextMenu.hex.row})
             </div>
           </div>
           
-          {contextMenu.options.map((option, index) => (
-            <div key={index}>
+          {/* Unit Actions */}
+          {contextMenu.unit && (
+            <>
               <button
-                className={`btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button ${
-                  option.enabled ? 'btn-dark text-white' : 'btn-secondary text-muted'
-                }`}
-                disabled={!option.enabled}
-                onClick={() => option.submenu ? null : executeContextAction(option.action)}
+                className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
+                onClick={() => executeContextAction('sleep')}
               >
-                {option.label}
-                {option.submenu && ' ▶'}
+                😴 Sleep
               </button>
-              
-              {option.submenu && (
-                <div className="ms-3 border-start border-secondary">
-                  {option.submenu.map((subOption, subIndex) => (
-                    <button
-                      key={subIndex}
-                      className="btn btn-sm btn-dark text-white w-100 text-start border-0 rounded-0 context-menu-sub-button"
-                      onClick={() => executeContextAction(subOption.action)}
-                    >
-                      {subOption.label}
-                    </button>
-                  ))}
-                </div>
+
+              {(contextMenu.unit.type === 'warriors' || contextMenu.unit.type === 'archer' || contextMenu.unit.type === 'chariot') && (
+                <button
+                  className={`btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button ${
+                    (contextMenu.unit.movesRemaining || 0) > 0 ? 'btn-dark text-white' : 'btn-secondary text-muted'
+                  }`}
+                  disabled={(contextMenu.unit.movesRemaining || 0) <= 0}
+                  onClick={() => executeContextAction('fortify')}
+                >
+                  🛡️ Fortify
+                </button>
               )}
-              
-              {option.description && (
-                <div className="px-2 py-1 bg-info text-dark context-menu-description">
-                  {option.description}
-                </div>
+
+              {(contextMenu.unit.type === 'settlers' || contextMenu.unit.type === 'settler') && (
+                <>
+                  <button
+                    className={`btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button ${
+                      (contextMenu.unit.movesRemaining || 0) > 0 ? 'btn-dark text-white' : 'btn-secondary text-muted'
+                    }`}
+                    disabled={(contextMenu.unit.movesRemaining || 0) <= 0}
+                    onClick={() => executeContextAction('found_city')}
+                  >
+                    🏛️ Found City
+                  </button>
+
+                  <button
+                    className={`btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button ${
+                      (contextMenu.unit.movesRemaining || 0) > 0 ? 'btn-dark text-white' : 'btn-secondary text-muted'
+                    }`}
+                    disabled={(contextMenu.unit.movesRemaining || 0) <= 0}
+                    onClick={() => executeContextAction('build_road')}
+                  >
+                    🛣️ Build Road
+                  </button>
+                </>
               )}
-            </div>
-          ))}
+
+              {/* ORDERS separator */}
+              <hr style={{ margin: '4px 0', borderColor: '#555' }} />
+
+              {/* ORDERS Menu */}
+              <div style={{ fontSize: '11px', color: '#aaa', padding: '4px 8px', fontWeight: 'bold' }}>
+                ORDERS
+              </div>
+
+              <button
+                className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
+                onClick={() => executeContextAction('patrol')}
+              >
+                🔄 Patrol
+              </button>
+
+              <hr style={{ margin: '4px 0', borderColor: '#555' }} />
+
+              <button
+                className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
+                onClick={() => executeContextAction('skip_turn')}
+              >
+                ⏭️ Skip Turn
+              </button>
+            </>
+          )}
+
+          {/* City Actions */}
+          {contextMenu.city && (
+            <>
+              <button
+                className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
+                onClick={() => executeContextAction('viewProduction')}
+              >
+                🏭 View Production
+              </button>
+              <button
+                className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
+                onClick={() => executeContextAction('cityInfo')}
+              >
+                📊 City Info
+              </button>
+            </>
+          )}
+
+          {/* General Actions */}
+          <hr style={{ margin: '4px 0', borderColor: '#555' }} />
+          <button
+            className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
+            onClick={() => executeContextAction('centerView')}
+          >
+            📍 Center View
+          </button>
+          <button
+            className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
+            onClick={() => executeContextAction('examineHex')}
+          >
+            🔍 Examine
+          </button>
         </div>
       )}
     </div>
