@@ -27,10 +27,7 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
 
   const handleConfirm = () => {
     console.log('EndTurnConfirmModal: Confirmed end turn');
-    // Update the setting if the checkbox was checked
-    if (skipNextTime !== settings.skipEndTurnConfirmation) {
-      actions.updateSettings({ skipEndTurnConfirmation: skipNextTime });
-    }
+    // Update the setting if the checkbox was checked - now done on change
     onConfirm();
   };
 
@@ -50,7 +47,7 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
       <Modal.Body className="end-turn-modal-body">
         <div className="text-center mb-3">
           <h5>{isAutomatic ? 'All Your Units Have Moved!' : 'Are you ready to end your turn?'}</h5>
-          <p className="text-muted mb-1">
+          <p className="mb-2">
             <strong>Turn {currentTurn}</strong> | <strong>{currentYear} BC</strong>
           </p>
         </div>
@@ -68,7 +65,11 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
           id="skip-end-turn-confirmation"
           label="Don't show this confirmation next time"
           checked={skipNextTime}
-          onChange={(e) => setSkipNextTime(e.target.checked)}
+          onChange={(e) => {
+            const checked = e.target.checked;
+            setSkipNextTime(checked);
+            actions.updateSettings({ skipEndTurnConfirmation: checked });
+          }}
           className="mt-2"
         />
       </Modal.Body>

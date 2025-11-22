@@ -298,6 +298,15 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     }
   }, [gameEngine, minimap]);
 
+  // Sync unit paths from RoundManager when turn changes
+  useEffect(() => {
+    if (gameEngine && gameEngine.roundManager) {
+      console.log('[GameCanvas] Syncing unit paths from RoundManager on turn change');
+      const paths = gameEngine.roundManager.getAllUnitPaths();
+      setUnitPaths(paths);
+    }
+  }, [gameState.currentTurn, gameEngine]);
+
   // Convert square coordinates to screen position
   const squareToScreen = (col, row) => {
     const x = (col * TILE_SIZE - camera.x) * camera.zoom;
@@ -933,6 +942,12 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
               const pathToFollow = pathResult.path.slice(1);
               setUnitPaths(prev => new Map(prev).set(gotoUnit.id, pathToFollow));
               
+              // Sync with RoundManager in GameEngine
+              if (gameEngine && gameEngine.roundManager) {
+                gameEngine.roundManager.setUnitPath(gotoUnit.id, pathToFollow);
+                console.log(`[CLICK] Path synced to RoundManager for unit ${gotoUnit.id}`);
+              }
+              
               if (actions?.addNotification) actions.addNotification({
                 type: 'success',
                 message: `${gotoUnit.type} will go to (${hex.col}, ${hex.row})`
@@ -949,6 +964,12 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
                     // Update path to remaining
                     const remainingPath = pathToFollow.slice(1);
                     setUnitPaths(prev => new Map(prev).set(gotoUnit.id, remainingPath));
+                    
+                    // Sync with RoundManager
+                    if (gameEngine && gameEngine.roundManager) {
+                      gameEngine.roundManager.setUnitPath(gotoUnit.id, remainingPath);
+                    }
+                    
                     console.log(`[CLICK] Unit ${gotoUnit.id} moved to (${nextPos.col}, ${nextPos.row}), remaining path:`, remainingPath);
                   } else {
                     console.log(`[CLICK] Automatic move failed for unit ${gotoUnit.id}`);
@@ -1026,6 +1047,12 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
               if (moveResult && moveResult.success) {
                 const remainingPath = existingPath.slice(1);
                 setUnitPaths(prev => new Map(prev).set(unitAt.id, remainingPath));
+                
+                // Sync with RoundManager
+                if (gameEngine && gameEngine.roundManager) {
+                  gameEngine.roundManager.setUnitPath(unitAt.id, remainingPath);
+                }
+                
                 console.log(`[CLICK] Unit ${unitAt.id} continued path to (${nextPos.col}, ${nextPos.row}), remaining:`, remainingPath);
               }
             } catch (e) {
@@ -1400,30 +1427,6 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   useEffect(() => {
     triggerRender();
   }, [gameState.activePlayer, gameState.currentTurn, units.length, cities.length]);
-
-  // Auto-move units along paths when turn changes
-  useEffect(() => {
-    if (!gameEngine || !units || !currentPlayer) return;
-
-    unitPaths.forEach((path, unitId) => {
-      if (path.length === 0) return;
-
-      const unit = units.find(u => u.id === unitId);
-      if (!unit || unit.civilizationId !== currentPlayer.id || unit.movesRemaining <= 0) return;
-
-      const nextPos = path[0];
-      try {
-        const moveResult = gameEngine.moveUnit(unitId, nextPos.col, nextPos.row);
-        if (moveResult && moveResult.success) {
-          const remainingPath = path.slice(1);
-          setUnitPaths(prev => new Map(prev).set(unitId, remainingPath));
-          console.log(`[AutoMove] Unit ${unitId} moved to (${nextPos.col}, ${nextPos.row}), remaining:`, remainingPath);
-        }
-      } catch (e) {
-        console.log(`[AutoMove] Error auto-moving unit ${unitId}:`, e);
-      }
-    });
-  }, [gameState.currentTurn]);
 
 
   return (

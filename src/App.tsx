@@ -146,7 +146,7 @@ function App() {
     console.log('[App] End turn confirmed');
     setShowEndTurnConfirm(false);
     setIsEndTurnAutomatic(false);
-    actions.nextTurn();
+    // actions.nextTurn(); // Removed - processTurn() handles turn advancement
     if (gameEngine) {
       gameEngine.processTurn();
     }

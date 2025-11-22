@@ -28,7 +28,7 @@ export const TERRAIN_TYPES = {
 
 export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
     [TERRAIN_TYPES.OCEAN]: {
-        movement: 1,
+        movement: 0.8,
         defense: 0,
         food: 1,
         production: 0,
@@ -38,7 +38,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Deep ocean waters'
     },
     [TERRAIN_TYPES.COAST]: {
-        movement: 1,
+        movement: 0.8,
         defense: 0,
         food: 2,
         production: 0,
@@ -48,7 +48,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Coastal waters'
     },
     [TERRAIN_TYPES.GRASSLAND]: {
-        movement: 1,
+        movement: 0.8,
         defense: 0,
         food: 3,
         production: 0,
@@ -58,7 +58,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Fertile grassland'
     },
     [TERRAIN_TYPES.PLAINS]: {
-        movement: 1,
+        movement: 0.8,
         defense: 0,
         food: 1,
         production: 1,
@@ -68,7 +68,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Open plains'
     },
     [TERRAIN_TYPES.TUNDRA]: {
-        movement: 1,
+        movement: 0.8,
         defense: 0,
         food: 1,
         production: 0,
@@ -78,7 +78,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Cold tundra'
     },
     [TERRAIN_TYPES.DESERT]: {
-        movement: 1,
+        movement: 0.8,
         defense: 0,
         food: 0,
         production: 1,
@@ -88,7 +88,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Arid desert'
     },
     [TERRAIN_TYPES.FOREST]: {
-        movement: 2,
+        movement: 0.9,
         defense: 1,
         food: 1,
         production: 2,
@@ -98,7 +98,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Dense forest'
     },
     [TERRAIN_TYPES.JUNGLE]: {
-        movement: 3,
+        movement: 1.0,
         defense: 0,
         food: 0,
         production: 0,
@@ -108,7 +108,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Impassable jungle'
     },
     [TERRAIN_TYPES.MOUNTAINS]: {
-        movement: 3,
+        movement: 1.0,
         defense: 2,
         food: 0,
         production: 1,
@@ -118,7 +118,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Rugged mountains'
     },
     [TERRAIN_TYPES.HILLS]: {
-        movement: 2,
+        movement: 0.9,
         defense: 1,
         food: 0,
         production: 1,
@@ -128,7 +128,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Rolling hills'
     },
     [TERRAIN_TYPES.SWAMP]: {
-        movement: 2,
+        movement: 0.9,
         defense: 0,
         food: 0,
         production: 0,
@@ -138,7 +138,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         description: 'Muddy swamp'
     },
     [TERRAIN_TYPES.ARCTIC]: {
-        movement: 1,
+        movement: 0.8,
         defense: 0,
         food: 0,
         production: 0,
