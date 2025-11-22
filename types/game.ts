@@ -61,6 +61,7 @@ export interface Unit {
   isFortified?: boolean;
   isSkipped?: boolean;
   isSleeping?: boolean;
+  plannedPath?: { col: number; row: number }[];
 }
 
 export interface City {
@@ -132,6 +133,8 @@ export interface UIState {
   activeDialog: 'city' | 'tech' | 'diplomacy' | 'game-menu' | 'help' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
+  goToMode: boolean; // When true, next click will set destination for selected unit
+  goToUnit: string | null; // Unit id targeted by Go To mode (null when not set)
 }
 
 export interface Notification {
@@ -198,8 +201,8 @@ export interface GameStoreState {
 export interface GameActions {
   startGame: () => void;
   selectHex: (hex: { col: number; row: number }) => void;
-  selectUnit: (unitId: string) => void;
-  selectCity: (cityId: string) => void;
+  selectUnit: (unitId: string | null) => void;
+  selectCity: (cityId: string | null) => void;
   nextTurn: () => void;
   focusOnNextUnit: () => void;
   updateCamera: (cameraUpdate: Partial<CameraState>) => void;
@@ -208,6 +211,7 @@ export interface GameActions {
   hideDialog: () => void;
   addNotification: (notification: Omit<Notification, 'id'>) => void;
   removeNotification: (id: number) => void;
+  setGoToMode: (enabled: boolean, unitId?: string | null) => void;
   setLoading: (isLoading: boolean) => void;
   updateMap: (mapUpdate: Partial<MapState>) => void;
   updateVisibility: () => void;
@@ -230,6 +234,7 @@ export interface GameEngine {
   newGame(): void;
   processTurn(): void;
   moveUnit(unitId: string, col: number, row: number): { success: boolean; reason?: string };
+  canUnitMoveTo: (unitId: string, col: number, row: number) => boolean;
   foundCity(col: number, row: number, civilizationId: number, customName?: string | null): any;
   foundCityWithSettler(settlerId: string): boolean;
   setResearch(civId: number, techId: string): void;
@@ -240,4 +245,7 @@ export interface GameEngine {
   buildImprovement(unitId: string, improvement: string): void;
   getAllUnits(): Unit[];
   getAllCities(): City[];
+  calculateUnitPath(unitId: string, targetCol: number, targetRow: number): boolean;
+  clearUnitPath(unitId: string): void;
+  moveUnitAlongPath(unitId: string): boolean;
 }

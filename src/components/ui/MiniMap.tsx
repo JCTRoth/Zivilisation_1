@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useGameStore } from '@/stores/GameStore';
-import { Constants } from '@/utils/Constants';
-import { UNIT_TYPES } from '@/data/GameData';
+import React, {useEffect, useRef, useState} from 'react';
+import {useGameStore} from '@/stores/GameStore';
+import {Constants} from '@/utils/Constants';
+import {UNIT_TYPES} from '@/data/GameData';
 import '../../styles/miniMap.css';
 
 // Declare window properties
@@ -107,10 +107,8 @@ const MiniMap = ({ gameEngine }) => {
           console.warn('[MiniMap] Missing terrain props for type:', tile.type);
           window.__MINIMAP_MISSED_TYPE_REPORTED = true;
         }
-        const baseColor = terrainProps ? terrainProps.color : '#555555';
-
         // Always draw underlying terrain first so the minimap never renders as a solid void
-        ctx.fillStyle = baseColor;
+        ctx.fillStyle = terrainProps ? terrainProps.color : '#555555';
         ctx.fillRect(x, y, scaleX + 1, scaleY + 1); // +1 to avoid gaps at low scale
 
         // Apply fog-of-war as translucent overlays so unexplored areas remain readable

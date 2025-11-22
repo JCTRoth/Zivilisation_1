@@ -9,6 +9,7 @@ import EndTurnConfirmModal from './components/ui/EndTurnConfirmModal';
 import GameModals from './components/ui/GameModals';
 import { useGameEngine } from './hooks/UseGameEngine';
 import SidePanel from './components/ui/SidePanel';
+import miniMap from "@/components/ui/MiniMap";
 
 function App() {
   const gameState = useGameStore(state => state.gameState);
@@ -578,14 +579,14 @@ function App() {
         </div>
       </div>
 
-      {/* Main Game Area */}
+  {/* Main Game Area */}
   <div className="game-area flex-grow-1 d-flex">
-        {/* Left Sidebar - use centralized SidePanel component */}
+  {/* Left Sidebar - use centralized SidePanel component */}
   <div className="game-side-panel" style={{ width: `${settings.sidebarWidth * 2}px` }}>
           <SidePanel gameEngine={gameEngine} />
         </div>
 
-        {/* Main Map Area */}
+  {/* Main Map Area */}
   <div className="game-canvas flex-grow-1 position-relative">
           <GameCanvas
             onExamineHex={handleExamineHex} 
@@ -884,7 +885,6 @@ function App() {
         onHide={() => setShowHexDetail(false)}
         hex={detailHex}
         terrain={terrainData}
-        adjacentTiles={[]}
       />
 
       {/* Settings Modal */}
@@ -910,3 +910,4 @@ function App() {
 }
 
 export default App;
+

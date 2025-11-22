@@ -27,7 +27,6 @@ body {
 
 .game-canvas {
   flex: 1;
-  cursor: crosshair;
 }
 
 .game-canvas:active {

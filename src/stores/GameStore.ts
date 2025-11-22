@@ -79,7 +79,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     showGameMenu: false,
     activeDialog: null, // 'city', 'tech', 'diplomacy', 'game-menu', null
     sidebarCollapsed: false,
-    notifications: []
+    notifications: [],
+    goToMode: false,
+    goToUnit: null
   },
 
   // Settings
@@ -275,6 +277,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         notifications: state.uiState.notifications.filter(n => n.id !== id)
       }
     })),
+
+    setGoToMode: (enabled: boolean, unitId: string | null = null) => set(state => {
+      console.log('[Store] setGoToMode:', enabled, 'unitId:', unitId);
+      return {
+        uiState: {
+          ...state.uiState,
+          goToMode: enabled,
+          goToUnit: enabled ? (unitId || state.gameState.selectedUnit) : null
+        }
+      };
+    }),
 
     setLoading: (isLoading) => set(state => ({
       gameState: { ...state.gameState, isLoading }
@@ -485,9 +498,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     updateCities: (cities) => set({ cities }),
 
-    updateCivilizations: (civilizations) => set({ civilizations }),
-
     updateTechnologies: (technologies) => set({ technologies }),
+
+    updateCivilizations: (civilizations) => set({ civilizations }),
 
     updateGameState: (updates) => set(state => ({
       gameState: { ...state.gameState, ...updates }
@@ -570,3 +583,4 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     };
   }
 }));
+

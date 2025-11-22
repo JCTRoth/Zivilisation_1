@@ -171,6 +171,28 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
           }
           break;
 
+        case 'UNIT_PATH_CALCULATED':
+          console.log('[useGameEngine] UNIT_PATH_CALCULATED: Path calculated for unit', eventData.unit?.id);
+          // Update units to reflect new path
+          actions.updateUnits(gameEngine.getAllUnits());
+          break;
+
+        case 'UNIT_PATH_CLEARED':
+          console.log('[useGameEngine] UNIT_PATH_CLEARED: Path cleared for unit', eventData.unit?.id);
+          // Update units to reflect cleared path
+          actions.updateUnits(gameEngine.getAllUnits());
+          break;
+
+        case 'UNIT_SKIPPED':
+        case 'UNIT_SLEPT':
+        case 'UNIT_FORTIFIED':
+          // Clear path when unit action changes
+          if (eventData.unit && gameEngine.clearUnitPath) {
+            gameEngine.clearUnitPath(eventData.unit.id);
+          }
+          actions.updateUnits(gameEngine.getAllUnits());
+          break;
+
         default:
           console.log('Unhandled game engine event:', eventType, eventData);
       }

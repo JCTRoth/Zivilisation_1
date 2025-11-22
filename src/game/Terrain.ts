@@ -1,7 +1,7 @@
 // Terrain and Tile System - Legacy Implementation (Converted to TypeScript)
 
-import { Constants } from '../utils/Constants';
-import { ArrayUtils, MathUtils } from '../utils/Helpers';
+import { Constants } from '@/utils/Constants';
+import { ArrayUtils, MathUtils } from '@/utils/Helpers';
 
 // Type definitions
 interface Improvement {

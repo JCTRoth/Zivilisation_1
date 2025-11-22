@@ -5,8 +5,67 @@
   opacity: 0.8;
 }
 
-.context-menu-button {
-  font-size: 11px;
+.context-menu-description {
+  font-size: 9px;
+}
+
+/* Go To Mode Indicator */
+.goto-mode-indicator {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.95) 0%, rgba(118, 75, 162, 0.95) 100%);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 1000;
+  font-size: 14px;
+  font-weight: 600;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.goto-icon {
+  font-size: 20px;
+}
+
+.goto-text {
+  flex: 1;
+}
+
+.goto-cancel {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  padding: 4px 12px;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.goto-cancel:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.goto-cancel:active {
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .context-menu-sub-button {

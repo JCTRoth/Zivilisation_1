@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal } from 'react-bootstrap';
 import { TERRAIN_TYPES } from '@/data/TerrainData';
 
-const HexDetailModal = ({ show, onHide, hex, terrain, adjacentTiles }) => {
+const HexDetailModal = ({ show, onHide, hex, terrain}) => {
   if (!hex || !terrain) return null;
 
   const centerTile = terrain[hex.row]?.[hex.col];

@@ -5,6 +5,8 @@ import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import { Constants } from '@/utils/Constants';
 import { TERRAIN_TYPES, getTerrainInfo, TILE_SIZE } from '@/data/TerrainData';
 import '../../styles/civ1GameCanvas.css';
+import UnitActionsModal from './UnitActionsModal';
+import { Pathfinding } from '../../game/engine/Pathfinding';
 
 const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const canvasRef = useRef(null);
@@ -22,6 +24,9 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const [selectedHex, setSelectedHex] = useState({ col: 5, row: 5 });
   const [contextMenu, setContextMenu] = useState(null);
   const [terrain, setTerrain] = useState(null);
+  const [gotoMode, setGotoMode] = useState(false);
+  const [gotoUnit, setGotoUnit] = useState(null);
+  const [unitPaths, setUnitPaths] = useState(new Map()); // unitId -> path array
   const animationFrameRef = useRef(null);
   const renderTimeoutRef = useRef(null);
   const lastRenderTime = useRef(0);
@@ -396,8 +401,8 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     ctx.fillText(city.name, centerX, centerY + 24);
   };
 
-  // Draw unit (alpha optional for blinking)
-  const drawUnit = (ctx, centerX, centerY, unit, alpha = 1) => {
+  // Draw unit
+  const drawUnit = (ctx, centerX, centerY, unit, alpha) => {
     ctx.save();
     ctx.globalAlpha = alpha;
 
@@ -410,13 +415,12 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     const civIndex = unit.civilizationId ?? unit.owner;
     const civColor = (civilizations && civilizations[civIndex] && civilizations[civIndex].color) || (civIndex === 0 ? '#4169E1' : '#DC143C');
 
-  // Draw civ-colored disc as unit marker (no outer halo)
-  const innerRadius = Math.max(8, Math.round(radius * 0.95));
-  ctx.beginPath();
-  ctx.fillStyle = civColor;
-  ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
-  ctx.fill();
-
+    // Draw civ-colored disc as unit marker (no outer halo)
+    const innerRadius = Math.max(8, Math.round(radius * 0.95));
+    ctx.beginPath();
+    ctx.fillStyle = civColor;
+    ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+    ctx.fill();
 
     // Determine icon color (contrast with civColor)
     const hexToRgb = (hex) => {
@@ -429,6 +433,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
     const iconColor = luminance > 0.6 ? '#111' : '#FFF';
     ctx.fillStyle = iconColor;
+
     // Resolve unit type definitions from multiple data sources.
     // unit.type in the engine is usually the id (e.g. 'settler', 'warrior').
     const unitTypeId = unit.type ? String(unit.type) : null;
@@ -474,6 +479,69 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       ctx.textBaseline = 'middle';
       ctx.fillStyle = iconColor; // Use same color as main icon
       ctx.fillText(sleepIcon, centerX, centerY + 22);
+    }
+
+    ctx.restore();
+  };
+
+  // Draw unit path as red lines
+
+  // Draw unit path as red lines
+  const drawUnitPath = (ctx, unitId, path, units, gameState, squareToScreen) => {
+    if (!path || path.length < 2) return;
+
+    // Find the unit to check if it's selected
+    const unit = units.find(u => u.id === unitId);
+    if (!unit) return;
+
+    // Only draw path for selected unit
+    if (gameState.selectedUnit !== unitId) return;
+
+    ctx.save();
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    let first = true;
+    for (const pos of path) {
+      const { x, y } = squareToScreen(pos.col, pos.row);
+      if (first) {
+        ctx.moveTo(x, y);
+        first = false;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+
+    // Draw arrow at the end
+    if (path.length >= 2) {
+      const last = path[path.length - 1];
+      const secondLast = path[path.length - 2];
+      const { x: x1, y: y1 } = squareToScreen(secondLast.col, secondLast.row);
+      const { x: x2, y: y2 } = squareToScreen(last.col, last.row);
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > 0) {
+        const arrowLen = 10;
+        const arrowAngle = Math.PI / 6; // 30 degrees
+        const angle = Math.atan2(dy, dx);
+        const leftAngle = angle - arrowAngle;
+        const rightAngle = angle + arrowAngle;
+        const leftX = x2 - arrowLen * Math.cos(leftAngle);
+        const leftY = y2 - arrowLen * Math.sin(leftAngle);
+        const rightX = x2 - arrowLen * Math.cos(rightAngle);
+        const rightY = y2 - arrowLen * Math.sin(rightAngle);
+        ctx.beginPath();
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(leftX, leftY);
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(rightX, rightY);
+        ctx.stroke();
+      }
     }
 
     ctx.restore();
@@ -737,8 +805,10 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
           }
         }
 
-        // Draw selection highlight (red border)
-        const isSelected = selectedHex.col === col && selectedHex.row === row;
+        // Draw selection highlight (red border) for selected units
+        const selectedUnitId = gameState.selectedUnit;
+        const unitAtTile = units.find(u => u.col === col && u.row === row);
+        const isSelected = selectedUnitId && unitAtTile && unitAtTile.id === selectedUnitId;
         if (isSelected) {
           ctx.strokeStyle = '#FF0000';
           ctx.lineWidth = 3;
@@ -755,17 +825,27 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       }
     }
 
+    // Draw unit paths for all units that have paths
+    unitPaths.forEach((path, unitId) => {
+      drawUnitPath(ctx, unitId, path, units, gameState, squareToScreen);
+    });
+
   };
 
   // Handle mouse events
   const handleMouseDown = (e) => {
+    // Don't allow dragging in Go To mode
+    if (gotoMode) {
+      return;
+    }
+    
     setIsDragging(true);
     setLastMousePos({ x: e.clientX, y: e.clientY });
     triggerRender(); // Immediate render for visual feedback
   };
 
   const handleMouseMove = (e) => {
-    if (isDragging) {
+    if (isDragging && !gotoMode) {
       const dx = e.clientX - lastMousePos.x;
       const dy = e.clientY - lastMousePos.y;
       
@@ -808,10 +888,97 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         });
       } else {
         const hex = screenToSquare(x, y);
+        
+        // Check if clicking on already selected hex - deselect everything
+        if (selectedHex.col === hex.col && selectedHex.row === hex.row) {
+          console.log(`[CLICK] Deselecting selected hex (${hex.col}, ${hex.row})`);
+          if (actions && typeof actions.selectUnit === 'function') {
+            actions.selectUnit(null);
+          }
+          if (actions && typeof actions.selectCity === 'function') {
+            actions.selectCity(null);
+          }
+          setSelectedHex({ col: -1, row: -1 });
+          return;
+        }
+        
         setSelectedHex(hex);
         setContextMenu(null); // Hide context menu on left click
 
         console.log(`[CLICK] Map click at hex (${hex.col}, ${hex.row})`);
+
+        // Handle Go To mode
+        if (gotoMode && gotoUnit) {
+          console.log(`[CLICK] Go To destination set for unit ${gotoUnit.id} to (${hex.col}, ${hex.row})`);
+          
+          // Calculate path using Pathfinding
+          try {
+            const pathResult = Pathfinding.findPath(
+              gotoUnit.col,
+              gotoUnit.row,
+              hex.col,
+              hex.row,
+              (col, row) => {
+                // Get tile from terrain data
+                const tileIndex = row * mapData.width + col;
+                return mapData.tiles?.[tileIndex] || null;
+              },
+              gotoUnit.type,
+              mapData.width,
+              mapData.height
+            );
+
+            if (pathResult.success && pathResult.path.length > 1) {
+              // Store the path (excluding the starting position)
+              const pathToFollow = pathResult.path.slice(1);
+              setUnitPaths(prev => new Map(prev).set(gotoUnit.id, pathToFollow));
+              
+              if (actions?.addNotification) actions.addNotification({
+                type: 'success',
+                message: `${gotoUnit.type} will go to (${hex.col}, ${hex.row})`
+              });
+              
+              console.log(`[CLICK] Path calculated for unit ${gotoUnit.id}:`, pathToFollow);
+              
+              // Try to move to first step automatically
+              if (pathToFollow.length > 0 && gotoUnit.movesRemaining > 0) {
+                const nextPos = pathToFollow[0];
+                try {
+                  const moveResult = gameEngine.moveUnit(gotoUnit.id, nextPos.col, nextPos.row);
+                  if (moveResult && moveResult.success) {
+                    // Update path to remaining
+                    const remainingPath = pathToFollow.slice(1);
+                    setUnitPaths(prev => new Map(prev).set(gotoUnit.id, remainingPath));
+                    console.log(`[CLICK] Unit ${gotoUnit.id} moved to (${nextPos.col}, ${nextPos.row}), remaining path:`, remainingPath);
+                  } else {
+                    console.log(`[CLICK] Automatic move failed for unit ${gotoUnit.id}`);
+                  }
+                } catch (e) {
+                  console.log(`[CLICK] Automatic move error:`, e);
+                }
+              }
+              
+              // Trigger render to show the path immediately
+              triggerRender();
+            } else {
+              if (actions?.addNotification) actions.addNotification({
+                type: 'warning',
+                message: 'Cannot reach destination'
+              });
+            }
+          } catch (e) {
+            console.log(`[CLICK] Pathfinding error:`, e);
+            if (actions?.addNotification) actions.addNotification({
+              type: 'error',
+              message: 'Pathfinding failed'
+            });
+          }
+          
+          // Exit Go To mode
+          setGotoMode(false);
+          setGotoUnit(null);
+          return;
+        }
 
         // Select the hex in the global store
         if (actions && typeof actions.selectHex === 'function') {
@@ -835,8 +1002,35 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
 
         if (unitAt && currentPlayer && unitAt.civilizationId === currentPlayer.id) {
           console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type}) at (${hex.col}, ${hex.row})`);
+          
+          // Check if this unit is already selected - if so, deselect it
+          const currentlySelectedUnitId = gameState?.selectedUnit;
+          if (currentlySelectedUnitId === unitAt.id) {
+            console.log(`[CLICK] Deselecting unit ${unitAt.id}`);
+            if (actions && typeof actions.selectUnit === 'function') {
+              actions.selectUnit(null);
+            }
+            return; // Don't proceed with normal selection
+          }
+          
           if (actions && typeof actions.selectUnit === 'function') {
             actions.selectUnit(unitAt.id);
+          }
+          
+          // If the unit has a path and moves, continue following
+          const existingPath = unitPaths.get(unitAt.id);
+          if (existingPath && existingPath.length > 0 && unitAt.movesRemaining > 0) {
+            const nextPos = existingPath[0];
+            try {
+              const moveResult = gameEngine.moveUnit(unitAt.id, nextPos.col, nextPos.row);
+              if (moveResult && moveResult.success) {
+                const remainingPath = existingPath.slice(1);
+                setUnitPaths(prev => new Map(prev).set(unitAt.id, remainingPath));
+                console.log(`[CLICK] Unit ${unitAt.id} continued path to (${nextPos.col}, ${nextPos.row}), remaining:`, remainingPath);
+              }
+            } catch (e) {
+              console.log(`[CLICK] Continue path error:`, e);
+            }
           }
         } else if (cityAt) {
           console.log(`[CLICK] Selected city ${cityAt.id} (${cityAt.name}) at (${hex.col}, ${hex.row})`);
@@ -888,6 +1082,12 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
 
   const handleRightClick = (e) => {
     e.preventDefault();
+    
+    // Don't show context menu in Go To mode
+    if (gotoMode) {
+      return;
+    }
+    
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -912,6 +1112,11 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     }
 
     console.log(`[ContextMenu] Right-clicked player unit ${unitAtHex.id} (${unitAtHex.type})`);
+
+    // Select the unit
+    if (actions && typeof actions.selectUnit === 'function') {
+      actions.selectUnit(unitAtHex.id);
+    }
 
     // Get city at this location
     let cityAtHex = null;
@@ -990,6 +1195,20 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
             message: `${unit.type} turn skipped`
           });
           if (actions?.selectUnit) actions.selectUnit(null);
+        }
+        break;
+
+      case 'goto':
+        if (unit) {
+          console.log(`[ContextMenu] Entering Go To mode for unit ${unit.id}`);
+          setGotoMode(true);
+          setGotoUnit(unit);
+          if (actions?.selectUnit) actions.selectUnit(unit.id); // Ensure unit is selected
+          setContextMenu(null); // Close the context menu
+          if (actions?.addNotification) actions.addNotification({
+            type: 'info',
+            message: `Click destination for ${unit.type} to go to`
+          });
         }
         break;
 
@@ -1077,6 +1296,11 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
 
   const handleWheel = (e) => {
     e.preventDefault();
+    
+    // Don't allow zooming in Go To mode
+    if (gotoMode) {
+      return;
+    }
     
     // Smoother zoom with smaller increments
     const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05;
@@ -1177,24 +1401,41 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     triggerRender();
   }, [gameState.activePlayer, gameState.currentTurn, units.length, cities.length]);
 
-  // Close context menu when clicking outside
+  // Auto-move units along paths when turn changes
   useEffect(() => {
-    const handleClickOutside = () => {
-      setContextMenu(null);
-      triggerRender(); // Render to hide context menu
-    };
-    if (contextMenu) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [contextMenu]);
+    if (!gameEngine || !units || !currentPlayer) return;
+
+    unitPaths.forEach((path, unitId) => {
+      if (path.length === 0) return;
+
+      const unit = units.find(u => u.id === unitId);
+      if (!unit || unit.civilizationId !== currentPlayer.id || unit.movesRemaining <= 0) return;
+
+      const nextPos = path[0];
+      try {
+        const moveResult = gameEngine.moveUnit(unitId, nextPos.col, nextPos.row);
+        if (moveResult && moveResult.success) {
+          const remainingPath = path.slice(1);
+          setUnitPaths(prev => new Map(prev).set(unitId, remainingPath));
+          console.log(`[AutoMove] Unit ${unitId} moved to (${nextPos.col}, ${nextPos.row}), remaining:`, remainingPath);
+        }
+      } catch (e) {
+        console.log(`[AutoMove] Error auto-moving unit ${unitId}:`, e);
+      }
+    });
+  }, [gameState.currentTurn]);
+
 
   return (
     <div className="position-relative w-100 h-100">
       <canvas
         ref={canvasRef}
         className="w-100 h-100"
-        style={{ cursor: minimap ? 'pointer' : (isDragging ? 'grabbing' : 'grab') }}
+        style={{ 
+          cursor: minimap ? 'pointer' : 
+                  gotoMode ? 'crosshair' : 
+                  (isDragging ? 'grabbing' : 'grab') 
+        }}
         tabIndex={minimap ? -1 : 0}
         onMouseDown={minimap ? null : handleMouseDown}
         onMouseMove={minimap ? null : handleMouseMove}
@@ -1205,136 +1446,12 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       />
       
       {/* Context Menu (not shown on minimap) */}
-      {!minimap && contextMenu && (
-        <div
-          className="position-fixed bg-dark border border-light text-white"
-          style={{
-            left: `${Math.min(contextMenu.x, window.innerWidth - 250)}px`,
-            top: `${Math.min(contextMenu.y, window.innerHeight - 400)}px`,
-            zIndex: 1000,
-            minWidth: '180px',
-            fontSize: '12px',
-            fontFamily: 'monospace'
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="bg-secondary p-2 border-bottom border-light">
-            <strong>
-              {contextMenu.unit ? `${contextMenu.unit.type}` :
-               contextMenu.city ? `${contextMenu.city.name}` :
-               'Menu'}
-            </strong>
-            <div className="context-menu-coords" style={{ fontSize: '10px', color: '#aaa' }}>
-              ({contextMenu.hex.col}, {contextMenu.hex.row})
-            </div>
-          </div>
-          
-          {/* Unit Actions */}
-          {contextMenu.unit && (
-            <>
-              <button
-                className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
-                onClick={() => executeContextAction('sleep')}
-              >
-                {contextMenu.unit.isSleeping ? '🌅 Wake Up' : '😴 Sleep'}
-              </button>
-
-              {(contextMenu.unit.type === 'warriors' || contextMenu.unit.type === 'archer' || contextMenu.unit.type === 'chariot') && (
-                <button
-                  className={`btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button ${
-                    (contextMenu.unit.movesRemaining || 0) > 0 ? 'btn-dark text-white' : 'btn-secondary text-muted'
-                  }`}
-                  disabled={(contextMenu.unit.movesRemaining || 0) <= 0}
-                  onClick={() => executeContextAction('fortify')}
-                >
-                  🛡️ Fortify
-                </button>
-              )}
-
-              {(contextMenu.unit.type === 'settlers' || contextMenu.unit.type === 'settler') && (
-                <>
-                  <button
-                    className={`btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button ${
-                      (contextMenu.unit.movesRemaining || 0) > 0 ? 'btn-dark text-white' : 'btn-secondary text-muted'
-                    }`}
-                    disabled={(contextMenu.unit.movesRemaining || 0) <= 0}
-                    onClick={() => executeContextAction('found_city')}
-                  >
-                    🏛️ Found City
-                  </button>
-
-                  <button
-                    className={`btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button ${
-                      (contextMenu.unit.movesRemaining || 0) > 0 ? 'btn-dark text-white' : 'btn-secondary text-muted'
-                    }`}
-                    disabled={(contextMenu.unit.movesRemaining || 0) <= 0}
-                    onClick={() => executeContextAction('build_road')}
-                  >
-                    🛣️ Build Road
-                  </button>
-                </>
-              )}
-
-              {/* ORDERS separator */}
-              <hr style={{ margin: '4px 0', borderColor: '#555' }} />
-
-              {/* ORDERS Menu */}
-              <div style={{ fontSize: '11px', color: '#aaa', padding: '4px 8px', fontWeight: 'bold' }}>
-                ORDERS
-              </div>
-
-              <button
-                className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
-                onClick={() => executeContextAction('patrol')}
-              >
-                🔄 Patrol
-              </button>
-
-              <hr style={{ margin: '4px 0', borderColor: '#555' }} />
-
-              <button
-                className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
-                onClick={() => executeContextAction('skip_turn')}
-              >
-                ⏭️ Skip Turn
-              </button>
-            </>
-          )}
-
-          {/* City Actions */}
-          {contextMenu.city && (
-            <>
-              <button
-                className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
-                onClick={() => executeContextAction('viewProduction')}
-              >
-                🏭 View Production
-              </button>
-              <button
-                className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
-                onClick={() => executeContextAction('cityInfo')}
-              >
-                📊 City Info
-              </button>
-            </>
-          )}
-
-          {/* General Actions */}
-          <hr style={{ margin: '4px 0', borderColor: '#555' }} />
-          <button
-            className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
-            onClick={() => executeContextAction('centerView')}
-          >
-            📍 Center View
-          </button>
-          <button
-            className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-dark text-white"
-            onClick={() => executeContextAction('examineHex')}
-          >
-            🔍 Examine
-          </button>
-        </div>
+      {!minimap && (
+        <UnitActionsModal
+          contextMenu={contextMenu}
+          onExecuteAction={executeContextAction}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   );

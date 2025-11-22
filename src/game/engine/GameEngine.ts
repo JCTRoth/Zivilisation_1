@@ -5,6 +5,7 @@ import { ProductionManager } from './ProductionManager';
 import { AIUtility } from './AIUtility';
 import { UnitActionManager } from './UnitActionManager';
 import { SettlementEvaluator } from './SettlementEvaluator';
+import { Pathfinding } from './Pathfinding';
 import type { GameActions, Unit, City, Civilization } from '../../../types/game';
 
 interface GameSettings {
@@ -25,6 +26,7 @@ interface MapTile {
   col: number;
   row: number;
   type?: string;
+  river?: boolean;
 }
 
 interface MapData {
@@ -116,7 +118,7 @@ export default class GameEngine {
     if (!this.renderer || !this.renderer.setHighlightedHexes) return;
     // Set a single highlighted hex for a short time
     try {
-      this.renderer.setHighlightedHexes([{ col, row }]);
+      this.renderer.setHighlightedHexes([{col, row}]);
     } catch (e) {
       // ignore
     }
@@ -130,14 +132,22 @@ export default class GameEngine {
     const unexplored = this.findNearbyUnexplored(unit);
     if (unexplored) {
       console.log(`[AI] Chose unexplored tile at (${unexplored.col},${unexplored.row})`);
-      return { col: unexplored.col, row: unexplored.row };
+      return {col: unexplored.col, row: unexplored.row};
     }
 
-    // 2) Nearby enemy unit
+    // 2) Nearby enemy unit - use A* pathfinding if visible
     const enemy = this.findNearbyEnemy(unit);
     if (enemy) {
-      console.log(`[AI] Chose enemy unit at (${enemy.col},${enemy.row})`);
-      return { col: enemy.col, row: enemy.row };
+      const tile = this.getTileAt(enemy.col, enemy.row);
+      // If enemy is visible and within 5x5, use A* pathfinding
+      if (tile && tile.visible) {
+        console.log(`[AI] Found visible enemy at (${enemy.col},${enemy.row}), using A* pathfinding`);
+        // Calculate path using A*
+        this.calculateUnitPath(unit.id, enemy.col, enemy.row);
+      } else {
+        console.log(`[AI] Chose enemy unit at (${enemy.col},${enemy.row})`);
+      }
+      return {col: enemy.col, row: enemy.row};
     }
 
     // 3) Choose best neighbor based on terrain cost
@@ -145,12 +155,12 @@ export default class GameEngine {
 
     const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
     const terrainAnalysis = AIUtility.analyzeSurroundingTerrain(
-      unit.col,
-      unit.row,
-      neighbors,
-      (col, row) => this.getTileAt(col, row),
-      (col, row) => this.getUnitAt(col, row),
-      (col, row) => this.squareGrid!.isValidSquare(col, row)
+        unit.col,
+        unit.row,
+        neighbors,
+        (col, row) => this.getTileAt(col, row),
+        (col, row) => this.getUnitAt(col, row),
+        (col, row) => this.squareGrid!.isValidSquare(col, row)
     );
 
     if (terrainAnalysis.passableMoves.length > 0) {
@@ -160,7 +170,7 @@ export default class GameEngine {
       if (bestMove) {
         const terrainName = AIUtility.getTerrainName(bestMove.terrainType);
         console.log(`[AI] Chose best neighbor at (${bestMove.col},${bestMove.row}) - ${terrainName} (cost: ${bestMove.moveCost})`);
-        return { col: bestMove.col, row: bestMove.row };
+        return {col: bestMove.col, row: bestMove.row};
       }
     }
 
@@ -181,13 +191,19 @@ export default class GameEngine {
     return null;
   }
 
-  // Find nearby enemy unit
+  // Find nearby enemy unit (check visibility for player units)
   private findNearbyEnemy(unit: any, searchRadius: number = 5): any {
     if (!this.squareGrid) return null;
     const nearbyTiles = this.squareGrid.getSquaresInRange(unit.col, unit.row, searchRadius);
     for (const tilePos of nearbyTiles) {
       const enemyUnit = this.getUnitAt(tilePos.col, tilePos.row);
       if (enemyUnit && enemyUnit.civilizationId !== unit.civilizationId) {
+        // Check if enemy is visible (for player units, AI should use A* for visible enemies)
+        const tile = this.getTileAt(tilePos.col, tilePos.row);
+        if (tile && tile.visible) {
+          // Found visible enemy - mark for A* pathfinding
+          // Note: enemyUnit.isVisible property removed - visibility is checked via tile.visible
+        }
         return enemyUnit;
       }
     }
@@ -209,40 +225,35 @@ export default class GameEngine {
       // Special handling for settlers - use settlement evaluator
       if (unit.type === 'settlers') {
         console.log(`[AI] Settler detected, using settlement evaluator`);
-
-        // At the beginning of the game, temporarily reveal tiles around the settler for evaluation
-        let temporarilyRevealed = false;
-        if (this.currentTurn === 1) {
-          console.log(`[AI] Beginning of game - temporarily revealing 10-tile radius around settler for evaluation`);
-          this.revealArea(unit.col, unit.row, 10);
-          temporarilyRevealed = true;
-        }
+        console.log(`[AI] Settler can only evaluate visible tiles around current position`);
 
         // Find best settlement location using balanced growth strategy
+        // AI can only see what's currently visible (no cheating with extra vision)
         const bestLocation = SettlementEvaluator.findBestSettlementLocation(
-          unit.col,
-          unit.row,
-          (col, row) => this.getTileAt(col, row),
-          (col, row) => this.getCityAt(col, row),
-          (col, row) => this.getUnitAt(col, row),
-          SettlementEvaluator.balancedGrowthWeights(),
-          3,
-          civilizationId, // Pass civilization ID for proximity penalties
-          // Visibility check - AI can only see visible tiles
-          (col, row) => {
-            const tile = this.getTileAt(col, row);
-            return tile && tile.visible;
-          },
-          // Reachability check - unit must be able to reach the location
-          (fromCol, fromRow, toCol, toRow) => {
-            if (!this.squareGrid) return false;
-            const path = this.squareGrid.findPath(fromCol, fromRow, toCol, toRow, new Set());
-            return path.length > 1; // Has a path if more than just start position
-          }
-        );
-
-        // If we temporarily revealed tiles, we might want to hide them again, but for now keep them revealed
-        // as the AI will move towards the location anyway
+            unit.col,
+            unit.row,
+            (col, row) => this.getTileAt(col, row),
+            (col, row) => this.getCityAt(col, row),
+            (col, row) => this.getUnitAt(col, row),
+            SettlementEvaluator.balancedGrowthWeights(),
+            3,
+            civilizationId, // Pass civilization ID for proximity penalties
+            // Visibility check - AI can ONLY see visible tiles (no cheating)
+            (col, row) => {
+              const tile = this.getTileAt(col, row);
+              const isVisible = tile && tile.visible;
+              if (!isVisible && Math.abs(col - unit.col) <= 5 && Math.abs(row - unit.row) <= 5) {
+                console.log(`[AI] Settlement evaluator rejected tile (${col},${row}) - not visible`);
+              }
+              return isVisible;
+            },
+            // Reachability check - unit must be able to reach the location
+            (fromCol, fromRow, toCol, toRow) => {
+              if (!this.squareGrid) return false;
+              const path = this.squareGrid.findPath(fromCol, fromRow, toCol, toRow, new Set());
+              return path.length > 1; // Has a path if more than just start position
+            }
+        )
 
         if (bestLocation) {
           console.log(`[AI] Found optimal settlement location at (${bestLocation.col},${bestLocation.row}) with score ${bestLocation.score}`);
@@ -363,23 +374,23 @@ export default class GameEngine {
               console.log(`[AI] Path step failed with non-terminal reason: ${reason}, trying fallback`);
               const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
               const terrainAnalysis = AIUtility.analyzeSurroundingTerrain(
-                unit.col,
-                unit.row,
-                neighbors,
-                (col, row) => this.getTileAt(col, row),
-                (col, row) => this.getUnitAt(col, row),
-                (col, row) => this.squareGrid!.isValidSquare(col, row)
+                  unit.col,
+                  unit.row,
+                  neighbors,
+                  (col, row) => this.getTileAt(col, row),
+                  (col, row) => this.getUnitAt(col, row),
+                  (col, row) => this.squareGrid!.isValidSquare(col, row)
               );
               if (terrainAnalysis.passableMoves.length > 0) {
                 // Prefer moves we can afford with current moves remaining
                 const affordableMoves = terrainAnalysis.passableMoves.filter(m =>
-                  AIUtility.canAffordMove(unit.movesRemaining || 0, m.moveCost)
+                    AIUtility.canAffordMove(unit.movesRemaining || 0, m.moveCost)
                 );
 
                 if (affordableMoves.length > 0) {
                   // Pick cheapest affordable move
                   const moveOption = affordableMoves.reduce((best, current) =>
-                    current.moveCost < best.moveCost ? current : best
+                      current.moveCost < best.moveCost ? current : best
                   );
                   console.log(`[AI] Found affordable fallback move to (${moveOption.col},${moveOption.row}) - cost: ${moveOption.moveCost}, remaining: ${unit.movesRemaining}`);
                   const r = this.moveUnit(unit.id, moveOption.col, moveOption.row);
@@ -401,23 +412,23 @@ export default class GameEngine {
             // No path found, try moving to any valid neighbor as fallback
             const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
             const terrainAnalysis = AIUtility.analyzeSurroundingTerrain(
-              unit.col,
-              unit.row,
-              neighbors,
-              (col, row) => this.getTileAt(col, row),
-              (col, row) => this.getUnitAt(col, row),
-              (col, row) => this.squareGrid!.isValidSquare(col, row)
+                unit.col,
+                unit.row,
+                neighbors,
+                (col, row) => this.getTileAt(col, row),
+                (col, row) => this.getUnitAt(col, row),
+                (col, row) => this.squareGrid!.isValidSquare(col, row)
             );
             if (terrainAnalysis.passableMoves.length > 0) {
               // Prefer moves we can afford with current moves remaining
               const affordableMoves = terrainAnalysis.passableMoves.filter(m =>
-                AIUtility.canAffordMove(unit.movesRemaining || 0, m.moveCost)
+                  AIUtility.canAffordMove(unit.movesRemaining || 0, m.moveCost)
               );
 
               if (affordableMoves.length > 0) {
                 // Pick cheapest affordable move
                 const moveOption = affordableMoves.reduce((best, current) =>
-                  current.moveCost < best.moveCost ? current : best
+                    current.moveCost < best.moveCost ? current : best
                 );
                 console.log(`[AI] Found affordable fallback move to (${moveOption.col},${moveOption.row}) - cost: ${moveOption.moveCost}, remaining: ${unit.movesRemaining}`);
                 const r = this.moveUnit(unit.id, moveOption.col, moveOption.row);
@@ -445,7 +456,10 @@ export default class GameEngine {
     console.log(`[AI] Finished all units for civilization ${civilizationId}`);
     // Clear highlights and signal turn end for AI
     if (this.renderer && this.renderer.setHighlightedHexes) {
-      try { this.renderer.setHighlightedHexes([]); } catch (e) {}
+      try {
+        this.renderer.setHighlightedHexes([]);
+      } catch (e) {
+      }
     }
 
     // Check if turn should end automatically after AI moves
@@ -453,7 +467,7 @@ export default class GameEngine {
 
     // After AI finished its units, auto-advance to next player
     console.log(`[AI] AI turn completed for civilization ${civilizationId}, advancing to next player`);
-    this.onStateChange && this.onStateChange('AI_FINISHED', { civilizationId });
+    this.onStateChange && this.onStateChange('AI_FINISHED', {civilizationId});
   }
 
   /**
@@ -463,7 +477,7 @@ export default class GameEngine {
     console.log('Initializing game engine...');
 
     // Merge custom settings
-    this.gameSettings = { ...this.gameSettings, ...settings };
+    this.gameSettings = {...this.gameSettings, ...settings};
 
     // Validate playerCivilization index
     if (this.gameSettings.playerCivilization < 0 ||
@@ -537,6 +551,9 @@ export default class GameEngine {
         });
       }
     }
+
+    // Generate rivers on land tiles (connected rivers at least 8 tiles long)
+    this.generateRivers();
 
     this.map = {
       width: Constants.MAP_WIDTH,
@@ -621,7 +638,7 @@ export default class GameEngine {
           }
 
           if (validPosition) {
-            startPos = { col, row };
+            startPos = {col, row};
           }
         }
         attempts++;
@@ -788,7 +805,7 @@ export default class GameEngine {
 
     // Remove settler unit that founded the city
     const settlerIdx = this.units.findIndex(u =>
-      u.col === col && u.row === row && u.civilizationId === civilizationId && u.type === 'settlers'
+        u.col === col && u.row === row && u.civilizationId === civilizationId && u.type === 'settlers'
     );
     if (settlerIdx !== -1) {
       this.units.splice(settlerIdx, 1);
@@ -797,65 +814,26 @@ export default class GameEngine {
     console.log(`${civ.name} founded ${cityName} at (${col}, ${row})`);
     return city;
   }
-  async createTechnologies() {
-    this.technologies = [
-      {
-        id: 'pottery',
-        name: 'Pottery',
-        description: 'Allows granary construction',
-        cost: 20,
-        prerequisites: [],
-        available: true,
-        researched: false
-      },
-      {
-        id: 'bronze_working',
-        name: 'Bronze Working',
-        description: 'Enables bronze weapons and tools',
-        cost: 30,
-        prerequisites: [],
-        available: true,
-        researched: false
-      },
-      {
-        id: 'alphabet',
-        name: 'Alphabet',
-        description: 'Enables library construction',
-        cost: 40,
-        prerequisites: [],
-        available: true,
-        researched: false
-      },
-      {
-        id: 'iron_working',
-        name: 'Iron Working',
-        description: 'Enables iron weapons',
-        cost: 50,
-        prerequisites: ['bronze_working'],
-        available: false,
-        researched: false
-      }
-    ];
-  }
+
 
   /**
    * Convert screen coordinates to hex coordinates
    */
-  screenToHex(screenX, screenY) {
+  screenToHex(screenX: number, screenY: number) {
     return this.squareGrid.getSquareAtPosition(screenX, screenY);
   }
 
   /**
    * Check if hex coordinates are valid
    */
-  isValidHex(col, row) {
+  isValidHex(col: number, row: number) {
     return this.squareGrid.isValidSquare(col, row);
   }
 
   /**
    * Get tile at coordinates
    */
-  getTileAt(col, row) {
+  getTileAt(col: number, row: number) {
     if (!this.squareGrid.isValidSquare(col, row)) return null;
     const index = row * this.map.width + col;
     return this.map.tiles[index] || null;
@@ -864,14 +842,14 @@ export default class GameEngine {
   /**
    * Get unit at coordinates
    */
-  getUnitAt(col, row) {
+  getUnitAt(col: number, row: number) {
     return this.units.find(unit => unit.col === col && unit.row === row) || null;
   }
 
   /**
    * Get city at coordinates
    */
-  getCityAt(col, row) {
+  getCityAt(col: number, row: number) {
     return this.cities.find(city => city.col === col && city.row === row) || null;
   }
 
@@ -934,7 +912,9 @@ export default class GameEngine {
       console.log(`[canUnitMoveTo] Target tile does not exist at (${targetCol}, ${targetRow}).`);
       return false;
     }
-    if (TERRAIN_PROPS[targetTile.type]?.passable === false) {
+    // Rivers are passable, but deep water (ocean) is not
+    const isPassable = TERRAIN_PROPS[targetTile.type]?.passable !== false || targetTile.river;
+    if (!isPassable) {
       console.log(`[canUnitMoveTo] Target tile at (${targetCol}, ${targetRow}) is not passable.`);
       return false;
     }
@@ -967,16 +947,18 @@ export default class GameEngine {
    */
   moveUnit(unitId, targetCol, targetRow) {
     const unit = this.units.find(u => u.id === unitId);
-    if (!unit) return { success: false, reason: 'unit_not_found' };
-    if (!this.squareGrid.isValidSquare(targetCol, targetRow)) return { success: false, reason: 'invalid_target' };
+    if (!unit) return {success: false, reason: 'unit_not_found'};
+    if (!this.squareGrid.isValidSquare(targetCol, targetRow)) return {success: false, reason: 'invalid_target'};
 
     // Check if unit has moves remaining
-    if ((unit.movesRemaining || 0) <= 0) return { success: false, reason: 'no_moves_left' };
+    if ((unit.movesRemaining || 0) <= 0) return {success: false, reason: 'no_moves_left'};
 
     // Check if target tile is passable
     const targetTile = this.getTileAt(targetCol, targetRow);
-    if (!targetTile) return { success: false, reason: 'invalid_target' };
-    if (TERRAIN_PROPS[targetTile.type]?.passable === false) return { success: false, reason: 'terrain_impassable' };
+    if (!targetTile) return {success: false, reason: 'invalid_target'};
+    // Rivers are passable, but deep water (ocean) is not
+    const isPassable = TERRAIN_PROPS[targetTile.type]?.passable !== false || targetTile.river;
+    if (!isPassable) return {success: false, reason: 'terrain_impassable'};
 
     // Check if there's another unit at target (combat or stacking rules)
     const targetUnit = this.getUnitAt(targetCol, targetRow);
@@ -985,7 +967,7 @@ export default class GameEngine {
       const combatResult = this.combatUnit(unit, targetUnit);
       // combatUnit returns boolean success currently; normalize
       const success = !!combatResult;
-      return { success, reason: success ? 'combat_victory' : 'combat_defeat' };
+      return {success, reason: success ? 'combat_victory' : 'combat_defeat'};
     }
 
     // Move the unit
@@ -1006,16 +988,16 @@ export default class GameEngine {
 
       // Trigger state update
       if (this.onStateChange) {
-        this.onStateChange('UNIT_MOVED', { unit, targetCol, targetRow });
+        this.onStateChange('UNIT_MOVED', {unit, targetCol, targetRow});
       }
 
       // Check if turn should end automatically
       this.checkAndEndTurnIfNoMoves();
 
-      return { success: true };
+      return {success: true};
     }
 
-    return { success: false, reason: 'insufficient_moves' };
+    return {success: false, reason: 'insufficient_moves'};
   }
 
   /**
@@ -1043,7 +1025,7 @@ export default class GameEngine {
       this.units = this.units.filter(u => u.id !== defender.id);
 
       if (this.onStateChange) {
-        this.onStateChange('COMBAT_VICTORY', { attacker, defender });
+        this.onStateChange('COMBAT_VICTORY', {attacker, defender});
       }
 
       // Check if turn should end automatically
@@ -1060,7 +1042,7 @@ export default class GameEngine {
       }
 
       if (this.onStateChange) {
-        this.onStateChange('COMBAT_DEFEAT', { attacker, defender });
+        this.onStateChange('COMBAT_DEFEAT', {attacker, defender});
       }
 
       // Check if turn should end automatically
@@ -1108,13 +1090,13 @@ export default class GameEngine {
       science: 0,
       isCapital: this.cities.filter(c => c.civilizationId === civId).length === 0,
       buildings: [],
-      yields: { food: 2, production: 1, trade: 0 },
+      yields: {food: 2, production: 1, trade: 0},
       foodStored: 0,
       foodNeeded: 20,
       productionStored: 0,
       productionProgress: 0, // Initialize production display
-      currentProduction: { type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }, // Default to first unit
-      buildQueue: [{ type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }] // Default production queue
+      currentProduction: {type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10}, // Default to first unit
+      buildQueue: [{type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10}] // Default production queue
     };
 
     this.cities.push(city);
@@ -1130,7 +1112,7 @@ export default class GameEngine {
     console.log(`[SETTLER REMOVAL] ${settler.type} (${settlerId}) founded city "${cityName}" at (${settler.col},${settler.row}) and was removed from the map`);
 
     if (this.onStateChange) {
-      this.onStateChange('CITY_FOUNDED', { city, settler });
+      this.onStateChange('CITY_FOUNDED', {city, settler});
     }
 
     // Check if turn should end automatically after founding city
@@ -1154,13 +1136,13 @@ export default class GameEngine {
         // For human players, ask for confirmation instead of auto-ending
         console.log('[TURN] Human player has no moves left - asking for confirmation');
         if (this.onStateChange) {
-          this.onStateChange('TURN_END_CONFIRMATION_NEEDED', { civilizationId: this.activePlayer });
+          this.onStateChange('TURN_END_CONFIRMATION_NEEDED', {civilizationId: this.activePlayer});
         }
       } else {
         // For AI players, auto-end the turn
         console.log('[TURN] AI player has no moves left - auto-ending turn');
         if (this.onStateChange) {
-          this.onStateChange('AUTO_END_TURN', { civilizationId: this.activePlayer });
+          this.onStateChange('AUTO_END_TURN', {civilizationId: this.activePlayer});
         }
       }
     }
@@ -1177,11 +1159,11 @@ export default class GameEngine {
 
     // Reset unit moves for the new active player
     this.units
-      .filter(u => u.civilizationId === this.activePlayer)
-      .forEach(unit => {
-        const unitProps = UNIT_PROPS[unit.type];
-        unit.movesRemaining = unitProps ? unitProps.movement : 1;
-      });
+        .filter(u => u.civilizationId === this.activePlayer)
+        .forEach(unit => {
+          const unitProps = UNIT_PROPS[unit.type];
+          unit.movesRemaining = unitProps ? unitProps.movement : 1;
+        });
 
     // Process purchased items from previous turn
     this.cities.forEach(city => {
@@ -1190,9 +1172,9 @@ export default class GameEngine {
           if (item.type === 'unit') {
             // Create unit at city location
             const unitType = item.itemType;
-            const unitProps = UNIT_PROPS[unitType] || { movement: 1 };
+            const unitProps = UNIT_PROPS[unitType] || {movement: 1};
             const unit = {
-              id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+              id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
               type: unitType,
               civilizationId: city.civilizationId,
               col: city.col,
@@ -1209,7 +1191,7 @@ export default class GameEngine {
 
             // Notify state change
             if (this.onStateChange) {
-              this.onStateChange('UNIT_PURCHASED', { cityId: city.id, unit });
+              this.onStateChange('UNIT_PURCHASED', {cityId: city.id, unit});
             }
           } else if (item.type === 'building') {
             // Add building to city
@@ -1220,7 +1202,7 @@ export default class GameEngine {
 
             // Notify state change
             if (this.onStateChange) {
-              this.onStateChange('BUILDING_PURCHASED', { cityId: city.id, buildingType });
+              this.onStateChange('BUILDING_PURCHASED', {cityId: city.id, buildingType});
             }
           }
         });
@@ -1231,89 +1213,89 @@ export default class GameEngine {
 
     // Process cities for the active player
     this.cities
-      .filter(c => c.civilizationId === this.activePlayer)
-      .forEach(city => {
-        // Check if we need to start production from queue
-        if (!city.currentProduction && city.buildQueue && city.buildQueue.length > 0) {
-          const nextItem = city.buildQueue.shift();
-          if (nextItem) {
-            city.currentProduction = nextItem;
-            city.productionProgress = city.carriedOverProgress || 0;
-            city.carriedOverProgress = 0;
-          }
-        }
-
-        // Add food for growth
-        city.foodStored += city.yields.food;
-        if (city.foodStored >= city.foodNeeded) {
-          city.population++;
-          city.foodStored = 0;
-          city.foodNeeded = city.population * 20;
-        }
-
-        // Add production (with bonus if actively producing)
-        if (city.currentProduction) {
-           const before = city.productionStored;
-           city.productionStored += city.yields.production;
-           city.productionProgress = city.productionStored; // Keep in sync for UI
-           if (city.productionStored > before) {
-             console.log(`[PRODUCTION] City ${city.name} (${city.id}) productionStored increased: ${before} -> ${city.productionStored}`);
-           }
-          if (city.productionStored >= city.currentProduction.cost) {
-            // Complete production
-            console.log(`[PRODUCTION] City ${city.name} completed production: ${city.currentProduction.type} ${city.currentProduction.itemType}`);
-            city.productionStored = 0;
-            city.productionProgress = 0; // Reset production progress display
-
-            // Handle completed production
-            if (city.currentProduction.type === 'unit') {
-              // Create unit at city location
-              const unitType = city.currentProduction.itemType;
-              const unitProps = UNIT_PROPS[unitType] || { movement: 1 };
-              const unit = {
-                id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
-                type: unitType,
-                civilizationId: city.civilizationId,
-                col: city.col,
-                row: city.row,
-                health: 100,
-                movement: unitProps.movement, // Full movement points
-                movesRemaining: unitProps.movement, // Full movement points
-                homeCityId: city.id
-              };
-
-              // Add unit to game
-              this.units.push(unit as any);
-              console.log(`[PRODUCTION] Created unit ${unit.type} at city ${city.name} (${city.id})`);
-
-              // Notify state change
-              if (this.onStateChange) {
-                this.onStateChange('UNIT_PRODUCED', { cityId: city.id, unit });
-              }
-            } else if (city.currentProduction.type === 'building') {
-              // Add building to city
-              const buildingType = city.currentProduction.itemType;
-              if (!city.buildings) city.buildings = [];
-              city.buildings.push(buildingType);
-              console.log(`[PRODUCTION] Added building ${buildingType} to city ${city.name} (${city.id})`);
-
-              // Notify state change
-              if (this.onStateChange) {
-                this.onStateChange('BUILDING_COMPLETED', { cityId: city.id, buildingType });
-              }
-            }
-
-            // Advance queue if present
-            if (Array.isArray(city.buildQueue) && city.buildQueue.length > 0) {
-              city.currentProduction = city.buildQueue.shift();
-              // Reset production progress for new item
-              city.productionProgress = 0;
-            } else {
-              city.currentProduction = null;
+        .filter(c => c.civilizationId === this.activePlayer)
+        .forEach(city => {
+          // Check if we need to start production from queue
+          if (!city.currentProduction && city.buildQueue && city.buildQueue.length > 0) {
+            const nextItem = city.buildQueue.shift();
+            if (nextItem) {
+              city.currentProduction = nextItem;
+              city.productionProgress = city.carriedOverProgress || 0;
+              city.carriedOverProgress = 0;
             }
           }
-        }
-      });
+
+          // Add food for growth
+          city.foodStored += city.yields.food;
+          if (city.foodStored >= city.foodNeeded) {
+            city.population++;
+            city.foodStored = 0;
+            city.foodNeeded = city.population * 20;
+          }
+
+          // Add production (with bonus if actively producing)
+          if (city.currentProduction) {
+            const before = city.productionStored;
+            city.productionStored += city.yields.production;
+            city.productionProgress = city.productionStored; // Keep in sync for UI
+            if (city.productionStored > before) {
+              console.log(`[PRODUCTION] City ${city.name} (${city.id}) productionStored increased: ${before} -> ${city.productionStored}`);
+            }
+            if (city.productionStored >= city.currentProduction.cost) {
+              // Complete production
+              console.log(`[PRODUCTION] City ${city.name} completed production: ${city.currentProduction.type} ${city.currentProduction.itemType}`);
+              city.productionStored = 0;
+              city.productionProgress = 0; // Reset production progress display
+
+              // Handle completed production
+              if (city.currentProduction.type === 'unit') {
+                // Create unit at city location
+                const unitType = city.currentProduction.itemType;
+                const unitProps = UNIT_PROPS[unitType] || {movement: 1};
+                const unit = {
+                  id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                  type: unitType,
+                  civilizationId: city.civilizationId,
+                  col: city.col,
+                  row: city.row,
+                  health: 100,
+                  movement: unitProps.movement, // Full movement points
+                  movesRemaining: unitProps.movement, // Full movement points
+                  homeCityId: city.id
+                };
+
+                // Add unit to game
+                this.units.push(unit as any);
+                console.log(`[PRODUCTION] Created unit ${unit.type} at city ${city.name} (${city.id})`);
+
+                // Notify state change
+                if (this.onStateChange) {
+                  this.onStateChange('UNIT_PRODUCED', {cityId: city.id, unit});
+                }
+              } else if (city.currentProduction.type === 'building') {
+                // Add building to city
+                const buildingType = city.currentProduction.itemType;
+                if (!city.buildings) city.buildings = [];
+                city.buildings.push(buildingType);
+                console.log(`[PRODUCTION] Added building ${buildingType} to city ${city.name} (${city.id})`);
+
+                // Notify state change
+                if (this.onStateChange) {
+                  this.onStateChange('BUILDING_COMPLETED', {cityId: city.id, buildingType});
+                }
+              }
+
+              // Advance queue if present
+              if (Array.isArray(city.buildQueue) && city.buildQueue.length > 0) {
+                city.currentProduction = city.buildQueue.shift();
+                // Reset production progress for new item
+                city.productionProgress = 0;
+              } else {
+                city.currentProduction = null;
+              }
+            }
+          }
+        });
     // Add resources to civilization (if civilization object follows the same structure)
     try {
       if (currentCiv.resources) {
@@ -1356,7 +1338,7 @@ export default class GameEngine {
     }
 
     if (this.onStateChange) {
-      this.onStateChange('TURN_PROCESSED', { civilizationId: this.activePlayer });
+      this.onStateChange('TURN_PROCESSED', {civilizationId: this.activePlayer});
     }
   }
 
@@ -1386,7 +1368,7 @@ export default class GameEngine {
     this.technologies.forEach(tech => {
       if (!tech.researched && !tech.available) {
         const hasPrereqs = tech.prerequisites.every(prereq =>
-          currentCiv.technologies.includes(prereq)
+            currentCiv.technologies.includes(prereq)
         );
         if (hasPrereqs) {
           tech.available = true;
@@ -1406,7 +1388,7 @@ export default class GameEngine {
       civ.currentResearch = tech;
       civ.researchProgress = 0;
     }
-}
+  }
 
   /**
    * Start a new game
@@ -1425,7 +1407,6 @@ export default class GameEngine {
     // Regenerate world
     await this.generateWorld();
     await this.createCivilizations();
-    await this.createTechnologies();
 
     if (this.storeActions) {
       this.storeActions.updateMap(this.map);
@@ -1437,6 +1418,111 @@ export default class GameEngine {
 
     // Initialize fog of war visibility
     this.updateVisibility();
+  }
+
+  /**
+   * Calculate A* path for a unit to a target location
+   * Stores the path on the unit
+   */
+  calculateUnitPath(unitId: string, targetCol: number, targetRow: number): boolean {
+    const unit = this.units.find(u => u.id === unitId);
+    if (!unit || !this.map) {
+      console.warn(`[GameEngine] Calculate path: Unit ${unitId} not found or map not available`);
+      return false;
+    }
+
+    const pathResult = Pathfinding.findPath(
+      unit.col,
+      unit.row,
+      targetCol,
+      targetRow,
+      (col, row) => this.getTileAt(col, row),
+      unit.type,
+      this.map.width,
+      this.map.height
+    );
+
+    if (pathResult.success && pathResult.path.length > 0) {
+      unit.plannedPath = pathResult.path;
+      console.log(`[GameEngine] Calculated path for unit ${unitId} with ${pathResult.path.length} steps, cost: ${pathResult.totalCost.toFixed(2)}`);
+
+      // Notify state change for UI update
+      if (this.onStateChange) {
+        this.onStateChange('UNIT_PATH_CALCULATED', { unit, path: pathResult.path });
+      }
+
+      return true;
+    }
+
+    console.log(`[GameEngine] Could not calculate path for unit ${unitId} to (${targetCol},${targetRow})`);
+    unit.plannedPath = undefined;
+    return false;
+  }
+
+  /**
+   * Clear planned path for a unit
+   */
+  clearUnitPath(unitId: string): void {
+    const unit = this.units.find(u => u.id === unitId);
+    if (unit) {
+      unit.plannedPath = undefined;
+
+      // Notify state change for UI update
+      if (this.onStateChange) {
+        this.onStateChange('UNIT_PATH_CLEARED', { unit });
+      }
+    }
+  }
+
+  /**
+   * Move unit along its planned path (one step)
+   */
+  moveUnitAlongPath(unitId: string): boolean {
+    const unit = this.units.find(u => u.id === unitId);
+    if (!unit || !unit.plannedPath || unit.plannedPath.length <= 1) {
+      console.log(`[moveUnitAlongPath] No planned path for unit ${unitId} or insufficient path length`);
+      return false;
+    }
+
+    console.log(`[moveUnitAlongPath] Attempting to move unit ${unitId}. movesRemaining=${unit.movesRemaining}, plannedPathLength=${unit.plannedPath.length}, currentPos=(${unit.col},${unit.row})`);
+
+    // Get next step (skip current position if it's the first in path)
+    const currentIndex = unit.plannedPath.findIndex(p => p.col === unit.col && p.row === unit.row);
+    const nextStepIndex = currentIndex >= 0 ? currentIndex + 1 : 1;
+
+    if (nextStepIndex >= unit.plannedPath.length) {
+      // Reached end of path
+      console.log(`[moveUnitAlongPath] Unit ${unitId} already at end of path, clearing planned path`);
+      this.clearUnitPath(unitId);
+      return false;
+    }
+
+    const nextStep = unit.plannedPath[nextStepIndex];
+    console.log(`[moveUnitAlongPath] Next step for unit ${unitId} is (${nextStep.col},${nextStep.row}) at index ${nextStepIndex}`);
+    const result = this.moveUnit(unitId, nextStep.col, nextStep.row);
+
+    // If movement failed, decide whether to clear the path or keep it for later
+    if (!result || !result.success) {
+      const reason = result?.reason || 'unknown';
+
+      // Do NOT clear the planned path when failure is due to insufficient moves or no moves left.
+      // Keep the path so the unit can continue next turn.
+      if (reason === 'insufficient_moves' || reason === 'no_moves_left') {
+        console.log(`[moveUnitAlongPath] Movement deferred for unit ${unitId} due to '${reason}'. Keeping planned path for next turn.`);
+        return false;
+      }
+
+      // For other failure reasons (terrain impassable, invalid target, combat defeat, unit not found), clear the path
+      console.log(`[moveUnitAlongPath] Movement failed for unit ${unitId} due to '${reason}', clearing planned path.`);
+      this.clearUnitPath(unitId);
+      return false;
+    }
+
+    // Movement succeeded - update path to remove traveled nodes
+    console.log(`[moveUnitAlongPath] Movement succeeded for unit ${unitId}, removing traveled nodes up to index ${nextStepIndex}`);
+    unit.plannedPath = unit.plannedPath.slice(nextStepIndex);
+
+    return true;
   }
 
   /**
@@ -1452,7 +1538,7 @@ export default class GameEngine {
     const success = UnitActionManager.skipUnit(unit);
 
     if (success && this.onStateChange) {
-      this.onStateChange('UNIT_SKIPPED', { unit });
+      this.onStateChange('UNIT_SKIPPED', {unit});
     }
 
     return success;
@@ -1471,7 +1557,7 @@ export default class GameEngine {
     UnitActionManager.sleepUnit(unit);
 
     if (this.onStateChange) {
-      this.onStateChange('UNIT_SLEPT', { unit });
+      this.onStateChange('UNIT_SLEPT', {unit});
     }
 
     return true;
@@ -1490,7 +1576,7 @@ export default class GameEngine {
     UnitActionManager.fortifyUnit(unit);
 
     if (this.onStateChange) {
-      this.onStateChange('UNIT_FORTIFIED', { unit });
+      this.onStateChange('UNIT_FORTIFIED', {unit});
     }
 
     return true;
@@ -1530,7 +1616,7 @@ export default class GameEngine {
     console.log(`[GameEngine] Unit ${unit.id} built ${improvementType} at (${unit.col},${unit.row}). Moves remaining: ${unit.movesRemaining}`);
 
     if (this.onStateChange) {
-      this.onStateChange('IMPROVEMENT_BUILT', { unit, tile, improvementType });
+      this.onStateChange('IMPROVEMENT_BUILT', {unit, tile, improvementType});
     }
 
     // Check if turn should end
@@ -1538,4 +1624,178 @@ export default class GameEngine {
 
     return true;
   }
+
+  /**
+   * Generate rivers on land tiles (connected rivers at least 8 tiles long)
+   */
+  private generateRivers(): void {
+    if (!this.map) return;
+
+    const mapWidth = this.map.width;
+    const mapHeight = this.map.height;
+    const tiles = this.map.tiles;
+
+    // Determine number of rivers based on map size (roughly 1 river per 1000 tiles)
+    const numRivers = Math.max(1, Math.floor((mapWidth * mapHeight) / 1000));
+    console.log(`[RIVER GEN] Generating ${numRivers} rivers for ${mapWidth}x${mapHeight} map`);
+
+    for (let riverIndex = 0; riverIndex < numRivers; riverIndex++) {
+      this.generateSingleRiver(tiles, mapWidth, mapHeight, riverIndex);
+    }
+  }
+
+  /**
+   * Generate a single connected river
+   */
+  private generateSingleRiver(tiles: MapTile[], mapWidth: number, mapHeight: number, riverIndex: number): void {
+    // Find a suitable starting point (land tile, not too close to edges)
+    let startCol: number, startRow: number;
+    let attempts = 0;
+    do {
+      startCol = Math.floor(Math.random() * (mapWidth - 20)) + 10;
+      startRow = Math.floor(Math.random() * (mapHeight - 20)) + 10;
+      attempts++;
+    } while (attempts < 100 && (this.getTileType(tiles, startCol, startRow, mapWidth) === 'ocean' ||
+        this.hasRiverNearby(tiles, startCol, startRow, mapWidth, 5)));
+
+    if (attempts >= 100) {
+      console.log(`[RIVER GEN] Could not find suitable start for river ${riverIndex}`);
+      return;
+    }
+
+    // Start growing the river
+    const riverTiles: Set<string> = new Set();
+    let currentCol = startCol;
+    let currentRow = startRow;
+    let directionCol = (Math.random() - 0.5) * 2; // Random direction bias
+    let directionRow = (Math.random() - 0.5) * 2;
+
+    console.log(`[RIVER GEN] Starting river ${riverIndex} at (${startCol},${startRow})`);
+
+    // Grow river until we reach minimum length or hit a dead end
+    while (riverTiles.size < 20) { // Allow up to 20 tiles, but we'll check for minimum 8
+      const tileKey = `${currentCol},${currentRow}`;
+
+      // Skip if already has river or is ocean
+      if (riverTiles.has(tileKey) || this.getTileType(tiles, currentCol, currentRow, mapWidth) === 'ocean') {
+        break;
+      }
+
+      // Add river to this tile
+      const tileIndex = currentRow * mapWidth + currentCol;
+      if (tileIndex >= 0 && tileIndex < tiles.length) {
+        tiles[tileIndex].river = true;
+        riverTiles.add(tileKey);
+      }
+
+      // Try to find next tile in a somewhat winding path
+      const nextTile = this.findNextRiverTile(tiles, currentCol, currentRow, mapWidth, mapHeight, directionCol, directionRow);
+      if (!nextTile) {
+        // No valid next tile found
+        break;
+      }
+
+      // Update position and direction
+      currentCol = nextTile.col;
+      currentRow = nextTile.row;
+
+      // Slightly randomize direction to create winding paths
+      directionCol += (Math.random() - 0.5) * 0.5;
+      directionRow += (Math.random() - 0.5) * 0.5;
+
+      // Normalize direction vector
+      const length = Math.sqrt(directionCol * directionCol + directionRow * directionRow);
+      if (length > 0) {
+        directionCol /= length;
+        directionRow /= length;
+      }
+    }
+
+    // Check if river meets minimum length requirement
+    if (riverTiles.size < 8) {
+      console.log(`[RIVER GEN] River ${riverIndex} too short (${riverTiles.size} tiles), removing`);
+      // Remove the short river
+      for (const tileKey of riverTiles) {
+        const [col, row] = tileKey.split(',').map(Number);
+        const tileIndex = row * mapWidth + col;
+        if (tileIndex >= 0 && tileIndex < tiles.length) {
+          tiles[tileIndex].river = false;
+        }
+      }
+    } else {
+      console.log(`[RIVER GEN] Completed river ${riverIndex} with ${riverTiles.size} tiles`);
+    }
+  }
+
+  /**
+   * Find the next tile for river growth
+   */
+  private findNextRiverTile(tiles: MapTile[], currentCol: number, currentRow: number, mapWidth: number, mapHeight: number, dirCol: number, dirRow: number): {
+    col: number,
+    row: number
+  } | null {
+    // Try tiles in order of preference: forward direction, then adjacent
+    const candidates = [
+      {col: currentCol + Math.round(dirCol), row: currentRow + Math.round(dirRow)},
+      {col: currentCol + Math.round(dirCol), row: currentRow},
+      {col: currentCol, row: currentRow + Math.round(dirRow)},
+      {col: currentCol + 1, row: currentRow},
+      {col: currentCol - 1, row: currentRow},
+      {col: currentCol, row: currentRow + 1},
+      {col: currentCol, row: currentRow - 1},
+      {col: currentCol + 1, row: currentRow + 1},
+      {col: currentCol + 1, row: currentRow - 1},
+      {col: currentCol - 1, row: currentRow + 1},
+      {col: currentCol - 1, row: currentRow - 1}
+    ];
+
+    for (const candidate of candidates) {
+      const {col, row} = candidate;
+
+      // Check bounds
+      if (col < 0 || col >= mapWidth || row < 0 || row >= mapHeight) continue;
+
+      // Check if tile is land and doesn't already have a river
+      const tileType = this.getTileType(tiles, col, row, mapWidth);
+      if (tileType !== 'ocean' && !this.hasRiverAt(tiles, col, row, mapWidth)) {
+        return {col, row};
+      }
+    }
+
+    return null; // No valid next tile found
+  }
+
+  /**
+   * Get tile type at coordinates
+   */
+  private getTileType(tiles: MapTile[], col: number, row: number, mapWidth: number): string {
+    const index = row * mapWidth + col;
+    if (index < 0 || index >= tiles.length) return 'ocean';
+    return tiles[index].type || 'ocean';
+  }
+
+  /**
+   * Check if tile has a river
+   */
+  private hasRiverAt(tiles: MapTile[], col: number, row: number, mapWidth: number): boolean {
+    const index = row * mapWidth + col;
+    if (index < 0 || index >= tiles.length) return false;
+    return tiles[index].river === true;
+  }
+
+  /**
+   * Check if there's a river nearby
+   */
+  private hasRiverNearby(tiles: MapTile[], col: number, row: number, mapWidth: number, radius: number): boolean {
+    for (let dRow = -radius; dRow <= radius; dRow++) {
+      for (let dCol = -radius; dCol <= radius; dCol++) {
+        if (dCol === 0 && dRow === 0) continue;
+        if (this.hasRiverAt(tiles, col + dCol, row + dRow, mapWidth)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
 }
+

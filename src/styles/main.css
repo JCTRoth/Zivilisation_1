@@ -80,7 +80,6 @@ body {
 
 #gameCanvas, .game-canvas {
     background: var(--game-canvas-bg);
-    cursor: crosshair;
 }
 
 /* Side Panel */

@@ -243,6 +243,45 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
                   <div>Attack: {(selectedUnit as any)?.attack ?? 0}</div>
                   <div>Defense: {(selectedUnit as any)?.defense ?? 0}</div>
                 </div>
+
+                {/* Unit Actions */}
+                <div className="unit-actions">
+                  <button
+                    className={`unit-action-btn goto-btn ${uiState.goToMode ? 'goto-btn-active' : ''}`}
+                    onClick={() => {
+                      console.log('[SidePanel] Go To button clicked for unit', selectedUnit.id);
+                      if (actions && typeof actions.setGoToMode === 'function') {
+                        // Toggle Go To mode and pass the selected unit id when enabling
+                        const enable = !uiState.goToMode;
+                        actions.setGoToMode(enable, enable ? selectedUnit.id : null);
+                      }
+                    }}
+                    title={uiState.goToMode ? "Click Cancel or press Escape to exit Go To mode" : "Click to select a destination for this unit"}
+                  >
+                    📍 {uiState.goToMode ? 'Go To (Active)' : 'Go To'}
+                  </button>
+
+                  {selectedUnit.plannedPath && selectedUnit.plannedPath.length > 1 && (
+                    <button
+                      className="unit-action-btn clear-path-btn"
+                      onClick={() => {
+                        console.log('[SidePanel] Clear path button clicked for unit', selectedUnit.id);
+                        if (gameEngine && typeof gameEngine.clearUnitPath === 'function') {
+                          gameEngine.clearUnitPath(selectedUnit.id);
+                        }
+                      }}
+                      title="Clear the planned route"
+                    >
+                      ✖ Clear Route
+                    </button>
+                  )}
+
+                  {selectedUnit.plannedPath && selectedUnit.plannedPath.length > 1 && (
+                    <div className="path-info">
+                      Route: {selectedUnit.plannedPath.length} waypoints
+                    </div>
+                  )}
+                </div>
               </>
             ) : selectedCity ? (
               <>
@@ -295,3 +334,4 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
 };
 
 export default SidePanel;
+
