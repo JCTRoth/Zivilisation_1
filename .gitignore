@@ -113,3 +113,6 @@ temp/
 
 # Storybook build outputs
 storybook-static
+
+# Keep documentation files - they're important!
+*.md

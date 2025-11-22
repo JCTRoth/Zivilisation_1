@@ -6,4 +6,6 @@
 - CSS -> src/styles
 - Static Data -> create/extend -> src/data
 - Not start any npm server assume that on port 3000 an instance is running
-- Use Parameter Types when defining a function.
+- Use Parameter Types when defining a function
+- The Fish Bash is used for your commands
+- Use python3 instead of python when running it in as a command
