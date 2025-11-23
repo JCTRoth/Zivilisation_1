@@ -9,6 +9,7 @@ export interface TerrainProperties {
     color: string;
     passable: boolean;
     description?: string;
+    buildModifier?: number;
 }
 
 export interface UnitProperties {

@@ -2,6 +2,7 @@
 
 import { Constants } from '@/utils/Constants';
 import { ArrayUtils, MathUtils } from '@/utils/Helpers';
+import { IMPROVEMENT_REQUIREMENTS } from '@/data/TileImprovementConstants';
 
 // Type definitions
 interface Improvement {
@@ -250,6 +251,12 @@ export class Tile {
         // Check resource compatibility
         if (improvement.requiresResource &&
             (!this.resources || this.resources.type !== improvement.requiresResource)) {
+            return false;
+        }
+
+        // Check improvement requirements (e.g., railroads require roads)
+        const requiredImprovement = IMPROVEMENT_REQUIREMENTS[improvementType];
+        if (requiredImprovement && !this.hasImprovement(requiredImprovement)) {
             return false;
         }
 

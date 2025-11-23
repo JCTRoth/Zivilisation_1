@@ -47,8 +47,6 @@ interface UnitInfo {
     name: string;
     type: string;
     position: { col: number; row: number };
-    health: number;
-    maxHealth: number;
     movement: number;
     maxMovement: number;
     attack: number;
@@ -254,10 +252,6 @@ export class UIManager extends EventEmitter {
         this.elements.unitDetails.innerHTML = `
             <h4>${info.name}</h4>
             <div class="unit-stats">
-                <div class="stat-row">
-                    <span>Health:</span>
-                    <span>${info.health}/${info.maxHealth}</span>
-                </div>
                 <div class="stat-row">
                     <span>Movement:</span>
                     <span>${info.movement}/${info.maxMovement}</span>
@@ -555,6 +549,11 @@ export class UIManager extends EventEmitter {
                     this.waitUnit();
                 }
                 break;
+            case 'KeyR':
+                if (this.selectedUnit && this.selectedUnit.type === 'settler') {
+                    this.buildRailroad();
+                }
+                break;
         }
     }
 
@@ -583,6 +582,17 @@ export class UIManager extends EventEmitter {
         if (this.selectedUnit) {
             this.selectedUnit.endTurn();
             this.findNextActiveUnit();
+        }
+    }
+
+    buildRailroad(): void {
+        if (this.selectedUnit && this.selectedUnit.type === 'settler') {
+            if (this.selectedUnit.startWork('railroad', this.gameMap)) {
+                this.updateUnitInfo(this.selectedUnit);
+                this.updateStatusMessage(`${this.selectedUnit.name} started building railroad`);
+            } else {
+                this.updateStatusMessage('Cannot build railroad here');
+            }
         }
     }
 

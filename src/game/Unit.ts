@@ -2,6 +2,8 @@
 
 import { Constants } from '../utils/Constants';
 import { GameUtils, EventEmitter } from '../utils/Helpers';
+import { TERRAIN_PROPERTIES } from '../data/TerrainConstants';
+import { IMPROVEMENT_PROPERTIES } from '../data/TileImprovementConstants';
 import type { Civilization } from './Civilization';
 
 // Type definitions
@@ -178,7 +180,13 @@ export class Unit extends EventEmitter {
         }
 
         const tile = gameMap.getTile(col, row);
-        const moveCost = tile.getMovementCost(this);
+        let moveCost = tile.getMovementCost(this);
+
+        // Railroad to railroad movement is free
+        const currentTile = gameMap.getTile(this.col, this.row);
+        if (currentTile.hasImprovement('railroad') && tile.hasImprovement('railroad')) {
+            moveCost = 0;
+        }
 
         if (this.movement < moveCost) {
             return false;
@@ -382,6 +390,9 @@ export class Unit extends EventEmitter {
 
         return city;
     }
+    destroy() {
+        throw new Error('Method not implemented.');
+    }
 
     // Check if unit can settle at current location
     canSettleAt(tile: any, gameMap: any): boolean {
@@ -419,8 +430,12 @@ export class Unit extends EventEmitter {
             return false;
         }
 
+        // Calculate build time based on Civ1 mechanics
+        const baseTurns = this.getBaseBuildTurns(improvementType);
+        const terrainModifier = this.getTerrainBuildModifier(tile.terrain);
+        this.workTurns = Math.ceil(baseTurns * terrainModifier);
+
         this.workTarget = improvementType;
-        this.workTurns = improvementProps.turns;
 
         this.emit('startedWork', { unit: this, improvementType, turns: this.workTurns } as WorkData);
 
@@ -475,10 +490,16 @@ export class Unit extends EventEmitter {
         }
     }
 
-    // Destroy unit
-    destroy(): void {
-        this.active = false;
-        this.emit('destroyed', { unit: this } as DestroyData);
+    // Get base build turns for improvement type (Civ1 mechanics)
+    getBaseBuildTurns(improvementType: string): number {
+        const props = IMPROVEMENT_PROPERTIES[improvementType];
+        return props ? props.turns : 1;
+    }
+
+    // Get terrain modifier for build time (Civ1 mechanics)
+    getTerrainBuildModifier(terrain: string): number {
+        const terrainProps = TERRAIN_PROPERTIES[terrain];
+        return terrainProps?.buildModifier ?? 1;
     }
 
     // Reset movement points for new turn

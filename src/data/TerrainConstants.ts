@@ -35,7 +35,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 2,
         color: '#1e3a8a',
         passable: false,
-        description: 'Deep ocean waters'
+        description: 'Deep ocean waters',
+        buildModifier: 1
     },
     [TERRAIN_TYPES.COAST]: {
         movement: 0.8,
@@ -45,7 +46,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 1,
         color: '#3b82f6',
         passable: false,
-        description: 'Coastal waters'
+        description: 'Coastal waters',
+        buildModifier: 1
     },
     [TERRAIN_TYPES.GRASSLAND]: {
         movement: 0.8,
@@ -55,7 +57,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 0,
         color: '#22c55e',
         passable: true,
-        description: 'Fertile grassland'
+        description: 'Fertile grassland',
+        buildModifier: 1
     },
     [TERRAIN_TYPES.PLAINS]: {
         movement: 0.8,
@@ -65,7 +68,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 0,
         color: '#eab308',
         passable: true,
-        description: 'Open plains'
+        description: 'Open plains',
+        buildModifier: 1
     },
     [TERRAIN_TYPES.TUNDRA]: {
         movement: 0.8,
@@ -75,7 +79,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 0,
         color: '#94a3b8',
         passable: true,
-        description: 'Cold tundra'
+        description: 'Cold tundra',
+        buildModifier: 1
     },
     [TERRAIN_TYPES.DESERT]: {
         movement: 0.8,
@@ -85,7 +90,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 0,
         color: '#f59e0b',
         passable: true,
-        description: 'Arid desert'
+        description: 'Arid desert',
+        buildModifier: 1
     },
     [TERRAIN_TYPES.FOREST]: {
         movement: 0.9,
@@ -95,7 +101,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 0,
         color: '#166534',
         passable: true,
-        description: 'Dense forest'
+        description: 'Dense forest',
+        buildModifier: 2
     },
     [TERRAIN_TYPES.JUNGLE]: {
         movement: 1.0,
@@ -105,7 +112,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 0,
         color: '#15803d',
         passable: true,
-        description: 'Impassable jungle'
+        description: 'Impassable jungle',
+        buildModifier: 2
     },
     [TERRAIN_TYPES.MOUNTAINS]: {
         movement: 1.0,
@@ -115,7 +123,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 0,
         color: '#78716c',
         passable: true,
-        description: 'Rugged mountains'
+        description: 'Rugged mountains',
+        buildModifier: 3
     },
     [TERRAIN_TYPES.HILLS]: {
         movement: 0.9,
@@ -125,7 +134,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 0,
         color: '#a3a3a3',
         passable: true,
-        description: 'Rolling hills'
+        description: 'Rolling hills',
+        buildModifier: 2
     },
     [TERRAIN_TYPES.SWAMP]: {
         movement: 0.9,
@@ -135,7 +145,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 0,
         color: '#7c2d12',
         passable: true,
-        description: 'Muddy swamp'
+        description: 'Muddy swamp',
+        buildModifier: 3
     },
     [TERRAIN_TYPES.ARCTIC]: {
         movement: 0.8,
@@ -145,7 +156,8 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         trade: 0,
         color: '#f1f5f9',
         passable: true,
-        description: 'Frozen arctic'
+        description: 'Frozen arctic',
+        buildModifier: 1
     }
 };
 

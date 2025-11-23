@@ -3,7 +3,7 @@ import { GAME_CONSTANTS } from '../data/GameConstants';
 import { TERRAIN_TYPES as T_TYPES, TERRAIN_PROPERTIES as T_PROPS, SPECIAL_RESOURCES as S_RESOURCES } from '../data/TerrainConstants';
 import { UNIT_TYPES as U_TYPES, UNIT_PROPERTIES as U_PROPS } from '../data/UnitConstants';
 import { BUILDING_TYPES as B_TYPES, BUILDING_PROPERTIES as B_PROPS } from '../data/BuildingConstants';
-import { IMPROVEMENT_TYPES as I_TYPES, IMPROVEMENT_PROPERTIES as I_PROPS } from '../data/ImprovementConstants';
+import { IMPROVEMENT_TYPES as I_TYPES, IMPROVEMENT_PROPERTIES as I_PROPS } from '../data/TileImprovementConstants';
 
 // Main constants file - imports and re-exports all game constants
 // This file maintains backward compatibility while organizing constants into logical modules
@@ -21,7 +21,7 @@ export * from '../data/UnitConstants';
 export * from '../data/BuildingConstants';
 
 // Improvement Constants
-export * from '../data/ImprovementConstants';
+export * from '../data/TileImprovementConstants';
 
 export const Constants = {
     // Hex Grid Configuration

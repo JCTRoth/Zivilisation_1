@@ -68,6 +68,12 @@ export class Pathfinding {
         cost = Math.max(0.5, cost - 0.5); // Roads make movement faster
       }
 
+      // Railroads make movement free when moving between railroad tiles
+      // For pathfinding, we approximate by making railroad tiles very cheap to enter
+      if (tile.railroad) {
+        cost = 0.2; // Very low cost for railroad tiles
+      }
+
       return cost;
     }
 
