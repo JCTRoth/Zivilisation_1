@@ -67,7 +67,6 @@ interface CityInfo {
     buildings: string[];
     civilization: string;
     supportedUnits: string[];
-    garrisonedUnits: string[];
 }
 
 interface SerializedCity {
@@ -86,7 +85,6 @@ interface SerializedCity {
     workingTiles: string[];
     founded: number;
     supportedUnitIds: string[];
-    garrisonedUnitIds: string[];
 }
 
 // City System
@@ -131,7 +129,6 @@ export class City extends EventEmitter {
 
     // Unit support and garrison
     public supportedUnitIds: Set<string>;
-    public garrisonedUnitIds: Set<string>;
 
     constructor(name: string, civilization: Civilization, col: number, row: number) {
         super();
@@ -176,7 +173,6 @@ export class City extends EventEmitter {
 
         // Unit support and garrison
         this.supportedUnitIds = new Set();
-        this.garrisonedUnitIds = new Set();
 
         // Initialize with city center
         this.workingTiles.add(`${col},${row}`);
@@ -400,6 +396,11 @@ export class City extends EventEmitter {
     produceUnit(unitType: string): void {
         const unit = new (require('./Unit').Unit)(unitType, this.civilization, this.col, this.row);
 
+        // Set veteran status if city has barracks
+        if (this.buildings.has('barracks')) {
+            unit.veteran = true;
+        }
+
         // Set this city as the unit's home city
         unit.homeCityId = this.id;
         this.supportedUnitIds.add(unit.id);
@@ -438,7 +439,7 @@ export class City extends EventEmitter {
             }
         }
 
-        this.emit('buildingCompleted', { city: this, buildingType });
+        this.startNextProduction();
     }
 
     // Process unit support and maintenance costs
@@ -498,11 +499,6 @@ export class City extends EventEmitter {
         for (const unitId of unitsToDisband) {
             const unit = gameMap.unitManager.getUnit(unitId);
             if (unit) {
-                // Remove garrison status if unit was garrisoned
-                if (unit.garrisoned) {
-                    this.garrisonedUnitIds.delete(unitId);
-                }
-
                 gameMap.unitManager.removeUnit(unitId);
                 this.emit('unitDisbanded', { city: this, unit });
             }
@@ -531,54 +527,6 @@ export class City extends EventEmitter {
 
         this.emit('unitRehomed', { city: this, unit, oldHomeCityId: unit.homeCityId });
         return true;
-    }
-
-    // Garrison a unit in this city
-    garrisonUnit(unitId: string, gameMap: any): boolean {
-        const unit = gameMap.unitManager.getUnit(unitId);
-        if (!unit || unit.homeCityId !== this.id || unit.garrisoned) {
-            return false;
-        }
-
-        // Check if unit is at city location
-        if (unit.col !== this.col || unit.row !== this.row) {
-            return false;
-        }
-
-        unit.garrisoned = true;
-        this.garrisonedUnitIds.add(unitId);
-
-        this.emit('unitGarrisoned', { city: this, unit });
-        return true;
-    }
-
-    // Ungarrison a unit from this city
-    ungarrisonUnit(unitId: string, gameMap: any): boolean {
-        const unit = gameMap.unitManager.getUnit(unitId);
-        if (!unit || !unit.garrisoned || !this.garrisonedUnitIds.has(unitId)) {
-            return false;
-        }
-
-        unit.garrisoned = false;
-        this.garrisonedUnitIds.delete(unitId);
-
-        this.emit('unitUngarrisoned', { city: this, unit });
-        return true;
-    }
-
-    // Get city defense bonus from garrisoned units
-    getGarrisonDefenseBonus(): number {
-        let bonus = 0;
-
-        // Base defense bonus from garrisoned units
-        bonus += this.garrisonedUnitIds.size * 0.5; // 50% defense per garrisoned unit
-
-        // Additional bonus from city walls
-        if (this.buildings.has('walls')) {
-            bonus += 3; // City walls provide +3 defense
-        }
-
-        return bonus;
     }
 
     // Start next production from queue
@@ -904,8 +852,7 @@ export class City extends EventEmitter {
             gold: this.gold,
             buildings: Array.from(this.buildings),
             civilization: this.civilization.name,
-            supportedUnits: Array.from(this.supportedUnitIds),
-            garrisonedUnits: Array.from(this.garrisonedUnitIds)
+            supportedUnits: Array.from(this.supportedUnitIds)
         };
     }
 
@@ -926,8 +873,7 @@ export class City extends EventEmitter {
             carriedOverProgress: this.carriedOverProgress,
             workingTiles: Array.from(this.workingTiles),
             founded: this.founded,
-            supportedUnitIds: Array.from(this.supportedUnitIds),
-            garrisonedUnitIds: Array.from(this.garrisonedUnitIds)
+            supportedUnitIds: Array.from(this.supportedUnitIds)
         };
     }
 
@@ -945,7 +891,6 @@ export class City extends EventEmitter {
         city.workingTiles = new Set(data.workingTiles);
         city.founded = data.founded;
         city.supportedUnitIds = new Set(data.supportedUnitIds || []);
-        city.garrisonedUnitIds = new Set(data.garrisonedUnitIds || []);
         return city;
     }
 }

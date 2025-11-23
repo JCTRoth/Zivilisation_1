@@ -12,8 +12,6 @@ interface Position {
 
 interface CombatResult {
     attackerWins: boolean;
-    attackerDamage: number;
-    defenderDamage: number;
     attackStrength: number;
     defenseStrength: number;
     attackerWinChance: number;
@@ -24,8 +22,6 @@ interface UnitInfo {
     name: string;
     type: string;
     position: Position;
-    health: number;
-    maxHealth: number;
     movement: number;
     maxMovement: number;
     attack: number;
@@ -37,7 +33,6 @@ interface UnitInfo {
     workTurns: number;
     civilization: string;
     homeCityId: string | null;
-    garrisoned: boolean;
 }
 
 interface SerializedUnit {
@@ -46,7 +41,6 @@ interface SerializedUnit {
     civilizationId: string;
     col: number;
     row: number;
-    health: number;
     movement: number;
     experience: number;
     veteran: boolean;
@@ -56,7 +50,6 @@ interface SerializedUnit {
     moved: boolean;
     active: boolean;
     homeCityId: string | null;
-    garrisoned: boolean;
 }
 
 interface MoveData {
@@ -83,16 +76,15 @@ interface WorkData {
     turns?: number;
 }
 
+interface DestroyData {
+    unit: Unit;
+}
+
 interface PromotionData {
     unit: Unit;
 }
 
-interface HealData {
-    unit: Unit;
-    amount: number;
-}
-
-interface DestroyData {
+interface TurnData {
     unit: Unit;
 }
 
@@ -110,22 +102,21 @@ export class Unit extends EventEmitter {
 
     // Properties from constants
     public name: string;
-    public attack: number;
-    public defense: number;
+    public attackPoints: number;
+    public attackVeteranPoints: number;
+    public defensePoints: number;
     public maxMovement: number;
     public cost: number;
-    public maintenance: number;
+    public maintenanceCost: number;
     public canSettle: boolean;
     public canWork: boolean;
-    public naval: boolean;
+    public isNaval: boolean;
+    public isFlying: boolean;
 
     // City relationship
     public homeCityId: string | null;
-    public garrisoned: boolean;
 
     // Current state
-    public health: number;
-    public maxHealth: number;
     public movement: number;
     public experience: number;
     public veteran: boolean;
@@ -154,22 +145,19 @@ export class Unit extends EventEmitter {
         }
 
         this.name = unitProps.name;
-        this.attack = unitProps.attack;
-        this.defense = unitProps.defense;
+        this.attackPoints = unitProps.attack;
+        this.defensePoints = unitProps.defense;
         this.maxMovement = unitProps.movement;
         this.cost = unitProps.cost;
-        this.maintenance = unitProps.maintenance || 0;
+        this.maintenanceCost = unitProps.maintenance || 0;
         this.canSettle = unitProps.canSettle || false;
         this.canWork = unitProps.canWork || false;
-        this.naval = unitProps.naval || false;
+        this.isNaval = unitProps.naval || false;
 
         // City relationship
         this.homeCityId = null; // Will be set when produced by a city
-        this.garrisoned = false;
 
         // Current state
-        this.health = 100;
-        this.maxHealth = 100;
         this.movement = this.maxMovement;
         this.experience = 0;
         this.veteran = false;
@@ -292,28 +280,20 @@ export class Unit extends EventEmitter {
 
         const result = this.resolveCombat(target, gameMap);
 
-        // Apply combat results
-        this.health -= result.attackerDamage;
-        target.health -= result.defenderDamage;
-
         // Handle unit destruction
-        if (this.health <= 0) {
-            this.destroy();
-        }
-
-        if (target.health <= 0) {
+        if (result.attackerWins) {
             target.destroy();
 
             // Attacker moves into defender's tile if victorious
-            if (this.health > 0) {
-                this.col = target.col;
-                this.row = target.row;
-            }
+            this.col = target.col;
+            this.row = target.row;
+        } else {
+            this.destroy();
         }
 
         // Gain experience
-        this.addExperience(10);
-        target.addExperience(5);
+        this.addExperience(20);
+        target.addExperience(10);
 
         // End movement for attacker
         this.movement = 0;
@@ -330,7 +310,7 @@ export class Unit extends EventEmitter {
             return false;
         }
 
-        if (this.attack === 0) {
+        if (this.attackPoints === 0) {
             return false; // Non-combat units can't attack
         }
 
@@ -340,8 +320,8 @@ export class Unit extends EventEmitter {
 
     // Resolve combat between this unit and target
     resolveCombat(target: Unit, gameMap: any): CombatResult {
-        let attackStrength = this.attack;
-        let defenseStrength = target.defense;
+        let attackStrength = this.attackPoints;
+        let defenseStrength = target.defensePoints;
 
         // Apply veteran bonuses
         if (this.veteran) attackStrength = Math.floor(attackStrength * 1.5);
@@ -364,13 +344,6 @@ export class Unit extends EventEmitter {
             defenseStrength = Math.floor(defenseStrength * 1.5);
         }
 
-        // Apply health penalties
-        const attackerHealthFactor = this.health / this.maxHealth;
-        const defenderHealthFactor = target.health / this.maxHealth;
-
-        attackStrength = Math.floor(attackStrength * attackerHealthFactor);
-        defenseStrength = Math.floor(defenseStrength * defenderHealthFactor);
-
         // Calculate combat odds
         const totalStrength = attackStrength + defenseStrength;
         const attackerWinChance = attackStrength / totalStrength;
@@ -379,22 +352,8 @@ export class Unit extends EventEmitter {
         const random = Math.random();
         const attackerWins = random < attackerWinChance;
 
-        // Calculate damage
-        let attackerDamage = 0;
-        let defenderDamage = 0;
-
-        if (attackerWins) {
-            defenderDamage = Math.min(target.health, 30 + Math.floor(Math.random() * 40));
-            attackerDamage = Math.floor(defenderDamage * 0.3);
-        } else {
-            attackerDamage = Math.min(this.health, 30 + Math.floor(Math.random() * 40));
-            defenderDamage = Math.floor(attackerDamage * 0.3);
-        }
-
         return {
             attackerWins,
-            attackerDamage,
-            defenderDamage,
             attackStrength,
             defenseStrength,
             attackerWinChance
@@ -516,16 +475,6 @@ export class Unit extends EventEmitter {
         }
     }
 
-    // Heal unit
-    heal(amount: number = 10): void {
-        const oldHealth = this.health;
-        this.health = Math.min(this.maxHealth, this.health + amount);
-
-        if (this.health > oldHealth) {
-            this.emit('healed', { unit: this, amount: this.health - oldHealth } as HealData);
-        }
-    }
-
     // Destroy unit
     destroy(): void {
         this.active = false;
@@ -536,11 +485,6 @@ export class Unit extends EventEmitter {
     startTurn(): void {
         this.movement = this.maxMovement;
         this.moved = false;
-
-        // Heal if fortified or in city
-        if (this.fortified) {
-            this.heal(5);
-        }
 
         // Continue work if working
         if (this.workTarget) {
@@ -563,20 +507,17 @@ export class Unit extends EventEmitter {
             name: this.name,
             type: this.type,
             position: { col: this.col, row: this.row },
-            health: this.health,
-            maxHealth: this.maxHealth,
             movement: this.movement,
             maxMovement: this.maxMovement,
-            attack: this.attack,
-            defense: this.defense,
+            attack: this.attackPoints,
+            defense: this.defensePoints,
             experience: this.experience,
             veteran: this.veteran,
             fortified: this.fortified,
             workTarget: this.workTarget,
             workTurns: this.workTurns,
             civilization: this.civilization.name,
-            homeCityId: this.homeCityId,
-            garrisoned: this.garrisoned
+            homeCityId: this.homeCityId
         };
     }
 
@@ -588,7 +529,6 @@ export class Unit extends EventEmitter {
             civilizationId: this.civilization.id,
             col: this.col,
             row: this.row,
-            health: this.health,
             movement: this.movement,
             experience: this.experience,
             veteran: this.veteran,
@@ -597,8 +537,7 @@ export class Unit extends EventEmitter {
             workTurns: this.workTurns,
             moved: this.moved,
             active: this.active,
-            homeCityId: this.homeCityId,
-            garrisoned: this.garrisoned
+            homeCityId: this.homeCityId
         };
     }
 
@@ -606,7 +545,6 @@ export class Unit extends EventEmitter {
     static deserialize(data: SerializedUnit, civilization: Civilization): Unit {
         const unit = new Unit(data.type, civilization, data.col, data.row);
         unit.id = data.id;
-        unit.health = data.health;
         unit.movement = data.movement;
         unit.experience = data.experience;
         unit.veteran = data.veteran;
@@ -616,7 +554,6 @@ export class Unit extends EventEmitter {
         unit.moved = data.moved;
         unit.active = data.active;
         unit.homeCityId = data.homeCityId;
-        unit.garrisoned = data.garrisoned;
         return unit;
     }
 }

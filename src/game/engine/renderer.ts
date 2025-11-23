@@ -313,10 +313,6 @@ class Renderer {
         const unitChar = this.getUnitCharacter(unit.type);
         this.ctx.fillText(unitChar, center.x, center.y);
 
-        // Health bar
-        if (unit.health < unit.maxHealth) {
-            this.drawHealthBar(center.x, center.y - size - 5, size * 1.5, unit.health / unit.maxHealth);
-        }
     }
 
     private getUnitCharacter(unitType: string): string {

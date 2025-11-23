@@ -79,7 +79,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     showGameMenu: false,
     activeDialog: null, // 'city', 'tech', 'diplomacy', 'game-menu', null
     sidebarCollapsed: false,
-    notifications: []
+    notifications: [],
+    goToMode: false,
+    goToUnit: ''
   },
 
   // Settings
@@ -153,6 +155,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         const TILE_SIZE = Constants.HEX_SIZE || 32; // world pixels per tile
         const zoom = Math.max(0.1, state.camera.zoom || 2.0); // Prevent division by zero
 
+
         // Safe window dimension access with fallbacks
         const windowWidth = (typeof window !== 'undefined' && window.innerWidth) || 800;
         const windowHeight = (typeof window !== 'undefined' && window.innerHeight) || 600;
@@ -198,6 +201,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         if (capitalCity) {
           const TILE_SIZE = Constants.HEX_SIZE || 32; // world pixels per tile
           const zoom = Math.max(0.1, state.camera.zoom || 2.0); // Prevent division by zero
+
 
           // Safe window dimension access with fallbacks
           const windowWidth = (typeof window !== 'undefined' && window.innerWidth) || 800;
@@ -282,8 +286,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     updateMap: (mapUpdate) => set(state => {
       const newMap = { ...state.map, ...mapUpdate };
-  // For development-only forced fog disable, read from env (Vite exposes VITE_* vars)
-  const disableFog = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_DISABLE_FOG === 'true';
+      // For development-only forced fog disable, read from env (Vite exposes VITE_* vars)
+      const disableFog = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_DISABLE_FOG === 'true';
       const tilesArray = Array.isArray(mapUpdate.tiles) && mapUpdate.tiles.length > 0
         ? mapUpdate.tiles
         : Array.isArray(newMap.tiles) ? newMap.tiles : [];
@@ -341,7 +345,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
       // Clear current visibility (but keep revealed status)
       // Revealed tiles stay permanently visible
-
       // Reveal around all of the active player's units only
       for (const unit of units) {
         if (unit.civilizationId !== state.gameState.activePlayer) {
@@ -364,8 +367,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         // Fallback to UNIT_PROPERTIES (unitConstants) keyed by lowercase id
         const constDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
 
-  const sightRange = (typeof (unit as any).sightRange === 'number') ? (unit as any).sightRange : (gameTypeDef?.sightRange ?? 0);
-        
+        const sightRange = (typeof (unit as any).sightRange === 'number') ? (unit as any).sightRange : (gameTypeDef?.sightRange ?? 0);
+
         if (sightRange > 0) {
           console.log('[Store] updateVisibility: Processing unit with sight', {
             unitType: unit.type,
@@ -475,8 +478,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         const icon = u.icon || gameTypeDef?.icon || constDef?.icon || '🔸';
         const attack = (typeof u.attack === 'number') ? u.attack : (gameTypeDef?.attack ?? constDef?.attack ?? 0);
         const defense = (typeof u.defense === 'number') ? u.defense : (gameTypeDef?.defense ?? constDef?.defense ?? 0);
-      const movesRemaining = (typeof u.movesRemaining === 'number') ? u.movesRemaining : (typeof (u as any).movement === 'number' ? (u as any).movement : (constDef?.movement ?? 0));
-  const maxMoves = (typeof u.maxMoves === 'number') ? u.maxMoves : (constDef?.movement ?? gameTypeDef?.movement ?? movesRemaining);
+        const movesRemaining = (typeof u.movesRemaining === 'number') ? u.movesRemaining : (typeof (u as any).movement === 'number' ? (u as any).movement : (constDef?.movement ?? 0));
+        const maxMoves = (typeof u.maxMoves === 'number') ? u.maxMoves : (constDef?.movement ?? gameTypeDef?.movement ?? movesRemaining);
 
         return { ...u, icon, attack, defense, movesRemaining, maxMoves };
       });
@@ -495,7 +498,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     updateSettings: (updates) => set(state => ({
       settings: { ...state.settings, ...updates }
-    }))
+    })),
+    setGoToMode: function (enabled: boolean, unitId?: string | null): void {
+      throw new Error('Function not implemented.');
+    }
   },
 
   // Computed selectors (equivalent to derived atoms)
