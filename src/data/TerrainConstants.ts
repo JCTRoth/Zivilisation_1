@@ -89,7 +89,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
     },
     [TERRAIN_TYPES.FOREST]: {
         movement: 0.9,
-        defense: 1,
+        defense: 1.35,
         food: 1,
         production: 2,
         trade: 0,
@@ -99,7 +99,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
     },
     [TERRAIN_TYPES.JUNGLE]: {
         movement: 1.0,
-        defense: 0,
+        defense: 1.35,
         food: 0,
         production: 0,
         trade: 0,
@@ -109,7 +109,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
     },
     [TERRAIN_TYPES.MOUNTAINS]: {
         movement: 1.0,
-        defense: 2,
+        defense: 2.5,
         food: 0,
         production: 1,
         trade: 0,
@@ -119,7 +119,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
     },
     [TERRAIN_TYPES.HILLS]: {
         movement: 0.9,
-        defense: 1,
+        defense: 1.5,
         food: 0,
         production: 1,
         trade: 0,
@@ -129,7 +129,7 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
     },
     [TERRAIN_TYPES.SWAMP]: {
         movement: 0.9,
-        defense: 0,
+        defense: 1.35,
         food: 0,
         production: 0,
         trade: 0,

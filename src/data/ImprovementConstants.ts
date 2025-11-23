@@ -69,7 +69,7 @@ export const IMPROVEMENT_PROPERTIES: Record<string, ImprovementProperties> = {
         cost: 4,
         turns: 6,
         effects: {
-            defense: 1,
+            defense: 1.8,
             movement: 0.5
         }
     },

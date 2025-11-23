@@ -352,6 +352,13 @@ export class Unit extends EventEmitter {
         const terrainBonus = targetTile.getDefenseBonus();
         defenseStrength += terrainBonus;
 
+        // Apply city defense bonus
+        const city = gameMap.getCityAt(target.col, target.row);
+        if (city) {
+            const cityDefense = city.population >= 8 ? 2.7 : 1.8;
+            defenseStrength += cityDefense;
+        }
+
         // Apply fortification bonus
         if (target.fortified) {
             defenseStrength = Math.floor(defenseStrength * 1.5);
