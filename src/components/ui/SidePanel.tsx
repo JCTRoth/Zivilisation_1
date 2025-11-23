@@ -2,6 +2,7 @@ import React from 'react';
 import { useGameStore } from '@/stores/GameStore';
 import { CIVILIZATIONS } from '@/data/GameData';
 import { TERRAIN_TYPES, TILE_SIZE } from '@/data/TerrainData';
+import { TERRAIN_PROPERTIES } from '@/data/TerrainConstants';
 import MiniMap from './MiniMap';
 import '../../styles/sidePanel.css';
 
@@ -23,6 +24,8 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
   const gameState = useGameStore((s) => s.gameState);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
+
+  // NOTE: effectiveSelectedCity will be computed after selectedTile is known
 
   // Get unit at selected tile (if any)
   const getUnitAtSelectedTile = () => {
@@ -52,14 +55,20 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
     
     return {
       ...tile,
-      movementCost: terrainProps.movement ?? 1,
+      movementCost: terrainProps.movement ?? 999,
       terrainName: tile.type || 'Unknown',
       visible: isVisible,
-      explored: isExplored
+      explored: isExplored,
+      defenseBonus: (TERRAIN_PROPERTIES as any)[tile.type]?.defense ?? 0
     };
   };
 
   const selectedTile = getSelectedTileInfo();
+  // Only treat a city as selected if it matches the currently clicked tile.
+  // This avoids showing stale city info when the player clicks another tile.
+  const effectiveSelectedCity = (selectedTile && selectedCity)
+    ? (selectedTile.col === selectedCity.col && selectedTile.row === selectedCity.row ? selectedCity : null)
+    : selectedCity;
   
   // Compute a display player so the panel renders meaningful placeholders
   const displayPlayer = currentPlayer || (civilizations && civilizations.length > 0 ? civilizations[0] : {
@@ -118,7 +127,6 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
         onClick={() => actions.toggleUI('sidebarCollapsed')}
       />
 
-
         {uiState.showMinimap && (
           <div className="minimap-container">
             <MiniMap gameEngine={gameEngine} />
@@ -150,12 +158,11 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
         {/* Middle: selected unit/building summary */}
         <div className="side-panel-section middle-section">
           <div className="selected-title"> 
-            {selectedUnit ? 'Selected Unit' : selectedCity ? 'Selected City' : unitAtSelectedTile ? 'Unit on Tile' : selectedTile ? 'Selected Tile' : 'No Selection'}
+            {selectedUnit ? 'Selected Unit' : effectiveSelectedCity ? 'Selected City' : unitAtSelectedTile ? '' : selectedTile ? 'Selected Tile' : 'No Selection'}
           </div>
 
           {selectedUnit ? (
             <div>
-              <div className="unit-name">{selectedUnit.name}</div>
               <div className="side-panel-small-muted">{selectedUnit.type}</div>
               <div className="side-panel-small-muted unit-stats">
                 HP: {selectedUnit.health ?? 100} • Moves: {selectedUnit.movesRemaining ?? 0}
@@ -164,7 +171,7 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
                 Attack: {(selectedUnit as any)?.attack ?? 0} • Defense: {(selectedUnit as any)?.defense ?? 0}
               </div>
             </div>
-          ) : selectedCity ? (
+          ) : effectiveSelectedCity ? (
             <div>
               <div className="city-name">{selectedCity.name}</div>
               <div className="side-panel-small-muted">Population: {selectedCity.population ?? 1}</div>
@@ -226,6 +233,12 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
                     {selectedTile.improvement && <div>Improvement: {selectedTile.improvement}</div>}
                     <div>Visible: {selectedTile.visible ? 'Yes' : 'No'}</div>
                     <div>Explored: {selectedTile.explored ? 'Yes' : 'No'}</div>
+                    {selectedTile.defenseBonus > 0 && (
+                      <div className="defense-bonus">
+                        <span role="img" aria-label="defense">🛡️</span>
+                        <span className="ms-2">Defense Bonus: {selectedTile.defenseBonus}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <hr className="details-separator" />
@@ -283,32 +296,17 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
                   )}
                 </div>
               </>
-            ) : selectedCity ? (
+            ) : effectiveSelectedCity ? (
               <>
-                <div className="unit-name-details"><strong>{selectedCity.name}</strong></div>
-                <div className="side-panel-small-muted">Location: {selectedCity.col}, {selectedCity.row}</div>
+                <div className="unit-name-details"><strong>{effectiveSelectedCity.name}</strong></div>
+                <div className="side-panel-small-muted">Location: {effectiveSelectedCity.col}, {effectiveSelectedCity.row}</div>
                 <div className="stats-div">
-                  <div>Population: {selectedCity.population ?? 1}</div>
-                  <div>Food: {selectedCity.yields?.food ?? 0}</div>
-                  <div>Production: {selectedCity.yields?.production ?? 0}</div>
-                  <div>Trade: {selectedCity.yields?.trade ?? 0}</div>
-                  <div>Science: {selectedCity.science ?? 0}</div>
-                  <div>Gold: {selectedCity.gold ?? 0}</div>
-                </div>
-              </>
-            ) : unitAtSelectedTile ? (
-              <>
-                <div className="unit-name-details"><strong>{unitAtSelectedTile.name}</strong> — {unitAtSelectedTile.type}</div>
-                <div className="side-panel-small-muted">Location: {unitAtSelectedTile.col}, {unitAtSelectedTile.row}</div>
-                <div className="stats-div">
-                  {unitAtSelectedTile.civilizationId === currentPlayer?.id ? (
-                    <>
-                      <div>Health: {unitAtSelectedTile.health ?? 100}/100</div>
-                      <div>Moves: {unitAtSelectedTile.movesRemaining ?? 0}/{(unitAtSelectedTile as any)?.maxMoves ?? 1}</div>
-                    </>
-                  ) : null}
-                  <div>Attack: {(unitAtSelectedTile as any)?.attack ?? 0}</div>
-                  <div>Defense: {(unitAtSelectedTile as any)?.defense ?? 0}</div>
+                  <div>Population: {effectiveSelectedCity.population ?? 1}</div>
+                  <div>Food: {effectiveSelectedCity.yields?.food ?? 0}</div>
+                  <div>Production: {effectiveSelectedCity.yields?.production ?? 0}</div>
+                  <div>Trade: {effectiveSelectedCity.yields?.trade ?? 0}</div>
+                  <div>Science: {effectiveSelectedCity.science ?? 0}</div>
+                  <div>Gold: {effectiveSelectedCity.gold ?? 0}</div>
                 </div>
               </>
             ) : !selectedTile ? (

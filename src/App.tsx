@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { GameUtils } from '@/utils/Helpers';
 import { useGameStore } from './stores/GameStore';
 import GameEngine from '@/game/engine/GameEngine';
 import GameCanvas from './components/game/GameCanvas';
@@ -562,7 +563,7 @@ function App() {
           <div className="text-white me-3" style={{ fontSize: `${settings.menuFontSize * 1.2}px` }}>
             <span className="me-2">Turn {gameState.currentTurn}</span>
             <span className="text-muted">|</span>
-            <span className="ms-2">{gameState.currentYear || 4000} BC</span>
+            <span className="ms-2">{GameUtils.formatYear(gameState.currentYear ?? -4000)}</span>
           </div>
           <button
             className="btn btn-success"

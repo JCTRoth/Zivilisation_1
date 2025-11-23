@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
 import '../../styles/endTurnConfirmModal.css';
+import { GameUtils } from '@/utils/Helpers';
 
 
 interface EndTurnConfirmModalProps {
@@ -48,7 +49,7 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
         <div className="text-center mb-3">
           <h5>{isAutomatic ? 'All Your Units Have Moved!' : 'Are you ready to end your turn?'}</h5>
           <p className="mb-2">
-            <strong>Turn {currentTurn}</strong> | <strong>{currentYear} BC</strong>
+            <strong>Turn {currentTurn}</strong> | <strong>{GameUtils.formatYear(currentYear)}</strong>
           </p>
         </div>
         
