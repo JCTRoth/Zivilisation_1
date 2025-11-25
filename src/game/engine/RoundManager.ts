@@ -130,7 +130,7 @@ export class RoundManager {
 
     // Check if this is an AI civilization
     const civ = this.gameEngine.civilizations[civilizationId];
-    if (civ && civ.isAI && civilizationId !== 0) {
+    if (civ && civ.isAI) {
       console.log(`[RoundManager] Civilization ${civilizationId} is AI, triggering AI turn`);
       // AI will handle its own moves
       if (this.gameEngine.processAITurn) {

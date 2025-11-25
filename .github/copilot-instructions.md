@@ -9,3 +9,4 @@
 - Use Parameter Types when defining a function
 - The Fish Bash is used for your commands
 - Use python3 instead of python when running it in as a command
+- When prompt starts with "Update Error" check git diff for changes that might have caused it

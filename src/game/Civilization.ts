@@ -62,6 +62,7 @@ export class Civilization extends EventEmitter {
     public leaderName: string;
     public color: string;
     public isHuman: boolean;
+    public isAI: boolean;
 
     // Resources
     public gold: number;
@@ -101,6 +102,7 @@ export class Civilization extends EventEmitter {
         this.leaderName = leaderName;
         this.color = color;
         this.isHuman = isHuman;
+        this.isAI = !isHuman;
 
         // Resources
         this.gold = Constants.INITIAL_GOLD;

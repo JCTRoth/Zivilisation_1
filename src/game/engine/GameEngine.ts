@@ -275,8 +275,30 @@ export default class GameEngine {
     return null;
   }
 
+  /**
+   * Process AI turn for a civilization (public method for RoundManager)
+   */
+  processAITurn(civilizationId: number) {
+    const civ = this.civilizations[civilizationId];
+    if (!civ) {
+      console.warn(`[AI] processAITurn: Civilization ${civilizationId} not found`);
+      return;
+    }
+    if (civ.isHuman) {
+      console.log(`[AI] processAITurn: Skipping civilization ${civilizationId} - is human player`);
+      return;
+    }
+    // Fire and forget AI routine
+    this.runAITurn(civilizationId).catch(err => console.error('AI turn error', err));
+  }
+
   // Run an asynchronous AI turn for civilizationId
   async runAITurn(civilizationId: number) {
+    const civ = this.civilizations[civilizationId];
+    if (!civ || civ.isHuman) {
+      console.log(`[AI] runAITurn: Skipping civilization ${civilizationId} - not AI or is human`);
+      return;
+    }
     console.log(`[AI] Starting AI turn for civilization ${civilizationId}`);
     // Small delay before AI starts so player can observe
     await this.sleep(250);
@@ -583,6 +605,7 @@ export default class GameEngine {
     for (let i = 0; i < selectedCivs.length; i++) {
       const civData = selectedCivs[i];
       
+      const isHuman = i === 0;
       const civ = {
         id: i,
         name: civData.name,
@@ -591,7 +614,8 @@ export default class GameEngine {
         cityNames: [...civData.cityNames],
         nextCityNameIndex: 0,
         isAlive: true,
-        isHuman: i === 0, // First civ is human
+        isHuman: isHuman, // First civ is human
+        isAI: !isHuman,
         resources: {
           food: 0,
           production: 0,
@@ -1021,6 +1045,26 @@ export default class GameEngine {
       // Log movement
       console.log(`[MOVEMENT] ${unit.type} (${unit.id}) moved from (${fromCol},${fromRow}) to (${targetCol},${targetRow}), distance: ${distance}, moves remaining: ${unit.movesRemaining}`);
 
+      // Reveal area around the unit immediately after moving so automated moves explore
+      try {
+        // Determine sight range (unit may define it, otherwise check UNIT_PROPS)
+        let sightRange = 0;
+        if (typeof (unit as any).sightRange === 'number') sightRange = (unit as any).sightRange;
+        else if (UNIT_PROPS && UNIT_PROPS[String(unit.type).toLowerCase()] && typeof UNIT_PROPS[String(unit.type).toLowerCase()].sightRange === 'number') {
+          sightRange = UNIT_PROPS[String(unit.type).toLowerCase()].sightRange;
+        }
+
+        // Ensure at least reveal the tile itself (radius 0 will reveal center only)
+        if (sightRange < 0) sightRange = 0;
+
+        if (this.revealArea) {
+          this.revealArea(unit.col, unit.row, sightRange);
+        }
+      } catch (e) {
+        // Non-fatal: continue movement even if reveal fails
+        console.warn('[GameEngine] revealArea after move failed', e);
+      }
+
       // Trigger state update
       if (this.onStateChange) {
         this.onStateChange('UNIT_MOVED', { unit, targetCol, targetRow });
@@ -1389,9 +1433,12 @@ export default class GameEngine {
     }
 
     // If this civilization is an AI, run its turn asynchronously so UI can update between moves
-    if (!currentCiv.isHuman) {
+    if (!currentCiv.isHuman && currentCiv.isAI) {
+      console.log(`[GameEngine] processTurn: Civilization ${this.activePlayer} is AI, starting AI turn`);
       // fire-and-forget AI routine
       this.runAITurn(this.activePlayer).catch(err => console.error('AI turn error', err));
+    } else if (currentCiv.isHuman) {
+      console.log(`[GameEngine] processTurn: Civilization ${this.activePlayer} is human player, skipping AI`);
     }
 
     if (this.onStateChange) {

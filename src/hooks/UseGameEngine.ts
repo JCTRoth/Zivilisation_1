@@ -156,6 +156,27 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
           // Note: focusOnNextUnit is handled by TURN_PROCESSED event
           break;
 
+        case 'IMPROVEMENT_BUILT': {
+          // eventData: { unit, tile, improvementType }
+          try {
+            console.log('[useGameEngine] IMPROVEMENT_BUILT', eventData);
+            // Sync map and units with engine authoritative state
+            actions.updateUnits(gameEngine.getAllUnits());
+            actions.updateMap(gameEngine.map);
+            actions.updateVisibility();
+
+            if (eventData && eventData.improvementType) {
+              actions.addNotification({ type: 'success', message: `${eventData.improvementType} built` });
+            } else {
+              actions.addNotification({ type: 'info', message: 'Improvement built' });
+            }
+          } catch (e) {
+            console.warn('[useGameEngine] Error handling IMPROVEMENT_BUILT', e);
+          }
+
+          break;
+        }
+
         case 'AUTO_END_TURN':
           console.log('[useGameEngine] AUTO_END_TURN: All units moved, ending turn automatically');
           // Automatically end the turn

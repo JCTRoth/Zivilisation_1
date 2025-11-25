@@ -4,6 +4,7 @@ import { UNIT_TYPES } from '@/data/GameData';
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import { Constants } from '@/utils/Constants';
 import { TERRAIN_TYPES, getTerrainInfo, TILE_SIZE } from '@/data/TerrainData';
+import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
 import '../../styles/civ1GameCanvas.css';
 import UnitActionsModal from './UnitActionsModal';
 import { Pathfinding } from '../../game/engine/Pathfinding';
@@ -382,6 +383,19 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       } catch (err) {
         console.warn('[drawTerrainSymbol] fillText road failed', err);
       }
+    }
+    // Draw generic improvements (use first letter icon or configured name)
+    try {
+      if (terrain.improvement) {
+        const impKey = String(terrain.improvement);
+        const impDef = IMPROVEMENT_PROPERTIES[impKey];
+        const impLabel = impDef?.name ? impDef.name[0] : impKey[0]?.toUpperCase() || 'I';
+        ctx.fillStyle = '#222';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText(impLabel, centerX + 10, centerY - 10);
+      }
+    } catch (err) {
+      console.warn('[drawTerrainSymbol] fillText improvement failed', err);
     }
   };
 

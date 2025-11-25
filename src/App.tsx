@@ -753,7 +753,7 @@ function App() {
           )}
           {activeMenu === 'ORDERS' && (
             <div>
-              {['🏰 Build City', '🛣️ Build Road', '🌾 Irrigate', '🗿 Mine', '🏹 Fortify'].map((item, idx, arr) => (
+              {['🏰 Build City', '🛣️ Build Road', '🌾 Irrigate', '🗿 Mine', '🏹 Fortify', '🚆 Railroad', '🌾 Farmland', '⚓ Port', '✈️ Airport', '🛣️ Superhighways', '☠️ Pollution', '🏰 Fortress'].map((item, idx, arr) => (
                 <button 
                   key={item}
                   className="btn btn-dark text-start w-100 border-0"
@@ -774,7 +774,21 @@ function App() {
                   }}
                   onClick={() => {
                     console.log(`Civ1App: ORDERS - ${item} clicked`);
-                    
+
+                    // Map labels to improvement keys
+                    const improvementMap: Record<string, string> = {
+                      '🛣️ Build Road': 'road',
+                      '🌾 Irrigate': 'irrigation',
+                      '🗿 Mine': 'mines',
+                      '🚆 Railroad': 'railroad',
+                      '🌾 Farmland': 'farmland',
+                      '⚓ Port': 'port',
+                      '✈️ Airport': 'airport',
+                      '🛣️ Superhighways': 'superhighways',
+                      '☠️ Pollution': 'pollution',
+                      '🏰 Fortress': 'fortress'
+                    };
+
                     // Handle different ORDERS menu actions
                     if (item === '🏰 Build City') {
                       const selectedUnitId = gameState.selectedUnit;
@@ -789,18 +803,19 @@ function App() {
                       } else {
                         console.log('App: No unit selected for city founding');
                       }
-                    } else if (item === '🛣️ Build Road') {
+                    } else if (improvementMap[item]) {
                       const selectedUnitId = gameState.selectedUnit;
                       if (selectedUnitId && gameEngine) {
                         const selectedUnit = gameEngine.units.find(u => u.id === selectedUnitId);
                         if (selectedUnit) {
-                          console.log(`Civ1App: Building road with unit ${selectedUnit.id}`);
-                          gameEngine.buildImprovement(selectedUnit.id, 'road');
+                          const imp = improvementMap[item];
+                          console.log(`Civ1App: Building ${imp} with unit ${selectedUnit.id}`);
+                          gameEngine.buildImprovement(selectedUnit.id, imp);
                         } else {
-                          console.log('App: No unit found for road building');
+                          console.log('App: No unit found for building improvement');
                         }
                       } else {
-                        console.log('App: No unit selected for road building');
+                        console.log('App: No unit selected for building improvement');
                       }
                     } else if (item === '🌾 Irrigate') {
                       const selectedUnitId = gameState.selectedUnit;

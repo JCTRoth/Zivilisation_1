@@ -149,7 +149,7 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
               <div className="player-name">{displayPlayer.name}</div>
               <div className="side-panel-small-muted player-leader">{(displayPlayer as any)?.civilizationName || displayPlayer.leader || 'Unknown Civilization'}</div>
               <div className="gold-div">
-                <strong className="gold-strong">{(playerResources.gold ?? 0)} €</strong>
+                <strong className="gold-strong">{(playerResources.gold ?? 0)} 🪙</strong>
               </div>
             </div>
           </div>
