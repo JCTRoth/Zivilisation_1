@@ -17,6 +17,7 @@ export interface UnitProperties {
     attack: number;
     defense: number;
     movement: number;
+    sightRange?: number;
     cost: number;
     maintenance?: number;
     canSettle: boolean;

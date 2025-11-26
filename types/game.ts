@@ -121,6 +121,7 @@ export interface Civilization {
   technologies?: any[];
   score?: number;
   isHuman?: boolean;
+  isAI?: boolean;
 }
 
 export interface UIState {
