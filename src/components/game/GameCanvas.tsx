@@ -1,17 +1,33 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useGameStore } from '@/stores/GameStore';
-import { UNIT_TYPES } from '@/data/GameData';
-import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { Constants } from '@/utils/Constants';
-import { TERRAIN_TYPES, getTerrainInfo, TILE_SIZE } from '@/data/TerrainData';
-import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } from '@/data/TileImprovementConstants';
+import { TILE_SIZE } from '@/data/TerrainData';
+import { MapRenderer, TerrainRenderGrid, TerrainTileRenderInfo, UnitPathStep } from '@/game/rendering/MapRenderer';
+import type { City, Civilization, GameEngine, GameState, MapState, Unit } from '../../../types/game';
 import '../../styles/civ1GameCanvas.css';
 import UnitActionsModal from './UnitActionsModal';
 import { Pathfinding } from '../../game/engine/Pathfinding';
 
-const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
-  const canvasRef = useRef(null);
-  const terrainCanvasRef = useRef(null);
+type HexCoordinates = { col: number; row: number };
+
+interface GameCanvasProps {
+  minimap?: boolean;
+  onExamineHex?: (hex: HexCoordinates, tile: TerrainTileRenderInfo | null) => void;
+  gameEngine?: GameEngine | null;
+}
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  hex: HexCoordinates;
+  tile: TerrainTileRenderInfo | null;
+  unit: Unit | null;
+  city: City | null;
+}
+
+const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, gameEngine = null }) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mapRendererRef = useRef<MapRenderer>(new MapRenderer());
   const gameState = useGameStore(state => state.gameState);
   const mapData = useGameStore(state => state.map);
   const camera = useGameStore(state => state.camera);
@@ -20,27 +36,27 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   const units = useGameStore(state => state.units);
   const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
   const civilizations = useGameStore(state => state.civilizations);
-  const [isDragging, setIsDragging] = useState(false);
-  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
-  const [selectedHex, setSelectedHex] = useState({ col: 5, row: 5 });
-  const [contextMenu, setContextMenu] = useState(null);
-  const [terrain, setTerrain] = useState(null);
-  const [gotoMode, setGotoMode] = useState(false);
-  const [gotoUnit, setGotoUnit] = useState(null);
-  const [unitPaths, setUnitPaths] = useState(new Map()); // unitId -> path array
-  const animationFrameRef = useRef(null);
-  const renderTimeoutRef = useRef(null);
-  const lastRenderTime = useRef(0);
-  const needsRender = useRef(true); // Flag to track if re-render is needed
-  const lastGameState = useRef(null); // Track game state changes
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [lastMousePos, setLastMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [selectedHex, setSelectedHex] = useState<HexCoordinates>({ col: 5, row: 5 });
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [terrain, setTerrain] = useState<TerrainRenderGrid | null>(null);
+  const [gotoMode, setGotoMode] = useState<boolean>(false);
+  const [gotoUnit, setGotoUnit] = useState<Unit | null>(null);
+  const [unitPaths, setUnitPaths] = useState<Map<string, UnitPathStep[]>>(new Map());
+  const animationFrameRef = useRef<number | null>(null);
+  const renderTimeoutRef = useRef<number | null>(null);
+  const lastRenderTime = useRef<number>(0);
+  const needsRender = useRef<boolean>(true);
+  const lastGameState = useRef<any>(null);
 
   // Trigger re-render when game state changes (turn-based optimization)
-  const triggerRender = () => {
+  const triggerRender = useCallback(() => {
     needsRender.current = true;
-  };
+  }, []);
 
   // Check if game state has changed significantly
-  const hasGameStateChanged = () => {
+  const hasGameStateChanged = useCallback(() => {
     const currentState = {
       activePlayer: gameState.activePlayer,
       currentTurn: gameState.currentTurn,
@@ -56,159 +72,85 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       return true;
     }
     return false;
-  };
+  }, [camera, cities.length, gameState.activePlayer, gameState.currentTurn, selectedHex, units.length]);
 
-  // Generate terrain map (initialize once)
-  const generateTerrain = (width, height) => {
-    if (terrain) return terrain; // Return cached terrain
-    
-    const newTerrain = [];
+  const renderTerrainToOffscreen = useCallback((terrainGrid: TerrainRenderGrid | null) => {
+    if (!terrainGrid || !mapData) return;
+    const offscreenCanvas = terrainCanvasRef.current;
+    if (!offscreenCanvas) return;
+    mapRendererRef.current.renderTerrainLayer({
+      offscreenCanvas,
+      map: mapData,
+      terrainGrid
+    });
+  }, [mapData]);
+
+  useEffect(() => {
+    if (!terrainCanvasRef.current && typeof document !== 'undefined') {
+      terrainCanvasRef.current = document.createElement('canvas');
+    }
+  }, []);
+
+  const createTerrainGrid = useCallback((
+    tiles: any[] | undefined,
+    width: number,
+    height: number,
+    visibility?: boolean[],
+    revealed?: boolean[]
+  ): TerrainRenderGrid => {
+    const grid: TerrainRenderGrid = Array.from({ length: height }, () => Array.from({ length: width }, () => null));
+    if (!tiles) {
+      return grid;
+    }
+
     for (let row = 0; row < height; row++) {
-      newTerrain[row] = [];
       for (let col = 0; col < width; col++) {
-        // Create varied terrain with some logic
-        const distance = Math.sqrt((col - width/2) ** 2 + (row - height/2) ** 2);
-        const noise = Math.sin(col * 0.1) * Math.cos(row * 0.1);
-        
-        let terrainType;
-        if (distance > width * 0.4) {
-          terrainType = 'OCEAN';
-        } else if (noise > 0.5) {
-          terrainType = 'FOREST';
-        } else if (noise > 0.2) {
-          terrainType = 'HILLS';
-        } else if (noise < -0.3) {
-          terrainType = 'MOUNTAINS';
-        } else {
-          terrainType = Math.random() > 0.5 ? 'PLAINS' : 'GRASSLAND';
-        }
-        
-        newTerrain[row][col] = {
-          type: terrainType,
-          hasRiver: Math.random() < 0.1 && terrainType !== 'OCEAN',
-          hasRoad: false,
-          improvement: null,
-          city: null,
-          unit: null
+        const idx = row * width + col;
+        const tile = tiles[idx];
+        if (!tile) continue;
+        grid[row][col] = {
+          type: tile.type,
+          resource: tile.resource ?? null,
+          improvement: tile.improvement ?? null,
+          visible: visibility?.[idx] ?? tile.visible ?? false,
+          explored: revealed?.[idx] ?? tile.explored ?? false,
+          hasRoad: tile.hasRoad ?? false,
+          hasRiver: tile.hasRiver ?? false
         };
       }
     }
 
-    return newTerrain;
-  };
+    return grid;
+  }, []);
 
-  // Render static terrain (background + fog) to offscreen canvas
-  const renderTerrainToOffscreen = (terrainGrid) => {
-    if (!terrainGrid || !mapData) return;
-    
-    const offscreenCanvas = terrainCanvasRef.current;
-    if (!offscreenCanvas) return;
-    
-    const ctx = offscreenCanvas.getContext('2d');
-    if (!ctx) return;
-    
-    // Set offscreen canvas size to match map dimensions (scaled)
-    const mapWidth = mapData.width * TILE_SIZE;
-    const mapHeight = mapData.height * TILE_SIZE;
-    if (offscreenCanvas.width !== mapWidth || offscreenCanvas.height !== mapHeight) {
-      offscreenCanvas.width = mapWidth;
-      offscreenCanvas.height = mapHeight;
-    }
-    
-    // Clear offscreen canvas
-    ctx.clearRect(0, 0, mapWidth, mapHeight);
-    
-    // Draw all tiles (static terrain + fog)
-    for (let row = 0; row < mapData.height; row++) {
-      for (let col = 0; col < mapData.width; col++) {
-        const tile = terrainGrid[row]?.[col];
-        if (!tile) continue;
-        
-        const x = col * TILE_SIZE;
-        const y = row * TILE_SIZE;
-        
-        // Fog of War: Only render explored tiles
-        if (!tile.explored) {
-          // Draw completely black square for unexplored areas
-          drawSquare(ctx, x, y, TILE_SIZE, '#000000', '#000000');
-          continue;
-        }
-        
-        const terrainInfo = TERRAIN_TYPES[tile.type] || TERRAIN_TYPES[tile.type?.toUpperCase()] || TERRAIN_TYPES.GRASSLAND;
-        
-        // Draw square background
-        drawSquare(ctx, x, y, TILE_SIZE, terrainInfo.color, '#333');
-        
-        // Draw terrain details
-        drawTerrainSymbol(ctx, x, y, tile);
-        
-        // Apply fog overlay for explored but not currently visible tiles
-        if (!tile.visible) {
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-          ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-        }
-      }
-    }
-  };
-
-  // Initialize terrain from game engine
   useEffect(() => {
-    // Prefer authoritative store data (`mapData.tiles`) to avoid races where gameEngine.map
-    // might be present but the store hasn't synchronized yet. Fall back to gameEngine.map
-    // then to the procedural generator.
-    if (mapData && Array.isArray(mapData.tiles) && mapData.tiles.length === mapData.width * mapData.height) {
-      const terrainGrid = new Array(mapData.height);
-      for (let row = 0; row < mapData.height; row++) {
-        terrainGrid[row] = new Array(mapData.width);
-        for (let col = 0; col < mapData.width; col++) {
-          const tileIndex = row * mapData.width + col;
-          const tile = mapData.tiles[tileIndex];
-          if (!tile) continue;
+    if (!mapData?.width || !mapData?.height) {
+      return;
+    }
 
-          terrainGrid[row][col] = {
-            type: tile.type,
-            resource: tile.resource ?? null,
-            improvement: tile.improvement ?? null,
-            visible: mapData.visibility?.[tileIndex] ?? tile.visible ?? false,
-            explored: mapData.revealed?.[tileIndex] ?? tile.explored ?? false
-          };
-        }
-      }
+    const totalTiles = mapData.width * mapData.height;
+
+    if (Array.isArray(mapData.tiles) && mapData.tiles.length === totalTiles) {
+      const terrainGrid = createTerrainGrid(mapData.tiles, mapData.width, mapData.height, mapData.visibility, mapData.revealed);
       setTerrain(terrainGrid);
       renderTerrainToOffscreen(terrainGrid);
+      return;
+    }
 
-    } else if (gameEngine && gameEngine.map && Array.isArray(gameEngine.map.tiles) && gameEngine.map.tiles.length > 0) {
-      // Older fallback: use engine's map if available
-      const terrainGrid = [];
-      for (let row = 0; row < mapData.height; row++) {
-        terrainGrid[row] = [];
-        for (let col = 0; col < mapData.width; col++) {
-          const tileIndex = row * mapData.width + col;
-          const tile = gameEngine.map.tiles[tileIndex];
-          if (tile) {
-            const visibleFromStore = mapData.visibility?.[tileIndex] ?? tile.visible ?? false;
-            const exploredFromStore = mapData.revealed?.[tileIndex] ?? tile.explored ?? false;
-
-            terrainGrid[row][col] = {
-              type: tile.type,
-              resource: tile.resource,
-              improvement: tile.improvement,
-              visible: visibleFromStore,
-              explored: exploredFromStore
-            };
-          }
-        }
-      }
+    const engineTiles = (gameEngine as any)?.map?.tiles;
+    if (Array.isArray(engineTiles) && engineTiles.length >= totalTiles) {
+      const terrainGrid = createTerrainGrid(engineTiles, mapData.width, mapData.height, mapData.visibility, mapData.revealed);
       setTerrain(terrainGrid);
       renderTerrainToOffscreen(terrainGrid);
+      return;
+    }
 
-    } else if (!terrain) {
-      // Last-resort fallback to procedural generation
-      const generatedTerrain = generateTerrain(mapData.width || Constants.MAP_WIDTH, mapData.height || Constants.MAP_HEIGHT);
+    if (!terrain) {
+      const generatedTerrain = MapRenderer.generateFallbackTerrain(mapData.width || 20, mapData.height || 20);
       setTerrain(generatedTerrain);
       renderTerrainToOffscreen(generatedTerrain);
     }
-  }, [gameEngine, gameEngine?.map, gameEngine?.units, mapData.width, mapData.height, mapData.tiles]);
+  }, [createTerrainGrid, gameEngine, mapData.height, mapData.revealed, mapData.tiles, mapData.visibility, mapData.width, renderTerrainToOffscreen, terrain]);
 
   // Update terrain visibility when game state changes
   useEffect(() => {
@@ -301,22 +243,23 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
 
   // Sync unit paths from RoundManager when turn changes
   useEffect(() => {
-    if (gameEngine && gameEngine.roundManager) {
+    const roundManager = (gameEngine as any)?.roundManager;
+    if (roundManager && typeof roundManager.getAllUnitPaths === 'function') {
       console.log('[GameCanvas] Syncing unit paths from RoundManager on turn change');
-      const paths = gameEngine.roundManager.getAllUnitPaths();
-      setUnitPaths(paths);
+      const paths = roundManager.getAllUnitPaths();
+      if (paths instanceof Map) {
+        setUnitPaths(paths as Map<string, UnitPathStep[]>);
+      }
     }
   }, [gameState.currentTurn, gameEngine]);
 
-  // Convert square coordinates to screen position
-  const squareToScreen = (col, row) => {
+  const squareToScreen = useCallback((col: number, row: number): { x: number; y: number } => {
     const x = (col * TILE_SIZE - camera.x) * camera.zoom;
     const y = (row * TILE_SIZE - camera.y) * camera.zoom;
     return { x, y };
-  };
+  }, [camera.x, camera.y, camera.zoom]);
 
-  // Convert screen position to square coordinates
-  const screenToSquare = (screenX, screenY) => {
+  const screenToSquare = useCallback((screenX: number, screenY: number): HexCoordinates => {
     // Adjust for camera position and zoom
     const worldX = (screenX / camera.zoom) + camera.x;
     const worldY = (screenY / camera.zoom) + camera.y;
@@ -330,604 +273,55 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     row = Math.max(0, Math.min(mapData.height - 1, row));
 
     return { col, row };
-  };
+  }, [camera.x, camera.y, camera.zoom, mapData.height, mapData.width]);
 
-  // Draw square
-  const drawSquare = (ctx, centerX, centerY, size, fillColor, strokeColor = '#000') => {
-    const halfSize = size / 2;
-    ctx.beginPath();
-    ctx.rect(centerX - halfSize, centerY - halfSize, size, size);
-
-    ctx.fillStyle = fillColor;
-    ctx.fill();
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  };
-
-  // Draw terrain symbols
-  type DrawTerrainRenderOptions = {
-    drawBase?: boolean;
-    drawRivers?: boolean;
-  };
-
-  const drawTerrainSymbol = (ctx, centerX, centerY, terrain, options: DrawTerrainRenderOptions = {}) => {
-    const { drawBase = true, drawRivers = true } = options;
-    const terrainInfo = getTerrainInfo(terrain.type);
-    if (!terrainInfo) return;
-    // Defensive checks: ensure coordinates are finite and char is valid
-    if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) return;
-    const char = terrainInfo.char ?? '';
-    if (drawBase && (typeof char !== 'string' || char.length === 0)) return;
-
-    if (drawBase) {
-      ctx.fillStyle = '#000';
-      ctx.font = '16px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      // Draw terrain character (guard against runtime canvas exceptions)
-      try {
-        ctx.fillText(char, centerX, centerY - 8);
-      } catch (err) {
-        console.warn('[drawTerrainSymbol] fillText failed', { err, char, centerX, centerY });
-      }
-    }
-
-    // Ensure alignment for subsequent overlay glyphs
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    // Draw river overlay unless suppressed (avoid double rendering when overlaying)
-    if (drawRivers && terrain.hasRiver) {
-      try {
-        ctx.font = '16px monospace';
-        ctx.fillStyle = '#0066FF';
-        ctx.fillText('~', centerX + 8, centerY + 8);
-      } catch (err) {
-        console.warn('[drawTerrainSymbol] fillText river failed', err);
-      }
-    }
-    
-    const drawDisplayGlyph = (display?: ImprovementDisplayConfig | null): boolean => {
-      if (!display || !display.glyph) return false;
-      try {
-        ctx.font = display.font ?? 'bold 14px monospace';
-        ctx.fillStyle = display.color ?? '#8B4513';
-        const dx = display.offsetX ?? 0;
-        const dy = display.offsetY ?? 12;
-        ctx.fillText(display.glyph, centerX + dx, centerY + dy);
-        return true;
-      } catch (err) {
-        console.warn('[drawTerrainSymbol] fillText improvement glyph failed', err);
-        return false;
-      }
-    };
-
-    const drawLabelForImprovement = (impKey: string, display?: ImprovementDisplayConfig | null) => {
-      if (display?.skipLabel) return;
-      const impDef = IMPROVEMENT_PROPERTIES[impKey];
-      const baseLabel = display?.label || impDef?.name?.[0] || impKey[0]?.toUpperCase();
-      if (!baseLabel) return;
-
-      try {
-        ctx.font = display?.font ?? 'bold 12px monospace';
-        ctx.fillStyle = display?.color ?? '#ff0000ff';
-        const dx = display?.offsetX ?? 10;
-        const dy = display?.offsetY ?? -10;
-        ctx.fillText(baseLabel, centerX + dx, centerY + dy);
-      } catch (err) {
-        console.warn('[drawTerrainSymbol] fillText improvement label failed', err);
-      }
-    };
-
-    const roadDisplay = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD]?.display;
-    const railroadDisplay = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.RAILROAD]?.display;
-    let roadDrawn = false;
-
-    if (terrain?.hasRoad && roadDisplay) {
-      roadDrawn = drawDisplayGlyph(roadDisplay);
-    }
-
-    const improvementKey = terrain?.improvement ? String(terrain.improvement) : null;
-    if (improvementKey) {
-      const improvementDef = IMPROVEMENT_PROPERTIES[improvementKey];
-      const display = improvementDef?.display;
-
-      if (improvementKey === IMPROVEMENT_TYPES.ROAD) {
-        if (!roadDrawn) {
-          roadDrawn = drawDisplayGlyph(display || roadDisplay);
-        }
-      } else if (improvementKey === IMPROVEMENT_TYPES.RAILROAD) {
-        drawDisplayGlyph(display || railroadDisplay);
-      } else {
-        const glyphDrawn = drawDisplayGlyph(display);
-        if (!glyphDrawn) {
-          drawLabelForImprovement(improvementKey, display);
-        } else if (!display?.skipLabel) {
-          drawLabelForImprovement(improvementKey, display);
-        }
-      }
-    }
-  };
-
-  // Draw city
-  const drawCity = (ctx, centerX, centerY, city) => {
-    // City background - use civilization color if available
-    const civColor = (civilizations && civilizations[city.civilizationId] && civilizations[city.civilizationId].color) || (city.civilizationId === 0 ? '#FFD700' : '#FF6347');
-    ctx.fillStyle = civColor;
-    ctx.fillRect(centerX - 21, centerY - 21, 42, 42);
-    
-    // City border
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(centerX - 21, centerY - 21, 42, 42);
-    
-    // City symbol
-  ctx.fillStyle = '#000';
-  ctx.font = 'bold 24px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🏛️', centerX, centerY);
-    
-    // City name
-    ctx.font = '10px monospace';
-    ctx.fillStyle = '#000';
-    ctx.fillText(city.name, centerX, centerY + 24);
-  };
-
-  // Draw unit
-  const drawUnit = (ctx, centerX, centerY, unit, alpha) => {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-
-    // Unit marker
-    const zoomFactor = typeof camera?.zoom === 'number' ? Math.min(Math.max(camera.zoom, 0.5), 1.5) : 1;
-    const baseRadius = 20;
-    const radius = Math.round(baseRadius * zoomFactor);
-
-    // Unit background - use civilization color if available
-    const civIndex = unit.civilizationId ?? unit.owner;
-    const civColor = (civilizations && civilizations[civIndex] && civilizations[civIndex].color) || (civIndex === 0 ? '#4169E1' : '#DC143C');
-
-    // Draw civ-colored disc as unit marker (no outer halo)
-    const innerRadius = Math.max(8, Math.round(radius * 0.95));
-    ctx.beginPath();
-    ctx.fillStyle = civColor;
-    ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
-    ctx.fill();
-
-    // Determine icon color (contrast with civColor)
-    const hexToRgb = (hex) => {
-      if (!hex) return { r: 0, g: 0, b: 0 };
-      const normalized = hex.replace('#', '');
-      const bigint = parseInt(normalized.length === 3 ? normalized.split('').map(c => c + c).join('') : normalized, 16);
-      return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
-    };
-    const rgb = hexToRgb(civColor);
-    const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
-    const iconColor = luminance > 0.6 ? '#111' : '#FFF';
-    ctx.fillStyle = iconColor;
-
-    // Resolve unit type definitions from multiple data sources.
-    // unit.type in the engine is usually the id (e.g. 'settler', 'warrior').
-    const unitTypeId = unit.type ? String(unit.type) : null;
-
-    // Prefer a direct lookup into the exported UNIT_TYPES from gameData.
-    // Keys in UNIT_TYPES may be inconsistent (pluralization), so match by the inner `id` where possible.
-    let gameTypeDef = null;
-    if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
-      try {
-        gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === String(unitTypeId).toLowerCase()) || null;
-      } catch (e) {
-        gameTypeDef = null;
-      }
-    }
-
-    // Fallback to UNIT_PROPERTIES (unitConstants) which uses lowercase ids as keys
-    const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
-
-    // Choose icon priority:
-    // 1) explicit runtime unit.icon (engine may set this)
-    // 2) game data UNIT_TYPES icon
-    // 3) unit constants icon
-    // 4) first letter of type name
-    const icon = unit.icon || gameTypeDef?.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
-    const fontSize = Math.max(10, Math.round(innerRadius * 1.1));
-    ctx.font = `bold ${fontSize}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    try {
-      ctx.fillText(icon, centerX, centerY);
-    } catch (err) {
-      // Fallback to first letter if emoji/text can't be drawn
-      const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
-      ctx.fillText(fallback, centerX, centerY);
-    }
-
-    // Draw sleeping indicator (💤) at bottom center if unit is sleeping
-    if (unit.isSleeping) {
-      const sleepIcon = '💤';
-      const sleepFontSize = Math.max(8, Math.round(innerRadius * 0.7));
-      ctx.font = `${sleepFontSize}px monospace`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = iconColor; // Use same color as main icon
-      ctx.fillText(sleepIcon, centerX, centerY + 22);
-    }
-
-    ctx.restore();
-  };
-
-  // Draw unit path as red lines
-
-  // Draw unit path as red lines
-  const drawUnitPath = (ctx, unitId, path, units, gameState, squareToScreen) => {
-    if (!path || path.length < 2) return;
-
-    // Find the unit to check if it's selected
-    const unit = units.find(u => u.id === unitId);
-    if (!unit) return;
-
-    // Only draw path for selected unit
-    if (gameState.selectedUnit !== unitId) return;
-
-    ctx.save();
-    ctx.strokeStyle = 'red';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    ctx.beginPath();
-    let first = true;
-    for (const pos of path) {
-      const { x, y } = squareToScreen(pos.col, pos.row);
-      if (first) {
-        ctx.moveTo(x, y);
-        first = false;
-      } else {
-        ctx.lineTo(x, y);
-      }
-    }
-    ctx.stroke();
-
-    // Draw arrow at the end
-    if (path.length >= 2) {
-      const last = path[path.length - 1];
-      const secondLast = path[path.length - 2];
-      const { x: x1, y: y1 } = squareToScreen(secondLast.col, secondLast.row);
-      const { x: x2, y: y2 } = squareToScreen(last.col, last.row);
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len > 0) {
-        const arrowLen = 10;
-        const arrowAngle = Math.PI / 6; // 30 degrees
-        const angle = Math.atan2(dy, dx);
-        const leftAngle = angle - arrowAngle;
-        const rightAngle = angle + arrowAngle;
-        const leftX = x2 - arrowLen * Math.cos(leftAngle);
-        const leftY = y2 - arrowLen * Math.sin(leftAngle);
-        const rightX = x2 - arrowLen * Math.cos(rightAngle);
-        const rightY = y2 - arrowLen * Math.sin(rightAngle);
-        ctx.beginPath();
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(leftX, leftY);
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(rightX, rightY);
-        ctx.stroke();
-      }
-    }
-
-    ctx.restore();
-  };
-
-  // Render minimap
-  const renderMinimap = (ctx, canvas) => {
-    const minimapWidth = canvas.width;
-    const minimapHeight = canvas.height;
-    
-    // Calculate pixel size per tile
-    const tileWidth = minimapWidth / mapData.width;
-    const tileHeight = minimapHeight / mapData.height;
-    
-    // Draw all terrain as colored pixels
-    let exploredCount = 0;
-    let totalTiles = 0;
-    for (let row = 0; row < mapData.height; row++) {
-      for (let col = 0; col < mapData.width; col++) {
-        const tile = terrain[row]?.[col];
-        if (!tile) continue;
-        
-        totalTiles++;
-        
-        // Fog of War: Only render explored tiles
-        if (!tile.explored) {
-          // Draw completely black for unexplored areas
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(
-            col * tileWidth,
-            row * tileHeight,
-            tileWidth + 1,
-            tileHeight + 1
-          );
-          continue;
-        }
-        
-        exploredCount++;
-  const terrainInfo = getTerrainInfo(tile.type) || { color: '#000000' };
-  ctx.fillStyle = terrainInfo.color;
-        ctx.fillRect(
-          col * tileWidth,
-          row * tileHeight,
-          tileWidth + 1,
-          tileHeight + 1
-        );
-        
-        // Only show cities and units in currently visible areas
-        const isVisible = tile.visible;
-        
-        // Draw cities as bright dots (only if visible)
-        if (tile.city && isVisible) {
-          ctx.fillStyle = tile.city.civilizationId === 0 ? '#FFD700' : '#FF6347';
-          ctx.fillRect(
-            col * tileWidth,
-            row * tileHeight,
-            tileWidth * 2,
-            tileHeight * 2
-          );
-        }
-        
-        // Draw units as small dots (visible units or units with sight)
-        if (tile.unit && isVisible) {
-          ctx.fillStyle = tile.unit.owner === 0 ? '#FFFFFF' : '#FF0000';
-          ctx.fillRect(
-            col * tileWidth + tileWidth/3,
-            row * tileHeight + tileHeight/3,
-            tileWidth/3,
-            tileHeight/3
-          );
-        }
-        
-        // Apply fog overlay for explored but not currently visible tiles
-        if (!isVisible) {
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-          ctx.fillRect(
-            col * tileWidth,
-            row * tileHeight,
-            tileWidth + 1,
-            tileHeight + 1
-          );
-        }
-      }
-    }
-    
-    // Draw viewport rectangle
-    const viewportStartCol = Math.floor(camera.x / TILE_SIZE);
-    const viewportStartRow = Math.floor(camera.y / TILE_SIZE);
-    const viewportWidth = Math.ceil(canvas.width / camera.zoom / TILE_SIZE);
-    const viewportHeight = Math.ceil(canvas.height / camera.zoom / TILE_SIZE);
-    
-    ctx.strokeStyle = '#FFFF00';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(
-      viewportStartCol * tileWidth,
-      viewportStartRow * tileHeight,
-      viewportWidth * tileWidth,
-      viewportHeight * tileHeight
-    );
-    
-    // Draw border around minimap
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0, 0, minimapWidth, minimapHeight);
-  };
-
-  // Render the map (optimized with throttling)
-  const render = (currentTime = performance.now()) => {
+  const renderFrame = useCallback((currentTime: number = performance.now()) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
     const rect = canvas.getBoundingClientRect();
-    
-    // Set canvas size only if changed
     if (canvas.width !== rect.width || canvas.height !== rect.height) {
       canvas.width = rect.width;
       canvas.height = rect.height;
     }
-    
-  // Clear canvas and allow CSS background to show through for the game area
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Use cached terrain
-    if (!terrain) return;
 
-    const hasOffscreenTerrain = Boolean(terrainCanvasRef.current);
-
-    // Minimap rendering
     if (minimap) {
-      renderMinimap(ctx, canvas);
+      mapRendererRef.current.renderMinimap({
+        ctx,
+        map: mapData as MapState,
+        cssWidth: rect.width,
+        cssHeight: rect.height,
+        camera,
+        units,
+        cities,
+        civilizations
+      });
       return;
     }
-    
-    // Calculate visible bounds for culling (performance optimization)
-    const startCol = Math.max(0, Math.floor(camera.x / TILE_SIZE) - 2);
-    const endCol = Math.min(mapData.width, Math.ceil((camera.x + canvas.width / camera.zoom) / TILE_SIZE) + 2);
-    const startRow = Math.max(0, Math.floor(camera.y / TILE_SIZE) - 2);
-    const endRow = Math.min(mapData.height, Math.ceil((camera.y + canvas.height / camera.zoom) / TILE_SIZE) + 2);
 
-    // Copy visible portion of terrain from offscreen canvas
-    if (hasOffscreenTerrain) {
-      const terrainCanvas = terrainCanvasRef.current;
-      const terrainCtx = terrainCanvas.getContext('2d');
-
-      // Calculate source rectangle from offscreen canvas (world coordinates)
-      const srcX = camera.x;
-      const srcY = camera.y;
-      const srcWidth = canvas.width / camera.zoom;
-      const srcHeight = canvas.height / camera.zoom;
-
-      // Destination rectangle on main canvas (screen coordinates)
-      const destX = 0;
-      const destY = 0;
-      const destWidth = canvas.width;
-      const destHeight = canvas.height;
-
-      // Copy terrain layer
-      ctx.drawImage(
-        terrainCanvas,
-        srcX, srcY, srcWidth, srcHeight,
-        destX, destY, destWidth, destHeight
-      );
-    } else {
-      // Fallback: draw terrain directly if offscreen canvas not available
-      for (let row = startRow; row < endRow; row++) {
-        for (let col = startCol; col < endCol; col++) {
-          const { x, y } = squareToScreen(col, row);
-
-          // Additional viewport check
-          if (x < -TILE_SIZE * 2 || x > canvas.width + TILE_SIZE * 2 ||
-              y < -TILE_SIZE * 2 || y > canvas.height + TILE_SIZE * 2) {
-            continue;
-          }
-
-          const tile = terrain[row]?.[col];
-          if (!tile) continue;
-
-          // Fog of War: Only render explored tiles
-          if (!tile.explored) {
-            // Draw completely black hex for unexplored areas
-            drawSquare(
-              ctx,
-              x,
-              y,
-              TILE_SIZE * camera.zoom,
-              '#000000',
-              '#000000'
-            );
-            continue;
-          }
-
-          const terrainInfo = TERRAIN_TYPES[tile.type] || TERRAIN_TYPES[tile.type?.toUpperCase()] || TERRAIN_TYPES.GRASSLAND;
-          const isSelected = selectedHex.col === col && selectedHex.row === row;
-
-          // Draw hex background
-          drawSquare(
-            ctx,
-            x,
-            y,
-            TILE_SIZE * camera.zoom,
-            terrainInfo.color,
-            isSelected ? '#FF0000' : '#333'
-          );
-
-          // Draw terrain details only at reasonable zoom levels
-          if (camera.zoom > 0.5) {
-            drawTerrainSymbol(ctx, x, y, tile);
-          }
-
-          // Apply fog overlay for explored but not currently visible tiles
-          if (!tile.visible) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            const halfSize = TILE_SIZE * camera.zoom / 2;
-            ctx.fillRect(x - halfSize, y - halfSize, TILE_SIZE * camera.zoom, TILE_SIZE * camera.zoom);
-          }
-        }
-      }
-    }
-
-    // Draw dynamic elements on top (cities, units, selection highlights)
-    for (let row = startRow; row < endRow; row++) {
-      for (let col = startCol; col < endCol; col++) {
-        const { x, y } = squareToScreen(col, row);
-
-        // Additional viewport check
-        if (x < -TILE_SIZE * 2 || x > canvas.width + TILE_SIZE * 2 ||
-            y < -TILE_SIZE * 2 || y > canvas.height + TILE_SIZE * 2) {
-          continue;
-        }
-
-        const tile = terrain[row]?.[col];
-        if (!tile || !tile.explored) continue;
-
-        // Overlay improvements/roads when using offscreen terrain to reflect latest map state
-        if (hasOffscreenTerrain && camera.zoom > 0.5) {
-          const tileIndex = row * mapData.width + col;
-          const authoritativeTile = mapData.tiles && mapData.tiles[tileIndex] ? mapData.tiles[tileIndex] : null;
-
-          // Merge authoritative improvement/road/river flags into the transient terrain tile
-          const authority: any = authoritativeTile;
-          const overlayTile = {
-            ...tile,
-            improvement: authority?.improvement ?? tile.improvement,
-            hasRoad: authority?.hasRoad ?? (tile as any)?.hasRoad ?? false,
-            hasRiver: authority?.hasRiver ?? (tile as any)?.hasRiver ?? false
-          };
-
-          drawTerrainSymbol(ctx, x, y, overlayTile, { drawBase: false, drawRivers: false });
-        }
-
-        // Only draw units and cities if tile is currently visible (not just explored)
-        const isVisible = tile.visible;
-
-        // Draw city from game engine
-        if (gameEngine && camera.zoom > 0.3 && isVisible) {
-          const city = cities.find(c => c.col === col && c.row === row);
-          if (city) {
-            drawCity(ctx, x, y, city);
-          }
-        }
-
-        // Draw unit from game engine
-        if (gameEngine && camera.zoom > 0.3 && isVisible) {
-          const unit = units.find(u => u.col === col && u.row === row);
-          if (unit) {
-            // Determine if this unit should blink: belongs to active player and has moves remaining
-            const isActivePlayersUnit = unit.civilizationId === gameState.activePlayer;
-            const hasMoves = (unit.movesRemaining || 0) > 0;
-            let alpha = 1;
-            if (isActivePlayersUnit && hasMoves) {
-              // Blink using a smooth sine wave based on currentTime
-              const period = 2000; // ms per full cycle
-              const t = (currentTime % period) / period; // 0..1
-              const sine = Math.sin(t * Math.PI * 2); // -1..1
-              // Map to [0.35, 1.0]
-              alpha = 0.675 + 0.325 * (sine + 1) / 2; // between ~0.35 and 1.0
-            }
-            drawUnit(ctx, x, y, unit, alpha);
-          }
-        }
-
-        // Draw selection highlight (red border) for selected units
-        const selectedUnitId = gameState.selectedUnit;
-        const unitAtTile = units.find(u => u.col === col && u.row === row);
-        const isSelected = selectedUnitId && unitAtTile && unitAtTile.id === selectedUnitId;
-        if (isSelected) {
-          ctx.strokeStyle = '#FF0000';
-          ctx.lineWidth = 3;
-          ctx.strokeRect(x - TILE_SIZE * camera.zoom / 2, y - TILE_SIZE * camera.zoom / 2, TILE_SIZE * camera.zoom, TILE_SIZE * camera.zoom);
-        }
-
-        // Draw coordinates only when zoomed in
-        if (camera.zoom > 1.5) {
-          ctx.fillStyle = '#000';
-          ctx.font = '8px monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText(`${col},${row}`, x, y + TILE_SIZE);
-        }
-      }
-    }
-
-    // Draw unit paths for all units that have paths
-    unitPaths.forEach((path, unitId) => {
-      drawUnitPath(ctx, unitId, path, units, gameState, squareToScreen);
+    mapRendererRef.current.renderFrame({
+      ctx,
+      canvas,
+      map: mapData as MapState,
+      terrainGrid: terrain,
+      camera,
+      selectedHex,
+      gameState: gameState as GameState,
+      units,
+      cities,
+      civilizations,
+      unitPaths,
+      currentTime,
+      offscreenCanvas: terrainCanvasRef.current,
+      squareToScreen,
+      cameraZoom: camera.zoom
     });
-
-  };
+  }, [camera, canvasRef, civilizations, cities, gameState, mapData, minimap, squareToScreen, selectedHex, terrain, unitPaths, units]);
 
   // Handle mouse events
-  const handleMouseDown = (e) => {
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     // Don't allow dragging in Go To mode
     if (gotoMode) {
       return;
@@ -938,7 +332,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     triggerRender(); // Immediate render for visual feedback
   };
 
-  const handleMouseMove = (e) => {
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isDragging && !gotoMode) {
       const dx = e.clientX - lastMousePos.x;
       const dy = e.clientY - lastMousePos.y;
@@ -958,7 +352,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     triggerRender(); // Render to update cursor state
   };
 
-  const handleClick = (e) => {
+  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDragging) {
       const rect = canvasRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -1012,8 +406,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
               gotoUnit.row,
               hex.col,
               hex.row,
-              (col, row) => {
-                // Get tile from terrain data
+              (col: number, row: number) => {
                 const tileIndex = row * mapData.width + col;
                 return mapData.tiles?.[tileIndex] || null;
               },
@@ -1023,48 +416,55 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
             );
 
             if (pathResult.success && pathResult.path.length > 1) {
-              // Store the path (excluding the starting position)
-              const pathToFollow = pathResult.path.slice(1);
-              setUnitPaths(prev => new Map(prev).set(gotoUnit.id, pathToFollow));
-              
-              // Sync with RoundManager in GameEngine
-              if (gameEngine && gameEngine.roundManager) {
-                gameEngine.roundManager.setUnitPath(gotoUnit.id, pathToFollow);
+              const pathToFollow: UnitPathStep[] = pathResult.path.slice(1).map((step: any) => ({
+                col: step.col,
+                row: step.row
+              }));
+
+              setUnitPaths(prev => {
+                const next = new Map(prev);
+                next.set(gotoUnit.id, pathToFollow);
+                return next;
+              });
+
+              const roundManager = (gameEngine as any)?.roundManager;
+              if (roundManager && typeof roundManager.setUnitPath === 'function') {
+                roundManager.setUnitPath(gotoUnit.id, pathToFollow);
                 console.log(`[CLICK] Path synced to RoundManager for unit ${gotoUnit.id}`);
               }
-              
+
               if (actions?.addNotification) actions.addNotification({
                 type: 'success',
                 message: `${gotoUnit.type} will go to (${hex.col}, ${hex.row})`
               });
-              
+
               console.log(`[CLICK] Path calculated for unit ${gotoUnit.id}:`, pathToFollow);
-              
-              // Try to move to first step automatically
+
               if (pathToFollow.length > 0 && gotoUnit.movesRemaining > 0) {
                 const nextPos = pathToFollow[0];
                 try {
-                  const moveResult = gameEngine.moveUnit(gotoUnit.id, nextPos.col, nextPos.row);
+                  const moveResult = gameEngine?.moveUnit?.(gotoUnit.id, nextPos.col, nextPos.row);
                   if (moveResult && moveResult.success) {
-                    // Update path to remaining
                     const remainingPath = pathToFollow.slice(1);
-                    setUnitPaths(prev => new Map(prev).set(gotoUnit.id, remainingPath));
-                    
-                    // Sync with RoundManager
-                    if (gameEngine && gameEngine.roundManager) {
-                      gameEngine.roundManager.setUnitPath(gotoUnit.id, remainingPath);
+                    setUnitPaths(prev => {
+                      const next = new Map(prev);
+                      next.set(gotoUnit.id, remainingPath);
+                      return next;
+                    });
+
+                    if (roundManager && typeof roundManager.setUnitPath === 'function') {
+                      roundManager.setUnitPath(gotoUnit.id, remainingPath);
                     }
-                    
+
                     console.log(`[CLICK] Unit ${gotoUnit.id} moved to (${nextPos.col}, ${nextPos.row}), remaining path:`, remainingPath);
                   } else {
                     console.log(`[CLICK] Automatic move failed for unit ${gotoUnit.id}`);
                   }
-                } catch (e) {
-                  console.log(`[CLICK] Automatic move error:`, e);
+                } catch (err) {
+                  console.log(`[CLICK] Automatic move error:`, err);
                 }
               }
-              
-              // Trigger render to show the path immediately
+
               triggerRender();
             } else {
               if (actions?.addNotification) actions.addNotification({
@@ -1128,14 +528,18 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
           if (existingPath && existingPath.length > 0 && unitAt.movesRemaining > 0) {
             const nextPos = existingPath[0];
             try {
-              const moveResult = gameEngine.moveUnit(unitAt.id, nextPos.col, nextPos.row);
+              const moveResult = gameEngine?.moveUnit?.(unitAt.id, nextPos.col, nextPos.row);
               if (moveResult && moveResult.success) {
                 const remainingPath = existingPath.slice(1);
-                setUnitPaths(prev => new Map(prev).set(unitAt.id, remainingPath));
+                setUnitPaths(prev => {
+                  const next = new Map(prev);
+                  next.set(unitAt.id, remainingPath);
+                  return next;
+                });
                 
-                // Sync with RoundManager
-                if (gameEngine && gameEngine.roundManager) {
-                  gameEngine.roundManager.setUnitPath(unitAt.id, remainingPath);
+                const roundManager = (gameEngine as any)?.roundManager;
+                if (roundManager && typeof roundManager.setUnitPath === 'function') {
+                  roundManager.setUnitPath(unitAt.id, remainingPath);
                 }
                 
                 console.log(`[CLICK] Unit ${unitAt.id} continued path to (${nextPos.col}, ${nextPos.row}), remaining:`, remainingPath);
@@ -1192,7 +596,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     }
   };
 
-  const handleRightClick = (e) => {
+  const handleRightClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     
     // Don't show context menu in Go To mode
@@ -1253,7 +657,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     });
   };
 
-  const executeContextAction = (action: string, data = null) => {
+  const executeContextAction = (action: string, data: unknown = null) => {
     console.log(`[ContextMenu] Executing action: ${action}`, { contextMenu });
 
     if (!contextMenu) return;
@@ -1406,7 +810,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     triggerRender();
   };
 
-  const handleWheel = (e) => {
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     
     // Don't allow zooming in Go To mode
@@ -1457,7 +861,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       const elapsed = currentTime - lastFrameTime;
       if (elapsed > frameInterval) {
         lastFrameTime = currentTime - (elapsed % frameInterval);
-        render(currentTime);
+        renderFrame(currentTime);
         needsRender.current = false; // Reset flag after rendering
       }
     };
@@ -1469,7 +873,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [camera, selectedHex, mapData, terrain, gameState, units, cities]);
+  }, [camera, selectedHex, mapData, terrain, gameState, units, cities, hasGameStateChanged, renderFrame]);
 
   // Trigger render when camera changes (pan/zoom)
   useEffect(() => {
@@ -1489,7 +893,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame((t) => {
         try {
-          render(t);
+          renderFrame(t);
         } catch (e) {
           // swallow errors here - render will run in the main loop as well
           // console.debug('[GameCanvas] render() initial call failed after camera change', e);
