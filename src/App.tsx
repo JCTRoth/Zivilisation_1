@@ -836,7 +836,7 @@ function App() {
                         const selectedUnit = gameEngine.units.find(u => u.id === selectedUnitId);
                         if (selectedUnit) {
                           console.log(`Civ1App: Mining with unit ${selectedUnit.id}`);
-                          gameEngine.buildImprovement(selectedUnit.id, 'mine');
+                          gameEngine.buildImprovement(selectedUnit.id, 'mines');
                         } else {
                           console.log('App: No unit found for mining');
                         }

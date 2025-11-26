@@ -4,7 +4,7 @@ import { UNIT_TYPES } from '@/data/GameData';
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import { Constants } from '@/utils/Constants';
 import { TERRAIN_TYPES, getTerrainInfo, TILE_SIZE } from '@/data/TerrainData';
-import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
+import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } from '@/data/TileImprovementConstants';
 import '../../styles/civ1GameCanvas.css';
 import UnitActionsModal from './UnitActionsModal';
 import { Pathfinding } from '../../game/engine/Pathfinding';
@@ -208,7 +208,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       setTerrain(generatedTerrain);
       renderTerrainToOffscreen(generatedTerrain);
     }
-  }, [gameEngine, gameEngine?.map, gameEngine?.units, mapData.width, mapData.height]);
+  }, [gameEngine, gameEngine?.map, gameEngine?.units, mapData.width, mapData.height, mapData.tiles]);
 
   // Update terrain visibility when game state changes
   useEffect(() => {
@@ -346,29 +346,42 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
   };
 
   // Draw terrain symbols
-  const drawTerrainSymbol = (ctx, centerX, centerY, terrain) => {
+  type DrawTerrainRenderOptions = {
+    drawBase?: boolean;
+    drawRivers?: boolean;
+  };
+
+  const drawTerrainSymbol = (ctx, centerX, centerY, terrain, options: DrawTerrainRenderOptions = {}) => {
+    const { drawBase = true, drawRivers = true } = options;
     const terrainInfo = getTerrainInfo(terrain.type);
     if (!terrainInfo) return;
     // Defensive checks: ensure coordinates are finite and char is valid
     if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) return;
     const char = terrainInfo.char ?? '';
-    if (typeof char !== 'string' || char.length === 0) return;
+    if (drawBase && (typeof char !== 'string' || char.length === 0)) return;
 
-    ctx.fillStyle = '#000';
-    ctx.font = '16px monospace';
+    if (drawBase) {
+      ctx.fillStyle = '#000';
+      ctx.font = '16px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Draw terrain character (guard against runtime canvas exceptions)
+      try {
+        ctx.fillText(char, centerX, centerY - 8);
+      } catch (err) {
+        console.warn('[drawTerrainSymbol] fillText failed', { err, char, centerX, centerY });
+      }
+    }
+
+    // Ensure alignment for subsequent overlay glyphs
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    
-    // Draw terrain character (guard against runtime canvas exceptions)
-    try {
-      ctx.fillText(char, centerX, centerY - 8);
-    } catch (err) {
-      console.warn('[drawTerrainSymbol] fillText failed', { err, char, centerX, centerY });
-    }
-    
-    // Draw improvements
-    if (terrain.hasRiver) {
+
+    // Draw river overlay unless suppressed (avoid double rendering when overlaying)
+    if (drawRivers && terrain.hasRiver) {
       try {
+        ctx.font = '16px monospace';
         ctx.fillStyle = '#0066FF';
         ctx.fillText('~', centerX + 8, centerY + 8);
       } catch (err) {
@@ -376,26 +389,65 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
       }
     }
     
-    if (terrain.hasRoad) {
+    const drawDisplayGlyph = (display?: ImprovementDisplayConfig | null): boolean => {
+      if (!display || !display.glyph) return false;
       try {
-        ctx.fillStyle = '#8B4513';
-        ctx.fillText('═', centerX, centerY + 12);
+        ctx.font = display.font ?? 'bold 14px monospace';
+        ctx.fillStyle = display.color ?? '#8B4513';
+        const dx = display.offsetX ?? 0;
+        const dy = display.offsetY ?? 12;
+        ctx.fillText(display.glyph, centerX + dx, centerY + dy);
+        return true;
       } catch (err) {
-        console.warn('[drawTerrainSymbol] fillText road failed', err);
+        console.warn('[drawTerrainSymbol] fillText improvement glyph failed', err);
+        return false;
       }
+    };
+
+    const drawLabelForImprovement = (impKey: string, display?: ImprovementDisplayConfig | null) => {
+      if (display?.skipLabel) return;
+      const impDef = IMPROVEMENT_PROPERTIES[impKey];
+      const baseLabel = display?.label || impDef?.name?.[0] || impKey[0]?.toUpperCase();
+      if (!baseLabel) return;
+
+      try {
+        ctx.font = display?.font ?? 'bold 12px monospace';
+        ctx.fillStyle = display?.color ?? '#ff0000ff';
+        const dx = display?.offsetX ?? 10;
+        const dy = display?.offsetY ?? -10;
+        ctx.fillText(baseLabel, centerX + dx, centerY + dy);
+      } catch (err) {
+        console.warn('[drawTerrainSymbol] fillText improvement label failed', err);
+      }
+    };
+
+    const roadDisplay = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD]?.display;
+    const railroadDisplay = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.RAILROAD]?.display;
+    let roadDrawn = false;
+
+    if (terrain?.hasRoad && roadDisplay) {
+      roadDrawn = drawDisplayGlyph(roadDisplay);
     }
-    // Draw generic improvements (use first letter icon or configured name)
-    try {
-      if (terrain.improvement) {
-        const impKey = String(terrain.improvement);
-        const impDef = IMPROVEMENT_PROPERTIES[impKey];
-        const impLabel = impDef?.name ? impDef.name[0] : impKey[0]?.toUpperCase() || 'I';
-        ctx.fillStyle = '#222';
-        ctx.font = 'bold 12px monospace';
-        ctx.fillText(impLabel, centerX + 10, centerY - 10);
+
+    const improvementKey = terrain?.improvement ? String(terrain.improvement) : null;
+    if (improvementKey) {
+      const improvementDef = IMPROVEMENT_PROPERTIES[improvementKey];
+      const display = improvementDef?.display;
+
+      if (improvementKey === IMPROVEMENT_TYPES.ROAD) {
+        if (!roadDrawn) {
+          roadDrawn = drawDisplayGlyph(display || roadDisplay);
+        }
+      } else if (improvementKey === IMPROVEMENT_TYPES.RAILROAD) {
+        drawDisplayGlyph(display || railroadDisplay);
+      } else {
+        const glyphDrawn = drawDisplayGlyph(display);
+        if (!glyphDrawn) {
+          drawLabelForImprovement(improvementKey, display);
+        } else if (!display?.skipLabel) {
+          drawLabelForImprovement(improvementKey, display);
+        }
       }
-    } catch (err) {
-      console.warn('[drawTerrainSymbol] fillText improvement failed', err);
     }
   };
 
@@ -690,7 +742,9 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     
     // Use cached terrain
     if (!terrain) return;
-    
+
+    const hasOffscreenTerrain = Boolean(terrainCanvasRef.current);
+
     // Minimap rendering
     if (minimap) {
       renderMinimap(ctx, canvas);
@@ -704,7 +758,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
     const endRow = Math.min(mapData.height, Math.ceil((camera.y + canvas.height / camera.zoom) / TILE_SIZE) + 2);
 
     // Copy visible portion of terrain from offscreen canvas
-    if (terrainCanvasRef.current) {
+    if (hasOffscreenTerrain) {
       const terrainCanvas = terrainCanvasRef.current;
       const terrainCtx = terrainCanvas.getContext('2d');
 
@@ -797,6 +851,23 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
         const tile = terrain[row]?.[col];
         if (!tile || !tile.explored) continue;
 
+        // Overlay improvements/roads when using offscreen terrain to reflect latest map state
+        if (hasOffscreenTerrain && camera.zoom > 0.5) {
+          const tileIndex = row * mapData.width + col;
+          const authoritativeTile = mapData.tiles && mapData.tiles[tileIndex] ? mapData.tiles[tileIndex] : null;
+
+          // Merge authoritative improvement/road/river flags into the transient terrain tile
+          const authority: any = authoritativeTile;
+          const overlayTile = {
+            ...tile,
+            improvement: authority?.improvement ?? tile.improvement,
+            hasRoad: authority?.hasRoad ?? (tile as any)?.hasRoad ?? false,
+            hasRiver: authority?.hasRiver ?? (tile as any)?.hasRiver ?? false
+          };
+
+          drawTerrainSymbol(ctx, x, y, overlayTile, { drawBase: false, drawRivers: false });
+        }
+
         // Only draw units and cities if tile is currently visible (not just explored)
         const isVisible = tile.visible;
 
@@ -843,7 +914,7 @@ const GameCanvas = ({ minimap = false, onExamineHex, gameEngine }) => {
           ctx.fillStyle = '#000';
           ctx.font = '8px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(`${col},${row}`, x, y + TILE_SIZE + 10);
+          ctx.fillText(`${col},${row}`, x, y + TILE_SIZE);
         }
       }
     }

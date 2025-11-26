@@ -243,7 +243,7 @@ export interface GameEngine {
   unitWake(unitId: string): void;
   unitFortify(unitId: string): void;
   skipUnit(unitId: string): void;
-  buildImprovement(unitId: string, improvement: string): void;
+  buildImprovement(unitId: string, improvement: string): boolean;
   getAllUnits(): Unit[];
   getAllCities(): City[];
   calculateUnitPath(unitId: string, targetCol: number, targetRow: number): boolean;

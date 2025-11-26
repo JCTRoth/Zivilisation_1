@@ -90,15 +90,6 @@ const TERRAIN_CONSTANTS: TerrainConstants = {
             requiresResource: null,
             defenseBonus: 2
         },
-        airbase: {
-            name: 'Airbase',
-            food: 0,
-            production: 0,
-            trade: 0,
-            buildTurns: 10,
-            allowedTerrain: null,
-            requiresResource: null
-        },
         // Terrain conversion improvements
         convertToGrassland: {
             name: 'Convert to Grassland',

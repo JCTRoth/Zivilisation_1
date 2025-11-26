@@ -286,6 +286,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     updateMap: (mapUpdate) => set(state => {
       const newMap = { ...state.map, ...mapUpdate };
+      // Clone tiles to ensure React detects changes when individual tiles are updated
+      if (mapUpdate.tiles) {
+        newMap.tiles = mapUpdate.tiles.map(tile => ({ ...tile }));
+      }
       // For development-only forced fog disable, read from env (Vite exposes VITE_* vars)
       const disableFog = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_DISABLE_FOG === 'true';
       const tilesArray = Array.isArray(mapUpdate.tiles) && mapUpdate.tiles.length > 0

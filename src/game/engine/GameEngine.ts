@@ -1,6 +1,7 @@
 import { SquareGrid } from '../HexGrid';
 import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
+import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
 import { ProductionManager } from './ProductionManager';
 import { AIUtility } from './AIUtility';
 import { UnitActionManager } from './UnitActionManager';
@@ -537,6 +538,13 @@ export default class GameEngine {
    */
   async generateWorld() {
     const tiles = [];
+    // const testImprovements = [
+    //   IMPROVEMENT_TYPES.ROAD,
+    //   IMPROVEMENT_TYPES.IRRIGATION,
+    //   IMPROVEMENT_TYPES.MINES,
+    //   IMPROVEMENT_TYPES.FORTRESS,
+    //   IMPROVEMENT_TYPES.RAILROAD
+    // ];
     
     // Simple terrain generation - can be enhanced with noise functions
     for (let row = 0; row < Constants.MAP_HEIGHT; row++) {
@@ -559,13 +567,17 @@ export default class GameEngine {
           else if (rand < 0.6) terrainType = Constants.TERRAIN.TUNDRA;
           else terrainType = Constants.TERRAIN.GRASSLAND;
         }
-        
-        tiles.push({
+
+      // const tileIndex = row * Constants.MAP_WIDTH + col;
+      // const testImprovement = testImprovements[tileIndex % testImprovements.length];
+      // const tileIsOcean = terrainType === Constants.TERRAIN.OCEAN;
+
+      tiles.push({
           col,
           row,
           type: terrainType,
           resource: Math.random() < 0.1 ? 'bonus' : null,
-          improvement: null,
+                  // improvement: tileIsOcean ? null : testImprovement,
           visible: false,
           explored: false
         });
@@ -1616,8 +1628,12 @@ export default class GameEngine {
       return false;
     }
 
+    // Get improvement properties to determine build time
+    const improvementProps = IMPROVEMENT_PROPERTIES[improvementType];
+    const buildTurns = improvementProps?.turns || 1; // Default to 1 if not found
+
     // Check if unit can perform this action
-    if (!UnitActionManager.canPerformAction(unit, 'build_improvement', 1)) {
+    if (!UnitActionManager.canPerformAction(unit, 'build_improvement', buildTurns)) {
       return false;
     }
 
@@ -1635,9 +1651,9 @@ export default class GameEngine {
 
     // Build the improvement
     tile.improvement = improvementType;
-    unit.movesRemaining = (unit.movesRemaining || 0) - 1;
+    unit.movesRemaining = (unit.movesRemaining || 0) - buildTurns;
 
-    console.log(`[GameEngine] Unit ${unit.id} built ${improvementType} at (${unit.col},${unit.row}). Moves remaining: ${unit.movesRemaining}`);
+    console.log(`[GameEngine] Unit ${unit.id} built ${improvementType} at (${unit.col},${unit.row}) in ${buildTurns} turns. Moves remaining: ${unit.movesRemaining}`);
 
     if (this.onStateChange) {
       this.onStateChange('IMPROVEMENT_BUILT', { unit, tile, improvementType });

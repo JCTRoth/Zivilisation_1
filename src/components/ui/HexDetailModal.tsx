@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal } from 'react-bootstrap';
 import { TERRAIN_TYPES } from '@/data/TerrainData';
+import { IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
 
 const HexDetailModal = ({ show, onHide, hex, terrain}) => {
   if (!hex || !terrain) return null;
@@ -130,9 +131,9 @@ const HexDetailModal = ({ show, onHide, hex, terrain}) => {
             <div className="border-top border-dark pt-2 mt-2" style={{ fontSize: '9px' }}>
               <strong>Features:</strong><br/>
               {centerTile.hasRiver && <span>• River<br/></span>}
-              {centerTile.hasRoad && <span>• Road<br/></span>}
+              {(centerTile.hasRoad || [IMPROVEMENT_TYPES.ROAD, IMPROVEMENT_TYPES.RAILROAD].includes(centerTile.improvement)) && <span>• Road<br/></span>}
               {centerTile.improvement && <span>• {centerTile.improvement}<br/></span>}
-              {!centerTile.hasRiver && !centerTile.hasRoad && !centerTile.improvement && <span>• None<br/></span>}
+              {!centerTile.hasRiver && !(centerTile.hasRoad || [IMPROVEMENT_TYPES.ROAD, IMPROVEMENT_TYPES.RAILROAD].includes(centerTile.improvement)) && !centerTile.improvement && <span>• None<br/></span>}
             </div>
 
             {centerTile.city && (

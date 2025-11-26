@@ -49,9 +49,20 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
           gameEngine.foundCityWithSettler(selectedUnit.id);
         }
         break;
-      case 'build_road':
-        gameEngine.buildImprovement(selectedUnit.id, 'road');
+      case 'build_road': {
+        const built = gameEngine.buildImprovement(selectedUnit.id, 'road');
+        if (built) {
+          if (actions?.updateUnits) actions.updateUnits(gameEngine.getAllUnits());
+          if (actions?.updateMap) actions.updateMap(gameEngine.map);
+          if (actions?.updateVisibility) actions.updateVisibility();
+          if (actions?.addNotification) {
+            actions.addNotification({ type: 'success', message: 'Road built' });
+          }
+        } else if (actions?.addNotification) {
+          actions.addNotification({ type: 'warning', message: 'Cannot build road here' });
+        }
         break;
+      }
       case 'skip_turn':
         gameEngine.skipUnit(selectedUnit.id);
         break;

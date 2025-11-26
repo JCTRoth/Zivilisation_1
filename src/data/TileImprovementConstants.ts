@@ -1,11 +1,22 @@
 // Improvement Constants - Terrain improvements and their properties
 
-export interface ImprovementProperties {
+export interface ImprovementDisplayConfig {
+    glyph?: string;
+    label?: string;
+    color?: string;
+    font?: string;
+    offsetX?: number;
+    offsetY?: number;
+    skipLabel?: boolean;
+}
+
+export interface TileImprovementConstants {
     name: string;
     turns: number;
     effects: Record<string, any>;
     terrainRestrictions?: string[];
     requiredTech?: string;
+    display?: ImprovementDisplayConfig;
 }
 
 export const IMPROVEMENT_TYPES = {
@@ -16,28 +27,37 @@ export const IMPROVEMENT_TYPES = {
     MINES: 'mines',
     FORTRESS: 'fortress',
     POLLUTION: 'pollution',
-
-    // Advanced Improvements
-    FARMLAND: 'farmland',
-    AIRPORT: 'airport',
-    PORT: 'port',
-    SUPERHIGHWAYS: 'superhighways'
 } as const;
 
-export const IMPROVEMENT_PROPERTIES: Record<string, ImprovementProperties> = {
+export const IMPROVEMENT_PROPERTIES: Record<string, TileImprovementConstants> = {
     [IMPROVEMENT_TYPES.IRRIGATION]: {
         name: 'Irrigation',
         turns: 2,
         effects: {
             food: 1,
         },
-        terrainRestrictions: ['grassland', 'plains', 'desert']
+        terrainRestrictions: ['grassland', 'plains', 'desert'],
+        display: {
+            label: 'I',
+            color: '#00ff77ff',
+            font: 'bold 12px monospace',
+            offsetX: 10,
+            offsetY: -10
+        }
     },
     [IMPROVEMENT_TYPES.ROAD]: {
         name: 'Road',
         turns: 1,
         effects: {
             trade: 0.5
+        },
+        display: {
+            glyph: 'R',
+            color: '#ff0000ff',
+            font: 'bold 14px monospace',
+            offsetX: 0,
+            offsetY: 12,
+            skipLabel: true
         }
     },
     [IMPROVEMENT_TYPES.RAILROAD]: {
@@ -49,7 +69,15 @@ export const IMPROVEMENT_PROPERTIES: Record<string, ImprovementProperties> = {
             production: 0.5,
             trade: 0.5
         },
-        requiredTech: 'railroad'
+        requiredTech: 'railroad',
+        display: {
+            glyph: 'RR',
+            color: '#830000ff',
+            font: 'bold 14px monospace',
+            offsetX: 0,
+            offsetY: 12,
+            skipLabel: true
+        }
     },
     [IMPROVEMENT_TYPES.MINES]: {
         name: 'Mines',
@@ -57,13 +85,27 @@ export const IMPROVEMENT_PROPERTIES: Record<string, ImprovementProperties> = {
         effects: {
             production: 1
         },
-        terrainRestrictions: ['mountains', 'hills']
+        terrainRestrictions: ['mountains', 'hills'],
+        display: {
+            label: 'M',
+            color: '#444444',
+            font: 'bold 12px monospace',
+            offsetX: 10,
+            offsetY: -10
+        }
     },
     [IMPROVEMENT_TYPES.FORTRESS]: {
         name: 'Fortress',
         turns: 6,
         effects: {
             defense: 1.8,
+        },
+        display: {
+            label: 'F',
+            color: '#ffffffff',
+            font: 'bold 12px monospace',
+            offsetX: 10,
+            offsetY: -10
         }
     },
     [IMPROVEMENT_TYPES.POLLUTION]: {
@@ -74,16 +116,18 @@ export const IMPROVEMENT_PROPERTIES: Record<string, ImprovementProperties> = {
             production: -1,
             trade: -1,
             health: -1
+        },
+        display: {
+            label: 'P',
+            color: '#000000ff',
+            font: 'bold 12px monospace',
+            offsetX: 10,
+            offsetY: -10
         }
     }
 };
 
-export const IMPROVEMENT_UPGRADES = {
-    [IMPROVEMENT_TYPES.ROAD]: IMPROVEMENT_TYPES.RAILROAD,
-    [IMPROVEMENT_TYPES.IRRIGATION]: IMPROVEMENT_TYPES.FARMLAND
-} as const;
 
 export const IMPROVEMENT_REQUIREMENTS = {
     [IMPROVEMENT_TYPES.RAILROAD]: IMPROVEMENT_TYPES.ROAD,
-    [IMPROVEMENT_TYPES.FARMLAND]: IMPROVEMENT_TYPES.IRRIGATION
 } as const;
