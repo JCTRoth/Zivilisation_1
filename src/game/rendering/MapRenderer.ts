@@ -1,3 +1,19 @@
+/**
+ * MapRenderer - Core rendering engine for Civilization 1 game maps
+ *
+ * This module provides comprehensive canvas-based rendering for the game world,
+ * including terrain layers, dynamic game objects (units, cities), and minimap
+ * visualization. It handles camera transformations, fog of war, and performance
+ * optimizations through offscreen rendering and viewport culling.
+ *
+ * Key features:
+ * - Terrain rendering with improvements and resources
+ * - Dynamic content overlay (units, cities, selection highlights)
+ * - Minimap with fog of war and viewport indicator
+ * - Camera-aware viewport culling for performance
+ * - Offscreen terrain layer caching
+ */
+
 import { Constants } from '@/utils/Constants';
 import { TILE_SIZE, getTerrainInfo, TERRAIN_TYPES } from '@/data/TerrainData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } from '@/data/TileImprovementConstants';
@@ -5,70 +21,222 @@ import { UNIT_TYPES } from '@/data/GameData';
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import type { MapState, CameraState, Unit, City, GameState, Civilization } from '../../../types/game';
 
+import type { MapState, CameraState, Unit, City, GameState, Civilization } from '../../../types/game';
+
+/**
+ * 2D grid representing terrain tiles for rendering purposes.
+ * Each cell contains rendering information for a map tile.
+ */
 export type TerrainRenderGrid = Array<Array<TerrainTileRenderInfo | null>>;
 
+/**
+ * Rendering information for a single terrain tile.
+ * Contains all visual properties needed to draw the tile.
+ */
 export interface TerrainTileRenderInfo {
+  /** Terrain type identifier (e.g., 'GRASSLAND', 'OCEAN') */
   type: string;
+  /** Optional resource type present on this tile */
   resource?: string | null;
+  /** Optional improvement or structure on this tile */
   improvement?: string | Record<string, unknown> | null;
+  /** Whether this tile is currently visible to the player */
   visible?: boolean;
+  /** Whether this tile has been explored/discovered */
   explored?: boolean;
+  /** Whether this tile has a road improvement */
   hasRoad?: boolean;
+  /** Whether this tile has a river */
   hasRiver?: boolean;
 }
 
+/**
+ * Parameters for rendering the static terrain layer to an offscreen canvas.
+ */
 export interface TerrainLayerParams {
+  /** Offscreen canvas to render terrain onto */
   offscreenCanvas: HTMLCanvasElement;
+  /** Current map state */
   map: MapState;
+  /** Terrain grid containing rendering data */
   terrainGrid: TerrainRenderGrid;
 }
 
+/**
+ * Represents a single step in a unit's movement path.
+ */
 export interface UnitPathStep {
+  /** Column coordinate of the path step */
   col: number;
+  /** Row coordinate of the path step */
   row: number;
 }
 
+/**
+ * Parameters for rendering a complete game frame including terrain and dynamic content.
+ */
 export interface RenderFrameParams {
+  /** Canvas 2D rendering context */
   ctx: CanvasRenderingContext2D;
+  /** Main game canvas element */
   canvas: HTMLCanvasElement;
+  /** Current map state */
   map: MapState;
+  /** Terrain grid (null if using offscreen rendering) */
   terrainGrid: TerrainRenderGrid | null;
+  /** Current camera state */
   camera: CameraState;
+  /** Currently selected hex coordinates */
   selectedHex: { col: number; row: number } | null;
+  /** Current game state */
   gameState: GameState;
+  /** Array of all units in the game */
   units: Unit[];
+  /** Array of all cities in the game */
   cities: City[];
+  /** Array of all civilizations */
   civilizations: Civilization[];
+  /** Movement paths for units (unit ID -> path steps) */
   unitPaths: Map<string, UnitPathStep[]>;
+  /** Current timestamp for animations */
   currentTime: number;
+  /** Optional offscreen canvas for terrain layer */
   offscreenCanvas?: HTMLCanvasElement | null;
+  /** Function to convert map coordinates to screen coordinates */
   squareToScreen: (col: number, row: number) => { x: number; y: number };
+  /** Current camera zoom level */
   cameraZoom: number;
 }
 
+/**
+ * Parameters for rendering the minimap.
+ */
 export interface RenderMinimapParams {
+  /** Minimap canvas 2D rendering context */
   ctx: CanvasRenderingContext2D;
+  /** Current map state */
   map: MapState;
+  /** Minimap width in CSS pixels */
   cssWidth: number;
+  /** Minimap height in CSS pixels */
   cssHeight: number;
+  /** Current camera state */
   camera: CameraState;
+  /** Array of all units in the game */
   units: Unit[];
+  /** Array of all cities in the game */
   cities: City[];
+  /** Array of all civilizations */
   civilizations: Civilization[];
 }
 
+/**
+ * Options for drawing terrain symbols (improvements, resources, etc.).
+ */
 interface DrawTerrainSymbolOptions {
+  /** Whether to draw base terrain symbols */
   drawBase?: boolean;
+  /** Whether to draw river overlays */
   drawRivers?: boolean;
 }
 
+/**
+ * Bounds of the visible area in map coordinates.
+ */
+interface VisibleBounds {
+  /** Starting column (inclusive) */
+  startCol: number;
+  /** Ending column (exclusive) */
+  endCol: number;
+  /** Starting row (inclusive) */
+  startRow: number;
+  /** Ending row (exclusive) */
+  endRow: number;
+}
+
+/**
+ * Size of a canvas in pixels.
+ */
+interface CanvasSize {
+  /** Canvas width in pixels */
+  width: number;
+  /** Canvas height in pixels */
+  height: number;
+}
+
+/**
+ * State of fog of war for minimap rendering.
+ */
+interface MinimapFogState {
+  /** Whether the map has revealed tiles data */
+  hasRevealed: boolean;
+  /** Whether the map has visibility data */
+  hasVisibility: boolean;
+  /** Whether any tiles have been revealed */
+  anyRevealed: boolean;
+}
+
+/**
+ * Parameters for drawing dynamic content (units, cities, overlays).
+ */
+interface DynamicContentParams {
+  /** Canvas 2D rendering context */
+  ctx: CanvasRenderingContext2D;
+  /** Current map state */
+  map: MapState;
+  /** Terrain grid containing rendering data */
+  terrainGrid: TerrainRenderGrid;
+  /** Visible bounds in map coordinates */
+  bounds: VisibleBounds;
+  /** Canvas size in pixels */
+  canvasSize: CanvasSize;
+  /** Currently selected hex coordinates */
+  selectedHex: { col: number; row: number } | null;
+  /** Current game state */
+  gameState: GameState;
+  /** Array of all units in the game */
+  units: Unit[];
+  /** Array of all cities in the game */
+  cities: City[];
+  /** Array of all civilizations */
+  civilizations: Civilization[];
+  /** Current timestamp for animations */
+  currentTime: number;
+  /** Current camera zoom level */
+  cameraZoom: number;
+  /** Whether offscreen terrain rendering is available */
+  hasOffscreen: boolean;
+  /** Function to convert map coordinates to screen coordinates */
+  squareToScreen: (col: number, row: number) => { x: number; y: number };
+}
+
+/**
+ * Core rendering engine for Civilization 1 game maps.
+ *
+ * Handles all canvas-based rendering including terrain, units, cities,
+ * minimap, and various visual effects. Uses performance optimizations
+ * like viewport culling and offscreen rendering.
+ */
 export class MapRenderer {
+  /** Size of each map tile in pixels */
   private readonly tileSize: number;
 
+  /**
+   * Creates a new MapRenderer instance.
+   * @param tileSize - Size of each map tile in pixels (defaults to TILE_SIZE)
+   */
   constructor(tileSize: number = TILE_SIZE) {
     this.tileSize = tileSize;
   }
 
+  /**
+   * Generates a fallback terrain grid for testing or when map data is unavailable.
+   * Creates a procedurally generated terrain with varied types and some resources.
+   *
+   * @param width - Width of the terrain grid in tiles
+   * @param height - Height of the terrain grid in tiles
+   * @returns A complete terrain render grid with generated terrain data
+   */
   static generateFallbackTerrain(width: number, height: number): TerrainRenderGrid {
     const generated: TerrainRenderGrid = [];
     for (let row = 0; row < height; row++) {
@@ -103,6 +271,12 @@ export class MapRenderer {
     return generated;
   }
 
+  /**
+   * Renders the static terrain layer to an offscreen canvas for performance.
+   * This creates a cached version of the terrain that can be reused across frames.
+   *
+   * @param params - Parameters containing canvas, map state, and terrain grid
+   */
   renderTerrainLayer(params: TerrainLayerParams): void {
     const { offscreenCanvas, map, terrainGrid } = params;
     if (!offscreenCanvas || !terrainGrid) return;
@@ -145,6 +319,12 @@ export class MapRenderer {
     }
   }
 
+  /**
+   * Renders a complete game frame including terrain and all dynamic content.
+   * This is the main rendering method called each frame to update the game view.
+   *
+   * @param params - Complete set of rendering parameters for the frame
+   */
   renderFrame(params: RenderFrameParams): void {
     const {
       ctx,
@@ -164,76 +344,211 @@ export class MapRenderer {
       cameraZoom
     } = params;
 
-    const rect = canvas.getBoundingClientRect();
-    if (canvas.width !== rect.width || canvas.height !== rect.height) {
-      canvas.width = rect.width;
-      canvas.height = rect.height;
-    }
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const canvasSize = this.ensureCanvasSize(canvas);
+    ctx.clearRect(0, 0, canvasSize.width, canvasSize.height);
 
     if (!terrainGrid) {
       return;
     }
 
+    const bounds = this.calculateVisibleBounds(camera, canvasSize, map);
     const hasOffscreen = Boolean(offscreenCanvas);
 
-    const startCol = Math.max(0, Math.floor(camera.x / this.tileSize) - 2);
-    const endCol = Math.min(map.width, Math.ceil((camera.x + canvas.width / camera.zoom) / this.tileSize) + 2);
-    const startRow = Math.max(0, Math.floor(camera.y / this.tileSize) - 2);
-    const endRow = Math.min(map.height, Math.ceil((camera.y + canvas.height / camera.zoom) / this.tileSize) + 2);
-
     if (hasOffscreen && offscreenCanvas) {
-      const srcX = camera.x;
-      const srcY = camera.y;
-      const srcWidth = canvas.width / camera.zoom;
-      const srcHeight = canvas.height / camera.zoom;
-      ctx.drawImage(offscreenCanvas, srcX, srcY, srcWidth, srcHeight, 0, 0, canvas.width, canvas.height);
+      this.drawTerrainFromOffscreen(ctx, offscreenCanvas, camera, canvasSize);
     } else {
-      for (let row = startRow; row < endRow; row++) {
-        for (let col = startCol; col < endCol; col++) {
-          const { x, y } = squareToScreen(col, row);
-          if (x < -this.tileSize * 2 || x > canvas.width + this.tileSize * 2 || y < -this.tileSize * 2 || y > canvas.height + this.tileSize * 2) {
-            continue;
-          }
+      this.drawTerrainTiles(ctx, terrainGrid, bounds, camera, canvasSize, squareToScreen, selectedHex);
+    }
 
-          const tile = terrainGrid[row]?.[col];
-          if (!tile) continue;
+    this.drawDynamicContent({
+      ctx,
+      map,
+      terrainGrid,
+      bounds,
+      canvasSize,
+      selectedHex,
+      gameState,
+      units,
+      cities,
+      civilizations,
+      currentTime,
+      cameraZoom,
+      hasOffscreen,
+      squareToScreen
+    });
 
-          if (!tile.explored) {
-            this.drawSquare(ctx, x, y, this.tileSize * camera.zoom, '#000000', '#000000');
-            continue;
-          }
+    this.drawUnitPaths(ctx, unitPaths, units, gameState, squareToScreen);
+  }
 
-          const terrainInfo = this.resolveTerrain(tile.type);
-          const isSelected = selectedHex?.col === col && selectedHex?.row === row;
-          this.drawSquare(ctx, x, y, this.tileSize * camera.zoom, terrainInfo.color, isSelected ? '#FF0000' : '#333');
+  /**
+   * Renders the minimap showing the entire map with fog of war and viewport indicator.
+   * Displays terrain, cities, units, and the current camera viewport.
+   *
+   * @param params - Parameters for minimap rendering
+   */
+  renderMinimap(params: RenderMinimapParams): void {
+    const { ctx, map, cssWidth, cssHeight, camera, units, cities, civilizations } = params;
+    this.resetMinimapCanvas(ctx, cssWidth, cssHeight);
 
-          if (camera.zoom > 0.5) {
-            this.drawTerrainSymbol(ctx, x, y, tile, { drawBase: true, drawRivers: true });
-          }
+    const fogState = this.getMinimapFogState(map);
 
-          if (!tile.visible) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            const half = (this.tileSize * camera.zoom) / 2;
-            ctx.fillRect(x - half, y - half, this.tileSize * camera.zoom, this.tileSize * camera.zoom);
-          }
+    this.drawMinimapTerrain(ctx, map, cssWidth, cssHeight, fogState);
+    this.drawMinimapCities(ctx, map, cities, cssWidth, cssHeight);
+    this.drawMinimapUnits(ctx, map, units, civilizations, cssWidth, cssHeight);
+    this.drawMinimapViewport(ctx, map, camera, cssWidth, cssHeight);
+  }
+
+  /**
+   * Ensures the canvas size matches its CSS dimensions.
+   * Updates the canvas pixel dimensions if they don't match the CSS size.
+   *
+   * @param canvas - The HTML canvas element to check and resize
+   * @returns The current canvas size in pixels
+   */
+  private ensureCanvasSize(canvas: HTMLCanvasElement): CanvasSize {
+    const rect = canvas.getBoundingClientRect();
+    if (canvas.width !== rect.width || canvas.height !== rect.height) {
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    }
+    return { width: canvas.width, height: canvas.height };
+  }
+
+  /**
+   * Calculates the visible bounds of the map based on camera position and viewport.
+   * Adds padding around the viewport for smooth scrolling and culling margin.
+   *
+   * @param camera - Current camera state
+   * @param canvasSize - Size of the rendering canvas
+   * @param map - Current map state
+   * @returns Bounds of visible tiles in map coordinates
+   */
+  private calculateVisibleBounds(camera: CameraState, canvasSize: CanvasSize, map: MapState): VisibleBounds {
+    const startCol = Math.max(0, Math.floor(camera.x / this.tileSize) - 2);
+    const endCol = Math.min(map.width, Math.ceil((camera.x + canvasSize.width / camera.zoom) / this.tileSize) + 2);
+    const startRow = Math.max(0, Math.floor(camera.y / this.tileSize) - 2);
+    const endRow = Math.min(map.height, Math.ceil((camera.y + canvasSize.height / camera.zoom) / this.tileSize) + 2);
+    return { startCol, endCol, startRow, endRow };
+  }
+
+  /**
+   * Draws the terrain layer from the offscreen canvas to the main canvas.
+   * Applies camera transformation to show the correct portion of the terrain.
+   *
+   * @param ctx - Main canvas rendering context
+   * @param offscreenCanvas - Offscreen canvas containing terrain layer
+   * @param camera - Current camera state for positioning
+   * @param canvasSize - Size of the main canvas
+   */
+  private drawTerrainFromOffscreen(
+    ctx: CanvasRenderingContext2D,
+    offscreenCanvas: HTMLCanvasElement,
+    camera: CameraState,
+    canvasSize: CanvasSize
+  ): void {
+    const srcX = camera.x;
+    const srcY = camera.y;
+    const srcWidth = canvasSize.width / camera.zoom;
+    const srcHeight = canvasSize.height / camera.zoom;
+    ctx.drawImage(offscreenCanvas, srcX, srcY, srcWidth, srcHeight, 0, 0, canvasSize.width, canvasSize.height);
+  }
+
+  /**
+   * Draws terrain tiles directly to the canvas (fallback when offscreen not available).
+   * Handles viewport culling, terrain colors, symbols, and fog of war.
+   *
+   * @param ctx - Canvas rendering context
+   * @param terrainGrid - Terrain data grid
+   * @param bounds - Visible bounds in map coordinates
+   * @param camera - Current camera state
+   * @param canvasSize - Canvas dimensions
+   * @param squareToScreen - Coordinate transformation function
+   * @param selectedHex - Currently selected hex coordinates
+   */
+  private drawTerrainTiles(
+    ctx: CanvasRenderingContext2D,
+    terrainGrid: TerrainRenderGrid,
+    bounds: VisibleBounds,
+    camera: CameraState,
+    canvasSize: CanvasSize,
+    squareToScreen: (col: number, row: number) => { x: number; y: number },
+    selectedHex: { col: number; row: number } | null
+  ): void {
+    const scaledTileSize = this.tileSize * camera.zoom;
+    const margin = this.tileSize * 2;
+
+    for (let row = bounds.startRow; row < bounds.endRow; row++) {
+      for (let col = bounds.startCol; col < bounds.endCol; col++) {
+        const { x, y } = squareToScreen(col, row);
+        if (this.isOutsideViewport(x, y, canvasSize.width, canvasSize.height, margin)) {
+          continue;
+        }
+
+        const tile = terrainGrid[row]?.[col];
+        if (!tile) continue;
+
+        if (!tile.explored) {
+          this.drawSquare(ctx, x, y, scaledTileSize, '#000000', '#000000');
+          continue;
+        }
+
+        const terrainInfo = this.resolveTerrain(tile.type);
+        const isSelectedHex = selectedHex?.col === col && selectedHex?.row === row;
+        this.drawSquare(ctx, x, y, scaledTileSize, terrainInfo.color, isSelectedHex ? '#FF0000' : '#333');
+
+        if (camera.zoom > 0.5) {
+          this.drawTerrainSymbol(ctx, x, y, tile, { drawBase: true, drawRivers: true });
+        }
+
+        if (!tile.visible) {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          const half = scaledTileSize / 2;
+          ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
         }
       }
     }
+  }
 
-    for (let row = startRow; row < endRow; row++) {
-      for (let col = startCol; col < endCol; col++) {
+  /**
+   * Draws all dynamic content including units, cities, selection highlights, and overlays.
+   * Handles animations, visibility checks, and coordinate transformations.
+   *
+   * @param params - Complete parameters for dynamic content rendering
+   */
+  private drawDynamicContent(params: DynamicContentParams): void {
+    const {
+      ctx,
+      map,
+      terrainGrid,
+      bounds,
+      canvasSize,
+      selectedHex,
+      gameState,
+      units,
+      cities,
+      civilizations,
+      currentTime,
+      cameraZoom,
+      hasOffscreen,
+      squareToScreen
+    } = params;
+
+    const margin = this.tileSize * 2;
+    const scaledTileSize = this.tileSize * cameraZoom;
+
+    for (let row = bounds.startRow; row < bounds.endRow; row++) {
+      for (let col = bounds.startCol; col < bounds.endCol; col++) {
         const { x, y } = squareToScreen(col, row);
-        if (x < -this.tileSize * 2 || x > canvas.width + this.tileSize * 2 || y < -this.tileSize * 2 || y > canvas.height + this.tileSize * 2) {
+        if (this.isOutsideViewport(x, y, canvasSize.width, canvasSize.height, margin)) {
           continue;
         }
 
         const tile = terrainGrid[row]?.[col];
         if (!tile || !tile.explored) continue;
 
+        const tileIndex = this.getTileIndex(row, col, map.width);
+
         if (hasOffscreen) {
-          const tileIndex = row * map.width + col;
           const authoritativeTile: any = map.tiles?.[tileIndex];
           const overlayTile: TerrainTileRenderInfo = {
             ...tile,
@@ -241,12 +556,18 @@ export class MapRenderer {
             hasRoad: authoritativeTile?.hasRoad ?? tile.hasRoad ?? false,
             hasRiver: authoritativeTile?.hasRiver ?? tile.hasRiver ?? false
           };
-          if (camera.zoom > 0.5) {
-            this.drawTerrainSymbol(ctx, x, y, overlayTile, { drawBase: false, drawRivers: false });
+          // When we have an offscreen terrain layer, improvements (roads/rail)
+          // are already rendered into that layer. Avoid re-drawing improvement
+          // glyphs here to prevent them from overlapping dynamic content
+          // such as units. Keep only selection highlight drawing.
+          if (selectedHex && selectedHex.col === col && selectedHex.row === row) {
+            const half = scaledTileSize / 2;
+            ctx.strokeStyle = '#FF0000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
           }
         }
 
-        const tileIndex = row * map.width + col;
         const isVisible = map.visibility?.[tileIndex] ?? tile.visible ?? false;
 
         if (isVisible) {
@@ -273,13 +594,13 @@ export class MapRenderer {
         const selectedUnitId = gameState.selectedUnit;
         const unitAtTile = units.find(u => u.col === col && u.row === row);
         if (selectedUnitId && unitAtTile && unitAtTile.id === selectedUnitId) {
+          const half = scaledTileSize / 2;
           ctx.strokeStyle = '#FF0000';
           ctx.lineWidth = 3;
-          const half = (this.tileSize * camera.zoom) / 2;
-          ctx.strokeRect(x - half, y - half, this.tileSize * camera.zoom, this.tileSize * camera.zoom);
+          ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
         }
 
-        if (camera.zoom > 1.5) {
+        if (cameraZoom > 1.5) {
           ctx.fillStyle = '#000';
           ctx.font = '8px monospace';
           ctx.textAlign = 'center';
@@ -287,28 +608,105 @@ export class MapRenderer {
         }
       }
     }
+  }
 
+  /**
+   * Draws movement paths for all units that have planned paths.
+   * Only draws paths for the currently selected unit.
+   *
+   * @param ctx - Canvas rendering context
+   * @param unitPaths - Map of unit IDs to their movement paths
+   * @param units - Array of all units
+   * @param gameState - Current game state
+   * @param squareToScreen - Coordinate transformation function
+   */
+  private drawUnitPaths(
+    ctx: CanvasRenderingContext2D,
+    unitPaths: Map<string, UnitPathStep[]>,
+    units: Unit[],
+    gameState: GameState,
+    squareToScreen: (col: number, row: number) => { x: number; y: number }
+  ): void {
     unitPaths.forEach((path, unitId) => {
       this.drawUnitPath(ctx, unitId, path, units, gameState, squareToScreen);
     });
   }
 
-  renderMinimap(params: RenderMinimapParams): void {
-    const { ctx, map, cssWidth, cssHeight, camera, units, cities, civilizations } = params;
-    ctx.clearRect(0, 0, cssWidth, cssHeight);
+  /**
+   * Calculates the tile index in a 1D array from row and column coordinates.
+   * @param row - Row coordinate
+   * @param col - Column coordinate
+   * @param width - Map width in tiles
+   * @returns Linear index for the tile
+   */
+  private getTileIndex(row: number, col: number, width: number): number {
+    return row * width + col;
+  }
+
+  /**
+   * Checks if a screen position is outside the viewport bounds with margin.
+   * Used for culling objects that are not visible.
+   *
+   * @param x - Screen X coordinate
+   * @param y - Screen Y coordinate
+   * @param canvasWidth - Canvas width in pixels
+   * @param canvasHeight - Canvas height in pixels
+   * @param margin - Additional margin around viewport
+   * @returns True if position is outside viewport
+   */
+  private isOutsideViewport(x: number, y: number, canvasWidth: number, canvasHeight: number, margin: number = this.tileSize * 2): boolean {
+    return x < -margin || x > canvasWidth + margin || y < -margin || y > canvasHeight + margin;
+  }
+
+  /**
+   * Resets the minimap canvas by clearing it and filling with background color.
+   * @param ctx - Minimap canvas context
+   * @param width - Canvas width
+   * @param height - Canvas height
+   */
+  private resetMinimapCanvas(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+    ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(0, 0, cssWidth, cssHeight);
+    ctx.fillRect(0, 0, width, height);
+  }
 
-    const tileWidth = cssWidth / map.width;
-    const tileHeight = cssHeight / map.height;
-
+  /**
+   * Determines the fog of war state for minimap rendering.
+   * Checks if the map has revealed and visibility data available.
+   *
+   * @param map - Current map state
+   * @returns Fog state information for minimap rendering
+   */
+  private getMinimapFogState(map: MapState): MinimapFogState {
     const hasRevealed = Array.isArray(map.revealed) && map.revealed.length === map.tiles.length;
     const hasVisibility = Array.isArray(map.visibility) && map.visibility.length === map.tiles.length;
     const anyRevealed = hasRevealed ? map.revealed.some(Boolean) : false;
+    return { hasRevealed, hasVisibility, anyRevealed };
+  }
+
+  /**
+   * Draws the terrain layer on the minimap with fog of war effects.
+   * Each tile is represented as a small rectangle colored by terrain type.
+   *
+   * @param ctx - Minimap canvas context
+   * @param map - Current map state
+   * @param width - Minimap width in pixels
+   * @param height - Minimap height in pixels
+   * @param fogState - Fog of war state information
+   */
+  private drawMinimapTerrain(
+    ctx: CanvasRenderingContext2D,
+    map: MapState,
+    width: number,
+    height: number,
+    fogState: MinimapFogState
+  ): void {
+    const tileWidth = width / map.width;
+    const tileHeight = height / map.height;
 
     for (let row = 0; row < map.height; row++) {
       for (let col = 0; col < map.width; col++) {
-        const tileIndex = row * map.width + col;
+        const tileIndex = this.getTileIndex(row, col, map.width);
         const tile: any = map.tiles?.[tileIndex];
         if (!tile) continue;
 
@@ -316,7 +714,7 @@ export class MapRenderer {
         ctx.fillStyle = terrainProps.color;
         ctx.fillRect(col * tileWidth, row * tileHeight, tileWidth + 1, tileHeight + 1);
 
-        if (hasRevealed && anyRevealed) {
+        if (fogState.hasRevealed && fogState.anyRevealed) {
           const explored = map.revealed?.[tileIndex] ?? true;
           const visible = map.visibility?.[tileIndex] ?? true;
           if (!explored) {
@@ -329,9 +727,34 @@ export class MapRenderer {
         }
       }
     }
+  }
+
+  /**
+   * Draws cities on the minimap as colored rectangles.
+   * Only shows cities that are currently visible to the player.
+   *
+   * @param ctx - Minimap canvas context
+   * @param map - Current map state
+   * @param cities - Array of all cities
+   * @param width - Minimap width in pixels
+   * @param height - Minimap height in pixels
+   */
+  private drawMinimapCities(
+    ctx: CanvasRenderingContext2D,
+    map: MapState,
+    cities: City[],
+    width: number,
+    height: number
+  ): void {
+    if (!Array.isArray(cities) || cities.length === 0) {
+      return;
+    }
+
+    const tileWidth = width / map.width;
+    const tileHeight = height / map.height;
 
     for (const city of cities) {
-      const tileIndex = city.row * map.width + city.col;
+      const tileIndex = this.getTileIndex(city.row, city.col, map.width);
       const isVisible = map.visibility ? map.visibility[tileIndex] : false;
       if (!isVisible) continue;
 
@@ -340,9 +763,36 @@ export class MapRenderer {
       ctx.fillStyle = city.civilizationId === 0 ? '#FFD700' : '#FF6347';
       ctx.fillRect(x, y, tileWidth * 2, tileHeight * 2);
     }
+  }
+
+  /**
+   * Draws units on the minimap as small colored rectangles.
+   * Uses civilization colors and only shows visible units.
+   *
+   * @param ctx - Minimap canvas context
+   * @param map - Current map state
+   * @param units - Array of all units
+   * @param civilizations - Array of all civilizations
+   * @param width - Minimap width in pixels
+   * @param height - Minimap height in pixels
+   */
+  private drawMinimapUnits(
+    ctx: CanvasRenderingContext2D,
+    map: MapState,
+    units: Unit[],
+    civilizations: Civilization[],
+    width: number,
+    height: number
+  ): void {
+    if (!Array.isArray(units) || units.length === 0) {
+      return;
+    }
+
+    const tileWidth = width / map.width;
+    const tileHeight = height / map.height;
 
     for (const unit of units) {
-      const tileIndex = unit.row * map.width + unit.col;
+      const tileIndex = this.getTileIndex(unit.row, unit.col, map.width);
       const isVisible = map.visibility ? map.visibility[tileIndex] : false;
       const unitTypeKey = unit.type ? String(unit.type).toUpperCase() : '';
       const unitType = UNIT_TYPES[unitTypeKey];
@@ -355,10 +805,32 @@ export class MapRenderer {
       ctx.fillStyle = civ?.color || '#FF0000';
       ctx.fillRect(x, y, Math.max(1, tileWidth / 2), Math.max(1, tileHeight / 2));
     }
+  }
 
-    const tileSize = Constants.HEX_SIZE || 32;
-    const cssPerTileX = cssWidth / map.width;
-    const cssPerTileY = cssHeight / map.height;
+  /**
+   * Draws the current camera viewport rectangle on the minimap.
+   * Shows what portion of the map is currently visible in the main view.
+   *
+   * @param ctx - Minimap canvas context
+   * @param map - Current map state
+   * @param camera - Current camera state
+   * @param width - Minimap width in pixels
+   * @param height - Minimap height in pixels
+   */
+  private drawMinimapViewport(
+    ctx: CanvasRenderingContext2D,
+    map: MapState,
+    camera: CameraState,
+    width: number,
+    height: number
+  ): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const tileSize = Constants.HEX_SIZE || this.tileSize;
+    const cssPerTileX = width / map.width;
+    const cssPerTileY = height / map.height;
     const cameraTileX = camera.x / tileSize;
     const cameraTileY = camera.y / tileSize;
     const viewportTilesW = (window.innerWidth / camera.zoom) / tileSize;
@@ -367,17 +839,32 @@ export class MapRenderer {
     const viewportY = cameraTileY * cssPerTileY;
     const viewportW = viewportTilesW * cssPerTileX;
     const viewportH = viewportTilesH * cssPerTileY;
+    const rectX = Math.max(0, viewportX);
+    const rectY = Math.max(0, viewportY);
+    const rectW = Math.min(width, viewportX + viewportW) - rectX;
+    const rectH = Math.min(height, viewportY + viewportH) - rectY;
+
+    if (rectW <= 0 || rectH <= 0) {
+      return;
+    }
 
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(
-      Math.max(0, viewportX),
-      Math.max(0, viewportY),
-      Math.min(cssWidth - viewportX, viewportW),
-      Math.min(cssHeight - viewportY, viewportH)
-    );
+    ctx.strokeRect(rectX, rectY, rectW, rectH);
   }
 
+  /**
+   * Draws a square/rectangle on the canvas with fill and stroke.
+   * Can operate in world coordinates (center-based) or screen coordinates (corner-based).
+   *
+   * @param ctx - Canvas rendering context
+   * @param centerX - X coordinate (center if world coordinates, top-left if screen)
+   * @param centerY - Y coordinate (center if world coordinates, top-left if screen)
+   * @param size - Size of the square (width and height)
+   * @param fillColor - Fill color for the square
+   * @param strokeColor - Stroke/border color
+   * @param isWorldCoordinates - If true, treats coordinates as center point
+   */
   private drawSquare(
     ctx: CanvasRenderingContext2D,
     centerX: number,
@@ -402,6 +889,16 @@ export class MapRenderer {
     ctx.stroke();
   }
 
+  /**
+   * Draws terrain symbols including base terrain characters, rivers, and improvements.
+   * Handles glyph rendering for roads, railroads, and other terrain features.
+   *
+   * @param ctx - Canvas rendering context
+   * @param centerX - Center X coordinate for the symbol
+   * @param centerY - Center Y coordinate for the symbol
+   * @param terrain - Terrain tile information
+   * @param options - Drawing options for base symbols and rivers
+   */
   private drawTerrainSymbol(
     ctx: CanvasRenderingContext2D,
     centerX: number,
@@ -501,6 +998,17 @@ export class MapRenderer {
     }
   }
 
+  /**
+   * Draws a city on the map with civilization colors and name label.
+   * Shows a building icon and city name scaled by camera zoom.
+   *
+   * @param ctx - Canvas rendering context
+   * @param centerX - Center X coordinate
+   * @param centerY - Center Y coordinate
+   * @param city - City data to render
+   * @param cameraZoom - Current camera zoom level
+   * @param civilizations - Array of all civilizations for color lookup
+   */
   private drawCity(
     ctx: CanvasRenderingContext2D,
     centerX: number,
@@ -529,6 +1037,18 @@ export class MapRenderer {
     ctx.fillText(city.name, centerX, centerY + 24 * cameraZoom);
   }
 
+  /**
+   * Draws a unit on the map with civilization colors and unit icons.
+   * Handles animations for active units and special states like sleeping.
+   *
+   * @param ctx - Canvas rendering context
+   * @param centerX - Center X coordinate
+   * @param centerY - Center Y coordinate
+   * @param unit - Unit data to render
+   * @param alpha - Transparency level (for animations)
+   * @param cameraZoom - Current camera zoom level
+   * @param civilizations - Array of all civilizations for color lookup
+   */
   private drawUnit(
     ctx: CanvasRenderingContext2D,
     centerX: number,
@@ -592,6 +1112,17 @@ export class MapRenderer {
     ctx.restore();
   }
 
+  /**
+   * Draws a movement path for a single unit with directional arrows.
+   * Only draws if the unit is currently selected and has a valid path.
+   *
+   * @param ctx - Canvas rendering context
+   * @param unitId - ID of the unit whose path to draw
+   * @param path - Array of path steps for the unit
+   * @param units - Array of all units
+   * @param gameState - Current game state
+   * @param squareToScreen - Coordinate transformation function
+   */
   private drawUnitPath(
     ctx: CanvasRenderingContext2D,
     unitId: string,
@@ -652,11 +1183,25 @@ export class MapRenderer {
     ctx.restore();
   }
 
+  /**
+   * Resolves a terrain type string to its color definition.
+   * Falls back to grassland if the terrain type is not found.
+   *
+   * @param type - Terrain type identifier
+   * @returns Terrain color information
+   */
   private resolveTerrain(type: string): { color: string } {
     const upper = type?.toUpperCase();
     return TERRAIN_TYPES[type] || TERRAIN_TYPES[upper] || TERRAIN_TYPES.GRASSLAND;
   }
 
+  /**
+   * Determines if a hex color is considered "light" based on luminance.
+   * Used to choose appropriate text/icon colors for contrast.
+   *
+   * @param hexColor - Hex color string (with or without #)
+   * @returns True if the color is light (high luminance)
+   */
   private isLightColor(hexColor: string): boolean {
     if (!hexColor) return false;
     const normalized = hexColor.replace('#', '');

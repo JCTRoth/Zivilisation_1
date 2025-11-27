@@ -150,7 +150,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       setTerrain(generatedTerrain);
       renderTerrainToOffscreen(generatedTerrain);
     }
-  }, [createTerrainGrid, gameEngine, mapData.height, mapData.revealed, mapData.tiles, mapData.visibility, mapData.width, renderTerrainToOffscreen, terrain]);
+  }, [createTerrainGrid, gameEngine, mapData.height, mapData.revealed, mapData.tiles, mapData.visibility, mapData.width, renderTerrainToOffscreen]);
 
   // Update terrain visibility when game state changes
   useEffect(() => {
@@ -194,7 +194,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
             };
           }
         }
-        setTerrain(rebuilt);
+        // Only update terrain state if it differs to avoid triggering effects repeatedly
+        setTerrain(prev => {
+          const needUpdate = JSON.stringify(prev) !== JSON.stringify(rebuilt);
+          return needUpdate ? rebuilt : prev;
+        });
       } else {
         console.warn('[GameCanvas] Cannot rebuild terrain: invalid mapData.tiles length');
       }
@@ -216,8 +220,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
           }
         }
       }
-      setTerrain(updatedTerrain);
-      renderTerrainToOffscreen(updatedTerrain);
+      // Apply updated visibility only if it differs
+      setTerrain(prev => {
+        const prevStr = JSON.stringify(prev);
+        const nextStr = JSON.stringify(updatedTerrain);
+        if (prevStr !== nextStr) {
+          renderTerrainToOffscreen(updatedTerrain);
+          return updatedTerrain;
+        }
+        return prev;
+      });
       console.log('[GameCanvas] Terrain visibility updated');
     } else {
       console.log('[GameCanvas] Skipping terrain visibility update - missing data');
