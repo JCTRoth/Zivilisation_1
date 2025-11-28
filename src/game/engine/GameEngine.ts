@@ -3,6 +3,7 @@ import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
 import { ProductionManager } from './ProductionManager';
+import { AutoProduction } from './AutoProduction';
 import { AIUtility } from './AIUtility';
 import { UnitActionManager } from './UnitActionManager';
 import { RoundManager } from './RoundManager';
@@ -55,6 +56,7 @@ export default class GameEngine {
   activePlayer: number;
   onStateChange: ((eventType: string, eventData?: any) => void) | null;
   productionManager: ProductionManager;
+  autoProduction: AutoProduction;
   roundManager: RoundManager;
 
   constructor(storeActions: GameActions | null = null) {
@@ -88,6 +90,7 @@ export default class GameEngine {
     // Callbacks for React state updates
     this.onStateChange = null;
     this.productionManager = new ProductionManager(this);
+    this.autoProduction = new AutoProduction(this);
     this.roundManager = new RoundManager(this);
   }
 
@@ -108,6 +111,35 @@ export default class GameEngine {
    */
   removeCityQueueItem(cityId: string, index: number) {
     return this.productionManager.removeCityQueueItem(cityId, index);
+  }
+
+  /**
+   * Remove current production from a city
+   */
+  removeCurrentProduction(cityId: string) {
+    return this.productionManager.removeCurrentProduction(cityId);
+  }
+
+  /**
+   * Toggle auto-production for a city
+   */
+  toggleAutoProduction(cityId: string, enabled: boolean) {
+    const city = this.cities.find(c => c.id === cityId);
+    if (city) {
+      (city as any).autoProduction = enabled;
+      console.log(`[GameEngine] Auto-production ${enabled ? 'enabled' : 'disabled'} for city ${cityId}`);
+      
+      // If enabling and city has no current production, set one immediately
+      if (enabled && !city.currentProduction) {
+        this.autoProduction.setAutoProduction(cityId);
+      }
+      
+      if (this.onStateChange) {
+        this.onStateChange('CITY_AUTO_PRODUCTION_CHANGED', { cityId, enabled });
+      }
+      return true;
+    }
+    return false;
   }
 
   // Small helper: sleep for ms milliseconds
@@ -289,6 +321,11 @@ export default class GameEngine {
       console.log(`[AI] processAITurn: Skipping civilization ${civilizationId} - is human player`);
       return;
     }
+    // CRITICAL: Only allow AI to act during its own turn
+    if (this.activePlayer !== civilizationId) {
+      console.warn(`[AI] processAITurn: Civilization ${civilizationId} attempted to act outside its turn (active player: ${this.activePlayer})`);
+      return;
+    }
     // Fire and forget AI routine
     this.runAITurn(civilizationId).catch(err => console.error('AI turn error', err));
   }
@@ -298,6 +335,11 @@ export default class GameEngine {
     const civ = this.civilizations[civilizationId];
     if (!civ || civ.isHuman) {
       console.log(`[AI] runAITurn: Skipping civilization ${civilizationId} - not AI or is human`);
+      return;
+    }
+    // CRITICAL: Verify this is still the active player before proceeding
+    if (this.activePlayer !== civilizationId) {
+      console.warn(`[AI] runAITurn: Turn changed before AI could act (expected: ${civilizationId}, actual: ${this.activePlayer})`);
       return;
     }
     console.log(`[AI] Starting AI turn for civilization ${civilizationId}`);
@@ -483,12 +525,22 @@ export default class GameEngine {
       try { this.renderer.setHighlightedHexes([]); } catch (e) {}
     }
 
+    // Process auto-production for AI cities
+    console.log(`[AI] Processing auto-production for civilization ${civilizationId}`);
+    this.autoProduction.processAutoProductionForCivilization(civilizationId);
+
     // Check if turn should end automatically after AI moves
     this.checkAndEndTurnIfNoMoves();
 
     // After AI finished its units, auto-advance to next player
     console.log(`[AI] AI turn completed for civilization ${civilizationId}, advancing to next player`);
     this.onStateChange && this.onStateChange('AI_FINISHED', { civilizationId });
+    
+    // Automatically advance to next civilization's turn
+    setTimeout(() => {
+      console.log(`[AI] Auto-advancing turn after AI civilization ${civilizationId} finished`);
+      this.processTurn();
+    }, 500);
   }
 
   /**
@@ -1002,8 +1054,8 @@ export default class GameEngine {
     const distance = this.squareGrid.chebyshevDistance(unit.col, unit.row, targetCol, targetRow);
     const moveCost = Math.max(1, TERRAIN_PROPS[targetTile.type]?.movement || 1);
 
-    // Check if unit has enough moves
-    const hasEnoughMoves = (unit.movesRemaining || 0) >= distance * moveCost;
+    // Check if unit has enough moves (only check moveCost since pathfinding gives adjacent tiles)
+    const hasEnoughMoves = (unit.movesRemaining || 0) >= moveCost;
     if (!hasEnoughMoves) {
       console.log(`[canUnitMoveTo] Insufficient moves for unit ${unitId}. Distance: ${distance}, MoveCost: ${moveCost}, MovesRemaining: ${unit.movesRemaining}`);
     }
@@ -1045,17 +1097,18 @@ export default class GameEngine {
     const distance = this.squareGrid.chebyshevDistance(unit.col, unit.row, targetCol, targetRow);
     const moveCost = Math.max(1, TERRAIN_PROPS[targetTile.type]?.movement || 1);
 
-    // Require that unit has enough remaining moves to cover the distance * cost
-    if ((unit.movesRemaining || 0) >= distance * moveCost) {
+    // Require that unit has enough remaining moves to cover the move cost
+    // Note: pathfinding always gives adjacent tiles, so distance is 1
+    if ((unit.movesRemaining || 0) >= moveCost) {
       const fromCol = unit.col;
       const fromRow = unit.row;
 
       unit.col = targetCol;
       unit.row = targetRow;
-      unit.movesRemaining = (unit.movesRemaining || 0) - distance * moveCost;
+      unit.movesRemaining = (unit.movesRemaining || 0) - moveCost;
 
       // Log movement
-      console.log(`[MOVEMENT] ${unit.type} (${unit.id}) moved from (${fromCol},${fromRow}) to (${targetCol},${targetRow}), distance: ${distance}, moves remaining: ${unit.movesRemaining}`);
+      console.log(`[MOVEMENT] ${unit.type} (${unit.id}) moved from (${fromCol},${fromRow}) to (${targetCol},${targetRow}), moveCost: ${moveCost}, moves remaining: ${unit.movesRemaining}`);
 
       // Reveal area around the unit immediately after moving so automated moves explore
       try {
@@ -1112,13 +1165,16 @@ export default class GameEngine {
       // Log combat movement
       console.log(`[COMBAT MOVEMENT] ${attacker.type} (${attacker.id}) defeated ${defender.type} (${defender.id}) and moved from (${fromCol},${fromRow}) to (${defender.col},${defender.row})`);
 
-      // Emit defeat event and delay removal
+      // Mark defender as defeated and delay removal (5 seconds to show black X)
+      (defender as any).isDefeated = true;
+      (defender as any).defeatTimestamp = Date.now();
+      
       if (this.onStateChange) {
         this.onStateChange('UNIT_DEFEATED', { unit: defender });
       }
       setTimeout(() => {
         this.units = this.units.filter(u => u.id !== defender.id);
-      }, 3000);
+      }, 5000);
 
       if (this.onStateChange) {
         this.onStateChange('COMBAT_VICTORY', { attacker, defender });
@@ -1134,13 +1190,16 @@ export default class GameEngine {
       attacker.movesRemaining = 0;
       
       if (attacker.health <= 0) {
-        // Emit defeat event and delay removal
+        // Mark attacker as defeated and delay removal (5 seconds to show black X)
+        (attacker as any).isDefeated = true;
+        (attacker as any).defeatTimestamp = Date.now();
+        
         if (this.onStateChange) {
           this.onStateChange('UNIT_DEFEATED', { unit: attacker });
         }
         setTimeout(() => {
           this.units = this.units.filter(u => u.id !== attacker.id);
-        }, 3000);
+        }, 5000);
       }
       
       if (this.onStateChange) {
@@ -1198,7 +1257,8 @@ export default class GameEngine {
       productionStored: 0,
       productionProgress: 0, // Initialize production display
       currentProduction: { type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }, // Default to first unit
-      buildQueue: [{ type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }] // Default production queue
+      buildQueue: [{ type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }], // Default production queue
+      autoProduction: civ.isAI || civ.isHuman === false // Enable auto-production for AI cities by default
     };
 
     this.cities.push(city);

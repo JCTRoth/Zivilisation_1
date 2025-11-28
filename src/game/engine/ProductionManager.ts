@@ -146,15 +146,17 @@ export class ProductionManager {
 
       const removed = buildQueue.splice(index, 1)[0];
 
-      // If we removed the currently producing item and there's more in queue, start the next one
-      if (index === 0 && !city.currentProduction && buildQueue.length > 0) {
-        const nextItem = buildQueue[0];
+      // If we removed the first item in the queue (index 0), it should become the new current production
+      if (index === 0 && buildQueue.length > 0) {
+        const nextItem = buildQueue.shift(); // Remove from queue and use as current production
         if (nextItem) {
           (city as any).currentProduction = nextItem;
-          (city as any).productionProgress = (city as any).carriedOverProgress || 0;
-          (city as any).carriedOverProgress = 0;
+          // Keep existing production progress when switching
           console.log('[ProductionManager] started next queued item after removal', { cityId, currentProduction: (city as any).currentProduction });
         }
+      } else if (index === 0 && buildQueue.length === 0) {
+        // Removed the last queue item, clear current production
+        console.log('[ProductionManager] cleared current production - queue is now empty');
       }
 
       console.log('[ProductionManager] removed item from queue', { cityId, index, removed, remainingQueue: buildQueue });
@@ -162,6 +164,42 @@ export class ProductionManager {
       return { success: true, removed };
     } catch (e) {
       console.error('[ProductionManager] removeCityQueueItem error', e);
+      return { success: false, reason: 'exception' };
+    }
+  }
+
+  /**
+   * Remove current production from a city
+   */
+  removeCurrentProduction(cityId: string) {
+    try {
+      console.log('[ProductionManager] removeCurrentProduction called', { cityId });
+      const city = this.gameEngine.cities.find(c => c.id === cityId) || ((this.gameEngine as any).map && (this.gameEngine as any).map.getCity(cityId));
+      if (!city) return { success: false, reason: 'city_not_found' };
+
+      const removed = (city as any).currentProduction;
+      
+      // Store production progress as carried over progress
+      (city as any).carriedOverProgress = (city as any).productionProgress || 0;
+      
+      // Clear current production
+      (city as any).currentProduction = null;
+      (city as any).productionProgress = 0;
+
+      // If there's something in the queue, make it the new current production
+      if (Array.isArray((city as any).buildQueue) && (city as any).buildQueue.length > 0) {
+        const nextItem = (city as any).buildQueue.shift();
+        (city as any).currentProduction = nextItem;
+        (city as any).productionProgress = (city as any).carriedOverProgress || 0;
+        (city as any).carriedOverProgress = 0;
+        console.log('[ProductionManager] started next queued item as currentProduction', { cityId, currentProduction: (city as any).currentProduction });
+      }
+
+      console.log('[ProductionManager] removed current production', { cityId, removed });
+      if (this.gameEngine.onStateChange) this.gameEngine.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, removed });
+      return { success: true, removed };
+    } catch (e) {
+      console.error('[ProductionManager] removeCurrentProduction error', e);
       return { success: false, reason: 'exception' };
     }
   }

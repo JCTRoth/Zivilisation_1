@@ -6,6 +6,9 @@ import HexDetailModal from './gamemodals/HexDetailModal';
 import { useGameStore } from '@/stores/GameStore';
 import { UNIT_PROPS } from '@/utils/Constants';
 import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
+import { DomUtils } from '@/utils/DomUtils';
+import { enrichMapForExport } from '@/utils/MapExportUtils';
+import { getTerrainInfo } from '@/data/TerrainData';
 import '../../styles/gameModals.css';
 
 const GameModals = ({ gameEngine }) => {
@@ -20,7 +23,8 @@ const GameModals = ({ gameEngine }) => {
   const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
 
   const units = useGameStore(state => state.units);
-  const map = gameEngine?.map;
+  const map = useGameStore(state => state.map);
+  const gameStats = useGameStore(state => state.gameStats);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
 
@@ -107,6 +111,34 @@ const GameModals = ({ gameEngine }) => {
     handleCloseDialog();
   };
 
+  const handleDownloadMap = () => {
+    console.log('[CLICK] Download Map button');
+    try {
+      if (!map || !map.tiles || map.tiles.length === 0) {
+        console.warn('[GameModals] handleDownloadMap: no map data available');
+        handleCloseDialog();
+        return;
+      }
+
+      const enriched = enrichMapForExport(map);
+      const exportObj = {
+        meta: {
+          width: map.width,
+          height: map.height,
+          turn: gameStats?.turn ?? 'unknown'
+        },
+        map: enriched
+      };
+
+      const text = JSON.stringify(exportObj, null, 2);
+      const filename = `civ1-map-turn-${gameStats?.turn ?? 'unknown'}.json`;
+      DomUtils.downloadTextFile(text, filename);
+    } catch (e) {
+      console.error('[GameModals] handleDownloadMap error', e);
+    }
+    handleCloseDialog();
+  };
+
   const handleResearchTechnology = (techId) => {
     console.log(`[CLICK] Research technology: ${techId}`);
     if (gameEngine && currentPlayer) {
@@ -161,6 +193,12 @@ const GameModals = ({ gameEngine }) => {
           <Button variant="info" size="lg" onClick={() => console.log('[CLICK] Save Game button (not implemented)')}>
             <i className="bi bi-download"></i> Save Game
           </Button>
+          
+          {gameState.isGameStarted && (
+            <Button variant="success" size="lg" onClick={handleDownloadMap}>
+              <i className="bi bi-map"></i> Download Map
+            </Button>
+          )}
           
           <Button variant="warning" size="lg" onClick={() => console.log('[CLICK] Load Game button (not implemented)')}>
             <i className="bi bi-upload"></i> Load Game

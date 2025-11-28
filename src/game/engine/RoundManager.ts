@@ -81,21 +81,16 @@ export class RoundManager {
               this.clearUnitPath(unit.id);
               console.log(`[RoundManager] Unit ${unit.id} reached destination`);
 
-              // If this unit is a settler, attempt to found a city
-              try {
-                const u = this.gameEngine.units.find((x: any) => x.id === unit.id);
-                if (u && u.type === 'settlers') {
-                  console.log(`[RoundManager] Settler ${unit.id} reached its path destination, attempting to found city`);
-                  const founded = this.gameEngine.foundCityWithSettler(unit.id);
-                  if (founded) {
-                    console.log(`[RoundManager] Settler ${unit.id} founded a city successfully`);
-                  } else {
-                    console.log(`[RoundManager] Settler ${unit.id} could not found a city at destination`);
+                const unitsWithMoves = this.gameEngine.units.filter(
+                  (u: any) => u.civilizationId === civilizationId && u.movesRemaining > 0
+                );
+                if (unitsWithMoves.length === 0) {
+                  console.log(`[RoundManager] No units with moves left for civilization ${civilizationId}, ending turn.`);
+                  if (typeof this.gameEngine.endTurn === 'function') {
+                    this.gameEngine.endTurn(civilizationId);
                   }
+                  break; // End movement loop for this civilization
                 }
-              } catch (e) {
-                console.error('[RoundManager] Error attempting to found city with settler:', e);
-              }
             }
           } else {
             // Movement failed - clear the path

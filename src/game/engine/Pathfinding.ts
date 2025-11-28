@@ -204,4 +204,97 @@ export class Pathfinding {
       success: false
     };
   }
+
+  /**
+   * Get all reachable tiles within movement range
+   * @returns Map of "col,row" -> cost
+   */
+  static getReachableTiles(
+    startCol: number,
+    startRow: number,
+    maxMovement: number,
+    getTileAt: (col: number, row: number) => any,
+    unitType: string,
+    mapWidth: number,
+    mapHeight: number
+  ): Map<string, number> {
+    const reachable = new Map<string, number>();
+    const openSet: PathNode[] = [];
+    const visited = new Set<string>();
+
+    const startNode: PathNode = {
+      col: startCol,
+      row: startRow,
+      g: 0,
+      h: 0,
+      f: 0,
+      parent: null
+    };
+    openSet.push(startNode);
+    reachable.set(`${startCol},${startRow}`, 0);
+
+    while (openSet.length > 0) {
+      openSet.sort((a, b) => a.g - b.g);
+      const current = openSet.shift()!;
+      const currentKey = `${current.col},${current.row}`;
+
+      if (visited.has(currentKey)) continue;
+      visited.add(currentKey);
+
+      // Check neighbors
+      const neighbors = [
+        { col: current.col - 1, row: current.row },
+        { col: current.col + 1, row: current.row },
+        { col: current.col, row: current.row - 1 },
+        { col: current.col, row: current.row + 1 },
+        { col: current.col - 1, row: current.row - 1 },
+        { col: current.col + 1, row: current.row + 1 },
+        { col: current.col - 1, row: current.row + 1 },
+        { col: current.col + 1, row: current.row - 1 }
+      ];
+
+      for (const neighbor of neighbors) {
+        const { col, row } = neighbor;
+
+        // Check bounds
+        if (col < 0 || col >= mapWidth || row < 0 || row >= mapHeight) {
+          continue;
+        }
+
+        const neighborKey = `${col},${row}`;
+        if (visited.has(neighborKey)) {
+          continue;
+        }
+
+        const tile = getTileAt(col, row);
+        const cost = this.getMovementCost(tile, unitType);
+
+        if (cost === Infinity) {
+          continue; // Impassable
+        }
+
+        const g = current.g + cost;
+
+        // Only add if within movement range
+        if (g <= maxMovement) {
+          const existingCost = reachable.get(neighborKey);
+          if (existingCost === undefined || g < existingCost) {
+            reachable.set(neighborKey, g);
+            openSet.push({
+              col,
+              row,
+              g,
+              h: 0,
+              f: g,
+              parent: current
+            });
+          }
+        }
+      }
+    }
+
+    // Remove starting position
+    reachable.delete(`${startCol},${startRow}`);
+    return reachable;
+  }
 }

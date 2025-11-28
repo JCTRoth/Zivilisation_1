@@ -84,7 +84,9 @@ function App() {
     const handleShowEndTurnConfirmation = () => {
       console.log('[App] Received showEndTurnConfirmation event - automatic trigger');
       setIsEndTurnAutomatic(true);
-      if (settings.skipEndTurnConfirmation) {
+      // Get fresh setting value from store to avoid stale closure
+      const currentSettings = useGameStore.getState().settings;
+      if (currentSettings.skipEndTurnConfirmation) {
         console.log('[App] Skipping end turn confirmation due to user preference');
         handleEndTurnConfirm();
       } else {
@@ -185,13 +187,15 @@ function App() {
   const handleEndTurnRequest = useCallback(() => {
     console.log('[App] End turn requested manually - showing confirmation modal');
     setIsEndTurnAutomatic(false);
-    if (settings.skipEndTurnConfirmation) {
+    // Get fresh setting value from store to avoid stale closure
+    const currentSettings = useGameStore.getState().settings;
+    if (currentSettings.skipEndTurnConfirmation) {
       console.log('[App] Skipping end turn confirmation due to user preference');
       handleEndTurnConfirm();
     } else {
       setShowEndTurnConfirm(true);
     }
-  }, [settings.skipEndTurnConfirmation]);
+  }, []); // Remove settings from dependencies since we get fresh value inside
 
   // Handle end turn cancellation
   const handleEndTurnCancel = () => {

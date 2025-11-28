@@ -45,6 +45,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ gameEngine = null }) => {
   const MINIMAP_WIDTH = 200; // aspect ratio baseline
   const MINIMAP_HEIGHT = 150;
 
+
   // Render minimap
   useEffect(() => {
     const canvas: HTMLCanvasElement | null = canvasRef.current;

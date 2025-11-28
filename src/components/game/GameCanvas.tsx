@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useGameStore } from '@/stores/GameStore';
 import { TILE_SIZE } from '@/data/TerrainData';
 import { MapRenderer, TerrainRenderGrid, TerrainTileRenderInfo, UnitPathStep } from '@/game/rendering/MapRenderer';
-import type { City, Civilization, GameEngine, GameState, MapState, Unit } from '../../../types/game';
+import type { City, GameEngine, GameState, MapState, Unit } from '../../../types/game';
 import '../../styles/civ1GameCanvas.css';
 import UnitActionsModal from './UnitActionsModal';
-import { Pathfinding } from '../../game/engine/Pathfinding';
+import { Pathfinding } from '@/game/engine/Pathfinding';
 
 type HexCoordinates = { col: number; row: number };
 
@@ -44,15 +44,19 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   const [gotoMode, setGotoMode] = useState<boolean>(false);
   const [gotoUnit, setGotoUnit] = useState<Unit | null>(null);
   const [unitPaths, setUnitPaths] = useState<Map<string, UnitPathStep[]>>(new Map());
+  const [reachableTiles, setReachableTiles] = useState<Map<string, number>>(new Map());
   const animationFrameRef = useRef<number | null>(null);
   const renderTimeoutRef = useRef<number | null>(null);
   const lastRenderTime = useRef<number>(0);
   const needsRender = useRef<boolean>(true);
   const lastGameState = useRef<any>(null);
+  const animationCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const staticRenderedRef = useRef<boolean>(false);
 
   // Trigger re-render when game state changes (turn-based optimization)
   const triggerRender = useCallback(() => {
     needsRender.current = true;
+    staticRenderedRef.current = false;
   }, []);
 
   // Check if game state has changed significantly
@@ -62,17 +66,37 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       currentTurn: gameState.currentTurn,
       units: units.length,
       cities: cities.length,
-      selectedHex: selectedHex,
-      camera: camera
+      selectedHex: selectedHex ? `${selectedHex.col},${selectedHex.row}` : null,
+      selectedUnit: gameState.selectedUnit || null,
+      reachableTilesSize: reachableTiles.size,
+      cameraX: Math.round(camera.x),
+      cameraY: Math.round(camera.y),
+      cameraZoom: camera.zoom
     };
 
-    if (!lastGameState.current ||
-        JSON.stringify(currentState) !== JSON.stringify(lastGameState.current)) {
+    if (!lastGameState.current) {
+      lastGameState.current = currentState;
+      return true;
+    }
+
+    // Compare each property individually to avoid expensive JSON.stringify
+    const changed = currentState.activePlayer !== lastGameState.current.activePlayer ||
+                    currentState.currentTurn !== lastGameState.current.currentTurn ||
+                    currentState.units !== lastGameState.current.units ||
+                    currentState.cities !== lastGameState.current.cities ||
+                    currentState.selectedHex !== lastGameState.current.selectedHex ||
+                    currentState.selectedUnit !== lastGameState.current.selectedUnit ||
+                    currentState.reachableTilesSize !== lastGameState.current.reachableTilesSize ||
+                    currentState.cameraX !== lastGameState.current.cameraX ||
+                    currentState.cameraY !== lastGameState.current.cameraY ||
+                    currentState.cameraZoom !== lastGameState.current.cameraZoom;
+
+    if (changed) {
       lastGameState.current = currentState;
       return true;
     }
     return false;
-  }, [camera, cities.length, gameState.activePlayer, gameState.currentTurn, selectedHex, units.length]);
+  }, [camera, cities.length, gameState.activePlayer, gameState.currentTurn, gameState.selectedUnit, reachableTiles.size, selectedHex, units.length]);
 
   const renderTerrainToOffscreen = useCallback((terrainGrid: TerrainRenderGrid | null) => {
     if (!terrainGrid || !mapData) return;
@@ -88,6 +112,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   useEffect(() => {
     if (!terrainCanvasRef.current && typeof document !== 'undefined') {
       terrainCanvasRef.current = document.createElement('canvas');
+    }
+    if (!animationCanvasRef.current && typeof document !== 'undefined') {
+      animationCanvasRef.current = document.createElement('canvas');
     }
   }, []);
 
@@ -151,6 +178,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       renderTerrainToOffscreen(generatedTerrain);
     }
   }, [createTerrainGrid, gameEngine, mapData.height, mapData.revealed, mapData.tiles, mapData.visibility, mapData.width, renderTerrainToOffscreen]);
+
+  // Note: Improvements (roads, etc.) are now rendered directly from mapData.tiles
+  // in MapRenderer.drawDynamicContent, so we don't need to update the terrain grid
+  // or re-render the offscreen canvas when improvements change. This avoids
+  // expensive re-renders and prevents infinite loops.
 
   // Update terrain visibility when game state changes
   useEffect(() => {
@@ -242,9 +274,46 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       const playerSettler = units.find(u => u.civilizationId === 0 && u.type === 'settlers');
       if (playerSettler) {
         setSelectedHex({ col: playerSettler.col, row: playerSettler.row });
+        // Also select the unit in the store
+        if (actions && typeof actions.selectUnit === 'function') {
+          actions.selectUnit(playerSettler.id);
+        }
+        // Auto-enter GoTo mode if unit has moves
+        if ((playerSettler.movesRemaining || 0) > 0) {
+          setGotoMode(true);
+          setGotoUnit(playerSettler);
+          if (actions?.addNotification) {
+            actions.addNotification({
+              type: 'info',
+              message: `Click destination for ${playerSettler.type} to go to`
+            });
+          }
+        }
+        // Calculate reachable tiles for initial blue marking
+        if (mapData && terrain) {
+          const getTileAt = (col: number, row: number) => {
+            if (row < 0 || row >= mapData.height || col < 0 || col >= mapData.width) {
+              return null;
+            }
+            const tileIndex = row * mapData.width + col;
+            return mapData.tiles?.[tileIndex] || null;
+          };
+          
+          const reachable = Pathfinding.getReachableTiles(
+            playerSettler.col,
+            playerSettler.row,
+            playerSettler.movesRemaining || 0,
+            getTileAt,
+            playerSettler.type,
+            mapData.width,
+            mapData.height
+          );
+          
+          setReachableTiles(reachable);
+        }
       }
     }
-  }, [units, gameState.isGameStarted]);
+  }, [units, gameState.isGameStarted, actions, mapData, terrain]);
 
   // Focus the canvas when game engine is available for keyboard controls
   useEffect(() => {
@@ -265,9 +334,52 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     }
   }, [gameState.currentTurn, gameEngine]);
 
+  // Calculate reachable tiles when selected unit changes
+  useEffect(() => {
+    const selectedUnitId = gameState.selectedUnit;
+    
+    // Clear reachable tiles if no unit selected or not human player's turn
+    if (!selectedUnitId || gameState.activePlayer !== 0) {
+      setReachableTiles(new Map());
+      return;
+    }
+    
+    // Find the selected unit
+    const selectedUnit = units.find(u => u.id === selectedUnitId);
+    if (!selectedUnit || selectedUnit.civilizationId !== 0) {
+      // Only show for human player (civilization 0)
+      setReachableTiles(new Map());
+      return;
+    }
+    
+    // Calculate reachable tiles
+    if (mapData && terrain) {
+      const getTileAt = (col: number, row: number) => {
+        if (row < 0 || row >= mapData.height || col < 0 || col >= mapData.width) {
+          return null;
+        }
+        const tileIndex = row * mapData.width + col;
+        return mapData.tiles?.[tileIndex] || null;
+      };
+      
+      const reachable = Pathfinding.getReachableTiles(
+        selectedUnit.col,
+        selectedUnit.row,
+        selectedUnit.movesRemaining || 0,
+        getTileAt,
+        selectedUnit.type,
+        mapData.width,
+        mapData.height
+      );
+      
+      setReachableTiles(reachable);
+    }
+  }, [gameState.selectedUnit, gameState.activePlayer, units, mapData, terrain]);
+
   const squareToScreen = useCallback((col: number, row: number): { x: number; y: number } => {
-    const x = (col * TILE_SIZE - camera.x) * camera.zoom;
-    const y = (row * TILE_SIZE - camera.y) * camera.zoom;
+    // Return the center of the tile, not the top-left corner
+    const x = ((col + 0.5) * TILE_SIZE - camera.x) * camera.zoom;
+    const y = ((row + 0.5) * TILE_SIZE - camera.y) * camera.zoom;
     return { x, y };
   }, [camera.x, camera.y, camera.zoom]);
 
@@ -276,9 +388,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     const worldX = (screenX / camera.zoom) + camera.x;
     const worldY = (screenY / camera.zoom) + camera.y;
 
-    // Simple square coordinate conversion
-    let col = Math.round(worldX / TILE_SIZE);
-    let row = Math.round(worldY / TILE_SIZE);
+    // Simple square coordinate conversion - use floor so clicks map
+    // to the tile that contains the point (avoid rounding at corners)
+    let col = Math.floor(worldX / TILE_SIZE);
+    let row = Math.floor(worldY / TILE_SIZE);
 
     // Clamp to map bounds
     col = Math.max(0, Math.min(mapData.width - 1, col));
@@ -287,7 +400,68 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     return { col, row };
   }, [camera.x, camera.y, camera.zoom, mapData.height, mapData.width]);
 
-  const renderFrame = useCallback((currentTime: number = performance.now()) => {
+  // Helper accessors: support multiple engine shapes (engine.getUnitAt or engine.map.getUnitAt or fallback to engine.units[])
+  const getUnitAtFromEngine = (col: number, row: number) => {
+    if (!gameEngine) return null as any;
+    try {
+      const direct = (gameEngine as any).getUnitAt;
+      if (typeof direct === 'function') return direct.call(gameEngine, col, row);
+      const mapObj = (gameEngine as any).map;
+      if (mapObj && typeof mapObj.getUnitAt === 'function') return mapObj.getUnitAt(col, row);
+      const unitsArr = (gameEngine as any).units;
+      if (Array.isArray(unitsArr)) return unitsArr.find((u: any) => u && u.col === col && u.row === row) || null;
+    } catch (err) {
+      console.error('[GameCanvas] getUnitAtFromEngine error', err);
+    }
+    return null as any;
+  };
+
+  const getCityAtFromEngine = (col: number, row: number) => {
+    if (!gameEngine) return null as any;
+    try {
+      const direct = (gameEngine as any).getCityAt;
+      if (typeof direct === 'function') return direct.call(gameEngine, col, row);
+      const mapObj = (gameEngine as any).map;
+      if (mapObj && typeof mapObj.getCityAt === 'function') return mapObj.getCityAt(col, row);
+      const citiesArr = (gameEngine as any).cities;
+      if (Array.isArray(citiesArr)) return citiesArr.find((c: any) => c && c.col === col && c.row === row) || null;
+    } catch (err) {
+      console.error('[GameCanvas] getCityAtFromEngine error', err);
+    }
+    return null as any;
+  };
+
+  const getAllUnitsFromEngine = () => {
+    if (!gameEngine) return [] as any[];
+    try {
+      const directAll = (gameEngine as any).getAllUnits;
+      if (typeof directAll === 'function') return directAll.call(gameEngine);
+      const unitsArr = (gameEngine as any).units;
+      if (Array.isArray(unitsArr)) return unitsArr;
+      const mapObj = (gameEngine as any).map;
+      if (mapObj && typeof mapObj.getAllUnits === 'function') return mapObj.getAllUnits();
+    } catch (err) {
+      console.error('[GameCanvas] getAllUnitsFromEngine error', err);
+    }
+    return [] as any[];
+  };
+
+  const getAllCitiesFromEngine = () => {
+    if (!gameEngine) return [] as any[];
+    try {
+      const directAll = (gameEngine as any).getAllCities;
+      if (typeof directAll === 'function') return directAll.call(gameEngine);
+      const citiesArr = (gameEngine as any).cities;
+      if (Array.isArray(citiesArr)) return citiesArr;
+      const mapObj = (gameEngine as any).map;
+      if (mapObj && typeof mapObj.getAllCities === 'function') return mapObj.getAllCities();
+    } catch (err) {
+      console.error('[GameCanvas] getAllCitiesFromEngine error', err);
+    }
+    return [] as any[];
+  };
+
+  const renderStaticContent = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -313,7 +487,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       return;
     }
 
-    mapRendererRef.current.renderFrame({
+    // Render static content (terrain, cities, units without animation)
+    mapRendererRef.current.renderStaticFrame({
       ctx,
       canvas,
       map: mapData as MapState,
@@ -325,12 +500,78 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       cities,
       civilizations,
       unitPaths,
-      currentTime,
       offscreenCanvas: terrainCanvasRef.current,
+      squareToScreen,
+      cameraZoom: camera.zoom,
+      reachableTiles
+    });
+
+    // Save the static content to animation canvas for efficient restoration
+    if (animationCanvasRef.current) {
+      const animCanvas = animationCanvasRef.current;
+      if (animCanvas.width !== canvas.width || animCanvas.height !== canvas.height) {
+        animCanvas.width = canvas.width;
+        animCanvas.height = canvas.height;
+      }
+      const animCtx = animCanvas.getContext('2d');
+      if (animCtx) {
+        animCtx.clearRect(0, 0, animCanvas.width, animCanvas.height);
+        animCtx.drawImage(canvas, 0, 0);
+      }
+    }
+
+    staticRenderedRef.current = true;
+    // console.log('[GameCanvas] Static content rendered and saved');
+  }, [camera, canvasRef, civilizations, cities, gameState, mapData, minimap, squareToScreen, selectedHex, terrain, unitPaths, units]);
+
+  const renderAnimationLayer = useCallback((currentTime: number) => {
+    if (!canvasRef.current || !animationCanvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const animCanvas = animationCanvasRef.current;
+    const mainCtx = canvas.getContext('2d');
+    if (!mainCtx || !staticRenderedRef.current) return;
+
+    // Get units that need animation
+    const activePlayerUnits = units.filter(u => 
+      u.civilizationId === gameState.activePlayer && 
+      (u.movesRemaining || 0) > 0
+    );
+
+    if (activePlayerUnits.length === 0) return;
+
+    // Instead of redrawing the entire canvas, only update the unit regions
+    // Calculate the size of unit circles
+    const unitRadius = Math.round(20 * camera.zoom * 1.2); // Add margin for glow
+
+    activePlayerUnits.forEach(unit => {
+      const { x, y } = squareToScreen(unit.col, unit.row);
+      
+      // Only restore and redraw this specific region
+      const regionSize = unitRadius * 2;
+      const regionX = x - unitRadius;
+      const regionY = y - unitRadius;
+
+      // Restore static content for this unit's region only
+      mainCtx.drawImage(
+        animCanvas,
+        regionX, regionY, regionSize, regionSize,
+        regionX, regionY, regionSize, regionSize
+      );
+    });
+
+    // Draw only pulsing units on top (in their small regions)
+    mapRendererRef.current.renderPulsingUnits({
+      ctx: mainCtx,
+      map: mapData as MapState,
+      units,
+      gameState: gameState as GameState,
+      civilizations,
+      currentTime,
       squareToScreen,
       cameraZoom: camera.zoom
     });
-  }, [camera, canvasRef, civilizations, cities, gameState, mapData, minimap, squareToScreen, selectedHex, terrain, unitPaths, units]);
+  }, [camera.zoom, civilizations, gameState, mapData, squareToScreen, units]);
 
   // Handle mouse events
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -505,18 +746,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
 
         // Check for unit or city at this location
         let unitAt = null;
-        let cityAt = null;
-        try {
-          if (gameEngine && typeof gameEngine.getUnitAt === 'function') {
-            unitAt = gameEngine.getUnitAt(hex.col, hex.row);
-          }
-          if (gameEngine && typeof gameEngine.getCityAt === 'function') {
-            cityAt = gameEngine.getCityAt(hex.col, hex.row);
-          }
-        } catch (e) {
+        let cityAt: { id: string; name: any; civilizationId: number; };
+         try {
+           unitAt = getUnitAtFromEngine(hex.col, hex.row);
+           cityAt = getCityAtFromEngine(hex.col, hex.row);
+         } catch (e) {
           unitAt = null;
-          cityAt = null;
-        }
+          cityAt = undefined;
+         }
 
         if (unitAt && currentPlayer && unitAt.civilizationId === currentPlayer.id) {
           console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type}) at (${hex.col}, ${hex.row})`);
@@ -528,11 +765,27 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
             if (actions && typeof actions.selectUnit === 'function') {
               actions.selectUnit(null);
             }
+            // Exit GoTo mode when deselecting
+            setGotoMode(false);
+            setGotoUnit(null);
             return; // Don't proceed with normal selection
           }
           
           if (actions && typeof actions.selectUnit === 'function') {
             actions.selectUnit(unitAt.id);
+          }
+          
+          // Automatically enter GoTo mode if unit has remaining moves
+          if ((unitAt.movesRemaining || 0) > 0) {
+            console.log(`[CLICK] Unit has moves remaining, entering GoTo mode`);
+            setGotoMode(true);
+            setGotoUnit(unitAt);
+            if (actions?.addNotification) {
+              actions.addNotification({
+                type: 'info',
+                message: `Click destination for ${unitAt.type} to go to`
+              });
+            }
           }
           
           // If the unit has a path and moves, continue following
@@ -560,6 +813,34 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
               console.log(`[CLICK] Continue path error:`, e);
             }
           }
+        } else if (unitAt && !currentPlayer || (unitAt && unitAt.civilizationId !== currentPlayer.id)) {
+          // Enemy unit - check if we have a selected unit that can attack
+          console.log(`[CLICK] Enemy unit at (${hex.col}, ${hex.row})`);
+          const selectedUnitId = gameState?.selectedUnit;
+          if (selectedUnitId) {
+            const selectedUnit = units.find(u => u.id === selectedUnitId);
+            if (selectedUnit && selectedUnit.civilizationId === currentPlayer?.id) {
+              // Check if adjacent or use pathfinding to get there and attack
+              const isAdjacent = Math.abs(selectedUnit.col - hex.col) <= 1 && Math.abs(selectedUnit.row - hex.row) <= 1;
+              
+              if (isAdjacent && (selectedUnit.movesRemaining || 0) > 0) {
+                console.log(`[CLICK] Adjacent attack - attempting to move/attack`);
+                try {
+                  // moveUnit handles combat automatically
+                  gameEngine?.moveUnit?.(selectedUnit.id, hex.col, hex.row);
+                } catch (e) {
+                  console.log(`[CLICK] Attack error:`, e);
+                }
+              } else {
+                console.log(`[CLICK] Unit not adjacent to enemy - cannot attack`);
+                if (actions?.addNotification) {
+                  actions.addNotification({ type: 'warning', message: 'Unit must be adjacent to attack' });
+                }
+              }
+            }
+          } else {
+            console.log(`[CLICK] No unit selected to attack with`);
+          }
         } else if (cityAt) {
           console.log(`[CLICK] Selected city ${cityAt.id} (${cityAt.name}) at (${hex.col}, ${hex.row})`);
           console.log(`[CLICK] City debug - currentPlayer:`, currentPlayer, `cityAt.civilizationId:`, cityAt.civilizationId);
@@ -579,26 +860,168 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
           const selectedUnitId = gameState?.selectedUnit;
           if (selectedUnitId) {
             console.log(`[CLICK] Attempting to move selected unit ${selectedUnitId} to (${hex.col}, ${hex.row})`);
+
+            // Find unit object
+            const selectedUnit = units.find(u => u.id === selectedUnitId);
+
+            // If we have reachableTiles computed, prefer using it to validate click
+            const key = `${hex.col},${hex.row}`;
+            const isReachable = reachableTiles && reachableTiles.has(key);
+
+            if (!selectedUnit) {
+              console.log('[CLICK] Selected unit not found in units array');
+              return;
+            }
+
+            if (!isReachable) {
+              // Not reachable within current movement points
+              console.log('[CLICK] Destination not reachable with current moves');
+              if (actions && typeof actions.addNotification === 'function') {
+                actions.addNotification({ type: 'warning', message: 'Cannot reach destination with current movement points' });
+              }
+              return;
+            }
+
             try {
-              if (gameEngine && typeof gameEngine.moveUnit === 'function') {
-                const result = gameEngine.moveUnit(selectedUnitId, hex.col, hex.row);
-                if (!result || !result.success) {
-                  const reason = result?.reason || 'unknown';
-                  console.log(`[CLICK] Move failed: ${reason}`);
-                  if (actions && typeof actions.addNotification === 'function') {
-                    let msg = 'Move failed';
-                    switch (reason) {
-                      case 'no_moves_left': msg = 'Move failed: no moves left'; break;
-                      case 'terrain_impassable': msg = 'Move failed: terrain is impassable'; break;
-                      case 'insufficient_moves': msg = 'Move failed: insufficient movement points'; break;
-                      default: msg = 'Move failed';
-                    }
-                    actions.addNotification({ type: 'warning', message: msg });
-                  }
+              // Calculate path using Pathfinding
+              const pathResult = Pathfinding.findPath(
+                selectedUnit.col,
+                selectedUnit.row,
+                hex.col,
+                hex.row,
+                (col: number, row: number) => {
+                  const tileIndex = row * mapData.width + col;
+                  return mapData.tiles?.[tileIndex] || null;
+                },
+                selectedUnit.type,
+                mapData.width,
+                mapData.height
+              );
+
+              if (pathResult.success && pathResult.path.length > 1) {
+                const pathToFollow: UnitPathStep[] = pathResult.path.slice(1).map((step: any) => ({ col: step.col, row: step.row }));
+
+                // First, set the path and draw it
+                setUnitPaths(prev => {
+                  const next = new Map(prev);
+                  next.set(selectedUnit.id, pathToFollow);
+                  return next;
+                });
+
+                const roundManager = (gameEngine as any)?.roundManager;
+                if (roundManager && typeof roundManager.setUnitPath === 'function') {
+                  roundManager.setUnitPath(selectedUnit.id, pathToFollow);
+                  console.log(`[CLICK] Path synced to RoundManager for unit ${selectedUnit.id}`);
                 }
+
+                if (actions?.addNotification) actions.addNotification({ type: 'success', message: `${selectedUnit.type} will go to (${hex.col}, ${hex.row})` });
+
+                triggerRender();
+
+                // Then, if unit has moves, start moving along the path step by step
+                if (pathToFollow.length > 0 && (selectedUnit.movesRemaining || 0) > 0) {
+                  console.log(`[CLICK] Starting automatic movement along path for unit ${selectedUnit.id}`);
+                  
+                  // Use a small delay to ensure path is rendered first, then move step by step
+                  setTimeout(() => {
+                    const moveAlongPath = () => {
+                      // Get fresh unit state from gameEngine, not from React state
+                      const currentUnit = gameEngine?.units?.find((u: any) => u.id === selectedUnit.id);
+                      console.log(`[CLICK] moveAlongPath check:`, { 
+                        unitExists: !!currentUnit, 
+                        movesRemaining: currentUnit?.movesRemaining,
+                        unitId: selectedUnit.id
+                      });
+                      
+                      if (!currentUnit || (currentUnit.movesRemaining || 0) <= 0) {
+                        console.log(`[CLICK] Unit ${selectedUnit.id} has no more moves or doesn't exist`);
+                        return;
+                      }
+
+                      // Get fresh path from RoundManager
+                      const currentPath = roundManager?.getUnitPath?.(selectedUnit.id);
+                      console.log(`[CLICK] Current path for ${selectedUnit.id}:`, currentPath);
+                      
+                      if (!currentPath || currentPath.length === 0) {
+                        console.log(`[CLICK] No more path for unit ${selectedUnit.id}`);
+                        return;
+                      }
+
+                      const nextPos = currentPath[0];
+                      console.log(`[CLICK] Moving unit ${selectedUnit.id} to (${nextPos.col}, ${nextPos.row})`);
+
+                      try {
+                        const moveResult = gameEngine?.moveUnit?.(selectedUnit.id, nextPos.col, nextPos.row);
+                        console.log(`[CLICK] Move result:`, moveResult);
+                        
+                        if (moveResult && moveResult.success) {
+                          const remainingPath = currentPath.slice(1);
+                          setUnitPaths(prev => {
+                            const next = new Map(prev);
+                            if (remainingPath.length > 0) {
+                              next.set(selectedUnit.id, remainingPath);
+                            } else {
+                              next.delete(selectedUnit.id);
+                            }
+                            return next;
+                          });
+
+                          if (roundManager && typeof roundManager.setUnitPath === 'function') {
+                            if (remainingPath.length > 0) {
+                              roundManager.setUnitPath(selectedUnit.id, remainingPath);
+                            } else {
+                              roundManager.clearUnitPath(selectedUnit.id);
+                            }
+                          }
+
+                          console.log(`[CLICK] Unit ${selectedUnit.id} moved to (${nextPos.col}, ${nextPos.row}), remaining path:`, remainingPath);
+
+                          triggerRender();
+
+                          // Continue moving if there's more path
+                          // The unit object in gameEngine should already be updated by moveUnit
+                          if (remainingPath.length > 0) {
+                            // Check moves remaining after the gameEngine state is settled
+                            const unitAfterMove = gameEngine?.units?.find((u: any) => u.id === selectedUnit.id);
+                            console.log(`[CLICK] After move - unit state:`, {
+                              movesRemaining: unitAfterMove?.movesRemaining,
+                              remainingPathLength: remainingPath.length
+                            });
+                            
+                            if (unitAfterMove && (unitAfterMove.movesRemaining || 0) > 0) {
+                              console.log(`[CLICK] Scheduling next move in 300ms`);
+                              setTimeout(moveAlongPath, 300); // Small delay between moves for animation
+                            } else {
+                              console.log(`[CLICK] Unit ${selectedUnit.id} ran out of moves`);
+                            }
+                          } else {
+                            console.log(`[CLICK] Unit ${selectedUnit.id} reached destination`);
+                          }
+                        } else {
+                          console.log(`[CLICK] Move failed for unit ${selectedUnit.id}, clearing path. Reason:`, moveResult?.reason);
+                          setUnitPaths(prev => {
+                            const next = new Map(prev);
+                            next.delete(selectedUnit.id);
+                            return next;
+                          });
+                          if (roundManager && typeof roundManager.clearUnitPath === 'function') {
+                            roundManager.clearUnitPath(selectedUnit.id);
+                          }
+                        }
+                      } catch (err) {
+                        console.error(`[CLICK] Error moving unit:`, err);
+                      }
+                    };
+
+                    moveAlongPath();
+                  }, 100); // Initial delay to show the path
+                }
+              } else {
+                if (actions?.addNotification) actions.addNotification({ type: 'warning', message: 'Cannot reach destination' });
               }
             } catch (e) {
-              console.log(`[CLICK] Move error:`, e);
+              console.log(`[CLICK] Pathfinding error:`, e);
+              if (actions?.addNotification) actions.addNotification({ type: 'error', message: 'Pathfinding failed' });
             }
           } else {
             console.log(`[CLICK] Empty hex clicked at (${hex.col}, ${hex.row})`);
@@ -626,9 +1049,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     // Get unit at this location from gameEngine first (most reliable)
     let unitAtHex = null;
     try {
-      if (gameEngine && typeof gameEngine.getUnitAt === 'function') {
-        unitAtHex = gameEngine.getUnitAt(hex.col, hex.row);
-      }
+      unitAtHex = getUnitAtFromEngine(hex.col, hex.row);
     } catch (e) {
       console.error('[ContextMenu] Error getting unit from gameEngine:', e);
     }
@@ -649,9 +1070,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     // Get city at this location
     let cityAtHex = null;
     try {
-      if (gameEngine && typeof gameEngine.getCityAt === 'function') {
-        cityAtHex = gameEngine.getCityAt(hex.col, hex.row);
-      }
+      cityAtHex = getCityAtFromEngine(hex.col, hex.row);
     } catch (e) {
       // City not found, that's OK
     }
@@ -669,7 +1088,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     });
   };
 
-  const executeContextAction = (action: string, data: unknown = null) => {
+  const executeContextAction = (action: string) => {
     console.log(`[ContextMenu] Executing action: ${action}`, { contextMenu });
 
     if (!contextMenu) return;
@@ -683,7 +1102,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         if (unit && gameEngine?.unitFortify) {
           console.log(`[ContextMenu] Fortifying unit ${unit.id}`);
           gameEngine.unitFortify(unit.id);
-          if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+          if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
           if (actions?.addNotification) actions.addNotification({
             type: 'success',
             message: `${unit.type} fortified`
@@ -696,7 +1115,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
           if (unit.isSleeping && gameEngine.unitWake) {
             console.log(`[ContextMenu] Wake action for unit ${unit.id}`);
             gameEngine.unitWake(unit.id);
-            if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.addNotification) actions.addNotification({
               type: 'success',
               message: `${unit.type} woke up`
@@ -704,7 +1123,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
           } else if (gameEngine.unitSleep) {
             console.log(`[ContextMenu] Sleep action for unit ${unit.id}`);
             gameEngine.unitSleep(unit.id);
-            if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.addNotification) actions.addNotification({
               type: 'success',
               message: `${unit.type} sleeping`
@@ -717,7 +1136,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         if (unit && gameEngine?.skipUnit) {
           console.log(`[ContextMenu] Skipping turn for unit ${unit.id}`);
           gameEngine.skipUnit(unit.id);
-          if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
+          if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
           if (actions?.addNotification) actions.addNotification({
             type: 'info',
             message: `${unit.type} turn skipped`
@@ -745,9 +1164,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
           console.log(`[ContextMenu] Found city action for unit ${unit.id}`);
           const result = gameEngine.foundCityWithSettler(unit.id);
           if (result) {
-            if (actions?.updateCities) actions.updateCities(gameEngine.cities);
-            if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
-            if (actions?.updateMap) actions.updateMap(gameEngine.map);
+            if (actions?.updateCities) actions.updateCities(getAllCitiesFromEngine());
+            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
+            if (actions?.updateMap) actions.updateMap((gameEngine as any).map);
             if (actions?.addNotification) actions.addNotification({
               type: 'success',
               message: 'City founded!'
@@ -766,8 +1185,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
           console.log(`[ContextMenu] Build road action for unit ${unit.id}`);
           const result = gameEngine.buildImprovement(unit.id, 'road');
           if (result) {
-            if (actions?.updateUnits) actions.updateUnits(gameEngine.units);
-            if (actions?.updateMap) actions.updateMap(gameEngine.map);
+            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
+            if (actions?.updateMap) actions.updateMap((gameEngine as any).map);
             if (actions?.addNotification) actions.addNotification({
               type: 'success',
               message: 'Road built'
@@ -855,26 +1274,62 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     });
   };
 
-  // Optimized animation loop for turn-based game (always 10 FPS)
+  // Render static content only when needed
   useEffect(() => {
-    let lastFrameTime = 0;
-    const targetFPS = 10; // Always 10 FPS for turn-based game
-    const frameInterval = 1000 / targetFPS;
+    if (needsRender.current || hasGameStateChanged()) {
+      console.log('[GameCanvas] Rendering static content due to changes');
+      renderStaticContent();
+      needsRender.current = false;
+    }
+  }, [hasGameStateChanged, renderStaticContent]);
 
-    const animate = (currentTime) => {
+  // Separate animation loop only for pulsing units (only runs when needed)
+  useEffect(() => {
+    if (minimap || !gameState.isGameStarted) return;
+
+    // Check if there are any units that need pulsing animation
+    const hasUnitsWithMoves = units.some(u => 
+      u.civilizationId === gameState.activePlayer && 
+      (u.movesRemaining || 0) > 0
+    );
+
+    // Only start animation loop if there are units to animate
+    if (!hasUnitsWithMoves) {
+      // console.log('[GameCanvas] No units need animation, skipping animation loop');
+      return;
+    }
+
+    // console.log('[GameCanvas] Starting animation loop for pulsing units');
+
+    let lastAnimTime = 0;
+    let frameCount = 0;
+    let lastFPSLog = 0;
+    const animFPS = 5; // 5 FPS for pulsing (turn-based game doesn't need high FPS)
+    const animInterval = 1000 / animFPS;
+
+    const animate = (currentTime: number) => {
       animationFrameRef.current = requestAnimationFrame(animate);
 
-      // Check if game state changed (trigger immediate render)
-      if (hasGameStateChanged()) {
-        needsRender.current = true;
+      // Check if we need to render static content
+      if (needsRender.current || hasGameStateChanged()) {
+        renderStaticContent();
+        needsRender.current = false;
       }
 
-      // Always render at 10 FPS for turn-based gameplay
-      const elapsed = currentTime - lastFrameTime;
-      if (elapsed > frameInterval) {
-        lastFrameTime = currentTime - (elapsed % frameInterval);
-        renderFrame(currentTime);
-        needsRender.current = false; // Reset flag after rendering
+      // Render animation layer for pulsing units
+      const elapsed = currentTime - lastAnimTime;
+      if (elapsed > animInterval) {
+        lastAnimTime = currentTime - (elapsed % animInterval);
+        renderAnimationLayer(currentTime);
+        
+        // Log FPS every 5 seconds
+        frameCount++;
+        if (currentTime - lastFPSLog > 5000) {
+          const actualFPS = frameCount / 5;
+          // console.log(`[GameCanvas] Animation FPS: ${actualFPS.toFixed(1)} (target: ${animFPS})`);
+          frameCount = 0;
+          lastFPSLog = currentTime;
+        }
       }
     };
 
@@ -883,36 +1338,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        // console.log('[GameCanvas] Stopped animation loop');
       }
     };
-  }, [camera, selectedHex, mapData, terrain, gameState, units, cities, hasGameStateChanged, renderFrame]);
+  }, [minimap, gameState.isGameStarted, gameState.activePlayer, units, hasGameStateChanged, renderStaticContent, renderAnimationLayer]);
 
   // Trigger render when camera changes (pan/zoom)
   useEffect(() => {
-    // Reset render state to avoid stale/overly-large draws after zoom/pan
-    needsRender.current = true;
-    lastRenderTime.current = 0;
-    // Clear last known game state so hasGameStateChanged will re-evaluate fully
-    lastGameState.current = null;
-
-    // Cancel any pending render timeout that may have been scheduled
-    if (renderTimeoutRef.current) {
-      clearTimeout(renderTimeoutRef.current);
-      renderTimeoutRef.current = null;
-    }
-
-    // Force a quick refresh on the next animation frame (safe no-op if render not ready)
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame((t) => {
-        try {
-          renderFrame(t);
-        } catch (e) {
-          // swallow errors here - render will run in the main loop as well
-          // console.debug('[GameCanvas] render() initial call failed after camera change', e);
-        }
-      });
-    }
-  }, [camera.x, camera.y, camera.zoom]);
+    // console.log('[GameCanvas] Camera changed, triggering render');
+    triggerRender();
+  }, [camera.x, camera.y, camera.zoom, triggerRender]);
 
   // Trigger render when selection changes
   useEffect(() => {

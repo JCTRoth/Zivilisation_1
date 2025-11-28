@@ -5,6 +5,7 @@ import { TerrainProperties } from './GameConstants';
 export interface SpecialResource {
     name: string;
     terrain: string;
+    terrains?: string; // CSV of terrain types where this resource is usable
     food: number;
     production: number;
     trade: number;
@@ -165,6 +166,7 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
     {
         name: 'Wheat',
         terrain: TERRAIN_TYPES.PLAINS,
+        terrains: `${TERRAIN_TYPES.PLAINS}`,
         food: 1,
         production: 0,
         trade: 0,
@@ -173,6 +175,7 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
     {
         name: 'Silk',
         terrain: TERRAIN_TYPES.JUNGLE,
+        terrains: `${TERRAIN_TYPES.JUNGLE}`,
         food: 0,
         production: 0,
         trade: 2,
@@ -181,6 +184,7 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
     {
         name: 'Gems',
         terrain: TERRAIN_TYPES.JUNGLE,
+        terrains: `${TERRAIN_TYPES.JUNGLE}`,
         food: 0,
         production: 0,
         trade: 3,
@@ -189,6 +193,7 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
     {
         name: 'Gold',
         terrain: TERRAIN_TYPES.MOUNTAINS,
+        terrains: `${TERRAIN_TYPES.MOUNTAINS}`,
         food: 0,
         production: 0,
         trade: 4,
@@ -197,6 +202,7 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
     {
         name: 'Iron',
         terrain: TERRAIN_TYPES.HILLS,
+        terrains: `${TERRAIN_TYPES.HILLS}`,
         food: 0,
         production: 1,
         trade: 0,
@@ -205,6 +211,7 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
     {
         name: 'Coal',
         terrain: TERRAIN_TYPES.MOUNTAINS,
+        terrains: `${TERRAIN_TYPES.MOUNTAINS}`,
         food: 0,
         production: 2,
         trade: 0,
@@ -213,6 +220,7 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
     {
         name: 'Oil',
         terrain: TERRAIN_TYPES.DESERT,
+        terrains: `${TERRAIN_TYPES.DESERT}`,
         food: 0,
         production: 3,
         trade: 0,
@@ -221,6 +229,7 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
     {
         name: 'Fish',
         terrain: TERRAIN_TYPES.OCEAN,
+        terrains: `${TERRAIN_TYPES.OCEAN},${TERRAIN_TYPES.COAST}`,
         food: 2,
         production: 0,
         trade: 1,

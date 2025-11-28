@@ -10,3 +10,4 @@
 - The Fish Bash is used for your commands
 - Use python3 instead of python when running it in as a command
 - When prompt starts with "Update Error" check git diff for changes that might have caused it
+- Development is done on a ubuntu system, you are able to use all linux commands.

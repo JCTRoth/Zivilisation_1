@@ -21,7 +21,6 @@ import { UNIT_TYPES } from '@/data/GameData';
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import type { MapState, CameraState, Unit, City, GameState, Civilization } from '../../../types/game';
 
-import type { MapState, CameraState, Unit, City, GameState, Civilization } from '../../../types/game';
 
 /**
  * 2D grid representing terrain tiles for rendering purposes.
@@ -102,6 +101,66 @@ export interface RenderFrameParams {
   currentTime: number;
   /** Optional offscreen canvas for terrain layer */
   offscreenCanvas?: HTMLCanvasElement | null;
+  /** Function to convert map coordinates to screen coordinates */
+  squareToScreen: (col: number, row: number) => { x: number; y: number };
+  /** Current camera zoom level */
+  cameraZoom: number;
+  /** Reachable tiles for movement range indicator */
+  reachableTiles?: Map<string, number>;
+}
+
+/**
+ * Parameters for rendering static content (no animations).
+ */
+export interface RenderStaticFrameParams {
+  /** Canvas 2D rendering context */
+  ctx: CanvasRenderingContext2D;
+  /** Main game canvas element */
+  canvas: HTMLCanvasElement;
+  /** Current map state */
+  map: MapState;
+  /** Terrain grid (null if using offscreen rendering) */
+  terrainGrid: TerrainRenderGrid | null;
+  /** Current camera state */
+  camera: CameraState;
+  /** Currently selected hex coordinates */
+  selectedHex: { col: number; row: number } | null;
+  /** Current game state */
+  gameState: GameState;
+  /** Array of all units in the game */
+  units: Unit[];
+  /** Array of all cities in the game */
+  cities: City[];
+  /** Array of all civilizations */
+  civilizations: Civilization[];
+  /** Movement paths for units (unit ID -> path steps) */
+  unitPaths: Map<string, UnitPathStep[]>;
+  /** Optional offscreen canvas for terrain layer */
+  offscreenCanvas?: HTMLCanvasElement | null;
+  /** Function to convert map coordinates to screen coordinates */
+  squareToScreen: (col: number, row: number) => { x: number; y: number };
+  /** Current camera zoom level */
+  cameraZoom: number;
+  /** Reachable tiles for movement range indicator */
+  reachableTiles?: Map<string, number>;
+}
+
+/**
+ * Parameters for rendering animated pulsing units.
+ */
+export interface RenderPulsingUnitsParams {
+  /** Canvas 2D rendering context */
+  ctx: CanvasRenderingContext2D;
+  /** Current map state */
+  map: MapState;
+  /** Array of all units in the game */
+  units: Unit[];
+  /** Current game state */
+  gameState: GameState;
+  /** Array of all civilizations */
+  civilizations: Civilization[];
+  /** Current timestamp for animations */
+  currentTime: number;
   /** Function to convert map coordinates to screen coordinates */
   squareToScreen: (col: number, row: number) => { x: number; y: number };
   /** Current camera zoom level */
@@ -208,6 +267,8 @@ interface DynamicContentParams {
   hasOffscreen: boolean;
   /** Function to convert map coordinates to screen coordinates */
   squareToScreen: (col: number, row: number) => { x: number; y: number };
+  /** Reachable tiles for movement range indicator */
+  reachableTiles?: Map<string, number>;
 }
 
 /**
@@ -309,7 +370,8 @@ export class MapRenderer {
 
         const terrainInfo = this.resolveTerrain(tile.type);
         this.drawSquare(ctx, x, y, this.tileSize, terrainInfo.color, '#333', true);
-        this.drawTerrainSymbol(ctx, x + this.tileSize / 2, y + this.tileSize / 2, tile, { drawBase: true, drawRivers: true });
+        const tileWithoutImprovement = { ...tile, improvement: null, hasRoad: false };
+        this.drawTerrainSymbol(ctx, x + this.tileSize / 2, y + this.tileSize / 2, tileWithoutImprovement, { drawBase: true, drawRivers: true });
 
         if (!tile.visible) {
           ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -341,13 +403,15 @@ export class MapRenderer {
       currentTime,
       offscreenCanvas,
       squareToScreen,
-      cameraZoom
+      cameraZoom,
+      reachableTiles
     } = params;
 
     const canvasSize = this.ensureCanvasSize(canvas);
     ctx.clearRect(0, 0, canvasSize.width, canvasSize.height);
 
     if (!terrainGrid) {
+      console.warn('[MapRenderer] renderFrame: No terrain grid available');
       return;
     }
 
@@ -357,6 +421,7 @@ export class MapRenderer {
     if (hasOffscreen && offscreenCanvas) {
       this.drawTerrainFromOffscreen(ctx, offscreenCanvas, camera, canvasSize);
     } else {
+      console.warn('[MapRenderer] Falling back to direct terrain rendering - offscreen canvas not available');
       this.drawTerrainTiles(ctx, terrainGrid, bounds, camera, canvasSize, squareToScreen, selectedHex);
     }
 
@@ -374,10 +439,120 @@ export class MapRenderer {
       currentTime,
       cameraZoom,
       hasOffscreen,
-      squareToScreen
+      squareToScreen,
+      reachableTiles
     });
 
     this.drawUnitPaths(ctx, unitPaths, units, gameState, squareToScreen);
+  }
+
+  /**
+   * Renders static content only (no animations) - used for on-demand rendering.
+   * This is the main rendering method for turn-based gameplay when nothing is animating.
+   *
+   * @param params - Complete set of rendering parameters minus currentTime
+   */
+  renderStaticFrame(params: RenderStaticFrameParams): void {
+    const {
+      ctx,
+      canvas,
+      map,
+      terrainGrid,
+      camera,
+      selectedHex,
+      gameState,
+      units,
+      cities,
+      civilizations,
+      unitPaths,
+      offscreenCanvas,
+      squareToScreen,
+      cameraZoom,
+      reachableTiles
+    } = params;
+
+    const canvasSize = this.ensureCanvasSize(canvas);
+    ctx.clearRect(0, 0, canvasSize.width, canvasSize.height);
+
+    if (!terrainGrid) {
+      console.warn('[MapRenderer] renderStaticFrame: No terrain grid available');
+      return;
+    }
+
+    const bounds = this.calculateVisibleBounds(camera, canvasSize, map);
+    const hasOffscreen = Boolean(offscreenCanvas);
+
+    // Draw terrain
+    if (hasOffscreen && offscreenCanvas) {
+      this.drawTerrainFromOffscreen(ctx, offscreenCanvas, camera, canvasSize);
+    } else {
+      this.drawTerrainTiles(ctx, terrainGrid, bounds, camera, canvasSize, squareToScreen, selectedHex);
+    }
+
+    // Draw all static dynamic content (units at alpha 1, no pulsing)
+    this.drawDynamicContent({
+      ctx,
+      map,
+      terrainGrid,
+      bounds,
+      canvasSize,
+      selectedHex,
+      gameState,
+      units,
+      cities,
+      civilizations,
+      currentTime: 0, // No animation
+      cameraZoom,
+      hasOffscreen,
+      squareToScreen,
+      reachableTiles
+    });
+
+    this.drawUnitPaths(ctx, unitPaths, units, gameState, squareToScreen);
+  }
+
+  /**
+   * Renders only the pulsing animation for units with moves remaining.
+   * This is called at high FPS on a separate animation layer.
+   *
+   * @param params - Parameters for pulsing unit rendering
+   */
+  renderPulsingUnits(params: RenderPulsingUnitsParams): void {
+    const {
+      ctx,
+      map,
+      units,
+      gameState,
+      civilizations,
+      currentTime,
+      squareToScreen,
+      cameraZoom
+    } = params;
+
+    // Only draw units that need pulsing animation
+    const activePlayerUnits = units.filter(u => 
+      u.civilizationId === gameState.activePlayer && 
+      (u.movesRemaining || 0) > 0
+    );
+
+    if (activePlayerUnits.length === 0) return;
+
+    // Calculate pulse color shift (from green to yellow)
+    const period = 9000;
+    const t = (currentTime % period) / period;
+    const sine = Math.sin(t * Math.PI * 4);
+    // Normalize sine from [-1, 1] to [0, 1]
+    const pulseValue = (sine + 1) / 2;
+
+    activePlayerUnits.forEach(unit => {
+      const tileIndex = unit.row * map.width + unit.col;
+      const isVisible = map.visibility?.[tileIndex] ?? true;
+      
+      if (isVisible) {
+        const { x, y } = squareToScreen(unit.col, unit.row);
+        this.drawUnitWithPulse(ctx, x, y, unit, pulseValue, cameraZoom, civilizations);
+      }
+    });
   }
 
   /**
@@ -530,11 +705,49 @@ export class MapRenderer {
       currentTime,
       cameraZoom,
       hasOffscreen,
-      squareToScreen
+      squareToScreen,
+      reachableTiles
     } = params;
 
     const margin = this.tileSize * 2;
     const scaledTileSize = this.tileSize * cameraZoom;
+
+    // Draw movement range overlay first (so it's under everything else)
+    if (reachableTiles && reachableTiles.size > 0) {
+      // Determine if the selected unit is naval
+      const selectedUnitId = gameState.selectedUnit;
+      const selectedUnit = selectedUnitId ? units.find(u => u.id === selectedUnitId) : null;
+      const isNaval = selectedUnit && UNIT_PROPERTIES[selectedUnit.type]?.naval;
+      
+      reachableTiles.forEach((cost, key) => {
+        const [col, row] = key.split(',').map(Number);
+        
+        // Check if tile is visible (not in fog of war)
+        const tileIndex = this.getTileIndex(row, col, map.width);
+        const isVisible = map.visibility?.[tileIndex] ?? false;
+        
+        if (!isVisible) return; // Skip tiles in fog of war
+        
+        // Check if within viewport bounds
+        if (row < bounds.startRow || row >= bounds.endRow || col < bounds.startCol || col >= bounds.endCol) {
+          return;
+        }
+        
+        const { x, y } = squareToScreen(col, row);
+        if (this.isOutsideViewport(x, y, canvasSize.width, canvasSize.height, margin)) {
+          return;
+        }
+        
+        // Draw semi-transparent overlay
+        const half = scaledTileSize / 2;
+        if (isNaval) {
+          ctx.fillStyle = 'rgba(255, 0, 0, 0.4)'; // Red for naval units
+        } else {
+          ctx.fillStyle = 'rgba(0, 85, 255, 0.5)'; // Blue for land units
+        }
+        ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
+      });
+    }
 
     for (let row = bounds.startRow; row < bounds.endRow; row++) {
       for (let col = bounds.startCol; col < bounds.endCol; col++) {
@@ -548,26 +761,38 @@ export class MapRenderer {
 
         const tileIndex = this.getTileIndex(row, col, map.width);
 
-        if (hasOffscreen) {
-          const authoritativeTile: any = map.tiles?.[tileIndex];
-          const overlayTile: TerrainTileRenderInfo = {
-            ...tile,
-            improvement: authoritativeTile?.improvement ?? tile.improvement,
-            hasRoad: authoritativeTile?.hasRoad ?? tile.hasRoad ?? false,
-            hasRiver: authoritativeTile?.hasRiver ?? tile.hasRiver ?? false
+        // Draw selection highlight
+        if (selectedHex && selectedHex.col === col && selectedHex.row === row) {
+          const half = scaledTileSize / 2;
+          ctx.strokeStyle = '#FF0000';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
+        }
+
+        // === IMPROVEMENTS RENDERING (same pattern as units/cities) ===
+        // Always read improvements from authoritative map.tiles, never from cached terrain grid
+        const authoritativeTile: any = map.tiles?.[tileIndex];
+        if (authoritativeTile && tile.explored) {
+          const improvementTile: TerrainTileRenderInfo = {
+            type: tile.type,
+            resource: authoritativeTile.resource ?? tile.resource ?? null,
+            improvement: authoritativeTile.improvement ?? null,
+            hasRoad: authoritativeTile.hasRoad ?? false,
+            hasRiver: authoritativeTile.hasRiver ?? tile.hasRiver ?? false,
+            visible: tile.visible,
+            explored: tile.explored
           };
-          // When we have an offscreen terrain layer, improvements (roads/rail)
-          // are already rendered into that layer. Avoid re-drawing improvement
-          // glyphs here to prevent them from overlapping dynamic content
-          // such as units. Keep only selection highlight drawing.
-          if (selectedHex && selectedHex.col === col && selectedHex.row === row) {
-            const half = scaledTileSize / 2;
-            ctx.strokeStyle = '#FF0000';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
+
+          // Draw improvements using the same drawTerrainSymbol function, but only improvements/roads
+          // (no base terrain symbols, as those are already in the offscreen layer)
+          try {
+            this.drawTerrainSymbol(ctx, x, y, improvementTile, { drawBase: false, drawRivers: false });
+          } catch (err) {
+            console.warn('[MapRenderer] drawDynamicContent: failed to draw improvement', err);
           }
         }
 
+        // === UNITS AND CITIES RENDERING (only for visible tiles) ===
         const isVisible = map.visibility?.[tileIndex] ?? tile.visible ?? false;
 
         if (isVisible) {
@@ -581,16 +806,18 @@ export class MapRenderer {
             const isActivePlayersUnit = unit.civilizationId === gameState.activePlayer;
             const hasMoves = (unit.movesRemaining || 0) > 0;
             let alpha = 1;
-            if (isActivePlayersUnit && hasMoves) {
+            // Only apply pulsing animation if currentTime > 0 (animated mode)
+            if (currentTime > 0 && isActivePlayersUnit && hasMoves) {
               const period = 2000;
               const t = (currentTime % period) / period;
-              const sine = Math.sin(t * Math.PI * 2);
-              alpha = 0.675 + 0.325 * (sine + 1) / 2;
+              const sine = Math.sin(t * Math.PI * 4);
+              alpha = 0.675 + 0.325 * (sine + 1) * 10;
             }
             this.drawUnit(ctx, x, y, unit, alpha, cameraZoom, civilizations);
           }
         }
 
+        // Draw selected unit highlight (on top of everything)
         const selectedUnitId = gameState.selectedUnit;
         const unitAtTile = units.find(u => u.col === col && u.row === row);
         if (selectedUnitId && unitAtTile && unitAtTile.id === selectedUnitId) {
@@ -600,11 +827,12 @@ export class MapRenderer {
           ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
         }
 
+        // Debug coordinates (high zoom only)
         if (cameraZoom > 1.5) {
           ctx.fillStyle = '#000';
           ctx.font = '8px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(`${col},${row}`, x, y + this.tileSize);
+          ctx.fillText(`${col},${row}`, x, y + scaledTileSize * 0.3);
         }
       }
     }
@@ -718,10 +946,12 @@ export class MapRenderer {
           const explored = map.revealed?.[tileIndex] ?? true;
           const visible = map.visibility?.[tileIndex] ?? true;
           if (!explored) {
+            // Draw completely black for unexplored areas
             ctx.fillStyle = '#000000';
             ctx.fillRect(col * tileWidth, row * tileHeight, tileWidth + 1, tileHeight + 1);
           } else if (!visible) {
-            ctx.fillStyle = 'rgba(9, 13, 20, 0.25)';
+            // Draw semi-transparent black for explored but not currently visible
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
             ctx.fillRect(col * tileWidth, row * tileHeight, tileWidth + 1, tileHeight + 1);
           }
         }
@@ -1020,7 +1250,7 @@ export class MapRenderer {
     const civ = civilizations.find(c => c.id === city.civilizationId);
     const civColor = civ?.color || (city.civilizationId === 0 ? '#FFD700' : '#FF6347');
     ctx.fillStyle = civColor;
-    const size = 42 * cameraZoom;
+    const size = 28 * cameraZoom;
     ctx.fillRect(centerX - size / 2, centerY - size / 2, size, size);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
@@ -1035,6 +1265,87 @@ export class MapRenderer {
     ctx.font = `${Math.max(8, 10 * cameraZoom)}px monospace`;
     ctx.fillStyle = '#000';
     ctx.fillText(city.name, centerX, centerY + 24 * cameraZoom);
+  }
+
+  /**
+   * Draws a unit with color pulsing effect for units with moves remaining.
+   * @param ctx - Canvas rendering context
+   * @param centerX - Center X coordinate
+   * @param centerY - Center Y coordinate
+   * @param unit - Unit data to render
+   * @param pulseValue - Pulse value between 0 and 1 for color interpolation
+   * @param cameraZoom - Current camera zoom level
+   * @param civilizations - Array of all civilizations for color lookup
+   */
+  private drawUnitWithPulse(
+    ctx: CanvasRenderingContext2D,
+    centerX: number,
+    centerY: number,
+    unit: Unit,
+    pulseValue: number,
+    cameraZoom: number,
+    civilizations: Civilization[]
+  ): void {
+    ctx.save();
+
+    const zoomFactor = typeof cameraZoom === 'number' ? Math.min(Math.max(cameraZoom, 0.5), 1.5) : 1;
+    const radius = Math.round(20 * zoomFactor);
+
+    const civIndex = unit.civilizationId ?? (unit as any).owner;
+    const civ = civilizations.find(c => c.id === civIndex);
+    const civColor = civ?.color || (civIndex === 0 ? '#4169E1' : '#DC143C');
+
+    // Interpolate between base color and a brighter highlight color
+    const highlightColor = '#ff0000'; // Bright yellow for highlight
+    const pulseColor = this.interpolateColor(civColor, highlightColor, pulseValue);
+
+    const innerRadius = Math.max(8, Math.round(radius * 0.95));
+    ctx.beginPath();
+    ctx.fillStyle = pulseColor;
+    ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+    ctx.fill();
+
+    // Add a subtle glow effect
+    ctx.strokeStyle = highlightColor;
+    ctx.lineWidth = Math.max(1, pulseValue * 3);
+    ctx.stroke();
+
+    const iconColor = this.isLightColor(pulseColor) ? '#111' : '#FFF';
+    ctx.fillStyle = iconColor;
+
+    const unitTypeId = unit.type ? String(unit.type) : null;
+    let gameTypeDef: any = null;
+    if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
+      try {
+        gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === String(unitTypeId).toLowerCase()) || null;
+      } catch (e) {
+        gameTypeDef = null;
+      }
+    }
+    const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
+    const icon = unit.icon || gameTypeDef?.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
+    const fontSize = Math.max(10, Math.round(innerRadius * 1.1));
+    ctx.font = `bold ${fontSize}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    try {
+      ctx.fillText(icon, centerX, centerY);
+    } catch (err) {
+      const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
+      ctx.fillText(fallback, centerX, centerY);
+    }
+
+    if ((unit as any).isSleeping) {
+      const sleepIcon = '💤';
+      const sleepFontSize = Math.max(8, Math.round(innerRadius * 0.7));
+      ctx.font = `${sleepFontSize}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = iconColor;
+      ctx.fillText(sleepIcon, centerX, centerY + 22);
+    }
+
+    ctx.restore();
   }
 
   /**
@@ -1109,6 +1420,36 @@ export class MapRenderer {
       ctx.fillText(sleepIcon, centerX, centerY + 22);
     }
 
+    // Draw black X on defeated units (shown for 5 seconds before removal)
+    if ((unit as any).isDefeated) {
+      ctx.save();
+      ctx.globalAlpha = 1.0; // Make X fully visible
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      
+      const xSize = innerRadius * 1.2;
+      // Draw X
+      ctx.beginPath();
+      ctx.moveTo(centerX - xSize, centerY - xSize);
+      ctx.lineTo(centerX + xSize, centerY + xSize);
+      ctx.moveTo(centerX + xSize, centerY - xSize);
+      ctx.lineTo(centerX - xSize, centerY + xSize);
+      ctx.stroke();
+      
+      // Add white outline for visibility
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(centerX - xSize, centerY - xSize);
+      ctx.lineTo(centerX + xSize, centerY + xSize);
+      ctx.moveTo(centerX + xSize, centerY - xSize);
+      ctx.lineTo(centerX - xSize, centerY + xSize);
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+
     ctx.restore();
   }
 
@@ -1153,30 +1494,52 @@ export class MapRenderer {
     });
     ctx.stroke();
 
+    // Check if path ends at an enemy unit - if so, show combat icon instead of arrow
+    const lastPathStep = path[path.length - 1];
+    const targetUnit = units.find(u => u.col === lastPathStep.col && u.row === lastPathStep.row);
+    const isEnemyAtDestination = targetUnit && targetUnit.civilizationId !== unit.civilizationId;
+
     if (path.length >= 2) {
       const last = path[path.length - 1];
-      const secondLast = path[path.length - 2];
-      const { x: x1, y: y1 } = squareToScreen(secondLast.col, secondLast.row);
       const { x: x2, y: y2 } = squareToScreen(last.col, last.row);
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len > 0) {
-        const arrowLen = 10;
-        const arrowAngle = Math.PI / 6;
-        const angle = Math.atan2(dy, dx);
-        const leftAngle = angle - arrowAngle;
-        const rightAngle = angle + arrowAngle;
-        const leftX = x2 - arrowLen * Math.cos(leftAngle);
-        const leftY = y2 - arrowLen * Math.sin(leftAngle);
-        const rightX = x2 - arrowLen * Math.cos(rightAngle);
-        const rightY = y2 - arrowLen * Math.sin(rightAngle);
-        ctx.beginPath();
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(leftX, leftY);
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(rightX, rightY);
-        ctx.stroke();
+      
+      if (isEnemyAtDestination) {
+        // Draw red crossed swords icon (⚔) for combat
+        ctx.save();
+        ctx.fillStyle = '#FF0000';
+        ctx.font = 'bold 24px serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Add white outline for visibility
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 3;
+        ctx.strokeText('⚔', x2, y2 - 15);
+        ctx.fillText('⚔', x2, y2 - 15);
+        ctx.restore();
+      } else {
+        // Draw normal arrow for movement
+        const secondLast = path[path.length - 2];
+        const { x: x1, y: y1 } = squareToScreen(secondLast.col, secondLast.row);
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0) {
+          const arrowLen = 10;
+          const arrowAngle = Math.PI / 6;
+          const angle = Math.atan2(dy, dx);
+          const leftAngle = angle - arrowAngle;
+          const rightAngle = angle + arrowAngle;
+          const leftX = x2 - arrowLen * Math.cos(leftAngle);
+          const leftY = y2 - arrowLen * Math.sin(leftAngle);
+          const rightX = x2 - arrowLen * Math.cos(rightAngle);
+          const rightY = y2 - arrowLen * Math.sin(rightAngle);
+          ctx.beginPath();
+          ctx.moveTo(x2, y2);
+          ctx.lineTo(leftX, leftY);
+          ctx.moveTo(x2, y2);
+          ctx.lineTo(rightX, rightY);
+          ctx.stroke();
+        }
       }
     }
 
@@ -1193,6 +1556,32 @@ export class MapRenderer {
   private resolveTerrain(type: string): { color: string } {
     const upper = type?.toUpperCase();
     return TERRAIN_TYPES[type] || TERRAIN_TYPES[upper] || TERRAIN_TYPES.GRASSLAND;
+  }
+
+  /**
+   * Interpolates between two colors based on a factor.
+   * @param color1 - Start color (hex string)
+   * @param color2 - End color (hex string)
+   * @param factor - Interpolation factor between 0 and 1
+   * @returns Interpolated color as hex string
+   */
+  private interpolateColor(color1: string, color2: string, factor: number): string {
+    const c1 = color1.replace('#', '');
+    const c2 = color2.replace('#', '');
+    
+    const r1 = parseInt(c1.substring(0, 2), 16);
+    const g1 = parseInt(c1.substring(2, 4), 16);
+    const b1 = parseInt(c1.substring(4, 6), 16);
+    
+    const r2 = parseInt(c2.substring(0, 2), 16);
+    const g2 = parseInt(c2.substring(2, 4), 16);
+    const b2 = parseInt(c2.substring(4, 6), 16);
+    
+    const r = Math.round(r1 + (r2 - r1) * factor);
+    const g = Math.round(g1 + (g2 - g1) * factor);
+    const b = Math.round(b1 + (b2 - b1) * factor);
+    
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
   }
 
   /**

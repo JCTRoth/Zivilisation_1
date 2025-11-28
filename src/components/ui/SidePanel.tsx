@@ -53,9 +53,12 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
     const isVisible = map.visibility?.[tileIndex] ?? false;
     const isExplored = map.revealed?.[tileIndex] ?? false;
     
+    // Get movement cost from TERRAIN_PROPERTIES instead of TERRAIN_TYPES
+    const moveCost = (TERRAIN_PROPERTIES as any)[tile.type]?.movement ?? 1;
+    
     return {
       ...tile,
-      movementCost: terrainProps.movement ?? 999,
+      movementCost: moveCost,
       terrainName: tile.type || 'Unknown',
       visible: isVisible,
       explored: isExplored,
@@ -121,25 +124,31 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
 
   return (
     <>
+
+        {/* Minimap */}
+        {uiState.showMinimap && (
+          <div className="minimap-section">
+            <div className="minimap-container">
+              <MiniMap gameEngine={gameEngine} />
+            </div>
+          </div>
+        )}
       {/* Mobile backdrop */}
       <div
         className={`mobile-menu-backdrop ${!uiState.sidebarCollapsed ? 'show' : ''} d-md-none`}
         onClick={() => actions.toggleUI('sidebarCollapsed')}
       />
 
-        {uiState.showMinimap && (
-          <div className="minimap-container">
-            <MiniMap gameEngine={gameEngine} />
-          </div>
-        )}
-
       <aside className={`game-side-panel side-panel ${!uiState.sidebarCollapsed ? 'show' : ''}`}>
+        {/* Header */}
+
+        
         <div className="side-panel-header">
           <div className="header-flex">
             <div
               className={`avatar-div ${isTwoIcon ? 'avatar-two-icons' : ''}`}
               style={{ background: displayPlayer.color || '#4b8b3b', cursor: 'pointer' }}
-              onClick={handleAvatarClick} // Add click handler here
+              onClick={handleAvatarClick}
               title="Click to center on capital city"
             >
               <span className="icon-span">{civIcon}</span>
@@ -155,8 +164,8 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
           </div>
         </div>
 
-        {/* Middle: selected unit/building summary */}
-        <div className="side-panel-section middle-section">
+        {/* Selection */}
+        <div className="selection-section">
           <div className="selected-title"> 
             {selectedUnit ? 'Selected Unit' : effectiveSelectedCity ? 'Selected City' : unitAtSelectedTile ? '' : selectedTile ? 'Selected Tile' : 'No Selection'}
           </div>
@@ -215,8 +224,8 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
           )}
         </div>
 
-        {/* Bottom: Large detail box (big, mostly empty in screenshot) */}
-        <div className="side-panel-section bottom-section">
+        {/* Details */}
+        <div className="details-section">
           <div className="details-title">Details</div>
 
           <div className="details-content">

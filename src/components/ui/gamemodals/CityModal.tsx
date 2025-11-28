@@ -134,21 +134,54 @@ const CityModal: React.FC<CityModalProps> = ({
                     <div className="mt-3">
                       <h6>Current Production</h6>
                       {selectedCity.currentProduction ? (
-                        <div className="bg-secondary text-white p-2 rounded">
-                          <strong>{logic.getCurrentProductionName()}</strong>
-                          <div className="small text-muted">
-                            Progress: {logic.getProductionProgressValue()} / {logic.getCurrentProductionCost()} ({logic.getProgressPercent()}%)
+                        <div className="bg-secondary text-white p-2 rounded d-flex justify-content-between align-items-start">
+                          <div className="flex-grow-1">
+                            <strong>{logic.getCurrentProductionName()}</strong>
+                            <div className="small text-muted">
+                              Progress: {logic.getProductionProgressValue()} / {logic.getCurrentProductionCost()} ({logic.getProgressPercent()}%)
+                            </div>
+                            <div className="small text-muted">
+                              Production per turn: {logic.getProductionPerTurn()}
+                            </div>
+                            <div className="small text-muted">
+                              Turns remaining: {logic.getFormattedTurns()}
+                            </div>
                           </div>
-                          <div className="small text-muted">
-                            Production per turn: {logic.getProductionPerTurn()}
-                          </div>
-                          <div className="small text-muted">
-                            Turns remaining: {logic.getFormattedTurns()}
-                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger ms-2"
+                            title="Remove current production"
+                            onClick={() => {
+                              if (gameEngine && typeof gameEngine.removeCurrentProduction === 'function') {
+                                gameEngine.removeCurrentProduction(selectedCity.id);
+                              }
+                            }}
+                          >
+                            <i className="bi bi-x-lg"></i>
+                          </button>
                         </div>
                       ) : (
                         <div className="text-muted">No active production</div>
                       )}
+                    </div>
+                    <div className="mt-3">
+                      <div className="form-check">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id={`auto-production-${selectedCity.id}`}
+                          checked={(selectedCity as any).autoProduction || false}
+                          onChange={(e) => {
+                            if (gameEngine && typeof gameEngine.toggleAutoProduction === 'function') {
+                              gameEngine.toggleAutoProduction(selectedCity.id, e.target.checked);
+                            }
+                          }}
+                        />
+                        <label className="form-check-label" htmlFor={`auto-production-${selectedCity.id}`}>
+                          <strong>Auto Production</strong>
+                          <div className="small text-muted">Automatically set production items based on city needs</div>
+                        </label>
+                      </div>
                     </div>
                     <div className="mt-3">
                       <h6>Production</h6>

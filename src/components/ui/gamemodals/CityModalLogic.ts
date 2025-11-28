@@ -91,6 +91,7 @@ export class CityModalLogic {
   removeQueueItem(index: number): void {
     if (this.gameEngine && this.gameEngine.removeCityQueueItem) {
       this.gameEngine.removeCityQueueItem(this.city.id, index);
+      // ProductionManager now handles updating currentProduction automatically
     }
   }
 

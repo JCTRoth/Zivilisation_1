@@ -88,7 +88,7 @@ function SettingsModal({ show, onHide }) {
             </Form.Label>
             <Form.Range
               min="80"
-              max="250"
+              max="450"
               step="10"
               value={settings.minimapHeight}
               onChange={(e) => handleChange('minimapHeight', e.target.value)}
