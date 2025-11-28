@@ -40,7 +40,7 @@ export class SettlementEvaluator {
       gold: props.trade || 0
     };
 
-    console.log(`[SettlementEvaluator] getTileYields: Terrain '${terrainType}' => food:${yields.food}, shields:${yields.shields}, gold:${yields.gold}`);
+    // console.log(`[SettlementEvaluator] getTileYields: Terrain '${terrainType}' => food:${yields.food}, shields:${yields.shields}, gold:${yields.gold}`);
     return yields;
   }
 
@@ -162,7 +162,7 @@ export class SettlementEvaluator {
     weights: SettlementWeights,
     currentCivilizationId?: number
   ): number {
-    console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Evaluating with penalties at (${centerCol}, ${centerRow}), civId: ${currentCivilizationId}`);
+    // console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Evaluating with penalties at (${centerCol}, ${centerRow}), civId: ${currentCivilizationId}`);
 
     let totalFood = 0;
     let totalShields = 0;
@@ -177,7 +177,7 @@ export class SettlementEvaluator {
         const tile = getTileAt(col, row);
 
         if (!tile) {
-          console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: No tile at (${col}, ${row})`);
+          console.warn(`[SettlementEvaluator] evaluateAreaWithCityPenalties: No tile at (${col}, ${row})`);
           continue;
         }
 

@@ -1,9 +1,11 @@
 import { Constants } from './utils/Constants.js';
-import { DomUtils, GameUtils, EventEmitter } from './utils/Helpers.js';
 import type { GameMap } from './game/Map.js';
 import type { Unit } from './game/Unit.js';
 import type { City } from './game/City.js';
 import type { Civilization } from './game/Civilization.js';
+import EventEmitter from "node:events";
+import {DomUtils} from "@/utils/DomUtils";
+import {GameUtils} from "@/utils/GameUtils";
 
 interface UIElement {
     civilizationName: HTMLElement;

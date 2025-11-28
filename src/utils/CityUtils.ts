@@ -32,10 +32,8 @@ export const CityUtils = {
 
         // Distance increases corruption
         const distanceMultiplier = Math.min(distance / 10, 2); // Max 2x at distance 10+
-        const corruptionRate = baseCorruptionRate * distanceMultiplier;
-
         // Apply building reductions (Courthouse reduces corruption)
-        let finalCorruptionRate = corruptionRate;
+        let finalCorruptionRate = baseCorruptionRate * distanceMultiplier;
         if (city.buildings?.includes('courthouse')) {
             finalCorruptionRate *= 0.5; // Courthouse reduces corruption by 50%
         }

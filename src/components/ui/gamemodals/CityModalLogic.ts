@@ -2,7 +2,7 @@
 
 import { ModalUtils } from './ModalUtils';
 import { UNIT_PROPS } from '@/utils/Constants';
-import { CityUtils } from '@/utils/Helpers';
+import {CityUtils} from "@/utils/CityUtils";
 
 export class CityModalLogic {
   private readonly city: any;

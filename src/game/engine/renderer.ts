@@ -1,9 +1,9 @@
 import { Constants } from '@/utils/Constants';
-import { MathUtils } from '@/utils/Helpers';
 import type { SquareGrid } from '../HexGrid.js';
 import type { GameMap } from '../Map.js';
 import type { Unit } from '../Unit.js';
 import type { City } from '../City.js';
+import {MathUtils} from "@/utils/MathUtils";
 
 interface Camera {
     x: number;

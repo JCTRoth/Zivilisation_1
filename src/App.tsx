@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { GameUtils } from '@/utils/Helpers';
 import { useGameStore } from './stores/GameStore';
 import GameEngine from '@/game/engine/GameEngine';
 import GameCanvas from './components/game/GameCanvas';
@@ -10,7 +9,9 @@ import EndTurnConfirmModal from './components/ui/EndTurnConfirmModal';
 import GameModals from './components/ui/GameModals';
 import { useGameEngine } from './hooks/UseGameEngine';
 import SidePanel from './components/ui/SidePanel';
-import miniMap from "@/components/ui/MiniMap";
+import {GameUtils} from "@/utils/GameUtils";
+import { DomUtils } from '@/utils/DomUtils';
+import { enrichMapForExport } from '@/utils/MapExportUtils';
 
 function App() {
   const gameState = useGameStore(state => state.gameState);
@@ -103,7 +104,7 @@ function App() {
   }, []);
 
   // Handle menu actions
-  const handleMenuClick = (menu, event) => {
+  const handleMenuClick = (menu: string, event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
     console.log(`[CLICK] Menu click: ${menu}`);
     if (activeMenu === menu) {
       setActiveMenu(null);
@@ -114,6 +115,33 @@ function App() {
         left: rect.left
       });
       setActiveMenu(menu);
+    }
+  };
+
+  const handleDownloadMap = () => {
+    try {
+      const map = useGameStore.getState().map;
+      const gameStats = useGameStore.getState().gameStats;
+      if (!map) {
+        console.warn('No map data available to download');
+        return;
+      }
+
+      const enriched = enrichMapForExport(map);
+      const exportObj = {
+        meta: {
+          width: map.width,
+          height: map.height,
+          turn: gameStats?.turn ?? gameState.currentTurn
+        },
+        map: enriched
+      };
+
+      const text = JSON.stringify(exportObj, null, 2);
+      const filename = `civ1-map-turn-${gameStats?.turn ?? gameState.currentTurn}.json`;
+      DomUtils.downloadTextFile(text, filename);
+    } catch (e) {
+      console.error('handleDownloadMap error', e);
     }
   };
 
@@ -748,6 +776,30 @@ function App() {
                 }}
               >
                 🌳 Tech Tree
+              </button>
+              <button 
+                className="btn btn-dark text-start w-100 border-0"
+                style={{
+                  fontSize: `${settings.menuFontSize * 1.1}px`,
+                  padding: '12px 16px',
+                  fontWeight: '600',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  (e.target as HTMLElement).style.background = 'linear-gradient(90deg, #63b3ed 0%, #4299e1 100%)';
+                  (e.target as HTMLElement).style.paddingLeft = '24px';
+                }}
+                onMouseLeave={(e) => {
+                  (e.target as HTMLElement).style.background = 'transparent';
+                  (e.target as HTMLElement).style.paddingLeft = '16px';
+                }}
+                onClick={() => {
+                  console.log('App: Download Map clicked');
+                  handleDownloadMap();
+                  setActiveMenu(null);
+                }}
+              >
+                🗺️ Download Map
               </button>
             </div>
           )}

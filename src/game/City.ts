@@ -1,9 +1,11 @@
 // City System - Legacy Implementation (Converted to TypeScript)
 
 import { Constants } from '../utils/Constants';
-import { GameUtils, MathUtils, EventEmitter } from '../utils/Helpers';
 import type { Civilization } from './Civilization';
 import { CIVILIZATIONS } from '../data/GameData';
+import EventEmitter from "node:events";
+import {GameUtils} from "@/utils/GameUtils";
+import {MathUtils} from "@/utils/MathUtils";
 
 // Type definitions
 

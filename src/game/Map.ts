@@ -1,7 +1,6 @@
 // Game Map - Central game state manager (Converted to TypeScript)
 
-import { Constants } from '../utils/Constants';
-import { GameUtils, EventEmitter, MathUtils } from '../utils/Helpers';
+import { Constants } from '@/utils/Constants';
 import { SquareGrid } from './HexGrid';
 import { TerrainGenerator } from './Terrain';
 import { UnitManager } from './Unit';
@@ -9,6 +8,9 @@ import { CityManager } from './City';
 import { Civilization, CIVILIZATION_TEMPLATES } from './Civilization';
 import { City, CITY_NAMES } from './City';
 import { Unit } from './Unit';
+import EventEmitter from "node:events";
+import {GameUtils} from "@/utils/GameUtils";
+import {MathUtils} from "@/utils/MathUtils";
 
 // Type definitions
 interface GameOptions {

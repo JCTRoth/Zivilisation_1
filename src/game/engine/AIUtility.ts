@@ -1,4 +1,4 @@
-import { TERRAIN_PROPS } from '../../utils/Constants';
+import { TERRAIN_PROPS } from '@/utils/Constants';
 import type { SquareCoordinate } from '../HexGrid';
 
 /**

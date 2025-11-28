@@ -1,5 +1,5 @@
 // Legacy Constants object for backward compatibility
-import { GAME_CONSTANTS } from '../data/GameConstants';
+import { GAME_CONSTANTS } from '@/data/GameConstants';
 import { TERRAIN_TYPES as T_TYPES, TERRAIN_PROPERTIES as T_PROPS, SPECIAL_RESOURCES as S_RESOURCES } from '../data/TerrainConstants';
 import { UNIT_TYPES as U_TYPES, UNIT_PROPERTIES as U_PROPS } from '../data/UnitConstants';
 import { BUILDING_TYPES as B_TYPES, BUILDING_PROPERTIES as B_PROPS } from '../data/BuildingConstants';

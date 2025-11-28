@@ -1,8 +1,9 @@
 // Input Manager - handles mouse and keyboard input (Converted to TypeScript)
 
-import { MathUtils, EventEmitter } from '../../utils/Helpers';
-
 // Type definitions
+import EventEmitter from "node:events";
+import {MathUtils} from "@/utils/MathUtils";
+
 interface MousePosition {
     x: number;
     y: number;

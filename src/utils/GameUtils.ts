@@ -33,7 +33,7 @@ export const GameUtils = {
     },
 
     /**
-     * Format numbers with thousand separators
+     * Format numbers with a thousand separators
      * @param num - Number to format
      * @returns Formatted number string
      */

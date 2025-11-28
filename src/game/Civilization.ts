@@ -1,8 +1,9 @@
 // Civilization System - Legacy Implementation (Converted to TypeScript)
 
-import { Constants } from '../utils/Constants';
-import { MathUtils, EventEmitter } from '../utils/Helpers';
+import { Constants } from '@/utils/Constants';
 import { CITY_NAMES } from './City';
+import EventEmitter from "node:events";
+import {MathUtils} from "@/utils/MathUtils";
 
 // Type definitions
 interface Personality {

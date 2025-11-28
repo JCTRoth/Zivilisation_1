@@ -1,10 +1,11 @@
 // Unit System - Legacy Implementation (Converted to TypeScript)
 
-import { Constants } from '../utils/Constants';
-import { GameUtils, EventEmitter } from '../utils/Helpers';
-import { TERRAIN_PROPERTIES } from '../data/TerrainConstants';
-import { IMPROVEMENT_PROPERTIES } from '../data/TileImprovementConstants';
+import { Constants } from '@/utils/Constants';
+import { TERRAIN_PROPERTIES } from '@/data/TerrainConstants';
+import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
 import type { Civilization } from './Civilization';
+import EventEmitter from "node:events";
+import {GameUtils} from "@/utils/GameUtils";
 
 // Type definitions
 interface Position {
