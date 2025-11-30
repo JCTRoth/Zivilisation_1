@@ -77,15 +77,12 @@ const MiniMap: React.FC<MiniMapProps> = ({ gameEngine = null }) => {
 
     const civilizationsSource = effectiveCivilizations && effectiveCivilizations.length > 0 ? effectiveCivilizations : civilizations;
 
-    // Filter units and cities based on devMode setting
-    let visibleUnits = units;
-    let visibleCities = cities;
-    
+    // Show all units and cities, rely on fog-of-war visibility in renderer.
+    // This ensures enemy movement appears on the minimap when inside player vision.
+    const visibleUnits = units;
+    const visibleCities = cities;
     if (!settings.devMode) {
-      // In normal mode, only show human player's units and cities
-      visibleUnits = units.filter(u => u.civilizationId === activePlayer);
-      visibleCities = cities.filter(c => c.civilizationId === activePlayer);
-      console.log('[MiniMap] Normal mode: Showing only player', activePlayer, 'units/cities');
+      console.log('[MiniMap] Normal mode: Showing all units/cities but respecting fog');
     } else {
       console.log('[MiniMap] Developer mode: Showing all units/cities');
     }
@@ -98,7 +95,8 @@ const MiniMap: React.FC<MiniMapProps> = ({ gameEngine = null }) => {
       camera,
       units: visibleUnits,
       cities: visibleCities,
-      civilizations: civilizationsSource || []
+      civilizations: civilizationsSource || [],
+      ignoreFog: !!settings.devMode
     });
   }, [camera, mapData, cities, units, civilizations, effectiveCivilizations, settings.devMode, activePlayer, sizeKey]);
 

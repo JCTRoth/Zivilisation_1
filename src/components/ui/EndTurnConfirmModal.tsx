@@ -28,7 +28,7 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
 
   const handleConfirm = () => {
     console.log('EndTurnConfirmModal: Confirmed end turn');
-    // Update the setting if the checkbox was checked - now done on change
+    // Setting is already updated via onChange - just confirm
     onConfirm();
   };
 

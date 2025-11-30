@@ -87,21 +87,43 @@ function App() {
     }
   };
 
+  // Handle end turn confirmation
+  const handleEndTurnConfirm = useCallback(() => {
+    console.log('[App] End turn confirmed');
+    setShowEndTurnConfirm(false);
+    setIsEndTurnAutomatic(false);
+    
+    // Always process the turn when confirmed
+    if (gameEngine) {
+      console.log('[App] Processing turn via gameEngine.processTurn()');
+      gameEngine.processTurn();
+    } else {
+      console.warn('[App] Cannot process turn - gameEngine is null');
+    }
+  }, [gameEngine]);
+
   // Initialize game engine
   useEffect(() => {
     // Game initialization now happens in handleGameStart after setup modal
     // No auto-initialization
 
-    // Listen for end turn confirmation requests
+    // Listen for end turn confirmation requests (automatic from engine)
     const handleShowEndTurnConfirmation = () => {
       console.log('[App] Received showEndTurnConfirmation event - automatic trigger');
       setIsEndTurnAutomatic(true);
+      
       // Get fresh setting value from store to avoid stale closure
       const currentSettings = useGameStore.getState().settings;
+      
+      // If skipEndTurnConfirmation is enabled, bypass modal and end turn immediately
       if (currentSettings.skipEndTurnConfirmation) {
-        console.log('[App] Skipping end turn confirmation due to user preference');
-        handleEndTurnConfirm();
+        console.log('[App] Skipping end turn confirmation modal due to user preference');
+        // Directly process turn without showing modal
+        if (gameEngine) {
+          gameEngine.processTurn();
+        }
       } else {
+        // Show confirmation modal
         setShowEndTurnConfirm(true);
       }
     };
@@ -115,7 +137,7 @@ function App() {
         window.removeEventListener('showEndTurnConfirmation', handleShowEndTurnConfirmation);
       }
     };
-  }, []);
+  }, [handleEndTurnConfirm]);
 
   // Handle menu actions
   const handleMenuClick = (menu: string, event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
@@ -184,30 +206,26 @@ function App() {
     }
   };
 
-  // Handle end turn confirmation
-  const handleEndTurnConfirm = () => {
-    console.log('[App] End turn confirmed');
-    setShowEndTurnConfirm(false);
-    setIsEndTurnAutomatic(false);
-    // actions.nextTurn(); // Removed - processTurn() handles turn advancement
-    if (gameEngine) {
-      gameEngine.processTurn();
-    }
-  };
-
-  // Handle end turn request - show modal
+  // Handle end turn request - show modal (manual button click)
   const handleEndTurnRequest = useCallback(() => {
     console.log('[App] End turn requested manually - showing confirmation modal');
     setIsEndTurnAutomatic(false);
+    
     // Get fresh setting value from store to avoid stale closure
     const currentSettings = useGameStore.getState().settings;
+    
+    // If skipEndTurnConfirmation is enabled, bypass modal and end turn immediately
     if (currentSettings.skipEndTurnConfirmation) {
-      console.log('[App] Skipping end turn confirmation due to user preference');
-      handleEndTurnConfirm();
+      console.log('[App] Skipping end turn confirmation modal due to user preference');
+      // Directly process turn without showing modal
+      if (gameEngine) {
+        gameEngine.processTurn();
+      }
     } else {
+      // Show confirmation modal
       setShowEndTurnConfirm(true);
     }
-  }, []); // Remove settings from dependencies since we get fresh value inside
+  }, [gameEngine]);
 
   // Handle end turn cancellation
   const handleEndTurnCancel = () => {

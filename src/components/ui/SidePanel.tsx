@@ -161,6 +161,16 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
               <div className="gold-div">
                 <strong className="gold-strong">{(playerResources.gold ?? 0)} 🪙</strong>
               </div>
+              <label className="settings-checkbox-label" style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+                <input
+                  type="checkbox"
+                  checked={settings.autoEndTurn}
+                  onChange={(e) => {
+                    actions.updateSettings({ autoEndTurn: e.target.checked });
+                  }}
+                />
+                <span className="checkbox-text">Auto. turn ending</span>
+              </label>
             </div>
           </div>
         </div>
@@ -331,27 +341,6 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
                   <div>Production: {playerResources?.production ?? 0}</div>
                   <div>Trade: {playerResources?.trade ?? 0}</div>
                   <div>Science: {playerResources?.science ?? 0}</div>
-                </div>
-                
-                <hr className="details-separator" />
-                
-                <div className="settings-section">
-                  <div className="settings-title">Settings</div>
-                  <div className="settings-content">
-                    <label className="settings-checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={settings.autoEndTurn}
-                        onChange={(e) => {
-                          actions.updateSettings({ autoEndTurn: e.target.checked });
-                        }}
-                      />
-                      <span className="checkbox-text">Auto. turn ending</span>
-                    </label>
-                    <div className="settings-hint">
-                      Automatically ends the turns of the human player when all units are done
-                    </div>
-                  </div>
                 </div>
               </>
             ) : null}

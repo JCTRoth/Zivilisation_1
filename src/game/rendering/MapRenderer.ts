@@ -187,6 +187,8 @@ export interface RenderMinimapParams {
   cities: City[];
   /** Array of all civilizations */
   civilizations: Civilization[];
+  /** When true, ignore fog-of-war (show all tiles/units) */
+  ignoreFog?: boolean;
 }
 
 /**
@@ -559,14 +561,14 @@ export class MapRenderer {
    * @param params - Parameters for minimap rendering
    */
   renderMinimap(params: RenderMinimapParams): void {
-    const { ctx, map, cssWidth, cssHeight, camera, units, cities, civilizations } = params;
+    const { ctx, map, cssWidth, cssHeight, camera, units, cities, civilizations, ignoreFog } = params;
     this.resetMinimapCanvas(ctx, cssWidth, cssHeight);
 
-    const fogState = this.getMinimapFogState(map);
+    const fogState = ignoreFog ? { visibility: null, revealed: null } as any : this.getMinimapFogState(map);
 
     this.drawMinimapTerrain(ctx, map, cssWidth, cssHeight, fogState);
     this.drawMinimapCities(ctx, map, cities, cssWidth, cssHeight);
-    this.drawMinimapUnits(ctx, map, units, civilizations, cssWidth, cssHeight);
+    this.drawMinimapUnits(ctx, map, units, civilizations, cssWidth, cssHeight, !!ignoreFog);
     this.drawMinimapViewport(ctx, map, camera, cssWidth, cssHeight);
   }
 
@@ -791,18 +793,37 @@ export class MapRenderer {
           }
         }
 
-        // === UNITS AND CITIES RENDERING (only for visible tiles) ===
+        // === UNITS AND CITIES RENDERING ===
         const isVisible = map.visibility?.[tileIndex] ?? tile?.visible ?? false;
 
+        // Draw cities only on visible tiles
         if (isVisible) {
           const city = cities.find(c => c.col === col && c.row === row);
           if (city) {
             this.drawCity(ctx, x, y, city, cameraZoom, civilizations);
           }
+        }
 
-          const unit = units.find(u => u.col === col && u.row === row);
-          if (unit) {
-            const isActivePlayersUnit = unit.civilizationId === gameState.activePlayer;
+        // Draw units: player's own units always visible, enemy units only on visible tiles
+        const unit = units.find(u => u.col === col && u.row === row);
+        if (unit && isExplored) {
+          const isActivePlayersUnit = unit.civilizationId === gameState.activePlayer;
+          const shouldDrawUnit = isActivePlayersUnit || isVisible;
+          
+          // Debug: Log enemy units on non-visible tiles
+          if (!isActivePlayersUnit && !isVisible && shouldDrawUnit) {
+            console.warn('[MapRenderer] Drawing enemy unit on non-visible tile!', {
+              unitType: unit.type,
+              position: `${col},${row}`,
+              civilizationId: unit.civilizationId,
+              activePlayer: gameState.activePlayer,
+              isVisible,
+              isExplored,
+              shouldDrawUnit
+            });
+          }
+          
+          if (shouldDrawUnit) {
             const hasMoves = (unit.movesRemaining || 0) > 0;
             let alpha = 1;
             // Only apply pulsing animation if currentTime > 0 (animated mode)
@@ -1011,7 +1032,8 @@ export class MapRenderer {
     units: Unit[],
     civilizations: Civilization[],
     width: number,
-    height: number
+    height: number,
+    ignoreFog: boolean = false
   ): void {
     if (!Array.isArray(units) || units.length === 0) {
       return;
@@ -1022,11 +1044,10 @@ export class MapRenderer {
 
     for (const unit of units) {
       const tileIndex = this.getTileIndex(unit.row, unit.col, map.width);
-      const isVisible = map.visibility ? map.visibility[tileIndex] : false;
-      const unitTypeKey = unit.type ? String(unit.type).toUpperCase() : '';
-      const unitType = UNIT_TYPES[unitTypeKey];
-      const hasSight = unitType?.sightRange > 0;
-      if (!isVisible && !hasSight) continue;
+      const isVisible = ignoreFog ? true : (map.visibility ? map.visibility[tileIndex] : false);
+      
+      // Only draw units on visible tiles (fog of war)
+      if (!isVisible) continue;
 
       const x = unit.col * tileWidth;
       const y = unit.row * tileHeight;
