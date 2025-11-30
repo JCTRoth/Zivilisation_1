@@ -42,6 +42,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   const [selectedHex, setSelectedHex] = useState<HexCoordinates>({ col: 5, row: 5 });
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [terrain, setTerrain] = useState<TerrainRenderGrid | null>(null);
+  const storeGotoMode = useGameStore(state => state.uiState.goToMode);
+  const storeGotoUnitId = useGameStore(state => state.uiState.goToUnit);
   const [gotoMode, setGotoMode] = useState<boolean>(false);
   const [gotoUnit, setGotoUnit] = useState<Unit | null>(null);
   const [unitPaths, setUnitPaths] = useState<Map<string, UnitPathStep[]>>(new Map());
@@ -59,6 +61,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     needsRender.current = true;
     staticRenderedRef.current = false;
   }, []);
+
+  // Sync local GoTo state with store to ensure UI cursor updates correctly
+  useEffect(() => {
+    setGotoMode(!!storeGotoMode);
+    if (storeGotoUnitId) {
+      const unit = units.find(u => u.id === storeGotoUnitId) || null;
+      setGotoUnit(unit);
+    } else {
+      setGotoUnit(null);
+    }
+  }, [storeGotoMode, storeGotoUnitId, units]);
 
   // Check if game state has changed significantly
   const hasGameStateChanged = useCallback(() => {

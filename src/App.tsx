@@ -41,6 +41,12 @@ function App() {
       console.log('Starting new game with settings:', gameSettings);
       setShowGameSetup(false);
 
+      // Update devMode setting if provided
+      if (typeof gameSettings.devMode === 'boolean') {
+        actions.updateSettings({ devMode: gameSettings.devMode });
+        console.log('[App] Developer mode:', gameSettings.devMode);
+      }
+
       const engine = new GameEngine(actions);
       await engine.initialize(gameSettings);
 

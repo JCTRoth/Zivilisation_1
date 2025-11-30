@@ -153,6 +153,7 @@ export interface Settings {
   civListFontSize: number;
   skipEndTurnConfirmation: boolean;
   autoEndTurn: boolean; // Automatically end turn when all units are done
+  devMode: boolean; // Developer mode: see all players on minimap and switch between them
 }
 
 export interface Technology {

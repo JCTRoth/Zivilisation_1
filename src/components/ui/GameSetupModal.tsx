@@ -11,6 +11,7 @@ function GameSetupModal({ show, onStart }) {
   const [difficulty, setDifficulty] = useState('PRINCE');
   const [numCivilizations, setNumCivilizations] = useState(2);
   const [mapType, setMapType] = useState('EARTH');
+  const [devMode, setDevMode] = useState(false);
 
   const totalSteps = 2;
   const isFinalStep = currentStep === totalSteps;
@@ -73,7 +74,8 @@ function GameSetupModal({ show, onStart }) {
       playerCivilization: selectedCiv,
       difficulty: difficulty,
       numberOfCivilizations: numCivilizations,
-      mapType: mapType
+      mapType: mapType,
+      devMode: devMode
     };
     onStart(settings);
   };
@@ -226,6 +228,16 @@ function GameSetupModal({ show, onStart }) {
                   <div className="setup-summary-item">
                     <span className="label">Map Type</span>
                     <span className="value">{mapType}</span>
+                  </div>
+                  <div className="setup-summary-item">
+                    <Form.Check
+                      type="checkbox"
+                      id="devModeCheckbox"
+                      label="Dev Mode"
+                      checked={devMode}
+                      onChange={(e) => setDevMode(e.target.checked)}
+                      style={{ margin: 0 }}
+                    />
                   </div>
                 </div>
                 <div className="setup-summary-details">

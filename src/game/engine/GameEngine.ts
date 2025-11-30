@@ -6,7 +6,7 @@ import { ProductionManager } from './ProductionManager';
 import { AutoProduction } from './AutoProduction';
 import { AIUtility } from './AIUtility';
 import { UnitActionManager } from './UnitActionManager';
-import { RoundManager } from './RoundManager';
+import { TurnManager } from './TurnManager';
 import { SettlementEvaluator } from './SettlementEvaluator';
 import { GoToManager } from './GoToManager';
 import type { GameActions, Unit, City, Civilization } from '../../../types/game';
@@ -42,6 +42,10 @@ interface MapData {
  * Manages all game systems and state
  */
 export default class GameEngine {
+  // Static references for TurnManager to access
+  static UNIT_PROPS = UNIT_PROPS;
+  static TECHNOLOGIES = TECHNOLOGIES;
+  
   storeActions: GameActions | null;
   squareGrid: SquareGrid | null;
   map: MapData | null;
@@ -58,7 +62,7 @@ export default class GameEngine {
   onStateChange: ((eventType: string, eventData?: any) => void) | null;
   productionManager: ProductionManager;
   autoProduction: AutoProduction;
-  roundManager: RoundManager;
+  roundManager: TurnManager; // kept property name for compatibility
   goToManager: GoToManager;
 
   constructor(storeActions: GameActions | null = null) {
@@ -93,7 +97,7 @@ export default class GameEngine {
     this.onStateChange = null;
     this.productionManager = new ProductionManager(this);
     this.autoProduction = new AutoProduction(this);
-    this.roundManager = new RoundManager(this);
+    this.roundManager = new TurnManager(this);
     this.goToManager = new GoToManager(this, this.roundManager);
   }
 
@@ -162,7 +166,7 @@ export default class GameEngine {
     unit.areTurnsDone = noMovesLeft || isFortified || isSleeping;
     
     if (unit.areTurnsDone) {
-      console.log(`[GameEngine] Unit ${unit.id} turns done: moves=${unit.movesRemaining}, fortified=${isFortified}, sleeping=${isSleeping}`);
+      console.log(`[GameEngine] Unit ${unit.id} turns done: movesRemaining=${unit.movesRemaining}, isFortified=${isFortified}, isSleeping=${isSleeping}`);
     }
   }
 
@@ -345,8 +349,8 @@ export default class GameEngine {
       console.warn(`[AI] processAITurn: Civilization ${civilizationId} attempted to act outside its turn (active player: ${this.activePlayer})`);
       return;
     }
-    // Fire and forget AI routine
-    this.runAITurn(civilizationId).catch(err => console.error('AI turn error', err));
+    // Return promise so RoundManager can coordinate timeouts/end-of-turn
+    return this.runAITurn(civilizationId).catch(err => console.error('AI turn error', err));
   }
 
   // Run an asynchronous AI turn for civilizationId
@@ -363,8 +367,7 @@ export default class GameEngine {
     }
     console.log(`[AI] 🤖 Starting AI turn for civilization ${civilizationId} (${civ.name})`);
     
-    const turnStartTime = Date.now();
-    const MAX_AI_TURN_TIME = 30000; // 30 seconds max for entire AI turn
+    // Timing now coordinated by RoundManager; this method focuses only on AI logic
     
     // Small delay before AI starts so player can observe
     await this.sleep(250);
@@ -373,11 +376,6 @@ export default class GameEngine {
     console.log(`[AI] Found ${aiUnits.length} units with moves remaining for civilization ${civilizationId}`);
 
     for (const unit of aiUnits) {
-      // Check if we've exceeded the maximum AI turn time
-      if (Date.now() - turnStartTime > MAX_AI_TURN_TIME) {
-        console.error(`[AI] ❌ AI turn for civilization ${civilizationId} exceeded maximum time (${MAX_AI_TURN_TIME}ms), aborting`);
-        break;
-      }
       
       console.log(`[AI] Processing unit ${unit.id} (${unit.type}) at (${unit.col},${unit.row}) with ${unit.movesRemaining} moves remaining`);
       
@@ -592,23 +590,7 @@ export default class GameEngine {
     console.log(`[AI] AI turn completed for civilization ${civilizationId}`);
     this.onStateChange && this.onStateChange('AI_FINISHED', { civilizationId });
 
-    // Check if turn should end automatically after AI moves
-    console.log(`[AI] Checking if AI has moves remaining...`);
-    this.checkAndEndTurnIfNoMoves();
-    
-    // Fallback: If checkAndEndTurnIfNoMoves didn't trigger (AI still has units with moves but chose to skip them),
-    // force end the turn after a delay
-    setTimeout(() => {
-      // Double-check if we're still on the same AI player
-      if (this.activePlayer === civilizationId && !this.civilizations[this.activePlayer]?.isHuman) {
-        console.log(`[AI] Fallback: AI ${civilizationId} still active after processing, force ending turn`);
-        if (this.onStateChange) {
-          this.onStateChange('AUTO_END_TURN', { civilizationId: this.activePlayer });
-        }
-      }
-    }, 800);
-    
-    // Note: processTurn() is called via the AUTO_END_TURN event in UseGameEngine
+    // RoundManager now responsible for evaluating end-of-turn and timeouts
   }
 
 
@@ -652,6 +634,10 @@ export default class GameEngine {
     console.log('Game engine initialized successfully');
     console.log(`Starting year: ${this.formatYear(this.currentYear)}`);
     console.log(`Player civilization: ${this.civilizations[0].name}`);
+    
+    // Start the first turn for the active player (human player 0)
+    console.log('[GameEngine] Starting first turn for player', this.activePlayer);
+    this.roundManager.startTurn(this.activePlayer);
   }
 
   /**
@@ -1397,15 +1383,17 @@ export default class GameEngine {
       
       console.log(`[TURN] Human player units done status: ${playerUnits.filter(u => u.areTurnsDone).length}/${playerUnits.length} units done`);
       
-      if (allUnitsDone && playerUnits.length > 0) {
+      // Only check auto end turn if all units are done AND no moves left
+      // This ensures we don't end turn prematurely
+      if (allUnitsDone && playerUnits.length > 0 && !hasMovesLeft) {
         console.log('[TURN] All human player units are done - checking auto end turn setting');
         // Emit event with request for auto-end check
         if (this.onStateChange) {
           this.onStateChange('CHECK_AUTO_END_TURN', { civilizationId: this.activePlayer });
         }
-      } else if (!hasMovesLeft) {
-        // Traditional check: no moves left
-        console.log('[TURN] Human player has no moves left - asking for confirmation');
+      } else if (!hasMovesLeft && !allUnitsDone) {
+        // Traditional check: no moves left but not all units marked as done
+        console.log('[TURN] Human player has no moves left (traditional check) - asking for confirmation');
         if (this.onStateChange) {
           this.onStateChange('TURN_END_CONFIRMATION_NEEDED', { civilizationId: this.activePlayer });
         }
@@ -1413,237 +1401,29 @@ export default class GameEngine {
         console.log('[TURN] ⏸️ Human player still has moves left or units not done, not ending turn');
       }
     } else {
-      // For AI players, auto-end when no moves left
+      // For AI players: Do not emit AUTO_END_TURN here anymore; RoundManager owns turn flow
       if (!hasMovesLeft) {
-        console.log('[TURN] 🤖 AI player has no moves left - triggering AUTO_END_TURN event');
-        if (this.onStateChange) {
-          this.onStateChange('AUTO_END_TURN', { civilizationId: this.activePlayer });
-        }
+        console.log('[TURN] 🤖 AI player has no moves left (RoundManager will handle end-of-turn)');
       } else {
-        console.log('[TURN] ⏸️ AI player still has moves left, not ending turn');
+        console.log('[TURN] ⏸️ AI player still has moves left, continuing');
       }
     }
   }
 
   /**
    * Process end of turn
+   * @deprecated This method now delegates to TurnManager.advanceTurn()
+   * TurnManager owns all turn logic in the new architecture
    */
   processTurn() {
-    console.log('[GameEngine] processTurn: Starting turn processing for current player', this.activePlayer);
+    console.log('[GameEngine] processTurn: Delegating to TurnManager.advanceTurn()');
     
-    // Advance to next player
-    const previousPlayer = this.activePlayer;
-    this.activePlayer = (this.activePlayer + 1) % this.civilizations.length;
-    const currentCiv = this.civilizations[this.activePlayer];
-    if (!currentCiv) {
-      console.error('[GameEngine] processTurn: No civilization found for active player', this.activePlayer);
-      return;
-    }
-
-    console.log(`[GameEngine] processTurn: Turn advanced from player ${previousPlayer} to ${this.activePlayer} (${currentCiv.name}, ${currentCiv.isHuman ? 'human' : 'AI'})`);
-
-    // Reset unit moves for the new active player
-    const activePlayerUnits = this.units.filter(u => u.civilizationId === this.activePlayer);
-    console.log(`[GameEngine] processTurn: Resetting moves for ${activePlayerUnits.length} units of player ${this.activePlayer}`);
-    
-    activePlayerUnits.forEach(unit => {
-      const unitProps = UNIT_PROPS[unit.type];
-      unit.movesRemaining = unitProps ? unitProps.movement : 1;
-      unit.areTurnsDone = false; // Reset turn done flag
-    });
-
-    // Clean up paths for destroyed units
-    const existingUnitIds = this.units.map(u => u.id);
-    this.roundManager.cleanupDestroyedUnits(existingUnitIds);
-
-    // Execute civilization turn (automated movements)
-    this.roundManager.startNewRound(this.activePlayer);
-
-    // Process purchased items from previous turn
-    this.cities.forEach(city => {
-      if ((city as any).purchasedThisTurn && (city as any).purchasedThisTurn.length > 0) {
-        (city as any).purchasedThisTurn.forEach((item: any) => {
-          if (item.type === 'unit') {
-            // Create unit at city location
-            const unitType = item.itemType;
-            const unitProps = UNIT_PROPS[unitType] || { movement: 1 };
-            const unit = {
-              id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
-              type: unitType,
-              civilizationId: city.civilizationId,
-              col: city.col,
-              row: city.row,
-              health: 100,
-              movement: unitProps.movement, // Full movement points
-              movesRemaining: unitProps.movement, // Full movement points
-              homeCityId: city.id
-            };
-
-            // Add unit to game
-            this.units.push(unit as any);
-            console.log(`[PURCHASE] Created purchased unit ${unit.type} at city ${city.name} (${city.id})`);
-
-            // Notify state change
-            if (this.onStateChange) {
-              this.onStateChange('UNIT_PURCHASED', { cityId: city.id, unit });
-            }
-          } else if (item.type === 'building') {
-            // Add building to city
-            const buildingType = item.itemType;
-            if (!city.buildings) city.buildings = [];
-            city.buildings.push(buildingType);
-            console.log(`[PURCHASE] Added purchased building ${buildingType} to city ${city.name} (${city.id})`);
-
-            // Notify state change
-            if (this.onStateChange) {
-              this.onStateChange('BUILDING_PURCHASED', { cityId: city.id, buildingType });
-            }
-          }
-        });
-        // Clear purchased items for this turn
-        (city as any).purchasedThisTurn = [];
-      }
-    });
-
-    // Process cities for the active player
-    this.cities
-      .filter(c => c.civilizationId === this.activePlayer)
-      .forEach(city => {
-        // Check if we need to start production from queue
-        if (!city.currentProduction && city.buildQueue && city.buildQueue.length > 0) {
-          const nextItem = city.buildQueue.shift();
-          if (nextItem) {
-            city.currentProduction = nextItem;
-            city.productionProgress = city.carriedOverProgress || 0;
-            city.carriedOverProgress = 0;
-          }
-        }
-
-        // Add food for growth
-        city.foodStored += city.yields.food;
-        if (city.foodStored >= city.foodNeeded) {
-          city.population++;
-          city.foodStored = 0;
-          city.foodNeeded = city.population * 20;
-        }
-
-        // Add production (with bonus if actively producing)
-        if (city.currentProduction) {
-           const before = city.productionStored;
-           city.productionStored += city.yields.production;
-           city.productionProgress = city.productionStored; // Keep in sync for UI
-           if (city.productionStored > before) {
-             console.log(`[PRODUCTION] City ${city.name} (${city.id}) productionStored increased: ${before} -> ${city.productionStored}`);
-           }
-          if (city.productionStored >= city.currentProduction.cost) {
-            // Complete production
-            console.log(`[PRODUCTION] City ${city.name} completed production: ${city.currentProduction.type} ${city.currentProduction.itemType}`);
-            city.productionStored = 0;
-            city.productionProgress = 0; // Reset production progress display
-
-            // Handle completed production
-            if (city.currentProduction.type === 'unit') {
-              // Create unit at city location
-              const unitType = city.currentProduction.itemType;
-              const unitProps = UNIT_PROPS[unitType] || { movement: 1 };
-              const unit = {
-                id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
-                type: unitType,
-                civilizationId: city.civilizationId,
-                col: city.col,
-                row: city.row,
-                health: 100,
-                movement: unitProps.movement, // Full movement points
-                movesRemaining: unitProps.movement, // Full movement points
-                homeCityId: city.id
-              };
-
-              // Add unit to game
-              this.units.push(unit as any);
-              console.log(`[PRODUCTION] Created unit ${unit.type} at city ${city.name} (${city.id})`);
-
-              // Notify state change
-              if (this.onStateChange) {
-                this.onStateChange('UNIT_PRODUCED', { cityId: city.id, unit });
-              }
-            } else if (city.currentProduction.type === 'building') {
-              // Add building to city
-              const buildingType = city.currentProduction.itemType;
-              if (!city.buildings) city.buildings = [];
-              city.buildings.push(buildingType);
-              console.log(`[PRODUCTION] Added building ${buildingType} to city ${city.name} (${city.id})`);
-
-              // Notify state change
-              if (this.onStateChange) {
-                this.onStateChange('BUILDING_COMPLETED', { cityId: city.id, buildingType });
-              }
-            }
-
-            // Advance queue if present
-            if (Array.isArray(city.buildQueue) && city.buildQueue.length > 0) {
-              city.currentProduction = city.buildQueue.shift();
-              // Reset production progress for new item
-              city.productionProgress = 0;
-            } else {
-              city.currentProduction = null;
-            }
-          }
-        }
-      });
-    // Add resources to civilization (if civilization object follows the same structure)
-    try {
-      if (currentCiv.resources) {
-        currentCiv.resources.science += this.calculateCivScience(currentCiv.id);
-        currentCiv.resources.gold += this.calculateCivGold(currentCiv.id);
-      }
-    } catch (e) {
-      // Defensive: some civ objects are plain and may not have resources structured as expected
-    }
-
-    // Process research if fields exist
-    try {
-      if (currentCiv.currentResearch && currentCiv.resources && currentCiv.resources.science > 0) {
-        currentCiv.researchProgress = (currentCiv.researchProgress || 0) + currentCiv.resources.science;
-        const techCost = typeof currentCiv.currentResearch === 'object' && currentCiv.currentResearch.cost ? currentCiv.currentResearch.cost : (TECHNOLOGIES?.[currentCiv.currentResearch]?.cost || 0);
-        if (currentCiv.researchProgress >= techCost && techCost > 0) {
-          // Mark research complete (best-effort)
-          if (Array.isArray(currentCiv.technologies)) {
-            currentCiv.technologies.push(currentCiv.currentResearch.id || currentCiv.currentResearch);
-          }
-          currentCiv.researchProgress = 0;
-          currentCiv.currentResearch = null;
-          this.updateTechnologyAvailability();
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-
-    // Update the store with the processed state
-    if (this.storeActions) {
-      this.storeActions.updateCities([...this.cities]);
-      this.storeActions.updateCivilizations([...this.civilizations]);
-    }
-
-    // If this civilization is an AI, run its turn asynchronously so UI can update between moves
-    if (!currentCiv.isHuman && currentCiv.isAI) {
-      console.log(`[GameEngine] 🤖 processTurn: Civilization ${this.activePlayer} (${currentCiv.name}) is AI, starting AI turn`);
-      // fire-and-forget AI routine
-      this.runAITurn(this.activePlayer).catch(err => console.error('[GameEngine] ❌ AI turn error', err));
-    } else if (currentCiv.isHuman) {
-      console.log(`[GameEngine] 👤 processTurn: Civilization ${this.activePlayer} (${currentCiv.name}) is human player, awaiting input`);
+    // Delegate to TurnManager which now owns all turn logic
+    if (this.roundManager && typeof this.roundManager.advanceTurn === 'function') {
+      this.roundManager.advanceTurn();
     } else {
-      console.warn(`[GameEngine] ⚠️ processTurn: Civilization ${this.activePlayer} has ambiguous AI/human state:`, {
-        isHuman: currentCiv.isHuman,
-        isAI: currentCiv.isAI
-      });
+      console.error('[GameEngine] processTurn: TurnManager not available or advanceTurn method missing');
     }
-
-    if (this.onStateChange) {
-      this.onStateChange('TURN_PROCESSED', { civilizationId: this.activePlayer });
-    }
-    
-    console.log(`[GameEngine] processTurn: Completed for player ${this.activePlayer}`);
   }
 
   /**

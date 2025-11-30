@@ -38,6 +38,8 @@ const MiniMap: React.FC<MiniMapProps> = ({ gameEngine = null }) => {
   const cities = useGameStore(state => state.cities);
   const units = useGameStore(state => state.units);
   const civilizations = useGameStore(state => state.civilizations);
+  const settings = useGameStore(state => state.settings);
+  const activePlayer = useGameStore(state => state.gameState.activePlayer);
   // Also get civilizations from gameEngine if available (more reliable)
   const gameEngineCivilizations = gameEngine?.civilizations || [];
   const effectiveCivilizations = gameEngineCivilizations.length > 0 ? gameEngineCivilizations : civilizations;
@@ -75,17 +77,30 @@ const MiniMap: React.FC<MiniMapProps> = ({ gameEngine = null }) => {
 
     const civilizationsSource = effectiveCivilizations && effectiveCivilizations.length > 0 ? effectiveCivilizations : civilizations;
 
+    // Filter units and cities based on devMode setting
+    let visibleUnits = units;
+    let visibleCities = cities;
+    
+    if (!settings.devMode) {
+      // In normal mode, only show human player's units and cities
+      visibleUnits = units.filter(u => u.civilizationId === activePlayer);
+      visibleCities = cities.filter(c => c.civilizationId === activePlayer);
+      console.log('[MiniMap] Normal mode: Showing only player', activePlayer, 'units/cities');
+    } else {
+      console.log('[MiniMap] Developer mode: Showing all units/cities');
+    }
+
     mapRendererRef.current.renderMinimap({
       ctx,
       map: dataSource,
       cssWidth,
       cssHeight,
       camera,
-      units,
-      cities,
+      units: visibleUnits,
+      cities: visibleCities,
       civilizations: civilizationsSource || []
     });
-  }, [camera, mapData, cities, units, civilizations, effectiveCivilizations, sizeKey]);
+  }, [camera, mapData, cities, units, civilizations, effectiveCivilizations, settings.devMode, activePlayer, sizeKey]);
 
   // Resize observer to redraw when container width changes
   useEffect(() => {

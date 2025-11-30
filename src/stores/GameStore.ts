@@ -92,7 +92,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     minimapHeight: 120,  // Minimap height in pixels
     civListFontSize: 10, // Civilization list font size
     skipEndTurnConfirmation: false, // Skip showing end turn confirmation modal
-    autoEndTurn: false   // Automatically end turn when all human player units are done
+    autoEndTurn: false,  // Automatically end turn when all human player units are done
+    devMode: false       // Developer mode: see all players on minimap and switch between them
   },
 
   // Technology State
@@ -504,9 +505,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     updateSettings: (updates) => set(state => ({
       settings: { ...state.settings, ...updates }
     })),
-    setGoToMode: function (enabled: boolean, unitId?: string | null): void {
-      throw new Error('Function not implemented.');
-    }
+    setGoToMode: (enabled: boolean, unitId?: string | null) => set(state => ({
+      uiState: {
+        ...state.uiState,
+        goToMode: !!enabled,
+        goToUnit: enabled ? (unitId || state.gameState.selectedUnit || '') : ''
+      }
+    }))
   },
 
   // Computed selectors (equivalent to derived atoms)
