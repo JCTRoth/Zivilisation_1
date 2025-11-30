@@ -62,7 +62,7 @@ function App() {
 
       // Get player's starting settler position
       const playerSettler = engine.units.find(
-        (u) => u.civilizationId === 0 && u.type === 'settlers'
+        (u) => u.civilizationId === 0 && u.type === 'settler'
       );
 
       console.log('Game started with units:', engine.units);
@@ -889,7 +889,7 @@ function App() {
                       const selectedUnitId = gameState.selectedUnit;
                       if (selectedUnitId && gameEngine) {
                         const selectedUnit = gameEngine.units.find(u => u.id === selectedUnitId);
-                        if (selectedUnit && selectedUnit.type === 'settlers') {
+                        if (selectedUnit && selectedUnit.type === 'settler') {
                           console.log(`Civ1App: Founding city with settler ${selectedUnit.id}`);
                           gameEngine.foundCityWithSettler(selectedUnit.id);
                         } else {

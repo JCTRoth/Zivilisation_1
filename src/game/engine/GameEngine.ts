@@ -369,7 +369,7 @@ export default class GameEngine {
     if (!this.map || !this.squareGrid) return null;
 
     // Special handling for settlers: use SettlementEvaluator to find best city location
-    if (unit.type === 'settlers') {
+    if (unit.type === 'settler') {
       console.log(`[AI-SETTLER] Settler detected at (${unit.col}, ${unit.row}), using SettlementEvaluator`);
       
       try {
@@ -711,7 +711,7 @@ export default class GameEngine {
         this.highlightAITarget(target.col, target.row);
 
         // Special handling for settlers: found city when at target location
-        if (unit.type === 'settlers' && unit.col === target.col && unit.row === target.row) {
+        if (unit.type === 'settler' && unit.col === target.col && unit.row === target.row) {
           console.log(`[AI-SETTLER] Settler ${unit.id} has reached settlement location (${target.col}, ${target.row}), founding city`);
           const result = this.foundCityWithSettler(unit.id);
           if (result) {
@@ -902,13 +902,24 @@ export default class GameEngine {
       this.gameSettings.playerCivilization = 0; // Default to first civilization
     }
     
-    // Create hex grid system
-    this.squareGrid = new SquareGrid(Constants.MAP_WIDTH, Constants.MAP_HEIGHT);
+    // Determine map size based on map type
+    const mapType = this.gameSettings.mapType || 'NORMAL_SKIRMISH';
+    let mapWidth = Constants.MAP_WIDTH;
+    let mapHeight = Constants.MAP_HEIGHT;
+    
+    if (['CLOSEUP_1V1', 'CLOSEUP_BEATUP', 'NAVAL_CLOSEUP'].includes(mapType)) {
+      mapWidth = 20;
+      mapHeight = 20;
+      console.log(`[GameEngine] Using small map size for ${mapType}: ${mapWidth}x${mapHeight}`);
+    }
+    
+    // Create hex grid system with appropriate size
+    this.squareGrid = new SquareGrid(mapWidth, mapHeight);
     
     // Generate initial game state
-    await this.generateWorld();
-    await this.createCivilizations();
-    await this.initializeTechnologies();
+    await this.generateWorld(mapWidth, mapHeight, mapType);
+    await this.createCivilizations(mapType);
+    await this.initializeTechnologies(mapType);
 
     // Push freshly generated state into the store if available before computing visibility
     if (this.storeActions) {
@@ -935,57 +946,66 @@ export default class GameEngine {
   /**
    * Generate the game world with terrain
    */
-  async generateWorld() {
+  async generateWorld(mapWidth: number = Constants.MAP_WIDTH, mapHeight: number = Constants.MAP_HEIGHT, mapType: string = 'NORMAL_SKIRMISH') {
     const tiles = [];
-    // const testImprovements = [
-    //   IMPROVEMENT_TYPES.ROAD,
-    //   IMPROVEMENT_TYPES.IRRIGATION,
-    //   IMPROVEMENT_TYPES.MINES,
-    //   IMPROVEMENT_TYPES.FORTRESS,
-    //   IMPROVEMENT_TYPES.RAILROAD
-    // ];
     
-    // Simple terrain generation - can be enhanced with noise functions
-    for (let row = 0; row < Constants.MAP_HEIGHT; row++) {
-      for (let col = 0; col < Constants.MAP_WIDTH; col++) {
-        let terrainType: string = Constants.TERRAIN.GRASSLAND;
-        
-        // Ocean around edges
-        if (row === 0 || row === Constants.MAP_HEIGHT - 1 ||
-            col === 0 || col === Constants.MAP_WIDTH - 1) {
-          terrainType = Constants.TERRAIN.OCEAN;
+    console.log(`[GameEngine] Generating world: ${mapWidth}x${mapHeight}, type: ${mapType}`);
+    
+    // Naval Close up - water-only map
+    if (mapType === 'NAVAL_CLOSEUP') {
+      for (let row = 0; row < mapHeight; row++) {
+        for (let col = 0; col < mapWidth; col++) {
+          tiles.push({
+            col,
+            row,
+            type: Constants.TERRAIN.OCEAN,
+            resource: Math.random() < 0.2 ? 'fish' : null, // 20% chance of fish
+            visible: false,
+            explored: false
+          });
         }
-        // Random terrain generation
-        else {
-          const rand = Math.random();
-          if (rand < 0.05) terrainType = Constants.TERRAIN.MOUNTAINS;
-          else if (rand < 0.2) terrainType = Constants.TERRAIN.HILLS;
-          else if (rand < 0.3) terrainType = Constants.TERRAIN.FOREST;
-          else if (rand < 0.4) terrainType = Constants.TERRAIN.DESERT;
-          else if (rand < 0.5) terrainType = Constants.TERRAIN.PLAINS;
-          else if (rand < 0.6) terrainType = Constants.TERRAIN.TUNDRA;
-          else terrainType = Constants.TERRAIN.GRASSLAND;
+      }
+    } else {
+      // Standard terrain generation for other modes
+      for (let row = 0; row < mapHeight; row++) {
+        for (let col = 0; col < mapWidth; col++) {
+          let terrainType: string = Constants.TERRAIN.GRASSLAND;
+          
+          // Ocean around edges (except for small maps)
+          if (mapWidth >= 40 && mapHeight >= 40) {
+            if (row === 0 || row === mapHeight - 1 ||
+                col === 0 || col === mapWidth - 1) {
+              terrainType = Constants.TERRAIN.OCEAN;
+            }
+          }
+          
+          // Random terrain generation
+          if (terrainType !== Constants.TERRAIN.OCEAN) {
+            const rand = Math.random();
+            if (rand < 0.05) terrainType = Constants.TERRAIN.MOUNTAINS;
+            else if (rand < 0.2) terrainType = Constants.TERRAIN.HILLS;
+            else if (rand < 0.3) terrainType = Constants.TERRAIN.FOREST;
+            else if (rand < 0.4) terrainType = Constants.TERRAIN.DESERT;
+            else if (rand < 0.5) terrainType = Constants.TERRAIN.PLAINS;
+            else if (rand < 0.6) terrainType = Constants.TERRAIN.TUNDRA;
+            else terrainType = Constants.TERRAIN.GRASSLAND;
+          }
+
+          tiles.push({
+            col,
+            row,
+            type: terrainType,
+            resource: Math.random() < 0.1 ? 'bonus' : null,
+            visible: false,
+            explored: false
+          });
         }
-
-      // const tileIndex = row * Constants.MAP_WIDTH + col;
-      // const testImprovement = testImprovements[tileIndex % testImprovements.length];
-      // const tileIsOcean = terrainType === Constants.TERRAIN.OCEAN;
-
-      tiles.push({
-          col,
-          row,
-          type: terrainType,
-          resource: Math.random() < 0.1 ? 'bonus' : null,
-                  // improvement: tileIsOcean ? null : testImprovement,
-          visible: false,
-          explored: false
-        });
       }
     }
     
     this.map = {
-      width: Constants.MAP_WIDTH,
-      height: Constants.MAP_HEIGHT,
+      width: mapWidth,
+      height: mapHeight,
       tiles
     };
     
@@ -995,7 +1015,7 @@ export default class GameEngine {
   /**
    * Create civilizations and place starting units
    */
-  async createCivilizations() {
+  async createCivilizations(mapType: string = 'NORMAL_SKIRMISH') {
     const numCivs = Math.min(this.gameSettings.numberOfCivilizations, CIVILIZATIONS.length);
     const selectedCivs = [];
     
@@ -1025,20 +1045,19 @@ export default class GameEngine {
         cityNames: [...civData.cityNames],
         nextCityNameIndex: 0,
         isAlive: true,
-        isHuman: isHuman, // First civ is human
+        isHuman: isHuman,
         isAI: !isHuman,
         resources: {
           food: 0,
           production: 0,
           trade: 0,
           science: 0,
-          gold: this.gameSettings.startingGold // 50 gold starting treasury
+          gold: this.gameSettings.startingGold
         },
-        // Starting technologies (Civ1 style)
         technologies: ['irrigation', 'mining', 'roads'],
         currentResearch: null,
         researchProgress: 0,
-        scienceRate: 50, // 50% of trade goes to science initially
+        scienceRate: 50,
         taxRate: 0,
         luxuryRate: 50,
         government: 'despotism',
@@ -1048,9 +1067,13 @@ export default class GameEngine {
       // Find starting position
       let startPos = null;
       let attempts = 0;
+      const mapWidth = this.map?.width || Constants.MAP_WIDTH;
+      const mapHeight = this.map?.height || Constants.MAP_HEIGHT;
+      const minDist = mapWidth <= 20 ? 5 : 12; // Smaller distance for small maps
+      
       while (!startPos && attempts < 100) {
-        const col = Math.floor(Math.random() * (Constants.MAP_WIDTH - 20)) + 10;
-        const row = Math.floor(Math.random() * (Constants.MAP_HEIGHT - 20)) + 10;
+        const col = Math.floor(Math.random() * (mapWidth - 4)) + 2;
+        const row = Math.floor(Math.random() * (mapHeight - 4)) + 2;
         
         const tile = this.getTileAt(col, row);
         if (tile && tile.type !== Constants.TERRAIN.OCEAN &&
@@ -1060,7 +1083,7 @@ export default class GameEngine {
           for (const otherCiv of this.civilizations) {
             const otherUnits = this.units.filter(u => u.civilizationId === otherCiv.id);
             for (const unit of otherUnits) {
-              if (this.squareGrid.squareDistance(col, row, unit.col, unit.row) < 12) {
+              if (this.squareGrid.squareDistance(col, row, unit.col, unit.row) < minDist) {
                 validPosition = false;
                 break;
               }
@@ -1075,33 +1098,16 @@ export default class GameEngine {
       }
 
       if (startPos) {
-        // Create single starting settler unit (Civ1 style)
-        const settlerId = `settler_${i}_0`;
+        // Create starting units based on map type
+        console.log(`[INIT] Creating starting units for civ ${i} (${civData.name}) at (${startPos.col},${startPos.row}), mapType: ${mapType}`);
+        this.createStartingUnits(i, startPos, mapType);
         
-        const settler = {
-          id: settlerId,
-          civilizationId: i,
-          type: 'settlers',
-          name: 'Settlers',
-          col: startPos.col,
-          row: startPos.row,
-          health: 100,
-          movesRemaining: 2,
-          maxMoves: 1,
-          isVeteran: false,
-          attack: 0,
-          defense: 1,
-          icon: '👷',
-          orders: null // 'fortify', etc.
-        };
-
-        this.units.push(settler);
-
-        // Log initial unit placement
-        console.log(`[INITIAL PLACEMENT] ${settler.type} (${settlerId}) for ${civ.name} placed at (${startPos.col},${startPos.row})`);
-        
-        // Note: Starting area reveal is now handled in useGameEngine hook after map sync
-        // this.revealArea(startPos.col, startPos.row, 2);
+        // Create starting cities for MANY_CITIES mode
+        if (mapType === 'MANY_CITIES') {
+          this.createStartingCities(i, civ, startPos);
+        }
+      } else {
+        console.warn(`[INIT] Failed to find valid starting position for civ ${i} (${civData.name}) after ${attempts} attempts`);
       }
 
       this.civilizations.push(civ);
@@ -1109,12 +1115,151 @@ export default class GameEngine {
 
     console.log('Created', this.civilizations.length, 'civilizations');
     console.log('Player civilization:', this.civilizations[0].name, 'led by', this.civilizations[0].leader);
-    console.log('Starting with 1 Settler unit and', this.gameSettings.startingGold, 'gold');
-    console.log('Initial technologies: Irrigation, Mining, Roads');
+    console.log(`Map type: ${mapType}`);
     
     // Initialize player storage for each civilization
     for (let i = 0; i < this.civilizations.length; i++) {
       this.initializePlayerStorage(i);
+    }
+  }
+
+  /**
+   * Create starting units for a civilization based on map type
+   */
+  private createStartingUnits(civId: number, startPos: { col: number; row: number }, mapType: string) {
+    console.log(`[UNITS] createStartingUnits called for civId ${civId}, mapType: ${mapType}, position: (${startPos.col},${startPos.row})`);
+    const militaryUnits = ['warriors', 'phalanx', 'legion', 'musketeers', 'riflemen'];
+    
+    switch (mapType) {
+      case 'NORMAL_SKIRMISH':
+      case 'CLOSEUP_1V1':
+      case 'TECH_LEVEL_15':
+        // Standard: 1 settler
+        console.log(`[UNITS] Creating 1 settler for civ ${civId}`);
+        this.createUnit(civId, 'settler', startPos.col, startPos.row);
+        break;
+        
+      case 'CLOSEUP_BEATUP':
+        // 1 settler + variety of military units
+        this.createUnit(civId, 'settler', startPos.col, startPos.row);
+        this.createUnit(civId, 'warriors', startPos.col + 1, startPos.row);
+        this.createUnit(civId, 'phalanx', startPos.col - 1, startPos.row);
+        this.createUnit(civId, 'legion', startPos.col, startPos.row + 1);
+        this.createUnit(civId, 'musketeers', startPos.col, startPos.row - 1);
+        this.createUnit(civId, 'riflemen', startPos.col + 1, startPos.row + 1);
+        break;
+        
+      case 'NAVAL_CLOSEUP':
+        // Naval units only
+        this.createUnit(civId, 'trireme', startPos.col, startPos.row);
+        this.createUnit(civId, 'trireme', startPos.col + 1, startPos.row);
+        break;
+        
+      case 'NO_SETTLERS':
+        // Variety of military units, no settlers
+        this.createUnit(civId, 'warriors', startPos.col, startPos.row);
+        this.createUnit(civId, 'warriors', startPos.col + 1, startPos.row);
+        this.createUnit(civId, 'phalanx', startPos.col - 1, startPos.row);
+        this.createUnit(civId, 'legion', startPos.col, startPos.row + 1);
+        this.createUnit(civId, 'musketeers', startPos.col, startPos.row - 1);
+        break;
+        
+      case 'MANY_CITIES':
+        // 2 warriors (cities created separately)
+        this.createUnit(civId, 'warriors', startPos.col, startPos.row);
+        this.createUnit(civId, 'warriors', startPos.col + 1, startPos.row);
+        break;
+        
+      default:
+        this.createUnit(civId, 'settler', startPos.col, startPos.row);
+    }
+  }
+
+  /**
+   * Create a single unit
+   */
+  private createUnit(civId: number, type: string, col: number, row: number) {
+    const unitProps = UNIT_PROPS[type] || { movement: 1, attack: 1, defense: 1, icon: '⚔️' };
+    const unitId = `${type}_${civId}_${this.units.filter(u => u.civilizationId === civId).length}`;
+    
+    const unit = {
+      id: unitId,
+      civilizationId: civId,
+      type: type,
+      name: (unitProps as any).name || type,
+      col: col,
+      row: row,
+      health: 100,
+      movesRemaining: unitProps.movement || 1,
+      maxMoves: unitProps.movement || 1,
+      isVeteran: false,
+      attack: unitProps.attack || 0,
+      defense: unitProps.defense || 1,
+      icon: unitProps.icon || '⚔️',
+      orders: null
+    };
+    
+    this.units.push(unit);
+    console.log(`[UNIT] Created ${type} for civ ${civId} at (${col},${row})`);
+  }
+
+  /**
+   * Create starting cities for MANY_CITIES mode
+   */
+  private createStartingCities(civId: number, civ: any, startPos: { col: number; row: number }) {
+    const cityPositions = [
+      { col: startPos.col, row: startPos.row },
+      { col: startPos.col + 5, row: startPos.row },
+      { col: startPos.col, row: startPos.row + 5 },
+      { col: startPos.col - 5, row: startPos.row }
+    ];
+    
+    for (let i = 0; i < 4; i++) {
+      const pos = cityPositions[i];
+      const tile = this.getTileAt(pos.col, pos.row);
+      
+      if (tile && tile.type !== Constants.TERRAIN.OCEAN && tile.type !== Constants.TERRAIN.MOUNTAINS) {
+        // Get city name
+        const cityName = civ.cityNames[civ.nextCityNameIndex] || `City ${civ.nextCityNameIndex + 1}`;
+        civ.nextCityNameIndex++;
+        
+        const cityId = `city_${civId}_${this.cities.length}`;
+        const city = {
+          id: cityId,
+          name: cityName,
+          civilizationId: civId,
+          col: pos.col,
+          row: pos.row,
+          population: 1,
+          food: 0,
+          foodRequired: 20,
+          production: 0,
+          gold: 0,
+          science: 0,
+          currentProduction: null,
+          productionProgress: 0,
+          buildings: [],
+          tiles: [],
+          culture: 0,
+          happiness: 0
+        };
+        
+        this.cities.push(city);
+        console.log(`[CITY] Created ${cityName} for civ ${civId} at (${pos.col},${pos.row})`);
+        
+        // Add improvements around city (roads and irrigation)
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            const tileCol = pos.col + dc;
+            const tileRow = pos.row + dr;
+            const targetTile = this.getTileAt(tileCol, tileRow);
+            
+            if (targetTile && targetTile.type !== Constants.TERRAIN.OCEAN) {
+              targetTile.improvement = (dr === 0 || dc === 0) ? 'road' : 'irrigation';
+            }
+          }
+        }
+      }
     }
   }
 
@@ -1177,9 +1322,19 @@ export default class GameEngine {
   /**
    * Initialize technology tree
    */
-  async initializeTechnologies() {
-    // Starting technologies are already set in createCivilizations
-    // This can be expanded to include the full tech tree
+  async initializeTechnologies(mapType: string = 'NORMAL_SKIRMISH') {
+    // For TECH_LEVEL_15 mode, grant all technologies to all civilizations
+    if (mapType === 'TECH_LEVEL_15') {
+      console.log('[TECH] Granting all technologies for TECH_LEVEL_15 mode');
+      const allTechs = Object.keys(TECHNOLOGIES);
+      
+      for (const civ of this.civilizations) {
+        civ.technologies = [...allTechs];
+        console.log(`[TECH] Civilization ${civ.name} received ${allTechs.length} technologies`);
+      }
+    }
+    // Standard starting technologies are already set in createCivilizations
+    
     console.log('Technology tree initialized');
   }
 
@@ -1257,7 +1412,7 @@ export default class GameEngine {
     
     // Remove settler unit that founded the city
     const settlerIdx = this.units.findIndex(u => 
-      u.col === col && u.row === row && u.civilizationId === civilizationId && u.type === 'settlers'
+      u.col === col && u.row === row && u.civilizationId === civilizationId && u.type === 'settler'
     );
     if (settlerIdx !== -1) {
       this.units.splice(settlerIdx, 1);
@@ -1596,7 +1751,7 @@ export default class GameEngine {
    */
   foundCityWithSettler(settlerId: string) {
     const settler = this.units.find(u => u.id === settlerId);
-    if (!settler || settler.type !== 'settlers') return false;
+    if (!settler || settler.type !== 'settler') return false;
 
     // Check if location is valid for city
     const tile = this.getTileAt(settler.col, settler.row);

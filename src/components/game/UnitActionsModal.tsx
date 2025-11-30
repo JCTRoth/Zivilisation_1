@@ -61,7 +61,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
             </button>
           )}
 
-          {(contextMenu.unit.type === 'settlers' || contextMenu.unit.type === 'settler') && (
+          {contextMenu.unit.type === 'settler' && (
             <>
               <button
                 className={`btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button ${

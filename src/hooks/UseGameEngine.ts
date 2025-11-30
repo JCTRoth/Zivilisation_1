@@ -25,7 +25,7 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
       actions.updateCivilizations(gameEngine.civilizations);
       actions.updateTechnologies(gameEngine.technologies);
 
-      const playerSettler = gameEngine.units.find(u => u.civilizationId === 0 && u.type === 'settlers');
+      const playerSettler = gameEngine.units.find(u => u.civilizationId === 0 && u.type === 'settler');
       console.log('[useGameEngine] Player settler found:', playerSettler);
       if (playerSettler) {
         console.log('[useGameEngine] Revealing area around settler at', playerSettler.col, playerSettler.row);

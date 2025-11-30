@@ -10,7 +10,7 @@ function GameSetupModal({ show, onStart }) {
   const [selectedCiv, setSelectedCiv] = useState(defaultCivIndex >= 0 ? defaultCivIndex : 0);
   const [difficulty, setDifficulty] = useState('PRINCE');
   const [numCivilizations, setNumCivilizations] = useState(2);
-  const [mapType, setMapType] = useState('EARTH');
+  const [mapType, setMapType] = useState('NORMAL_SKIRMISH');
   const [devMode, setDevMode] = useState(false);
 
   const totalSteps = 2;
@@ -186,17 +186,20 @@ function GameSetupModal({ show, onStart }) {
                 <div className="control-card">
                   <div className="control-card__header">
                     <span className="control-card__title">Map Type</span>
-                    <span className="control-card__hint">Choose your world layout.</span>
+                    <span className="control-card__hint">Choose your game mode.</span>
                   </div>
                   <Form.Select
                     value={mapType}
                     onChange={(e) => setMapType(e.target.value)}
                     className="control-card__select"
                   >
-                    <option value="EARTH">Earth · Real-world geography</option>
-                    <option value="RANDOM">Random · Procedural generation</option>
-                    <option value="PANGAEA">Pangaea · One massive landmass</option>
-                    <option value="ARCHIPELAGO">Archipelago · Wide island chains</option>
+                    <option value="NORMAL_SKIRMISH">Normal Skirmish · Standard game setup</option>
+                    <option value="CLOSEUP_1V1">Close up 1vs1 · 20x20 map duel</option>
+                    <option value="CLOSEUP_BEATUP">Close up beat em up · 20x20 combat focus</option>
+                    <option value="NAVAL_CLOSEUP">Naval close up · 20x20 water map with fish</option>
+                    <option value="NO_SETTLERS">No Settlers · Start with military units</option>
+                    <option value="MANY_CITIES">Many Cities · 4 cities with infrastructure</option>
+                    <option value="TECH_LEVEL_15">Tech. Level 15 · All technologies researched</option>
                   </Form.Select>
                 </div>
               </div>
@@ -242,13 +245,65 @@ function GameSetupModal({ show, onStart }) {
                 </div>
                 <div className="setup-summary-details">
                   <h5>Starting Conditions</h5>
-                  <ul>
-                    <li>Year: <strong>4000 BC</strong></li>
-                    <li>Units: <strong>1 Settler</strong></li>
-                    <li>Treasury: <strong>50 Gold</strong></li>
-                    <li>Tech: <strong>Irrigation, Mining, Roads</strong></li>
-                    <li>Government: <strong>Despotism</strong></li>
-                  </ul>
+                  {mapType === 'NORMAL_SKIRMISH' && (
+                    <ul>
+                      <li>Map: <strong>80x50 tiles</strong></li>
+                      <li>Year: <strong>4000 BC</strong></li>
+                      <li>Units: <strong>1 Settler</strong></li>
+                      <li>Treasury: <strong>50 Gold</strong></li>
+                      <li>Tech: <strong>Irrigation, Mining, Roads</strong></li>
+                      <li>Government: <strong>Despotism</strong></li>
+                    </ul>
+                  )}
+                  {mapType === 'CLOSEUP_1V1' && (
+                    <ul>
+                      <li>Map: <strong>20x20 tiles (Small)</strong></li>
+                      <li>Units: <strong>1 Settler</strong></li>
+                      <li>Treasury: <strong>50 Gold</strong></li>
+                      <li>Mode: <strong>Quick duel</strong></li>
+                    </ul>
+                  )}
+                  {mapType === 'CLOSEUP_BEATUP' && (
+                    <ul>
+                      <li>Map: <strong>20x20 tiles (Small)</strong></li>
+                      <li>Units: <strong>1 Settler + 5 Military Units</strong></li>
+                      <li>Treasury: <strong>50 Gold</strong></li>
+                      <li>Mode: <strong>Combat-focused</strong></li>
+                    </ul>
+                  )}
+                  {mapType === 'NAVAL_CLOSEUP' && (
+                    <ul>
+                      <li>Map: <strong>20x20 tiles (Water only)</strong></li>
+                      <li>Units: <strong>2 Triremes</strong></li>
+                      <li>Resources: <strong>Fish available</strong></li>
+                      <li>Mode: <strong>Naval warfare</strong></li>
+                    </ul>
+                  )}
+                  {mapType === 'NO_SETTLERS' && (
+                    <ul>
+                      <li>Map: <strong>80x50 tiles</strong></li>
+                      <li>Units: <strong>5 Military Units (No Settlers)</strong></li>
+                      <li>Treasury: <strong>50 Gold</strong></li>
+                      <li>Mode: <strong>Pure combat</strong></li>
+                    </ul>
+                  )}
+                  {mapType === 'MANY_CITIES' && (
+                    <ul>
+                      <li>Map: <strong>80x50 tiles</strong></li>
+                      <li>Cities: <strong>4 Cities with infrastructure</strong></li>
+                      <li>Units: <strong>2 Warriors</strong></li>
+                      <li>Improvements: <strong>Roads & Irrigation</strong></li>
+                      <li>Mode: <strong>City management focus</strong></li>
+                    </ul>
+                  )}
+                  {mapType === 'TECH_LEVEL_15' && (
+                    <ul>
+                      <li>Map: <strong>80x50 tiles</strong></li>
+                      <li>Units: <strong>1 Settler</strong></li>
+                      <li>Technology: <strong>All researched</strong></li>
+                      <li>Mode: <strong>Advanced start</strong></li>
+                    </ul>
+                  )}
                 </div>
               </div>
             </section>

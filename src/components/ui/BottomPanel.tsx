@@ -45,7 +45,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
         gameEngine.unitFortify(selectedUnit.id);
         break;
       case 'found_city':
-        if (selectedUnit.type === 'settlers') {
+        if (selectedUnit.type === 'settler') {
           gameEngine.foundCityWithSettler(selectedUnit.id);
         }
         break;
@@ -171,7 +171,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
             <div className="col-md-6">
               <div className="unit-actions">
                 <ButtonGroup vertical className="w-100">
-                  {(selectedUnit.type === 'settler' || selectedUnit.type === 'settlers') && (
+                  {selectedUnit.type === 'settler' && (
                     <Button 
                       variant="outline-primary" 
                       size="sm"

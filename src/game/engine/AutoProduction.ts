@@ -112,7 +112,7 @@ export class AutoProduction {
       console.log('[AutoProduction] Civilization needs more cities');
       return {
         type: 'unit',
-        itemType: 'settlers',
+        itemType: 'settler',
         name: UNIT_PROPS.settlers.name,
         cost: UNIT_PROPS.settlers.cost
       };

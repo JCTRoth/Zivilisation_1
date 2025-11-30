@@ -288,7 +288,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   // Select player's starting settler when game starts
   useEffect(() => {
     if (units && units.length > 0 && gameState.isGameStarted) {
-      const playerSettler = units.find(u => u.civilizationId === 0 && u.type === 'settlers');
+      const playerSettler = units.find(u => u.civilizationId === 0 && u.type === 'settler');
       if (playerSettler) {
         setSelectedHex({ col: playerSettler.col, row: playerSettler.row });
         // Also select the unit in the store
