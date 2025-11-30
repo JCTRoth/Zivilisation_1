@@ -67,9 +67,21 @@ export class EngineEventRouter {
     const active = (this.gameEngine as any).activePlayer;
     const civ = this.gameEngine.civilizations?.[active];
     console.log('[EngineEventRouter] TURN_START for player', active, civ?.name);
-    const tm = (this.gameEngine as any).turnManager;
-    if (civ?.isHuman && tm && typeof tm.registerPlayer === 'function') {
-      tm.registerPlayer(active);
+    
+    // Try both turnManager and roundManager property names (backwards compatibility)
+    const tm = (this.gameEngine as any).turnManager || (this.gameEngine as any).roundManager;
+    
+    if (civ?.isHuman) {
+      if (tm && typeof tm.registerPlayer === 'function') {
+        console.log('[EngineEventRouter] Registering human player', active);
+        tm.registerPlayer(active);
+      } else {
+        console.warn('[EngineEventRouter] TurnManager not found or registerPlayer not available', { 
+          hasTurnManager: !!tm, 
+          hasRoundManager: !!(this.gameEngine as any).roundManager,
+          hasRegisterPlayer: !!(tm && typeof tm.registerPlayer === 'function')
+        });
+      }
     }
   }
 

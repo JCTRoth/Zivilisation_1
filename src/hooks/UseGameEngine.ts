@@ -35,6 +35,17 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
       console.log('[useGameEngine] Calling updateVisibility...');
       actions.updateVisibility();
       actions.focusOnNextUnit();
+      
+      // Register human player if their turn has started but wasn't registered
+      // (This happens because startTurn is called before the event router is connected)
+      const tm = (gameEngine as any).turnManager || (gameEngine as any).roundManager;
+      const activePlayer = (gameEngine as any).activePlayer;
+      const activeCiv = gameEngine.civilizations?.[activePlayer];
+      if (activeCiv?.isHuman && tm && typeof tm.registerPlayer === 'function') {
+        console.log('[useGameEngine] Registering human player for initial turn', activePlayer);
+        tm.registerPlayer(activePlayer);
+      }
+      
       console.log('[useGameEngine] Initial sync complete');
     }
 

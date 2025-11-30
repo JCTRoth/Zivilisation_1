@@ -469,14 +469,22 @@ export class TurnManager {
 
   // --- Automated movement (path following) ---
   private processAutomatedMovements(civilizationId: number): void {
-    console.log(`[TurnManager] Processing automated paths for civ ${civilizationId}`);
+    const unitsWithPaths = Array.from(this.unitPaths.entries())
+      .filter(([unitId]) => {
+        const unit = this.gameEngine.units.find((u: any) => u.id === unitId);
+        return unit && unit.civilizationId === civilizationId;
+      });
+    
+    console.log(`[TurnManager] 🚀 Processing automated GoTo paths for civ ${civilizationId}`);
+    console.log(`[TurnManager] Found ${unitsWithPaths.length} units with GoTo paths`);
+    
     const units = this.gameEngine.units.filter((u: any) => u.civilizationId === civilizationId && (u.movesRemaining || 0) > 0);
     
     for (const unit of units) {
       const path = this.unitPaths.get(unit.id);
       if (!path || path.length === 0) continue;
       
-      console.log(`[TurnManager] Unit ${unit.id} has GoTo path with ${path.length} steps, ${unit.movesRemaining} moves remaining`);
+      console.log(`[TurnManager] ➡️ Unit ${unit.id} (${unit.type}) has GoTo path with ${path.length} steps, ${unit.movesRemaining} moves remaining`);
       
       let safety = 0;
       while ((unit.movesRemaining || 0) > 0 && path.length > 0 && safety < 100) {
@@ -485,11 +493,12 @@ export class TurnManager {
         const result = this.gameEngine.moveUnit(unit.id, next.col, next.row);
         if (result?.success) {
           path.shift();
-          console.log(`[TurnManager] Unit ${unit.id} moved to (${next.col}, ${next.row}), ${path.length} steps remaining`);
+          console.log(`[TurnManager] ✅ Unit ${unit.id} moved to (${next.col}, ${next.row}), ${path.length} steps remaining in path`);
         } else {
-          console.log(`[TurnManager] Path step failed for unit ${unit.id}, reason=${result?.reason}`);
+          console.log(`[TurnManager] ❌ Path step failed for unit ${unit.id}, reason=${result?.reason}`);
           // Only clear path if blocked, not if just out of moves
           if (result?.reason !== 'no_moves' && result?.reason !== 'insufficient_moves') {
+            console.log(`[TurnManager] 🚫 Clearing path due to blocking issue`);
             this.clearUnitPath(unit.id);
           }
           break;
@@ -498,11 +507,15 @@ export class TurnManager {
       
       // Only clear path if actually completed (reached destination)
       if (path.length === 0) {
-        console.log(`[TurnManager] Unit ${unit.id} completed GoTo path`);
+        console.log(`[TurnManager] 🎯 Unit ${unit.id} completed GoTo path - destination reached!`);
         this.clearUnitPath(unit.id);
       } else {
-        console.log(`[TurnManager] Unit ${unit.id} path incomplete: ${path.length} steps remaining, will continue next turn`);
+        console.log(`[TurnManager] ⏸️ Unit ${unit.id} path incomplete: ${path.length} steps remaining, will continue next turn`);
       }
+    }
+    
+    if (unitsWithPaths.length === 0) {
+      console.log(`[TurnManager] No units with active GoTo paths for civ ${civilizationId}`);
     }
   }
 

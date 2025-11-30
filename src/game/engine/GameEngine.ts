@@ -65,6 +65,11 @@ export default class GameEngine {
   roundManager: TurnManager; // kept property name for compatibility
   goToManager: GoToManager;
 
+  // Getter for turnManager (alias for roundManager)
+  get turnManager() {
+    return this.roundManager;
+  }
+
   constructor(storeActions: GameActions | null = null) {
     this.storeActions = storeActions;
     this.squareGrid = null;
