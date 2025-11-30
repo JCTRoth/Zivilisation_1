@@ -8,6 +8,7 @@ import { AIUtility } from './AIUtility';
 import { UnitActionManager } from './UnitActionManager';
 import { TurnManager } from './TurnManager';
 import { SettlementEvaluator } from './SettlementEvaluator';
+import { EnemySearcher } from './EnemySearcher';
 import { GoToManager } from './GoToManager';
 import type { GameActions, Unit, City, Civilization } from '../../../types/game';
 
@@ -183,13 +184,78 @@ export default class GameEngine {
       try {
         const bestLocation = this.findBestSettlementForSettler(unit);
         if (bestLocation) {
-          console.log(`[AI-SETTLER] ✅ SettlementEvaluator found best location at (${bestLocation.col}, ${bestLocation.row}) with score ${bestLocation.score}`);
+          console.log(`[AI-SETTLER] SettlementEvaluator found best location at (${bestLocation.col}, ${bestLocation.row}) with score ${bestLocation.score}`);
           return { col: bestLocation.col, row: bestLocation.row };
         } else {
-          console.log(`[AI-SETTLER] ❌ SettlementEvaluator found no suitable location, settler will explore randomly`);
+          console.log(`[AI-SETTLER] SettlementEvaluator found no suitable location, settler will explore randomly`);
         }
       } catch (error) {
-        console.error(`[AI-SETTLER] ⚠️ Error calling SettlementEvaluator:`, error);
+        console.error(`[AI-SETTLER] Error calling SettlementEvaluator:`, error);
+      }
+    }
+
+    // Special handling for scouts: use EnemySearcher to find enemies
+    if (unit.type === 'scout') {
+      console.log(`[AI-SCOUT] Scout detected at (${unit.col}, ${unit.row}), checking for enemies`);
+      
+      try {
+        // Check if scout already found an enemy (stored in unit state)
+        if (unit.enemyFound) {
+          console.log(`[AI-SCOUT] Scout ${unit.id} has found enemy, returning to nearest city`);
+          const nearestCity = this.findNearestOwnCity(unit);
+          if (nearestCity) {
+            // Check if scout reached the city
+            if (unit.col === nearestCity.col && unit.row === nearestCity.row) {
+              console.log(`[AI-SCOUT] Scout ${unit.id} reached city, fortifying`);
+              unit.fortified = true;
+              unit.movesRemaining = 0;
+              
+              // Trigger warrior production at this city
+              this.triggerWarriorProduction(nearestCity, unit.enemyLocation);
+              
+              return null; // Scout is done
+            }
+            console.log(`[AI-SCOUT] Scout returning to city at (${nearestCity.col}, ${nearestCity.row})`);
+            return { col: nearestCity.col, row: nearestCity.row };
+          }
+        }
+
+        // Get visibility check function
+        const isVisible = (col: number, row: number) => {
+          const tile = this.getTileAt(col, row);
+          return tile && (tile.visible || tile.explored);
+        };
+
+        // Search for enemies using static hybrid search
+        const enemyResult = EnemySearcher.findNearestEnemy(
+          unit.col,
+          unit.row,
+          this.map.width,
+          this.map.height,
+          (col, row) => this.getUnitAt(col, row),
+          (col, row) => this.getCityAt(col, row),
+          isVisible,
+          unit.civilizationId
+        );
+        
+        if (enemyResult) {
+          console.log(`[AI-SCOUT] Enemy found at (${enemyResult.col}, ${enemyResult.row}), distance: ${enemyResult.distance}, type: ${enemyResult.targetType}`);
+          
+          // Mark that scout found enemy and store location
+          unit.enemyFound = true;
+          unit.enemyLocation = { col: enemyResult.col, row: enemyResult.row };
+          
+          // Start returning to nearest city
+          const nearestCity = this.findNearestOwnCity(unit);
+          if (nearestCity) {
+            console.log(`[AI-SCOUT] Scout returning to nearest city at (${nearestCity.col}, ${nearestCity.row})`);
+            return { col: nearestCity.col, row: nearestCity.row };
+          }
+        } else {
+          console.log(`[AI-SCOUT] No enemy found, continuing exploration`);
+        }
+      } catch (error) {
+        console.error(`[AI-SCOUT] Error using EnemySearcher:`, error);
       }
     }
 
@@ -233,6 +299,43 @@ export default class GameEngine {
 
     console.log(`[AI] No valid target found for unit ${unit.id}`);
     return null;
+  }
+
+  // Find nearest own city for a unit
+  private findNearestOwnCity(unit: any): City | null {
+    if (!this.squareGrid) return null;
+    
+    const ownCities = this.cities.filter(c => c.civilizationId === unit.civilizationId);
+    if (ownCities.length === 0) return null;
+    
+    let nearestCity: City | null = null;
+    let minDistance = Infinity;
+    
+    for (const city of ownCities) {
+      const distance = this.squareGrid.squareDistance(unit.col, unit.row, city.col, city.row);
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearestCity = city;
+      }
+    }
+    
+    console.log(`[AI-SCOUT] Nearest city for unit ${unit.id} is at (${nearestCity?.col}, ${nearestCity?.row}), distance: ${minDistance}`);
+    return nearestCity;
+  }
+
+  // Trigger warrior production at city and set target
+  private triggerWarriorProduction(city: City, enemyLocation: { col: number; row: number } | undefined) {
+    console.log(`[AI-CITY] Triggering warrior production at city ${city.name}`);
+    
+    // Set city production to warrior
+    city.currentProduction = { type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 };
+    city.buildQueue = [{ type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }];
+    
+    // Store enemy location for when warrior is built (using any cast to extend type)
+    if (enemyLocation) {
+      (city as any).enemyTarget = enemyLocation;
+      console.log(`[AI-CITY] Enemy target stored at (${enemyLocation.col}, ${enemyLocation.row})`);
+    }
   }
 
   // Find best settlement location for a settler using SettlementEvaluator
@@ -1314,8 +1417,8 @@ export default class GameEngine {
       foodNeeded: 20,
       productionStored: 0,
       productionProgress: 0, // Initialize production display
-      currentProduction: { type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }, // Default to first unit
-      buildQueue: [{ type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }], // Default production queue
+      currentProduction: civ.isHuman ? { type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 } : { type: 'unit', itemType: 'scout', name: 'Scout', cost: 15 }, // AI builds scout first
+      buildQueue: civ.isHuman ? [{ type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }] : [{ type: 'unit', itemType: 'scout', name: 'Scout', cost: 15 }], // AI builds scout first
       autoProduction: civ.isAI || civ.isHuman === false // Enable auto-production for AI cities by default
     };
 

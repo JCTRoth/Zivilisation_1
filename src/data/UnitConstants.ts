@@ -33,7 +33,10 @@ export const UNIT_TYPES = {
     WORKER: 'worker',
     DIPLOMAT: 'diplomat',
     CARAVAN: 'caravan',
-    FERRY: 'ferry'
+    FERRY: 'ferry',
+    
+    // Scout Units
+    SCOUT: 'scout'
 } as const;
 
 export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
@@ -48,6 +51,19 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canWork: false,
         naval: false,
         icon: '🗡️',
+        type: 'military'
+    },
+    [UNIT_TYPES.SCOUT]: {
+        name: 'Scout',
+        attack: 0.5,
+        defense: 1,
+        movement: 2,
+        cost: 15,
+        maintenance: 1,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '👁️',
         type: 'military'
     },
     [UNIT_TYPES.MILITIA]: {
@@ -385,6 +401,7 @@ export const UNIT_MAINTENANCE_COSTS = {
 
 export const UNIT_PRODUCTION_REQUIREMENTS = {
     [UNIT_TYPES.WARRIOR]: { shields: 10 },
+    [UNIT_TYPES.SCOUT]: { shields: 15 },
     [UNIT_TYPES.MILITIA]: { shields: 20 },
     [UNIT_TYPES.ARCHER]: { shields: 30 },
     [UNIT_TYPES.PHALANX]: { shields: 50 },
@@ -435,7 +452,7 @@ export const UNIT_DATA_MAP: Record<string, {
             sightRange = 2; // Ships can see further
         }
         // Special units with better vision
-        if (key === 'trireme' || key === 'caravel' || key === 'frigate') {
+        if (key === 'scout' || key === 'trireme' || key === 'caravel' || key === 'frigate') {
             sightRange = 2;
         }
         if (key === 'battleship' || key === 'cruiser' || key === 'submarine') {
