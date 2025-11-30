@@ -321,8 +321,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     // Visibility management actions
     updateVisibility: () => set(state => {
-      const { map, units, cities } = state;
-      const disableFog = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_DISABLE_FOG === 'true';
+      const { map, units, cities, settings } = state;
+      const disableFog = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_DISABLE_FOG === 'true') || settings.devMode;
 
       if (!map.tiles || map.tiles.length === 0) {
         console.log('[Store] updateVisibility: No tiles to update visibility for');
@@ -330,7 +330,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       }
 
       if (disableFog) {
-        // If developer requested fog disabled via env var, mark everything visible
+        // If developer mode enabled or fog disabled via env var, mark everything visible
+        console.log('[Store] updateVisibility: Developer mode enabled - revealing all tiles');
         const totalTiles = map.tiles.length;
         return {
           ...state,
@@ -431,8 +432,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     }),
 
     revealArea: (centerCol, centerRow, radius) => set(state => {
-      const disableFog = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_DISABLE_FOG === 'true';
+      const disableFog = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_DISABLE_FOG === 'true') || state.settings.devMode;
       if (disableFog) {
+        console.log('[Store] revealArea: Developer mode enabled - all tiles already visible');
         return state;
       }
 

@@ -38,6 +38,15 @@ interface MapData {
   tiles: MapTile[];
 }
 
+interface PlayerTurnStorage {
+  civilizationId: number;
+  visibility: boolean[]; // Current visibility (fog of war)
+  explored: boolean[]; // Permanently explored tiles
+  lastKnownUnits: Map<string, Unit>; // Last known enemy unit positions
+  lastKnownCities: Map<string, City>; // Last known enemy city positions
+  turnData: Record<string, any>; // Custom per-turn data storage
+}
+
 /**
  * Main Game Engine for React Civilization Clone
  * Manages all game systems and state
@@ -62,6 +71,8 @@ export default class GameEngine {
   onStateChange: ((eventType: string, eventData?: any) => void) | null;
   productionManager: ProductionManager;
   autoProduction: AutoProduction;
+  playerStorage: Map<number, PlayerTurnStorage>; // Per-player persistent storage
+  devMode: boolean; // Developer mode flag
   roundManager: TurnManager; // kept property name for compatibility
   goToManager: GoToManager;
 
@@ -101,6 +112,181 @@ export default class GameEngine {
     this.autoProduction = new AutoProduction(this);
     this.roundManager = new TurnManager(this);
     this.goToManager = new GoToManager(this, this.roundManager);
+    this.playerStorage = new Map();
+    this.devMode = false;
+  }
+
+  /**
+   * Initialize player storage for a civilization
+   */
+  private initializePlayerStorage(civilizationId: number): void {
+    if (!this.playerStorage.has(civilizationId)) {
+      this.playerStorage.set(civilizationId, {
+        civilizationId,
+        visibility: new Array(Constants.MAP_WIDTH * Constants.MAP_HEIGHT).fill(false),
+        explored: new Array(Constants.MAP_WIDTH * Constants.MAP_HEIGHT).fill(false),
+        lastKnownUnits: new Map(),
+        lastKnownCities: new Map(),
+        turnData: {}
+      });
+      console.log(`[PlayerStorage] Initialized storage for civilization ${civilizationId}`);
+    }
+  }
+
+  /**
+   * Get player storage for a civilization
+   */
+  getPlayerStorage(civilizationId: number): PlayerTurnStorage | undefined {
+    return this.playerStorage.get(civilizationId);
+  }
+
+  /**
+   * Update visibility for a player at a specific tile
+   */
+  setPlayerVisibility(civilizationId: number, col: number, row: number, visible: boolean, explored: boolean = false): void {
+    const storage = this.playerStorage.get(civilizationId);
+    if (!storage) return;
+    
+    const index = row * Constants.MAP_WIDTH + col;
+    storage.visibility[index] = visible;
+    if (explored) {
+      storage.explored[index] = true;
+    }
+  }
+
+  /**
+   * Check if a tile is visible to a player
+   */
+  isVisibleToPlayer(civilizationId: number, col: number, row: number): boolean {
+    // Dev mode: everything is visible
+    if (this.devMode) return true;
+    
+    const storage = this.playerStorage.get(civilizationId);
+    if (!storage) return false;
+    
+    const index = row * Constants.MAP_WIDTH + col;
+    return storage.visibility[index] || false;
+  }
+
+  /**
+   * Check if a tile has been explored by a player
+   */
+  isExploredByPlayer(civilizationId: number, col: number, row: number): boolean {
+    // Dev mode: everything is explored
+    if (this.devMode) return true;
+    
+    const storage = this.playerStorage.get(civilizationId);
+    if (!storage) return false;
+    
+    const index = row * Constants.MAP_WIDTH + col;
+    return storage.explored[index] || false;
+  }
+
+  /**
+   * Get all units visible to a player (respects fog of war)
+   */
+  getVisibleUnits(civilizationId: number): Unit[] {
+    // Dev mode: see all units
+    if (this.devMode) return this.units;
+    
+    return this.units.filter(unit => {
+      // Always see own units
+      if (unit.civilizationId === civilizationId) return true;
+      
+      // See enemy units only if their tile is currently visible
+      return this.isVisibleToPlayer(civilizationId, unit.col, unit.row);
+    });
+  }
+
+  /**
+   * Get all cities visible to a player (respects fog of war)
+   */
+  getVisibleCities(civilizationId: number): City[] {
+    // Dev mode: see all cities
+    if (this.devMode) return this.cities;
+    
+    return this.cities.filter(city => {
+      // Always see own cities
+      if (city.civilizationId === civilizationId) return true;
+      
+      // See enemy cities only if their tile has been explored
+      return this.isExploredByPlayer(civilizationId, city.col, city.row);
+    });
+  }
+
+  /**
+   * Update visibility for all tiles based on current player's unit positions
+   */
+  updatePlayerVisibility(civilizationId: number): void {
+    const storage = this.playerStorage.get(civilizationId);
+    if (!storage) return;
+    
+    console.log(`[Visibility] Updating visibility for civilization ${civilizationId}`);
+    
+    // Dev mode: reveal everything
+    if (this.devMode) {
+      storage.visibility.fill(true);
+      storage.explored.fill(true);
+      console.log(`[Visibility] Dev mode: All tiles visible and explored`);
+      return;
+    }
+    
+    // Reset current visibility (but keep explored)
+    storage.visibility.fill(false);
+    
+    // Calculate visibility from all player units
+    const playerUnits = this.units.filter(u => u.civilizationId === civilizationId);
+    
+    for (const unit of playerUnits) {
+      // Get unit sight range
+      let sightRange = 1; // Default
+      if (UNIT_PROPS && UNIT_PROPS[unit.type]) {
+        sightRange = UNIT_PROPS[unit.type].sightRange || 1;
+      }
+      
+      // Reveal tiles around unit
+      for (let dr = -sightRange; dr <= sightRange; dr++) {
+        for (let dc = -sightRange; dc <= sightRange; dc++) {
+          const targetCol = unit.col + dc;
+          const targetRow = unit.row + dr;
+          
+          if (this.isValidHex(targetCol, targetRow)) {
+            const distance = Math.max(Math.abs(dc), Math.abs(dr));
+            if (distance <= sightRange) {
+              const index = targetRow * Constants.MAP_WIDTH + targetCol;
+              storage.visibility[index] = true;
+              storage.explored[index] = true;
+            }
+          }
+        }
+      }
+    }
+    
+    // Calculate visibility from all player cities
+    const playerCities = this.cities.filter(c => c.civilizationId === civilizationId);
+    const citySightRange = 2; // Cities can see 2 tiles
+    
+    for (const city of playerCities) {
+      for (let dr = -citySightRange; dr <= citySightRange; dr++) {
+        for (let dc = -citySightRange; dc <= citySightRange; dc++) {
+          const targetCol = city.col + dc;
+          const targetRow = city.row + dr;
+          
+          if (this.isValidHex(targetCol, targetRow)) {
+            const distance = Math.max(Math.abs(dc), Math.abs(dr));
+            if (distance <= citySightRange) {
+              const index = targetRow * Constants.MAP_WIDTH + targetCol;
+              storage.visibility[index] = true;
+              storage.explored[index] = true;
+            }
+          }
+        }
+      }
+    }
+    
+    const visibleCount = storage.visibility.filter(v => v).length;
+    const exploredCount = storage.explored.filter(e => e).length;
+    console.log(`[Visibility] Civilization ${civilizationId}: ${visibleCount} visible, ${exploredCount} explored`);
   }
 
   /**
@@ -705,6 +891,10 @@ export default class GameEngine {
     // Merge custom settings
     this.gameSettings = { ...this.gameSettings, ...settings };
     
+    // Set dev mode from settings
+    this.devMode = (settings as any).devMode || false;
+    console.log(`[GameEngine] Developer mode: ${this.devMode ? 'ENABLED' : 'DISABLED'}`);
+    
     // Validate playerCivilization index
     if (this.gameSettings.playerCivilization < 0 || 
         this.gameSettings.playerCivilization >= CIVILIZATIONS.length) {
@@ -921,12 +1111,34 @@ export default class GameEngine {
     console.log('Player civilization:', this.civilizations[0].name, 'led by', this.civilizations[0].leader);
     console.log('Starting with 1 Settler unit and', this.gameSettings.startingGold, 'gold');
     console.log('Initial technologies: Irrigation, Mining, Roads');
+    
+    // Initialize player storage for each civilization
+    for (let i = 0; i < this.civilizations.length; i++) {
+      this.initializePlayerStorage(i);
+    }
   }
 
   /**
-   * Reveal map tiles around a position
+   * Reveal map tiles around a position for the active player
    */
   revealArea(centerCol, centerRow, radius) {
+    // Update player storage
+    const storage = this.playerStorage.get(this.activePlayer);
+    if (storage) {
+      for (let row = centerRow - radius; row <= centerRow + radius; row++) {
+        for (let col = centerCol - radius; col <= centerCol + radius; col++) {
+          if (this.isValidHex(col, row)) {
+            const distance = Math.max(Math.abs(col - centerCol), Math.abs(row - centerRow));
+            if (distance <= radius) {
+              const index = row * Constants.MAP_WIDTH + col;
+              storage.visibility[index] = true;
+              storage.explored[index] = true;
+            }
+          }
+        }
+      }
+    }
+    
     if (this.storeActions) {
       this.storeActions.revealArea(centerCol, centerRow, radius);
     }

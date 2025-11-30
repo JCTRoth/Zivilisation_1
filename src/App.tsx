@@ -68,6 +68,12 @@ function App() {
       console.log('Game started with units:', engine.units);
       console.log('Player settler at:', playerSettler);
 
+      // Update visibility to apply dev mode fog of war settings
+      if (typeof gameSettings.devMode === 'boolean') {
+        console.log('[App] Updating visibility after dev mode change');
+        actions.updateVisibility();
+      }
+
       // Focus camera on player's starting unit using the store action so the same
       // centering logic is used everywhere (keeps canvas and minimap in sync).
       if (playerSettler) {
