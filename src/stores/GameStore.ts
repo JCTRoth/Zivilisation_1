@@ -364,16 +364,31 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         let gameTypeDef: any = null;
         if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
           try {
+            // First try exact match
             gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === unitTypeId) || null;
+            
+            // If not found and ends with 's', try singular form
+            if (!gameTypeDef && unitTypeId.endsWith('s')) {
+              const singularType = unitTypeId.slice(0, -1);
+              gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === singularType) || null;
+            }
           } catch (e) {
+            console.warn('[Store] Error looking up unit type:', e);
             gameTypeDef = null;
           }
         }
 
-        // Fallback to UNIT_PROPERTIES (unitConstants) keyed by lowercase id
-        const constDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
-
-        const sightRange = (typeof (unit as any).sightRange === 'number') ? (unit as any).sightRange : (gameTypeDef?.sightRange ?? 0);
+        const sightRange = (typeof (unit as any).sightRange === 'number') 
+          ? (unit as any).sightRange 
+          : (gameTypeDef?.sightRange ?? 1); // Default to 1 if not found
+        
+        console.log('[Store] Unit visibility check:', {
+          unitType: unit.type,
+          unitTypeId,
+          foundDef: !!gameTypeDef,
+          sightRange,
+          position: `${unit.col},${unit.row}`
+        });
 
         if (sightRange > 0) {
           console.log('[Store] updateVisibility: Processing unit with sight', {

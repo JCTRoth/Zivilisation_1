@@ -221,6 +221,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       return true;
     };
 
+    // Track current terrain (either existing or newly rebuilt)
+    let currentTerrain = terrain;
+
     if (!ensureTerrainMatchesMap()) {
       console.warn('[GameCanvas] Terrain grid mismatch detected. Rebuilding terrain from mapData.tiles');
       // Rebuild terrain synchronously from mapData.tiles (best-effort)
@@ -240,19 +243,19 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
             };
           }
         }
-        // Only update terrain state if it differs to avoid triggering effects repeatedly
-        setTerrain(prev => {
-          const needUpdate = JSON.stringify(prev) !== JSON.stringify(rebuilt);
-          return needUpdate ? rebuilt : prev;
-        });
+        // Use rebuilt terrain immediately
+        currentTerrain = rebuilt;
+        setTerrain(rebuilt);
+        console.log('[GameCanvas] Terrain rebuilt from mapData');
       } else {
         console.warn('[GameCanvas] Cannot rebuild terrain: invalid mapData.tiles length');
       }
     }
 
-    if (terrain && mapData.visibility && mapData.revealed) {
+    // Update visibility using current terrain (either existing or just rebuilt)
+    if (currentTerrain && mapData.visibility && mapData.revealed) {
       // Update visibility without recreating the entire grid
-      const updatedTerrain = [...terrain];
+      const updatedTerrain = [...currentTerrain];
       for (let row = 0; row < mapData.height; row++) {
         if (!updatedTerrain[row]) updatedTerrain[row] = [];
         for (let col = 0; col < mapData.width; col++) {

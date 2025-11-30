@@ -66,6 +66,7 @@ export class UIManager {
     private selectedCity: City | null;
     private hoveredTile: { col: number; row: number } | null;
     private elements: UIElement;
+    public onStateChange: ((eventType: string, data: any) => void) | null = null;
 
     constructor(gameMap: GameMap) {
 

@@ -411,3 +411,51 @@ export const UNIT_PRODUCTION_REQUIREMENTS = {
     [UNIT_TYPES.CARAVAN]: { shields: 50 },
     [UNIT_TYPES.FERRY]: { shields: 30 }
 } as const;
+
+// Create GameData-compatible format: Record<string, UnitDataObject>
+// This provides the format expected by code using Object.values(UNIT_TYPES) from GameData
+export const UNIT_DATA_MAP: Record<string, {
+    id: string;
+    name: string;
+    cost: number;
+    attack: number;
+    defense: number;
+    movement: number;
+    sightRange?: number;
+    icon: string;
+    requires?: string | null;
+    description?: string;
+}> = Object.fromEntries(
+    Object.entries(UNIT_PROPERTIES).map(([key, props]) => {
+        // Determine sight range based on unit type
+        let sightRange = 1; // Default for most units
+        
+        // Naval units and scouts have extended sight range
+        if (props.naval) {
+            sightRange = 2; // Ships can see further
+        }
+        // Special units with better vision
+        if (key === 'trireme' || key === 'caravel' || key === 'frigate') {
+            sightRange = 2;
+        }
+        if (key === 'battleship' || key === 'cruiser' || key === 'submarine') {
+            sightRange = 3;
+        }
+        
+        return [
+            key,
+            {
+                id: key,
+                name: props.name,
+                cost: props.cost,
+                attack: props.attack,
+                defense: props.defense,
+                movement: props.movement,
+                sightRange,
+                icon: props.icon,
+                requires: null,
+                description: `${props.name} - ${props.type} unit`
+            }
+        ];
+    })
+);

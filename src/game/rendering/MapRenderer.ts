@@ -474,19 +474,16 @@ export class MapRenderer {
     const canvasSize = this.ensureCanvasSize(canvas);
     ctx.clearRect(0, 0, canvasSize.width, canvasSize.height);
 
-    if (!terrainGrid) {
-      console.warn('[MapRenderer] renderStaticFrame: No terrain grid available');
-      return;
-    }
-
     const bounds = this.calculateVisibleBounds(camera, canvasSize, map);
     const hasOffscreen = Boolean(offscreenCanvas);
 
-    // Draw terrain
-    if (hasOffscreen && offscreenCanvas) {
-      this.drawTerrainFromOffscreen(ctx, offscreenCanvas, camera, canvasSize);
-    } else {
-      this.drawTerrainTiles(ctx, terrainGrid, bounds, camera, canvasSize, squareToScreen, selectedHex);
+    // Draw terrain if available
+    if (terrainGrid) {
+      if (hasOffscreen && offscreenCanvas) {
+        this.drawTerrainFromOffscreen(ctx, offscreenCanvas, camera, canvasSize);
+      } else {
+        this.drawTerrainTiles(ctx, terrainGrid, bounds, camera, canvasSize, squareToScreen, selectedHex);
+      }
     }
 
     // Draw all static dynamic content (units at alpha 1, no pulsing)
@@ -756,10 +753,12 @@ export class MapRenderer {
           continue;
         }
 
-        const tile = terrainGrid[row]?.[col];
-        if (!tile || !tile.explored) continue;
-
         const tileIndex = this.getTileIndex(row, col, map.width);
+        const tile = terrainGrid?.[row]?.[col];
+        
+        // Check if tile is explored (either from terrain grid or map data)
+        const isExplored = tile?.explored ?? map.revealed?.[tileIndex] ?? false;
+        if (!isExplored) continue;
 
         // Draw selection highlight
         if (selectedHex && selectedHex.col === col && selectedHex.row === row) {
@@ -772,15 +771,15 @@ export class MapRenderer {
         // === IMPROVEMENTS RENDERING (same pattern as units/cities) ===
         // Always read improvements from authoritative map.tiles, never from cached terrain grid
         const authoritativeTile: any = map.tiles?.[tileIndex];
-        if (authoritativeTile && tile.explored) {
+        if (authoritativeTile && isExplored && tile) {
           const improvementTile: TerrainTileRenderInfo = {
             type: tile.type,
             resource: authoritativeTile.resource ?? tile.resource ?? null,
             improvement: authoritativeTile.improvement ?? null,
             hasRoad: authoritativeTile.hasRoad ?? false,
             hasRiver: authoritativeTile.hasRiver ?? tile.hasRiver ?? false,
-            visible: tile.visible,
-            explored: tile.explored
+            visible: tile.visible ?? false,
+            explored: tile.explored ?? false
           };
 
           // Draw improvements using the same drawTerrainSymbol function, but only improvements/roads
@@ -793,7 +792,7 @@ export class MapRenderer {
         }
 
         // === UNITS AND CITIES RENDERING (only for visible tiles) ===
-        const isVisible = map.visibility?.[tileIndex] ?? tile.visible ?? false;
+        const isVisible = map.visibility?.[tileIndex] ?? tile?.visible ?? false;
 
         if (isVisible) {
           const city = cities.find(c => c.col === col && c.row === row);
@@ -1483,23 +1482,39 @@ export class MapRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    ctx.beginPath();
-    path.forEach((pos, index) => {
-      const { x, y } = squareToScreen(pos.col, pos.row);
-      if (index === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
-      }
+    // Get map data for checking explored tiles
+    const mapData = (gameState as any).mapData;
+    const mapWidth = mapData?.width || 0;
+    
+    // Filter path to only include explored tiles for line drawing
+    const visiblePath = path.filter((pos) => {
+      if (!mapData || !mapData.revealed) return true;
+      const tileIndex = pos.row * mapWidth + pos.col;
+      return mapData.revealed[tileIndex] === true;
     });
-    ctx.stroke();
 
+    // Draw path lines only through explored tiles
+    if (visiblePath.length >= 2) {
+      ctx.beginPath();
+      visiblePath.forEach((pos, index) => {
+        const { x, y } = squareToScreen(pos.col, pos.row);
+        if (index === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+      ctx.stroke();
+    }
+
+    // Always show destination marker (even on unexplored terrain)
     // Check if path ends at an enemy unit - if so, show combat icon instead of arrow
     const lastPathStep = path[path.length - 1];
     const targetUnit = units.find(u => u.col === lastPathStep.col && u.row === lastPathStep.row);
     const isEnemyAtDestination = targetUnit && targetUnit.civilizationId !== unit.civilizationId;
 
-    if (path.length >= 2) {
+    // Always draw destination marker regardless of explored status
+    if (path.length >= 1) {
       const last = path[path.length - 1];
       const { x: x2, y: y2 } = squareToScreen(last.col, last.row);
       
@@ -1518,26 +1533,38 @@ export class MapRenderer {
         ctx.restore();
       } else {
         // Draw normal arrow for movement
-        const secondLast = path[path.length - 2];
-        const { x: x1, y: y1 } = squareToScreen(secondLast.col, secondLast.row);
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        const len = Math.sqrt(dx * dx + dy * dy);
-        if (len > 0) {
-          const arrowLen = 10;
-          const arrowAngle = Math.PI / 6;
-          const angle = Math.atan2(dy, dx);
-          const leftAngle = angle - arrowAngle;
-          const rightAngle = angle + arrowAngle;
-          const leftX = x2 - arrowLen * Math.cos(leftAngle);
-          const leftY = y2 - arrowLen * Math.sin(leftAngle);
-          const rightX = x2 - arrowLen * Math.cos(rightAngle);
-          const rightY = y2 - arrowLen * Math.sin(rightAngle);
+        // Use visiblePath if available to get proper direction from last visible segment
+        const arrowSourcePath = visiblePath.length >= 2 ? visiblePath : path;
+        if (arrowSourcePath.length >= 2) {
+          const secondLast = arrowSourcePath[arrowSourcePath.length - 2];
+          const { x: x1, y: y1 } = squareToScreen(secondLast.col, secondLast.row);
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          if (len > 0) {
+            const arrowLen = 10;
+            const arrowAngle = Math.PI / 6;
+            const angle = Math.atan2(dy, dx);
+            const leftAngle = angle - arrowAngle;
+            const rightAngle = angle + arrowAngle;
+            const leftX = x2 - arrowLen * Math.cos(leftAngle);
+            const leftY = y2 - arrowLen * Math.sin(leftAngle);
+            const rightX = x2 - arrowLen * Math.cos(rightAngle);
+            const rightY = y2 - arrowLen * Math.sin(rightAngle);
+            ctx.beginPath();
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(leftX, leftY);
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(rightX, rightY);
+            ctx.stroke();
+          }
+        } else {
+          // If no direction available, draw a simple target marker
           ctx.beginPath();
-          ctx.moveTo(x2, y2);
-          ctx.lineTo(leftX, leftY);
-          ctx.moveTo(x2, y2);
-          ctx.lineTo(rightX, rightY);
+          ctx.arc(x2, y2, 8, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(x2, y2, 4, 0, Math.PI * 2);
           ctx.stroke();
         }
       }

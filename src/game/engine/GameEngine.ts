@@ -178,13 +178,18 @@ export default class GameEngine {
 
     // Special handling for settlers: use SettlementEvaluator to find best city location
     if (unit.type === 'settlers') {
-      console.log(`[AI] Settler detected at (${unit.col}, ${unit.row}), using SettlementEvaluator`);
-      const bestLocation = this.findBestSettlementForSettler(unit);
-      if (bestLocation) {
-        console.log(`[AI] SettlementEvaluator found best location at (${bestLocation.col}, ${bestLocation.row}) with score ${bestLocation.score}`);
-        return { col: bestLocation.col, row: bestLocation.row };
-      } else {
-        console.log(`[AI] SettlementEvaluator found no suitable location, settler will explore`);
+      console.log(`[AI-SETTLER] Settler detected at (${unit.col}, ${unit.row}), using SettlementEvaluator`);
+      
+      try {
+        const bestLocation = this.findBestSettlementForSettler(unit);
+        if (bestLocation) {
+          console.log(`[AI-SETTLER] ✅ SettlementEvaluator found best location at (${bestLocation.col}, ${bestLocation.row}) with score ${bestLocation.score}`);
+          return { col: bestLocation.col, row: bestLocation.row };
+        } else {
+          console.log(`[AI-SETTLER] ❌ SettlementEvaluator found no suitable location, settler will explore randomly`);
+        }
+      } catch (error) {
+        console.error(`[AI-SETTLER] ⚠️ Error calling SettlementEvaluator:`, error);
       }
     }
 
