@@ -8,6 +8,7 @@ import { AIUtility } from './AIUtility';
 import { UnitActionManager } from './UnitActionManager';
 import { RoundManager } from './RoundManager';
 import { SettlementEvaluator } from './SettlementEvaluator';
+import { GoToManager } from './GoToManager';
 import type { GameActions, Unit, City, Civilization } from '../../../types/game';
 
 interface GameSettings {
@@ -58,6 +59,7 @@ export default class GameEngine {
   productionManager: ProductionManager;
   autoProduction: AutoProduction;
   roundManager: RoundManager;
+  goToManager: GoToManager;
 
   constructor(storeActions: GameActions | null = null) {
     this.storeActions = storeActions;
@@ -92,6 +94,7 @@ export default class GameEngine {
     this.productionManager = new ProductionManager(this);
     this.autoProduction = new AutoProduction(this);
     this.roundManager = new RoundManager(this);
+    this.goToManager = new GoToManager(this, this.roundManager);
   }
 
   /**
@@ -145,6 +148,22 @@ export default class GameEngine {
   // Small helper: sleep for ms milliseconds
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Check and update the areTurnsDone flag for a unit
+   * Sets to true if unit has no moves left OR is fortified OR is sleeping
+   */
+  private updateUnitTurnsDoneFlag(unit: any): void {
+    const noMovesLeft = (unit.movesRemaining || 0) <= 0;
+    const isFortified = unit.isFortified === true;
+    const isSleeping = unit.isSleeping === true;
+    
+    unit.areTurnsDone = noMovesLeft || isFortified || isSleeping;
+    
+    if (unit.areTurnsDone) {
+      console.log(`[GameEngine] Unit ${unit.id} turns done: moves=${unit.movesRemaining}, fortified=${isFortified}, sleeping=${isSleeping}`);
+    }
   }
 
   // Highlight AI target on renderer if available
@@ -342,7 +361,11 @@ export default class GameEngine {
       console.warn(`[AI] runAITurn: Turn changed before AI could act (expected: ${civilizationId}, actual: ${this.activePlayer})`);
       return;
     }
-    console.log(`[AI] Starting AI turn for civilization ${civilizationId}`);
+    console.log(`[AI] 🤖 Starting AI turn for civilization ${civilizationId} (${civ.name})`);
+    
+    const turnStartTime = Date.now();
+    const MAX_AI_TURN_TIME = 30000; // 30 seconds max for entire AI turn
+    
     // Small delay before AI starts so player can observe
     await this.sleep(250);
 
@@ -350,12 +373,48 @@ export default class GameEngine {
     console.log(`[AI] Found ${aiUnits.length} units with moves remaining for civilization ${civilizationId}`);
 
     for (const unit of aiUnits) {
+      // Check if we've exceeded the maximum AI turn time
+      if (Date.now() - turnStartTime > MAX_AI_TURN_TIME) {
+        console.error(`[AI] ❌ AI turn for civilization ${civilizationId} exceeded maximum time (${MAX_AI_TURN_TIME}ms), aborting`);
+        break;
+      }
+      
       console.log(`[AI] Processing unit ${unit.id} (${unit.type}) at (${unit.col},${unit.row}) with ${unit.movesRemaining} moves remaining`);
+      
+      // Safety: Prevent infinite loops by limiting iterations per unit
+      let movementAttempts = 0;
+      const MAX_MOVEMENT_ATTEMPTS = 50; // Reasonable limit for movement attempts
+      let previousMoves = unit.movesRemaining;
+      let stuckCounter = 0;
+      const MAX_STUCK_ITERATIONS = 3; // If moves don't change for 3 iterations, unit is stuck
+      
       // While this unit can move, pick targets and attempt actions
       while ((unit.movesRemaining || 0) > 0) {
+        movementAttempts++;
+        
+        // Check if unit is stuck (moves not decreasing)
+        if (unit.movesRemaining === previousMoves) {
+          stuckCounter++;
+          if (stuckCounter >= MAX_STUCK_ITERATIONS) {
+            console.warn(`[AI] ⚠️ Unit ${unit.id} stuck - moves not decreasing after ${stuckCounter} iterations, forcing skip`);
+            this.skipUnit(unit.id);
+            break;
+          }
+        } else {
+          stuckCounter = 0; // Reset stuck counter if moves changed
+        }
+        previousMoves = unit.movesRemaining;
+        
+        if (movementAttempts > MAX_MOVEMENT_ATTEMPTS) {
+          console.warn(`[AI] ⚠️ Unit ${unit.id} exceeded maximum movement attempts (${MAX_MOVEMENT_ATTEMPTS}), forcing skip`);
+          this.skipUnit(unit.id);
+          break;
+        }
+        
         const target = this.chooseAITarget(unit);
         if (!target) {
           // No valid target, skip the unit's turn
+          console.log(`[AI] No target found for unit ${unit.id}, skipping`);
           this.skipUnit(unit.id);
           break;
         }
@@ -529,19 +588,29 @@ export default class GameEngine {
     console.log(`[AI] Processing auto-production for civilization ${civilizationId}`);
     this.autoProduction.processAutoProductionForCivilization(civilizationId);
 
-    // Check if turn should end automatically after AI moves
-    this.checkAndEndTurnIfNoMoves();
-
-    // After AI finished its units, auto-advance to next player
-    console.log(`[AI] AI turn completed for civilization ${civilizationId}, advancing to next player`);
+    // Signal AI finished (for UI updates)
+    console.log(`[AI] AI turn completed for civilization ${civilizationId}`);
     this.onStateChange && this.onStateChange('AI_FINISHED', { civilizationId });
+
+    // Check if turn should end automatically after AI moves
+    console.log(`[AI] Checking if AI has moves remaining...`);
+    this.checkAndEndTurnIfNoMoves();
     
-    // Automatically advance to next civilization's turn
+    // Fallback: If checkAndEndTurnIfNoMoves didn't trigger (AI still has units with moves but chose to skip them),
+    // force end the turn after a delay
     setTimeout(() => {
-      console.log(`[AI] Auto-advancing turn after AI civilization ${civilizationId} finished`);
-      this.processTurn();
-    }, 500);
+      // Double-check if we're still on the same AI player
+      if (this.activePlayer === civilizationId && !this.civilizations[this.activePlayer]?.isHuman) {
+        console.log(`[AI] Fallback: AI ${civilizationId} still active after processing, force ending turn`);
+        if (this.onStateChange) {
+          this.onStateChange('AUTO_END_TURN', { civilizationId: this.activePlayer });
+        }
+      }
+    }, 800);
+    
+    // Note: processTurn() is called via the AUTO_END_TURN event in UseGameEngine
   }
+
 
   /**
    * Initialize the game engine with settings
@@ -1107,6 +1176,9 @@ export default class GameEngine {
       unit.row = targetRow;
       unit.movesRemaining = (unit.movesRemaining || 0) - moveCost;
 
+      // Update turn done status
+      this.updateUnitTurnsDoneFlag(unit);
+
       // Log movement
       console.log(`[MOVEMENT] ${unit.type} (${unit.id}) moved from (${fromCol},${fromRow}) to (${targetCol},${targetRow}), moveCost: ${moveCost}, moves remaining: ${unit.movesRemaining}`);
 
@@ -1162,6 +1234,9 @@ export default class GameEngine {
       attacker.row = defender.row;
       attacker.movesRemaining = 0;
 
+      // Update turn done status for attacker
+      this.updateUnitTurnsDoneFlag(attacker);
+
       // Log combat movement
       console.log(`[COMBAT MOVEMENT] ${attacker.type} (${attacker.id}) defeated ${defender.type} (${defender.id}) and moved from (${fromCol},${fromRow}) to (${defender.col},${defender.row})`);
 
@@ -1188,6 +1263,9 @@ export default class GameEngine {
       // Defender wins - attacker is damaged or destroyed
       attacker.health -= 25;
       attacker.movesRemaining = 0;
+      
+      // Update turn done status for attacker
+      this.updateUnitTurnsDoneFlag(attacker);
       
       if (attacker.health <= 0) {
         // Mark attacker as defeated and delay removal (5 seconds to show black X)
@@ -1287,25 +1365,62 @@ export default class GameEngine {
    * Check if current player has any units with moves remaining, and end turn if not
    */
   checkAndEndTurnIfNoMoves() {
+    console.log('[TURN] checkAndEndTurnIfNoMoves: Checking active player', this.activePlayer);
+    
     const currentCiv = this.civilizations[this.activePlayer];
-    if (!currentCiv) return; // Apply to both human and AI players
+    if (!currentCiv) {
+      console.warn('[TURN] No civilization found for active player', this.activePlayer);
+      return;
+    }
 
-    const hasMovesLeft = this.units.some(u => u.civilizationId === this.activePlayer && (u.movesRemaining || 0) > 0);
-    if (!hasMovesLeft) {
-      console.log('[TURN] All units moved for player', this.activePlayer, currentCiv.isHuman ? '(human)' : '(AI)');
+    const playerUnits = this.units.filter(u => u.civilizationId === this.activePlayer);
+    const unitsWithMoves = playerUnits.filter(u => (u.movesRemaining || 0) > 0);
+    
+    console.log(`[TURN] Player ${this.activePlayer} (${currentCiv.isHuman ? 'human' : 'AI'}) has ${playerUnits.length} total units, ${unitsWithMoves.length} with moves remaining`);
+    
+    if (unitsWithMoves.length > 0) {
+      console.log('[TURN] Units with moves:', unitsWithMoves.map(u => ({
+        id: u.id,
+        type: u.type,
+        pos: `(${u.col},${u.row})`,
+        moves: u.movesRemaining,
+        areTurnsDone: u.areTurnsDone
+      })));
+    }
+
+    const hasMovesLeft = unitsWithMoves.length > 0;
+    
+    // For human players, check if auto turn ending should trigger
+    if (currentCiv.isHuman) {
+      // Check if all units have areTurnsDone flag set
+      const allUnitsDone = playerUnits.every(u => u.areTurnsDone === true);
       
-      if (currentCiv.isHuman) {
-        // For human players, ask for confirmation instead of auto-ending
+      console.log(`[TURN] Human player units done status: ${playerUnits.filter(u => u.areTurnsDone).length}/${playerUnits.length} units done`);
+      
+      if (allUnitsDone && playerUnits.length > 0) {
+        console.log('[TURN] All human player units are done - checking auto end turn setting');
+        // Emit event with request for auto-end check
+        if (this.onStateChange) {
+          this.onStateChange('CHECK_AUTO_END_TURN', { civilizationId: this.activePlayer });
+        }
+      } else if (!hasMovesLeft) {
+        // Traditional check: no moves left
         console.log('[TURN] Human player has no moves left - asking for confirmation');
         if (this.onStateChange) {
           this.onStateChange('TURN_END_CONFIRMATION_NEEDED', { civilizationId: this.activePlayer });
         }
       } else {
-        // For AI players, auto-end the turn
-        console.log('[TURN] AI player has no moves left - auto-ending turn');
+        console.log('[TURN] ⏸️ Human player still has moves left or units not done, not ending turn');
+      }
+    } else {
+      // For AI players, auto-end when no moves left
+      if (!hasMovesLeft) {
+        console.log('[TURN] 🤖 AI player has no moves left - triggering AUTO_END_TURN event');
         if (this.onStateChange) {
           this.onStateChange('AUTO_END_TURN', { civilizationId: this.activePlayer });
         }
+      } else {
+        console.log('[TURN] ⏸️ AI player still has moves left, not ending turn');
       }
     }
   }
@@ -1314,22 +1429,28 @@ export default class GameEngine {
    * Process end of turn
    */
   processTurn() {
-    console.log('[GameEngine] processTurn: Starting turn processing');
+    console.log('[GameEngine] processTurn: Starting turn processing for current player', this.activePlayer);
     
     // Advance to next player
+    const previousPlayer = this.activePlayer;
     this.activePlayer = (this.activePlayer + 1) % this.civilizations.length;
     const currentCiv = this.civilizations[this.activePlayer];
-    if (!currentCiv) return;
+    if (!currentCiv) {
+      console.error('[GameEngine] processTurn: No civilization found for active player', this.activePlayer);
+      return;
+    }
 
-    console.log(`[GameEngine] processTurn: Active player is now ${this.activePlayer} (${currentCiv.name})`);
+    console.log(`[GameEngine] processTurn: Turn advanced from player ${previousPlayer} to ${this.activePlayer} (${currentCiv.name}, ${currentCiv.isHuman ? 'human' : 'AI'})`);
 
     // Reset unit moves for the new active player
-    this.units
-      .filter(u => u.civilizationId === this.activePlayer)
-      .forEach(unit => {
-        const unitProps = UNIT_PROPS[unit.type];
-        unit.movesRemaining = unitProps ? unitProps.movement : 1;
-      });
+    const activePlayerUnits = this.units.filter(u => u.civilizationId === this.activePlayer);
+    console.log(`[GameEngine] processTurn: Resetting moves for ${activePlayerUnits.length} units of player ${this.activePlayer}`);
+    
+    activePlayerUnits.forEach(unit => {
+      const unitProps = UNIT_PROPS[unit.type];
+      unit.movesRemaining = unitProps ? unitProps.movement : 1;
+      unit.areTurnsDone = false; // Reset turn done flag
+    });
 
     // Clean up paths for destroyed units
     const existingUnitIds = this.units.map(u => u.id);
@@ -1506,16 +1627,23 @@ export default class GameEngine {
 
     // If this civilization is an AI, run its turn asynchronously so UI can update between moves
     if (!currentCiv.isHuman && currentCiv.isAI) {
-      console.log(`[GameEngine] processTurn: Civilization ${this.activePlayer} is AI, starting AI turn`);
+      console.log(`[GameEngine] 🤖 processTurn: Civilization ${this.activePlayer} (${currentCiv.name}) is AI, starting AI turn`);
       // fire-and-forget AI routine
-      this.runAITurn(this.activePlayer).catch(err => console.error('AI turn error', err));
+      this.runAITurn(this.activePlayer).catch(err => console.error('[GameEngine] ❌ AI turn error', err));
     } else if (currentCiv.isHuman) {
-      console.log(`[GameEngine] processTurn: Civilization ${this.activePlayer} is human player, skipping AI`);
+      console.log(`[GameEngine] 👤 processTurn: Civilization ${this.activePlayer} (${currentCiv.name}) is human player, awaiting input`);
+    } else {
+      console.warn(`[GameEngine] ⚠️ processTurn: Civilization ${this.activePlayer} has ambiguous AI/human state:`, {
+        isHuman: currentCiv.isHuman,
+        isAI: currentCiv.isAI
+      });
     }
 
     if (this.onStateChange) {
       this.onStateChange('TURN_PROCESSED', { civilizationId: this.activePlayer });
     }
+    
+    console.log(`[GameEngine] processTurn: Completed for player ${this.activePlayer}`);
   }
 
   /**
@@ -1633,6 +1761,9 @@ export default class GameEngine {
 
     UnitActionManager.sleepUnit(unit);
 
+    // Update turn done status
+    this.updateUnitTurnsDoneFlag(unit);
+
     if (this.onStateChange) {
       this.onStateChange('UNIT_SLEPT', { unit });
     }
@@ -1671,6 +1802,9 @@ export default class GameEngine {
 
     UnitActionManager.fortifyUnit(unit);
 
+    // Update turn done status
+    this.updateUnitTurnsDoneFlag(unit);
+
     if (this.onStateChange) {
       this.onStateChange('UNIT_FORTIFIED', { unit });
     }
@@ -1682,18 +1816,33 @@ export default class GameEngine {
    * Build an improvement (road, farm, etc.)
    */
   buildImprovement(unitId: string, improvementType: string): boolean {
+    console.log(`[GameEngine] buildImprovement called: unitId=${unitId}, type=${improvementType}`);
+    
     const unit = this.units.find(u => u.id === unitId);
     if (!unit) {
       console.warn(`[GameEngine] Build: Unit ${unitId} not found`);
       return false;
     }
 
+    console.log(`[GameEngine] Build: Unit found:`, {
+      id: unit.id,
+      type: unit.type,
+      col: unit.col,
+      row: unit.row,
+      movesRemaining: unit.movesRemaining
+    });
+
     // Get improvement properties to determine build time
     const improvementProps = IMPROVEMENT_PROPERTIES[improvementType];
     const buildTurns = improvementProps?.turns || 1; // Default to 1 if not found
+    console.log(`[GameEngine] Build: Improvement props:`, improvementProps, 'turns:', buildTurns);
 
     // Check if unit can perform this action
-    if (!UnitActionManager.canPerformAction(unit, 'build_improvement', buildTurns)) {
+    const canPerform = UnitActionManager.canPerformAction(unit, 'build_improvement', buildTurns);
+    console.log(`[GameEngine] Build: Can perform action:`, canPerform);
+    
+    if (!canPerform) {
+      console.warn(`[GameEngine] Build: Unit cannot perform this action`);
       return false;
     }
 
@@ -1702,6 +1851,13 @@ export default class GameEngine {
       console.warn(`[GameEngine] Build: No tile at (${unit.col},${unit.row})`);
       return false;
     }
+
+    console.log(`[GameEngine] Build: Tile found:`, {
+      col: tile.col,
+      row: tile.row,
+      terrain: tile.terrain,
+      improvement: tile.improvement
+    });
 
     // Check if improvement already exists
     if (tile.improvement) {
@@ -1712,6 +1868,9 @@ export default class GameEngine {
     // Build the improvement
     tile.improvement = improvementType;
     unit.movesRemaining = (unit.movesRemaining || 0) - buildTurns;
+
+    // Update turn done status
+    this.updateUnitTurnsDoneFlag(unit);
 
     console.log(`[GameEngine] Unit ${unit.id} built ${improvementType} at (${unit.col},${unit.row}) in ${buildTurns} turns. Moves remaining: ${unit.movesRemaining}`);
 

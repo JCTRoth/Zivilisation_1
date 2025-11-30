@@ -24,6 +24,9 @@ interface SettlementScore {
  * Settlement Evaluator - Determines optimal city placement locations
  */
 export class SettlementEvaluator {
+  // Control verbosity of logging (set to false to reduce console spam during AI turns)
+  private static VERBOSE_LOGGING = false;
+  
   /**
    * Get tile yields based on terrain type
    */
@@ -59,12 +62,12 @@ export class SettlementEvaluator {
     row: number,
     getTileAt: (col: number, row: number) => any
   ): boolean {
-    console.log(`[SettlementEvaluator] hasWaterAccess: Checking water access at (${col}, ${row})`);
+    if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] hasWaterAccess: Checking water access at (${col}, ${row})`);
 
     // Check if the tile itself is water
     const centerTile = getTileAt(col, row);
     if (centerTile && this.isWaterTile(centerTile.type)) {
-      console.log(`[SettlementEvaluator] hasWaterAccess: ✓ Center tile IS water (${centerTile.type})`);
+      if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] hasWaterAccess: ✓ Center tile IS water (${centerTile.type})`);
       return true;
     }
 
@@ -78,12 +81,12 @@ export class SettlementEvaluator {
     for (const [dx, dy] of neighbors) {
       const tile = getTileAt(col + dx, row + dy);
       if (tile && this.isWaterTile(tile.type)) {
-        console.log(`[SettlementEvaluator] hasWaterAccess: ✓ Found water at adjacent tile (${col + dx}, ${row + dy}) - ${tile.type}`);
+        if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] hasWaterAccess: ✓ Found water at adjacent tile (${col + dx}, ${row + dy}) - ${tile.type}`);
         return true;
       }
     }
 
-    console.log(`[SettlementEvaluator] hasWaterAccess: ✗ No water access found`);
+    if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] hasWaterAccess: ✗ No water access found`);
     return false;
   }
 
@@ -96,7 +99,7 @@ export class SettlementEvaluator {
     getTileAt: (col: number, row: number) => any,
     weights: SettlementWeights
   ): number {
-    console.log(`[SettlementEvaluator] evaluateArea: Evaluating 3x3 area around (${centerCol}, ${centerRow}) with weights:`, weights);
+    if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateArea: Evaluating 3x3 area around (${centerCol}, ${centerRow}) with weights:`, weights);
 
     let totalFood = 0;
     let totalShields = 0;
@@ -191,7 +194,7 @@ export class SettlementEvaluator {
           foodYield *= 2;
           shieldsYield *= 2;
           goldYield *= 2;
-          console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Resource bonus at (${col}, ${row}): ${tile.resource}`);
+          if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Resource bonus at (${col}, ${row}): ${tile.resource}`);
         }
 
         // Apply city proximity penalties
@@ -206,11 +209,11 @@ export class SettlementEvaluator {
                 if (nearbyCity.civilizationId === currentCivilizationId) {
                   // Friendly city: -1 penalty per tile in overlap
                   cityPenalty += 1;
-                  console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Friendly city penalty at (${col + cityCheckDx}, ${row + cityCheckDy})`);
+                  if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Friendly city penalty at (${col + cityCheckDx}, ${row + cityCheckDy})`);
                 } else {
                   // Enemy city: -0.2 penalty per tile in overlap
                   cityPenalty += 0.2;
-                  console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Enemy city penalty at (${col + cityCheckDx}, ${row + cityCheckDy})`);
+                  if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Enemy city penalty at (${col + cityCheckDx}, ${row + cityCheckDy})`);
                 }
               }
             }
@@ -222,7 +225,7 @@ export class SettlementEvaluator {
         totalGold += goldYield;
         totalCityPenalty += cityPenalty;
 
-        console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Tile (${col}, ${row}) - ${tile.type}: food=${foodYield}, shields=${shieldsYield}, gold=${goldYield}, penalty=${cityPenalty}`);
+        if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Tile (${col}, ${row}) - ${tile.type}: food=${foodYield}, shields=${shieldsYield}, gold=${goldYield}, penalty=${cityPenalty}`);
       }
     }
 
@@ -237,7 +240,7 @@ export class SettlementEvaluator {
 
     // Add bonus for water access
     const waterBonus = this.hasWaterAccess(centerCol, centerRow, getTileAt) ? 2 : 0;
-    console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Water bonus: ${waterBonus}, Total city penalty: ${totalCityPenalty}`);
+    if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Water bonus: ${waterBonus}, Total city penalty: ${totalCityPenalty}`);
 
     // Calculate weighted score
     const score =
@@ -246,8 +249,8 @@ export class SettlementEvaluator {
       (totalGold * weights.gold_weight) +
       waterBonus;
 
-    console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Adjusted totals - food=${totalFood}, shields=${totalShields}, gold=${totalGold}`);
-    console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Final score: ${score}`);
+    if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Adjusted totals - food=${totalFood}, shields=${totalShields}, gold=${totalGold}`);
+    if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Final score: ${score}`);
 
     return score;
   }
@@ -262,35 +265,35 @@ export class SettlementEvaluator {
     getCityAt: (col: number, row: number) => any,
     getUnitAt: (col: number, row: number) => any
   ): boolean {
-    console.log(`[SettlementEvaluator] isValidSettlementLocation: Checking validity at (${col}, ${row})`);
+    if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: Checking validity at (${col}, ${row})`);
 
     const tile = getTileAt(col, row);
     
     // Must have a valid tile
     if (!tile) {
-      console.log(`[SettlementEvaluator] isValidSettlementLocation: No tile at location`);
+      if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: No tile at location`);
       return false;
     }
 
     // Cannot settle on ocean or mountains (typically)
     if (tile.type === Constants.TERRAIN.OCEAN || tile.type === Constants.TERRAIN.MOUNTAINS) {
-      console.log(`[SettlementEvaluator] isValidSettlementLocation: Invalid terrain: ${tile.type}`);
+      if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: Invalid terrain: ${tile.type}`);
       return false;
     }
 
     // Cannot settle where there's already a city
     if (getCityAt(col, row)) {
-      console.log(`[SettlementEvaluator] isValidSettlementLocation: City already exists at location`);
+      if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: City already exists at location`);
       return false;
     }
 
     // Cannot settle where there's another unit
     if (getUnitAt(col, row)) {
-      console.log(`[SettlementEvaluator] isValidSettlementLocation: Unit already at location`);
+      if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: Unit already at location`);
       return false;
     }
 
-    console.log(`[SettlementEvaluator] isValidSettlementLocation: Location is valid`);
+    if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: Location is valid`);
     return true;
   }
 
@@ -382,7 +385,7 @@ export class SettlementEvaluator {
           currentCivilizationId
         );
 
-        console.log(`[SettlementEvaluator] findBestSettlementLocation: Location (${col}, ${row}) score: ${score}`);
+        if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] findBestSettlementLocation: Location (${col}, ${row}) score: ${score}`);
 
         if (score > bestScore) {
           bestScore = score;
@@ -394,16 +397,16 @@ export class SettlementEvaluator {
             yields: this.getTileYields(tile.type),
             hasWaterAccess: this.hasWaterAccess(col, row, getTileAt)
           };
-          console.log(`[SettlementEvaluator] findBestSettlementLocation: New best location found: (${col}, ${row}) with score ${score}`);
+          console.log(`[SettlementEvaluator] findBestSettlementLocation: ⭐ New best location found: (${col}, ${row}) with score ${score}`);
         }
       }
     }
 
     console.log(`[SettlementEvaluator] findBestSettlementLocation: Evaluated ${evaluatedLocations} locations, ${validLocations} were valid`);
     if (bestLocation) {
-      console.log(`[SettlementEvaluator] findBestSettlementLocation: Best location: (${bestLocation.col}, ${bestLocation.row}) with score ${bestLocation.score}`);
+      console.log(`[SettlementEvaluator] findBestSettlementLocation: ✅ Best location: (${bestLocation.col}, ${bestLocation.row}) with score ${bestLocation.score}`);
     } else {
-      console.log(`[SettlementEvaluator] findBestSettlementLocation: No suitable location found`);
+      console.log(`[SettlementEvaluator] findBestSettlementLocation: ❌ No suitable location found`);
     }
 
     return bestLocation;

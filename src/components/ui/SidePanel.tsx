@@ -22,6 +22,7 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
   const selectedHex = useGameStore((s) => s.gameState.selectedHex);
   const map = useGameStore((s) => s.map);
   const gameState = useGameStore((s) => s.gameState);
+  const settings = useGameStore((s) => s.settings);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
 
@@ -330,6 +331,27 @@ const SidePanel: React.FC<{ gameEngine?: any }> = ({ gameEngine }) => {
                   <div>Production: {playerResources?.production ?? 0}</div>
                   <div>Trade: {playerResources?.trade ?? 0}</div>
                   <div>Science: {playerResources?.science ?? 0}</div>
+                </div>
+                
+                <hr className="details-separator" />
+                
+                <div className="settings-section">
+                  <div className="settings-title">Settings</div>
+                  <div className="settings-content">
+                    <label className="settings-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={settings.autoEndTurn}
+                        onChange={(e) => {
+                          actions.updateSettings({ autoEndTurn: e.target.checked });
+                        }}
+                      />
+                      <span className="checkbox-text">Auto. turn ending</span>
+                    </label>
+                    <div className="settings-hint">
+                      Automatically ends the turns of the human player when all units are done
+                    </div>
+                  </div>
                 </div>
               </>
             ) : null}

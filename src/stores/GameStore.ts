@@ -91,7 +91,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     sidebarWidth: 140,   // Left sidebar width in pixels
     minimapHeight: 120,  // Minimap height in pixels
     civListFontSize: 10, // Civilization list font size
-    skipEndTurnConfirmation: false // Skip showing end turn confirmation modal
+    skipEndTurnConfirmation: false, // Skip showing end turn confirmation modal
+    autoEndTurn: false   // Automatically end turn when all human player units are done
   },
 
   // Technology State

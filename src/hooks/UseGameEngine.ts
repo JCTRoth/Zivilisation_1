@@ -178,10 +178,30 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
         }
 
         case 'AUTO_END_TURN':
-          console.log('[useGameEngine] AUTO_END_TURN: All units moved, ending turn automatically');
+          console.log('[useGameEngine] 🤖 AUTO_END_TURN event received for civilization', data?.civilizationId);
+          console.log('[useGameEngine] Current active player:', gameEngine.activePlayer);
+          console.log('[useGameEngine] Calling actions.nextTurn() and gameEngine.processTurn()');
           // Automatically end the turn
           actions.nextTurn();
           gameEngine.processTurn();
+          console.log('[useGameEngine] Turn advanced, new active player:', gameEngine.activePlayer);
+          break;
+
+        case 'CHECK_AUTO_END_TURN':
+          console.log('[useGameEngine] CHECK_AUTO_END_TURN: Checking if auto end turn is enabled');
+          // Check if auto end turn setting is enabled
+          const settings = useGameStore.getState().settings;
+          if (settings.autoEndTurn) {
+            console.log('[useGameEngine] ✅ Auto end turn is enabled - automatically ending turn');
+            actions.nextTurn();
+            gameEngine.processTurn();
+          } else {
+            console.log('[useGameEngine] Auto end turn is disabled - showing confirmation modal');
+            // Show confirmation modal if setting is disabled
+            if (typeof window !== 'undefined' && window.dispatchEvent) {
+              window.dispatchEvent(new CustomEvent('showEndTurnConfirmation'));
+            }
+          }
           break;
 
         case 'TURN_END_CONFIRMATION_NEEDED':

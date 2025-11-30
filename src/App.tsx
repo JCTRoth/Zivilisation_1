@@ -214,10 +214,11 @@ function App() {
 
       const { key, shiftKey, ctrlKey, altKey } = event;
 
-      // Prevent default browser behavior for our shortcuts
+      // Prevent default browser behavior for navigation and specific shortcuts only
+      // Unit action keys (i, m, b, f, s, g) are now handled in GameCanvas
       const shouldPreventDefault = [
         'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-        'Enter', ' ', 's', 'f', 'r', 'c', 'd', 'a', 'w', 'g', 'b', 'i', 'm', 'p',
+        'Enter', ' ', 
         't', 'Escape', 'F1', 'F2', 'F3', 'F4', 'F11', 'h'
       ].includes(key) ||
       (ctrlKey && ['1','2','3','4','5','6','7','8','9','s','l','z'].includes(key)) ||
@@ -293,20 +294,26 @@ function App() {
               gameEngine.cycleUnitsInTile();
             }
             break;
+          
+          // NOTE: Unit action keys (s, f, g, b, i, m) are now handled in GameCanvas.tsx
+          // Keeping only the global UI shortcuts here
+          
+          /*
           case 's':
           case 'S':
-            // Skip current unit's turn
+            // Skip current unit's turn - NOW IN GAMECANVAS
             if (gameEngine && gameEngine.skipUnitTurn) {
               gameEngine.skipUnitTurn();
             }
             break;
           case 'f':
           case 'F':
-            // Fortify selected unit
+            // Fortify selected unit - NOW IN GAMECANVAS
             if (gameEngine && gameEngine.fortifyUnit) {
               gameEngine.fortifyUnit();
             }
             break;
+          */
           case 'r':
           case 'R':
             // Rush production in a city
@@ -342,34 +349,36 @@ function App() {
               gameEngine.waitUnit();
             }
             break;
+          /*
           case 'g':
           case 'G':
-            // Move unit to specific location (enter goto mode)
+            // Move unit to specific location (enter goto mode) - NOW IN GAMECANVAS
             if (gameEngine && gameEngine.enterGotoMode) {
               gameEngine.enterGotoMode();
             }
             break;
           case 'b':
           case 'B':
-            // Build road
+            // Build road - NOW IN GAMECANVAS (handled via buildImprovement)
             if (gameEngine && gameEngine.buildRoad) {
               gameEngine.buildRoad();
             }
             break;
           case 'i':
           case 'I':
-            // Irrigate
+            // Irrigate - NOW IN GAMECANVAS (handled via buildImprovement)
             if (gameEngine && gameEngine.irrigage) {
               gameEngine.irrigage();
             }
             break;
           case 'm':
           case 'M':
-            // Mine
+            // Mine - NOW IN GAMECANVAS (handled via buildImprovement)
             if (gameEngine && gameEngine.mine) {
               gameEngine.mine();
             }
             break;
+          */
           case 'p':
           case 'P':
             // Clean pollution

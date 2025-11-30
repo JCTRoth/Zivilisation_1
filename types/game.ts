@@ -62,6 +62,7 @@ export interface Unit {
   isSkipped?: boolean;
   isSleeping?: boolean;
   plannedPath?: { col: number; row: number }[];
+  areTurnsDone?: boolean; // Set to true when unit has no moves left or is fortified/sleeping
 }
 
 export interface City {
@@ -151,6 +152,7 @@ export interface Settings {
   minimapHeight: number;
   civListFontSize: number;
   skipEndTurnConfirmation: boolean;
+  autoEndTurn: boolean; // Automatically end turn when all units are done
 }
 
 export interface Technology {

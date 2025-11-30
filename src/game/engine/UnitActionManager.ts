@@ -95,14 +95,26 @@ export class UnitActionManager {
    * Check if a unit can perform an action
    */
   static canPerformAction(unit: Unit, action: string, costInMoves: number = 0): boolean {
-    if (!unit) return false;
+    if (!unit) {
+      console.warn(`[UnitActionManager] canPerformAction: No unit provided`);
+      return false;
+    }
+
+    console.log(`[UnitActionManager] Checking if unit ${unit.id} can perform "${action}" (cost: ${costInMoves} moves)`);
+    console.log(`[UnitActionManager] Unit state:`, {
+      movesRemaining: unit.movesRemaining,
+      isFortified: unit.isFortified,
+      type: unit.type
+    });
 
     const hasEnoughMoves = (unit.movesRemaining || 0) >= costInMoves;
     const canPerform = hasEnoughMoves && !unit.isFortified;
 
     if (!canPerform) {
       const reason = !hasEnoughMoves ? 'insufficient_moves' : 'unit_fortified';
-      console.log(`[UnitActionManager] Unit ${unit.id} cannot perform "${action}": ${reason}`);
+      console.warn(`[UnitActionManager] ❌ Unit ${unit.id} cannot perform "${action}": ${reason}`);
+    } else {
+      console.log(`[UnitActionManager] ✅ Unit ${unit.id} can perform "${action}"`);
     }
 
     return canPerform;

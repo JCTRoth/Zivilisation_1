@@ -247,3 +247,47 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin: 12px 0;
 }
+
+/* Settings section */
+.settings-section {
+  margin-top: 8px;
+}
+
+.settings-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.settings-content {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+}
+
+.settings-checkbox-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  margin-bottom: 4px;
+  user-select: none;
+}
+
+.settings-checkbox-label input[type="checkbox"] {
+  margin-right: 8px;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.checkbox-text {
+  font-size: 13px;
+}
+
+.settings-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 4px;
+  margin-left: 24px;
+  line-height: 1.3;
+}

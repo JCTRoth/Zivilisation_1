@@ -6,6 +6,7 @@ import type { City, GameEngine, GameState, MapState, Unit } from '../../../types
 import '../../styles/civ1GameCanvas.css';
 import UnitActionsModal from './UnitActionsModal';
 import { Pathfinding } from '@/game/engine/Pathfinding';
+import { KeyboardHandler } from '@/game/engine/KeyboardHandler';
 
 type HexCoordinates = { col: number; row: number };
 
@@ -321,6 +322,46 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       canvasRef.current.focus();
     }
   }, [gameEngine, minimap]);
+
+  // Keyboard event handler for unit actions using KeyboardHandler class
+  useEffect(() => {
+    if (minimap) {
+      console.log('[GameCanvas] Skipping keyboard handler - minimap mode');
+      return;
+    }
+
+    if (!gameEngine || !actions) {
+      console.log('[GameCanvas] Skipping keyboard handler - no gameEngine or actions');
+      return;
+    }
+
+    console.log('[GameCanvas] Creating KeyboardHandler');
+
+    const keyboardHandler = new KeyboardHandler(
+      gameEngine,
+      actions,
+      () => {
+        const selectedUnitId = gameState?.selectedUnit;
+        return selectedUnitId ? units.find(u => u.id === selectedUnitId) || null : null;
+      },
+      () => getAllUnitsFromEngine(),
+      () => minimap
+    );
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const handled = keyboardHandler.handleKeyDown(event);
+      if (handled) {
+        triggerRender();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      keyboardHandler.dispose();
+    };
+  }, [gameState?.selectedUnit, units, currentPlayer, minimap, gameEngine, actions, triggerRender]);
 
   // Sync unit paths from RoundManager when turn changes
   useEffect(() => {
@@ -652,85 +693,90 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         if (gotoMode && gotoUnit) {
           console.log(`[CLICK] Go To destination set for unit ${gotoUnit.id} to (${hex.col}, ${hex.row})`);
           
-          // Calculate path using Pathfinding
-          try {
-            const pathResult = Pathfinding.findPath(
-              gotoUnit.col,
-              gotoUnit.row,
+          // Use GoToManager to calculate and execute path
+          const goToManager = (gameEngine as any)?.goToManager;
+          if (goToManager) {
+            const pathResult = goToManager.calculatePath(
+              gotoUnit,
               hex.col,
               hex.row,
               (col: number, row: number) => {
                 const tileIndex = row * mapData.width + col;
                 return mapData.tiles?.[tileIndex] || null;
               },
-              gotoUnit.type,
               mapData.width,
               mapData.height
             );
 
-            if (pathResult.success && pathResult.path.length > 1) {
-              const pathToFollow: UnitPathStep[] = pathResult.path.slice(1).map((step: any) => ({
-                col: step.col,
-                row: step.row
-              }));
-
+            if (pathResult.success && pathResult.path.length > 0) {
+              // Set the path using GoToManager
+              goToManager.setUnitPath(gotoUnit.id, pathResult.path);
+              
+              // Update local state for rendering
               setUnitPaths(prev => {
                 const next = new Map(prev);
-                next.set(gotoUnit.id, pathToFollow);
+                next.set(gotoUnit.id, pathResult.path);
                 return next;
               });
 
-              const roundManager = (gameEngine as any)?.roundManager;
-              if (roundManager && typeof roundManager.setUnitPath === 'function') {
-                roundManager.setUnitPath(gotoUnit.id, pathToFollow);
-                console.log(`[CLICK] Path synced to RoundManager for unit ${gotoUnit.id}`);
+              if (actions?.addNotification) {
+                actions.addNotification({
+                  type: 'success',
+                  message: `${gotoUnit.type} will go to (${hex.col}, ${hex.row})`
+                });
               }
 
-              if (actions?.addNotification) actions.addNotification({
-                type: 'success',
-                message: `${gotoUnit.type} will go to (${hex.col}, ${hex.row})`
-              });
+              console.log(`[CLICK] Path calculated for unit ${gotoUnit.id}:`, pathResult.path);
 
-              console.log(`[CLICK] Path calculated for unit ${gotoUnit.id}:`, pathToFollow);
-
-              if (pathToFollow.length > 0 && gotoUnit.movesRemaining > 0) {
-                const nextPos = pathToFollow[0];
-                try {
-                  const moveResult = gameEngine?.moveUnit?.(gotoUnit.id, nextPos.col, nextPos.row);
-                  if (moveResult && moveResult.success) {
-                    const remainingPath = pathToFollow.slice(1);
-                    setUnitPaths(prev => {
-                      const next = new Map(prev);
-                      next.set(gotoUnit.id, remainingPath);
-                      return next;
-                    });
-
-                    if (roundManager && typeof roundManager.setUnitPath === 'function') {
-                      roundManager.setUnitPath(gotoUnit.id, remainingPath);
+              // Execute ALL steps until moves are exhausted using animation
+              if (gotoUnit.movesRemaining > 0) {
+                console.log(`[CLICK] Starting full path execution for unit ${gotoUnit.id}`);
+                triggerRender();
+                
+                // Execute path with animation, moving until all moves are used
+                setTimeout(() => {
+                  goToManager.executePathWithAnimation(
+                    gotoUnit.id,
+                    300,
+                    (remainingSteps: number) => {
+                      // Update UI after each step
+                      const path = goToManager.getUnitPath(gotoUnit.id);
+                      setUnitPaths(prev => {
+                        const next = new Map(prev);
+                        if (path && path.length > 0) {
+                          next.set(gotoUnit.id, path);
+                        } else {
+                          next.delete(gotoUnit.id);
+                        }
+                        return next;
+                      });
+                      triggerRender();
+                      console.log(`[CLICK] Unit ${gotoUnit.id} continuing, ${remainingSteps} steps remaining`);
                     }
-
-                    console.log(`[CLICK] Unit ${gotoUnit.id} moved to (${nextPos.col}, ${nextPos.row}), remaining path:`, remainingPath);
-                  } else {
-                    console.log(`[CLICK] Automatic move failed for unit ${gotoUnit.id}`);
-                  }
-                } catch (err) {
-                  console.log(`[CLICK] Automatic move error:`, err);
-                }
+                  ).then(result => {
+                    console.log(`[CLICK] Unit ${gotoUnit.id} completed GoTo movement, ${result.stepsCompleted} steps taken`);
+                    triggerRender();
+                  });
+                }, 100);
+              } else {
+                triggerRender();
               }
-
-              triggerRender();
             } else {
-              if (actions?.addNotification) actions.addNotification({
-                type: 'warning',
-                message: 'Cannot reach destination'
+              if (actions?.addNotification) {
+                actions.addNotification({
+                  type: 'warning',
+                  message: 'Cannot reach destination'
+                });
+              }
+            }
+          } else {
+            console.error('[CLICK] GoToManager not available');
+            if (actions?.addNotification) {
+              actions.addNotification({
+                type: 'error',
+                message: 'GoTo system unavailable'
               });
             }
-          } catch (e) {
-            console.log(`[CLICK] Pathfinding error:`, e);
-            if (actions?.addNotification) actions.addNotification({
-              type: 'error',
-              message: 'Pathfinding failed'
-            });
           }
           
           // Exit Go To mode
@@ -788,26 +834,22 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
             }
           }
           
-          // If the unit has a path and moves, continue following
-          const existingPath = unitPaths.get(unitAt.id);
-          if (existingPath && existingPath.length > 0 && unitAt.movesRemaining > 0) {
-            const nextPos = existingPath[0];
+          // If the unit has a path and moves, continue following using GoToManager
+          const goToManager = (gameEngine as any)?.goToManager;
+          if (goToManager && goToManager.hasPath(unitAt.id) && unitAt.movesRemaining > 0) {
             try {
-              const moveResult = gameEngine?.moveUnit?.(unitAt.id, nextPos.col, nextPos.row);
-              if (moveResult && moveResult.success) {
-                const remainingPath = existingPath.slice(1);
+              const moveResult = goToManager.executeFirstStep(unitAt.id);
+              if (moveResult.success) {
                 setUnitPaths(prev => {
                   const next = new Map(prev);
-                  next.set(unitAt.id, remainingPath);
+                  if (moveResult.remainingPath.length > 0) {
+                    next.set(unitAt.id, moveResult.remainingPath);
+                  } else {
+                    next.delete(unitAt.id);
+                  }
                   return next;
                 });
-                
-                const roundManager = (gameEngine as any)?.roundManager;
-                if (roundManager && typeof roundManager.setUnitPath === 'function') {
-                  roundManager.setUnitPath(unitAt.id, remainingPath);
-                }
-                
-                console.log(`[CLICK] Unit ${unitAt.id} continued path to (${nextPos.col}, ${nextPos.row}), remaining:`, remainingPath);
+                console.log(`[CLICK] Unit ${unitAt.id} continued path, ${moveResult.remainingPath.length} steps remaining`);
               }
             } catch (e) {
               console.log(`[CLICK] Continue path error:`, e);
@@ -901,120 +943,75 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
               if (pathResult.success && pathResult.path.length > 1) {
                 const pathToFollow: UnitPathStep[] = pathResult.path.slice(1).map((step: any) => ({ col: step.col, row: step.row }));
 
-                // First, set the path and draw it
-                setUnitPaths(prev => {
-                  const next = new Map(prev);
-                  next.set(selectedUnit.id, pathToFollow);
-                  return next;
-                });
-
-                const roundManager = (gameEngine as any)?.roundManager;
-                if (roundManager && typeof roundManager.setUnitPath === 'function') {
-                  roundManager.setUnitPath(selectedUnit.id, pathToFollow);
-                  console.log(`[CLICK] Path synced to RoundManager for unit ${selectedUnit.id}`);
-                }
-
-                if (actions?.addNotification) actions.addNotification({ type: 'success', message: `${selectedUnit.type} will go to (${hex.col}, ${hex.row})` });
-
-                triggerRender();
-
-                // Then, if unit has moves, start moving along the path step by step
-                if (pathToFollow.length > 0 && (selectedUnit.movesRemaining || 0) > 0) {
-                  console.log(`[CLICK] Starting automatic movement along path for unit ${selectedUnit.id}`);
+                // Use GoToManager to set the path and execute with animation
+                const goToManager = (gameEngine as any)?.goToManager;
+                if (goToManager) {
+                  goToManager.setUnitPath(selectedUnit.id, pathToFollow);
                   
-                  // Use a small delay to ensure path is rendered first, then move step by step
-                  setTimeout(() => {
-                    const moveAlongPath = () => {
-                      // Get fresh unit state from gameEngine, not from React state
-                      const currentUnit = gameEngine?.units?.find((u: any) => u.id === selectedUnit.id);
-                      console.log(`[CLICK] moveAlongPath check:`, { 
-                        unitExists: !!currentUnit, 
-                        movesRemaining: currentUnit?.movesRemaining,
-                        unitId: selectedUnit.id
-                      });
-                      
-                      if (!currentUnit || (currentUnit.movesRemaining || 0) <= 0) {
-                        console.log(`[CLICK] Unit ${selectedUnit.id} has no more moves or doesn't exist`);
-                        return;
-                      }
+                  // Update local state for rendering
+                  setUnitPaths(prev => {
+                    const next = new Map(prev);
+                    next.set(selectedUnit.id, pathToFollow);
+                    return next;
+                  });
 
-                      // Get fresh path from RoundManager
-                      const currentPath = roundManager?.getUnitPath?.(selectedUnit.id);
-                      console.log(`[CLICK] Current path for ${selectedUnit.id}:`, currentPath);
-                      
-                      if (!currentPath || currentPath.length === 0) {
-                        console.log(`[CLICK] No more path for unit ${selectedUnit.id}`);
-                        return;
-                      }
+                  if (actions?.addNotification) {
+                    actions.addNotification({ 
+                      type: 'success', 
+                      message: `${selectedUnit.type} will go to (${hex.col}, ${hex.row})` 
+                    });
+                  }
 
-                      const nextPos = currentPath[0];
-                      console.log(`[CLICK] Moving unit ${selectedUnit.id} to (${nextPos.col}, ${nextPos.row})`);
+                  triggerRender();
 
-                      try {
-                        const moveResult = gameEngine?.moveUnit?.(selectedUnit.id, nextPos.col, nextPos.row);
-                        console.log(`[CLICK] Move result:`, moveResult);
-                        
-                        if (moveResult && moveResult.success) {
-                          const remainingPath = currentPath.slice(1);
+                  // Then, if unit has moves, start moving along the path using GoToManager
+                  if (pathToFollow.length > 0 && (selectedUnit.movesRemaining || 0) > 0) {
+                    console.log(`[CLICK] Starting automatic movement along path for unit ${selectedUnit.id}`);
+                    
+                    // Use a small delay to ensure path is rendered first
+                    setTimeout(() => {
+                      goToManager.executePathWithAnimation(
+                        selectedUnit.id,
+                        300,
+                        (remainingSteps: number) => {
+                          // Update UI after each step
+                          const path = goToManager.getUnitPath(selectedUnit.id);
                           setUnitPaths(prev => {
                             const next = new Map(prev);
-                            if (remainingPath.length > 0) {
-                              next.set(selectedUnit.id, remainingPath);
+                            if (path && path.length > 0) {
+                              next.set(selectedUnit.id, path);
                             } else {
                               next.delete(selectedUnit.id);
                             }
                             return next;
                           });
-
-                          if (roundManager && typeof roundManager.setUnitPath === 'function') {
-                            if (remainingPath.length > 0) {
-                              roundManager.setUnitPath(selectedUnit.id, remainingPath);
-                            } else {
-                              roundManager.clearUnitPath(selectedUnit.id);
-                            }
-                          }
-
-                          console.log(`[CLICK] Unit ${selectedUnit.id} moved to (${nextPos.col}, ${nextPos.row}), remaining path:`, remainingPath);
-
                           triggerRender();
-
-                          // Continue moving if there's more path
-                          // The unit object in gameEngine should already be updated by moveUnit
-                          if (remainingPath.length > 0) {
-                            // Check moves remaining after the gameEngine state is settled
-                            const unitAfterMove = gameEngine?.units?.find((u: any) => u.id === selectedUnit.id);
-                            console.log(`[CLICK] After move - unit state:`, {
-                              movesRemaining: unitAfterMove?.movesRemaining,
-                              remainingPathLength: remainingPath.length
-                            });
-                            
-                            if (unitAfterMove && (unitAfterMove.movesRemaining || 0) > 0) {
-                              console.log(`[CLICK] Scheduling next move in 300ms`);
-                              setTimeout(moveAlongPath, 300); // Small delay between moves for animation
-                            } else {
-                              console.log(`[CLICK] Unit ${selectedUnit.id} ran out of moves`);
-                            }
-                          } else {
-                            console.log(`[CLICK] Unit ${selectedUnit.id} reached destination`);
-                          }
-                        } else {
-                          console.log(`[CLICK] Move failed for unit ${selectedUnit.id}, clearing path. Reason:`, moveResult?.reason);
-                          setUnitPaths(prev => {
-                            const next = new Map(prev);
-                            next.delete(selectedUnit.id);
-                            return next;
-                          });
-                          if (roundManager && typeof roundManager.clearUnitPath === 'function') {
-                            roundManager.clearUnitPath(selectedUnit.id);
-                          }
                         }
-                      } catch (err) {
-                        console.error(`[CLICK] Error moving unit:`, err);
-                      }
-                    };
-
-                    moveAlongPath();
-                  }, 100); // Initial delay to show the path
+                      );
+                    }, 100);
+                  }
+                } else {
+                  console.error('[CLICK] GoToManager not available, falling back to old method');
+                  // Fallback to old method if GoToManager not available
+                  setUnitPaths(prev => {
+                    const next = new Map(prev);
+                    next.set(selectedUnit.id, pathToFollow);
+                    return next;
+                  });
+                  
+                  const roundManager = (gameEngine as any)?.roundManager;
+                  if (roundManager && typeof roundManager.setUnitPath === 'function') {
+                    roundManager.setUnitPath(selectedUnit.id, pathToFollow);
+                  }
+                  
+                  if (actions?.addNotification) {
+                    actions.addNotification({ 
+                      type: 'success', 
+                      message: `${selectedUnit.type} will go to (${hex.col}, ${hex.row})` 
+                    });
+                  }
+                  
+                  triggerRender();
                 }
               } else {
                 if (actions?.addNotification) actions.addNotification({ type: 'warning', message: 'Cannot reach destination' });
