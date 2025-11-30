@@ -3,7 +3,6 @@ import type { GameMap } from './game/Map.js';
 import type { Unit } from './game/Unit.js';
 import type { City } from './game/City.js';
 import type { Civilization } from './game/Civilization.js';
-import EventEmitter from "node:events";
 import {DomUtils} from "@/utils/DomUtils";
 import {GameUtils} from "@/utils/GameUtils";
 
@@ -61,7 +60,7 @@ interface UnitInfo {
     civilization: string;
 }
 
-export class UIManager extends EventEmitter {
+export class UIManager {
     private gameMap: GameMap;
     private selectedUnit: Unit | null;
     private selectedCity: City | null;
@@ -69,7 +68,6 @@ export class UIManager extends EventEmitter {
     private elements: UIElement;
 
     constructor(gameMap: GameMap) {
-        super();
 
         this.gameMap = gameMap;
         this.selectedUnit = null;
@@ -131,31 +129,30 @@ export class UIManager extends EventEmitter {
     }
 
     private setupGameEventListeners(): void {
-        // Game events
-        this.gameMap.on('civilizationTurnStarted', (data) => {
-            this.updateTopBar(data.civilization);
-            this.updateStatusMessage(`${data.civilization.name}'s turn`);
-        });
-
-        this.gameMap.on('newTurn', (data) => {
-            this.updateTurnDisplay(data.turn, data.year);
-        });
-
-        this.gameMap.on('unitMoved', (data) => {
-            this.updateUnitInfo(data.unit);
-        });
-
-        this.gameMap.on('cityAdded', (data) => {
-            this.updateStatusMessage(`${data.city.name} founded!`);
-        });
-
-        this.gameMap.on('civilizationDefeated', (data) => {
-            this.showNotification(`${data.civilization.name} has been defeated!`);
-        });
-
-        this.gameMap.on('gameEnd', (data) => {
-            this.showGameEnd(data.winner);
-        });
+        // Game events - use callback instead of .on()
+        this.gameMap.onStateChange = (eventType: string, data: any) => {
+            switch (eventType) {
+                case 'civilizationTurnStarted':
+                    this.updateTopBar(data.civilization);
+                    this.updateStatusMessage(`${data.civilization.name}'s turn`);
+                    break;
+                case 'newTurn':
+                    this.updateTurnDisplay(data.turn, data.year);
+                    break;
+                case 'unitMoved':
+                    this.updateUnitInfo(data.unit);
+                    break;
+                case 'cityAdded':
+                    this.updateStatusMessage(`${data.city.name} founded!`);
+                    break;
+                case 'civilizationDefeated':
+                    this.showNotification(`${data.civilization.name} has been defeated!`);
+                    break;
+                case 'gameEnd':
+                    this.showGameEnd(data.winner);
+                    break;
+            }
+        };
     }
 
     // Update top bar information
@@ -217,7 +214,7 @@ export class UIManager extends EventEmitter {
         if (unit) {
             this.updateUnitInfo(unit);
             this.updateStatusMessage(`Selected: ${unit.name}`);
-            this.emit('unitSelected', { unit });
+            if (this.onStateChange) { this.onStateChange('unitSelected', { unit }); }
         } else {
             this.clearUnitInfo();
         }
@@ -236,7 +233,7 @@ export class UIManager extends EventEmitter {
         if (city) {
             this.updateCityInfo(city);
             this.updateStatusMessage(`Selected: ${city.name}`);
-            this.emit('citySelected', { city });
+            if (this.onStateChange) { this.onStateChange('citySelected', { city }); }
         } else {
             this.clearCityInfo();
         }
@@ -617,7 +614,7 @@ export class UIManager extends EventEmitter {
 
         if (activeUnits.length > 0) {
             this.selectUnit(activeUnits[0]);
-            this.emit('centerOnUnit', { unit: activeUnits[0] });
+            if (this.onStateChange) { this.onStateChange('centerOnUnit', { unit: activeUnits[0] }); }
         } else {
             this.selectUnit(null);
         }
@@ -654,7 +651,7 @@ export class UIManager extends EventEmitter {
     clearSelection(): void {
         this.selectUnit(null);
         this.selectCity(null);
-        this.emit('selectionCleared');
+        // Selection cleared (no need to emit event)
     }
 
     // Show menu

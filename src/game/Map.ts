@@ -8,7 +8,6 @@ import { CityManager } from './City';
 import { Civilization, CIVILIZATION_TEMPLATES } from './Civilization';
 import { City, CITY_NAMES } from './City';
 import { Unit } from './Unit';
-import EventEmitter from "node:events";
 import {GameUtils} from "@/utils/GameUtils";
 import {MathUtils} from "@/utils/MathUtils";
 
@@ -44,7 +43,7 @@ interface GameInfo {
 }
 
 // Game Map class
-export class GameMap extends EventEmitter {
+export class GameMap {
     public width: number;
     public height: number;
     public seed: number;
@@ -64,9 +63,11 @@ export class GameMap extends EventEmitter {
     public currentTurn: number;
     public currentYear: number;
     public activeCivilization: Civilization | null;
+    
+    // Callback for state changes (replaces EventEmitter)
+    public onStateChange: ((eventType: string, data: any) => void) | null;
 
     constructor(width: number, height: number, seed: number | null = null) {
-        super();
 
         this.width = width;
         this.height = height;
@@ -88,33 +89,36 @@ export class GameMap extends EventEmitter {
         this.currentTurn = 1;
         this.currentYear = Constants.STARTING_YEAR;
         this.activeCivilization = null;
+        
+        // Initialize callback
+        this.onStateChange = null;
 
         // Setup event listeners
         this.setupEventListeners();
     }
 
     setupEventListeners(): void {
-        // Unit events
-        this.unitManager.on('unitMoved', (data: any) => {
-            this.updateVisibility(data.unit);
-            this.emit('unitMoved', data);
-        });
+        // Unit events - use callbacks instead of .on()
+        this.unitManager.onStateChange = (eventType: string, data: any) => {
+            if (eventType === 'unitMoved') {
+                this.updateVisibility(data.unit);
+                if (this.onStateChange) { this.onStateChange('unitMoved', data); }
+            } else if (eventType === 'unitDestroyed') {
+                this.removeUnitFromCiv(data.unit);
+                if (this.onStateChange) { this.onStateChange('unitDestroyed', data); }
+            }
+        };
 
-        this.unitManager.on('unitDestroyed', (data: any) => {
-            this.removeUnitFromCiv(data.unit);
-            this.emit('unitDestroyed', data);
-        });
-
-        // City events
-        this.cityManager.on('cityAdded', (data: any) => {
-            this.addCityToCiv(data.city);
-            this.emit('cityAdded', data);
-        });
-
-        this.cityManager.on('cityUnitCreated', (data: any) => {
-            this.addUnit(data.unit);
-            this.emit('cityUnitCreated', data);
-        });
+        // City events - use callbacks instead of .on()
+        this.cityManager.onStateChange = (eventType: string, data: any) => {
+            if (eventType === 'cityAdded') {
+                this.addCityToCiv(data.city);
+                if (this.onStateChange) { this.onStateChange('cityAdded', data); }
+            } else if (eventType === 'cityUnitCreated') {
+                this.addUnit(data.unit);
+                if (this.onStateChange) { this.onStateChange('cityUnitCreated', data); }
+            }
+        };
     }
 
     // Tile access methods
@@ -240,12 +244,14 @@ export class GameMap extends EventEmitter {
         this.civilizations.set(civilization.id, civilization);
         civilization.gameMap = this; // Reference back to game map
 
-        // Listen to civilization events
-        civilization.on('defeated', (data: any) => {
-            this.handleCivilizationDefeated(data.civilization);
-        });
+        // Listen to civilization events via callback
+        civilization.onStateChange = (eventType: string, data: any) => {
+            if (eventType === 'defeated') {
+                this.handleCivilizationDefeated(data.civilization);
+            }
+        };
 
-        this.emit('civilizationAdded', { civilization });
+        if (this.onStateChange) { this.onStateChange('civilizationAdded', { civilization }); }
     }
 
     getCivilization(civId: string): Civilization | undefined {
@@ -297,12 +303,12 @@ export class GameMap extends EventEmitter {
     }
 
     handleCivilizationDefeated(civilization: Civilization): void {
-        this.emit('civilizationDefeated', { civilization });
+        if (this.onStateChange) { this.onStateChange('civilizationDefeated', { civilization }); }
 
         // Check for game end conditions
         const aliveCivs = this.getAliveCivilizations();
         if (aliveCivs.length <= 1) {
-            this.emit('gameEnd', { winner: aliveCivs[0] || null });
+            if (this.onStateChange) { this.onStateChange('gameEnd', { winner: aliveCivs[0] || null }); }
         }
     }
 
@@ -358,10 +364,10 @@ export class GameMap extends EventEmitter {
             // Process all cities
             this.processCityTurns();
 
-            this.emit('newTurn', {
+            if (this.onStateChange) { this.onStateChange('newTurn', {
                 turn: this.currentTurn,
                 year: this.currentYear
-            });
+            }); }
         }
 
         // Start next civilization's turn
@@ -369,10 +375,10 @@ export class GameMap extends EventEmitter {
         this.activeCivilization.startTurn(this, this.currentTurn);
         this.unitManager.startTurnForCivilization(this.activeCivilization.id);
 
-        this.emit('civilizationTurnStarted', {
+        if (this.onStateChange) { this.onStateChange('civilizationTurnStarted', {
             civilization: this.activeCivilization,
             turn: this.currentTurn
-        });
+        }); }
     }
 
     processCityTurns(): void {

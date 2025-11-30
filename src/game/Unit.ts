@@ -1,10 +1,9 @@
-// Unit System - Legacy Implementation (Converted to TypeScript)
+// Unit System - Refactored to remove EventEmitter pattern
 
 import { Constants } from '@/utils/Constants';
 import { TERRAIN_PROPERTIES } from '@/data/TerrainConstants';
 import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
 import type { Civilization } from './Civilization';
-import EventEmitter from "node:events";
 import {GameUtils} from "@/utils/GameUtils";
 
 // Type definitions
@@ -96,7 +95,7 @@ interface TurnData {
 }
 
 // Unit System
-export class Unit extends EventEmitter {
+export class Unit {
     public id: string;
     public type: string;
     public civilization: Civilization;
@@ -131,10 +130,11 @@ export class Unit extends EventEmitter {
     // Status flags
     public active: boolean;
     public moved: boolean;
+    
+    // Callback for state changes (replaces EventEmitter)
+    public onStateChange: ((eventType: string, data: any) => void) | null;
 
     constructor(type: string, civilization: Civilization, col: number, row: number) {
-        super();
-
         this.id = GameUtils.generateId();
         this.type = type;
         this.civilization = civilization;
@@ -172,6 +172,9 @@ export class Unit extends EventEmitter {
         // Status flags
         this.active = true;
         this.moved = false;
+        
+        // Initialize callback as null
+        this.onStateChange = null;
     }
 
     // Move unit to new position
@@ -206,13 +209,15 @@ export class Unit extends EventEmitter {
         // Clear fortification
         this.fortified = false;
 
-        // Emit movement event
-        this.emit('moved', {
-            unit: this,
-            from: { col: oldCol, row: oldRow },
-            to: { col, row },
-            moveCost
-        } as MoveData);
+        // Notify state change via callback
+        if (this.onStateChange) {
+            this.onStateChange('moved', {
+                unit: this,
+                from: { col: oldCol, row: oldRow },
+                to: { col, row },
+                moveCost
+            } as MoveData);
+        }
 
         return true;
     }
@@ -308,7 +313,9 @@ export class Unit extends EventEmitter {
         this.movement = 0;
         this.moved = true;
 
-        this.emit('attacked', { attacker: this, defender: target, result } as AttackData);
+        if (this.onStateChange) {
+            this.onStateChange('attacked', { attacker: this, defender: target, result } as AttackData);
+        }
 
         return result;
     }
@@ -386,7 +393,9 @@ export class Unit extends EventEmitter {
         if (city) {
             // Remove settler unit
             this.destroy();
-            this.emit('settled', { unit: this, city } as SettleData);
+            if (this.onStateChange) {
+                this.onStateChange('settled', { unit: this, city } as SettleData);
+            }
         }
 
         return city;
@@ -438,7 +447,9 @@ export class Unit extends EventEmitter {
 
         this.workTarget = improvementType;
 
-        this.emit('startedWork', { unit: this, improvementType, turns: this.workTurns } as WorkData);
+        if (this.onStateChange) {
+            this.onStateChange('startedWork', { unit: this, improvementType, turns: this.workTurns } as WorkData);
+        }
 
         return true;
     }
@@ -456,10 +467,13 @@ export class Unit extends EventEmitter {
             const tile = gameMap.getTile(this.col, this.row);
             tile.addImprovement(this.workTarget);
 
-            this.emit('completedWork', {
-                unit: this,
-                improvementType: this.workTarget
-            } as WorkData);
+            if (this.onStateChange) {
+                this.onStateChange('completedWork', {
+                    unit: this,
+                    improvementType,
+                    tile: currentTile
+                } as WorkData);
+            }
 
             this.workTarget = null;
         }
@@ -476,7 +490,9 @@ export class Unit extends EventEmitter {
         this.fortified = !this.fortified;
         this.movement = 0;
 
-        this.emit('fortified', { unit: this, fortified: this.fortified });
+        if (this.onStateChange) {
+            this.onStateChange('fortified', { unit: this, fortified: this.fortified });
+        }
 
         return true;
     }
@@ -487,7 +503,9 @@ export class Unit extends EventEmitter {
 
         if (!this.veteran && this.experience >= 100) {
             this.veteran = true;
-            this.emit('promoted', { unit: this } as PromotionData);
+            if (this.onStateChange) {
+                this.onStateChange('promoted', { unit: this } as PromotionData);
+            }
         }
     }
 
@@ -513,13 +531,17 @@ export class Unit extends EventEmitter {
             this.doWork(null); // gameMap would be passed in real implementation
         }
 
-        this.emit('turnStarted', { unit: this } as TurnData);
+        if (this.onStateChange) {
+            this.onStateChange('turnStarted', { unit: this } as TurnData);
+        }
     }
 
     // End turn for this unit
     endTurn(): void {
         this.movement = 0;
-        this.emit('turnEnded', { unit: this } as TurnData);
+        if (this.onStateChange) {
+            this.onStateChange('turnEnded', { unit: this } as TurnData);
+        }
     }
 
     // Get unit information for UI
@@ -581,16 +603,17 @@ export class Unit extends EventEmitter {
 }
 
 // Unit Manager - handles collections of units
-export class UnitManager extends EventEmitter {
+export class UnitManager {
     private units: Map<string, Unit>;
     private unitsByPosition: Map<string, Unit[]>;
     private unitsByCivilization: Map<string, Unit[]>;
+    public onStateChange: ((eventType: string, data: any) => void) | null;
 
     constructor() {
-        super();
         this.units = new Map();
         this.unitsByPosition = new Map();
         this.unitsByCivilization = new Map();
+        this.onStateChange = null;
     }
 
     // Add unit to manager
@@ -599,18 +622,24 @@ export class UnitManager extends EventEmitter {
         this.updatePositionIndex(unit);
         this.updateCivilizationIndex(unit);
 
-        // Listen to unit events
-        unit.on('moved', (data: MoveData) => {
-            this.updatePositionIndex(unit);
-            this.emit('unitMoved', data);
-        });
+        // Set callback to receive unit events
+        unit.onStateChange = (eventType, data) => {
+            if (eventType === 'moved') {
+                this.updatePositionIndex(unit);
+                if (this.onStateChange) {
+                    this.onStateChange('unitMoved', data);
+                }
+            } else if (eventType === 'destroyed') {
+                this.removeUnit(unit.id);
+                if (this.onStateChange) {
+                    this.onStateChange('unitDestroyed', data);
+                }
+            }
+        };
 
-        unit.on('destroyed', (data: DestroyData) => {
-            this.removeUnit(unit.id);
-            this.emit('unitDestroyed', data);
-        });
-
-        this.emit('unitAdded', { unit });
+        if (this.onStateChange) {
+            this.onStateChange('unitAdded', { unit });
+        }
     }
 
     // Remove unit from manager
@@ -622,7 +651,9 @@ export class UnitManager extends EventEmitter {
         this.removeFromPositionIndex(unit);
         this.removeFromCivilizationIndex(unit);
 
-        this.emit('unitRemoved', { unit });
+        if (this.onStateChange) {
+            this.onStateChange('unitRemoved', { unit });
+        }
 
         return true;
     }

@@ -1,7 +1,6 @@
 // Input Manager - handles mouse and keyboard input (Converted to TypeScript)
 
 // Type definitions
-import EventEmitter from "node:events";
 import {MathUtils} from "@/utils/MathUtils";
 
 interface MousePosition {
@@ -30,7 +29,7 @@ interface InputState {
 }
 
 // Input Manager class
-export class InputManager extends EventEmitter {
+export class InputManager {
     public canvas: HTMLCanvasElement;
     public renderer: any;
     public gameMap: any;
@@ -52,7 +51,6 @@ export class InputManager extends EventEmitter {
     public enabled: boolean;
 
     constructor(canvas: HTMLCanvasElement, renderer: any, gameMap: any) {
-        super();
 
         this.canvas = canvas;
         this.renderer = renderer;
@@ -130,7 +128,7 @@ export class InputManager extends EventEmitter {
 
             if (!this.isDragging && dragDistance > this.dragThreshold) {
                 this.isDragging = true;
-                this.emit('dragStart', { start: this.dragStart, current: this.mousePos });
+                if (this.onStateChange) { this.onStateChange('dragStart', { start: this.dragStart, current: this.mousePos }); }
             }
 
             if (this.isDragging) {
@@ -146,7 +144,7 @@ export class InputManager extends EventEmitter {
         if (!this.enabled) return;
 
         if (this.isDragging) {
-            this.emit('dragEnd', { start: this.dragStart, end: this.mousePos });
+            if (this.onStateChange) { this.onStateChange('dragEnd', { start: this.dragStart, end: this.mousePos }); }
         } else if (event.button === 0) { // Left click
             this.handleClick();
         }
@@ -164,11 +162,11 @@ export class InputManager extends EventEmitter {
         const zoomDelta = event.deltaY > 0 ? -this.zoomSpeed : this.zoomSpeed;
         this.renderer.zoomCamera(zoomDelta, this.mousePos.x, this.mousePos.y);
 
-        this.emit('zoom', {
+        if (this.onStateChange) { this.onStateChange('zoom', {
             delta: zoomDelta,
             centerX: this.mousePos.x,
             centerY: this.mousePos.y
-        });
+        }); }
     }
 
     // Touch event handlers
@@ -212,14 +210,14 @@ export class InputManager extends EventEmitter {
         this.updateCameraMovement();
 
         // Emit keyboard events for UI
-        this.emit('keyDown', { code: event.code, key: event.key });
+        if (this.onStateChange) { this.onStateChange('keyDown', { code: event.code, key: event.key }); }
     }
 
     handleKeyUp(event: KeyboardEvent): void {
         if (!this.enabled) return;
 
         this.keys.delete(event.code);
-        this.emit('keyUp', { code: event.code, key: event.key });
+        if (this.onStateChange) { this.onStateChange('keyUp', { code: event.code, key: event.key }); }
     }
 
     // Update mouse position relative to canvas
@@ -242,7 +240,7 @@ export class InputManager extends EventEmitter {
     // Handle right click
     handleRightClick(): void {
         // Show context menu or alternative action
-        this.emit('rightClick', { pos: this.mousePos });
+        if (this.onStateChange) { this.onStateChange('rightClick', { pos: this.mousePos }); }
     }
 
     // Handle hex tile click
@@ -255,12 +253,12 @@ export class InputManager extends EventEmitter {
 
         // Priority: Own units > Own cities > Move selected unit > Enemy units/cities
         if (unit && unit.civilization.id === activeCiv?.id) {
-            this.emit('unitClicked', { unit, col, row });
+            if (this.onStateChange) { this.onStateChange('unitClicked', { unit, col, row }); }
         } else if (city && city.civilization.id === activeCiv?.id) {
-            this.emit('cityClicked', { city, col, row });
+            if (this.onStateChange) { this.onStateChange('cityClicked', { city, col, row }); }
         } else {
             // Try to move selected unit or attack
-            this.emit('hexClicked', { col, row, unit, city });
+            if (this.onStateChange) { this.onStateChange('hexClicked', { col, row, unit, city }); }
         }
     }
 
@@ -270,7 +268,7 @@ export class InputManager extends EventEmitter {
         const hexCoords = this.renderer.grid.getHexAtPosition(worldPos.x, worldPos.y);
 
         if (hexCoords && this.renderer.grid.isValidHex(hexCoords.col, hexCoords.row)) {
-            this.emit('hexHover', { col: hexCoords.col, row: hexCoords.row });
+            if (this.onStateChange) { this.onStateChange('hexHover', { col: hexCoords.col, row: hexCoords.row }); }
         }
     }
 
@@ -286,7 +284,7 @@ export class InputManager extends EventEmitter {
         // Update drag start for smooth movement
         this.dragStart = { ...this.mousePos };
 
-        this.emit('cameraMoved', { deltaX, deltaY });
+        if (this.onStateChange) { this.onStateChange('cameraMoved', { deltaX, deltaY }); }
     }
 
     // Update camera movement from keyboard
@@ -309,7 +307,7 @@ export class InputManager extends EventEmitter {
 
         if (deltaX !== 0 || deltaY !== 0) {
             this.renderer.moveCamera(deltaX, deltaY);
-            this.emit('cameraMoved', { deltaX, deltaY });
+            if (this.onStateChange) { this.onStateChange('cameraMoved', { deltaX, deltaY }); }
         }
     }
 
@@ -334,7 +332,7 @@ export class InputManager extends EventEmitter {
             this.renderer.camera.zoom
         );
 
-        this.emit('cameraCentered', { col, row });
+        if (this.onStateChange) { this.onStateChange('cameraCentered', { col, row }); }
     }
 
     // Get hex coordinates at screen position
@@ -388,7 +386,7 @@ export class InputManager extends EventEmitter {
             if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
-                this.emit('panComplete', { col, row });
+                if (this.onStateChange) { this.onStateChange('panComplete', { col, row }); }
             }
         };
 

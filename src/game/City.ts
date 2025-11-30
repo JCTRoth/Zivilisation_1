@@ -1,9 +1,8 @@
-// City System - Legacy Implementation (Converted to TypeScript)
+// City System - Refactored to remove EventEmitter pattern
 
 import { Constants } from '../utils/Constants';
 import type { Civilization } from './Civilization';
 import { CIVILIZATIONS } from '../data/GameData';
-import EventEmitter from "node:events";
 import {GameUtils} from "@/utils/GameUtils";
 import {MathUtils} from "@/utils/MathUtils";
 
@@ -90,7 +89,7 @@ interface SerializedCity {
 }
 
 // City System
-export class City extends EventEmitter {
+export class City {
     public id: string;
     public name: string;
     public civilization: Civilization;
@@ -131,10 +130,11 @@ export class City extends EventEmitter {
 
     // Unit support and garrison
     public supportedUnitIds: Set<string>;
+    
+    // Callback for state changes (replaces EventEmitter)
+    public onStateChange: ((eventType: string, data: any) => void) | null;
 
     constructor(name: string, civilization: Civilization, col: number, row: number) {
-        super();
-
         this.id = GameUtils.generateId();
         this.name = name;
         this.civilization = civilization;
@@ -178,6 +178,9 @@ export class City extends EventEmitter {
 
         // Initialize with city center
         this.workingTiles.add(`${col},${row}`);
+        
+        // Initialize callback
+        this.onStateChange = null;
     }
 
     // Process city turn
@@ -205,7 +208,7 @@ export class City extends EventEmitter {
         // Update city state
         this.updateCityState();
 
-        this.emit('turnProcessed', { city: this, turn });
+        if (this.onStateChange) { this.onStateChange('turnProcessed', { city: this, turn }); }
     }
 
     // Calculate yields from all worked tiles
@@ -334,7 +337,7 @@ export class City extends EventEmitter {
         // Automatically assign new citizen to work best available tile
         this.autoAssignWorker(gameMap);
 
-        this.emit('grown', { city: this, newPopulation: this.population });
+        if (this.onStateChange) { this.onStateChange('grown', { city: this, newPopulation: this.population }); }
     }
 
     // Handle starvation
@@ -346,7 +349,7 @@ export class City extends EventEmitter {
             // Remove a worker from the least productive tile
             this.removeWorker();
 
-            this.emit('starved', { city: this, newPopulation: this.population });
+            if (this.onStateChange) { this.onStateChange('starved', { city: this, newPopulation: this.population }); }
         }
     }
 
@@ -391,7 +394,7 @@ export class City extends EventEmitter {
         // Start next item in queue
         this.startNextProduction();
 
-        this.emit('productionCompleted', { city: this, item });
+        if (this.onStateChange) { this.onStateChange('productionCompleted', { city: this, item }); }
     }
 
     // Produce a unit
@@ -423,7 +426,7 @@ export class City extends EventEmitter {
         }
 
         gameMap.unitManager.addUnit(unit);
-        this.emit('unitProduced', { city: this, unit });
+        if (this.onStateChange) { this.onStateChange('unitProduced', { city: this, unit }); }
     }
 
     // Build a building
@@ -502,7 +505,7 @@ export class City extends EventEmitter {
             const unit = gameMap.unitManager.getUnit(unitId);
             if (unit) {
                 gameMap.unitManager.removeUnit(unitId);
-                this.emit('unitDisbanded', { city: this, unit });
+                if (this.onStateChange) { this.onStateChange('unitDisbanded', { city: this, unit }); }
             }
         }
     }
@@ -527,7 +530,7 @@ export class City extends EventEmitter {
         unit.homeCityId = this.id;
         this.supportedUnitIds.add(unitId);
 
-        this.emit('unitRehomed', { city: this, unit, oldHomeCityId: unit.homeCityId });
+        if (this.onStateChange) { this.onStateChange('unitRehomed', { city: this, unit, oldHomeCityId: unit.homeCityId }); }
         return true;
     }
 
@@ -548,13 +551,13 @@ export class City extends EventEmitter {
         this.currentProduction = item;
         this.productionProgress = this.carriedOverProgress;
         this.carriedOverProgress = 0;
-        this.emit('productionChanged', { city: this, item });
+        if (this.onStateChange) { this.onStateChange('productionChanged', { city: this, item }); }
     }
 
     // Add item to production queue
     queueProduction(item: ProductionItem): void {
         this.buildQueue.push(item);
-        this.emit('productionQueued', { city: this, item });
+        if (this.onStateChange) { this.onStateChange('productionQueued', { city: this, item }); }
     }
 
     // Calculate happiness
@@ -899,16 +902,17 @@ export class City extends EventEmitter {
 
 
 // City Manager - handles collections of cities
-export class CityManager extends EventEmitter {
+export class CityManager {
     private cities: Map<string, City>;
     private citiesByPosition: Map<string, City>;
     private citiesByCivilization: Map<string, City[]>;
+    public onStateChange: ((eventType: string, data: any) => void) | null;
 
     constructor() {
-        super();
         this.cities = new Map();
         this.citiesByPosition = new Map();
         this.citiesByCivilization = new Map();
+        this.onStateChange = null;
     }
 
     // Add city to manager
@@ -917,14 +921,14 @@ export class CityManager extends EventEmitter {
         this.updatePositionIndex(city);
         this.updateCivilizationIndex(city);
 
-        // Listen to city events
-        city.on('grown', (data) => this.emit('cityGrown', data));
-        city.on('starved', (data) => this.emit('cityStarved', data));
-        city.on('productionCompleted', (data) => this.emit('cityProductionCompleted', data));
-        city.on('buildingCompleted', (data) => this.emit('cityBuildingCompleted', data));
-        city.on('unitProduced', (data) => this.emit('cityUnitProduced', data));
+        // Set callback to receive city events
+        city.onStateChange = (eventType, data) => {
+            if (this.onStateChange) {
+                this.onStateChange(eventType, data);
+            }
+        };
 
-        this.emit('cityAdded', { city });
+        if (this.onStateChange) { this.onStateChange('cityAdded', { city }); }
     }
 
     // Remove city from manager
@@ -936,7 +940,7 @@ export class CityManager extends EventEmitter {
         this.removeFromPositionIndex(city);
         this.removeFromCivilizationIndex(city);
 
-        this.emit('cityRemoved', { city });
+        if (this.onStateChange) { this.onStateChange('cityRemoved', { city }); }
 
         return true;
     }

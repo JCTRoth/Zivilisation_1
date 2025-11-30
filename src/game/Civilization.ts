@@ -1,8 +1,7 @@
-// Civilization System - Legacy Implementation (Converted to TypeScript)
+// Civilization System - Refactored to remove EventEmitter pattern
 
 import { Constants } from '@/utils/Constants';
 import { CITY_NAMES } from './City';
-import EventEmitter from "node:events";
 import {MathUtils} from "@/utils/MathUtils";
 
 // Type definitions
@@ -57,7 +56,7 @@ interface CivilizationInfo {
 }
 
 // Civilization class
-export class Civilization extends EventEmitter {
+export class Civilization {
     public id: string;
     public name: string;
     public leaderName: string;
@@ -94,10 +93,11 @@ export class Civilization extends EventEmitter {
     // Units and cities (will be managed by game map)
     public units: any[];
     public cities: any[];
+    
+    // Callback for state changes (replaces EventEmitter)
+    public onStateChange: ((eventType: string, data: any) => void) | null;
 
     constructor(id: string, name: string, leaderName: string, color: string, isHuman: boolean = false) {
-        super();
-
         this.id = id;
         this.name = name;
         this.leaderName = leaderName;
@@ -131,6 +131,8 @@ export class Civilization extends EventEmitter {
         // Units and cities (will be managed by game map)
         this.units = [];
         this.cities = [];
+        
+        // Initialize callback\n        this.onStateChange = null;
 
         // Initialize starting technologies
         this.initializeStartingTech();
@@ -184,13 +186,13 @@ export class Civilization extends EventEmitter {
             this.makeAIDecisions(gameMap, turn);
         }
 
-        this.emit('turnStarted', { civilization: this, turn });
+        if (this.onStateChange) { this.onStateChange('turnStarted', { civilization: this, turn }); }
     }
 
     // End civilization's turn
     endTurn(): void {
         this.turnActive = false;
-        this.emit('turnEnded', { civilization: this });
+        if (this.onStateChange) { this.onStateChange('turnEnded', { civilization: this }); }
     }
 
     // Calculate resources from all cities
@@ -247,7 +249,7 @@ export class Civilization extends EventEmitter {
         // Apply technology effects
         this.applyTechnologyEffects(techId);
 
-        this.emit('technologyCompleted', { civilization: this, technology: techId });
+        if (this.onStateChange) { this.onStateChange('technologyCompleted', { civilization: this, technology: techId }); }
 
         // Auto-select next research if AI
         if (!this.isHuman) {
@@ -706,7 +708,7 @@ export class Civilization extends EventEmitter {
         this.warWith.add(otherCiv.id);
         otherCiv.warWith.add(this.id);
 
-        this.emit('warDeclared', { aggressor: this, target: otherCiv });
+        if (this.onStateChange) { this.onStateChange('warDeclared', { aggressor: this, target: otherCiv }); }
     }
 
     // Make peace with another civilization
@@ -714,7 +716,7 @@ export class Civilization extends EventEmitter {
         this.warWith.delete(otherCiv.id);
         otherCiv.warWith.delete(this.id);
 
-        this.emit('peaceMade', { civ1: this, civ2: otherCiv });
+        if (this.onStateChange) { this.onStateChange('peaceMade', { civ1: this, civ2: otherCiv }); }
     }
 
     // Exploration decisions
@@ -751,7 +753,7 @@ export class Civilization extends EventEmitter {
     checkDefeat(): void {
         if (this.cities.length === 0 && this.units.length === 0) {
             this.alive = false;
-            this.emit('defeated', { civilization: this });
+            if (this.onStateChange) { this.onStateChange('defeated', { civilization: this }); }
         }
     }
 

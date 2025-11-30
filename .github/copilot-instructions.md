@@ -5,6 +5,7 @@
 - Create/extend utilities for shared logic across components
 - CSS -> src/styles
 - Static Data -> create/extend -> src/data
+- Use Classes instead of Interfaces.
 - Not start any npm server assume that on port 3000 an instance is running
 - Use Parameter Types when defining a function
 - The Fish Bash is used for your commands

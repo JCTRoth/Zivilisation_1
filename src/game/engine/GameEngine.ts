@@ -54,7 +54,6 @@ export default class GameEngine {
   civilizations: Civilization[];
   technologies: any[];
   gameSettings: GameSettings;
-  renderer: any;
   isInitialized: boolean;
   currentTurn: number;
   currentYear: number;
@@ -83,9 +82,6 @@ export default class GameEngine {
       startingYear: -4000, // 4000 BC
       startingGold: 50
     };
-    
-    // Rendering context
-    this.renderer = null;
     
     // Game state
     this.isInitialized = false;
@@ -170,15 +166,10 @@ export default class GameEngine {
     }
   }
 
-  // Highlight AI target on renderer if available
+  // Emit event for AI target highlighting (UI decides how to render)
   private highlightAITarget(col: number, row: number, color: string = 'rgba(255,0,0,0.4)') {
-    if (!this.renderer || !this.renderer.setHighlightedHexes) return;
-    // Set a single highlighted hex for a short time
-    try {
-      this.renderer.setHighlightedHexes([{ col, row }]);
-    } catch (e) {
-      // ignore
-    }
+    // Emit event for UI layer to handle highlighting
+    this.onStateChange && this.onStateChange('AI_TARGET_HIGHLIGHT', { col, row, color });
   }
 
   // Choose a target for AI unit: prefer unexplored nearby tiles, then enemy units, then random neighbor
@@ -577,10 +568,8 @@ export default class GameEngine {
     }
 
     console.log(`[AI] Finished all units for civilization ${civilizationId}`);
-    // Clear highlights and signal turn end for AI
-    if (this.renderer && this.renderer.setHighlightedHexes) {
-      try { this.renderer.setHighlightedHexes([]); } catch (e) {}
-    }
+    // Emit event to clear highlights (UI decides how to handle)
+    this.onStateChange && this.onStateChange('AI_CLEAR_HIGHLIGHTS', { civilizationId });
 
     // Process auto-production for AI cities
     console.log(`[AI] Processing auto-production for civilization ${civilizationId}`);

@@ -206,18 +206,7 @@ export class TurnManager {
   private finalizeEndPhase(civilizationId: number) {
     console.log(`[TurnManager] Finalizing end phase for civ ${civilizationId}`);
     
-    // Clear any renderer highlights and selection for the ending turn
-    try {
-      if (this.gameEngine.renderer?.setHighlightedHexes) {
-        this.gameEngine.renderer.setHighlightedHexes([]);
-      }
-      if (this.gameEngine.renderer?.setSelectedHex) {
-        this.gameEngine.renderer.setSelectedHex(null, null);
-      }
-    } catch (e) {
-      console.warn('[TurnManager] Could not clear renderer state', e);
-    }
-    
+    // Emit event for UI to clear highlights and selection
     this.emit('TURN_END', { civilizationId, turnNumber: this.turnNumber });
     
     // Now advance to the next player's turn
@@ -516,11 +505,8 @@ export class TurnManager {
     } catch (e) {
       console.warn('[TurnManager] AutoProduction failed during forced end', e);
     }
-    try {
-      if (this.gameEngine.renderer?.setHighlightedHexes) {
-        this.gameEngine.renderer.setHighlightedHexes([]);
-      }
-    } catch {}
+    // Emit event for UI to clear highlights
+    this.emit('AI_TURN_COMPLETE', { civilizationId, reason });
     console.log(`[TurnManager] Forced AI turn end for civ ${civilizationId} due to ${reason}`);
     this.finalizeEndPhase(civilizationId);
   }
