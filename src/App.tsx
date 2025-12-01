@@ -12,6 +12,7 @@ import SidePanel from './components/ui/SidePanel';
 import {GameUtils} from "@/utils/GameUtils";
 import { DomUtils } from '@/utils/DomUtils';
 import { enrichMapForExport } from '@/utils/MapExportUtils';
+import { preloadAllUnitIcons } from '@/utils/UnitIconLoader';
 
 function App() {
   const gameState = useGameStore(state => state.gameState);
@@ -31,6 +32,13 @@ function App() {
   const [detailHex, setDetailHex] = useState(null);
   const [terrainData, setTerrainData] = useState(null);
   const menuRefs = React.useRef({});
+
+  // Preload unit icons on mount
+  useEffect(() => {
+    preloadAllUnitIcons().catch(err => {
+      console.warn('Failed to preload some unit icons:', err);
+    });
+  }, []);
 
   // Connect game engine to React state management
   useGameEngine(gameEngine);

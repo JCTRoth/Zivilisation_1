@@ -19,6 +19,7 @@ import { TILE_SIZE, getTerrainInfo, TERRAIN_TYPES } from '@/data/TerrainData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } from '@/data/TileImprovementConstants';
 import { UNIT_TYPES } from '@/data/GameData';
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
+import { getUnitIcon } from '@/utils/UnitIconLoader';
 import type { MapState, CameraState, Unit, City, GameState, Civilization } from '../../../types/game';
 
 
@@ -1334,25 +1335,42 @@ export class MapRenderer {
     ctx.fillStyle = iconColor;
 
     const unitTypeId = unit.type ? String(unit.type) : null;
-    let gameTypeDef: any = null;
-    if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
-      try {
-        gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === String(unitTypeId).toLowerCase()) || null;
-      } catch (e) {
-        gameTypeDef = null;
+    
+    // Try to load the image icon first
+    const iconImg = unitTypeId ? getUnitIcon(unitTypeId) : null;
+    
+    if (iconImg && iconImg.complete) {
+      // Draw the SVG icon
+      const iconSize = innerRadius * 1.8;
+      ctx.drawImage(
+        iconImg,
+        centerX - iconSize / 2,
+        centerY - iconSize / 2,
+        iconSize,
+        iconSize
+      );
+    } else {
+      // Fallback to emoji/text icon
+      let gameTypeDef: any = null;
+      if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
+        try {
+          gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === String(unitTypeId).toLowerCase()) || null;
+        } catch (e) {
+          gameTypeDef = null;
+        }
       }
-    }
-    const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
-    const icon = unit.icon || gameTypeDef?.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
-    const fontSize = Math.max(10, Math.round(innerRadius * 1.1));
-    ctx.font = `bold ${fontSize}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    try {
-      ctx.fillText(icon, centerX, centerY);
-    } catch (err) {
-      const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
-      ctx.fillText(fallback, centerX, centerY);
+      const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
+      const icon = unit.icon || gameTypeDef?.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
+      const fontSize = Math.max(10, Math.round(innerRadius * 1.1));
+      ctx.font = `bold ${fontSize}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      try {
+        ctx.fillText(icon, centerX, centerY);
+      } catch (err) {
+        const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
+        ctx.fillText(fallback, centerX, centerY);
+      }
     }
 
     if ((unit as any).isSleeping) {
@@ -1409,25 +1427,42 @@ export class MapRenderer {
     ctx.fillStyle = iconColor;
 
     const unitTypeId = unit.type ? String(unit.type) : null;
-    let gameTypeDef: any = null;
-    if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
-      try {
-        gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === String(unitTypeId).toLowerCase()) || null;
-      } catch (e) {
-        gameTypeDef = null;
+    
+    // Try to load the image icon first
+    const iconImg = unitTypeId ? getUnitIcon(unitTypeId) : null;
+    
+    if (iconImg && iconImg.complete) {
+      // Draw the SVG icon
+      const iconSize = innerRadius * 1.8;
+      ctx.drawImage(
+        iconImg,
+        centerX - iconSize / 2,
+        centerY - iconSize / 2,
+        iconSize,
+        iconSize
+      );
+    } else {
+      // Fallback to emoji/text icon
+      let gameTypeDef: any = null;
+      if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
+        try {
+          gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === String(unitTypeId).toLowerCase()) || null;
+        } catch (e) {
+          gameTypeDef = null;
+        }
       }
-    }
-    const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
-    const icon = unit.icon || gameTypeDef?.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
-    const fontSize = Math.max(10, Math.round(innerRadius * 1.1));
-    ctx.font = `bold ${fontSize}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    try {
-      ctx.fillText(icon, centerX, centerY);
-    } catch (err) {
-      const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
-      ctx.fillText(fallback, centerX, centerY);
+      const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
+      const icon = unit.icon || gameTypeDef?.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
+      const fontSize = Math.max(10, Math.round(innerRadius * 1.1));
+      ctx.font = `bold ${fontSize}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      try {
+        ctx.fillText(icon, centerX, centerY);
+      } catch (err) {
+        const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
+        ctx.fillText(fallback, centerX, centerY);
+      }
     }
 
     if ((unit as any).isSleeping) {
