@@ -238,6 +238,13 @@ export class TurnManager {
     }
     
     console.log(`[TurnManager] advanceTurn: Moving from player ${previousPlayer} to ${nextPlayer} (${nextCiv.name}, ${nextCiv.isHuman ? 'human' : 'AI'})`);
+
+    if (this.gameEngine.victoryManager && this.gameEngine.victoryManager.evaluateEndOfTurn()) {
+      console.log('[TurnManager] advanceTurn: VictoryManager reported game end; halting further turn processing.');
+      this.currentPlayer = null;
+      this.currentPhase = null;
+      return;
+    }
     
     // Update active player in game engine
     this.gameEngine.activePlayer = nextPlayer;

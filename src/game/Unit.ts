@@ -465,13 +465,17 @@ export class Unit {
         if (this.workTurns === 0) {
             // Complete the improvement
             const tile = gameMap.getTile(this.col, this.row);
-            tile.addImprovement(this.workTarget);
+            const completedImprovement = this.workTarget;
+
+            if (tile && completedImprovement) {
+                tile.addImprovement(completedImprovement);
+            }
 
             if (this.onStateChange) {
                 this.onStateChange('completedWork', {
                     unit: this,
-                    improvementType,
-                    tile: currentTile
+                    improvementType: completedImprovement,
+                    tile
                 } as WorkData);
             }
 

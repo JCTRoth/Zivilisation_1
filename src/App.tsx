@@ -7,6 +7,7 @@ import SettingsModal from './components/ui/SettingsModal';
 import GameSetupModal from './components/ui/GameSetupModal';
 import EndTurnConfirmModal from './components/ui/EndTurnConfirmModal';
 import GameModals from './components/ui/GameModals';
+import GameResultOverlay from './components/ui/GameResultOverlay';
 import { useGameEngine } from './hooks/UseGameEngine';
 import SidePanel from './components/ui/SidePanel';
 import {GameUtils} from "@/utils/GameUtils";
@@ -19,6 +20,7 @@ function App() {
   const actions = useGameStore(state => state.actions);
   const settings = useGameStore(state => state.settings);
   const camera = useGameStore(state => state.camera);
+  const gameResult = useGameStore(state => state.gameState.gameResult);
   const setCamera = useGameStore(state => state.actions.updateCamera);
   const [gameEngine, setGameEngine] = useState(null);
   const [error, setError] = useState(null);
@@ -188,6 +190,42 @@ function App() {
       console.error('handleDownloadMap error', e);
     }
   };
+
+  const handleResultClose = useCallback(() => {
+    actions.clearGameResult();
+  }, [actions]);
+
+  const handleResultRestart = useCallback(async () => {
+    if (!gameEngine) {
+      return;
+    }
+    try {
+      await gameEngine.restartCurrentGame();
+      actions.clearGameResult();
+      setActiveMenu(null);
+      setShowHexDetail(false);
+      setShowSettings(false);
+      setShowEndTurnConfirm(false);
+    } catch (err) {
+      console.error('[App] Failed to restart game', err);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [actions, gameEngine]);
+
+  const handleResultQuit = useCallback(() => {
+    if (gameEngine) {
+      gameEngine.shutdownToMenu();
+    }
+    actions.clearGameResult();
+    actions.resetGameState();
+    setActiveMenu(null);
+    setShowHexDetail(false);
+    setShowSettings(false);
+    setShowEndTurnConfirm(false);
+    setIsEndTurnAutomatic(false);
+    setGameEngine(null);
+    setShowGameSetup(true);
+  }, [actions, gameEngine]);
 
   // Handle hex examination (called from canvas)
   const handleExamineHex = (hex, terrain) => {
@@ -1024,6 +1062,13 @@ function App() {
 
       {/* Game Modals */}
       <GameModals gameEngine={gameEngine} />
+
+      <GameResultOverlay
+        result={gameResult}
+        onClose={handleResultClose}
+        onRestart={handleResultRestart}
+        onQuit={handleResultQuit}
+      />
     </div>
   );
 }

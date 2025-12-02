@@ -7,6 +7,7 @@ import { AutoProduction } from './AutoProduction';
 import { AIUtility } from './AIUtility';
 import { UnitActionManager } from './UnitActionManager';
 import { TurnManager } from './TurnManager';
+import { VictoryManager } from './VictoryManager';
 import { SettlementEvaluator } from './SettlementEvaluator';
 import { EnemySearcher } from './EnemySearcher';
 import { GoToManager } from './GoToManager';
@@ -75,6 +76,8 @@ export default class GameEngine {
   devMode: boolean; // Developer mode flag
   roundManager: TurnManager; // kept property name for compatibility
   goToManager: GoToManager;
+  victoryManager: VictoryManager;
+  isGameOver: boolean;
 
   // Getter for turnManager (alias for roundManager)
   get turnManager() {
@@ -114,6 +117,9 @@ export default class GameEngine {
     this.goToManager = new GoToManager(this, this.roundManager);
     this.playerStorage = new Map();
     this.devMode = false;
+    this.victoryManager = new VictoryManager(this);
+    this.isGameOver = false;
+    this.victoryManager.syncStoreActions(this.storeActions);
   }
 
   /**
@@ -890,6 +896,12 @@ export default class GameEngine {
     
     // Merge custom settings
     this.gameSettings = { ...this.gameSettings, ...settings };
+
+    // Fresh game setup resets victory checks and player visibility storage
+    this.isGameOver = false;
+    this.victoryManager.reset();
+    this.victoryManager.syncStoreActions(this.storeActions);
+    this.playerStorage.clear();
     
     // Set dev mode from settings
     this.devMode = (settings as any).devMode || false;
@@ -923,6 +935,7 @@ export default class GameEngine {
 
     // Push freshly generated state into the store if available before computing visibility
     if (this.storeActions) {
+      this.storeActions.clearGameResult?.();
       this.storeActions.updateMap(this.map);
       this.storeActions.updateUnits(this.units);
       this.storeActions.updateCities(this.cities);
@@ -1133,7 +1146,7 @@ export default class GameEngine {
     switch (mapType) {
       case 'NORMAL_SKIRMISH':
       case 'CLOSEUP_1V1':
-      case 'TECH_LEVEL_15':
+      case 'TECH_LEVEL_10':
         // Standard: 1 settler
         console.log(`[UNITS] Creating 1 settler for civ ${civId}`);
         this.createUnit(civId, 'settler', startPos.col, startPos.row);
@@ -1323,9 +1336,9 @@ export default class GameEngine {
    * Initialize technology tree
    */
   async initializeTechnologies(mapType: string = 'NORMAL_SKIRMISH') {
-    // For TECH_LEVEL_15 mode, grant all technologies to all civilizations
-    if (mapType === 'TECH_LEVEL_15') {
-      console.log('[TECH] Granting all technologies for TECH_LEVEL_15 mode');
+    // For TECH_LEVEL_10 mode, grant all technologies to all civilizations
+    if (mapType === 'TECH_LEVEL_10') {
+      console.log('[TECH] Granting all technologies for TECH_LEVEL_10 mode');
       const allTechs = Object.keys(TECHNOLOGIES);
       
       for (const civ of this.civilizations) {
@@ -1886,6 +1899,11 @@ export default class GameEngine {
    */
   processTurn() {
     console.log('[GameEngine] processTurn: Delegating to TurnManager.advanceTurn()');
+
+    if (this.isGameOver) {
+      console.log('[GameEngine] processTurn: Ignored because the game has concluded');
+      return;
+    }
     
     // Delegate to TurnManager which now owns all turn logic
     if (this.roundManager && typeof this.roundManager.advanceTurn === 'function') {
@@ -1956,6 +1974,8 @@ export default class GameEngine {
     this.technologies = [];
     this.currentTurn = 1;
     this.activePlayer = 0;
+    this.isGameOver = false;
+    this.victoryManager.reset();
     
     // Regenerate world
     await this.generateWorld();
@@ -1972,6 +1992,44 @@ export default class GameEngine {
 
     // Initialize fog of war visibility
     this.updateVisibility();
+  }
+
+  async restartCurrentGame(): Promise<void> {
+    console.log('[GameEngine] Restarting current game with identical settings');
+    const actions = this.storeActions;
+    actions?.clearGameResult();
+    actions?.updateGameState({
+      isLoading: true,
+      gamePhase: 'loading',
+      winner: null
+    });
+
+    this.isGameOver = false;
+    this.victoryManager.reset();
+
+    await this.initialize({ ...this.gameSettings });
+
+    actions?.updateGameState({
+      isLoading: false,
+      gamePhase: 'playing',
+      mapGenerated: true,
+      winner: null,
+      currentTurn: this.currentTurn,
+      currentYear: this.currentYear
+    });
+  }
+
+  shutdownToMenu(): void {
+    console.log('[GameEngine] Shutting down current game and returning to menu');
+    this.isGameOver = true;
+    this.isInitialized = false;
+    this.units = [];
+    this.cities = [];
+    this.civilizations = [];
+    this.technologies = [];
+    this.map = null;
+    this.playerStorage.clear();
+    this.storeActions?.clearGameResult();
   }
 
   /**

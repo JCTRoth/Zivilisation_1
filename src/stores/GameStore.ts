@@ -5,7 +5,53 @@ import { Constants } from '../utils/Constants';
 import { SquareGrid } from '../game/HexGrid';
 import { UNIT_TYPES } from '../data/GameData';
 import { UNIT_PROPERTIES } from '../data/UnitConstants';
-import type { GameStoreState, GameState, MapState, CameraState, Unit, City, Civilization, UIState, Settings, Technology, GameActions } from '../../types/game';
+import type { GameStoreState, GameState, MapState, CameraState, Unit, City, Civilization, UIState, Settings, Technology, GameActions, GameResult } from '../../types/game';
+
+const createInitialGameState = (): GameState => ({
+  isLoading: false,
+  isGameStarted: false,
+  currentTurn: 1,
+  gamePhase: 'menu',
+  selectedHex: null,
+  selectedUnit: null,
+  activeUnit: null,
+  selectedCity: null,
+  activePlayer: 0,
+  mapGenerated: false,
+  winner: null,
+  currentYear: -4000,
+  gameResult: null
+});
+
+const createInitialMapState = (): MapState => ({
+  width: Constants.MAP_WIDTH,
+  height: Constants.MAP_HEIGHT,
+  tiles: [],
+  visibility: [],
+  revealed: []
+});
+
+const createInitialCameraState = (): CameraState => ({
+  x: 0,
+  y: 0,
+  zoom: 2.0,
+  minZoom: 0.5,
+  maxZoom: 3.0
+});
+
+const createInitialUIState = (): UIState => ({
+  showMinimap: true,
+  showUnitPanel: false,
+  showCityPanel: false,
+  showTechTree: false,
+  showDiplomacy: false,
+  showGameMenu: false,
+  activeDialog: null,
+  sidebarCollapsed: false,
+  notifications: [],
+  goToMode: false,
+  goToUnit: ''
+});
 
 // Helper function for visibility calculations
 const setVisibilityAreaInternal = (visibility, revealed, centerCol, centerRow, radius, mapWidth, mapHeight) => {
@@ -28,37 +74,13 @@ const setVisibilityAreaInternal = (visibility, revealed, centerCol, centerRow, r
 // Zustand store replacing Jotai atoms
 export const useGameStore = create<GameStoreState>((set, get) => ({
   // Game State
-  gameState: {
-    isLoading: false,
-    isGameStarted: false,
-    currentTurn: 1,
-    gamePhase: 'menu', // 'menu', 'loading', 'playing', 'paused'
-    selectedHex: null,
-    selectedUnit: null,
-    activeUnit: null,
-    selectedCity: null,
-    activePlayer: 0,
-    mapGenerated: false,
-    winner: null
-  },
+  gameState: createInitialGameState(),
 
   // Map State
-  map: {
-    width: Constants.MAP_WIDTH,
-    height: Constants.MAP_HEIGHT,
-    tiles: [],
-    visibility: [], // Fog of war
-    revealed: []    // Permanently revealed tiles
-  },
+  map: createInitialMapState(),
 
   // Camera State
-  camera: {
-    x: 0,
-    y: 0,
-    zoom: 2.0,
-    minZoom: 0.5,
-    maxZoom: 3.0
-  },
+  camera: createInitialCameraState(),
 
   // Units State
   units: [],
@@ -70,19 +92,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   civilizations: [],
 
   // UI State
-  uiState: {
-    showMinimap: true,
-    showUnitPanel: false,
-    showCityPanel: false,
-    showTechTree: false,
-    showDiplomacy: false,
-    showGameMenu: false,
-    activeDialog: null, // 'city', 'tech', 'diplomacy', 'game-menu', null
-    sidebarCollapsed: false,
-    notifications: [],
-    goToMode: false,
-    goToUnit: ''
-  },
+  uiState: createInitialUIState(),
 
   // Settings
   settings: {
@@ -528,6 +538,33 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         goToMode: !!enabled,
         goToUnit: enabled ? (unitId || state.gameState.selectedUnit || '') : ''
       }
+    })),
+
+    setGameResult: (result: GameResult | null) => set(state => ({
+      gameState: {
+        ...state.gameState,
+        gameResult: result,
+        winner: result && result.outcome === 'victory' ? result.civName : null,
+        gamePhase: result ? 'completed' : state.gameState.gamePhase
+      }
+    })),
+
+    clearGameResult: () => set(state => ({
+      gameState: {
+        ...state.gameState,
+        gameResult: null
+      }
+    })),
+
+    resetGameState: () => set(state => ({
+      gameState: createInitialGameState(),
+      map: createInitialMapState(),
+      camera: createInitialCameraState(),
+      units: [],
+      cities: [],
+      civilizations: [],
+      technologies: [],
+      uiState: createInitialUIState()
     }))
   },
 

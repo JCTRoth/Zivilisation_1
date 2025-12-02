@@ -45,4 +45,5 @@ export const TECHNOLOGIES_DATA: Technology[] = [
   { id: "electronics", name: "Electronics", researched: false, researching: false, cost: 180, description: "Allows Hydro Plants.", prerequisites: ["electricity"] },
   { id: "nuclear_power", name: "Nuclear Power", researched: false, researching: false, cost: 200, description: "Allows Nuclear Plants.", prerequisites: ["electronics"] },
   { id: "mass_production", name: "Mass Production", researched: false, researching: false, cost: 170, description: "Allows faster production of units.", prerequisites: ["industrialization"] },
+  { id: "moonshot", name: "Moonshot", researched: false, researching: false, available: false, cost: 300, description: "Launch a moon mission that ushers in a new golden age.", prerequisites: ["space_flight"] },
 ];

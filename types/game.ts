@@ -1,10 +1,37 @@
 // Game types for Civ1Browser
 
+export type VictoryReason = 'elimination' | 'moonshot';
+
+export class GameResult {
+  outcome: 'victory' | 'defeat';
+  civilizationId: number;
+  civName: string;
+  reason: VictoryReason;
+  isHuman: boolean;
+  timestamp: number;
+
+  constructor(params: {
+    outcome: 'victory' | 'defeat';
+    civilizationId: number;
+    civName: string;
+    reason: VictoryReason;
+    isHuman: boolean;
+    timestamp?: number;
+  }) {
+    this.outcome = params.outcome;
+    this.civilizationId = params.civilizationId;
+    this.civName = params.civName;
+    this.reason = params.reason;
+    this.isHuman = params.isHuman;
+    this.timestamp = params.timestamp ?? Date.now();
+  }
+}
+
 export interface GameState {
   isLoading: boolean;
   isGameStarted: boolean;
   currentTurn: number;
-  gamePhase: 'menu' | 'loading' | 'playing' | 'paused';
+  gamePhase: 'menu' | 'loading' | 'playing' | 'paused' | 'completed';
   selectedHex: { col: number; row: number } | null;
   selectedUnit: string | null;
   activeUnit: string | null;
@@ -13,6 +40,7 @@ export interface GameState {
   mapGenerated: boolean;
   winner: string | null;
   currentYear?: number;
+  gameResult: GameResult | null;
 }
 
 export interface MapState {
@@ -226,6 +254,9 @@ export interface GameActions {
   updateTechnologies: (technologies: Technology[]) => void;
   updateGameState: (updates: Partial<GameState>) => void;
   updateSettings: (updates: Partial<Settings>) => void;
+  setGameResult: (result: GameResult | null) => void;
+  clearGameResult: () => void;
+  resetGameState: () => void;
 }
 
 export interface GameEngine {
@@ -252,4 +283,7 @@ export interface GameEngine {
   calculateUnitPath(unitId: string, targetCol: number, targetRow: number): boolean;
   clearUnitPath(unitId: string): void;
   moveUnitAlongPath(unitId: string): boolean;
+  restartCurrentGame(): Promise<void>;
+  shutdownToMenu(): void;
+  isGameOver: boolean;
 }

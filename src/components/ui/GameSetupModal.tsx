@@ -199,7 +199,7 @@ function GameSetupModal({ show, onStart }) {
                     <option value="NAVAL_CLOSEUP">Naval close up · 20x20 water map with fish</option>
                     <option value="NO_SETTLERS">No Settlers · Start with military units</option>
                     <option value="MANY_CITIES">Many Cities · 4 cities with infrastructure</option>
-                    <option value="TECH_LEVEL_15">Tech. Level 15 · All technologies researched</option>
+                    <option value="TECH_LEVEL_10">Tech. Level 10 · All technologies researched</option>
                   </Form.Select>
                 </div>
               </div>
@@ -296,7 +296,7 @@ function GameSetupModal({ show, onStart }) {
                       <li>Mode: <strong>City management focus</strong></li>
                     </ul>
                   )}
-                  {mapType === 'TECH_LEVEL_15' && (
+                  {mapType === 'TECH_LEVEL_10' && (
                     <ul>
                       <li>Map: <strong>80x50 tiles</strong></li>
                       <li>Units: <strong>1 Settler</strong></li>
