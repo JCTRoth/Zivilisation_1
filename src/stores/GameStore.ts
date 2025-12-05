@@ -130,14 +130,44 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     })),
 
     nextTurn: () => set(state => {
-      const nextPlayer = (state.gameState.activePlayer + 1) % state.civilizations.length;
-      const nextTurn = nextPlayer === 0 ? state.gameState.currentTurn + 1 : state.gameState.currentTurn;
+      // Get only active (alive) civilizations for turn cycling
+      const activeCivs = state.civilizations.filter(civ => civ.isAlive !== false);
+      const currentActiveIndex = activeCivs.findIndex(civ => civ.id === state.gameState.activePlayer);
+      const nextActiveIndex = (currentActiveIndex + 1) % activeCivs.length;
+      const nextPlayer = activeCivs[nextActiveIndex]?.id ?? 0;
+      
+      // A new round starts when we wrap back to the first active player
+      const isNewRound = nextActiveIndex === 0 && currentActiveIndex !== -1;
+      const nextTurn = isNewRound ? state.gameState.currentTurn + 1 : state.gameState.currentTurn;
+      
+      // Use era-based year progression (only advance on new round)
+      const currentYear = state.gameState.currentYear || -4000;
+      let nextYear = currentYear;
+      if (isNewRound) {
+        // Era-based increments
+        if (currentYear < 1000) {
+          nextYear = currentYear + 20;
+        } else if (currentYear < 1500) {
+          nextYear = currentYear + 10;
+        } else if (currentYear < 1750) {
+          nextYear = currentYear + 5;
+        } else if (currentYear < 1850) {
+          nextYear = currentYear + 2;
+        } else {
+          nextYear = currentYear + 1;
+        }
+        // Skip year 0 (1 BC -> 1 AD)
+        if (currentYear < 0 && nextYear >= 0) {
+          nextYear = nextYear === 0 ? 1 : nextYear;
+        }
+      }
 
       return {
         gameState: {
           ...state.gameState,
           activePlayer: nextPlayer,
           currentTurn: nextTurn,
+          currentYear: nextYear,
           selectedUnit: null,
           selectedCity: null,
           selectedHex: null
@@ -565,7 +595,39 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       civilizations: [],
       technologies: [],
       uiState: createInitialUIState()
-    }))
+    })),
+
+    resetFogOfWar: () => set(state => {
+      const { map } = state;
+      if (!map.tiles || map.tiles.length === 0) {
+        console.log('[Store] resetFogOfWar: No tiles to reset');
+        return state;
+      }
+
+      const totalTiles = map.tiles.length;
+      console.log(`[Store] resetFogOfWar: Resetting fog of war for ${totalTiles} tiles`);
+
+      // Reset all visibility and revealed arrays to false
+      const newVisibility = new Array(totalTiles).fill(false);
+      const newRevealed = new Array(totalTiles).fill(false);
+
+      // Also reset tile-level visibility flags
+      const newTiles = map.tiles.map(tile => ({
+        ...tile,
+        visible: false,
+        explored: false
+      }));
+
+      return {
+        ...state,
+        map: {
+          ...map,
+          tiles: newTiles,
+          visibility: newVisibility,
+          revealed: newRevealed
+        }
+      };
+    })
   },
 
   // Computed selectors (equivalent to derived atoms)

@@ -9,6 +9,42 @@ image::doc/1.png[]
 image::doc/2.png[]
 image::doc/3.png[]
 
+== Game Concepts
+
+=== Terminology
+
+* *Round*: A round is completed when all active (alive) players have finished their turns. The game year advances at the end of each round.
+* *Turn*: Each player has one turn per round if they are active (not eliminated). Each turn has phases: START → UNIT_MOVEMENT → CITY_PRODUCTION → RESEARCH → END.
+* *Move*: Each unit has available moves (`movesRemaining`) that can be used during their owner's turn. Units cannot exceed their movement limit per turn.
+
+=== Time Progression
+
+The game models historical progression starting at 4000 BC and advances the year at the end of each round using era-dependent increments:
+
+[cols="1,1", options="header"]
+|===
+|Era |Years per Round
+
+|Before 1000 AD
+|+20 years
+
+|1000–1499 AD
+|+10 years
+
+|1500–1749 AD
+|+5 years
+
+|1750–1849 AD
+|+2 years
+
+|1850+ AD
+|+1 year
+|===
+
+NOTE: The game skips year 0 (historically there is no year 0). The transition goes from 1 BC directly to 1 AD.
+
+The year is displayed in the UI with the appropriate BC/AD suffix (e.g., "Turn 1|4000 BC").
+
 == Features
 
 * *Turn-based Strategy Gameplay*: Classic Civilization mechanics with modern React architecture

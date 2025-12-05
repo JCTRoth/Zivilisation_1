@@ -257,6 +257,7 @@ export interface GameActions {
   setGameResult: (result: GameResult | null) => void;
   clearGameResult: () => void;
   resetGameState: () => void;
+  resetFogOfWar: () => void;
 }
 
 export interface GameEngine {

@@ -68,19 +68,14 @@ export class EngineEventRouter {
     const civ = this.gameEngine.civilizations?.[active];
     console.log('[EngineEventRouter] TURN_START for player', active, civ?.name);
     
-    // Try both turnManager and roundManager property names (backwards compatibility)
-    const tm = (this.gameEngine as any).turnManager || (this.gameEngine as any).roundManager;
+    const tm = (this.gameEngine as any).roundManager;
     
     if (civ?.isHuman) {
       if (tm && typeof tm.registerPlayer === 'function') {
         console.log('[EngineEventRouter] Registering human player', active);
         tm.registerPlayer(active);
       } else {
-        console.warn('[EngineEventRouter] TurnManager not found or registerPlayer not available', { 
-          hasTurnManager: !!tm, 
-          hasRoundManager: !!(this.gameEngine as any).roundManager,
-          hasRegisterPlayer: !!(tm && typeof tm.registerPlayer === 'function')
-        });
+        console.warn('[EngineEventRouter] TurnManager not found or registerPlayer not available');
       }
     }
   }
@@ -202,13 +197,11 @@ export class EngineEventRouter {
     const settings = useGameStore.getState().settings;
     if (settings.autoEndTurn) {
       // Trigger turn advancement through TurnManager
-      const tm = (this.gameEngine as any).roundManager || (this.gameEngine as any).turnManager;
+      const tm = (this.gameEngine as any).roundManager;
       if (tm && typeof tm.advanceTurn === 'function') {
         tm.advanceTurn();
       } else {
-        // Fallback to legacy method
-        this.actions.nextTurn();
-        this.gameEngine.processTurn();
+        console.error('[EngineEventRouter] TurnManager not available for auto-end turn');
       }
     } else {
       if (typeof window !== 'undefined' && window.dispatchEvent) {

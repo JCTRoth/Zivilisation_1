@@ -1056,7 +1056,7 @@ function App() {
         onConfirm={handleEndTurnConfirm}
         onCancel={handleEndTurnCancel}
         currentTurn={gameState.currentTurn}
-        currentYear={gameState.currentYear || 4000}
+        currentYear={gameState.currentYear ?? -4000}
         isAutomatic={isEndTurnAutomatic}
       />
 

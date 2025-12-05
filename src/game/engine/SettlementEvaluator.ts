@@ -257,13 +257,17 @@ export class SettlementEvaluator {
 
   /**
    * Check if a location is valid for settling
+   * @param settlerCol - The settler's current column (to exclude from unit check)
+   * @param settlerRow - The settler's current row (to exclude from unit check)
    */
   private static isValidSettlementLocation(
     col: number,
     row: number,
     getTileAt: (col: number, row: number) => any,
     getCityAt: (col: number, row: number) => any,
-    getUnitAt: (col: number, row: number) => any
+    getUnitAt: (col: number, row: number) => any,
+    settlerCol?: number,
+    settlerRow?: number
   ): boolean {
     if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: Checking validity at (${col}, ${row})`);
 
@@ -287,10 +291,16 @@ export class SettlementEvaluator {
       return false;
     }
 
-    // Cannot settle where there's another unit
-    if (getUnitAt(col, row)) {
-      if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: Unit already at location`);
-      return false;
+    // Cannot settle where there's another unit (but allow settler's own position)
+    const unitAtLocation = getUnitAt(col, row);
+    if (unitAtLocation) {
+      // If this is the settler's own position, it's valid
+      const isSettlerPosition = settlerCol !== undefined && settlerRow !== undefined && 
+                                 col === settlerCol && row === settlerRow;
+      if (!isSettlerPosition) {
+        if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: Unit already at location`);
+        return false;
+      }
     }
 
     if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: Location is valid`);
@@ -328,8 +338,8 @@ export class SettlementEvaluator {
         const row = centerRow + dy;
         evaluatedLocations++;
 
-        // Check if location is valid
-        if (!this.isValidSettlementLocation(col, row, getTileAt, getCityAt, getUnitAt)) {
+        // Check if location is valid (pass settler position to allow its own tile)
+        if (!this.isValidSettlementLocation(col, row, getTileAt, getCityAt, getUnitAt, centerCol, centerRow)) {
           continue;
         }
         validLocations++;

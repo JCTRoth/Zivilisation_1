@@ -1,5 +1,14 @@
 /**
  * TurnManager - Manages phased turn execution for all civilizations.
+ * 
+ * TERMINOLOGY:
+ * - Round: A round is finished when all active (alive) players have completed their turns.
+ *          The game year advances at the end of each round using era-based increments.
+ * - Turn: Each player has one turn per round if they are active (not eliminated).
+ *         Each turn has phases: START -> UNIT_MOVEMENT -> CITY_PRODUCTION -> RESEARCH -> END
+ * - Move: Each unit has available moves (movesRemaining) they can use during their owner's turn.
+ *         Units cannot move more than their movesRemaining allows.
+ * 
  * Phases: START -> UNIT_MOVEMENT -> CITY_PRODUCTION -> RESEARCH -> END
  * Emits events via GameEngine.onStateChange callback for UI / hooks.
  */
@@ -19,7 +28,7 @@ export class TurnManager {
   private currentPlayer: number | null = null;
   private currentPhase: TurnPhase | null = null;
   private playerRegistered = false;
-  private turnNumber = 0;
+  private roundNumber = 0; // Tracks complete rounds (all players have played)
 
   constructor(gameEngine: any) {
     this.gameEngine = gameEngine;
@@ -30,13 +39,67 @@ export class TurnManager {
   // --- Public accessors ---
   getPhase(): TurnPhase | null { return this.currentPhase; }
   getCurrentPlayer(): number | null { return this.currentPlayer; }
-  getTurnNumber(): number { return this.turnNumber; }
+  getRoundNumber(): number { return this.roundNumber; }
 
   // --- Event helper ---
   private emit(eventType: string, data: any = {}) {
     if (this.gameEngine && typeof this.gameEngine.onStateChange === 'function') {
       this.gameEngine.onStateChange(eventType, data);
     }
+  }
+
+  /**
+   * Format year for display (handles BC/AD notation)
+   */
+  private formatYear(year: number): string {
+    if (year < 0) {
+      return `${Math.abs(year)} BC`;
+    } else if (year === 0) {
+      return '1 BC';
+    } else {
+      return `${year} AD`;
+    }
+  }
+
+  /**
+   * Calculate year increment based on era.
+   * Era-based progression:
+   * - Before 1000 AD: +20 years/round
+   * - 1000-1499 AD: +10 years/round  
+   * - 1500-1749 AD: +5 years/round
+   * - 1750-1849 AD: +2 years/round
+   * - 1850+ AD: +1 year/round
+   */
+  private getYearIncrement(currentYear: number): number {
+    if (currentYear < 1000) {
+      return 20;
+    } else if (currentYear < 1500) {
+      return 10;
+    } else if (currentYear < 1750) {
+      return 5;
+    } else if (currentYear < 1850) {
+      return 2;
+    } else {
+      return 1;
+    }
+  }
+
+  /**
+   * Advance the game year using era-based progression.
+   * Skips year 0 (there is no year 0 - goes from 1 BC to 1 AD).
+   */
+  private advanceYear(): void {
+    const currentYear = this.gameEngine.currentYear || -4000;
+    const increment = this.getYearIncrement(currentYear);
+    let newYear = currentYear + increment;
+    
+    // Skip year 0 (1 BC -> 1 AD)
+    if (currentYear < 0 && newYear >= 0) {
+      newYear = newYear === 0 ? 1 : newYear;
+    }
+    
+    this.gameEngine.currentYear = newYear;
+    console.log(`[TurnManager] Year advanced: ${this.formatYear(currentYear)} -> ${this.formatYear(newYear)} (+${increment})`);
   }
 
   // --- Unit path management (compatibility with previous RoundManager) ---
@@ -68,9 +131,13 @@ export class TurnManager {
     this.currentPlayer = civilizationId;
     this.currentPhase = TurnPhase.START;
     this.playerRegistered = false;
-    this.turnNumber += 1;
-    console.log(`[TurnManager] Starting turn #${this.turnNumber} for civ ${civilizationId}`);
-    this.emit('TURN_START', { civilizationId, turnNumber: this.turnNumber });
+    
+    // Format year for display
+    const currentYear = this.gameEngine.currentYear || -4000;
+    const yearDisplay = this.formatYear(currentYear);
+    
+    console.log(`[TurnManager] Starting turn for civ ${civilizationId} | Round: ${this.roundNumber} | Year: ${yearDisplay}`);
+    this.emit('TURN_START', { civilizationId, roundNumber: this.roundNumber });
 
     const civ = this.gameEngine.civilizations?.[civilizationId];
     if (civ?.isAI) {
@@ -207,34 +274,70 @@ export class TurnManager {
     console.log(`[TurnManager] Finalizing end phase for civ ${civilizationId}`);
     
     // Emit event for UI to clear highlights and selection
-    this.emit('TURN_END', { civilizationId, turnNumber: this.turnNumber });
+    this.emit('TURN_END', { civilizationId, roundNumber: this.roundNumber });
     
     // Now advance to the next player's turn
     this.advanceTurn();
   }
 
   /**
-   * Advance to the next player's turn
-   * This is the core turn management logic - no external calls needed
+   * Advance to the next player's turn.
+   * When all active players have had their turn, a new round begins and the year advances.
+   * This is the core turn management logic - no external calls needed.
    */
   advanceTurn(): void {
     console.log('[TurnManager] advanceTurn: Advancing from player', this.currentPlayer);
     
     const previousPlayer = this.currentPlayer;
-    const numCivs = this.gameEngine.civilizations?.length || 0;
     
-    if (numCivs === 0) {
-      console.error('[TurnManager] advanceTurn: No civilizations found');
+    // Get only active (alive) civilizations
+    const activeCivs = this.gameEngine.civilizations?.filter((civ: any) => civ.isAlive !== false) || [];
+    const numActiveCivs = activeCivs.length;
+    
+    if (numActiveCivs === 0) {
+      console.error('[TurnManager] advanceTurn: No active civilizations found');
       return;
     }
     
-    // Move to next player
-    const nextPlayer = ((previousPlayer || 0) + 1) % numCivs;
-    const nextCiv = this.gameEngine.civilizations[nextPlayer];
+    // Find current player's index in active civs and move to next
+    const currentActiveIndex = activeCivs.findIndex((civ: any) => civ.id === previousPlayer);
+    const nextActiveIndex = (currentActiveIndex + 1) % numActiveCivs;
+    const nextCiv = activeCivs[nextActiveIndex];
+    const nextPlayer = nextCiv?.id ?? 0;
     
     if (!nextCiv) {
-      console.error('[TurnManager] advanceTurn: Next civilization not found for player', nextPlayer);
+      console.error('[TurnManager] advanceTurn: Next civilization not found');
       return;
+    }
+    
+    // Check if a new round is starting (wrapped back to first active player)
+    const isNewRound = nextActiveIndex === 0 && currentActiveIndex !== -1;
+    
+    if (isNewRound) {
+      this.roundNumber += 1;
+      // Advance year using era-based progression
+      this.advanceYear();
+      // Also sync to GameEngine.currentTurn for consistency
+      this.gameEngine.currentTurn = this.roundNumber;
+      
+      console.log(`[TurnManager] ═══════════════════════════════════════════════`);
+      console.log(`[TurnManager] NEW ROUND ${this.roundNumber} | Year: ${this.formatYear(this.gameEngine.currentYear)}`);
+      console.log(`[TurnManager] ═══════════════════════════════════════════════`);
+      
+      // Sync turn and year to the store
+      if (this.gameEngine.storeActions) {
+        this.gameEngine.storeActions.updateGameState({
+          currentTurn: this.roundNumber,
+          currentYear: this.gameEngine.currentYear
+        });
+      }
+    }
+    
+    // Sync active player to store on every turn change
+    if (this.gameEngine.storeActions) {
+      this.gameEngine.storeActions.updateGameState({
+        activePlayer: nextPlayer
+      });
     }
     
     console.log(`[TurnManager] advanceTurn: Moving from player ${previousPlayer} to ${nextPlayer} (${nextCiv.name}, ${nextCiv.isHuman ? 'human' : 'AI'})`);
@@ -546,6 +649,3 @@ export class TurnManager {
     this.finalizeEndPhase(civilizationId);
   }
 }
-
-// Backwards compatibility export
-export { TurnManager as RoundManager };

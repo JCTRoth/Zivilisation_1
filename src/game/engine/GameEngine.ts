@@ -539,6 +539,47 @@ export default class GameEngine {
   private findBestSettlementForSettler(unit: any): { col: number; row: number; score: number } | null {
     console.log(`[AI-SETTLER] Evaluating settlement locations for settler at (${unit.col}, ${unit.row})`);
     
+    // Track position history to detect oscillation
+    if (!(unit as any)._positionHistory) {
+      (unit as any)._positionHistory = [];
+    }
+    const history = (unit as any)._positionHistory;
+    const currentPos = `${unit.col},${unit.row}`;
+    
+    // Add current position to history
+    history.push(currentPos);
+    
+    // Keep only last 6 positions
+    if (history.length > 6) {
+      history.shift();
+    }
+    
+    // Detect oscillation: if we've visited the same position 3+ times in last 6 moves, we're oscillating
+    const positionCounts = history.reduce((acc: Record<string, number>, pos: string) => {
+      acc[pos] = (acc[pos] || 0) + 1;
+      return acc;
+    }, {});
+    
+    const isOscillating = Object.values(positionCounts).some((count: number) => count >= 3);
+    
+    // First, check if current location is a good settlement spot
+    const currentTile = this.getTileAt(unit.col, unit.row);
+    const currentCity = this.getCityAt(unit.col, unit.row);
+    
+    // Check if current position is valid for settling
+    const currentPosValid = currentTile && 
+        currentTile.type !== Constants.TERRAIN.OCEAN && 
+        currentTile.type !== Constants.TERRAIN.MOUNTAINS && 
+        !currentCity;
+    
+    if (currentPosValid && isOscillating) {
+      console.log(`[AI-SETTLER] 🔄 Oscillation detected! Position history: ${history.join(' -> ')}`);
+      console.log(`[AI-SETTLER] Founding city at current location to break oscillation`);
+      // Directly found city here instead of returning target
+      this.foundCityWithSettler(unit.id);
+      return null;
+    }
+    
     // Choose appropriate weights based on game state
     const weights = SettlementEvaluator.balancedGrowthWeights();
     console.log(`[AI-SETTLER] Using strategy: Balanced Growth with weights:`, weights);
@@ -593,6 +634,9 @@ export default class GameEngine {
         this.foundCityWithSettler(unit.id);
         return null; // No need to move
       }
+      
+      // Store target to detect oscillation on next evaluation
+      (unit as any)._lastSettlementTarget = { col: bestLocation.col, row: bestLocation.row };
       
       return bestLocation;
     }
@@ -1831,6 +1875,7 @@ export default class GameEngine {
 
   /**
    * Check if current player has any units with moves remaining, and end turn if not
+   * Only considers ACTIVE units (not sleeping or fortified) for auto-end turn
    */
   checkAndEndTurnIfNoMoves() {
     console.log('[TURN] checkAndEndTurnIfNoMoves: Checking active player', this.activePlayer);
@@ -1842,52 +1887,48 @@ export default class GameEngine {
     }
 
     const playerUnits = this.units.filter(u => u.civilizationId === this.activePlayer);
-    const unitsWithMoves = playerUnits.filter(u => (u.movesRemaining || 0) > 0);
     
-    console.log(`[TURN] Player ${this.activePlayer} (${currentCiv.isHuman ? 'human' : 'AI'}) has ${playerUnits.length} total units, ${unitsWithMoves.length} with moves remaining`);
+    // Only count ACTIVE units (not sleeping, not fortified) that have moves remaining
+    const activeUnitsWithMoves = playerUnits.filter(u => 
+      (u.movesRemaining || 0) > 0 && 
+      !u.isSleeping && 
+      !u.isFortified
+    );
     
-    if (unitsWithMoves.length > 0) {
-      console.log('[TURN] Units with moves:', unitsWithMoves.map(u => ({
+    // Count inactive units (sleeping or fortified)
+    const inactiveUnits = playerUnits.filter(u => u.isSleeping || u.isFortified);
+    
+    console.log(`[TURN] Player ${this.activePlayer} (${currentCiv.isHuman ? 'human' : 'AI'}): ${playerUnits.length} total units, ${activeUnitsWithMoves.length} active with moves, ${inactiveUnits.length} inactive (sleeping/fortified)`);
+    
+    if (activeUnitsWithMoves.length > 0) {
+      console.log('[TURN] Active units with moves:', activeUnitsWithMoves.map(u => ({
         id: u.id,
         type: u.type,
         pos: `(${u.col},${u.row})`,
-        moves: u.movesRemaining,
-        areTurnsDone: u.areTurnsDone
+        moves: u.movesRemaining
       })));
     }
 
-    const hasMovesLeft = unitsWithMoves.length > 0;
+    const hasActiveUnitsWithMoves = activeUnitsWithMoves.length > 0;
     
     // For human players, check if auto turn ending should trigger
     if (currentCiv.isHuman) {
-      // Check if all units have areTurnsDone flag set
-      const allUnitsDone = playerUnits.every(u => u.areTurnsDone === true);
-      
-      console.log(`[TURN] Human player units done status: ${playerUnits.filter(u => u.areTurnsDone).length}/${playerUnits.length} units done`);
-      
-      // Only check auto end turn if all units are done AND no moves left
-      // This ensures we don't end turn prematurely
-      if (allUnitsDone && playerUnits.length > 0 && !hasMovesLeft) {
-        console.log('[TURN] All human player units are done - checking auto end turn setting');
-        // Emit event with request for auto-end check
+      // Only auto-end if NO active units have moves left
+      // Sleeping/fortified units don't prevent auto-end
+      if (!hasActiveUnitsWithMoves && playerUnits.length > 0) {
+        console.log('[TURN] All active human units have no moves - checking auto end turn setting');
         if (this.onStateChange) {
           this.onStateChange('CHECK_AUTO_END_TURN', { civilizationId: this.activePlayer });
         }
-      } else if (!hasMovesLeft && !allUnitsDone) {
-        // Traditional check: no moves left but not all units marked as done
-        console.log('[TURN] Human player has no moves left (traditional check) - asking for confirmation');
-        if (this.onStateChange) {
-          this.onStateChange('TURN_END_CONFIRMATION_NEEDED', { civilizationId: this.activePlayer });
-        }
-      } else {
-        console.log('[TURN] ⏸️ Human player still has moves left or units not done, not ending turn');
+      } else if (hasActiveUnitsWithMoves) {
+        console.log('[TURN] ⏸️ Human player still has active units with moves, not ending turn');
       }
     } else {
-      // For AI players: Do not emit AUTO_END_TURN here anymore; RoundManager owns turn flow
-      if (!hasMovesLeft) {
-        console.log('[TURN] 🤖 AI player has no moves left (RoundManager will handle end-of-turn)');
+      // For AI players: TurnManager owns turn flow
+      if (!hasActiveUnitsWithMoves) {
+        console.log('[TURN] 🤖 AI player has no active units with moves (TurnManager will handle end-of-turn)');
       } else {
-        console.log('[TURN] ⏸️ AI player still has moves left, continuing');
+        console.log('[TURN] ⏸️ AI player still has active units with moves, continuing');
       }
     }
   }
@@ -1977,6 +2018,12 @@ export default class GameEngine {
     this.isGameOver = false;
     this.victoryManager.reset();
     
+    // Reset fog of war and player storage
+    this.playerStorage.clear();
+    if (this.storeActions?.resetFogOfWar) {
+      this.storeActions.resetFogOfWar();
+    }
+    
     // Regenerate world
     await this.generateWorld();
     await this.createCivilizations();
@@ -2006,6 +2053,12 @@ export default class GameEngine {
 
     this.isGameOver = false;
     this.victoryManager.reset();
+    
+    // Reset fog of war before reinitializing
+    this.playerStorage.clear();
+    if (actions?.resetFogOfWar) {
+      actions.resetFogOfWar();
+    }
 
     await this.initialize({ ...this.gameSettings });
 
