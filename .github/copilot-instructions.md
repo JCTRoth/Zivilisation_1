@@ -1,14 +1,5 @@
-- Extract business and data logic from TSX components into dedicated TypeScript classes
-- Move "static" functions into helper classes.
-- Only keep presentational logic and JSX in TSX/React components
-- Ensure one class per file for logic layers
-- Create/extend utilities for shared logic across components
-- CSS -> src/styles
-- Static Data -> create/extend -> src/data
-- Use Classes instead of Interfaces.
-- Not start any npm server assume that on port 3000 an instance is running
-- Use Parameter Types when defining a function
-- The Fish Bash is used for your commands
-- Use python3 instead of python when running it in as a command
-- When prompt starts with "Update Error" check git diff for changes that might have caused it
-- Development is done on a ubuntu system, you are able to use all linux commands.
+Keep TSX components purely presentational (JSX only)
+Move CSS → src/styles, static data → src/data
+Always define function parameter with types and return types
+Use Fish Bash for commands
+Assume npm server is already running
