@@ -9,7 +9,7 @@ import { UnitActionManager } from './UnitActionManager';
 import { TurnManager } from './TurnManager';
 import { VictoryManager } from './VictoryManager';
 import { SettlementEvaluator } from './SettlementEvaluator';
-import { EnemySearcher } from './EnemySearcher';
+import { EnemySearcher, EnemyLocation } from './EnemySearcher';
 import { GoToManager } from './GoToManager';
 import type { GameActions, Unit, City, Civilization } from '../../../types/game';
 
@@ -45,6 +45,8 @@ interface PlayerTurnStorage {
   explored: boolean[]; // Permanently explored tiles
   lastKnownUnits: Map<string, Unit>; // Last known enemy unit positions
   lastKnownCities: Map<string, City>; // Last known enemy city positions
+  enemyLocations: Map<number, EnemyLocation[]>; // Enemy locations per civilization [enemyCivId -> locations]
+  scoutZones: Array<{ minCol: number; maxCol: number; minRow: number; maxRow: number }>; // Scout assignment zones
   turnData: Record<string, any>; // Custom per-turn data storage
 }
 
@@ -133,6 +135,8 @@ export default class GameEngine {
         explored: new Array(Constants.MAP_WIDTH * Constants.MAP_HEIGHT).fill(false),
         lastKnownUnits: new Map(),
         lastKnownCities: new Map(),
+        enemyLocations: new Map(), // Map from enemy civId to EnemyLocation[]
+        scoutZones: [], // Scout zone assignments
         turnData: {}
       });
       console.log(`[PlayerStorage] Initialized storage for civilization ${civilizationId}`);
@@ -417,13 +421,19 @@ export default class GameEngine {
           }
         }
 
-        // Get visibility check function
+        // Get visibility check function - use per-player visibility storage
+        const playerStorage = this.getPlayerStorage(unit.civilizationId);
         const isVisible = (col: number, row: number) => {
+          if (playerStorage) {
+            const idx = row * this.map!.width + col;
+            return playerStorage.visibility[idx] || playerStorage.explored[idx] || false;
+          }
+          // Fallback to tile visibility if storage not available
           const tile = this.getTileAt(col, row);
           return tile && (tile.visible || tile.explored);
         };
 
-        // Search for enemies using static hybrid search
+        // Search for enemies using Archimedean spiral with city prioritization
         const enemyResult = EnemySearcher.findNearestEnemy(
           unit.col,
           unit.row,
@@ -436,9 +446,12 @@ export default class GameEngine {
         );
         
         if (enemyResult) {
-          console.log(`[AI-SCOUT] Enemy found at (${enemyResult.col}, ${enemyResult.row}), distance: ${enemyResult.distance}, type: ${enemyResult.targetType}`);
+          console.log(`[AI-SCOUT] Enemy ${enemyResult.targetType} found at (${enemyResult.col}, ${enemyResult.row}), distance: ${enemyResult.distance}`);
           
-          // Mark that scout found enemy and store location
+          // Store enemy location in player storage for civilization-wide decision making
+          this.recordEnemyLocation(unit.civilizationId, enemyResult);
+          
+          // Mark that scout found enemy
           unit.enemyFound = true;
           unit.enemyLocation = { col: enemyResult.col, row: enemyResult.row };
           
@@ -449,7 +462,7 @@ export default class GameEngine {
             return { col: nearestCity.col, row: nearestCity.row };
           }
         } else {
-          console.log(`[AI-SCOUT] No enemy found, continuing exploration`);
+          console.log(`[AI-SCOUT] No enemy found near (${unit.col}, ${unit.row}), continuing exploration`);
         }
       } catch (error) {
         console.error(`[AI-SCOUT] Error using EnemySearcher:`, error);
@@ -518,6 +531,98 @@ export default class GameEngine {
     
     console.log(`[AI-SCOUT] Nearest city for unit ${unit.id} is at (${nearestCity?.col}, ${nearestCity?.row}), distance: ${minDistance}`);
     return nearestCity;
+  }
+
+  /**
+   * Record enemy location in player's intelligence storage
+   * Allows AI to make coordinated decisions based on known enemy positions
+   * 
+   * @param civilizationId Civilization recording the location
+   * @param enemy Enemy search result from EnemySearcher
+   */
+  private recordEnemyLocation(civilizationId: number, enemy: any): void {
+    const storage = this.getPlayerStorage(civilizationId);
+    if (!storage) return;
+
+    const round = this.roundManager.getRoundNumber();
+    const location: EnemyLocation = {
+      col: enemy.col,
+      row: enemy.row,
+      type: enemy.targetType,
+      id: enemy.targetId,
+      discoveredRound: round,
+      lastSeenRound: round
+    };
+
+    // Get enemy civilization ID from the actual unit/city
+    let enemyCivId = -1;
+    if (enemy.targetType === 'unit') {
+      const unit = this.getUnitAt(enemy.col, enemy.row);
+      if (unit) enemyCivId = unit.civilizationId;
+    } else if (enemy.targetType === 'city') {
+      const city = this.getCityAt(enemy.col, enemy.row);
+      if (city) enemyCivId = city.civilizationId;
+    }
+
+    if (enemyCivId < 0) return;
+
+    // Initialize enemy list if needed
+    if (!storage.enemyLocations.has(enemyCivId)) {
+      storage.enemyLocations.set(enemyCivId, []);
+    }
+
+    // Update existing location or add new one
+    const enemyList = storage.enemyLocations.get(enemyCivId)!;
+    const existingIdx = enemyList.findIndex(e => e.id === enemy.targetId);
+    
+    if (existingIdx >= 0) {
+      // Update last seen
+      enemyList[existingIdx].lastSeenRound = round;
+    } else {
+      // Add new location
+      enemyList.push(location);
+    }
+
+    console.log(`[AI] Recorded ${enemy.targetType} at (${enemy.col}, ${enemy.row}) for civ ${civilizationId}`);
+  }
+
+  /**
+   * Get known enemy locations for a civilization
+   * Used by AI to make coordinated decisions
+   */
+  public getKnownEnemyLocations(civilizationId: number, enemyCivId: number): EnemyLocation[] {
+    const storage = this.getPlayerStorage(civilizationId);
+    return storage?.enemyLocations.get(enemyCivId) || [];
+  }
+
+  /**
+   * Initialize and assign scout zones for a civilization
+   * Scouts coordinate by being assigned different zones to search
+   */
+  public assignScoutZones(civilizationId: number): void {
+    const storage = this.getPlayerStorage(civilizationId);
+    if (!storage) return;
+
+    // Count scouts for this civilization
+    const scouts = this.units.filter(u => u.civilizationId === civilizationId && u.type === 'scout');
+    
+    // Calculate zones based on scout count and map size
+    storage.scoutZones = EnemySearcher.calculateScoutZones(scouts.length, this.map!.width, this.map!.height);
+
+    if (this.devMode) {
+      console.log(`[AI-COORDINATION] Assigned ${scouts.length} scouts with ${storage.scoutZones.length} zones`);
+    }
+  }
+
+  /**
+   * Check if position is in scout's assigned zone
+   * Helps scouts coordinate and avoid searching same areas
+   */
+  public isInScoutZone(civilizationId: number, scoutIndex: number, col: number, row: number): boolean {
+    const storage = this.getPlayerStorage(civilizationId);
+    if (!storage || !storage.scoutZones[scoutIndex]) return true; // No zone restriction
+    
+    return EnemySearcher.isInZone(col, row, storage.scoutZones[scoutIndex]);
   }
 
   // Trigger warrior production at city and set target
@@ -1351,8 +1456,14 @@ export default class GameEngine {
    * Delegates to store actions for centralized visibility management
    */
   updateVisibility() {
+    // Update store visibility for UI rendering
     if (this.storeActions) {
       this.storeActions.updateVisibility();
+    }
+
+    // Update per-player visibility storage for game logic (EnemySearcher, AI decisions, etc.)
+    for (const civ of this.civilizations) {
+      this.updatePlayerVisibility(civ.id);
     }
   }
 
