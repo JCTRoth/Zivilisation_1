@@ -1,12 +1,14 @@
-// Unit Icon Loader - Manages loading and caching of unit SVG icons
+// Unit Icon Loader - Manages loading and caching of unit PNG and SVG icons
 
-const iconCache = new Map<string, HTMLImageElement>();
-const loadingPromises = new Map<string, Promise<HTMLImageElement>>();
+import { UNIT_PROPERTIES } from '@/data/UnitConstants';
+
+const iconCache = new Map<string, HTMLImageElement | string>(); // HTMLImageElement for images, string for emoji
+const loadingPromises = new Map<string, Promise<HTMLImageElement | string>>();
 
 /**
- * Load a unit icon SVG as an image
+ * Load a unit icon - tries PNG first, then SVG, falls back to emoji from unit data
  */
-export async function loadUnitIcon(unitType: string): Promise<HTMLImageElement> {
+export async function loadUnitIcon(unitType: string): Promise<HTMLImageElement | string> {
   // Check cache first
   if (iconCache.has(unitType)) {
     return iconCache.get(unitType)!;
@@ -18,29 +20,48 @@ export async function loadUnitIcon(unitType: string): Promise<HTMLImageElement> 
   }
 
   // Start loading
-  const promise = new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
+  const promise = new Promise<HTMLImageElement | string>((resolve, reject) => {
+    // Try PNG first
+    const pngImg = new Image();
     
-    img.onload = () => {
-      iconCache.set(unitType, img);
+    pngImg.onload = () => {
+      iconCache.set(unitType, pngImg);
       loadingPromises.delete(unitType);
-      resolve(img);
+      resolve(pngImg);
     };
     
-    img.onerror = () => {
-      loadingPromises.delete(unitType);
-      reject(new Error(`Failed to load icon for ${unitType}`));
+    pngImg.onerror = () => {
+      // PNG failed, try SVG
+      const svgImg = new Image();
+      
+      svgImg.onload = () => {
+        iconCache.set(unitType, svgImg);
+        loadingPromises.delete(unitType);
+        resolve(svgImg);
+      };
+      
+      svgImg.onerror = () => {
+        // SVG also failed, fall back to emoji from unit data
+        const unitData = UNIT_PROPERTIES[unitType];
+        const emoji = unitData?.icon || '⚔️';
+        iconCache.set(unitType, emoji);
+        loadingPromises.delete(unitType);
+        resolve(emoji);
+      };
+      
+      // Try loading SVG
+      import(`../assets/units/${unitType}.svg`)
+        .then(module => {
+          svgImg.src = module.default;
+        })
+        .catch(() => {
+          // SVG import failed, trigger onerror
+          svgImg.onerror?.(new Event('error'));
+        });
     };
     
-    // Dynamically import the SVG
-    import(`../assets/units/${unitType}.svg`)
-      .then(module => {
-        img.src = module.default;
-      })
-      .catch(err => {
-        console.warn(`Icon not found for ${unitType}, using fallback`);
-        reject(err);
-      });
+    // Try loading PNG first
+    pngImg.src = `/src/assets/units/${unitType}.png`;
   });
 
   loadingPromises.set(unitType, promise);
@@ -50,7 +71,7 @@ export async function loadUnitIcon(unitType: string): Promise<HTMLImageElement> 
 /**
  * Get a unit icon from cache (returns null if not loaded)
  */
-export function getUnitIcon(unitType: string): HTMLImageElement | null {
+export function getUnitIcon(unitType: string): HTMLImageElement | string | null {
   return iconCache.get(unitType) || null;
 }
 

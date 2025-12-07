@@ -1331,42 +1331,45 @@ export class MapRenderer {
     ctx.lineWidth = Math.max(1, pulseValue * 3);
     ctx.stroke();
 
-    const iconColor = this.isLightColor(pulseColor) ? '#111' : '#FFF';
-    ctx.fillStyle = iconColor;
-
     const unitTypeId = unit.type ? String(unit.type) : null;
     
-    // Try to load the image icon first
-    const iconImg = unitTypeId ? getUnitIcon(unitTypeId) : null;
+    // Try to load the image icon first (PNG or SVG)
+    const iconResource = unitTypeId ? getUnitIcon(unitTypeId) : null;
     
-    if (iconImg && iconImg.complete) {
-      // Draw the SVG icon
-      const iconSize = innerRadius * 1.8;
+    if (iconResource && typeof iconResource !== 'string' && iconResource.complete) {
+      // Draw the PNG/SVG image icon (preserves transparency to show tile background)
+      const iconSize = innerRadius * 2;
       ctx.drawImage(
-        iconImg,
+        iconResource as HTMLImageElement,
         centerX - iconSize / 2,
         centerY - iconSize / 2,
         iconSize,
         iconSize
       );
     } else {
-      // Fallback to emoji/text icon
-      let gameTypeDef: any = null;
-      if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
-        try {
-          gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === String(unitTypeId).toLowerCase()) || null;
-        } catch (e) {
-          gameTypeDef = null;
-        }
+      // Fallback to emoji from unit data or text icon on colored circle
+      ctx.fillStyle = pulseColor;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+      ctx.fill();
+
+      const iconColor = this.isLightColor(pulseColor) ? '#111' : '#FFF';
+      let emoji = '';
+      if (typeof iconResource === 'string') {
+        // Cached emoji
+        emoji = iconResource;
+      } else {
+        // Get emoji from unit data
+        const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
+        emoji = unit.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
       }
-      const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
-      const icon = unit.icon || gameTypeDef?.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
       const fontSize = Math.max(10, Math.round(innerRadius * 1.1));
       ctx.font = `bold ${fontSize}px monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      ctx.fillStyle = iconColor;
       try {
-        ctx.fillText(icon, centerX, centerY);
+        ctx.fillText(emoji, centerX, centerY);
       } catch (err) {
         const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
         ctx.fillText(fallback, centerX, centerY);
@@ -1379,7 +1382,7 @@ export class MapRenderer {
       ctx.font = `${sleepFontSize}px monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = iconColor;
+      ctx.fillStyle = this.isLightColor(pulseColor) ? '#111' : '#FFF';
       ctx.fillText(sleepIcon, centerX, centerY + 22);
     }
 
@@ -1418,47 +1421,46 @@ export class MapRenderer {
     const civColor = civ?.color || (civIndex === 0 ? '#4169E1' : '#DC143C');
 
     const innerRadius = Math.max(8, Math.round(radius * 0.95));
-    ctx.beginPath();
-    ctx.fillStyle = civColor;
-    ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
-    ctx.fill();
-
-    const iconColor = this.isLightColor(civColor) ? '#111' : '#FFF';
-    ctx.fillStyle = iconColor;
 
     const unitTypeId = unit.type ? String(unit.type) : null;
     
-    // Try to load the image icon first
-    const iconImg = unitTypeId ? getUnitIcon(unitTypeId) : null;
+    // Try to load the image icon first (PNG or SVG)
+    const iconResource = unitTypeId ? getUnitIcon(unitTypeId) : null;
     
-    if (iconImg && iconImg.complete) {
-      // Draw the SVG icon
-      const iconSize = innerRadius * 1.8;
+    if (iconResource && typeof iconResource !== 'string' && iconResource.complete) {
+      // Draw the PNG/SVG image icon (preserves transparency to show tile background)
+      const iconSize = innerRadius * 2;
       ctx.drawImage(
-        iconImg,
+        iconResource as HTMLImageElement,
         centerX - iconSize / 2,
         centerY - iconSize / 2,
         iconSize,
         iconSize
       );
     } else {
-      // Fallback to emoji/text icon
-      let gameTypeDef: any = null;
-      if (unitTypeId && UNIT_TYPES && typeof UNIT_TYPES === 'object') {
-        try {
-          gameTypeDef = Object.values(UNIT_TYPES).find((t: any) => t && String(t.id).toLowerCase() === String(unitTypeId).toLowerCase()) || null;
-        } catch (e) {
-          gameTypeDef = null;
-        }
+      // Fallback to emoji from unit data or text icon on colored circle
+      ctx.beginPath();
+      ctx.fillStyle = civColor;
+      ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+      ctx.fill();
+
+      const iconColor = this.isLightColor(civColor) ? '#111' : '#FFF';
+      let emoji = '';
+      if (typeof iconResource === 'string') {
+        // Cached emoji
+        emoji = iconResource;
+      } else {
+        // Get emoji from unit data
+        const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
+        emoji = unit.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
       }
-      const typeDef = unitTypeId ? (UNIT_PROPERTIES[String(unitTypeId).toLowerCase()] || null) : null;
-      const icon = unit.icon || gameTypeDef?.icon || typeDef?.icon || (typeDef?.name ? typeDef.name[0] : (unit.type ? String(unit.type)[0].toUpperCase() : 'U')) || '⚔️';
       const fontSize = Math.max(10, Math.round(innerRadius * 1.1));
       ctx.font = `bold ${fontSize}px monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      ctx.fillStyle = iconColor;
       try {
-        ctx.fillText(icon, centerX, centerY);
+        ctx.fillText(emoji, centerX, centerY);
       } catch (err) {
         const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
         ctx.fillText(fallback, centerX, centerY);
@@ -1471,7 +1473,7 @@ export class MapRenderer {
       ctx.font = `${sleepFontSize}px monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = iconColor;
+      ctx.fillStyle = this.isLightColor(civColor) ? '#111' : '#FFF';
       ctx.fillText(sleepIcon, centerX, centerY + 22);
     }
 
