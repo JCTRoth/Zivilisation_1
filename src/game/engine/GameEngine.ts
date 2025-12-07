@@ -1394,16 +1394,21 @@ export default class GameEngine {
           row: pos.row,
           population: 1,
           food: 0,
-          foodRequired: 20,
+          foodStored: 0,
+          foodNeeded: 20,
           production: 0,
+          productionStored: 0,
+          productionProgress: 0,
           gold: 0,
           science: 0,
-          currentProduction: null,
-          productionProgress: 0,
+          culture: 0,
+          happiness: 0,
+          yields: { food: 2, production: 2, trade: 0 },
+          currentProduction: civ.isAI ? { type: 'unit', itemType: 'scout', name: 'Scout', cost: 15 } : null,
+          buildQueue: civ.isAI ? [{ type: 'unit', itemType: 'scout', name: 'Scout', cost: 15 }] : [],
           buildings: [],
           tiles: [],
-          culture: 0,
-          happiness: 0
+          autoProduction: true // Enable auto-production for AI cities by default
         };
         
         this.cities.push(city);
