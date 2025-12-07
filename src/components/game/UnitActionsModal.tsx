@@ -5,7 +5,8 @@ import { UnitActionsModalProps, ContextMenuData } from './UnitActionsModalProps'
 const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
   contextMenu,
   onExecuteAction,
-  onClose
+  onClose,
+  gameEngine
 }) => {
   if (!contextMenu) return null;
 
@@ -106,6 +107,16 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
           >
             <i className="bi bi-geo-alt-fill">Go to</i>
           </button>
+
+          {/* Show GoTo X only if unit has a path set */}
+          {contextMenu.unit && gameEngine?.goToManager?.getUnitPath(contextMenu.unit.id) && (
+            <button
+              className="btn btn-sm w-100 text-start border-0 rounded-0 context-menu-button btn-danger text-white"
+              onClick={() => handleAction('goto_cancel')}
+            >
+              ❌ GoTo X
+            </button>
+          )}
 
           <hr style={{margin: '4px 0', borderColor: '#555' }} />
 

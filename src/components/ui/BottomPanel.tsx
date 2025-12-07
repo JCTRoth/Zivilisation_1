@@ -4,6 +4,8 @@ import { useGameStore } from '../../stores/GameStore';
 import { UNIT_PROPS, BUILDING_PROPS, UnitProperties } from '../../utils/Constants';
 import type { GameEngine } from '../../../types/game';
 import '../../styles/bottomPanel.css';
+import HoverTooltip from './HoverTooltip';
+import '@/styles/hoverTooltip.css';
 
 interface BottomPanelProps {
   gameEngine: GameEngine | null;
@@ -108,16 +110,18 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
               <span className="badge bg-success ms-2">Veteran</span>
             )}
           </div>
-          <Button 
-            variant="outline-secondary" 
-            size="sm"
-            onClick={() => {
-              console.log(`[CLICK] Deselect unit ${selectedUnit.id} (${selectedUnit.type})`);
-              actions.selectUnit(null);
-            }}
-          >
-            <i className="bi bi-x"></i>
-          </Button>
+            <HoverTooltip text="Close unit panel">
+              <Button 
+                variant="outline-secondary" 
+                size="sm"
+                onClick={() => {
+                  console.log(`[CLICK] Deselect unit ${selectedUnit.id} (${selectedUnit.type})`);
+                  actions.selectUnit(null);
+                }}
+              >
+                <i className="bi bi-x"></i>
+              </Button>
+            </HoverTooltip>
         </Card.Header>
         
         <Card.Body>
@@ -182,13 +186,15 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
                     </Button>
                   )}
                   
-                  <Button 
-                    variant="outline-secondary" 
-                    size="sm"
-                    onClick={() => handleUnitAction('sleep')}
-                  >
-                    <i className={selectedUnit.isSleeping ? "bi bi-sun" : "bi bi-moon"}></i> {selectedUnit.isSleeping ? 'Wake Up' : 'Sleep'}
-                  </Button>
+                  <HoverTooltip text={selectedUnit.isSleeping ? 'Wake this unit' : 'Put this unit to sleep'}>
+                    <Button 
+                      variant="outline-secondary" 
+                      size="sm"
+                      onClick={() => handleUnitAction('sleep')}
+                    >
+                      <i className={selectedUnit.isSleeping ? "bi bi-sun" : "bi bi-moon"}></i> {selectedUnit.isSleeping ? 'Wake Up' : 'Sleep'}
+                    </Button>
+                  </HoverTooltip>
                   
                   {unitProps.type === 'military' && (
                     <Button 
@@ -200,22 +206,26 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
                     </Button>
                   )}
                   
-                  <Button 
-                    variant="outline-info" 
-                    size="sm"
-                    onClick={() => handleUnitAction('build_road')}
-                    disabled={(selectedUnit.movesRemaining || 0) === 0}
-                  >
-                    <i className="bi bi-arrow-bar-right"></i> Build Road
-                  </Button>
+                  <HoverTooltip text="Build a road on this tile (if allowed)">
+                    <Button 
+                      variant="outline-info" 
+                      size="sm"
+                      onClick={() => handleUnitAction('build_road')}
+                      disabled={(selectedUnit.movesRemaining || 0) === 0}
+                    >
+                      <i className="bi bi-arrow-bar-right"></i> Build Road
+                    </Button>
+                  </HoverTooltip>
                   
-                  <Button 
-                    variant="outline-light" 
-                    size="sm"
-                    onClick={() => handleUnitAction('skip_turn')}
-                  >
-                    <i className="bi bi-skip-end"></i> Skip Turn
-                  </Button>
+                  <HoverTooltip text="End this unit's actions for this turn">
+                    <Button 
+                      variant="outline-light" 
+                      size="sm"
+                      onClick={() => handleUnitAction('skip_turn')}
+                    >
+                      <i className="bi bi-skip-end"></i> Skip Turn
+                    </Button>
+                  </HoverTooltip>
                 </ButtonGroup>
               </div>
             </div>
@@ -316,29 +326,35 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
             <div className="col-md-6">
               <div className="city-actions">
                 <ButtonGroup vertical className="w-100">
-                  <Button 
-                    variant="outline-primary" 
-                    size="sm"
-                    onClick={() => handleCityAction('change_production')}
-                  >
-                    <i className="bi bi-gear"></i> Change Production
-                  </Button>
+                  <HoverTooltip text="Change what the city is building">
+                    <Button 
+                      variant="outline-primary" 
+                      size="sm"
+                      onClick={() => handleCityAction('change_production')}
+                    >
+                      <i className="bi bi-gear"></i> Change Production
+                    </Button>
+                  </HoverTooltip>
                   
-                  <Button 
-                    variant="outline-success" 
-                    size="sm"
-                    onClick={() => handleCityAction('buy_unit')}
-                  >
-                    <i className="bi bi-cart"></i> Buy Unit/Building
-                  </Button>
+                  <HoverTooltip text="Purchase units or buildings using gold">
+                    <Button 
+                      variant="outline-success" 
+                      size="sm"
+                      onClick={() => handleCityAction('buy_unit')}
+                    >
+                      <i className="bi bi-cart"></i> Buy Unit/Building
+                    </Button>
+                  </HoverTooltip>
                   
-                  <Button 
-                    variant="outline-info" 
-                    size="sm"
-                    onClick={() => handleCityAction('manage_citizens')}
-                  >
-                    <i className="bi bi-people"></i> Manage Citizens
-                  </Button>
+                  <HoverTooltip text="Assign citizens to tiles or specialists">
+                    <Button 
+                      variant="outline-info" 
+                      size="sm"
+                      onClick={() => handleCityAction('manage_citizens')}
+                    >
+                      <i className="bi bi-people"></i> Manage Citizens
+                    </Button>
+                  </HoverTooltip>
                   
                   <Button 
                     variant="outline-warning" 
@@ -363,13 +379,13 @@ const BottomPanel: React.FC<BottomPanelProps> = ({ gameEngine }) => {
                 {selectedCity.buildings.map((buildingType, index) => {
                   const building = BUILDING_PROPS[buildingType];
                   return (
-                    <span 
-                      key={index}
-                      className="badge bg-secondary"
-                      title={building?.description}
-                    >
-                      {building?.name || buildingType}
-                    </span>
+                    <HoverTooltip key={index} text={building?.description || ''}>
+                      <span 
+                        className="badge bg-secondary"
+                      >
+                        {building?.name || buildingType}
+                      </span>
+                    </HoverTooltip>
                   );
                 })}
               </div>

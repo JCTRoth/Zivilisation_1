@@ -1,6 +1,8 @@
 import React from 'react';
 import { Navbar, Nav, Button, Badge } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
+import HoverTooltip from './HoverTooltip';
+import '@/styles/hoverTooltip.css';
 
 interface TopBarProps {
   gameEngine: any;
@@ -12,9 +14,12 @@ const TopBar: React.FC<TopBarProps> = ({ gameEngine, onEndTurnRequest }) => {
   const gameStats = useGameStore(state => state.gameStats);
   const uiState = useGameStore(state => state.uiState);
   const actions = useGameStore(state => state.actions);
+  const turnButtonDisabled = uiState.turnButtonDisabled;
 
   const handleNextTurn = () => {
     console.log('[CLICK] Next Turn button');
+    // Disable the button immediately to prevent multiple clicks
+    actions.setTurnButtonDisabled(true);
     // Trigger the modal instead of directly ending turn
     if (onEndTurnRequest) {
       onEndTurnRequest();
@@ -51,35 +56,41 @@ const TopBar: React.FC<TopBarProps> = ({ gameEngine, onEndTurnRequest }) => {
     <Navbar bg="dark" variant="dark" className="game-top-bar">
       {/* Left side - Game controls (Mobile: Hamburger menu) */}
       <Nav className="me-auto d-flex align-items-center">
-        <Button 
-          variant="outline-light" 
-          size="sm" 
-          className="me-2 d-md-inline-block"
-          onClick={handleShowMenu}
-        >
-          <i className="bi bi-list"></i>
-          <span className="d-none d-sm-inline ms-1">Menu</span>
-        </Button>
+        <HoverTooltip text="Open game menu and settings">
+          <Button 
+            variant="outline-light" 
+            size="sm" 
+            className="me-2 d-md-inline-block"
+            onClick={handleShowMenu}
+          >
+            <i className="bi bi-list"></i>
+            <span className="d-none d-sm-inline ms-1">Menu</span>
+          </Button>
+        </HoverTooltip>
         
-        <Button 
-          variant="outline-info" 
-          size="sm" 
-          className="me-2 d-none d-sm-inline-block"
-          onClick={handleShowTechTree}
-        >
-          <i className="bi bi-lightbulb"></i>
-          <span className="d-none d-md-inline ms-1">Tech</span>
-        </Button>
+        <HoverTooltip text="Open the technology tree">
+          <Button 
+            variant="outline-info" 
+            size="sm" 
+            className="me-2 d-none d-sm-inline-block"
+            onClick={handleShowTechTree}
+          >
+            <i className="bi bi-lightbulb"></i>
+            <span className="d-none d-md-inline ms-1">Tech</span>
+          </Button>
+        </HoverTooltip>
         
-        <Button 
-          variant="outline-warning" 
-          size="sm" 
-          className="me-2 d-none d-sm-inline-block"
-          onClick={handleShowDiplomacy}
-        >
-          <i className="bi bi-people"></i>
-          <span className="d-none d-md-inline ms-1">Diplomacy</span>
-        </Button>
+        <HoverTooltip text="Open diplomacy and trade screen">
+          <Button 
+            variant="outline-warning" 
+            size="sm" 
+            className="me-2 d-none d-sm-inline-block"
+            onClick={handleShowDiplomacy}
+          >
+            <i className="bi bi-people"></i>
+            <span className="d-none d-md-inline ms-1">Diplomacy</span>
+          </Button>
+        </HoverTooltip>
       </Nav>
 
       {/* Center - Resources (Mobile: Full width, Desktop: Center) */}
@@ -136,6 +147,7 @@ const TopBar: React.FC<TopBarProps> = ({ gameEngine, onEndTurnRequest }) => {
           variant="success" 
           size="sm"
           onClick={handleNextTurn}
+          disabled={turnButtonDisabled}
         >
           <i className="bi bi-skip-end-fill"></i>
           <span className="d-none d-sm-inline ms-1">End Turn</span>

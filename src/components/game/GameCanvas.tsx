@@ -269,21 +269,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
           }
         }
       }
-      // Apply updated visibility only if it differs
-      setTerrain(prev => {
-        const prevStr = JSON.stringify(prev);
-        const nextStr = JSON.stringify(updatedTerrain);
-        if (prevStr !== nextStr) {
-          renderTerrainToOffscreen(updatedTerrain);
-          return updatedTerrain;
-        }
-        return prev;
-      });
+      // Always update terrain visibility - don't use expensive JSON comparison
+      renderTerrainToOffscreen(updatedTerrain);
+      setTerrain(updatedTerrain);
       console.log('[GameCanvas] Terrain visibility updated');
     } else {
       console.log('[GameCanvas] Skipping terrain visibility update - missing data');
     }
-  }, [gameState.currentTurn, mapData.visibility, mapData.revealed]);
+  }, [mapData.visibility, mapData.revealed, mapData.height, mapData.width, mapData.tiles]);
 
   // Select player's starting settler when game starts
   useEffect(() => {
@@ -642,18 +635,46 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     triggerRender(); // Immediate render for visual feedback
   };
 
+  // Always show context menu when mouse is over a player unit
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isDragging && !gotoMode) {
       const dx = e.clientX - lastMousePos.x;
       const dy = e.clientY - lastMousePos.y;
-      
       actions.updateCamera({
         x: camera.x - dx / camera.zoom,
         y: camera.y - dy / camera.zoom
       });
-      
       setLastMousePos({ x: e.clientX, y: e.clientY });
       // Camera changes will trigger render via useEffect
+      return;
+    }
+
+    // Show context menu if mouse is over a player unit
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const hex = screenToSquare(x, y);
+    let unitAtHex = null;
+    try {
+      unitAtHex = getUnitAtFromEngine(hex.col, hex.row);
+    } catch (e) {
+      unitAtHex = null;
+    }
+    if (unitAtHex && currentPlayer && unitAtHex.civilizationId === currentPlayer.id) {
+      // Only show if not already open for this unit
+      if (!contextMenu || contextMenu.unit?.id !== unitAtHex.id) {
+        setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          hex: hex,
+          tile: terrain?.[hex.row]?.[hex.col] || null,
+          unit: unitAtHex,
+          city: null
+        });
+      }
+    } else {
+      // Hide context menu if not over a player unit
+      if (contextMenu) setContextMenu(null);
     }
   };
 
@@ -837,17 +858,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
             actions.selectUnit(unitAt.id);
           }
           
-          // Automatically enter GoTo mode if unit has remaining moves
-          if ((unitAt.movesRemaining || 0) > 0) {
-            console.log(`[CLICK] Unit has moves remaining, entering GoTo mode`);
-            setGotoMode(true);
-            setGotoUnit(unitAt);
-            if (actions?.addNotification) {
-              actions.addNotification({
-                type: 'info',
-                message: `Click destination for ${unitAt.type} to go to`
-              });
-            }
+          // Automatically enter GoTo mode when unit is selected
+          console.log(`[CLICK] Unit selected, entering GoTo mode`);
+          setGotoMode(true);
+          setGotoUnit(unitAt);
+          if (actions?.addNotification) {
+            actions.addNotification({
+              type: 'info',
+              message: `Click destination for ${unitAt.type} to go to`
+            });
           }
           
           // If the unit has a path and moves, continue following using GoToManager
@@ -1172,6 +1191,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         }
         break;
 
+      case 'goto_cancel':
+        if (unit && gameEngine?.goToManager) {
+          console.log(`[ContextMenu] Canceling Go To for unit ${unit.id}`);
+          gameEngine.goToManager.clearUnitPath(unit.id);
+          if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
+          if (actions?.addNotification) actions.addNotification({
+            type: 'info',
+            message: `GoTo cancelled for ${unit.type}`
+          });
+        }
+        break;
+
       case 'found_city':
         if (unit && gameEngine?.foundCityWithSettler) {
           console.log(`[ContextMenu] Found city action for unit ${unit.id}`);
@@ -1403,6 +1434,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
           contextMenu={contextMenu}
           onExecuteAction={executeContextAction}
           onClose={() => setContextMenu(null)}
+          gameEngine={gameEngine}
         />
       )}
     </div>

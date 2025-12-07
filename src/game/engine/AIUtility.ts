@@ -166,6 +166,71 @@ export class AIUtility {
     };
     return names[terrainType] || terrainType;
   }
+
+  /**
+   * Find nearby unexplored tile
+   */
+  static findNearbyUnexplored(
+    unitCol: number,
+    unitRow: number,
+    getNeighbors: (col: number, row: number) => SquareCoordinate[],
+    getTileAt: (col: number, row: number) => any
+  ): SquareCoordinate | null {
+    const neighbors = getNeighbors(unitCol, unitRow);
+    for (const tilePos of neighbors) {
+      const tile = getTileAt(tilePos.col, tilePos.row);
+      if (tile && !tile.explored) {
+        return tilePos;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Find nearby enemy unit
+   */
+  static findNearbyEnemy(
+    unitCol: number,
+    unitRow: number,
+    unitCivilizationId: number,
+    getNeighbors: (col: number, row: number) => SquareCoordinate[],
+    getUnitAt: (col: number, row: number) => any
+  ): any {
+    const neighbors = getNeighbors(unitCol, unitRow);
+    for (const tilePos of neighbors) {
+      const enemyUnit = getUnitAt(tilePos.col, tilePos.row);
+      if (enemyUnit && enemyUnit.civilizationId !== unitCivilizationId) {
+        return enemyUnit;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Find nearest own city for a unit
+   */
+  static findNearestOwnCity(
+    unitCol: number,
+    unitRow: number,
+    unitCivilizationId: number,
+    cities: any[],
+    squareDistance: (col1: number, row1: number, col2: number, row2: number) => number
+  ): any {
+    let nearestCity = null;
+    let minDistance = Infinity;
+
+    for (const city of cities) {
+      if (city.civilizationId === unitCivilizationId) {
+        const distance = squareDistance(unitCol, unitRow, city.col, city.row);
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearestCity = city;
+        }
+      }
+    }
+
+    return nearestCity;
+  }
 }
 
 /**

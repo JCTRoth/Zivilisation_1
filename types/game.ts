@@ -165,6 +165,7 @@ export interface UIState {
   notifications: Notification[];
   goToMode: boolean; // When true, next click will set destination for selected unit
   goToUnit: string | null; // Unit id targeted by Go To mode (null when not set)
+  turnButtonDisabled: boolean;
 }
 
 export interface Notification {
@@ -258,6 +259,7 @@ export interface GameActions {
   clearGameResult: () => void;
   resetGameState: () => void;
   resetFogOfWar: () => void;
+  setTurnButtonDisabled: (disabled: boolean) => void;
 }
 
 export interface GameEngine {
@@ -267,6 +269,7 @@ export interface GameEngine {
   civilizations: Civilization[];
   technologies: Technology[];
   onStateChange: ((eventType: string, eventData: any) => void) | null;
+  goToManager: any; // GoToManager instance for path management
   newGame(): void;
   processTurn(): void;
   moveUnit(unitId: string, col: number, row: number): { success: boolean; reason?: string };

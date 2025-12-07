@@ -50,7 +50,8 @@ const createInitialUIState = (): UIState => ({
   sidebarCollapsed: false,
   notifications: [],
   goToMode: false,
-  goToUnit: ''
+  goToUnit: '',
+  turnButtonDisabled: false
 });
 
 // Helper function for visibility calculations
@@ -81,6 +82,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   // Camera State
   camera: createInitialCameraState(),
+
+  // Internal helper to track last active player to avoid noisy camera pans
+  _lastActivePlayer: null,
 
   // Units State
   units: [],
@@ -190,6 +194,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
       // Find next unit belonging to active player that still has moves and is not sleeping
       const activeId = state.gameState.activePlayer;
+      const lastActive = (state as any)._lastActivePlayer;
+      const devMode = !!state.settings?.devMode;
       const candidate = state.units.find(u => u.civilizationId === activeId && (u.movesRemaining || 0) > 0 && !u.isSleeping);
 
       if (candidate) {
@@ -229,11 +235,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           camera: newCamera
         });
 
+        // Only update the camera position if either the same player retained control or developer mode is enabled
+        const shouldMoveCamera = devMode || lastActive === null || lastActive === activeId;
+
         return {
           ...state,
           _lastFocusCall: now,
+          _lastActivePlayer: activeId,
           gameState: { ...state.gameState, selectedUnit: candidate.id, activeUnit: candidate.id, selectedCity: null },
-          camera: { ...state.camera, ...newCamera }
+          camera: shouldMoveCamera ? { ...state.camera, ...newCamera } : { ...state.camera }
         };
       } else {
         // No unit found, focus on the capital city of the active player
@@ -276,11 +286,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             camera: newCamera
           });
 
+          const lastActive = (state as any)._lastActivePlayer;
+          const devMode = !!state.settings?.devMode;
+          const shouldMoveCamera = devMode || lastActive === null || lastActive === activeId;
+
           return {
             ...state,
             _lastFocusCall: now,
+            _lastActivePlayer: activeId,
             gameState: { ...state.gameState, selectedUnit: null, activeUnit: null, selectedCity: capitalCity.id },
-            camera: { ...state.camera, ...newCamera }
+            camera: shouldMoveCamera ? { ...state.camera, ...newCamera } : { ...state.camera }
           };
         }
       }
@@ -295,6 +310,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     toggleUI: (key) => set(state => ({
       uiState: { ...state.uiState, [key]: !state.uiState[key] }
+    })),
+
+    setTurnButtonDisabled: (disabled: boolean) => set(state => ({
+      uiState: { ...state.uiState, turnButtonDisabled: disabled }
     })),
 
     showDialog: (dialog) => set(state => ({

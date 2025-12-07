@@ -58,6 +58,24 @@ export class EngineEventRouter {
       case 'TURN_END':
         this.onTurnEnd();
         break;
+      case 'AI_CLEAR_HIGHLIGHTS':
+        this.onAIClearHighlights(eventData);
+        break;
+      case 'CITY_PRODUCTION_PHASE':
+        this.onCityProductionPhase(eventData);
+        break;
+      case 'RESEARCH_PHASE':
+        this.onResearchPhase(eventData);
+        break;
+      case 'PLAYER_REGISTERED':
+        this.onPlayerRegistered(eventData);
+        break;
+      case 'UNIT_SKIPPED':
+        this.onUnitSkipped(eventData);
+        break;
+      case 'AI_TARGET_HIGHLIGHT':
+        this.onAITargetHighlight(eventData);
+        break;
       default:
         console.log('Unhandled game engine event:', eventType, eventData);
     }
@@ -78,6 +96,9 @@ export class EngineEventRouter {
         console.warn('[EngineEventRouter] TurnManager not found or registerPlayer not available');
       }
     }
+
+    // Re-enable the end turn button at the start of each turn
+    this.actions.setTurnButtonDisabled(false);
   }
 
   private onPhaseChange(eventData: any) {
@@ -196,10 +217,10 @@ export class EngineEventRouter {
   private onCheckAutoEndTurn() {
     const settings = useGameStore.getState().settings;
     if (settings.autoEndTurn) {
-      // Trigger turn advancement through TurnManager
+      // Trigger proper turn ending through TurnManager (advances through all phases)
       const tm = (this.gameEngine as any).roundManager;
-      if (tm && typeof tm.advanceTurn === 'function') {
-        tm.advanceTurn();
+      if (tm && typeof tm.endHumanTurn === 'function') {
+        tm.endHumanTurn();
       } else {
         console.error('[EngineEventRouter] TurnManager not available for auto-end turn');
       }
@@ -222,5 +243,45 @@ export class EngineEventRouter {
     this.actions.setGoToMode(false, null);
     this.actions.selectUnit(null);
     // Renderer cleanup is now handled in TurnManager
+  }
+
+  private onAIClearHighlights(eventData: any) {
+    console.log('[EngineEventRouter] AI_CLEAR_HIGHLIGHTS for civ', eventData?.civilizationId);
+    // Clear any UI highlights when AI finishes its turn
+    this.actions.setGoToMode(false, null);
+    this.actions.selectUnit(null);
+  }
+
+  private onCityProductionPhase(eventData: any) {
+    console.log('[EngineEventRouter] CITY_PRODUCTION_PHASE for civ', eventData?.civilizationId);
+    // Update UI to show city production phase
+    this.actions.updateGameState({ currentTurn: useGameStore.getState().gameState.currentTurn });
+  }
+
+  private onResearchPhase(eventData: any) {
+    console.log('[EngineEventRouter] RESEARCH_PHASE for civ', eventData?.civilizationId);
+    // Update UI to show research phase
+    this.actions.updateGameState({ currentTurn: useGameStore.getState().gameState.currentTurn });
+  }
+
+  private onPlayerRegistered(eventData: any) {
+    console.log('[EngineEventRouter] PLAYER_REGISTERED for civ', eventData?.civilizationId);
+    // Player registration is handled - update UI state
+    this.actions.updateGameState({ currentTurn: useGameStore.getState().gameState.currentTurn });
+  }
+
+  private onUnitSkipped(eventData: any) {
+    console.log('[EngineEventRouter] UNIT_SKIPPED:', eventData?.unit?.id, eventData?.unit?.type);
+    // Unit was skipped - update unit state in UI
+    if (this.actions?.updateUnits) {
+      this.actions.updateUnits(this.gameEngine.getAllUnits());
+    }
+  }
+
+  private onAITargetHighlight(eventData: any) {
+    console.log('[EngineEventRouter] AI_TARGET_HIGHLIGHT:', eventData);
+    // Optionally, highlight the target tile in the UI (red overlay, etc.)
+    // For now, just log and update visibility
+    this.actions.updateVisibility();
   }
 }

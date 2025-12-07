@@ -24,6 +24,7 @@ export class TurnManager {
   private gameEngine: any;
   private unitPaths: Map<string, Array<{ col: number; row: number }>>;
   private AI_MAX_TURN_MS = 30000; // timeout for AI movement phase
+  private isProcessingGoToPaths = false; // Prevents auto-end while GoTo is executing
 
   private currentPlayer: number | null = null;
   private currentPhase: TurnPhase | null = null;
@@ -40,6 +41,7 @@ export class TurnManager {
   getPhase(): TurnPhase | null { return this.currentPhase; }
   getCurrentPlayer(): number | null { return this.currentPlayer; }
   getRoundNumber(): number { return this.roundNumber; }
+  isProcessingGoTo(): boolean { return this.isProcessingGoToPaths; }
 
   // --- Event helper ---
   private emit(eventType: string, data: any = {}) {
@@ -153,7 +155,7 @@ export class TurnManager {
     }
   }
 
-  registerPlayer(civilizationId: number): boolean {
+  async registerPlayer(civilizationId: number): Promise<boolean> {
     if (this.currentPlayer !== civilizationId) {
       console.warn(`[TurnManager] registerPlayer mismatch expected ${this.currentPlayer} got ${civilizationId}`);
       return false;
@@ -166,28 +168,64 @@ export class TurnManager {
     console.log(`[TurnManager] Player ${civilizationId} registered`);
     this.emit('PLAYER_REGISTERED', { civilizationId });
     // Move to first actionable phase
-    this.advanceToPhase(TurnPhase.UNIT_MOVEMENT);
+    await this.advanceToPhase(TurnPhase.UNIT_MOVEMENT);
     return true;
   }
 
-  nextPhase(): void {
+  async nextPhase(): Promise<void> {
     if (this.currentPlayer == null || this.currentPhase == null) return;
     switch (this.currentPhase) {
       case TurnPhase.START:
-        this.advanceToPhase(TurnPhase.UNIT_MOVEMENT); break;
+        await this.advanceToPhase(TurnPhase.UNIT_MOVEMENT); break;
       case TurnPhase.UNIT_MOVEMENT:
-        this.advanceToPhase(TurnPhase.CITY_PRODUCTION); break;
+        await this.advanceToPhase(TurnPhase.CITY_PRODUCTION); break;
       case TurnPhase.CITY_PRODUCTION:
-        this.advanceToPhase(TurnPhase.RESEARCH); break;
+        await this.advanceToPhase(TurnPhase.RESEARCH); break;
       case TurnPhase.RESEARCH:
-        this.advanceToPhase(TurnPhase.END); break;
+        await this.advanceToPhase(TurnPhase.END); break;
       case TurnPhase.END:
-        console.log('[TurnManager] nextPhase called but already at END');
+        console.log('[TurnManager] nextPhase: At END phase, not advancing further (finalization happens via advanceToPhase)');
         break;
     }
   }
 
-  private advanceToPhase(phase: TurnPhase): void {
+  /**
+   * End the current human player's turn properly by advancing through all remaining phases.
+   * This ensures CITY_PRODUCTION, RESEARCH, and END phases are processed before moving to the next player.
+   * Should be called when:
+   * - Human clicks "End Turn" button
+   * - Auto-end turn triggers (all units done)
+   */
+  async endHumanTurn(): Promise<void> {
+    const civId = this.currentPlayer;
+    if (civId == null) {
+      console.warn('[TurnManager] endHumanTurn: No current player');
+      return;
+    }
+    
+    const civ = this.gameEngine.civilizations?.[civId];
+    if (!civ?.isHuman) {
+      console.warn(`[TurnManager] endHumanTurn: Player ${civId} is not human, ignoring`);
+      return;
+    }
+    
+    console.log(`[TurnManager] endHumanTurn: Ending turn for human player ${civId}, current phase: ${this.currentPhase}`);
+    
+    // Advance through remaining phases. advanceToPhase handles END phase finalization.
+    if (this.currentPhase === TurnPhase.UNIT_MOVEMENT) {
+      await this.advanceToPhase(TurnPhase.CITY_PRODUCTION);
+    }
+    if (this.currentPhase === TurnPhase.CITY_PRODUCTION) {
+      await this.advanceToPhase(TurnPhase.RESEARCH);
+    }
+    if (this.currentPhase === TurnPhase.RESEARCH) {
+      await this.advanceToPhase(TurnPhase.END);
+    }
+    
+    console.log(`[TurnManager] endHumanTurn: Human player ${civId} turn completed`);
+  }
+
+  private async advanceToPhase(phase: TurnPhase): Promise<void> {
     if (this.currentPlayer == null) return;
     this.currentPhase = phase;
     console.log(`[TurnManager] Phase -> ${phase} for civ ${this.currentPlayer}`);
@@ -195,7 +233,7 @@ export class TurnManager {
 
     switch (phase) {
       case TurnPhase.UNIT_MOVEMENT:
-        this.processAutomatedMovements(this.currentPlayer);
+        await this.processAutomatedMovements(this.currentPlayer);
         // Human movement waits for UI. AI movement triggered asynchronously below.
         const civ = this.gameEngine.civilizations?.[this.currentPlayer];
         if (civ?.isAI) this.runAIUnitMovementPhase(this.currentPlayer);
@@ -586,15 +624,23 @@ export class TurnManager {
   }
 
   // --- Automated movement (path following) ---
-  private processAutomatedMovements(civilizationId: number): void {
+  private async processAutomatedMovements(civilizationId: number): Promise<void> {
     const unitsWithPaths = Array.from(this.unitPaths.entries())
       .filter(([unitId]) => {
         const unit = this.gameEngine.units.find((u: any) => u.id === unitId);
         return unit && unit.civilizationId === civilizationId;
       });
     
-    console.log(`[TurnManager] 🚀 Processing automated GoTo paths for civ ${civilizationId}`);
-    console.log(`[TurnManager] Found ${unitsWithPaths.length} units with GoTo paths`);
+    // Flag that we're processing GoTo paths - prevents checkAndEndTurnIfNoMoves from triggering
+    this.isProcessingGoToPaths = true;
+    
+    try {
+      console.log(`[TurnManager] 🚀 Processing automated GoTo paths for civ ${civilizationId}`);
+      console.log(`[TurnManager] Found ${unitsWithPaths.length} units with GoTo paths`);
+    
+    // Check if this is a human player (for animated movement)
+    const civ = this.gameEngine.civilizations.find((c: any) => c.id === civilizationId);
+    const isHumanPlayer = civ?.isHuman || false;
     
     const units = this.gameEngine.units.filter((u: any) => u.civilizationId === civilizationId && (u.movesRemaining || 0) > 0);
     
@@ -604,36 +650,60 @@ export class TurnManager {
       
       console.log(`[TurnManager] ➡️ Unit ${unit.id} (${unit.type}) has GoTo path with ${path.length} steps, ${unit.movesRemaining} moves remaining`);
       
-      let safety = 0;
-      while ((unit.movesRemaining || 0) > 0 && path.length > 0 && safety < 100) {
-        safety++;
-        const next = path[0];
-        const result = this.gameEngine.moveUnit(unit.id, next.col, next.row);
-        if (result?.success) {
-          path.shift();
-          console.log(`[TurnManager] ✅ Unit ${unit.id} moved to (${next.col}, ${next.row}), ${path.length} steps remaining in path`);
-        } else {
-          console.log(`[TurnManager] ❌ Path step failed for unit ${unit.id}, reason=${result?.reason}`);
-          // Only clear path if blocked, not if just out of moves
-          if (result?.reason !== 'no_moves' && result?.reason !== 'insufficient_moves') {
-            console.log(`[TurnManager] 🚫 Clearing path due to blocking issue`);
-            this.clearUnitPath(unit.id);
+      if (isHumanPlayer) {
+        // Use animated movement for human players so they can see the unit moving
+        console.log(`[TurnManager] 🎬 Using animated GoTo movement for human player unit ${unit.id}`);
+        try {
+          const result = await this.gameEngine.goToManager.executePathWithAnimation(unit.id, 200); // 200ms delay between moves
+          if (result.success) {
+            console.log(`[TurnManager] ✅ Animated path completed for unit ${unit.id}, ${result.stepsCompleted} steps taken`);
+            if (this.unitPaths.get(unit.id)?.length === 0) {
+              console.log(`[TurnManager] 🎯 Unit ${unit.id} completed GoTo path - destination reached!`);
+              this.clearUnitPath(unit.id);
+            }
+          } else {
+            console.log(`[TurnManager] ❌ Animated path failed for unit ${unit.id}`);
           }
-          break;
+        } catch (error) {
+          console.error(`[TurnManager] Error in animated GoTo for unit ${unit.id}:`, error);
         }
-      }
-      
-      // Only clear path if actually completed (reached destination)
-      if (path.length === 0) {
-        console.log(`[TurnManager] 🎯 Unit ${unit.id} completed GoTo path - destination reached!`);
-        this.clearUnitPath(unit.id);
       } else {
-        console.log(`[TurnManager] ⏸️ Unit ${unit.id} path incomplete: ${path.length} steps remaining, will continue next turn`);
+        // Use instant movement for AI players
+        let safety = 0;
+        while ((unit.movesRemaining || 0) > 0 && path.length > 0 && safety < 100) {
+          safety++;
+          const next = path[0];
+          const result = this.gameEngine.moveUnit(unit.id, next.col, next.row);
+          if (result?.success) {
+            path.shift();
+            console.log(`[TurnManager] ✅ Unit ${unit.id} moved to (${next.col}, ${next.row}), ${path.length} steps remaining in path`);
+          } else {
+            console.log(`[TurnManager] ❌ Path step failed for unit ${unit.id}, reason=${result?.reason}`);
+            // Only clear path if blocked, not if just out of moves
+            if (result?.reason !== 'no_moves' && result?.reason !== 'insufficient_moves') {
+              console.log(`[TurnManager] 🚫 Clearing path due to blocking issue`);
+              this.clearUnitPath(unit.id);
+            }
+            break;
+          }
+        }
+        
+        // Only clear path if actually completed (reached destination)
+        if (path.length === 0) {
+          console.log(`[TurnManager] 🎯 Unit ${unit.id} completed GoTo path - destination reached!`);
+          this.clearUnitPath(unit.id);
+        } else {
+          console.log(`[TurnManager] ⏸️ Unit ${unit.id} path incomplete: ${path.length} steps remaining, will continue next turn`);
+        }
       }
     }
     
     if (unitsWithPaths.length === 0) {
       console.log(`[TurnManager] No units with active GoTo paths for civ ${civilizationId}`);
+    }
+    } finally {
+      // Reset the flag after GoTo path processing is complete
+      this.isProcessingGoToPaths = false;
     }
   }
 

@@ -14,4 +14,5 @@ export interface UnitActionsModalProps {
   contextMenu: ContextMenuData | null;
   onExecuteAction: (action: string, data?: any) => void;
   onClose: () => void;
+  gameEngine?: any;
 }

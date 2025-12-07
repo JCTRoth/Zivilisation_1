@@ -12,6 +12,7 @@ import { SettlementEvaluator } from './SettlementEvaluator';
 import { EnemySearcher, EnemyLocation } from './EnemySearcher';
 import { ScoutMemory } from './ScoutMemory';
 import { GoToManager } from './GoToManager';
+import { AIManager } from './AIManager';
 import type { GameActions, Unit, City, Civilization } from '../../../types/game';
 
 interface GameSettings {
@@ -82,6 +83,7 @@ export default class GameEngine {
   victoryManager: VictoryManager;
   isGameOver: boolean;
   scoutMemory: ScoutMemory; // Phase 3.1: Scout persistence across turns
+  aiManager: AIManager;
 
   // Getter for turnManager (alias for roundManager)
   get turnManager() {
@@ -121,7 +123,7 @@ export default class GameEngine {
     this.goToManager = new GoToManager(this, this.roundManager);
     this.playerStorage = new Map();
     this.scoutMemory = new ScoutMemory(); // Phase 3.1: Initialize scout memory
-    this.scoutMemory = new ScoutMemory(); // Phase 3.1: Initialize scout memory
+    this.aiManager = new AIManager(this);
     this.devMode = false;
     this.victoryManager = new VictoryManager(this);
     this.isGameOver = false;
@@ -440,7 +442,13 @@ export default class GameEngine {
         // Check if scout already found an enemy (stored in unit state)
         if (unit.enemyFound) {
           console.log(`[AI-SCOUT] Scout ${unit.id} has found enemy, returning to nearest city`);
-          const nearestCity = this.findNearestOwnCity(unit);
+          const nearestCity = AIUtility.findNearestOwnCity(
+            unit.col,
+            unit.row,
+            unit.civilizationId,
+            this.cities,
+            (col1, row1, col2, row2) => this.squareGrid!.squareDistance(col1, row1, col2, row2)
+          );
           if (nearestCity) {
             // Check if scout reached the city
             if (unit.col === nearestCity.col && unit.row === nearestCity.row) {
@@ -503,6 +511,34 @@ export default class GameEngine {
         if (enemyResult) {
           console.log(`[AI-SCOUT] Enemy ${enemyResult.targetType} found at (${enemyResult.col}, ${enemyResult.row}), distance: ${enemyResult.distance}`);
           
+          // Phase 3.3: Check if this enemy was already discovered by another scout
+          const storage = this.getPlayerStorage(unit.civilizationId);
+          let alreadyKnown = false;
+          if (storage) {
+            // Get enemy civilization ID
+            let enemyCivId = -1;
+            if (enemyResult.targetType === 'unit') {
+              const enemyUnit = this.getUnitAt(enemyResult.col, enemyResult.row);
+              if (enemyUnit) enemyCivId = enemyUnit.civilizationId;
+            } else if (enemyResult.targetType === 'city') {
+              const enemyCity = this.getCityAt(enemyResult.col, enemyResult.row);
+              if (enemyCity) enemyCivId = enemyCity.civilizationId;
+            }
+            
+            if (enemyCivId >= 0 && storage.enemyLocations.has(enemyCivId)) {
+              const knownEnemies = storage.enemyLocations.get(enemyCivId)!;
+              alreadyKnown = knownEnemies.some(e => 
+                e.col === enemyResult.col && 
+                e.row === enemyResult.row && 
+                e.type === enemyResult.targetType
+              );
+              
+              if (alreadyKnown) {
+                console.log(`[AI-SCOUT] Scout reunion: Enemy at (${enemyResult.col}, ${enemyResult.row}) already known by another scout`);
+              }
+            }
+          }
+          
           // Store enemy location in player storage for civilization-wide decision making
           this.recordEnemyLocation(unit.civilizationId, enemyResult);
           
@@ -511,7 +547,13 @@ export default class GameEngine {
           unit.enemyLocation = { col: enemyResult.col, row: enemyResult.row };
           
           // Start returning to nearest city
-          const nearestCity = this.findNearestOwnCity(unit);
+          const nearestCity = AIUtility.findNearestOwnCity(
+            unit.col,
+            unit.row,
+            unit.civilizationId,
+            this.cities,
+            (col1, row1, col2, row2) => this.squareGrid!.squareDistance(col1, row1, col2, row2)
+          );
           if (nearestCity) {
             console.log(`[AI-SCOUT] Scout returning to nearest city at (${nearestCity.col}, ${nearestCity.row})`);
             return { col: nearestCity.col, row: nearestCity.row };
@@ -525,14 +567,34 @@ export default class GameEngine {
     }
 
     // 1) Nearby unexplored tile
-    const unexplored = this.findNearbyUnexplored(unit);
+    const unexplored = AIUtility.findNearbyUnexplored(
+      unit.col,
+      unit.row,
+      (col, row) => this.squareGrid!.getNeighbors(col, row),
+      (col, row) => this.getTileAt(col, row)
+    );
     if (unexplored) {
       console.log(`[AI] Chose unexplored tile at (${unexplored.col},${unexplored.row})`);
       return { col: unexplored.col, row: unexplored.row };
     }
 
+    // Special exploration logic for scouts when no immediate unexplored tiles
+    if (unit.type === 'scout') {
+      const scoutExplorationTarget = this.findScoutExplorationTarget(unit);
+      if (scoutExplorationTarget) {
+        console.log(`[AI-SCOUT] Chose exploration target at (${scoutExplorationTarget.col},${scoutExplorationTarget.row})`);
+        return { col: scoutExplorationTarget.col, row: scoutExplorationTarget.row };
+      }
+    }
+
     // 2) Nearby enemy unit
-    const enemy = this.findNearbyEnemy(unit);
+    const enemy = AIUtility.findNearbyEnemy(
+      unit.col,
+      unit.row,
+      unit.civilizationId,
+      (col, row) => this.squareGrid!.getNeighbors(col, row),
+      (col, row) => this.getUnitAt(col, row)
+    );
     if (enemy) {
       console.log(`[AI] Chose enemy unit at (${enemy.col},${enemy.row})`);
       return { col: enemy.col, row: enemy.row };
@@ -566,27 +628,7 @@ export default class GameEngine {
     return null;
   }
 
-  // Find nearest own city for a unit
-  private findNearestOwnCity(unit: any): City | null {
-    if (!this.squareGrid) return null;
-    
-    const ownCities = this.cities.filter(c => c.civilizationId === unit.civilizationId);
-    if (ownCities.length === 0) return null;
-    
-    let nearestCity: City | null = null;
-    let minDistance = Infinity;
-    
-    for (const city of ownCities) {
-      const distance = this.squareGrid.squareDistance(unit.col, unit.row, city.col, city.row);
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearestCity = city;
-      }
-    }
-    
-    console.log(`[AI-SCOUT] Nearest city for unit ${unit.id} is at (${nearestCity?.col}, ${nearestCity?.row}), distance: ${minDistance}`);
-    return nearestCity;
-  }
+
 
   /**
    * Record enemy location in player's intelligence storage
@@ -932,52 +974,96 @@ export default class GameEngine {
     return null;
   }
 
-  // Find nearby unexplored tile (uses GameEngine's map representation)
-  private findNearbyUnexplored(unit: any): any {
+
+
+  // Find exploration target for scouts within their zone
+  private findScoutExplorationTarget(unit: any): any {
     if (!this.map || !this.squareGrid) return null;
-    const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
-    for (const tilePos of neighbors) {
-      const tile = this.getTileAt(tilePos.col, tilePos.row);
-      if (tile && !tile.explored) {
-        return tilePos;
+
+    // Get scout's zone
+    const scouts = this.units.filter(u => u.civilizationId === unit.civilizationId && u.type === 'scout');
+    const scoutIndex = scouts.findIndex(s => s.id === unit.id);
+    
+    if (scoutIndex < 0) return null;
+
+    const storage = this.getPlayerStorage(unit.civilizationId);
+    if (!storage || !storage.scoutZones[scoutIndex]) return null;
+
+    const zone = storage.scoutZones[scoutIndex];
+    
+    // Find nearest unexplored tile within the scout's zone
+    let nearestUnexplored: { col: number; row: number } | null = null;
+    let minDistance = Infinity;
+
+    // Search within zone boundaries (limit search to avoid performance issues)
+    const searchRadius = 10; // Search up to 10 tiles away
+    const startCol = Math.max(zone.minCol, unit.col - searchRadius);
+    const endCol = Math.min(zone.maxCol, unit.col + searchRadius);
+    const startRow = Math.max(zone.minRow, unit.row - searchRadius);
+    const endRow = Math.min(zone.maxRow, unit.row + searchRadius);
+
+    for (let col = startCol; col < endCol; col++) {
+      for (let row = startRow; row < endRow; row++) {
+        // Check if tile is in zone
+        if (!this.isInScoutZone(unit.civilizationId, scoutIndex, col, row)) continue;
+        
+        const tile = this.getTileAt(col, row);
+        if (tile && !tile.explored) {
+          const distance = Math.max(Math.abs(col - unit.col), Math.abs(row - unit.row));
+          if (distance < minDistance) {
+            minDistance = distance;
+            nearestUnexplored = { col, row };
+          }
+        }
       }
     }
+
+    if (nearestUnexplored) {
+      console.log(`[AI-SCOUT] Found unexplored tile at (${nearestUnexplored.col},${nearestUnexplored.row}) in zone, distance: ${minDistance}`);
+      return nearestUnexplored;
+    }
+
+    // If no unexplored tiles found in zone, move toward zone center to explore systematically
+    const zoneCenterCol = Math.floor((zone.minCol + zone.maxCol) / 2);
+    const zoneCenterRow = Math.floor((zone.minRow + zone.maxRow) / 2);
+    
+    // If scout is not at zone center, move toward it
+    if (unit.col !== zoneCenterCol || unit.row !== zoneCenterRow) {
+      // Find path toward zone center, preferring unexplored directions
+      const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
+      let bestNeighbor: { col: number; row: number } | null = null;
+      let bestDistanceToCenter = Math.max(Math.abs(unit.col - zoneCenterCol), Math.abs(unit.row - zoneCenterRow));
+      
+      for (const neighbor of neighbors) {
+        if (!this.isInScoutZone(unit.civilizationId, scoutIndex, neighbor.col, neighbor.row)) continue;
+        
+        const tile = this.getTileAt(neighbor.col, neighbor.row);
+        if (!tile || TERRAIN_PROPS[tile.type]?.passable === false) continue;
+        
+        const distanceToCenter = Math.max(Math.abs(neighbor.col - zoneCenterCol), Math.abs(neighbor.row - zoneCenterRow));
+        if (distanceToCenter < bestDistanceToCenter) {
+          bestDistanceToCenter = distanceToCenter;
+          bestNeighbor = neighbor;
+        }
+      }
+      
+      if (bestNeighbor) {
+        console.log(`[AI-SCOUT] Moving toward zone center at (${zoneCenterCol},${zoneCenterRow}) via (${bestNeighbor.col},${bestNeighbor.row})`);
+        return bestNeighbor;
+      }
+    }
+
+    console.log(`[AI-SCOUT] No exploration targets found in zone ${scoutIndex}`);
     return null;
   }
 
-  // Find nearby enemy unit
-  private findNearbyEnemy(unit: any): any {
-    if (!this.squareGrid) return null;
-    const neighbors = this.squareGrid.getNeighbors(unit.col, unit.row);
-    for (const tilePos of neighbors) {
-      const enemyUnit = this.getUnitAt(tilePos.col, tilePos.row);
-      if (enemyUnit && enemyUnit.civilizationId !== unit.civilizationId) {
-        return enemyUnit;
-      }
-    }
-    return null;
-  }
+
 
   /**
    * Process AI turn for a civilization (public method for RoundManager)
    */
   processAITurn(civilizationId: number) {
-    const civ = this.civilizations[civilizationId];
-    if (!civ) {
-      console.warn(`[AI] processAITurn: Civilization ${civilizationId} not found`);
-      return;
-    }
-    if (civ.isHuman) {
-      console.log(`[AI] processAITurn: Skipping civilization ${civilizationId} - is human player`);
-      return;
-    }
-    // CRITICAL: Only allow AI to act during its own turn
-    if (this.activePlayer !== civilizationId) {
-      console.warn(`[AI] processAITurn: Civilization ${civilizationId} attempted to act outside its turn (active player: ${this.activePlayer})`);
-      return;
-    }
-    // Return promise so RoundManager can coordinate timeouts/end-of-turn
-    return this.runAITurn(civilizationId).catch(err => console.error('AI turn error', err));
+    return this.aiManager.processAITurn(civilizationId);
   }
 
   // Run an asynchronous AI turn for civilizationId
@@ -2003,14 +2089,14 @@ export default class GameEngine {
 
       // Reveal area around the unit immediately after moving so automated moves explore
       try {
-        // Determine sight range (unit may define it, otherwise check UNIT_PROPS)
-        let sightRange = 0;
+        // Determine sight range (unit may define it, otherwise check UNIT_PROPS, default to 1)
+        let sightRange = 1; // Default to 1 tile radius
         if (typeof (unit as any).sightRange === 'number') sightRange = (unit as any).sightRange;
         else if (UNIT_PROPS && UNIT_PROPS[String(unit.type).toLowerCase()] && typeof UNIT_PROPS[String(unit.type).toLowerCase()].sightRange === 'number') {
           sightRange = UNIT_PROPS[String(unit.type).toLowerCase()].sightRange;
         }
 
-        // Ensure at least reveal the tile itself (radius 0 will reveal center only)
+        // Ensure sight range is valid (non-negative)
         if (sightRange < 0) sightRange = 0;
 
         if (this.revealArea) {
@@ -2197,6 +2283,12 @@ export default class GameEngine {
   checkAndEndTurnIfNoMoves() {
     console.log('[TURN] checkAndEndTurnIfNoMoves: Checking active player', this.activePlayer);
     
+    // Don't trigger auto-end while GoTo paths are being processed
+    if (this.roundManager?.isProcessingGoTo?.()) {
+      console.log('[TURN] ⏸️ Skipping auto-end check - GoTo paths still being processed');
+      return;
+    }
+    
     const currentCiv = this.civilizations[this.activePlayer];
     if (!currentCiv) {
       console.warn('[TURN] No civilization found for active player', this.activePlayer);
@@ -2251,23 +2343,23 @@ export default class GameEngine {
   }
 
   /**
-   * Process end of turn
-   * @deprecated This method now delegates to TurnManager.advanceTurn()
-   * TurnManager owns all turn logic in the new architecture
+   * Process end of turn for human player.
+   * This properly advances through all remaining phases (CITY_PRODUCTION, RESEARCH, END)
+   * before moving to the next player's turn.
    */
   processTurn() {
-    console.log('[GameEngine] processTurn: Delegating to TurnManager.advanceTurn()');
+    console.log('[GameEngine] processTurn: Ending human turn via TurnManager.endHumanTurn()');
 
     if (this.isGameOver) {
       console.log('[GameEngine] processTurn: Ignored because the game has concluded');
       return;
     }
     
-    // Delegate to TurnManager which now owns all turn logic
-    if (this.roundManager && typeof this.roundManager.advanceTurn === 'function') {
-      this.roundManager.advanceTurn();
+    // Delegate to TurnManager.endHumanTurn() which properly advances through all phases
+    if (this.roundManager && typeof this.roundManager.endHumanTurn === 'function') {
+      this.roundManager.endHumanTurn();
     } else {
-      console.error('[GameEngine] processTurn: TurnManager not available or advanceTurn method missing');
+      console.error('[GameEngine] processTurn: TurnManager not available or endHumanTurn method missing');
     }
   }
 
@@ -2317,7 +2409,7 @@ export default class GameEngine {
       civ.currentResearch = tech;
       civ.researchProgress = 0;
     }
-}
+  }
 
   /**
    * Start a new game

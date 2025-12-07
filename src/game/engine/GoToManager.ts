@@ -153,6 +153,35 @@ export class GoToManager {
     onStepComplete?: (remainingSteps: number) => void
   ): Promise<{ success: boolean; stepsCompleted: number }> {
     console.log(`[GoToManager] Starting animated path execution for unit ${unitId}`);
+
+    // Before doing the first move, log how many steps the current path has and an
+    // estimated number of turns this path will take based on the unit's moves per turn.
+    try {
+      const unit = this.gameEngine.units.find((u: any) => u.id === unitId);
+      const path = this.unitPaths.get(unitId) || [];
+      const steps = path.length;
+      if (unit) {
+        // Determine moves per turn (fallback to 1)
+        const movesPerTurn = (typeof unit.maxMoves === 'number' ? unit.maxMoves : (unit.movesRemaining || 1));
+        // Estimate turns required: account for remaining moves this turn
+        const remainingMovesThisTurn = unit.movesRemaining || 0;
+        let estimatedTurns = 0;
+        if (steps <= remainingMovesThisTurn) {
+          estimatedTurns = 1;
+        } else if (movesPerTurn <= 0) {
+          estimatedTurns = Infinity;
+        } else {
+          const stepsAfterThisTurn = Math.max(0, steps - remainingMovesThisTurn);
+          estimatedTurns = 1 + Math.ceil(stepsAfterThisTurn / movesPerTurn);
+        }
+
+        console.log(`[GoToManager] Pre-move estimate for unit ${unitId}: ${steps} steps, estimated turns: ${isFinite(estimatedTurns) ? estimatedTurns : 'unknown (no movement)'} (moves/turn: ${movesPerTurn}, remaining this turn: ${remainingMovesThisTurn})`);
+      } else {
+        console.log(`[GoToManager] Pre-move estimate: unit ${unitId} not found, steps: ${path.length}`);
+      }
+    } catch (e) {
+      console.warn('[GoToManager] Failed to compute pre-move estimate', e);
+    }
     
     let stepsCompleted = 0;
     let continueMoving = true;

@@ -278,6 +278,8 @@ function App() {
     console.log('[App] End turn cancelled');
     setShowEndTurnConfirm(false);
     setIsEndTurnAutomatic(false);
+    // Re-enable the turn button since the turn wasn't ended
+    actions.setTurnButtonDisabled(false);
   };
 
   // Keyboard shortcuts
