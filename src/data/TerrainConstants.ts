@@ -53,10 +53,10 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
     [TERRAIN_TYPES.GRASSLAND]: {
         movement: 0.8,
         defense: 0,
-        food: 3,
-        production: 0,
+        food: 2,
+        production: 1,
         trade: 0,
-        color: '#22c55e',
+        color: '#7dc850',
         passable: true,
         description: 'Fertile grassland',
         buildModifier: 1
@@ -128,12 +128,12 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         buildModifier: 3
     },
     [TERRAIN_TYPES.HILLS]: {
-        movement: 0.9,
-        defense: 1.5,
-        food: 0,
+        movement: 1.0,
+        defense: 0.5,
+        food: 1,
         production: 1,
         trade: 0,
-        color: '#a3a3a3',
+        color: '#a39071',
         passable: true,
         description: 'Rolling hills',
         buildModifier: 2

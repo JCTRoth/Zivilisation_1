@@ -222,7 +222,22 @@ export class City {
             const tile = gameMap.getTile(col, row);
 
             if (tile) {
-                const yields = tile.getYields();
+                let yields = tile.getYields();
+                
+                // City center always produces minimum 2 food, 1 production, 1 trade
+                if (col === this.col && row === this.row) {
+                    yields = {
+                        food: Math.max(yields.food, 2),
+                        production: Math.max(yields.production, 1),
+                        trade: Math.max(yields.trade, 1)
+                    };
+                    
+                    // Rivers on city center add +1 trade
+                    if (tile.hasRiver) {
+                        yields.trade += 1;
+                    }
+                }
+                
                 totalFood += yields.food;
                 totalProduction += yields.production;
                 totalTrade += yields.trade;
@@ -323,7 +338,7 @@ export class City {
 
     // Get food needed to grow to next population level
     getGrowthThreshold(): number {
-        return this.population * 10;
+        return 20 + (this.population * 2);
     }
 
     // Grow city population
@@ -643,14 +658,16 @@ export class City {
     // Get all tiles within city radius (2 squares in every direction except diagonally)
     getCityRadiusTiles(gameMap: any): Array<{col: number, row: number, tile: any}> {
         const radiusTiles: Array<{col: number, row: number, tile: any}> = [];
-
-        // City radius extends 2 squares in every direction except diagonally
-        // This creates a diamond-shaped area around the city
+        // City radius is a diamond-shaped 5x5 area centered on the city
+        // We include all tiles with Chebyshev distance <= 2, but exclude the four corner tiles
+        // and exclude the city center itself. That yields exactly 20 workable tiles.
         for (let dCol = -2; dCol <= 2; dCol++) {
             for (let dRow = -2; dRow <= 2; dRow++) {
-                // Skip diagonals (only orthogonal and diagonal-adjacent tiles)
-                const manhattanDistance = Math.abs(dCol) + Math.abs(dRow);
-                if (manhattanDistance > 2 || manhattanDistance === 0) continue;
+                // Skip center
+                if (dCol === 0 && dRow === 0) continue;
+
+                // Exclude the four extreme corners of the 5x5 square
+                if (Math.abs(dCol) === 2 && Math.abs(dRow) === 2) continue;
 
                 const tileCol = this.col + dCol;
                 const tileRow = this.row + dRow;
@@ -791,10 +808,37 @@ export class City {
             }
         }
 
-        // Sort by food production (most important for growth)
-        workableTiles.sort((a, b) => b.yields.food - a.yields.food);
+        // Civ1 4-tier tile priority system
+        workableTiles.sort((a, b) => {
+            const priorityA = this.getTilePriority(a.yields);
+            const priorityB = this.getTilePriority(b.yields);
+            
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB; // Lower priority number = higher priority
+            }
+            
+            // Within same tier, sort by total yield value
+            const totalA = a.yields.food * 2 + a.yields.production + a.yields.trade;
+            const totalB = b.yields.food * 2 + b.yields.production + b.yields.trade;
+            return totalB - totalA;
+        });
 
         return workableTiles;
+    }
+    
+    // Civ1 tile priority tiers
+    private getTilePriority(yields: any): number {
+        // Tier 1: Food-rich tiles (prevent famine) - food >= 3
+        if (yields.food >= 3) return 1;
+        
+        // Tier 2: Balanced tiles (food + production) - food >= 2 and production >= 1
+        if (yields.food >= 2 && yields.production >= 1) return 2;
+        
+        // Tier 3: Production-rich tiles - production >= 2
+        if (yields.production >= 2) return 3;
+        
+        // Tier 4: Trade-rich or other tiles
+        return 4;
     }
 
     // Auto-assign workers to best available tiles
