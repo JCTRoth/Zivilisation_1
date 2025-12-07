@@ -10,6 +10,7 @@ import { TurnManager } from './TurnManager';
 import { VictoryManager } from './VictoryManager';
 import { SettlementEvaluator } from './SettlementEvaluator';
 import { EnemySearcher, EnemyLocation } from './EnemySearcher';
+import { ScoutMemory } from './ScoutMemory';
 import { GoToManager } from './GoToManager';
 import type { GameActions, Unit, City, Civilization } from '../../../types/game';
 
@@ -80,6 +81,7 @@ export default class GameEngine {
   goToManager: GoToManager;
   victoryManager: VictoryManager;
   isGameOver: boolean;
+  scoutMemory: ScoutMemory; // Phase 3.1: Scout persistence across turns
 
   // Getter for turnManager (alias for roundManager)
   get turnManager() {
@@ -118,6 +120,8 @@ export default class GameEngine {
     this.roundManager = new TurnManager(this);
     this.goToManager = new GoToManager(this, this.roundManager);
     this.playerStorage = new Map();
+    this.scoutMemory = new ScoutMemory(); // Phase 3.1: Initialize scout memory
+    this.scoutMemory = new ScoutMemory(); // Phase 3.1: Initialize scout memory
     this.devMode = false;
     this.victoryManager = new VictoryManager(this);
     this.isGameOver = false;
@@ -395,6 +399,39 @@ export default class GameEngine {
       }
     }
 
+    // Phase 2.2: Special handling for warriors: target known enemy cities
+    if (unit.type === 'warrior') {
+      console.log(`[AI-WARRIOR] Warrior at (${unit.col}, ${unit.row}), checking for enemy targets`);
+      
+      const civData = this.getPlayerStorage(unit.civilizationId);
+      if (civData) {
+        // Get nearest enemy city from known locations
+        let nearestEnemy: { col: number; row: number; enemyCivId: number } | null = null;
+        let minDistance = Infinity;
+        
+        for (const [enemyCivId, enemies] of civData.enemyLocations) {
+          for (const enemy of enemies) {
+            if (enemy.type !== 'city') continue; // Only target cities
+            
+            const dist = this.squareGrid.squareDistance(unit.col, unit.row, enemy.col, enemy.row);
+            if (dist < minDistance) {
+              minDistance = dist;
+              nearestEnemy = { col: enemy.col, row: enemy.row, enemyCivId };
+            }
+          }
+        }
+        
+        if (nearestEnemy) {
+          console.log(`[AI-WARRIOR] Found enemy city at (${nearestEnemy.col}, ${nearestEnemy.row}), distance: ${minDistance.toFixed(1)}`);
+          return { col: nearestEnemy.col, row: nearestEnemy.row };
+        } else {
+          console.log(`[AI-WARRIOR] No known enemy cities, will explore`);
+        }
+      }
+      
+      // If no enemy city known, proceed to normal exploration below
+    }
+
     // Special handling for scouts: use EnemySearcher to find enemies
     if (unit.type === 'scout') {
       console.log(`[AI-SCOUT] Scout detected at (${unit.col}, ${unit.row}), checking for enemies`);
@@ -421,6 +458,14 @@ export default class GameEngine {
           }
         }
 
+        // Phase 1: Initialize scout zones for this civilization
+        this.assignScoutZones(unit.civilizationId);
+
+        // Find this scout's zone index
+        const scouts = this.units.filter(u => u.civilizationId === unit.civilizationId && u.type === 'scout');
+        const scoutIndex = scouts.findIndex(s => s.id === unit.id);
+        console.log(`[AI-SCOUT] Scout ${scoutIndex + 1}/${scouts.length} searching zone ${scoutIndex}`);
+
         // Get visibility check function - use per-player visibility storage
         const playerStorage = this.getPlayerStorage(unit.civilizationId);
         const isVisible = (col: number, row: number) => {
@@ -433,16 +478,26 @@ export default class GameEngine {
           return tile && (tile.visible || tile.explored);
         };
 
-        // Search for enemies using Archimedean spiral with city prioritization
-        const enemyResult = EnemySearcher.findNearestEnemy(
-          unit.col,
-          unit.row,
-          this.map.width,
-          this.map.height,
-          (col, row) => this.getUnitAt(col, row),
-          (col, row) => this.getCityAt(col, row),
-          isVisible,
-          unit.civilizationId
+        // Phase 1 & 4: Search only within scout's assigned zone with performance monitoring
+        const enemyResult = this.measurePerformance('Scout enemy search', () => 
+          EnemySearcher.findNearestEnemy(
+            unit.col,
+            unit.row,
+            this.map.width,
+            this.map.height,
+            (col, row) => {
+              // Filter getUnitAt results to zone boundary
+              if (scoutIndex >= 0 && !this.isInScoutZone(unit.civilizationId, scoutIndex, col, row)) return null;
+              return this.getUnitAt(col, row);
+            },
+            (col, row) => {
+              // Filter getCityAt results to zone boundary
+              if (scoutIndex >= 0 && !this.isInScoutZone(unit.civilizationId, scoutIndex, col, row)) return null;
+              return this.getCityAt(col, row);
+            },
+            isVisible,
+            unit.civilizationId
+          )
         );
         
         if (enemyResult) {
@@ -545,6 +600,9 @@ export default class GameEngine {
     if (!storage) return;
 
     const round = this.roundManager.getRoundNumber();
+    
+    // Phase 3.1: Update scout memory with current round
+    this.scoutMemory.setCurrentRound(round);
     const location: EnemyLocation = {
       col: enemy.col,
       row: enemy.row,
@@ -571,19 +629,53 @@ export default class GameEngine {
       storage.enemyLocations.set(enemyCivId, []);
     }
 
-    // Update existing location or add new one
+    // Get list of known enemy locations for this civ
     const enemyList = storage.enemyLocations.get(enemyCivId)!;
+
+    // Cleanup: if there's an entry with this ID but the entity no longer exists at that position, remove it
+    const idxById = enemyList.findIndex(e => e.id === enemy.targetId);
+    if (idxById >= 0) {
+      const stored = enemyList[idxById];
+      let existsNow = false;
+      if (stored.type === 'unit') {
+        const u = this.getUnitAt(stored.col, stored.row);
+        existsNow = !!u && u.id === stored.id;
+      } else if (stored.type === 'city') {
+        const c = this.getCityAt(stored.col, stored.row);
+        existsNow = !!c && c.id === stored.id;
+      }
+
+      if (!existsNow) {
+        console.log(`[AI] Removing stale entry for id=${stored.id} at (${stored.col},${stored.row}) because entity no longer exists`);
+        enemyList.splice(idxById, 1);
+        this.scoutMemory.removeDiscovery(enemyCivId, stored.col, stored.row, stored.type);
+      }
+    }
     const existingIdx = enemyList.findIndex(e => e.id === enemy.targetId);
-    
+
     if (existingIdx >= 0) {
       // Update last seen
       enemyList[existingIdx].lastSeenRound = round;
     } else {
+      // Before adding a new location, check if there's a stale record at the same coords
+      const staleIdx = enemyList.findIndex(e => e.col === location.col && e.row === location.row && e.type === location.type);
+      if (staleIdx >= 0) {
+        // If IDs differ (e.g., city destroyed and another created), remove stale record first
+        const stale = enemyList[staleIdx];
+        console.log(`[AI] Removing stale stored enemy at (${stale.col}, ${stale.row}) for civ ${enemyCivId} (stored id=${stale.id}, new id=${location.id})`);
+        enemyList.splice(staleIdx, 1);
+        // Also remove from scout memory if present
+        this.scoutMemory.removeDiscovery(enemyCivId, stale.col, stale.row, stale.type);
+      }
+
       // Add new location
       enemyList.push(location);
     }
 
     console.log(`[AI] Recorded ${enemy.targetType} at (${enemy.col}, ${enemy.row}) for civ ${civilizationId}`);
+    
+    // Phase 3.1: Also record in scout memory for persistence
+    this.scoutMemory.recordDiscovery(enemyCivId, location);
   }
 
   /**
@@ -606,12 +698,74 @@ export default class GameEngine {
     // Count scouts for this civilization
     const scouts = this.units.filter(u => u.civilizationId === civilizationId && u.type === 'scout');
     
-    // Calculate zones based on scout count and map size
+    // Phase 4: Measure zone calculation performance
+    const startTime = performance.now();
     storage.scoutZones = EnemySearcher.calculateScoutZones(scouts.length, this.map!.width, this.map!.height);
-
-    if (this.devMode) {
-      console.log(`[AI-COORDINATION] Assigned ${scouts.length} scouts with ${storage.scoutZones.length} zones`);
+    const endTime = performance.now();
+    
+    if (this.devMode && (endTime - startTime) > 2) {
+      console.log(`[PERF] Zone calculation took ${(endTime - startTime).toFixed(2)}ms`);
     }
+
+    // Phase 1.2: Enhanced logging for scout coordination
+    console.log(`[AI-COORDINATION] Assigned ${scouts.length} scouts with zones:`);
+    storage.scoutZones.forEach((zone, idx) => {
+      console.log(`  Scout ${idx + 1}: cols ${zone.minCol}-${zone.maxCol}, rows ${zone.minRow}-${zone.maxRow}`);
+    });
+  }
+
+  /**
+   * Phase 3.2: Dynamic Scout Reassignment - Called when a scout dies
+   * Recalculates scout zones for remaining scouts
+   */
+  public onScoutDeath(scoutUnit: Unit): void {
+    console.log(`[AI-COORDINATION] Scout ${scoutUnit.id} died, reassigning zones for civilization ${scoutUnit.civilizationId}`);
+    
+    // Recalculate zones for remaining scouts
+    this.assignScoutZones(scoutUnit.civilizationId);
+    
+    // Log remaining scouts
+    const remainingScouts = this.units.filter(u => 
+      u.civilizationId === scoutUnit.civilizationId && 
+      u.type === 'scout' && 
+      u.id !== scoutUnit.id
+    );
+    console.log(`[AI-COORDINATION] ${remainingScouts.length} scouts remaining after reassignment`);
+  }
+
+  /**
+   * Phase 3.2: Dynamic Scout Reassignment - Called when a scout is created
+   * Re-initializes zones to include the new scout
+   */
+  public onScoutCreated(scoutUnit: Unit): void {
+    console.log(`[AI-COORDINATION] Scout ${scoutUnit.id} created, reassigning zones for civilization ${scoutUnit.civilizationId}`);
+    
+    // Re-initialize zones to include new scout
+    this.assignScoutZones(scoutUnit.civilizationId);
+    
+    // Log total scouts
+    const totalScouts = this.units.filter(u => 
+      u.civilizationId === scoutUnit.civilizationId && 
+      u.type === 'scout'
+    );
+    console.log(`[AI-COORDINATION] ${totalScouts.length} scouts active after reassignment`);
+  }
+
+  /**
+   * Phase 4: Performance Monitoring - Measure scout AI performance
+   */
+  private measurePerformance<T>(operation: string, fn: () => T): T {
+    const startTime = performance.now();
+    const result = fn();
+    const endTime = performance.now();
+    const duration = endTime - startTime;
+    
+    // Only log if duration exceeds threshold or in dev mode
+    if (duration > 5 || this.devMode) {
+      console.log(`[PERF] ${operation} took ${duration.toFixed(2)}ms`);
+    }
+    
+    return result;
   }
 
   /**
@@ -629,14 +783,42 @@ export default class GameEngine {
   private triggerWarriorProduction(city: City, enemyLocation: { col: number; row: number } | undefined) {
     console.log(`[AI-CITY] Triggering warrior production at city ${city.name}`);
     
+    // Phase 2.1: Use centralized enemy locations for city targeting
+    let nearestEnemy: { col: number; row: number } | null = null;
+    let minDistance = Infinity;
+    
+    // Look for nearest enemy city from known locations across all enemy civilizations
+    for (const civ of this.civilizations) {
+      if (civ.id === city.civilizationId) continue;
+      
+      const enemies = this.getKnownEnemyLocations(city.civilizationId, civ.id);
+      for (const enemy of enemies) {
+        // Prefer enemy cities over units
+        if (enemy.type === 'city') {
+          const dist = this.squareGrid!.squareDistance(city.col, city.row, enemy.col, enemy.row);
+          if (dist < minDistance) {
+            minDistance = dist;
+            nearestEnemy = { col: enemy.col, row: enemy.row };
+          }
+        }
+      }
+    }
+    
+    // If no enemy cities found, use the passed enemy location or check for enemy units
+    if (!nearestEnemy && enemyLocation) {
+      nearestEnemy = enemyLocation;
+    }
+    
     // Set city production to warrior
     city.currentProduction = { type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 };
     city.buildQueue = [{ type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 }];
     
     // Store enemy location for when warrior is built (using any cast to extend type)
-    if (enemyLocation) {
-      (city as any).enemyTarget = enemyLocation;
-      console.log(`[AI-CITY] Enemy target stored at (${enemyLocation.col}, ${enemyLocation.row})`);
+    if (nearestEnemy) {
+      (city as any).enemyTarget = nearestEnemy;
+      console.log(`[AI-CITY] Warrior will target enemy at (${nearestEnemy.col}, ${nearestEnemy.row}), distance: ${minDistance.toFixed(1)}`);
+    } else {
+      console.log(`[AI-CITY] No enemy target available for warrior`);
     }
   }
 
@@ -1052,6 +1234,10 @@ export default class GameEngine {
     this.victoryManager.syncStoreActions(this.storeActions);
     this.playerStorage.clear();
     
+    // Phase 3.1: Reset scout memory for new game
+    this.scoutMemory.clear();
+    this.scoutMemory.setCurrentRound(0);
+    
     // Set dev mode from settings
     this.devMode = (settings as any).devMode || false;
     console.log(`[GameEngine] Developer mode: ${this.devMode ? 'ENABLED' : 'DISABLED'}`);
@@ -1363,6 +1549,11 @@ export default class GameEngine {
     
     this.units.push(unit);
     console.log(`[UNIT] Created ${type} for civ ${civId} at (${col},${row})`);
+    
+    // Phase 3.2: If a scout was created, reassign zones
+    if (type === 'scout') {
+      this.onScoutCreated(unit);
+    }
   }
 
   /**
@@ -1877,6 +2068,11 @@ export default class GameEngine {
       }
       setTimeout(() => {
         this.units = this.units.filter(u => u.id !== defender.id);
+        
+        // Phase 3.2: If a scout died, reassign zones
+        if (defender.type === 'scout') {
+          this.onScoutDeath(defender);
+        }
       }, 5000);
 
       if (this.onStateChange) {
@@ -1905,6 +2101,11 @@ export default class GameEngine {
         }
         setTimeout(() => {
           this.units = this.units.filter(u => u.id !== attacker.id);
+          
+          // Phase 3.2: If a scout died, reassign zones
+          if (attacker.type === 'scout') {
+            this.onScoutDeath(attacker);
+          }
         }, 5000);
       }
       
@@ -2390,6 +2591,11 @@ export default class GameEngine {
     unit.col = targetUnit.col;
     unit.row = targetUnit.row;
     this.units = this.units.filter(u => u.id !== unitId);
+    
+    // Phase 3.2: If a scout was disbanded, reassign zones
+    if (unit.type === 'scout') {
+      this.onScoutDeath(unit);
+    }
 
     console.log(`[ATTACH] Unit ${unit.type} (${unitId}) attached to ${targetUnit.type} (${targetUnitId}) at (${targetUnit.col},${targetUnit.row}) and was deleted`);
 

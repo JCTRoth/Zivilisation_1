@@ -320,6 +320,9 @@ export class TurnManager {
       // Also sync to GameEngine.currentTurn for consistency
       this.gameEngine.currentTurn = this.roundNumber;
       
+      // Phase 3.1: Update scout memory with new round and prune old discoveries
+      this.gameEngine.scoutMemory.setCurrentRound(this.roundNumber);
+
       console.log(`[TurnManager] ═══════════════════════════════════════════════`);
       console.log(`[TurnManager] NEW ROUND ${this.roundNumber} | Year: ${this.formatYear(this.gameEngine.currentYear)}`);
       console.log(`[TurnManager] ═══════════════════════════════════════════════`);
@@ -510,6 +513,11 @@ export class TurnManager {
 
     this.gameEngine.units.push(unit);
     console.log(`[TurnManager] Created unit ${unit.type} at city ${city.name}`);
+    
+    // Phase 3.2: If a scout was created, reassign zones
+    if (unitType === 'scout') {
+      this.gameEngine.onScoutCreated(unit);
+    }
     
     this.emit('UNIT_PRODUCED', { cityId: city.id, unit });
   }
