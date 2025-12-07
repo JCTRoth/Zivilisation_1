@@ -138,8 +138,8 @@ describe('Human vs AI - 50 Round Test', () => {
       const finalAIScouts = engine.units.filter((u: any) => u.civilizationId === aiCiv.id && u.type === 'scout');
       const scoutPositions = finalAIScouts.map(s => `(${s.col},${s.row})`).join(', ');
       
-      const humanCities = engine.cities.filter(c => c.civilizationId === humanCiv.id);
-      const humanCityPositions = humanCities.map(c => `${c.name}(${c.col},${c.row})`).join(', ');
+      const humanCities = engine.cities.filter((c: any) => c.civilizationId === humanCiv.id);
+      const humanCityPositions = humanCities.map((c: any) => `${c.name}(${c.col},${c.row})`).join(', ');
 
       // Print analysis
       console.log = originalLog;

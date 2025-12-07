@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '../src/game/engine/GameEngine';
 
 describe('Trace Enemy Discovery', () => {
   it('check if scouts find enemies', async () => {
@@ -56,7 +56,7 @@ describe('Trace Enemy Discovery', () => {
           const knownEnemies = engine.getKnownEnemyLocations(aiCiv.id, humanCiv.id);
           console.log(`  Known Enemies: ${knownEnemies.length}`);
           if (knownEnemies.length > 0) {
-            console.log(`  Enemy locations: ${knownEnemies.map(e => `(${e.col},${e.row})`).join(', ')}`);
+            console.log(`  Enemy locations: ${knownEnemies.map((e: any) => `(${e.col},${e.row})`).join(', ')}`);
           }
         }
         

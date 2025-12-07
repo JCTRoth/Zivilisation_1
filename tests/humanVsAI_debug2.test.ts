@@ -33,7 +33,7 @@ describe('Human vs AI Debug v2', () => {
     });
 
     console.log('=== INITIAL STATE ===');
-    const aiCity = engine.cities.filter(c => c.civilizationId === 1)[0];
+    const aiCity = engine.cities.filter((c: any) => c.civilizationId === 1)[0];
     console.log(`AI City: ${aiCity.name}`);
     console.log(`  Yields: ${JSON.stringify(aiCity.yields)}`);
     console.log(`  CurrentProduction: ${aiCity.currentProduction?.itemType} (cost ${aiCity.currentProduction?.cost})`);
@@ -57,7 +57,7 @@ describe('Human vs AI Debug v2', () => {
       console.log(`\nIter ${iter}: Player ${activeCiv.id} (${activeCiv.name}), Phase: ${phase}`);
       
       // Show city production status
-      const civCities = engine.cities.filter(c => c.civilizationId === activeCiv.id);
+      const civCities = engine.cities.filter((c: any) => c.civilizationId === activeCiv.id);
       for (const city of civCities) {
         if (city.civilizationId === 1 && city === aiCity) {
           console.log(`  AI City production: ${city.productionStored}/${city.currentProduction?.cost}`);
@@ -80,7 +80,7 @@ describe('Human vs AI Debug v2', () => {
     console.log(`AI City production after 10 rounds: ${aiCity.productionStored}/${aiCity.currentProduction?.cost}`);
     
     // Check units
-    const scouts = engine.units.filter(u => u.type === 'scout' && u.civilizationId === 1);
+    const scouts = engine.units.filter((u: any) => u.type === 'scout' && u.civilizationId === 1);
     console.log(`AI Scouts: ${scouts.length}`);
     
     expect(scouts.length).toBeGreaterThan(0);

@@ -68,7 +68,7 @@ describe('Human vs AI Debug', () => {
         engine.turnManager.startTurn(civ.id);
         
         // Get cities before
-        const civCitiesBefore = engine.cities.filter(c => c.civilizationId === civ.id);
+        const civCitiesBefore = engine.cities.filter((c: any) => c.civilizationId === civ.id);
         console.log(`${civ.name} turn: ${civCitiesBefore.length} cities`);
         
         for (const city of civCitiesBefore) {
@@ -95,7 +95,7 @@ describe('Human vs AI Debug', () => {
     }
 
     // Verify scout exists
-    const scouts = engine.units.filter(u => u.type === 'scout');
+    const scouts = engine.units.filter((u: any) => u.type === 'scout');
     expect(scouts.length).toBeGreaterThan(0);
   });
 });

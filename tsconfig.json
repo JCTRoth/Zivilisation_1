@@ -19,7 +19,7 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src", "js", "types"],
+  "include": ["src", "js", "types", "tests"],
   "types": ["vite/client"],
   "exclude": ["node_modules", "dist"]
 }

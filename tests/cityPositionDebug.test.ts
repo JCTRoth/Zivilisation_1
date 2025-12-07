@@ -27,12 +27,12 @@ describe('City Position Debug', () => {
       const humanCities = engine.cities.filter(c => c.civilizationId === humanCiv.id);
       originalLog(`Total cities in engine: ${engine.cities.length}`);
       originalLog(`Human cities filtered: ${humanCities.length}`);
-      humanCities.forEach((city, idx) => {
+      humanCities.forEach((city: any, idx: number) => {
         originalLog(`  [${idx}] ${city.name || '?'}: (${city.col}, ${city.row})`);
       });
 
       originalLog(`\n=== AI CITIES ===`);
-      const aiCities = engine.cities.filter(c => c.civilizationId === aiCiv.id);
+      const aiCities = engine.cities.filter((c: any) => c.civilizationId === aiCiv.id);
       for (const city of aiCities) {
         originalLog(`  ${city.name}: (${city.col}, ${city.row})`);
       }
