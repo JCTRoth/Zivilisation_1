@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal, Button, Tab, Tabs } from 'react-bootstrap';
 import { CityModalLogic } from './CityModalLogic';
 import { ModalUtils } from './ModalUtils';
@@ -29,8 +29,14 @@ const CityModal: React.FC<CityModalProps> = ({
   const [selectedQueueIndex, setSelectedQueueIndex] = useState<number | null>(null);
   const [showProductionModal, setShowProductionModal] = useState<boolean>(false);
   const [autoQueueOnSelect, setAutoQueueOnSelect] = useState<boolean>(false);
+  const [autoProduction, setAutoProduction] = useState<boolean>((selectedCity as any)?.autoProduction || false);
 
   if (!selectedCity) return null;
+
+  // Sync local state when selectedCity changes
+  useEffect(() => {
+    setAutoProduction((selectedCity as any)?.autoProduction || false);
+  }, [selectedCity.id, (selectedCity as any).autoProduction]);
 
   const logic = new CityModalLogic(selectedCity, gameEngine, actions, currentPlayer);
 
@@ -170,10 +176,24 @@ const CityModal: React.FC<CityModalProps> = ({
                           className="form-check-input"
                           type="checkbox"
                           id={`auto-production-${selectedCity.id}`}
-                          checked={(selectedCity as any).autoProduction || false}
+                          checked={autoProduction}
                           onChange={(e) => {
+                            const newState = e.target.checked;
+                            // Immediate visual feedback
+                            setAutoProduction(newState);
+                            // Trigger engine action
                             if (gameEngine && typeof gameEngine.toggleAutoProduction === 'function') {
-                              gameEngine.toggleAutoProduction(selectedCity.id, e.target.checked);
+                              const result = gameEngine.toggleAutoProduction(selectedCity.id, newState);
+                              console.log(`[CityModal] Auto Production ${newState ? 'enabled' : 'disabled'} for city ${selectedCity.id}, result:`, result);
+                              // Update actions if available
+                              if (actions?.addNotification) {
+                                actions.addNotification({
+                                  type: 'success',
+                                  message: `Auto Production ${newState ? 'enabled' : 'disabled'}`
+                                });
+                              }
+                            } else {
+                              console.warn('[CityModal] toggleAutoProduction method not available');
                             }
                           }}
                         />
