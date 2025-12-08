@@ -6,15 +6,21 @@
 
 A modern, faithful browser-based recreation of Sid Meier's Civilization I (1991), built with React, Vite, Zustand, and Bootstrap. Experience the classic turn-based strategy game where you build an empire from 4000 BC to 2100 AD through exploration, diplomacy, warfare, and technological advancement.
 
-[cols="3*", options="header"]
 [.text-center]
-++++
-<img src="doc/2025-11-16_21-36.png" alt="Screenshot 1" width="200"/>
-<img src="doc/2025-11-16_21-36_1.png" alt="Screenshot 2" width="200"/>
-<img src="doc/1.png" alt="Screenshot 3" width="200"/>
-<img src="doc/2.png" alt="Screenshot 4" width="200"/>
-<img src="doc/3.png" alt="Screenshot 5" width="200"/>
-++++
+--
+image::doc/2025-11-16_21-36.png[Screenshot 1, width=800]
+image::doc/2025-11-16_21-36_1.png[Screenshot 2, width=800]
+
+image::doc/1.png[Screenshot 3, width=800]
+image::doc/2.png[Screenshot 4, width=800]
+
+image::doc/3.png[Screenshot 5, width=800]
+image::doc/action_menu.png[Action Menu, width=800]
+
+image::doc/all_over.png[All Over, width=800]
+image::doc/end_turn.png[End Turn, width=800]
+--
+
 
 
 == Architecture
