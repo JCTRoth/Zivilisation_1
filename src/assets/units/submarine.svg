@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="currentColor">
-  <ellipse cx="16" cy="20" rx="12" ry="5"/>
-  <path d="M8 20c0-3 3-6 8-6s8 3 8 6"/>
-  <rect x="14" y="10" width="4" height="4"/>
-  <path d="M16 10l-2-4 4 0z"/>
-  <line x1="14" y1="14" x2="10" y2="16" stroke="currentColor" stroke-width="2"/>
-  <line x1="18" y1="14" x2="22" y2="16" stroke="currentColor" stroke-width="2"/>
-  <path d="M4 25c2-1 4-1 6 0 2 1 4 1 6 0 2-1 4-1 6 0 2 1 4 1 6 0" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>
-</svg>

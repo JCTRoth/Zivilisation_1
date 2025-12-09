@@ -31,12 +31,13 @@ const CityModal: React.FC<CityModalProps> = ({
   const [autoQueueOnSelect, setAutoQueueOnSelect] = useState<boolean>(false);
   const [autoProduction, setAutoProduction] = useState<boolean>((selectedCity as any)?.autoProduction || false);
 
-  if (!selectedCity) return null;
-
   // Sync local state when selectedCity changes
   useEffect(() => {
+    if (!selectedCity) return;
     setAutoProduction((selectedCity as any)?.autoProduction || false);
-  }, [selectedCity.id, (selectedCity as any).autoProduction]);
+  }, [selectedCity?.id, (selectedCity as any)?.autoProduction]);
+
+  if (!selectedCity) return null;
 
   const logic = new CityModalLogic(selectedCity, gameEngine, actions, currentPlayer);
 

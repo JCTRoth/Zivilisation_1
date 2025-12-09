@@ -30,7 +30,6 @@ export const UNIT_TYPES = {
 
     // Civilian Units
     SETTLER: 'settler',
-    WORKER: 'worker',
     DIPLOMAT: 'diplomat',
     CARAVAN: 'caravan',
     FERRY: 'ferry',
@@ -65,7 +64,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '🔭',
+        icon: ' 🔦',
         type: 'military'
     },
     [UNIT_TYPES.MILITIA]: {
@@ -79,7 +78,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '🛡️',
+        icon: '💪',
         type: 'military'
     },
     [UNIT_TYPES.ARCHER]: {
@@ -121,7 +120,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '🏇',
+        icon: '𓌝',
         type: 'military'
     },
     [UNIT_TYPES.LEGION]: {
@@ -135,7 +134,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '🪖',
+        icon: '⚔️',
         type: 'military'
     },
     [UNIT_TYPES.CATAPULT]: {
@@ -149,7 +148,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '🎯',
+        icon: '🪨',
         type: 'siege'
     },
     [UNIT_TYPES.MUSKETEER]: {
@@ -163,7 +162,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '🔫',
+        icon: '💂',
         type: 'military'
     },
     [UNIT_TYPES.CAVALRY]: {
@@ -177,7 +176,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '🐴',
+        icon: '🐎',
         type: 'military'
     },
     [UNIT_TYPES.CANNON]: {
@@ -275,7 +274,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: true,
-        icon: '🚢',
+        icon: '𓊝',
         type: 'naval'
     },
     [UNIT_TYPES.IRONCLAD]: {
@@ -289,7 +288,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: true,
-        icon: '⚓',
+        icon: '🚢',
         type: 'naval'
     },
     [UNIT_TYPES.DESTROYER]: {
@@ -303,7 +302,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: true,
-        icon: '🚤',
+        icon: '🏴‍☠',
         type: 'naval'
     },
     [UNIT_TYPES.CRUISER]: {
@@ -358,20 +357,6 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         maintenance: 1,
         canSettle: true,
         canWork: false,
-        naval: false,
-        icon: '🏕️',
-        type: 'civilian'
-    },
-    [UNIT_TYPES.WORKER]: {
-        name: 'Worker',
-        attack: 0,
-        defense: 0,
-        movement: 1,
-        sightRange: 1,
-        cost: 20,
-        maintenance: 1,
-        canSettle: false,
-        canWork: true,
         naval: false,
         icon: '👷',
         type: 'civilian'
@@ -450,7 +435,6 @@ export const UNIT_PRODUCTION_REQUIREMENTS = {
     [UNIT_TYPES.BATTLESHIP]: { shields: 280 },
     [UNIT_TYPES.SUBMARINE]: { shields: 240 },
     [UNIT_TYPES.SETTLER]: { shields: 40 },
-    [UNIT_TYPES.WORKER]: { shields: 20 },
     [UNIT_TYPES.DIPLOMAT]: { shields: 30 },
     [UNIT_TYPES.CARAVAN]: { shields: 50 },
     [UNIT_TYPES.FERRY]: { shields: 30 }

@@ -1,10 +1,19 @@
 /* Modern React app base styles - game-specific styles in main.css */
+
+/* Noto Color Emoji Font Face - Using Google Fonts for better compatibility */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+
 body {
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* Note: font-family, background, and color are set in main.css for game theme */
+}
+
+/* Ensure emoji render with Noto Color Emoji font */
+.emoji, .unit-icon-emoji {
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
 }
 
 #root {

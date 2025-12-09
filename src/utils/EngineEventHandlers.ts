@@ -216,7 +216,10 @@ export class EngineEventRouter {
 
   private onCheckAutoEndTurn() {
     const settings = useGameStore.getState().settings;
+    console.log('[EngineEventRouter] Checking auto end turn. Setting enabled:', settings.autoEndTurn);
+    
     if (settings.autoEndTurn) {
+      console.log('[EngineEventRouter] Auto-ending turn...');
       // Trigger proper turn ending through TurnManager (advances through all phases)
       const tm = (this.gameEngine as any).roundManager;
       if (tm && typeof tm.endHumanTurn === 'function') {
@@ -225,6 +228,7 @@ export class EngineEventRouter {
         console.error('[EngineEventRouter] TurnManager not available for auto-end turn');
       }
     } else {
+      console.log('[EngineEventRouter] Auto end turn disabled, showing confirmation');
       if (typeof window !== 'undefined' && window.dispatchEvent) {
         window.dispatchEvent(new CustomEvent('showEndTurnConfirmation'));
       }

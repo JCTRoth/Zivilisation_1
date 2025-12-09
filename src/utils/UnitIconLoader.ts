@@ -1,12 +1,18 @@
-// Unit Icon Loader - Manages loading and caching of unit PNG and SVG icons
+// Unit Icon Loader - Manages loading and caching of unit SVG and emoji icons
+// Uses Noto Color Emoji font for consistent emoji rendering
 
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
+import { getUnitSvgPath, hasUnitSvgOverride } from '@/data/UnitIconConfig';
 
-const iconCache = new Map<string, HTMLImageElement | string>(); // HTMLImageElement for images, string for emoji
+const iconCache = new Map<string, HTMLImageElement | string>(); // HTMLImageElement for SVG, string for emoji
 const loadingPromises = new Map<string, Promise<HTMLImageElement | string>>();
 
 /**
- * Load a unit icon - tries PNG first, then SVG, falls back to emoji from unit data
+ * Load a unit icon
+ * Priority: SVG override (if configured) → Emoji (from UnitConstants)
+ * 
+ * SVG icons are loaded from src/assets/units/ based on UnitIconConfig
+ * Emoji icons use Noto Color Emoji font for consistent rendering
  */
 export async function loadUnitIcon(unitType: string): Promise<HTMLImageElement | string> {
   // Check cache first
@@ -21,17 +27,11 @@ export async function loadUnitIcon(unitType: string): Promise<HTMLImageElement |
 
   // Start loading
   const promise = new Promise<HTMLImageElement | string>((resolve, reject) => {
-    // Try PNG first
-    const pngImg = new Image();
+    // Check if this unit has an SVG override
+    const svgPath = getUnitSvgPath(unitType);
     
-    pngImg.onload = () => {
-      iconCache.set(unitType, pngImg);
-      loadingPromises.delete(unitType);
-      resolve(pngImg);
-    };
-    
-    pngImg.onerror = () => {
-      // PNG failed, try SVG
+    if (svgPath) {
+      // Try loading SVG
       const svgImg = new Image();
       
       svgImg.onload = () => {
@@ -41,7 +41,7 @@ export async function loadUnitIcon(unitType: string): Promise<HTMLImageElement |
       };
       
       svgImg.onerror = () => {
-        // SVG also failed, fall back to emoji from unit data
+        // SVG failed, fall back to emoji from unit data
         const unitData = UNIT_PROPERTIES[unitType];
         const emoji = unitData?.icon || '⚔️';
         iconCache.set(unitType, emoji);
@@ -50,18 +50,15 @@ export async function loadUnitIcon(unitType: string): Promise<HTMLImageElement |
       };
       
       // Try loading SVG
-      import(`../assets/units/${unitType}.svg`)
-        .then(module => {
-          svgImg.src = module.default;
-        })
-        .catch(() => {
-          // SVG import failed, trigger onerror
-          svgImg.onerror?.(new Event('error'));
-        });
-    };
-    
-    // Try loading PNG first
-    pngImg.src = `/src/assets/units/${unitType}.png`;
+      svgImg.src = new URL(`../assets/units/${svgPath}`, import.meta.url).href;
+    } else {
+      // No SVG override, use emoji from unit data
+      const unitData = UNIT_PROPERTIES[unitType];
+      const emoji = unitData?.icon || '⚔️';
+      iconCache.set(unitType, emoji);
+      loadingPromises.delete(unitType);
+      resolve(emoji);
+    }
   });
 
   loadingPromises.set(unitType, promise);
@@ -84,7 +81,7 @@ export async function preloadAllUnitIcons(): Promise<void> {
     'legion', 'catapult', 'musketeer', 'cavalry', 'cannon', 'artillery', 'tank',
     'galley', 'trireme', 'caravel', 'frigate', 'ironclad', 'destroyer',
     'cruiser', 'battleship', 'submarine',
-    'settler', 'worker', 'diplomat', 'caravan', 'ferry'
+    'settler', 'diplomat', 'caravan', 'ferry'
   ];
 
   await Promise.allSettled(unitTypes.map(type => loadUnitIcon(type)));
