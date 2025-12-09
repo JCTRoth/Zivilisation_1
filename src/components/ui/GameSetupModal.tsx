@@ -200,6 +200,7 @@ function GameSetupModal({ show, onStart }) {
                     <option value="NO_SETTLERS">No Settlers · Start with military units</option>
                     <option value="MANY_CITIES">Many Cities · 4 cities with infrastructure</option>
                     <option value="TECH_LEVEL_10">Tech. Level 10 · All technologies researched</option>
+                    <option value="ALL_UNITS">All Units Showcase · Every unit type on the board</option>
                   </Form.Select>
                 </div>
               </div>
@@ -297,12 +298,16 @@ function GameSetupModal({ show, onStart }) {
                     </ul>
                   )}
                   {mapType === 'TECH_LEVEL_10' && (
-                    <ul>
-                      <li>Map: <strong>80x50 tiles</strong></li>
-                      <li>Units: <strong>1 Settler</strong></li>
-                      <li>Technology: <strong>All researched</strong></li>
-                      <li>Mode: <strong>Advanced start</strong></li>
-                    </ul>
+                    <div className="map-type-description">
+                      <span className="hint-icon">💡</span>
+                      <span>Start with all technologies researched. Best for testing advanced units.</span>
+                    </div>
+                  )}
+                  {mapType === 'ALL_UNITS' && (
+                    <div className="map-type-description">
+                      <span className="hint-icon">🎮</span>
+                      <span>Every single unit type spawned on the board. Perfect for testing and showcasing all units.</span>
+                    </div>
                   )}
                 </div>
               </div>

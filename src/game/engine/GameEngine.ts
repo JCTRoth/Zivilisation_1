@@ -1565,6 +1565,28 @@ export default class GameEngine {
     const militaryUnits = ['warriors', 'phalanx', 'legion', 'musketeers', 'riflemen'];
     
     switch (mapType) {
+      case 'ALL_UNITS':
+        // Create every single unit type on the board
+        console.log(`[UNITS] Creating ALL unit types for civ ${civId}`);
+        const allUnitTypes = Object.keys(UNIT_PROPS);
+        let offsetCol = 0;
+        let offsetRow = 0;
+        const maxUnitsPerRow = 10; // Arrange units in a grid
+        
+        allUnitTypes.forEach((unitType, index) => {
+          offsetCol = (index % maxUnitsPerRow) - Math.floor(maxUnitsPerRow / 2);
+          offsetRow = Math.floor(index / maxUnitsPerRow);
+          
+          const col = startPos.col + offsetCol * 2; // Space units 2 tiles apart
+          const row = startPos.row + offsetRow * 2;
+          
+          // Ensure the position is valid
+          if (col >= 0 && col < Constants.MAP_WIDTH && row >= 0 && row < Constants.MAP_HEIGHT) {
+            this.createUnit(civId, unitType, col, row);
+          }
+        });
+        break;
+        
       case 'NORMAL_SKIRMISH':
       case 'CLOSEUP_1V1':
       case 'TECH_LEVEL_10':
