@@ -54,7 +54,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             unitProduction: 1,
             veteranUnits: true
         },
-        description: 'Increases the production of military units and produces veteran units'
+        description: 'Increases the production of military units and produces veteran units',
+        icon: '🏛️'
     },
     [BUILDING_TYPES.GRANARY]: {
         name: 'Granary',
@@ -65,7 +66,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             foodStorage: 2,
             growthBonus: 1
         },
-        description: 'Increases food storage capacity and helps cities grow faster'
+        description: 'Increases food storage capacity and helps cities grow faster',
+        icon: '🌾'
     },
     [BUILDING_TYPES.TEMPLE]: {
         name: 'Temple',
@@ -76,7 +78,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             happiness: 1,
             culture: 1
         },
-        description: 'Increases happiness and culture in the city'
+        description: 'Increases happiness and culture in the city',
+        icon: '⛩️'
     },
     [BUILDING_TYPES.MARKETPLACE]: {
         name: 'Marketplace',
@@ -87,7 +90,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             trade: 1,
             corruptionReduction: 0.5
         },
-        description: 'Increases trade revenue and reduces corruption'
+        description: 'Increases trade revenue and reduces corruption',
+        icon: '🏪'
     },
     [BUILDING_TYPES.LIBRARY]: {
         name: 'Library',
@@ -98,7 +102,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             science: 1,
             culture: 1
         },
-        description: 'Increases science production and culture'
+        description: 'Increases science production and culture',
+        icon: '📚'
     },
     [BUILDING_TYPES.COURTHOUSE]: {
         name: 'Courthouse',
@@ -109,7 +114,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             corruptionReduction: 0.8,
             happiness: 1
         },
-        description: 'Greatly reduces corruption and increases happiness'
+        description: 'Greatly reduces corruption and increases happiness',
+        icon: '⚖️'
     },
     [BUILDING_TYPES.CITY_WALLS]: {
         name: 'City Walls',
@@ -120,7 +126,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             defense: 2,
             happiness: -1
         },
-        description: 'Increases city defense but reduces happiness'
+        description: 'Increases city defense but reduces happiness',
+        icon: '🏰'
     },
     [BUILDING_TYPES.AQUEDUCT]: {
         name: 'Aqueduct',
@@ -131,7 +138,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             health: 2,
             growthBonus: 1
         },
-        description: 'Increases health and helps cities grow larger'
+        description: 'Increases health and helps cities grow larger',
+        icon: '🏛️'
     },
     [BUILDING_TYPES.BANK]: {
         name: 'Bank',
@@ -141,7 +149,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             trade: 2,
             corruptionReduction: 0.5
         },
-        description: 'Increases trade revenue and reduces corruption'
+        description: 'Increases trade revenue and reduces corruption',
+        icon: '🏦'
     },
     [BUILDING_TYPES.CATHEDRAL]: {
         name: 'Cathedral',
@@ -151,7 +160,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             happiness: 3,
             culture: 2
         },
-        description: 'Greatly increases happiness and culture'
+        description: 'Greatly increases happiness and culture',
+        icon: '⛪'
     },
     [BUILDING_TYPES.UNIVERSITY]: {
         name: 'University',
@@ -161,7 +171,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             science: 2,
             culture: 1
         },
-        description: 'Increases science production and culture'
+        description: 'Increases science production and culture',
+        icon: '🎓'
     },
     [BUILDING_TYPES.COLOSSEUM]: {
         name: 'Colosseum',
@@ -171,7 +182,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             happiness: 2,
             culture: 1
         },
-        description: 'Increases happiness and culture through entertainment'
+        description: 'Increases happiness and culture through entertainment',
+        icon: '🏟️'
     },
     [BUILDING_TYPES.FORGE]: {
         name: 'Forge',
@@ -181,7 +193,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             production: 1,
             unitProduction: 1
         },
-        description: 'Increases production and military unit production'
+        description: 'Increases production and military unit production',
+        icon: '⚒️'
     },
     [BUILDING_TYPES.FACTORY]: {
         name: 'Factory',
@@ -191,7 +204,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             production: 2,
             pollution: 2
         },
-        description: 'Greatly increases production but causes pollution'
+        description: 'Greatly increases production but causes pollution',
+        icon: '🏭'
     },
     [BUILDING_TYPES.HOSPITAL]: {
         name: 'Hospital',
@@ -201,7 +215,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             health: 2,
             happiness: 1
         },
-        description: 'Increases health and happiness'
+        description: 'Increases health and happiness',
+        icon: '🏥'
     },
     [BUILDING_TYPES.HYDRO_PLANT]: {
         name: 'Hydro Plant',
@@ -211,7 +226,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             production: 1,
             pollution: -2
         },
-        description: 'Increases production and reduces pollution'
+        description: 'Increases production and reduces pollution',
+        icon: '💧'
     },
     [BUILDING_TYPES.MASS_TRANSIT]: {
         name: 'Mass Transit',
@@ -221,7 +237,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             happiness: 2,
             pollution: -1
         },
-        description: 'Increases happiness and reduces pollution'
+        description: 'Increases happiness and reduces pollution',
+        icon: '🚇'
     },
     [BUILDING_TYPES.NUCLEAR_PLANT]: {
         name: 'Nuclear Plant',
@@ -231,7 +248,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             production: 2,
             pollution: 3
         },
-        description: 'Greatly increases production but causes significant pollution'
+        description: 'Greatly increases production but causes significant pollution',
+        icon: '☢️'
     },
     [BUILDING_TYPES.POWER_PLANT]: {
         name: 'Power Plant',
@@ -241,7 +259,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             production: 1,
             pollution: 2
         },
-        description: 'Increases production but causes pollution'
+        description: 'Increases production but causes pollution',
+        icon: '⚡'
     },
     [BUILDING_TYPES.RECYCLING_CENTER]: {
         name: 'Recycling Center',
@@ -251,7 +270,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             pollution: -3,
             production: 1
         },
-        description: 'Greatly reduces pollution and increases production'
+        description: 'Greatly reduces pollution and increases production',
+        icon: '♻️'
     },
     [BUILDING_TYPES.SDI_DEFENSE]: {
         name: 'SDI Defense',
@@ -261,7 +281,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             missileDefense: true,
             culture: 1
         },
-        description: 'Provides missile defense and increases culture'
+        description: 'Provides missile defense and increases culture',
+        icon: '🛡️'
     },
     [BUILDING_TYPES.STOCK_EXCHANGE]: {
         name: 'Stock Exchange',
@@ -271,7 +292,8 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
             trade: 3,
             corruptionReduction: 0.8
         },
-        description: 'Greatly increases trade and reduces corruption'
+        description: 'Greatly increases trade and reduces corruption',
+        icon: '📈'
     }
 };
 
@@ -284,7 +306,8 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
             globalDefense: 1,
             culture: 2,
             wonder: true
-        }
+        },
+        icon: '🏯'
     },
     [BUILDING_TYPES.HANGING_GARDENS]: {
         name: 'Hanging Gardens',
@@ -294,7 +317,8 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
             globalHappiness: 1,
             culture: 2,
             wonder: true
-        }
+        },
+        icon: '🌿'
     },
     [BUILDING_TYPES.LIGHTHOUSE]: {
         name: 'Lighthouse',
@@ -304,7 +328,8 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
             navalMovement: 1,
             trade: 1,
             wonder: true
-        }
+        },
+        icon: '🏮'
     },
     [BUILDING_TYPES.ORACLE]: {
         name: 'Oracle',
@@ -314,7 +339,8 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
             science: 2,
             culture: 2,
             wonder: true
-        }
+        },
+        icon: '🔮'
     },
     [BUILDING_TYPES.PYRAMIDS]: {
         name: 'Pyramids',
@@ -323,7 +349,8 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
         effects: {
             culture: 3,
             wonder: true
-        }
+        },
+        icon: '🏗️'
     },
     [BUILDING_TYPES.MAGELLANS_VOYAGE]: {
         name: 'Magellan\'s Voyage',
@@ -333,7 +360,8 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
             navalMovement: 2,
             exploration: true,
             wonder: true
-        }
+        },
+        icon: '🗺️'
     },
     [BUILDING_TYPES.MICHELANGELO]: {
         name: 'Michelangelo\'s Chapel',
@@ -342,7 +370,8 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
         effects: {
             culture: 3,
             wonder: true
-        }
+        },
+        icon: '🎨'
     },
     [BUILDING_TYPES.NEWTON]: {
         name: 'Newton\'s University',
@@ -351,7 +380,8 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
         effects: {
             science: 3,
             wonder: true
-        }
+        },
+        icon: '🧮'
     },
     [BUILDING_TYPES.UNITED_NATIONS]: {
         name: 'United Nations',
@@ -361,7 +391,8 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
             diplomacy: true,
             culture: 2,
             wonder: true
-        }
+        },
+        icon: '🌍'
     },
     [BUILDING_TYPES.WOMENS_SUFFRAGE]: {
         name: 'Women\'s Suffrage',
@@ -371,7 +402,8 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
             happiness: 2,
             culture: 2,
             wonder: true
-        }
+        },
+        icon: '🗳️'
     }
 };
 

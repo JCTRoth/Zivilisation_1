@@ -34,6 +34,7 @@ export interface BuildingProperties {
     effects: Record<string, any>;
     description?: string;
     requiredTechnology?: string;
+    icon?: string;
 }
 
 export interface GameConstants {

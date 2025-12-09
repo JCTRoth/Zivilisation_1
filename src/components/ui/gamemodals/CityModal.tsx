@@ -300,11 +300,18 @@ const CityModal: React.FC<CityModalProps> = ({
                       return (
                         <div key={index} className="building-card bg-secondary text-white p-3 rounded mb-2">
                           <div className="d-flex justify-content-between align-items-start">
-                            <div>
-                              <h6 className="building-name mb-1">{buildingProps?.name || buildingKey}</h6>
-                              <div className="building-details small">
-                                <div>Cost: {buildingProps?.cost || 0} shields</div>
-                                <div>Maintenance: {buildingProps?.maintenance || 0} gold/turn</div>
+                            <div className="d-flex align-items-center">
+                              {buildingProps?.icon && (
+                                <span className="building-icon me-2" style={{ fontSize: '1.5em' }}>
+                                  {buildingProps.icon}
+                                </span>
+                              )}
+                              <div>
+                                <h6 className="building-name mb-1">{buildingProps?.name || buildingKey}</h6>
+                                <div className="building-details small">
+                                  <div>Cost: {buildingProps?.cost || 0} shields</div>
+                                  <div>Maintenance: {buildingProps?.maintenance || 0} gold/turn</div>
+                                </div>
                               </div>
                             </div>
                           </div>
