@@ -1197,6 +1197,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         if (unit && gameEngine?.goToManager) {
           console.log(`[ContextMenu] Canceling Go To for unit ${unit.id}`);
           gameEngine.goToManager.clearUnitPath(unit.id);
+          
+          // Clear the path from local state to remove the rendered GoTo line
+          setUnitPaths(prev => {
+            const next = new Map(prev);
+            next.delete(unit.id);
+            return next;
+          });
+          
           if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
           if (actions?.addNotification) actions.addNotification({
             type: 'info',
