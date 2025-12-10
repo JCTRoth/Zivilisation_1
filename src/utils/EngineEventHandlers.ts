@@ -4,6 +4,8 @@ import type { GameEngine } from '../../types/game';
 export class EngineEventRouter {
   private gameEngine: GameEngine;
   private actions = useGameStore.getState().actions;
+  private lastQueueLengths: Map<number, number> = new Map();
+  private endTurnPromptShown: Set<number> = new Set();
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
@@ -111,6 +113,8 @@ export class EngineEventRouter {
 
     // Re-enable the end turn button at the start of each turn
     this.actions.setTurnButtonDisabled(false);
+    this.lastQueueLengths.delete(active);
+    this.endTurnPromptShown.delete(active);
   }
 
   private onPhaseChange(eventData: any) {
@@ -120,6 +124,8 @@ export class EngineEventRouter {
 
   private onNewGame(eventData: any) {
     console.log('[EngineEventRouter] NEW_GAME: Updating map and initial visibility');
+    this.lastQueueLengths.clear();
+    this.endTurnPromptShown.clear();
     eventData.civilizations.forEach((civ: any, index: number) => {
       if (!civ.capital) {
         const firstCity = eventData.cities.find((c: any) => c.civilizationId === index);
@@ -358,6 +364,27 @@ export class EngineEventRouter {
     } else if (civ?.isHuman && !unitId) {
       // Queue is empty for human player - deselect unit
       this.actions.selectUnit(null);
+    }
+
+    const queueLength = typeof eventData?.queueLength === 'number'
+      ? eventData.queueLength
+      : Array.isArray(eventData?.queue)
+        ? eventData.queue.length
+        : 0;
+    const previousLength = this.lastQueueLengths.get(civilizationId);
+    this.lastQueueLengths.set(civilizationId, queueLength);
+
+    if (queueLength > 0) {
+      this.endTurnPromptShown.delete(civilizationId);
+    }
+
+    const settings = useGameStore.getState().settings;
+    const queueEmptied = typeof previousLength === 'number' && previousLength > 0 && queueLength === 0;
+    const shouldPrompt = civ?.isHuman && !settings.autoEndTurn && queueEmptied && !this.endTurnPromptShown.has(civilizationId);
+
+    if (shouldPrompt && typeof window !== 'undefined') {
+      this.endTurnPromptShown.add(civilizationId);
+      window.dispatchEvent(new CustomEvent('showEndTurnConfirmation'));
     }
   }
 
