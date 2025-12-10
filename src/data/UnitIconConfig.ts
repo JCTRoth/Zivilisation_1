@@ -25,8 +25,23 @@ export interface UnitIconOverride {
  */
 export const UNIT_ICON_OVERRIDES: UnitIconOverride[] = [
   {
+    unitType: 'chariot',
+    svgPath: 'chariot.svg',
+    fallbackEmoji: '𓌝'
+  },
+  {
+    unitType: 'cannon',
+    svgPath: 'cannon.svg',
+    fallbackEmoji: '💣'
+  },
+  {
+    unitType: 'artillery',
+    svgPath: 'artillerie.svg',
+    fallbackEmoji: '💥'
+  },
+  {
     unitType: 'submarine',
-    svgPath: 'submarina.svg',
+    svgPath: 'submarin.svg',
     fallbackEmoji: '🔱'
   },
   {
