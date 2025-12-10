@@ -37,6 +37,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   const units = useGameStore(state => state.units);
   const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
   const civilizations = useGameStore(state => state.civilizations);
+  const currentQueueUnitId = useGameStore(state => state.uiState.currentQueueUnitId);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [lastMousePos, setLastMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [selectedHex, setSelectedHex] = useState<HexCoordinates>({ col: 5, row: 5 });
@@ -619,9 +620,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       civilizations,
       currentTime,
       squareToScreen,
-      cameraZoom: camera.zoom
+      cameraZoom: camera.zoom,
+      currentQueueUnitId: currentQueueUnitId ?? undefined
     });
-  }, [camera.zoom, civilizations, gameState, mapData, squareToScreen, units]);
+  }, [camera.zoom, civilizations, currentQueueUnitId, gameState, mapData, squareToScreen, units]);
 
   // Handle mouse events
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {

@@ -76,6 +76,18 @@ export class EngineEventRouter {
       case 'AI_TARGET_HIGHLIGHT':
         this.onAITargetHighlight(eventData);
         break;
+      case 'UNIT_QUEUE_INIT':
+        this.onUnitQueueInit(eventData);
+        break;
+      case 'UNIT_QUEUE_ADVANCE':
+        this.onUnitQueueAdvance(eventData);
+        break;
+      case 'UNIT_QUEUE_CHANGE':
+        this.onUnitQueueChange(eventData);
+        break;
+      case 'SELECT_QUEUE_UNIT':
+        this.onSelectQueueUnit(eventData);
+        break;
       default:
         console.log('Unhandled game engine event:', eventType, eventData);
     }
@@ -228,10 +240,8 @@ export class EngineEventRouter {
         console.error('[EngineEventRouter] TurnManager not available for auto-end turn');
       }
     } else {
-      console.log('[EngineEventRouter] Auto end turn disabled, showing confirmation');
-      if (typeof window !== 'undefined' && window.dispatchEvent) {
-        window.dispatchEvent(new CustomEvent('showEndTurnConfirmation'));
-      }
+      // Auto end turn disabled - do nothing, user must manually end turn
+      console.log('[EngineEventRouter] Auto end turn disabled, waiting for manual turn end');
     }
   }
 
@@ -287,5 +297,118 @@ export class EngineEventRouter {
     // Optionally, highlight the target tile in the UI (red overlay, etc.)
     // For now, just log and update visibility
     this.actions.updateVisibility();
+  }
+
+  private onUnitQueueInit(eventData: any) {
+    console.log('[EngineEventRouter] UNIT_QUEUE_INIT:', eventData);
+    const unitId = eventData?.unitId || null;
+    this.actions.setCurrentQueueUnitId(unitId);
+    
+    // Auto-select and focus on the first unit in the queue (for human players)
+    const activePlayer = (this.gameEngine as any).activePlayer;
+    const civ = this.gameEngine.civilizations?.[activePlayer];
+    if (civ?.isHuman && unitId) {
+      this.actions.selectUnit(unitId);
+      // Find unit and focus camera on it
+      const unit = this.gameEngine.getAllUnits().find(u => u.id === unitId);
+      if (unit) {
+        this.actions.updateCamera({ x: unit.col * 32, y: unit.row * 32 });
+      }
+    }
+  }
+
+  private onUnitQueueAdvance(eventData: any) {
+    console.log('[EngineEventRouter] UNIT_QUEUE_ADVANCE:', eventData);
+    const unitId = eventData?.unitId || null;
+    this.actions.setCurrentQueueUnitId(unitId);
+    
+    // Auto-select and focus on the next unit (for human players)
+    const activePlayer = (this.gameEngine as any).activePlayer;
+    const civ = this.gameEngine.civilizations?.[activePlayer];
+    if (civ?.isHuman && unitId) {
+      this.actions.selectUnit(unitId);
+      // Find unit and focus camera on it
+      const unit = this.gameEngine.getAllUnits().find(u => u.id === unitId);
+      if (unit) {
+        this.actions.updateCamera({ x: unit.col * 32, y: unit.row * 32 });
+      }
+    }
+  }
+
+  private onUnitQueueChange(eventData: any) {
+    console.log('[EngineEventRouter] UNIT_QUEUE_CHANGE:', eventData);
+    const unitId = eventData?.currentUnitId || null;
+    const civilizationId = eventData?.civilizationId;
+    
+    // Only update for the active player
+    const activePlayer = (this.gameEngine as any).activePlayer;
+    if (civilizationId !== activePlayer) return;
+    
+    this.actions.setCurrentQueueUnitId(unitId);
+    
+    // Auto-select and focus on the current unit (for human players)
+    const civ = this.gameEngine.civilizations?.[activePlayer];
+    if (civ?.isHuman && unitId) {
+      this.actions.selectUnit(unitId);
+      // Find unit and focus camera on it using the same logic as focusOnNextUnit
+      const unit = this.gameEngine.getAllUnits().find(u => u.id === unitId);
+      if (unit) {
+        this.focusOnUnit(unit);
+      }
+    } else if (civ?.isHuman && !unitId) {
+      // Queue is empty for human player - deselect unit
+      this.actions.selectUnit(null);
+    }
+  }
+
+  private onSelectQueueUnit(eventData: any) {
+    console.log('[EngineEventRouter] SELECT_QUEUE_UNIT:', eventData);
+    const unit = eventData?.unit;
+    if (unit) {
+      this.actions.setCurrentQueueUnitId(unit.id);
+      this.actions.selectUnit(unit.id);
+      this.focusOnUnit(unit);
+    }
+  }
+
+  /**
+   * Focus camera on a specific unit using the same centering logic as focusOnNextUnit
+   */
+  private focusOnUnit(unit: any): void {
+    const TILE_SIZE = 32; // world pixels per tile
+    const zoom = 2.0; // Default zoom level
+
+    // Safe window dimension access with fallbacks
+    const windowWidth = (typeof window !== 'undefined' && window.innerWidth) || 800;
+    const windowHeight = (typeof window !== 'undefined' && window.innerHeight) || 600;
+
+    const startX = unit.col * TILE_SIZE;
+    const startY = unit.row * TILE_SIZE;
+
+    // Calculate camera position to center the unit
+    const centerOffsetX = windowWidth / 2 / zoom;
+    const centerOffsetY = windowHeight / 2 / zoom;
+
+    const newCameraX = startX - centerOffsetX;
+    const newCameraY = startY - centerOffsetY;
+
+    // Ensure camera position is valid (not NaN or infinite)
+    const safeCameraX = isFinite(newCameraX) ? newCameraX : 0;
+    const safeCameraY = isFinite(newCameraY) ? newCameraY : 0;
+
+    const newCamera = {
+      x: safeCameraX,
+      y: safeCameraY,
+      zoom: zoom
+    };
+
+    console.log('[EngineEventRouter] Focusing camera on unit', {
+      unitId: unit.id,
+      col: unit.col,
+      row: unit.row,
+      camera: newCamera
+    });
+
+    this.actions.updateCamera(newCamera);
   }
 }

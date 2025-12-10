@@ -13,6 +13,7 @@ import { EnemySearcher, EnemyLocation } from './EnemySearcher';
 import { ScoutMemory } from './ScoutMemory';
 import { GoToManager } from './GoToManager';
 import { AIManager } from './AIManager';
+import { UnitTurnQueue } from './UnitTurnQueue';
 import type { GameActions, Unit, City, Civilization } from '../../../types/game';
 
 interface GameSettings {
@@ -84,6 +85,7 @@ export default class GameEngine {
   isGameOver: boolean;
   scoutMemory: ScoutMemory; // Phase 3.1: Scout persistence across turns
   aiManager: AIManager;
+  unitTurnQueue: UnitTurnQueue; // Unit turn queue for managing unit order
 
   // Getter for turnManager (alias for roundManager)
   get turnManager() {
@@ -124,6 +126,7 @@ export default class GameEngine {
     this.playerStorage = new Map();
     this.scoutMemory = new ScoutMemory(); // Phase 3.1: Initialize scout memory
     this.aiManager = new AIManager(this);
+    this.unitTurnQueue = new UnitTurnQueue(this); // Initialize unit turn queue
     this.devMode = false;
     this.victoryManager = new VictoryManager(this);
     this.isGameOver = false;
@@ -2134,6 +2137,11 @@ export default class GameEngine {
         this.onStateChange('UNIT_MOVED', { unit, targetCol, targetRow });
       }
 
+      // Check unit status in the turn queue (may advance to next unit)
+      if (this.unitTurnQueue) {
+        this.unitTurnQueue.checkUnitStatus(unitId);
+      }
+
       // Check if turn should end automatically
       this.checkAndEndTurnIfNoMoves();
 
@@ -2329,7 +2337,11 @@ export default class GameEngine {
     // Count inactive units (sleeping or fortified)
     const inactiveUnits = playerUnits.filter(u => u.isSleeping || u.isFortified);
     
-    console.log(`[TURN] Player ${this.activePlayer} (${currentCiv.isHuman ? 'human' : 'AI'}): ${playerUnits.length} total units, ${activeUnitsWithMoves.length} active with moves, ${inactiveUnits.length} inactive (sleeping/fortified)`);
+    // Check if queue is empty (more reliable than counting units)
+    const queueEmpty = this.unitTurnQueue ? this.unitTurnQueue.isQueueEmpty(this.activePlayer) : true;
+    const queueLength = this.unitTurnQueue ? this.unitTurnQueue.getQueueLength(this.activePlayer) : 0;
+    
+    console.log(`[TURN] Player ${this.activePlayer} (${currentCiv.isHuman ? 'human' : 'AI'}): ${playerUnits.length} total units, ${activeUnitsWithMoves.length} active with moves, ${inactiveUnits.length} inactive (sleeping/fortified), queue: ${queueLength} units`);
     
     if (activeUnitsWithMoves.length > 0) {
       console.log('[TURN] Active units with moves:', activeUnitsWithMoves.map(u => ({
@@ -2340,26 +2352,38 @@ export default class GameEngine {
       })));
     }
 
-    const hasActiveUnitsWithMoves = activeUnitsWithMoves.length > 0;
+    const hasActiveUnitsWithMoves = activeUnitsWithMoves.length > 0 || !queueEmpty;
     
     // For human players, check if auto turn ending should trigger
     if (currentCiv.isHuman) {
-      // Only auto-end if NO active units have moves left
+      // Only auto-end if NO active units have moves left AND queue is empty
       // Sleeping/fortified units don't prevent auto-end
       if (!hasActiveUnitsWithMoves && playerUnits.length > 0) {
-        console.log('[TURN] All active human units have no moves - checking auto end turn setting');
+        console.log('[TURN] All active human units have no moves and queue is empty - checking auto end turn setting');
         if (this.onStateChange) {
           this.onStateChange('CHECK_AUTO_END_TURN', { civilizationId: this.activePlayer });
         }
       } else if (hasActiveUnitsWithMoves) {
-        console.log('[TURN] ⏸️ Human player still has active units with moves, not ending turn');
+        console.log('[TURN] ⏸️ Human player still has active units with moves or queue not empty, not ending turn');
+        
+        // If queue has units, select the next one
+        if (!queueEmpty && this.unitTurnQueue) {
+          const currentQueueUnit = this.unitTurnQueue.getCurrentUnit(this.activePlayer);
+          if (currentQueueUnit) {
+            this.selectAndFocusUnit(currentQueueUnit);
+          }
+        }
       }
     } else {
-      // For AI players: TurnManager owns turn flow
-      if (!hasActiveUnitsWithMoves) {
-        console.log('[TURN] 🤖 AI player has no active units with moves (TurnManager will handle end-of-turn)');
+      // For AI players: auto-end turn when queue is empty
+      if (queueEmpty && !hasActiveUnitsWithMoves) {
+        console.log('[TURN] 🤖 AI player queue is empty and no active units with moves - auto-ending turn');
+        // Trigger AI turn end
+        if (this.roundManager && typeof this.roundManager.nextPhase === 'function') {
+          this.roundManager.nextPhase();
+        }
       } else {
-        console.log('[TURN] ⏸️ AI player still has active units with moves, continuing');
+        console.log('[TURN] ⏸️ AI player still has active units with moves or queue not empty, continuing');
       }
     }
   }
@@ -2529,6 +2553,11 @@ export default class GameEngine {
     const success = UnitActionManager.skipUnit(unit);
 
     if (success) {
+      // Mark unit as done in the queue and advance to next unit
+      if (this.unitTurnQueue) {
+        this.unitTurnQueue.unitDone(unit.civilizationId, unitId);
+      }
+
       // Check if this was the last unit with moves, and end turn if so
       this.checkAndEndTurnIfNoMoves();
 
@@ -2538,6 +2567,118 @@ export default class GameEngine {
     }
 
     return success;
+  }
+
+  /**
+   * Make the current unit wait - move it to the end of the queue.
+   * The unit keeps its turn later in this round.
+   */
+  waitUnit(unitId?: string): boolean {
+    const civId = this.activePlayer;
+    if (!this.unitTurnQueue) {
+      console.warn('[GameEngine] waitUnit: No unit turn queue available');
+      return false;
+    }
+
+    // Get the unit to wait (current queue unit or specified)
+    const targetUnitId = unitId || this.unitTurnQueue.getCurrentUnitId(civId);
+    if (!targetUnitId) {
+      console.warn('[GameEngine] waitUnit: No unit to wait');
+      return false;
+    }
+
+    const unit = this.units.find(u => u.id === targetUnitId);
+    if (!unit) {
+      console.warn(`[GameEngine] waitUnit: Unit ${targetUnitId} not found`);
+      return false;
+    }
+
+    console.log(`[GameEngine] Unit ${targetUnitId} (${unit.type}) is waiting`);
+    
+    // Move unit to end of queue and advance to next unit
+    const nextUnit = this.unitTurnQueue.waitUnit(civId);
+    
+    if (this.onStateChange) {
+      this.onStateChange('UNIT_WAITING', { unit });
+    }
+
+    // Auto-select the next unit for human players
+    const civ = this.civilizations[civId];
+    if (civ?.isHuman && nextUnit) {
+      this.selectAndFocusUnit(nextUnit);
+    }
+
+    return true;
+  }
+
+  /**
+   * Advance to the next unit in the queue (for human players).
+   * Called when manually cycling through units.
+   */
+  nextQueueUnit(): Unit | null {
+    const civId = this.activePlayer;
+    if (!this.unitTurnQueue) {
+      return null;
+    }
+
+    const currentUnit = this.unitTurnQueue.getCurrentUnit(civId);
+    if (currentUnit && (currentUnit.movesRemaining || 0) > 0) {
+      // Current unit still has moves, use wait to move to next
+      this.waitUnit(currentUnit.id);
+    }
+
+    return this.unitTurnQueue.getCurrentUnit(civId);
+  }
+
+  /**
+   * Get the current unit in the turn queue for the active player.
+   */
+  getCurrentQueueUnit(): Unit | null {
+    if (!this.unitTurnQueue) return null;
+    return this.unitTurnQueue.getCurrentUnit(this.activePlayer);
+  }
+
+  /**
+   * Get the current unit ID in the turn queue for the active player.
+   */
+  getCurrentQueueUnitId(): string | null {
+    if (!this.unitTurnQueue) return null;
+    return this.unitTurnQueue.getCurrentUnitId(this.activePlayer);
+  }
+
+  /**
+   * Check if the unit queue is empty for the active player.
+   */
+  isQueueEmpty(): boolean {
+    if (!this.unitTurnQueue) return true;
+    return this.unitTurnQueue.isQueueEmpty(this.activePlayer);
+  }
+
+  /**
+   * Get the number of units remaining in the queue.
+   */
+  getQueueLength(): number {
+    if (!this.unitTurnQueue) return 0;
+    return this.unitTurnQueue.getQueueLength(this.activePlayer);
+  }
+
+  /**
+   * Select and focus on a unit (for queue transitions).
+   */
+  selectAndFocusUnit(unit: Unit): void {
+    if (!unit) return;
+    
+    console.log(`[GameEngine] Selecting and focusing on unit ${unit.id} (${unit.type}) at (${unit.col}, ${unit.row})`);
+    
+    // Update store to select the unit
+    if (this.storeActions) {
+      this.storeActions.selectUnit(unit.id);
+    }
+    
+    // Emit event for camera focus
+    if (this.onStateChange) {
+      this.onStateChange('FOCUS_UNIT', { unit });
+    }
   }
 
   /**

@@ -166,6 +166,8 @@ export interface RenderPulsingUnitsParams {
   squareToScreen: (col: number, row: number) => { x: number; y: number };
   /** Current camera zoom level */
   cameraZoom: number;
+  /** ID of the current unit in the turn queue (only this unit should pulse) */
+  currentQueueUnitId?: string | null;
 }
 
 /**
@@ -526,16 +528,27 @@ export class MapRenderer {
       civilizations,
       currentTime,
       squareToScreen,
-      cameraZoom
+      cameraZoom,
+      currentQueueUnitId
     } = params;
 
-    // Only draw units that need pulsing animation
-    const activePlayerUnits = units.filter(u => 
-      u.civilizationId === gameState.activePlayer && 
-      (u.movesRemaining || 0) > 0
-    );
+    // If a currentQueueUnitId is provided, only pulse that specific unit
+    // Otherwise, fall back to the old behavior (all active player units with moves)
+    let unitsToPulse: Unit[];
+    
+    if (currentQueueUnitId) {
+      // Only pulse the current queue unit
+      const currentUnit = units.find(u => u.id === currentQueueUnitId);
+      unitsToPulse = currentUnit ? [currentUnit] : [];
+    } else {
+      // Fall back: all active player units with moves
+      unitsToPulse = units.filter(u => 
+        u.civilizationId === gameState.activePlayer && 
+        (u.movesRemaining || 0) > 0
+      );
+    }
 
-    if (activePlayerUnits.length === 0) return;
+    if (unitsToPulse.length === 0) return;
 
     // Calculate pulse color shift (from green to yellow)
     const period = 9000;
@@ -544,7 +557,7 @@ export class MapRenderer {
     // Normalize sine from [-1, 1] to [0, 1]
     const pulseValue = (sine + 1) / 2;
 
-    activePlayerUnits.forEach(unit => {
+    unitsToPulse.forEach(unit => {
       const tileIndex = unit.row * map.width + unit.col;
       const isVisible = map.visibility?.[tileIndex] ?? true;
       

@@ -234,9 +234,20 @@ export class TurnManager {
     switch (phase) {
       case TurnPhase.UNIT_MOVEMENT:
         await this.processAutomatedMovements(this.currentPlayer);
+        
+        // Initialize the unit turn queue for this player
+        if (this.gameEngine.unitTurnQueue) {
+          this.gameEngine.unitTurnQueue.initializeQueue(this.currentPlayer);
+        }
+        
         // Human movement waits for UI. AI movement triggered asynchronously below.
         const civ = this.gameEngine.civilizations?.[this.currentPlayer];
-        if (civ?.isAI) this.runAIUnitMovementPhase(this.currentPlayer);
+        if (civ?.isAI) {
+          this.runAIUnitMovementPhase(this.currentPlayer);
+        } else if (civ?.isHuman) {
+          // For human players, auto-select and focus on the first unit in the queue
+          this.selectCurrentQueueUnit(this.currentPlayer);
+        }
         break;
       case TurnPhase.CITY_PRODUCTION:
         this.handleCityProduction(this.currentPlayer);
@@ -245,11 +256,42 @@ export class TurnManager {
         this.handleResearch(this.currentPlayer);
         break;
       case TurnPhase.END:
+        // Clear the unit queue at end of turn
+        if (this.gameEngine.unitTurnQueue) {
+          this.gameEngine.unitTurnQueue.clearQueue(this.currentPlayer);
+        }
         this.finalizeEndPhase(this.currentPlayer);
         break;
       case TurnPhase.START:
         // Should not be re-entered via advanceToPhase
         break;
+    }
+  }
+
+  /**
+   * Select and focus on the current unit in the queue for human players.
+   * This auto-selects the unit and centers the camera on it.
+   */
+  private selectCurrentQueueUnit(civilizationId: number): void {
+    const queue = this.gameEngine.unitTurnQueue;
+    if (!queue) return;
+    
+    const currentUnit = queue.getCurrentUnit(civilizationId);
+    if (currentUnit) {
+      console.log(`[TurnManager] Auto-selecting queue unit: ${currentUnit.id} (${currentUnit.type}) at (${currentUnit.col}, ${currentUnit.row})`);
+      
+      // Emit event to select and focus on this unit
+      this.emit('SELECT_QUEUE_UNIT', { 
+        unit: currentUnit,
+        civilizationId 
+      });
+      
+      // Also update store directly if available
+      if (this.gameEngine.storeActions) {
+        this.gameEngine.storeActions.selectUnit(currentUnit.id);
+      }
+    } else {
+      console.log(`[TurnManager] No units in queue for civ ${civilizationId}`);
     }
   }
 

@@ -166,6 +166,7 @@ export interface UIState {
   goToMode: boolean; // When true, next click will set destination for selected unit
   goToUnit: string | null; // Unit id targeted by Go To mode (null when not set)
   turnButtonDisabled: boolean;
+  currentQueueUnitId: string | null; // Current unit in the turn queue (only this unit pulses)
 }
 
 export interface Notification {
@@ -240,6 +241,7 @@ export interface GameActions {
   focusOnNextUnit: () => void;
   updateCamera: (cameraUpdate: Partial<CameraState>) => void;
   toggleUI: (key: keyof UIState) => void;
+  setCurrentQueueUnitId: (unitId: string | null) => void;
   showDialog: (dialog: UIState['activeDialog']) => void;
   hideDialog: () => void;
   addNotification: (notification: Omit<Notification, 'id'>) => void;
