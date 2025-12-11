@@ -29,6 +29,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
           backgroundColor: 'transparent'
         }}
         onClick={onClose}
+        onContextMenu={(e) => { e.preventDefault(); onClose(); }}
       />
       
       {/* Context Menu */}
@@ -43,6 +44,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
           fontFamily: 'monospace'
         }}
         onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
       >
       {/* Header */}
       <div className="bg-secondary p-2 border-bottom border-light">

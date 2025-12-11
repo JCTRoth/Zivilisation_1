@@ -58,18 +58,24 @@ export const UNIT_ICON_OVERRIDES: UnitIconOverride[] = [
   },
   {
     unitType: 'artillery',
-    svgPath: 'artillerie.svg',
+    svgPath: 'artillery.svg',
     fallbackEmoji: UNIT_PROPERTIES['artillery']?.icon
   },
   {
     unitType: 'submarine',
-    svgPath: 'submarin.svg',
+    svgPath: 'submarine.svg',
     fallbackEmoji: UNIT_PROPERTIES['submarine']?.icon
   },
   {
     unitType: 'tank',
     svgPath: 'tank.svg',
     fallbackEmoji: UNIT_PROPERTIES['tank']?.icon
+  }
+  ,
+  {
+    unitType: 'archer',
+    svgPath: 'archer.svg',
+    fallbackEmoji: UNIT_PROPERTIES['archer']?.icon
   }
 ];
 

@@ -512,6 +512,38 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     return [] as any[];
   };
 
+  // Compute reachable tiles for a given unit and update local state
+  const computeReachableForUnit = useCallback((unit: Unit | null) => {
+    if (!unit || !mapData || !terrain) {
+      setReachableTiles(new Map());
+      return;
+    }
+
+    const getTileAt = (col: number, row: number) => {
+      if (row < 0 || row >= mapData.height || col < 0 || col >= mapData.width) {
+        return null;
+      }
+      const tileIndex = row * mapData.width + col;
+      return mapData.tiles?.[tileIndex] || null;
+    };
+
+    try {
+      const reachable = Pathfinding.getReachableTiles(
+        unit.col,
+        unit.row,
+        unit.movesRemaining || 0,
+        getTileAt,
+        unit.type,
+        mapData.width,
+        mapData.height
+      );
+      setReachableTiles(reachable);
+    } catch (e) {
+      console.error('[GameCanvas] computeReachableForUnit error', e);
+      setReachableTiles(new Map());
+    }
+  }, [mapData, terrain]);
+
   const renderStaticContent = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -683,6 +715,23 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         });
       } else {
         const hex = screenToSquare(x, y);
+
+        // Check if clicking on the currently selected unit - deselect it
+        const currentSelectedUnitId = gameState.selectedUnit;
+        const currentSelectedUnit = currentSelectedUnitId ? units.find(u => u.id === currentSelectedUnitId) : null;
+        
+        if (currentSelectedUnit && currentSelectedUnit.col === hex.col && currentSelectedUnit.row === hex.row) {
+           console.log(`[CLICK] Clicked on currently selected unit - deselecting`);
+           if (actions && typeof actions.selectUnit === 'function') {
+             actions.selectUnit(null);
+           }
+           setGotoMode(false);
+           setGotoUnit(null);
+           setSelectedHex({ col: -1, row: -1 });
+           setReachableTiles(new Map());
+           triggerRender();
+           return;
+        }
         
         // Check if clicking on already selected hex - deselect everything
         if (selectedHex.col === hex.col && selectedHex.row === hex.row) {
@@ -838,6 +887,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
           console.log(`[CLICK] Unit selected, entering GoTo mode`);
           setGotoMode(true);
           setGotoUnit(unitAt);
+          // Compute reachable tiles immediately when a unit is selected
+          computeReachableForUnit(unitAt);
           if (actions?.addNotification) {
             actions.addNotification({
               type: 'info',
@@ -1080,6 +1131,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     if (actions && typeof actions.selectUnit === 'function') {
       actions.selectUnit(unitAtHex.id);
     }
+    // Compute reachable tiles immediately when a unit is selected via right-click
+    computeReachableForUnit(unitAtHex);
 
     // Get city at this location
     let cityAtHex = null;
@@ -1165,6 +1218,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
           setGotoMode(true);
           setGotoUnit(unit);
           if (actions?.selectUnit) actions.selectUnit(unit.id); // Ensure unit is selected
+          // Compute reachable tiles immediately when selected from context menu
+          computeReachableForUnit(unit);
           setContextMenu(null); // Close the context menu
           if (actions?.addNotification) actions.addNotification({
             type: 'info',
