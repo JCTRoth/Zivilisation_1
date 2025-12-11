@@ -126,7 +126,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     selectUnit: (unitId) => set(state => ({
       gameState: { ...state.gameState, selectedUnit: unitId, activeUnit: unitId, selectedCity: null },
-      uiState: { ...state.uiState, showUnitPanel: !!unitId, showCityPanel: false }
+      uiState: { 
+        ...state.uiState, 
+        showUnitPanel: !!unitId, 
+        showCityPanel: false,
+        goToMode: !!unitId,  // Enable GoTo mode when unit is selected, disable when deselected
+        goToUnit: unitId || ''
+      }
     })),
 
     selectCity: (cityId) => set(state => ({

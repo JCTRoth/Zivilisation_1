@@ -651,33 +651,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       return;
     }
 
-    // Show context menu if mouse is over a player unit
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const hex = screenToSquare(x, y);
-    let unitAtHex = null;
-    try {
-      unitAtHex = getUnitAtFromEngine(hex.col, hex.row);
-    } catch (e) {
-      unitAtHex = null;
-    }
-    if (unitAtHex && currentPlayer && unitAtHex.civilizationId === currentPlayer.id) {
-      // Only show if not already open for this unit
-      if (!contextMenu || contextMenu.unit?.id !== unitAtHex.id) {
-        setContextMenu({
-          x: e.clientX,
-          y: e.clientY,
-          hex: hex,
-          tile: terrain?.[hex.row]?.[hex.col] || null,
-          unit: unitAtHex,
-          city: null
-        });
-      }
-    } else {
-      // Hide context menu if not over a player unit
-      if (contextMenu) setContextMenu(null);
-    }
+    // Removed hover functionality for context menu
   };
 
   const handleMouseUp = () => {
@@ -1068,8 +1042,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   const handleRightClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     
-    // Don't show context menu in Go To mode
+    // If in Go To mode, right click exits GoTo mode and deselects unit
     if (gotoMode) {
+      console.log('[RightClick] Exiting GoTo mode');
+      setGotoMode(false);
+      setGotoUnit(null);
+      if (actions && typeof actions.selectUnit === 'function') {
+        actions.selectUnit(null);
+      }
       return;
     }
     

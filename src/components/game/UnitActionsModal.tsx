@@ -16,18 +16,34 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
   };
 
   return (
-    <div
-      className="position-fixed bg-dark border border-light text-white"
-      style={{
-        left: `${Math.min(contextMenu.x, window.innerWidth - 250)}px`,
-        top: `${Math.min(contextMenu.y, window.innerHeight - 400)}px`,
-        zIndex: 1000,
-        minWidth: '180px',
-        fontSize: '12px',
-        fontFamily: 'monospace'
-      }}
-      onClick={(e) => e.stopPropagation()}
-    >
+    <>
+      {/* Backdrop for click-outside functionality */}
+      <div
+        className="position-fixed"
+        style={{
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          zIndex: 999,
+          backgroundColor: 'transparent'
+        }}
+        onClick={onClose}
+      />
+      
+      {/* Context Menu */}
+      <div
+        className="position-fixed bg-dark border border-light text-white"
+        style={{
+          left: `${Math.min(contextMenu.x, window.innerWidth - 250)}px`,
+          top: `${Math.min(contextMenu.y, window.innerHeight - 400)}px`,
+          zIndex: 1000,
+          minWidth: '180px',
+          fontSize: '12px',
+          fontFamily: 'monospace'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
       {/* Header */}
       <div className="bg-secondary p-2 border-bottom border-light">
         <strong>
@@ -162,6 +178,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
         🔍 Examine
       </button>
     </div>
+    </>
   );
 };
 

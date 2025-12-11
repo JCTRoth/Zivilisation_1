@@ -1441,7 +1441,13 @@ export class MapRenderer {
     const iconResource = unitTypeId ? getUnitIcon(unitTypeId) : null;
     
     if (iconResource && typeof iconResource !== 'string' && iconResource.complete) {
-      // Draw the PNG/SVG image icon (preserves transparency to show tile background)
+      // Draw colored circle background for SVG units (same as emoji units)
+      ctx.beginPath();
+      ctx.fillStyle = civColor;
+      ctx.arc(centerX, centerY, innerRadius, 0, 2.7 * Math.PI);
+      ctx.fill();
+      
+      // Draw the PNG/SVG image icon on top of the colored circle
       const iconSize = innerRadius * 2;
       ctx.drawImage(
         iconResource as HTMLImageElement,

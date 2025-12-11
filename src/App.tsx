@@ -474,6 +474,10 @@ function App() {
             setActiveMenu(null);
             setShowHexDetail(false);
             setShowSettings(false);
+            // Deselect unit and exit GoTo mode
+            if (actions && typeof actions.selectUnit === 'function') {
+              actions.selectUnit(null);
+            }
             // Add more modal closures as needed
             break;
           case 'F1':
