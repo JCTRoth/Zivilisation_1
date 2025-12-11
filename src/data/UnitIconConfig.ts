@@ -7,8 +7,10 @@
  * Structure:
  * - unitType: The unit identifier (must match UNIT_TYPES)
  * - svgPath: Path to the SVG file (relative to src/assets/units/)
- * - fallbackEmoji: Optional emoji to use if SVG fails to load
+ * - fallbackEmoji: Optional emoji to use if SVG fails to load (sourced from UnitConstants.ts)
  */
+
+import { UNIT_PROPERTIES } from './UnitConstants';
 
 export interface UnitIconOverride {
   unitType: string;
@@ -25,29 +27,49 @@ export interface UnitIconOverride {
  */
 export const UNIT_ICON_OVERRIDES: UnitIconOverride[] = [
   {
+    unitType: 'warrior',
+    svgPath: 'worrier.svg',
+    fallbackEmoji: UNIT_PROPERTIES['warrior']?.icon
+  },
+  {
+    unitType: 'scout',
+    svgPath: 'scout.svg',
+    fallbackEmoji: UNIT_PROPERTIES['scout']?.icon
+  },
+  {
+    unitType: 'phalanx',
+    svgPath: 'phalanx.svg',
+    fallbackEmoji: UNIT_PROPERTIES['phalanx']?.icon
+  },
+  {
+    unitType: 'knights',
+    svgPath: 'knights.svg',
+    fallbackEmoji: UNIT_PROPERTIES['knights']?.icon
+  },
+  {
     unitType: 'chariot',
     svgPath: 'chariot.svg',
-    fallbackEmoji: '𓌝'
+    fallbackEmoji: UNIT_PROPERTIES['chariot']?.icon
   },
   {
     unitType: 'cannon',
     svgPath: 'cannon.svg',
-    fallbackEmoji: '💣'
+    fallbackEmoji: UNIT_PROPERTIES['cannon']?.icon
   },
   {
     unitType: 'artillery',
     svgPath: 'artillerie.svg',
-    fallbackEmoji: '💥'
+    fallbackEmoji: UNIT_PROPERTIES['artillery']?.icon
   },
   {
     unitType: 'submarine',
     svgPath: 'submarin.svg',
-    fallbackEmoji: '🔱'
+    fallbackEmoji: UNIT_PROPERTIES['submarine']?.icon
   },
   {
     unitType: 'tank',
     svgPath: 'tank.svg',
-    fallbackEmoji: '🚂'
+    fallbackEmoji: UNIT_PROPERTIES['tank']?.icon
   }
 ];
 
