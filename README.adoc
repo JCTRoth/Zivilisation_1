@@ -632,6 +632,20 @@ Civilization score calculated from:
 
 **Economic Victory**: Pottery → The Wheel → Currency → Trade → Banking → Economics
 
+== Deployment
+
+This is a static single-page application (SPA) built with Vite. After building, deploy the `dist/` folder contents to any static web host.
+
+=== Building for Production
+
+```bash
+npm install
+npm run build
+```
+
+The production build will be in the `dist/` directory.
+
+
 == Historical Accuracy
 
 This browser clone faithfully recreates the original Civilization I experience while modernizing the interface for contemporary browsers and significantly speeding up the game. Game balance, technology costs, unit statistics, and core mechanics mirror mostly the 1991 original.
