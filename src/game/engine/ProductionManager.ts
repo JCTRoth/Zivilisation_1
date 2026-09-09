@@ -234,13 +234,6 @@ export class ProductionManager {
 
       const removed = buildQueue.splice(index, 1)[0];
 
-      // NOTE: Removing a queued item must ONLY remove that single item. The
-      // queue is separate from currentProduction; promoting the next queued
-      // item to current production happens in removeCurrentProduction (or when
-      // a production completes), NOT here. Previously this block shifted an
-      // EXTRA item out of the queue when index === 0, deleting two items at
-      // once.
-
       console.log('[ProductionManager] removed item from queue', { cityId, index, removed, remainingQueue: buildQueue });
       if (this.gameEngine.onStateChange) this.gameEngine.onStateChange('CITY_QUEUE_UPDATED', { cityId, removed, index });
       return { success: true, removed };

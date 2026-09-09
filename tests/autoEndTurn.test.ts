@@ -99,8 +99,8 @@ describe('Auto End Turn + city founding', () => {
     expect(city!.currentProduction).toBeTruthy();
     expect(Array.isArray(city!.buildQueue)).toBe(true);
     // Auto-production lines up follow-ups so the queue isn't empty right away,
-    // but the current production (Warrior) must NOT also sit at the front of
-    // the queue (that would be a duplicate).
+    // but the current production must NOT also sit at the front of the queue
+    // — that would be a duplicate.
     const currentName = city!.currentProduction?.name || city!.currentProduction?.itemType;
     const frontName = city!.buildQueue[0]?.name || city!.buildQueue[0]?.itemType;
     expect(frontName).not.toBe(currentName);

@@ -771,6 +771,10 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
       city.productionProgress = 0;
     } else {
       city.currentProduction = null;
+      // Queue empty after completion — let auto-production fill it next turn
+      if (this.gameEngine.autoProduction && city.autoProduction) {
+        this.gameEngine.autoProduction.ensureProductionQueue(city.id);
+      }
     }
   }
 
