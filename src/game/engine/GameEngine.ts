@@ -32,7 +32,7 @@ import { EconomicManager } from './EconomicManager';
 import { GovernmentManager } from './GovernmentManager';
 import { ResearchManager } from './ResearchManager';
 import { AIResearch } from './AIResearch';
-import MapGenerator from './MapGenerator';
+import MapGenerator from './MapGenerator/MapGenerator';
 import { MIN_CITY_CENTER_DISTANCE } from './SettlementEvaluator';
 import type { GameActions, Unit, City, Civilization, VillageResult, Technology, ProductionItem, TradeRoute, SpecialistType } from '../../../types/game';
 
