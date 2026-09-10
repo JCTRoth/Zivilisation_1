@@ -106,6 +106,10 @@ export default class MapGenerator {
     this.stage6_PolarCaps(rng);
     this.stage6a_SpecialResources(rng);
 
+    // Final cleanup: fill any remaining isolated ocean holes on land.
+    // These stragglers come from river destinations or edge effects.
+    this.fillIsolatedOceanHoles();
+
     // Groups + scoring + validation
     this.stage7_FloodFillGroups();
     this.stage8_BuildSites();
@@ -230,6 +234,9 @@ export default class MapGenerator {
     }
 
     this.smoothCoastlines();
+
+    // Pathfinding-based mountain ridges: walk along high-elevation crests
+    this.generateMountainRidges(rng, distField);
   }
 
   // ── Coastline smoothing ──────────────────────────────────────────
@@ -278,6 +285,126 @@ export default class MapGenerator {
     }
   }
 
+  // ── Pathfinding-based mountain ridges ──────────────────────────
+
+  /**
+   * Generate mountain ranges using pathfinding along high-elevation
+   * crests. Instead of random blobs, mountains form connected ridges
+   * that follow the natural terrain contours — like real mountain chains.
+   *
+   * Algorithm:
+   *   1. Identify "ridge-worthy" tiles (high elevation, not ocean/river)
+   *   2. Pick random seed points from these tiles
+   *   3. Walk from each seed along the highest-elevation neighbor,
+   *      preferring to stay on high ground and avoiding sharp turns
+   *   4. Mark walked tiles as mountains
+   */
+  private generateMountainRidges(rng: () => number, distField: number[][]): void {
+    // Find tiles with high enough elevation for mountains
+    // (eff 7.0+ is just below the mountain threshold of 9.0)
+    const ridgeCandidates: Point[] = [];
+    for (let r = 1; r < this.height - 1; r++) {
+      for (let c = 0; c < this.width; c++) {
+        const t = this.cells[r][c].type;
+        if (t === TERRAIN_TYPES.OCEAN || t === TERRAIN_TYPES.RIVER) continue;
+        // Use the distance field + noise to estimate elevation
+        const n1 = hashNoise(c, r, 0);
+        const n2 = hashNoise(c >> 1, r >> 1, 1);
+        const n3 = hashNoise(c >> 2, r >> 2, 2);
+        const n4 = hashNoise(c >> 3, r >> 3, 3);
+        const noise = (n1 * 1.0 + n2 * 0.5 + n3 * 0.25 + n4 * 0.125) / 1.875;
+        const eff = distField[r][c] + (noise - 0.5) * 4;
+        if (eff >= 6.5) { // High enough for mountain ridges
+          ridgeCandidates.push({ col: c, row: r });
+        }
+      }
+    }
+    if (ridgeCandidates.length === 0) return;
+
+    // Number of ridge systems scales with map size
+    const numRidges = Math.floor(ridgeCandidates.length / 80) + 2;
+    const ridgeDirs = [
+      { col: -1, row: 0 }, { col: 1, row: 0 },
+      { col: 0, row: -1 }, { col: 0, row: 1 },
+      { col: -1, row: -1 }, { col: 1, row: -1 },
+      { col: -1, row: 1 }, { col: 1, row: 1 },
+    ];
+
+    for (let ri = 0; ri < numRidges; ri++) {
+      // Pick a random seed from high-elevation candidates
+      const seed = ridgeCandidates[Math.floor(rng() * ridgeCandidates.length)];
+
+      // Walk the ridge: greedy pathfinding along high ground
+      let curCol = seed.col;
+      let curRow = seed.row;
+      let prevDirIdx = Math.floor(rng() * 4); // random initial direction
+      const ridgeLen = 8 + Math.floor(rng() * 12); // 8-19 tiles per ridge
+
+      for (let step = 0; step < ridgeLen; step++) {
+        if (!this.isValid(curCol, curRow)) break;
+        const cell = this.cells[curRow][curCol];
+        if (cell.type === TERRAIN_TYPES.OCEAN || cell.type === TERRAIN_TYPES.RIVER) break;
+
+        // Place mountain (or keep existing mountain/hill)
+        if (cell.type !== TERRAIN_TYPES.MOUNTAINS) {
+          cell.type = TERRAIN_TYPES.HILLS; // base: hills
+        }
+
+        // Find best next step: prefer high elevation + similar direction
+        let bestDir = prevDirIdx;
+        let bestScore = -Infinity;
+        for (let di = 0; di < 8; di++) {
+          const d = ridgeDirs[di];
+          const nc = this.wrapCol(curCol + d.col);
+          const nr = curRow + d.row;
+          if (!this.isValid(nc, nr)) continue;
+          const nt = this.cells[nr][nc].type;
+          if (nt === TERRAIN_TYPES.OCEAN || nt === TERRAIN_TYPES.RIVER) continue;
+
+          // Elevation score: prefer high ground
+          const n = distField[nr][nc];
+          const elevScore = n * 2;
+
+          // Direction continuity: prefer straight or gentle curves
+          const dirDiff = Math.abs(di - prevDirIdx);
+          const turnCost = dirDiff <= 1 ? 0 : dirDiff <= 2 ? -1 : -3;
+
+          // Avoid revisiting mountains we already placed
+          const existingPenalty = nt === TERRAIN_TYPES.MOUNTAINS ? -2 : 0;
+
+          const score = elevScore + turnCost + existingPenalty + rng() * 2;
+          if (score > bestScore) {
+            bestScore = score;
+            bestDir = di;
+          }
+        }
+
+        // Move to best neighbor
+        const d = ridgeDirs[bestDir];
+        curCol = this.wrapCol(curCol + d.col);
+        curRow += d.row;
+        prevDirIdx = bestDir;
+      }
+
+      // Upgrade the center tiles of the ridge to mountains
+      // (hills on edges, mountains in core)
+      let cx = seed.col, cy = seed.row;
+      let pd = Math.floor(rng() * 4);
+      for (let step = 0; step < ridgeLen; step++) {
+        if (!this.isValid(cx, cy)) break;
+        const cell = this.cells[cy][cx];
+        if (cell.type === TERRAIN_TYPES.HILLS) {
+          cell.type = TERRAIN_TYPES.MOUNTAINS;
+        }
+        const d = ridgeDirs[pd];
+        cx = this.wrapCol(cx + d.col);
+        cy += d.row;
+        // Occasionally change direction for natural curves
+        if (rng() < 0.3) pd = (pd + (rng() < 0.5 ? 1 : 7)) % 8;
+      }
+    }
+  }
+
   // ── Phase 1: Mountain cluster breaking ───────────────────────────
 
   private breakMountainClusters(): void {
@@ -312,16 +439,24 @@ export default class MapGenerator {
           }
         }
 
-        if (component.length > 6) {
-          const fraction = component.length > 12 ? 0.6 : 0.4;
+        if (component.length > 8) {
+          // Gentle cleanup: only break very large clusters left over from
+          // the ridge generation. Convert edge tiles to hills.
+          const fraction = component.length > 15 ? 0.5 : 0.3;
           const convertCount = Math.floor(component.length * fraction);
-          for (let i = component.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [component[i], component[j]] = [component[j], component[i]];
-          }
-          for (let i = 0; i < convertCount && i < component.length; i++) {
-            const p = component[i];
-            this.cells[p.row][p.col].type = TERRAIN_TYPES.HILLS;
+          // Convert from edges (most non-mountain neighbors)
+          const scored = component.map(p => {
+            let nCount = 0;
+            for (const dd of dirs) {
+              const nc2 = this.wrapCol(p.col + dd.col);
+              const nr2 = p.row + dd.row;
+              if (this.isValid(nc2, nr2) && this.cells[nr2][nc2].type !== TERRAIN_TYPES.MOUNTAINS) nCount++;
+            }
+            return { ...p, nCount };
+          });
+          scored.sort((a, b) => b.nCount - a.nCount);
+          for (let i = 0; i < convertCount && i < scored.length; i++) {
+            this.cells[scored[i].row][scored[i].col].type = TERRAIN_TYPES.HILLS;
           }
         }
       }
@@ -445,6 +580,26 @@ export default class MapGenerator {
       for (let col = 0; col < this.width; col++) {
         const tile = this.cells[row][col];
         if (tile.type !== TERRAIN_TYPES.PLAINS) continue;
+
+        // Lock polar rows: rows 0-1 and height-2 to height-1 must stay cold.
+        // Row 0-1: Arctic only. Row 2: Arctic or Tundra.
+        // This prevents the temperature stage from creating warm biomes at the poles.
+        if (row <= 1) {
+          tile.type = TERRAIN_TYPES.ARCTIC;
+          continue;
+        }
+        if (row === 2) {
+          tile.type = TERRAIN_TYPES.TUNDRA; // Row 2 is always tundra
+          continue;
+        }
+        if (row >= this.height - 2) {
+          tile.type = TERRAIN_TYPES.ARCTIC;
+          continue;
+        }
+        if (row === this.height - 3) {
+          tile.type = TERRAIN_TYPES.TUNDRA;
+          continue;
+        }
 
         // Multi-octave noise to break up uniform temperature bands
         const macroNoise  = hashNoise(col >> 2, row >> 2, 101);
@@ -746,6 +901,7 @@ export default class MapGenerator {
   }
 
   private findRiverPath(source: Point, dest: Point): Point[] | null {
+    // Tracks direction to penalize sharp turns — rivers meander naturally
     interface RiverNode {
       col: number;
       row: number;
@@ -753,13 +909,14 @@ export default class MapGenerator {
       h: number;
       f: number;
       parent: RiverNode | null;
+      prevDir: number; // index into neighbors array (-1 for start)
     }
 
     const openSet: RiverNode[] = [];
     const closedSet = new Set<string>();
 
     const h = Math.abs(source.col - dest.col) + Math.abs(source.row - dest.row);
-    const startNode: RiverNode = { col: source.col, row: source.row, g: 0, h, f: h, parent: null };
+    const startNode: RiverNode = { col: source.col, row: source.row, g: 0, h, f: h, parent: null, prevDir: -1 };
     openSet.push(startNode);
 
     const nodeMap = new Map<string, RiverNode>();
@@ -782,6 +939,7 @@ export default class MapGenerator {
 
       closedSet.add(currentKey);
 
+      // Cardinal + diagonal neighbors
       const neighbors = [
         { col: current.col - 1, row: current.row },
         { col: current.col + 1, row: current.row },
@@ -793,7 +951,8 @@ export default class MapGenerator {
         { col: current.col + 1, row: current.row - 1 },
       ];
 
-      for (const neighbor of neighbors) {
+      for (let ni = 0; ni < neighbors.length; ni++) {
+        const neighbor = neighbors[ni];
         const nc = this.wrapCol(neighbor.col);
         const nr = neighbor.row;
         if (!this.isValid(nc, nr)) continue;
@@ -802,7 +961,16 @@ export default class MapGenerator {
         if (closedSet.has(neighborKey)) continue;
 
         const terrain = this.cells[nr][nc].type;
-        const cost = riverFlowCost(terrain);
+        let cost = riverFlowCost(terrain);
+
+        // Turn penalty: rivers meander smoothly, avoiding sharp zigzags.
+        // Same direction = 0, 45° turn = 0.3, 90° turn = 0.8, 135°+ = 1.5
+        if (current.prevDir >= 0) {
+          const angleDiff = Math.abs(ni - current.prevDir);
+          if (angleDiff === 1 || angleDiff === 7) cost += 0.6;      // 45° — gentle bend
+          else if (angleDiff === 2 || angleDiff === 6) cost += 1.5;  // 90° — sharp turn
+          else if (angleDiff >= 3) cost += 3.0;                       // 135°+ — reversal
+        }
 
         const g = current.g + cost;
         const h2 = Math.abs(nc - dest.col) + Math.abs(nr - dest.row);
@@ -810,13 +978,14 @@ export default class MapGenerator {
 
         let neighborNode = nodeMap.get(neighborKey);
         if (!neighborNode) {
-          neighborNode = { col: nc, row: nr, g, h: h2, f, parent: current };
+          neighborNode = { col: nc, row: nr, g, h: h2, f, parent: current, prevDir: ni };
           nodeMap.set(neighborKey, neighborNode);
           openSet.push(neighborNode);
         } else if (g < neighborNode.g) {
           neighborNode.g = g;
           neighborNode.f = f;
           neighborNode.parent = current;
+          neighborNode.prevDir = ni;
         }
       }
     }
@@ -827,18 +996,25 @@ export default class MapGenerator {
   // ── Stage 6 — Polar caps ────────────────────────────────────────
 
   private stage6_PolarCaps(rng: () => number): void {
-    const totalCells = this.width * this.height;
+    // Arctic: exactly 2 rows on top and bottom — no more.
+    // The temperature stage now also locks rows 0-2 and height-3 to height-1
+    // to prevent warm biomes appearing at the poles.
     for (let col = 0; col < this.width; col++) {
       this.cells[0][col].type = TERRAIN_TYPES.ARCTIC;
+      this.cells[1][col].type = TERRAIN_TYPES.ARCTIC;
       this.cells[this.height - 1][col].type = TERRAIN_TYPES.ARCTIC;
+      this.cells[this.height - 2][col].type = TERRAIN_TYPES.ARCTIC;
     }
-    const scatter = Math.floor(totalCells / 200);
+    // Scatter Tundra on row 2 and height-3 for natural transition
+    const scatter = Math.floor(this.width * 0.3);
     for (let i = 0; i < scatter; i++) {
       const c = Math.floor(rng() * this.width);
-      this.cells[0][c].type = TERRAIN_TYPES.TUNDRA;
-      this.cells[1][c].type = TERRAIN_TYPES.TUNDRA;
-      this.cells[this.height - 2][c].type = TERRAIN_TYPES.TUNDRA;
-      this.cells[this.height - 1][c].type = TERRAIN_TYPES.TUNDRA;
+      if (this.cells[2][c].type === TERRAIN_TYPES.PLAINS) {
+        this.cells[2][c].type = TERRAIN_TYPES.TUNDRA;
+      }
+      if (this.cells[this.height - 3][c].type === TERRAIN_TYPES.PLAINS) {
+        this.cells[this.height - 3][c].type = TERRAIN_TYPES.TUNDRA;
+      }
     }
   }
 
@@ -1064,6 +1240,36 @@ export default class MapGenerator {
       }
     }
     return tiles;
+  }
+
+  // ── Final cleanup ───────────────────────────────────────────────
+
+  /**
+   * Fill isolated ocean tiles that are surrounded by land on all 4 cardinal
+   * sides. These are stragglers from river paths or edge effects that the
+   * coastline smoothing pass missed.
+   */
+  private fillIsolatedOceanHoles(): void {
+    const cardinals = [
+      { col: 0, row: -1 }, { col: 1, row: 0 },
+      { col: 0, row: 1 },  { col: -1, row: 0 },
+    ];
+    for (let r = 1; r < this.height - 1; r++) {
+      for (let c = 0; c < this.width; c++) {
+        if (this.cells[r][c].type !== TERRAIN_TYPES.OCEAN) continue;
+        let landCount = 0;
+        for (const d of cardinals) {
+          const nr = r + d.row;
+          const nc = this.wrapCol(c + d.col);
+          if (this.isValid(nc, nr) && this.cells[nr][nc].type !== TERRAIN_TYPES.OCEAN) {
+            landCount++;
+          }
+        }
+        if (landCount >= 3) {
+          this.cells[r][c].type = TERRAIN_TYPES.PLAINS;
+        }
+      }
+    }
   }
 
   // ── Public accessors ────────────────────────────────────────────
