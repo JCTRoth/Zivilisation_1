@@ -27,6 +27,99 @@ import {
   RNG,
 } from './MapGeneratorHelper';
 
+/*
+ * Predefined Earth map terrain layout (80×50 tiles).
+ * Pacific-centered projection: Americas on right, Europe/Asia/Africa on left.
+ * Map wraps: left/right edges connect across the Pacific.
+ *
+ * Characters: . = ocean, a = arctic, t = tundra, d = desert, p = plains,
+ *             g = grassland, f = forest, j = jungle, h = hills, m = mountains
+ */
+/**
+ * Predefined Earth map terrain layout (80×50 tiles).
+ * Standard Earth map (Americas on left, Europe/Africa middle, Asia/Australia right).
+ * Japan enlarged 3x in the Pacific (cols 72-78, rows 12-21).
+ *
+ * Characters: . = ocean, a = arctic, t = tundra, d = desert, p = plains,
+ *             g = grassland, f = forest, j = jungle, h = hills, m = mountains
+ */
+/**
+ * Predefined Earth map terrain layout (80×50 tiles).
+ * Pacific-centered projection: Americas on right, Europe/Asia/Africa on left.
+ * Map wraps: left/right edges connect across the Pacific.
+ *
+ * Characters: . = ocean, a = arctic, t = tundra, d = desert, p = plains,
+ *             g = grassland, f = forest, j = jungle, h = hills, m = mountains
+ */
+const EARTH_TERRAIN: string[] = [
+  //0         1         2         3         4         5         6         7
+  //01234567890123456789012345678901234567890123456789012345678901234567890123456789
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 0
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 1
+  'aaatttttaa......tttttttttt....tttttttttt....tttttttttttt....tttttttt....attttaaaa', // 2
+  'a..tttaa.......tttttttttt.....ttttttttt....ttttttttttt......tttttt......atttaa..', // 3
+  'aa.hhmmft.......tttttttttt.....tttttttt....ttttttttttt......tttthh......atttaa..', // 4
+  'a..hhmmfft......fffpppfff.......ttttttt.....tpppppffff.....tttthh.......ttaaaa..', // 5
+  'aa.hhmmffp......fffpppfff.......ttttttt.....tpppppffff.....tttthh.......ttaaaa..', // 6
+  'aa.hhffpp.......ffpppfff........tttttt.....tpppppfffff....tttt.........ttaaaa...', // 7
+  'aa..hffpp.......fffpppp.........tttttt.....tpppppffff......tttt..........ttaaaa..', // 8
+  'aa..ffppp.......ffffppp..........tttttt...tppppppfff......tttt..........ttaaaa..', // 9
+  'aaa.ffpp........ffffpp...........tttttt...tpppppffff.....ttttt...........ttaaa..', // 10
+  'aaa.fpp.........ffffpp...........t..ttt...tpppppffff....ttttt...........ttaaa...', // 11
+  'aaa..pp.........dddddpp............ttt....tppppppf.....ttttt............ttaaa...', // 12
+  'aaa..pp.........dddddpp...........tttt...tpppppp......ttttt............ttaaa...', // 13
+  'aaa...p.........dddddpp...........tttt...tpppppp......tttt............ttaaaa...', // 14
+  'aaa...p.........dddddd............tttt...jjjjjjj......tttt............ttaaaa...', // 15
+  'aaa...p.........dddddd............tttt...jjjjjjj......tttt............ttaaaa...', // 16
+  'aaa............gddddd............ttt.....jjjjjjj......tttt............ttaaaa...', // 17
+  'aaa............ggdddd............ttt.....jjjjjjj....ttttt............ttaaaa...', // 18
+  'aaa............gggddd............ttt.....jjjjjjj...tttttt............ttaaaa...', // 19
+  'aaa............ggggdd............ttt....jjjjjjjj...ttttttt...........ttaaaaa...', // 20
+  'aaa............ggggg..............tt....jjjjjjj...ttttttt...........ttaaaaaa...', // 21
+  'aaa............ggggg..............tt.....jjjjjjj.tttttttt..........ttaaaaaa...', // 22
+  'aaa.............gggg...............t......jjjjjj.tttttttt..........ttaaaaaa...', // 23
+  'aaa.............ggg........................jjjjj.tttttttt..........ttaaaaaa...', // 24
+  'aaa.............ggg........................jjjjj.ttttttttt.........ttaaaaaaa...', // 25
+  'aaa.............ggg........................jjjjjtttttttttt.........ttaaaaaaa...', // 26
+  'aaa.............ggg........................jjjj.ttttttttt..........ttaaaaaaa...', // 27
+  'aaa.............gg........................jjj.ttttttttt..........ttaaaaaaa...', // 28
+  'aaa.............g..........................jj..tttttttt...........ttaaaaaaa...', // 29
+  'aaa........................................j...ttttttt............ttaaaaaaa...', // 30
+  'aaa........................................j...ttttttt............ttaaaaaaa...', // 31
+  'aaa............................................tttttt.............ttaaaaaaa...', // 32
+  'aaa............................................ttttt..............ttaaaaaaa...', // 33
+  'aaa............................................ttttt..............ttaaaaaaa...', // 34
+  'aaa............................................ttttt..............ttaaaaaaa...', // 35
+  'aaa............................................ttttt..............ttaaaaaaa...', // 36
+  'aaa............................................ttttt..............ttaaaaaaa...', // 37
+  'aaa............................................ttttt..............ttaaaaaaa...', // 38
+  'aaa............................................ttttt..............ttaaaaaaa...', // 39
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 40
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 41
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 42
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 43
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 44
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 45
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 46
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 47
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 48
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'  // 49
+];
+
+/** Character → TERRAIN_TYPES mapping for the Earth map. */
+const EARTH_CHAR_MAP: Record<string, string> = {
+  '.': TERRAIN_TYPES.OCEAN,
+  'a': TERRAIN_TYPES.ARCTIC,
+  't': TERRAIN_TYPES.TUNDRA,
+  'd': TERRAIN_TYPES.DESERT,
+  'p': TERRAIN_TYPES.PLAINS,
+  'g': TERRAIN_TYPES.GRASSLAND,
+  'f': TERRAIN_TYPES.FOREST,
+  'j': TERRAIN_TYPES.JUNGLE,
+  'h': TERRAIN_TYPES.HILLS,
+  'm': TERRAIN_TYPES.MOUNTAINS,
+};
+
 export default class MapGenerator {
   // Parameters
   private readonly seed: number;
@@ -129,6 +222,41 @@ export default class MapGenerator {
     return this.toTileArray();
   }
 
+  /**
+   * Generate a predefined Earth map (80×50) using the EARTH_TERRAIN layout.
+   * Rivers are added via pathfinding, resources via normal placement,
+   * groups and build sites are computed normally.
+   */
+  generateEarth(): GenTile[] {
+    const rng = mulberry32(this.seed);
+
+    // Load the predefined Earth terrain layout
+    for (let row = 0; row < Math.min(this.height, EARTH_TERRAIN.length); row++) {
+      const line = EARTH_TERRAIN[row];
+      for (let col = 0; col < this.width; col++) {
+        const ch = col < line.length ? line[col] : '.';
+        const terrainType = EARTH_CHAR_MAP[ch] ?? TERRAIN_TYPES.OCEAN;
+        this.cells[row][col].type = terrainType;
+      }
+    }
+
+    // Add rivers via pathfinding (same as procedural generation)
+    this.stage5_Rivers(rng);
+
+    // Add special resources
+    this.stage6a_SpecialResources(rng);
+
+    // Fill any isolated ocean holes
+    this.fillIsolatedOceanHoles();
+
+    // Compute groups, build sites, and passability
+    this.stage7_FloodFillGroups();
+    this.stage8_BuildSites();
+    this.ensurePassability();
+
+    return this.toTileArray();
+  }
+
   // ── Stage 1 — Continent creation ────────────────────────────────
 
   private stage1_Continents(rng: () => number): void {
@@ -139,11 +267,11 @@ export default class MapGenerator {
       this.cells[this.height - 1][col].type = TERRAIN_TYPES.OCEAN;
     }
 
-    // Horizontal ocean straits — count scales with land mass
-    //   landMass 0: 1-2 straits (fragmented islands)
-    //   landMass 1: 0-1 straits (normal)
-    //   landMass 2: 0 straits (large continents)
-    const numHStraits = Math.max(0, 2 - this.landMass) + (rng() < 0.3 ? 1 : 0);
+    // Scale ocean features with map size — large maps need more water
+    const mapScale = Math.max(1, Math.floor((this.width * this.height) / (50 * 50)));
+
+    // Horizontal ocean straits — count scales with land mass AND map size
+    const numHStraits = Math.max(0, Math.floor((2 - this.landMass) * mapScale * 0.6) + (rng() < 0.3 ? 1 : 0));
     for (let s = 0; s < numHStraits; s++) {
       let baseRow = 3 + Math.floor(rng() * Math.max(1, this.height - 6));
       const bandWidth = 1 + Math.floor(rng() * 2);
@@ -158,8 +286,8 @@ export default class MapGenerator {
       }
     }
 
-    // Vertical ocean straits — count scales with land mass
-    const numVStraits = Math.max(0, 2 - this.landMass) + (rng() < 0.2 ? 1 : 0);
+    // Vertical ocean straits — count scales with land mass AND map size
+    const numVStraits = Math.max(0, Math.floor((2 - this.landMass) * mapScale * 0.5) + (rng() < 0.2 ? 1 : 0));
     for (let s = 0; s < numVStraits; s++) {
       let baseCol = Math.floor(rng() * this.width);
       const bandWidth = 1;
@@ -173,17 +301,20 @@ export default class MapGenerator {
       }
     }
 
-    // Land mass strongly controls land vs ocean ratio:
-    //   landMass 0: ~20% land (archipelago — many small islands)
+    // Land mass controls land vs ocean ratio — STRONG effect:
+    //   landMass 0: ~8% land (sparse islands in vast ocean)
     //   landMass 1: ~45% land (normal — balanced continents)
-    //   landMass 2: ~65% land (pangea — large connected land)
-    const landFraction = 0.20 + this.landMass * 0.225;
-    const oceanBlobs = Math.floor(totalCells * (1 - landFraction) / (40 + this.landMass * 20));
+    //   landMass 2: ~70% land (pangea — massive connected land)
+    const landFraction = 0.08 + this.landMass * 0.31;
+    // Sparse islands: many small blobs for scattered archipelago feel
+    const blobSize = this.landMass === 0 ? 4 : 4 + this.landMass * 4; // 4 / 8 / 12
+    const blobDivisor = this.landMass === 0 ? 60 : 40 + this.landMass * 20;
+    const oceanBlobs = Math.floor(totalCells * (1 - landFraction) / blobDivisor) * mapScale;
     for (let b = 0; b < oceanBlobs; b++) {
       let col = Math.floor(rng() * this.width);
       let row = 3 + Math.floor(rng() * Math.max(1, this.height - 6));
-      const blobSize = 4 + Math.floor(rng() * 8);
-      for (let i = 0; i < blobSize; i++) {
+      const curBlobSize = blobSize + Math.floor(rng() * blobSize);
+      for (let i = 0; i < curBlobSize; i++) {
         if (row >= 3 && row < this.height - 1) {
           this.cells[row][col].type = TERRAIN_TYPES.OCEAN;
         }
@@ -559,19 +690,20 @@ export default class MapGenerator {
     //   0 (Ice Age): tundra/arctic dominates, almost no desert
     //   1 (Normal): balanced distribution
     //   2 (Greenhouse): desert expands, tundra retreats to poles
-    const tempShift = (this.temperature - 1) * 0.35;
+    // Temperature shifts biome boundaries STRONGLY:
+    //   0 (Ice Age): -0.50 → arctic/tundra dominates, tiny desert band
+    //   1 (Normal): 0.00 → balanced distribution
+    //   2 (Greenhouse): +0.50 → desert expands, tundra retreats to poles
+    const tempShift = (this.temperature - 0.8) * 0.50;
 
-    // Adaptive thresholds: temperature setting moves desert/tundra boundaries
-    const desertThreshold = 0.88 - tempShift * 0.15;  // hot → lower (more desert)
-    const plainsThreshold = 0.60 - tempShift * 0.10;
-    const grassThreshold  = 0.40 - tempShift * 0.05;
-    const tundraThreshold = 0.20 + tempShift * 0.05;
+    // Adaptive thresholds: temperature setting moves biome boundaries
+    const desertThreshold = 0.85 - tempShift * 0.20;
+    const plainsThreshold = 0.55 - tempShift * 0.15;
+    const grassThreshold  = 0.35 - tempShift * 0.10;
+    const tundraThreshold = 0.18 + tempShift * 0.05;
 
     // Desert probability: scales with temperature
-    //   temp 0: 10% (rare oases)
-    //   temp 1: 25% (scattered)
-    //   temp 2: 40% (prominent but not dominant)
-    const desertProb = 0.10 + this.temperature * 0.15;
+    const desertProb = 0.05 + this.temperature * 0.20; // 5% / 25% / 45%
 
     for (let row = 0; row < this.height; row++) {
       const latDist = Math.abs(row - yMedian) / (yMedian || 1);
@@ -581,23 +713,11 @@ export default class MapGenerator {
         const tile = this.cells[row][col];
         if (tile.type !== TERRAIN_TYPES.PLAINS) continue;
 
-        // Lock polar rows: rows 0-1 and height-2 to height-1 must stay cold.
-        // Row 0-1: Arctic only. Row 2: Arctic or Tundra.
-        // This prevents the temperature stage from creating warm biomes at the poles.
-        if (row <= 1) {
+        // Lock ONLY the outermost rows to arctic — max 2 rows total.
+        // Row 0 and height-1 are arctic. Row 1 and height-2 go through
+        // normal temperature processing (may become tundra/plains).
+        if (row === 0 || row === this.height - 1) {
           tile.type = TERRAIN_TYPES.ARCTIC;
-          continue;
-        }
-        if (row === 2) {
-          tile.type = TERRAIN_TYPES.TUNDRA; // Row 2 is always tundra
-          continue;
-        }
-        if (row >= this.height - 2) {
-          tile.type = TERRAIN_TYPES.ARCTIC;
-          continue;
-        }
-        if (row === this.height - 3) {
-          tile.type = TERRAIN_TYPES.TUNDRA;
           continue;
         }
 
@@ -619,7 +739,10 @@ export default class MapGenerator {
         } else if (temp > grassThreshold) {
           tile.type = TERRAIN_TYPES.GRASSLAND;
         } else if (temp > tundraThreshold) {
-          tile.type = TERRAIN_TYPES.TUNDRA;
+          // Tundra: probabilistic mix with plains for natural transition.
+          // Closer to poles (lower latFactor) = more tundra; toward equator = more plains.
+          const tundraProb = Math.max(0.2, 1.0 - latFactor * 1.5);
+          tile.type = rng() < tundraProb ? TERRAIN_TYPES.TUNDRA : TERRAIN_TYPES.PLAINS;
         } else {
           tile.type = TERRAIN_TYPES.ARCTIC;
         }
@@ -687,11 +810,11 @@ export default class MapGenerator {
       (c) => this.wrapCol(c),
     );
 
-    // Climate modulates the rain shadow effect itself:
-    //   arid (0): mountains block MORE (0.6 → 0.4) → sharper dry shadows
-    //   normal (1): no change (0.6)
-    //   tropical (2): mountains block LESS (0.6 → 0.8) → moisture penetrates
-    const shadowMod = 1.0 + (this.climate - 1) * 0.20;  // 0.8 / 1.0 / 1.2
+    // Climate modulates the rain shadow effect STRONGLY:
+    //   arid (0): mountains block 50% more → sharp dry shadows
+    //   normal (1): no change
+    //   tropical (2): mountains block 50% less → moisture penetrates deep
+    const shadowMod = 1.0 + (this.climate - 1) * 0.35;  // 0.65 / 1.0 / 1.35
     for (let r = 0; r < this.height; r++) {
       for (let c = 0; c < this.width; c++) {
         rainShadow[r][c] = Math.max(0, Math.min(1, rainShadow[r][c] * shadowMod));
@@ -717,12 +840,12 @@ export default class MapGenerator {
     }
     const safeMaxDist = Math.max(1, maxDist);
 
-    // Climate setting strongly affects moisture distribution:
-    //   0 (Arid): low base, steep rain shadow → desert/plains dominate
-    //   1 (Normal): balanced moisture → mixed vegetation
-    //   2 (Tropical): high base, mild rain shadow → forest/jungle dominate
-    const baseMoisture = 0.15 + this.climate * 0.175;     // 0.15 / 0.325 / 0.50
-    const climateBoost = (this.climate - 1) * 0.35;        // -0.35 / 0 / +0.35
+    // Climate setting STRONGLY affects moisture:
+    //   0 (Arid): very dry → desert/plains dominate, minimal forest
+    //   1 (Normal): balanced → mixed vegetation
+    //   2 (Tropical): very wet → forest/jungle dominate, minimal desert
+    const baseMoisture = 0.08 + this.climate * 0.22;      // 0.08 / 0.30 / 0.52
+    const climateBoost = (this.climate - 1) * 0.45;        // -0.45 / 0 / +0.45
 
     for (let r = 0; r < this.height; r++) {
       const latNorm = Math.abs(r - this.yMedian) / (this.yMedian || 1);
@@ -939,23 +1062,20 @@ export default class MapGenerator {
 
       closedSet.add(currentKey);
 
-      // Cardinal + diagonal neighbors
+      // Cardinal ONLY — rivers must not use diagonals (creates gaps)
       const neighbors = [
-        { col: current.col - 1, row: current.row },
-        { col: current.col + 1, row: current.row },
-        { col: current.col, row: current.row - 1 },
-        { col: current.col, row: current.row + 1 },
-        { col: current.col - 1, row: current.row - 1 },
-        { col: current.col + 1, row: current.row + 1 },
-        { col: current.col - 1, row: current.row + 1 },
-        { col: current.col + 1, row: current.row - 1 },
+        { col: current.col - 1, row: current.row },  // West
+        { col: current.col + 1, row: current.row },  // East
+        { col: current.col, row: current.row - 1 },  // North
+        { col: current.col, row: current.row + 1 },  // South
       ];
 
       for (let ni = 0; ni < neighbors.length; ni++) {
         const neighbor = neighbors[ni];
-        const nc = this.wrapCol(neighbor.col);
+        // Rivers must NOT wrap around map edges — stay within bounds
+        const nc = neighbor.col;
         const nr = neighbor.row;
-        if (!this.isValid(nc, nr)) continue;
+        if (nc < 0 || nc >= this.width || nr < 0 || nr >= this.height) continue;
 
         const neighborKey = `${nc},${nr}`;
         if (closedSet.has(neighborKey)) continue;
@@ -967,9 +1087,8 @@ export default class MapGenerator {
         // Same direction = 0, 45° turn = 0.3, 90° turn = 0.8, 135°+ = 1.5
         if (current.prevDir >= 0) {
           const angleDiff = Math.abs(ni - current.prevDir);
-          if (angleDiff === 1 || angleDiff === 7) cost += 0.6;      // 45° — gentle bend
-          else if (angleDiff === 2 || angleDiff === 6) cost += 1.5;  // 90° — sharp turn
-          else if (angleDiff >= 3) cost += 3.0;                       // 135°+ — reversal
+          if (angleDiff === 1 || angleDiff === 3) cost += 0.8;      // 90° — one cardinal turn
+          else if (angleDiff === 2) cost += 2.0;                     // 180° — reversal (avoid)
         }
 
         const g = current.g + cost;
@@ -995,25 +1114,24 @@ export default class MapGenerator {
 
   // ── Stage 6 — Polar caps ────────────────────────────────────────
 
-  private stage6_PolarCaps(rng: () => number): void {
-    // Arctic: exactly 2 rows on top and bottom — no more.
-    // The temperature stage now also locks rows 0-2 and height-3 to height-1
-    // to prevent warm biomes appearing at the poles.
+  private stage6_PolarCaps(_rng: () => number): void {
+    // Arctic: ONLY the outermost row — max 1 row of pure ice.
+    // Row 1 and height-2 go through temperature processing and may become
+    // tundra or plains depending on the threshold — giving a natural
+    // transition instead of a solid arctic band.
     for (let col = 0; col < this.width; col++) {
       this.cells[0][col].type = TERRAIN_TYPES.ARCTIC;
-      this.cells[1][col].type = TERRAIN_TYPES.ARCTIC;
       this.cells[this.height - 1][col].type = TERRAIN_TYPES.ARCTIC;
-      this.cells[this.height - 2][col].type = TERRAIN_TYPES.ARCTIC;
     }
-    // Scatter Tundra on row 2 and height-3 for natural transition
-    const scatter = Math.floor(this.width * 0.3);
-    for (let i = 0; i < scatter; i++) {
-      const c = Math.floor(rng() * this.width);
-      if (this.cells[2][c].type === TERRAIN_TYPES.PLAINS) {
-        this.cells[2][c].type = TERRAIN_TYPES.TUNDRA;
+    // Light tundra scatter on row 1 and height-2 for natural transition
+    for (let col = 0; col < this.width; col++) {
+      if (this.cells[1][col].type === TERRAIN_TYPES.PLAINS) {
+        const n = hashNoise(col, 1, 555);
+        if (n < 0.25) this.cells[1][col].type = TERRAIN_TYPES.TUNDRA;
       }
-      if (this.cells[this.height - 3][c].type === TERRAIN_TYPES.PLAINS) {
-        this.cells[this.height - 3][c].type = TERRAIN_TYPES.TUNDRA;
+      if (this.cells[this.height - 2][col].type === TERRAIN_TYPES.PLAINS) {
+        const n = hashNoise(col, this.height - 2, 666);
+        if (n < 0.25) this.cells[this.height - 2][col].type = TERRAIN_TYPES.TUNDRA;
       }
     }
   }

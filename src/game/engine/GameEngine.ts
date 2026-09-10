@@ -765,6 +765,10 @@ export default class GameEngine {
       mapWidth = 20;
       mapHeight = 20;
       console.log(`[GameEngine] Using small map size for ${mapType}: ${mapWidth}x${mapHeight}`);
+    } else if (mapType === 'EARTH') {
+      mapWidth = 80;
+      mapHeight = 50;
+      console.log(`[GameEngine] Using Earth map size: ${mapWidth}x${mapHeight}`);
     } else if (mapType === 'AI_VS_AI') {
       mapWidth = 40;
       mapHeight = 40;
@@ -837,6 +841,9 @@ export default class GameEngine {
     if (mapType === 'NAVAL_CLOSEUP') {
       // Water-only map — no land, no rivers.
       tiles = generator.generateWaterOnly();
+    } else if (mapType === 'EARTH') {
+      // Predefined Earth geography map.
+      tiles = generator.generateEarth();
     } else {
       // Full Civ1-style terrain generation.
       tiles = generator.generate();
@@ -2855,92 +2862,115 @@ export default class GameEngine {
     const attackerWins = Math.random() * (attackerStrength + defenderStrength) < attackerStrength;
     
     if (attackerWins) {
-      // Attacker wins - move to defender's position
-      const fromCol = attacker.col;
-      const fromRow = attacker.row;
-
-      attacker.col = defender.col;
-      attacker.row = defender.row;
-      attacker.movesRemaining = 0;
-      attacker.hasMovedThisTurn = true;
-
-      // Update turn done status for attacker
-      this.updateUnitTurnsDoneFlag(attacker);
-
-      // Log combat movement
-      console.log(`[COMBAT MOVEMENT] ${attacker.type} (${attacker.id}) defeated ${defender.type} (${defender.id}) and moved from (${fromCol},${fromRow}) to (${defender.col},${defender.row})`);
-
-      // Mark defender as defeated and delay removal (5 seconds to show black X)
-      defender.isDefeated = true;
-      defender.defeatTimestamp = Date.now();
+      // Attacker wins — apply PROPORTIONAL damage to defender.
+      // Damage scales with the strength ratio: dominant attacks deal more.
+      const ratio = attackerStrength / (attackerStrength + defenderStrength);
+      const baseDamage = Math.round(30 + 50 * ratio); // 30–80 damage
+      defender.health = Math.max(0, (defender.health ?? 100) - baseDamage);
       
-      if (this.onStateChange) {
-        this.onStateChange('UNIT_DEFEATED', { unit: defender });
-      }
-      setTimeout(() => {
-        this.units = this.units.filter(u => u.id !== defender.id);
+      if (defender.health <= 0) {
+        // Defender killed — move attacker to defender's position
+        const fromCol = attacker.col;
+        const fromRow = attacker.row;
 
-        // Sync the store so the defeated unit actually disappears (the engine
-        // removed it here; without this the store would keep a stale copy).
-        this.onStateChange?.('UNIT_REMOVED', { unit: defender });
+        attacker.col = defender.col;
+        attacker.row = defender.row;
+        attacker.movesRemaining = 0;
+        attacker.hasMovedThisTurn = true;
 
-        // Phase 3.2: If a scout died, reassign zones
-        if (defender.type === 'scout') {
-          this.onScoutDeath(defender);
+        this.updateUnitTurnsDoneFlag(attacker);
+
+        console.log(`[COMBAT] ${attacker.type} killed ${defender.type} (${baseDamage} dmg) and moved to (${defender.col},${defender.row})`);
+
+        defender.isDefeated = true;
+        defender.defeatTimestamp = Date.now();
+        
+        if (this.onStateChange) {
+          this.onStateChange('UNIT_DEFEATED', { unit: defender });
         }
-      }, 1200);
+        setTimeout(() => {
+          this.units = this.units.filter(u => u.id !== defender.id);
+          this.onStateChange?.('UNIT_REMOVED', { unit: defender });
+          if (defender.type === 'scout') {
+            this.onScoutDeath(defender);
+          }
+        }, 1200);
 
-      if (this.onStateChange) {
-        this.onStateChange('COMBAT_VICTORY', {
-          attacker,
-          defender,
-          attackerFromCol: fromCol,
-          attackerFromRow: fromRow,
-          attackerSurvived: true,
-          defenderSurvived: false,
-        });
-      }
+        if (this.onStateChange) {
+          this.onStateChange('COMBAT_VICTORY', {
+            attacker,
+            defender,
+            attackerFromCol: fromCol,
+            attackerFromRow: fromRow,
+            attackerSurvived: true,
+            defenderSurvived: false,
+          });
+        }
 
-      // Civ1: when the LAST defender inside a city falls, the city is captured
-      // instantly — the attacker takes the city and any remaining garrison
-      // (stacked units not yet fought) is destroyed. Without this, a
-      // garrisoned city could never be taken: the attacker would just stand on
-      // the tile after killing the defender and city combat would never run.
-      const cityHere = this.getCityAt(defender.col, defender.row);
-      if (cityHere && cityHere.civilizationId !== attacker.civilizationId) {
-        const originalCiv = cityHere.civilizationId;
-        const stillDefended = this.units.some(
-          (u: Unit) => u.civilizationId === originalCiv
-            && u.col === cityHere.col && u.row === cityHere.row
-            && u.isDefeated !== true
-            && u.id !== defender.id,
-        );
-        if (!stillDefended) {
-          const captureResult = this.resolveCityCombat(attacker, cityHere);
-          if (captureResult === 'captured' || captureResult === 'city_destroyed') {
-            // Attacker survives city capture — spend its moves for this turn.
-            attacker.movesRemaining = 0;
-            attacker.hasMovedThisTurn = true;
-            this.updateUnitTurnsDoneFlag(attacker);
-            if (captureResult === 'captured' && this.onStateChange) {
-              this.onStateChange('CITY_CAPTURED', {
-                city: cityHere,
-                capturedBy: attacker.civilizationId,
-                originalCiv,
-              });
+        // Civ1: when the LAST defender inside a city falls, the city is captured
+        const cityHere = this.getCityAt(defender.col, defender.row);
+        if (cityHere && cityHere.civilizationId !== attacker.civilizationId) {
+          const originalCiv = cityHere.civilizationId;
+          const stillDefended = this.units.some(
+            (u: Unit) => u.civilizationId === originalCiv
+              && u.col === cityHere.col && u.row === cityHere.row
+              && u.isDefeated !== true
+              && u.id !== defender.id,
+          );
+          if (!stillDefended) {
+            const captureResult = this.resolveCityCombat(attacker, cityHere);
+            if (captureResult === 'captured' || captureResult === 'city_destroyed') {
+              attacker.movesRemaining = 0;
+              attacker.hasMovedThisTurn = true;
+              this.updateUnitTurnsDoneFlag(attacker);
+              if (captureResult === 'captured' && this.onStateChange) {
+                this.onStateChange('CITY_CAPTURED', {
+                  city: cityHere,
+                  capturedBy: attacker.civilizationId,
+                  originalCiv,
+                });
+              }
+              return true;
             }
-            return true;
           }
         }
-      }
 
-      // Check if turn should end automatically
-      this.checkAndEndTurnIfNoMoves('combat-win');
-      
-      return true;
+        this.checkAndEndTurnIfNoMoves('combat-win');
+        return true;
+      } else {
+        // Defender survived — both take light damage, neither moves
+        attacker.health = Math.max(0, (attacker.health ?? 100) - Math.round(10 + 15 * (1 - ratio)));
+        attacker.movesRemaining = 0;
+        attacker.hasMovedThisTurn = true;
+        this.updateUnitTurnsDoneFlag(attacker);
+        
+        if (this.onStateChange) {
+          this.onStateChange('COMBAT_VICTORY', {
+            attacker,
+            defender,
+            attackerSurvived: (attacker.health ?? 0) > 0,
+            defenderSurvived: true,
+          });
+        }
+        
+        if (attacker.health <= 0) {
+          attacker.isDefeated = true;
+          attacker.defeatTimestamp = Date.now();
+          if (this.onStateChange) this.onStateChange('UNIT_DEFEATED', { unit: attacker });
+          setTimeout(() => {
+            this.units = this.units.filter(u => u.id !== attacker.id);
+            this.onStateChange?.('UNIT_REMOVED', { unit: attacker });
+          }, 1200);
+        }
+        
+        this.checkAndEndTurnIfNoMoves('combat-both-survived');
+        return true;
+      }
     } else {
-      // Defender wins - attacker is damaged or destroyed
-      attacker.health -= 25;
+      // Defender wins - attacker takes proportional damage
+      const ratio = defenderStrength / (attackerStrength + defenderStrength);
+      const damage = Math.round(20 + 50 * ratio); // 20–70 damage
+      attacker.health = Math.max(0, (attacker.health ?? 100) - damage);
       attacker.movesRemaining = 0;
       attacker.hasMovedThisTurn = true;
 

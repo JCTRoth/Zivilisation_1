@@ -212,7 +212,9 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
         <div className="no-selection-summary">
           Food: {playerResources?.food ?? 0} • Production: {playerResources?.production ?? 0}
         </div>
-        <div>Trade: {playerResources?.trade ?? 0} • Science: {playerResources?.science ?? 0}</div>
+        <div>Trade: {playerResources?.trade ?? 0} • Science: {(gameEngine?.researchManager && currentPlayer?.currentResearch)
+          ? gameEngine.researchManager.beakersApplied(currentPlayer, currentPlayer.currentResearch, playerResources?.science ?? 0)
+          : playerResources?.science ?? 0}</div>
       </div>
     );
   };

@@ -485,6 +485,32 @@ export class MapRenderer {
       }
     }
 
+    // ── Pass 2b: edge-aware river rendering ────────────────────────────────
+    // Replaces the old blue "~" glyph with directional water arms that
+    // connect to adjacent river tiles and show natural banks.
+    if (tm && tm.isReady) {
+      for (let row = 0; row < map.height; row++) {
+        for (let col = 0; col < map.width; col++) {
+          const tile = terrainGrid[row]?.[col];
+          if (!tile?.explored || !tile.hasRiver) continue;
+          const x = col * scaledTile;
+          const y = row * scaledTile;
+
+          // Detect which cardinal edges connect to adjacent river tiles
+          const n = terrainGrid[row - 1]?.[col];
+          const e = terrainGrid[row]?.[col + 1];
+          const s = terrainGrid[row + 1]?.[col];
+          const w = terrainGrid[row]?.[col - 1];
+          const connectN = !!n?.hasRiver && n.explored;
+          const connectE = !!e?.hasRiver && e.explored;
+          const connectS = !!s?.hasRiver && s.explored;
+          const connectW = !!w?.hasRiver && w.explored;
+
+          tm.drawRiver(ctx, tile.type, x, y, scaledTile, connectN, connectE, connectS, connectW);
+        }
+      }
+    }
+
     // ── Pass 3a: terrain symbols (rivers, resources) — no fog ───────────
     for (let row = 0; row < map.height; row++) {
       for (let col = 0; col < map.width; col++) {
@@ -909,7 +935,24 @@ export class MapRenderer {
         }
 
         if (camera.zoom > 0.5) {
-          this.drawTerrainSymbol(ctx, x, y, tile, { drawBase: false, drawRivers: true });
+          // Edge-aware river rendering (replaces old "~" glyph)
+          if (tile.hasRiver) {
+            const tm2 = this.textureManager;
+            if (tm2 && tm2.isReady) {
+              const n2 = terrainGrid[row - 1]?.[col];
+              const e2 = terrainGrid[row]?.[col + 1];
+              const s2 = terrainGrid[row + 1]?.[col];
+              const w2 = terrainGrid[row]?.[col - 1];
+              tm2.drawRiver(ctx, tile.type, tileX, tileY, scaledTileSize,
+                !!n2?.hasRiver && n2.explored,
+                !!e2?.hasRiver && e2.explored,
+                !!s2?.hasRiver && s2.explored,
+                !!w2?.hasRiver && w2.explored,
+              );
+            }
+          } else {
+            this.drawTerrainSymbol(ctx, x, y, tile, { drawBase: false, drawRivers: true });
+          }
         }
 
         if (!tile.visible) {

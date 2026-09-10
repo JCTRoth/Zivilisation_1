@@ -103,8 +103,12 @@ export class ProductionManager {
           console.log('[ProductionManager] After buildQueue init', { cityId, buildQueue: city.buildQueue, city });
 
           if (queue && typeof (city as { queueProduction?: (item: ProductionItem) => void }).queueProduction === 'function') {
-            (city as { queueProduction: (item: ProductionItem) => void }).queueProduction(item);
-            console.log('[ProductionManager] city.queueProduction executed', { cityId, buildQueue: city.buildQueue });
+            // Prevent duplicate queue entries — skip if same item already in queue
+            const isDuplicate = city.buildQueue.some((q: ProductionItem) => q.itemType === item.itemType && q.type === item.type);
+            if (!isDuplicate) {
+              (city as { queueProduction: (item: ProductionItem) => void }).queueProduction(item);
+            }
+            console.log('[ProductionManager] city.queueProduction executed', { cityId, buildQueue: city.buildQueue, isDuplicate });
             // If no current production, start the first queued item with carried over progress
             if (!city.currentProduction && city.buildQueue.length > 0) {
               city.currentProduction = city.buildQueue[0];
@@ -115,8 +119,11 @@ export class ProductionManager {
           } else if (!queue && typeof (city as { setProduction?: (item: ProductionItem) => void }).setProduction === 'function') {
             (city as { setProduction: (item: ProductionItem) => void }).setProduction(item);
           } else if (queue && Array.isArray(city.buildQueue)) {
-            city.buildQueue.push(item);
-            console.log('[ProductionManager] pushed to city.buildQueue', { cityId, buildQueue: city.buildQueue });
+            const isDuplicate = city.buildQueue.some((q: ProductionItem) => q.itemType === item.itemType && q.type === item.type);
+            if (!isDuplicate) {
+              city.buildQueue.push(item);
+            }
+            console.log('[ProductionManager] pushed to city.buildQueue', { cityId, buildQueue: city.buildQueue, isDuplicate });
             // If no current production, start the first queued item with carried over progress
             if (!city.currentProduction && city.buildQueue.length === 1) {
               city.currentProduction = item;
@@ -144,8 +151,11 @@ export class ProductionManager {
       if (!Array.isArray(city2.buildQueue)) city2.buildQueue = [];
 
       if (queue && Array.isArray(city2.buildQueue)) {
-        city2.buildQueue.push(item);
-        console.log('[ProductionManager] fallback pushed to city2.buildQueue', { cityId, buildQueue: city2.buildQueue });
+        const isDuplicate2 = city2.buildQueue.some((q: ProductionItem) => q.itemType === item.itemType && q.type === item.type);
+        if (!isDuplicate2) {
+          city2.buildQueue.push(item);
+        }
+        console.log('[ProductionManager] fallback pushed to city2.buildQueue', { cityId, buildQueue: city2.buildQueue, isDuplicate: isDuplicate2 });
         // If no current production, start the first queued item with carried over progress
         if (!city2.currentProduction && city2.buildQueue.length === 1) {
           city2.currentProduction = item;

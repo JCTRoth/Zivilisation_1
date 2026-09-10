@@ -106,12 +106,12 @@ export const AI_MIN_TAX = 35;
  * invest the surplus instead of hoarding gold.
  */
 export const AI_RESERVE_TURNS: Record<StrategyProfile, number> = {
-  military_expansion: 2,
-  defensive_turtle: 2,
-  balanced_growth: 1,
-  early_expansion: 1,
-  wonder_rush: 1,
-  science_focus: 1,
+  military_expansion: 3,
+  defensive_turtle: 3,
+  balanced_growth: 2,
+  early_expansion: 2,
+  wonder_rush: 2,
+  science_focus: 2,
 };
 /** Fraction of the reserve shortfall the AI tries to rebuild each turn. */
 export const AI_RESERVE_REBUILD = 0.1;

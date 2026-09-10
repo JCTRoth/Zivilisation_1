@@ -99,8 +99,15 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
       (u) => u.civilizationId === currentPlayer.id,
     ).length;
     const upkeep = Math.max(unitCount, cities.length);
-    const tax = perCityCommerce.reduce((t, v) => t + Math.floor((v * rates.tax) / 100), 0);
-    const science = perCityCommerce.reduce((t, v) => t + Math.floor((v * rates.science) / 100), 0);
+    const tax = perCityCommerce.reduce((t, v) => t + Math.floor((v * rates.tax) / 100), 0) * 2; // ×2 matches engine TRADE_GOLD_MULTIPLIER
+    const rawScience = perCityCommerce.reduce((t, v) => t + Math.floor((v * rates.science) / 100), 0);
+    // Apply the same beaker modifiers the engine uses (knownCivs + prerequisites)
+    // so the preview shows EFFECTIVE research, not raw output.
+    const researchMgr = (gameEngine as { researchManager?: { beakersApplied: (civ: unknown, tech: unknown, base: number) => number } }).researchManager;
+    const currentTech = currentPlayer?.currentResearch ?? null;
+    const science = researchMgr && typeof researchMgr.beakersApplied === 'function' && currentTech
+      ? researchMgr.beakersApplied(currentPlayer, currentTech, rawScience)
+      : rawScience;
     const luxury = perCityCommerce.reduce((t, v) => t + Math.floor((v * rates.luxury) / 100), 0);
     return { commerce, tax, science, luxury, upkeep, net: tax - upkeep, hasCities: cities.length > 0 };
   }, [rates, currentPlayer, gameEngine]);

@@ -278,6 +278,7 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
           const progress = isCurrentResearch && (nodeCost ?? 0) > 0
             ? Math.min(1, (researchProgress || 0) / (nodeCost || 1))
             : 0;
+          const isUnavailable = !isPlayerResearched(tech.id) && !tech.available;
           return (
             <g 
               key={tech.id} 
@@ -285,7 +286,8 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
               onClick={() => handleNodeClick(tech.id)} 
               onMouseEnter={(e) => handleNodeMouseEnter(tech, e)}
               onMouseLeave={handleNodeMouseLeave}
-              className={`tech-tree-node ${isAnimating ? 'pulse' : ''} ${isCurrentResearch ? 'is-researching' : ''}`}
+              className={`tech-tree-node ${isAnimating ? 'pulse' : ''} ${isCurrentResearch ? 'is-researching' : ''} ${isUnavailable ? 'unavailable' : ''}`}
+              style={{ cursor: isUnavailable ? 'not-allowed' : 'pointer', opacity: isUnavailable ? 0.5 : 1 }}
             >
               <rect width={nodeWidth} height={nodeHeight} rx={6} ry={6} fill={fill} stroke={isCurrentResearch ? '#ffd700' : '#0b00a4ff'} strokeWidth={isCurrentResearch ? 3 : 1} />
               <text x={12} y={20} className="tech-tree-node-text">{tech.name}</text>
@@ -294,6 +296,9 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
               </text>
               {isCurrentResearch && progress > 0 && (
                 <rect x={4} y={nodeHeight - 6} width={(nodeWidth - 8) * progress} height={4} rx={2} fill="#ffd700" />
+              )}
+              {isUnavailable && (
+                <text x={nodeWidth / 2} y={nodeHeight / 2 - 2} textAnchor="middle" fill="#fff" fontSize={14} style={{ pointerEvents: 'none' }}>🔒</text>
               )}
             </g>
           );

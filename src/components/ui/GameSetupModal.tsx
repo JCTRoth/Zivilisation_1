@@ -281,6 +281,7 @@ function GameSetupModal({ show, onStart }) {
                     className="control-card__select"
                   >
                     <option value="NORMAL_SKIRMISH">Normal Skirmish · Standard game setup</option>
+                    <option value="EARTH">Earth · 80×50 real-world geography</option>
                     <option value="CLOSEUP_1V1">Close up 1vs1 · 20x20 map duel</option>
                     <option value="CLOSEUP_BEATUP">Close up beat em up · 20x20 combat focus</option>
                     <option value="NAVAL_CLOSEUP">Naval close up · 20x20 water map with fish</option>
