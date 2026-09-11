@@ -19,6 +19,27 @@ async function startGame(page: Page): Promise<void> {
 
   // Wait for game canvas to appear (game finished loading)
   await expect(page.locator('.game-canvas canvas').first()).toBeVisible({ timeout: 30_000 });
+
+  // The game now asks for the first research with an informational modal
+  // ("No Research Selected") — dismiss it so tests start on the board. The
+  // tech-tree tests open the tree themselves.
+  await closeResearchPrompt(page);
+}
+
+/**
+ * Helper: dismiss the start-of-game "No Research Selected" modal when it is
+ * open ("Decide Later" — research stays unset on purpose, feature tests
+ * exercise the gate separately). No-op when the game did not ask for one.
+ */
+async function closeResearchPrompt(page: Page): Promise<void> {
+  const researchPrompt = page.locator('.modal').filter({ hasText: 'No Research Selected' });
+  try {
+    await researchPrompt.waitFor({ state: 'visible', timeout: 5_000 });
+  } catch {
+    return; // no research prompt for this game
+  }
+  await researchPrompt.getByRole('button', { name: 'Decide Later' }).click();
+  await expect(researchPrompt).toBeHidden({ timeout: 5_000 });
 }
 
 /**
@@ -867,6 +888,70 @@ test.describe('AI Behavior', () => {
         const sidePanel = page.locator('.side-panel-shell').first();
         await expect(sidePanel.getByText('Cities: 1').first()).toBeVisible({ timeout: 10_000 });
       }
+    });
+
+    test('city production queue accepts the same unit repeatedly', async ({ page }) => {
+      test.setTimeout(180_000);
+      await startGame(page);
+
+      // Found the capital the way a player does: right-click the settler tile
+      // and pick "Found / Join City" from the ORDERS menu. The settler starts
+      // at a random spot, so scan the tile grid (64px pitch at default zoom)
+      // until the settler's menu shows up.
+      const canvas = page.locator('.game-canvas canvas').first();
+      await expect(canvas).toBeVisible();
+      await page.waitForTimeout(2_000); // let the camera settle on the settler
+
+      const foundBtn = page.getByRole('button', { name: /Found \/ Join City/i });
+      const box = (await canvas.boundingBox())!;
+      scan:
+      for (let y = 20; y < box.height; y += 64) {
+        for (let x = 20; x < box.width; x += 64) {
+          await canvas.click({ position: { x, y }, button: 'right' });
+          if (await foundBtn.isVisible().catch(() => false)) break scan;
+        }
+      }
+      await expect(foundBtn).toBeVisible({ timeout: 5_000 });
+      await foundBtn.click();
+      await dismissEndTurnDialog(page);
+
+      // Ctrl+1 selects the first city and opens the city screen.
+      await page.keyboard.press('Control+1');
+      const queuePanel = page.locator('.queue-panel').first();
+      await expect(queuePanel).toBeVisible({ timeout: 10_000 });
+
+      // Adding items must never replace what the city is currently building.
+      const productionBlock = page.locator('h6:text-is("Current Production") + div').first();
+      const productionBefore = (await productionBlock.textContent()) ?? '';
+
+      // Queue the same unit three times. Every click must land: a Warrior
+      // already sitting in the queue used to swallow the next one silently.
+      const queuedWarriors = queuePanel.locator('.queue-item').filter({ hasText: 'Warrior' });
+      const warriorsBefore = await queuedWarriors.count();
+
+      for (let i = 0; i < 3; i++) {
+        // Choose the Warrior in the picker — picking it also selects it as the
+        // city's production, and "Add" queues a copy.
+        await page.locator('.production-select-btn').first().click();
+        const picker = page.locator('.modal').filter({
+          has: page.locator('.modal-title', { hasText: 'Select Production' }),
+        });
+        await expect(picker).toBeVisible({ timeout: 5_000 });
+        await picker
+          .locator('tbody tr')
+          .filter({ hasText: 'Warrior' })
+          .getByRole('button', { name: 'Select' })
+          .click();
+        await expect(picker).toBeHidden({ timeout: 5_000 });
+        // "Add" appends the chosen unit to the queue.
+        await page.locator('.production-add-btn').click();
+      }
+
+      // All three clicks were honoured (the city may already have had some
+      // production queued by auto-production, hence the relative count).
+      await expect(queuedWarriors).toHaveCount(warriorsBefore + 3, { timeout: 5_000 });
+      // …and the current production is still the same item.
+      await expect(productionBlock).toHaveText(productionBefore);
     });
   });
 

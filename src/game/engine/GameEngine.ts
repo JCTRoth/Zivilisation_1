@@ -1,6 +1,7 @@
 import { SquareGrid } from '../HexGrid';
 import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
+import { WORLD_MAP } from '@/data/maps';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
 import { TERRAIN_RESOURCES, TERRAIN_TYPES } from '@/data/TerrainConstants';
@@ -766,9 +767,11 @@ export default class GameEngine {
       mapHeight = 20;
       console.log(`[GameEngine] Using small map size for ${mapType}: ${mapWidth}x${mapHeight}`);
     } else if (mapType === 'EARTH') {
-      mapWidth = 80;
-      mapHeight = 50;
-      console.log(`[GameEngine] Using Earth map size: ${mapWidth}x${mapHeight}`);
+      // Static world map (src/data/maps/earth-180x90.json) — must match the
+      // static map's dimensions so every tile of it is used.
+      mapWidth = 180;
+      mapHeight = 90;
+      console.log(`[GameEngine] Using Earth world map size: ${mapWidth}x${mapHeight}`);
     } else if (mapType === 'AI_VS_AI') {
       mapWidth = 40;
       mapHeight = 40;
@@ -879,6 +882,15 @@ export default class GameEngine {
     this.units = [];
     this.cities = [];
 
+    // Static world maps ship hand-placed start positions (the Freeciv Earth map
+    // has 30 balanced grassland spawns) — shuffle them once so each civ gets a
+    // different, far-apart spawn instead of a random tile (which could be ice).
+    const staticStarts = mapType === 'EARTH' ? [...(WORLD_MAP?.startPositions ?? [])] : [];
+    for (let i = staticStarts.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [staticStarts[i], staticStarts[j]] = [staticStarts[j], staticStarts[i]];
+    }
+
     for (let i = 0; i < selectedCivs.length; i++) {
       const civData = selectedCivs[i];
       
@@ -919,7 +931,19 @@ export default class GameEngine {
       const mapWidth = this.map?.width || Constants.MAP_WIDTH;
       const mapHeight = this.map?.height || Constants.MAP_HEIGHT;
       const minDist = mapWidth <= 20 ? 5 : 12; // Smaller distance for small maps
-      
+
+      // Prefer the static map's hand-placed starts (skipping any that are
+      // unusable or too close to a civ that already settled).
+      while (!startPos && staticStarts.length > 0) {
+        const candidate = staticStarts.shift()!;
+        const tile = this.getTileAt(candidate.col, candidate.row);
+        if (!tile || tile.type === Constants.TERRAIN.OCEAN || tile.type === Constants.TERRAIN.MOUNTAINS) continue;
+        const tooClose = this.units.some(
+          (u) => this.squareGrid.squareDistance(candidate.col, candidate.row, u.col, u.row) < minDist,
+        );
+        if (!tooClose) startPos = { col: candidate.col, row: candidate.row };
+      }
+
       while (!startPos && attempts < 100) {
         const col = Math.floor(Math.random() * (mapWidth - 4)) + 2;
         const row = Math.floor(Math.random() * (mapHeight - 4)) + 2;
@@ -3729,6 +3753,49 @@ export default class GameEngine {
         civ.researchProgress = savedProgress || 0;
       }
     }
+  }
+
+  /**
+   * Technologies this civ could start right now: not yet researched by the
+   * civ itself and all prerequisites already researched by it. (Own techs
+   * only — the shared tree flags are union-based, see `setResearch`.)
+   */
+  availableResearchFor(civId: number) {
+    const civ = this.civilizations?.[civId];
+    if (!civ) return [];
+    const owned = new Set<string>((civ.technologies ?? []).map(String));
+    return (this.technologies ?? []).filter((tech) => {
+      if (owned.has(String(tech.id))) return false;
+      const prereqs = tech.prerequisites ?? [];
+      return prereqs.length === 0 || prereqs.every((p) => owned.has(String(p)));
+    });
+  }
+
+  /** Whether the civ still has any technology it could research. */
+  hasResearchableTech(civId: number): boolean {
+    return this.availableResearchFor(civId).length > 0;
+  }
+
+  /**
+   * Pick a RANDOM available technology for the civ and start researching it.
+   * Used as the fallback when a human turn ends without a research selection
+   * (the auto-end gate only prompts — this guarantees research never sits
+   * idle and the turn's science is not wasted).
+   * Returns the tech id, or null when nothing is left to research / the civ
+   * already has a research selected.
+   */
+  autoSelectResearch(civId: number, savedProgress = 0): string | null {
+    const civ = this.civilizations?.[civId];
+    if (!civ || civ.currentResearch) return null;
+    const candidates = this.availableResearchFor(civId);
+    if (candidates.length === 0) return null;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    this.setResearch(civId, pick.id, savedProgress);
+    console.log(`[GameEngine] Auto-selected research ${pick.name} for ${civ.name} (no technology was chosen)`);
+    if (this.onStateChange) {
+      this.onStateChange('RESEARCH_AUTO_SELECTED', { civilizationId: civId, techId: pick.id, tech: pick });
+    }
+    return pick.id;
   }
 
   /**

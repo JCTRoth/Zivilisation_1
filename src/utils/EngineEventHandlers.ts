@@ -11,6 +11,10 @@ export class EngineEventRouter {
   private actions = useGameStore.getState().actions;
   private lastQueueLengths: Map<number, number> = new Map();
   private endTurnPromptShown: Set<number> = new Set();
+  /** Set once the auto-end check asked the player to pick a research, so the
+   *  "no research selected" prompt is not repeated on every check. Cleared as
+   *  soon as a research is selected (or nothing is left to research). */
+  private researchPromptedForGap = false;
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
@@ -70,6 +74,9 @@ export class EngineEventRouter {
         break;
       case 'CHECK_AUTO_END_TURN':
         this.onCheckAutoEndTurn();
+        break;
+      case 'RESEARCH_AUTO_SELECTED':
+        this.onResearchAutoSelected(eventData);
         break;
       case 'TURN_END_CONFIRMATION_NEEDED':
         this.onTurnEndConfirmationNeeded();
@@ -597,6 +604,22 @@ export class EngineEventRouter {
     // Note: TurnManager now handles turn advancement internally
   }
 
+  /**
+   * The engine auto-picked a technology because the human player ended a turn
+   * without selecting one (the auto-end gate only prompts — this fallback
+   * guarantees research never sits idle). Sync the store + inform the player.
+   */
+  private onResearchAutoSelected(eventData: Record<string, unknown>) {
+    const civilizationId = eventData?.civilizationId as number;
+    const tech = eventData?.tech as Technology | undefined;
+    this.actions.updateCivilizations([...(this.gameEngine.civilizations || [])]);
+    if (civilizationId !== HUMAN_PLAYER_ID || !tech?.name) return;
+    this.actions.addNotification({
+      type: 'info',
+      message: `No research selected — now researching ${tech.name}.`,
+    });
+  }
+
   private onCheckAutoEndTurn() {
     const state = useGameStore.getState();
     const settings = state.settings;
@@ -607,6 +630,35 @@ export class EngineEventRouter {
       console.log('[AUTO-END] Auto end turn disabled, waiting for manual turn end');
       return;
     }
+
+    // Never auto-end the turn while the player still has no technology
+    // selected: the turn would be thrown away with research sitting idle.
+    // Once per "no research" gap an informational modal points this out (the
+    // player decides there whether to open the tech tree or keep playing) —
+    // they may still end the turn manually, and the engine then auto-selects
+    // a random available tech (see GameEngine.autoSelectResearch /
+    // TurnManager.endHumanTurn).
+    const human = (this.gameEngine?.civilizations ?? []).find((c: Civilization) => c.isHuman);
+    const needsResearch = !!human
+      && !human.currentResearch
+      && typeof this.gameEngine?.hasResearchableTech === 'function'
+      && this.gameEngine.hasResearchableTech(human.id);
+    if (needsResearch) {
+      if (!this.researchPromptedForGap) {
+        this.researchPromptedForGap = true;
+        console.log('[AUTO-END] Auto end turn deferred — no research selected');
+        this.actions.addNotification({
+          type: 'warning',
+          message: 'Choose a technology to research first.',
+        });
+        // Inform (do not decide for the player): "No Research Selected" modal.
+        this.actions.showDialog('research-required');
+      }
+      return;
+    }
+    // Research is selected (or nothing is left to research) — allow the next
+    // gap to prompt again.
+    this.researchPromptedForGap = false;
 
     // Do not auto-end the turn while the player is in a screen where they
     // might still make a decision: city management (details / production /
@@ -690,6 +742,10 @@ export class EngineEventRouter {
     const techId = eventData.techId as string;
     const tech = this.gameEngine.technologies?.find((t: Technology) => t.id === techId);
     if (!tech) return;
+
+    // A completed tech starts a new "needs a research decision" gap: allow the
+    // auto-end gate to prompt again if no follow-up research is selected.
+    this.researchPromptedForGap = false;
 
     // Keep the UI copies of techs/civs in sync with the engine (researched
     // flags + currentResearch may have changed).

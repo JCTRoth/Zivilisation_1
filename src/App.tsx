@@ -225,25 +225,28 @@ function App() {
     handleGameStart(quickSettings);
   }, [gameEngine, showGameSetup, handleGameStart]);
 
-  // Show the research-selection modal once when the game starts with no
-  // active research and no researched techs. Only fires once per game.
-  const researchPromptedRef = useRef(false);
+  // Ask the player to pick a technology when a game starts with no research
+  // selected. (Civilizations start with a few free techs, so the old "no techs
+  // at all" condition never matched.) Fires once per game/engine instance, on
+  // turn 1.
+  const researchPromptedRef = useRef<GameEngine | null>(null);
   useEffect(() => {
-    if (!gameEngine || !gameState.isGameStarted) {
-      researchPromptedRef.current = false;
-      return;
-    }
-    if (researchPromptedRef.current) return;
-    const civ = gameEngine.civilizations?.[gameState.activePlayer];
+    if (!gameEngine || !gameState.isGameStarted) return;
+    if (gameState.currentTurn > 1) return;
+    if (researchPromptedRef.current === gameEngine) return;
+    const civ = gameEngine.civilizations?.find((c) => c.isHuman);
     if (!civ) return;
-    const hasResearched = (civ.technologies?.length ?? 0) > 0;
-    const hasResearch = !!civ.currentResearch;
-    if (!hasResearched && !hasResearch) {
-      researchPromptedRef.current = true;
-      // Short delay so the game board renders first
-      setTimeout(() => actions.showDialog('tech'), 500);
+    const canResearch = typeof gameEngine.hasResearchableTech === 'function'
+      && gameEngine.hasResearchableTech(civ.id);
+    if (!civ.currentResearch && canResearch) {
+      researchPromptedRef.current = gameEngine;
+      actions.addNotification({ type: 'info', message: 'Choose a technology to research.' });
+      // Short delay so the game board renders first. Opens the informational
+      // "No Research Selected" modal — NOT the tech tree directly; the player
+      // chooses there whether to pick a tech or continue without one.
+      setTimeout(() => actions.showDialog('research-required'), 500);
     }
-  }, [gameEngine, gameState.isGameStarted, gameState.activePlayer, actions]);
+  }, [gameEngine, gameState.isGameStarted, gameState.currentTurn, actions]);
 
   // End the human turn and, when it was auto-triggered, surface a recap of
   // what the engine auto-resolved (e.g. "2 units skipped"). Shared by the
@@ -519,6 +522,8 @@ function App() {
     }
     try {
       await gameEngine.restartCurrentGame();
+      // A restarted game is a fresh game: ask for a research again.
+      researchPromptedRef.current = null;
       // Restart the progression tracker for the fresh game.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       gameProgression.startSession(gameEngine, (gameEngine as any)?.gameSettings ?? {});

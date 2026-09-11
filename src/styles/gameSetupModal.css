@@ -8,6 +8,26 @@
   padding: 20px clamp(16px, 4vw, 32px);
 }
 
+/* Boxed container for all settings above "Your Setup" */
+.setup-settings-box {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+
+  /* Match the .setup-summary box look — copy the exact values
+     from your existing .setup-summary rule for a perfect match */
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+  /* On wide screens, place the settings box and summary box side by side */
+  .setup-section .setup-settings-box {
+    margin-bottom: 1.25rem;
+  }
+
 .modal-header-custom .modal-title {
   font-size: clamp(1.6rem, 2.25vw, 2.2rem);
   font-weight: 600;
@@ -757,4 +777,79 @@
 
 .modal-dialog.game-setup-dialog .modal-body-custom::-webkit-scrollbar-thumb:hover {
   background: rgba(212, 175, 55, 0.8);
+}
+
+/* ============================================================
+   One big settings box — same look as .setup-summary,
+   with flat settings inside (no inner mini-boxes)
+   ============================================================ */
+.setup-settings-box {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+
+  /* Match .setup-summary — replace with the exact values from your CSS */
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.setup-settings-box__header {
+  text-align: center;
+}
+
+.setup-settings-box__title {
+  margin: 0 0 0.25rem;
+  font-size: 1.25rem;
+}
+
+.setup-settings-box__subtitle {
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
+/* Flat grid of settings — like .setup-summary-grid */
+.setup-settings-box__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem 2rem;
+}
+
+/* Each setting: flat item, NO background/border/shadow */
+.setup-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.setup-setting__label {
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.setup-setting__value {
+  font-weight: 400;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.setup-setting__hint {
+  font-size: 0.78rem;
+  opacity: 0.6;
+}
+
+.setup-setting__control {
+  width: 100%;
 }

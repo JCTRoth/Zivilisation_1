@@ -17,8 +17,8 @@ function GameSetupModal({ show, onStart }) {
     if (!(target instanceof HTMLElement)) return true;
     const tag = target.tagName.toLowerCase();
     if (['button', 'select', 'input', 'textarea', 'a', 'label', 'option'].includes(tag)) return true;
-    // Treat anything inside a civ card / control card / summary / header as interactive
-    return !!target.closest('.setup-civ-card, .control-card, .setup-summary, .modal-header-custom, .setup-footer');
+    // Treat anything inside a civ card / summary / header as interactive
+    return !!target.closest('.setup-civ-card, .setup-summary, .modal-header-custom, .setup-footer');
   }, []);
 
   const handleBodyPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -233,106 +233,120 @@ function GameSetupModal({ show, onStart }) {
           {/* Step 2: Game Settings & Summary */}
           {currentStep === 2 && (
             <section className="setup-section" aria-labelledby="setup-step-settings">
-              <div className="setup-section-header">
-                <h3 id="setup-step-settings" className="setup-section-heading">Fine-tune Your Challenge</h3>
-                <p className="setup-section-subheading">Adjust the core settings before you embark on your campaign.</p>
-              </div>
-
-              <div className="setup-controls">
-                <div className="control-card">
-                  <div className="control-card__header">
-                    <span className="control-card__title">Difficulty</span>
-                    <span className="control-card__hint">Affects AI bonuses and barbarian activity.</span>
-                  </div>
-                  <Form.Select
-                    value={difficulty}
-                    onChange={(e) => setDifficulty(e.target.value)}
-                    className="control-card__select"
-                  >
-                    {difficultyOptions.map(({ id, label }) => (
-                      <option key={id} value={id}>{label}</option>
-                    ))}
-                  </Form.Select>
+              {/* ONE big box — all settings flat inside, no inner mini-boxes */}
+              <div className="setup-settings-box">
+                <div className="setup-settings-box__header">
+                  <h3 id="setup-step-settings" className="setup-settings-box__title">Fine-tune Your Challenge</h3>
+                  <span className="setup-settings-box__subtitle">Adjust the core settings before you embark on your campaign.</span>
                 </div>
 
-                <div className="control-card">
-                  <div className="control-card__header">
-                    <span className="control-card__title">Civilizations in Play</span>
-                    <span className="control-card__value">{numCivilizations}</span>
+                <div className="setup-settings-box__grid">
+                  <div className="setup-setting">
+                    <span className="setup-setting__label">Difficulty</span>
+                    <Form.Select
+                      value={difficulty}
+                      onChange={(e) => setDifficulty(e.target.value)}
+                      className="setup-setting__control"
+                    >
+                      {difficultyOptions.map(({ id, label }) => (
+                        <option key={id} value={id}>{label}</option>
+                      ))}
+                    </Form.Select>
+                    <span className="setup-setting__hint">Affects AI bonuses and barbarian activity.</span>
                   </div>
-                  <Form.Range
-                    min="2"
-                    max="7"
-                    value={numCivilizations}
-                    onChange={(e) => setNumCivilizations(Number(e.target.value))}
-                    className="control-card__range"
-                  />
-                  <span className="control-card__hint">More rivals mean tight borders and faster discoveries.</span>
-                </div>
 
-                <div className="control-card">
-                  <div className="control-card__header">
-                    <span className="control-card__title">Map Type</span>
-                    <span className="control-card__hint">Choose your game mode.</span>
+                  <div className="setup-setting">
+                    <span className="setup-setting__label">
+                      Civilizations in Play <span className="setup-setting__value">{numCivilizations}</span>
+                    </span>
+                    <Form.Range
+                      min="2"
+                      max="7"
+                      value={numCivilizations}
+                      onChange={(e) => setNumCivilizations(Number(e.target.value))}
+                      className="setup-setting__control"
+                    />
+                    <span className="setup-setting__hint">More rivals mean tight borders and faster discoveries.</span>
                   </div>
-                  <Form.Select
-                    value={mapType}
-                    onChange={(e) => setMapType(e.target.value)}
-                    className="control-card__select"
-                  >
-                    <option value="NORMAL_SKIRMISH">Normal Skirmish · Standard game setup</option>
-                    <option value="EARTH">Earth · 80×50 real-world geography</option>
-                    <option value="CLOSEUP_1V1">Close up 1vs1 · 20x20 map duel</option>
-                    <option value="CLOSEUP_BEATUP">Close up beat em up · 20x20 combat focus</option>
-                    <option value="NAVAL_CLOSEUP">Naval close up · 20x20 water map with fish</option>
-                    <option value="NO_SETTLERS">No Settlers · Start with military units</option>
-                    <option value="MANY_CITIES">Many Cities · 4 cities with infrastructure</option>
-                    <option value="TECH_LEVEL_10">Tech. Level 10 · All technologies researched</option>
-                    <option value="ALL_UNITS">All Units Showcase · Every unit type on the board</option>
-                    <option value="AI_VS_AI">Computer vs Computer · Auto-playing AI duel</option>
-                    <option value="AI_VS_AI_SMALL">Computer vs Computer (Small) · Tall narrow corridor</option>
-                  </Form.Select>
+
+                  <div className="setup-setting">
+                    <span className="setup-setting__label">Map Type</span>
+                    <Form.Select
+                      value={mapType}
+                      onChange={(e) => setMapType(e.target.value)}
+                      className="setup-setting__control"
+                    >
+                      <option value="NORMAL_SKIRMISH">Normal Skirmish · Standard game setup</option>
+                      <option value="EARTH">Earth · 180×90 real-world geography</option>
+                      <option value="CLOSEUP_1V1">Close up 1vs1 · 20x20 map duel</option>
+                      <option value="CLOSEUP_BEATUP">Close up beat em up · 20x20 combat focus</option>
+                      <option value="NAVAL_CLOSEUP">Naval close up · 20x20 water map with fish</option>
+                      <option value="NO_SETTLERS">No Settlers · Start with military units</option>
+                      <option value="MANY_CITIES">Many Cities · 4 cities with infrastructure</option>
+                      <option value="TECH_LEVEL_10">Tech. Level 10 · All technologies researched</option>
+                      <option value="ALL_UNITS">All Units Showcase · Every unit type on the board</option>
+                      <option value="AI_VS_AI">Computer vs Computer · Auto-playing AI duel</option>
+                      <option value="AI_VS_AI_SMALL">Computer vs Computer (Small) · Tall narrow corridor</option>
+                    </Form.Select>
+                    <span className="setup-setting__hint">Choose your game mode.</span>
+                  </div>
+
+                  {mapType !== 'NAVAL_CLOSEUP' && (
+                    <>
+                      <div className="setup-setting">
+                        <span className="setup-setting__label">
+                          Land Mass <span className="setup-setting__value">{['Sparse Islands', 'Standard', 'Pangaea'][landMass]}</span>
+                        </span>
+                        <Form.Range
+                          min="0" max="2" step="1"
+                          value={landMass}
+                          onChange={(e) => setLandMass(Number(e.target.value))}
+                          className="setup-setting__control"
+                        />
+                        <span className="setup-setting__hint">How much land appears on the map.</span>
+                      </div>
+
+                      <div className="setup-setting">
+                        <span className="setup-setting__label">
+                          Temperature <span className="setup-setting__value">{['Hot (Desert)', 'Temperate', 'Cold (Arctic)'][temperature]}</span>
+                        </span>
+                        <Form.Range
+                          min="0" max="2" step="1"
+                          value={temperature}
+                          onChange={(e) => setTemperature(Number(e.target.value))}
+                          className="setup-setting__control"
+                        />
+                        <span className="setup-setting__hint">Shifts the latitude-based biome distribution.</span>
+                      </div>
+
+                      <div className="setup-setting">
+                        <span className="setup-setting__label">
+                          Climate <span className="setup-setting__value">{['Dry (Plains)', 'Moderate', 'Wet (Jungle)'][climate]}</span>
+                        </span>
+                        <Form.Range
+                          min="0" max="2" step="1"
+                          value={climate}
+                          onChange={(e) => setClimate(Number(e.target.value))}
+                          className="setup-setting__control"
+                        />
+                        <span className="setup-setting__hint">Controls moisture and vegetation density.</span>
+                      </div>
+
+                      <div className="setup-setting">
+                        <span className="setup-setting__label">
+                          Age <span className="setup-setting__value">{['Young (Flat)', 'Mature', 'Old (Mountains)'][age]}</span>
+                        </span>
+                        <Form.Range
+                          min="0" max="2" step="1"
+                          value={age}
+                          onChange={(e) => setAge(Number(e.target.value))}
+                          className="setup-setting__control"
+                        />
+                        <span className="setup-setting__hint">Older maps have more hills and mountains.</span>
+                      </div>
+                    </>
+                  )}
                 </div>
-
-                {mapType !== 'NAVAL_CLOSEUP' && (
-                  <>
-                    <div className="control-card">
-                      <div className="control-card__header">
-                        <span className="control-card__title">Land Mass</span>
-                        <span className="control-card__value">{['Sparse Islands', 'Standard', 'Pangaea'][landMass]}</span>
-                      </div>
-                      <Form.Range min="0" max="2" step="1" value={landMass} onChange={(e) => setLandMass(Number(e.target.value))} className="control-card__range" />
-                      <span className="control-card__hint">How much land appears on the map.</span>
-                    </div>
-
-                    <div className="control-card">
-                      <div className="control-card__header">
-                        <span className="control-card__title">Temperature</span>
-                        <span className="control-card__value">{['Hot (Desert)', 'Temperate', 'Cold (Arctic)'][temperature]}</span>
-                      </div>
-                      <Form.Range min="0" max="2" step="1" value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} className="control-card__range" />
-                      <span className="control-card__hint">Shifts the latitude-based biome distribution.</span>
-                    </div>
-
-                    <div className="control-card">
-                      <div className="control-card__header">
-                        <span className="control-card__title">Climate</span>
-                        <span className="control-card__value">{['Dry (Plains)', 'Moderate', 'Wet (Jungle)'][climate]}</span>
-                      </div>
-                      <Form.Range min="0" max="2" step="1" value={climate} onChange={(e) => setClimate(Number(e.target.value))} className="control-card__range" />
-                      <span className="control-card__hint">Controls moisture and vegetation density.</span>
-                    </div>
-
-                    <div className="control-card">
-                      <div className="control-card__header">
-                        <span className="control-card__title">Age</span>
-                        <span className="control-card__value">{['Young (Flat)', 'Mature', 'Old (Mountains)'][age]}</span>
-                      </div>
-                      <Form.Range min="0" max="2" step="1" value={age} onChange={(e) => setAge(Number(e.target.value))} className="control-card__range" />
-                      <span className="control-card__hint">Older maps have more hills and mountains.</span>
-                    </div>
-                  </>
-                )}
               </div>
 
               <div className="setup-summary" aria-label="Game summary">
@@ -404,6 +418,15 @@ function GameSetupModal({ show, onStart }) {
                       <li>Treasury: <strong>50 Gold</strong></li>
                       <li>Tech: <strong>Irrigation, Mining, Roads</strong></li>
                       <li>Government: <strong>Despotism</strong></li>
+                    </ul>
+                  )}
+                  {mapType === 'EARTH' && (
+                    <ul>
+                      <li>Map: <strong>180x90 tiles (Static world map)</strong></li>
+                      <li>Source: <strong>Earth 180x90 v1.4</strong></li>
+                      <li>Year: <strong>4000 BC</strong></li>
+                      <li>Units: <strong>1 Settler</strong></li>
+                      <li>Treasury: <strong>50 Gold</strong></li>
                     </ul>
                   )}
                   {mapType === 'CLOSEUP_1V1' && (
@@ -483,7 +506,7 @@ function GameSetupModal({ show, onStart }) {
         </div>
       </Modal.Body>
       
-  <Modal.Footer className={`setup-footer ${(currentStep === 1 || isFinalStep) ? 'setup-footer--center' : ''}`}>
+      <Modal.Footer className={`setup-footer ${(currentStep === 1 || isFinalStep) ? 'setup-footer--center' : ''}`}>
         {currentStep === 1 && (
           <div className="setup-footer__selected">
             <span className="setup-footer__selected-label">Selected:</span>

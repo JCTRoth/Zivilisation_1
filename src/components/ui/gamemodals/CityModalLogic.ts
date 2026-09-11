@@ -82,10 +82,11 @@ export class CityModalLogic {
     }
   }
 
-  setProduction(item: ProductionItem, queue: boolean = false): void {
+  setProduction(item: ProductionItem, queue: boolean = false): { success: boolean; reason?: string } {
     if (this.gameEngine && this.gameEngine.productionManager) {
-      this.gameEngine.productionManager.setCityProduction(this.city.id, item, queue);
+      return this.gameEngine.productionManager.setCityProduction(this.city.id, item, queue);
     }
+    return { success: false, reason: 'production_manager_unavailable' };
   }
 
   removeQueueItem(index: number): void {

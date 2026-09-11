@@ -213,6 +213,23 @@
   white-space: normal;
 }
 
+/* Production: action row with the "Add" (queue) button below the selection
+   button / dropdown. */
+.production-btn-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.production-add-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: normal;
+}
+
 /* Production dropdown selector (city-production modal) */
 .production-select {
   width: 100%;

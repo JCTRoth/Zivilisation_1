@@ -39,6 +39,7 @@
   filter: invert(1);
   min-width: 44px;
   min-height: 44px;
+  color: whitesmoke;
 }
 
 .diplomacy-body {

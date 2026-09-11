@@ -94,6 +94,31 @@ export class ProductionManager {
     }
   }
 
+  /**
+   * Whether `item` must not be queued again in `city` — and why.
+   *
+   * Civ1 lets a city build the same *unit* over and over (queue three Warriors
+   * in a row), so unit duplicates are explicitly allowed. A *building* only
+   * exists once per city: a second copy either can't be built at all (the city
+   * already owns it — see `canBuildItem`) or silently wastes the shields it
+   * accumulated (`addBuildingToCity` skips duplicates on completion).
+   * Returns the rejection reason, or `null` when the item may be queued.
+   */
+  private queueDuplicateReason(city: City, item: ProductionItem): string | null {
+    const itemType = String(item?.itemType ?? item?.type ?? '');
+    if (!itemType) return null;
+    const isBuilding = item?.type === 'building' || !!BUILDING_PROPERTIES[itemType];
+    if (!isBuilding) return null; // units may repeat
+
+    const sameItem = (q: ProductionItem | null | undefined): boolean => {
+      if (!q) return false;
+      return String(q.itemType ?? q.type ?? '') === itemType;
+    };
+    if ((city.buildQueue ?? []).some(sameItem)) return 'already_queued';
+    if (sameItem(city.currentProduction as ProductionItem | null | undefined)) return 'already_in_production';
+    return null;
+  }
+
   setCityProduction(cityId: string, item: ProductionItem, queue: boolean = false): ProductionResult {
     console.log('[ProductionManager] setCityProduction called', { cityId, item, queue });
 
@@ -103,6 +128,9 @@ export class ProductionManager {
       console.warn(`[ProductionManager] Rejected production ${item?.name ?? item?.itemType ?? item}: ${gate.reason}`);
       return { success: false, reason: gate.reason };
     }
+    // Set when the item may not be queued again (duplicate building); the
+    // promotion step below still runs so a stranded queue item keeps producing.
+    let rejectReason: string | null = null;
     // Try city manager if available
     try {
       if (this.gameEngine.map && typeof (this.gameEngine.map as { getCity?: (id: string) => City | undefined }).getCity === 'function') {
@@ -115,12 +143,15 @@ export class ProductionManager {
           console.log('[ProductionManager] After buildQueue init', { cityId, buildQueue: city.buildQueue, city });
 
           if (queue && typeof (city as { queueProduction?: (item: ProductionItem) => void }).queueProduction === 'function') {
-            // Prevent duplicate queue entries — skip if same item already in queue
-            const isDuplicate = city.buildQueue.some((q: ProductionItem) => q.itemType === item.itemType && q.type === item.type);
-            if (!isDuplicate) {
+            // Only buildings are unique per city — the same unit may be queued
+            // any number of times.
+            const duplicate = this.queueDuplicateReason(city, item);
+            if (!duplicate) {
               (city as { queueProduction: (item: ProductionItem) => void }).queueProduction(item);
+            } else {
+              rejectReason = duplicate;
             }
-            console.log('[ProductionManager] city.queueProduction executed', { cityId, buildQueue: city.buildQueue, isDuplicate });
+            console.log('[ProductionManager] city.queueProduction executed', { cityId, buildQueue: city.buildQueue, rejected: duplicate });
             // If no current production, start the first queued item with
             // carried over progress. The item must be REMOVED from the queue
             // (shift): keeping it in both places made one queued item show up
@@ -134,11 +165,13 @@ export class ProductionManager {
           } else if (!queue && typeof (city as { setProduction?: (item: ProductionItem) => void }).setProduction === 'function') {
             (city as { setProduction: (item: ProductionItem) => void }).setProduction(item);
           } else if (queue && Array.isArray(city.buildQueue)) {
-            const isDuplicate = city.buildQueue.some((q: ProductionItem) => q.itemType === item.itemType && q.type === item.type);
-            if (!isDuplicate) {
+            const duplicate = this.queueDuplicateReason(city, item);
+            if (!duplicate) {
               city.buildQueue.push(item);
+            } else {
+              rejectReason = duplicate;
             }
-            console.log('[ProductionManager] pushed to city.buildQueue', { cityId, buildQueue: city.buildQueue, isDuplicate });
+            console.log('[ProductionManager] pushed to city.buildQueue', { cityId, buildQueue: city.buildQueue, rejected: duplicate });
             // If no current production, promote the queued item AND remove it
             // from the queue (otherwise the same item is listed twice).
             if (!city.currentProduction && city.buildQueue.length > 0) {
@@ -155,6 +188,8 @@ export class ProductionManager {
 
         // Emit state change for React
         if (this.gameEngine.onStateChange) this.gameEngine.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item, queued: !!queue });
+        // A duplicate building was not queued — tell the caller why.
+        if (rejectReason) return { success: false, reason: rejectReason };
         return { success: true, city };
       }
 
@@ -167,11 +202,13 @@ export class ProductionManager {
       if (!Array.isArray(city2.buildQueue)) city2.buildQueue = [];
 
       if (queue && Array.isArray(city2.buildQueue)) {
-        const isDuplicate2 = city2.buildQueue.some((q: ProductionItem) => q.itemType === item.itemType && q.type === item.type);
-        if (!isDuplicate2) {
+        const duplicate2 = this.queueDuplicateReason(city2, item);
+        if (!duplicate2) {
           city2.buildQueue.push(item);
+        } else {
+          rejectReason = duplicate2;
         }
-        console.log('[ProductionManager] fallback pushed to city2.buildQueue', { cityId, buildQueue: city2.buildQueue, isDuplicate: isDuplicate2 });
+        console.log('[ProductionManager] fallback pushed to city2.buildQueue', { cityId, buildQueue: city2.buildQueue, rejected: duplicate2 });
         // If no current production, promote the queued item AND remove it
         // from the queue (otherwise the same item is listed twice).
         if (!city2.currentProduction && city2.buildQueue.length > 0) {
@@ -188,6 +225,8 @@ export class ProductionManager {
       }
 
       if (this.gameEngine.onStateChange) this.gameEngine.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item, queued: !!queue });
+      // A duplicate building was not queued — tell the caller why.
+      if (rejectReason) return { success: false, reason: rejectReason };
       return { success: true, city: city2 };
     } catch (e) {
       console.error('[ProductionManager] setCityProduction error', e);

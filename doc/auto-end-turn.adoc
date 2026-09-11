@@ -35,9 +35,21 @@ Auto-end fires only when *all* of the following hold (`GameEngine.checkAndEndTur
      they close.
    * A *combat animation* defers auto-end while playing; the check is re-run
      ~2.4 s later when the cloud animation finishes (`onCombat` timeout).
-   * *Non-blocking dialogs* (WORLD menu, help, tech tree, hex-details) do *not*
-     block auto-end — closing them does not end the turn.
-5. GoTo movement paths are not currently being processed
+   * *Non-blocking dialogs* (WORLD menu, help, hex-details) do *not* block
+     auto-end. The *tech tree* and the *"No Research Selected"* prompt are
+     special-cased: they defer auto-end while no research is selected (see 5)
+     and closing them re-runs the check.
+5. A *technology is selected for research* — or nothing is left to research.
+   While the human has no `currentResearch` and researchable techs remain, the
+   turn is NOT auto-ended. Once per gap an informational *"No Research
+   Selected"* modal (`ResearchRequiredModal`, dialog id
+   `research-required`) is shown (`EngineEventHandlers.onCheckAutoEndTurn`,
+   `researchPromptedForGap`): it points out that science is idle and offers
+   *Choose Technology* (opens the tech tree) or *Decide Later* — it never
+   force-opens the tree. If the player ends the turn anyway, a random
+   available technology is auto-selected (`GameEngine.autoSelectResearch`
+   called from `TurnManager.endHumanTurn`) so science never sits idle.
+6. GoTo movement paths are not currently being processed
    (`TurnManager.isProcessingGoTo` guard).
 
 == When the check runs

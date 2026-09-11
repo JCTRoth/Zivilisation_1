@@ -27,98 +27,15 @@ import {
   RNG,
 } from './MapGeneratorHelper';
 
-/*
- * Predefined Earth map terrain layout (80×50 tiles).
- * Pacific-centered projection: Americas on right, Europe/Asia/Africa on left.
- * Map wraps: left/right edges connect across the Pacific.
- *
- * Characters: . = ocean, a = arctic, t = tundra, d = desert, p = plains,
- *             g = grassland, f = forest, j = jungle, h = hills, m = mountains
- */
-/**
- * Predefined Earth map terrain layout (80×50 tiles).
- * Standard Earth map (Americas on left, Europe/Africa middle, Asia/Australia right).
- * Japan enlarged 3x in the Pacific (cols 72-78, rows 12-21).
- *
- * Characters: . = ocean, a = arctic, t = tundra, d = desert, p = plains,
- *             g = grassland, f = forest, j = jungle, h = hills, m = mountains
- */
-/**
- * Predefined Earth map terrain layout (80×50 tiles).
- * Pacific-centered projection: Americas on right, Europe/Asia/Africa on left.
- * Map wraps: left/right edges connect across the Pacific.
- *
- * Characters: . = ocean, a = arctic, t = tundra, d = desert, p = plains,
- *             g = grassland, f = forest, j = jungle, h = hills, m = mountains
- */
-const EARTH_TERRAIN: string[] = [
-  //0         1         2         3         4         5         6         7
-  //01234567890123456789012345678901234567890123456789012345678901234567890123456789
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 0
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 1
-  'aaatttttaa......tttttttttt....tttttttttt....tttttttttttt....tttttttt....attttaaaa', // 2
-  'a..tttaa.......tttttttttt.....ttttttttt....ttttttttttt......tttttt......atttaa..', // 3
-  'aa.hhmmft.......tttttttttt.....tttttttt....ttttttttttt......tttthh......atttaa..', // 4
-  'a..hhmmfft......fffpppfff.......ttttttt.....tpppppffff.....tttthh.......ttaaaa..', // 5
-  'aa.hhmmffp......fffpppfff.......ttttttt.....tpppppffff.....tttthh.......ttaaaa..', // 6
-  'aa.hhffpp.......ffpppfff........tttttt.....tpppppfffff....tttt.........ttaaaa...', // 7
-  'aa..hffpp.......fffpppp.........tttttt.....tpppppffff......tttt..........ttaaaa..', // 8
-  'aa..ffppp.......ffffppp..........tttttt...tppppppfff......tttt..........ttaaaa..', // 9
-  'aaa.ffpp........ffffpp...........tttttt...tpppppffff.....ttttt...........ttaaa..', // 10
-  'aaa.fpp.........ffffpp...........t..ttt...tpppppffff....ttttt...........ttaaa...', // 11
-  'aaa..pp.........dddddpp............ttt....tppppppf.....ttttt............ttaaa...', // 12
-  'aaa..pp.........dddddpp...........tttt...tpppppp......ttttt............ttaaa...', // 13
-  'aaa...p.........dddddpp...........tttt...tpppppp......tttt............ttaaaa...', // 14
-  'aaa...p.........dddddd............tttt...jjjjjjj......tttt............ttaaaa...', // 15
-  'aaa...p.........dddddd............tttt...jjjjjjj......tttt............ttaaaa...', // 16
-  'aaa............gddddd............ttt.....jjjjjjj......tttt............ttaaaa...', // 17
-  'aaa............ggdddd............ttt.....jjjjjjj....ttttt............ttaaaa...', // 18
-  'aaa............gggddd............ttt.....jjjjjjj...tttttt............ttaaaa...', // 19
-  'aaa............ggggdd............ttt....jjjjjjjj...ttttttt...........ttaaaaa...', // 20
-  'aaa............ggggg..............tt....jjjjjjj...ttttttt...........ttaaaaaa...', // 21
-  'aaa............ggggg..............tt.....jjjjjjj.tttttttt..........ttaaaaaa...', // 22
-  'aaa.............gggg...............t......jjjjjj.tttttttt..........ttaaaaaa...', // 23
-  'aaa.............ggg........................jjjjj.tttttttt..........ttaaaaaa...', // 24
-  'aaa.............ggg........................jjjjj.ttttttttt.........ttaaaaaaa...', // 25
-  'aaa.............ggg........................jjjjjtttttttttt.........ttaaaaaaa...', // 26
-  'aaa.............ggg........................jjjj.ttttttttt..........ttaaaaaaa...', // 27
-  'aaa.............gg........................jjj.ttttttttt..........ttaaaaaaa...', // 28
-  'aaa.............g..........................jj..tttttttt...........ttaaaaaaa...', // 29
-  'aaa........................................j...ttttttt............ttaaaaaaa...', // 30
-  'aaa........................................j...ttttttt............ttaaaaaaa...', // 31
-  'aaa............................................tttttt.............ttaaaaaaa...', // 32
-  'aaa............................................ttttt..............ttaaaaaaa...', // 33
-  'aaa............................................ttttt..............ttaaaaaaa...', // 34
-  'aaa............................................ttttt..............ttaaaaaaa...', // 35
-  'aaa............................................ttttt..............ttaaaaaaa...', // 36
-  'aaa............................................ttttt..............ttaaaaaaa...', // 37
-  'aaa............................................ttttt..............ttaaaaaaa...', // 38
-  'aaa............................................ttttt..............ttaaaaaaa...', // 39
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 40
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 41
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 42
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 43
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 44
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 45
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 46
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 47
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', // 48
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'  // 49
-];
-
-/** Character → TERRAIN_TYPES mapping for the Earth map. */
-const EARTH_CHAR_MAP: Record<string, string> = {
-  '.': TERRAIN_TYPES.OCEAN,
-  'a': TERRAIN_TYPES.ARCTIC,
-  't': TERRAIN_TYPES.TUNDRA,
-  'd': TERRAIN_TYPES.DESERT,
-  'p': TERRAIN_TYPES.PLAINS,
-  'g': TERRAIN_TYPES.GRASSLAND,
-  'f': TERRAIN_TYPES.FOREST,
-  'j': TERRAIN_TYPES.JUNGLE,
-  'h': TERRAIN_TYPES.HILLS,
-  'm': TERRAIN_TYPES.MOUNTAINS,
-};
+// Predefined world maps are STATIC data files (src/data/maps/*.json, extracted
+// from Freeciv savegames via scripts/extract-freeciv-map.mjs) instead of being
+// hardcoded here.
+import {
+  WORLD_MAP,
+  hasSpecialResource,
+  terrainIdForChar,
+  type StaticMapDefinition,
+} from '@/data/maps';
 
 export default class MapGenerator {
   // Parameters
@@ -223,28 +140,24 @@ export default class MapGenerator {
   }
 
   /**
-   * Generate a predefined Earth map (80×50) using the EARTH_TERRAIN layout.
-   * Rivers are added via pathfinding, resources via normal placement,
-   * groups and build sites are computed normally.
+   * Generate the predefined WORLD map (Earth) from the static map data
+   * (`src/data/maps/earth-180x90.json`, extracted from a Freeciv savegame).
+   *
+   * The source map defines the terrain; rivers are added procedurally (the
+   * Freeciv map has none) and its "special" flags become bonus resources.
+   * Groups, build sites and passability are computed like any other map.
    */
   generateEarth(): GenTile[] {
-    const rng = mulberry32(this.seed);
-
-    // Load the predefined Earth terrain layout
-    for (let row = 0; row < Math.min(this.height, EARTH_TERRAIN.length); row++) {
-      const line = EARTH_TERRAIN[row];
-      for (let col = 0; col < this.width; col++) {
-        const ch = col < line.length ? line[col] : '.';
-        const terrainType = EARTH_CHAR_MAP[ch] ?? TERRAIN_TYPES.OCEAN;
-        this.cells[row][col].type = terrainType;
-      }
+    if (!WORLD_MAP) {
+      console.warn('[MapGenerator] No static world map registered — falling back to procedural generation');
+      return this.generate();
     }
+
+    const rng = mulberry32(this.seed);
+    this.loadStaticMap(WORLD_MAP);
 
     // Add rivers via pathfinding (same as procedural generation)
     this.stage5_Rivers(rng);
-
-    // Add special resources
-    this.stage6a_SpecialResources(rng);
 
     // Fill any isolated ocean holes
     this.fillIsolatedOceanHoles();
@@ -255,6 +168,29 @@ export default class MapGenerator {
     this.ensurePassability();
 
     return this.toTileArray();
+  }
+
+  /**
+   * Copy a static map into the cell grid: the raw Freeciv characters become
+   * this game's terrain ids, and the map's "special" layer flags bonus
+   * resources (the equivalent of `stage6a_SpecialResources`). Tiles outside
+   * the static map's bounds are filled with ocean so nothing leaks through.
+   */
+  private loadStaticMap(def: StaticMapDefinition): void {
+    for (let row = 0; row < this.height; row++) {
+      const line = row < def.height ? (def.rows[row] ?? '') : '';
+      const specials = row < def.height ? (def.specials?.[row] ?? '') : '';
+      for (let col = 0; col < this.width; col++) {
+        const cell = this.cells[row][col];
+        const inBounds = row < def.height && col < def.width && line.length > 0;
+        const terrain = inBounds ? terrainIdForChar(line[col]) : TERRAIN_TYPES.OCEAN;
+        cell.type = terrain;
+        cell.terrain = terrain;
+        cell.specialResource = inBounds
+          && terrain !== TERRAIN_TYPES.OCEAN
+          && hasSpecialResource(specials[col]);
+      }
+    }
   }
 
   // ── Stage 1 — Continent creation ────────────────────────────────

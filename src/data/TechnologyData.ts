@@ -27,7 +27,7 @@ export const TECHNOLOGIES_DATA: Technology[] = [
   { id: "theology", name: "Theology", researched: false, researching: false, cost: 100, description: "Allows Cathedrals.", prerequisites: ["monotheism"] },
   { id: "monotheism", name: "Monotheism", researched: false, researching: false, cost: 80, description: "Allows Crusader units and leads to Theology.", prerequisites: ["philosophy", "polytheism"] },
   { id: "polytheism", name: "Polytheism", researched: false, researching: false, cost: 60, description: "Allows Horsemen and leads to Monotheism.", prerequisites: ["ceremonial_burial", "bronze_working"] },
-  { id: "horseback_riding", name: "Horseback Riding", researched: false, researching: false, available: true, cost: 20, description: "Enables Horsemen units.", prerequisites: ["animal_husbandry"] },
+  { id: "horseback_riding", name: "Horseback Riding", researched: false, researching: false, available: true, cost: 20, description: "Enables Horsemen units.", prerequisites: [] },
   { id: "gunpowder", name: "Gunpowder", researched: false, researching: false, cost: 100, description: "Enables Musketeer units.", prerequisites: ["metallurgy"] },
   { id: "navigation", name: "Navigation", researched: false, researching: false, cost: 80, description: "Allows exploration of oceans.", prerequisites: ["map_making", "astronomy"] },
   { id: "astronomy", name: "Astronomy", researched: false, researching: false, cost: 70, description: "Allows Copernicus' Observatory and leads to Navigation.", prerequisites: ["philosophy", "mathematics"] },

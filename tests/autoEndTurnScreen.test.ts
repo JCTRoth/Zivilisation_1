@@ -52,6 +52,10 @@ describe('Auto End Turn defers while a screen is open', () => {
     // Reset store UI state between tests.
     useGameStore.getState().actions.hideDialog();
     useGameStore.getState().actions.updateSettings({ autoEndTurn: true });
+    // The auto-end gate now ALSO defers while the human has no research
+    // selected; pick one so these tests exercise the screen-deferral behavior
+    // they are about (the research gate has its own test below).
+    engine.setResearch(0, 'pottery');
     // Remove any combat animations.
     const anims = useGameStore.getState().combatAnimations || [];
     for (const a of anims) {
@@ -129,6 +133,27 @@ describe('Auto End Turn defers while a screen is open', () => {
     useGameStore.getState().actions.hideDialog();
     router.handle('CHECK_AUTO_END_TURN', { civilizationId: 0 });
 
+    expect(prompts).toContain('showEndTurnConfirmation');
+  });
+
+  it('defers auto-end while no technology is selected — and asks for a choice', () => {
+    // No research selected: the turn must not be auto-ended with idle research.
+    engine.civilizations[0].currentResearch = null;
+    makeAllUnitsDone();
+
+    router.handle('CHECK_AUTO_END_TURN', { civilizationId: 0 });
+
+    expect(prompts).not.toContain('showEndTurnConfirmation');
+    // The player is only INFORMED that research is missing (and offered the
+    // tech tree) — the tree itself must not be forced open.
+    const dialog = useGameStore.getState().uiState.activeDialog;
+    expect(dialog).toBe('research-required');
+    expect(dialog).not.toBe('tech');
+
+    // Once a research is selected the gate lets the turn end again.
+    engine.setResearch(0, 'bronze_working');
+    useGameStore.getState().actions.hideDialog();
+    router.handle('CHECK_AUTO_END_TURN', { civilizationId: 0 });
     expect(prompts).toContain('showEndTurnConfirmation');
   });
 });

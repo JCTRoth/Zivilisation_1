@@ -243,6 +243,17 @@ export class TurnManager {
       console.warn(`[TurnManager] endHumanTurn: Player ${civId} is not human, ignoring`);
       return;
     }
+
+    // Research must never sit idle: if the player ends the turn without a
+    // selected technology, research a random available one. The auto-end gate
+    // only PROMPTS for a choice — this is the safety net for "selected
+    // nothing" so the turn's science is not wasted.
+    if (!civ.currentResearch && typeof this.gameEngine.autoSelectResearch === 'function') {
+      const autoPicked = this.gameEngine.autoSelectResearch(civId);
+      if (autoPicked) {
+        console.log(`[TurnManager] No research selected — auto-selected '${autoPicked}' for ${civ.name}`);
+      }
+    }
     
     console.log(`[TurnManager] endHumanTurn: Ending turn for human player ${civId}, current phase: ${this.currentPhase}`);
     

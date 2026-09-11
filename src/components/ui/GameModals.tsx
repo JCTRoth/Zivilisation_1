@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import { getTechIcon } from '@/data/TechnologyIcons';
@@ -9,11 +9,13 @@ import RatesModal from './gamemodals/RatesModal';
 import GovernmentModal from './gamemodals/GovernmentModal';
 import StatisticsModal from './gamemodals/StatisticsModal';
 import VillageModal from './gamemodals/VillageModal';
+import ResearchRequiredModal from './ResearchRequiredModal';
 import { useGameStore } from '@/stores/GameStore';
 import { UNIT_PROPS } from '@/utils/Constants';
 import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
 import { DomUtils } from '@/utils/DomUtils';
 import { enrichMapForExport } from '@/utils/MapExportUtils';
+import { productionFailureText } from '@/utils/ProductionUtils';
 import '../../styles/gameModals.css';
 import '../../styles/diplomacyModal.css';
 import LeaderPortrait from './LeaderPortrait';
@@ -120,13 +122,17 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const handleCloseDialog = () => {
     const closing = useGameStore.getState().uiState.activeDialog;
     actions.hideDialog();
-    const blocking = !NON_BLOCKING_DIALOGS.includes(closing);
+    // The "No Research Selected" prompt and the tech tree defer auto-end while
+    // no research is selected, so closing them IS a decision point: with a
+    // research chosen the turn may proceed, with an empty one the auto-end gate
+    // keeps deferring. Other non-blocking dialogs (WORLD menu, help, hex
+    // details) never defer auto-end, so closing them must not trigger a
+    // re-check.
+    const blocking = !NON_BLOCKING_DIALOGS.includes(closing) || closing === 'tech' || closing === 'research-required';
     console.log(`[AUTO-END] Dialog "${closing ?? 'none'}" closed — ${blocking ? 're-checking auto-end' : 'non-blocking, no re-check'}`);
     // Re-check auto-end after any screen that defers it closes (city
     // management, diplomacy, rates, government, statistics, village, …). Once
     // closed, end the turn if every unit is done and auto-end is enabled.
-    // Non-blocking dialogs (WORLD menu, tech, help, hex details) never defer
-    // auto-end, so closing them must not trigger a re-check.
     if (blocking &&
         gameEngine && typeof gameEngine.checkAndEndTurnIfNoMoves === 'function') {
       gameEngine.checkAndEndTurnIfNoMoves('dialog-closed');
@@ -1446,6 +1452,45 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCityId]);
 
+  // Keep the build queue scrolled to its bottom so a freshly added item is
+  // always visible without manual scrolling.
+  const productionQueueBoxRef = useRef<HTMLDivElement | null>(null);
+  const productionQueueLength = selectedCity?.buildQueue?.length ?? 0;
+  useEffect(() => {
+    const el = productionQueueBoxRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [productionQueueLength]);
+
+  /**
+   * Send the item picked in the Production dropdown to the engine.
+   * `queue = true` appends ONE entry for it to the bottom of the build queue;
+   * the current production is never touched (picking from the dropdown only
+   * chooses the item). Failures (missing tech, duplicate building, …) are
+   * reported instead of silently doing nothing.
+   */
+  const submitProduction = (itemKey?: string): void => {
+    const key = itemKey ?? selectedProductionKey;
+    if (!selectedCity || !key || !gameEngine) return;
+    const unitDef = UNIT_PROPS[key];
+    if (!unitDef) return;
+    const item = { type: 'unit', itemType: key, name: unitDef.name, cost: unitDef.cost };
+    const engine = gameEngine as GameEngine & { setCityProduction?: (cityId: string, item: Record<string, unknown>, queue: boolean) => { success?: boolean; reason?: string } | null };
+    let result: { success?: boolean; reason?: string } | null = null;
+    try {
+      if (typeof engine.setCityProduction === 'function') result = engine.setCityProduction(selectedCity.id, item, true);
+    } catch (e) {
+      console.error('[GameModals] submitProduction: setCityProduction exception', e);
+    }
+    if (typeof gameEngine.getAllCities === 'function') actions.updateCities(gameEngine.getAllCities());
+    // setCityProduction answers with a result object even on failure — reading
+    // its truthiness reported bogus successes.
+    if (result && result.success !== false) {
+      actions.addNotification({ type: 'info', message: `Added to queue: ${item.name}` });
+    } else {
+      actions.addNotification({ type: 'warning', message: `Cannot queue ${item.name}: ${productionFailureText(result?.reason)}` });
+    }
+  };
+
   const renderCityProduction = () => (
     <Modal
       show={uiState.activeDialog === 'city-production'}
@@ -1535,8 +1580,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
             <select
               className="form-select form-select-sm mb-2 production-select"
               value={selectedProductionKey ?? ''}
+              // Picking an item only CHOOSES it — "Add" below appends it to the
+              // queue. The current production is never replaced from here.
               onChange={(e) => setSelectedProductionKey(e.target.value)}
               disabled={!isPlayerCity}
+              title="Choose the unit to add to the build queue"
             >
               <option value="" disabled>Select production…</option>
               {availableProductionKeys.map(key => {
@@ -1548,39 +1596,23 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 );
               })}
             </select>
-            <Button
-              className="production-select-btn"
-              variant="secondary"
-              disabled={!selectedProductionKey || !gameEngine || !selectedCity}
-              onClick={() => {
-                if (!selectedProductionKey) return;
-                const unitDef = UNIT_PROPS[selectedProductionKey];
-                const item = { type: 'unit', itemType: selectedProductionKey, name: unitDef.name, cost: unitDef.cost };
-                if (gameEngine) {
-                  const engine = gameEngine as GameEngine & { setCityProduction?: (cityId: string, item: Record<string, unknown>, queue: boolean) => { success: boolean } | null };
-                  let ok: { success: boolean } | null = null;
-                  try {
-                    if (typeof engine.setCityProduction === 'function') ok = engine.setCityProduction!(selectedCity.id, item, true);
-                  } catch (e) {
-                    console.error('[GameModals] Inline Add to Queue: setCityProduction exception', e);
-                  }
-                  if (typeof gameEngine.getAllCities === 'function') actions.updateCities(gameEngine.getAllCities());
-                  if (ok) {
-                    actions.addNotification({ type: 'info', message: `Added to queue: ${item.name}` });
-                  } else {
-                    actions.addNotification({ type: 'warning', message: `Failed to add to queue: ${item.name}` });
-                  }
-                }
-              }}
-            >
-              <i className="bi bi-plus-lg me-1"></i> Add to Queue
-            </Button>
+            <div className="production-btn-row">
+              <Button
+                className="production-add-btn"
+                variant="secondary"
+                disabled={!selectedProductionKey || !gameEngine || !selectedCity || !isPlayerCity}
+                onClick={() => submitProduction()}
+                title="Append one entry to the bottom of the build queue"
+              >
+                <i className="bi bi-plus-lg me-1"></i> Add
+              </Button>
+            </div>
           </div>
 
           {/* Queue panel: items with move up/down/remove */}
           <div className="queue-panel">
             <h6>Queue</h6>
-            <div className="queue-box bg-dark border border-secondary rounded p-2" style={{maxHeight: '240px', overflowY: 'auto'}}>
+            <div className="queue-box bg-dark border border-secondary rounded p-2" ref={productionQueueBoxRef} style={{maxHeight: '240px', overflowY: 'auto'}}>
               {hasQueueItems ? (
                 selectedCity.buildQueue.map((q: { name?: string; type?: string; itemType?: string; cost?: number }, i: number) => {
                   const queueItemName = getProductionName(q);
@@ -1842,6 +1874,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     <>
       {renderGameMenu()}
       {renderTechTree()}
+      <ResearchRequiredModal
+        show={uiState.activeDialog === 'research-required'}
+        onHide={handleCloseDialog}
+        onChooseResearch={() => actions.showDialog('tech')}
+      />
       {renderResearchComplete()}
       {renderDiplomacy()}
       {renderDiplomacyReport()}

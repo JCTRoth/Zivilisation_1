@@ -29,6 +29,7 @@
 
 .rates-modal__header .btn-close {
   filter: invert(0.85) hue-rotate(180deg);
+  color: whitesmoke;
 }
 
 .rates-modal__body {

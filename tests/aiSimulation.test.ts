@@ -28,7 +28,7 @@ describe('AI scout enemy search integration', () => {
     }
   });
 
-  it('runs two AI civs headlessly for 40 rounds and invokes EnemySearcher', async () => {
+  it('drives two AI civs headlessly (up to 40 rounds) and invokes EnemySearcher', async () => {
     // Suppress console.log during test to reduce memory from string accumulation
     const originalLog = console.log;
     const originalWarn = console.warn;
@@ -81,14 +81,22 @@ describe('AI scout enemy search integration', () => {
       const MAX_ITERATIONS = TARGET_ROUNDS * 10; // Safety limit to prevent infinite loops
       let iterations = 0;
 
-      // Directly drive the game loop without async polling
-      while (engine.turnManager.getRoundNumber() < TARGET_ROUNDS && iterations < MAX_ITERATIONS) {
+      // Directly drive the game loop without async polling.
+      // NOTE: this is a 2-civ duel — with decisive Civ1 combat one civ can be
+      // eliminated (ending the game) before 40 rounds, so stop driving turns
+      // once the game is over instead of spinning to MAX_ITERATIONS.
+      while (
+        engine.turnManager.getRoundNumber() < TARGET_ROUNDS
+        && iterations < MAX_ITERATIONS
+        && !engine.isGameOver
+      ) {
         iterations++;
         
         const activeCivs = engine.civilizations.filter((c: any) => c.isAlive !== false);
         
         for (const civ of activeCivs) {
           if (engine.turnManager.getRoundNumber() >= TARGET_ROUNDS) break;
+          if (engine.isGameOver) break;
           
           // Start the turn for this civilization
           engine.turnManager.startTurn(civ.id);
@@ -115,7 +123,11 @@ describe('AI scout enemy search integration', () => {
         }
       }
 
-      expect(engine.turnManager.getRoundNumber()).toBeGreaterThanOrEqual(TARGET_ROUNDS);
+      // Either the target round count was reached, or the duel concluded early
+      // (elimination — decisive Civ1 combat makes that possible well before
+      // round 40). A stalled loop without a game over still fails here.
+      expect(engine.isGameOver || engine.turnManager.getRoundNumber() >= TARGET_ROUNDS).toBe(true);
+      expect(engine.turnManager.getRoundNumber()).toBeGreaterThanOrEqual(5);
       // EnemySearcher might not be invoked if no scouts are present;
       // verify that AI processing ran by checking units were processed
       const aiProcessed = spy.mock.calls.length > 0 ||

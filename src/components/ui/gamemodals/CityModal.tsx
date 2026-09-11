@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal, Button, Tab, Tabs } from 'react-bootstrap';
 import { CityModalLogic } from './CityModalLogic';
 import { ModalUtils } from './ModalUtils';
@@ -6,6 +6,7 @@ import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
 import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import ProductionSelectionModal from './ProductionSelectionModal';
+import { productionFailureText } from '@/utils/ProductionUtils';
 import GameEngine from '@/game/engine/GameEngine';
 import type { City, Civilization, GameActions, ProductionItem, SpecialistType } from '../../../../types/game';
 import '../../../styles/cityModal.css';
@@ -40,38 +41,49 @@ const CityModal: React.FC<CityModalProps> = ({
     setAutoProduction(selectedCity?.autoProduction || false);
   }, [selectedCity]);
 
+  // Keep the queue box scrolled to its bottom so a freshly added item is
+  // always visible without manual scrolling.
+  const queueBoxRef = useRef<HTMLDivElement | null>(null);
+  const queueLength = selectedCity?.buildQueue?.length ?? 0;
+  useEffect(() => {
+    const el = queueBoxRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [queueLength]);
+
   if (!selectedCity) return null;
 
   const logic = new CityModalLogic(selectedCity, gameEngine, actions, currentPlayer);
 
-  const handleQueueProduction = (itemType: string) => {
-    // Check if it's a unit
+  /** Build a ProductionItem for a unit/building key (null when unknown). */
+  const buildProductionItem = (itemType: string | null): ProductionItem | null => {
+    if (!itemType) return null;
     const unitDef = UNIT_PROPS[itemType];
     if (unitDef) {
-      const item: ProductionItem = {
-        type: 'unit',
-        itemType,
-        name: unitDef.name,
-        cost: unitDef.cost
-      };
-      logic.setProduction(item, true);
-      return;
+      return { type: 'unit', itemType, name: unitDef.name, cost: unitDef.cost };
     }
-
-    // Check if it's a building
     const buildingDef = BUILDING_PROPS[itemType];
     if (buildingDef) {
-      const item: ProductionItem = {
-        type: 'building',
-        itemType,
-        name: buildingDef.name,
-        cost: buildingDef.cost
-      };
-      logic.setProduction(item, true);
-      return;
+      return { type: 'building', itemType, name: buildingDef.name, cost: buildingDef.cost };
     }
-
     console.warn('Unknown production type:', itemType);
+    return null;
+  };
+
+  /**
+   * "Add" — append ONE entry for the chosen item to the bottom of the build
+   * queue (the current production is left untouched). Rejections (building
+   * already queued/built, missing tech, …) are reported instead of silently
+   * doing nothing.
+   */
+  const handleQueueProduction = (itemType: string | null) => {
+    const item = buildProductionItem(itemType);
+    if (!item) return;
+    const result = logic.setProduction(item, true);
+    if (result.success === false && actions?.addNotification) {
+      actions.addNotification({ type: 'warning', message: `Cannot queue ${item.name}: ${productionFailureText(result.reason)}` });
+    } else if (actions?.addNotification) {
+      actions.addNotification({ type: 'info', message: `Added to queue: ${item.name}` });
+    }
   };
 
   // handleBuyNow removed (unused)
@@ -239,22 +251,37 @@ const CityModal: React.FC<CityModalProps> = ({
                           }
                           return null;
                         })()}
-                        <div className="d-flex gap-2 align-items-center">
-                          {/* This button opens a modal with Units and Buildings tabs, listing all items. */}
+                        <div className="production-panel-actions">
+                          {/* Item chooser: taking an item only selects it for
+                              the "Add" button below — it never touches the
+                              current production. */}
                           <button
                             className="btn btn-secondary text-white production-select-btn"
                             type="button"
                             onClick={() => setShowProductionModal(true)}
                             disabled={!isPlayerCity}
+                            title="Choose the unit or building to add"
                           >
-                            <i className="bi bi-plus-lg me-1"></i>
-                            {selectedProductionKey ? `${UNIT_PROPS[selectedProductionKey]?.name || BUILDING_PROPS[selectedProductionKey]?.name} (${getSelectedProductionCost(selectedProductionKey)} shields)` : 'Add to Queue'}
+                            <i className="bi bi-list-ul me-1"></i>
+                            {selectedProductionKey ? `${UNIT_PROPS[selectedProductionKey]?.name || BUILDING_PROPS[selectedProductionKey]?.name} (${getSelectedProductionCost(selectedProductionKey)} shields)` : 'Choose Production…'}
                           </button>
+                          {/* Add = append extra copies to the build queue. */}
+                          <div className="production-btn-row mt-2">
+                            <button
+                              className="btn btn-primary production-add-btn"
+                              type="button"
+                              onClick={() => handleQueueProduction(selectedProductionKey)}
+                              disabled={!isPlayerCity || !selectedProductionKey}
+                              title="Append to the build queue (repeatable)"
+                            >
+                              <i className="bi bi-plus-lg me-1"></i> Add
+                            </button>
+                          </div>
                         </div>
                       </div>
                       <div className="queue-panel">
                         <h6>Queue</h6>
-                        <div className="queue-box bg-dark border border-secondary rounded p-2" style={{maxHeight: '240px', overflowY: 'auto'}}>
+                        <div className="queue-box bg-dark border border-secondary rounded p-2" ref={queueBoxRef} style={{maxHeight: '240px', overflowY: 'auto'}}>
                           {logic.hasQueueItems() ? (
                             logic.getQueueItems().map((q: ProductionItem, i: number) => (
                               <div key={i} className={`queue-item p-2 mb-1 rounded ${selectedQueueIndex === i ? 'text-white' : 'text-white'}`} onClick={() => setSelectedQueueIndex(i)}>
@@ -737,9 +764,8 @@ const CityModal: React.FC<CityModalProps> = ({
         purchasedThisTurn={(selectedCity?.purchasedThisTurn?.length ?? 0) > 0}
         cityBuildings={selectedCity?.buildings ?? []}
         onSelectProduction={key => {
-          // Always queue the selected item when picking from the modal
-          handleQueueProduction(key);
-          // keep the selected production visible after queuing
+          // Choosing an item only marks it: "Add" then appends ONE entry for it
+          // to the bottom of the queue. The current production stays as is.
           setSelectedProductionKey(key);
           setShowProductionModal(false);
         }}

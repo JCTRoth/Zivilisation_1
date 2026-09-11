@@ -56,6 +56,7 @@
   z-index: 10;
   min-width: 44px;
   min-height: 44px;
+  color: whitesmoke;
 }
 
 /* Slightly lighter background for production selection than the city modal */

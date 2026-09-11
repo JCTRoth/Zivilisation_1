@@ -819,6 +819,7 @@ div.game-top-bar {
   min-width: 44px;
   min-height: 44px;
   background-size: 0.9em;
+  color: whitesmoke;
 }
 
 /* Small confirmation dialogs stay centered (they are intentionally compact) */
