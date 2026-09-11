@@ -32,6 +32,15 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
   const techs = (technologies && technologies.length > 0) ? technologies : TECHNOLOGIES_DATA;
   // Helper: is this tech researched by the current player?
   const isPlayerResearched = (techId: string) => playerResearchedIds?.has(techId) ?? false;
+  // Whether the PLAYER can pick this tech: every prerequisite is in the
+  // player's own research list. The shared tree's `available` flag is the
+  // union across all civs (it unlocks on ANY civ's progress), so with the
+  // player's list available it is not a reliable "you can research this" test.
+  const isPlayerAvailable = (tech: Technology): boolean => {
+    if (!playerResearchedIds) return !!tech.available;
+    const prereqs = tech.prerequisites ?? [];
+    return prereqs.length === 0 || prereqs.every((p) => playerResearchedIds.has(p));
+  };
   // compute depth per tech
   const getDepth = (techId: string, visited = new Set()): number => {
     const tech = techs.find(t => t.id === techId);
@@ -209,7 +218,7 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
     if (selectedPath) {
       const unresearchedInPath = selectedPath.filter(id => {
         const tech = techs.find(t => t.id === id);
-        return tech && !tech.researched;
+        return tech && !isPlayerResearched(id);
       });
       setAnimatingNodes(new Set(unresearchedInPath));
       const timer = setTimeout(() => setAnimatingNodes(new Set()), 3000); // 3 seconds for 5 pulses
@@ -271,14 +280,15 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
           if (!pos) return null;
           const isAnimating = animatingNodes.has(tech.id);
           const isCurrentResearch = tech.id === currentResearchId;
-          const fill = isAnimating ? 'url(#unresearchedPattern)' : (isPlayerResearched(tech.id) ? '#2f855a' : tech.available ? '#1e90ff' : '#444');
+          const playerAvailable = isPlayerAvailable(tech);
+          const fill = isAnimating ? 'url(#unresearchedPattern)' : (isPlayerResearched(tech.id) ? '#2f855a' : playerAvailable ? '#1e90ff' : '#444');
           // Effective cost for the current research (map/difficulty scaled);
           // other nodes keep their base cost.
           const nodeCost = isCurrentResearch && currentTechCost != null ? currentTechCost : tech.cost;
           const progress = isCurrentResearch && (nodeCost ?? 0) > 0
             ? Math.min(1, (researchProgress || 0) / (nodeCost || 1))
             : 0;
-          const isUnavailable = !isPlayerResearched(tech.id) && !tech.available;
+          const isUnavailable = !isPlayerResearched(tech.id) && !playerAvailable;
           return (
             <g 
               key={tech.id} 
@@ -338,7 +348,7 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
             <div className="small mt-1">
               Status: {isPlayerResearched(hoveredTech.id) ? 
                 <span className="text-success">✓ Researched</span> : 
-                hoveredTech.available ? 
+                isPlayerAvailable(hoveredTech) ? 
                   <span className="text-info">Available</span> : 
                   <span className="text-secondary">Locked</span>
               }

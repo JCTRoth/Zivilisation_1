@@ -450,4 +450,58 @@ export class TerrainTextureManager {
 
     ctx.drawImage(fc, 0, 0, drawW, drawH, drawX, drawY, drawW, drawH);
   }
+
+  /**
+   * Edge-aware river rendering: instead of a "~" glyph per tile, draw water
+   * arms from the tile centre to the edges shared with neighbouring river
+   * tiles, so the watercourse flows continuously across the map. Each arm is
+   * stroked three times — dark bank, water, light highlight.
+   *
+   * `connectN/E/S/W` say which cardinal neighbours also carry a river; a tile
+   * with no connections (should not happen) degenerates to a small pond.
+   */
+  drawRiver(
+    ctx: CanvasRenderingContext2D,
+    _terrainType: string | null | undefined,
+    x: number,
+    y: number,
+    tileSize: number,
+    connectN = false,
+    connectE = false,
+    connectS = false,
+    connectW = false,
+  ): void {
+    const half = tileSize / 2;
+    const cx = x + half;
+    const cy = y + half;
+
+    const waterWidth = Math.max(2, tileSize * 0.16);
+    const bankWidth = waterWidth + Math.max(2, tileSize * 0.06);
+
+    const edges: Array<[number, number]> = [];
+    if (connectN) edges.push([cx, y]);
+    if (connectE) edges.push([x + tileSize, cy]);
+    if (connectS) edges.push([cx, y + tileSize]);
+    if (connectW) edges.push([x, cy]);
+    if (edges.length === 0) edges.push([cx, cy + waterWidth * 0.5]); // isolated pond
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const strokeArms = (width: number, color: string): void => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      for (const [ex, ey] of edges) {
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(ex, ey);
+      }
+      ctx.stroke();
+    };
+
+    strokeArms(bankWidth, 'rgba(20, 60, 110, 0.55)');            // banks
+    strokeArms(waterWidth, 'rgba(55, 135, 225, 0.9)');           // water
+    strokeArms(Math.max(1, waterWidth * 0.4), 'rgba(150, 210, 255, 0.5)'); // highlight
+    ctx.restore();
+  }
 }

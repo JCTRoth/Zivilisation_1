@@ -52,9 +52,13 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
       }
     }
 
+    // Gate on the player's OWN techs — the shared tree's `researched` flag is
+    // the union across all civs (coloring only) and would otherwise hide a
+    // path tech an AI discovered first.
+    const civTechIds = new Set<string>((civObj?.technologies ?? []).map(String));
     const nextInPathId = researchPath.find((id) => {
       const t = techs.find((x) => x.id === id);
-      return !!t && !!t.available && !t.researched;
+      return !!t && t.available !== false && !civTechIds.has(String(id));
     }) ?? null;
     const nextInPath = nextInPathId ? (techs.find((t) => t.id === nextInPathId) ?? null) : null;
 

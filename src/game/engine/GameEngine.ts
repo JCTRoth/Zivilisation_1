@@ -2862,12 +2862,13 @@ export default class GameEngine {
     const attackerWins = Math.random() * (attackerStrength + defenderStrength) < attackerStrength;
     
     if (attackerWins) {
-      // Attacker wins — apply PROPORTIONAL damage to defender.
-      // Damage scales with the strength ratio: dominant attacks deal more.
-      const ratio = attackerStrength / (attackerStrength + defenderStrength);
-      const baseDamage = Math.round(30 + 50 * ratio); // 30–80 damage
+      // Attacker wins — Civ1: the battle is decisive, the defender is
+      // destroyed outright and the attacker takes its tile. (The previous
+      // proportional-damage model let attackers grind defenders down over
+      // several turns, so single units seemed to "overrun" whole garrisons.)
+      const baseDamage = defender.health ?? 100; // lethal: all remaining health
       defender.health = Math.max(0, (defender.health ?? 100) - baseDamage);
-      
+
       if (defender.health <= 0) {
         // Defender killed — move attacker to defender's position
         const fromCol = attacker.col;
@@ -2937,40 +2938,10 @@ export default class GameEngine {
 
         this.checkAndEndTurnIfNoMoves('combat-win');
         return true;
-      } else {
-        // Defender survived — both take light damage, neither moves
-        attacker.health = Math.max(0, (attacker.health ?? 100) - Math.round(10 + 15 * (1 - ratio)));
-        attacker.movesRemaining = 0;
-        attacker.hasMovedThisTurn = true;
-        this.updateUnitTurnsDoneFlag(attacker);
-        
-        if (this.onStateChange) {
-          this.onStateChange('COMBAT_VICTORY', {
-            attacker,
-            defender,
-            attackerSurvived: (attacker.health ?? 0) > 0,
-            defenderSurvived: true,
-          });
-        }
-        
-        if (attacker.health <= 0) {
-          attacker.isDefeated = true;
-          attacker.defeatTimestamp = Date.now();
-          if (this.onStateChange) this.onStateChange('UNIT_DEFEATED', { unit: attacker });
-          setTimeout(() => {
-            this.units = this.units.filter(u => u.id !== attacker.id);
-            this.onStateChange?.('UNIT_REMOVED', { unit: attacker });
-          }, 1200);
-        }
-        
-        this.checkAndEndTurnIfNoMoves('combat-both-survived');
-        return true;
       }
     } else {
-      // Defender wins - attacker takes proportional damage
-      const ratio = defenderStrength / (attackerStrength + defenderStrength);
-      const damage = Math.round(20 + 50 * ratio); // 20–70 damage
-      attacker.health = Math.max(0, (attacker.health ?? 100) - damage);
+      // Defender wins - attacker is damaged (and destroyed at ≤ 0 health)
+      attacker.health -= 25;
       attacker.movesRemaining = 0;
       attacker.hasMovedThisTurn = true;
 

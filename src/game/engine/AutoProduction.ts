@@ -279,15 +279,17 @@ export class AutoProduction {
       return dist <= 2;
     });
 
-    // A queued unit with defense also counts toward the garrison.
-    const plannedHasDefender = plannedTypes.some((t: string) => {
-      const unitProps = UNIT_PROPS[t];
-      return unitProps && (unitProps.defense || 0) > 0;
-    });
-    const hasDefender = plannedHasDefender || garrisonUnits.some((u: Unit) => {
-      const unitProps = UNIT_PROPS[u.type];
-      return unitProps && unitProps.defense > 0;
-    });
+    // A QUEUED unit with defense also counts toward the garrison.
+    // A real defender must be a COMBAT unit: civilians (settlers/caravans) and
+    // explorers (scouts) have a token defense value but cannot hold a city —
+    // counting them as "defended" left AI cities empty and capturable by a
+    // single enemy scout.
+    const isDefenderType = (type: string): boolean => {
+      const unitProps = UNIT_PROPS[type];
+      return !!unitProps && (unitProps.defense || 0) > 0 && (unitProps.attack || 0) > 0.5;
+    };
+    const plannedHasDefender = plannedTypes.some((t: string) => isDefenderType(t));
+    const hasDefender = plannedHasDefender || garrisonUnits.some((u: Unit) => isDefenderType(u.type));
 
     // 1. A city under direct threat must build a defender FIRST (survival
     //    beats comfort). Minor border pressure alone does not preempt it.

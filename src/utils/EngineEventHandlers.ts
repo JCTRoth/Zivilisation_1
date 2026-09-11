@@ -709,7 +709,12 @@ export class EngineEventRouter {
     const state = useGameStore.getState();
     const path = state.researchPath;
     if (!path || path.length === 0) return;
-    const nextId = firstUnresearchedInPath(this.gameEngine.technologies || [], path);
+    // Gate on THIS civ's own techs only — the shared tree's `researched` flag
+    // is the union across all civs (used for coloring) and would otherwise
+    // stop the player's path as soon as an AI discovered the next tech.
+    const civ = this.gameEngine.civilizations?.[civId];
+    const civTechs = new Set<string>((civ?.technologies ?? []).map(String));
+    const nextId = firstUnresearchedInPath(this.gameEngine.technologies || [], path, civTechs);
     if (!nextId || !this.gameEngine.setResearch) return;
     // Restore the tech's saved progress (progress is kept across switches).
     this.gameEngine.setResearch(civId, nextId, state.techProgress[nextId] ?? 0);

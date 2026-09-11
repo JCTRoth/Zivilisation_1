@@ -2035,6 +2035,30 @@ export class MapRenderer {
       ctx.fillText(sleepIcon, centerX, centerY + 22);
     }
 
+    // Fortified indicator (Civ1: fortification = +50% defense). A small shield
+    // is drawn above the unit so players can see which units are dug in —
+    // previously fortification was invisible and combat outcomes seemed random.
+    if ((unit as Unit).isFortified) {
+      const shieldSize = Math.max(5, Math.round(7 * zoomFactor));
+      const shieldY = centerY - innerRadius - 3 * zoomFactor;
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.95;
+      ctx.beginPath();
+      ctx.moveTo(centerX, shieldY - shieldSize);
+      ctx.lineTo(centerX + shieldSize, shieldY - shieldSize * 0.5);
+      ctx.lineTo(centerX + shieldSize, shieldY + shieldSize * 0.3);
+      ctx.quadraticCurveTo(centerX + shieldSize, shieldY + shieldSize, centerX, shieldY + shieldSize);
+      ctx.quadraticCurveTo(centerX - shieldSize, shieldY + shieldSize, centerX - shieldSize, shieldY + shieldSize * 0.3);
+      ctx.lineTo(centerX - shieldSize, shieldY - shieldSize * 0.5);
+      ctx.closePath();
+      ctx.fillStyle = '#2b6cb0';
+      ctx.fill();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = Math.max(1, 1.5 * zoomFactor);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // Red hit-flash overlay on a unit that took damage or is being attacked.
     if (healthState.hitFlash > 0) {
       ctx.save();

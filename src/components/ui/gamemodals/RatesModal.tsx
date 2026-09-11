@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Form, Alert } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
 import { gameLogger } from '@/utils/GameLogger';
+import { CityUtils } from '@/utils/CityUtils';
 import { getGovernment } from '@/data/GovernmentData';
-import { CITY_CENTER_COMMERCE } from '@/game/engine/EconomicManager';
+import { CITY_CENTER_COMMERCE, TRADE_GOLD_MULTIPLIER } from '@/game/engine/EconomicManager';
 import GameEngine from '@/game/engine/GameEngine';
 import '../../../styles/ratesModal.css';
 
@@ -75,10 +76,10 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
   const taxOverCap = currentPlayer ? rates.tax > gov.maxTaxRate : false;
   const sum = rates.tax + rates.science + rates.luxury;
 
-  // Live preview of what the selected rates would produce. Uses the engine's
-  // real tile-based commerce (EconomicManager.calculateCityTrade) per city, and
-  // the split is floor-based per city (corruption is applied on the real turn,
-  // so the preview is optimistic by that amount).
+  // Live preview of what the selected rates would produce. Mirrors
+  // EconomicManager exactly — real tile-based commerce, government penalty,
+  // distance corruption, the rate split, and the engine's upkeep model — so
+  // the projected numbers match what the turn actually pays out.
   const preview = useMemo(() => {
     if (!currentPlayer || !gameEngine) {
       return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, net: 0, hasCities: false };
@@ -86,29 +87,45 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
     const cities = (gameEngine.cities ?? []).filter(
       (c) => c.civilizationId === currentPlayer.id,
     );
-    const econ = (gameEngine as { economicManager?: { calculateCityTrade: (c: unknown) => number } }).economicManager;
-    const perCityCommerce = cities.map((c) =>
-      econ && typeof econ.calculateCityTrade === 'function'
-        ? econ.calculateCityTrade(c)
-        : Math.max((c as { yields?: { trade?: number } }).yields?.trade ?? 0, CITY_CENTER_COMMERCE),
-    );
-    const commerce = perCityCommerce.reduce((t, v) => t + v, 0);
-    // Match the engine's upkeep model: each city costs 1 gold and supports one
-    // unit free, so total upkeep = max(unitCount, cityCount).
-    const unitCount = (gameEngine.units ?? []).filter(
-      (u) => u.civilizationId === currentPlayer.id,
-    ).length;
-    const upkeep = Math.max(unitCount, cities.length);
-    const tax = perCityCommerce.reduce((t, v) => t + Math.floor((v * rates.tax) / 100), 0) * 2; // ×2 matches engine TRADE_GOLD_MULTIPLIER
-    const rawScience = perCityCommerce.reduce((t, v) => t + Math.floor((v * rates.science) / 100), 0);
-    // Apply the same beaker modifiers the engine uses (knownCivs + prerequisites)
-    // so the preview shows EFFECTIVE research, not raw output.
-    const researchMgr = (gameEngine as { researchManager?: { beakersApplied: (civ: unknown, tech: unknown, base: number) => number } }).researchManager;
-    const currentTech = currentPlayer?.currentResearch ?? null;
-    const science = researchMgr && typeof researchMgr.beakersApplied === 'function' && currentTech
-      ? researchMgr.beakersApplied(currentPlayer, currentTech, rawScience)
+    const econ = gameEngine.economicManager;
+    const gov = getGovernment(currentPlayer.government);
+    // Same pipeline as EconomicManager.cityOutputs: commerce → government
+    // commerce penalty → distance-from-capital corruption → rate split.
+    // (Skipping corruption made the preview promise more gold/science than
+    // the treasury/research pool actually received.)
+    const perCityAfterCorruption = cities.map((c) => {
+      const rawCommerce = typeof econ?.cityCommerce === 'function'
+        ? econ.cityCommerce(c)
+        : Math.max(c.yields?.trade ?? 0, CITY_CENTER_COMMERCE);
+      const effective = rawCommerce * (1 - gov.commercePenalty);
+      const corruption = CityUtils.calculateCorruption(c, currentPlayer, effective);
+      return Math.max(0, Math.floor(effective - corruption));
+    });
+    const commerce = perCityAfterCorruption.reduce((t, v) => t + v, 0);
+    const tax = perCityAfterCorruption.reduce(
+      (t, v) => t + Math.floor((v * rates.tax) / 100) * TRADE_GOLD_MULTIPLIER, 0);
+    const rawScience = perCityAfterCorruption.reduce(
+      (t, v) => t + Math.round((v * rates.science) / 100), 0)
+      + cities.reduce((t, c) => t + (c.scienceBonus ?? 0), 0);
+    // Effective research actually added to the current tech this turn — the
+    // beaker modifiers plus the 4-turn minimum / 32-turn maximum caps. (Using
+    // raw beakers over-reported: "+19" shown while only 9 points were added.)
+    const currentTech = currentPlayer.currentResearch ?? null;
+    const researchMgr = gameEngine.researchManager;
+    const science = researchMgr && currentTech
+      ? researchMgr.perTurnProgress(currentPlayer, currentTech, rawScience)
       : rawScience;
-    const luxury = perCityCommerce.reduce((t, v) => t + Math.floor((v * rates.luxury) / 100), 0);
+    const luxury = perCityAfterCorruption.reduce(
+      (t, v) => t + Math.floor((v * rates.luxury) / 100), 0);
+    // Exact upkeep: 1 gold per city + units beyond the one-per-city free
+    // support. NONE units (village units without a home city) are free —
+    // counting every unit here overstated the drain (-7 shown vs -5 actual).
+    const upkeep = typeof econ?.totalUpkeep === 'function'
+      ? econ.totalUpkeep(currentPlayer.id)
+      : Math.max(
+          (gameEngine.units ?? []).filter((u) => u.civilizationId === currentPlayer.id).length,
+          cities.length,
+        );
     return { commerce, tax, science, luxury, upkeep, net: tax - upkeep, hasCities: cities.length > 0 };
   }, [rates, currentPlayer, gameEngine]);
 

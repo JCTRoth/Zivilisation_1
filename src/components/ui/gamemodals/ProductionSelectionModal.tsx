@@ -14,6 +14,8 @@ interface ProductionSelectionModalProps {
   playerGold?: number;
   /** Whether the city already purchased something this turn. */
   purchasedThisTurn?: boolean;
+  /** Buildings the city ALREADY owns — hidden from the Buildings tab. */
+  cityBuildings?: string[];
 }
 
 /** True when the civ has researched every tech in the (possibly single) requirement. */
@@ -50,7 +52,12 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   currentPlayer,
   playerGold = 0,
   purchasedThisTurn = false,
+  cityBuildings = [],
 }) => {
+  // Buildings are one-per-city in Civ1 — hide the ones the city already owns.
+  const ownedBuildings = new Set((cityBuildings ?? []).map((b) => String(b).toLowerCase()));
+  const buildableBuildingKeys = Object.keys(BUILDING_PROPS)
+    .filter((key) => !ownedBuildings.has(key.toLowerCase()));
   const handleSelect = (key: string) => {
     onSelectProduction(key);
     onHide();
@@ -166,7 +173,14 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.keys(BUILDING_PROPS).map(key => {
+                  {buildableBuildingKeys.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center text-muted">
+                        All available buildings are already constructed in this city.
+                      </td>
+                    </tr>
+                  )}
+                  {buildableBuildingKeys.map(key => {
                     const building = BUILDING_PROPS[key];
                     const requiredTech = (building as { requiredTechnology?: string }).requiredTechnology || null;
                     const canBuild = hasRequiredTechs(currentPlayer, requiredTech);

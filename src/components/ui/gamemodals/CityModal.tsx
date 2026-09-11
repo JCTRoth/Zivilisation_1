@@ -735,6 +735,7 @@ const CityModal: React.FC<CityModalProps> = ({
         currentPlayer={currentPlayer}
         playerGold={currentPlayer?.resources?.gold ?? 0}
         purchasedThisTurn={(selectedCity?.purchasedThisTurn?.length ?? 0) > 0}
+        cityBuildings={selectedCity?.buildings ?? []}
         onSelectProduction={key => {
           // Always queue the selected item when picking from the modal
           handleQueueProduction(key);

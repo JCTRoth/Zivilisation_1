@@ -122,6 +122,37 @@ export class ResearchManager {
   }
 
   /**
+   * Beakers that would ACTUALLY be applied to the civ's current tech this
+   * turn — the exact value `advanceResearch` adds, including the 4-turn
+   * minimum (per-turn cap) and the 32-turn maximum (per-turn floor), but
+   * without mutating any state. UI displays must use this instead of
+   * `beakersApplied`: the raw modifier value over-reports whenever the
+   * min-turns cap clips the progress (e.g. the panel showed "+19" while only
+   * 9 points were actually added to the tech).
+   */
+  perTurnProgress(civ: Civilization, tech: Technology, totalBaseBeakers: number): number {
+    const cost = this.effectiveTechCost(civ, tech);
+    const progress = civ.researchProgress ?? 0;
+    const remaining = Math.max(0, cost - progress);
+    if (remaining <= 0) return 0;
+
+    let beakers = this.beakersApplied(civ, tech, totalBaseBeakers);
+
+    // Min turns: never apply more than remaining/MIN_TURNS per turn, so the
+    // remaining work always spans at least MIN_RESEARCH_TURNS turns.
+    const maxPerTurn = Math.max(1, Math.ceil(remaining / MIN_RESEARCH_TURNS));
+    beakers = Math.min(beakers, maxPerTurn);
+
+    // Max turns: always apply at least cost/MAX_TURNS per turn (fixed floor,
+    // based on the FULL cost). The floor never overrides the min-turns cap.
+    const minPerTurn = Math.ceil(cost / MAX_RESEARCH_TURNS);
+    beakers = Math.max(beakers, Math.min(minPerTurn, maxPerTurn));
+
+    // Never overshoot past the remaining cost, and always make ≥ 1 progress.
+    return Math.max(1, Math.min(beakers, remaining));
+  }
+
+  /**
    * Advance one turn of research for the civ's current tech. Returns the
    * completed tech id, or null if still in progress.
    *
@@ -137,22 +168,7 @@ export class ResearchManager {
     const remaining = Math.max(0, cost - progress);
     if (remaining <= 0) return tech.id;
 
-    let beakers = this.beakersApplied(civ, tech, totalBaseBeakers);
-
-    // Min turns: never apply more than remaining/MIN_TURNS per turn, so the
-    // remaining work always spans at least MIN_RESEARCH_TURNS turns.
-    const maxPerTurn = Math.max(1, Math.ceil(remaining / MIN_RESEARCH_TURNS));
-    beakers = Math.min(beakers, maxPerTurn);
-
-    // Max turns: always apply at least cost/MAX_TURNS per turn (fixed floor,
-    // based on the FULL cost — a per-remaining floor would shrink near the end
-    // and let a tech drag past MAX_RESEARCH_TURNS). The floor never overrides
-    // the min-turns cap above.
-    const minPerTurn = Math.ceil(cost / MAX_RESEARCH_TURNS);
-    beakers = Math.max(beakers, Math.min(minPerTurn, maxPerTurn));
-
-    // Never overshoot past the remaining cost, and always make ≥ 1 progress.
-    beakers = Math.max(1, Math.min(beakers, remaining));
+    const beakers = this.perTurnProgress(civ, tech, totalBaseBeakers);
 
     civ.researchProgress = progress + beakers;
     if (civ.researchProgress >= cost) return tech.id;

@@ -3,7 +3,7 @@
  * Research feature (tree selection, progress persistence, notifications).
  */
 import { describe, it, expect } from 'vitest';
-import { findPathToTech, firstUnresearchedInPath } from '@/utils/ResearchPath';
+import { findPathToTech, firstUnresearchedInPath, firstResearchableInPath } from '@/utils/ResearchPath';
 import { getTechIcon } from '@/data/TechnologyIcons';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 
@@ -54,6 +54,47 @@ describe('firstUnresearchedInPath', () => {
     );
     expect(firstUnresearchedInPath(techs, ['alphabet', 'writing', 'literacy'])).toBeNull();
     expect(firstUnresearchedInPath(techs, [])).toBeNull();
+  });
+
+  it('ignores the shared union flag when the civ\'s own techs are provided', () => {
+    // `writing` is marked researched on the SHARED tree (another civ discovered
+    // it first) — the player's own list only has `alphabet`, so `writing` must
+    // still be picked (regression: techs an AI discovered first were skipped).
+    const techs = TECHNOLOGIES_DATA.map((t) =>
+      ['alphabet', 'writing'].includes(t.id) ? { ...t, researched: true, available: true } : { ...t },
+    );
+    expect(firstUnresearchedInPath(techs, ['alphabet', 'writing', 'literacy'])).toBeNull();
+    expect(firstUnresearchedInPath(techs, ['alphabet', 'writing', 'literacy'], new Set(['alphabet'])))
+      .toBe('writing');
+  });
+});
+
+describe('firstResearchableInPath', () => {
+  it('returns the first tech the civ has not researched with prereqs met', () => {
+    const path = ['alphabet', 'writing', 'literacy'];
+    expect(firstResearchableInPath(TECHNOLOGIES_DATA, path, new Set())).toBe('alphabet');
+    expect(firstResearchableInPath(TECHNOLOGIES_DATA, path, new Set(['alphabet']))).toBe('writing');
+    expect(firstResearchableInPath(TECHNOLOGIES_DATA, path, new Set(['alphabet', 'writing']))).toBe('literacy');
+    expect(firstResearchableInPath(TECHNOLOGIES_DATA, path, new Set(['alphabet', 'writing', 'literacy']))).toBeNull();
+  });
+
+  it('lets the player pick a tech another civ already discovered', () => {
+    // A tech the AI discovered first is `researched` on the SHARED tree — the
+    // player must still be able to select it (each civ researches
+    // independently in Civ1).
+    const techs = TECHNOLOGIES_DATA.map((t) =>
+      t.id === 'pottery' ? { ...t, researched: true, available: true } : { ...t },
+    );
+    expect(firstResearchableInPath(techs, ['pottery'], new Set())).toBe('pottery');
+  });
+
+  it('skips techs whose prerequisites the civ has not researched', () => {
+    // `writing` requires `alphabet`: with an empty tech list the path can only
+    // start at the root.
+    const path = ['alphabet', 'writing'];
+    expect(firstResearchableInPath(TECHNOLOGIES_DATA, path, new Set())).toBe('alphabet');
+    // Unknown techs are skipped, not returned.
+    expect(firstResearchableInPath(TECHNOLOGIES_DATA, ['not_a_tech'], new Set())).toBeNull();
   });
 });
 

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import { getTechIcon } from '@/data/TechnologyIcons';
-import { findPathToTech } from '@/utils/ResearchPath';
+import { findPathToTech, firstResearchableInPath } from '@/utils/ResearchPath';
 import CityModal from './gamemodals/CityModal';
 import HexDetailModal from './gamemodals/HexDetailModal';
 import RatesModal from './gamemodals/RatesModal';
@@ -368,11 +368,13 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
     actions.setResearchPath(path);
 
-    // Start researching the first available, unresearched tech in the path.
-    const firstResearchable = path.find(id => {
-      const t = techs.find(x => x.id === id);
-      return t && t.available && !t.researched;
-    });
+    // Start researching the first tech in the path that THIS civ hasn't
+    // researched yet and whose prerequisites it actually owns. The shared
+    // tree's `researched`/`available` flags are the union across all civs
+    // (coloring only) — gating on them made every tech an AI had discovered
+    // first silently unselectable for the player.
+    const civTechs = new Set<string>((civ.technologies ?? []).map(String));
+    const firstResearchable = firstResearchableInPath(techs, path, civTechs);
     if (firstResearchable) {
       const saved = useGameStore.getState().techProgress[firstResearchable] ?? 0;
       ge.setResearch(0, firstResearchable, saved);

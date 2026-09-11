@@ -160,6 +160,7 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
           </div>
           <div className="side-panel-small-muted unit-attack-defense">
             Attack: {selectedUnit?.attack ?? 0} • Defense: {selectedUnit?.defense ?? 0}
+            {selectedUnit?.isFortified ? ' • 🛡️ Fortified (+50% def)' : ''}
           </div>
         </div>
       );
@@ -213,7 +214,7 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
           Food: {playerResources?.food ?? 0} • Production: {playerResources?.production ?? 0}
         </div>
         <div>Trade: {playerResources?.trade ?? 0} • Science: {(gameEngine?.researchManager && currentPlayer?.currentResearch)
-          ? gameEngine.researchManager.beakersApplied(currentPlayer, currentPlayer.currentResearch, playerResources?.science ?? 0)
+          ? gameEngine.researchManager.perTurnProgress(currentPlayer, currentPlayer.currentResearch, playerResources?.science ?? 0)
           : playerResources?.science ?? 0}</div>
       </div>
     );

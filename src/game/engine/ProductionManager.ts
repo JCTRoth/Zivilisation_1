@@ -73,6 +73,18 @@ export class ProductionManager {
         if (req && !techs.has(req)) {
           return { ok: false, reason: `requires_tech_${req}` };
         }
+        // Buildings are one-per-city (Civ1): never let the player/AI queue a
+        // building the city already owns — it would silently waste shields on
+        // completion (addBuildingToCity skips the duplicate).
+        const ownsBuilding = (city.buildings ?? []).some((b: unknown) => {
+          const id = typeof b === 'string'
+            ? b
+            : ((b as { id?: string })?.id ?? (b as { type?: string })?.type ?? '');
+          return String(id) === String(itemType);
+        });
+        if (ownsBuilding) {
+          return { ok: false, reason: 'already_built' };
+        }
       }
 
       return { ok: true };
@@ -109,9 +121,12 @@ export class ProductionManager {
               (city as { queueProduction: (item: ProductionItem) => void }).queueProduction(item);
             }
             console.log('[ProductionManager] city.queueProduction executed', { cityId, buildQueue: city.buildQueue, isDuplicate });
-            // If no current production, start the first queued item with carried over progress
+            // If no current production, start the first queued item with
+            // carried over progress. The item must be REMOVED from the queue
+            // (shift): keeping it in both places made one queued item show up
+            // twice — once as "Current Production" and once as "#1 in queue".
             if (!city.currentProduction && city.buildQueue.length > 0) {
-              city.currentProduction = city.buildQueue[0];
+              city.currentProduction = city.buildQueue.shift() ?? null;
               city.productionProgress = city.carriedOverProgress || 0;
               city.carriedOverProgress = 0;
               console.log('[ProductionManager] started queued item as currentProduction', { cityId, currentProduction: city.currentProduction, productionProgress: city.productionProgress });
@@ -124,9 +139,10 @@ export class ProductionManager {
               city.buildQueue.push(item);
             }
             console.log('[ProductionManager] pushed to city.buildQueue', { cityId, buildQueue: city.buildQueue, isDuplicate });
-            // If no current production, start the first queued item with carried over progress
-            if (!city.currentProduction && city.buildQueue.length === 1) {
-              city.currentProduction = item;
+            // If no current production, promote the queued item AND remove it
+            // from the queue (otherwise the same item is listed twice).
+            if (!city.currentProduction && city.buildQueue.length > 0) {
+              city.currentProduction = city.buildQueue.shift() ?? null;
               city.productionProgress = city.carriedOverProgress || 0;
               city.carriedOverProgress = 0;
               console.log('[ProductionManager] started single queued item as currentProduction', { cityId, currentProduction: city.currentProduction, productionProgress: city.productionProgress });
@@ -156,9 +172,10 @@ export class ProductionManager {
           city2.buildQueue.push(item);
         }
         console.log('[ProductionManager] fallback pushed to city2.buildQueue', { cityId, buildQueue: city2.buildQueue, isDuplicate: isDuplicate2 });
-        // If no current production, start the first queued item with carried over progress
-        if (!city2.currentProduction && city2.buildQueue.length === 1) {
-          city2.currentProduction = item;
+        // If no current production, promote the queued item AND remove it
+        // from the queue (otherwise the same item is listed twice).
+        if (!city2.currentProduction && city2.buildQueue.length > 0) {
+          city2.currentProduction = city2.buildQueue.shift() ?? null;
           city2.productionProgress = city2.carriedOverProgress || 0;
           city2.carriedOverProgress = 0;
           console.log('[ProductionManager] fallback started queued item as currentProduction', { cityId, currentProduction: city2.currentProduction, productionProgress: city2.productionProgress });
