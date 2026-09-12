@@ -28,9 +28,12 @@ export interface PathResult {
  */
 export class Pathfinding {
   /**
-   * Calculate movement cost for a tile
+   * Calculate movement cost for a tile.
+   *
+   * Public so UI previews (hover path + turn markers) reuse the exact same cost
+   * model as the engine (roads = 1/3, railroads ~0.05, ocean impassable to land).
    */
-  private static getMovementCost(
+  static getMovementCost(
     tile: MapTile,
     unitType: string
   ): number {

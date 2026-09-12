@@ -24,7 +24,7 @@ import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import { getUnitIcon } from '@/utils/UnitIconLoader';
 import { TERRAIN_FONT_FAMILY } from '@/utils/terrainFont';
 import { MathUtils } from '@/utils/MathUtils';
-import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation } from '../../../types/game';
+import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, TurnMarker } from '../../../types/game';
 import { TerrainTextureManager } from './TerrainTextureManager';
 
 /**
@@ -157,6 +157,14 @@ export interface RenderFrameParams {
   cameraZoom: number;
   /** Reachable tiles for movement range indicator */
   reachableTiles?: Map<string, number>;
+  /** Unit type the reachable overlay belongs to (land = blue, naval = red). */
+  reachableUnitType?: string | null;
+  /** Tile currently under the mouse (drawn with a subtle outline). */
+  hoveredHex?: { col: number; row: number } | null;
+  /** Hover shortest-path preview (steps, excluding the unit's start tile). */
+  previewPath?: UnitPathStep[] | null;
+  /** Turn-number markers along the hovered preview path. */
+  previewTurnMarkers?: TurnMarker[];
   /** Active combat animations (hide units + draw cloud) */
   combatAnimations?: CombatAnimation[];
   /** Active unit-movement glides (position interpolation between tiles) */
@@ -199,6 +207,14 @@ export interface RenderStaticFrameParams {
   cameraZoom: number;
   /** Reachable tiles for movement range indicator */
   reachableTiles?: Map<string, number>;
+  /** Unit type the reachable overlay belongs to (land = blue, naval = red). */
+  reachableUnitType?: string | null;
+  /** Tile currently under the mouse (drawn with a subtle outline). */
+  hoveredHex?: { col: number; row: number } | null;
+  /** Hover shortest-path preview (steps, excluding the unit's start tile). */
+  previewPath?: UnitPathStep[] | null;
+  /** Turn-number markers along the hovered preview path. */
+  previewTurnMarkers?: TurnMarker[];
   /** Active combat animations (hide units + draw cloud) */
   combatAnimations?: CombatAnimation[];
   /** Active unit-movement glides (position interpolation between tiles) */
@@ -295,6 +311,14 @@ interface DynamicContentParams {
   civilizations: Civilization[];
   /** Current timestamp for animations */
   currentTime: number;
+  /** Unit type the reachable overlay belongs to (land = blue, naval = red). */
+  reachableUnitType?: string | null;
+  /** Tile currently under the mouse (drawn with a subtle outline). */
+  hoveredHex?: { col: number; row: number } | null;
+  /** Hover shortest-path preview (steps, excluding the unit's start tile). */
+  previewPath?: UnitPathStep[] | null;
+  /** Turn-number markers along the hovered preview path. */
+  previewTurnMarkers?: TurnMarker[];
   /** Current camera zoom level */
   cameraZoom: number;
   /** Whether offscreen terrain rendering is available */
@@ -588,7 +612,11 @@ export class MapRenderer {
       offscreenCanvas,
       squareToScreen,
       cameraZoom,
-      reachableTiles
+      reachableTiles,
+      reachableUnitType,
+      hoveredHex,
+      previewPath,
+      previewTurnMarkers
     } = params;
 
     const canvasSize = this.ensureCanvasSize(canvas);
@@ -626,6 +654,10 @@ export class MapRenderer {
       hasOffscreen,
       squareToScreen,
       reachableTiles,
+      reachableUnitType,
+      hoveredHex,
+      previewPath,
+      previewTurnMarkers,
       combatAnimations: params.combatAnimations,
       movementAnimations: params.movementAnimations
     });
@@ -656,6 +688,10 @@ export class MapRenderer {
       squareToScreen,
       cameraZoom,
       reachableTiles,
+      reachableUnitType,
+      hoveredHex,
+      previewPath,
+      previewTurnMarkers,
       combatAnimations,
       movementAnimations
     } = params;
@@ -693,6 +729,10 @@ export class MapRenderer {
       hasOffscreen,
       squareToScreen,
       reachableTiles,
+      reachableUnitType,
+      hoveredHex,
+      previewPath,
+      previewTurnMarkers,
       combatAnimations,
       movementAnimations
     });
@@ -1001,6 +1041,10 @@ export class MapRenderer {
       cameraZoom,
       squareToScreen,
       reachableTiles,
+      reachableUnitType,
+      hoveredHex,
+      previewPath,
+      previewTurnMarkers,
       combatAnimations,
       movementAnimations
     } = params;
@@ -1159,10 +1203,13 @@ export class MapRenderer {
 
     // Draw movement range overlay first (so it's under everything else)
     if (reachableTiles && reachableTiles.size > 0) {
-      // Determine if the selected unit is naval
+      // Determine whether the previewed/selected unit is naval. Prefer the
+      // explicit unit type passed by the caller (hover previews can belong to a
+      // different unit than `gameState.selectedUnit`).
       const selectedUnitId = gameState.selectedUnit;
       const selectedUnit = selectedUnitId ? units.find(u => u.id === selectedUnitId) : null;
-      const isNaval = selectedUnit && UNIT_PROPERTIES[selectedUnit.type]?.naval;
+      const previewType = reachableUnitType ?? selectedUnit?.type ?? null;
+      const isNaval = previewType ? UNIT_PROPERTIES[previewType]?.naval : false;
       
       reachableTiles.forEach((_cost, key) => {
         const [col, row] = key.split(',').map(Number);
@@ -1192,6 +1239,23 @@ export class MapRenderer {
         }
         ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
       });
+    }
+
+    // Draw the tile under the mouse (subtle white outline, under units).
+    if (hoveredHex && hoveredHex.col >= 0 && hoveredHex.row >= 0) {
+      const tileIndex = this.getTileIndex(hoveredHex.row, hoveredHex.col, map.width);
+      const explored = terrainGrid?.[hoveredHex.row]?.[hoveredHex.col]?.explored
+        ?? map.revealed?.[tileIndex]
+        ?? false;
+      if (explored) {
+        const { x, y } = squareToScreen(hoveredHex.col, hoveredHex.row);
+        const half = scaledTileSize / 2;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = Math.max(1.5, cameraZoom * 1.5);
+        ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
+        ctx.restore();
+      }
     }
 
     for (let row = bounds.startRow; row < bounds.endRow; row++) {
@@ -1324,6 +1388,20 @@ export class MapRenderer {
           ctx.fillText(`${col},${row}`, x, y + scaledTileSize * 0.3);
         }
       }
+    }
+
+    // Hover path preview (dashed) + turn numbers, drawn above units so the
+    // destination and ETA stay readable.
+    if (previewPath && previewPath.length > 0) {
+      const previewUnit = gameState.selectedUnit
+        ? units.find(u => u.id === gameState.selectedUnit) ?? null
+        : null;
+      if (previewUnit) {
+        this.drawPreviewPath(ctx, previewUnit, previewPath, map, squareToScreen, cameraZoom);
+      }
+    }
+    if (previewTurnMarkers && previewTurnMarkers.length > 0) {
+      this.drawTurnMarkers(ctx, previewTurnMarkers, map, squareToScreen, scaledTileSize);
     }
 
     // Draw combat clouds (on top of terrain/units).
@@ -2261,6 +2339,106 @@ export class MapRenderer {
       }
     }
 
+    ctx.restore();
+  }
+
+  /**
+   * Draws the dashed hover shortest-path preview for the selected unit.
+   * Only explored tiles are connected (fog of war hides the rest); a ring marks
+   * the hovered destination.
+   */
+  private drawPreviewPath(
+    ctx: CanvasRenderingContext2D,
+    unit: Unit,
+    steps: UnitPathStep[],
+    map: MapState,
+    squareToScreen: (col: number, row: number) => { x: number; y: number },
+    cameraZoom: number
+  ): void {
+    if (steps.length === 0) return;
+
+    const mapWidth = map.width || 0;
+    const revealed = map.revealed;
+    const isExplored = (col: number, row: number): boolean => {
+      if (!revealed) return true;
+      return revealed[row * mapWidth + col] === true;
+    };
+
+    // Full polyline from the unit's tile through the path steps.
+    const points: { col: number; row: number }[] = [
+      { col: unit.col, row: unit.row },
+      ...steps
+    ];
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 224, 102, 0.95)';
+    ctx.lineWidth = Math.max(2, cameraZoom * 2);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.setLineDash([Math.max(6, cameraZoom * 8), Math.max(4, cameraZoom * 5)]);
+
+    ctx.beginPath();
+    let started = false;
+    for (const p of points) {
+      if (!isExplored(p.col, p.row)) {
+        started = false;
+        continue;
+      }
+      const { x, y } = squareToScreen(p.col, p.row);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+
+    // Destination ring on the hovered tile.
+    const dest = steps[steps.length - 1];
+    const { x: dx, y: dy } = squareToScreen(dest.col, dest.row);
+    ctx.setLineDash([]);
+    ctx.lineWidth = Math.max(2, cameraZoom * 2);
+    ctx.beginPath();
+    ctx.arc(dx, dy, Math.max(6, cameraZoom * 7), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * Draws a small numbered disc on each tile where one turn of a multi-turn
+   * journey ends (1 = end of the current turn, 2 = next turn, ...).
+   */
+  private drawTurnMarkers(
+    ctx: CanvasRenderingContext2D,
+    markers: TurnMarker[],
+    map: MapState,
+    squareToScreen: (col: number, row: number) => { x: number; y: number },
+    scaledTileSize: number
+  ): void {
+    const mapWidth = map.width || 0;
+    const revealed = map.revealed;
+    const radius = Math.max(7, scaledTileSize * 0.16);
+    const fontSize = Math.max(10, Math.round(radius * 1.3));
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `bold ${fontSize}px sans-serif`;
+
+    for (const marker of markers) {
+      if (revealed && revealed[marker.row * mapWidth + marker.col] !== true) continue;
+      const { x, y } = squareToScreen(marker.col, marker.row);
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(20, 20, 20, 0.85)';
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 224, 102, 0.95)';
+      ctx.lineWidth = Math.max(1, radius * 0.18);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(String(marker.turn), x, y + 0.5);
+    }
     ctx.restore();
   }
 

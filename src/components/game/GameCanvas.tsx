@@ -1,25 +1,54 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useGameStore } from '@/stores/GameStore';
-import { useShallow } from 'zustand/react/shallow';
-import { TILE_SIZE } from '@/data/TerrainData';
-import { MapRenderer, TerrainRenderGrid, TerrainTileRenderInfo, UnitPathStep, getUnitDisplayTile } from '@/game/rendering/MapRenderer';
-import MoveAnimator from '@/game/engine/MoveAnimator';
-import { MathUtils } from '@/utils/MathUtils';
-import { centerCameraOnTile } from '@/utils/CameraUtils';
-import { MiniMapRenderer } from '@/game/rendering/MiniMapRenderer';
-import { TerrainTextureManager } from '@/game/rendering/TerrainTextureManager';
-import type { City, GameState, MapState, Unit } from '../../../types/game';
-import GameEngine from '@/game/engine/GameEngine';
-import '../../styles/civ1GameCanvas.css';
-import UnitActionsModal from './UnitActionsModal';
-import { Pathfinding } from '@/game/engine/Pathfinding';
-import { KeyboardHandler } from '@/game/engine/KeyboardHandler';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useGameStore } from "@/stores/GameStore";
+import { useShallow } from "zustand/react/shallow";
+import { TILE_SIZE } from "@/data/TerrainData";
+import {
+  MapRenderer,
+  TerrainRenderGrid,
+  TerrainTileRenderInfo,
+  UnitPathStep,
+  getUnitDisplayTile,
+} from "@/game/rendering/MapRenderer";
+import MoveAnimator from "@/game/engine/MoveAnimator";
+import { MathUtils } from "@/utils/MathUtils";
+import { centerCameraOnTile } from "@/utils/CameraUtils";
+import { MiniMapRenderer } from "@/game/rendering/MiniMapRenderer";
+import { TerrainTextureManager } from "@/game/rendering/TerrainTextureManager";
+import type {
+  City,
+  GameState,
+  MapState,
+  MovementReachable,
+  TurnMarker,
+  Unit,
+} from "../../../types/game";
+import GameEngine from "@/game/engine/GameEngine";
+import "../../styles/civ1GameCanvas.css";
+import UnitActionsModal from "./UnitActionsModal";
+import { Pathfinding } from "@/game/engine/Pathfinding";
+import {
+  computeMovementPreview,
+  type TileLookup,
+} from "@/utils/MovementPreview";
+import { KeyboardHandler } from "@/game/engine/KeyboardHandler";
 
 type HexCoordinates = { col: number; row: number };
 
+/** Civilization id of the human player (matches GameStore/EngineEventHandlers). */
+const HUMAN_PLAYER_ID = 0;
+
 interface GameCanvasProps {
   minimap?: boolean;
-  onExamineHex?: (hex: HexCoordinates, tile: TerrainTileRenderInfo | null) => void;
+  onExamineHex?: (
+    hex: HexCoordinates,
+    tile: TerrainTileRenderInfo | null,
+  ) => void;
   gameEngine?: GameEngine | null;
 }
 
@@ -32,30 +61,48 @@ interface ContextMenuState {
   city: City | null;
 }
 
-const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, gameEngine = null }) => {
+const GameCanvas: React.FC<GameCanvasProps> = ({
+  minimap = false,
+  onExamineHex,
+  gameEngine = null,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const terrainBaseCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const terrainTypesHashRef = useRef<string>('');
+  const terrainTypesHashRef = useRef<string>("");
   const mapRendererRef = useRef<MapRenderer>(new MapRenderer());
   const miniMapRendererRef = useRef<MiniMapRenderer>(new MiniMapRenderer());
   const textureManagerRef = useRef<TerrainTextureManager | null>(null);
-  const gameState = useGameStore(useShallow(state => state.gameState));
-  const mapData = useGameStore(state => state.map);
-  const camera = useGameStore(state => state.camera);
-  const actions = useGameStore(state => state.actions);
-  const cities = useGameStore(state => state.cities);
-  const units = useGameStore(state => state.units);
-  const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
-  const civilizations = useGameStore(state => state.civilizations);
-  const currentQueueUnitId = useGameStore(state => state.uiState.currentQueueUnitId);
-  const combatAnimations = useGameStore(state => state.combatAnimations);
-  const movementAnimations = useGameStore(state => state.movementAnimations);
-  const cameraPanRequest = useGameStore(state => state.cameraPanRequest);
-  const moveAnimator = useMemo(() => (gameEngine ? new MoveAnimator(gameEngine) : null), [gameEngine]);
+  const gameState = useGameStore(useShallow((state) => state.gameState));
+  const mapData = useGameStore((state) => state.map);
+  const camera = useGameStore((state) => state.camera);
+  const actions = useGameStore((state) => state.actions);
+  const cities = useGameStore((state) => state.cities);
+  const units = useGameStore((state) => state.units);
+  const currentPlayer = useGameStore(
+    (state) => state.civilizations[state.gameState.activePlayer] || null,
+  );
+  const civilizations = useGameStore((state) => state.civilizations);
+  const devMode = useGameStore((state) => !!state.settings?.devMode);
+  const currentQueueUnitId = useGameStore(
+    (state) => state.uiState.currentQueueUnitId,
+  );
+  const combatAnimations = useGameStore((state) => state.combatAnimations);
+  const movementAnimations = useGameStore((state) => state.movementAnimations);
+  const cameraPanRequest = useGameStore((state) => state.cameraPanRequest);
+  const moveAnimator = useMemo(
+    () => (gameEngine ? new MoveAnimator(gameEngine) : null),
+    [gameEngine],
+  );
   const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [lastMousePos, setLastMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [selectedHex, setSelectedHex] = useState<HexCoordinates>({ col: 5, row: 5 });
+  const [lastMousePos, setLastMousePos] = useState<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
+  const [selectedHex, setSelectedHex] = useState<HexCoordinates>({
+    col: 5,
+    row: 5,
+  });
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [terrain, setTerrain] = useState<TerrainRenderGrid | null>(null);
   // Ref mirroring the latest terrain grid so the build/visibility effects below
@@ -63,13 +110,35 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   // `terrain` while calling setTerrain() with a fresh array each run caused an
   // infinite render loop (and 100% CPU) once the game started.
   const terrainRef = useRef<TerrainRenderGrid | null>(null);
-  const storeGotoMode = useGameStore(state => state.uiState.goToMode);
-  const storeGotoUnitId = useGameStore(state => state.uiState.goToUnit);
-  const citizenReassign = useGameStore(state => state.uiState.citizenReassign);
-  const [gotoMode, setGotoMode] = useState<boolean>(false);
-  const [gotoUnit, setGotoUnit] = useState<Unit | null>(null);
-  const [unitPaths, setUnitPaths] = useState<Map<string, UnitPathStep[]>>(new Map());
-  const [reachableTiles, setReachableTiles] = useState<Map<string, number>>(new Map());
+  const citizenReassign = useGameStore(
+    (state) => state.uiState.citizenReassign,
+  );
+  // Selection is derived from the store so manual clicks and auto-selection
+  // (turn queue / focusOnNextUnit / unit-moved events) share one source of truth.
+  const selectedUnit = useMemo<Unit | null>(() => {
+    const id = gameState.selectedUnit;
+    return id ? (units.find((u) => u.id === id) ?? null) : null;
+  }, [gameState.selectedUnit, units]);
+  const isUnitSelectionMode =
+    !!selectedUnit &&
+    selectedUnit.civilizationId === HUMAN_PLAYER_ID &&
+    gameState.activePlayer === HUMAN_PLAYER_ID;
+  const [unitPaths, setUnitPaths] = useState<Map<string, UnitPathStep[]>>(
+    new Map(),
+  );
+  const [reachableTiles, setReachableTiles] = useState<Map<string, number>>(
+    new Map(),
+  );
+  // ---- Hover preview state ----
+  const [hoveredHex, setHoveredHex] = useState<HexCoordinates | null>(null);
+  const [hoverReachable, setHoverReachable] =
+    useState<MovementReachable | null>(null);
+  const [previewPath, setPreviewPath] = useState<UnitPathStep[] | null>(null);
+  const [previewTurnMarkers, setPreviewTurnMarkers] = useState<TurnMarker[]>(
+    [],
+  );
+  const lastHoverKeyRef = useRef<string>("");
+  const reachableCacheRef = useRef<Map<string, Map<string, number>>>(new Map());
   const animationFrameRef = useRef<number | null>(null);
   const needsRender = useRef<boolean>(true);
   const cameraPanRafRef = useRef<number | null>(null);
@@ -84,7 +153,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   const [, setTexturesLoaded] = useState(false);
 
   // ---- Touch / gesture state (mobile support) ----
-  const touchStartRef = useRef<{ x: number; y: number; id: number } | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; id: number } | null>(
+    null,
+  );
   const touchMovedRef = useRef<boolean>(false);
   const pinchStartRef = useRef<{ distance: number; zoom: number } | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
@@ -99,28 +170,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     staticRenderedRef.current = false;
   }, []);
 
-  // Sync local GoTo state with store to ensure UI cursor updates correctly
-  useEffect(() => {
-    setGotoMode(!!storeGotoMode);
-    if (storeGotoUnitId) {
-      const unit = units.find(u => u.id === storeGotoUnitId) || null;
-      setGotoUnit(unit);
-    } else {
-      setGotoUnit(null);
-    }
-  }, [storeGotoMode, storeGotoUnitId, units]);
-
   // Cancel a citizen pick-up with the ESC key.
   useEffect(() => {
     if (!citizenReassign) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         actions.endCitizenReassign();
         triggerRender();
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [citizenReassign, actions, triggerRender]);
 
   // Check if game state has changed significantly
@@ -136,7 +196,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       reachableTilesSize: reachableTiles.size,
       cameraX: Math.round(camera.x),
       cameraY: Math.round(camera.y),
-      cameraZoom: camera.zoom
+      cameraZoom: camera.zoom,
     };
 
     if (!lastGameState.current) {
@@ -145,24 +205,36 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     }
 
     // Compare each property individually to avoid expensive JSON.stringify
-    const changed = currentState.activePlayer !== lastGameState.current.activePlayer ||
-                    currentState.currentTurn !== lastGameState.current.currentTurn ||
-                    currentState.units !== lastGameState.current.units ||
-                    currentState.cities !== lastGameState.current.cities ||
-                    currentState.selectedHex !== lastGameState.current.selectedHex ||
-                    currentState.selectedCity !== lastGameState.current.selectedCity ||
-                    currentState.selectedUnit !== lastGameState.current.selectedUnit ||
-                    currentState.reachableTilesSize !== lastGameState.current.reachableTilesSize ||
-                    currentState.cameraX !== lastGameState.current.cameraX ||
-                    currentState.cameraY !== lastGameState.current.cameraY ||
-                    currentState.cameraZoom !== lastGameState.current.cameraZoom;
+    const changed =
+      currentState.activePlayer !== lastGameState.current.activePlayer ||
+      currentState.currentTurn !== lastGameState.current.currentTurn ||
+      currentState.units !== lastGameState.current.units ||
+      currentState.cities !== lastGameState.current.cities ||
+      currentState.selectedHex !== lastGameState.current.selectedHex ||
+      currentState.selectedCity !== lastGameState.current.selectedCity ||
+      currentState.selectedUnit !== lastGameState.current.selectedUnit ||
+      currentState.reachableTilesSize !==
+        lastGameState.current.reachableTilesSize ||
+      currentState.cameraX !== lastGameState.current.cameraX ||
+      currentState.cameraY !== lastGameState.current.cameraY ||
+      currentState.cameraZoom !== lastGameState.current.cameraZoom;
 
     if (changed) {
       lastGameState.current = currentState;
       return true;
     }
     return false;
-  }, [camera, cities.length, gameState.activePlayer, gameState.currentTurn, gameState.selectedCity, gameState.selectedUnit, reachableTiles.size, selectedHex, units.length]);
+  }, [
+    camera,
+    cities.length,
+    gameState.activePlayer,
+    gameState.currentTurn,
+    gameState.selectedCity,
+    gameState.selectedUnit,
+    reachableTiles.size,
+    selectedHex,
+    units.length,
+  ]);
 
   /** Build a cheap hash of terrain types + exploration (not visibility). */
   const hashTerrainTypes = useCallback((grid: TerrainRenderGrid): string => {
@@ -174,7 +246,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         const t = row[c];
         if (!t) continue;
         // Simple hash: type char codes + explored flag
-        const s = t.type + (t.explored ? '1' : '0');
+        const s = t.type + (t.explored ? "1" : "0");
         for (let i = 0; i < s.length; i++) {
           h = ((h << 5) - h + s.charCodeAt(i)) | 0;
         }
@@ -183,51 +255,61 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     return String(h);
   }, []);
 
-  const renderTerrainToOffscreen = useCallback((terrainGrid: TerrainRenderGrid | null) => {
-    if (!terrainGrid || !mapData) return;
-    const offscreenCanvas = terrainCanvasRef.current;
-    const baseCanvas = terrainBaseCanvasRef.current;
-    if (!offscreenCanvas || !baseCanvas) return;
+  const renderTerrainToOffscreen = useCallback(
+    (terrainGrid: TerrainRenderGrid | null) => {
+      if (!terrainGrid || !mapData) return;
+      const offscreenCanvas = terrainCanvasRef.current;
+      const baseCanvas = terrainBaseCanvasRef.current;
+      if (!offscreenCanvas || !baseCanvas) return;
 
-    const mr = mapRendererRef.current;
-    const newHash = hashTerrainTypes(terrainGrid);
-    const typesChanged = newHash !== terrainTypesHashRef.current;
+      const mr = mapRendererRef.current;
+      const newHash = hashTerrainTypes(terrainGrid);
+      const typesChanged = newHash !== terrainTypesHashRef.current;
 
-    if (typesChanged) {
-      // Expensive path: terrain types or exploration changed — rebuild base
-      terrainTypesHashRef.current = newHash;
-      mr.renderTerrainBase({ offscreenCanvas: baseCanvas, map: mapData, terrainGrid });
-    }
+      if (typesChanged) {
+        // Expensive path: terrain types or exploration changed — rebuild base
+        terrainTypesHashRef.current = newHash;
+        mr.renderTerrainBase({
+          offscreenCanvas: baseCanvas,
+          map: mapData,
+          terrainGrid,
+        });
+      }
 
-    // Always composite: base canvas + fog overlay (cheap)
-    const mapWidth  = mapData.width  * (TILE_SIZE * 2);
-    const mapHeight = mapData.height * (TILE_SIZE * 2);
-    if (offscreenCanvas.width !== mapWidth || offscreenCanvas.height !== mapHeight) {
-      offscreenCanvas.width  = mapWidth;
-      offscreenCanvas.height = mapHeight;
-    }
-    const ctx = offscreenCanvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, mapWidth, mapHeight);
-    ctx.drawImage(baseCanvas, 0, 0);
-    mr.renderFogOverlay(ctx, mapData, terrainGrid);
-  }, [mapData, hashTerrainTypes]);
+      // Always composite: base canvas + fog overlay (cheap)
+      const mapWidth = mapData.width * (TILE_SIZE * 2);
+      const mapHeight = mapData.height * (TILE_SIZE * 2);
+      if (
+        offscreenCanvas.width !== mapWidth ||
+        offscreenCanvas.height !== mapHeight
+      ) {
+        offscreenCanvas.width = mapWidth;
+        offscreenCanvas.height = mapHeight;
+      }
+      const ctx = offscreenCanvas.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, mapWidth, mapHeight);
+      ctx.drawImage(baseCanvas, 0, 0);
+      mr.renderFogOverlay(ctx, mapData, terrainGrid);
+    },
+    [mapData, hashTerrainTypes],
+  );
 
   useEffect(() => {
-    if (!terrainCanvasRef.current && typeof document !== 'undefined') {
-      terrainCanvasRef.current = document.createElement('canvas');
+    if (!terrainCanvasRef.current && typeof document !== "undefined") {
+      terrainCanvasRef.current = document.createElement("canvas");
     }
-    if (!terrainBaseCanvasRef.current && typeof document !== 'undefined') {
-      terrainBaseCanvasRef.current = document.createElement('canvas');
+    if (!terrainBaseCanvasRef.current && typeof document !== "undefined") {
+      terrainBaseCanvasRef.current = document.createElement("canvas");
     }
-    if (!animationCanvasRef.current && typeof document !== 'undefined') {
-      animationCanvasRef.current = document.createElement('canvas');
+    if (!animationCanvasRef.current && typeof document !== "undefined") {
+      animationCanvasRef.current = document.createElement("canvas");
     }
     // Initialize texture manager once and attach to renderer
     if (!textureManagerRef.current) {
       const tm = new TerrainTextureManager(() => {
         // Textures finished loading — force base canvas rebuild and re-render
-        terrainTypesHashRef.current = '';  // invalidate cached base
+        terrainTypesHashRef.current = ""; // invalidate cached base
         terrainRebuildNeededRef.current = true;
         needsRender.current = true;
         staticRenderedRef.current = false;
@@ -238,38 +320,54 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     }
   }, []);
 
-  const createTerrainGrid = useCallback((
-    tiles: Array<{ type?: string; resource?: string; improvement?: string; visible?: boolean; explored?: boolean; hasRoad?: boolean; hasRiver?: boolean; village?: boolean }> | undefined,
-    width: number,
-    height: number,
-    visibility?: boolean[],
-    revealed?: boolean[]
-  ): TerrainRenderGrid => {
-    const grid: TerrainRenderGrid = Array.from({ length: height }, () => Array.from({ length: width }, () => null));
-    if (!tiles) {
-      return grid;
-    }
-
-    for (let row = 0; row < height; row++) {
-      for (let col = 0; col < width; col++) {
-        const idx = row * width + col;
-        const tile = tiles[idx];
-        if (!tile) continue;
-        grid[row][col] = {
-          type: tile.type,
-          resource: tile.resource ?? null,
-          improvement: tile.improvement ?? null,
-          visible: visibility?.[idx] ?? tile.visible ?? false,
-          explored: revealed?.[idx] ?? tile.explored ?? false,
-          hasRoad: tile.hasRoad ?? false,
-          hasRiver: tile.hasRiver ?? false,
-          village: tile.village ?? false
-        };
+  const createTerrainGrid = useCallback(
+    (
+      tiles:
+        | Array<{
+            type?: string;
+            resource?: string;
+            improvement?: string;
+            visible?: boolean;
+            explored?: boolean;
+            hasRoad?: boolean;
+            hasRiver?: boolean;
+            village?: boolean;
+          }>
+        | undefined,
+      width: number,
+      height: number,
+      visibility?: boolean[],
+      revealed?: boolean[],
+    ): TerrainRenderGrid => {
+      const grid: TerrainRenderGrid = Array.from({ length: height }, () =>
+        Array.from({ length: width }, () => null),
+      );
+      if (!tiles) {
+        return grid;
       }
-    }
 
-    return grid;
-  }, []);
+      for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+          const idx = row * width + col;
+          const tile = tiles[idx];
+          if (!tile) continue;
+          grid[row][col] = {
+            type: tile.type,
+            resource: tile.resource ?? null,
+            improvement: tile.improvement ?? null,
+            visible: visibility?.[idx] ?? tile.visible ?? false,
+            explored: revealed?.[idx] ?? tile.explored ?? false,
+            hasRoad: tile.hasRoad ?? false,
+            hasRiver: tile.hasRiver ?? false,
+            village: tile.village ?? false,
+          };
+        }
+      }
+
+      return grid;
+    },
+    [],
+  );
 
   // Keep a ref in sync with the terrain state so the build/visibility effects
   // can read the latest grid without depending on `terrain` state.
@@ -285,7 +383,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     const totalTiles = mapData.width * mapData.height;
 
     if (Array.isArray(mapData.tiles) && mapData.tiles.length === totalTiles) {
-      const terrainGrid = createTerrainGrid(mapData.tiles, mapData.width, mapData.height, mapData.visibility, mapData.revealed);
+      const terrainGrid = createTerrainGrid(
+        mapData.tiles,
+        mapData.width,
+        mapData.height,
+        mapData.visibility,
+        mapData.revealed,
+      );
       terrainRef.current = terrainGrid;
       setTerrain(terrainGrid);
       renderTerrainToOffscreen(terrainGrid);
@@ -294,7 +398,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
 
     const engineTiles = gameEngine?.map?.tiles;
     if (Array.isArray(engineTiles) && engineTiles.length >= totalTiles) {
-      const terrainGrid = createTerrainGrid(engineTiles, mapData.width, mapData.height, mapData.visibility, mapData.revealed);
+      const terrainGrid = createTerrainGrid(
+        engineTiles,
+        mapData.width,
+        mapData.height,
+        mapData.visibility,
+        mapData.revealed,
+      );
       terrainRef.current = terrainGrid;
       setTerrain(terrainGrid);
       renderTerrainToOffscreen(terrainGrid);
@@ -302,12 +412,24 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     }
 
     if (!terrainRef.current) {
-      const generatedTerrain = MapRenderer.generateFallbackTerrain(mapData.width || 20, mapData.height || 20);
+      const generatedTerrain = MapRenderer.generateFallbackTerrain(
+        mapData.width || 20,
+        mapData.height || 20,
+      );
       terrainRef.current = generatedTerrain;
       setTerrain(generatedTerrain);
       renderTerrainToOffscreen(generatedTerrain);
     }
-  }, [createTerrainGrid, gameEngine, mapData.height, mapData.revealed, mapData.tiles, mapData.visibility, mapData.width, renderTerrainToOffscreen]);
+  }, [
+    createTerrainGrid,
+    gameEngine,
+    mapData.height,
+    mapData.revealed,
+    mapData.tiles,
+    mapData.visibility,
+    mapData.width,
+    renderTerrainToOffscreen,
+  ]);
 
   // Note: Improvements (roads, etc.) are now rendered directly from mapData.tiles
   // in MapRenderer.drawDynamicContent, so we don't need to update the terrain grid
@@ -316,14 +438,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
 
   // Update terrain visibility when game state changes
   useEffect(() => {
-    console.log('[GameCanvas] Updating terrain visibility', {
+    console.log("[GameCanvas] Updating terrain visibility", {
       hasTerrain: !!terrainRef.current,
       hasVisibility: !!mapData.visibility,
       hasRevealed: !!mapData.revealed,
       visibilityLength: mapData.visibility?.length || 0,
       revealedLength: mapData.revealed?.length || 0,
-      visibilityTrueCount: mapData.visibility?.filter(v => v).length || 0,
-      revealedTrueCount: mapData.revealed?.filter(r => r).length || 0
+      visibilityTrueCount: mapData.visibility?.filter((v) => v).length || 0,
+      revealedTrueCount: mapData.revealed?.filter((r) => r).length || 0,
     });
 
     // Defensive check: ensure terrain grid matches map dimensions
@@ -342,21 +464,34 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     let currentTerrain = terrainRef.current;
 
     if (!ensureTerrainMatchesMap()) {
-      console.warn('[GameCanvas] Terrain grid mismatch detected. Rebuilding terrain from mapData.tiles');
+      console.warn(
+        "[GameCanvas] Terrain grid mismatch detected. Rebuilding terrain from mapData.tiles",
+      );
       // Rebuild terrain synchronously from mapData.tiles (best-effort)
-      if (mapData && Array.isArray(mapData.tiles) && mapData.tiles.length === mapData.width * mapData.height) {
+      if (
+        mapData &&
+        Array.isArray(mapData.tiles) &&
+        mapData.tiles.length === mapData.width * mapData.height
+      ) {
         const rebuilt = new Array(mapData.height);
         for (let row = 0; row < mapData.height; row++) {
           rebuilt[row] = new Array(mapData.width);
           for (let col = 0; col < mapData.width; col++) {
             const idx = row * mapData.width + col;
-            const tile = mapData.tiles[idx] as { type?: string; resource?: string; improvement?: string; visible?: boolean; explored?: boolean } || {};
+            const tile =
+              (mapData.tiles[idx] as {
+                type?: string;
+                resource?: string;
+                improvement?: string;
+                visible?: boolean;
+                explored?: boolean;
+              }) || {};
             rebuilt[row][col] = {
-              type: tile.type || 'OCEAN',
+              type: tile.type || "OCEAN",
               resource: tile.resource ?? null,
               improvement: tile.improvement ?? null,
               visible: mapData.visibility?.[idx] ?? tile.visible ?? false,
-              explored: mapData.revealed?.[idx] ?? tile.explored ?? false
+              explored: mapData.revealed?.[idx] ?? tile.explored ?? false,
             };
           }
         }
@@ -364,9 +499,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         currentTerrain = rebuilt;
         terrainRef.current = rebuilt;
         setTerrain(rebuilt);
-        console.log('[GameCanvas] Terrain rebuilt from mapData');
+        console.log("[GameCanvas] Terrain rebuilt from mapData");
       } else {
-        console.warn('[GameCanvas] Cannot rebuild terrain: invalid mapData.tiles length');
+        console.warn(
+          "[GameCanvas] Cannot rebuild terrain: invalid mapData.tiles length",
+        );
       }
     }
 
@@ -382,7 +519,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
             updatedTerrain[row][col] = {
               ...updatedTerrain[row][col],
               visible: mapData.visibility[tileIndex] || false,
-              explored: mapData.revealed[tileIndex] || false
+              explored: mapData.revealed[tileIndex] || false,
             };
           }
         }
@@ -391,11 +528,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       terrainRef.current = updatedTerrain;
       renderTerrainToOffscreen(updatedTerrain);
       setTerrain(updatedTerrain);
-      console.log('[GameCanvas] Terrain visibility updated');
+      console.log("[GameCanvas] Terrain visibility updated");
     } else {
-      console.log('[GameCanvas] Skipping terrain visibility update - missing data');
+      console.log(
+        "[GameCanvas] Skipping terrain visibility update - missing data",
+      );
     }
-  }, [mapData.visibility, mapData.revealed, mapData.height, mapData.width, mapData.tiles, mapData, renderTerrainToOffscreen]);
+  }, [
+    mapData.visibility,
+    mapData.revealed,
+    mapData.height,
+    mapData.width,
+    mapData.tiles,
+    mapData,
+    renderTerrainToOffscreen,
+  ]);
 
   // Select player's starting settler when a game starts.
   // This runs ONLY once per new game. Without the guard it re-fires on every
@@ -417,56 +564,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       return;
     }
     if (units && units.length > 0) {
-      const playerSettler = units.find(u => u.civilizationId === 0 && u.type === 'settler');
+      const playerSettler = units.find(
+        (u) => u.civilizationId === HUMAN_PLAYER_ID && u.type === "settler",
+      );
       if (playerSettler) {
         initialSettlerSelectionDoneRef.current = true;
         setSelectedHex({ col: playerSettler.col, row: playerSettler.row });
-        // Also select the unit in the store
-        if (actions && typeof actions.selectUnit === 'function') {
+        // Selecting the unit is enough to enter movement mode: the selected-unit
+        // effect computes the reachable range, and the cursor derives from
+        // `gameState.selectedUnit` (single source of truth).
+        if (actions && typeof actions.selectUnit === "function") {
           actions.selectUnit(playerSettler.id);
-        }
-        // Auto-enter GoTo mode if unit has moves. Sync the store as well so the
-        // store->local effect keeps both in agreement (otherwise the cursor can
-        // stay stuck as "crosshair" when the goto is later cleared).
-        if ((playerSettler.movesRemaining || 0) > 0) {
-          setGotoMode(true);
-          setGotoUnit(playerSettler);
-          if (actions?.setGoToMode) {
-            actions.setGoToMode(true, playerSettler.id);
-          }
-          if (actions?.addNotification) {
-            actions.addNotification({
-              type: 'info',
-              message: `Click destination for ${playerSettler.type} to go to`
-            });
-          }
-        }
-        // Calculate reachable tiles for initial blue marking
-        if (mapData && terrain) {
-          const getTileAt = (col: number, row: number) => {
-            if (row < 0 || row >= mapData.height || col < 0 || col >= mapData.width) {
-              return null;
-            }
-            const tileIndex = row * mapData.width + col;
-            return mapData.tiles?.[tileIndex] || null;
-          };
-          
-          const reachable = Pathfinding.getReachableTiles(
-            playerSettler.col,
-            playerSettler.row,
-            playerSettler.movesRemaining || 0,
-            getTileAt,
-            playerSettler.type,
-            mapData.width,
-            mapData.height,
-            playerSettler
-          );
-          
-          setReachableTiles(reachable);
         }
       }
     }
-  }, [units, gameState.isGameStarted, gameState.currentTurn, actions, mapData, terrain]);
+  }, [units, gameState.isGameStarted, gameState.currentTurn, actions]);
 
   // Focus the canvas when game engine is available for keyboard controls
   useEffect(() => {
@@ -478,31 +590,35 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   // Keyboard event handler for unit actions using KeyboardHandler class
   useEffect(() => {
     if (minimap) {
-      console.log('[GameCanvas] Skipping keyboard handler - minimap mode');
+      console.log("[GameCanvas] Skipping keyboard handler - minimap mode");
       return;
     }
 
     if (!gameEngine || !actions) {
-      console.log('[GameCanvas] Skipping keyboard handler - no gameEngine or actions');
+      console.log(
+        "[GameCanvas] Skipping keyboard handler - no gameEngine or actions",
+      );
       return;
     }
 
-    console.log('[GameCanvas] Creating KeyboardHandler');
+    console.log("[GameCanvas] Creating KeyboardHandler");
 
     const keyboardHandler = new KeyboardHandler(
       gameEngine,
       actions,
       () => {
         const selectedUnitId = gameState?.selectedUnit;
-        return selectedUnitId ? units.find(u => u.id === selectedUnitId) || null : null;
+        return selectedUnitId
+          ? units.find((u) => u.id === selectedUnitId) || null
+          : null;
       },
       () => getAllUnitsFromEngine(),
-      () => minimap
+      () => minimap,
     );
 
     const handleKeyDown = (event: KeyboardEvent) => {
       // Ignore unit-action keys while the game is paused.
-      if (useGameStore.getState().uiState.activeDialog === 'pause') {
+      if (useGameStore.getState().uiState.activeDialog === "pause") {
         return;
       }
       const handled = keyboardHandler.handleKeyDown(event);
@@ -511,19 +627,29 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    
+    window.addEventListener("keydown", handleKeyDown);
+
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown);
       keyboardHandler.dispose();
     };
-  }, [gameState?.selectedUnit, units, currentPlayer, minimap, gameEngine, actions, triggerRender]);
+  }, [
+    gameState?.selectedUnit,
+    units,
+    currentPlayer,
+    minimap,
+    gameEngine,
+    actions,
+    triggerRender,
+  ]);
 
   // Sync unit paths from RoundManager when turn changes
   useEffect(() => {
     const roundManager = gameEngine?.roundManager;
-    if (roundManager && typeof roundManager.getAllUnitPaths === 'function') {
-      console.log('[GameCanvas] Syncing unit paths from RoundManager on turn change');
+    if (roundManager && typeof roundManager.getAllUnitPaths === "function") {
+      console.log(
+        "[GameCanvas] Syncing unit paths from RoundManager on turn change",
+      );
       const paths = roundManager.getAllUnitPaths();
       if (paths instanceof Map) {
         setUnitPaths(paths as Map<string, UnitPathStep[]>);
@@ -531,84 +657,117 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     }
   }, [gameState.currentTurn, gameEngine]);
 
-  // Calculate reachable tiles when selected unit changes
+  // Shared tile lookup for pathfinding and movement previews.
+  const getTileAt = useCallback<TileLookup>(
+    (col: number, row: number) => {
+      if (!mapData) return null;
+      if (row < 0 || row >= mapData.height || col < 0 || col >= mapData.width)
+        return null;
+      return mapData.tiles?.[row * mapData.width + col] ?? null;
+    },
+    [mapData],
+  );
+
+  // Calculate reachable tiles when selected unit changes. This is the ONLY
+  // source for the selected unit's movement range, so auto-selection (turn
+  // queue, focusOnNextUnit, unit-moved events) behaves exactly like a click.
   useEffect(() => {
     const selectedUnitId = gameState.selectedUnit;
-    
+
     // Clear reachable tiles if no unit selected or not human player's turn
-    if (!selectedUnitId || gameState.activePlayer !== 0) {
+    if (!selectedUnitId || gameState.activePlayer !== HUMAN_PLAYER_ID) {
       setReachableTiles(new Map());
       return;
     }
-    
-    // Find the selected unit
-    const selectedUnit = units.find(u => u.id === selectedUnitId);
-    if (!selectedUnit || selectedUnit.civilizationId !== 0) {
-      // Only show for human player (civilization 0)
+
+    // Only show for the human player's own units
+    const unit = units.find((u) => u.id === selectedUnitId);
+    if (!unit || unit.civilizationId !== HUMAN_PLAYER_ID) {
       setReachableTiles(new Map());
       return;
     }
-    
-    // Calculate reachable tiles
+
     if (mapData && terrain) {
-      const getTileAt = (col: number, row: number) => {
-        if (row < 0 || row >= mapData.height || col < 0 || col >= mapData.width) {
-          return null;
-        }
-        const tileIndex = row * mapData.width + col;
-        return mapData.tiles?.[tileIndex] || null;
-      };
-      
-      const reachable = Pathfinding.getReachableTiles(
-        selectedUnit.col,
-        selectedUnit.row,
-        selectedUnit.movesRemaining || 0,
-        getTileAt,
-        selectedUnit.type,
-        mapData.width,
-        mapData.height,
-        selectedUnit
+      setReachableTiles(
+        Pathfinding.getReachableTiles(
+          unit.col,
+          unit.row,
+          unit.movesRemaining || 0,
+          getTileAt,
+          unit.type,
+          mapData.width,
+          mapData.height,
+          unit,
+        ),
       );
-      
-      setReachableTiles(reachable);
     }
-  }, [gameState.selectedUnit, gameState.activePlayer, units, mapData, terrain]);
+  }, [
+    gameState.selectedUnit,
+    gameState.activePlayer,
+    units,
+    mapData,
+    terrain,
+    getTileAt,
+  ]);
 
-  const squareToScreen = useCallback((col: number, row: number): { x: number; y: number } => {
-    // Return the center of the tile, not the top-left corner
-    const x = ((col + 0.5) * TILE_SIZE - camera.x) * camera.zoom;
-    const y = ((row + 0.5) * TILE_SIZE - camera.y) * camera.zoom;
-    return { x, y };
-  }, [camera.x, camera.y, camera.zoom]);
+  // Selection can change without any mouse movement (auto-select at turn start,
+  // unit-moved events). Drop the stale hover-path preview; it is recomputed on
+  // the next mouse move.
+  useEffect(() => {
+    lastHoverKeyRef.current = "";
+    setPreviewPath(null);
+    setPreviewTurnMarkers([]);
+  }, [gameState.selectedUnit]);
 
-  const screenToSquare = useCallback((screenX: number, screenY: number): HexCoordinates => {
-    // Adjust for camera position and zoom
-    const worldX = (screenX / camera.zoom) + camera.x;
-    const worldY = (screenY / camera.zoom) + camera.y;
+  const squareToScreen = useCallback(
+    (col: number, row: number): { x: number; y: number } => {
+      // Return the center of the tile, not the top-left corner
+      const x = ((col + 0.5) * TILE_SIZE - camera.x) * camera.zoom;
+      const y = ((row + 0.5) * TILE_SIZE - camera.y) * camera.zoom;
+      return { x, y };
+    },
+    [camera.x, camera.y, camera.zoom],
+  );
 
-    // Simple square coordinate conversion - use floor so clicks map
-    // to the tile that contains the point (avoid rounding at corners)
-    let col = Math.floor(worldX / TILE_SIZE);
-    let row = Math.floor(worldY / TILE_SIZE);
+  const screenToSquare = useCallback(
+    (screenX: number, screenY: number): HexCoordinates => {
+      // Adjust for camera position and zoom
+      const worldX = screenX / camera.zoom + camera.x;
+      const worldY = screenY / camera.zoom + camera.y;
 
-    // Clamp to map bounds
-    col = Math.max(0, Math.min(mapData.width - 1, col));
-    row = Math.max(0, Math.min(mapData.height - 1, row));
+      // Simple square coordinate conversion - use floor so clicks map
+      // to the tile that contains the point (avoid rounding at corners)
+      let col = Math.floor(worldX / TILE_SIZE);
+      let row = Math.floor(worldY / TILE_SIZE);
 
-    return { col, row };
-  }, [camera.x, camera.y, camera.zoom, mapData.height, mapData.width]);
+      // Clamp to map bounds
+      col = Math.max(0, Math.min(mapData.width - 1, col));
+      row = Math.max(0, Math.min(mapData.height - 1, row));
+
+      return { col, row };
+    },
+    [camera.x, camera.y, camera.zoom, mapData.height, mapData.width],
+  );
 
   // Helper accessors: support multiple engine shapes (engine.getUnitAt or engine.map.getUnitAt or fallback to engine.units[])
   const getUnitAtFromEngine = (col: number, row: number): Unit | null => {
     if (!gameEngine) return null;
     try {
-      if (typeof gameEngine.getUnitAt === 'function') return gameEngine.getUnitAt(col, row);
-      const mapObj = gameEngine.map as { getUnitAt?: (c: number, r: number) => Unit | null } | null;
-      if (mapObj && typeof mapObj.getUnitAt === 'function') return mapObj.getUnitAt(col, row);
+      if (typeof gameEngine.getUnitAt === "function")
+        return gameEngine.getUnitAt(col, row);
+      const mapObj = gameEngine.map as {
+        getUnitAt?: (c: number, r: number) => Unit | null;
+      } | null;
+      if (mapObj && typeof mapObj.getUnitAt === "function")
+        return mapObj.getUnitAt(col, row);
       const unitsArr = gameEngine.units;
-      if (Array.isArray(unitsArr)) return unitsArr.find((u: Unit) => u && u.col === col && u.row === row) || null;
+      if (Array.isArray(unitsArr))
+        return (
+          unitsArr.find((u: Unit) => u && u.col === col && u.row === row) ||
+          null
+        );
     } catch (err) {
-      console.error('[GameCanvas] getUnitAtFromEngine error', err);
+      console.error("[GameCanvas] getUnitAtFromEngine error", err);
     }
     return null;
   };
@@ -616,13 +775,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   const getCityAtFromEngine = (col: number, row: number): City | null => {
     if (!gameEngine) return null;
     try {
-      if (typeof gameEngine.getCityAt === 'function') return gameEngine.getCityAt(col, row);
-      const mapObj = gameEngine.map as { getCityAt?: (c: number, r: number) => City | null } | null;
-      if (mapObj && typeof mapObj.getCityAt === 'function') return mapObj.getCityAt(col, row);
+      if (typeof gameEngine.getCityAt === "function")
+        return gameEngine.getCityAt(col, row);
+      const mapObj = gameEngine.map as {
+        getCityAt?: (c: number, r: number) => City | null;
+      } | null;
+      if (mapObj && typeof mapObj.getCityAt === "function")
+        return mapObj.getCityAt(col, row);
       const citiesArr = gameEngine.cities;
-      if (Array.isArray(citiesArr)) return citiesArr.find((c: City) => c && c.col === col && c.row === row) || null;
+      if (Array.isArray(citiesArr))
+        return (
+          citiesArr.find((c: City) => c && c.col === col && c.row === row) ||
+          null
+        );
     } catch (err) {
-      console.error('[GameCanvas] getCityAtFromEngine error', err);
+      console.error("[GameCanvas] getCityAtFromEngine error", err);
     }
     return null;
   };
@@ -630,13 +797,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   const getAllUnitsFromEngine = (): Unit[] => {
     if (!gameEngine) return [];
     try {
-      if (typeof gameEngine.getAllUnits === 'function') return gameEngine.getAllUnits();
+      if (typeof gameEngine.getAllUnits === "function")
+        return gameEngine.getAllUnits();
       const unitsArr = gameEngine.units;
       if (Array.isArray(unitsArr)) return unitsArr;
       const mapObj = gameEngine.map as { getAllUnits?: () => Unit[] } | null;
-      if (mapObj && typeof mapObj.getAllUnits === 'function') return mapObj.getAllUnits();
+      if (mapObj && typeof mapObj.getAllUnits === "function")
+        return mapObj.getAllUnits();
     } catch (err) {
-      console.error('[GameCanvas] getAllUnitsFromEngine error', err);
+      console.error("[GameCanvas] getAllUnitsFromEngine error", err);
     }
     return [];
   };
@@ -644,54 +813,62 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   const getAllCitiesFromEngine = (): City[] => {
     if (!gameEngine) return [];
     try {
-      if (typeof gameEngine.getAllCities === 'function') return gameEngine.getAllCities();
+      if (typeof gameEngine.getAllCities === "function")
+        return gameEngine.getAllCities();
       const citiesArr = gameEngine.cities;
       if (Array.isArray(citiesArr)) return citiesArr;
       const mapObj = gameEngine.map as { getAllCities?: () => City[] } | null;
-      if (mapObj && typeof mapObj.getAllCities === 'function') return mapObj.getAllCities();
+      if (mapObj && typeof mapObj.getAllCities === "function")
+        return mapObj.getAllCities();
     } catch (err) {
-      console.error('[GameCanvas] getAllCitiesFromEngine error', err);
+      console.error("[GameCanvas] getAllCitiesFromEngine error", err);
     }
     return [];
   };
 
-  // Compute reachable tiles for a given unit and update local state
-  const computeReachableForUnit = useCallback((unit: Unit | null) => {
-    if (!unit || !mapData || !terrain) {
-      setReachableTiles(new Map());
-      return;
-    }
-
-    const getTileAt = (col: number, row: number) => {
-      if (row < 0 || row >= mapData.height || col < 0 || col >= mapData.width) {
-        return null;
+  // Compute the reachable tiles for a unit (pure; returns a fresh map).
+  const getReachableForUnit = useCallback(
+    (unit: Unit): Map<string, number> => {
+      if (!unit || !mapData || !terrain) return new Map();
+      try {
+        return Pathfinding.getReachableTiles(
+          unit.col,
+          unit.row,
+          unit.movesRemaining || 0,
+          getTileAt,
+          unit.type,
+          mapData.width,
+          mapData.height,
+          unit,
+        );
+      } catch (e) {
+        console.error("[GameCanvas] getReachableForUnit error", e);
+        return new Map();
       }
-      const tileIndex = row * mapData.width + col;
-      return mapData.tiles?.[tileIndex] || null;
-    };
+    },
+    [mapData, terrain, getTileAt],
+  );
 
-    try {
-      const reachable = Pathfinding.getReachableTiles(
-        unit.col,
-        unit.row,
-        unit.movesRemaining || 0,
-        getTileAt,
-        unit.type,
-        mapData.width,
-        mapData.height,
-        unit
-      );
-      setReachableTiles(reachable);
-    } catch (e) {
-      console.error('[GameCanvas] computeReachableForUnit error', e);
-      setReachableTiles(new Map());
-    }
-  }, [mapData, terrain]);
+  /**
+   * Whether a unit may be previewed by the UI: the human player's own units, or
+   * an enemy/AI unit on a tile the human can currently see (fog of war). Dev
+   * mode reveals everything.
+   */
+  const isUnitVisibleToHuman = useCallback(
+    (unit: Unit): boolean => {
+      if (devMode) return true;
+      if (unit.civilizationId === HUMAN_PLAYER_ID) return true;
+      const width = mapData?.width ?? 0;
+      if (!width) return false;
+      return !!mapData?.visibility?.[unit.row * width + unit.col];
+    },
+    [devMode, mapData],
+  );
 
   const renderStaticContent = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     // Rebuild offscreen terrain canvas if textures just loaded
@@ -715,7 +892,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         camera,
         units,
         cities,
-        civilizations
+        civilizations,
       });
       return;
     }
@@ -737,19 +914,28 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       offscreenCanvas: terrainCanvasRef.current,
       squareToScreen,
       cameraZoom: camera.zoom,
-      reachableTiles,
+      reachableTiles: hoverReachable ? hoverReachable.tiles : reachableTiles,
+      reachableUnitType: hoverReachable
+        ? hoverReachable.unitType
+        : (selectedUnit?.type ?? null),
+      hoveredHex,
+      previewPath,
+      previewTurnMarkers,
       combatAnimations,
-      movementAnimations
+      movementAnimations,
     });
 
     // Save the static content to animation canvas for efficient restoration
     if (animationCanvasRef.current) {
       const animCanvas = animationCanvasRef.current;
-      if (animCanvas.width !== canvas.width || animCanvas.height !== canvas.height) {
+      if (
+        animCanvas.width !== canvas.width ||
+        animCanvas.height !== canvas.height
+      ) {
         animCanvas.width = canvas.width;
         animCanvas.height = canvas.height;
       }
-      const animCtx = animCanvas.getContext('2d');
+      const animCtx = animCanvas.getContext("2d");
       if (animCtx) {
         animCtx.clearRect(0, 0, animCanvas.width, animCanvas.height);
         animCtx.drawImage(canvas, 0, 0);
@@ -758,60 +944,102 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
 
     staticRenderedRef.current = true;
     // console.log('[GameCanvas] Static content rendered and saved');
-  }, [minimap, mapData, terrain, camera, selectedHex, citizenReassign, gameState, units, cities, civilizations, unitPaths, squareToScreen, reachableTiles, combatAnimations, movementAnimations, renderTerrainToOffscreen]);
+  }, [
+    minimap,
+    mapData,
+    terrain,
+    camera,
+    selectedHex,
+    citizenReassign,
+    gameState,
+    units,
+    cities,
+    civilizations,
+    unitPaths,
+    squareToScreen,
+    reachableTiles,
+    hoverReachable,
+    hoveredHex,
+    previewPath,
+    previewTurnMarkers,
+    selectedUnit,
+    combatAnimations,
+    movementAnimations,
+    renderTerrainToOffscreen,
+  ]);
 
-  const renderAnimationLayer = useCallback((currentTime: number) => {
-    if (!canvasRef.current || !animationCanvasRef.current) return;
+  const renderAnimationLayer = useCallback(
+    (currentTime: number) => {
+      if (!canvasRef.current || !animationCanvasRef.current) return;
 
-    const canvas = canvasRef.current;
-    const animCanvas = animationCanvasRef.current;
-    const mainCtx = canvas.getContext('2d');
-    if (!mainCtx || !staticRenderedRef.current) return;
+      const canvas = canvasRef.current;
+      const animCanvas = animationCanvasRef.current;
+      const mainCtx = canvas.getContext("2d");
+      if (!mainCtx || !staticRenderedRef.current) return;
 
-    // Get units that need animation
-    const activePlayerUnits = units.filter(u => 
-      u.civilizationId === gameState.activePlayer && 
-      (u.movesRemaining || 0) > 0
-    );
-
-    if (activePlayerUnits.length === 0) return;
-
-    // Instead of redrawing the entire canvas, only update the unit regions
-    // Calculate the size of unit circles
-    const unitRadius = Math.round(20 * camera.zoom * 1.2); // Add margin for glow
-
-    activePlayerUnits.forEach(unit => {
-      const displayTile = getUnitDisplayTile(unit, movementAnimations);
-      const { x, y } = squareToScreen(displayTile.col, displayTile.row);
-      
-      // Only restore and redraw this specific region
-      const regionSize = unitRadius * 2;
-      const regionX = x - unitRadius;
-      const regionY = y - unitRadius;
-
-      // Restore static content for this unit's region only
-      mainCtx.drawImage(
-        animCanvas,
-        regionX, regionY, regionSize, regionSize,
-        regionX, regionY, regionSize, regionSize
+      // Get units that need animation
+      const activePlayerUnits = units.filter(
+        (u) =>
+          u.civilizationId === gameState.activePlayer &&
+          (u.movesRemaining || 0) > 0,
       );
-    });
 
-    // Draw only pulsing units on top (in their small regions)
-    mapRendererRef.current.renderPulsingUnits({
-      ctx: mainCtx,
-      map: mapData as MapState,
-      units,
-      gameState: gameState as GameState,
+      if (activePlayerUnits.length === 0) return;
+
+      // Instead of redrawing the entire canvas, only update the unit regions
+      // Calculate the size of unit circles
+      const unitRadius = Math.round(20 * camera.zoom * 1.2); // Add margin for glow
+
+      activePlayerUnits.forEach((unit) => {
+        const displayTile = getUnitDisplayTile(unit, movementAnimations);
+        const { x, y } = squareToScreen(displayTile.col, displayTile.row);
+
+        // Only restore and redraw this specific region
+        const regionSize = unitRadius * 2;
+        const regionX = x - unitRadius;
+        const regionY = y - unitRadius;
+
+        // Restore static content for this unit's region only
+        mainCtx.drawImage(
+          animCanvas,
+          regionX,
+          regionY,
+          regionSize,
+          regionSize,
+          regionX,
+          regionY,
+          regionSize,
+          regionSize,
+        );
+      });
+
+      // Draw only pulsing units on top (in their small regions)
+      mapRendererRef.current.renderPulsingUnits({
+        ctx: mainCtx,
+        map: mapData as MapState,
+        units,
+        gameState: gameState as GameState,
+        civilizations,
+        currentTime,
+        squareToScreen,
+        cameraZoom: camera.zoom,
+        currentQueueUnitId: currentQueueUnitId ?? undefined,
+        combatAnimations,
+        movementAnimations,
+      });
+    },
+    [
+      camera.zoom,
       civilizations,
-      currentTime,
-      squareToScreen,
-      cameraZoom: camera.zoom,
-      currentQueueUnitId: currentQueueUnitId ?? undefined,
       combatAnimations,
-      movementAnimations
-    });
-  }, [camera.zoom, civilizations, combatAnimations, currentQueueUnitId, gameState, mapData, movementAnimations, squareToScreen, units]);
+      currentQueueUnitId,
+      gameState,
+      mapData,
+      movementAnimations,
+      squareToScreen,
+      units,
+    ],
+  );
 
   // Handle mouse events
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -829,36 +1057,122 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     if (e.button !== 0) {
       return;
     }
-    // Don't allow dragging in Go To mode
-    if (gotoMode) {
+    // While a unit is selected the map is in movement mode: a left-drag would
+    // otherwise also fire a click and issue a move order.
+    if (isUnitSelectionMode) {
       return;
     }
-    
+
     setIsDragging(true);
     setLastMousePos({ x: e.clientX, y: e.clientY });
     triggerRender(); // Immediate render for visual feedback
   };
 
-  // Always show context menu when mouse is over a player unit
+  /** Clear all hover-preview state. */
+  const clearHoverPreview = useCallback(() => {
+    lastHoverKeyRef.current = "";
+    setHoveredHex(null);
+    setHoverReachable(null);
+    setPreviewPath(null);
+    setPreviewTurnMarkers([]);
+  }, []);
+
+  // Hover: preview a unit's movement range, or the selected unit's shortest
+  // path to the hovered destination (with turn numbers for multi-turn moves).
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isDragging && !gotoMode) {
+    if (isDragging && !isUnitSelectionMode) {
       const dx = e.clientX - lastMousePos.x;
       const dy = e.clientY - lastMousePos.y;
       actions.updateCamera({
         x: camera.x - dx / camera.zoom,
-        y: camera.y - dy / camera.zoom
+        y: camera.y - dy / camera.zoom,
       });
       setLastMousePos({ x: e.clientX, y: e.clientY });
       // Camera changes will trigger render via useEffect
       return;
     }
 
-    // Removed hover functionality for context menu
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const hex = screenToSquare(e.clientX - rect.left, e.clientY - rect.top);
+
+    const hoverUnit = getUnitAtFromEngine(hex.col, hex.row);
+    const hoverUnitVisible = hoverUnit
+      ? isUnitVisibleToHuman(hoverUnit)
+      : false;
+    const selId = gameState.selectedUnit;
+    const selUnit = selId ? (units.find((u) => u.id === selId) ?? null) : null;
+
+    // Cheap key so we only recompute when the hovered tile or units changed.
+    const hoverKey = [
+      hex.col,
+      hex.row,
+      hoverUnitVisible && hoverUnit ? hoverUnit.id : "-",
+      selId ?? "-",
+      selUnit
+        ? `${selUnit.col},${selUnit.row},${selUnit.movesRemaining},${selUnit.hasMovedThisTurn ? 1 : 0}`
+        : "-",
+    ].join("|");
+    if (hoverKey === lastHoverKeyRef.current) return;
+    lastHoverKeyRef.current = hoverKey;
+
+    setHoveredHex(hex);
+
+    if (hoverUnit && hoverUnitVisible) {
+      // Show the hovered unit's movement capabilities.
+      const cacheKey = `${hoverUnit.id}:${hoverUnit.col},${hoverUnit.row}:${hoverUnit.movesRemaining}:${hoverUnit.hasMovedThisTurn ? 1 : 0}`;
+      let tiles = reachableCacheRef.current.get(cacheKey);
+      if (!tiles) {
+        tiles = getReachableForUnit(hoverUnit);
+        reachableCacheRef.current.set(cacheKey, tiles);
+        // Bound the cache so it can't grow without limit.
+        if (reachableCacheRef.current.size > 64) {
+          const oldest = reachableCacheRef.current.keys().next().value;
+          if (oldest !== undefined) reachableCacheRef.current.delete(oldest);
+        }
+      }
+      setHoverReachable({
+        unitId: hoverUnit.id,
+        unitType: hoverUnit.type,
+        tiles,
+      });
+      setPreviewPath(null);
+      setPreviewTurnMarkers([]);
+      triggerRender();
+      return;
+    }
+
+    // No visible unit under the cursor: preview the selected unit's path here.
+    setHoverReachable(null);
+    const onSelectedTile =
+      !!selUnit && selUnit.col === hex.col && selUnit.row === hex.row;
+    if (isUnitSelectionMode && selUnit && !onSelectedTile && mapData) {
+      const preview = computeMovementPreview(
+        selUnit,
+        hex.col,
+        hex.row,
+        getTileAt,
+        mapData.width,
+        mapData.height,
+      );
+      setPreviewPath(preview ? preview.steps : null);
+      setPreviewTurnMarkers(preview ? preview.turnMarkers : []);
+    } else {
+      setPreviewPath(null);
+      setPreviewTurnMarkers([]);
+    }
+    triggerRender();
   };
 
   const handleMouseUp = () => {
     setIsDragging(false);
     triggerRender(); // Render to update cursor state
+  };
+
+  const handleMouseLeave = () => {
+    clearHoverPreview();
+    setIsDragging(false);
+    triggerRender();
   };
 
   // ---- Citizen reassignment (pick up & drop) ----
@@ -868,22 +1182,32 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   const handleCitizenDrop = (hex: HexCoordinates) => {
     const re = citizenReassign;
     if (!re) return;
-    const city = cities.find(c => c.id === re.cityId);
+    const city = cities.find((c) => c.id === re.cityId);
     if (!city) {
       actions.endCitizenReassign();
       triggerRender();
       return;
     }
-    const inRadius = gameEngine?.isTileInCityRadius?.(city, hex.col, hex.row) ?? false;
+    const inRadius =
+      gameEngine?.isTileInCityRadius?.(city, hex.col, hex.row) ?? false;
     const isCenter = hex.col === city.col && hex.row === city.row;
     const worked = city.workingTiles ?? new Set<string>();
     const key = `${hex.col},${hex.row}`;
     if (!isCenter && inRadius && !worked.has(key)) {
-      const ok = !!gameEngine?.reassignCitizen?.(re.cityId, re.col, re.row, hex.col, hex.row);
+      const ok = !!gameEngine?.reassignCitizen?.(
+        re.cityId,
+        re.col,
+        re.row,
+        hex.col,
+        hex.row,
+      );
       actions.endCitizenReassign();
       triggerRender();
       if (!ok && actions.addNotification) {
-        actions.addNotification({ type: 'warning', message: 'Cannot move citizen to that tile' });
+        actions.addNotification({
+          type: "warning",
+          message: "Cannot move citizen to that tile",
+        });
       }
     } else if (!inRadius) {
       // Abort: clicked well outside the city's workable radius.
@@ -893,27 +1217,125 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     // Clicking the origin / another worked tile / the center keeps the grab.
   };
 
+  /** Remove a unit's assigned GoTo path (engine + local render state). */
+  const cancelUnitPath = useCallback(
+    (unitId: string, unitType?: string) => {
+      gameEngine?.goToManager?.clearUnitPath(unitId);
+      setUnitPaths((prev) => {
+        if (!prev.has(unitId)) return prev;
+        const next = new Map(prev);
+        next.delete(unitId);
+        return next;
+      });
+      if (unitType && actions?.addNotification) {
+        actions.addNotification({
+          type: "info",
+          message: `GoTo cancelled for ${unitType}`,
+        });
+      }
+      triggerRender();
+    },
+    [gameEngine, actions, triggerRender],
+  );
+
+  /**
+   * Assign a GoTo path to a unit and move it as far as it can this turn.
+   * The remaining steps stay in the engine so `TurnManager.processAutomatedMovements`
+   * continues the journey on the following turns.
+   */
+  const assignUnitPath = useCallback(
+    (unit: Unit, targetCol: number, targetRow: number) => {
+      const goToManager = gameEngine?.goToManager;
+      if (!goToManager || !mapData) {
+        if (actions?.addNotification)
+          actions.addNotification({
+            type: "error",
+            message: "GoTo system unavailable",
+          });
+        return;
+      }
+
+      const pathResult = goToManager.calculatePath(
+        unit,
+        targetCol,
+        targetRow,
+        getTileAt,
+        mapData.width,
+        mapData.height,
+      );
+
+      if (!pathResult.success || pathResult.path.length === 0) {
+        if (actions?.addNotification) {
+          actions.addNotification({
+            type: "warning",
+            message: "Cannot reach destination",
+          });
+        }
+        return;
+      }
+
+      goToManager.setUnitPath(unit.id, pathResult.path);
+      setUnitPaths((prev) => {
+        const next = new Map(prev);
+        next.set(unit.id, pathResult.path);
+        return next;
+      });
+      // The hover preview is now committed; clear it until the mouse moves again.
+      setPreviewPath(null);
+      setPreviewTurnMarkers([]);
+
+      if (actions?.addNotification) {
+        actions.addNotification({
+          type: "success",
+          message: `${unit.type} will go to (${targetCol}, ${targetRow})`,
+        });
+      }
+      triggerRender();
+
+      if ((unit.movesRemaining || 0) > 0) {
+        setTimeout(() => {
+          goToManager
+            .executePathWithAnimation(unit.id, 300, () => {
+              const remaining = goToManager.getUnitPath(unit.id);
+              setUnitPaths((prev) => {
+                const next = new Map(prev);
+                if (remaining && remaining.length > 0) {
+                  next.set(unit.id, remaining);
+                } else {
+                  next.delete(unit.id);
+                }
+                return next;
+              });
+              triggerRender();
+            })
+            .then(() => triggerRender());
+        }, 100);
+      }
+    },
+    [gameEngine, mapData, getTileAt, actions, triggerRender],
+  );
+
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDragging) {
       const rect = canvasRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      
+
       // Minimap click - jump to location
       if (minimap) {
         const canvas = canvasRef.current;
         const tileWidth = canvas.width / mapData.width;
         const tileHeight = canvas.height / mapData.height;
-        
+
         const clickedCol = Math.floor(x / tileWidth);
         const clickedRow = Math.floor(y / tileHeight);
-        
+
         console.log(`[CLICK] Minimap click at (${clickedCol}, ${clickedRow})`);
-        
+
         // Center camera on clicked position
         actions.updateCamera({
-          x: clickedCol * TILE_SIZE - (canvas.width / camera.zoom) / 2,
-          y: clickedRow * TILE_SIZE - (canvas.height / camera.zoom) / 2
+          x: clickedCol * TILE_SIZE - canvas.width / camera.zoom / 2,
+          y: clickedRow * TILE_SIZE - canvas.height / camera.zoom / 2,
         });
       } else {
         const hex = screenToSquare(x, y);
@@ -932,248 +1354,123 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         // the yellow net visible after the modal is closed / unit is selected).
         const activeCityId = gameState.selectedCity ?? gameState.focusedCity;
         if (!citizenReassign && gameEngine && activeCityId) {
-          const selCity = cities.find(c => c.id === activeCityId);
+          const selCity = cities.find((c) => c.id === activeCityId);
           const onTileUnit = gameEngine.getUnitAt?.(hex.col, hex.row);
-          const isCityCenter = selCity !== undefined && hex.col === selCity.col && hex.row === selCity.row;
+          const isCityCenter =
+            selCity !== undefined &&
+            hex.col === selCity.col &&
+            hex.row === selCity.row;
           const worked = selCity?.workingTiles ?? new Set<string>();
           const isWorked = worked.has(`${hex.col},${hex.row}`);
-          const inRadius = selCity ? (gameEngine.isTileInCityRadius?.(selCity, hex.col, hex.row) ?? false) : false;
-          const ownUnitOnTile = !!(onTileUnit && currentPlayer && onTileUnit.civilizationId === currentPlayer.id);
-          if (selCity && !isCityCenter && isWorked && inRadius && !ownUnitOnTile) {
-            actions.setCitizenReassign({ cityId: selCity.id, col: hex.col, row: hex.row });
+          const inRadius = selCity
+            ? (gameEngine.isTileInCityRadius?.(selCity, hex.col, hex.row) ??
+              false)
+            : false;
+          const ownUnitOnTile = !!(
+            onTileUnit &&
+            currentPlayer &&
+            onTileUnit.civilizationId === currentPlayer.id
+          );
+          if (
+            selCity &&
+            !isCityCenter &&
+            isWorked &&
+            inRadius &&
+            !ownUnitOnTile
+          ) {
+            actions.setCitizenReassign({
+              cityId: selCity.id,
+              col: hex.col,
+              row: hex.row,
+            });
             setSelectedHex(hex);
             triggerRender();
             return;
           }
         }
 
-        // Check if clicking on the currently selected unit - deselect it
-        const currentSelectedUnitId = gameState.selectedUnit;
-        const currentSelectedUnit = currentSelectedUnitId ? units.find(u => u.id === currentSelectedUnitId) : null;
-        
-        if (currentSelectedUnit && currentSelectedUnit.col === hex.col && currentSelectedUnit.row === hex.row) {
-           console.log(`[CLICK] Clicked on currently selected unit - deselecting`);
-           if (actions && typeof actions.selectUnit === 'function') {
-             actions.selectUnit(null);
-           }
-           setGotoMode(false);
-           setGotoUnit(null);
-           setSelectedHex({ col: -1, row: -1 });
-           setReachableTiles(new Map());
-           triggerRender();
-           return;
+        // Resolve what is at this location once; all branches below use it.
+        let unitAt = null;
+        let cityAt: { id: string; name: string; civilizationId: number } | null;
+        try {
+          unitAt = getUnitAtFromEngine(hex.col, hex.row);
+          cityAt = getCityAtFromEngine(hex.col, hex.row);
+        } catch {
+          unitAt = null;
+          cityAt = undefined;
         }
-        
-        // Check if clicking on already selected hex - deselect everything
-        if (selectedHex.col === hex.col && selectedHex.row === hex.row) {
-          console.log(`[CLICK] Deselecting selected hex (${hex.col}, ${hex.row})`);
-          if (actions && typeof actions.selectUnit === 'function') {
+
+        // Clicking an already-selected *empty* hex clears the selection. Unit
+        // and city tiles are handled below — re-clicking a unit must NOT
+        // deselect it (it cancels its GoTo path instead).
+        if (
+          !unitAt &&
+          selectedHex.col === hex.col &&
+          selectedHex.row === hex.row &&
+          !isUnitSelectionMode &&
+          !gameState.selectedUnit
+        ) {
+          console.log(
+            `[CLICK] Deselecting selected hex (${hex.col}, ${hex.row})`,
+          );
+          if (actions && typeof actions.selectUnit === "function") {
             actions.selectUnit(null);
           }
-          if (actions && typeof actions.selectCity === 'function') {
+          if (actions && typeof actions.selectCity === "function") {
             actions.selectCity(null);
           }
           setSelectedHex({ col: -1, row: -1 });
           return;
         }
-        
+
         setSelectedHex(hex);
         setContextMenu(null); // Hide context menu on left click
 
         console.log(`[CLICK] Map click at hex (${hex.col}, ${hex.row})`);
 
-        // Handle Go To mode
-        if (gotoMode && gotoUnit) {
-          // Clicking an adjacent enemy unit = attack, not a move order.
-          // Handle it directly (moveUnit triggers combat, which auto-declares
-          // war) instead of pathfinding onto the enemy tile.
-          const destUnit = getUnitAtFromEngine(hex.col, hex.row);
-          const adjacent = Math.abs(gotoUnit.col - hex.col) <= 1 && Math.abs(gotoUnit.row - hex.row) <= 1;
-          if (destUnit && destUnit.civilizationId !== gotoUnit.civilizationId && adjacent && (gotoUnit.movesRemaining || 0) > 0) {
-            console.log(`[CLICK] Attacking enemy ${destUnit.type} at (${hex.col},${hex.row})`);
-            gameEngine?.moveUnit?.(gotoUnit.id, hex.col, hex.row);
-            setGotoMode(false);
-            setGotoUnit(null);
-            triggerRender();
-            return;
-          }
-
-          console.log(`[CLICK] Go To destination set for unit ${gotoUnit.id} to (${hex.col}, ${hex.row})`);
-          
-          // Use GoToManager to calculate and execute path
-          const goToManager = gameEngine?.goToManager;
-          if (goToManager) {
-            const pathResult = goToManager.calculatePath(
-              gotoUnit,
-              hex.col,
-              hex.row,
-              (col: number, row: number) => {
-                const tileIndex = row * mapData.width + col;
-                return mapData.tiles?.[tileIndex] || null;
-              },
-              mapData.width,
-              mapData.height
-            );
-
-            if (pathResult.success && pathResult.path.length > 0) {
-              // Set the path using GoToManager
-              goToManager.setUnitPath(gotoUnit.id, pathResult.path);
-              
-              // Update local state for rendering
-              setUnitPaths(prev => {
-                const next = new Map(prev);
-                next.set(gotoUnit.id, pathResult.path);
-                return next;
-              });
-
-              if (actions?.addNotification) {
-                actions.addNotification({
-                  type: 'success',
-                  message: `${gotoUnit.type} will go to (${hex.col}, ${hex.row})`
-                });
-              }
-
-              console.log(`[CLICK] Path calculated for unit ${gotoUnit.id}:`, pathResult.path);
-
-              // Execute ALL steps until moves are exhausted using animation
-              if (gotoUnit.movesRemaining > 0) {
-                console.log(`[CLICK] Starting full path execution for unit ${gotoUnit.id}`);
-                triggerRender();
-                
-                // Execute path with animation, moving until all moves are used
-                setTimeout(() => {
-                  goToManager.executePathWithAnimation(
-                    gotoUnit.id,
-                    300,
-                    (remainingSteps: number) => {
-                      // Update UI after each step
-                      const path = goToManager.getUnitPath(gotoUnit.id);
-                      setUnitPaths(prev => {
-                        const next = new Map(prev);
-                        if (path && path.length > 0) {
-                          next.set(gotoUnit.id, path);
-                        } else {
-                          next.delete(gotoUnit.id);
-                        }
-                        return next;
-                      });
-                      triggerRender();
-                      console.log(`[CLICK] Unit ${gotoUnit.id} continuing, ${remainingSteps} steps remaining`);
-                    }
-                  ).then(result => {
-                    console.log(`[CLICK] Unit ${gotoUnit.id} completed GoTo movement, ${result.stepsCompleted} steps taken`);
-                    triggerRender();
-                  });
-                }, 100);
-              } else {
-                triggerRender();
-              }
-            } else {
-              if (actions?.addNotification) {
-                actions.addNotification({
-                  type: 'warning',
-                  message: 'Cannot reach destination'
-                });
-              }
-            }
-          } else {
-            console.error('[CLICK] GoToManager not available');
-            if (actions?.addNotification) {
-              actions.addNotification({
-                type: 'error',
-                message: 'GoTo system unavailable'
-              });
-            }
-          }
-          
-          // Exit Go To mode
-          setGotoMode(false);
-          setGotoUnit(null);
-          return;
-        }
-
         // Select the hex in the global store
-        if (actions && typeof actions.selectHex === 'function') {
+        if (actions && typeof actions.selectHex === "function") {
           actions.selectHex(hex);
         }
 
-        // Check for unit or city at this location
-        let unitAt = null;
-        let cityAt: { id: string; name: string; civilizationId: number; } | null;
-         try {
-           unitAt = getUnitAtFromEngine(hex.col, hex.row);
-           cityAt = getCityAtFromEngine(hex.col, hex.row);
-         } catch {
-          unitAt = null;
-          cityAt = undefined;
-         }
-
-        if (unitAt && currentPlayer && unitAt.civilizationId === currentPlayer.id) {
-          console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type}) at (${hex.col}, ${hex.row})`);
-          
-          // Check if this unit is already selected - if so, deselect it
-          const currentlySelectedUnitId = gameState?.selectedUnit;
-          if (currentlySelectedUnitId === unitAt.id) {
-            console.log(`[CLICK] Deselecting unit ${unitAt.id}`);
-            if (actions && typeof actions.selectUnit === 'function') {
-              actions.selectUnit(null);
-            }
-            // Exit GoTo mode when deselecting
-            setGotoMode(false);
-            setGotoUnit(null);
-            return; // Don't proceed with normal selection
+        if (
+          unitAt &&
+          currentPlayer &&
+          unitAt.civilizationId === currentPlayer.id
+        ) {
+          if (gameState.selectedUnit === unitAt.id) {
+            // Re-clicking the selected unit orders it to its own tile, which
+            // cancels any assigned GoTo path. The unit stays selected.
+            console.log(
+              `[CLICK] Re-clicked selected unit ${unitAt.id} - cancelling its path`,
+            );
+            cancelUnitPath(unitAt.id, unitAt.type);
+            return;
           }
-          
-          if (actions && typeof actions.selectUnit === 'function') {
+
+          if (actions && typeof actions.selectUnit === "function") {
             actions.selectUnit(unitAt.id);
           }
-          
-          // Automatically enter GoTo mode when unit is selected
-          console.log(`[CLICK] Unit selected, entering GoTo mode`);
-          setGotoMode(true);
-          setGotoUnit(unitAt);
-          // Compute reachable tiles immediately when a unit is selected
-          computeReachableForUnit(unitAt);
-          if (actions?.addNotification) {
-            actions.addNotification({
-              type: 'info',
-              message: `Click destination for ${unitAt.type} to go to`
-            });
-          }
-          
-          // If the unit has a path and moves, continue following using GoToManager
-          const goToManager = gameEngine?.goToManager;
-          if (goToManager && goToManager.hasPath(unitAt.id) && unitAt.movesRemaining > 0) {
-            try {
-              const moveResult = goToManager.executeFirstStep(unitAt.id);
-              if (moveResult.success) {
-                setUnitPaths(prev => {
-                  const next = new Map(prev);
-                  if (moveResult.remainingPath.length > 0) {
-                    next.set(unitAt.id, moveResult.remainingPath);
-                  } else {
-                    next.delete(unitAt.id);
-                  }
-                  return next;
-                });
-                console.log(`[CLICK] Unit ${unitAt.id} continued path, ${moveResult.remainingPath.length} steps remaining`);
-              }
-            } catch (e) {
-              console.log(`[CLICK] Continue path error:`, e);
-            }
-          }
-        } else if (unitAt && !currentPlayer || (unitAt && unitAt.civilizationId !== currentPlayer.id)) {
+          console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type})`);
+          triggerRender();
+        } else if (
+          unitAt &&
+          currentPlayer &&
+          unitAt.civilizationId !== currentPlayer.id
+        ) {
           // Enemy unit - check if we have a selected unit that can attack
           console.log(`[CLICK] Enemy unit at (${hex.col}, ${hex.row})`);
-          const selectedUnitId = gameState?.selectedUnit;
-          if (selectedUnitId) {
-            const selectedUnit = units.find(u => u.id === selectedUnitId);
-            if (selectedUnit && selectedUnit.civilizationId === currentPlayer?.id) {
+          if (selectedUnit) {
+            if (selectedUnit.civilizationId === currentPlayer?.id) {
               // Check if adjacent or use pathfinding to get there and attack
-              const isAdjacent = Math.abs(selectedUnit.col - hex.col) <= 1 && Math.abs(selectedUnit.row - hex.row) <= 1;
-              
+              const isAdjacent =
+                Math.abs(selectedUnit.col - hex.col) <= 1 &&
+                Math.abs(selectedUnit.row - hex.row) <= 1;
+
               if (isAdjacent && (selectedUnit.movesRemaining || 0) > 0) {
-                console.log(`[CLICK] Adjacent attack - attempting to move/attack`);
+                console.log(
+                  `[CLICK] Adjacent attack - attempting to move/attack`,
+                );
                 try {
                   // MoveAnimator lunges toward the defender, then commits combat.
                   moveAnimator?.attack(selectedUnit.id, hex.col, hex.row);
@@ -1181,141 +1478,43 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
                   console.log(`[CLICK] Attack error:`, e);
                 }
               } else {
-                console.log(`[CLICK] Unit not adjacent to enemy - cannot attack`);
+                console.log(
+                  `[CLICK] Unit not adjacent to enemy - cannot attack`,
+                );
                 if (actions?.addNotification) {
-                  actions.addNotification({ type: 'warning', message: 'Unit must be adjacent to attack' });
+                  actions.addNotification({
+                    type: "warning",
+                    message: "Unit must be adjacent to attack",
+                  });
                 }
               }
             }
           } else {
             console.log(`[CLICK] No unit selected to attack with`);
           }
+        } else if (isUnitSelectionMode && selectedUnit) {
+          // Moving a selected unit takes precedence over city selection: while
+          // a unit is selected, clicking a tile issues a GoTo order.
+          assignUnitPath(selectedUnit, hex.col, hex.row);
         } else if (cityAt) {
-          console.log(`[CLICK] Selected city ${cityAt.id} (${cityAt.name}) at (${hex.col}, ${hex.row})`);
-          console.log(`[CLICK] City debug - currentPlayer:`, currentPlayer, `cityAt.civilizationId:`, cityAt.civilizationId);
-          if (actions && typeof actions.selectCity === 'function') {
+          console.log(
+            `[CLICK] Selected city ${cityAt.id} (${cityAt.name}) at (${hex.col}, ${hex.row})`,
+          );
+          if (actions && typeof actions.selectCity === "function") {
             actions.selectCity(cityAt.id);
           }
-          // Only open modal for player cities
-          console.log(`[CLICK] Modal check - currentPlayer exists:`, !!currentPlayer, `civilizationId match:`, currentPlayer?.id === cityAt.civilizationId, `actions.showDialog exists:`, !!(actions && typeof actions.showDialog === 'function'));
-          if (currentPlayer && cityAt.civilizationId === currentPlayer.id && actions && typeof actions.showDialog === 'function') {
-            console.log(`[CLICK] Opening city modal for player city`);
-            actions.showDialog('city-details');
-          } else {
-            console.log(`[CLICK] Not opening city modal - condition not met`);
+          if (
+            currentPlayer &&
+            cityAt.civilizationId === currentPlayer.id &&
+            actions &&
+            typeof actions.showDialog === "function"
+          ) {
+            actions.showDialog("city-details");
           }
+          triggerRender();
         } else {
-          // Check if we have a selected unit and try to move it
-          const selectedUnitId = gameState?.selectedUnit;
-          if (selectedUnitId) {
-            console.log(`[CLICK] Attempting to move selected unit ${selectedUnitId} to (${hex.col}, ${hex.row})`);
-
-            // Find unit object
-            const selectedUnit = units.find(u => u.id === selectedUnitId);
-
-            // If we have reachableTiles computed, prefer using it to validate click
-            const key = `${hex.col},${hex.row}`;
-            const isReachable = reachableTiles && reachableTiles.has(key);
-
-            if (!selectedUnit) {
-              console.log('[CLICK] Selected unit not found in units array');
-              return;
-            }
-
-            if (!isReachable) {
-              // Not reachable within current movement points
-              console.log('[CLICK] Destination not reachable with current moves');
-              if (actions && typeof actions.addNotification === 'function') {
-                actions.addNotification({ type: 'warning', message: 'Cannot reach destination with current movement points' });
-              }
-              return;
-            }
-
-            try {
-              // Calculate path using Pathfinding
-              const pathResult = Pathfinding.findPath(
-                selectedUnit.col,
-                selectedUnit.row,
-                hex.col,
-                hex.row,
-                (col: number, row: number) => {
-                  const tileIndex = row * mapData.width + col;
-                  return mapData.tiles?.[tileIndex] || null;
-                },
-                selectedUnit.type,
-                mapData.width,
-                mapData.height
-              );
-
-              if (pathResult.success && pathResult.path.length > 1) {
-                const pathToFollow: UnitPathStep[] = pathResult.path.slice(1).map((step: { col: number; row: number }) => ({ col: step.col, row: step.row }));
-
-                // Use GoToManager to set the path and execute with animation
-                const goToManager = gameEngine?.goToManager;
-                if (goToManager) {
-                  goToManager.setUnitPath(selectedUnit.id, pathToFollow);
-                  
-                  // Update local state for rendering
-                  setUnitPaths(prev => {
-                    const next = new Map(prev);
-                    next.set(selectedUnit.id, pathToFollow);
-                    return next;
-                  });
-
-                  if (actions?.addNotification) {
-                    actions.addNotification({ 
-                      type: 'success', 
-                      message: `${selectedUnit.type} will go to (${hex.col}, ${hex.row})` 
-                    });
-                  }
-
-                  triggerRender();
-
-                  // Then, if unit has moves, start moving along the path using the
-                  // deferred-commit MoveAnimator (glide each step, then commit).
-                  if (pathToFollow.length > 0 && (selectedUnit.movesRemaining || 0) > 0) {
-                    moveAnimator?.moveAlongPath(selectedUnit.id, pathToFollow).then(() => {
-                      setUnitPaths(prev => {
-                        const next = new Map(prev);
-                        next.delete(selectedUnit.id);
-                        return next;
-                      });
-                      triggerRender();
-                    });
-                  }
-                } else {
-                  console.error('[CLICK] GoToManager not available, falling back to old method');
-                  // Fallback to old method if GoToManager not available
-                  setUnitPaths(prev => {
-                    const next = new Map(prev);
-                    next.set(selectedUnit.id, pathToFollow);
-                    return next;
-                  });
-                  
-                  const roundManager = gameEngine?.roundManager;
-                  if (roundManager && typeof roundManager.setUnitPath === 'function') {
-                    roundManager.setUnitPath(selectedUnit.id, pathToFollow);
-                  }
-                  
-                  if (actions?.addNotification) {
-                    actions.addNotification({ 
-                      type: 'success', 
-                      message: `${selectedUnit.type} will go to (${hex.col}, ${hex.row})` 
-                    });
-                  }
-                  
-                  triggerRender();
-                }
-              } else {
-                if (actions?.addNotification) actions.addNotification({ type: 'warning', message: 'Cannot reach destination' });
-              }
-            } catch (e) {
-              console.log(`[CLICK] Pathfinding error:`, e);
-              if (actions?.addNotification) actions.addNotification({ type: 'error', message: 'Pathfinding failed' });
-            }
-          } else {
-            console.log(`[CLICK] Empty hex clicked at (${hex.col}, ${hex.row})`);
-          }
+          console.log(`[CLICK] Empty hex clicked at (${hex.col}, ${hex.row})`);
+          triggerRender();
         }
       }
     }
@@ -1331,28 +1530,29 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     // Right-click aborts a citizen pick-up (cancel the grab without altering
     // any tile) before opening the unit context menu.
     if (citizenReassign) {
-      console.log('[RightClick] Cancelling citizen reassignment');
+      console.log("[RightClick] Cancelling citizen reassignment");
       actions.endCitizenReassign();
       triggerRender();
       return;
     }
 
-    // If in Go To mode, right click exits GoTo mode and deselects unit
-    if (gotoMode) {
-      console.log('[RightClick] Exiting GoTo mode');
-      setGotoMode(false);
-      setGotoUnit(null);
-      if (actions && typeof actions.selectUnit === 'function') {
+    // Right-click always ends unit selection mode. The context menu below is
+    // independent of selection (the unit is not re-selected by it).
+    if (gameState.selectedUnit) {
+      console.log("[RightClick] Clearing unit selection");
+      clearHoverPreview();
+      setReachableTiles(new Map());
+      if (actions && typeof actions.selectUnit === "function") {
         actions.selectUnit(null);
       }
-      return;
+      triggerRender();
     }
-    
+
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const hex = screenToSquare(x, y);
-    
+
     if (!terrain) return;
 
     // Get unit at this location from gameEngine first (most reliable)
@@ -1360,23 +1560,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     try {
       unitAtHex = getUnitAtFromEngine(hex.col, hex.row);
     } catch (e) {
-      console.error('[ContextMenu] Error getting unit from gameEngine:', e);
+      console.error("[ContextMenu] Error getting unit from gameEngine:", e);
     }
 
     // Check if it's a player's unit
     if (!unitAtHex || unitAtHex.civilizationId !== currentPlayer?.id) {
-      console.log('[ContextMenu] Not player unit, skipping menu');
+      console.log("[ContextMenu] Not player unit, skipping menu");
       return;
     }
 
-    console.log(`[ContextMenu] Right-clicked player unit ${unitAtHex.id} (${unitAtHex.type})`);
-
-    // Select the unit
-    if (actions && typeof actions.selectUnit === 'function') {
-      actions.selectUnit(unitAtHex.id);
-    }
-    // Compute reachable tiles immediately when a unit is selected via right-click
-    computeReachableForUnit(unitAtHex);
+    console.log(
+      `[ContextMenu] Right-clicked player unit ${unitAtHex.id} (${unitAtHex.type})`,
+    );
 
     // Get city at this location
     let cityAtHex = null;
@@ -1395,7 +1590,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       hex: hex,
       tile: tile,
       unit: unitAtHex,
-      city: cityAtHex
+      city: cityAtHex,
     });
   };
 
@@ -1417,20 +1612,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   };
 
   const handleDoubleTap = (clientX: number, clientY: number) => {
-    if (gotoMode) return;
+    if (isUnitSelectionMode) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = clientX - rect.left;
     const y = clientY - rect.top;
     const newZoom = Math.min(camera.zoom * 1.5, 2.5);
-    const worldXBefore = (x / camera.zoom) + camera.x;
-    const worldYBefore = (y / camera.zoom) + camera.y;
-    const worldXAfter = (x / newZoom) + camera.x;
-    const worldYAfter = (y / newZoom) + camera.y;
+    const worldXBefore = x / camera.zoom + camera.x;
+    const worldYBefore = y / camera.zoom + camera.y;
+    const worldXAfter = x / newZoom + camera.x;
+    const worldYAfter = y / newZoom + camera.y;
     actions.updateCamera({
       zoom: newZoom,
       x: camera.x - (worldXAfter - worldXBefore),
-      y: camera.y - (worldYAfter - worldYBefore)
+      y: camera.y - (worldYAfter - worldYBefore),
     });
   };
 
@@ -1448,9 +1643,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       longPressTimerRef.current = window.setTimeout(() => {
         if (!touchMovedRef.current && touchStartRef.current) {
           if (navigator.vibrate) {
-            try { navigator.vibrate(20); } catch { /* unsupported */ }
+            try {
+              navigator.vibrate(20);
+            } catch {
+              /* unsupported */
+            }
           }
-          handleTouchLongPress(touchStartRef.current.x, touchStartRef.current.y);
+          handleTouchLongPress(
+            touchStartRef.current.x,
+            touchStartRef.current.y,
+          );
           touchMovedRef.current = true; // suppress tap on release
         }
       }, LONG_PRESS_MS);
@@ -1460,7 +1662,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       touchStartRef.current = null;
       const dx = touches[0].clientX - touches[1].clientX;
       const dy = touches[0].clientY - touches[1].clientY;
-      pinchStartRef.current = { distance: Math.hypot(dx, dy), zoom: camera.zoom };
+      pinchStartRef.current = {
+        distance: Math.hypot(dx, dy),
+        zoom: camera.zoom,
+      };
       setIsDragging(false);
     }
   };
@@ -1478,13 +1683,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         clearLongPressTimer();
       }
 
-      // One-finger pan (skip in Go To mode so taps place the destination)
-      if (touchMovedRef.current && !gotoMode) {
+      // One-finger pan (skip while a unit is selected so taps place the destination)
+      if (touchMovedRef.current && !isUnitSelectionMode) {
         actions.updateCamera({
           x: camera.x - dx / camera.zoom,
-          y: camera.y - dy / camera.zoom
+          y: camera.y - dy / camera.zoom,
         });
-        touchStartRef.current = { x: t.clientX, y: t.clientY, id: t.identifier };
+        touchStartRef.current = {
+          x: t.clientX,
+          y: t.clientY,
+          id: t.identifier,
+        };
       }
     } else if (touches.length === 2 && pinchStartRef.current) {
       clearLongPressTimer();
@@ -1492,7 +1701,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       const dy = touches[0].clientY - touches[1].clientY;
       const distance = Math.hypot(dx, dy);
       const scale = distance / pinchStartRef.current.distance;
-      const newZoom = Math.max(0.3, Math.min(2.5, pinchStartRef.current.zoom * scale));
+      const newZoom = Math.max(
+        0.3,
+        Math.min(2.5, pinchStartRef.current.zoom * scale),
+      );
       actions.updateCamera({ zoom: newZoom });
     }
   };
@@ -1502,7 +1714,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
 
     if (e.touches.length === 0) {
       const now = Date.now();
-      const wasTap = !!touchStartRef.current && !touchMovedRef.current && !pinchStartRef.current;
+      const wasTap =
+        !!touchStartRef.current &&
+        !touchMovedRef.current &&
+        !pinchStartRef.current;
 
       if (wasTap && touchStartRef.current) {
         const { x, y } = touchStartRef.current;
@@ -1540,12 +1755,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   };
 
   /** "Road construction started (2 turns)" — Civ1 multi-turn construction feedback. */
-  const buildStartedMessage = (engine: GameEngine, unit: Unit, improvement: string): string => {
-    const tile = engine.getTileAt(unit.col, unit.row) as { terrain?: string; type?: string } | undefined;
-    const terrain = tile?.terrain || tile?.type || '';
+  const buildStartedMessage = (
+    engine: GameEngine,
+    unit: Unit,
+    improvement: string,
+  ): string => {
+    const tile = engine.getTileAt(unit.col, unit.row) as
+      | { terrain?: string; type?: string }
+      | undefined;
+    const terrain = tile?.terrain || tile?.type || "";
     const turns = engine.improvementBuildTurns?.(improvement, terrain) ?? 1;
-    const label = improvement === 'mines' ? 'Mine' : improvement.charAt(0).toUpperCase() + improvement.slice(1);
-    return `${label} construction started (${turns} turn${turns > 1 ? 's' : ''})`;
+    const label =
+      improvement === "mines"
+        ? "Mine"
+        : improvement.charAt(0).toUpperCase() + improvement.slice(1);
+    return `${label} construction started (${turns} turn${turns > 1 ? "s" : ""})`;
   };
 
   const executeContextAction = (action: string) => {
@@ -1558,229 +1782,257 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
 
     switch (action) {
       // ===== UNIT ACTIONS =====
-      case 'fortify':
+      case "fortify":
         if (unit && gameEngine?.unitFortify) {
           console.log(`[ContextMenu] Fortifying unit ${unit.id}`);
           gameEngine.unitFortify(unit.id);
-          if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
-          if (actions?.addNotification) actions.addNotification({
-            type: 'success',
-            message: `${unit.type} fortified`
-          });
+          if (actions?.updateUnits)
+            actions.updateUnits(getAllUnitsFromEngine());
+          if (actions?.addNotification)
+            actions.addNotification({
+              type: "success",
+              message: `${unit.type} fortified`,
+            });
         }
         break;
 
-      case 'sleep':
+      case "sleep":
         if (unit && gameEngine) {
           if (unit.isSleeping && gameEngine.unitWake) {
             console.log(`[ContextMenu] Wake action for unit ${unit.id}`);
             gameEngine.unitWake(unit.id);
-            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
-            if (actions?.addNotification) actions.addNotification({
-              type: 'success',
-              message: `${unit.type} woke up`
-            });
+            if (actions?.updateUnits)
+              actions.updateUnits(getAllUnitsFromEngine());
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "success",
+                message: `${unit.type} woke up`,
+              });
           } else if (gameEngine.unitSleep) {
             console.log(`[ContextMenu] Sleep action for unit ${unit.id}`);
             gameEngine.unitSleep(unit.id);
-            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
-            if (actions?.addNotification) actions.addNotification({
-              type: 'success',
-              message: `${unit.type} sleeping`
-            });
+            if (actions?.updateUnits)
+              actions.updateUnits(getAllUnitsFromEngine());
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "success",
+                message: `${unit.type} sleeping`,
+              });
           }
         }
         break;
 
-      case 'skip_turn':
+      case "skip_turn":
         if (unit && gameEngine?.skipUnit) {
           console.log(`[ContextMenu] Skipping turn for unit ${unit.id}`);
           gameEngine.skipUnit(unit.id);
-          if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
-          if (actions?.addNotification) actions.addNotification({
-            type: 'info',
-            message: `${unit.type} turn skipped`
-          });
+          if (actions?.updateUnits)
+            actions.updateUnits(getAllUnitsFromEngine());
+          if (actions?.addNotification)
+            actions.addNotification({
+              type: "info",
+              message: `${unit.type} turn skipped`,
+            });
           if (actions?.selectUnit) actions.selectUnit(null);
         }
         break;
 
-      case 'goto':
+      case "goto":
         if (unit) {
-          console.log(`[ContextMenu] Entering Go To mode for unit ${unit.id}`);
-          setGotoMode(true);
-          setGotoUnit(unit);
-          if (actions?.selectUnit) actions.selectUnit(unit.id); // Ensure unit is selected
-          // Compute reachable tiles immediately when selected from context menu
-          computeReachableForUnit(unit);
+          console.log(
+            `[ContextMenu] Entering unit movement mode for ${unit.id}`,
+          );
+          // Selecting the unit enters movement mode (cursor + range + hover
+          // path preview all derive from `gameState.selectedUnit`).
+          if (actions?.selectUnit) actions.selectUnit(unit.id);
           setContextMenu(null); // Close the context menu
-          if (actions?.addNotification) actions.addNotification({
-            type: 'info',
-            message: `Click destination for ${unit.type} to go to`
-          });
+          if (actions?.addNotification)
+            actions.addNotification({
+              type: "info",
+              message: `Click destination for ${unit.type} to go to`,
+            });
         }
         break;
 
-      case 'goto_cancel':
+      case "goto_cancel":
         if (unit && gameEngine?.goToManager) {
           console.log(`[ContextMenu] Canceling Go To for unit ${unit.id}`);
           gameEngine.goToManager.clearUnitPath(unit.id);
-          
+
           // Clear the path from local state to remove the rendered GoTo line
-          setUnitPaths(prev => {
+          setUnitPaths((prev) => {
             const next = new Map(prev);
             next.delete(unit.id);
             return next;
           });
-          
-          if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
-          if (actions?.addNotification) actions.addNotification({
-            type: 'info',
-            message: `GoTo cancelled for ${unit.type}`
-          });
+
+          if (actions?.updateUnits)
+            actions.updateUnits(getAllUnitsFromEngine());
+          if (actions?.addNotification)
+            actions.addNotification({
+              type: "info",
+              message: `GoTo cancelled for ${unit.type}`,
+            });
         }
         break;
 
-      case 'found_city':
+      case "found_city":
         if (unit && gameEngine?.foundCityWithSettler) {
           console.log(`[ContextMenu] Found city action for unit ${unit.id}`);
-          // The settler is consumed — leave GoTo mode so the cursor isn't left
-          // stuck in "crosshair"/drag state with no unit to move.
-          if (actions?.setGoToMode) {
-            actions.setGoToMode(false, null);
-          }
-          setGotoMode(false);
-          setGotoUnit(null);
           const result = gameEngine.foundCityWithSettler(unit.id);
           if (result) {
-            if (actions?.updateCities) actions.updateCities(getAllCitiesFromEngine());
-            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
+            if (actions?.updateCities)
+              actions.updateCities(getAllCitiesFromEngine());
+            if (actions?.updateUnits)
+              actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.updateMap) actions.updateMap(gameEngine.map);
-            if (actions?.addNotification) actions.addNotification({
-              type: 'success',
-              message: 'City founded!'
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "success",
+                message: "City founded!",
+              });
           } else {
-            if (actions?.addNotification) actions.addNotification({
-              type: 'warning',
-              message: 'Cannot found city here'
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "warning",
+                message: "Cannot found city here",
+              });
           }
         }
         break;
 
-      case 'build_road':
+      case "build_road":
         if (unit && gameEngine?.buildImprovement) {
           console.log(`[ContextMenu] Build road action for unit ${unit.id}`);
-          const result = gameEngine.buildImprovement(unit.id, 'road');
+          const result = gameEngine.buildImprovement(unit.id, "road");
           if (result) {
-            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
+            if (actions?.updateUnits)
+              actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.updateMap) actions.updateMap(gameEngine.map);
-            if (actions?.addNotification) actions.addNotification({
-              type: 'success',
-              message: buildStartedMessage(gameEngine, unit, 'road'),
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "success",
+                message: buildStartedMessage(gameEngine, unit, "road"),
+              });
           } else {
-            if (actions?.addNotification) actions.addNotification({
-              type: 'warning',
-              message: 'Cannot build road here'
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "warning",
+                message: "Cannot build road here",
+              });
           }
         }
         break;
 
-      case 'build_irrigation':
+      case "build_irrigation":
         if (unit && gameEngine?.buildImprovement) {
-          console.log(`[ContextMenu] Build irrigation action for unit ${unit.id}`);
-          const result = gameEngine.buildImprovement(unit.id, 'irrigation');
+          console.log(
+            `[ContextMenu] Build irrigation action for unit ${unit.id}`,
+          );
+          const result = gameEngine.buildImprovement(unit.id, "irrigation");
           if (result) {
-            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
+            if (actions?.updateUnits)
+              actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.updateMap) actions.updateMap(gameEngine.map);
-            if (actions?.addNotification) actions.addNotification({
-              type: 'success',
-              message: buildStartedMessage(gameEngine, unit, 'irrigation'),
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "success",
+                message: buildStartedMessage(gameEngine, unit, "irrigation"),
+              });
           } else {
-            if (actions?.addNotification) actions.addNotification({
-              type: 'warning',
-              message: 'Cannot build irrigation here'
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "warning",
+                message: "Cannot build irrigation here",
+              });
           }
         }
         break;
 
-      case 'build_mine':
+      case "build_mine":
         if (unit && gameEngine?.buildImprovement) {
           console.log(`[ContextMenu] Build mine action for unit ${unit.id}`);
-          const result = gameEngine.buildImprovement(unit.id, 'mine');
+          const result = gameEngine.buildImprovement(unit.id, "mine");
           if (result) {
-            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
+            if (actions?.updateUnits)
+              actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.updateMap) actions.updateMap(gameEngine.map);
-            if (actions?.addNotification) actions.addNotification({
-              type: 'success',
-              message: buildStartedMessage(gameEngine, unit, 'mines'),
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "success",
+                message: buildStartedMessage(gameEngine, unit, "mines"),
+              });
           } else {
-            if (actions?.addNotification) actions.addNotification({
-              type: 'warning',
-              message: 'Cannot build mine here'
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "warning",
+                message: "Cannot build mine here",
+              });
           }
         }
         break;
 
-      case 'build_railroad':
+      case "build_railroad":
         if (unit && gameEngine?.buildImprovement) {
-          console.log(`[ContextMenu] Build railroad action for unit ${unit.id}`);
-          const result = gameEngine.buildImprovement(unit.id, 'railroad');
+          console.log(
+            `[ContextMenu] Build railroad action for unit ${unit.id}`,
+          );
+          const result = gameEngine.buildImprovement(unit.id, "railroad");
           if (result) {
-            if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
+            if (actions?.updateUnits)
+              actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.updateMap) actions.updateMap(gameEngine.map);
-            if (actions?.addNotification) actions.addNotification({
-              type: 'success',
-              message: buildStartedMessage(gameEngine, unit, 'railroad'),
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "success",
+                message: buildStartedMessage(gameEngine, unit, "railroad"),
+              });
           } else {
-            if (actions?.addNotification) actions.addNotification({
-              type: 'warning',
-              message: 'Cannot build railroad here'
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "warning",
+                message: "Cannot build railroad here",
+              });
           }
         }
         break;
 
       // ===== CITY ACTIONS =====
-      case 'viewProduction':
+      case "viewProduction":
         if (city) {
           console.log(`[ContextMenu] View production for city ${city.id}`);
           if (actions?.selectCity) actions.selectCity(city.id);
-          if (actions?.showDialog) actions.showDialog('city-production');
+          if (actions?.showDialog) actions.showDialog("city-production");
         }
         break;
 
-      case 'cityInfo':
+      case "cityInfo":
         if (city) {
           console.log(`[ContextMenu] View info for city ${city.id}`);
           if (actions?.selectCity) actions.selectCity(city.id);
-          if (actions?.showDialog) actions.showDialog('city-details');
+          if (actions?.showDialog) actions.showDialog("city-details");
         }
         break;
 
       // ===== UNIT DISBAND =====
-      case 'disband_unit': {
+      case "disband_unit": {
         if (unit) {
-          console.log(`[ContextMenu] Disbanding unit ${unit.id} (${unit.type})`);
-          if (gameEngine && typeof gameEngine.disbandUnit === 'function') {
+          console.log(
+            `[ContextMenu] Disbanding unit ${unit.id} (${unit.type})`,
+          );
+          if (gameEngine && typeof gameEngine.disbandUnit === "function") {
             gameEngine.disbandUnit(unit.id);
           } else if (actions?.updateUnits) {
             // Fallback: remove unit directly from store
             const allUnits = getAllUnitsFromEngine();
-            actions.updateUnits(allUnits.filter((u: { id: string }) => u.id !== unit.id));
+            actions.updateUnits(
+              allUnits.filter((u: { id: string }) => u.id !== unit.id),
+            );
           }
           if (actions?.addNotification) {
             actions.addNotification({
-              type: 'info',
-              message: `Unit ${unit.type} disbanded`
+              type: "info",
+              message: `Unit ${unit.type} disbanded`,
             });
           }
         }
@@ -1788,78 +2040,107 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       }
 
       // ===== DIPLOMAT ACTIONS =====
-      case 'diplomat_propose_peace':
-      case 'diplomat_propose_alliance':
-      case 'diplomat_demand_tribute':
-      case 'diplomat_bribe':
-      case 'diplomat_gather_intel': {
-        if (unit && gameEngine?.getDiplomatActions && gameEngine?.executeDiplomatAction) {
+      case "diplomat_propose_peace":
+      case "diplomat_propose_alliance":
+      case "diplomat_demand_tribute":
+      case "diplomat_bribe":
+      case "diplomat_gather_intel": {
+        if (
+          unit &&
+          gameEngine?.getDiplomatActions &&
+          gameEngine?.executeDiplomatAction
+        ) {
           const diplomatInfo = gameEngine.getDiplomatActions(unit.id);
           if (!diplomatInfo) {
-            if (actions?.addNotification) actions.addNotification({
-              type: 'warning',
-              message: 'No adjacent foreign unit or city for diplomacy'
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "warning",
+                message: "No adjacent foreign unit or city for diplomacy",
+              });
             break;
           }
           const actionMap: Record<string, string> = {
-            diplomat_propose_peace: 'propose_peace',
-            diplomat_propose_alliance: 'propose_alliance',
-            diplomat_demand_tribute: 'demand_tribute',
-            diplomat_bribe: 'bribe_unit',
-            diplomat_gather_intel: 'gather_intelligence',
+            diplomat_propose_peace: "propose_peace",
+            diplomat_propose_alliance: "propose_alliance",
+            diplomat_demand_tribute: "demand_tribute",
+            diplomat_bribe: "bribe_unit",
+            diplomat_gather_intel: "gather_intelligence",
           };
-          const result = gameEngine.executeDiplomatAction(unit.id, actionMap[action], diplomatInfo.targetCivId);
-          if (actions?.updateUnits) actions.updateUnits(getAllUnitsFromEngine());
+          const result = gameEngine.executeDiplomatAction(
+            unit.id,
+            actionMap[action],
+            diplomatInfo.targetCivId,
+          );
+          if (actions?.updateUnits)
+            actions.updateUnits(getAllUnitsFromEngine());
           // Civ I behaviour: a diplomat's contact opens the negotiation screen
           // focused on the foreign civ so the player can continue bargaining.
           if (actions?.openDiplomacy && diplomatInfo?.targetCivId != null) {
             actions.openDiplomacy(diplomatInfo.targetCivId);
           }
           if (result?.success) {
-            if (result.type === 'intelligence') {
+            if (result.type === "intelligence") {
               const r = result.report as Record<string, unknown> | undefined;
               if (actions?.addNotification) {
                 actions.addNotification({
-                  type: 'info',
-                  message: `📜 Intel on ${r?.civName ?? 'Unknown'}: ${r?.numCities ?? '?'} cities, ${r?.numMilitaryUnits ?? '?'} military units, ${r?.gold ?? '?'} gold, researching ${r?.currentResearch ?? 'nothing'}, govt: ${r?.government ?? '?'}, attitude: ${r?.attitude ?? '?'}`
+                  type: "info",
+                  message: `📜 Intel on ${r?.civName ?? "Unknown"}: ${r?.numCities ?? "?"} cities, ${r?.numMilitaryUnits ?? "?"} military units, ${r?.gold ?? "?"} gold, researching ${r?.currentResearch ?? "nothing"}, govt: ${r?.government ?? "?"}, attitude: ${r?.attitude ?? "?"}`,
                 });
               }
-            } else if (result.type === 'proposal') {
-              const resp = result.response as Record<string, unknown> | undefined;
+            } else if (result.type === "proposal") {
+              const resp = result.response as
+                | Record<string, unknown>
+                | undefined;
               const accepted = resp?.accepted;
-              if (actions?.addNotification) actions.addNotification({
-                type: accepted ? 'success' : 'warning',
-                message: accepted ? `Proposal accepted!` : `Proposal rejected: ${resp?.reason || 'unknown'}`
-              });
-            } else if (result.type === 'bribe') {
-              const resp = result.response as Record<string, unknown> | undefined;
-              if (actions?.addNotification) actions.addNotification({
-                type: resp?.success ? 'success' : 'warning',
-                message: resp?.success ? 'Unit bribed!' : `Bribe failed: ${resp?.reason || 'not enough gold'}`
-              });
+              if (actions?.addNotification)
+                actions.addNotification({
+                  type: accepted ? "success" : "warning",
+                  message: accepted
+                    ? `Proposal accepted!`
+                    : `Proposal rejected: ${resp?.reason || "unknown"}`,
+                });
+            } else if (result.type === "bribe") {
+              const resp = result.response as
+                | Record<string, unknown>
+                | undefined;
+              if (actions?.addNotification)
+                actions.addNotification({
+                  type: resp?.success ? "success" : "warning",
+                  message: resp?.success
+                    ? "Unit bribed!"
+                    : `Bribe failed: ${resp?.reason || "not enough gold"}`,
+                });
             }
           } else {
-            if (actions?.addNotification) actions.addNotification({
-              type: 'warning',
-              message: result?.reason || 'Diplomat action failed'
-            });
+            if (actions?.addNotification)
+              actions.addNotification({
+                type: "warning",
+                message: result?.reason || "Diplomat action failed",
+              });
           }
         }
         break;
       }
 
       // ===== GENERAL ACTIONS =====
-      case 'centerView':
-        console.log(`[ContextMenu] Centering view on (${contextMenu.hex.col}, ${contextMenu.hex.row})`);
+      case "centerView":
+        console.log(
+          `[ContextMenu] Centering view on (${contextMenu.hex.col}, ${contextMenu.hex.row})`,
+        );
         actions.updateCamera({
-          x: contextMenu.hex.col * TILE_SIZE - canvasRef.current.width / (2 * camera.zoom),
-          y: contextMenu.hex.row * TILE_SIZE - canvasRef.current.height / (2 * camera.zoom)
+          x:
+            contextMenu.hex.col * TILE_SIZE -
+            canvasRef.current.width / (2 * camera.zoom),
+          y:
+            contextMenu.hex.row * TILE_SIZE -
+            canvasRef.current.height / (2 * camera.zoom),
         });
         break;
 
-      case 'examineHex':
-        console.log(`[ContextMenu] Examining hex (${contextMenu.hex.col}, ${contextMenu.hex.row})`);
+      case "examineHex":
+        console.log(
+          `[ContextMenu] Examining hex (${contextMenu.hex.col}, ${contextMenu.hex.row})`,
+        );
         if (onExamineHex) {
           onExamineHex(contextMenu.hex, contextMenu.tile);
         }
@@ -1868,41 +2149,36 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       default:
         console.warn(`[ContextMenu] Unknown action: ${action}`);
     }
-    
+
     setContextMenu(null);
     triggerRender();
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    
-    // Don't allow zooming in Go To mode
-    if (gotoMode) {
-      return;
-    }
-    
+
     // Smoother zoom with smaller increments
     const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05;
     const newZoom = Math.max(0.3, Math.min(2.5, camera.zoom * zoomFactor));
-    
+
     // Get mouse position for zoom centering
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-    
+
     // Calculate world position before zoom
-    const worldXBefore = (mouseX / camera.zoom) + camera.x;
-    const worldYBefore = (mouseY / camera.zoom) + camera.y;
-    
+    const worldXBefore = mouseX / camera.zoom + camera.x;
+    const worldYBefore = mouseY / camera.zoom + camera.y;
+
     // Calculate world position after zoom
-    const worldXAfter = (mouseX / newZoom) + camera.x;
-    const worldYAfter = (mouseY / newZoom) + camera.y;
-    
+    const worldXAfter = mouseX / newZoom + camera.x;
+    const worldYAfter = mouseY / newZoom + camera.y;
+
     // Adjust camera to keep mouse position stable
     actions.updateCamera({
       zoom: newZoom,
       x: camera.x - (worldXAfter - worldXBefore),
-      y: camera.y - (worldYAfter - worldYBefore)
+      y: camera.y - (worldYAfter - worldYBefore),
     });
   };
 
@@ -1919,9 +2195,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     if (minimap || !gameState.isGameStarted) return;
 
     // Check if there are any units that need pulsing animation
-    const hasUnitsWithMoves = units.some(u => 
-      u.civilizationId === gameState.activePlayer && 
-      (u.movesRemaining || 0) > 0
+    const hasUnitsWithMoves = units.some(
+      (u) =>
+        u.civilizationId === gameState.activePlayer &&
+        (u.movesRemaining || 0) > 0,
     );
 
     // Only start animation loop if there are units to animate
@@ -1966,7 +2243,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         // console.log('[GameCanvas] Stopped animation loop');
       }
     };
-  }, [minimap, gameState.isGameStarted, gameState.activePlayer, units, hasGameStateChanged, renderStaticContent, renderAnimationLayer]);
+  }, [
+    minimap,
+    gameState.isGameStarted,
+    gameState.activePlayer,
+    units,
+    hasGameStateChanged,
+    renderStaticContent,
+    renderAnimationLayer,
+  ]);
 
   // Combat animation loop: while combat animations are active, re-render the
   // static frame at a modest FPS so the cloud shows and the survivor fades in.
@@ -1987,7 +2272,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
 
       // Stop once every animation has fully finished (cloud + death blink).
       const now = performance.now();
-      const anyActive = (combatAnimations ?? []).some(a => {
+      const anyActive = (combatAnimations ?? []).some((a) => {
         const totalDuration = a.duration + (a.deathBlinkDuration ?? 1000);
         return now - a.startTime < totalDuration;
       });
@@ -2018,7 +2303,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
       renderStaticContent();
 
       const now = performance.now();
-      const anyActive = (movementAnimations ?? []).some(a => now - a.startTime < a.duration);
+      const anyActive = (movementAnimations ?? []).some(
+        (a) => now - a.startTime < a.duration,
+      );
       if (!anyActive) {
         cancelAnimationFrame(raf);
       }
@@ -2026,7 +2313,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
 
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [minimap, gameState.isGameStarted, movementAnimations, renderStaticContent]);
+  }, [
+    minimap,
+    gameState.isGameStarted,
+    movementAnimations,
+    renderStaticContent,
+  ]);
 
   // Smooth camera pan: when a focus request arrives, tween camera.x/y toward the
   // centered target tile (scaled by cameraGlideSpeed; instant when disabled).
@@ -2057,9 +2349,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     }
 
     const settings = state.settings;
-    const duration = !settings.enableAnimations || settings.cameraGlideSpeed <= 0
-      ? 0
-      : Math.round(400 * settings.cameraGlideSpeed);
+    const duration =
+      !settings.enableAnimations || settings.cameraGlideSpeed <= 0
+        ? 0
+        : Math.round(400 * settings.cameraGlideSpeed);
 
     const startX = cam.x;
     const startY = cam.y;
@@ -2089,7 +2382,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     };
     cameraPanRafRef.current = requestAnimationFrame(animate);
     return () => {
-      if (cameraPanRafRef.current) cancelAnimationFrame(cameraPanRafRef.current);
+      if (cameraPanRafRef.current)
+        cancelAnimationFrame(cameraPanRafRef.current);
       cameraPanRafRef.current = null;
     };
   }, [cameraPanRequest, minimap, gameState.isGameStarted, actions]);
@@ -2113,7 +2407,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
   // Trigger render when game state changes significantly
   useEffect(() => {
     triggerRender();
-  }, [gameState.activePlayer, gameState.currentTurn, units.length, cities.length, triggerRender]);
+  }, [
+    gameState.activePlayer,
+    gameState.currentTurn,
+    units.length,
+    cities.length,
+    triggerRender,
+  ]);
 
   // Keep the canvas in sync with its container: when the window is resized
   // (desktop) or the layout changes, re-sync the backing store size and redraw
@@ -2143,39 +2443,43 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
     // Fast path: real browsers fire these on window/layout changes.
     const ro = new ResizeObserver(check);
     ro.observe(canvas);
-    window.addEventListener('resize', check);
+    window.addEventListener("resize", check);
 
     // Reliable fallback (cheap: compares two integers twice a second).
     const interval = window.setInterval(check, 500);
 
     return () => {
       window.clearInterval(interval);
-      window.removeEventListener('resize', check);
+      window.removeEventListener("resize", check);
       ro.disconnect();
     };
   }, [minimap]);
-
 
   return (
     <div className="position-relative w-100 h-100">
       <canvas
         ref={canvasRef}
         className="w-100 h-100 game-canvas-input"
-        style={{ 
-          cursor: minimap ? 'pointer' : 
-                  citizenReassign ? 'grabbing' :
-                  gotoMode ? 'crosshair' : 
-                  (isDragging ? 'grabbing' : 'grab'),
-          touchAction: 'none',
-          userSelect: 'none',
-          WebkitUserSelect: 'none',
-          WebkitTouchCallout: 'none'
+        style={{
+          cursor: minimap
+            ? "pointer"
+            : citizenReassign
+              ? "grabbing"
+              : isUnitSelectionMode
+                ? "crosshair"
+                : isDragging
+                  ? "grabbing"
+                  : "grab",
+          touchAction: "none",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          WebkitTouchCallout: "none",
         }}
         tabIndex={minimap ? -1 : 0}
         onMouseDown={minimap ? null : handleMouseDown}
         onMouseMove={minimap ? null : handleMouseMove}
         onMouseUp={minimap ? null : handleMouseUp}
-        onMouseLeave={minimap ? null : () => setIsDragging(false)}
+        onMouseLeave={minimap ? null : handleMouseLeave}
         onClick={handleClick}
         onContextMenu={minimap ? null : handleRightClick}
         onWheel={minimap ? null : handleWheel}
@@ -2184,7 +2488,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ minimap = false, onExamineHex, 
         onTouchEnd={minimap ? null : handleTouchEnd}
         onTouchCancel={minimap ? null : handleTouchCancel}
       />
-      
+
       {/* Context Menu (not shown on minimap) */}
       {!minimap && (
         <UnitActionsModal

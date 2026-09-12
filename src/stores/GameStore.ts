@@ -71,8 +71,6 @@ const createInitialUIState = (): UIState => ({
   // is immediately visible) and a static sidebar on desktop (starts open).
   sidebarCollapsed: typeof window !== 'undefined' ? window.innerWidth < 992 : true,
   notifications: [],
-  goToMode: false,
-  goToUnit: '',
   // Active citizen pick-up ("1 citizen selected for reassignment"). Null when idle.
   citizenReassign: null,
   turnButtonDisabled: false,
@@ -712,13 +710,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     updateSettings: (updates) => set(state => ({
       settings: { ...state.settings, ...updates }
-    })),
-    setGoToMode: (enabled: boolean, unitId?: string | null) => set(state => ({
-      uiState: {
-        ...state.uiState,
-        goToMode: !!enabled,
-        goToUnit: enabled ? (unitId || state.gameState.selectedUnit || '') : ''
-      }
     })),
     // Enter/exit citizen pick-up mode. Stores the origin tile being picked up
     // so the map renderer + side panel can reflect the "grabbed" citizen.

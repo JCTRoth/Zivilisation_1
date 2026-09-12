@@ -598,7 +598,6 @@ export class EngineEventRouter {
   private onAutoEndTurn(eventData: Record<string, unknown>) {
     console.log('[EngineEventRouter] AUTO_END_TURN for civ', eventData?.civilizationId);
     // Pure UI updates only - no game logic
-    this.actions.setGoToMode(false, null);
     this.actions.selectUnit(null);
     this.actions.nextTurn();
     // Note: TurnManager now handles turn advancement internally
@@ -705,7 +704,6 @@ export class EngineEventRouter {
   private onTurnEnd(eventData: Record<string, unknown>) {
     console.log('[EngineEventRouter] TURN_END: Clearing UI state, civ:', eventData?.civilizationId);
     // Pure UI cleanup only
-    this.actions.setGoToMode(false, null);
     this.actions.selectUnit(null);
     
     // Flash the top bar when the human player's turn ends (auto and manual)
@@ -721,7 +719,6 @@ export class EngineEventRouter {
   private onAIClearHighlights(eventData: Record<string, unknown>) {
     console.log('[EngineEventRouter] AI_CLEAR_HIGHLIGHTS for civ', eventData?.civilizationId);
     // Clear any UI highlights when AI finishes its turn
-    this.actions.setGoToMode(false, null);
     this.actions.selectUnit(null);
   }
 

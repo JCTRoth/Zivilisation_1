@@ -1024,6 +1024,62 @@ test.describe('AI Behavior', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Unit Movement mode (hover / selection / right-click)
+  // -------------------------------------------------------------------------
+
+  test.describe('Unit Movement mode', () => {
+    test('an auto-selected unit enters movement mode (crosshair cursor)', async ({ page }) => {
+      await startGame(page);
+
+      const canvas = page.locator('.game-canvas canvas').first();
+      await expect(canvas).toBeVisible();
+
+      // The starting settler is auto-selected on turn 1. Movement mode derives
+      // from the store selection (gameState.selectedUnit), so the cursor must
+      // be the movement crosshair — previously only a manual click set it.
+      await expect(canvas).toHaveCSS('cursor', 'crosshair');
+    });
+
+    test('a single right-click opens the ORDERS menu while a unit is selected', async ({ page }) => {
+      test.setTimeout(30_000);
+      await startGame(page);
+
+      const canvas = page.locator('.game-canvas canvas').first();
+      await expect(canvas).toBeVisible();
+      // Let the camera settle on the auto-focused settler before scanning.
+      await page.waitForTimeout(2_000);
+
+      // Find the player unit: the ORDERS menu only opens when right-clicking one.
+      const box = (await canvas.boundingBox())!;
+      let unitPos: { x: number; y: number } | null = null;
+      outer:
+      for (let y = 20; y < box.height; y += 64) {
+        for (let x = 20; x < box.width; x += 64) {
+          await canvas.click({ position: { x, y }, button: 'right' });
+          if (await page.getByRole('button', { name: /Skip Turn/i }).isVisible().catch(() => false)) {
+            unitPos = { x, y };
+            break outer;
+          }
+        }
+      }
+      expect(unitPos).not.toBeNull();
+
+      // Close the menu by clicking its backdrop.
+      await page.locator('.unit-context-backdrop').click();
+      await expect(page.getByRole('button', { name: /Skip Turn/i })).not.toBeVisible();
+
+      // Select the unit: movement mode is active and the cursor is a crosshair.
+      await canvas.click({ position: unitPos! });
+      await expect(canvas).toHaveCSS('cursor', 'crosshair');
+
+      // A single right-click ends selection AND opens the ORDERS menu; before
+      // the fix the first right-click only exited movement mode.
+      await canvas.click({ position: unitPos!, button: 'right' });
+      await expect(page.getByRole('button', { name: /Skip Turn/i })).toBeVisible({ timeout: 3_000 });
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // AI Expansion (longer gameplay)
   // -------------------------------------------------------------------------
 

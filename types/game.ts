@@ -426,6 +426,29 @@ export interface Civilization {
   priorities?: Record<string, unknown>;
 }
 
+/**
+ * A tile where one turn of a multi-turn movement preview ends.
+ * Used to draw the turn number on the hovered destination path (Civ-style).
+ */
+export interface TurnMarker {
+  col: number;
+  row: number;
+  /** 1-based turn number in which the unit reaches this tile. */
+  turn: number;
+}
+
+/**
+ * A movement-range preview for a unit (shown while hovering a unit or while a
+ * unit is selected). Carries the unit type so the renderer can colour the
+ * overlay correctly (land = blue, naval = red) without a second lookup.
+ */
+export interface MovementReachable {
+  unitId: string;
+  unitType: string;
+  /** Reachable tiles within the current turn: "col,row" -> movement cost. */
+  tiles: Map<string, number>;
+}
+
 export interface UIState {
   showMinimap: boolean;
   showUnitPanel: boolean;
@@ -436,8 +459,6 @@ export interface UIState {
   activeDialog: 'city' | 'tech' | 'diplomacy' | 'diplomacy-report' | 'game-menu' | 'help' | 'pause' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | 'rates' | 'government' | 'statistics' | 'village' | 'upkeep-disbanded' | 'trade-route-result' | 'research-required' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
-  goToMode: boolean; // When true, next click will set destination for selected unit
-  goToUnit: string | null; // Unit id targeted by Go To mode (null when not set)
   /** Active citizen pick-up origin ({cityId, col, row}) while reassigning. Null when idle. */
   citizenReassign: { cityId: string; col: number; row: number } | null;
   turnButtonDisabled: boolean;
@@ -647,7 +668,6 @@ export interface GameActions {
   clearIncomingDiplomacyOffer: () => void;
   addNotification: (notification: Omit<Notification, 'id'>) => void;
   removeNotification: (id: number) => void;
-  setGoToMode: (enabled: boolean, unitId?: string | null) => void;
   /** Enter citizen pick-up mode (origin tile grabbed) or clear it when null. */
   setCitizenReassign: (origin: { cityId: string; col: number; row: number } | null) => void;
   /** Exit citizen pick-up mode (cancels the grab without changing any tile). */
