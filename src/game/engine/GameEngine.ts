@@ -44,6 +44,13 @@ const BRIDGE_BUILDING_TECH = 'engineering';
 /** Max permanent trade routes a city can hold (Civ1). */
 export const MAX_TRADE_ROUTES = 3;
 
+/**
+ * Health (%) a combat round inflicts on the loser. Used symmetrically: a
+ * defeated attacker loses this much, and a weaker attacker that wins the roll
+ * can only wear a stronger defender down by this much (see `combatUnit`).
+ */
+const COMBAT_DAMAGE = 25;
+
 
 interface GameSettings {
   difficulty: string;
@@ -1566,7 +1573,14 @@ export default class GameEngine {
    * Get unit at coordinates
    */
   getUnitAt(col: number, row: number) {
-    return this.units.find(unit => unit.col === col && unit.row === row) || null;
+    // Defeated units linger in `this.units` until their delayed removal fires
+    // (~1.2 s) so the death animation can play. They must NOT be returned as
+    // living occupants: the victorious attacker has already moved onto the
+    // tile, and a defeated unit would otherwise mask it as a valid target /
+    // blocker ("ghost" targeting).
+    return this.units.find(
+      unit => unit.col === col && unit.row === row && !unit.isDefeated,
+    ) || null;
   }
 
   /**
@@ -2822,6 +2836,119 @@ export default class GameEngine {
   }
 
   /**
+   * DEV/TEST ONLY — pose opposing pairs of units on the map, ready to fight.
+   *
+   * Launched by the `?combatlab` dev-mode URL and driven by the Playwright
+   * `e2e/combat.spec.ts` spec, so a battle can be exercised without playing
+   * through the setup wizard. Each scenario spawns one attacker (civ 0) and
+   * one defender (civ 1) on adjacent, terrain-neutral land tiles:
+   *
+   *   1. scout   vs riflemen  — a weak attacker must NOT overrun (wound only)
+   *   2. legion  vs warrior   — a stronger attacker overruns decisively
+   *   3. cavalry vs archer    — another decisive overrun
+   *
+   * Units are identified by ids prefixed `lab_<index>_<attacker|defender>`.
+   * Returns the number of scenarios placed.
+   */
+  setupCombatScenario(): number {
+    const attackerCiv = this.civilizations[0]?.id ?? 0;
+    const defenderCiv = this.civilizations[1]?.id ?? attackerCiv;
+
+    const scenarios: Array<{ attacker: string; defender: string }> = [
+      { attacker: 'scout', defender: 'riflemen' },
+      { attacker: 'legion', defender: 'warrior' },
+      { attacker: 'cavalry', defender: 'archer' },
+    ];
+
+    const pairs = this.findCombatLabPairs(scenarios.length);
+    scenarios.forEach((scenario, index) => {
+      const pair = pairs[index];
+      if (!pair) return;
+      this.spawnCombatLabUnit(attackerCiv, scenario.attacker, `lab_${index}_attacker`, pair.from);
+      this.spawnCombatLabUnit(defenderCiv, scenario.defender, `lab_${index}_defender`, pair.to);
+    });
+
+    console.log(`[COMBAT-LAB] Placed ${pairs.length}/${scenarios.length} combat scenarios`);
+    return pairs.length;
+  }
+
+  /**
+   * Find adjacent pairs of free, terrain-neutral land tiles for the combat lab.
+   * Terrain with a defense multiplier above 1 is skipped so the prepared fights
+   * behave independently of where the map generator placed them.
+   */
+  private findCombatLabPairs(count: number): Array<{
+    from: { col: number; row: number };
+    to: { col: number; row: number };
+  }> {
+    const pairs: Array<{ from: { col: number; row: number }; to: { col: number; row: number } }> = [];
+    if (!this.map || !this.squareGrid) return pairs;
+
+    for (let row = 1; row < this.map.height - 1 && pairs.length < count; row++) {
+      for (let col = 1; col < this.map.width - 1 && pairs.length < count; col++) {
+        if (!this.isCombatLabTileFree(col, row)) continue;
+        for (const neighbour of this.squareGrid.getNeighbors(col, row)) {
+          if (!this.isCombatLabTileFree(neighbour.col, neighbour.row)) continue;
+          pairs.push({ from: { col, row }, to: { col: neighbour.col, row: neighbour.row } });
+          break;
+        }
+      }
+    }
+    return pairs;
+  }
+
+  /** A tile the combat lab may use: free, passable land with no defense bonus. */
+  private isCombatLabTileFree(col: number, row: number): boolean {
+    const tile = this.getTileAt(col, row);
+    if (!tile) return false;
+    if (this.isWaterTerrain(tile)) return false;
+    const terrain = this.getTerrainKey(tile);
+    if (TERRAIN_PROPS[terrain]?.passable === false) return false;
+    if ((TERRAIN_PROPS[terrain]?.defense ?? 1) > 1) return false;
+    if (this.getUnitAt(col, row) || this.getCityAt(col, row)) return false;
+    // Include defeated units (getUnitAt skips them) so ghosts are not reused.
+    if (this.units.some((u) => u.col === col && u.row === row)) return false;
+    return true;
+  }
+
+  /** Spawn a fully-statted combat-lab unit (real UNIT_PROPS values). */
+  private spawnCombatLabUnit(
+    civilizationId: number,
+    type: string,
+    id: string,
+    pos: { col: number; row: number },
+  ): void {
+    const props = UNIT_PROPS[type];
+    if (!props) return;
+    const unit: Unit = {
+      id,
+      type,
+      civilizationId,
+      col: pos.col,
+      row: pos.row,
+      health: 100,
+      hitPoints: props.hitPoints ?? 2,
+      maxHitPoints: props.hitPoints ?? 2,
+      movesRemaining: props.movement || 1,
+      maxMoves: props.movement || 1,
+      hasMovedThisTurn: false,
+      isVeteran: false,
+      attack: props.attack || 0,
+      defense: props.defense || 1,
+      maintenance: 0,
+      name: props.name || type,
+      icon: props.icon || '⚔️',
+      orders: null,
+      homeCityId: null,
+      isFortified: false,
+      isSleeping: false,
+      isSkipped: false,
+      areTurnsDone: false,
+    };
+    this.units.push(unit);
+  }
+
+  /**
    * Combat between units
    */
   combatUnit(attacker: Unit, defender: Unit) {
@@ -2884,14 +3011,21 @@ export default class GameEngine {
     }
 
     const attackerWins = Math.random() * (attackerStrength + defenderStrength) < attackerStrength;
-    
+    // Overrun rule ("no more run-overs"): only an attacker that is at least as
+    // strong as the defender can destroy it outright in one round. Before this
+    // guard, a Scout (attack 0.5) could one-shot a full-health Riflemen
+    // (defense 5) whenever its low-probability roll landed — combat ignored the
+    // power gap because the loser was always destroyed outright.
+    const canOverrun = attackerStrength >= defenderStrength;
+
     if (attackerWins) {
-      // Attacker wins — Civ1: the battle is decisive, the defender is
-      // destroyed outright and the attacker takes its tile. (The previous
-      // proportional-damage model let attackers grind defenders down over
-      // several turns, so single units seemed to "overrun" whole garrisons.)
-      const baseDamage = defender.health ?? 100; // lethal: all remaining health
-      defender.health = Math.max(0, (defender.health ?? 100) - baseDamage);
+      // The losing side of the round always takes damage. A decisive overrun
+      // (attacker >= defender) is lethal; a weaker attacker only wounds the
+      // defender, which can then be ground down over several attacks.
+      const remaining = defender.health ?? 100;
+      const lethal = canOverrun || remaining <= COMBAT_DAMAGE;
+      const damage = lethal ? remaining : COMBAT_DAMAGE;
+      defender.health = Math.max(0, remaining - damage);
 
       if (defender.health <= 0) {
         // Defender killed — move attacker to defender's position
@@ -2905,7 +3039,7 @@ export default class GameEngine {
 
         this.updateUnitTurnsDoneFlag(attacker);
 
-        console.log(`[COMBAT] ${attacker.type} killed ${defender.type} (${baseDamage} dmg) and moved to (${defender.col},${defender.row})`);
+        console.log(`[COMBAT] ${attacker.type} killed ${defender.type} (${damage} dmg) and moved to (${defender.col},${defender.row})`);
 
         defender.isDefeated = true;
         defender.defeatTimestamp = Date.now();
@@ -2963,9 +3097,32 @@ export default class GameEngine {
         this.checkAndEndTurnIfNoMoves('combat-win');
         return true;
       }
+
+      // Non-lethal round: the weaker attacker wounded the defender but could
+      // not take its tile. It spends its move and holds position.
+      attacker.movesRemaining = 0;
+      attacker.hasMovedThisTurn = true;
+      this.updateUnitTurnsDoneFlag(attacker);
+
+      console.log(`[COMBAT] ${attacker.type} wounded ${defender.type} (${damage} dmg, ${defender.health} hp left)`);
+
+      if (this.onStateChange) {
+        this.onStateChange('COMBAT_HIT', {
+          attacker,
+          defender,
+          attackerFromCol: attacker.col,
+          attackerFromRow: attacker.row,
+          attackerSurvived: true,
+          defenderSurvived: true,
+          damage,
+        });
+      }
+
+      this.checkAndEndTurnIfNoMoves('combat-hit');
+      return false;
     } else {
       // Defender wins - attacker is damaged (and destroyed at ≤ 0 health)
-      attacker.health -= 25;
+      attacker.health -= COMBAT_DAMAGE;
       attacker.movesRemaining = 0;
       attacker.hasMovedThisTurn = true;
 

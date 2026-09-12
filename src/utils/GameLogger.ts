@@ -151,6 +151,8 @@ class GameLogger {
         return `⚔ Combat: ${data.attacker?.type} defeated ${data.defender?.type} at (${data.defender?.col},${data.defender?.row})`;
       case 'COMBAT_DEFEAT':
         return `⚔ Combat: ${data.attacker?.type} was defeated by ${data.defender?.type}`;
+      case 'COMBAT_HIT':
+        return `⚔ Combat: ${data.attacker?.type} wounded ${data.defender?.type} (not enough power to overrun)`;
       case 'UNIT_DEFEATED':
         return `✝ Unit defeated: ${data.unit?.type}(${data.unit?.id})`;
       case 'CITY_FOUNDED':

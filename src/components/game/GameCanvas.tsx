@@ -1053,8 +1053,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       const mainCanvas = canvasRef.current;
       if (!overlay || !mainCanvas) return;
 
-      const cssWidth = Math.round(canvasRectRef.current.width) || mainCanvas.width;
-      const cssHeight = Math.round(canvasRectRef.current.height) || mainCanvas.height;
+      const cssWidth =
+        Math.round(canvasRectRef.current.width) || mainCanvas.width;
+      const cssHeight =
+        Math.round(canvasRectRef.current.height) || mainCanvas.height;
       if (overlay.width !== cssWidth || overlay.height !== cssHeight) {
         overlay.width = cssWidth;
         overlay.height = cssHeight;
@@ -2380,7 +2382,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           (a) => nowMs - a.startTime < a.duration,
         ) ||
         combatAnimationsRef.current.some(
-          (a) => nowMs - a.startTime < a.duration + (a.deathBlinkDuration ?? 1000),
+          (a) =>
+            nowMs - a.startTime < a.duration + (a.deathBlinkDuration ?? 1000),
         );
       if (
         needsRender.current ||
@@ -2422,7 +2425,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const viewportWidth =
       canvasRectRef.current.width || canvas?.clientWidth || window.innerWidth;
     const viewportHeight =
-      canvasRectRef.current.height || canvas?.clientHeight || window.innerHeight;
+      canvasRectRef.current.height ||
+      canvas?.clientHeight ||
+      window.innerHeight;
     const target = centerCameraOnTile({
       col: cameraPanRequest.col,
       row: cameraPanRequest.row,

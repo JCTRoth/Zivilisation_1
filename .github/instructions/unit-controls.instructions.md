@@ -1,7 +1,15 @@
 ---
 description: "Use when changing unit selection, movement mode, the map cursor, hover previews, reachable-tile overlays, GoTo/path assignment, path turn numbers, or the unit right-click context menu (ORDERS). Documents the control model: selectedUnit as the single source of truth, hover behaviour, click/right-click semantics, and the movement-preview helpers."
-applyTo: ["src/components/game/GameCanvas.tsx", "src/game/rendering/MapRenderer.ts", "src/utils/MovementPreview.ts", "src/game/engine/GoToManager.ts", "src/game/engine/Pathfinding.ts"]
+applyTo:
+  [
+    "src/components/game/GameCanvas.tsx",
+    "src/game/rendering/MapRenderer.ts",
+    "src/utils/MovementPreview.ts",
+    "src/game/engine/GoToManager.ts",
+    "src/game/engine/Pathfinding.ts",
+  ]
 ---
+
 # Unit Controls & Movement Mode
 
 How the mouse/keyboard controls for units are meant to behave. Keep these rules
@@ -84,14 +92,14 @@ every mouse move.
 
 Order of resolution matters: **unit → enemy → move (selection mode) → city → empty.**
 
-| Action | Result |
-| --- | --- |
-| Left-click own unit (not selected) | Select it → movement mode |
-| Left-click the **already selected** unit | Cancel its assigned GoTo path; **stay selected** (no-op if no path). Never deselects. |
+| Action                                   | Result                                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Left-click own unit (not selected)       | Select it → movement mode                                                                  |
+| Left-click the **already selected** unit | Cancel its assigned GoTo path; **stay selected** (no-op if no path). Never deselects.      |
 | Left-click a destination (unit selected) | Assign a GoTo path; the unit moves as far as it can this turn and continues on later turns |
-| Left-click an adjacent enemy | Attack (`moveAnimator.attack`) |
-| Left-click a city (no unit selected) | Select the city + open city details |
-| Left-click the same **empty** hex twice | Clear selection (guarded by `!unitAt`) |
+| Left-click an adjacent enemy             | Attack (`moveAnimator.attack`)                                                             |
+| Left-click a city (no unit selected)     | Select the city + open city details                                                        |
+| Left-click the same **empty** hex twice  | Clear selection (guarded by `!unitAt`)                                                     |
 
 While a unit is selected, a click issues a move **even on a city tile** (movement
 takes precedence). City details only open when no unit is selected.

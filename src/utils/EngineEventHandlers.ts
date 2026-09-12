@@ -43,6 +43,7 @@ export class EngineEventRouter {
         break;
       case 'COMBAT_VICTORY':
       case 'COMBAT_DEFEAT':
+      case 'COMBAT_HIT':
         this.onCombat(eventType, eventData);
         break;
       case 'CITY_ATTACKED':
@@ -400,8 +401,12 @@ export class EngineEventRouter {
     this.actions.updateUnits(this.gameEngine.getAllUnits());
     this.actions.updateVisibility();
     this.actions.addNotification({
-      type: eventType === 'COMBAT_VICTORY' ? 'success' : 'warning',
-      message: eventType === 'COMBAT_VICTORY' ? 'Victory in combat!' : 'Unit defeated in combat!'
+      type: eventType === 'COMBAT_VICTORY' ? 'success' : eventType === 'COMBAT_HIT' ? 'info' : 'warning',
+      message: eventType === 'COMBAT_VICTORY'
+        ? 'Victory in combat!'
+        : eventType === 'COMBAT_HIT'
+          ? 'Enemy unit wounded!'
+          : 'Unit defeated in combat!'
     });
 
     // Record a combat animation: a cloud appears at the defender's tile, the
