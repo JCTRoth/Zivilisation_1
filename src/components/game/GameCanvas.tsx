@@ -13,7 +13,6 @@ import {
   TerrainRenderGrid,
   TerrainTileRenderInfo,
   UnitPathStep,
-  getUnitDisplayTile,
 } from "@/game/rendering/MapRenderer";
 import MoveAnimator from "@/game/engine/MoveAnimator";
 import { MathUtils } from "@/utils/MathUtils";
@@ -37,6 +36,13 @@ import {
   type TileLookup,
 } from "@/utils/MovementPreview";
 import { KeyboardHandler } from "@/game/engine/KeyboardHandler";
+
+/**
+ * Frame rate of the single render loop that drives the map. Animations are
+ * capped here on purpose: a turn-based map does not need display-refresh rate,
+ * and a lower cap keeps the main thread free for input and UI.
+ */
+const ANIMATION_FPS = 30;
 
 type HexCoordinates = { col: number; row: number };
 
@@ -130,27 +136,61 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     new Map(),
   );
   // ---- Hover preview state ----
-  const [hoveredHex, setHoveredHex] = useState<HexCoordinates | null>(null);
-  const [hoverReachable, setHoverReachable] =
-    useState<MovementReachable | null>(null);
-  const [previewPath, setPreviewPath] = useState<UnitPathStep[] | null>(null);
-  const [previewTurnMarkers, setPreviewTurnMarkers] = useState<TurnMarker[]>(
-    [],
-  );
+  //
+  // Deliberately held in refs, NOT React state. A hover changes on every mouse
+  // move; routing it through `useState` re-rendered this (large) component and
+  // re-created `renderStaticContent`, which then redrew the whole map. The render
+  // loop just reads these and composites, so hovering now costs no React work.
+  const hoveredHexRef = useRef<HexCoordinates | null>(null);
+  const hoverReachableRef = useRef<MovementReachable | null>(null);
+  const previewPathRef = useRef<UnitPathStep[] | null>(null);
+  const previewTurnMarkersRef = useRef<TurnMarker[]>([]);
   const lastHoverKeyRef = useRef<string>("");
+  /** Pending deferred path-preview computation (see `handleMouseMove`). */
+  const previewTimerRef = useRef<number | null>(null);
   const reachableCacheRef = useRef<Map<string, Map<string, number>>>(new Map());
   const animationFrameRef = useRef<number | null>(null);
   const needsRender = useRef<boolean>(true);
-  const cameraPanRafRef = useRef<number | null>(null);
   const lastGameState = useRef<Record<string, unknown> | null>(null);
-  const animationCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const staticRenderedRef = useRef<boolean>(false);
+  /** Transparent canvas layered above the map for above-unit animations. */
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  /**
+   * Viewport-sized cache of the expensive terrain pass. Rebuilt only when the
+   * camera, viewport size or terrain data changes (see `terrainVersionRef`).
+   */
+  const groundCacheCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  /** Bumped whenever the composited terrain offscreen canvas is rebuilt. */
+  const terrainVersionRef = useRef<number>(0);
+  /**
+   * In-flight camera glide. Stepped by the render loop; while it is set the
+   * ground cache is bypassed (the camera changes every frame, so caching the
+   * terrain would only add a second full-canvas blit per frame).
+   */
+  const cameraTweenRef = useRef<{
+    startX: number;
+    startY: number;
+    targetX: number;
+    targetY: number;
+    startTime: number;
+    duration: number;
+  } | null>(null);
   const terrainRebuildNeededRef = useRef<boolean>(false);
   // Tracks whether the starting settler has already been auto-selected for the
   // current game. Prevents the "select starting settler" effect from re-running
   // on every `units` change (load, unit movement, turn processing).
   const initialSettlerSelectionDoneRef = useRef<boolean>(false);
   const [, setTexturesLoaded] = useState(false);
+
+  // Cached canvas bounding rect, refreshed on resize/scroll/renders so the hot
+  // `handleMouseMove` path never calls `getBoundingClientRect()` (which forces a
+  // synchronous layout) on every mouse event.
+  const canvasRectRef = useRef<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  }>({ left: 0, top: 0, width: 0, height: 0 });
+  const syncCanvasRectRef = useRef<() => void>(() => {});
 
   // ---- Touch / gesture state (mobile support) ----
   const touchStartRef = useRef<{ x: number; y: number; id: number } | null>(
@@ -167,7 +207,33 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   // Trigger re-render when game state changes (turn-based optimization)
   const triggerRender = useCallback(() => {
     needsRender.current = true;
-    staticRenderedRef.current = false;
+  }, []);
+
+  /** Refresh the cached canvas rect (cheap, but not per-mouse-event). */
+  const syncCanvasRect = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    canvasRectRef.current = {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }, []);
+
+  useEffect(() => {
+    syncCanvasRectRef.current = syncCanvasRect;
+  }, [syncCanvasRect]);
+
+  // Drop a pending deferred hover-preview computation when the canvas unmounts.
+  useEffect(() => {
+    return () => {
+      if (previewTimerRef.current !== null) {
+        window.clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
+    };
   }, []);
 
   // Cancel a citizen pick-up with the ESC key.
@@ -291,6 +357,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       ctx.clearRect(0, 0, mapWidth, mapHeight);
       ctx.drawImage(baseCanvas, 0, 0);
       mr.renderFogOverlay(ctx, mapData, terrainGrid);
+      // The terrain layer changed — invalidate the ground-cache key so the next
+      // render rebuilds the cached viewport-sized terrain blit.
+      terrainVersionRef.current += 1;
     },
     [mapData, hashTerrainTypes],
   );
@@ -302,8 +371,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (!terrainBaseCanvasRef.current && typeof document !== "undefined") {
       terrainBaseCanvasRef.current = document.createElement("canvas");
     }
-    if (!animationCanvasRef.current && typeof document !== "undefined") {
-      animationCanvasRef.current = document.createElement("canvas");
+    if (!groundCacheCanvasRef.current && typeof document !== "undefined") {
+      groundCacheCanvasRef.current = document.createElement("canvas");
     }
     // Initialize texture manager once and attach to renderer
     if (!textureManagerRef.current) {
@@ -312,7 +381,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         terrainTypesHashRef.current = ""; // invalidate cached base
         terrainRebuildNeededRef.current = true;
         needsRender.current = true;
-        staticRenderedRef.current = false;
         setTexturesLoaded(true);
       });
       textureManagerRef.current = tm;
@@ -715,8 +783,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   // the next mouse move.
   useEffect(() => {
     lastHoverKeyRef.current = "";
-    setPreviewPath(null);
-    setPreviewTurnMarkers([]);
+    previewPathRef.current = null;
+    previewTurnMarkersRef.current = [];
   }, [gameState.selectedUnit]);
 
   const squareToScreen = useCallback(
@@ -877,10 +945,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       renderTerrainToOffscreen(terrain);
     }
 
-    const rect = canvas.getBoundingClientRect();
-    if (canvas.width !== rect.width || canvas.height !== rect.height) {
-      canvas.width = rect.width;
-      canvas.height = rect.height;
+    // Keep the cached rect fresh (used by the hot mouse-move path) and reuse it
+    // here instead of calling getBoundingClientRect() a second time.
+    syncCanvasRect();
+    const rect = canvasRectRef.current;
+    // Round the fractional CSS size to match the integer backing store: writing
+    // a fractional value truncates and never matches `clientWidth`, which made
+    // the size watchdog below re-render (and re-allocate the bitmap) forever.
+    const cssWidth = Math.round(rect.width);
+    const cssHeight = Math.round(rect.height);
+    if (canvas.width !== cssWidth || canvas.height !== cssHeight) {
+      canvas.width = cssWidth;
+      canvas.height = cssHeight;
     }
 
     if (minimap) {
@@ -912,38 +988,35 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       civilizations,
       unitPaths,
       offscreenCanvas: terrainCanvasRef.current,
+      // Bypass the ground cache while the camera is gliding: the camera changes
+      // every frame, so caching would only add a second full-canvas blit.
+      groundCacheCanvas: cameraTweenRef.current
+        ? null
+        : groundCacheCanvasRef.current,
+      groundCacheKey: cameraTweenRef.current
+        ? undefined
+        : [
+            camera.x,
+            camera.y,
+            camera.zoom,
+            cssWidth,
+            cssHeight,
+            terrainVersionRef.current,
+          ].join("|"),
       squareToScreen,
       cameraZoom: camera.zoom,
-      reachableTiles: hoverReachable ? hoverReachable.tiles : reachableTiles,
-      reachableUnitType: hoverReachable
-        ? hoverReachable.unitType
+      reachableTiles: hoverReachableRef.current
+        ? hoverReachableRef.current.tiles
+        : reachableTiles,
+      reachableUnitType: hoverReachableRef.current
+        ? hoverReachableRef.current.unitType
         : (selectedUnit?.type ?? null),
-      hoveredHex,
-      previewPath,
-      previewTurnMarkers,
+      hoveredHex: hoveredHexRef.current,
+      previewPath: previewPathRef.current,
+      previewTurnMarkers: previewTurnMarkersRef.current,
       combatAnimations,
       movementAnimations,
     });
-
-    // Save the static content to animation canvas for efficient restoration
-    if (animationCanvasRef.current) {
-      const animCanvas = animationCanvasRef.current;
-      if (
-        animCanvas.width !== canvas.width ||
-        animCanvas.height !== canvas.height
-      ) {
-        animCanvas.width = canvas.width;
-        animCanvas.height = canvas.height;
-      }
-      const animCtx = animCanvas.getContext("2d");
-      if (animCtx) {
-        animCtx.clearRect(0, 0, animCanvas.width, animCanvas.height);
-        animCtx.drawImage(canvas, 0, 0);
-      }
-    }
-
-    staticRenderedRef.current = true;
-    // console.log('[GameCanvas] Static content rendered and saved');
   }, [
     minimap,
     mapData,
@@ -958,64 +1031,55 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     unitPaths,
     squareToScreen,
     reachableTiles,
-    hoverReachable,
-    hoveredHex,
-    previewPath,
-    previewTurnMarkers,
     selectedUnit,
     combatAnimations,
     movementAnimations,
     renderTerrainToOffscreen,
+    syncCanvasRect,
   ]);
 
-  const renderAnimationLayer = useCallback(
+  /**
+   * Redraws the transparent overlay canvas that sits **above** the units.
+   *
+   * It is fully cleared every frame, so a pulsing circle can never smear or
+   * leave a trail — unlike the old "restore a small rect from a full-canvas
+   * snapshot" scheme, which had to guess at the drawn footprint (and got it
+   * wrong for the 💤 icon and the glow) and mismatched the restored regions
+   * against the drawn set.
+   */
+  const renderOverlayLayer = useCallback(
     (currentTime: number) => {
-      if (!canvasRef.current || !animationCanvasRef.current) return;
+      const overlay = overlayCanvasRef.current;
+      const mainCanvas = canvasRef.current;
+      if (!overlay || !mainCanvas) return;
 
-      const canvas = canvasRef.current;
-      const animCanvas = animationCanvasRef.current;
-      const mainCtx = canvas.getContext("2d");
-      if (!mainCtx || !staticRenderedRef.current) return;
+      const cssWidth = Math.round(canvasRectRef.current.width) || mainCanvas.width;
+      const cssHeight = Math.round(canvasRectRef.current.height) || mainCanvas.height;
+      if (overlay.width !== cssWidth || overlay.height !== cssHeight) {
+        overlay.width = cssWidth;
+        overlay.height = cssHeight;
+      }
+      const overlayCtx = overlay.getContext("2d");
+      if (!overlayCtx) return;
 
-      // Get units that need animation
-      const activePlayerUnits = units.filter(
-        (u) =>
-          u.civilizationId === gameState.activePlayer &&
-          (u.movesRemaining || 0) > 0,
-      );
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
-      if (activePlayerUnits.length === 0) return;
+      // The current turn-queue unit always pulses; the manually selected unit
+      // pulses too (when it belongs to the active player and can still move).
+      const selectedUnitId = gameState.selectedUnit ?? null;
+      const hasPulsingUnit =
+        !!currentQueueUnitId ||
+        (selectedUnitId !== null &&
+          units.some(
+            (u) =>
+              u.id === selectedUnitId &&
+              u.civilizationId === gameState.activePlayer &&
+              (u.movesRemaining || 0) > 0,
+          ));
+      if (!hasPulsingUnit) return;
 
-      // Instead of redrawing the entire canvas, only update the unit regions
-      // Calculate the size of unit circles
-      const unitRadius = Math.round(20 * camera.zoom * 1.2); // Add margin for glow
-
-      activePlayerUnits.forEach((unit) => {
-        const displayTile = getUnitDisplayTile(unit, movementAnimations);
-        const { x, y } = squareToScreen(displayTile.col, displayTile.row);
-
-        // Only restore and redraw this specific region
-        const regionSize = unitRadius * 2;
-        const regionX = x - unitRadius;
-        const regionY = y - unitRadius;
-
-        // Restore static content for this unit's region only
-        mainCtx.drawImage(
-          animCanvas,
-          regionX,
-          regionY,
-          regionSize,
-          regionSize,
-          regionX,
-          regionY,
-          regionSize,
-          regionSize,
-        );
-      });
-
-      // Draw only pulsing units on top (in their small regions)
       mapRendererRef.current.renderPulsingUnits({
-        ctx: mainCtx,
+        ctx: overlayCtx,
         map: mapData as MapState,
         units,
         gameState: gameState as GameState,
@@ -1024,6 +1088,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         squareToScreen,
         cameraZoom: camera.zoom,
         currentQueueUnitId: currentQueueUnitId ?? undefined,
+        selectedUnitId,
         combatAnimations,
         movementAnimations,
       });
@@ -1043,11 +1108,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   // Handle mouse events
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Cancel any in-progress camera pan when the user interacts directly.
-    if (cameraPanRafRef.current) {
-      cancelAnimationFrame(cameraPanRafRef.current);
-      cameraPanRafRef.current = null;
-    }
+    // Cancel any in-progress camera glide when the user interacts directly.
+    cameraTweenRef.current = null;
     actions.clearCameraPanRequest();
 
     // Only the primary (left) button starts a drag-pan. Right/middle clicks
@@ -1071,10 +1133,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   /** Clear all hover-preview state. */
   const clearHoverPreview = useCallback(() => {
     lastHoverKeyRef.current = "";
-    setHoveredHex(null);
-    setHoverReachable(null);
-    setPreviewPath(null);
-    setPreviewTurnMarkers([]);
+    if (previewTimerRef.current !== null) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    hoveredHexRef.current = null;
+    hoverReachableRef.current = null;
+    previewPathRef.current = null;
+    previewTurnMarkersRef.current = [];
   }, []);
 
   // Hover: preview a unit's movement range, or the selected unit's shortest
@@ -1092,8 +1158,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       return;
     }
 
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    const rect = canvasRectRef.current;
+    if (!rect.width || !rect.height) return;
     const hex = screenToSquare(e.clientX - rect.left, e.clientY - rect.top);
 
     const hoverUnit = getUnitAtFromEngine(hex.col, hex.row);
@@ -1116,7 +1182,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (hoverKey === lastHoverKeyRef.current) return;
     lastHoverKeyRef.current = hoverKey;
 
-    setHoveredHex(hex);
+    // Any hover change cancels a pending deferred preview computation.
+    if (previewTimerRef.current !== null) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+
+    hoveredHexRef.current = hex;
 
     if (hoverUnit && hoverUnitVisible) {
       // Show the hovered unit's movement capabilities.
@@ -1131,37 +1203,63 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (oldest !== undefined) reachableCacheRef.current.delete(oldest);
         }
       }
-      setHoverReachable({
+      hoverReachableRef.current = {
         unitId: hoverUnit.id,
         unitType: hoverUnit.type,
         tiles,
-      });
-      setPreviewPath(null);
-      setPreviewTurnMarkers([]);
+      };
+      previewPathRef.current = null;
+      previewTurnMarkersRef.current = [];
       triggerRender();
       return;
     }
 
     // No visible unit under the cursor: preview the selected unit's path here.
-    setHoverReachable(null);
+    hoverReachableRef.current = null;
     const onSelectedTile =
       !!selUnit && selUnit.col === hex.col && selUnit.row === hex.row;
-    if (isUnitSelectionMode && selUnit && !onSelectedTile && mapData) {
-      const preview = computeMovementPreview(
-        selUnit,
-        hex.col,
-        hex.row,
-        getTileAt,
-        mapData.width,
-        mapData.height,
-      );
-      setPreviewPath(preview ? preview.steps : null);
-      setPreviewTurnMarkers(preview ? preview.turnMarkers : []);
-    } else {
-      setPreviewPath(null);
-      setPreviewTurnMarkers([]);
+    const wantsPreview =
+      isUnitSelectionMode && !!selUnit && !onSelectedTile && !!mapData;
+
+    if (!wantsPreview) {
+      previewPathRef.current = null;
+      previewTurnMarkersRef.current = [];
+      triggerRender();
+      return;
     }
+
+    // Draw the plain hover outline immediately, then compute the (comparatively
+    // expensive) shortest path on a later tick. Sweeping the mouse across the map
+    // dispatches many mousemoves but only the tile the pointer comes to rest on
+    // ever runs A* — previously every intermediate tile blocked the main thread
+    // inside the event handler, which is what made the *last* hovered tile feel
+    // like it registered late.
+    previewPathRef.current = null;
+    previewTurnMarkersRef.current = [];
     triggerRender();
+
+    const previewUnit = selUnit;
+    const previewMap = mapData;
+    const targetCol = hex.col;
+    const targetRow = hex.row;
+    const requestedKey = hoverKey;
+    previewTimerRef.current = window.setTimeout(() => {
+      previewTimerRef.current = null;
+      // Bail out if the pointer moved on while this was queued.
+      if (lastHoverKeyRef.current !== requestedKey) return;
+      const preview = computeMovementPreview(
+        previewUnit,
+        targetCol,
+        targetRow,
+        getTileAt,
+        previewMap.width,
+        previewMap.height,
+      );
+      if (lastHoverKeyRef.current !== requestedKey) return;
+      previewPathRef.current = preview ? preview.steps : null;
+      previewTurnMarkersRef.current = preview ? preview.turnMarkers : [];
+      triggerRender();
+    }, 0);
   };
 
   const handleMouseUp = () => {
@@ -1281,8 +1379,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         return next;
       });
       // The hover preview is now committed; clear it until the mouse moves again.
-      setPreviewPath(null);
-      setPreviewTurnMarkers([]);
+      previewPathRef.current = null;
+      previewTurnMarkersRef.current = [];
 
       if (actions?.addNotification) {
         actions.addNotification({
@@ -2182,146 +2280,137 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     });
   };
 
-  // Render static content only when needed
-  useEffect(() => {
-    if (needsRender.current || hasGameStateChanged()) {
-      renderStaticContent();
-      needsRender.current = false;
-    }
-  }, [hasGameStateChanged, renderStaticContent]);
+  // ── Single render loop (30 FPS) ─────────────────────────────────────────
+  //
+  // One loop drives everything: dirty static composites, movement/combat
+  // re-renders, the camera glide and the above-unit overlay animation.
+  //
+  // It is mounted once for the whole game and never restarted — the previous
+  // implementation had four separate rAF loops whose effects depended on
+  // `renderStaticContent`, so they were torn down and recreated on almost every
+  // state change (resetting their frame accumulators) and could render the same
+  // frame two or three times over. Everything the loop needs is read through
+  // refs instead of effect dependencies.
+  const renderStaticRef = useRef<() => void>(() => {});
+  const renderOverlayRef = useRef<(currentTime: number) => void>(() => {});
+  const hasGameStateChangedRef = useRef<() => boolean>(() => false);
+  const movementAnimationsRef = useRef(movementAnimations);
+  const combatAnimationsRef = useRef(combatAnimations);
+  const overlayActiveRef = useRef<boolean>(false);
 
-  // Separate animation loop only for pulsing units (only runs when needed)
+  useEffect(() => {
+    renderStaticRef.current = renderStaticContent;
+    renderOverlayRef.current = renderOverlayLayer;
+    hasGameStateChangedRef.current = hasGameStateChanged;
+  }, [renderStaticContent, renderOverlayLayer, hasGameStateChanged]);
+
+  // Active glides / combat animations need a fresh composite every tick. Kept in
+  // refs (evaluated inside the loop) so the loop itself never restarts and stops
+  // ticking as soon as the last animation's duration has elapsed.
+  useEffect(() => {
+    movementAnimationsRef.current = movementAnimations;
+  }, [movementAnimations]);
+  useEffect(() => {
+    combatAnimationsRef.current = combatAnimations;
+  }, [combatAnimations]);
+
+  // The above-unit overlay only needs clearing/redrawing while something in it
+  // is actually animating.
+  useEffect(() => {
+    const selectedUnitId = gameState.selectedUnit ?? null;
+    const queueUnitCanPulse = currentQueueUnitId
+      ? units.some((u) => u.id === currentQueueUnitId)
+      : false;
+    const selectedUnitCanPulse =
+      selectedUnitId !== null &&
+      units.some(
+        (u) =>
+          u.id === selectedUnitId &&
+          u.civilizationId === gameState.activePlayer &&
+          (u.movesRemaining || 0) > 0,
+      );
+    overlayActiveRef.current =
+      queueUnitCanPulse ||
+      selectedUnitCanPulse ||
+      (citizenReassign !== null && citizenReassign !== undefined);
+  }, [
+    units,
+    currentQueueUnitId,
+    gameState.selectedUnit,
+    gameState.activePlayer,
+    citizenReassign,
+  ]);
+
   useEffect(() => {
     if (minimap || !gameState.isGameStarted) return;
 
-    // Check if there are any units that need pulsing animation
-    const hasUnitsWithMoves = units.some(
-      (u) =>
-        u.civilizationId === gameState.activePlayer &&
-        (u.movesRemaining || 0) > 0,
-    );
+    let raf = 0;
+    let lastFrame = 0;
+    let overlayWasActive = false;
+    const interval = 1000 / ANIMATION_FPS;
 
-    // Only start animation loop if there are units to animate
-    if (!hasUnitsWithMoves) {
-      // console.log('[GameCanvas] No units need animation, skipping animation loop');
-      return;
-    }
+    const loop = (now: number) => {
+      raf = requestAnimationFrame(loop);
+      if (now - lastFrame < interval) return;
+      lastFrame = now - ((now - lastFrame) % interval);
 
-    // console.log('[GameCanvas] Starting animation loop for pulsing units');
+      // 1. Camera glide — stepped from this loop so a pan never needs its own
+      //    rAF chain and never composites the scene twice in one frame.
+      const tween = cameraTweenRef.current;
+      if (tween) {
+        const t = Math.min(1, (now - tween.startTime) / tween.duration);
+        const eased = MathUtils.fade(t);
+        if (t >= 1) {
+          cameraTweenRef.current = null;
+          actions.updateCamera({ x: tween.targetX, y: tween.targetY });
+          actions.clearCameraPanRequest();
+        } else {
+          actions.updateCamera({
+            x: MathUtils.lerp(tween.startX, tween.targetX, eased),
+            y: MathUtils.lerp(tween.startY, tween.targetY, eased),
+          });
+        }
+      }
 
-    let lastAnimTime = 0;
-    let lastFPSLog = 0;
-    const animFPS = 5; // 5 FPS for pulsing (turn-based game doesn't need high FPS)
-    const animInterval = 1000 / animFPS;
-
-    const animate = (currentTime: number) => {
-      animationFrameRef.current = requestAnimationFrame(animate);
-
-      // Check if we need to render static content
-      if (needsRender.current || hasGameStateChanged()) {
-        renderStaticContent();
+      // 2. Static composite — only when something invalidated it, the tracked
+      //    game state moved on, or a glide/combat animation is in flight.
+      const nowMs = performance.now();
+      const animatingNow =
+        movementAnimationsRef.current.some(
+          (a) => nowMs - a.startTime < a.duration,
+        ) ||
+        combatAnimationsRef.current.some(
+          (a) => nowMs - a.startTime < a.duration + (a.deathBlinkDuration ?? 1000),
+        );
+      if (
+        needsRender.current ||
+        animatingNow ||
+        hasGameStateChangedRef.current()
+      ) {
+        renderStaticRef.current();
         needsRender.current = false;
       }
 
-      // Render animation layer for pulsing units
-      const elapsed = currentTime - lastAnimTime;
-      if (elapsed > animInterval) {
-        lastAnimTime = currentTime - (elapsed % animInterval);
-        renderAnimationLayer(currentTime);
-
-        if (currentTime - lastFPSLog > 5000) {
-          lastFPSLog = currentTime;
-        }
+      // 3. Above-unit overlay (pulse rings, …), redrawn from scratch every
+      //    tick so nothing can smear.
+      const overlayActive = overlayActiveRef.current;
+      if (overlayActive || overlayWasActive) {
+        renderOverlayRef.current(now);
       }
+      overlayWasActive = overlayActive;
     };
 
-    animationFrameRef.current = requestAnimationFrame(animate);
+    animationFrameRef.current = requestAnimationFrame(loop);
 
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        // console.log('[GameCanvas] Stopped animation loop');
-      }
+      cancelAnimationFrame(raf);
+      animationFrameRef.current = null;
     };
-  }, [
-    minimap,
-    gameState.isGameStarted,
-    gameState.activePlayer,
-    units,
-    hasGameStateChanged,
-    renderStaticContent,
-    renderAnimationLayer,
-  ]);
+  }, [minimap, gameState.isGameStarted, actions]);
 
-  // Combat animation loop: while combat animations are active, re-render the
-  // static frame at a modest FPS so the cloud shows and the survivor fades in.
-  useEffect(() => {
-    if (minimap || !gameState.isGameStarted) return;
-    if (!combatAnimations || combatAnimations.length === 0) return;
-
-    let raf = 0;
-    let last = 0;
-    const fps = 30;
-    const interval = 1000 / fps;
-
-    const loop = (currentTime: number) => {
-      raf = requestAnimationFrame(loop);
-      if (currentTime - last < interval) return;
-      last = currentTime;
-      renderStaticContent();
-
-      // Stop once every animation has fully finished (cloud + death blink).
-      const now = performance.now();
-      const anyActive = (combatAnimations ?? []).some((a) => {
-        const totalDuration = a.duration + (a.deathBlinkDuration ?? 1000);
-        return now - a.startTime < totalDuration;
-      });
-      if (!anyActive) {
-        cancelAnimationFrame(raf);
-      }
-    };
-
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [minimap, gameState.isGameStarted, combatAnimations, renderStaticContent]);
-
-  // Movement animation loop: while a unit glide is active, re-render the static
-  // frame at ~30 FPS so the interpolated position updates smoothly.
-  useEffect(() => {
-    if (minimap || !gameState.isGameStarted) return;
-    if (!movementAnimations || movementAnimations.length === 0) return;
-
-    let raf = 0;
-    let last = 0;
-    const fps = 30;
-    const interval = 1000 / fps;
-
-    const loop = (currentTime: number) => {
-      raf = requestAnimationFrame(loop);
-      if (currentTime - last < interval) return;
-      last = currentTime;
-      renderStaticContent();
-
-      const now = performance.now();
-      const anyActive = (movementAnimations ?? []).some(
-        (a) => now - a.startTime < a.duration,
-      );
-      if (!anyActive) {
-        cancelAnimationFrame(raf);
-      }
-    };
-
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [
-    minimap,
-    gameState.isGameStarted,
-    movementAnimations,
-    renderStaticContent,
-  ]);
-
-  // Smooth camera pan: when a focus request arrives, tween camera.x/y toward the
-  // centered target tile (scaled by cameraGlideSpeed; instant when disabled).
+  // Resolve a camera-pan request into a glide target. The loop above performs
+  // the actual tween; when animations are disabled the camera is committed
+  // immediately instead.
   useEffect(() => {
     if (minimap || !gameState.isGameStarted) return;
     if (!cameraPanRequest) return;
@@ -2329,21 +2418,22 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const state = useGameStore.getState();
     const cam = state.camera;
     const map = state.map;
-    const rect = canvasRef.current?.getBoundingClientRect();
-    const viewportWidth = rect?.width ?? window.innerWidth;
-    const viewportHeight = rect?.height ?? window.innerHeight;
-    const mapWidth = map?.width ?? 0;
-    const mapHeight = map?.height ?? 0;
+    const canvas = canvasRef.current;
+    const viewportWidth =
+      canvasRectRef.current.width || canvas?.clientWidth || window.innerWidth;
+    const viewportHeight =
+      canvasRectRef.current.height || canvas?.clientHeight || window.innerHeight;
     const target = centerCameraOnTile({
       col: cameraPanRequest.col,
       row: cameraPanRequest.row,
       zoom: cam.zoom,
       viewportWidth,
       viewportHeight,
-      mapWidth,
-      mapHeight,
+      mapWidth: map?.width ?? 0,
+      mapHeight: map?.height ?? 0,
     });
     if (!isFinite(target.x) || !isFinite(target.y)) {
+      cameraTweenRef.current = null;
       actions.clearCameraPanRequest();
       return;
     }
@@ -2354,37 +2444,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         ? 0
         : Math.round(400 * settings.cameraGlideSpeed);
 
-    const startX = cam.x;
-    const startY = cam.y;
-
     if (duration <= 0) {
+      // Animations disabled / set to instant: commit and finish immediately.
+      cameraTweenRef.current = null;
       actions.updateCamera({ x: target.x, y: target.y });
       actions.clearCameraPanRequest();
       return;
     }
 
-    const startTime = performance.now();
-    const animate = (now: number) => {
-      cameraPanRafRef.current = requestAnimationFrame(animate);
-      const elapsed = now - startTime;
-      const t = Math.min(1, elapsed / duration);
-      const eased = MathUtils.fade(t);
-      actions.updateCamera({
-        x: MathUtils.lerp(startX, target.x, eased),
-        y: MathUtils.lerp(startY, target.y, eased),
-      });
-      if (t >= 1) {
-        actions.updateCamera({ x: target.x, y: target.y });
-        actions.clearCameraPanRequest();
-        cancelAnimationFrame(cameraPanRafRef.current ?? 0);
-        cameraPanRafRef.current = null;
-      }
-    };
-    cameraPanRafRef.current = requestAnimationFrame(animate);
-    return () => {
-      if (cameraPanRafRef.current)
-        cancelAnimationFrame(cameraPanRafRef.current);
-      cameraPanRafRef.current = null;
+    cameraTweenRef.current = {
+      startX: cam.x,
+      startY: cam.y,
+      targetX: target.x,
+      targetY: target.y,
+      startTime: performance.now(),
+      duration,
     };
   }, [cameraPanRequest, minimap, gameState.isGameStarted, actions]);
 
@@ -2419,23 +2493,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   // (desktop) or the layout changes, re-sync the backing store size and redraw
   // so the map is never stretched/blurry or left stale. We call the latest
   // render function directly (via a ref) so a plain CSS resize — which React
-  // state doesn't see — still redraws immediately. A lightweight interval
-  // covers environments where resize events / ResizeObserver are suppressed.
-  const renderStaticRef = useRef<() => void>(() => {});
-  useEffect(() => {
-    renderStaticRef.current = renderStaticContent;
-  }, [renderStaticContent]);
-
+  // state doesn't see — still redraws immediately.
   useEffect(() => {
     if (minimap) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Redraw only when the CSS size no longer matches the backing store.
+    // Redraw only when the CSS size no longer matches the backing store. Both
+    // sides are integers now that the backing store is rounded, so this
+    // converges after a single redraw instead of firing forever.
     const check = () => {
       const c = canvasRef.current;
       if (!c) return;
       if (c.width !== c.clientWidth || c.height !== c.clientHeight) {
+        syncCanvasRectRef.current();
         renderStaticRef.current();
       }
     };
@@ -2445,12 +2516,19 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ro.observe(canvas);
     window.addEventListener("resize", check);
 
-    // Reliable fallback (cheap: compares two integers twice a second).
-    const interval = window.setInterval(check, 500);
+    // The canvas can move without resizing (scrolling), which would stale the
+    // cached rect used by the mouse-move path — refresh it on any scroll.
+    const onScroll = () => syncCanvasRectRef.current();
+    window.addEventListener("scroll", onScroll, true);
+
+    // Reliable fallback for environments where resize events / ResizeObserver
+    // are suppressed. Slow: it exists only to catch a lost layout change.
+    const interval = window.setInterval(check, 2000);
 
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("resize", check);
+      window.removeEventListener("scroll", onScroll, true);
       ro.disconnect();
     };
   }, [minimap]);
@@ -2488,6 +2566,27 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         onTouchEnd={minimap ? null : handleTouchEnd}
         onTouchCancel={minimap ? null : handleTouchCancel}
       />
+
+      {/*
+        Overlay layer for animations that must be drawn *above* units (pulsing
+        selection circle, glow). It is transparent and click-through, and is
+        cleared and redrawn from scratch by the render loop — so nothing can
+        smear or leave a trail. Ground-level visuals (hover outline, reachable
+        range, preview path) stay on the main canvas below the units.
+      */}
+      {!minimap && (
+        <canvas
+          ref={overlayCanvasRef}
+          className="w-100 h-100"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            pointerEvents: "none",
+          }}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Context Menu (not shown on minimap) */}
       {!minimap && (

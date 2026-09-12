@@ -203,7 +203,7 @@ function App() {
     // `?noanim` disables all movement/combat/camera animations (instant). Used by
     // the e2e suite and tests to keep runs deterministic.
     if (params.has('noanim')) {
-      actions.updateSettings({ enableAnimations: false, animationSpeed: 0, cameraGlideSpeed: 0 });
+      actions.updateSettings({ enableAnimations: false, animationSpeed: 0, enemyAnimationSpeed: 0, cameraGlideSpeed: 0 });
     }
   }, [actions]);
 

@@ -27,6 +27,7 @@ import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import type { ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
+import { awaitPendingAnimations } from './GlideAnimation';
 
 export class TurnManager {
   private gameEngine: GameEngine;
@@ -1085,6 +1086,9 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
           if (result?.success) {
             path.shift();
             console.log(`[TurnManager] ✅ Unit ${unit.id} moved to (${next.col}, ${next.row}), ${path.length} steps remaining in path`);
+            // Pace automated AI movement so visible enemy moves animate instead
+            // of teleporting. No-op (and instant) when animations are disabled.
+            await awaitPendingAnimations();
           } else {
             console.log(`[TurnManager] ❌ Path step failed for unit ${unit.id}, reason=${result?.reason}`);
             // Only clear path if blocked, not if just out of moves

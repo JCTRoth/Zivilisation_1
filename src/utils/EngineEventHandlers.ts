@@ -1,5 +1,6 @@
 import { useGameStore } from '../stores/GameStore';
 import { firstUnresearchedInPath } from './ResearchPath';
+import { trackAIAnimation } from '../game/engine/GlideAnimation';
 import type GameEngine from '../game/engine/GameEngine';
 import type { Technology, Unit, City, Civilization, VillageOutcome } from '../../types/game';
 
@@ -303,11 +304,18 @@ export class EngineEventRouter {
     return !!state.map?.visibility?.[index];
   }
 
-  /** Resolve a movement-animation duration for AI moves (0 = instant). */
+  /**
+   * Resolve a movement-animation duration for AI moves (0 = instant).
+   *
+   * Uses `enemyAnimationSpeed` so enemy movement can be tuned independently of
+   * the player's own animation speed. Always 0 in AI-vs-AI mode (nobody is
+   * watching) so simulated turns stay fast.
+   */
   private aiAnimationDuration(base: number): number {
     const settings = useGameStore.getState().settings;
-    if (!settings.enableAnimations || settings.animationSpeed <= 0) return 0;
-    return Math.round(base * settings.animationSpeed);
+    if (this.isAIVsAI) return 0;
+    if (!settings.enableAnimations || settings.enemyAnimationSpeed <= 0) return 0;
+    return Math.round(base * settings.enemyAnimationSpeed);
   }
 
   /** Glide a visible AI unit from its previous tile to its committed tile. */
@@ -322,7 +330,16 @@ export class EngineEventRouter {
       toCol: unit.col, toRow: unit.row,
       startTime: performance.now(), duration,
     });
-    setTimeout(() => this.actions.removeMovementAnimation(id), duration + 60);
+    // Register the animation with the AI gate so the AI turn can wait for it
+    // before acting with the next unit — otherwise the next unit's action lands
+    // in the same tick and the move is never seen.
+    const cleanup = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        this.actions.removeMovementAnimation(id);
+        resolve();
+      }, duration + 60);
+    });
+    trackAIAnimation(cleanup);
   }
 
   /** Lunge a visible AI attacker toward the defender; recoil if it didn't advance. */
@@ -342,11 +359,18 @@ export class EngineEventRouter {
 
     // When the lunge finishes, remove it and, if the attacker didn't advance
     // (it was repelled / lost), recoil it back to its actual tile.
-    setTimeout(() => {
-      this.actions.removeMovementAnimation(lungeId);
-      if (!advanced && !(attacker as Unit).isDefeated) {
+    const lunge = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        this.actions.removeMovementAnimation(lungeId);
+        if (advanced || (attacker as Unit).isDefeated) {
+          resolve();
+          return;
+        }
         const recoilDuration = this.aiAnimationDuration(250);
-        if (recoilDuration <= 0) return;
+        if (recoilDuration <= 0) {
+          resolve();
+          return;
+        }
         const recoilId = `ai-recoil-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         this.actions.addMovementAnimation({
           id: recoilId, unitId: attacker.id,
@@ -354,9 +378,13 @@ export class EngineEventRouter {
           toCol: attacker.col, toRow: attacker.row,
           startTime: performance.now(), duration: recoilDuration,
         });
-        setTimeout(() => this.actions.removeMovementAnimation(recoilId), recoilDuration + 60);
-      }
-    }, lungeDuration + 10);
+        setTimeout(() => {
+          this.actions.removeMovementAnimation(recoilId);
+          resolve();
+        }, recoilDuration + 60);
+      }, lungeDuration + 10);
+    });
+    trackAIAnimation(lunge);
   }
 
   private onCombat(eventType: string, eventData: Record<string, unknown>) {

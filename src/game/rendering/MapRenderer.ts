@@ -201,6 +201,15 @@ export interface RenderStaticFrameParams {
   unitPaths: Map<string, UnitPathStep[]>;
   /** Optional offscreen canvas for terrain layer */
   offscreenCanvas?: HTMLCanvasElement | null;
+  /**
+   * Optional viewport-sized offscreen canvas used to cache the (expensive)
+   * terrain pass. When supplied together with {@link groundCacheKey}, the
+   * terrain layer is only redrawn when the key changes and is otherwise blitted
+   * 1:1 — which keeps hover/selection repaints cheap.
+   */
+  groundCacheCanvas?: HTMLCanvasElement | null;
+  /** Cache key describing the terrain layer's inputs (camera, size, terrain version). */
+  groundCacheKey?: string;
   /** Function to convert map coordinates to screen coordinates */
   squareToScreen: (col: number, row: number) => { x: number; y: number };
   /** Current camera zoom level */
@@ -243,6 +252,8 @@ export interface RenderPulsingUnitsParams {
   cameraZoom: number;
   /** ID of the current unit in the turn queue (only this unit should pulse) */
   currentQueueUnitId?: string | null;
+  /** ID of the manually selected unit — pulses in addition to the queue unit. */
+  selectedUnitId?: string | null;
   /** Active combat animations (hide units + apply survivor fade) */
   combatAnimations?: CombatAnimation[];
   /** Active unit-movement glides (position interpolation between tiles) */
@@ -346,6 +357,12 @@ export class MapRenderer {
 
   /** Optional texture manager for AI-generated terrain images with transitions. */
   textureManager: TerrainTextureManager | null = null;
+
+  /**
+   * Cache key of the terrain layer currently stored in the caller-supplied
+   * ground-cache canvas. Empty until the first cached render.
+   */
+  private groundCacheKey = "";
 
   /**
    * Creates a new MapRenderer instance.
@@ -685,6 +702,8 @@ export class MapRenderer {
       civilizations,
       unitPaths,
       offscreenCanvas,
+      groundCacheCanvas,
+      groundCacheKey,
       squareToScreen,
       cameraZoom,
       reachableTiles,
@@ -702,13 +721,47 @@ export class MapRenderer {
     const bounds = this.calculateVisibleBounds(camera, canvasSize, map);
     const hasOffscreen = Boolean(offscreenCanvas);
 
-    // Draw terrain if available
-    if (terrainGrid) {
-      if (hasOffscreen && offscreenCanvas) {
-        this.drawTerrainFromOffscreen(ctx, offscreenCanvas, camera, canvasSize);
-      } else {
-        this.drawTerrainTiles(ctx, terrainGrid, bounds, camera, canvasSize, squareToScreen, selectedHex);
+    // ── Ground layer (terrain) ────────────────────────────────────────────
+    // The terrain pass is by far the most expensive step (a 2×-resolution,
+    // high-quality downscale of the whole map). It depends only on the camera,
+    // the viewport size and the terrain/visibility data — never on hover,
+    // selection or units — so cache it in a viewport-sized canvas and blit it
+    // 1:1 until one of those inputs changes.
+    const cacheCanvas = groundCacheCanvas ?? null;
+    const cacheCtx = cacheCanvas ? cacheCanvas.getContext('2d') : null;
+    if (cacheCtx && cacheCanvas && groundCacheKey !== undefined) {
+      if (cacheCanvas.width !== canvasSize.width || cacheCanvas.height !== canvasSize.height) {
+        cacheCanvas.width = canvasSize.width;
+        cacheCanvas.height = canvasSize.height;
+        this.groundCacheKey = '';
       }
+      if (groundCacheKey !== this.groundCacheKey) {
+        cacheCtx.clearRect(0, 0, canvasSize.width, canvasSize.height);
+        this.drawTerrainPass(cacheCtx, {
+          terrainGrid,
+          offscreenCanvas,
+          hasOffscreen,
+          camera,
+          canvasSize,
+          bounds,
+          squareToScreen,
+          selectedHex,
+        });
+        this.groundCacheKey = groundCacheKey;
+      }
+      ctx.drawImage(cacheCanvas, 0, 0);
+    } else if (terrainGrid) {
+      // Uncached fallback (no ground-cache canvas supplied, e.g. from tests).
+      this.drawTerrainPass(ctx, {
+        terrainGrid,
+        offscreenCanvas,
+        hasOffscreen,
+        camera,
+        canvasSize,
+        bounds,
+        squareToScreen,
+        selectedHex,
+      });
     }
 
     // Draw all static dynamic content (units at alpha 1, no pulsing)
@@ -756,17 +809,20 @@ export class MapRenderer {
       currentTime,
       squareToScreen,
       cameraZoom,
-      currentQueueUnitId
+      currentQueueUnitId,
+      selectedUnitId
     } = params;
 
-    // If a currentQueueUnitId is provided, only pulse that specific unit
-    // Otherwise, fall back to the old behavior (all active player units with moves)
+    // Pulse the current turn-queue unit and (when supplied) the manually
+    // selected unit. Older callers that pass only `currentQueueUnitId` keep the
+    // original behaviour.
+    const ids = new Set<string>();
+    if (currentQueueUnitId) ids.add(currentQueueUnitId);
+    if (selectedUnitId) ids.add(selectedUnitId);
+
     let unitsToPulse: Unit[];
-    
-    if (currentQueueUnitId) {
-      // Only pulse the current queue unit
-      const currentUnit = units.find(u => u.id === currentQueueUnitId);
-      unitsToPulse = currentUnit ? [currentUnit] : [];
+    if (ids.size > 0) {
+      unitsToPulse = units.filter(u => ids.has(u.id));
     } else {
       // Fall back: all active player units with moves
       unitsToPulse = units.filter(u => 
@@ -777,12 +833,11 @@ export class MapRenderer {
 
     if (unitsToPulse.length === 0) return;
 
-    // Calculate pulse color shift (from green to yellow)
-    const period = 9000;
-    const t = (currentTime % period) / period;
-    const sine = Math.sin(t * Math.PI * 4);
-    // Normalize sine from [-1, 1] to [0, 1]
-    const pulseValue = (sine + 1) / 2;
+    // One slow, smooth "breathing" cycle. Previously this sampled a fast
+    // 4π/9s sine at 5 FPS, which read as a stuttering blink rather than a
+    // smooth pulse.
+    const period = 2600;
+    const pulseValue = 0.5 - 0.5 * Math.cos((currentTime / period) * Math.PI * 2);
 
     unitsToPulse.forEach(unit => {
       // Combat animation: hide units during the cloud window and apply the
@@ -804,6 +859,51 @@ export class MapRenderer {
   }
 
   /**
+   * Draws the terrain layer (from the 2×-resolution offscreen canvas when
+   * available, otherwise per-tile) into `targetCtx`. Extracted so the result can
+   * be cached in a viewport-sized ground-cache canvas and blitted 1:1.
+   */
+  private drawTerrainPass(
+    targetCtx: CanvasRenderingContext2D,
+    params: {
+      terrainGrid: TerrainRenderGrid | null;
+      offscreenCanvas?: HTMLCanvasElement | null;
+      hasOffscreen: boolean;
+      camera: CameraState;
+      canvasSize: CanvasSize;
+      bounds: VisibleBounds;
+      squareToScreen: (col: number, row: number) => { x: number; y: number };
+      selectedHex: { col: number; row: number } | null;
+    }
+  ): void {
+    const {
+      terrainGrid,
+      offscreenCanvas,
+      hasOffscreen,
+      camera,
+      canvasSize,
+      bounds,
+      squareToScreen,
+      selectedHex,
+    } = params;
+    if (!terrainGrid) return;
+
+    if (hasOffscreen && offscreenCanvas) {
+      this.drawTerrainFromOffscreen(targetCtx, offscreenCanvas, camera, canvasSize);
+    } else {
+      this.drawTerrainTiles(
+        targetCtx,
+        terrainGrid,
+        bounds,
+        camera,
+        canvasSize,
+        squareToScreen,
+        selectedHex
+      );
+    }
+  }
+
+  /**
    * Ensures the canvas size matches its CSS dimensions.
    * Updates the canvas pixel dimensions if they don't match the CSS size.
    *
@@ -812,9 +912,16 @@ export class MapRenderer {
    */
   private ensureCanvasSize(canvas: HTMLCanvasElement): CanvasSize {
     const rect = canvas.getBoundingClientRect();
-    if (canvas.width !== rect.width || canvas.height !== rect.height) {
-      canvas.width = rect.width;
-      canvas.height = rect.height;
+    // `canvas.width`/`height` are integers and assigning to them resets (and
+    // re-allocates) the bitmap, so round the fractional CSS size first and only
+    // write when the rounded value actually differs. Comparing the raw
+    // fractional rect against the integer backing store never converges when the
+    // layout size has a fractional part, which made callers redraw forever.
+    const width = Math.round(rect.width);
+    const height = Math.round(rect.height);
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
     }
     return { width: canvas.width, height: canvas.height };
   }
@@ -1051,6 +1158,21 @@ export class MapRenderer {
 
     const margin = this.tileSize * 2;
     const scaledTileSize = this.tileSize * cameraZoom;
+
+    // ── O(1) tile lookups for the visible-bounds loop ─────────────────────
+    // The loop below used to run three linear `Array.find` scans per tile
+    // (~240k comparisons per frame). These maps are cheap to build (one pass)
+    // and keep the first match per tile, exactly like `Array.find` did.
+    const unitAtTileKey = new Map<string, Unit>();
+    for (const unit of units) {
+      const key = `${unit.col},${unit.row}`;
+      if (!unitAtTileKey.has(key)) unitAtTileKey.set(key, unit);
+    }
+    const cityAtTileKey = new Map<string, City>();
+    for (const city of cities) {
+      const key = `${city.col},${city.row}`;
+      if (!cityAtTileKey.has(key)) cityAtTileKey.set(key, city);
+    }
 
     // ── City radius highlights ───────────────────────────────────────────
     //
@@ -1312,14 +1434,14 @@ export class MapRenderer {
 
         // Draw cities only on visible tiles
         if (isVisible) {
-          const city = cities.find(c => c.col === col && c.row === row);
+          const city = cityAtTileKey.get(`${col},${row}`);
           if (city) {
             this.drawCity(ctx, x, y, city, cameraZoom, civilizations, combatAnimations);
           }
         }
 
         // Draw units: player's own units always visible, enemy units only on visible tiles
-        const unit = units.find(u => u.col === col && u.row === row);
+        const unit = unitAtTileKey.get(`${col},${row}`);
         if (unit && isExplored) {
           const isActivePlayersUnit = unit.civilizationId === gameState.activePlayer;
           const shouldDrawUnit = isActivePlayersUnit || isVisible;
@@ -1370,7 +1492,7 @@ export class MapRenderer {
 
         // Draw selected unit highlight (on top of everything)
         const selectedUnitId = gameState.selectedUnit;
-        const unitAtTile = units.find(u => u.col === col && u.row === row);
+        const unitAtTile = unitAtTileKey.get(`${col},${row}`);
         if (selectedUnitId && unitAtTile && unitAtTile.id === selectedUnitId) {
           const displayTile = this.getUnitDisplayTile(unitAtTile, movementAnimations);
           const unitPos = squareToScreen(displayTile.col, displayTile.row);
@@ -1872,9 +1994,10 @@ export class MapRenderer {
     const civ = civilizations.find(c => c.id === civIndex);
     const civColor = civ?.color || (civIndex === 0 ? '#4169E1' : '#DC143C');
 
-    // Interpolate between base color and a brighter highlight color
-    const highlightColor = '#ff0000'; // Bright yellow for highlight
-    const pulseColor = this.interpolateColor(civColor, highlightColor, pulseValue);
+    // Blend only part-way toward the highlight colour so the circle "breathes"
+    // instead of strobing between two extremes.
+    const highlightColor = '#ff5a5a';
+    const pulseColor = this.interpolateColor(civColor, highlightColor, 0.12 + 0.45 * pulseValue);
 
     const innerRadius = Math.max(8, Math.round(radius * 0.95));
     ctx.beginPath();
@@ -1887,8 +2010,10 @@ export class MapRenderer {
 
     // Add a subtle glow effect
     ctx.strokeStyle = highlightColor;
-    ctx.lineWidth = Math.max(1, pulseValue * 3);
+    ctx.globalAlpha = backgroundAlpha * (0.35 + 0.65 * pulseValue);
+    ctx.lineWidth = Math.max(1, 1 + pulseValue * 2);
     ctx.stroke();
+    ctx.globalAlpha = backgroundAlpha;
 
     const unitTypeId = unit.type ? String(unit.type) : null;
     

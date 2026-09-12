@@ -164,6 +164,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     devMode: false,     // Developer mode: see all players on minimap and switch between them
     enableAnimations: true, // Master switch for movement/combat/camera animations
     animationSpeed: 1,  // Animation speed multiplier (0 = instant, 1 = normal)
+    enemyAnimationSpeed: 1, // Enemy (AI) movement animation speed multiplier (0 = instant)
     cameraGlideSpeed: 1 // Camera glide speed multiplier (0 = instant, 1 = normal)
   },
 

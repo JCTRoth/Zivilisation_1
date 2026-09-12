@@ -2,6 +2,13 @@ import { Unit } from '../../../types/game';
 import { Pathfinding } from './Pathfinding';
 import GameEngine, { type MapTile } from './GameEngine';
 import type { TurnManager } from './TurnManager';
+import {
+  BASE_GLIDE_DURATION_MS,
+  registerGlide,
+  removeGlide,
+  resolveAnimationDuration,
+  sleep,
+} from './GlideAnimation';
 
 /**
  * GoToManager - Manages unit "Go To" movement commands
@@ -201,7 +208,34 @@ export class GoToManager {
         break;
       }
 
+      const nextStep = path[0];
+
+      // Glide the unit to the next tile *before* committing the engine move, so
+      // the player sees the movement instead of the unit teleporting one tile at
+      // a time. When animations are disabled the duration resolves to 0, no glide
+      // is registered, and the legacy inter-step delay below keeps the previous
+      // (instant) pacing that the `?noanim` e2e runs rely on.
+      const glideMs = resolveAnimationDuration(BASE_GLIDE_DURATION_MS);
+      let glideId: string | null = null;
+      if (
+        glideMs > 0 &&
+        nextStep &&
+        this.gameEngine.canUnitMoveTo(unitId, nextStep.col, nextStep.row)
+      ) {
+        glideId = registerGlide({
+          unitId,
+          fromCol: unit.col,
+          fromRow: unit.row,
+          toCol: nextStep.col,
+          toRow: nextStep.row,
+          duration: glideMs,
+          idPrefix: 'goto',
+        });
+        await sleep(glideMs);
+      }
+
       const result = this.executeFirstStep(unitId);
+      removeGlide(glideId);
       
       if (result.success) {
         stepsCompleted++;
@@ -210,8 +244,11 @@ export class GoToManager {
         }
         
         if (result.remainingPath.length > 0) {
-          // Wait before next move for animation
-          await new Promise(resolve => setTimeout(resolve, delayMs));
+          // Animated runs are already paced by the glide above; keep the legacy
+          // delay only when animations are disabled.
+          if (glideMs <= 0) {
+            await sleep(delayMs);
+          }
         } else {
           continueMoving = false;
         }

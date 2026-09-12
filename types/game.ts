@@ -485,6 +485,12 @@ interface Settings {
   enableAnimations: boolean;
   /** Animation speed multiplier (0..3). 0 = instant, 1 = normal, higher = slower. */
   animationSpeed: number;
+  /**
+   * Speed multiplier (0..3) for *enemy* (AI) unit movement animations. Kept
+   * separate from `animationSpeed` so enemy movement can be sped up, slowed down
+   * or turned off (0 = instant) without affecting the player's own units.
+   */
+  enemyAnimationSpeed: number;
   /** Camera glide speed multiplier (0..3). 0 = instant, 1 = normal, higher = slower. */
   cameraGlideSpeed: number;
 }
@@ -577,6 +583,22 @@ export interface MovementAnimation {
   startTime: number;
   /** Glide duration in ms. */
   duration: number;
+}
+
+/**
+ * Parameters for registering a unit glide (used by the shared glide helper and
+ * the move animators that drive it).
+ */
+export interface GlideRequest {
+  unitId: string;
+  fromCol: number;
+  fromRow: number;
+  toCol: number;
+  toRow: number;
+  /** Already-resolved duration in ms (must be > 0 for a glide to be registered). */
+  duration: number;
+  /** Prefix for the generated animation id, e.g. 'move' or 'goto'. */
+  idPrefix?: string;
 }
 
 /**

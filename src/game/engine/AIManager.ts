@@ -33,6 +33,7 @@ import type { DiplomatAction } from './DiplomacyTypes';
 import type { Unit, City } from '../../../types/game';
 import GameEngine, { type PlayerTurnStorage, type MapTile } from './GameEngine';
 import { getShuffledAdjacentTiles } from './MovementHelper';
+import { awaitPendingAnimations } from './GlideAnimation';
 
 // How much better (in settlement-score points) the best location must be for a
 // settler to keep walking instead of founding at its current tile. Prevents
@@ -250,6 +251,12 @@ export class AIManager {
         console.warn(`[AI] runAITurn: Game paused mid-turn — stopping AI for civ ${civilizationId}`);
         return;
       }
+
+      // Let the previous unit's visible movement/animation finish before acting
+      // with this one, so the player can actually see what the AI is doing.
+      // A no-op when animations are disabled and bounded so it can never stall
+      // (or time out) the AI turn.
+      await awaitPendingAnimations();
 
       // Skip units that no longer exist (died in combat, disbanded for upkeep,
       // or consumed by founding a city) — prevents the "Skip: Unit not found"

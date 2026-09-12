@@ -22,6 +22,7 @@ function SettingsModal({ show, onHide }) {
       civListFontSize: 10,
       enableAnimations: true,
       animationSpeed: 1,
+      enemyAnimationSpeed: 1,
       cameraGlideSpeed: 1
     });
   };
@@ -120,6 +121,15 @@ function SettingsModal({ show, onHide }) {
             0, 3, 0.1,
             'animationSpeed',
             'How fast units move and combat plays (leftmost = instant)',
+            (v) => (v === 0 ? 'Instant' : `${v.toFixed(1)}x`)
+          )}
+
+          {renderSlider(
+            'Enemy Animation Speed',
+            settings.enemyAnimationSpeed,
+            0, 3, 0.1,
+            'enemyAnimationSpeed',
+            'How fast enemy (AI) units move, independent of your own units (leftmost = instant)',
             (v) => (v === 0 ? 'Instant' : `${v.toFixed(1)}x`)
           )}
 

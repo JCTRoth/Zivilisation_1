@@ -1,5 +1,12 @@
 import { useGameStore } from '../../stores/GameStore';
 import type { Unit } from '../../../types/game';
+import {
+  BASE_GLIDE_DURATION_MS,
+  registerGlide,
+  removeGlide,
+  resolveAnimationDuration,
+  sleep,
+} from './GlideAnimation';
 
 /** The narrow slice of the engine MoveAnimator needs, so the engine class
  * instance is assignable without inheriting the unrelated interface mismatch
@@ -15,12 +22,12 @@ interface MoveEngine {
  * when `Settings.enableAnimations` is false). MoveAnimator drives the *visual*
  * glide and only commits the engine move once the glide has finished, so the
  * game state updates after the animation completes.
+ *
+ * The per-tile glide duration is shared with `GoToManager` via
+ * `BASE_GLIDE_DURATION_MS` so every unit move animates identically.
  */
-const BASE_MOVE_DURATION = 250; // per-tile glide
 const BASE_LUNGE_DURATION = 300; // attacker moves toward the defender
 const BASE_RECOIL_DURATION = 250; // attacker retreats after a failed attack
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Deferred-commit controller for human-initiated unit movement and attacks.
@@ -40,9 +47,7 @@ export class MoveAnimator {
 
   /** Resolved duration (ms) for a base animation given current settings. */
   private duration(base: number): number {
-    const s = useGameStore.getState().settings;
-    if (!s.enableAnimations || s.animationSpeed <= 0) return 0;
-    return Math.round(base * s.animationSpeed);
+    return resolveAnimationDuration(base);
   }
 
   /**
@@ -61,16 +66,14 @@ export class MoveAnimator {
   ): Promise<string | null> {
     const duration = this.duration(baseDuration);
     if (duration <= 0) return null;
-    const id = `move-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    useGameStore.getState().actions.addMovementAnimation({
-      id,
+    const id = registerGlide({
       unitId,
       fromCol,
       fromRow,
       toCol,
       toRow,
-      startTime: performance.now(),
       duration,
+      idPrefix: 'move',
     });
     await sleep(duration);
     return id;
@@ -78,7 +81,7 @@ export class MoveAnimator {
 
   /** Remove a movement animation by id (best-effort). */
   private removeAnimation(id: string | null): void {
-    if (id) useGameStore.getState().actions.removeMovementAnimation(id);
+    removeGlide(id);
   }
 
   /** Move a unit along a path (plain moves only), committing each step after its glide. */
@@ -96,7 +99,7 @@ export class MoveAnimator {
         if (!unit || (unit.movesRemaining || 0) <= 0) break;
         if (!this.engine.canUnitMoveTo(unitId, step.col, step.row)) break;
 
-        const animId = await this.glide(unitId, unit.col, unit.row, step.col, step.row, BASE_MOVE_DURATION);
+        const animId = await this.glide(unitId, unit.col, unit.row, step.col, step.row, BASE_GLIDE_DURATION_MS);
         const result = this.engine.moveUnit(unitId, step.col, step.row);
         this.removeAnimation(animId);
 
