@@ -145,8 +145,8 @@ class GameLogger {
         return `  phase → ${data.phase} (civ ${data.civilizationId})`;
       case 'TURN_END':
         return `■ Turn end — civ ${data.civilizationId} (round ${data.roundNumber})`;
-      case 'UNIT_MOVED':
-        return `Move: ${data.unit?.type}(${data.unit?.id}) → (${data.targetCol},${data.targetRow})`;
+      //case 'UNIT_MOVED':
+      //  return `Move: ${data.unit?.type}(${data.unit?.id}) → (${data.targetCol},${data.targetRow})`;
       case 'COMBAT_VICTORY':
         return `⚔ Combat: ${data.attacker?.type} defeated ${data.defender?.type} at (${data.defender?.col},${data.defender?.row})`;
       case 'COMBAT_DEFEAT':
@@ -155,8 +155,8 @@ class GameLogger {
         return `⚔ Combat: ${data.attacker?.type} wounded ${data.defender?.type} (not enough power to overrun)`;
       case 'UNIT_DEFEATED':
         return `✝ Unit defeated: ${data.unit?.type}(${data.unit?.id})`;
-      case 'CITY_FOUNDED':
-        return `🏙 City founded: ${data.city?.name} at (${data.city?.col},${data.city?.row})`;
+       case 'CITY_FOUNDED':
+         return `🏙 City founded: ${data.city?.name} at (${data.city?.col},${data.city?.row})`;
       case 'CITY_CAPTURED':
         return `🚩 City captured: ${data.city?.name} (civ ${data.city?.civilizationId})`;
       case 'UNIT_SKIPPED':

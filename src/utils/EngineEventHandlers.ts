@@ -717,7 +717,7 @@ export class EngineEventRouter {
 
   private onAIFinished() {
     this.actions.updateUnits(this.gameEngine.getAllUnits());
-    this.actions.addNotification({ type: 'info', message: 'AI finished its turn' });
+    // this.actions.addNotification({ type: 'info', message: 'AI finished its turn' });
   }
 
   private onImprovementBuilt(eventData: Record<string, unknown>) {

@@ -42,7 +42,7 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
       actions.updateTechnologies(gameEngine.technologies);
 
       const playerSettler = gameEngine.units.find(u => u.civilizationId === 0 && u.type === 'settler');
-      console.log('[useGameEngine] Player settler found:', playerSettler);
+      // console.log('[useGameEngine] Player settler found:', playerSettler.id);
       if (playerSettler) {
         console.log('[useGameEngine] Revealing area around settler at', playerSettler.col, playerSettler.row);
         actions.revealArea(playerSettler.col, playerSettler.row, 2);
@@ -75,9 +75,3 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
     };
   }, [gameEngine, actions]);
 };
-
-/**
- * Custom hook for game controls
- */
-// useGameControls removed (unused)
-

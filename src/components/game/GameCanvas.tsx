@@ -505,15 +505,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   // Update terrain visibility when game state changes
   useEffect(() => {
-    console.log("[GameCanvas] Updating terrain visibility", {
-      hasTerrain: !!terrainRef.current,
-      hasVisibility: !!mapData.visibility,
-      hasRevealed: !!mapData.revealed,
-      visibilityLength: mapData.visibility?.length || 0,
-      revealedLength: mapData.revealed?.length || 0,
-      visibilityTrueCount: mapData.visibility?.filter((v) => v).length || 0,
-      revealedTrueCount: mapData.revealed?.filter((r) => r).length || 0,
-    });
+    // console.log("[GameCanvas] Updating terrain visibility", {
+    //   hasTerrain: !!terrainRef.current,
+    //   hasVisibility: !!mapData.visibility,
+    //   hasRevealed: !!mapData.revealed,
+    //   visibilityLength: mapData.visibility?.length || 0,
+    //   revealedLength: mapData.revealed?.length || 0,
+    //   visibilityTrueCount: mapData.visibility?.filter((v) => v).length || 0,
+    //   revealedTrueCount: mapData.revealed?.filter((r) => r).length || 0,
+    // });
 
     // Defensive check: ensure terrain grid matches map dimensions
     const ensureTerrainMatchesMap = () => {
@@ -531,9 +531,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     let currentTerrain = terrainRef.current;
 
     if (!ensureTerrainMatchesMap()) {
-      console.warn(
-        "[GameCanvas] Terrain grid mismatch detected. Rebuilding terrain from mapData.tiles",
-      );
+      // console.warn(
+      //   "[GameCanvas] Terrain grid mismatch detected. Rebuilding terrain from mapData.tiles",
+      // );
       // Rebuild terrain synchronously from mapData.tiles (best-effort)
       if (
         mapData &&
@@ -667,8 +667,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       );
       return;
     }
-
-    console.log("[GameCanvas] Creating KeyboardHandler");
 
     const keyboardHandler = new KeyboardHandler(
       gameEngine,
@@ -1421,13 +1419,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       previewPathRef.current = null;
       previewTurnMarkersRef.current = [];
 
-      if (actions?.addNotification) {
-        actions.addNotification({
-          type: "success",
-          message: `${unit.type} will go to (${targetCol}, ${targetRow})`,
-        });
-      }
-      triggerRender();
+      // if (actions?.addNotification) {
+      //   actions.addNotification({
+      //     type: "success",
+      //     message: `${unit.type} will go to (${targetCol}, ${targetRow})`,
+      //   });
+      // }
+      // triggerRender();
 
       if ((unit.movesRemaining || 0) > 0) {
         setTimeout(() => {
@@ -1528,7 +1526,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
         // Resolve what is at this location once; all branches below use it.
         let unitAt = null;
-        let cityAt: { id: string; name: string; civilizationId: number } | null;
+        let cityAt: { id: string; name: string; civilizationId: number; col: number; row: number } | null;
         try {
           unitAt = getUnitAtFromEngine(hex.col, hex.row);
           cityAt = getCityAtFromEngine(hex.col, hex.row);
@@ -2113,11 +2111,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             if (actions?.updateUnits)
               actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.updateMap) actions.updateMap(gameEngine.map);
-            if (actions?.addNotification)
-              actions.addNotification({
-                type: "success",
-                message: "City founded!",
-              });
           } else {
             if (actions?.addNotification)
               actions.addNotification({

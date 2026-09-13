@@ -198,6 +198,7 @@ export default class MapGenerator {
   private stage1_Continents(rng: () => number): void {
     const totalCells = this.width * this.height;
 
+    // ── Polar ocean strips ──
     for (let col = 0; col < this.width; col++) {
       this.cells[0][col].type = TERRAIN_TYPES.OCEAN;
       this.cells[this.height - 1][col].type = TERRAIN_TYPES.OCEAN;
@@ -206,13 +207,13 @@ export default class MapGenerator {
     // Scale ocean features with map size — large maps need more water
     const mapScale = Math.max(1, Math.floor((this.width * this.height) / (50 * 50)));
 
-    // Horizontal ocean straits — count scales with land mass AND map size
-    const numHStraits = Math.max(0, Math.floor((2 - this.landMass) * mapScale * 0.6) + (rng() < 0.3 ? 1 : 0));
+    // ── Horizontal & Vertical Ocean Straits ──
+    // No straits for Pangaea (landMass 2) to ensure a single landmass.
+    const numHStraits = this.landMass === 2 ? 0 : Math.max(0, Math.floor((2 - this.landMass) * mapScale * 0.6) + (rng() < 0.3 ? 1 : 0));
     for (let s = 0; s < numHStraits; s++) {
       let baseRow = 3 + Math.floor(rng() * Math.max(1, this.height - 6));
       const bandWidth = 1 + Math.floor(rng() * 2);
       for (let c = 0; c < this.width; c++) {
-        // Meander: shift the row ±1 every few columns
         if (c % 3 === 0) baseRow += Math.floor(rng() * 3) - 1;
         baseRow = Math.max(3, Math.min(this.height - 2, baseRow));
         for (let dr = 0; dr < bandWidth; dr++) {
@@ -222,13 +223,11 @@ export default class MapGenerator {
       }
     }
 
-    // Vertical ocean straits — count scales with land mass AND map size
-    const numVStraits = Math.max(0, Math.floor((2 - this.landMass) * mapScale * 0.5) + (rng() < 0.2 ? 1 : 0));
+    const numVStraits = this.landMass === 2 ? 0 : Math.max(0, Math.floor((2 - this.landMass) * mapScale * 0.5) + (rng() < 0.2 ? 1 : 0));
     for (let s = 0; s < numVStraits; s++) {
       let baseCol = Math.floor(rng() * this.width);
       const bandWidth = 1;
       for (let r = 3; r < this.height - 1; r++) {
-        // Meander: shift the column ±1 every few rows
         if (r % 3 === 0) baseCol = this.wrapCol(baseCol + Math.floor(rng() * 3) - 1);
         for (let dc = 0; dc < bandWidth; dc++) {
           const cc = this.wrapCol(baseCol + dc);
@@ -237,17 +236,34 @@ export default class MapGenerator {
       }
     }
 
-    // Land mass controls land vs ocean ratio — STRONG effect:
-    //   landMass 0: ~28% land / 72% water (sparse islands in vast ocean)
-    //   landMass 1: ~45% land (normal — balanced continents)
-    //   landMass 2: ~70% land (pangea — massive connected land)
-    const landFraction = this.landMass === 0 ? 0.28 : 0.08 + this.landMass * 0.31;
-    // Sparse islands: many small blobs for scattered archipelago feel
-    const blobSize = this.landMass === 0 ? 4 : 4 + this.landMass * 4; // 4 / 8 / 12
-    // Calculate ocean blobs to achieve desired land fraction.
-    // Average blob size = blobSize * 1.5 (uniform random [blobSize, 2*blobSize)).
-    const avgBlobSize = blobSize * 1.5;
-    const oceanBlobs = Math.floor(totalCells * (1 - landFraction) / avgBlobSize) * mapScale;
+    console.log("landMass " + this.landMass);
+
+    // ── Scatter ocean cloud-blobs ──
+    // Land mass controls land vs ocean ratio explicitly:
+    //   0: Islands (~20% land, 80% water)
+    //   1: Normal (~45% land, 55% water)
+    //   2: Pangaea (~95% land, 5% water - only small lakes/rivers)
+    let landFraction: number;
+    let blobSize: number;
+    let oceanBlobs: number;
+
+    if (this.landMass === 0) {
+      // Sparse Islands: vast ocean, many small ocean blobs scattered everywhere
+      landFraction = 0.20;
+      blobSize = 3;
+      oceanBlobs = Math.floor(totalCells * (1 - landFraction) / blobSize);
+    } else if (this.landMass === 2) {
+      // Pangaea: mostly land, very few ocean blobs (lakes/rivers)
+      landFraction = 0.95;
+      blobSize = 4;
+      oceanBlobs = Math.floor(totalCells * (1 - landFraction) / 10) * mapScale;
+    } else {
+      // Normal continents
+      landFraction = 0.45;
+      blobSize = 6;
+      oceanBlobs = Math.floor(totalCells * (1 - landFraction) / 40) * mapScale;
+    }
+
     for (let b = 0; b < oceanBlobs; b++) {
       let col = Math.floor(rng() * this.width);
       let row = 3 + Math.floor(rng() * Math.max(1, this.height - 6));
@@ -255,6 +271,10 @@ export default class MapGenerator {
       for (let i = 0; i < curBlobSize; i++) {
         if (row >= 3 && row < this.height - 1) {
           this.cells[row][col].type = TERRAIN_TYPES.OCEAN;
+          // For islands, carve wider to guarantee separation
+          if (this.landMass === 0) {
+            this.cells[row][this.wrapCol(col + 1)].type = TERRAIN_TYPES.OCEAN;
+          }
         }
         switch (Math.floor(rng() * 4)) {
           case 0: col = this.wrapCol(col - 1); break;
@@ -265,6 +285,8 @@ export default class MapGenerator {
       }
     }
 
+    // ── Protect map center ──
+    // Ensures the starting area is land, especially important for Pangaea and Normal.
     const centerCol = this.width >> 1;
     const centerRow = this.height >> 1;
     const protectR = Math.max(2, Math.floor(Math.min(this.width, this.height) / 6));
@@ -278,6 +300,7 @@ export default class MapGenerator {
       }
     }
 
+    // ── Smooth Manhattan distance-to-water field ──
     const rawDist = computeManhattanDistanceField(
       (c, r) => this.cells[r][c].type === TERRAIN_TYPES.OCEAN,
       this.width, this.height,
@@ -288,6 +311,7 @@ export default class MapGenerator {
       (c) => this.wrapCol(c), 2,
     );
 
+    // ── Raise terrain using smoothed field + multi-octave noise ──
     for (let r = 1; r < this.height - 1; r++) {
       for (let c = 0; c < this.width; c++) {
         if (this.cells[r][c].type === TERRAIN_TYPES.OCEAN) continue;
@@ -307,6 +331,7 @@ export default class MapGenerator {
     // Pathfinding-based mountain ridges: walk along high-elevation crests
     this.generateMountainRidges(rng, distField);
   }
+
 
   // ── Coastline smoothing ──────────────────────────────────────────
 

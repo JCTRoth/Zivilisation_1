@@ -331,13 +331,11 @@ describe('previewEconomy — projected per-turn numbers', () => {
   // 6. Multi-city totals
   // ---------------------------------------------------------------
   describe('multi-city', () => {
-    it('two cities contribute additively (both capital, 0 corruption)', () => {
+    it('two cities contribute additively (no corruption when no capital)', () => {
       const city1 = makeCity(5);
-      setCapital(city1);
       const city2 = makeCity(8);
       // Null the capital so corruption = 0 for both (no capital = no corruption)
       civ().capital = null;
-      city1.isCapital = false;
 
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
       // city1: afterCorruption = floor(5 × 1 - 0) = 5

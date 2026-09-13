@@ -1260,17 +1260,13 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     }
     // Clear selection if nothing available
     if (availableProductionKeys.length === 0) setSelectedProductionKey(null);
-    // Log available production options for debugging
-    // console.log('[GameModals] availableProductionKeys', availableProductionKeys);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availableProductionKeys]);
+  }, [availableProductionKeys, selectedProductionKey]);
 
   // Reset queue selection when the selected city changes
   useEffect(() => {
     setSelectedQueueIndex(null);
     if (selectedCity) console.log('[GameModals] selectedCity changed', { id: selectedCity.id, name: selectedCity.name, buildQueue: selectedCity.buildQueue });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCityId]);
+  }, [selectedCity, selectedCityId]);
 
   // Keep the build queue scrolled to its bottom so a freshly added item is
   // always visible without manual scrolling.
