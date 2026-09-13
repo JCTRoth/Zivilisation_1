@@ -130,6 +130,12 @@ export class GoToManager {
     const nextPos = path[0];
     console.log(`[GoToManager] Executing first step for unit ${unitId} to (${nextPos.col}, ${nextPos.row})`);
 
+    const targetCity = this.gameEngine.getCityAt(nextPos.col, nextPos.row);
+    if (targetCity && targetCity.civilizationId !== unit.civilizationId && path.length > 1) {
+      this.clearUnitPath(unitId);
+      return { success: false, reason: 'enemy_city_blocks_path', remainingPath: [] };
+    }
+
     try {
       const moveResult = this.gameEngine.moveUnit(unitId, nextPos.col, nextPos.row);
       

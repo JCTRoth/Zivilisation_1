@@ -3579,13 +3579,6 @@ export default class GameEngine {
       this.onStateChange('CITY_FOUNDED', { city, settler });
     }
 
-    // ── Settler rush capture: adjacent enemy settlers may steal the city ──
-    // When a city is founded, any enemy settler standing on an adjacent tile
-    // has a 50% chance to rush in and take it over — mirroring the scout
-    // rush but with higher odds (the city is brand-new and completely
-    // undefended). The capturing settler is consumed.
-    this.checkSettlerRushCapture(city);
-
     // Check if turn should end automatically after founding city
     this.checkAndEndTurnIfNoMoves('city-founded');
 

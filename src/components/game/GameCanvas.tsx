@@ -2293,6 +2293,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           );
           if (actions?.updateUnits)
             actions.updateUnits(getAllUnitsFromEngine());
+          if (actions?.updateCivilizations)
+            actions.updateCivilizations([...gameEngine.civilizations]);
           // Civ I behaviour: a diplomat's contact opens the negotiation screen
           // focused on the foreign civ so the player can continue bargaining.
           if (actions?.openDiplomacy && diplomatInfo?.targetCivId != null) {
@@ -2325,8 +2327,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 | undefined;
               if (actions?.addNotification)
                 actions.addNotification({
-                  type: resp?.success ? "success" : "warning",
-                  message: resp?.success
+                  type: resp?.accepted ? "success" : "warning",
+                  message: resp?.accepted
                     ? "Unit bribed!"
                     : `Bribe failed: ${resp?.reason || "not enough gold"}`,
                 });

@@ -596,6 +596,7 @@ export class DiplomacyManager {
     }
 
     // Success: transfer the unit
+    const originalCivId = unit.civilizationId;
     fromCiv.resources.gold -= cost;
     unit.civilizationId = diplomatCivId;
     unit.movesRemaining = 0;
@@ -603,7 +604,7 @@ export class DiplomacyManager {
     this.logEvent({
       type: 'unit_bribed',
       fromCivId: diplomatCivId,
-      toCivId: unit.civilizationId,
+      toCivId: originalCivId,
       goldAmount: cost,
       details: `Bribed ${unit.type}`,
     });

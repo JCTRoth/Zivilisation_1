@@ -77,7 +77,8 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
     onHide();
   };
 
-  const canAfford = (cost: number) => playerGold >= cost;
+  const getPurchaseCost = (type: string, cost: number): number => type === 'unit' ? cost * 2 : cost;
+  const canAfford = (type: string, cost: number): boolean => playerGold >= getPurchaseCost(type, cost);
 
   return (
     <Modal show={show} onHide={onHide} centered size="lg" dialogClassName="city-details-modal production-selection-modal hex-detail-modal">
@@ -115,14 +116,15 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                     const canBuild = hasRequiredTechs(currentPlayer, requires);
                     const requiredTech = Array.isArray(requires) ? requires.join(', ') : requires || 'None';
                     const stats = `${unit.attack}/${unit.defense} (${unit.movement} moves)`;
-                    const affordable = canAfford(unit.cost);
+                    const purchaseCost = getPurchaseCost('unit', unit.cost);
+                    const affordable = canAfford('unit', unit.cost);
                     const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
                     return (
                       <tr key={key} className={canBuild ? '' : 'text-muted'}>
                         <td>{unit.name}</td>
                         <td>{requiredTech}</td>
                         <td>{stats}</td>
-                        <td>{unit.cost} <i className="bi bi-gear"></i></td>
+                        <td>{purchaseCost} <i className="bi bi-coin"></i></td>
                         <td>
                           <div className="d-flex gap-1">
                             <Button
@@ -143,12 +145,12 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                                   purchasedThisTurn
                                     ? 'Already purchased this turn'
                                     : !affordable
-                                      ? `Need ${unit.cost} Gold (have ${playerGold})`
-                                      : `Buy now for ${unit.cost} Gold`
+                                      ? `Need ${purchaseCost} Gold (have ${playerGold})`
+                                      : `Buy now for ${purchaseCost} Gold`
                                 }
                                 onClick={() => handleBuy(key, 'unit')}
                               >
-                                {unit.cost}🪙
+                                {purchaseCost}🪙
                               </Button>
                             )}
                           </div>
@@ -184,14 +186,15 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                     const building = BUILDING_PROPS[key];
                     const requiredTech = (building as { requiredTechnology?: string }).requiredTechnology || null;
                     const canBuild = hasRequiredTechs(currentPlayer, requiredTech);
-                    const affordable = canAfford(building.cost);
+                    const purchaseCost = getPurchaseCost('building', building.cost);
+                    const affordable = canAfford('building', building.cost);
                     const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
                     return (
                       <tr key={key} className={canBuild ? '' : 'text-muted'}>
                         <td>{building.name}</td>
                         <td>{requiredTech || 'None'}</td>
                         <td>{building.description}</td>
-                        <td>{building.cost} <i className="bi bi-gear"></i></td>
+                        <td>{purchaseCost} <i className="bi bi-coin"></i></td>
                         <td>
                           <div className="d-flex gap-1">
                             <Button
@@ -212,12 +215,12 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                                   purchasedThisTurn
                                     ? 'Already purchased this turn'
                                     : !affordable
-                                      ? `Need ${building.cost} Gold (have ${playerGold})`
-                                      : `Buy now for ${building.cost} Gold`
+                                      ? `Need ${purchaseCost} Gold (have ${playerGold})`
+                                      : `Buy now for ${purchaseCost} Gold`
                                 }
                                 onClick={() => handleBuy(key, 'building')}
                               >
-                                🪙{building.cost}
+                                🪙{purchaseCost}
                               </Button>
                             )}
                           </div>

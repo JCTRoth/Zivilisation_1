@@ -312,7 +312,8 @@ export class ProductionManager {
       const civ: Civilization | undefined = civId !== undefined ? this.gameEngine.civilizations[civId] : this.gameEngine.civilizations[city.civilizationId] || this.gameEngine.civilizations[(city as { civId?: number }).civId] || undefined;
       if (!civ || !civ.resources) return { success: false, reason: 'civ_not_found' };
 
-      const cost: number = item.cost || (item.shields || 0);
+      const baseCost: number = item.cost || (item.shields || 0);
+      const cost: number = item.type === 'unit' ? baseCost * 2 : baseCost;
       if ((civ.resources.gold || 0) < cost) return { success: false, reason: 'insufficient_gold' };
 
       // Deduct gold

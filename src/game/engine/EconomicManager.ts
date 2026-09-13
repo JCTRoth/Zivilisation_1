@@ -190,13 +190,17 @@ export class EconomicManager {
     const corruption = CityUtils.calculateCorruption(city, civ, effective);
     const afterCorruption = Math.max(0, Math.floor(effective - corruption));
     const rates = this.getRates(civ?.id);
-    const scienceBonus = city?.scienceBonus ?? 0;
+    const buildingScience = this.buildingBonuses(city).science;
+    const scienceBonus = buildingScience > 0 || (city.buildings?.length ?? 0) > 0
+      ? buildingScience
+      : (city.scienceBonus ?? 0);
+    const specialistScience = this.specialistYields(city).science;
     return {
       commerce: afterCorruption,
       corruption,
       tax: Math.floor(afterCorruption * (rates.tax / 100)) * TRADE_GOLD_MULTIPLIER,
       science:
-        Math.round(afterCorruption * (rates.science / 100)) + scienceBonus,
+        Math.round(afterCorruption * (rates.science / 100)) + scienceBonus + specialistScience,
       luxury: Math.floor(afterCorruption * (rates.luxury / 100)),
     };
   }
@@ -669,7 +673,13 @@ export class EconomicManager {
       }
 
       tax += Math.floor((afterCorruption * proposedRates.tax) / 100) * TRADE_GOLD_MULTIPLIER;
-      science += Math.round((afterCorruption * proposedRates.science) / 100) + (city.scienceBonus ?? 0);
+      const buildingScience = this.buildingBonuses(city).science;
+      const scienceBonus = buildingScience > 0 || (city.buildings?.length ?? 0) > 0
+        ? buildingScience
+        : (city.scienceBonus ?? 0);
+      science += Math.round((afterCorruption * proposedRates.science) / 100)
+        + scienceBonus
+        + this.specialistYields(city).science;
       luxury += cityLuxury;
     }
 
@@ -892,7 +902,6 @@ export class EconomicManager {
     let luxuryTotal = 0;
     let commerceTotal = 0;
     let specGoldTotal = 0;
-    let specScienceTotal = 0;
 
     const accumulateOutputs = () => {
       taxTotal = 0;
@@ -900,7 +909,6 @@ export class EconomicManager {
       luxuryTotal = 0;
       commerceTotal = 0;
       specGoldTotal = 0;
-      specScienceTotal = 0;
       for (const city of cities) {
         const out = this.applyCityOutputs(city, civ);
         taxTotal += out.tax;
@@ -909,7 +917,6 @@ export class EconomicManager {
         commerceTotal += out.commerce;
         const spec = this.specialistYields(city);
         specGoldTotal += spec.gold;
-        specScienceTotal += spec.science;
       }
     };
 
@@ -919,7 +926,7 @@ export class EconomicManager {
     accumulateOutputs();
 
     civ.resources.trade = commerceTotal;
-    civ.resources.science = scienceTotal + specScienceTotal;
+    civ.resources.science = scienceTotal;
     civ.resources.production = 0;
     civ.resources.food = 0;
 
@@ -944,7 +951,7 @@ export class EconomicManager {
         const newGoldIncome = taxTotal + specGoldTotal;
         civ.resources.gold += newGoldIncome - oldGoldIncome;
         civ.resources.trade = commerceTotal;
-        civ.resources.science = scienceTotal + specScienceTotal;
+        civ.resources.science = scienceTotal;
       }
     }
 
