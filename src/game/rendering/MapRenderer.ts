@@ -1352,14 +1352,28 @@ export class MapRenderer {
           return;
         }
         
-        // Draw semi-transparent overlay
+        // Draw semi-transparent overlay.  Negative cost = enemy-occupied
+        // (attackable) tile → red tint so the player sees attack targets.
         const half = scaledTileSize / 2;
-        if (isNaval) {
+        const isAttackTile = _cost < 0;
+        if (isAttackTile) {
+          // Attackable enemy tile: red with sword hint
+          ctx.fillStyle = 'rgba(220, 40, 40, 0.55)';
+          ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
+          ctx.save();
+          ctx.fillStyle = '#fff';
+          ctx.font = `bold ${Math.max(12, scaledTileSize * 0.38)}px serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('⚔', x, y);
+          ctx.restore();
+        } else if (isNaval) {
           ctx.fillStyle = 'rgba(255, 0, 0, 0.4)'; // Red for naval units
+          ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
         } else {
           ctx.fillStyle = 'rgba(0, 85, 255, 0.5)'; // Blue for land units
+          ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
         }
-        ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
       });
     }
 
@@ -1519,7 +1533,7 @@ export class MapRenderer {
         ? units.find(u => u.id === gameState.selectedUnit) ?? null
         : null;
       if (previewUnit) {
-        this.drawPreviewPath(ctx, previewUnit, previewPath, map, squareToScreen, cameraZoom);
+        this.drawPreviewPath(ctx, previewUnit, previewPath, map, squareToScreen, cameraZoom, units);
       }
     }
     if (previewTurnMarkers && previewTurnMarkers.length > 0) {
@@ -2395,6 +2409,27 @@ export class MapRenderer {
       ctx.stroke();
     }
 
+    // --- Intermediate enemy markers: show ⚔ at every enemy tile along the path ---
+    const cities = (gameState as unknown as Record<string, unknown>).cities as City[] || [];
+    for (let si = 1; si < path.length; si++) {
+      const step = path[si];
+      const enemyHere = units.find(u => u.col === step.col && u.row === step.row && u.civilizationId !== unit.civilizationId && !u.isDefeated);
+      const enemyCityHere = cities.find((c: City) => c.col === step.col && c.row === step.row && c.civilizationId !== unit.civilizationId);
+      if (enemyHere || enemyCityHere) {
+        const { x: sx, y: sy } = squareToScreen(step.col, step.row);
+        ctx.save();
+        ctx.fillStyle = '#FF4444';
+        ctx.font = 'bold 20px serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2.5;
+        ctx.strokeText('⚔', sx, sy - 12);
+        ctx.fillText('⚔', sx, sy - 12);
+        ctx.restore();
+      }
+    }
+
     // Always show destination marker (even on unexplored terrain)
     // Check if path ends at an enemy unit or city - if so, show combat icon instead of arrow
     const lastPathStep = path[path.length - 1];
@@ -2402,7 +2437,6 @@ export class MapRenderer {
     const isEnemyAtUnit = targetUnit && targetUnit.civilizationId !== unit.civilizationId;
     
     // Check for enemy city at destination
-    const cities = (gameState as unknown as Record<string, unknown>).cities as City[] || [];
     const targetCity = cities.find((c: City) => c.col === lastPathStep.col && c.row === lastPathStep.row);
     const isEnemyAtCity = targetCity && targetCity.civilizationId !== unit.civilizationId;
     const isEnemyAtDestination = isEnemyAtUnit || isEnemyAtCity;
@@ -2478,7 +2512,8 @@ export class MapRenderer {
     steps: UnitPathStep[],
     map: MapState,
     squareToScreen: (col: number, row: number) => { x: number; y: number },
-    cameraZoom: number
+    cameraZoom: number,
+    units?: Unit[]
   ): void {
     if (steps.length === 0) return;
 
@@ -2519,14 +2554,34 @@ export class MapRenderer {
     }
     ctx.stroke();
 
-    // Destination ring on the hovered tile.
+    // Destination ring on the hovered tile — or ⚔ if an enemy is there.
     const dest = steps[steps.length - 1];
     const { x: dx, y: dy } = squareToScreen(dest.col, dest.row);
     ctx.setLineDash([]);
-    ctx.lineWidth = Math.max(2, cameraZoom * 2);
-    ctx.beginPath();
-    ctx.arc(dx, dy, Math.max(6, cameraZoom * 7), 0, Math.PI * 2);
-    ctx.stroke();
+    const destUnit = units?.find(u => u.col === dest.col && u.row === dest.row && !u.isDefeated);
+    const destIsEnemy = destUnit && unit && destUnit.civilizationId !== unit.civilizationId;
+    if (destIsEnemy) {
+      // Attack destination: red ring + ⚔ icon
+      ctx.strokeStyle = '#FF4444';
+      ctx.lineWidth = Math.max(3, cameraZoom * 3);
+      ctx.beginPath();
+      ctx.arc(dx, dy, Math.max(8, cameraZoom * 8), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = `bold ${Math.max(16, cameraZoom * 18)}px serif`;
+      ctx.fillStyle = '#FF4444';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2.5;
+      ctx.strokeText('\u2694', dx, dy - Math.max(8, cameraZoom * 8) - 10);
+      ctx.fillText('\u2694', dx, dy - Math.max(8, cameraZoom * 8) - 10);
+    } else {
+      ctx.strokeStyle = 'rgba(255, 224, 102, 0.95)';
+      ctx.lineWidth = Math.max(2, cameraZoom * 2);
+      ctx.beginPath();
+      ctx.arc(dx, dy, Math.max(6, cameraZoom * 7), 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

@@ -211,11 +211,18 @@ export class Pathfinding {
   }
 
   /**
-   * Get all reachable tiles within movement range
+   * Get all reachable tiles within movement range.
+   *
    * `unit` (optional) supplies Civ1 movement state: a fresh unit (no action
    * taken, full movement intact) may always enter its FIRST adjacent tile,
    * even when that tile's cost exceeds its remaining points.
-   * @returns Map of "col,row" -> cost
+   *
+   * When `getUnitAt` is provided, tiles occupied by enemy units are still
+   * included (they are attackable) but flagged with a negative cost in the
+   * returned map so callers can distinguish *move* tiles from *attack* tiles.
+   * Friendly-occupied tiles are excluded (can't stack except carriers).
+   *
+   * @returns Map of "col,row" -> cost (negative = attackable enemy tile)
    */
   static getReachableTiles(
     startCol: number,
@@ -225,7 +232,8 @@ export class Pathfinding {
     unitType: string,
     mapWidth: number,
     mapHeight: number,
-    unit?: { hasMovedThisTurn?: boolean; maxMoves?: number }
+    unit?: { hasMovedThisTurn?: boolean; maxMoves?: number; civilizationId?: number },
+    getUnitAt?: (col: number, row: number) => { civilizationId: number } | null
   ): Map<string, number> {
     const reachable = new Map<string, number>();
     const openSet: PathNode[] = [];
@@ -287,6 +295,10 @@ export class Pathfinding {
           continue; // Impassable
         }
 
+        // --- Unit occupancy check (when getUnitAt is provided) ---
+        const occupant = getUnitAt ? getUnitAt(col, row) : null;
+        const isEnemy = occupant && unit && occupant.civilizationId !== unit.civilizationId;
+
         const g = current.g + cost;
 
         // Civ1 Minimum-1-Move: the FIRST step of a fresh unit is always
@@ -296,12 +308,15 @@ export class Pathfinding {
         const isFreshFirstStep = isFreshUnit && current.col === startCol && current.row === startRow;
 
         if (g <= maxMovement || isFreshFirstStep) {
-          const recordCost = g <= maxMovement ? g : maxMovement;
+          // Negative cost signals an attackable enemy tile to callers.
+          const recordCost = isEnemy ? -Math.abs(g <= maxMovement ? g : maxMovement) : (g <= maxMovement ? g : maxMovement);
           const existingCost = reachable.get(neighborKey);
-          if (existingCost === undefined || recordCost < existingCost) {
+          if (existingCost === undefined || Math.abs(recordCost) < Math.abs(existingCost)) {
             reachable.set(neighborKey, recordCost);
           }
-          if (g <= maxMovement) {
+          // Enemy tiles are reachable (attackable) but NOT expanded further —
+          // the unit stops there to fight, it doesn't path through enemies.
+          if (g <= maxMovement && !isEnemy) {
             openSet.push({
               col,
               row,

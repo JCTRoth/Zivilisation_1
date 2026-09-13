@@ -5,10 +5,10 @@ import type { TurnMarker, Unit } from '../../types/game';
 /** Tile accessor shared by the movement-preview helpers. */
 export type TileLookup = (col: number, row: number) => MapTile | null;
 
-/** The subset of a Unit needed to preview a movement. */
+/** The subset of a Unit needed to preview a movement or attack. */
 export type MovementPreviewUnit = Pick<
   Unit,
-  'col' | 'row' | 'type' | 'movesRemaining' | 'maxMoves' | 'hasMovedThisTurn'
+  'col' | 'row' | 'type' | 'movesRemaining' | 'maxMoves' | 'hasMovedThisTurn' | 'civilizationId'
 >;
 
 /** A computed preview: the path steps (excluding the start tile) + turn markers. */
@@ -20,6 +20,8 @@ export interface MovementPreview {
    * path fits in the current turn (no numbers are drawn in that case).
    */
   turnMarkers: TurnMarker[];
+  /** True when the final step lands on an enemy unit (attack move). */
+  isAttack: boolean;
 }
 
 /** Floating-point tolerance for "no movement points left". */
@@ -32,6 +34,10 @@ const EPSILON = 1e-6;
  * The path comes from `Pathfinding.findPath` (A*); the turn markers come from
  * {@link computeTurnMarkers}, which mirrors the engine's movement rules so the
  * preview matches what `GameEngine.moveUnit` will actually do.
+ *
+ * When `getUnitAt` is provided, the result includes `isAttack: true` if the
+ * destination tile is occupied by an enemy unit. This flag is shared by the
+ * GoToManager path drawing and the hover preview.
  */
 export function computeMovementPreview(
   unit: MovementPreviewUnit,
@@ -39,7 +45,8 @@ export function computeMovementPreview(
   targetRow: number,
   getTileAt: TileLookup,
   mapWidth: number,
-  mapHeight: number
+  mapHeight: number,
+  getUnitAt?: (col: number, row: number) => { civilizationId: number } | null
 ): MovementPreview | null {
   if (unit.col === targetCol && unit.row === targetRow) return null;
 
@@ -66,7 +73,14 @@ export function computeMovementPreview(
     unit.hasMovedThisTurn === true
   );
 
-  return { steps, turnMarkers };
+  // Detect attack: destination occupied by an enemy.
+  let isAttack = false;
+  if (getUnitAt) {
+    const occupant = getUnitAt(targetCol, targetRow);
+    isAttack = !!occupant && occupant.civilizationId !== unit.civilizationId;
+  }
+
+  return { steps, turnMarkers, isAttack };
 }
 
 /**

@@ -736,6 +736,32 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     [mapData],
   );
 
+  // Unit lookup: support multiple engine shapes (engine.getUnitAt or engine.map.getUnitAt or fallback to engine.units[])
+  const getUnitAtFromEngine = useCallback(
+    (col: number, row: number): Unit | null => {
+      if (!gameEngine) return null;
+      try {
+        if (typeof gameEngine.getUnitAt === 'function')
+          return gameEngine.getUnitAt(col, row);
+        const mapObj = gameEngine.map as {
+          getUnitAt?: (c: number, r: number) => Unit | null;
+        } | null;
+        if (mapObj && typeof mapObj.getUnitAt === 'function')
+          return mapObj.getUnitAt(col, row);
+        const unitsArr = gameEngine.units;
+        if (Array.isArray(unitsArr))
+          return (
+            unitsArr.find((u: Unit) => u && u.col === col && u.row === row) ||
+            null
+          );
+      } catch (err) {
+        console.error('[GameCanvas] getUnitAtFromEngine error', err);
+      }
+      return null;
+    },
+    [gameEngine],
+  );
+
   // Calculate reachable tiles when selected unit changes. This is the ONLY
   // source for the selected unit's movement range, so auto-selection (turn
   // queue, focusOnNextUnit, unit-moved events) behaves exactly like a click.
@@ -766,6 +792,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           mapData.width,
           mapData.height,
           unit,
+          getUnitAtFromEngine,
         ),
       );
     }
@@ -776,6 +803,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     mapData,
     terrain,
     getTileAt,
+    getUnitAtFromEngine,
   ]);
 
   // Selection can change without any mouse movement (auto-select at turn start,
@@ -817,28 +845,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     [camera.x, camera.y, camera.zoom, mapData.height, mapData.width],
   );
 
-  // Helper accessors: support multiple engine shapes (engine.getUnitAt or engine.map.getUnitAt or fallback to engine.units[])
-  const getUnitAtFromEngine = (col: number, row: number): Unit | null => {
-    if (!gameEngine) return null;
-    try {
-      if (typeof gameEngine.getUnitAt === "function")
-        return gameEngine.getUnitAt(col, row);
-      const mapObj = gameEngine.map as {
-        getUnitAt?: (c: number, r: number) => Unit | null;
-      } | null;
-      if (mapObj && typeof mapObj.getUnitAt === "function")
-        return mapObj.getUnitAt(col, row);
-      const unitsArr = gameEngine.units;
-      if (Array.isArray(unitsArr))
-        return (
-          unitsArr.find((u: Unit) => u && u.col === col && u.row === row) ||
-          null
-        );
-    } catch (err) {
-      console.error("[GameCanvas] getUnitAtFromEngine error", err);
-    }
-    return null;
-  };
+  // getUnitAtFromEngine is defined above (near getTileAt).
 
   const getCityAtFromEngine = (col: number, row: number): City | null => {
     if (!gameEngine) return null;
@@ -908,13 +915,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           mapData.width,
           mapData.height,
           unit,
+          getUnitAtFromEngine,
         );
       } catch (e) {
         console.error("[GameCanvas] getReachableForUnit error", e);
         return new Map();
       }
     },
-    [mapData, terrain, getTileAt],
+    [mapData, terrain, getTileAt, getUnitAtFromEngine],
   );
 
   /**
@@ -1193,7 +1201,34 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     hoveredHexRef.current = hex;
 
     if (hoverUnit && hoverUnitVisible) {
-      // Show the hovered unit's movement capabilities.
+      // NEVER show blue movement range for enemy units.
+      const isEnemy = hoverUnit.civilizationId !== (currentPlayer?.id ?? -1);
+      if (isEnemy) {
+        // Show attack path if we have a selected unit with moves, otherwise
+        // just clear all hover state — no blue range for enemies, ever.
+        if (selUnit && selUnit.civilizationId === currentPlayer?.id && (selUnit.movesRemaining || 0) > 0) {
+          hoverReachableRef.current = null;
+          const preview = computeMovementPreview(
+            selUnit,
+            hoverUnit.col,
+            hoverUnit.row,
+            getTileAt,
+            mapData.width,
+            mapData.height,
+            getUnitAtFromEngine,
+          );
+          previewPathRef.current = preview ? preview.steps : null;
+          previewTurnMarkersRef.current = preview ? preview.turnMarkers : [];
+        } else {
+          hoverReachableRef.current = null;
+          previewPathRef.current = null;
+          previewTurnMarkersRef.current = [];
+        }
+        triggerRender();
+        return;
+      }
+
+      // Friendly unit: show its own movement range.
       const cacheKey = `${hoverUnit.id}:${hoverUnit.col},${hoverUnit.row}:${hoverUnit.movesRemaining}:${hoverUnit.hasMovedThisTurn ? 1 : 0}`;
       let tiles = reachableCacheRef.current.get(cacheKey);
       if (!tiles) {
@@ -1256,6 +1291,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         getTileAt,
         previewMap.width,
         previewMap.height,
+        getUnitAtFromEngine,
       );
       if (lastHoverKeyRef.current !== requestedKey) return;
       previewPathRef.current = preview ? preview.steps : null;
@@ -1577,14 +1613,22 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 } catch (e) {
                   console.log(`[CLICK] Attack error:`, e);
                 }
+              } else if (!isAdjacent && (selectedUnit.movesRemaining || 0) > 0) {
+                // Non-adjacent enemy: path to them and attack on arrival.
+                // Reuse the same GoTo logic as clicking an empty tile — the
+                // engine handles combat when moveUnit lands on an enemy.
+                console.log(
+                  `[CLICK] Non-adjacent enemy — assigning attack path`,
+                );
+                assignUnitPath(selectedUnit, hex.col, hex.row);
               } else {
                 console.log(
-                  `[CLICK] Unit not adjacent to enemy - cannot attack`,
+                  `[CLICK] Cannot attack — no moves remaining`,
                 );
                 if (actions?.addNotification) {
                   actions.addNotification({
                     type: "warning",
-                    message: "Unit must be adjacent to attack",
+                    message: "Unit has no moves remaining",
                   });
                 }
               }

@@ -21,3 +21,18 @@ Far further development of the game engine is planned, including:
 * Hall of fame for multiplayer games, including a list of high scores, and the ability to submit high scores to a server.
 
 * Database backup and restore system, including the ability to backup and restore the database, and the ability to export and import the database.
+
+
+BUGS:
+GoTo/GoToManager the red arraow of the GoToManager should not be visible on unexplored tiles, and the red arrow should be visible on explored tiles, but not on tiles that are not visible to the player. The red arrow should also be visible on tiles that are visible to the player, but not on tiles that are not visible to the player.
+
+World -> Statistics -> Shows always: Turn 1 · 4000 BC - No matter what turn it is.
+
+World -> Techtree -> The X button to close the techtree is not visible, because it is dark on dark background. The button is there, but it is not visible. Button should be white.
+
+Units should not be able to pass rivers that are more than 1 tile wide, unless they have a bridge or a boat. The AI should also not be able to pass rivers that are more than 1 tile wide, unless they have a bridge or a boat.
+Units should be able to walk down a river that is 1 tile wide.
+
+Map Generator:
+If more than three water tiles are setted next to each other than they should be ocan tiles.
+Mix in the gras tiles some plain tiles use therefor the computeManhattanDistanceField the ratio should be 1:7 where 6 can be between 4 and 9
