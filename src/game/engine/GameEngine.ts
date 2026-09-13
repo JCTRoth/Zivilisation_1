@@ -2008,6 +2008,26 @@ export default class GameEngine {
    * Pathfinding.getTileCost so the path the AI plans is charged the same way
    * a manual move is.
    */
+  private isWideRiver(col: number, row: number): boolean {
+    const tile = this.getTileAt(col, row);
+    if (!tile) return false;
+    const key = String(tile.type ?? tile.terrain ?? '').trim().toLowerCase();
+    if (key !== TERRAIN_TYPES.RIVER) return false;
+    // Check 4-directional neighbors for adjacent river tiles
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dc, dr] of dirs) {
+      const nc = col + dc;
+      const nr = row + dr;
+      if (!this.squareGrid.isValidSquare(nc, nr)) continue;
+      const neighbor = this.getTileAt(nc, nr);
+      if (neighbor) {
+        const nKey = String(neighbor.type ?? neighbor.terrain ?? '').trim().toLowerCase();
+        if (nKey === TERRAIN_TYPES.RIVER) return true;
+      }
+    }
+    return false;
+  }
+
   private getMoveCost(tile: MapTile | null): number {
     if (!tile) return 1;
     const t = tile as MapTile & { road?: boolean; railroad?: boolean; hasRoad?: boolean };
@@ -2085,6 +2105,17 @@ export default class GameEngine {
     if (TERRAIN_PROPS[targetTerrain]?.passable === false) {
       console.log(`[canUnitMoveTo] Target tile at (${targetCol}, ${targetRow}) is not passable.`);
       return false;
+    }
+
+    // River crossing check: land units can't cross wide rivers (2+ tiles)
+    // unless they are already on a river tile or are naval units.
+    if (!isUnitNaval && targetTerrain === TERRAIN_TYPES.RIVER) {
+      const fromTile = this.getTileAt(unit.col, unit.row);
+      const isOnRiver = fromTile && (String(fromTile.type ?? fromTile.terrain ?? '').trim().toLowerCase() === TERRAIN_TYPES.RIVER);
+      if (!isOnRiver && this.isWideRiver(targetCol, targetRow)) {
+        console.log(`[canUnitMoveTo] Wide river at (${targetCol}, ${targetRow}) — crossing blocked.`);
+        return false;
+      }
     }
 
     // Caravans may always enter a city tile (to establish a trade route),

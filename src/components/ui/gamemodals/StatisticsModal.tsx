@@ -67,7 +67,6 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
   const cities = useGameStore(state => state.cities);
   const units = useGameStore(state => state.units);
   const gameState = useGameStore(state => state.gameState);
-  const gameStats = useGameStore(state => state.gameStats);
   const technologies = useGameStore(state => state.technologies);
 
   const currentPlayer = civilizations[gameState.activePlayer] ?? civilizations.find(civ => civ.isHuman) ?? civilizations[0] ?? null;
@@ -105,7 +104,7 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
       <Modal.Body>
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div className="text-light-emphasis">
-            Turn {gameStats.turn} · {gameState.currentYear != null ? `${gameState.currentYear < 0 ? `${Math.abs(gameState.currentYear)} BC` : `${gameState.currentYear} AD`}` : '—'}
+            Turn {gameState.currentTurn ?? 1} · {gameState.currentYear != null ? `${gameState.currentYear < 0 ? `${Math.abs(gameState.currentYear)} BC` : `${gameState.currentYear} AD`}` : '—'}
           </div>
           <Button variant="outline-light" size="sm" onClick={onHide}>Close</Button>
         </div>

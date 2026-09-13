@@ -1,7 +1,7 @@
 /* GameModals styles */
 
 .tech-tree-modal .btn-close {
-  color: #f5f5f5;
+  filter: invert(1);
 }
 
 /* Tech Tree modal is fullscreen; make the body flex so the tree canvas expands

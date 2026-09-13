@@ -296,7 +296,7 @@ export default class MapGenerator {
         const n4 = hashNoise(c >> 3, r >> 3, 3);
         const noise = (n1 * 1.0 + n2 * 0.5 + n3 * 0.25 + n4 * 0.125) / 1.875;
 
-        this.cells[r][c].type = elevationFromDistance(distField[r][c], noise);
+        this.cells[r][c].type = elevationFromDistance(distField[r][c], noise, c, r);
       }
     }
 

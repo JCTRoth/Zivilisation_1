@@ -364,21 +364,32 @@ export function smoothNumericField(
  * noise onto a terrain type, producing gradual elevation bands:
  *
  *   dist 1–2  → Plains        (coastal flats)
- *   dist 3–4  → Grassland     (lowland meadows)
- *   dist 5–6  → Hills          (rolling uplands)
- *   dist 7+   → Mountains     (continental spine)
+ *   dist 3–5  → Grassland     (lowland meadows), with ~1/7 plains mixed in
+ *   dist 6–7  → Hills          (rolling uplands)
+ *   dist 8+   → Mountains     (continental spine)
  *
  * The noise term lets the band edges wander organically instead of
  * forming perfectly concentric rings around every coastline.
+ *
+ * Within the grassland band (dist 3–5), a 1:7 plains-to-grassland ratio
+ * is achieved by using `hashNoise` — roughly 12.5% of grassland tiles
+ * become plains, creating natural savanna/grassland mosaic.
  */
-export function elevationFromDistance(dist: number, noise: number): string {
+export function elevationFromDistance(dist: number, noise: number, col?: number, row?: number): string {
   if (dist <= 0) return TERRAIN_TYPES.OCEAN;
   // Multi-octave noise shifts the effective distance by up to ±2.0.
   // Higher thresholds produce fewer mountains (3-5% of land typical).
   const eff = dist + (noise - 0.5) * 4;
-  if (eff >= 9.0) return TERRAIN_TYPES.MOUNTAINS;
+  if (eff >= 8.0) return TERRAIN_TYPES.MOUNTAINS;
   if (eff >= 6.0) return TERRAIN_TYPES.HILLS;
-  if (eff >= 3.0) return TERRAIN_TYPES.GRASSLAND;
+  if (eff >= 3.0) {
+    // Grassland band: mix in ~1/7 plains using deterministic noise
+    if (col != null && row != null) {
+      const mix = hashNoise(col, row, 99);
+      if (mix < 1 / 7) return TERRAIN_TYPES.PLAINS;
+    }
+    return TERRAIN_TYPES.GRASSLAND;
+  }
   return TERRAIN_TYPES.PLAINS;
 }
 

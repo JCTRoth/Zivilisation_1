@@ -1,5 +1,6 @@
 import { TERRAIN_PROPS } from '../../utils/Constants';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '../../data/TileImprovementConstants';
+import { TERRAIN_TYPES } from '../../data/TerrainConstants';
 import type { MapTile } from './GameEngine';
 
 /**
@@ -27,6 +28,67 @@ export interface PathResult {
  * A* Pathfinding for unit movement
  */
 export class Pathfinding {
+
+  /**
+   * Check if a tile is a river tile.
+   */
+  private static isRiverTile(tile: MapTile | null): boolean {
+    if (!tile) return false;
+    const key = String(tile.type ?? tile.terrain ?? '').trim().toLowerCase();
+    return key === TERRAIN_TYPES.RIVER;
+  }
+
+  /**
+   * Check if a river is "wide" (2+ tiles) at a given crossing point.
+   * A river crossing from non-river → river is blocked when the river tile
+   * has at least one adjacent river tile (making it part of a group ≥2).
+   * Units already ON a river tile can move freely.
+   */
+  private static isWideRiverAt(
+    col: number, row: number,
+    getTileAt: (c: number, r: number) => MapTile | null,
+    mapWidth: number, mapHeight: number,
+  ): boolean {
+    const tile = getTileAt(col, row);
+    if (!this.isRiverTile(tile)) return false;
+    // Count adjacent river tiles (4-directional for width measurement)
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dc, dr] of dirs) {
+      const nc = col + dc;
+      const nr = row + dr;
+      if (nc < 0 || nc >= mapWidth || nr < 0 || nr >= mapHeight) continue;
+      if (this.isRiverTile(getTileAt(nc, nr))) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check if a unit can cross a river at a given edge.
+   * Returns true if movement is allowed, false if blocked by a wide river.
+   * Land units without bridge tech cannot cross wide rivers.
+   */
+  private static canCrossRiver(
+    fromCol: number, fromRow: number,
+    toCol: number, toRow: number,
+    getTileAt: (c: number, r: number) => MapTile | null,
+    mapWidth: number, mapHeight: number,
+    unitType: string,
+  ): boolean {
+    const targetTile = getTileAt(toCol, toRow);
+    if (!this.isRiverTile(targetTile)) return true;
+
+    // Naval units can enter river tiles freely
+    const normalizedType = String(unitType ?? '').trim().toLowerCase();
+    const isWaterUnit = ['trireme', 'caravel', 'ironclad', 'frigate', 'destroyer', 'cruiser', 'battleship', 'submarine', 'carrier', 'transport', 'sail'].includes(normalizedType);
+    if (isWaterUnit) return true;
+
+    // Units already on a river tile can move freely (walking along the river)
+    const fromTile = getTileAt(fromCol, fromRow);
+    if (this.isRiverTile(fromTile)) return true;
+
+    // Check if this river crossing is wide (2+ tiles)
+    return !this.isWideRiverAt(toCol, toRow, getTileAt, mapWidth, mapHeight);
+  }
   /**
    * Calculate movement cost for a tile.
    *
@@ -177,6 +239,11 @@ export class Pathfinding {
           continue; // Impassable
         }
 
+        // River crossing check: land units can't cross wide rivers
+        if (!this.canCrossRiver(current.col, current.row, col, row, getTileAt, mapWidth, mapHeight, unitType)) {
+          continue;
+        }
+
         const g = current.g + cost;
         const h = this.heuristic(col, row, targetCol, targetRow);
         const f = g + h;
@@ -293,6 +360,11 @@ export class Pathfinding {
 
         if (cost === Infinity) {
           continue; // Impassable
+        }
+
+        // River crossing check: land units can't cross wide rivers
+        if (!this.canCrossRiver(current.col, current.row, col, row, getTileAt, mapWidth, mapHeight, unitType)) {
+          continue;
         }
 
         // --- Unit occupancy check (when getUnitAt is provided) ---
