@@ -27,4 +27,16 @@ Water stuff
 * Introduce new Tile Type Lake if less than 4x6 Tiles than it is NO/NOT ocean but a lake, a lake has the same properties as an river but is NOT passable.
 Integrate it into the map generation, and into the game engine, and into the game logic, and into the game UI, and into the game AI, and into the game diplomacy, and into the game economics, and into the game military, and into the game science, and into the game culture, and into the game religion, and into the game espionage, and into the game trade, and into the game diplomacy, and into the game victory conditions.
 * The AI should start to build ships if no enemy is reachable on the land way.
-* Add new ship type, "Trade Ship" A trade ship can establish a trade route from a city with a harbor to a city with a harbor, and then the ship uses GoTo (pathfinding) to drive between the two cities automatically. Everytime it was in one of the two cities and reaches than the other citie a reward is payed out. Only one ship per city is possible as partner.
+* Add new ship type, "Trade Ship" 
+A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
+and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.
+Everytime it was in one of city of your civilisation and than reaches than another city of your civilisation or of another one the 
+owner civ. of the ship get 80% of the following calulation and the owner of the reciving city 20%:
+[(1+F*X)*(5*(Pop-10))+100+Cap)* (Minimum ([T*50%], [D*70%]))*20%/100]
+F is 150% (1.5) if it is a Foreign Trade Route, 0 if domestic
+X = 2*Enemy Civ. , 1*Your Own, 1.2 Friend, Peach Agreement NOT war.
+Pop is the Pop of the city Getting the trade route
+T is the Pop of the City the Trade Route is With
+D is the Distance to the City
+Cap is 25 if one of the cities is conected to the Capital, 0 if not
+[] indicates rounding down

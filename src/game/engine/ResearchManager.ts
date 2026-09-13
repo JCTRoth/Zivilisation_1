@@ -2,7 +2,6 @@ import type { Technology, Civilization } from '../../../types/game';
 import GameEngine from './GameEngine';
 
 /**
- * Civ I–style research model.
  *
  * Adds the exact conditions that make research speed depend on more than just
  * raw beaker output:
