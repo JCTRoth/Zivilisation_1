@@ -130,7 +130,7 @@ const KEY_UNLOCK_SCORES: Record<string, number> = {
   iron_working: 10,     // Legion
   gunpowder: 14,        // Musketeer — major military leap
   masonry: 8,           // City Walls
-  democracy: 12,        // Best late government
+  communism: 12,        // Best late government
   space_flight: 20,     // Victory path
   moonshot: 25,         // Victory condition
 };

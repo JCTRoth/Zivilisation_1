@@ -52,6 +52,24 @@ export interface ProcessTurnResult {
   disbanded: number;
 }
 
+/** Side-effect-free projection returned by `previewEconomy`. */
+export interface CivEconomyPreview {
+  /** Total after-corruption commerce across all cities (including disordered). */
+  commerce: number;
+  /** Tax income (disordered cities contribute 0). */
+  tax: number;
+  /** Research beakers (disordered cities contribute 0). */
+  science: number;
+  /** Luxury happiness points (disordered cities contribute 0). */
+  luxury: number;
+  /** Unit + building upkeep. */
+  upkeep: number;
+  /** tax − upkeep. */
+  net: number;
+  /** Whether the civ owns at least one city. */
+  hasCities: boolean;
+}
+
 export const UNIT_MAINTENANCE = 1;
 export const CITY_CENTER_COMMERCE = 2;
 export const TRADE_GOLD_MULTIPLIER = 2;
@@ -564,6 +582,99 @@ export class EconomicManager {
             '';
       return total + (BUILDING_PROPERTIES[id]?.effects?.happiness ?? 0);
     }, 0);
+  }
+
+  // ------------------------------------------------------------------
+  // Preview (side-effect-free, used by RatesModal)
+  // ------------------------------------------------------------------
+
+  /**
+   * Projected per-turn economy for `civ` using the **proposed** rates.
+   * Mirrors the real `processTurn` pipeline (commerce → corruption → rate
+   * split → disorder check → upkeep) but writes nothing to city state.
+   * The RatesModal is the sole consumer; AI and gameplay use
+   * `applyCityOutputs` / `processTurn` instead.
+   */
+  previewEconomy(
+    civ: Civilization,
+    proposedRates: { tax: number; science: number; luxury: number },
+  ): CivEconomyPreview {
+    const civId = civ?.id;
+    if (civId == null) {
+      return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, net: 0, hasCities: false };
+    }
+    const cities = (this.gameEngine?.cities ?? []).filter(
+      (c: City) => c.civilizationId === civId,
+    );
+    if (cities.length === 0) {
+      return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, net: 0, hasCities: false };
+    }
+
+    const gov = getGovernment(civ.government);
+
+    let commerce = 0;
+    let tax = 0;
+    let science = 0;
+    let luxury = 0;
+
+    for (const city of cities) {
+      // After-corruption commerce (same as cityOutputs).
+      const rawCommerce = this.cityCommerce(city);
+      const effective = rawCommerce * (1 - gov.commercePenalty);
+      const corruption = CityUtils.calculateCorruption(city, civ, effective);
+      const afterCorruption = Math.max(0, Math.floor(effective - corruption));
+      commerce += afterCorruption;
+
+      // --- Disorder check (mirrors cityHappiness) ---
+      const population = city?.population ?? 1;
+      const capturedUnrest =
+        city?.capturedTurns && city.capturedTurns > 0 ? CAPTURED_CITY_UNHAPPY : 0;
+      const unhappiness =
+        Math.max(0, population - gov.tolerance) + capturedUnrest;
+
+      const specLuxury = this.specialistYields(city).luxury;
+
+      const garrisonUnits = (this.gameEngine?.units ?? []).filter(
+        (u: Unit) =>
+          u.civilizationId === civId &&
+          u.col === city.col &&
+          u.row === city.row &&
+          !u.isDefeated &&
+          (u.attack ?? 0) > 0,
+      ).length;
+      const govName = (gov.name ?? '').toLowerCase();
+      const martialLawMax =
+        govName === 'despotism' || govName === 'anarchy'
+          ? 4
+          : govName === 'monarchy' || govName === 'communism'
+            ? 3
+            : 0;
+      const martialLawBonus = Math.min(garrisonUnits, martialLawMax);
+
+      // Luxury from the *proposed* rate (not the current rate).
+      const cityLuxury = Math.floor(afterCorruption * (proposedRates.luxury / 100));
+
+      const happiness =
+        cityLuxury +
+        specLuxury +
+        martialLawBonus +
+        this.buildingHappiness(city) +
+        gov.happinessBonus +
+        BASE_CONTENTMENT;
+      const disorder = unhappiness > happiness;
+
+      if (disorder) {
+        // Disordered city produces zero tax/science/luxury (Civ1 rule).
+        continue;
+      }
+
+      tax += Math.floor((afterCorruption * proposedRates.tax) / 100) * TRADE_GOLD_MULTIPLIER;
+      science += Math.round((afterCorruption * proposedRates.science) / 100) + (city.scienceBonus ?? 0);
+      luxury += cityLuxury;
+    }
+
+    const upkeep = this.totalUpkeep(civId);
+    return { commerce, tax, science, luxury, upkeep, net: tax - upkeep, hasCities: true };
   }
 
   // ------------------------------------------------------------------
