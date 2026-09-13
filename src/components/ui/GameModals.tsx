@@ -497,17 +497,26 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     setDiplomacyLog(prev => [msg, ...prev].slice(0, 20));
   };
 
-  // When the diplomacy screen opens with a focus civ (diplomat contact or an
-  // AI-initiated offer), pre-select that civ in the negotiation list, then
-  // consume the focus hint so it only applies once.
+  // When the diplomacy screen opens:
+  //  - With a focus civ (diplomat contact or AI-initiated offer) → pre-select that civ.
+  //  - Without a focus civ → auto-select the first discovered civ so the
+  //    right panel is never empty on open.
   useEffect(() => {
-    if (uiState.activeDialog === 'diplomacy' && diplomacyFocusCivId != null) {
+    if (uiState.activeDialog !== 'diplomacy') return;
+    if (diplomacyFocusCivId != null) {
       setSelectedDiploCiv(diplomacyFocusCivId);
       setShowTreatyPanel(false);
       setCounterProposal(null);
       actions.clearDiplomacyFocus();
+    } else if (selectedDiploCiv === null) {
+      const first = civilizations.find((c: Civilization) => c.id !== (currentPlayer?.id ?? 0) && c.isAlive !== false);
+      if (first) {
+        setSelectedDiploCiv(first.id);
+        setShowTreatyPanel(false);
+        setCounterProposal(null);
+      }
     }
-  }, [uiState.activeDialog, diplomacyFocusCivId, actions]);
+  }, [uiState.activeDialog, diplomacyFocusCivId, selectedDiploCiv, civilizations, currentPlayer, actions]);
 
   // Accept or reject the AI's pending proposal shown in the incoming-offer
   // banner. Accepting executes the proposal directly (no willingness roll —
@@ -1016,156 +1025,6 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     );
   };
 
-  // Diplomacy Report — read-only overview of current diplomatic state (Civ I Foreign Advisor style)
-  const renderDiplomacyReport = (): React.ReactNode => {
-    const dm = gameEngine?.diplomacyManager;
-    const playerId = currentPlayer?.id ?? 0;
-    const otherCivs = civilizations.filter((c: Civilization) => c.id !== playerId && c.isAlive !== false);
-
-    const STATUS_ICONS: Record<string, string> = {
-      peace: '🕊️',
-      war: '⚔️',
-      ceasefire: '🏳️',
-      alliance: '🤝',
-    };
-
-    const ATTITUDE_LABELS: Record<string, { label: string; color: string }> = {
-      friendly: { label: 'Friendly', color: '#4caf50' },
-      neutral: { label: 'Neutral', color: '#9e9e9e' },
-      annoyed: { label: 'Annoyed', color: '#ff9800' },
-      hostile: { label: 'Hostile', color: '#f44336' },
-    };
-
-    const TREATY_LABELS: Record<string, { icon: string; label: string }> = {
-      open_borders: { icon: '🚪', label: 'Open Borders' },
-      trade_agreement: { icon: '📦', label: 'Trade Agreement' },
-      mutual_defense: { icon: '🛡️', label: 'Mutual Defense' },
-      non_aggression: { icon: '🤚', label: 'Non-Aggression' },
-      embargo_target: { icon: '🚫', label: 'Embargo' },
-    };
-
-    return (
-      <Modal
-        show={uiState.activeDialog === 'diplomacy-report'}
-        onHide={handleCloseDialog}
-        centered
-        size="lg"
-        fullscreen="lg-down"
-        dialogClassName="diplomacy-modal"
-      >
-        <Modal.Header closeButton className="diplomacy-header">
-          <Modal.Title>Diplomacy Report</Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="diplomacy-body">
-          <div className="diplomacy-report-actions">
-            <button
-              className="diplomacy-btn btn-peace"
-              onClick={() => actions.openDiplomacy(null)}
-              title="Open the full negotiation screen for this civilization"
-            >
-              ⚖️ Open Negotiations
-            </button>
-          </div>
-          {otherCivs.length === 0 ? (
-            <p className="text-muted text-center py-4">No other civilizations discovered yet.</p>
-          ) : (
-            <div className="diplomacy-report-list">
-              {otherCivs.map((civ: Civilization) => {
-                const status = dm?.getStatus(playerId, civ.id) ?? 'peace';
-                const attitude = dm?.getAttitude(playerId, civ.id) ?? 'neutral';
-                const relation = dm?.getRelation?.(playerId, civ.id);
-                const treaties: string[] = dm?.getActiveTreaties?.(playerId, civ.id) ?? [];
-                const attLabel = ATTITUDE_LABELS[attitude] || ATTITUDE_LABELS.neutral;
-                const leaderName = civ.leader || civ.leaderName || '';
-                const portraitConfig = LEADER_PORTRAITS[leaderName] || null;
-
-                return (
-                  <div key={civ.id} className="diplomacy-report-row" style={{ borderLeftColor: civ.color || '#555' }}>
-                    <div className="diplomacy-report-portrait">
-                      {portraitConfig ? (
-                        <LeaderPortrait config={portraitConfig} mood={attitude as 'friendly' | 'neutral' | 'annoyed' | 'hostile'} size={60} leaderName={leaderName} />
-                      ) : (
-                        <span className="diplomacy-report-icon" style={{ color: civ.color || '#fff' }}>
-                          {civ.icon || '👤'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="diplomacy-report-info">
-                      <div className="diplomacy-report-name">
-                        {civ.name}
-                        {leaderName && <span className="diplomacy-report-leader"> — {leaderName}</span>}
-                      </div>
-                      <div className="diplomacy-report-status-row">
-                        <span className={`diplomacy-report-status status-${status}`}>
-                          {STATUS_ICONS[status]} {status.charAt(0).toUpperCase() + status.slice(1)}
-                        </span>
-                        <span className="diplomacy-report-attitude" style={{ color: attLabel.color }}>
-                          {attLabel.label}
-                        </span>
-                        {relation && (
-                          <span className="diplomacy-report-rep" style={{ color: relation.reputationModifier < 0 ? '#f44336' : relation.reputationModifier > 0 ? '#4caf50' : '#9e9e9e' }}>
-                            Rep: {relation.reputationModifier > 0 ? '+' : ''}{relation.reputationModifier}
-                          </span>
-                        )}
-                      </div>
-                      {treaties.length > 0 && (
-                        <div className="diplomacy-report-treaties">
-                          {treaties.map((t: string) => (
-                            <span key={t} className="diplomacy-treaty-badge">
-                              {TREATY_LABELS[t]?.icon || '📜'} {TREATY_LABELS[t]?.label || t}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Global diplomacy history */}
-              {(() => {
-                const events: Array<{ type: string; fromCivId: number; toCivId: number; goldAmount?: number; details?: string }> = dm?.getEventLog?.() ?? [];
-                const recent = events.slice(0, 12);
-                if (recent.length === 0) return null;
-                return (
-                  <>
-                    <div className="diplomacy-section-label" style={{ marginTop: '16px' }}>RECENT HISTORY</div>
-                    <div className="diplomacy-log">
-                      {recent.map((e, i: number) => {
-                        const from = civilizations[e.fromCivId]?.name ?? `Civ ${e.fromCivId}`;
-                        const to = civilizations[e.toCivId]?.name ?? `Civ ${e.toCivId}`;
-                        const labels: Record<string, string> = {
-                          war_declared: `⚔️ ${from} declared war on ${to}`,
-                          peace_made: `🕊️ Peace between ${from} and ${to}`,
-                          ceasefire_signed: `🏳️ Ceasefire between ${from} and ${to}`,
-                          alliance_formed: `🤝 Alliance between ${from} and ${to}`,
-                          alliance_broken: `💔 ${from} broke the alliance with ${to}`,
-                          tribute_paid: `💰 ${from} paid tribute to ${to}${e.goldAmount ? ` (${e.goldAmount}g)` : ''}`,
-                          treaty_rejected: `❌ ${to} rejected ${from}'s proposal`,
-                          open_borders_signed: `🚪 Open borders: ${from} ↔ ${to}`,
-                          trade_agreement_signed: `📦 Trade deal: ${from} ↔ ${to}`,
-                          mutual_defense_signed: `🛡️ Defense pact: ${from} ↔ ${to}`,
-                          non_aggression_signed: `🤚 Non-aggression: ${from} ↔ ${to}`,
-                          embargo_declared: `🚫 Embargo declared by ${from} & ${to}`,
-                          treaty_cancelled: `📜 Treaty cancelled by ${from}`,
-                        };
-                        return (
-                          <div key={i} className="diplomacy-log-entry">
-                            {labels[e.type] ?? `${e.type}: ${e.details ?? ''}`}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          )}
-        </Modal.Body>
-      </Modal>
-    );
-  };
-
   // Help Modal
   const renderHelp = () => (
     <Modal 
@@ -1235,7 +1094,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 <strong>Enter:</strong> End turn
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>D:</strong> Diplomacy report
+                <strong>D:</strong> Diplomatic Relations
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
                 <strong>R:</strong> Rush city production (when city selected)
@@ -1269,7 +1128,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 <strong>F3:</strong> Settings
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>F4:</strong> Diplomacy report
+                <strong>F4:</strong> Diplomatic Relations
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
                 <strong>F11:</strong> Toggle fullscreen
@@ -1881,7 +1740,6 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       />
       {renderResearchComplete()}
       {renderDiplomacy()}
-      {renderDiplomacyReport()}
       {renderHelp()}
       <CityModal show={uiState.activeDialog === 'city-details'} onHide={handleCloseDialog} selectedCity={selectedCity} gameEngine={gameEngine} actions={actions} currentPlayer={currentPlayer} isPlayerCity={isPlayerCity} />
       <HexDetailModal show={uiState.activeDialog === 'hex-details'} onHide={handleCloseDialog} selectedHex={selectedHex} map={map} units={units} cities={cities} />

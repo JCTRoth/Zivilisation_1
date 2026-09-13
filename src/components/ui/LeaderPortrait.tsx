@@ -22,6 +22,7 @@ import leader_Montezuma from '@/assets/leader/Montezuma.jpg';
 import leader_Napoleon_Bonaparte from '@/assets/leader/Napoleon_Bonaparte.jpg';
 import leader_Ramesses_II from '@/assets/leader/Ramesses_II.jpg';
 import leader_Shaka from '@/assets/leader/Shaka.jpg';
+import leader_Abraham_Lincoln from '@/assets/leader/lincoln.jpg';
 
 // Map leader names to image paths
 const LEADER_IMAGES: Record<string, string> = {
@@ -38,6 +39,7 @@ const LEADER_IMAGES: Record<string, string> = {
   'Napoleon Bonaparte': leader_Napoleon_Bonaparte,
   'Ramesses II': leader_Ramesses_II,
   'Shaka': leader_Shaka,
+  'Abraham Lincoln': leader_Abraham_Lincoln,
 };
 
 function renderHeadgear(cfg: LeaderPortraitConfig, cx: number, topY: number): React.ReactNode {

@@ -937,8 +937,8 @@ function App() {
             break;
           case "d":
           case "D":
-            // Open diplomacy report (Foreign Advisor)
-            actions.showDialog("diplomacy-report");
+            // Open Diplomatic Relations (full negotiation screen)
+            actions.openDiplomacy(null);
             break;
           // 'a' key not bound
           case "w":
@@ -1033,8 +1033,8 @@ function App() {
             setShowSettings(true);
             break;
           case "F4":
-            // Open diplomacy report (Foreign Advisor)
-            actions.showDialog("diplomacy-report");
+            // Open Diplomatic Relations (full negotiation screen)
+            actions.openDiplomacy(null);
             break;
           case "F11":
             // Toggle fullscreen
@@ -1240,7 +1240,7 @@ function App() {
           setActiveMenu(null);
         }}
         onDiplomacy={() => {
-          actions.showDialog("diplomacy-report");
+          actions.openDiplomacy(null);
           setActiveMenu(null);
         }}
         onTechTree={() => {
