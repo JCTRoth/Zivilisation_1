@@ -2600,7 +2600,7 @@ export default class GameEngine {
       const tile = tiles[Math.floor(Math.random() * tiles.length)];
       if (!tile || tile.village) continue;
       const type = String(tile.type ?? tile.terrain);
-      if (type === Constants.TERRAIN.OCEAN || type === Constants.TERRAIN.MOUNTAINS) continue;
+      if (type === Constants.TERRAIN.OCEAN || type === Constants.TERRAIN.MOUNTAINS || type === TERRAIN_TYPES.RIVER) continue;
       if (tile.resource) continue; // Civ1: never override special resource tiles (oasis, gold, …)
       if (protectedTiles.has(`${tile.col},${tile.row}`)) continue;
       tile.village = true;
@@ -4325,6 +4325,26 @@ export default class GameEngine {
 
     if (this.onStateChange) {
       this.onStateChange('UNIT_WOKE', { unit });
+    }
+
+    return true;
+  }
+
+  /**
+   * Unfortify a unit (wake from fortified state)
+   */
+  unfortifyUnit(unitId: string): boolean {
+    const unit = this.units.find(u => u.id === unitId);
+    if (!unit) {
+      console.warn(`[GameEngine] Unfortify: Unit ${unitId} not found`);
+      return false;
+    }
+
+    unit.isFortified = false;
+    this.updateUnitTurnsDoneFlag(unit);
+
+    if (this.onStateChange) {
+      this.onStateChange('UNIT_UNFORTIFIED', { unit });
     }
 
     return true;

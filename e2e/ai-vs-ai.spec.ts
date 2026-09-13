@@ -35,9 +35,7 @@ async function startAIVsAIGame(page: Page): Promise<void> {
 
   // Step 2 – Game settings: choose the Computer vs Computer map type
   await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
-  await page.locator('.control-card__select').last().selectOption('AI_VS_AI');
-  await page.getByRole('button', { name: '🏛️ Start Game' }).click();
-
+    await page.locator('select.setup-setting__control').last().selectOption('AI_VS_AI');
   // Wait for game canvas to appear (game finished loading)
   await expect(page.locator('.game-canvas canvas').first()).toBeVisible({ timeout: 30_000 });
 }
@@ -72,7 +70,7 @@ test.describe('AI vs AI (Computer vs Computer)', () => {
     await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
 
     // The map-type select must expose the AI_VS_AI option.
-    const mapSelect = page.locator('.control-card__select').last();
+    const mapSelect = page.locator('select.setup-setting__control').last();
     await expect(mapSelect.locator('option[value="AI_VS_AI"]')).toHaveText(/Computer vs Computer/i);
   });
 
@@ -81,7 +79,7 @@ test.describe('AI vs AI (Computer vs Computer)', () => {
     await page.getByRole('button', { name: 'Next →' }).click();
     await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
 
-    await page.locator('.control-card__select').last().selectOption('AI_VS_AI');
+    await page.locator('select.setup-setting__control').last().selectOption('AI_VS_AI');
 
     // The dedicated summary block explains the mode.
     await expect(page.getByText('Map:')).toBeVisible();

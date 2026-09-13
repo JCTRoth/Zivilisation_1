@@ -23,7 +23,7 @@ export async function startGame(page: Page): Promise<void> {
   // Step 2 – Game settings
   await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
   // Pick the smallest map for fast tests
-  await page.locator('.control-card__select').last().selectOption('CLOSEUP_1V1');
+  await page.locator('select.setup-setting__control').last().selectOption('CLOSEUP_1V1');
   await page.getByRole('button', { name: '🏛️ Start Game' }).click();
 
   // Wait for game canvas to appear (game finished loading)

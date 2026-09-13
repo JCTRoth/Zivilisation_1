@@ -245,10 +245,16 @@ export function applyMoisture(
       }
       break;
     case TERRAIN_TYPES.HILLS:
-      if (moisture > 0.6) cell.type = TERRAIN_TYPES.FOREST;
+      if (moisture > 0.85) cell.type = TERRAIN_TYPES.JUNGLE;
+      else if (moisture > 0.6) cell.type = TERRAIN_TYPES.FOREST;
+      break;
+    case TERRAIN_TYPES.FOREST:
+      // Very wet forests → Jungle (near equator)
+      if (moisture > 0.85 && latitude < 0.35) cell.type = TERRAIN_TYPES.JUNGLE;
       break;
     case TERRAIN_TYPES.SWAMP:
-      if (moisture > 0.75) cell.type = TERRAIN_TYPES.FOREST;
+      if (moisture > 0.85) cell.type = TERRAIN_TYPES.JUNGLE;
+      else if (moisture > 0.75) cell.type = TERRAIN_TYPES.FOREST;
       break;
     case TERRAIN_TYPES.MOUNTAINS:
       // Mountains block rain; leave them rocky unless extremely wet

@@ -55,6 +55,67 @@ export class AIManager {
   }
 
   /**
+   * Check if any sleeping/fortified human units have enemies in their line
+   * of sight. If so, wake them and center the screen on the danger.
+   * Returns true if an enemy was found (caller should pause AI turn).
+   */
+  private checkSleepingUnitsForEnemies(): boolean {
+    const humanCivId = this.gameEngine.civilizations.findIndex(c => c.isHuman);
+    if (humanCivId < 0) return false;
+
+    const sleepingUnits = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === humanCivId && (u.isSleeping || u.isFortified) && !u.isDefeated,
+    );
+    if (sleepingUnits.length === 0) return false;
+
+    const enemyUnits = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId !== humanCivId && !u.isDefeated,
+    );
+    if (enemyUnits.length === 0) return false;
+
+    for (const sleeping of sleepingUnits) {
+      // Check 2-tile radius for enemies (typical line of sight)
+      const sightRange = 2;
+      for (const enemy of enemyUnits) {
+        const dist = Math.abs(sleeping.col - enemy.col) + Math.abs(sleeping.row - enemy.row);
+        if (dist <= sightRange) {
+          console.log(`[AI] Sleeping unit ${sleeping.id} (${sleeping.type}) woke — enemy ${enemy.id} (${enemy.type}) at (${enemy.col},${enemy.row})`);
+          this.gameEngine.log('ai', `Sleeping unit woke — enemy spotted`, {
+            unitId: sleeping.id, unitType: sleeping.type,
+            enemyId: enemy.id, enemyType: enemy.type,
+            action: 'sleep_wake',
+          });
+
+          // Wake the unit
+          if (sleeping.isSleeping) {
+            this.gameEngine.unitWake(sleeping.id);
+          }
+          if (sleeping.isFortified) {
+            this.gameEngine.unfortifyUnit(sleeping.id);
+          }
+
+          // Center screen on the danger
+          const store = this.gameEngine.storeActions;
+          if (store?.focusCameraOnTile) {
+            store.focusCameraOnTile(enemy.col, enemy.row);
+          }
+
+          // Notify the player
+          if (store?.addNotification) {
+            store.addNotification({
+              type: 'warning',
+              message: `Enemy ${enemy.type} spotted near your ${sleeping.type}!`,
+            });
+          }
+
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
    * Process AI turn for a civilization
    */
   async processAITurn(civilizationId: number) {
@@ -257,6 +318,14 @@ export class AIManager {
       // A no-op when animations are disabled and bounded so it can never stall
       // (or time out) the AI turn.
       await awaitPendingAnimations();
+
+      // Check if any sleeping/fortified human units spotted enemies.
+      // If so, pause the AI turn to alert the player.
+      if (this.checkSleepingUnitsForEnemies()) {
+        console.log(`[AI] Pausing AI turn — sleeping unit spotted enemy`);
+        await this.gameEngine.sleep(1500); // Give player time to see the danger
+        // Resume after brief pause — player can react on their turn
+      }
 
       // Skip units that no longer exist (died in combat, disbanded for upkeep,
       // or consumed by founding a city) — prevents the "Skip: Unit not found"

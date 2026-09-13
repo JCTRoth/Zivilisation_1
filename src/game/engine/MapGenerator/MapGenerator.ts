@@ -238,14 +238,16 @@ export default class MapGenerator {
     }
 
     // Land mass controls land vs ocean ratio — STRONG effect:
-    //   landMass 0: ~8% land (sparse islands in vast ocean)
+    //   landMass 0: ~28% land / 72% water (sparse islands in vast ocean)
     //   landMass 1: ~45% land (normal — balanced continents)
     //   landMass 2: ~70% land (pangea — massive connected land)
-    const landFraction = 0.08 + this.landMass * 0.31;
+    const landFraction = this.landMass === 0 ? 0.28 : 0.08 + this.landMass * 0.31;
     // Sparse islands: many small blobs for scattered archipelago feel
     const blobSize = this.landMass === 0 ? 4 : 4 + this.landMass * 4; // 4 / 8 / 12
-    const blobDivisor = this.landMass === 0 ? 60 : 40 + this.landMass * 20;
-    const oceanBlobs = Math.floor(totalCells * (1 - landFraction) / blobDivisor) * mapScale;
+    // Calculate ocean blobs to achieve desired land fraction.
+    // Average blob size = blobSize * 1.5 (uniform random [blobSize, 2*blobSize)).
+    const avgBlobSize = blobSize * 1.5;
+    const oceanBlobs = Math.floor(totalCells * (1 - landFraction) / avgBlobSize) * mapScale;
     for (let b = 0; b < oceanBlobs; b++) {
       let col = Math.floor(rng() * this.width);
       let row = 3 + Math.floor(rng() * Math.max(1, this.height - 6));
@@ -830,7 +832,10 @@ export default class MapGenerator {
       const cell = this.cells[row][col];
       const roll = rng();
       switch (cell.type) {
-        case TERRAIN_TYPES.FOREST:    if (roll < 0.3) cell.type = TERRAIN_TYPES.JUNGLE; break;
+        case TERRAIN_TYPES.FOREST:
+        // Wet climate → Forest becomes Jungle; Cold climate → Forest stays
+        if (this.climate >= 2 && this.temperature < 2 && roll < 0.5) cell.type = TERRAIN_TYPES.JUNGLE;
+        break;
         case TERRAIN_TYPES.SWAMP:     cell.type = TERRAIN_TYPES.GRASSLAND; break;
         case TERRAIN_TYPES.RIVER:     break;
         case TERRAIN_TYPES.PLAINS:
@@ -856,7 +861,9 @@ export default class MapGenerator {
   // ── Stage 5 — Rivers (pathfinding-based) ─────────────────────────
 
   private stage5_Rivers(rng: () => number): void {
-    const maxRivers = ((this.landMass + this.climate) * 2) + 6;
+    // Wet (Jungle) climate draws many more rivers between the jungle.
+    const riverMultiplier = this.climate === 2 ? 4 : 1;
+    const maxRivers = (((this.landMass + this.climate) * 2) + 6) * riverMultiplier;
     const largeWaterTiles = this.findLargeWaterBodies();
     if (largeWaterTiles.size === 0) return;
 
