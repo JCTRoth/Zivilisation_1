@@ -35,7 +35,8 @@ async function startAIVsAIGame(page: Page): Promise<void> {
 
   // Step 2 – Game settings: choose the Computer vs Computer map type
   await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
-    await page.locator('select.setup-setting__control').last().selectOption('AI_VS_AI');
+  await page.locator('select.setup-setting__control').last().selectOption('AI_VS_AI');
+  await page.getByRole('button', { name: '🏛️ Start Game' }).click();
   // Wait for game canvas to appear (game finished loading)
   await expect(page.locator('.game-canvas canvas').first()).toBeVisible({ timeout: 30_000 });
 }
