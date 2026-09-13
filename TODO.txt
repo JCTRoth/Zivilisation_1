@@ -24,15 +24,29 @@ Far further development of the game engine is planned, including:
 
 
 BUGS:
-GoTo/GoToManager the red arraow of the GoToManager should not be visible on unexplored tiles, and the red arrow should be visible on explored tiles, but not on tiles that are not visible to the player. The red arrow should also be visible on tiles that are visible to the player, but not on tiles that are not visible to the player.
+[FIXED] Villages should be not placed on water tiles such as Ocan or River.
 
-World -> Statistics -> Shows always: Turn 1 · 4000 BC - No matter what turn it is.
+[FIXED] Fetures:
+Add to the Context Menu when clicking on a unit option: Fortify (Defend). Check if the Defnding Mode is implemented reuse what is implemented make it a working system.
+The Defending Bonus: The unit receives a +50% boost to its defense value.
+When a unit is actively in defending mode (Fortified or Sentried):It consumes 0 movement points per turn.It will remain locked in its tile forever until you manually click on it to wake it up, or an enemy attacks it.
 
-World -> Techtree -> The X button to close the techtree is not visible, because it is dark on dark background. The button is there, but it is not visible. Button should be white.
+[FIXED] Fix the Sleeping Mode:
+The unit behaves like a lookout.
+The exact moment an enemy unit enters its line of sight (usually a 1-tile or 2-tile radius depending on the unit),
+the sleeping or defending/fortify unit will instantly wake up and center your screen on the danger,
+pausing the enemy's turn execution to alert you Note:
+Sleeping mode does not grant the +50% defense bonus that Fortify does.
+Sleeping unit can be woken up by the player at any time by clicking on it,
+and it will then be able to move and act normally.
+A defending/fortify unit can be woken up by the player at any time by clicking on it,
+but has no movement points left to move or act normally until the next turn.
 
-Units should not be able to pass rivers that are more than 1 tile wide, unless they have a bridge or a boat. The AI should also not be able to pass rivers that are more than 1 tile wide, unless they have a bridge or a boat.
-Units should be able to walk down a river that is 1 tile wide.
 
-Map Generator:
-If more than three water tiles are setted next to each other than they should be ocan tiles.
-Mix in the gras tiles some plain tiles use therefor the computeManhattanDistanceField the ratio should be 1:7 where 6 can be between 4 and 9
+[FIXED] Reduce the number of Toast messages that are shown to the player, and only show the messages the user is allowed to see,
+
+[FIXED] GoTo red line should not be shown on fog of war tiles (unexplored terrain).
+
+[FIXED] Sleeping units should not be selectable for movement. Clicking a sleeping unit should wake it up.
+
+[FIXED] Fortified units should have a "Mobilize" option in context menu to unfreeze them (keeps 0 moves for the turn).

@@ -2410,9 +2410,15 @@ export class MapRenderer {
     }
 
     // --- Intermediate enemy markers: show ⚔ at every enemy tile along the path ---
+    // Only show on explored tiles (no fog of war)
     const cities = (gameState as unknown as Record<string, unknown>).cities as City[] || [];
+    const isExplored = (col: number, row: number): boolean => {
+      if (!mapData || !mapData.revealed) return true;
+      return mapData.revealed[row * mapWidth + col] === true;
+    };
     for (let si = 1; si < path.length; si++) {
       const step = path[si];
+      if (!isExplored(step.col, step.row)) continue;
       const enemyHere = units.find(u => u.col === step.col && u.row === step.row && u.civilizationId !== unit.civilizationId && !u.isDefeated);
       const enemyCityHere = cities.find((c: City) => c.col === step.col && c.row === step.row && c.civilizationId !== unit.civilizationId);
       if (enemyHere || enemyCityHere) {
@@ -2441,9 +2447,14 @@ export class MapRenderer {
     const isEnemyAtCity = targetCity && targetCity.civilizationId !== unit.civilizationId;
     const isEnemyAtDestination = isEnemyAtUnit || isEnemyAtCity;
 
-    // Always draw destination marker regardless of explored status
+    // Destination marker: only show on explored tiles (no fog of war)
     if (path.length >= 1) {
       const last = path[path.length - 1];
+      // Don't draw destination marker on fog-of-war tiles
+      if (!isExplored(last.col, last.row)) {
+        ctx.restore();
+        return;
+      }
       const { x: x2, y: y2 } = squareToScreen(last.col, last.row);
       
       if (isEnemyAtDestination) {

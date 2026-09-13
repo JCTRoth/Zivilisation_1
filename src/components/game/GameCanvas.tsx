@@ -773,9 +773,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       return;
     }
 
-    // Only show for the human player's own units
+    // Only show for the human player's own units (skip sleeping units)
     const unit = units.find((u) => u.id === selectedUnitId);
-    if (!unit || unit.civilizationId !== HUMAN_PLAYER_ID) {
+    if (!unit || unit.civilizationId !== HUMAN_PLAYER_ID || unit.isSleeping) {
       setReachableTiles(new Map());
       return;
     }
@@ -1629,6 +1629,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             return;
           }
 
+          // Sleeping units: clicking wakes them immediately (no movement mode)
+          if (unitAt.isSleeping) {
+            console.log(`[CLICK] Clicking sleeping unit ${unitAt.id} - waking it`);
+            gameEngine?.unitWake?.(unitAt.id);
+            triggerRender();
+            return;
+          }
+
           if (actions && typeof actions.selectUnit === "function") {
             actions.selectUnit(unitAt.id, "user");
           }
@@ -1997,6 +2005,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             actions.addNotification({
               type: "success",
               message: `${unit.type} fortified`,
+            });
+        }
+        break;
+
+      case "mobilize":
+        if (unit && gameEngine?.unfortifyUnit) {
+          console.log(`[ContextMenu] Mobilizing unit ${unit.id}`);
+          gameEngine.unfortifyUnit(unit.id);
+          if (actions?.updateUnits)
+            actions.updateUnits(getAllUnitsFromEngine());
+          if (actions?.addNotification)
+            actions.addNotification({
+              type: "success",
+              message: `${unit.type} mobilized (no moves this turn)`,
             });
         }
         break;

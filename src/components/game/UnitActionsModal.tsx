@@ -86,7 +86,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
             <>
 
               {/* Fortify: available for all military units (attack > 0 or defense > 0).
-                  Disabled when sleeping (can't fortify while sleeping) or when already fortified. */}
+                  Disabled when sleeping, already fortified, or no moves. */}
               {contextMenu.unit && ((contextMenu.unit.attack ?? 0) > 0 || (contextMenu.unit.defense ?? 0) > 0) && (
                 <button
                   type="button"
@@ -98,13 +98,24 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                 </button>
               )}
 
+              {/* Mobilize: unfreeze a fortified unit (keeps 0 moves for this turn) */}
+              {isFortified && (
+                <button
+                  type="button"
+                  className="context-menu-item"
+                  onClick={() => handleAction('mobilize')}
+                >
+                  <span aria-hidden="true">⚔️</span>Mobilize
+                </button>
+              )}
+
               {contextMenu.unit.type === 'settler' && (
                 <>
                   {foundCityAvailable() && (
                     <button
                       type="button"
                       className="context-menu-item"
-                      disabled={isFortified}
+                      disabled={isFortified || isSleeping}
                       onClick={() => handleAction('found_city')}
                     >
                       <span aria-hidden="true">🏛️</span>Found / Join City
@@ -115,7 +126,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                     <button
                       type="button"
                       className="context-menu-item"
-                      disabled={!improvementStatus('road').executable || isFortified}
+                      disabled={!improvementStatus('road').executable || isFortified || isSleeping}
                       onClick={() => handleAction('build_road')}
                     >
                       <span aria-hidden="true">🛣️</span>Build Road
@@ -126,7 +137,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                     <button
                       type="button"
                       className="context-menu-item"
-                      disabled={!improvementStatus('irrigation').executable || isFortified}
+                      disabled={!improvementStatus('irrigation').executable || isFortified || isSleeping}
                       onClick={() => handleAction('build_irrigation')}
                     >
                       <span aria-hidden="true">🌾</span>Build Irrigation
@@ -137,7 +148,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                     <button
                       type="button"
                       className="context-menu-item"
-                      disabled={!improvementStatus('mine').executable || isFortified}
+                      disabled={!improvementStatus('mine').executable || isFortified || isSleeping}
                       onClick={() => handleAction('build_mine')}
                     >
                       <span aria-hidden="true">⛏️</span>Build Mine
@@ -148,7 +159,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                     <button
                       type="button"
                       className="context-menu-item"
-                      disabled={!improvementStatus('railroad').executable || isFortified}
+                      disabled={!improvementStatus('railroad').executable || isFortified || isSleeping}
                       onClick={() => handleAction('build_railroad')}
                     >
                       <span aria-hidden="true">🚆</span>Build Railroad
@@ -162,7 +173,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                   <button
                     type="button"
                     className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified}
+                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
                     onClick={() => handleAction('diplomat_propose_peace')}
                   >
                     <span aria-hidden="true">🕊️</span>Propose Peace
@@ -170,7 +181,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                   <button
                     type="button"
                     className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified}
+                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
                     onClick={() => handleAction('diplomat_propose_alliance')}
                   >
                     <span aria-hidden="true">🤝</span>Propose Alliance
@@ -178,7 +189,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                   <button
                     type="button"
                     className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified}
+                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
                     onClick={() => handleAction('diplomat_demand_tribute')}
                   >
                     <span aria-hidden="true">💰</span>Demand Tribute
@@ -186,7 +197,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                   <button
                     type="button"
                     className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified}
+                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
                     onClick={() => handleAction('diplomat_bribe')}
                   >
                     <span aria-hidden="true">🎭</span>Bribe Unit
@@ -194,7 +205,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                   <button
                     type="button"
                     className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified}
+                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
                     onClick={() => handleAction('diplomat_gather_intel')}
                   >
                     <span aria-hidden="true">🔍</span>Gather Intelligence
@@ -205,7 +216,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
               <button
                 type="button"
                 className="context-menu-item"
-                disabled={isFortified}
+                disabled={isFortified || isSleeping}
                 onClick={() => handleAction('patrol')}
               >
                 <span aria-hidden="true">🔄</span>Patrol
@@ -214,7 +225,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
               <button
                 type="button"
                 className="context-menu-item"
-                disabled={isFortified}
+                disabled={isFortified || isSleeping}
                 onClick={() => handleAction('goto')}
               >
                 <span aria-hidden="true">📍</span>Go to
@@ -224,7 +235,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                 <button
                   type="button"
                   className="context-menu-item context-menu-item--danger"
-                  disabled={isFortified}
+                  disabled={isFortified || isSleeping}
                   onClick={() => handleAction('goto_cancel')}
                 >
                   <span aria-hidden="true">❌</span>GoTo X
@@ -234,7 +245,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
               <button
                 type="button"
                 className="context-menu-item"
-                disabled={isFortified}
+                disabled={isFortified || isSleeping}
                 onClick={() => handleAction('skip_turn')}
               >
                 <span aria-hidden="true">⏭️</span>Skip Turn
@@ -247,7 +258,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                 <button
                   type="button"
                   className="context-menu-item context-menu-item--danger"
-                  disabled={isFortified}
+                  disabled={isFortified || isSleeping}
                   onClick={() => handleAction('disband_unit')}
                 >
                   <span aria-hidden="true">🗑️</span>Disband
