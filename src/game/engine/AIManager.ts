@@ -559,9 +559,33 @@ export class AIManager {
         // (e.g. a scout garrisoning a threatened city via findScoutDefenseTarget).
         // Trying to "move" there makes the AI loop pathfind-to-self forever and
         // trip the stuck detector. A combat unit garrisoned at its city
-        // fortifies for the +50% defense (Civ1: garrisons entrench); otherwise
-        // skip the unit cleanly.
+        // fortifies for the +50% defense (Civ1: garrisons entrench).
+        // HOWEVER: if an enemy is adjacent, always attack first — a unit
+        // should never skip its turn while a hostile stands next to it.
         if (target.col === unit.col && target.row === unit.row) {
+          // Always check for adjacent enemies before skipping — two adjacent
+          // enemy scouts must be able to fight rather than freeze forever.
+          const adjacentEnemy = AIUtility.findNearbyEnemy(
+            unit.col, unit.row, unit.civilizationId,
+            (c, r) => this.gameEngine.squareGrid!.getNeighbors(c, r),
+            (c, r) => this.gameEngine.getUnitAt(c, r)
+          );
+          if (adjacentEnemy && adjacentEnemy.civilizationId !== unit.civilizationId) {
+            const tt = this.gameEngine.getTileAt(adjacentEnemy.col, adjacentEnemy.row);
+            const attackCost = Math.max(1, TERRAIN_PROPS[tt?.type ?? '']?.movement ?? 1);
+            if (this.gameEngine.canUnitAffordMove(unit, attackCost)) {
+              console.log(`[AI] Unit ${unit.id} attacks adjacent enemy ${adjacentEnemy.type} at (${adjacentEnemy.col},${adjacentEnemy.row})`);
+              this.gameEngine.log('ai', `Attack — ${civ.name} ${unit.type}(${unit.id}) attacks adjacent ${adjacentEnemy.type} at (${adjacentEnemy.col},${adjacentEnemy.row})`, { civilizationId, action: 'attack', unitId: unit.id, unitType: unit.type, targetType: adjacentEnemy.type, targetCol: adjacentEnemy.col, targetRow: adjacentEnemy.row });
+              this.gameEngine.combatUnit(unit, adjacentEnemy);
+              if (!this.gameEngine.units.includes(unit)) break; // unit defeated
+              break; // combatUnit zeroes moves
+            } else {
+              console.log(`[AI] Unit ${unit.id} adjacent enemy but not enough moves, skipping`);
+              this.gameEngine.skipUnit(unit.id);
+              break;
+            }
+          }
+
           if (this.shouldFortifyForDefense(unit as Unit)) {
             console.log(`[AI] Unit ${unit.id} fortifies to defend the city`);
             this.gameEngine.log('ai', `Fortify — ${civ.name} ${unit.type}(${unit.id}) defends city`, { civilizationId, action: 'fortify', unitId: unit.id, unitType: unit.type });
