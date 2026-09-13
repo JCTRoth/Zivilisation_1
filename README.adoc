@@ -606,6 +606,8 @@ Additional documentation is available in the `doc/` folder:
 4. Ensure linting passes
 5. Submit pull request
 
+Or just write me an E-Mail and we talk: info@mailbase.info
+
 == Scoring System
 
 Civilization score calculated from:
@@ -673,19 +675,3 @@ npm run build
 ```
 
 The production build will be in the `dist/` directory.
-
-
-== Historical Accuracy
-
-This browser clone faithfully recreates the original Civilization I experience while modernizing the interface for contemporary browsers and significantly speeding up the game. Game balance, technology costs, unit statistics, and core mechanics mirror mostly the 1991 original.
-
-== Credits
-
-**Original Game**: Sid Meier's Civilization (MicroProse, 1991) +
-**Design**: Sid Meier & Bruce Shelley +
-**Browser Implementation**: Educational recreation project +
-**Built With**: React, Vite, Zustand, Bootstrap, HTML5 Canvas
-
----
-
-**Glory to your civilization! May you build an empire to stand the test of time!** 🏛️
