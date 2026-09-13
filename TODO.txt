@@ -22,31 +22,9 @@ Far further development of the game engine is planned, including:
 
 * Database backup and restore system, including the ability to backup and restore the database, and the ability to export and import the database.
 
-
-BUGS:
-[FIXED] Villages should be not placed on water tiles such as Ocan or River.
-
-[FIXED] Fetures:
-Add to the Context Menu when clicking on a unit option: Fortify (Defend). Check if the Defnding Mode is implemented reuse what is implemented make it a working system.
-The Defending Bonus: The unit receives a +50% boost to its defense value.
-When a unit is actively in defending mode (Fortified or Sentried):It consumes 0 movement points per turn.It will remain locked in its tile forever until you manually click on it to wake it up, or an enemy attacks it.
-
-[FIXED] Fix the Sleeping Mode:
-The unit behaves like a lookout.
-The exact moment an enemy unit enters its line of sight (usually a 1-tile or 2-tile radius depending on the unit),
-the sleeping or defending/fortify unit will instantly wake up and center your screen on the danger,
-pausing the enemy's turn execution to alert you Note:
-Sleeping mode does not grant the +50% defense bonus that Fortify does.
-Sleeping unit can be woken up by the player at any time by clicking on it,
-and it will then be able to move and act normally.
-A defending/fortify unit can be woken up by the player at any time by clicking on it,
-but has no movement points left to move or act normally until the next turn.
-
-
-[FIXED] Reduce the number of Toast messages that are shown to the player, and only show the messages the user is allowed to see,
-
-[FIXED] GoTo red line should not be shown on fog of war tiles (unexplored terrain).
-
-[FIXED] Sleeping units should not be selectable for movement. Clicking a sleeping unit should wake it up.
-
-[FIXED] Fortified units should have a "Mobilize" option in context menu to unfreeze them (keeps 0 moves for the turn).
+Water stuff
+-----------
+* Introduce new Tile Type Lake if less than 4x6 Tiles than it is NO/NOT ocean but a lake, a lake has the same properties as an river but is NOT passable.
+Integrate it into the map generation, and into the game engine, and into the game logic, and into the game UI, and into the game AI, and into the game diplomacy, and into the game economics, and into the game military, and into the game science, and into the game culture, and into the game religion, and into the game espionage, and into the game trade, and into the game diplomacy, and into the game victory conditions.
+* The AI should start to build ships if no enemy is reachable on the land way.
+* Add new ship type, "Trade Ship" A trade ship can establish a trade route from a city with a harbor to a city with a harbor, and then the ship uses GoTo (pathfinding) to drive between the two cities automatically. Everytime it was in one of the two cities and reaches than the other citie a reward is payed out. Only one ship per city is possible as partner.
