@@ -84,6 +84,9 @@ export class EngineEventRouter {
       case 'CITY_PRODUCTION_IDLE':
         this.onCityProductionIdle(eventData);
         break;
+      case 'CITY_STARVED':
+        this.onCityStarved(eventData);
+        break;
       case 'RESEARCH_AUTO_SELECTED':
         this.onResearchAutoSelected(eventData);
         break;
@@ -704,6 +707,18 @@ export class EngineEventRouter {
     if (firstTime) {
       this.actions.showDialog('city-details');
     }
+  }
+
+  private onCityStarved(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const city = eventData?.city as City | undefined;
+    if (!city) return;
+
+    this.actions.showCityStarved({
+      cityId: city.id,
+      cityName: city.name,
+      newPopulation: (eventData.newPopulation as number) ?? city.population,
+    });
   }
 
   private onTurnProcessed() {

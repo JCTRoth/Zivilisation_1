@@ -46,6 +46,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const incomingDiplomacyOffer = useGameStore(state => state.incomingDiplomacyOffer);
   const diplomacyFocusCivId = useGameStore(state => state.diplomacyFocusCivId);
   const disbandNotice = useGameStore(state => state.disbandNotice);
+  const starvationNotice = useGameStore(state => state.starvationNotice);
   const tradeRouteResult = useGameStore(state => state.tradeRouteResult);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
@@ -122,6 +123,10 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const handleCloseDialog = () => {
     const closing = useGameStore.getState().uiState.activeDialog;
     actions.hideDialog();
+    // Clear modal-specific data when closing
+    if (closing === 'city-starved') {
+      actions.clearCityStarved();
+    }
     // The "No Research Selected" prompt and the tech tree defer auto-end while
     // no research is selected, so closing them IS a decision point: with a
     // research chosen the turn may proceed, with an empty one the auto-end gate
@@ -1641,6 +1646,52 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     </Modal>
   );
 
+  // City starved: population decreased due to food shortage.
+  const renderCityStarved = () => (
+    <Modal
+      show={uiState.activeDialog === 'city-starved'}
+      onHide={handleCloseDialog}
+      centered
+      size="lg"
+    >
+      <Modal.Header closeButton className="bg-dark text-white">
+        <Modal.Title>
+          <span role="img" aria-label="famine">🌾💀</span> Famine Imminent! <span role="img" aria-label="famine">💀🌾</span>
+        </Modal.Title>
+      </Modal.Header>
+      <Modal.Body className="bg-dark text-white">
+        <p className="mb-2">
+          The granaries in <strong>{starvationNotice?.cityName ?? 'your city'}</strong> are
+          completely empty! 🏚️ Your citizens are starving, and the situation is rapidly decaying.
+        </p>
+        <p className="mb-0">
+          Take action immediately before people starve to death!
+        </p>
+      </Modal.Body>
+      <Modal.Footer className="bg-dark">
+        <Button variant="outline-secondary" onClick={handleCloseDialog}>
+          <span role="img" aria-label="close">❌</span> Close
+        </Button>
+        <Button
+          variant="primary"
+          onClick={() => {
+            if (starvationNotice?.cityId) {
+              actions.selectCity(starvationNotice.cityId, 'user');
+              const city = cities.find(c => c.id === starvationNotice.cityId);
+              if (city) {
+                actions.focusCameraOnTile(city.col, city.row);
+              }
+              actions.showDialog('city-details');
+            }
+            handleCloseDialog();
+          }}
+        >
+          <span role="img" aria-label="go to city">📍</span> Go to City
+        </Button>
+      </Modal.Footer>
+    </Modal>
+  );
+
   // Trade-route result: a Caravan delivered — lump-sum gold + science now,
   // plus a permanent per-turn route between the two cities.
   const renderTradeRouteResult = () => (
@@ -1705,6 +1756,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       <StatisticsModal show={uiState.activeDialog === 'statistics'} onHide={handleCloseDialog} />
       <VillageModal show={uiState.activeDialog === 'village'} onHide={handleVillageClose} />
       {renderUpkeepDisbanded()}
+      {renderCityStarved()}
       {renderTradeRouteResult()}
       {renderCityProduction()}
       {renderCityPurchase()}

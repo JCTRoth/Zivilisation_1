@@ -52,7 +52,8 @@ export const CityUtils = {
      */
     calculateCityResources: (city: City, currentPlayer: Civilization) => {
         // Calculate food surplus/shortfall
-        const foodNeeded = (city.population ?? 1) * 2;
+        const population = city.population ?? 1;
+        const foodNeeded = population * 2;
         const foodProduced = city.yields?.food ?? city.food ?? 0;
         const foodSurplus = foodProduced - foodNeeded;
 
@@ -83,7 +84,7 @@ export const CityUtils = {
         const actualScience = Math.floor(tradeAfterCorruption * (scienceRate / 100));
 
         // Growth calculations
-        const growthThreshold = (city.population + 1) * 10;
+        const growthThreshold = (population + 1) * 10;
         const foodStorage = city.foodStored ?? 0;
         const hasGranary = city.buildings?.includes?.(BUILDING_TYPES.GRANARY) ?? false;
         const granaryLine = hasGranary ? Math.floor(growthThreshold / 2) : 0;

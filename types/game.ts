@@ -159,6 +159,15 @@ export interface DisbandNotice {
 }
 
 /**
+ * Data shown by the city-starved modal: a city lost population due to famine.
+ */
+export interface StarvationNotice {
+  cityId: string;
+  cityName: string;
+  newPopulation: number;
+}
+
+/**
  * A permanent Civ1 trade route connecting this city to another city.
  * Established when a Caravan delivers; adds per-turn trade to the city. A city
  * holds at most MAX_TRADE_ROUTES (3); a better new route replaces the weakest.
@@ -473,7 +482,7 @@ export interface UIState {
   showTechTree: boolean;
   showDiplomacy: boolean;
   showGameMenu: boolean;
-  activeDialog: 'city' | 'tech' | 'diplomacy' | 'diplomacy-report' | 'game-menu' | 'help' | 'pause' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | 'rates' | 'government' | 'statistics' | 'village' | 'upkeep-disbanded' | 'trade-route-result' | 'research-required' | null;
+  activeDialog: 'city' | 'tech' | 'diplomacy' | 'diplomacy-report' | 'game-menu' | 'help' | 'pause' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | 'rates' | 'government' | 'statistics' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'trade-route-result' | 'research-required' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
   /** Active citizen pick-up origin ({cityId, col, row}) while reassigning. Null when idle. */
@@ -574,6 +583,8 @@ export interface GameStoreState {
   villageResult: VillageResult | null;
   /** Info for the "unit disbanded to cover upkeep" modal. */
   disbandNotice: DisbandNotice | null;
+  /** Info for the "city starved" modal. */
+  starvationNotice: StarvationNotice | null;
   /** Info for the "trade route established" modal. */
   tradeRouteResult: TradeRouteResult | null;
   /** Civ auto-selected when the diplomacy screen opens (diplomat contact / AI offer). */
@@ -693,6 +704,10 @@ export interface GameActions {
   showUpkeepDisbanded: (notice: DisbandNotice) => void;
   /** Dismiss the upkeep-disbanded modal. */
   clearUpkeepDisbanded: () => void;
+  /** Show the "city starved" modal. */
+  showCityStarved: (notice: StarvationNotice) => void;
+  /** Dismiss the city-starved modal. */
+  clearCityStarved: () => void;
   /** Show the "trade route established" modal (Caravan delivery). */
   showTradeRouteResult: (result: TradeRouteResult) => void;
   /** Dismiss the trade-route-result modal. */

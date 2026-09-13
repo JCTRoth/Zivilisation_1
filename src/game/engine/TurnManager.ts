@@ -24,6 +24,7 @@ import { AIResearch } from './AIResearch';
 import { createDefaultAIState, resolveAICivStrategy } from './AITypes';
 import { serializeCities } from '../../utils/CitySnapshots';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { BUILDING_TYPES } from '@/data/BuildingConstants';
 import type { ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
@@ -806,7 +807,7 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
     if (isSettler && population > 1 && !isPurchased) {
       // Civ1 consumes exactly one citizen when the settler completes.
       city.population = population - 1;
-      city.foodNeeded = Math.max(20, city.population * 20);
+      city.foodNeeded = (city.population + 1) * 10;
       if (typeof city.hitPoints === 'number') city.hitPoints = Math.min(city.hitPoints, city.population);
     }
 
@@ -903,22 +904,51 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
   private processCityGrowth(city: City): void {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     const government = String(civ?.government ?? 'despotism').toLowerCase();
-    
-    // Civ1: each settler attached to a city consumes food per turn.
-    // Democracy is special: settlers cost 2 food instead of 1.
-    const settlerFoodPerTurn = government === 'democracy' ? 2 : 1;
+
+    // Citizens consume two food each turn. Settlers consume one food under
+    // the older governments and two under Republic and Democracy.
+    const citizenFoodConsumption = (city.population ?? 1) * 2;
+    const settlerFoodPerTurn = government === 'republic' || government === 'democracy' ? 2 : 1;
     const settlerFoodSupport = (this.gameEngine.units ?? []).filter(
       (unit) => unit.type === 'settler'
         && unit.homeCityId === city.id
         && !unit.isNoneUnit,
     ).length * settlerFoodPerTurn;
-    // Settlers consume food from their home city's food box each turn.
-    city.foodStored = Math.max(0, (city.foodStored ?? 0) + (city.yields?.food ?? 0) - settlerFoodSupport);
-    
-    if (city.foodStored >= city.foodNeeded) {
-      city.population++;
+
+    const netFood = (city.yields?.food ?? 0) - citizenFoodConsumption - settlerFoodSupport;
+    city.foodStored = (city.foodStored ?? 0) + netFood;
+
+    // Growth threshold: (population + 1) × 10 — Civ1: size-1 needs 20 food,
+    // size-2 needs 30, etc.  This is the *current* target; it is refreshed
+    // after every growth or starvation event.
+    city.foodNeeded = (city.population + 1) * 10;
+
+    if (city.foodStored < 0) {
+      // Starvation — always reduce population by 1 (Civ1 spec).
+      city.population = Math.max(0, (city.population ?? 1) - 1);
       city.foodStored = 0;
-      city.foodNeeded = city.population * 20;
+
+      if (city.population <= 0) {
+        // City eliminated — remove it from the map.
+        console.log(`[TurnManager] City ${city.name} destroyed by starvation`);
+        this.gameEngine.onStateChange?.('CITY_DESTROYED', { city, reason: 'starvation' });
+        this.gameEngine.cities = this.gameEngine.cities.filter(
+          (c) => c.id !== city.id,
+        );
+      } else {
+        city.foodNeeded = (city.population + 1) * 10;
+        console.log(`[TurnManager] City ${city.name} starves — population ${city.population}`);
+        this.gameEngine.onStateChange?.('CITY_STARVED', {
+          city,
+          newPopulation: city.population,
+        });
+      }
+    } else if (city.foodStored >= city.foodNeeded) {
+      city.population++;
+      const hasGranary = city.buildings?.includes(BUILDING_TYPES.GRANARY) ?? false;
+      // Granary retains 50% of the growth threshold on growth (Civ1 spec).
+      city.foodStored = hasGranary ? Math.floor(city.foodNeeded / 2) : 0;
+      city.foodNeeded = (city.population + 1) * 10;
       console.log(`[TurnManager] City ${city.name} grew to population ${city.population}`);
     }
   }

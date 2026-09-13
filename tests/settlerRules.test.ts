@@ -161,7 +161,8 @@ describe('Civ1 settler rules', () => {
     expect(e.canUnitMoveTo(settler.id, neighbor.col, neighbor.row)).toBe(false);
 
     (e.roundManager as any).processCityGrowth(c);
-    expect(c.foodStored).toBe(1);
+    // The city's 2 food is consumed by its citizen and the supported settler.
+    expect(c.foodStored).toBe(0);
   });
 
   it('blocks land units from entering water tiles even when the tile uses terrain and uppercase ocean naming', async () => {
