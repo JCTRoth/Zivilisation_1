@@ -13,6 +13,71 @@ BUGS:
 - improve building stuff ui in cities
 - resources in cities don't seem to be calculated correctly
   what is starvation doing?
+  Here is how the starvation logic works written out as structured pseudo-code, followed by an exact breakdown of how the Granary functions in Civilization 1.Civ 1 City Food & Starvation Pseudo-codetext// Run once per city at the end of every turn
+FUNCTION UpdateCityFood(city):
+    // 1. Calculate Food Production
+    total_food_produced = CalculateTilesFood(city.worked_tiles)
+
+    // 2. Calculate Food Consumption
+    citizen_consumption = city.population * 2
+    
+    settler_consumption = 0
+    IF city.government_type IN [DESPOTISM, ANARCHY, MONARCHY, COMMUNISM]:
+        settler_consumption = city.supported_settlers * 1
+    ELSE IF city.government_type IN [REPUBLIC, DEMOCRACY]:
+        settler_consumption = city.supported_settlers * 2
+        
+    total_consumption = citizen_consumption + settler_consumption
+
+    // 3. Determine Net Food Status
+    net_food = total_food_produced - total_consumption
+
+    // 4. Apply Net Food to Storage
+    city.food_storage = city.food_storage + net_food
+
+    // 5. Check for Starvation
+    IF city.food_storage < 0:
+        city.population = city.population - 1
+        city.food_storage = 0
+        TriggerNotification(city.name + " starves! Population reduced.")
+        
+        // Handle city elimination if population hits zero
+        IF city.population <= 0:
+            DestroyCity(city)
+            
+    // 6. Check for Growth (For Context)
+    ELSE IF city.food_storage >= city.growth_threshold:
+        city.population = city.population + 1
+        IF city.has_granary == TRUE:
+            city.food_storage = city.growth_threshold / 2 // Granary retains half
+        ELSE:
+            city.food_storage = 0 // Standard reset
+        TriggerNotification(city.name + " grows to size " + city.population)
+Granary WorksIn Civilization 1, the Granary (costing 60 shields to build) has two distinct mechanics.
+It serves as an accelerator for population growth and a shield against an unpredictable random event.
+0. It stores food in it self when a city has a food surplus.
+The size of it is 20. When the city has no food any more it uses the food storage until it is empty.
+1. The Growth Retention Benefit (Primary Function)When a city grows,
+it normally empties its entire food storage box back to 0.
+Without a Granary: If your food box needs 20 food to grow,
+it resets to 0 / 20 (or 0 / 30 for the next size) the moment the city population increases.
+With a Granary: The game retains 50% of the food box threshold upon growth.
+If the city needed 20 food to grow, the box instantly resets to 10 instead of 0.
+This effectively cuts the time it takes for your city to grow a subsequent time in half.
+2. The Disaster Immunity Benefit (Secondary Function)Civ 1 features random "Disaster" mechanics that
+can strike individual cities during the turn flip. One of these disasters is Famine.
+Without a Granary: If a random Famine event hits your city,
+it immediately kills 1 citizen and wipes out a portion of your stored food,
+even if your tiles are producing a food surplus.With a Granary:
+The city is 100% immune to the random Famine disaster.
+Important Note on Starvation: As shown in the pseudo-code above,
+the Granary does not prevent turn-by-turn starvation caused by mismanagement.
+If your tiles produce less food than your citizens and settlers eat (net_food < 0),
+the food storage will eventually drop below zero, and a citizen will die regardless
+of whether a Granary is present.If you are trying to calculate the exact food storage
+capacity threshold for a specific city size to plug into your formulas.
+
+
 - when citiy is selected, tiles could preview which resources they support
 - when attacking, don't set that as a path that will be done automatically next turn
   -> just because unit can't reach that path (because it is blocked by enemy unit) it shouldn't auto attack next turn
