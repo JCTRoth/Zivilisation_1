@@ -168,6 +168,17 @@ export interface StarvationNotice {
 }
 
 /**
+ * Data shown by the city-disorder modal (civil unrest / order restored).
+ */
+export interface DisorderNotice {
+  cityId: string;
+  cityName: string;
+  newPopulation: number;
+  /** true = entering disorder, false = disorder ended */
+  enteringDisorder: boolean;
+}
+
+/**
  * A permanent Civ1 trade route connecting this city to another city.
  * Established when a Caravan delivers; adds per-turn trade to the city. A city
  * holds at most MAX_TRADE_ROUTES (3); a better new route replaces the weakest.
@@ -482,7 +493,7 @@ export interface UIState {
   showTechTree: boolean;
   showDiplomacy: boolean;
   showGameMenu: boolean;
-  activeDialog: 'city' | 'tech' | 'diplomacy' | 'diplomacy-report' | 'game-menu' | 'help' | 'pause' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | 'rates' | 'government' | 'statistics' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'trade-route-result' | 'research-required' | null;
+  activeDialog: 'city' | 'tech' | 'diplomacy' | 'diplomacy-report' | 'game-menu' | 'help' | 'pause' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | 'rates' | 'government' | 'statistics' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'research-required' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
   /** Active citizen pick-up origin ({cityId, col, row}) while reassigning. Null when idle. */
@@ -585,6 +596,8 @@ export interface GameStoreState {
   disbandNotice: DisbandNotice | null;
   /** Info for the "city starved" modal. */
   starvationNotice: StarvationNotice | null;
+  /** Info for the "city disorder" modal. */
+  disorderNotice: DisorderNotice | null;
   /** Info for the "trade route established" modal. */
   tradeRouteResult: TradeRouteResult | null;
   /** Civ auto-selected when the diplomacy screen opens (diplomat contact / AI offer). */
@@ -708,6 +721,10 @@ export interface GameActions {
   showCityStarved: (notice: StarvationNotice) => void;
   /** Dismiss the city-starved modal. */
   clearCityStarved: () => void;
+  /** Show the "city disorder" modal (entering or leaving disorder). */
+  showCityDisorder: (notice: DisorderNotice) => void;
+  /** Dismiss the city-disorder modal. */
+  clearCityDisorder: () => void;
   /** Show the "trade route established" modal (Caravan delivery). */
   showTradeRouteResult: (result: TradeRouteResult) => void;
   /** Dismiss the trade-route-result modal. */

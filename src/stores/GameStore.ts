@@ -182,6 +182,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   // Info for the "city starved" modal
   starvationNotice: null,
 
+  // Info for the "city disorder" modal
+  disorderNotice: null,
+
   // Info for the "trade route established" modal (Caravan delivery)
   tradeRouteResult: null,
 
@@ -567,6 +570,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       uiState: { ...state.uiState, activeDialog: null }
     })),
 
+    showCityDisorder: (notice) => set(state => ({
+      disorderNotice: notice,
+      uiState: { ...state.uiState, activeDialog: 'city-disorder' }
+    })),
+
+    clearCityDisorder: () => set(state => ({
+      disorderNotice: null,
+      uiState: { ...state.uiState, activeDialog: null }
+    })),
+
     showTradeRouteResult: (result) => set(state => ({
       tradeRouteResult: result,
       uiState: { ...state.uiState, activeDialog: 'trade-route-result' }
@@ -885,6 +898,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       combatAnimations: [],
       disbandNotice: null,
       starvationNotice: null,
+      disorderNotice: null,
       tradeRouteResult: null
     })),
 

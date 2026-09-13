@@ -1936,6 +1936,17 @@ export class MapRenderer {
       }
     }
 
+    // Show fire icon below the city when in disorder (civil unrest)
+    if (city.disorder) {
+      const fireFontSize = Math.max(10, 12 * cameraZoom);
+      ctx.font = `${fireFontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const fireY = centerY + 24 * cameraZoom + fireFontSize * 0.5 +
+        (specs.length > 0 ? fireFontSize * 1.2 : 0);
+      ctx.fillText('🔥', centerX, fireY);
+    }
+
     // Show city population size as a number badge on the city tile
     const pop = city.population || 1;
     const popRadius = Math.max(6, 8 * cameraZoom);

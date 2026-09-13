@@ -47,6 +47,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const diplomacyFocusCivId = useGameStore(state => state.diplomacyFocusCivId);
   const disbandNotice = useGameStore(state => state.disbandNotice);
   const starvationNotice = useGameStore(state => state.starvationNotice);
+  const disorderNotice = useGameStore(state => state.disorderNotice);
   const tradeRouteResult = useGameStore(state => state.tradeRouteResult);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
@@ -126,6 +127,9 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     // Clear modal-specific data when closing
     if (closing === 'city-starved') {
       actions.clearCityStarved();
+    }
+    if (closing === 'city-disorder') {
+      actions.clearCityDisorder();
     }
     // The "No Research Selected" prompt and the tech tree defer auto-end while
     // no research is selected, so closing them IS a decision point: with a
@@ -1692,6 +1696,77 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     </Modal>
   );
 
+  // City disorder — entering or leaving civil unrest
+  const renderCityDisorder = () => {
+    const entering = disorderNotice?.enteringDisorder ?? true;
+    return (
+      <Modal
+        show={uiState.activeDialog === 'city-disorder'}
+        onHide={handleCloseDialog}
+        centered
+        size="lg"
+      >
+        <Modal.Header closeButton className="bg-dark text-white">
+          <Modal.Title>
+            {entering
+              ? <><span role="img" aria-label="unrest">🔥🪧</span> CIVIL UNREST! <span role="img" aria-label="unrest">🔥🪧</span></>
+              : <><span role="img" aria-label="order">🛡️⚖️</span> ORDER RESTORED! <span role="img" aria-label="order">🛡️⚖️</span></>
+            }
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="bg-dark text-white">
+          {entering ? (
+            <>
+              <p className="mb-2">
+                <strong>Sire! The citizens of {disorderNotice?.cityName ?? 'your city'} are rioting!</strong>{' '}
+                <span role="img" aria-label="riot">🚩🔊</span>
+              </p>
+              <p className="mb-2">
+                Anarchy has broken out in the streets! Production has ground to a halt and no taxes
+                can be collected from this city. <span role="img" aria-label="down">📉🏚️</span>
+              </p>
+              <p className="mb-0">
+                We must restore order immediately! <span role="img" aria-label="shield">🛡️⚖️</span>
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mb-2">
+                <strong>Great news, Sire! Peace has returned to {disorderNotice?.cityName ?? 'your city'}.</strong>
+              </p>
+              <p className="mb-2">
+                The riots have ended, and the citizens have returned to work. Production and tax
+                collection have resumed as normal. <span role="img" aria-label="money">🌾💰</span>
+              </p>
+              <p className="mb-0">Business can continue!</p>
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer className="bg-dark">
+          <Button variant="outline-secondary" onClick={handleCloseDialog}>
+            <span role="img" aria-label="close">❌</span> Close
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (disorderNotice?.cityId) {
+                actions.selectCity(disorderNotice.cityId, 'user');
+                const city = cities.find(c => c.id === disorderNotice.cityId);
+                if (city) {
+                  actions.focusCameraOnTile(city.col, city.row);
+                }
+                actions.showDialog('city-details');
+              }
+              handleCloseDialog();
+            }}
+          >
+            <span role="img" aria-label="go to city">📍</span> Go to City
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    );
+  };
+
   // Trade-route result: a Caravan delivered — lump-sum gold + science now,
   // plus a permanent per-turn route between the two cities.
   const renderTradeRouteResult = () => (
@@ -1757,6 +1832,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       <VillageModal show={uiState.activeDialog === 'village'} onHide={handleVillageClose} />
       {renderUpkeepDisbanded()}
       {renderCityStarved()}
+      {renderCityDisorder()}
       {renderTradeRouteResult()}
       {renderCityProduction()}
       {renderCityPurchase()}

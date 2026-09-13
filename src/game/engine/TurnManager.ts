@@ -665,10 +665,16 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
         if (city.capturedTurns < 0) city.capturedTurns = 0;
       }
       const inDisorder = city.disorder === true;
+      const wasInDisorder = city.disorderLastTurn === true;
       // Emit CITY_DISORDER only on transitions (enter/leave) to avoid spamming.
-      if (inDisorder !== (city.disorderLastTurn === true)) {
+      if (inDisorder !== wasInDisorder) {
         if (this.gameEngine.onStateChange) {
           this.gameEngine.onStateChange('CITY_DISORDER', { city, civilizationId: playerId });
+        }
+        // When disorder ends, auto-assign citizens back to their fields so
+        // production and food yields resume immediately.
+        if (wasInDisorder && !inDisorder && this.gameEngine.map) {
+          this.gameEngine.economicManager?.recomputeCityYields(city);
         }
       }
       city.disorderLastTurn = inDisorder;

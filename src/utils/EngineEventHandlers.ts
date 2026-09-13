@@ -87,6 +87,9 @@ export class EngineEventRouter {
       case 'CITY_STARVED':
         this.onCityStarved(eventData);
         break;
+      case 'CITY_DISORDER':
+        this.onCityDisorder(eventData);
+        break;
       case 'RESEARCH_AUTO_SELECTED':
         this.onResearchAutoSelected(eventData);
         break;
@@ -718,6 +721,23 @@ export class EngineEventRouter {
       cityId: city.id,
       cityName: city.name,
       newPopulation: (eventData.newPopulation as number) ?? city.population,
+    });
+  }
+
+  private onCityDisorder(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const city = eventData?.city as City | undefined;
+    if (!city) return;
+
+    // city.disorder reflects the NEW state (true = entering disorder,
+    // false = disorder ended).  The event fires on transitions only.
+    const enteringDisorder = city.disorder === true;
+
+    this.actions.showCityDisorder({
+      cityId: city.id,
+      cityName: city.name,
+      newPopulation: city.population,
+      enteringDisorder,
     });
   }
 
