@@ -884,6 +884,74 @@ div.game-top-bar {
   line-height: 1.4;
 }
 
+/* Stacked, dismissible toasts driven by `uiState.notifications`. */
+.notification-center {
+  position: fixed;
+  top: calc(var(--topbar-h) + var(--safe-top) + 8px);
+  right: 8px;
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: min(92vw, 380px);
+  pointer-events: none;
+}
+
+.notification-item {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 40px;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--color-bg-overlay);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  cursor: pointer;
+  animation: notification-slide-in 0.18s ease-out;
+}
+
+.notification-item:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.notification-item--info {
+  border-left: 3px solid var(--color-info, #4aa3ff);
+}
+.notification-item--success {
+  border-left: 3px solid var(--color-success);
+}
+.notification-item--warning {
+  border-left: 3px solid var(--color-warning);
+}
+.notification-item--error {
+  border-left: 3px solid var(--color-danger);
+}
+
+.notification-item__icon {
+  flex: 0 0 auto;
+  font-size: 1rem;
+}
+
+.notification-item__message {
+  flex: 1 1 auto;
+}
+
+@keyframes notification-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 /* ============================================================================
    Misc helpers
    ========================================================================== */

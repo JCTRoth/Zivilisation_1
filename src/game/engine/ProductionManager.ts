@@ -95,6 +95,62 @@ export class ProductionManager {
   }
 
   /**
+   * Unit types this city could start building right now: tech requirements and
+   * the Civ1 naval rule (a naval unit needs a harbour or a coastal location).
+   * Used by the city production UI and the "idle city" auto-end gate.
+   */
+  getBuildableUnitTypes(cityId: string): string[] {
+    const city = this.gameEngine.cities?.find((c) => c.id === cityId);
+    if (!city) return [];
+    return Object.keys(UNIT_PROPERTIES).filter((key) => {
+      if (!this.canBuildItem(cityId, key).ok) return false;
+      const props = UNIT_PROPERTIES[key];
+      if (props?.naval && !this.cityHasHarborOrCoast(city)) return false;
+      return true;
+    });
+  }
+
+  /**
+   * Building types this city could start building right now (tech requirements
+   * plus the one-building-per-city rule enforced by `canBuildItem`).
+   */
+  getBuildableBuildingTypes(cityId: string): string[] {
+    return Object.keys(BUILDING_PROPERTIES).filter((key) => this.canBuildItem(cityId, key).ok);
+  }
+
+  /** Whether the city could start building anything at all right now. */
+  cityHasBuildableItems(cityId: string): boolean {
+    return this.getBuildableUnitTypes(cityId).length > 0
+      || this.getBuildableBuildingTypes(cityId).length > 0;
+  }
+
+  /** Civ1: naval units require a harbour or a coastal (ocean-adjacent) tile. */
+  private cityHasHarborOrCoast(city: City): boolean {
+    const ownsHarbor = (city.buildings ?? []).some((b: unknown) => {
+      const id = typeof b === 'string'
+        ? b
+        : ((b as { id?: string })?.id ?? (b as { type?: string })?.type ?? '');
+      return String(id) === 'harbor';
+    });
+    if (ownsHarbor) return true;
+
+    const deltas = [
+      { col: 0, row: 0 }, // the city tile itself
+      { col: -1, row: -1 }, { col: 0, row: -1 }, { col: 1, row: -1 },
+      { col: -1, row: 0 }, { col: 1, row: 0 },
+      { col: -1, row: 1 }, { col: 0, row: 1 }, { col: 1, row: 1 },
+    ];
+    return deltas.some((d) => {
+      const tile = this.gameEngine.getTileAt?.(city.col + d.col, city.row + d.row) as
+        | { terrain?: string; type?: string }
+        | null
+        | undefined;
+      const terrain = tile?.terrain ?? tile?.type ?? '';
+      return terrain === 'ocean';
+    });
+  }
+
+  /**
    * Whether `item` must not be queued again in `city` — and why.
    *
    * Civ1 lets a city build the same *unit* over and over (queue three Warriors

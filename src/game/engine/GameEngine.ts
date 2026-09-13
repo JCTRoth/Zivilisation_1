@@ -1584,6 +1584,17 @@ export default class GameEngine {
   }
 
   /**
+   * Get every living unit stacked on a tile, in engine (creation) order.
+   * `getUnitAt` returns only the first one; this is used to cycle the
+   * selection through a stack when the player clicks the same tile repeatedly.
+   */
+  getUnitsAt(col: number, row: number) {
+    return this.units.filter(
+      unit => unit.col === col && unit.row === row && !unit.isDefeated,
+    );
+  }
+
+  /**
    * Get city at coordinates
    */
   getCityAt(col: number, row: number) {
@@ -3640,6 +3651,23 @@ export default class GameEngine {
   }
 
   /**
+   * Cities the player still has something to decide about: a manually managed
+   * (Auto Production OFF) city with nothing in production but at least one item
+   * it could build. Auto-end turn defers while any exist, so shipping a turn
+   * with an idle city is never silent.
+   */
+  getCitiesAwaitingProduction(civilizationId: number): City[] {
+    if (!this.productionManager) return [];
+    return this.cities.filter((city: City) => {
+      if (city.civilizationId !== civilizationId) return false;
+      if (city.autoProduction === true) return false;
+      if (city.currentProduction) return false;
+      if (Array.isArray(city.buildQueue) && city.buildQueue.length > 0) return false;
+      return this.productionManager.cityHasBuildableItems(city.id);
+    });
+  }
+
+  /**
    * Check if current player has any units with moves remaining, and end turn if not
    * Only considers ACTIVE units (not sleeping or fortified) for auto-end turn
    */
@@ -3722,16 +3750,30 @@ export default class GameEngine {
         && c.buildQueue.length > 0
     );
 
+    // Second "stuff to build" case: a city with NOTHING in production that could
+    // still build something. Ending the turn would silently waste its shields.
+    const citiesAwaitingProduction = currentCiv.isHuman
+      ? this.getCitiesAwaitingProduction(this.activePlayer)
+      : [];
+    const hasCitiesWithBuildableItems = citiesAwaitingProduction.length > 0;
+
     // For human players, check if auto turn ending should trigger
     if (currentCiv.isHuman) {
       // Only auto-end if NO active units have moves left AND queue is empty.
       // Sleeping/fortified/skipped units don't prevent auto-end. A player with
       // zero units (e.g. their last settler just founded a city) also auto-ends
       // — there is nothing left to do this turn — UNLESS a city still has
-      // production queued to build this turn.
+      // production queued or an idle city could still build something.
       if (!hasActiveUnitsWithMoves) {
-        if (hasCitiesWithProductionQueued) {
-          console.log('[TURN] ⏸️ Human player still has cities with production queued, not ending turn');
+        if (hasCitiesWithProductionQueued || hasCitiesWithBuildableItems) {
+          console.log('[TURN] ⏸️ Human player still has cities awaiting production, not ending turn');
+          if (hasCitiesWithBuildableItems && this.onStateChange) {
+            this.onStateChange('CITY_PRODUCTION_IDLE', {
+              civilizationId: this.activePlayer,
+              cityIds: citiesAwaitingProduction.map((c: City) => c.id),
+              cityNames: citiesAwaitingProduction.map((c: City) => c.name),
+            });
+          }
         } else {
           console.log('[TURN] All active human units have no moves and queue is empty - checking auto end turn setting');
           // Transparency: log which units the auto-end is skipping and remember
@@ -4882,7 +4924,7 @@ export default class GameEngine {
 
     const city = playerCities[index];
     if (this.storeActions) {
-      this.storeActions.selectCity(city.id);
+      this.storeActions.selectCity(city.id, 'user');
       this.storeActions.showDialog('city-details');
     }
     console.log(`[GameEngine] Selected city ${city.name} (index ${index})`);

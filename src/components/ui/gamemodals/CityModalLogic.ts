@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 
 import { ModalUtils } from './ModalUtils';
-import { UNIT_PROPS } from '@/utils/Constants';
 import {CityUtils} from "@/utils/CityUtils";
 import type { City, Civilization, ProductionItem, TradeRoute } from '../../../../types/game';
 import GameEngine from '@/game/engine/GameEngine';
@@ -102,48 +101,15 @@ export class CityModalLogic {
     }
   }
 
+  /**
+   * Unit types this city could start building. Delegates to the engine so the
+   * UI, the purchase modal and the auto-end "idle city" gate all agree.
+   */
   getAvailableProductionKeys(): string[] {
-    return Object.keys(UNIT_PROPS).filter((key) => {
-      const u = UNIT_PROPS[key];
-      const req = u.requires || null;
-      if (req && this.currentPlayer && Array.isArray(this.currentPlayer.technologies)) {
-        // Handle both single requirement and array of requirements
-        const requirements = Array.isArray(req) ? req : [req];
-        const hasAllRequiredTechs = requirements.every((tech: string) => this.currentPlayer.technologies!.includes(tech));
-        if (!hasAllRequiredTechs) return false;
-      }
-
-      if (u.naval && this.city) {
-        // Check if city has harbor or is coastal (tile or adjacent tiles are water)
-        const hasHarbor = this.city.buildings && this.city.buildings.includes('harbor');
-        if (!hasHarbor) {
-          const isCoastal = this.checkIfCityIsCoastal();
-          if (!isCoastal) return false;
-        }
-      }
-
-      return true;
-    });
-  }
-
-  private checkIfCityIsCoastal(): boolean {
-    const map = this.gameEngine.map as unknown as { getTile?(col: number, row: number): { terrain: string } | undefined };
-    if (!this.gameEngine || !map || !map.getTile) return false;
-    
-    const directions = [
-      { col: 0, row: 0 }, // city tile itself
-      { col: -1, row: -1 }, { col: 0, row: -1 }, { col: 1, row: -1 },
-      { col: -1, row: 0 }, { col: 1, row: 0 },
-      { col: -1, row: 1 }, { col: 0, row: 1 }, { col: 1, row: 1 }
-    ];
-    
-    for (const dir of directions) {
-      const tile = map.getTile(this.city.col + dir.col, this.city.row + dir.row);
-      if (tile && tile.terrain === 'ocean') {
-        return true;
-      }
+    if (this.gameEngine?.productionManager) {
+      return this.gameEngine.productionManager.getBuildableUnitTypes(this.city.id);
     }
-    return false;
+    return [];
   }
 
   canAffordBuyNow(itemType: string): boolean {

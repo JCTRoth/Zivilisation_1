@@ -13,6 +13,7 @@ import VictoryFireworks from "./components/ui/VictoryFireworks";
 import PauseScreen from "./components/ui/PauseScreen";
 import TopBar from "./components/ui/TopBar";
 import MobileBottomBar from "./components/ui/MobileBottomBar";
+import NotificationCenter from "./components/ui/NotificationCenter";
 import GameMenuSheet, {
   type GameMenuName,
 } from "./components/ui/GameMenuSheet";
@@ -1015,7 +1016,7 @@ function App() {
               actions &&
               typeof actions.selectUnit === "function"
             ) {
-              actions.selectUnit(null);
+              actions.selectUnit(null, "user");
             }
             // Add more modal closures as needed
             break;
@@ -1309,6 +1310,12 @@ function App() {
 
       {/* Game Modals */}
       <GameModals gameEngine={gameEngine} />
+
+      {/* Store-driven toasts (combat results, auto-end recap, warnings, …) */}
+      <NotificationCenter
+        notifications={uiState.notifications}
+        onDismiss={actions.removeNotification}
+      />
 
       {/* Pause overlay */}
       <PauseScreen

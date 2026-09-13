@@ -24,6 +24,7 @@ import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import { getUnitIcon } from '@/utils/UnitIconLoader';
 import { TERRAIN_FONT_FAMILY } from '@/utils/terrainFont';
 import { MathUtils } from '@/utils/MathUtils';
+import { HUMAN_PLAYER_ID } from '@/utils/PlayerConstants';
 import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, TurnMarker } from '../../../types/game';
 import { TerrainTextureManager } from './TerrainTextureManager';
 
@@ -570,7 +571,10 @@ export class MapRenderer {
       for (let row = 0; row < map.height; row++) {
         for (let col = 0; col < map.width; col++) {
           const tile = terrainGrid[row]?.[col];
-          if (!tile?.explored || !tile.visible) continue;
+          // Features are remembered: once a tile has been explored its
+          // forest/jungle/hills sprite stays on the map even after the unit
+          // that revealed it has moved on (explored-but-not-visible fog).
+          if (!tile?.explored) continue;
           const x = col * scaledTile;
           const y = row * scaledTile;
           tm.drawFeature(ctx, tile.type, x, y, scaledTile, col, row);
@@ -804,7 +808,6 @@ export class MapRenderer {
       ctx,
       map,
       units,
-      gameState,
       civilizations,
       currentTime,
       squareToScreen,
@@ -822,11 +825,13 @@ export class MapRenderer {
 
     let unitsToPulse: Unit[];
     if (ids.size > 0) {
-      unitsToPulse = units.filter(u => ids.has(u.id));
+      // Only the human's own units pulse — `currentQueueUnitId` tracks the
+      // *active* player, which is an AI civ during its turn.
+      unitsToPulse = units.filter(u => ids.has(u.id) && u.civilizationId === HUMAN_PLAYER_ID);
     } else {
-      // Fall back: all active player units with moves
+      // Fall back: all own units with moves
       unitsToPulse = units.filter(u => 
-        u.civilizationId === gameState.activePlayer && 
+        u.civilizationId === HUMAN_PLAYER_ID && 
         (u.movesRemaining || 0) > 0
       );
     }
@@ -848,7 +853,9 @@ export class MapRenderer {
       }
 
       const tileIndex = unit.row * map.width + unit.col;
-      const isVisible = map.visibility?.[tileIndex] ?? true;
+      // Default to hidden: a missing visibility array must never reveal an
+      // enemy unit (missing data used to default to "visible").
+      const isVisible = map.visibility?.[tileIndex] ?? false;
       
       if (isVisible) {
         const displayTile = this.getUnitDisplayTile(unit, params.movementAnimations);
@@ -1115,11 +1122,19 @@ export class MapRenderer {
       for (let row = bounds.startRow; row < bounds.endRow; row++) {
         for (let col = bounds.startCol; col < bounds.endCol; col++) {
           const tile = terrainGrid[row]?.[col];
-          if (!tile?.explored || !tile.visible) continue;
+          // Remembered features (see the offscreen feature pass).
+          if (!tile?.explored) continue;
           const { x, y } = squareToScreen(col, row);
           if (this.isOutsideViewport(x, y + scaledTileSize / 2, canvasSize.width, canvasSize.height, scaledTileSize * 2)) continue;
           const half = scaledTileSize / 2;
           tm.drawFeature(ctx, tile.type, x - half, y - half, scaledTileSize, col, row);
+          // Features are drawn after the per-tile fog fill above, so a feature
+          // on an explored-but-not-visible tile must be dimmed here too —
+          // matching the offscreen path, where fog is composited last.
+          if (!tile.visible) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+            ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
+          }
         }
       }
     }
@@ -1446,33 +1461,29 @@ export class MapRenderer {
         // === UNITS AND CITIES RENDERING ===
         const isVisible = map.visibility?.[tileIndex] ?? tile?.visible ?? false;
 
-        // Draw cities only on visible tiles
-        if (isVisible) {
-          const city = cityAtTileKey.get(`${col},${row}`);
+        // Cities stay known once discovered: draw them on any explored tile.
+        // When the tile is not currently visible, fall back to the last-seen
+        // snapshot (`map.knownCities`) so the city's size/name only changes
+        // when the player sees it again.
+        if (isExplored) {
+          const liveCity = cityAtTileKey.get(`${col},${row}`);
+          const city = liveCity
+            ? (isVisible ? liveCity : map.knownCities?.[liveCity.id])
+            : undefined;
           if (city) {
             this.drawCity(ctx, x, y, city, cameraZoom, civilizations, combatAnimations);
           }
         }
 
-        // Draw units: player's own units always visible, enemy units only on visible tiles
+        // Draw units: the human player's own units are always visible, other
+        // players' units only while their tile is currently visible. Using the
+        // human id (not `activePlayer`) matters here: during an AI turn
+        // `activePlayer` is that AI, which leaked every AI unit through the fog.
         const unit = unitAtTileKey.get(`${col},${row}`);
         if (unit && isExplored) {
-          const isActivePlayersUnit = unit.civilizationId === gameState.activePlayer;
-          const shouldDrawUnit = isActivePlayersUnit || isVisible;
-          
-          // Debug: Log enemy units on non-visible tiles
-          if (!isActivePlayersUnit && !isVisible && shouldDrawUnit) {
-            console.warn('[MapRenderer] Drawing enemy unit on non-visible tile!', {
-              unitType: unit.type,
-              position: `${col},${row}`,
-              civilizationId: unit.civilizationId,
-              activePlayer: gameState.activePlayer,
-              isVisible,
-              isExplored,
-              shouldDrawUnit
-            });
-          }
-          
+          const isOwnUnit = unit.civilizationId === HUMAN_PLAYER_ID;
+          const shouldDrawUnit = isOwnUnit || isVisible;
+
           if (shouldDrawUnit) {
             // Killed units (marked isDefeated) are never drawn again — the
             // combat animation replaces the old "black X" death marker.
@@ -1483,7 +1494,7 @@ export class MapRenderer {
             const hasMoves = (unit.movesRemaining || 0) > 0;
             let alpha = 1;
             // Only apply pulsing animation if currentTime > 0 (animated mode)
-            if (currentTime > 0 && isActivePlayersUnit && hasMoves) {
+            if (currentTime > 0 && isOwnUnit && hasMoves) {
               const period = 2000;
               const t = (currentTime % period) / period;
               const sine = Math.sin(t * Math.PI * 4);

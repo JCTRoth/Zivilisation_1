@@ -9,6 +9,10 @@ import {
   resolveAnimationDuration,
   sleep,
 } from './GlideAnimation';
+import { awaitCameraGlide, isCameraGliding } from './CameraGlideGate';
+import { findNewlySightedEnemies, getVisibleEnemyUnitIds } from './EnemySighting';
+import { useGameStore } from '../../stores/GameStore';
+import { HUMAN_PLAYER_ID } from '../../utils/PlayerConstants';
 
 /**
  * GoToManager - Manages unit "Go To" movement commands
@@ -195,6 +199,13 @@ export class GoToManager {
     let stepsCompleted = 0;
     let continueMoving = true;
 
+    // Only the human player's units stop for new enemy sightings (the AI has
+    // its own `enemyFound` logic), and only when a human civ actually exists.
+    const startUnit = this.gameEngine.units.find((u: Unit) => u.id === unitId);
+    const hasHumanCiv = (this.gameEngine.civilizations ?? []).some((c) => c.isHuman);
+    const watchesForEnemies = hasHumanCiv && startUnit?.civilizationId === HUMAN_PLAYER_ID;
+    let visibleEnemies = watchesForEnemies ? getVisibleEnemyUnitIds() : null;
+
     while (continueMoving) {
       const unit = this.gameEngine.units.find((u: Unit) => u.id === unitId);
       if (!unit || (unit.movesRemaining || 0) <= 0) {
@@ -222,6 +233,8 @@ export class GoToManager {
         nextStep &&
         this.gameEngine.canUnitMoveTo(unitId, nextStep.col, nextStep.row)
       ) {
+        // Don't start the step until the camera has arrived (no-op when idle).
+        if (isCameraGliding()) await awaitCameraGlide();
         glideId = registerGlide({
           unitId,
           fromCol: unit.col,
@@ -239,6 +252,27 @@ export class GoToManager {
       
       if (result.success) {
         stepsCompleted++;
+
+        // Fog-of-war interrupt: this step revealed an enemy the player had not
+        // seen before. The path was plotted blind, so stop and hand control
+        // back to the player instead of walking into an ambush.
+        if (watchesForEnemies && visibleEnemies) {
+          const newlySighted = findNewlySightedEnemies(visibleEnemies);
+          if (newlySighted.length > 0) {
+            const first = newlySighted[0];
+            console.log(`[GoToManager] Enemy unit sighted at (${first.col},${first.row}) — aborting path for ${unitId}`);
+            this.clearUnitPath(unitId);
+            useGameStore.getState().actions.addNotification({
+              type: 'warning',
+              message: 'Enemy unit sighted!',
+            });
+            // Also drop the caller's local path overlay.
+            if (onStepComplete) onStepComplete(0);
+            break;
+          }
+          visibleEnemies = getVisibleEnemyUnitIds();
+        }
+
         if (onStepComplete) {
           onStepComplete(result.remainingPath.length);
         }

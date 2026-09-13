@@ -7,6 +7,7 @@ import {
   resolveAnimationDuration,
   sleep,
 } from './GlideAnimation';
+import { awaitCameraGlide, isCameraGliding } from './CameraGlideGate';
 
 /** The narrow slice of the engine MoveAnimator needs, so the engine class
  * instance is assignable without inheriting the unrelated interface mismatch
@@ -66,6 +67,11 @@ export class MoveAnimator {
   ): Promise<string | null> {
     const duration = this.duration(baseDuration);
     if (duration <= 0) return null;
+    // Never start a move/fight while the camera is still travelling to it.
+    // Only awaits when a pan is actually in flight, so the common path (the
+    // human's own move with no camera focus) still registers the glide
+    // synchronously.
+    if (isCameraGliding()) await awaitCameraGlide();
     const id = registerGlide({
       unitId,
       fromCol,

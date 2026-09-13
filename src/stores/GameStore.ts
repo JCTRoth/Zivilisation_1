@@ -5,7 +5,9 @@ import { Constants } from '../utils/Constants';
 import { SquareGrid } from '../game/HexGrid';
 import { UNIT_TYPES } from '../data/GameData';
 import { UNIT_PROPERTIES } from '../data/UnitConstants';
-import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult } from '../../types/game';
+import { HUMAN_PLAYER_ID } from '../utils/PlayerConstants';
+import { beginCameraGlide } from '../game/engine/CameraGlideGate';
+import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City } from '../../types/game';
 
 // Internal store property types for cached/computed state
 type StoreWithInternals = GameStoreState & {
@@ -36,6 +38,7 @@ const createInitialGameState = (): GameState => ({
   activeUnit: null,
   selectedCity: null,
   focusedCity: null,
+  selectionOrigin: null,
   activePlayer: 0,
   mapGenerated: false,
   winner: null,
@@ -48,7 +51,8 @@ const createInitialMapState = (): MapState => ({
   height: Constants.MAP_HEIGHT,
   tiles: [],
   visibility: [],
-  revealed: []
+  revealed: [],
+  knownCities: {}
 });
 
 const createInitialCameraState = (): CameraState => ({
@@ -78,6 +82,15 @@ const createInitialUIState = (): UIState => ({
   turnFlashTrigger: 0
 });
 
+/** City dialogs that a user-initiated unit selection closes (one selection at a time). */
+const CITY_DIALOGS: ReadonlySet<string> = new Set<string>([
+  'city',
+  'city-details',
+  'city-production',
+  'city-purchase',
+  'city-citizens',
+]);
+
 // Helper function for visibility calculations
 const setVisibilityAreaInternal = (visibility, revealed, centerCol, centerRow, radius, mapWidth, mapHeight) => {
   const squareGrid = new SquareGrid(mapWidth, mapHeight);
@@ -99,7 +112,31 @@ const setVisibilityAreaInternal = (visibility, revealed, centerCol, centerRow, r
 // The human player is always civilization 0. The UI's fog of war
 // (map.visibility) reflects this player's perspective, and the camera may only
 // follow units the human can actually see.
-const HUMAN_PLAYER_ID = 0;
+
+/**
+ * Merge the last-seen snapshot of cities the human can currently see into the
+ * previous snapshot, dropping cities that no longer exist. Cities stay drawn on
+ * explored tiles afterwards; their details only refresh when seen again.
+ */
+const mergeKnownCities = (
+  previous: Record<string, City> | undefined,
+  cities: City[],
+  visibility: boolean[],
+  mapWidth: number
+): Record<string, City> => {
+  const alive = new Set(cities.map(city => city.id));
+  const known: Record<string, City> = {};
+  for (const [id, snapshot] of Object.entries(previous ?? {})) {
+    if (alive.has(id)) known[id] = snapshot;
+  }
+  for (const city of cities) {
+    const index = city.row * mapWidth + city.col;
+    if (index >= 0 && index < visibility.length && visibility[index]) {
+      known[city.id] = { ...city };
+    }
+  }
+  return known;
+};
 
 // Zustand store replacing Jotai atoms
 export const useGameStore = create<GameStoreState>((set, get) => ({
@@ -187,27 +224,65 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       gameState: { ...state.gameState, selectedHex: hex }
     })),
 
-    selectUnit: (unitId) => set(state => ({
-      gameState: { ...state.gameState, selectedUnit: unitId, activeUnit: unitId, selectedCity: null },
-      uiState: { 
-        ...state.uiState, 
-        showUnitPanel: !!unitId, 
-        showCityPanel: false
+    selectUnit: (unitId, origin = 'auto') => set(state => {
+      const currentOrigin = state.gameState.selectionOrigin ?? null;
+      // A selection the player made by hand (origin 'user') wins over the
+      // engine's automatic selection. This is what previously made a unit pop
+      // up right after the player had clicked a city: the deferred move/queue
+      // advance auto-selected the next unit while the city panel was open.
+      if (origin === 'auto' && currentOrigin === 'user') {
+        return state;
       }
-    })),
 
-    selectCity: (cityId) => set(state => ({
+      const isUserSelectingUnit = origin === 'user' && unitId !== null;
+      const nextDialog =
+        isUserSelectingUnit && CITY_DIALOGS.has(state.uiState.activeDialog ?? '')
+          ? null
+          : state.uiState.activeDialog;
+
+      return {
+        gameState: {
+          ...state.gameState,
+          selectedUnit: unitId,
+          activeUnit: unitId,
+          selectedCity: null,
+          // Selecting a unit clears the city marker: only one thing is
+          // selected at a time (the city net and the unit panel never coexist).
+          focusedCity: isUserSelectingUnit ? null : state.gameState.focusedCity ?? null,
+          selectionOrigin: unitId === null ? null : origin,
+        },
+        uiState: {
+          ...state.uiState,
+          showUnitPanel: !!unitId,
+          showCityPanel: false,
+          activeDialog: nextDialog,
+        }
+      };
+    }),
+
+    selectCity: (cityId, origin = 'auto') => set(state => {
+      const currentOrigin = state.gameState.selectionOrigin ?? null;
+      // Same rule as selectUnit: never override an explicit player selection.
+      if (origin === 'auto' && currentOrigin === 'user') {
+        return state;
+      }
+
       // Selecting/deselecting a city updates the transient selection. When a
       // real city is picked, it also becomes the persistent "focused" city so
-      // the map keeps it marked; deselecting (null) leaves the marker in place.
-      gameState: {
-        ...state.gameState,
-        selectedCity: cityId,
-        selectedUnit: null,
-        focusedCity: cityId ?? state.gameState.focusedCity ?? null
-      },
-      uiState: { ...state.uiState, showCityPanel: !!cityId, showUnitPanel: false }
-    })),
+      // the map keeps it marked; deselecting (null) leaves the marker in place
+      // unless the player explicitly dismissed the selection.
+      return {
+        gameState: {
+          ...state.gameState,
+          selectedCity: cityId,
+          selectedUnit: null,
+          activeUnit: null,
+          focusedCity: cityId ?? (origin === 'user' ? null : state.gameState.focusedCity ?? null),
+          selectionOrigin: cityId === null ? null : origin,
+        },
+        uiState: { ...state.uiState, showCityPanel: !!cityId, showUnitPanel: false }
+      };
+    }),
 
     nextTurn: () => set(state => {
       // Get only active (alive) civilizations for turn cycling
@@ -251,6 +326,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           selectedUnit: null,
           selectedCity: null,
           focusedCity: null,
+          selectionOrigin: null,
           selectedHex: null
         },
         uiState: {
@@ -269,13 +345,21 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         return state;
       }
 
+      // The player is looking at something they picked themselves (a city they
+      // opened, a unit they clicked). Don't jump the camera away or replace it.
+      if ((state.gameState.selectionOrigin ?? null) === 'user') {
+        return state;
+      }
+
       // Prevent multiple calls in quick succession
       const now = Date.now();
       if (state._lastFocusCall && now - state._lastFocusCall < 100) {
         return state;
       }
 
-      // Find next unit belonging to active player that still has moves and is not sleeping
+      // Auto-selection follows the *active* player's units: the human's own
+      // during their turn, and an AI unit only while the human can see its tile
+      // (fog of war). Hidden AI movement must never be followed.
       const activeId = state.gameState.activePlayer;
       const devMode = !!state.settings?.devMode;
 
@@ -298,10 +382,21 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           return state;
         }
 
+        if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0) {
+          beginCameraGlide();
+        }
+
         return {
           ...state,
           _lastFocusCall: now,
-          gameState: { ...state.gameState, selectedUnit: candidate.id, activeUnit: candidate.id, selectedCity: null },
+          gameState: {
+            ...state.gameState,
+            selectedUnit: candidate.id,
+            activeUnit: candidate.id,
+            selectedCity: null,
+            focusedCity: null,
+            selectionOrigin: 'auto',
+          },
           cameraPanRequest: {
             col: candidate.col,
             row: candidate.row,
@@ -312,14 +407,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       } else {
         // No unit found. Only bring the camera to a city when the player still
         // has production left to manage — this mirrors the engine's auto-end
-        // turn gate (`hasCitiesWithNoProductionQueued`): a city with an empty
-        // build queue means "no production queued", so the player needs to
-        // review/queue something and we land on the capital. Otherwise let the
-        // turn end without snapping the camera to a city.
+        // turn gate: a city with nothing in production means the player needs
+        // to review/queue something, so we land on the capital. Otherwise let
+        // the turn end without snapping the camera to a city.
         const hasProductionLeft = state.cities.some(
           (c) => c.civilizationId === activeId
-            && Array.isArray(c.buildQueue)
-            && c.buildQueue.length === 0
+            && !c.currentProduction
+            && (!Array.isArray(c.buildQueue) || c.buildQueue.length === 0)
         );
         if (!hasProductionLeft) {
           return state;
@@ -335,10 +429,21 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             return state;
           }
 
+          if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0) {
+            beginCameraGlide();
+          }
+
           return {
             ...state,
             _lastFocusCall: now,
-            gameState: { ...state.gameState, selectedUnit: null, activeUnit: null, selectedCity: capitalCity.id },
+            gameState: {
+              ...state.gameState,
+              selectedUnit: null,
+              activeUnit: null,
+              selectedCity: capitalCity.id,
+              focusedCity: capitalCity.id,
+              selectionOrigin: 'auto',
+            },
             cameraPanRequest: {
               col: capitalCity.col,
               row: capitalCity.row,
@@ -397,14 +502,21 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       isUnitAnimating: isAnimating
     })),
 
-    focusCameraOnTile: (col, row, keepZoom = true) => set(() => ({
-      cameraPanRequest: {
-        col,
-        row,
-        keepZoom,
-        requestId: `camera-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    focusCameraOnTile: (col, row, keepZoom = true) => set(state => {
+      // Tell the engine a pan is in flight: any animation triggered while the
+      // camera travels waits for it (see CameraGlideGate / awaitCameraGlide).
+      if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0) {
+        beginCameraGlide();
       }
-    })),
+      return {
+        cameraPanRequest: {
+          col,
+          row,
+          keepZoom,
+          requestId: `camera-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        }
+      };
+    }),
 
     clearCameraPanRequest: () => set(() => ({
       cameraPanRequest: null
@@ -415,7 +527,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     })),
 
     hideDialog: () => set(state => ({
-      uiState: { ...state.uiState, activeDialog: null }
+      // Closing a dialog means the player is done with that decision screen:
+      // release the hand-made selection lock so the turn queue can auto-select
+      // the next unit again. The city marker (`focusedCity`) stays.
+      uiState: { ...state.uiState, activeDialog: null },
+      gameState: { ...state.gameState, selectionOrigin: null }
     })),
 
     showVillageResult: (result) => set(state => ({
@@ -545,12 +661,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       if (disableFog) {
         // If developer mode enabled or fog disabled via env var, mark everything visible
         const totalTiles = map.tiles.length;
+        const allVisible = new Array(totalTiles).fill(true);
         return {
           ...state,
           map: {
             ...map,
-            visibility: new Array(totalTiles).fill(true),
+            visibility: allVisible,
             revealed: new Array(totalTiles).fill(true),
+            knownCities: mergeKnownCities(map.knownCities, cities, allVisible, map.width),
             tiles: Array.isArray(map.tiles) ? map.tiles.map(t => t ? { ...t, visible: true, explored: true } : t) : map.tiles
           }
         };
@@ -614,7 +732,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         map: {
           ...map,
           visibility: newVisibility,
-          revealed: newRevealed
+          revealed: newRevealed,
+          knownCities: mergeKnownCities(map.knownCities, cities, newVisibility, map.width)
         }
       };
     }),
@@ -654,7 +773,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         map: {
           ...map,
           visibility: newVisibility,
-          revealed: newRevealed
+          revealed: newRevealed,
+          knownCities: mergeKnownCities(map.knownCities, state.cities, newVisibility, map.width)
         }
       };
     }),

@@ -68,12 +68,22 @@ export interface GameState {
   // (selecting a unit, clicking a field, right-click, ESC), so the map keeps
   // the city highlighted until the turn ends or another city is chosen.
   focusedCity?: string | null;
+  /**
+   * Who made the current selection. While this is `'user'` the engine's
+   * automatic selection (next unit in the turn queue, unit after a move, …) is
+   * ignored, so a city the player just opened is not replaced by a unit a
+   * moment later. Reset on turn change / explicit deselection.
+   */
+  selectionOrigin?: SelectionOrigin | null;
   activePlayer: number;
   mapGenerated: boolean;
   winner: string | null;
   currentYear?: number;
   gameResult: GameResult | null;
 }
+
+/** Where a unit/city selection came from (see `GameState.selectionOrigin`). */
+export type SelectionOrigin = 'user' | 'auto';
 
 export interface MapState {
   width: number;
@@ -83,6 +93,13 @@ export interface MapState {
   // mirrors this, so generated maps that don't fill them still type-check).
   visibility?: boolean[];
   revealed?: boolean[];
+  /**
+   * Last-seen snapshot of every city the human has discovered, keyed by city
+   * id. Cities stay drawn on explored tiles after they leave sight; the
+   * renderer uses this snapshot so a city's size/name only updates when the
+   * player actually sees it again.
+   */
+  knownCities?: Record<string, City>;
   getTile?(col: number, row: number): Tile | undefined;
   getUnitAt?(col: number, row: number): unknown;
   grid?: { getNeighbors(col: number, row: number): Array<{ col: number; row: number }> };
@@ -466,7 +483,7 @@ export interface UIState {
   turnFlashTrigger: number; // Incremented on each turn start to trigger top-bar flash animation
 }
 
-interface Notification {
+export interface Notification {
   id: number;
   type: 'info' | 'success' | 'warning' | 'error';
   message: string;
@@ -659,8 +676,8 @@ export interface CombatAnimation {
 export interface GameActions {
   startGame: () => void;
   selectHex: (hex: { col: number; row: number }) => void;
-  selectUnit: (unitId: string | null) => void;
-  selectCity: (cityId: string | null) => void;
+  selectUnit: (unitId: string | null, origin?: SelectionOrigin) => void;
+  selectCity: (cityId: string | null, origin?: SelectionOrigin) => void;
   nextTurn: () => void;
   focusOnNextUnit: () => void;
   updateCamera: (cameraUpdate: Partial<CameraState>) => void;

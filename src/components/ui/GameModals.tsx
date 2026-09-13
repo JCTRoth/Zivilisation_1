@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import { getTechIcon } from '@/data/TechnologyIcons';
@@ -1246,51 +1246,12 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   // Track selected index in the queue (for removal)
   const [selectedQueueIndex, setSelectedQueueIndex] = useState<number | null>(null);
 
-  // Helper function to check if a city is coastal (has water tiles adjacent or on its position)
-  const checkIfCityIsCoastal = useCallback((city: City | null | undefined, gameEngine: GameEngine | null | undefined): boolean => {
-    if (!gameEngine || !city) return false;
-    
-    const directions = [
-      { col: 0, row: 0 }, // city tile itself
-      { col: -1, row: -1 }, { col: 0, row: -1 }, { col: 1, row: -1 },
-      { col: -1, row: 0 }, { col: 1, row: 0 },
-      { col: -1, row: 1 }, { col: 0, row: 1 }, { col: 1, row: 1 }
-    ];
-    
-    for (const dir of directions) {
-      const tile = gameEngine.getTileAt(city.col + dir.col, city.row + dir.row);
-      if (tile && tile.terrain === 'ocean') {
-        return true;
-      }
-    }
-    return false;
-  }, []);
-
-  // Build available items list (filtered) using same logic as render list
+  // Build available items list (filtered). Delegates to the engine so the UI
+  // and the auto-end "idle city" gate share one tech/naval rule.
   const availableProductionKeys = useMemo(() => {
-    return Object.keys(UNIT_PROPS).filter((key) => {
-      const u = UNIT_PROPS[key];
-      const req = (u as { requires?: string | string[] }).requires || null;
-      if (req && currentPlayer && Array.isArray(currentPlayer.technologies)) {
-        // Handle both single requirement and array of requirements
-        const requirements = Array.isArray(req) ? req : [req];
-        const hasAllRequiredTechs = requirements.every((tech: string) => currentPlayer.technologies.includes(tech));
-        if (!hasAllRequiredTechs) return false;
-      }
-
-      if (u.naval && selectedCity) {
-        // Check if city has harbor or is coastal (tile or adjacent tiles are water)
-        const hasHarbor = selectedCity.buildings && selectedCity.buildings.includes('harbor');
-        if (!hasHarbor) {
-          const isCoastal = checkIfCityIsCoastal(selectedCity, gameEngine);
-          if (!isCoastal) return false;
-        }
-      }
-
-      return true;
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPlayer, selectedCity, checkIfCityIsCoastal]);
+    if (!selectedCity || !gameEngine?.productionManager) return [];
+    return gameEngine.productionManager.getBuildableUnitTypes(selectedCity.id);
+  }, [selectedCity, gameEngine]);
 
   // Ensure there is a default selection when modal opens or available list changes
   useEffect(() => {

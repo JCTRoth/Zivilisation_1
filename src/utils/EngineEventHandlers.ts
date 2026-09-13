@@ -1,11 +1,10 @@
 import { useGameStore } from '../stores/GameStore';
 import { firstUnresearchedInPath } from './ResearchPath';
 import { trackAIAnimation } from '../game/engine/GlideAnimation';
+import { awaitCameraGlide, isCameraGliding } from '../game/engine/CameraGlideGate';
+import { HUMAN_PLAYER_ID } from './PlayerConstants';
 import type GameEngine from '../game/engine/GameEngine';
 import type { Technology, Unit, City, Civilization, VillageOutcome } from '../../types/game';
-
-// The human player is always civilization 0 (mirrors the store's fog of war).
-const HUMAN_PLAYER_ID = 0;
 
 export class EngineEventRouter {
   private gameEngine: GameEngine;
@@ -16,6 +15,11 @@ export class EngineEventRouter {
    *  "no research selected" prompt is not repeated on every check. Cleared as
    *  soon as a research is selected (or nothing is left to research). */
   private researchPromptedForGap = false;
+  /**
+   * Cities the auto-end check already pointed out as having nothing in
+   * production this turn, so the city details modal is only forced open once.
+   */
+  private idleCityPrompted: Set<string> = new Set();
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
@@ -76,6 +80,9 @@ export class EngineEventRouter {
         break;
       case 'CHECK_AUTO_END_TURN':
         this.onCheckAutoEndTurn();
+        break;
+      case 'CITY_PRODUCTION_IDLE':
+        this.onCityProductionIdle(eventData);
         break;
       case 'RESEARCH_AUTO_SELECTED':
         this.onResearchAutoSelected(eventData);
@@ -228,6 +235,8 @@ export class EngineEventRouter {
     this.actions.setTurnButtonDisabled(false);
     this.lastQueueLengths.delete(active);
     this.endTurnPromptShown.delete(active);
+    // A new turn may legitimately look at every city's production again.
+    if (civ?.isHuman) this.idleCityPrompted.clear();
 
     // Refresh visibility for the current player so the minimap and main view
     // reflect the correct per-player fog of war on turn start
@@ -274,6 +283,19 @@ export class EngineEventRouter {
     if (this.isAIVsAI) return;
     if (moved) {
       const movesLeft = moved.movesRemaining || 0;
+      // Follow a visible enemy action: pan the camera to it first. The glide
+      // below waits for the camera (CameraGlideGate), so the unit does not
+      // start moving before the player can actually see the tile.
+      const isEnemyAction =
+        moved.civilizationId !== HUMAN_PLAYER_ID
+        && this.isUnitVisibleToHuman(moved)
+        && this.isTileVisibleToHuman(fromCol, fromRow);
+      if (isEnemyAction) {
+        // Camera follows the enemy action itself. `focusOnNextUnit` is skipped
+        // below so the camera does not immediately swing to a different unit
+        // while this one animates.
+        this.actions.focusCameraOnTile(moved.col, moved.row);
+      }
       if (movesLeft > 0) {
         // Only auto-select the moved unit when it is the human player's own
         // unit, or an enemy/AI unit the human can currently see. Hidden enemy
@@ -281,7 +303,16 @@ export class EngineEventRouter {
         if (this.isUnitVisibleToHuman(moved)) {
           this.actions.selectUnit(moved.id);
         }
-      } else {
+      } else if (!isEnemyAction) {
+        // The unit that just ran out of moves is the one the player is
+        // watching: their selection has served its purpose, so release the
+        // hand-made-selection lock and let the turn queue focus the next unit.
+        // (If the player has meanwhile selected something else — which is the
+        // city-click bug — the ids differ and the lock stays.)
+        const selectedUnitId = useGameStore.getState().gameState.selectedUnit;
+        if (selectedUnitId && selectedUnitId === moved.id) {
+          this.actions.updateGameState({ selectionOrigin: null });
+        }
         // focusOnNextUnit applies the same visibility rule before moving the camera.
         this.actions.focusOnNextUnit();
       }
@@ -299,10 +330,26 @@ export class EngineEventRouter {
     const state = useGameStore.getState();
     if (state.settings?.devMode) return true;
     if (unit.civilizationId === HUMAN_PLAYER_ID) return true;
+    return this.isTileVisibleToHuman(unit.col, unit.row);
+  }
+
+  /** Whether a tile is currently within the human player's field of view. */
+  private isTileVisibleToHuman(col: number, row: number): boolean {
+    const state = useGameStore.getState();
+    if (state.settings?.devMode) return true;
     const mapWidth = state.map?.width ?? 0;
     if (!mapWidth) return false;
-    const index = unit.row * mapWidth + unit.col;
+    const index = row * mapWidth + col;
     return !!state.map?.visibility?.[index];
+  }
+
+  /**
+   * True while the player holds a selection they made by hand (a city they
+   * opened, a unit they clicked). Engine-driven selection and camera focus must
+   * not steal it — that is what made a unit appear right after a city click.
+   */
+  private isUserSelectionActive(): boolean {
+    return (useGameStore.getState().gameState.selectionOrigin ?? null) === 'user';
   }
 
   /**
@@ -323,69 +370,80 @@ export class EngineEventRouter {
   private glideVisibleAIMove(unit: Unit, fromCol: number, fromRow: number): void {
     if (unit.civilizationId === HUMAN_PLAYER_ID) return;
     if (!this.isUnitVisibleToHuman(unit)) return;
+    // Only animate a move the player could already see: gliding in from a
+    // fogged tile would draw the unit on top of unexplored/remembered terrain.
+    if (!this.isTileVisibleToHuman(fromCol, fromRow)) return;
     const duration = this.aiAnimationDuration(250);
     if (duration <= 0) return;
-    const id = `ai-move-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    this.actions.addMovementAnimation({
-      id, unitId: unit.id, fromCol, fromRow,
-      toCol: unit.col, toRow: unit.row,
-      startTime: performance.now(), duration,
-    });
-    // Register the animation with the AI gate so the AI turn can wait for it
-    // before acting with the next unit — otherwise the next unit's action lands
-    // in the same tick and the move is never seen.
-    const cleanup = new Promise<void>((resolve) => {
-      setTimeout(() => {
-        this.actions.removeMovementAnimation(id);
-        resolve();
-      }, duration + 60);
-    });
-    trackAIAnimation(cleanup);
+
+    // Wait for the camera to reach the unit, then animate. Tracking the whole
+    // chain lets the AI turn's `awaitPendingAnimations()` wait for both.
+    const run = async () => {
+      if (isCameraGliding()) await awaitCameraGlide();
+      const id = `ai-move-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      this.actions.addMovementAnimation({
+        id, unitId: unit.id, fromCol, fromRow,
+        toCol: unit.col, toRow: unit.row,
+        startTime: performance.now(), duration,
+      });
+      await new Promise<void>((resolve) => {
+        setTimeout(() => {
+          this.actions.removeMovementAnimation(id);
+          resolve();
+        }, duration + 60);
+      });
+    };
+    trackAIAnimation(run());
   }
 
   /** Lunge a visible AI attacker toward the defender; recoil if it didn't advance. */
   private animateAIAttacker(attacker: Unit, defender: Unit, fromCol: number, fromRow: number): void {
     if (attacker.civilizationId === HUMAN_PLAYER_ID) return;
     if (!this.isUnitVisibleToHuman(attacker)) return;
+    // Same rule as movement: never animate a fighter the player cannot see.
+    if (!this.isTileVisibleToHuman(fromCol, fromRow)) return;
     const lungeDuration = this.aiAnimationDuration(300);
     if (lungeDuration <= 0) return;
 
     const advanced = attacker.col === defender.col && attacker.row === defender.row;
-    const lungeId = `ai-lunge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    this.actions.addMovementAnimation({
-      id: lungeId, unitId: attacker.id, fromCol, fromRow,
-      toCol: defender.col, toRow: defender.row,
-      startTime: performance.now(), duration: lungeDuration,
-    });
+    const run = async () => {
+      if (isCameraGliding()) await awaitCameraGlide();
+      const lungeId = `ai-lunge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      this.actions.addMovementAnimation({
+        id: lungeId, unitId: attacker.id, fromCol, fromRow,
+        toCol: defender.col, toRow: defender.row,
+        startTime: performance.now(), duration: lungeDuration,
+      });
 
-    // When the lunge finishes, remove it and, if the attacker didn't advance
-    // (it was repelled / lost), recoil it back to its actual tile.
-    const lunge = new Promise<void>((resolve) => {
-      setTimeout(() => {
-        this.actions.removeMovementAnimation(lungeId);
-        if (advanced || (attacker as Unit).isDefeated) {
-          resolve();
-          return;
-        }
-        const recoilDuration = this.aiAnimationDuration(250);
-        if (recoilDuration <= 0) {
-          resolve();
-          return;
-        }
-        const recoilId = `ai-recoil-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        this.actions.addMovementAnimation({
-          id: recoilId, unitId: attacker.id,
-          fromCol: defender.col, fromRow: defender.row,
-          toCol: attacker.col, toRow: attacker.row,
-          startTime: performance.now(), duration: recoilDuration,
-        });
+      // When the lunge finishes, remove it and, if the attacker didn't advance
+      // (it was repelled / lost), recoil it back to its actual tile.
+      await new Promise<void>((resolve) => {
         setTimeout(() => {
-          this.actions.removeMovementAnimation(recoilId);
-          resolve();
-        }, recoilDuration + 60);
-      }, lungeDuration + 10);
-    });
-    trackAIAnimation(lunge);
+          this.actions.removeMovementAnimation(lungeId);
+          if (advanced || (attacker as Unit).isDefeated) {
+            resolve();
+            return;
+          }
+          const recoilDuration = this.aiAnimationDuration(250);
+          if (recoilDuration <= 0) {
+            resolve();
+            return;
+          }
+          const recoilId = `ai-recoil-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          this.actions.addMovementAnimation({
+            id: recoilId, unitId: attacker.id,
+            fromCol: defender.col, fromRow: defender.row,
+            toCol: attacker.col, toRow: attacker.row,
+            startTime: performance.now(), duration: recoilDuration,
+          });
+          setTimeout(() => {
+            this.actions.removeMovementAnimation(recoilId);
+            resolve();
+          }, recoilDuration + 60);
+        }, lungeDuration + 10);
+      });
+    };
+    trackAIAnimation(run());
   }
 
   private onCombat(eventType: string, eventData: Record<string, unknown>) {
@@ -431,23 +489,38 @@ export class EngineEventRouter {
         defenderHealthBefore: preDefender?.health ?? defender.health,
         defenderHealthAfter: defender.health,
       };
-      this.actions.addCombatAnimation(animation);
-
-      // Animate a visible AI attacker's lunge (and recoil if it didn't advance).
-      this.animateAIAttacker(attacker, defender, animation.attackerCol, animation.attackerRow);
-
-      // When the player's own unit is attacked, smoothly pan the camera to it.
-      if (defender.civilizationId === HUMAN_PLAYER_ID) {
-        this.actions.focusCameraOnTile(defender.col, defender.row);
+      // Where should the camera go for this fight? The player's own defender
+      // always, or a visible AI attacker. Hidden fights get no camera move (that
+      // would reveal fog).
+      const isHumanDefender = defender.civilizationId === HUMAN_PLAYER_ID;
+      const isVisibleEnemyAction =
+        attacker.civilizationId !== HUMAN_PLAYER_ID
+        && this.isUnitVisibleToHuman(attacker)
+        && this.isTileVisibleToHuman(animation.attackerCol, animation.attackerRow);
+      const focusTile = isHumanDefender || isVisibleEnemyAction
+        ? { col: defender.col, row: defender.row }
+        : null;
+      if (focusTile) {
+        this.actions.focusCameraOnTile(focusTile.col, focusTile.row);
       }
 
-      // Remove the animation once it has fully played out (cloud + death blink).
-      setTimeout(() => {
-        this.actions.removeCombatAnimation(id);
-        if (this.gameEngine && typeof this.gameEngine.checkAndEndTurnIfNoMoves === 'function') {
-          this.gameEngine.checkAndEndTurnIfNoMoves('combat-animation-ended');
-        }
-      }, animation.duration + animation.deathBlinkDuration + 200);
+      // Wait for the camera to arrive before the fight plays out. The whole
+      // chain is tracked so the AI turn waits for the camera (not just the
+      // lunge), while the removal timer below keeps its usual timing.
+      const startCombatVisuals = async () => {
+        if (isCameraGliding()) await awaitCameraGlide();
+        this.actions.addCombatAnimation(animation);
+        // Animate a visible AI attacker's lunge (and recoil if it didn't advance).
+        this.animateAIAttacker(attacker, defender, animation.attackerCol, animation.attackerRow);
+        // Remove the animation once it has fully played out (cloud + death blink).
+        setTimeout(() => {
+          this.actions.removeCombatAnimation(id);
+          if (this.gameEngine && typeof this.gameEngine.checkAndEndTurnIfNoMoves === 'function') {
+            this.gameEngine.checkAndEndTurnIfNoMoves('combat-animation-ended');
+          }
+        }, animation.duration + animation.deathBlinkDuration + 200);
+      };
+      trackAIAnimation(startCombatVisuals());
     }
   }
 
@@ -595,6 +668,41 @@ export class EngineEventRouter {
     if (eventData && item) {
       const name = item.name || item.itemType || 'Production';
       this.actions.addNotification({ type: 'success', message: eventData.queued ? `Queued ${name}` : `Started production: ${name}` });
+    }
+    // The city is no longer idle — allow a future prompt for it.
+    const changedCityId = eventData?.cityId as string | undefined;
+    if (changedCityId) this.idleCityPrompted.delete(changedCityId);
+  }
+
+  /**
+   * The engine refused to auto-end the turn because a (manually managed) city
+   * has nothing in production but could still build something. Point the player
+   * at it: warn, select + focus the city, and open its details screen the first
+   * time so production is never silently skipped.
+   */
+  private onCityProductionIdle(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const cityIds = Array.isArray(eventData?.cityIds) ? (eventData.cityIds as string[]) : [];
+    const cityId = cityIds[0];
+    if (!cityId) return;
+    const city = this.gameEngine.cities.find((c) => c.id === cityId);
+    if (!city) return;
+
+    this.actions.addNotification({
+      type: 'warning',
+      message: `${city.name} has nothing in production!`,
+    });
+
+    const firstTime = !this.idleCityPrompted.has(cityId);
+    if (firstTime) this.idleCityPrompted.add(cityId);
+
+    // Never steal a selection the player made by hand (e.g. another city).
+    if (!this.isUserSelectionActive()) {
+      this.actions.selectCity(cityId, firstTime ? 'user' : 'auto');
+      this.actions.focusCameraOnTile(city.col, city.row);
+    }
+    if (firstTime) {
+      this.actions.showDialog('city-details');
     }
   }
 
@@ -882,11 +990,12 @@ export class EngineEventRouter {
       this.actions.selectUnit(unitId);
       // Find unit and focus camera on it using the same logic as focusOnNextUnit
       const unit = this.gameEngine.getAllUnits().find(u => u.id === unitId);
-      if (unit) {
+      if (unit && !this.isUserSelectionActive()) {
         this.focusOnUnit(unit);
       }
     } else if (civ?.isHuman && !unitId) {
-      // Queue is empty for human player - deselect unit
+      // Queue is empty for human player - deselect unit (ignored when the
+      // player is holding a selection of their own)
       this.actions.selectUnit(null);
     }
 
@@ -933,6 +1042,8 @@ export class EngineEventRouter {
       // In AI-vs-AI mode the queue unit is an AI unit — don't select it or
       // swing the camera to it.
       if (this.isAIVsAI) return;
+      // Leave a hand-made selection (e.g. an open city) alone.
+      if (this.isUserSelectionActive()) return;
       this.actions.selectUnit(unit.id);
       this.focusOnUnit(unit);
     }

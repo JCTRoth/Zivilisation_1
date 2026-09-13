@@ -17,6 +17,8 @@ import {
 import MoveAnimator from "@/game/engine/MoveAnimator";
 import { MathUtils } from "@/utils/MathUtils";
 import { centerCameraOnTile } from "@/utils/CameraUtils";
+import { HUMAN_PLAYER_ID } from "@/utils/PlayerConstants";
+import { finishCameraGlide } from "@/game/engine/CameraGlideGate";
 import { MiniMapRenderer } from "@/game/rendering/MiniMapRenderer";
 import { TerrainTextureManager } from "@/game/rendering/TerrainTextureManager";
 import type {
@@ -45,9 +47,6 @@ import { KeyboardHandler } from "@/game/engine/KeyboardHandler";
 const ANIMATION_FPS = 30;
 
 type HexCoordinates = { col: number; row: number };
-
-/** Civilization id of the human player (matches GameStore/EngineEventHandlers). */
-const HUMAN_PLAYER_ID = 0;
 
 interface GameCanvasProps {
   minimap?: boolean;
@@ -1121,6 +1120,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Cancel any in-progress camera glide when the user interacts directly.
     cameraTweenRef.current = null;
     actions.clearCameraPanRequest();
+    // The pan was abandoned, not completed — but waiters must not hang.
+    finishCameraGlide();
 
     // Only the primary (left) button starts a drag-pan. Right/middle clicks
     // open the context menu instead — starting a drag for them would leave
@@ -1550,10 +1551,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             `[CLICK] Deselecting selected hex (${hex.col}, ${hex.row})`,
           );
           if (actions && typeof actions.selectUnit === "function") {
-            actions.selectUnit(null);
+            actions.selectUnit(null, "user");
           }
           if (actions && typeof actions.selectCity === "function") {
-            actions.selectCity(null);
+            actions.selectCity(null, "user");
           }
           setSelectedHex({ col: -1, row: -1 });
           return;
@@ -1574,9 +1575,53 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           currentPlayer &&
           unitAt.civilizationId === currentPlayer.id
         ) {
+          // Selection cycling: repeatedly clicking the same tile steps through
+          // the units stacked on it and then the (own) city, wrapping back to
+          // the first unit. A lone unit keeps the old behaviour — re-clicking
+          // it cancels its GoTo path (also available as "Cancel orders" in the
+          // ORDERS menu).
+          const ownUnitsOnTile = (
+            gameEngine?.getUnitsAt?.(hex.col, hex.row) ?? [unitAt]
+          ).filter((u) => u.civilizationId === currentPlayer.id);
+          const ownCityOnTile =
+            cityAt && cityAt.civilizationId === currentPlayer.id
+              ? cityAt
+              : null;
+
+          const cycleKeys: string[] = [
+            ...ownUnitsOnTile.map((u) => `unit:${u.id}`),
+            ...(ownCityOnTile ? [`city:${ownCityOnTile.id}`] : []),
+          ];
+          const currentKey = gameState.selectedUnit
+            ? `unit:${gameState.selectedUnit}`
+            : gameState.selectedCity
+              ? `city:${gameState.selectedCity}`
+              : null;
+          const currentIndex = currentKey ? cycleKeys.indexOf(currentKey) : -1;
+
+          if (currentIndex >= 0 && cycleKeys.length > 1) {
+            const nextKey =
+              cycleKeys[(currentIndex + 1) % cycleKeys.length] ?? cycleKeys[0];
+            console.log(
+              `[CLICK] Cycling selection on (${hex.col}, ${hex.row}) from ${currentKey} to ${nextKey}`,
+            );
+            if (nextKey.startsWith("city:")) {
+              if (actions?.selectCity) {
+                actions.selectCity(nextKey.slice("city:".length), "user");
+              }
+              if (ownCityOnTile && actions?.showDialog) {
+                actions.showDialog("city-details");
+              }
+            } else if (actions?.selectUnit) {
+              actions.selectUnit(nextKey.slice("unit:".length), "user");
+            }
+            triggerRender();
+            return;
+          }
+
           if (gameState.selectedUnit === unitAt.id) {
-            // Re-clicking the selected unit orders it to its own tile, which
-            // cancels any assigned GoTo path. The unit stays selected.
+            // Re-clicking the lone selected unit orders it to its own tile,
+            // which cancels any assigned GoTo path. The unit stays selected.
             console.log(
               `[CLICK] Re-clicked selected unit ${unitAt.id} - cancelling its path`,
             );
@@ -1585,7 +1630,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           }
 
           if (actions && typeof actions.selectUnit === "function") {
-            actions.selectUnit(unitAt.id);
+            actions.selectUnit(unitAt.id, "user");
           }
           console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type})`);
           triggerRender();
@@ -1641,19 +1686,35 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           // a unit is selected, clicking a tile issues a GoTo order.
           assignUnitPath(selectedUnit, hex.col, hex.row);
         } else if (cityAt) {
-          console.log(
-            `[CLICK] Selected city ${cityAt.id} (${cityAt.name}) at (${hex.col}, ${hex.row})`,
-          );
-          if (actions && typeof actions.selectCity === "function") {
-            actions.selectCity(cityAt.id);
-          }
-          if (
-            currentPlayer &&
-            cityAt.civilizationId === currentPlayer.id &&
-            actions &&
-            typeof actions.showDialog === "function"
-          ) {
-            actions.showDialog("city-details");
+          // Own cities are always visible; a foreign city may still be drawn on
+          // explored terrain from the last-seen snapshot. You can only inspect
+          // a city you can actually see.
+          const isOwnCity =
+            !!currentPlayer && cityAt.civilizationId === currentPlayer.id;
+          const cityVisible =
+            isOwnCity ||
+            (mapData
+              ? !!mapData.visibility?.[cityAt.row * mapData.width + cityAt.col]
+              : false);
+
+          if (!cityVisible) {
+            console.log(
+              `[CLICK] City ${cityAt.name} is out of sight - ignoring`,
+            );
+          } else {
+            console.log(
+              `[CLICK] Selected city ${cityAt.id} (${cityAt.name}) at (${hex.col}, ${hex.row})`,
+            );
+            if (actions && typeof actions.selectCity === "function") {
+              actions.selectCity(cityAt.id, "user");
+            }
+            if (
+              isOwnCity &&
+              actions &&
+              typeof actions.showDialog === "function"
+            ) {
+              actions.showDialog("city-details");
+            }
           }
           triggerRender();
         } else {
@@ -1687,7 +1748,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       clearHoverPreview();
       setReachableTiles(new Map());
       if (actions && typeof actions.selectUnit === "function") {
-        actions.selectUnit(null);
+        actions.selectUnit(null, "user");
       }
       triggerRender();
     }
@@ -1977,7 +2038,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               type: "info",
               message: `${unit.type} turn skipped`,
             });
-          if (actions?.selectUnit) actions.selectUnit(null);
+          if (actions?.selectUnit) actions.selectUnit(null, "user");
         }
         break;
 
@@ -1988,7 +2049,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           );
           // Selecting the unit enters movement mode (cursor + range + hover
           // path preview all derive from `gameState.selectedUnit`).
-          if (actions?.selectUnit) actions.selectUnit(unit.id);
+          if (actions?.selectUnit) actions.selectUnit(unit.id, "user");
           setContextMenu(null); // Close the context menu
           if (actions?.addNotification)
             actions.addNotification({
@@ -2145,7 +2206,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       case "viewProduction":
         if (city) {
           console.log(`[ContextMenu] View production for city ${city.id}`);
-          if (actions?.selectCity) actions.selectCity(city.id);
+          if (actions?.selectCity) actions.selectCity(city.id, "user");
           if (actions?.showDialog) actions.showDialog("city-production");
         }
         break;
@@ -2153,7 +2214,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       case "cityInfo":
         if (city) {
           console.log(`[ContextMenu] View info for city ${city.id}`);
-          if (actions?.selectCity) actions.selectCity(city.id);
+          if (actions?.selectCity) actions.selectCity(city.id, "user");
           if (actions?.showDialog) actions.showDialog("city-details");
         }
         break;
@@ -2410,6 +2471,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           cameraTweenRef.current = null;
           actions.updateCamera({ x: tween.targetX, y: tween.targetY });
           actions.clearCameraPanRequest();
+          // Camera has arrived — release anything waiting on the pan.
+          finishCameraGlide();
         } else {
           actions.updateCamera({
             x: MathUtils.lerp(tween.startX, tween.targetX, eased),
@@ -2459,7 +2522,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   // the actual tween; when animations are disabled the camera is committed
   // immediately instead.
   useEffect(() => {
-    if (minimap || !gameState.isGameStarted) return;
+    if (minimap || !gameState.isGameStarted) {
+      // No camera exists in minimap / pre-game mode: never leave a waiter hanging.
+      finishCameraGlide();
+      return;
+    }
     if (!cameraPanRequest) return;
 
     const state = useGameStore.getState();
@@ -2484,6 +2551,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (!isFinite(target.x) || !isFinite(target.y)) {
       cameraTweenRef.current = null;
       actions.clearCameraPanRequest();
+      finishCameraGlide();
       return;
     }
 
@@ -2498,6 +2566,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       cameraTweenRef.current = null;
       actions.updateCamera({ x: target.x, y: target.y });
       actions.clearCameraPanRequest();
+      finishCameraGlide();
       return;
     }
 

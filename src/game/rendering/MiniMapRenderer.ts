@@ -219,8 +219,10 @@ export class MiniMapRenderer {
 
     for (const city of cities) {
       const tileIndex = this.getTileIndex(city.row, city.col, map.width);
-      const isVisible = map.visibility ? map.visibility[tileIndex] : false;
-      if (!isVisible) continue;
+      // Cities are remembered: show them on any explored tile (not only while
+      // currently visible), matching the main map.
+      const explored = map.revealed ? !!map.revealed[tileIndex] : !!map.visibility?.[tileIndex];
+      if (!explored) continue;
 
       const x = city.col * tileWidth;
       const y = city.row * tileHeight;
