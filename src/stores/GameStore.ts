@@ -139,6 +139,10 @@ const mergeKnownCities = (
 };
 
 // Zustand store replacing Jotai atoms
+// Monotonic counter for unique notification IDs (avoids Date.now() collisions
+// when multiple notifications fire in the same millisecond).
+let _notificationCounter = 0;
+
 export const useGameStore = create<GameStoreState>((set, get) => ({
   // Game State
   gameState: createInitialGameState(),
@@ -610,7 +614,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     })),
 
     addNotification: (notification) => {
-      const id = Date.now();
+      const id = ++_notificationCounter;
       set(state => ({
         uiState: {
           ...state.uiState,

@@ -679,13 +679,15 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
       }
       city.disorderLastTurn = inDisorder;
 
+      // Food is ALWAYS processed — citizens eat during disorder, which
+      // decrements foodStored and can trigger starvation.  Only the growth
+      // check (population increase) is skipped during disorder.
+      this.processCityGrowth(city, inDisorder);
       if (inDisorder) {
         // Disorder halts growth (stability) but NOT production — otherwise a
         // low-commerce economy (trade ~0) would deadlock forever. Commerce is
         // already lost to unrest in EconomicManager.applyCityOutputs.
         console.log(`[TurnManager] City ${city.name} is in disorder — growth halted`);
-      } else {
-        this.processCityGrowth(city);
       }
       this.processCityProduction(city);
     });
@@ -907,7 +909,7 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
     });
   }
 
-  private processCityGrowth(city: City): void {
+  private processCityGrowth(city: City, inDisorder: boolean = false): void {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     const government = String(civ?.government ?? 'despotism').toLowerCase();
 
@@ -931,6 +933,7 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
 
     if (city.foodStored < 0) {
       // Starvation — always reduce population by 1 (Civ1 spec).
+      // Disorder does NOT prevent starvation — citizens still eat.
       city.population = Math.max(0, (city.population ?? 1) - 1);
       city.foodStored = 0;
 
@@ -949,7 +952,8 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
           newPopulation: city.population,
         });
       }
-    } else if (city.foodStored >= city.foodNeeded) {
+    } else if (!inDisorder && city.foodStored >= city.foodNeeded) {
+      // Growth only happens when the city is NOT in disorder.
       city.population++;
       const hasGranary = city.buildings?.includes(BUILDING_TYPES.GRANARY) ?? false;
       // Granary retains 50% of the growth threshold on growth (Civ1 spec).
