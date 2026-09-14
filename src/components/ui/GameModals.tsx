@@ -4,7 +4,6 @@ import TechTreeView from './TechTreeView';
 import { getTechIcon } from '@/data/TechnologyIcons';
 import { findPathToTech, firstResearchableInPath } from '@/utils/ResearchPath';
 import CityModal from './gamemodals/CityModal';
-import HexDetailModal from './gamemodals/HexDetailModal';
 import RatesModal from './gamemodals/RatesModal';
 import GovernmentModal from './gamemodals/GovernmentModal';
 import StatisticsModal from './gamemodals/StatisticsModal';
@@ -29,7 +28,6 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const uiState = useGameStore(state => state.uiState);
   const actions = useGameStore(state => state.actions);
   const isGameStarted = useGameStore(state => state.gameState.isGameStarted);
-  const selectedHex = useGameStore(state => state.gameState.selectedHex);
   const selectedCityId: string | null = useGameStore(state => state.gameState.selectedCity);
   const cities = useGameStore(state => state.cities);
   const technologies = useGameStore(state => state.technologies);
@@ -38,7 +36,6 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const lastResearchedTech = useGameStore(state => state.lastResearchedTech);
   const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
 
-  const units = useGameStore(state => state.units);
   const map = useGameStore(state => state.map);
   const gameStats = useGameStore(state => state.gameStats);
 
@@ -1825,7 +1822,6 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       {renderDiplomacy()}
       {renderHelp()}
       <CityModal show={uiState.activeDialog === 'city-details'} onHide={handleCloseDialog} selectedCity={selectedCity} gameEngine={gameEngine} actions={actions} currentPlayer={currentPlayer} isPlayerCity={isPlayerCity} />
-      <HexDetailModal show={uiState.activeDialog === 'hex-details'} onHide={handleCloseDialog} selectedHex={selectedHex} map={map} units={units} cities={cities} />
       <RatesModal show={uiState.activeDialog === 'rates'} onHide={handleCloseDialog} gameEngine={gameEngine} />
       <GovernmentModal show={uiState.activeDialog === 'government'} onHide={handleCloseDialog} gameEngine={gameEngine} />
       <StatisticsModal show={uiState.activeDialog === 'statistics'} onHide={handleCloseDialog} />

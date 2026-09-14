@@ -14,9 +14,9 @@ import {
   collectCityThreatSamples,
   computeCityGarrisonStrength,
   type CityThreatAssessment
-} from './AIStrategy';
-import { canBuildUnit, type StrategyProfile, type AIState, resolveAICivStrategy, type BuildingPlan } from './AITypes';
-import { AIBuildingStrategy } from './AIBuildingStrategy';
+} from './AI/AIStrategy';
+import { canBuildUnit, type StrategyProfile, type AIState, resolveAICivStrategy, type BuildingPlan } from './AI/AITypes';
+import { AIBuildingStrategy } from './AI/AIBuildingStrategy';
 import type { City, Civilization, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 

@@ -1,5 +1,5 @@
 import { TERRAIN_PROPS } from '@/utils/Constants';
-import type { SquareCoordinate } from '../HexGrid';
+import type { SquareCoordinate } from '../../SquareGrid';
 
 // Type aliases for AI function parameters to avoid `any`
 type TileData = { type: string; explored?: boolean; resource?: string | null; fortress?: boolean; river?: boolean; passable?: boolean };

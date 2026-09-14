@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { Constants } from '../utils/Constants';
-import { SquareGrid } from '../game/HexGrid';
+import { SquareGrid } from '../game/SquareGrid';
 import { UNIT_TYPES } from '../data/GameData';
 import { UNIT_PROPERTIES } from '../data/UnitConstants';
 import { HUMAN_PLAYER_ID } from '../utils/PlayerConstants';

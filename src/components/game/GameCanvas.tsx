@@ -14,7 +14,7 @@ import {
   TerrainTileRenderInfo,
   UnitPathStep,
 } from "@/game/rendering/MapRenderer";
-import MoveAnimator from "@/game/engine/MoveAnimator";
+import MoveAnimator from "@/game/rendering/MoveAnimator";
 import { MathUtils } from "@/utils/MathUtils";
 import { centerCameraOnTile } from "@/utils/CameraUtils";
 import { HUMAN_PLAYER_ID } from "@/utils/PlayerConstants";

@@ -9,9 +9,9 @@
  * choice is a weighted coin-flip, so games don't all play out identically.
  */
 
-import { TERRAIN_PROPERTIES } from '../../data/TerrainConstants';
-import type { City } from '../../../types/game';
-import type GameEngine from './GameEngine';
+import { TERRAIN_PROPERTIES } from '../../../data/TerrainConstants';
+import type { City } from '../../../../types/game';
+import type GameEngine from '../GameEngine';
 
 // ---------------------------------------------------------------------------
 // Constants

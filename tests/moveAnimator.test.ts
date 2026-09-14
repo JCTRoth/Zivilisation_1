@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useGameStore } from '@/stores/GameStore';
-import MoveAnimator from '@/game/engine/MoveAnimator';
+import MoveAnimator from '@/game/rendering/MoveAnimator';
 import { getUnitDisplayTile } from '@/game/rendering/MapRenderer';
 import type { Unit } from '../types/game';
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AIManager } from '@/game/engine/AIManager';
+import { AIManager } from '@/game/engine/AI/AIManager';
 import {
   computeAggression,
   shouldTriggerAggression,
@@ -8,7 +8,7 @@ import {
   AGGRESSION_TRIGGER_THRESHOLD,
   AGGRESSION_TRIGGER_BAND,
   UNKNOWN_CITY_DEFENSE,
-} from '@/game/engine/AIAggression';
+} from '@/game/engine/AI/AIAggression';
 import type { EnemyLocation } from '@/game/engine/EnemySearcher';
 
 // ---------------------------------------------------------------------------

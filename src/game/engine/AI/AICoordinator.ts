@@ -6,7 +6,7 @@
  * outmatched units.
  */
 
-import type { Unit, City } from '../../../types/game';
+import type { Unit, City } from '../../../../types/game';
 import type { ArmyGroup } from './AITypes';
 
 // ---------------------------------------------------------------------------

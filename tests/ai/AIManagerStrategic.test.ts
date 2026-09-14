@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AIManager } from '@/game/engine/AIManager';
+import { AIManager } from '@/game/engine/AI/AIManager';
 import type { EnemyLocation } from '@/game/engine/EnemySearcher';
 
 const createMockEngine = () => {

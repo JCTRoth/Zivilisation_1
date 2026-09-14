@@ -7,14 +7,14 @@
  */
 
 import { BUILDING_PROPERTIES, BUILDING_PREREQUISITES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import type { BuildingProperties } from '../../data/GameConstants';
+import type { BuildingProperties } from '../../../data/GameConstants';
 import {
   type StrategyProfile,
   type Personality,
   type BuildingPlan,
   canBuildBuilding,
 } from './AITypes';
-import type { City, Civilization } from '../../../types/game';
+import type { City, Civilization } from '../../../../types/game';
 
 // ---------------------------------------------------------------------------
 // Helpers

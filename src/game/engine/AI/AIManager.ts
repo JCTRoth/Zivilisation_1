@@ -6,10 +6,10 @@
  */
 
 import { AIUtility, scanAreaForEnemies, findInterceptPosition, findPatrolWaypoint, type ThreatAlert } from './AIUtility';
-import { EnemySearcher } from './EnemySearcher';
+import { EnemySearcher } from '../EnemySearcher';
 import { UNIT_PROPS, TERRAIN_PROPS, IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '@/utils/Constants';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
-import { SettlementEvaluator, MIN_CITY_CENTER_DISTANCE } from './SettlementEvaluator';
+import { SettlementEvaluator, MIN_CITY_CENTER_DISTANCE } from '../SettlementEvaluator';
 import { AIStrategySelector } from './AIStrategySelector';
 import { AICoordinator } from './AICoordinator';
 import { AIResearch } from './AIResearch';
@@ -29,11 +29,11 @@ import {
   scoreEnemyTarget,
   type CityThreatAssessment
 } from './AIStrategy';
-import type { DiplomatAction } from './DiplomacyTypes';
-import type { Unit, City } from '../../../types/game';
-import GameEngine, { type PlayerTurnStorage, type MapTile } from './GameEngine';
-import { getShuffledAdjacentTiles } from './MovementHelper';
-import { awaitPendingAnimations } from './GlideAnimation';
+import type { DiplomatAction } from '../DiplomacyTypes';
+import type { Unit, City } from '../../../../types/game';
+import GameEngine, { type PlayerTurnStorage, type MapTile } from '../GameEngine';
+import { getShuffledAdjacentTiles } from '../MovementHelper';
+import { awaitPendingAnimations } from '../../rendering/GlideAnimation';
 
 // How much better (in settlement-score points) the best location must be for a
 // settler to keep walking instead of founding at its current tile. Prevents
@@ -571,12 +571,17 @@ export class AIManager {
             (c, r) => this.gameEngine.getUnitAt(c, r)
           );
           if (adjacentEnemy && adjacentEnemy.civilizationId !== unit.civilizationId) {
-            const tt = this.gameEngine.getTileAt(adjacentEnemy.col, adjacentEnemy.row);
+            // Look up the full Unit object (findNearbyEnemy returns a lightweight UnitData)
+            const fullEnemy = this.gameEngine.units.find(
+              (u: Unit) => u.id === adjacentEnemy.id && u.civilizationId === adjacentEnemy.civilizationId,
+            );
+            if (!fullEnemy) break;
+            const tt = this.gameEngine.getTileAt(fullEnemy.col, fullEnemy.row);
             const attackCost = Math.max(1, TERRAIN_PROPS[tt?.type ?? '']?.movement ?? 1);
             if (this.gameEngine.canUnitAffordMove(unit, attackCost)) {
-              console.log(`[AI] Unit ${unit.id} attacks adjacent enemy ${adjacentEnemy.type} at (${adjacentEnemy.col},${adjacentEnemy.row})`);
-              this.gameEngine.log('ai', `Attack — ${civ.name} ${unit.type}(${unit.id}) attacks adjacent ${adjacentEnemy.type} at (${adjacentEnemy.col},${adjacentEnemy.row})`, { civilizationId, action: 'attack', unitId: unit.id, unitType: unit.type, targetType: adjacentEnemy.type, targetCol: adjacentEnemy.col, targetRow: adjacentEnemy.row });
-              this.gameEngine.combatUnit(unit, adjacentEnemy);
+              console.log(`[AI] Unit ${unit.id} attacks adjacent enemy ${fullEnemy.type} at (${fullEnemy.col},${fullEnemy.row})`);
+              this.gameEngine.log('ai', `Attack — ${civ.name} ${unit.type}(${unit.id}) attacks adjacent ${fullEnemy.type} at (${fullEnemy.col},${fullEnemy.row})`, { civilizationId, action: 'attack', unitId: unit.id, unitType: unit.type, targetType: fullEnemy.type, targetCol: fullEnemy.col, targetRow: fullEnemy.row });
+              this.gameEngine.combatUnit(unit, fullEnemy);
               if (!this.gameEngine.units.includes(unit)) break; // unit defeated
               break; // combatUnit zeroes moves
             } else {

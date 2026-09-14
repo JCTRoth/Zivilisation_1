@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SquareGrid } from '@/game/HexGrid';
+import { SquareGrid } from '@/game/SquareGrid';
 import { Tile } from '@/game/Terrain';
 import { City } from '@/game/City';
 import { Civilization } from '@/game/Civilization';

@@ -10,7 +10,7 @@ import {
   type Personality,
   type AIState,
 } from './AITypes';
-import type { Civilization } from '../../../types/game';
+import type { Civilization } from '../../../../types/game';
 
 // ---------------------------------------------------------------------------
 // Constants

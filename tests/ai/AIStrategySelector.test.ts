@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { AIStrategySelector } from '@/game/engine/AIStrategySelector';
-import { createDefaultAIState, type AIState, type Personality, type StrategyProfile } from '@/game/engine/AITypes';
+import { AIStrategySelector } from '@/game/engine/AI/AIStrategySelector';
+import { createDefaultAIState, type AIState, type Personality, type StrategyProfile } from '@/game/engine/AI/AITypes';
 
 const makePersonality = (overrides: Partial<Personality> = {}): Personality => ({
   aggression: 5, expansion: 5, diplomacy: 5, science: 5, military: 5, economy: 5,

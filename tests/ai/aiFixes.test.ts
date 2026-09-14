@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
 import { AutoProduction } from '@/game/engine/AutoProduction';
-import { canBuildBuilding, resolveAICivStrategy } from '@/game/engine/AITypes';
+import { canBuildBuilding, resolveAICivStrategy } from '@/game/engine/AI/AITypes';
 import { BUILDING_PROPERTIES, BUILDING_TYPES } from '@/data/BuildingConstants';
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
-import { AIResearch } from '@/game/engine/AIResearch';
+import { AIResearch } from '@/game/engine/AI/AIResearch';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 
 /**

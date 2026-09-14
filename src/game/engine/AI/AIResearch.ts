@@ -15,7 +15,7 @@ import {
   type TechCategory,
   TECH_CATEGORIES,
 } from './AITypes';
-import type { Civilization } from '../../../types/game';
+import type { Civilization } from '../../../../types/game';
 
 // ---------------------------------------------------------------------------
 // Types

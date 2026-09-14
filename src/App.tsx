@@ -3,7 +3,6 @@ import { useGameStore } from "./stores/GameStore";
 import { CIVILIZATIONS } from "@/data/GameData";
 import GameEngine from "@/game/engine/GameEngine";
 import GameCanvas from "./components/game/GameCanvas";
-import HexDetailModal from "./components/ui/HexDetailModal";
 import SettingsModal from "./components/ui/SettingsModal";
 import GameSetupModal from "./components/ui/GameSetupModal";
 import EndTurnConfirmModal from "./components/ui/EndTurnConfirmModal";
@@ -56,11 +55,11 @@ function App() {
   const [confirmNewGame, setConfirmNewGame] = useState(false);
   const [confirmQuit, setConfirmQuit] = useState(false);
   const [isEndTurnAutomatic, setIsEndTurnAutomatic] = useState(false);
-  const [detailHex, setDetailHex] = useState<{
+  const [, setDetailHex] = useState<{
     col: number;
     row: number;
   } | null>(null);
-  const [terrainData, setTerrainData] = useState<TerrainTileRenderInfo | null>(
+  const [, setTerrainData] = useState<TerrainTileRenderInfo | null>(
     null,
   );
 
@@ -1282,14 +1281,6 @@ function App() {
         variant="danger"
         onConfirm={handleQuitConfirmed}
         onCancel={() => setConfirmQuit(false)}
-      />
-
-      {/* Hex Detail Modal */}
-      <HexDetailModal
-        show={showHexDetail}
-        onHide={() => setShowHexDetail(false)}
-        hex={detailHex}
-        terrain={terrainData}
       />
 
       {/* Settings Modal */}

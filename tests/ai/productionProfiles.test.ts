@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { AutoProduction } from '@/game/engine/AutoProduction';
-import { getCivProductionProfile } from '@/game/engine/AITypes';
+import { getCivProductionProfile } from '@/game/engine/AI/AITypes';
 import GameEngine from '@/game/engine/GameEngine';
 
 type MockProfile = 'military_expansion' | 'science_focus' | 'balanced_growth' | 'defensive_turtle' | 'wonder_rush' | 'early_expansion';

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { AICoordinator } from '@/game/engine/AICoordinator';
-import type { ArmyGroup } from '@/game/engine/AITypes';
+import { AICoordinator } from '@/game/engine/AI/AICoordinator';
+import type { ArmyGroup } from '@/game/engine/AI/AITypes';
 import type { Unit, City } from '@/../types/game';
 
 const makeUnit = (overrides: Partial<Unit> = {}): Unit => ({

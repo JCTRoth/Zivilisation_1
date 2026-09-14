@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
-import { AIManager } from '@/game/engine/AIManager';
+import { AIManager } from '@/game/engine/AI/AIManager';
 import type { Unit } from '@/../types/game';
 
 /**

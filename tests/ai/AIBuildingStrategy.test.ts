@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { AIBuildingStrategy } from '@/game/engine/AIBuildingStrategy';
-import type { BuildingPlan, Personality } from '@/game/engine/AITypes';
+import { AIBuildingStrategy } from '@/game/engine/AI/AIBuildingStrategy';
+import type { BuildingPlan, Personality } from '@/game/engine/AI/AITypes';
 
 interface TestCity {
   id: string;

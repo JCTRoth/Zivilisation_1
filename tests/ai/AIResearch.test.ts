@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { AIResearch } from '@/game/engine/AIResearch';
+import { AIResearch } from '@/game/engine/AI/AIResearch';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
-import type { Personality } from '@/game/engine/AITypes';
+import type { Personality } from '@/game/engine/AI/AITypes';
 
 type TestCiv = {
   id: number;

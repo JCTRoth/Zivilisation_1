@@ -1,6 +1,6 @@
 import { useGameStore } from '../stores/GameStore';
 import { firstUnresearchedInPath } from './ResearchPath';
-import { trackAIAnimation } from '../game/engine/GlideAnimation';
+import { trackAIAnimation } from '../game/rendering/GlideAnimation';
 import { awaitCameraGlide, isCameraGliding } from '../game/engine/CameraGlideGate';
 import { HUMAN_PLAYER_ID } from './PlayerConstants';
 import type GameEngine from '../game/engine/GameEngine';

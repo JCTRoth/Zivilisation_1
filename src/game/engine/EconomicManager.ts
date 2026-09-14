@@ -89,6 +89,7 @@ const clamp = (v: number, min: number, max: number): number =>
 
 export class EconomicManager {
   private gameEngine: GameEngine;
+  AI_MIN_GOLD_RESERVE: number;
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
@@ -241,6 +242,34 @@ export class EconomicManager {
       (sum, city) => sum + this.specialistYields(city).gold,
       0,
     );
+  }
+
+  /**
+   * Maximum number of units a civ can sustain without going negative on gold.
+   * Equals full-tax income (tax + specialist gold) divided by 1 gold/unit upkeep,
+   * floored. A civ always gets free support for one unit per city, so those
+   * don't count toward the cap.
+   */
+  sustainableUnits(civ: Civilization): number {
+    const civId = civ?.id;
+    if (civId == null) return 0;
+    const cities = (this.gameEngine?.cities ?? []).filter(
+      (c: City) => c.civilizationId === civId,
+    );
+    const cityCount = cities.length;
+    // Full-tax income: every city's commerce at 100% tax rate × TRADE_GOLD_MULTIPLIER
+    const fullTaxIncome = cities.reduce((total: number, city: City) => {
+      const commerce = this.cityCommerce(city);
+      const gov = getGovernment(civ.government);
+      const effective = commerce * (1 - gov.commercePenalty);
+      const corruption = CityUtils.calculateCorruption(city, civ, effective);
+      return total + Math.max(0, Math.floor(effective - corruption)) * TRADE_GOLD_MULTIPLIER;
+    }, 0);
+    const specialistGold = this.maxSpecialistGold(civ);
+    const totalIncome = fullTaxIncome + specialistGold;
+    // Each unit costs 1 gold/turn upkeep; one free unit per city
+    const upkeepSlots = Math.max(0, totalIncome - cityCount);
+    return upkeepSlots;
   }
 
   // ------------------------------------------------------------------

@@ -8,7 +8,7 @@ import {
   removeGlide,
   resolveAnimationDuration,
   sleep,
-} from './GlideAnimation';
+} from '../rendering/GlideAnimation';
 import { awaitCameraGlide, isCameraGliding } from './CameraGlideGate';
 import { findNewlySightedEnemies, getVisibleEnemyUnitIds } from './EnemySighting';
 import { useGameStore } from '../../stores/GameStore';

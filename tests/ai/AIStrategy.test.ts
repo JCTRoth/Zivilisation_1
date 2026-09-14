@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assessCityThreat, scoreEnemyTarget } from '@/game/engine/AIStrategy';
+import { assessCityThreat, scoreEnemyTarget } from '@/game/engine/AI/AIStrategy';
 import type { EnemyLocation } from '@/game/engine/EnemySearcher';
 
 const makeLocation = (overrides: Partial<EnemyLocation> = {}): EnemyLocation => ({

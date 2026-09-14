@@ -20,15 +20,15 @@ export enum TurnPhase {
   END = 'END'
 }
 
-import { AIResearch } from './AIResearch';
-import { createDefaultAIState, resolveAICivStrategy } from './AITypes';
+import { AIResearch } from './AI/AIResearch';
+import { createDefaultAIState, resolveAICivStrategy } from './AI/AITypes';
 import { serializeCities } from '../../utils/CitySnapshots';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { BUILDING_TYPES } from '@/data/BuildingConstants';
 import type { ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
-import { awaitPendingAnimations } from './GlideAnimation';
+import { awaitPendingAnimations } from '../rendering/GlideAnimation';
 
 export class TurnManager {
   private gameEngine: GameEngine;

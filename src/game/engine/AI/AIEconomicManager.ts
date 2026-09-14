@@ -10,16 +10,16 @@
  * before queueing new military units.
  */
 
-import { getGovernment } from '../../data/GovernmentData';
-import { CityUtils } from '../../utils/CityUtils';
-import type { City, Civilization } from '../../../types/game';
+import { getGovernment } from '../../../data/GovernmentData';
+import { CityUtils } from '../../../utils/CityUtils';
+import type { City, Civilization } from '../../../../types/game';
 import { resolveAICivStrategy, type StrategyProfile } from './AITypes';
-import GameEngine from './GameEngine';
+import GameEngine from '../GameEngine';
 import {
   EconomicManager,
   UNIT_MAINTENANCE,
   ABSOLUTE_MIN_GOLD,
-} from './EconomicManager';
+} from '../EconomicManager';
 
 export const AI_SCIENCE_FLOOR = 20;
 export const AI_MIN_TAX = 35;
