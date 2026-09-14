@@ -489,3 +489,26 @@
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* Worked tiles list in city details */
+.worked-tiles-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.worked-tiles-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.worked-tiles-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.worked-tiles-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+
+.worked-tile-row:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}

@@ -3,6 +3,7 @@ import { useGameStore } from '@/stores/GameStore';
 import { CIVILIZATIONS } from '@/data/GameData';
 import { TILE_SIZE } from '@/data/TerrainData';
 import { TERRAIN_PROPERTIES } from '@/data/TerrainConstants';
+import { SPECIAL_RESOURCES } from '@/data/TerrainConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import MiniMap from './MiniMap';
 import '../../styles/sidePanel.css';
@@ -65,6 +66,30 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     >;
     const props = terrainProps[tile.type];
     
+    // Base terrain yields
+    let food = props?.food ?? 0;
+    let production = props?.production ?? 0;
+    let trade = props?.trade ?? 0;
+
+    // Add resource bonuses (e.g. Horses +2 production on Plains)
+    const resInfo = (tile as unknown as Record<string, unknown>).resourceInfo as
+      { food?: number; production?: number; trade?: number; description?: string } | undefined;
+    if (resInfo) {
+      food += resInfo.food ?? 0;
+      production += resInfo.production ?? 0;
+      trade += resInfo.trade ?? 0;
+    } else if (tile.resource) {
+      // Fallback: look up from SPECIAL_RESOURCES
+      const special = SPECIAL_RESOURCES.find(
+        (r) => r.name.toLowerCase() === String(tile.resource).toLowerCase()
+      );
+      if (special) {
+        food += special.food ?? 0;
+        production += special.production ?? 0;
+        trade += special.trade ?? 0;
+      }
+    }
+
     return {
       ...tile,
       movementCost: props?.movement ?? 1,
@@ -72,9 +97,13 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
       visible: isVisible,
       explored: isExplored,
       defenseBonus: props?.defense ?? 1,
-      food: props?.food ?? 0,
-      production: props?.production ?? 0,
-      trade: props?.trade ?? 0
+      food,
+      production,
+      trade,
+      baseFood: props?.food ?? 0,
+      baseProduction: props?.production ?? 0,
+      baseTrade: props?.trade ?? 0,
+      resourceBonus: resInfo as { food?: number; production?: number; trade?: number; description?: string } | null,
     };
   }, [selectedHex, map]);
 
@@ -167,11 +196,38 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     }
     
     if (effectiveSelectedCity) {
+      const specs = effectiveSelectedCity.specialists ?? [];
       return (
         <div>
-          <div className="city-name">{selectedCity?.name}</div>
-          <div className="side-panel-small-muted">Population: {selectedCity?.population ?? 1}</div>
-          <div className="side-panel-small-muted city-production">Production: {selectedCity?.yields?.production ?? 0}</div>
+          <div className="city-name"><strong>{effectiveSelectedCity.name}</strong></div>
+          <div className="side-panel-small-muted">Location: {effectiveSelectedCity.col}, {effectiveSelectedCity.row}</div>
+          <div className="stats-div">
+            <div>Population: {effectiveSelectedCity.population ?? 1}</div>
+            <div>Food: {effectiveSelectedCity.yields?.food ?? 0}</div>
+            <div>Production: {effectiveSelectedCity.yields?.production ?? 0}</div>
+            <div>Trade: {effectiveSelectedCity.yields?.trade ?? 0}</div>
+            <div>Science: {effectiveSelectedCity.science ?? 0}</div>
+            <div>Gold: {effectiveSelectedCity.gold ?? 0}</div>
+          </div>
+          {/* Specialist icons — only shown if at least one is assigned */}
+          {specs.length > 0 && (
+            <div className="d-flex flex-wrap gap-1 mt-1">
+              {specs.map((type, i) => {
+                const def = SPECIALIST_YIELDS[type];
+                return (
+                  <span key={i} className="side-panel-specialist-chip" title={`${def.name} — click to remove`}>
+                    {def.icon}
+                    <button
+                      type="button"
+                      className="side-panel-specialist-remove"
+                      onClick={() => handleDemote(effectiveSelectedCity.id, i)}
+                      title="Convert back to tile worker"
+                    >×</button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
       );
     }
@@ -277,6 +333,107 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     );
   };
 
+  const renderWorkedTiles = (city: City) => {
+    const workedTiles = city.workingTiles;
+    if (!workedTiles || workedTiles.size === 0) return null;
+
+    const terrainProps = TERRAIN_PROPERTIES as Record<string, { food?: number; production?: number; trade?: number }>;
+    const tiles: Array<{ key: string; col: number; row: number; terrain: string; resource?: string; food: number; production: number; trade: number; worked: boolean }> = [];
+
+    for (const key of workedTiles) {
+      const [colStr, rowStr] = key.split(',');
+      const col = parseInt(colStr, 10);
+      const row = parseInt(rowStr, 10);
+      const tileIndex = row * map.width + col;
+      const tile = map.tiles?.[tileIndex];
+      if (!tile) continue;
+
+      const terrain = tile.type ?? 'Unknown';
+      const base = terrainProps[terrain] ?? {};
+      let food = base.food ?? 0;
+      let production = base.production ?? 0;
+      let trade = base.trade ?? 0;
+
+      // Add special resource bonuses
+      const resName = tile.resource;
+      if (resName) {
+        const special = SPECIAL_RESOURCES.find(
+          (r: { name: string }) => r.name.toLowerCase() === String(resName).toLowerCase()
+        );
+        if (special) {
+          food += special.food ?? 0;
+          production += special.production ?? 0;
+          trade += special.trade ?? 0;
+        }
+      }
+
+      tiles.push({ key, col, row, terrain, resource: tile.resource, food, production, trade, worked: true });
+    }
+
+    // Sort: city center first, then by food desc
+    tiles.sort((a, b) => {
+      const aCenter = a.col === city.col && a.row === city.row;
+      const bCenter = b.col === city.col && b.row === city.row;
+      if (aCenter && !bCenter) return -1;
+      if (!aCenter && bCenter) return 1;
+      return b.food - a.food;
+    });
+
+    const totals = tiles.reduce(
+      (acc, t) => ({ food: acc.food + t.food, production: acc.production + t.production, trade: acc.trade + t.trade }),
+      { food: 0, production: 0, trade: 0 }
+    );
+
+    return (
+      <div className="mt-2">
+        <div className="side-panel-small-muted fw-bold mb-1">
+          Worked Tiles ({tiles.length})
+        </div>
+        <div className="worked-tiles-list" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+          {tiles.map((t) => {
+            const isCenter = t.col === city.col && t.row === city.row;
+            return (
+              <div
+                key={t.key}
+                className="worked-tile-row d-flex justify-content-between align-items-center py-1 px-1 rounded mb-1"
+                style={{
+                  background: isCenter ? 'rgba(255,193,7,0.1)' : 'rgba(255,255,255,0.03)',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                }}
+                title={`${t.terrain}${t.resource ? ` (${t.resource})` : ''} — click to center map`}
+                onClick={() => {
+                  if (gameEngine) {
+                    const centerX = t.col * TILE_SIZE;
+                    const centerY = t.row * TILE_SIZE;
+                    actions.updateCamera({ x: centerX - window.innerWidth / 5, y: centerY - window.innerHeight / 4 });
+                  }
+                }}
+              >
+                <span className="text-white-50" style={{ minWidth: '20px' }}>
+                  {isCenter ? '🏛️' : '•'}
+                </span>
+                <span className="flex-grow-1 text-white text-truncate mx-1">
+                  {t.terrain}{t.resource ? ` (${t.resource})` : ''}
+                </span>
+                <span className="d-flex gap-2 flex-shrink-0" style={{ fontSize: '0.75rem' }}>
+                  <span className="text-success" title="Food">🍞{t.food}</span>
+                  <span className="text-warning" title="Production">⛏️{t.production}</span>
+                  <span className="text-info" title="Trade">💰{t.trade}</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="d-flex justify-content-between small text-muted mt-1 px-1" style={{ fontSize: '0.7rem' }}>
+          <span>🍞 {totals.food}</span>
+          <span>⛏️ {totals.production}</span>
+          <span>💰 {totals.trade}</span>
+        </div>
+      </div>
+    );
+  };
+
   const renderDetailsContent = () => {
     return (
       <>
@@ -291,10 +448,40 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
                 <div>Movement Cost: {selectedTile.movementCost}</div>
                 <div>Defense: {Math.round((selectedTile.defenseBonus - 1) * 100)}%</div>
                 {selectedTile.improvement && <div>Improvement: {selectedTile.improvement}</div>}
-                {selectedTile.resource && <div>Resource: {selectedTile.resource}</div>}
-                <div>Food: {selectedTile.food ?? 0}</div>
-                <div>Production: {selectedTile.production ?? 0}</div>
-                <div>Trade: {selectedTile.trade ?? 0}</div>
+                {selectedTile.resource && (
+                  <div>
+                    Resource: <strong>{selectedTile.resource}</strong>
+                    {selectedTile.resourceBonus?.description && (
+                      <div className="small text-muted fst-italic mt-1">
+                        {selectedTile.resourceBonus.description}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="mt-1">
+                  <span className="text-success">Food: {selectedTile.food ?? 0}</span>
+                  {selectedTile.resourceBonus?.food ? (
+                    <span className="small text-success ms-1">
+                      (base {selectedTile.baseFood} + {selectedTile.resourceBonus.food} resource)
+                    </span>
+                  ) : null}
+                </div>
+                <div>
+                  <span className="text-warning">Production: {selectedTile.production ?? 0}</span>
+                  {selectedTile.resourceBonus?.production ? (
+                    <span className="small text-warning ms-1">
+                      (base {selectedTile.baseProduction} + {selectedTile.resourceBonus.production} resource)
+                    </span>
+                  ) : null}
+                </div>
+                <div>
+                  <span className="text-info">Trade: {selectedTile.trade ?? 0}</span>
+                  {selectedTile.resourceBonus?.trade ? (
+                    <span className="small text-info ms-1">
+                      (base {selectedTile.baseTrade} + {selectedTile.resourceBonus.trade} resource)
+                    </span>
+                  ) : null}
+                </div>
               </div>
             </div>
             <hr className="details-separator" />
@@ -303,17 +490,9 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
 
         {effectiveSelectedCity ? (
           <>
-            <div className="unit-name-details"><strong>{effectiveSelectedCity.name}</strong></div>
-            <div className="side-panel-small-muted">Location: {effectiveSelectedCity.col}, {effectiveSelectedCity.row}</div>
-            <div className="stats-div">
-              <div>Population: {effectiveSelectedCity.population ?? 1}</div>
-              <div>Food: {effectiveSelectedCity.yields?.food ?? 0}</div>
-              <div>Production: {effectiveSelectedCity.yields?.production ?? 0}</div>
-              <div>Trade: {effectiveSelectedCity.yields?.trade ?? 0}</div>
-              <div>Science: {effectiveSelectedCity.science ?? 0}</div>
-              <div>Gold: {effectiveSelectedCity.gold ?? 0}</div>
-            </div>
             {renderCitySpecialists(effectiveSelectedCity)}
+            {/* Worked Tiles Resource Preview */}
+            {renderWorkedTiles(effectiveSelectedCity)}
           </>
         ) : !selectedTile ? (
           <>
