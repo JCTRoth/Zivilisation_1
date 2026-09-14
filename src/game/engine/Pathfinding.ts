@@ -165,7 +165,10 @@ export class Pathfinding {
     getTileAt: (col: number, row: number) => MapTile | null,
     unitType: string,
     mapWidth: number,
-    mapHeight: number
+    mapHeight: number,
+    getUnitAt?: (col: number, row: number) => { civilizationId: number } | null,
+    friendlyCivId?: number,
+    getCityAt?: (col: number, row: number) => { civilizationId: number } | null
   ): PathResult {
     const openSet: PathNode[] = [];
     const closedSet = new Set<string>();
@@ -242,6 +245,25 @@ export class Pathfinding {
         // River crossing check: land units can't cross wide rivers
         if (!this.canCrossRiver(current.col, current.row, col, row, getTileAt, mapWidth, mapHeight, unitType)) {
           continue;
+        }
+
+        // Skip tiles occupied by friendly units (can't stack).
+        // The target tile is exempted — the unit needs to reach its destination.
+        const isTarget = col === targetCol && row === targetRow;
+        if (!isTarget && getUnitAt && friendlyCivId != null) {
+          const occupant = getUnitAt(col, row);
+          if (occupant && occupant.civilizationId === friendlyCivId) {
+            continue; // Friendly unit blocking — path around it
+          }
+        }
+
+        // Skip tiles with enemy cities (can't pass through — must attack or go around).
+        // The target tile is exempted — if the destination IS an enemy city, allow it.
+        if (!isTarget && getCityAt && friendlyCivId != null) {
+          const city = getCityAt(col, row);
+          if (city && city.civilizationId !== friendlyCivId) {
+            continue; // Enemy city — path around it
+          }
         }
 
         const g = current.g + cost;

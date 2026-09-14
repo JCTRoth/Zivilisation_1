@@ -3,16 +3,26 @@ BUGS:
 -----
 
 --Open--
-- bribe unit is bugged?
 - attacking doesnt work if it goes through a friendly unit
 - improve building stuff ui in cities
+- when moving units over enemy cities, they attack them instead
+- when citiy is selected, tiles could preview which resources they support
+- when attacking, don't set that as a path that will be done automatically next turn
+  -> just because unit can't reach that path (because it is blocked by enemy unit) it shouldn't auto attack next turn
+- why is research prograss towards the end of a research getting slower?
+  ->  it should be constant right?
+- how to not get annoyed if city has nothing to build?
+  -> need an idea? -> only spawn message once? -> until that production had been slected and is done?
+
 
 ?--Fixed--?
+- bribe unit is bugged?
+- nothing happens when producing caravans, fix it!
+- Make it impossible to research somthing that is already discovered/researched by the civ.
 - per turn projections are wrong
 - when creating a city next to enemy unit, the city will imediately fall in enemies hand
 - when attacking city with one health the city stays alive and only next turn disappears
 - are the libraries of other cities even doing anything? i am getting one science while having multiple cities with libraries
-- when moving units over enemy cities, they attack them instead
 - buying units directly should not be 50% cheaper
 - resources in cities don't seem to be calculated correctly
   what is starvation doing?
@@ -80,18 +90,6 @@ the food storage will eventually drop below zero, and a citizen will die regardl
 of whether a Granary is present.If you are trying to calculate the exact food storage
 capacity threshold for a specific city size to plug into your formulas.
 
-- when citiy is selected, tiles could preview which resources they support
-- when attacking, don't set that as a path that will be done automatically next turn
-  -> just because unit can't reach that path (because it is blocked by enemy unit) it shouldn't auto attack next turn
-- why is research prograss towards the end of a research getting slower?
-  ->  it should be constant right?
-- nothing happens when producing caravans
-- how to not get annoyed if city has nothing to build?
-  -> need an idea? -> only spawn message once? -> until that production had been slected and is done?
-- it should not be possible to build water units on cities that have no water connection
-  -> I can not move water units on water / river if next to it (probably not supposed to be)
-
-
 -------------------
 FUNCTIONAL TOODO'S:
 -------------------
@@ -122,6 +120,8 @@ Far further development of the game engine is planned, including:
 ------------
 Water stuff
 ------------
+- it should not be possible to build water units on cities that have no water connection
+  -> I can not move water units on water / river if next to it (probably not supposed to be)
 * Introduce new Tile Type Lake if less than 4x6 Tiles than it is NO/NOT ocean but a lake, a lake has the same properties as an river but is NOT passable.
 Integrate it into the map generation, and into the game engine, and into the game logic, and into the game UI, and into the game AI, and into the game diplomacy, and into the game economics, and into the game military, and into the game science, and into the game culture, and into the game religion, and into the game espionage, and into the game trade, and into the game diplomacy, and into the game victory conditions.
 * The AI should start to build ships if no enemy is reachable on the land way.

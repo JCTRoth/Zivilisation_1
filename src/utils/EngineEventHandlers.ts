@@ -647,7 +647,12 @@ export class EngineEventRouter {
       if (!this.isAIVsAI) {
         this.actions.selectUnit(unit.id);
       }
-      this.actions.addNotification({ type: 'success', message: `${unit.type} ready to move!` });
+      // Caravans get a special hint about trade routes.
+      if (unit.type === 'caravan') {
+        this.actions.addNotification({ type: 'info', message: 'Caravan built! Move it to another city to establish a trade route.' });
+      } else {
+        this.actions.addNotification({ type: 'success', message: `${unit.type} ready to move!` });
+      }
     }
   }
 

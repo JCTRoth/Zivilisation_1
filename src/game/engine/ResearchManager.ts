@@ -87,14 +87,14 @@ export class ResearchManager {
     return clamp(1 - known * 0.1, 0.6, 1);
   }
 
-  /** < 1.0 when the civ has discovered some of the tech's prerequisites. */
+  /** ≤ 1.0 when the civ is missing some of the tech's prerequisites. */
   prerequisitesModifier(civ: Civilization, tech: Technology): number {
     const prereqs = Array.isArray(tech.prerequisites) ? tech.prerequisites : [];
     if (prereqs.length === 0) return 1;
-    const researched = prereqs.filter((p) =>
-      Array.isArray(civ.technologies) && civ.technologies.includes(p),
+    const missing = prereqs.filter((p) =>
+      !Array.isArray(civ.technologies) || !civ.technologies.includes(p),
     ).length;
-    return clamp(1 - (researched / prereqs.length) * 0.4, 0.6, 1);
+    return clamp(1 - (missing / prereqs.length) * 0.4, 0.6, 1);
   }
 
   /** Civ 1 beakers-applied formula for a turn. */

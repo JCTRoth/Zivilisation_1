@@ -251,6 +251,15 @@
   cursor: pointer;
 }
 
+.queue-item--active {
+  background: rgba(255, 193, 7, 0.08);
+  border: 1px solid rgba(255, 193, 7, 0.25);
+}
+
+.min-width-0 {
+  min-width: 0;
+}
+
 /* All three action buttons in a single horizontal row on every screen size */
 .queue-item-actions {
   display: flex;

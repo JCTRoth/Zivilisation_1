@@ -44,6 +44,18 @@ export class GoToManager {
     console.log(`[GoToManager] Calculating path for unit ${unit.id} from (${unit.col},${unit.row}) to (${targetCol},${targetRow})`);
 
     try {
+      // Provide a getUnitAt callback so the pathfinder avoids friendly units.
+      const getUnitAt = (col: number, row: number) => {
+        const u = this.gameEngine.units.find(u => u.col === col && u.row === row);
+        return u ? { civilizationId: u.civilizationId } : null;
+      };
+
+      // Provide a getCityAt callback so the pathfinder avoids enemy cities.
+      const getCityAt = (col: number, row: number) => {
+        const c = this.gameEngine.getCityAt(col, row);
+        return c ? { civilizationId: c.civilizationId } : null;
+      };
+
       const pathResult = Pathfinding.findPath(
         unit.col,
         unit.row,
@@ -52,7 +64,10 @@ export class GoToManager {
         getTileAt,
         unit.type,
         mapWidth,
-        mapHeight
+        mapHeight,
+        getUnitAt,
+        unit.civilizationId,
+        getCityAt
       );
 
       if (pathResult.success && pathResult.path.length > 1) {
@@ -154,7 +169,10 @@ export class GoToManager {
         return { success: true, remainingPath };
       } else {
         console.log(`[GoToManager] Move failed for unit ${unitId}, reason:`, moveResult?.reason);
-        return { success: false, reason: moveResult?.reason || 'move_failed', remainingPath: path };
+        // Clear the path on failure so it doesn't persist to the next turn
+        // (e.g. attack blocked by enemy, friendly unit in the way).
+        this.clearUnitPath(unitId);
+        return { success: false, reason: moveResult?.reason || 'move_failed', remainingPath: [] };
       }
     } catch (error) {
       console.error(`[GoToManager] Error executing move for unit ${unitId}:`, error);

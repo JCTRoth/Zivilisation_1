@@ -61,7 +61,7 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
         <Modal.Title>Statistics and Reports</Modal.Title>
       </Modal.Header>
       <Modal.Body>
-        <div className="mb-3 text-light-emphasis">
+        <div className="mb-3 text-white">
           Turn {gameState.currentTurn ?? 1} ·{' '}
           {gameState.currentYear != null
             ? gameState.currentYear < 0
@@ -83,9 +83,8 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
                         <th className="text-end" style={{ width: '25%' }}>Value</th>
                         <th className="text-end" style={{ width: '15%' }}>Rank</th>
                         <th className="text-end" style={{ width: '30%' }}>
-                          1st Place
+                          Ranking
                           <span className="ms-1 text-white-50" style={{ fontSize: '0.75em' }}>
-                            (Embassy Bonus)
                           </span>
                         </th>
                       </tr>

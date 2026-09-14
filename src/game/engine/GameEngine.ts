@@ -3971,7 +3971,8 @@ export default class GameEngine {
       const hasTech = (id: string): boolean => civTechs.includes(String(id));
       const prereqs = tech.prerequisites ?? [];
       const prereqsMet = prereqs.length === 0 || prereqs.every(hasTech);
-      if (prereqsMet) {
+      // Don't allow researching a tech the civ already owns.
+      if (prereqsMet && !hasTech(techId)) {
         civ.currentResearch = tech;
         civ.researchProgress = savedProgress || 0;
       }

@@ -585,11 +585,13 @@ export class DiplomacyManager {
       return { accepted: false, reason: `Requires ${cost} gold (have ${gold})` };
     }
 
-    // Bribe success chance: 60% base, modified by attitude
+    // Bribe success chance: 60% base, modified by attitude.
+    // Hostile civs are easier to bribe (units are demoralised),
+    // friendly civs are harder (units are loyal).
     const attitude = this.getAttitude(unit.civilizationId, diplomatCivId);
     let chance = 60;
-    if (attitude === 'friendly') chance += 20;
-    else if (attitude === 'hostile') chance -= 20;
+    if (attitude === 'hostile') chance += 20;
+    else if (attitude === 'friendly') chance -= 20;
 
     if (Math.random() * 100 >= chance) {
       return { accepted: false, reason: 'Bribe failed — the unit refused' };
@@ -600,6 +602,12 @@ export class DiplomacyManager {
     fromCiv.resources.gold -= cost;
     unit.civilizationId = diplomatCivId;
     unit.movesRemaining = 0;
+
+    // Bribing is a hostile act — declare war automatically (Civ1 behaviour).
+    const targetCiv = this.gameEngine.civilizations?.[originalCivId];
+    if (targetCiv) {
+      this.declareWar(diplomatCivId, originalCivId);
+    }
 
     this.logEvent({
       type: 'unit_bribed',

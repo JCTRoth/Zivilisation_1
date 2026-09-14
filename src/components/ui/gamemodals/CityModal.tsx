@@ -31,7 +31,6 @@ const CityModal: React.FC<CityModalProps> = ({
   isPlayerCity
 }) => {
   const [selectedProductionKey, setSelectedProductionKey] = useState<string | null>(null);
-  const [selectedQueueIndex, setSelectedQueueIndex] = useState<number | null>(null);
   const [showProductionModal, setShowProductionModal] = useState<boolean>(false);
   const [autoProduction, setAutoProduction] = useState<boolean>(selectedCity?.autoProduction || false);
 
@@ -131,213 +130,172 @@ const CityModal: React.FC<CityModalProps> = ({
                 </div>
                 {isPlayerCity && (
                   <>
+                    {/* ── Production Queue (redesigned) ─────────────────── */}
                     <div className="mt-3">
-                      <h6>Current Production</h6>
-                      {selectedCity.currentProduction ? (
-                        <div className="text-white p-2 rounded d-flex justify-content-between align-items-start">
-                          <div className="flex-grow-1">
-                            <strong>{logic.getCurrentProductionName()}</strong>
-                            <div className="small text-muted">
-                              Progress: {logic.getProductionProgressValue()} / {logic.getCurrentProductionCost()} ({logic.getProgressPercent()}%)
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <h6 className="mb-0">Production</h6>
+                        <div className="form-check form-switch mb-0">
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            id={`auto-production-${selectedCity.id}`}
+                            checked={autoProduction}
+                            onChange={(e) => {
+                              const newState = e.target.checked;
+                              setAutoProduction(newState);
+                              if (gameEngine && typeof gameEngine.toggleAutoProduction === 'function') {
+                                gameEngine.toggleAutoProduction(selectedCity.id, newState);
+                              }
+                            }}
+                          />
+                          <label className="form-check-label small text-muted" htmlFor={`auto-production-${selectedCity.id}`}>
+                            Auto
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Choose + Add row */}
+                      <div className="d-flex gap-2 mb-2">
+                        <button
+                          className="btn btn-secondary text-white flex-grow-1 production-select-btn"
+                          type="button"
+                          onClick={() => setShowProductionModal(true)}
+                        >
+                          <i className="bi bi-list-ul me-1"></i>
+                          {selectedProductionKey
+                            ? `${UNIT_PROPS[selectedProductionKey]?.name || BUILDING_PROPS[selectedProductionKey]?.name} (${getSelectedProductionCost(selectedProductionKey)} shields)`
+                            : 'Choose Production…'}
+                        </button>
+                        <button
+                          className="btn btn-primary"
+                          type="button"
+                          onClick={() => handleQueueProduction(selectedProductionKey)}
+                          disabled={!selectedProductionKey}
+                          title="Add to queue"
+                        >
+                          <i className="bi bi-plus-lg"></i> Add
+                        </button>
+                      </div>
+
+                      {(() => {
+                        const purchasedThisTurn = selectedCity.purchasedThisTurn || [];
+                        if (purchasedThisTurn.length > 0) {
+                          return (
+                            <div className="alert alert-warning small mb-2 py-1 px-2">
+                              <i className="bi bi-exclamation-triangle"></i> Purchase used this turn.
                             </div>
-                            <div className="small text-muted">
-                              Production per turn: {logic.getProductionPerTurn()}
-                            </div>
-                            <div className="small text-muted">
-                              Turns remaining: {logic.getFormattedTurns()}
-                            </div>
-                          </div>
-                          <div className="d-flex flex-column gap-1 ms-2">
-                            {(() => {
-                              const totalCost = logic.getCurrentProductionCost();
-                              const progress = logic.getProductionProgressValue();
-                              const remainingShields = Math.max(0, totalCost - progress);
-                              const playerGold = currentPlayer?.resources?.gold ?? 0;
-                              const purchasedThisTurn = (selectedCity.purchasedThisTurn?.length ?? 0) > 0;
-                              const goldCost = remainingShields * 2;
-                              const canBuy = remainingShields > 0 && playerGold >= goldCost && !purchasedThisTurn;
-                              return (
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      {/* Queue box — current production is always item #0 */}
+                      <div className="queue-box bg-dark border border-secondary rounded p-2" ref={queueBoxRef} style={{maxHeight: '320px', overflowY: 'auto'}}>
+                        {/* Current production (always first) */}
+                        {selectedCity.currentProduction ? (
+                          <div className="queue-item queue-item--active p-2 mb-1 rounded">
+                            <div className="d-flex justify-content-between align-items-start gap-2">
+                              <div className="flex-grow-1 min-width-0">
+                                <div className="d-flex align-items-center gap-2">
+                                  <span className="badge bg-warning text-dark">▶</span>
+                                  <strong className="text-truncate">{logic.getCurrentProductionName()}</strong>
+                                </div>
+                                {/* Progress bar */}
+                                <div className="progress mt-1 mb-1" style={{height: '6px'}}>
+                                  <div
+                                    className="progress-bar bg-warning"
+                                    style={{width: `${logic.getProgressPercent()}%`}}
+                                  ></div>
+                                </div>
+                                <div className="d-flex justify-content-between small text-muted">
+                                  <span>{logic.getProductionProgressValue()}/{logic.getCurrentProductionCost()} shields · {logic.getProductionPerTurn()}/turn</span>
+                                  <span>{logic.getFormattedTurns()} turns left</span>
+                                </div>
+                              </div>
+                              <div className="d-flex gap-1 flex-shrink-0">
+                                {(() => {
+                                  const totalCost = logic.getCurrentProductionCost();
+                                  const progress = logic.getProductionProgressValue();
+                                  const remaining = Math.max(0, totalCost - progress);
+                                  const gold = currentPlayer?.resources?.gold ?? 0;
+                                  const purchased = (selectedCity.purchasedThisTurn?.length ?? 0) > 0;
+                                  const goldCost = remaining * 2;
+                                  const canBuy = remaining > 0 && gold >= goldCost && !purchased;
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm city-buy-button"
+                                      disabled={!canBuy}
+                                      title={purchased ? 'Already purchased' : canBuy ? `Rush for ${goldCost}g` : `Need ${goldCost}g`}
+                                      onClick={() => {
+                                        if (gameEngine && typeof gameEngine.rushCityProduction === 'function') {
+                                          gameEngine.rushCityProduction(selectedCity.id);
+                                          if (actions?.addNotification) {
+                                            actions.addNotification({ type: 'success', message: `Rushed ${logic.getCurrentProductionName()} for ${goldCost}g!` });
+                                          }
+                                        }
+                                      }}
+                                    >
+                                      🪙 {goldCost}g
+                                    </button>
+                                  );
+                                })()}
                                 <button
                                   type="button"
-                                  className="btn btn-sm city-buy-button"
-                                  disabled={!canBuy}
-                                  title={
-                                    purchasedThisTurn
-                                      ? 'Already purchased this turn'
-                                      : remainingShields <= 0
-                                        ? 'Production complete'
-                                        : playerGold < goldCost
-                                          ? `Need ${goldCost} Gold (have ${playerGold})`
-                                          : `Buy remaining for ${goldCost} Gold`
-                                  }
+                                  className="btn btn-sm btn-outline-danger"
+                                  title="Cancel production"
                                   onClick={() => {
-                                    if (gameEngine && typeof gameEngine.rushCityProduction === 'function') {
-                                      gameEngine.rushCityProduction(selectedCity.id);
-                                      if (actions?.addNotification) {
-                                        actions.addNotification({
-                                          type: 'success',
-                                          message: `Rushed ${logic.getCurrentProductionName()} for ${goldCost} Gold!`
-                                        });
-                                      }
+                                    if (gameEngine && typeof gameEngine.removeCurrentProduction === 'function') {
+                                      gameEngine.removeCurrentProduction(selectedCity.id);
                                     }
                                   }}
                                 >
-                                  🪙 Rush ({goldCost}g)
+                                  <i className="bi bi-x-lg"></i>
                                 </button>
-                              );
-                            })()}
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-danger"
-                              title="Remove current production"
-                              onClick={() => {
-                                if (gameEngine && typeof gameEngine.removeCurrentProduction === 'function') {
-                                  gameEngine.removeCurrentProduction(selectedCity.id);
-                                }
-                              }}
-                            >
-                              <i className="bi bi-x-lg"></i>
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-muted">No active production</div>
-                      )}
-                    </div>
-                    <div className="mt-3">
-                      <div className="form-check">
-                        <input
-                          className="form-check-input"
-                          type="checkbox"
-                          id={`auto-production-${selectedCity.id}`}
-                          checked={autoProduction}
-                          onChange={(e) => {
-                            const newState = e.target.checked;
-                            // Immediate visual feedback
-                            setAutoProduction(newState);
-                            // Trigger engine action
-                            if (gameEngine && typeof gameEngine.toggleAutoProduction === 'function') {
-                              const result = gameEngine.toggleAutoProduction(selectedCity.id, newState);
-                              console.log(`[CityModal] Auto Production ${newState ? 'enabled' : 'disabled'} for city ${selectedCity.id}, result:`, result);
-                              // Update actions if available
-                              if (actions?.addNotification) {
-                                actions.addNotification({
-                                  type: 'success',
-                                  message: `Auto Production ${newState ? 'enabled' : 'disabled'}`
-                                });
-                              }
-                            } else {
-                              console.warn('[CityModal] toggleAutoProduction method not available');
-                            }
-                          }}
-                        />
-                        <label className="form-check-label" htmlFor={`auto-production-${selectedCity.id}`}>
-                          <strong>Auto Production</strong>
-                          <div className="small text-muted">Automatically set production items based on city needs</div>
-                        </label>
-                      </div>
-                    </div>
-                    <div className="production-queue-layout">
-                      <div className="production-panel">
-                        <h6>Production</h6>
-                        {(() => {
-                          const purchasedThisTurn = selectedCity.purchasedThisTurn || [];
-                          if (purchasedThisTurn.length > 0) {
-                            return (
-                              <div className="alert alert-warning small mb-2">
-                                <i className="bi bi-exclamation-triangle"></i> Already purchased an item this turn. Purchase will be available next turn.
                               </div>
-                            );
-                          }
-                          return null;
-                        })()}
-                        <div className="production-panel-actions">
-                          {/* Item chooser: taking an item only selects it for
-                              the "Add" button below — it never touches the
-                              current production. */}
-                          <button
-                            className="btn btn-secondary text-white production-select-btn"
-                            type="button"
-                            onClick={() => setShowProductionModal(true)}
-                            disabled={!isPlayerCity}
-                            title="Choose the unit or building to add"
-                          >
-                            <i className="bi bi-list-ul me-1"></i>
-                            {selectedProductionKey ? `${UNIT_PROPS[selectedProductionKey]?.name || BUILDING_PROPS[selectedProductionKey]?.name} (${getSelectedProductionCost(selectedProductionKey)} shields)` : 'Choose Production…'}
-                          </button>
-                          {/* Add = append extra copies to the build queue. */}
-                          <div className="production-btn-row mt-2">
-                            <button
-                              className="btn btn-primary production-add-btn"
-                              type="button"
-                              onClick={() => handleQueueProduction(selectedProductionKey)}
-                              disabled={!isPlayerCity || !selectedProductionKey}
-                              title="Append to the build queue (repeatable)"
-                            >
-                              <i className="bi bi-plus-lg me-1"></i> Add
-                            </button>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                      <div className="queue-panel">
-                        <h6>Queue</h6>
-                        <div className="queue-box bg-dark border border-secondary rounded p-2" ref={queueBoxRef} style={{maxHeight: '240px', overflowY: 'auto'}}>
-                          {logic.hasQueueItems() ? (
-                            logic.getQueueItems().map((q: ProductionItem, i: number) => (
-                              <div key={i} className={`queue-item p-2 mb-1 rounded ${selectedQueueIndex === i ? 'text-white' : 'text-white'}`} onClick={() => setSelectedQueueIndex(i)}>
-                                <div className="d-flex justify-content-between align-items-center gap-2">
-                                  <div className="flex-grow-1">
-                                    <div><strong>{q.name}</strong></div>
-                                    <div className="small">#{i + 1} in queue · {q.cost} shields</div>
-                                    <div className="small text-muted">Turns: {ModalUtils.getTurnsRemaining(0, q.cost, logic.getProductionPerTurn())}</div>
-                                  </div>
-                                  <div className="queue-item-actions">
-                                    <button
-                                      type="button"
-                                      className="btn btn-outline-light btn-sm queue-action-btn"
-                                      title="Move up in queue"
-                                      disabled={i === 0}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        logic.moveQueueItem(i, i - 1);
-                                        setSelectedQueueIndex(i - 1);
-                                      }}
-                                    >
-                                      <i className="bi bi-arrow-up"></i>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn btn-outline-light btn-sm queue-action-btn"
-                                      title="Move down in queue"
-                                      disabled={i === logic.getQueueItems().length - 1}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        logic.moveQueueItem(i, i + 1);
-                                        setSelectedQueueIndex(i + 1);
-                                      }}
-                                    >
-                                      <i className="bi bi-arrow-down"></i>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="btn btn-outline-danger btn-sm queue-action-btn"
-                                      title="Remove from queue"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        logic.removeQueueItem(i);
-                                        setSelectedQueueIndex(null);
-                                      }}
-                                    >
-                                      <i className="bi bi-trash"></i>
-                                    </button>
-                                  </div>
+                        ) : (
+                          <div className="text-muted small p-2">No active production</div>
+                        )}
+
+                        {/* Queued items */}
+                        {logic.hasQueueItems() && logic.getQueueItems().map((q: ProductionItem, i: number) => (
+                          <div key={i} className="queue-item p-2 mb-1 rounded">
+                            <div className="d-flex justify-content-between align-items-center gap-2">
+                              <div className="flex-grow-1 min-width-0">
+                                <div className="d-flex align-items-center gap-2">
+                                  <span className="badge bg-secondary">#{i + 1}</span>
+                                  <span className="text-truncate">{q.name}</span>
+                                </div>
+                                <div className="small text-muted ms-4">
+                                  {q.cost} shields · ~{ModalUtils.getTurnsRemaining(0, q.cost, logic.getProductionPerTurn())} turns
                                 </div>
                               </div>
-                            ))
-                          ) : (
-                            <div className="text-white">Queue is empty</div>
-                          )}
-                        </div>
+                              <div className="queue-item-actions">
+                                <button type="button" className="btn btn-outline-light btn-sm queue-action-btn" disabled={i === 0}
+                                  onClick={(e) => { e.stopPropagation(); logic.moveQueueItem(i, i - 1); }}>
+                                  <i className="bi bi-arrow-up"></i>
+                                </button>
+                                <button type="button" className="btn btn-outline-light btn-sm queue-action-btn" disabled={i === logic.getQueueItems().length - 1}
+                                  onClick={(e) => { e.stopPropagation(); logic.moveQueueItem(i, i + 1); }}>
+                                  <i className="bi bi-arrow-down"></i>
+                                </button>
+                                <button type="button" className="btn btn-outline-danger btn-sm queue-action-btn"
+                                  onClick={(e) => { e.stopPropagation(); logic.removeQueueItem(i); }}>
+                                  <i className="bi bi-trash"></i>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+
+                        {!selectedCity.currentProduction && !logic.hasQueueItems() && (
+                          <div className="text-center text-muted py-3">
+                            <i className="bi bi-inbox fs-3 d-block mb-1"></i>
+                            Nothing in production. Choose something above.
+                          </div>
+                        )}
                       </div>
                     </div>
                   </>
