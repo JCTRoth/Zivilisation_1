@@ -7,6 +7,9 @@ Move CSS → src/styles, static data → src/data, utility functions → src/uti
 Assume npm server is already running at port 3000
 You are running on a Ubuntu/Fedora system all command are availablell, install what is missing if needed
 
+...Modal.tsx Classes should never conatine any extended logic. If needed create a class in the /src/game/engine
+folder.
+
 ## Playwright E2E Test Guidelines
 
 ### Fail-fast setup (MANDATORY — never bypass)

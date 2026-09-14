@@ -1,181 +1,184 @@
 import React, { useMemo, useState } from 'react';
-import { Badge, Button, Modal, Tab, Table, Tabs } from 'react-bootstrap';
+import { Modal, Tab, Table, Tabs } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
-import type { Civilization, Unit } from '../../../../types/game';
+import {
+  computeDemographics,
+  ordinal,
+  realPopulation,
+  numberValue,
+  type DemographicRow,
+} from '@/game/engine/DemographicsManager';
 
 interface StatisticsModalProps {
   show: boolean;
   onHide: () => void;
 }
 
-const NON_COMBAT_UNIT_TYPES = new Set([
-  'settler',
-  'worker',
-  'scout',
-  'diplomat',
-  'spy',
-  'caravan',
-  'freight',
-]);
-
-const numberValue = (value: unknown): number => (
-  typeof value === 'number' && Number.isFinite(value) ? value : 0
-);
-
-const technologyCount = (civilization: Civilization): number => (
-  Array.isArray(civilization.technologies) ? civilization.technologies.length : 0
-);
-
-const populationFor = (civilizationId: number, cities: Array<{ civilizationId: number; population: number }>): number => (
-  cities
-    .filter(city => city.civilizationId === civilizationId)
-    .reduce((total, city) => total + numberValue(city.population), 0)
-);
-
-const unitsFor = (civilizationId: number, units: Unit[]): Unit[] => (
-  units.filter(unit => unit.civilizationId === civilizationId)
-);
-
-const militaryStrengthFor = (units: Unit[]): number => (
-  units
-    .filter(unit => !NON_COMBAT_UNIT_TYPES.has(unit.type.toLowerCase()))
-    .reduce((total, unit) => {
-      const attack = numberValue(unit.attack);
-      const defense = numberValue(unit.defense);
-      // Keep this deliberately compact: it is a comparison indicator, not a
-      // replacement for the combat system's battle calculation.
-      return total + Math.max(1, attack + defense * 0.5);
-    }, 0)
-);
-
-const formatNumber = (value: number): string => (
-  Number.isInteger(value) ? value.toLocaleString() : value.toFixed(1)
-);
-
-const Stat = ({ label, value }: { label: string; value: React.ReactNode }) => (
-  <div className="col-12 col-sm-6 col-lg-4 mb-3">
-    <div className="rounded p-3 h-100">
-      <div className="small text-white">{label}</div>
-      <div className="h4 mb-0 text-white">{value}</div>
-    </div>
-  </div>
-);
+const formatVal = (r: DemographicRow): string =>
+  r.fmt === 'pct' ? `${r.value}%` : r.fmt === 'float' ? r.value.toFixed(1) : Number.isInteger(r.value) ? r.value.toLocaleString() : r.value.toFixed(1);
 
 const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
-  const [activeTab, setActiveTab] = useState('player');
-  const civilizations = useGameStore(state => state.civilizations);
-  const cities = useGameStore(state => state.cities);
-  const units = useGameStore(state => state.units);
-  const gameState = useGameStore(state => state.gameState);
-  const technologies = useGameStore(state => state.technologies);
+  const [activeTab, setActiveTab] = useState('demographics');
+  const civilizations = useGameStore(s => s.civilizations);
+  const cities = useGameStore(s => s.cities);
+  const map = useGameStore(s => s.map);
+  const gameState = useGameStore(s => s.gameState);
+  const devMode = useGameStore(s => s.settings?.devMode);
 
-  const currentPlayer = civilizations[gameState.activePlayer] ?? civilizations.find(civ => civ.isHuman) ?? civilizations[0] ?? null;
+  const currentPlayer =
+    civilizations[gameState.activePlayer] ??
+    civilizations.find(c => c.isHuman) ??
+    civilizations[0] ??
+    null;
 
-  const worldStats = useMemo(() => civilizations.map(civilization => {
-    const civCities = cities.filter(city => city.civilizationId === civilization.id);
-    const civUnits = unitsFor(civilization.id, units);
-    const population = populationFor(civilization.id, cities);
-    const militaryStrength = militaryStrengthFor(civUnits);
-    const derivedScore = civCities.length * 10 + population * 2 + technologyCount(civilization) * 4 + militaryStrength;
+  // ── Demographics via manager ──────────────────────────────────────────
+  const { all, ranks, topValues } = useMemo(
+    () => computeDemographics(civilizations, cities, map?.revealed ?? []),
+    [civilizations, cities, map],
+  );
 
-    return {
-      civilization,
-      cityCount: civCities.length,
-      population,
-      unitCount: civUnits.length,
-      militaryStrength,
-      technologyCount: technologyCount(civilization),
-      score: numberValue(civilization.score) || derivedScore,
-    };
-  }).sort((a, b) => b.score - a.score), [civilizations, cities, units]);
+  const playerRows = all.find(d => d.civId === currentPlayer?.id)?.rows;
 
-  const currentPlayerUnits = currentPlayer ? unitsFor(currentPlayer.id, units) : [];
-  const currentPlayerCities = currentPlayer
-    ? cities.filter(city => city.civilizationId === currentPlayer.id)
-    : [];
-  const currentPlayerPopulation = currentPlayerCities.reduce((total, city) => total + numberValue(city.population), 0);
-  const currentPlayerWorldStats = worldStats.find(stats => stats.civilization.id === currentPlayer?.id);
+  // ── World tab data (devMode only) ─────────────────────────────────────
+  const worldStats = useMemo(
+    () =>
+      civilizations.map(c => {
+        const pop = realPopulation(c.id, cities);
+        const civCities = cities.filter(ci => ci.civilizationId === c.id);
+        return {
+          civ: c,
+          cityCount: civCities.length,
+          pop,
+          score: numberValue(c.score) || civCities.length * 10 + pop * 2,
+        };
+      }).sort((a, b) => b.score - a.score),
+    [civilizations, cities],
+  );
 
   return (
     <Modal show={show} onHide={onHide} centered size="xl" contentClassName="bg-dark text-white">
       <Modal.Header closeButton closeVariant="white">
-        <Modal.Title>Statistics</Modal.Title>
+        <Modal.Title>Statistics and Reports</Modal.Title>
       </Modal.Header>
       <Modal.Body>
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          <div className="text-light-emphasis">
-            Turn {gameState.currentTurn ?? 1} · {gameState.currentYear != null ? `${gameState.currentYear < 0 ? `${Math.abs(gameState.currentYear)} BC` : `${gameState.currentYear} AD`}` : '—'}
-          </div>
-          <Button variant="outline-light" size="sm" onClick={onHide}>Close</Button>
+        <div className="mb-3 text-light-emphasis">
+          Turn {gameState.currentTurn ?? 1} ·{' '}
+          {gameState.currentYear != null
+            ? gameState.currentYear < 0
+              ? `${Math.abs(gameState.currentYear)} BC`
+              : `${gameState.currentYear} AD`
+            : '—'}
         </div>
 
-        <Tabs
-          activeKey={activeTab}
-          onSelect={key => key && setActiveTab(key)}
-          className="mb-3"
-          variant="tabs"
-        >
-          <Tab eventKey="player" title="Player Statistics">
-            {currentPlayer ? (
+        <Tabs activeKey={activeTab} onSelect={k => k && setActiveTab(k)} className="mb-3" variant="tabs">
+          {/* ── World Demographics ──────────────────────────────────────── */}
+          <Tab eventKey="demographics" title="World Demographics">
+            {currentPlayer && playerRows ? (
               <>
-                <div className="d-flex align-items-center gap-2 mb-3">
-                  <span className="h5 mb-0">{currentPlayer.name}</span>
-                  {currentPlayer.isAlive === false && <Badge bg="danger">Eliminated</Badge>}
+                <div className="table-responsive">
+                  <Table variant="dark" size="sm" className="mb-0 align-middle">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '30%' }} />
+                        <th className="text-end" style={{ width: '25%' }}>Value</th>
+                        <th className="text-end" style={{ width: '15%' }}>Rank</th>
+                        <th className="text-end" style={{ width: '30%' }}>
+                          1st Place
+                          <span className="ms-1 text-white-50" style={{ fontSize: '0.75em' }}>
+                            (Embassy Bonus)
+                          </span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {playerRows.map((row, i) => {
+                        const rank = ranks[row.metric]?.get(currentPlayer.id) ?? 0;
+                        const top = topValues[row.metric];
+                        const isTop = top?.civName === currentPlayer.name;
+                        return (
+                          <tr key={row.metric} className={i % 2 === 0 ? 'table-active' : ''}>
+                            <td className="fw-semibold text-white">{row.label}</td>
+                            <td className="text-end text-white">
+                              {formatVal(row)}
+                              {row.unit && <span className="text-white-50 ms-1" style={{ fontSize: '0.8em' }}>{row.unit}</span>}
+                            </td>
+                            <td className="text-end">
+                              <span className={`fw-bold ${rank === 1 ? 'text-warning' : rank === 2 ? 'text-info' : 'text-white-50'}`}>
+                                {ordinal(rank)}
+                              </span>
+                            </td>
+                            <td className="text-end" style={{ fontSize: '0.85em' }}>
+                              {top?.allEqual ? (
+                                <span className="text-white-50">—</span>
+                              ) : isTop ? (
+                                <span className="text-warning fw-bold">Leading!</span>
+                              ) : top ? (
+                                <span className="text-white-50">
+                                  <span style={{ color: 'var(--bs-warning)' }}>{ordinal(1)}</span>{' '}
+                                  {top.value.toLocaleString()}
+                                  {row.unit ? ` ${row.unit}` : ''}
+                                </span>
+                              ) : (
+                                <span className="text-white-50">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </Table>
                 </div>
-                <div className="row">
-                  <Stat label="Score" value={formatNumber(currentPlayerWorldStats?.score ?? numberValue(currentPlayer.score))} />
-                  <Stat label="Cities" value={formatNumber(currentPlayerCities.length)} />
-                  <Stat label="Population" value={formatNumber(currentPlayerPopulation)} />
-                  <Stat label="Units" value={formatNumber(currentPlayerUnits.length)} />
-                  <Stat label="Military strength" value={formatNumber(militaryStrengthFor(currentPlayerUnits))} />
-                  <Stat label="Technologies" value={`${technologyCount(currentPlayer)} / ${technologies.length}`} />
-                  <Stat label="Treasury" value={formatNumber(numberValue(currentPlayer.resources?.gold))} />
-                  <Stat label="Science / turn" value={formatNumber(numberValue(currentPlayer.resources?.science))} />
-                  <Stat label="Trade / turn" value={formatNumber(numberValue(currentPlayer.resources?.trade))} />
+                <div className="mt-3 text-white-50" style={{ fontSize: '0.75em' }}>
+                  Rankings compare all active civilizations. Population uses the Civ1 triangular formula
+                  (Size × (Size+1)/2 × 10,000). GNP = taxes + luxuries before upkeep.
+                  <br />
+                  <em>Embassy Bonus</em>: Establishing an embassy with a rival reveals their exact stat
+                  next to your rank. (Embassy system not yet implemented.)
                 </div>
               </>
             ) : (
-              <div className="text-light-emphasis py-4">No player statistics are available yet.</div>
+              <div className="text-light-emphasis py-4">No demographics available.</div>
             )}
           </Tab>
 
-          <Tab eventKey="world" title="World">
-            <div className="table-responsive">
-              <Table striped bordered hover variant="dark" size="sm" className="mb-0 align-middle">
-                <thead>
-                  <tr>
-                    <th>Player</th>
-                    <th>Status</th>
-                    <th>Score</th>
-                    <th>Cities</th>
-                    <th>Population</th>
-                    <th>Units</th>
-                    <th>Military</th>
-                    <th>Techs</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {worldStats.map(({ civilization, cityCount, population, unitCount, militaryStrength, technologyCount: researched, score }) => (
-                    <tr key={civilization.id}>
-                      <td>
-                        <span className="me-2" style={{ color: civilization.color }}>●</span>
-                        {civilization.name}
-                        {civilization.id === currentPlayer?.id && <Badge bg="primary" className="ms-2">You</Badge>}
-                      </td>
-                      <td>{civilization.isAlive === false ? <Badge bg="danger">Out</Badge> : <Badge bg="success">Alive</Badge>}</td>
-                      <td>{formatNumber(score)}</td>
-                      <td>{formatNumber(cityCount)}</td>
-                      <td>{formatNumber(population)}</td>
-                      <td>{formatNumber(unitCount)}</td>
-                      <td>{formatNumber(militaryStrength)}</td>
-                      <td>{formatNumber(researched)}</td>
+          {/* ── World (devMode only) ──────────────────────────────────── */}
+          {devMode && (
+            <Tab eventKey="world" title="World">
+              <div className="table-responsive">
+                <Table striped bordered hover variant="dark" size="sm" className="mb-0 align-middle">
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th>Status</th>
+                      <th>Score</th>
+                      <th>Cities</th>
+                      <th>Population</th>
                     </tr>
-                  ))}
-                </tbody>
-              </Table>
-            </div>
-            {worldStats.length === 0 && <div className="text-light-emphasis py-4">No world statistics are available yet.</div>}
-          </Tab>
+                  </thead>
+                  <tbody>
+                    {worldStats.map(({ civ, cityCount, pop, score }) => (
+                      <tr key={civ.id}>
+                        <td>
+                          <span className="me-2" style={{ color: civ.color }}>●</span>
+                          {civ.name}
+                          {civ.id === currentPlayer?.id && <span className="badge bg-primary ms-2">You</span>}
+                        </td>
+                        <td>
+                          {civ.isAlive === false
+                            ? <span className="badge bg-danger">Out</span>
+                            : <span className="badge bg-success">Alive</span>}
+                        </td>
+                        <td>{Number.isInteger(score) ? score.toLocaleString() : score.toFixed(1)}</td>
+                        <td>{cityCount.toLocaleString()}</td>
+                        <td>{pop.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+              {worldStats.length === 0 && <div className="text-light-emphasis py-4">No world statistics available.</div>}
+            </Tab>
+          )}
         </Tabs>
       </Modal.Body>
     </Modal>
