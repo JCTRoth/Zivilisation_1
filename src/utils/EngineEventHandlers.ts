@@ -1,10 +1,10 @@
 import { useGameStore } from '../stores/GameStore';
 import { firstUnresearchedInPath } from './ResearchPath';
-import { trackAIAnimation } from '../game/rendering/GlideAnimation';
 import { awaitCameraGlide, isCameraGliding } from '../game/engine/CameraGlideGate';
 import { HUMAN_PLAYER_ID } from './PlayerConstants';
 import type GameEngine from '../game/engine/GameEngine';
 import type { Technology, Unit, City, Civilization, VillageOutcome } from '../../types/game';
+import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
 
 export class EngineEventRouter {
   private gameEngine: GameEngine;

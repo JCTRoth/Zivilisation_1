@@ -417,9 +417,9 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
                   {t.terrain}{t.resource ? ` (${t.resource})` : ''}
                 </span>
                 <span className="d-flex gap-2 flex-shrink-0" style={{ fontSize: '0.75rem' }}>
-                  <span className="text-success" title="Food">🍞{t.food}</span>
-                  <span className="text-warning" title="Production">⛏️{t.production}</span>
-                  <span className="text-info" title="Trade">💰{t.trade}</span>
+                  <span title="Food">{t.food}</span>
+                  <span title="Production">{t.production}</span>
+                  <span title="Trade">{t.trade}</span>
                 </span>
               </div>
             );
@@ -459,25 +459,25 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
                   </div>
                 )}
                 <div className="mt-1">
-                  <span className="text-success">Food: {selectedTile.food ?? 0}</span>
+                  <span>Food: {selectedTile.food ?? 0}</span>
                   {selectedTile.resourceBonus?.food ? (
-                    <span className="small text-success ms-1">
+                    <span className="small ms-1 text-muted">
                       (base {selectedTile.baseFood} + {selectedTile.resourceBonus.food} resource)
                     </span>
                   ) : null}
                 </div>
                 <div>
-                  <span className="text-warning">Production: {selectedTile.production ?? 0}</span>
+                  <span>Production: {selectedTile.production ?? 0}</span>
                   {selectedTile.resourceBonus?.production ? (
-                    <span className="small text-warning ms-1">
+                    <span className="small ms-1 text-muted">
                       (base {selectedTile.baseProduction} + {selectedTile.resourceBonus.production} resource)
                     </span>
                   ) : null}
                 </div>
                 <div>
-                  <span className="text-info">Trade: {selectedTile.trade ?? 0}</span>
+                  <span>Trade: {selectedTile.trade ?? 0}</span>
                   {selectedTile.resourceBonus?.trade ? (
-                    <span className="small text-info ms-1">
+                    <span className="small ms-1 text-muted">
                       (base {selectedTile.baseTrade} + {selectedTile.resourceBonus.trade} resource)
                     </span>
                   ) : null}
