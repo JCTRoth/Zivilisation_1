@@ -83,10 +83,16 @@ describe('ResearchManager', () => {
       expect(rm.knownCivsModifier(civ, tech)).toBe(1);
     });
 
-    it('prerequisitesModifier < 1.0 when the civ has discovered prerequisites', () => {
-      const civ = { ...engine.civilizations[0], technologies: ['alphabet'] };
+    it('prerequisitesModifier < 1.0 when the civ is missing prerequisites', () => {
+      const civ = { ...engine.civilizations[0], technologies: [] };
       const writing = engine.technologies[2]; // requires alphabet
       expect(rm.prerequisitesModifier(civ, writing)).toBeLessThan(1);
+    });
+
+    it('prerequisitesModifier is 1.0 when all prerequisites are researched', () => {
+      const civ = { ...engine.civilizations[0], technologies: ['alphabet'] };
+      const writing = engine.technologies[2]; // requires alphabet
+      expect(rm.prerequisitesModifier(civ, writing)).toBe(1);
     });
 
     it('prerequisitesModifier is 1.0 for techs with no prerequisites', () => {
@@ -119,17 +125,19 @@ describe('ResearchManager', () => {
       expect(guard).toBeLessThanOrEqual(cost);
     });
 
-    it('never completes faster than MIN_RESEARCH_TURNS even with huge science', () => {
+    it('research progress is constant — no min-turns slowdown near completion', () => {
       const civ = engine.civilizations[0];
       civ.currentResearch = engine.technologies[0];
       civ.researchProgress = 0;
 
+      // With huge science, research should complete in very few turns
+      // (no more 4-turn minimum cap).
       let completed = false;
-      for (let turn = 1; turn < MIN_RESEARCH_TURNS; turn++) {
+      for (let turn = 0; turn < 3; turn++) {
         completed = !!rm.advanceResearch(civ, engine.technologies[0], 1000);
         if (completed) break;
       }
-      expect(completed).toBe(false);
+      expect(completed).toBe(true);
     });
 
     it('never takes longer than MAX_RESEARCH_TURNS even with zero science', () => {
