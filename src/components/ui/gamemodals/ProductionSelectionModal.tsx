@@ -6,7 +6,6 @@ import type { ProductionItem } from '../../../../types/game';
 interface ProductionSelectionModalProps {
   show: boolean;
   onHide: () => void;
-  onSelectProduction: (key: string) => void;
   /** Add item directly to the build queue (bypasses current production). */
   onAddToQueue?: (key: string) => void;
   onPurchase?: (key: string, item: ProductionItem) => void;
@@ -83,7 +82,6 @@ function sortItems<T extends { key: string; name: string; cost: number; canBuild
 const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   show,
   onHide,
-  onSelectProduction,
   onAddToQueue,
   onPurchase,
   currentPlayer,
@@ -118,10 +116,6 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   const sortIndicator = (col: 'name' | 'cost', state: SortState) => {
     if (state.column !== col) return null;
     return <span className="ms-1">{state.dir === 'asc' ? '▲' : '▼'}</span>;
-  };
-  const handleSelect = (key: string) => {
-    onSelectProduction(key);
-    onHide();
   };
 
   const handleBuy = (key: string, type: 'unit' | 'building') => {
@@ -225,15 +219,6 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                         <td>{purchaseCost} <i className="bi bi-coin"></i></td>
                         <td>
                           <div className="d-flex gap-1">
-                            <Button
-                              variant="outline-primary"
-                              size="sm"
-                              disabled={!canBuild}
-                              title={canBuild ? 'Set as current production' : `Requires ${formatTechName(requiredTech)}`}
-                              onClick={() => handleSelect(key)}
-                            >
-                              {canBuild ? 'Select' : `Requires ${formatTechName(requiredTech)}`}
-                            </Button>
                             {canBuild && onAddToQueue && (
                               <Button
                                 variant="outline-success"
@@ -322,15 +307,6 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                         <td>{purchaseCost} <i className="bi bi-coin"></i></td>
                         <td>
                           <div className="d-flex gap-1">
-                            <Button
-                              variant="outline-success"
-                              size="sm"
-                              disabled={!canBuild}
-                              title={canBuild ? 'Set as current production' : `Requires ${formatTechName(requiredTech)}`}
-                              onClick={() => handleSelect(key)}
-                            >
-                              {canBuild ? 'Select' : `Requires ${formatTechName(requiredTech)}`}
-                            </Button>
                             {canBuild && onAddToQueue && (
                               <Button
                                 variant="outline-info"

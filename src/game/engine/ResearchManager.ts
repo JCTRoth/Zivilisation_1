@@ -137,15 +137,11 @@ export class ResearchManager {
 
     let beakers = this.beakersApplied(civ, tech, totalBaseBeakers);
 
-    // Min turns: never apply more than remaining/MIN_TURNS per turn, so the
-    // remaining work always spans at least MIN_RESEARCH_TURNS turns.
-    const maxPerTurn = Math.max(1, Math.ceil(remaining / MIN_RESEARCH_TURNS));
-    beakers = Math.min(beakers, maxPerTurn);
-
-    // Max turns: always apply at least cost/MAX_TURNS per turn (fixed floor,
-    // based on the FULL cost). The floor never overrides the min-turns cap.
+    // Research progress is constant: no min-turns cap that slows down near
+    // the end.  The only floor is the max-turns safety net so a very low
+    // science rate still makes at least 1 point of progress per turn.
     const minPerTurn = Math.ceil(cost / MAX_RESEARCH_TURNS);
-    beakers = Math.max(beakers, Math.min(minPerTurn, maxPerTurn));
+    beakers = Math.max(beakers, minPerTurn);
 
     // Never overshoot past the remaining cost, and always make ≥ 1 progress.
     return Math.max(1, Math.min(beakers, remaining));

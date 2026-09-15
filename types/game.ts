@@ -519,6 +519,7 @@ interface Settings {
   civListFontSize: number;
   skipEndTurnConfirmation: boolean;
   autoEndTurn: boolean; // Automatically end turn when all units are done
+  autoCamera: boolean; // Automatically move camera to focused unit / event
   devMode: boolean; // Developer mode: see all players on minimap and switch between them
   /** Master switch for all movement/combat/camera animations. When false, durations are 0 (instant). */
   enableAnimations: boolean;
@@ -771,7 +772,7 @@ export interface GameActions {
   removeMovementAnimation: (id: string) => void;
   clearMovementAnimations: () => void;
   setUnitAnimating: (isAnimating: boolean) => void;
-  focusCameraOnTile: (col: number, row: number, keepZoom?: boolean) => void;
+  focusCameraOnTile: (col: number, row: number, keepZoom?: boolean, force?: boolean) => void;
   clearCameraPanRequest: () => void;
 }
 

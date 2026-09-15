@@ -208,6 +208,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     civListFontSize: 10, // Civilization list font size
     skipEndTurnConfirmation: false, // Skip showing end turn confirmation modal
     autoEndTurn: false, // Automatically end turn when all human player units are done (default disabled)
+    autoCamera: true,   // Automatically move camera to focused unit / event
     devMode: false,     // Developer mode: see all players on minimap and switch between them
     enableAnimations: true, // Master switch for movement/combat/camera animations
     animationSpeed: 1,  // Animation speed multiplier (0 = instant, 1 = normal)
@@ -355,6 +356,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         return state;
       }
 
+      // Auto-camera disabled: still select the unit for keyboard/gameplay,
+      // but do NOT pan the camera.
+      const autoCamera = state.settings?.autoCamera !== false;
+
       // The player is looking at something they picked themselves (a city they
       // opened, a unit they clicked). Don't jump the camera away or replace it.
       if ((state.gameState.selectionOrigin ?? null) === 'user') {
@@ -392,7 +397,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           return state;
         }
 
-        if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0) {
+        if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0 && autoCamera) {
           beginCameraGlide();
         }
 
@@ -407,12 +412,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             focusedCity: null,
             selectionOrigin: 'auto',
           },
-          cameraPanRequest: {
-            col: candidate.col,
-            row: candidate.row,
-            keepZoom: true,
-            requestId: `focus-${now}-${Math.random().toString(36).slice(2, 8)}`,
-          }
+          ...(autoCamera ? {
+            cameraPanRequest: {
+              col: candidate.col,
+              row: candidate.row,
+              keepZoom: true,
+              requestId: `focus-${now}-${Math.random().toString(36).slice(2, 8)}`,
+            }
+          } : {}),
         };
       } else {
         // No unit found. Only bring the camera to a city when the player still
@@ -439,7 +446,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             return state;
           }
 
-          if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0) {
+          if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0 && autoCamera) {
             beginCameraGlide();
           }
 
@@ -454,12 +461,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
               focusedCity: capitalCity.id,
               selectionOrigin: 'auto',
             },
-            cameraPanRequest: {
-              col: capitalCity.col,
-              row: capitalCity.row,
-              keepZoom: true,
-              requestId: `focus-${now}-${Math.random().toString(36).slice(2, 8)}`,
-            }
+            ...(autoCamera ? {
+              cameraPanRequest: {
+                col: capitalCity.col,
+                row: capitalCity.row,
+                keepZoom: true,
+                requestId: `focus-${now}-${Math.random().toString(36).slice(2, 8)}`,
+              }
+            } : {}),
           };
         }
       }
@@ -512,7 +521,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       isUnitAnimating: isAnimating
     })),
 
-    focusCameraOnTile: (col, row, keepZoom = true) => set(state => {
+    focusCameraOnTile: (col, row, keepZoom = true, force = false) => set(state => {
+      // When autoCamera is off, skip automated camera pans (unit moves, AI
+      // events, turn transitions).  Pass force=true to override (user clicks).
+      if (!force && state.settings?.autoCamera === false) {
+        return state;
+      }
       // Tell the engine a pan is in flight: any animation triggered while the
       // camera travels waits for it (see CameraGlideGate / awaitCameraGlide).
       if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0) {

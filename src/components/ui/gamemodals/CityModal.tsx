@@ -30,7 +30,6 @@ const CityModal: React.FC<CityModalProps> = ({
   currentPlayer,
   isPlayerCity
 }) => {
-  const [selectedProductionKey, setSelectedProductionKey] = useState<string | null>(null);
   const [showProductionModal, setShowProductionModal] = useState<boolean>(false);
   const [autoProduction, setAutoProduction] = useState<boolean>(selectedCity?.autoProduction || false);
 
@@ -86,11 +85,6 @@ const CityModal: React.FC<CityModalProps> = ({
   };
 
   // handleBuyNow removed (unused)
-
-  const getSelectedProductionCost = (key: string | null): number => {
-    if (!key) return 0;
-    return UNIT_PROPS[key]?.cost || BUILDING_PROPS[key]?.cost || 0;
-  };
 
   return (
     <>
@@ -162,9 +156,7 @@ const CityModal: React.FC<CityModalProps> = ({
                           onClick={() => setShowProductionModal(true)}
                         >
                           <i className="bi bi-list-ul me-1"></i>
-                          {selectedProductionKey
-                            ? `${UNIT_PROPS[selectedProductionKey]?.name || BUILDING_PROPS[selectedProductionKey]?.name} (${getSelectedProductionCost(selectedProductionKey)} shields)`
-                            : 'Choose Production…'}
+                          Choose Production…
                         </button>
                       </div>
 
@@ -503,8 +495,13 @@ const CityModal: React.FC<CityModalProps> = ({
                       if (!b) return null;
                       const effects = b.effects ?? {};
                       const effectEntries = Object.entries(effects).filter(([, v]) => v && v !== false && v !== 0);
-                      const canSell = key !== 'palace' && !WONDER_PROPERTIES[key] && !(selectedCity.soldBuildingThisTurn);
+                      const isWonder = !!WONDER_PROPERTIES[key];
+                      const canSell = !isWonder && !(selectedCity.soldBuildingThisTurn);
                       const sellRefund = Math.floor((b.cost ?? 0) / 2);
+                      const sellDisabled = !canSell;
+                      const sellTitle = isWonder ? 'Wonders cannot be sold'
+                        : selectedCity.soldBuildingThisTurn ? 'Already sold a building this turn'
+                        : `Sell for ${sellRefund} gold`;
                       return (
                         <div key={key} className="building-card">
                           <div className="building-card__header">
@@ -512,32 +509,29 @@ const CityModal: React.FC<CityModalProps> = ({
                             <div className="building-card__body">
                               <div className="d-flex justify-content-between align-items-start">
                                 <h6 className="building-name mb-1">{b.name}</h6>
-                                {canSell && (
-                                  <button
-                                    type="button"
-                                    className="btn btn-sm btn-outline-danger building-sell-btn"
-                                    title={selectedCity.soldBuildingThisTurn ? 'Already sold a building this turn' : `Sell for ${sellRefund} gold`}
-                                    disabled={!!selectedCity.soldBuildingThisTurn}
-                                    onClick={() => {
-                                      if (gameEngine && typeof gameEngine.sellBuilding === 'function') {
-                                        const result = gameEngine.sellBuilding(selectedCity.id, key);
-                                        if (result.success && actions?.addNotification) {
-                                          actions.addNotification({
-                                            type: 'success',
-                                            message: `Sold ${b.name} for ${result.refund} gold`,
-                                          });
-                                        } else if (result.reason && actions?.addNotification) {
-                                          actions.addNotification({
-                                            type: 'warning',
-                                            message: result.reason,
-                                          });
-                                        }
-                                      }
-                                    }}
-                                  >
-                                    <i className="bi bi-trash"></i> Sell ({sellRefund}g)
-                                  </button>
-                                )}
+                                <button
+                                  type="button"
+                                  className={`btn btn-sm building-sell-btn ${canSell ? 'btn-outline-danger' : 'btn-outline-secondary disabled'}`}
+                                  title={sellTitle}
+                                  disabled={sellDisabled}
+                                  onClick={() => {
+                                    if (!canSell || !gameEngine || typeof gameEngine.sellBuilding !== 'function') return;
+                                    const result = gameEngine.sellBuilding(selectedCity.id, key);
+                                    if (result.success && actions?.addNotification) {
+                                      actions.addNotification({
+                                        type: 'success',
+                                        message: `Sold ${b.name} for ${result.refund} gold`,
+                                      });
+                                    } else if (result.reason && actions?.addNotification) {
+                                      actions.addNotification({
+                                        type: 'warning',
+                                        message: result.reason,
+                                      });
+                                    }
+                                  }}
+                                >
+                                  <i className="bi bi-trash"></i> {isWonder ? '—' : `Sell (${sellRefund}g)`}
+                                </button>
                               </div>
                               <div className="building-meta small">
                                 <span className="building-meta__item">
@@ -807,12 +801,6 @@ const CityModal: React.FC<CityModalProps> = ({
         playerGold={currentPlayer?.resources?.gold ?? 0}
         purchasedThisTurn={(selectedCity?.purchasedThisTurn?.length ?? 0) > 0}
         cityBuildings={selectedCity?.buildings ?? []}
-        onSelectProduction={key => {
-          // Choosing an item only marks it: "Add" then appends ONE entry for it
-          // to the bottom of the queue. The current production stays as is.
-          setSelectedProductionKey(key);
-          setShowProductionModal(false);
-        }}
         onAddToQueue={(key) => {
           handleQueueProduction(key);
         }}

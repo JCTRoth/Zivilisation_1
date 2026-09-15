@@ -21,6 +21,7 @@ function SettingsModal({ show, onHide }) {
       minimapHeight: 120,
       civListFontSize: 10,
       enableAnimations: true,
+      autoCamera: true,
       animationSpeed: 1,
       enemyAnimationSpeed: 1,
       cameraGlideSpeed: 1,
@@ -132,6 +133,17 @@ function SettingsModal({ show, onHide }) {
             checked={settings.enableAnimations}
             onChange={(e) =>
               actions.updateSettings({ enableAnimations: e.target.checked })
+            }
+            className="settings-control__toggle"
+          />
+
+          <Form.Check
+            type="switch"
+            id="autoCamera"
+            label="Auto-move camera"
+            checked={settings.autoCamera !== false}
+            onChange={(e) =>
+              actions.updateSettings({ autoCamera: e.target.checked })
             }
             className="settings-control__toggle"
           />

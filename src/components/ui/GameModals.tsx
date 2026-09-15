@@ -1680,7 +1680,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               actions.selectCity(starvationNotice.cityId, 'user');
               const city = cities.find(c => c.id === starvationNotice.cityId);
               if (city) {
-                actions.focusCameraOnTile(city.col, city.row);
+                actions.focusCameraOnTile(city.col, city.row, true, true);
               }
               actions.showDialog('city-details');
             }
@@ -1750,7 +1750,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 actions.selectCity(disorderNotice.cityId, 'user');
                 const city = cities.find(c => c.id === disorderNotice.cityId);
                 if (city) {
-                  actions.focusCameraOnTile(city.col, city.row);
+                  actions.focusCameraOnTile(city.col, city.row, true, true);
                 }
                 actions.showDialog('city-details');
               }

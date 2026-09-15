@@ -4952,10 +4952,7 @@ export default class GameEngine {
       return { success: false, reason: 'Already sold a building this turn' };
     }
 
-    // Cannot sell wonders or palace
-    if (buildingType === 'palace') {
-      return { success: false, reason: 'Cannot sell the Palace' };
-    }
+    // Cannot sell wonders
     if (WONDER_PROPERTIES[buildingType]) {
       return { success: false, reason: 'Cannot sell a Wonder' };
     }
@@ -4969,6 +4966,11 @@ export default class GameEngine {
     // Remove the building
     buildings.splice(idx, 1);
     city.buildings = buildings;
+
+    // Selling the Palace reassigns the capital
+    if (buildingType === 'palace') {
+      this.governmentManager?.ensureCapital(city.civilizationId);
+    }
 
     // Calculate refund (50% of cost)
     const buildingProps = BUILDING_PROPERTIES[buildingType];
