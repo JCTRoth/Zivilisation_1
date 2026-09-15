@@ -4,6 +4,7 @@ import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
 import { WORLD_MAP } from '@/data/maps';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
+import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { TERRAIN_RESOURCES, TERRAIN_TYPES } from '@/data/TerrainConstants';
 import {
   BARBARIAN_CIV_ID,
@@ -4931,6 +4932,63 @@ export default class GameEngine {
     }
 
     return true;
+  }
+
+  /**
+   * Sell a building from a city. Only one building can be sold per city per
+   * turn. Wonders and the palace cannot be sold. Refund is 50% of the
+   * building cost.
+   */
+  sellBuilding(cityId: string, buildingType: string): { success: boolean; refund?: number; reason?: string } {
+    const civ = this.civilizations[this.activePlayer];
+    if (!civ?.isHuman) return { success: false, reason: 'Not a human player' };
+
+    const city = this.cities.find(c => c.id === cityId);
+    if (!city || city.civilizationId !== this.activePlayer) {
+      return { success: false, reason: 'City not found or not owned' };
+    }
+
+    if (city.soldBuildingThisTurn) {
+      return { success: false, reason: 'Already sold a building this turn' };
+    }
+
+    // Cannot sell wonders or palace
+    if (buildingType === 'palace') {
+      return { success: false, reason: 'Cannot sell the Palace' };
+    }
+    if (WONDER_PROPERTIES[buildingType]) {
+      return { success: false, reason: 'Cannot sell a Wonder' };
+    }
+
+    const buildings = city.buildings ?? [];
+    const idx = buildings.indexOf(buildingType);
+    if (idx === -1) {
+      return { success: false, reason: 'Building not found in city' };
+    }
+
+    // Remove the building
+    buildings.splice(idx, 1);
+    city.buildings = buildings;
+
+    // Calculate refund (50% of cost)
+    const buildingProps = BUILDING_PROPERTIES[buildingType];
+    const cost = buildingProps?.cost ?? 0;
+    const refund = Math.floor(cost / 2);
+
+    // Add gold to the player
+    const civResources = civ.resources || { gold: 0 };
+    civResources.gold = (civResources.gold || 0) + refund;
+
+    // Mark that a building was sold this turn
+    city.soldBuildingThisTurn = true;
+
+    console.log(`[GameEngine] Sold ${buildingType} in ${city.name} for ${refund} gold`);
+
+    if (this.onStateChange) {
+      this.onStateChange('BUILDING_SOLD', { cityId, buildingType, refund });
+    }
+
+    return { success: true, refund };
   }
 
   /**

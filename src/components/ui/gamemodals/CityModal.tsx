@@ -3,7 +3,7 @@ import { Modal, Button, Tab, Tabs } from 'react-bootstrap';
 import { CityModalLogic } from './CityModalLogic';
 import { ModalUtils } from './ModalUtils';
 import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
-import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
+import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import ProductionSelectionModal from './ProductionSelectionModal';
 import { productionFailureText } from '@/utils/ProductionUtils';
@@ -154,10 +154,10 @@ const CityModal: React.FC<CityModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Choose + Add row */}
-                      <div className="d-flex gap-2 mb-2">
+                      {/* Choose Production button */}
+                      <div className="mb-2">
                         <button
-                          className="btn btn-secondary text-white flex-grow-1 production-select-btn"
+                          className="btn btn-secondary text-white w-100 production-select-btn"
                           type="button"
                           onClick={() => setShowProductionModal(true)}
                         >
@@ -165,15 +165,6 @@ const CityModal: React.FC<CityModalProps> = ({
                           {selectedProductionKey
                             ? `${UNIT_PROPS[selectedProductionKey]?.name || BUILDING_PROPS[selectedProductionKey]?.name} (${getSelectedProductionCost(selectedProductionKey)} shields)`
                             : 'Choose Production…'}
-                        </button>
-                        <button
-                          className="btn btn-primary"
-                          type="button"
-                          onClick={() => handleQueueProduction(selectedProductionKey)}
-                          disabled={!selectedProductionKey}
-                          title="Add to queue"
-                        >
-                          <i className="bi bi-plus-lg"></i> Add
                         </button>
                       </div>
 
@@ -479,45 +470,140 @@ const CityModal: React.FC<CityModalProps> = ({
             <Tab eventKey="buildings" title="Buildings">
               <div className="city-buildings-content">
                 {selectedCity.buildings && selectedCity.buildings.length > 0 ? (
-                  <div className="buildings-grid">
-                    {selectedCity.buildings.map((buildingKey: string, index: number) => {
-                      const buildingProps = BUILDING_PROPERTIES[buildingKey];
+                  (() => {
+                    // Separate regular buildings from wonders
+                    const regularBuildings: string[] = [];
+                    const wonders: string[] = [];
+                    for (const key of selectedCity.buildings) {
+                      if (WONDER_PROPERTIES[key]) {
+                        wonders.push(key);
+                      } else {
+                        regularBuildings.push(key);
+                      }
+                    }
+
+                    const effectIcons: Record<string, string> = {
+                      happiness: '😊', food: '🍞', production: '⛏️', trade: '💰',
+                      gold: '🪙', science: '🔬', culture: '🎨', corruptionReduction: '⚖️',
+                      foodStorage: '📦', growthBonus: '📈', unitProduction: '⚔️',
+                      veteranUnits: '⭐', freeUnits: '🎁', extraPopulation: '👥',
+                    };
+
+                    const effectLabels: Record<string, string> = {
+                      happiness: 'Happiness', food: 'Food', production: 'Production',
+                      trade: 'Trade', gold: 'Gold', science: 'Science', culture: 'Culture',
+                      corruptionReduction: 'Corruption Reduction', foodStorage: 'Food Storage',
+                      growthBonus: 'Growth Bonus', unitProduction: 'Military Production',
+                      veteranUnits: 'Veteran Units', freeUnits: 'Free Units',
+                      extraPopulation: 'Extra Population', isPalace: 'Capital',
+                    };
+
+                    const renderBuildingCard = (key: string) => {
+                      const b = BUILDING_PROPERTIES[key];
+                      if (!b) return null;
+                      const effects = b.effects ?? {};
+                      const effectEntries = Object.entries(effects).filter(([, v]) => v && v !== false && v !== 0);
+                      const canSell = key !== 'palace' && !WONDER_PROPERTIES[key] && !(selectedCity.soldBuildingThisTurn);
+                      const sellRefund = Math.floor((b.cost ?? 0) / 2);
                       return (
-                        <div key={index} className="building-card">
+                        <div key={key} className="building-card">
                           <div className="building-card__header">
-                            {buildingProps?.icon && (
-                              <span className="building-icon">{buildingProps.icon}</span>
-                            )}
+                            <span className="building-icon">{b.icon ?? '🏗️'}</span>
                             <div className="building-card__body">
-                              <h6 className="building-name mb-1">{buildingProps?.name || buildingKey}</h6>
-                              <div className="building-details small">
-                                <span>Cost: {buildingProps?.cost || 0} shields</span>
-                                <span className="building-details-sep">•</span>
-                                <span>Maintenance: {buildingProps?.maintenance || 0} gold/turn</span>
+                              <div className="d-flex justify-content-between align-items-start">
+                                <h6 className="building-name mb-1">{b.name}</h6>
+                                {canSell && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-danger building-sell-btn"
+                                    title={selectedCity.soldBuildingThisTurn ? 'Already sold a building this turn' : `Sell for ${sellRefund} gold`}
+                                    disabled={!!selectedCity.soldBuildingThisTurn}
+                                    onClick={() => {
+                                      if (gameEngine && typeof gameEngine.sellBuilding === 'function') {
+                                        const result = gameEngine.sellBuilding(selectedCity.id, key);
+                                        if (result.success && actions?.addNotification) {
+                                          actions.addNotification({
+                                            type: 'success',
+                                            message: `Sold ${b.name} for ${result.refund} gold`,
+                                          });
+                                        } else if (result.reason && actions?.addNotification) {
+                                          actions.addNotification({
+                                            type: 'warning',
+                                            message: result.reason,
+                                          });
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    <i className="bi bi-trash"></i> Sell ({sellRefund}g)
+                                  </button>
+                                )}
                               </div>
-                              {buildingProps?.description && (
-                                <div className="building-description small mt-2">{buildingProps.description}</div>
+                              <div className="building-meta small">
+                                <span className="building-meta__item">
+                                  <i className="bi bi-bricks"></i> {b.cost}
+                                </span>
+                                {b.maintenance > 0 && (
+                                  <span className="building-meta__item">
+                                    <i className="bi bi-coin"></i> {b.maintenance}/turn
+                                  </span>
+                                )}
+                                {b.requiredTechnology && (
+                                  <span className="building-meta__item building-meta__tech">
+                                    🔬 {b.requiredTechnology.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                                  </span>
+                                )}
+                              </div>
+                              {b.description && (
+                                <div className="building-description small mt-2">{b.description}</div>
                               )}
-                              {buildingProps?.effects && (
-                                <div className="building-effects small mt-2">
-                                  <strong>Effects:</strong>
-                                  <ul className="mb-0 mt-1">
-                                    {Object.entries(buildingProps.effects).map(([effect, value]) => (
-                                      <li key={effect}>
-                                        {effect.replace(/([A-Z])/g, ' $1').toLowerCase()}: {String(value)}
-                                      </li>
-                                    ))}
-                                  </ul>
+                              {effectEntries.length > 0 && (
+                                <div className="building-effects mt-2">
+                                  {effectEntries.map(([effect, value]) => (
+                                    <span key={effect} className="building-effect-badge">
+                                      {effectIcons[effect] ?? '✨'}{' '}
+                                      {effectLabels[effect] ?? effect.replace(/([A-Z])/g, ' $1').replace(/^./, (s: string) => s.toUpperCase())}
+                                      {typeof value === 'boolean' ? '' : ` ${value}`}
+                                    </span>
+                                  ))}
                                 </div>
                               )}
                             </div>
                           </div>
                         </div>
                       );
-                    })}
-                  </div>
+                    };
+
+                    return (
+                      <>
+                        {regularBuildings.length > 0 && (
+                          <div className="mb-3">
+                            <div className="buildings-section-title mb-2">
+                              <i className="bi bi-building"></i> Buildings ({regularBuildings.length})
+                            </div>
+                            <div className="buildings-grid">
+                              {regularBuildings.map(renderBuildingCard)}
+                            </div>
+                          </div>
+                        )}
+                        {wonders.length > 0 && (
+                          <div>
+                            <div className="buildings-section-title mb-2">
+                              <i className="bi bi-trophy"></i> Wonders ({wonders.length})
+                            </div>
+                            <div className="buildings-grid">
+                              {wonders.map(renderBuildingCard)}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()
                 ) : (
-                  <div className="city-buildings-empty">No buildings constructed yet</div>
+                  <div className="city-buildings-empty">
+                    <i className="bi bi-building fs-1 d-block mb-2 text-muted"></i>
+                    No buildings constructed yet
+                  </div>
                 )}
               </div>
             </Tab>
@@ -726,6 +812,9 @@ const CityModal: React.FC<CityModalProps> = ({
           // to the bottom of the queue. The current production stays as is.
           setSelectedProductionKey(key);
           setShowProductionModal(false);
+        }}
+        onAddToQueue={(key) => {
+          handleQueueProduction(key);
         }}
         onPurchase={(_key, item) => {
           if (gameEngine && typeof gameEngine.purchaseCityProduction === 'function') {

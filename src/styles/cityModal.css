@@ -109,16 +109,28 @@
   border-color: rgba(240, 195, 60, 0.4);
 }
 
+.building-card__header {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.building-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
 .building-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.25);
   color: #ffd700;
   flex-shrink: 0;
+  font-size: 1.25rem;
 }
 
 .building-name {
@@ -127,9 +139,21 @@
   font-weight: 700;
 }
 
-.building-details {
+.building-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   color: #9ca3af;
-  line-height: 1.4;
+}
+
+.building-meta__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.building-meta__tech {
+  color: #a78bfa;
 }
 
 .building-description {
@@ -138,18 +162,41 @@
 }
 
 .building-effects {
-  color: #e6e6e6;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
 }
 
-.building-effects strong {
+.building-effect-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.75rem;
+  color: #e5e7eb;
+  white-space: nowrap;
+}
+
+.buildings-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: #ffd700;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
-.building-effects ul {
-  padding-left: 1.25rem;
-  margin-top: 0.25rem;
+.building-sell-btn {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ============================================================================

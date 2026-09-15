@@ -379,6 +379,8 @@ export interface City {
   userAssignedTiles?: Set<string>;
   /** Items purchased this turn (queued for next turn creation). */
   purchasedThisTurn?: Array<{ type?: string; itemType?: string; name?: string; cost?: number }>;
+  /** Whether a building was sold this turn (one sell per city per turn). */
+  soldBuildingThisTurn?: boolean;
   /** Whether barbarian scout has been built from this city. */
   barbarianScoutBuilt?: boolean;
   /** Method to queue production (if available on city instance). */

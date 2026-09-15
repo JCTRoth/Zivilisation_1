@@ -643,6 +643,8 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
         });
         city.purchasedThisTurn = [];
       }
+      // Reset sell tracking for the new turn
+      city.soldBuildingThisTurn = false;
     });
 
     // Process cities for the active player

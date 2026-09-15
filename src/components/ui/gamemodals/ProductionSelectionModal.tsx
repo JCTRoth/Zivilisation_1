@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Modal, Button, Tab, Tabs } from 'react-bootstrap';
 import { UNIT_PROPS, BUILDING_PROPS } from '../../../utils/Constants';
 import type { ProductionItem } from '../../../../types/game';
@@ -7,6 +7,8 @@ interface ProductionSelectionModalProps {
   show: boolean;
   onHide: () => void;
   onSelectProduction: (key: string) => void;
+  /** Add item directly to the build queue (bypasses current production). */
+  onAddToQueue?: (key: string) => void;
   onPurchase?: (key: string, item: ProductionItem) => void;
   /** The owning civilization (must expose `technologies` as an array of tech ids). */
   currentPlayer?: { technologies?: Array<string | Set<string>> | Set<string> } | null;
@@ -44,10 +46,45 @@ function hasRequiredTechs(
   return requirements.every((tech: string) => techSet.has(tech));
 }
 
+/** Convert snake_case tech ids to human-readable names: bronze_working → Bronze Working */
+function formatTechName(id: string | null | undefined): string {
+  if (!id) return 'None';
+  return id
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+type SortDir = 'asc' | 'desc' | null;
+
+interface SortState {
+  column: 'name' | 'cost' | null;
+  dir: SortDir;
+}
+
+/** Sort items: buildable first (when no sort active), then by chosen column. */
+function sortItems<T extends { key: string; name: string; cost: number; canBuild: boolean }>(
+  items: T[],
+  sort: SortState,
+): T[] {
+  const sorted = [...items];
+  sorted.sort((a, b) => {
+    // When no sort is active, buildable items first
+    if (!sort.column) {
+      if (a.canBuild !== b.canBuild) return a.canBuild ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    }
+    // Sort by chosen column
+    const cmp = sort.column === 'cost' ? a.cost - b.cost : a.name.localeCompare(b.name);
+    return sort.dir === 'desc' ? -cmp : cmp;
+  });
+  return sorted;
+}
+
 const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   show,
   onHide,
   onSelectProduction,
+  onAddToQueue,
   onPurchase,
   currentPlayer,
   playerGold = 0,
@@ -58,6 +95,30 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   const ownedBuildings = new Set((cityBuildings ?? []).map((b) => String(b).toLowerCase()));
   const buildableBuildingKeys = Object.keys(BUILDING_PROPS)
     .filter((key) => !ownedBuildings.has(key.toLowerCase()));
+
+  const [unitSort, setUnitSort] = useState<SortState>({ column: 'cost', dir: 'asc' });
+  const [buildingSort, setBuildingSort] = useState<SortState>({ column: 'cost', dir: 'asc' });
+  const [showUnavailable, setShowUnavailable] = useState(false);
+
+  const toggleUnitSort = (col: 'name' | 'cost') => {
+    setUnitSort((prev) =>
+      prev.column === col
+        ? { column: col, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { column: col, dir: 'asc' }
+    );
+  };
+  const toggleBuildingSort = (col: 'name' | 'cost') => {
+    setBuildingSort((prev) =>
+      prev.column === col
+        ? { column: col, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { column: col, dir: 'asc' }
+    );
+  };
+
+  const sortIndicator = (col: 'name' | 'cost', state: SortState) => {
+    if (state.column !== col) return null;
+    return <span className="ms-1">{state.dir === 'asc' ? '▲' : '▼'}</span>;
+  };
   const handleSelect = (key: string) => {
     onSelectProduction(key);
     onHide();
@@ -74,6 +135,12 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
       cost: props.cost,
     };
     onPurchase(key, item);
+    onHide();
+  };
+
+  const handleAddToQueue = (key: string) => {
+    if (!onAddToQueue) return;
+    onAddToQueue(key);
     onHide();
   };
 
@@ -96,33 +163,64 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
         </Button>
       </Modal.Header>
       <Modal.Body className="hex-detail-modal-body text-white">
+        <div className="d-flex justify-content-end mb-2">
+          <div className="form-check form-switch mb-0">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="show-unavailable-toggle"
+              checked={showUnavailable}
+              onChange={() => setShowUnavailable(!showUnavailable)}
+            />
+            <label className="form-check-label small text-muted" htmlFor="show-unavailable-toggle">
+              Show unavailable
+            </label>
+          </div>
+        </div>
         <Tabs defaultActiveKey="units" id="production-selection-tabs">
           <Tab eventKey="units" title="Units">
             <div className="table-responsive">
               <table className="table table-dark table-striped">
                 <thead>
                   <tr>
-                    <th>Unit</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => toggleUnitSort('name')}>
+                      Unit{sortIndicator('name', unitSort)}
+                    </th>
                     <th>Required Technology</th>
                     <th>Stats</th>
-                    <th>Cost</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => toggleUnitSort('cost')}>
+                      Cost{sortIndicator('cost', unitSort)}
+                    </th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.keys(UNIT_PROPS).map(key => {
-                    const unit = UNIT_PROPS[key];
-                    const requires = (unit as { requires?: string | string[] }).requires;
-                    const canBuild = hasRequiredTechs(currentPlayer, requires);
+                  {sortItems(
+                    Object.keys(UNIT_PROPS)
+                      .map((key) => {
+                        const unit = UNIT_PROPS[key];
+                        const requires = (unit as { requires?: string | string[] }).requires;
+                        return {
+                          key,
+                          name: unit.name,
+                          cost: unit.cost,
+                          canBuild: hasRequiredTechs(currentPlayer, requires),
+                          requires,
+                          unit,
+                        };
+                      })
+                      .filter((item) => showUnavailable || item.canBuild),
+                    unitSort,
+                  ).map(({ key, name, cost, canBuild, requires, unit }) => {
                     const requiredTech = Array.isArray(requires) ? requires.join(', ') : requires || 'None';
                     const stats = `${unit.attack}/${unit.defense} (${unit.movement} moves)`;
-                    const purchaseCost = getPurchaseCost('unit', unit.cost);
-                    const affordable = canAfford('unit', unit.cost);
+                    const purchaseCost = getPurchaseCost('unit', cost);
+                    const affordable = canAfford('unit', cost);
                     const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
                     return (
                       <tr key={key} className={canBuild ? '' : 'text-muted'}>
-                        <td>{unit.name}</td>
-                        <td>{requiredTech}</td>
+                        <td>{name}</td>
+                        <td>{formatTechName(requiredTech)}</td>
                         <td>{stats}</td>
                         <td>{purchaseCost} <i className="bi bi-coin"></i></td>
                         <td>
@@ -131,11 +229,21 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                               variant="outline-primary"
                               size="sm"
                               disabled={!canBuild}
-                              title={canBuild ? '' : `Requires ${requiredTech} technology`}
+                              title={canBuild ? 'Set as current production' : `Requires ${formatTechName(requiredTech)}`}
                               onClick={() => handleSelect(key)}
                             >
-                              {canBuild ? 'Select' : `Requires ${requiredTech}`}
+                              {canBuild ? 'Select' : `Requires ${formatTechName(requiredTech)}`}
                             </Button>
+                            {canBuild && onAddToQueue && (
+                              <Button
+                                variant="outline-success"
+                                size="sm"
+                                title="Add to build queue"
+                                onClick={() => handleAddToQueue(key)}
+                              >
+                                + Add
+                              </Button>
+                            )}
                             {canBuild && (
                               <Button
                                 variant="outline-warning"
@@ -167,10 +275,14 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
               <table className="table table-dark table-striped">
                 <thead>
                   <tr>
-                    <th>Building</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => toggleBuildingSort('name')}>
+                      Building{sortIndicator('name', buildingSort)}
+                    </th>
                     <th>Required Technology</th>
                     <th>Effect</th>
-                    <th>Cost</th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => toggleBuildingSort('cost')}>
+                      Cost{sortIndicator('cost', buildingSort)}
+                    </th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -182,17 +294,30 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                       </td>
                     </tr>
                   )}
-                  {buildableBuildingKeys.map(key => {
-                    const building = BUILDING_PROPS[key];
-                    const requiredTech = (building as { requiredTechnology?: string }).requiredTechnology || null;
-                    const canBuild = hasRequiredTechs(currentPlayer, requiredTech);
-                    const purchaseCost = getPurchaseCost('building', building.cost);
-                    const affordable = canAfford('building', building.cost);
+                  {sortItems(
+                    buildableBuildingKeys
+                      .map((key) => {
+                        const building = BUILDING_PROPS[key];
+                        const requiredTech = (building as { requiredTechnology?: string }).requiredTechnology || null;
+                        return {
+                          key,
+                          name: building.name,
+                          cost: building.cost,
+                          canBuild: hasRequiredTechs(currentPlayer, requiredTech),
+                          requiredTech,
+                          building,
+                        };
+                      })
+                      .filter((item) => showUnavailable || item.canBuild),
+                    buildingSort,
+                  ).map(({ key, name, cost, canBuild, requiredTech, building }) => {
+                    const purchaseCost = getPurchaseCost('building', cost);
+                    const affordable = canAfford('building', cost);
                     const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
                     return (
                       <tr key={key} className={canBuild ? '' : 'text-muted'}>
-                        <td>{building.name}</td>
-                        <td>{requiredTech || 'None'}</td>
+                        <td>{name}</td>
+                        <td>{formatTechName(requiredTech)}</td>
                         <td>{building.description}</td>
                         <td>{purchaseCost} <i className="bi bi-coin"></i></td>
                         <td>
@@ -201,11 +326,21 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                               variant="outline-success"
                               size="sm"
                               disabled={!canBuild}
-                              title={canBuild ? '' : `Requires ${requiredTech} technology`}
+                              title={canBuild ? 'Set as current production' : `Requires ${formatTechName(requiredTech)}`}
                               onClick={() => handleSelect(key)}
                             >
-                              {canBuild ? 'Select' : `Requires ${requiredTech}`}
+                              {canBuild ? 'Select' : `Requires ${formatTechName(requiredTech)}`}
                             </Button>
+                            {canBuild && onAddToQueue && (
+                              <Button
+                                variant="outline-info"
+                                size="sm"
+                                title="Add to build queue"
+                                onClick={() => handleAddToQueue(key)}
+                              >
+                                + Add
+                              </Button>
+                            )}
                             {canBuild && (
                               <Button
                                 variant="outline-warning"
