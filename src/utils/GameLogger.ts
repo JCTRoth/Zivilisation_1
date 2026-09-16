@@ -145,8 +145,8 @@ class GameLogger {
         return `  phase → ${data.phase} (civ ${data.civilizationId})`;
       case 'TURN_END':
         return `■ Turn end — civ ${data.civilizationId} (round ${data.roundNumber})`;
-      //case 'UNIT_MOVED':
-      //  return `Move: ${data.unit?.type}(${data.unit?.id}) → (${data.targetCol},${data.targetRow})`;
+      case 'UNIT_MOVED':
+        return `Move: ${data.unit?.type}(${data.unit?.id}) → (${data.targetCol},${data.targetRow})`;
       case 'COMBAT_VICTORY':
         return `⚔ Combat: ${data.attacker?.type} defeated ${data.defender?.type} at (${data.defender?.col},${data.defender?.row})`;
       case 'COMBAT_DEFEAT':
