@@ -1,5 +1,6 @@
 import { Unit, type GameActions } from '../../../types/game';
 import GameEngine from './GameEngine';
+import { notify } from '../../utils/NotificationUtils';
 
 /**
  * KeyboardHandler - Manages keyboard input for unit actions
@@ -230,9 +231,7 @@ export class KeyboardHandler {
    * Show notification to user
    */
   private showNotification(type: 'info' | 'success' | 'warning' | 'error', message: string): void {
-    if (this.actions?.addNotification) {
-      this.actions.addNotification({ type, message });
-    }
+    notify(type, message);
   }
 
   /**

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Notification } from '../../../types/game';
+import { HUMAN_PLAYER_ID } from '../../utils/PlayerConstants';
 
 const ICONS: Record<Notification['type'], string> = {
   info: 'ℹ️',
@@ -16,6 +17,9 @@ interface NotificationCenterProps {
 /**
  * Renders the store's notification queue as a stack of dismissible toasts.
  * Purely presentational — the caller owns the store wiring.
+ *
+ * Only toasts related to the (human) player are shown: notifications that are
+ * explicitly tagged for another civilization (AI-only events) are hidden.
  */
 const NotificationCenter: React.FC<NotificationCenterProps> = ({
   notifications,
@@ -25,9 +29,14 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     return null;
   }
 
+  const visible = notifications.filter(
+    (n) => n.civId === undefined || n.civId === HUMAN_PLAYER_ID,
+  );
+  if (visible.length === 0) return null;
+
   return (
     <div className="notification-center" role="status" aria-live="polite">
-      {notifications.map((notification) => (
+      {visible.map((notification) => (
         <div
           key={notification.id}
           className={`notification-item notification-item--${notification.type}`}

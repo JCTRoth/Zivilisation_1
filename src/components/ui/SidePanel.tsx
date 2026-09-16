@@ -2,8 +2,7 @@ import React, { useMemo, useCallback } from 'react';
 import { useGameStore } from '@/stores/GameStore';
 import { CIVILIZATIONS } from '@/data/GameData';
 import { TILE_SIZE } from '@/data/TerrainData';
-import { TERRAIN_PROPERTIES } from '@/data/TerrainConstants';
-import { SPECIAL_RESOURCES } from '@/data/TerrainConstants';
+import { getResourceYields, TERRAIN_PROPERTIES } from '@/data/TerrainConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import MiniMap from './MiniMap';
 import '../../styles/sidePanel.css';
@@ -72,23 +71,10 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     let trade = props?.trade ?? 0;
 
     // Add resource bonuses (e.g. Horses +2 production on Plains)
-    const resInfo = (tile as unknown as Record<string, unknown>).resourceInfo as
-      { food?: number; production?: number; trade?: number; description?: string } | undefined;
-    if (resInfo) {
-      food += resInfo.food ?? 0;
-      production += resInfo.production ?? 0;
-      trade += resInfo.trade ?? 0;
-    } else if (tile.resource) {
-      // Fallback: look up from SPECIAL_RESOURCES
-      const special = SPECIAL_RESOURCES.find(
-        (r) => r.name.toLowerCase() === String(tile.resource).toLowerCase()
-      );
-      if (special) {
-        food += special.food ?? 0;
-        production += special.production ?? 0;
-        trade += special.trade ?? 0;
-      }
-    }
+    const resourceYields = getResourceYields(tile.resource, tile.type);
+    food += resourceYields.food;
+    production += resourceYields.production;
+    trade += resourceYields.trade;
 
     return {
       ...tile,
@@ -103,7 +89,7 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
       baseFood: props?.food ?? 0,
       baseProduction: props?.production ?? 0,
       baseTrade: props?.trade ?? 0,
-      resourceBonus: resInfo as { food?: number; production?: number; trade?: number; description?: string } | null,
+      resourceBonus: resourceYields,
     };
   }, [selectedHex, map]);
 
@@ -354,18 +340,10 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
       let production = base.production ?? 0;
       let trade = base.trade ?? 0;
 
-      // Add special resource bonuses
-      const resName = tile.resource;
-      if (resName) {
-        const special = SPECIAL_RESOURCES.find(
-          (r: { name: string }) => r.name.toLowerCase() === String(resName).toLowerCase()
-        );
-        if (special) {
-          food += special.food ?? 0;
-          production += special.production ?? 0;
-          trade += special.trade ?? 0;
-        }
-      }
+      const resourceYields = getResourceYields(tile.resource, terrain);
+      food += resourceYields.food;
+      production += resourceYields.production;
+      trade += resourceYields.trade;
 
       tiles.push({ key, col, row, terrain, resource: tile.resource, food, production, trade, worked: true });
     }

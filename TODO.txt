@@ -4,18 +4,18 @@ BUGS:
 
 --Open--
 - attacking doesnt work if it goes through a friendly unit
-- improve building stuff ui in cities
 - when moving units over enemy cities, they attack them instead
-- when citiy is selected, tiles could preview which resources they support
 - when attacking, don't set that as a path that will be done automatically next turn
   -> just because unit can't reach that path (because it is blocked by enemy unit) it shouldn't auto attack next turn
-- why is research prograss towards the end of a research getting slower?
-  ->  it should be constant right?
+
 - how to not get annoyed if city has nothing to build?
   -> need an idea? -> only spawn message once? -> until that production had been slected and is done?
 
 
 ?--Fixed--?
+- when citiy is selected, tiles could preview which resources they support
+- improve building stuff ui in cities
+- Only show the Tosts that are related to the player 
 - bribe unit is bugged?
 - nothing happens when producing caravans, fix it!
 - Make it impossible to research somthing that is already discovered/researched by the civ.
@@ -24,6 +24,8 @@ BUGS:
 - when attacking city with one health the city stays alive and only next turn disappears
 - are the libraries of other cities even doing anything? i am getting one science while having multiple cities with libraries
 - buying units directly should not be 50% cheaper
+- why is research prograss towards the end of a research getting slower?
+  ->  it should be constant right?
 - resources in cities don't seem to be calculated correctly
   what is starvation doing?
   Here is how the starvation logic works written out as structured pseudo-code, followed by an exact breakdown of how the Granary functions in Civilization 1.Civ 1 City Food & Starvation Pseudo-codetext// Run once per city at the end of every turn

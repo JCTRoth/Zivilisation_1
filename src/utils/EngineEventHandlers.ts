@@ -2,6 +2,7 @@ import { useGameStore } from '../stores/GameStore';
 import { firstUnresearchedInPath } from './ResearchPath';
 import { awaitCameraGlide, isCameraGliding } from '../game/engine/CameraGlideGate';
 import { HUMAN_PLAYER_ID } from './PlayerConstants';
+import { humanOrFirst, notify } from './NotificationUtils';
 import type GameEngine from '../game/engine/GameEngine';
 import type { Technology, Unit, City, Civilization, VillageOutcome } from '../../types/game';
 import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
@@ -464,14 +465,16 @@ export class EngineEventRouter {
 
     this.actions.updateUnits(this.gameEngine.getAllUnits());
     this.actions.updateVisibility();
-    this.actions.addNotification({
-      type: eventType === 'COMBAT_VICTORY' ? 'success' : eventType === 'COMBAT_HIT' ? 'info' : 'warning',
-      message: eventType === 'COMBAT_VICTORY'
-        ? 'Victory in combat!'
-        : eventType === 'COMBAT_HIT'
-          ? 'Enemy unit wounded!'
-          : 'Unit defeated in combat!'
-    });
+    // Only toast fights that involve the human player (or a fight of another
+    // civ's units — e.g. an AI battle) should be suppressed.
+    const combatCivId = humanOrFirst(attacker?.civilizationId, defender?.civilizationId);
+    const combatType = eventType === 'COMBAT_VICTORY' ? 'success' : eventType === 'COMBAT_HIT' ? 'info' : 'warning';
+    const combatMsg = eventType === 'COMBAT_VICTORY'
+      ? 'Victory in combat!'
+      : eventType === 'COMBAT_HIT'
+        ? 'Enemy unit wounded!'
+        : 'Unit defeated in combat!';
+    notify(combatType, combatMsg, combatCivId);
 
     // Record a combat animation: a cloud appears at the defender's tile, the
     // HP bars tween, and the survivor fades back in (2 seconds total).
@@ -569,10 +572,7 @@ export class EngineEventRouter {
 
     const gold = Number(eventData?.gold ?? 0);
     const science = Number(eventData?.science ?? 0);
-    this.actions.addNotification({
-      type: 'success',
-      message: `Trade route: ${home.name} → ${dest.name} (+${gold} gold, +${science} science)`,
-    });
+    notify('success', `Trade route: ${home.name} → ${dest.name} (+${gold} gold, +${science} science)`, humanOrFirst(caravan?.civilizationId, dest.civilizationId));
 
     // Only surface the payout modal for the human player.
     const civ = caravan ? this.gameEngine?.civilizations?.[caravan.civilizationId] : undefined;
@@ -649,9 +649,9 @@ export class EngineEventRouter {
       }
       // Caravans get a special hint about trade routes.
       if (unit.type === 'caravan') {
-        this.actions.addNotification({ type: 'info', message: 'Caravan built! Move it to another city to establish a trade route.' });
+        notify('info', 'Caravan built! Move it to another city to establish a trade route.', unit.civilizationId);
       } else {
-        this.actions.addNotification({ type: 'success', message: `${unit.type} ready to move!` });
+        notify('success', `${unit.type} ready to move!`, unit.civilizationId);
       }
     }
   }
@@ -670,15 +670,22 @@ export class EngineEventRouter {
     this.actions.updateVisibility();
     // Don't auto-open the city panel in AI-vs-AI mode (nobody is managing it).
     if (!this.isAIVsAI && city.civilizationId === 0) this.actions.selectCity(city.id);
-    this.actions.addNotification({ type: 'info', message: `${city.name} founded!` });
+    notify('info', `${city.name} founded!`, city.civilizationId);
   }
 
   private onCityProductionChanged(eventData: Record<string, unknown>) {
     this.actions.updateCities(this.gameEngine.getAllCities());
     const item = eventData.item as { name?: string; itemType?: string } | undefined;
     if (eventData && item) {
+      // AI cities report their production too — only toast the human's.
+      const prodCityId = eventData?.cityId as string | undefined;
+      const cityForProd = prodCityId
+        ? this.gameEngine.cities.find((c) => c.id === prodCityId)
+        : undefined;
+      const prodCivId = cityForProd?.civilizationId
+        ?? (eventData?.civilizationId as number | undefined);
       const name = item.name || item.itemType || 'Production';
-      this.actions.addNotification({ type: 'success', message: eventData.queued ? `Queued ${name}` : `Started production: ${name}` });
+      notify('success', eventData.queued ? `Queued ${name}` : `Started production: ${name}`, prodCivId);
     }
     // The city is no longer idle — allow a future prompt for it.
     const changedCityId = eventData?.cityId as string | undefined;
@@ -699,10 +706,7 @@ export class EngineEventRouter {
     const city = this.gameEngine.cities.find((c) => c.id === cityId);
     if (!city) return;
 
-    this.actions.addNotification({
-      type: 'warning',
-      message: `${city.name} has nothing in production!`,
-    });
+    notify('warning', `${city.name} has nothing in production!`);
 
     const firstTime = !this.idleCityPrompted.has(cityId);
     if (firstTime) this.idleCityPrompted.add(cityId);
@@ -767,9 +771,9 @@ export class EngineEventRouter {
       this.actions.updateMap(this.gameEngine.map);
       this.actions.updateVisibility();
       if (eventData && eventData.improvementType) {
-        this.actions.addNotification({ type: 'success', message: `${eventData.improvementType} built` });
+        notify('success', `${eventData.improvementType} built`, (eventData?.unit as Unit | undefined)?.civilizationId);
       } else {
-        this.actions.addNotification({ type: 'info', message: 'Improvement built' });
+        notify('info', 'Improvement built');
       }
     } catch (e) {
       console.warn('[EngineEventRouter] Error handling IMPROVEMENT_BUILT', e);
@@ -794,10 +798,7 @@ export class EngineEventRouter {
     const tech = eventData?.tech as Technology | undefined;
     this.actions.updateCivilizations([...(this.gameEngine.civilizations || [])]);
     if (civilizationId !== HUMAN_PLAYER_ID || !tech?.name) return;
-    this.actions.addNotification({
-      type: 'info',
-      message: `No research selected — now researching ${tech.name}.`,
-    });
+    notify('info', `No research selected — now researching ${tech.name}.`);
   }
 
   private onCheckAutoEndTurn() {
@@ -827,10 +828,7 @@ export class EngineEventRouter {
       if (!this.researchPromptedForGap) {
         this.researchPromptedForGap = true;
         console.log('[AUTO-END] Auto end turn deferred — no research selected');
-        this.actions.addNotification({
-          type: 'warning',
-          message: 'Choose a technology to research first.',
-        });
+        notify('warning', 'Choose a technology to research first.');
         // Inform (do not decide for the player): "No Research Selected" modal.
         this.actions.showDialog('research-required');
       }
@@ -1105,7 +1103,7 @@ export class EngineEventRouter {
     const target = civs.find((c: Civilization) => c.id === (eventData?.targetId as number));
     const msg = `${aggressor?.name ?? 'Unknown'} declared war on ${target?.name ?? 'Unknown'}!`;
     console.log('[EngineEventRouter] WAR_DECLARED:', msg);
-    this.actions.addNotification?.({ type: 'warning', message: msg });
+    notify('warning', msg, humanOrFirst(aggressor?.id, target?.id));
     this.syncState();
   }
 
@@ -1115,13 +1113,13 @@ export class EngineEventRouter {
     const civB = civs.find((c: Civilization) => c.id === (eventData?.civB as number));
     const msg = `Peace between ${civA?.name ?? 'Unknown'} and ${civB?.name ?? 'Unknown'}!`;
     console.log('[EngineEventRouter] PEACE_MADE:', msg);
-    this.actions.addNotification?.({ type: 'success', message: msg });
+    notify('success', msg, humanOrFirst(civA?.id, civB?.id));
     this.syncState();
   }
 
   private onDiplomacyEvent(eventData: Record<string, unknown>) {
     if (eventData?.message) {
-      this.actions.addNotification?.({ type: 'info', message: eventData.message as string });
+      notify('info', eventData.message as string);
     }
   }
 
@@ -1131,7 +1129,7 @@ export class EngineEventRouter {
     const civB = civs.find((c: Civilization) => c.id === (eventData?.civB as number));
     const msg = `💔 Alliance broken: ${civA?.name ?? 'Unknown'} declared war on ${civB?.name ?? 'Unknown'}!`;
     console.log('[EngineEventRouter] ALLIANCE_BROKEN:', msg);
-    this.actions.addNotification?.({ type: 'warning', message: msg });
+    notify('warning', msg, humanOrFirst(civA?.id, civB?.id));
     this.syncState();
   }
 
@@ -1150,7 +1148,7 @@ export class EngineEventRouter {
     console.log('[EngineEventRouter] AI_DIPLOMACY_OFFER from', from?.name ?? eventData.fromCivId, '→', eventData.action);
 
     if (eventData?.message) {
-      this.actions.addNotification?.({ type: 'info', message: eventData.message as string });
+      notify('info', eventData.message as string);
     }
     this.actions.showIncomingDiplomacyOffer?.({
       fromCivId: eventData.fromCivId as number,

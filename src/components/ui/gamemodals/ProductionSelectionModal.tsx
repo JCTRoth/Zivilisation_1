@@ -17,6 +17,8 @@ interface ProductionSelectionModalProps {
   purchasedThisTurn?: boolean;
   /** Buildings the city ALREADY owns — hidden from the Buildings tab. */
   cityBuildings?: string[];
+  /** City's production per turn — used to estimate build time (shields/turn). */
+  productionPerTurn?: number;
 }
 
 /** True when the civ has researched every tech in the (possibly single) requirement. */
@@ -88,6 +90,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   playerGold = 0,
   purchasedThisTurn = false,
   cityBuildings = [],
+  productionPerTurn = 0,
 }) => {
   // Buildings are one-per-city in Civ1 — hide the ones the city already owns.
   const ownedBuildings = new Set((cityBuildings ?? []).map((b) => String(b).toLowerCase()));
@@ -140,6 +143,10 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
 
   const getPurchaseCost = (type: string, cost: number): number => type === 'unit' ? cost * 2 : cost;
   const canAfford = (type: string, cost: number): boolean => playerGold >= getPurchaseCost(type, cost);
+  const getTurnsText = (cost: number): string => {
+    if (cost <= 0 || productionPerTurn <= 0) return '—';
+    return `~${Math.ceil(cost / productionPerTurn)} turns`;
+  };
 
   return (
     <Modal show={show} onHide={onHide} centered size="lg" dialogClassName="city-details-modal production-selection-modal hex-detail-modal">
@@ -183,7 +190,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                     <th>Required Technology</th>
                     <th>Stats</th>
                     <th style={{ cursor: 'pointer' }} onClick={() => toggleUnitSort('cost')}>
-                      Cost{sortIndicator('cost', unitSort)}
+                      Shields{sortIndicator('cost', unitSort)}
                     </th>
                     <th>Action</th>
                   </tr>
@@ -216,7 +223,10 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                         <td>{name}</td>
                         <td>{formatTechName(requiredTech)}</td>
                         <td>{stats}</td>
-                        <td>{purchaseCost} <i className="bi bi-coin"></i></td>
+                        <td>
+                          <span className="text-warning">⛏️ {cost}</span>{' '}
+                          <span className="text-info">{getTurnsText(cost)}</span>
+                        </td>
                         <td>
                           <div className="d-flex gap-1">
                             {canBuild && onAddToQueue && (
@@ -266,7 +276,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                     <th>Required Technology</th>
                     <th>Effect</th>
                     <th style={{ cursor: 'pointer' }} onClick={() => toggleBuildingSort('cost')}>
-                      Cost{sortIndicator('cost', buildingSort)}
+                      Shields{sortIndicator('cost', buildingSort)}
                     </th>
                     <th>Action</th>
                   </tr>
@@ -304,7 +314,10 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                         <td>{name}</td>
                         <td>{formatTechName(requiredTech)}</td>
                         <td>{building.description}</td>
-                        <td>{purchaseCost} <i className="bi bi-coin"></i></td>
+                        <td>
+                          <span className="text-warning">⛏️ {cost}</span>{' '}
+                          <span className="text-info">{getTurnsText(cost)}</span>
+                        </td>
                         <td>
                           <div className="d-flex gap-1">
                             {canBuild && onAddToQueue && (

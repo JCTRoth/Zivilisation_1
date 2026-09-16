@@ -509,6 +509,13 @@ export interface Notification {
   id: number;
   type: 'info' | 'success' | 'warning' | 'error';
   message: string;
+  /**
+   * Which civilization the toast concerns. Toasts tagged with a civ that is
+   * not the human player's are suppressed in the UI (AI-only events like an
+   * AI building a unit must not spam the player). Undefined = player-relevant
+   * generic UI info, always shown.
+   */
+  civId?: number;
 }
 
 interface Settings {

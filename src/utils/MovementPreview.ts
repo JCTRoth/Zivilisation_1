@@ -38,6 +38,13 @@ const EPSILON = 1e-6;
  * When `getUnitAt` is provided, the result includes `isAttack: true` if the
  * destination tile is occupied by an enemy unit. This flag is shared by the
  * GoToManager path drawing and the hover preview.
+ *
+ * Both `getUnitAt` and `getCityAt` are forwarded to the pathfinder so the
+ * preview matches the real GoTo path: friendly units and enemy cities are
+ * routed around (unless they are the attack target itself). Without this the
+ * preview draws a line straight through units the unit cannot actually step
+ * on, so the order then "doesn't work" (`GoToManager.calculatePath` returns a
+ * different path or none at all).
  */
 export function computeMovementPreview(
   unit: MovementPreviewUnit,
@@ -46,7 +53,8 @@ export function computeMovementPreview(
   getTileAt: TileLookup,
   mapWidth: number,
   mapHeight: number,
-  getUnitAt?: (col: number, row: number) => { civilizationId: number } | null
+  getUnitAt?: (col: number, row: number) => { civilizationId: number } | null,
+  getCityAt?: (col: number, row: number) => { civilizationId: number } | null
 ): MovementPreview | null {
   if (unit.col === targetCol && unit.row === targetRow) return null;
 
@@ -58,7 +66,10 @@ export function computeMovementPreview(
     getTileAt,
     unit.type,
     mapWidth,
-    mapHeight
+    mapHeight,
+    getUnitAt,
+    unit.civilizationId,
+    getCityAt
   );
 
   if (!result.success || result.path.length < 2) return null;

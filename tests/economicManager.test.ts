@@ -6,6 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { EconomicManager } from '../src/game/engine/EconomicManager';
+import { getResourceYields } from '../src/data/TerrainConstants';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeEngine(overrides: any = {}): any {
@@ -343,6 +344,25 @@ function makeTile(type: string, overrides: any = {}): any {
 }
 
 describe('EconomicManager tile-based commerce', () => {
+  it('uses the Civ1 bonus table for every special resource', () => {
+    const cases = [
+      ['hills', 'coal', { food: 0, production: 2, trade: 0 }],
+      ['ocean', 'fish', { food: 2, production: 0, trade: 0 }],
+      ['forest', 'game', { food: 2, production: 0, trade: 0 }],
+      ['tundra', 'game', { food: 3, production: 0, trade: 0 }],
+      ['jungle', 'gems', { food: 0, production: 0, trade: 4 }],
+      ['mountains', 'gold', { food: 0, production: 0, trade: 6 }],
+      ['plains', 'horses', { food: 0, production: 2, trade: 0 }],
+      ['desert', 'oasis', { food: 3, production: 0, trade: 0 }],
+      ['swamp', 'oil', { food: 0, production: 4, trade: 0 }],
+      ['arctic', 'seal', { food: 2, production: 0, trade: 0 }],
+    ] as const;
+
+    for (const [terrain, resource, expected] of cases) {
+      expect(getResourceYields(resource, terrain), `${resource} on ${terrain}`).toMatchObject(expected);
+    }
+  });
+
   it('computes tile yields from terrain, resources and improvements', () => {
     const civ = makeCiv(0);
     const engine = makeEngine({ civilizations: [civ], cities: [], units: [] });

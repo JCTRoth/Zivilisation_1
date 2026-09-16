@@ -125,7 +125,7 @@ export default class MapGenerator {
     this.stage8_BuildSites();
     this.ensurePassability();
 
-    return this.toTileArray();
+    return this.toTileArray(rng);
   }
 
   generateWaterOnly(): GenTile[] {
@@ -136,7 +136,7 @@ export default class MapGenerator {
     }
     this.stage6a_SpecialResources(mulberry32(this.seed + 9999));
     this.stage7_FloodFillGroups();
-    return this.toTileArray();
+    return this.toTileArray(mulberry32(this.seed + 9999));
   }
 
   /**
@@ -167,7 +167,7 @@ export default class MapGenerator {
     this.stage8_BuildSites();
     this.ensurePassability();
 
-    return this.toTileArray();
+    return this.toTileArray(rng);
   }
 
   /**
@@ -1311,7 +1311,7 @@ export default class MapGenerator {
 
   // ── Helpers ──────────────────────────────────────────────────────
 
-  private toTileArray(): GenTile[] {
+  private toTileArray(random: () => number = Math.random): GenTile[] {
     const tiles: GenTile[] = [];
     for (let row = 0; row < this.height; row++) {
       for (let col = 0; col < this.width; col++) {
@@ -1319,7 +1319,7 @@ export default class MapGenerator {
         tiles.push({
           col: src.col, row: src.row,
           type: src.type, terrain: src.type,
-          resource: rollResource(src.type, src.specialResource),
+          resource: rollResource(src.type, src.specialResource, random),
           visible: false, explored: false,
           groupId: src.groupId,
         });

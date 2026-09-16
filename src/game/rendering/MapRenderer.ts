@@ -17,7 +17,7 @@
 
 import { Constants } from '@/utils/Constants';
 import { TILE_SIZE, getTerrainInfo, TERRAIN_TYPES } from '@/data/TerrainData';
-import { TERRAIN_RESOURCES } from '@/data/TerrainConstants';
+import { TERRAIN_RESOURCES, TERRAIN_PROPERTIES, getResourceYields } from '@/data/TerrainConstants';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } from '@/data/TileImprovementConstants';
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
@@ -62,7 +62,7 @@ const RESOURCE_GLYPHS: Record<string, string> = {
   horses: '🐎',
   gold: '💰',
   coal: '🪨',
-  fish: '🐟',
+  fish: 'F',
   oil: '🛢️',
   game: '🦌',
   oasis: '🌴',
@@ -269,6 +269,10 @@ interface DrawTerrainSymbolOptions {
   drawBase?: boolean;
   /** Whether to draw river overlays */
   drawRivers?: boolean;
+  /** Camera zoom used by dynamic tile overlays. */
+  zoom?: number;
+  /** Draw dynamic resource and village overlays rather than cached terrain symbols. */
+  dynamicOverlays?: boolean;
 }
 
 /**
@@ -1105,7 +1109,7 @@ export class MapRenderer {
               );
             }
           } else {
-            this.drawTerrainSymbol(ctx, x, y, tile, { drawBase: false, drawRivers: true });
+            this.drawTerrainSymbol(ctx, x, y, tile, { drawBase: false, drawRivers: true, zoom: camera.zoom, dynamicOverlays: true });
           }
         }
 
@@ -1338,6 +1342,37 @@ export class MapRenderer {
       ctx.fillRect(center.x - half, center.y - half, scaledTileSize, scaledTileSize);
     }
 
+    // ── Selected-city resource preview ────────────────────────────────────
+    // While a city is selected, every tile in its radius shows the Food /
+    // Production / Trade it contributes when worked, so the player can weigh
+    // citizen assignments directly on the map. Tiles already belonging to
+    // another city are skipped (they can never be worked here).
+    if (selectedCity) {
+      for (let dCol = -2; dCol <= 2; dCol++) {
+        for (let dRow = -2; dRow <= 2; dRow++) {
+          if (dCol === 0 && dRow === 0) continue;
+          if (Math.abs(dCol) === 2 && Math.abs(dRow) === 2) continue;
+          const col = selectedCity.col + dCol;
+          const row = selectedCity.row + dRow;
+          const key = `${col},${row}`;
+          if (blockedByOtherCity.has(key)) continue;
+          if (row < bounds.startRow || row >= bounds.endRow ||
+              col < bounds.startCol || col >= bounds.endCol) continue;
+          const tile = terrainGrid?.[row]?.[col];
+          if (!tile?.explored) continue;
+          const { x, y } = squareToScreen(col, row);
+          if (this.isOutsideViewport(x, y, canvasSize.width, canvasSize.height, margin)) continue;
+          const yields = MapRenderer.computeTileYield(
+            tile.type,
+            tile.resource ?? null,
+            typeof tile.improvement === 'string' ? tile.improvement : null,
+          );
+          if (yields.food <= 0 && yields.production <= 0 && yields.trade <= 0) continue;
+          this.drawTileYieldPreview(ctx, x, y, scaledTileSize, yields);
+        }
+      }
+    }
+
     // Draw movement range overlay first (so it's under everything else)
     if (reachableTiles && reachableTiles.size > 0) {
       // Determine whether the previewed/selected unit is naval. Prefer the
@@ -1452,7 +1487,7 @@ export class MapRenderer {
           // Draw improvements using the same drawTerrainSymbol function, but only improvements/roads
           // (no base terrain symbols, as those are already in the offscreen layer)
           try {
-            this.drawTerrainSymbol(ctx, x, y, improvementTile, { drawBase: false, drawRivers: false });
+            this.drawTerrainSymbol(ctx, x, y, improvementTile, { drawBase: false, drawRivers: false, zoom: cameraZoom, dynamicOverlays: true });
           } catch (err) {
             console.warn('[MapRenderer] drawDynamicContent: failed to draw improvement', err);
           }
@@ -1563,6 +1598,91 @@ export class MapRenderer {
     movementAnimations?: MovementAnimation[]
   ): { col: number; row: number } {
     return getUnitDisplayTile(unit, movementAnimations);
+  }
+
+  /**
+   * Food / Production / Trade a tile yields when worked, mirroring
+   * `EconomicManager.tileYields` (base terrain + special resource + improvement
+   * effects). Used by the selected-city resource preview on the map.
+   */
+  private static computeTileYield(
+    terrainType: string,
+    resource: string | null,
+    improvement: string | null,
+  ): { food: number; production: number; trade: number } {
+    const base = TERRAIN_PROPERTIES[terrainType];
+    let food = base?.food ?? 0;
+    let production = base?.production ?? 0;
+    let trade = base?.trade ?? 0;
+
+    const resourceYields = getResourceYields(resource, terrainType);
+    food += resourceYields.food;
+    production += resourceYields.production;
+    trade += resourceYields.trade;
+
+    if (improvement) {
+      const imp = IMPROVEMENT_PROPERTIES[improvement];
+      if (imp) {
+        const terrainEffects = imp.effectsByTerrain?.[terrainType];
+        if (terrainEffects) {
+          food += terrainEffects.food ?? 0;
+          production += terrainEffects.production ?? 0;
+          trade += terrainEffects.trade ?? 0;
+        } else if (imp.effects) {
+          food += imp.effects.food ?? 0;
+          production += imp.effects.production ?? 0;
+          trade += imp.effects.trade ?? 0;
+        }
+      }
+    }
+
+    return { food, production, trade };
+  }
+
+  /**
+  * Draw a compact neutral yield indicator at the bottom of a tile. All
+  * numbers are bold white; the order is Food, Production, Trade.
+   */
+  private drawTileYieldPreview(
+    ctx: CanvasRenderingContext2D,
+    tileCenterX: number,
+    tileCenterY: number,
+    scaledTileSize: number,
+    yields: { food: number; production: number; trade: number },
+  ): void {
+    if (scaledTileSize < 22) return;
+
+    const dotR = 8;
+    const fs = 11;
+    const gap = 5;
+    const rowW = dotR * 2 * 3 + gap * 2;
+
+    const cx = tileCenterX;
+    const cy = tileCenterY + scaledTileSize / 2 - dotR - 2;
+
+    ctx.save();
+    ctx.textBaseline = 'middle';
+    ctx.font = `bold ${fs}px sans-serif`;
+    ctx.textAlign = 'center';
+
+    const items = [yields.food, yields.production, yields.trade];
+
+    items.forEach((val, i) => {
+      const dx = cx - rowW / 2 + dotR + i * (dotR * 2 + gap);
+
+      ctx.beginPath();
+      ctx.arc(dx, cy, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(20, 20, 20, 0.78)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(String(val), dx, cy + 0.5);
+    });
+
+    ctx.restore();
   }
 
   /**
@@ -1729,16 +1849,17 @@ export class MapRenderer {
     centerX: number,
     centerY: number,
     dimmed: boolean,
+    zoom: number,
   ): void {
     try {
-      const symbolScale = this.tileSize / 22;
-      const villageSize = Math.round(20 * symbolScale);
+      const overlayScale = Math.max(0.5, zoom);
+      const villageSize = Math.round(20 * overlayScale);
       ctx.save();
       if (dimmed) ctx.globalAlpha = 0.45;
       ctx.font = `${villageSize}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('🛖', centerX, centerY - 4 * symbolScale);
+      ctx.fillText('🛖', centerX, centerY - 4 * overlayScale);
       ctx.restore();
     } catch (err) {
       console.warn('[MapRenderer] drawVillageMarker fillText failed', err);
@@ -1752,14 +1873,15 @@ export class MapRenderer {
     terrain: TerrainTileRenderInfo,
     options: DrawTerrainSymbolOptions
   ): void {
-    const { drawBase = true, drawRivers = true } = options;
+    const { drawBase = true, drawRivers = true, zoom = 1, dynamicOverlays = false } = options;
     const terrainInfo = getTerrainInfo(terrain.type);
     if (!terrainInfo) return;
     if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) return;
     const char = terrainInfo.char ?? '';
 
-    // Scale terrain symbols proportionally to tile size (base: 32px → 16px font)
-    const symbolScale = this.tileSize / 32;
+    // Base symbols belong to the zoomed terrain layer. Dynamic overlays use
+    // fixed screen pixels so labels and emoji do not resize with the camera.
+    const symbolScale = drawBase ? this.tileSize / 32 : 1;
     const baseFontSize = Math.round(16 * symbolScale);
 
     if (drawBase && typeof char === 'string' && char.length > 0) {
@@ -1774,13 +1896,19 @@ export class MapRenderer {
       }
     }
 
-    // Civ1 special-resource glyph (Seal, Gems, Horses, Gold, Coal, Fish, Oil, Game, Oasis).
+    // Resources are drawn in the dynamic pass at a fixed screen size. Keeping
+    // them out of the terrain layer prevents emoji from scaling with zoom.
     const resource = terrain.resource ? String(terrain.resource) : null;
-    if (drawBase && resource && RESOURCE_GLYPHS[resource.toLowerCase()]) {
+    if (dynamicOverlays && resource && RESOURCE_GLYPHS[resource.toLowerCase()]) {
       try {
-        ctx.font = `${baseFontSize}px ${TERRAIN_FONT_FAMILY}`;
-        ctx.fillStyle = '#000';
-        ctx.fillText(RESOURCE_GLYPHS[resource.toLowerCase()], centerX - 10 * symbolScale, centerY + 10 * symbolScale);
+        const overlayScale = Math.max(0.5, zoom);
+        const resourceKey = resource.toLowerCase();
+        const isFish = resourceKey === 'fish';
+        ctx.font = isFish
+          ? `bold ${Math.round(16 * overlayScale)}px sans-serif`
+          : `${Math.round(16 * overlayScale)}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+        ctx.fillStyle = isFish ? '#ffffff' : '#000';
+        ctx.fillText(RESOURCE_GLYPHS[resourceKey], centerX - 10 * overlayScale, centerY + 10 * overlayScale);
       } catch (err) {
         console.warn('[MapRenderer] drawTerrainSymbol resource fillText failed', err);
       }
@@ -1789,8 +1917,8 @@ export class MapRenderer {
     // Civ1 village (goody hut) marker. Drawn only in the dynamic pass
     // (drawBase === false) so it always reflects the authoritative map state
     // and disappears the moment a unit claims the hut.
-    if (terrain.village && !drawBase) {
-      this.drawVillageMarker(ctx, centerX, centerY, false);
+    if (dynamicOverlays && terrain.village) {
+      this.drawVillageMarker(ctx, centerX, centerY, false, zoom);
     }
 
     ctx.textAlign = 'center';
@@ -1890,40 +2018,43 @@ export class MapRenderer {
     const civ = civilizations.find(c => c.id === city.civilizationId);
     const civColor = civ?.color || (city.civilizationId === 0 ? '#FFD700' : '#FF6347');
     ctx.fillStyle = civColor;
-    const size = 28 * cameraZoom;
+    // Keep the city marker readable at every zoom level without letting it
+    // become tiny when the map is zoomed in.
+    const overlayScale = Math.min(2, Math.max(0.85, cameraZoom));
+    const size = Math.min(56, Math.max(28, 28 * overlayScale));
     ctx.fillRect(centerX - size / 2, centerY - size / 2, size, size);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
     ctx.strokeRect(centerX - size / 2, centerY - size / 2, size, size);
 
     ctx.fillStyle = '#000';
-    ctx.font = `bold ${Math.max(12, 24 * cameraZoom)}px monospace`;
+    ctx.font = `bold ${Math.min(44, Math.max(24, 24 * overlayScale))}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🏛️', centerX, centerY);
 
-    ctx.font = `${Math.max(8, 10 * cameraZoom)}px monospace`;
+    ctx.font = `${Math.min(18, Math.max(10, 10 * overlayScale))}px monospace`;
     ctx.fillStyle = '#000';
-    ctx.fillText(city.name, centerX, centerY + 24 * cameraZoom);
+    ctx.fillText(city.name, centerX, centerY + size / 2 + 12 * overlayScale);
 
     // Draw specialist icons below the city name, flowing left to right.
     const specs = city.specialists ?? [];
     if (specs.length > 0) {
-      const specFontSize = Math.max(6, 7 * cameraZoom);
+      const specFontSize = Math.min(15, Math.max(7, 7 * overlayScale));
       ctx.font = `${specFontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       const iconW = specFontSize * 1.4;
       const totalW = specs.length * iconW;
       const startX = centerX - totalW / 2 + iconW / 2;
-      const specY = centerY + 24 * cameraZoom + specFontSize * 0.5;
+      const specY = centerY + size / 2 + 12 * overlayScale + specFontSize * 0.2;
       for (let i = 0; i < specs.length; i++) {
         const def = SPECIALIST_YIELDS[specs[i]];
         if (def) {
           const x = startX + i * iconW;
           // Coloured circle background for each specialist type
           const bg =
-            specs[i] === 'entertainer' ? 'rgba(180,80,220,0.7)' :
+            specs[i] === 'entertainer' ? 'rgba(80, 220, 192, 0.7)' :
             specs[i] === 'taxman'      ? 'rgba(220,180,40,0.7)' :
                                           'rgba(80,160,220,0.7)';
           ctx.beginPath();
@@ -1938,18 +2069,18 @@ export class MapRenderer {
 
     // Show fire icon below the city when in disorder (civil unrest)
     if (city.disorder) {
-      const fireFontSize = Math.max(10, 12 * cameraZoom);
+      const fireFontSize = Math.min(24, Math.max(12, 12 * overlayScale));
       ctx.font = `${fireFontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const fireY = centerY + 24 * cameraZoom + fireFontSize * 0.5 +
+      const fireY = centerY + size / 2 + 12 * overlayScale + fireFontSize * 0.5 +
         (specs.length > 0 ? fireFontSize * 1.2 : 0);
       ctx.fillText('🔥', centerX, fireY);
     }
 
     // Show city population size as a number badge on the city tile
     const pop = city.population || 1;
-    const popRadius = Math.max(6, 8 * cameraZoom);
+    const popRadius = Math.min(16, Math.max(8, 8 * overlayScale));
     const popX = centerX + size / 2 - 2;
     const popY = centerY - size / 2 + 2;
     ctx.beginPath();
@@ -1957,7 +2088,7 @@ export class MapRenderer {
     ctx.arc(popX, popY, popRadius, 0, 2 * Math.PI);
     ctx.fill();
     ctx.fillStyle = '#FFF';
-    ctx.font = `bold ${Math.max(7, 9 * cameraZoom)}px monospace`;
+    ctx.font = `bold ${Math.min(18, Math.max(9, 9 * overlayScale))}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(pop), popX, popY + 0.5);
@@ -2616,12 +2747,14 @@ export class MapRenderer {
     markers: TurnMarker[],
     map: MapState,
     squareToScreen: (col: number, row: number) => { x: number; y: number },
-    scaledTileSize: number
+    _scaledTileSize: number
   ): void {
     const mapWidth = map.width || 0;
     const revealed = map.revealed;
-    const radius = Math.max(7, scaledTileSize * 0.16);
-    const fontSize = Math.max(10, Math.round(radius * 1.3));
+    // Fixed screen-space dimensions keep the white ETA numbers readable and
+    // stable while zooming in or out.
+    const radius = 8;
+    const fontSize = 11;
 
     ctx.save();
     ctx.textAlign = 'center';

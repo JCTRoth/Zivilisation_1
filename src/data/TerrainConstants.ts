@@ -12,6 +12,13 @@ export interface SpecialResource {
     description: string;
 }
 
+export interface ResourceYields {
+    food: number;
+    production: number;
+    trade: number;
+    description?: string;
+}
+
 export const TERRAIN_TYPES = {
     OCEAN: 'ocean',
     GRASSLAND: 'grassland',
@@ -229,7 +236,7 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
     {
         name: 'Game',
         terrain: TERRAIN_TYPES.FOREST,
-        terrains: `${TERRAIN_TYPES.FOREST}`,
+        terrains: `${TERRAIN_TYPES.FOREST},${TERRAIN_TYPES.TUNDRA}`,
         food: 2,
         production: 0,
         trade: 0,
@@ -260,14 +267,39 @@ export const TERRAIN_RESOURCES: Record<string, string | null> = {
     [TERRAIN_TYPES.OCEAN]: 'Fish',
     [TERRAIN_TYPES.SWAMP]: 'Oil',
     [TERRAIN_TYPES.FOREST]: 'Game',
+    [TERRAIN_TYPES.TUNDRA]: 'Game',
     [TERRAIN_TYPES.GRASSLAND]: null,
     [TERRAIN_TYPES.DESERT]: 'Oasis',
     [TERRAIN_TYPES.RIVER]: null
 };
 
+/** Resolve a resource's Civ1 yield bonus for the terrain it occupies. */
+export function getResourceYields(
+    resource: string | null | undefined,
+    terrain: string | null | undefined,
+): ResourceYields {
+    if (!resource || !terrain) return { food: 0, production: 0, trade: 0 };
+    const definition = SPECIAL_RESOURCES.find(
+        (candidate) => candidate.name.toLowerCase() === resource.toLowerCase()
+            && candidate.terrains?.split(',').includes(terrain),
+    );
+    if (!definition) return { food: 0, production: 0, trade: 0 };
+    // Civ1's tundra Game is +3 food; forest Game is +2.
+    if (definition.name === 'Game' && terrain === TERRAIN_TYPES.TUNDRA) {
+        return { food: 3, production: 0, trade: 0, description: definition.description };
+    }
+    return {
+        food: definition.food,
+        production: definition.production,
+        trade: definition.trade,
+        description: definition.description,
+    };
+}
+
 export default {
     TERRAIN_TYPES,
     TERRAIN_PROPERTIES,
     SPECIAL_RESOURCES,
-    TERRAIN_RESOURCES
+    TERRAIN_RESOURCES,
+    getResourceYields
 };

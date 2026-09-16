@@ -1,4 +1,4 @@
-import TERRAIN from '@/data/TerrainConstants';
+import TERRAIN, { getResourceYields } from '@/data/TerrainConstants';
 
 const { SPECIAL_RESOURCES, TERRAIN_PROPERTIES } = TERRAIN;
 
@@ -94,9 +94,10 @@ export function enrichMapForExport(originalMap: ExportMap | null | undefined): E
     const baseProduction = terrainProps.production || 0;
     const baseTrade = terrainProps.trade || 0;
 
-    const resFood = resourceDef?.food || 0;
-    const resProduction = resourceDef?.production || 0;
-    const resTrade = resourceDef?.trade || 0;
+    const resourceYields = getResourceYields(resourceName, tileType);
+    const resFood = resourceYields.food;
+    const resProduction = resourceYields.production;
+    const resTrade = resourceYields.trade;
 
     const computedYields = {
       food: baseFood + resFood,
@@ -116,10 +117,10 @@ export function enrichMapForExport(originalMap: ExportMap | null | undefined): E
       resource: invalidResource ? null : resourceName,
       resourceInfo: invalidResource ? null : (resourceDef ? {
         name: resourceDef.name,
-        food: resourceDef.food,
-        production: resourceDef.production,
-        trade: resourceDef.trade,
-        description: resourceDef.description
+        food: resourceYields.food,
+        production: resourceYields.production,
+        trade: resourceYields.trade,
+        description: resourceYields.description ?? resourceDef.description
       } : null),
       invalidResource: invalidResource,
       terrainInfo: {

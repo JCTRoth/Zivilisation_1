@@ -11,7 +11,7 @@ import {
 } from '../rendering/GlideAnimation';
 import { awaitCameraGlide, isCameraGliding } from './CameraGlideGate';
 import { findNewlySightedEnemies, getVisibleEnemyUnitIds } from './EnemySighting';
-import { useGameStore } from '../../stores/GameStore';
+import { notify } from '../../utils/NotificationUtils';
 import { HUMAN_PLAYER_ID } from '../../utils/PlayerConstants';
 
 /**
@@ -145,11 +145,10 @@ export class GoToManager {
     const nextPos = path[0];
     console.log(`[GoToManager] Executing first step for unit ${unitId} to (${nextPos.col}, ${nextPos.row})`);
 
-    const targetCity = this.gameEngine.getCityAt(nextPos.col, nextPos.row);
-    if (targetCity && targetCity.civilizationId !== unit.civilizationId && path.length > 1) {
-      this.clearUnitPath(unitId);
-      return { success: false, reason: 'enemy_city_blocks_path', remainingPath: [] };
-    }
+    // An enemy city on the path is an attack, not a wall: `moveUnit` resolves
+    // combat when a unit lands on an enemy city, so let it through instead of
+    // silently clearing the path (Civ1: moving units over enemy cities attacks
+    // them rather than stopping).
 
     try {
       const moveResult = this.gameEngine.moveUnit(unitId, nextPos.col, nextPos.row);
@@ -286,10 +285,7 @@ export class GoToManager {
             const first = newlySighted[0];
             console.log(`[GoToManager] Enemy unit sighted at (${first.col},${first.row}) — aborting path for ${unitId}`);
             this.clearUnitPath(unitId);
-            useGameStore.getState().actions.addNotification({
-              type: 'warning',
-              message: 'Enemy unit sighted!',
-            });
+            notify('warning', 'Enemy unit sighted!');
             // Also drop the caller's local path overlay.
             if (onStepComplete) onStepComplete(0);
             break;

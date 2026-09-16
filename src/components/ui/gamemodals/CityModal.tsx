@@ -801,6 +801,7 @@ const CityModal: React.FC<CityModalProps> = ({
         playerGold={currentPlayer?.resources?.gold ?? 0}
         purchasedThisTurn={(selectedCity?.purchasedThisTurn?.length ?? 0) > 0}
         cityBuildings={selectedCity?.buildings ?? []}
+        productionPerTurn={logic.getProductionPerTurn()}
         onAddToQueue={(key) => {
           handleQueueProduction(key);
         }}

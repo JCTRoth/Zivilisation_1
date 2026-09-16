@@ -14,7 +14,7 @@ import { UNIT_PROPS } from '../../utils/Constants';
 import {
   TERRAIN_PROPERTIES,
   TERRAIN_TYPES,
-  SPECIAL_RESOURCES,
+  getResourceYields,
 } from '../../data/TerrainConstants';
 import { IMPROVEMENT_PROPERTIES } from '../../data/TileImprovementConstants';
 import { SPECIALIST_YIELDS } from '../../data/GameConstants';
@@ -294,17 +294,10 @@ export class EconomicManager {
     let production = base?.production ?? 0;
     let trade = base?.trade ?? 0;
 
-    const resName = tile.resource;
-    if (resName) {
-      const special = SPECIAL_RESOURCES.find(
-        (r) => r.name.toLowerCase() === String(resName).toLowerCase(),
-      );
-      if (special) {
-        food += special.food ?? 0;
-        production += special.production ?? 0;
-        trade += special.trade ?? 0;
-      }
-    }
+    const resourceYields = getResourceYields(tile.resource, terrainType);
+    food += resourceYields.food;
+    production += resourceYields.production;
+    trade += resourceYields.trade;
 
     const imp = tile.improvement
       ? IMPROVEMENT_PROPERTIES[tile.improvement]

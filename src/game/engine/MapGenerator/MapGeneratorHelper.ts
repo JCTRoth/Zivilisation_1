@@ -199,11 +199,15 @@ export function baseYield(t: string): number {
  * Civ1 resource placement: each terrain type has one associated resource.
  * Tiles flagged `hasSpecial` always receive one; otherwise ~15% chance.
  */
-export function rollResource(terrain: string, hasSpecial: boolean): string | null {
+export function rollResource(
+  terrain: string,
+  hasSpecial: boolean,
+  random: () => number = Math.random,
+): string | null {
   const name = TERRAIN_RESOURCES[terrain];
   if (!name) return null;
   if (hasSpecial) return name;
-  return Math.random() < 0.15 ? name : null;
+  return random() < 0.15 ? name : null;
 }
 
 // ── Moisture application ────────────────────────────────────────────────

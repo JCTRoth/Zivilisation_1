@@ -66,6 +66,11 @@ interface ContextMenuState {
   city: City | null;
 }
 
+/** Civ1 non-military units — they cannot attack (settlers build, diplomats
+ *  negotiate, caravans trade, workers improve). */
+const NON_COMBAT_UNITS = new Set(['settler', 'worker', 'caravan', 'diplomat']);
+const isCombatUnitType = (type: string): boolean => !NON_COMBAT_UNITS.has(type);
+
 const GameCanvas: React.FC<GameCanvasProps> = ({
   minimap = false,
   onExamineHex,
@@ -844,27 +849,30 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   // getUnitAtFromEngine is defined above (near getTileAt).
 
-  const getCityAtFromEngine = (col: number, row: number): City | null => {
-    if (!gameEngine) return null;
-    try {
-      if (typeof gameEngine.getCityAt === "function")
-        return gameEngine.getCityAt(col, row);
-      const mapObj = gameEngine.map as {
-        getCityAt?: (c: number, r: number) => City | null;
-      } | null;
-      if (mapObj && typeof mapObj.getCityAt === "function")
-        return mapObj.getCityAt(col, row);
-      const citiesArr = gameEngine.cities;
-      if (Array.isArray(citiesArr))
-        return (
-          citiesArr.find((c: City) => c && c.col === col && c.row === row) ||
-          null
-        );
-    } catch (err) {
-      console.error("[GameCanvas] getCityAtFromEngine error", err);
-    }
-    return null;
-  };
+  const getCityAtFromEngine = useCallback(
+    (col: number, row: number): City | null => {
+      if (!gameEngine) return null;
+      try {
+        if (typeof gameEngine.getCityAt === "function")
+          return gameEngine.getCityAt(col, row);
+        const mapObj = gameEngine.map as {
+          getCityAt?: (c: number, r: number) => City | null;
+        } | null;
+        if (mapObj && typeof mapObj.getCityAt === "function")
+          return mapObj.getCityAt(col, row);
+        const citiesArr = gameEngine.cities;
+        if (Array.isArray(citiesArr))
+          return (
+            citiesArr.find((c: City) => c && c.col === col && c.row === row) ||
+            null
+          );
+      } catch (err) {
+        console.error("[GameCanvas] getCityAtFromEngine error", err);
+      }
+      return null;
+    },
+    [gameEngine],
+  );
 
   const getAllUnitsFromEngine = (): Unit[] => {
     if (!gameEngine) return [];
@@ -1215,6 +1223,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             mapData.width,
             mapData.height,
             getUnitAtFromEngine,
+            getCityAtFromEngine,
           );
           previewPathRef.current = preview ? preview.steps : null;
           previewTurnMarkersRef.current = preview ? preview.turnMarkers : [];
@@ -1291,6 +1300,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         previewMap.width,
         previewMap.height,
         getUnitAtFromEngine,
+        getCityAtFromEngine,
       );
       if (lastHoverKeyRef.current !== requestedKey) return;
       previewPathRef.current = preview ? preview.steps : null;
@@ -1409,6 +1419,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         return;
       }
 
+      // An ATTACK order (target tile holds an enemy unit or an enemy city) must
+      // not linger in the engine as a GoTo path for the next turn: the player
+      // ordered a fight, and the unit stops when it runs out of moves — it
+      // should never auto-attack next turn just because the target was beyond
+      // reach this turn (tasks 5/6).
+      const targetUnit = getUnitAtFromEngine(targetCol, targetRow);
+      const targetCity = getCityAtFromEngine(targetCol, targetRow);
+      const isAttackOrder =
+        (!!targetUnit && targetUnit.civilizationId !== unit.civilizationId) ||
+        (!!targetCity && targetCity.civilizationId !== unit.civilizationId);
+
       goToManager.setUnitPath(unit.id, pathResult.path);
       setUnitPaths((prev) => {
         const next = new Map(prev);
@@ -1418,14 +1439,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       // The hover preview is now committed; clear it until the mouse moves again.
       previewPathRef.current = null;
       previewTurnMarkersRef.current = [];
-
-      // if (actions?.addNotification) {
-      //   actions.addNotification({
-      //     type: "success",
-      //     message: `${unit.type} will go to (${targetCol}, ${targetRow})`,
-      //   });
-      // }
-      // triggerRender();
 
       if ((unit.movesRemaining || 0) > 0) {
         setTimeout(() => {
@@ -1443,11 +1456,27 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               });
               triggerRender();
             })
-            .then(() => triggerRender());
+            .then(() => {
+              // Attack orders end with this turn's movement — drop whatever is
+              // left so it is not auto-executed on the next turn. Direct
+              // multi-turn GoTo journeys (empty destinations) are untouched.
+              if (isAttackOrder && goToManager.hasPath(unit.id)) {
+                goToManager.clearUnitPath(unit.id);
+                setUnitPaths((prev) => {
+                  const next = new Map(prev);
+                  next.delete(unit.id);
+                  return next;
+                });
+              }
+              triggerRender();
+            });
         }, 100);
+      } else if (isAttackOrder) {
+        // No moves left this turn: don't even keep the order for next turn.
+        goToManager.clearUnitPath(unit.id);
       }
     },
-    [gameEngine, mapData, getTileAt, actions, triggerRender],
+    [gameEngine, mapData, getTileAt, actions, triggerRender, getUnitAtFromEngine, getCityAtFromEngine],
   );
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1687,11 +1716,43 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           } else {
             console.log(`[CLICK] No unit selected to attack with`);
           }
-        } else if (isUnitSelectionMode && selectedUnit) {
-          // Moving a selected unit takes precedence over city selection: while
-          // a unit is selected, clicking a tile issues a GoTo order.
-          assignUnitPath(selectedUnit, hex.col, hex.row);
-        } else if (cityAt) {
+} else if (
+            cityAt &&
+            currentPlayer &&
+            selectedUnit &&
+            selectedUnit.civilizationId === currentPlayer.id &&
+            cityAt.civilizationId !== currentPlayer.id &&
+            isCombatUnitType(selectedUnit.type)
+          ) {
+            // Enemy city with a military unit selected: order an attack. Moving
+            // a combat unit over/onto an enemy city attacks it (Civ1). Civilians
+            // fall through to the city-selection branch below instead.
+            console.log(`[CLICK] Enemy city at (${hex.col}, ${hex.row}) — attacking`);
+            if ((selectedUnit.movesRemaining || 0) > 0) {
+              assignUnitPath(selectedUnit, hex.col, hex.row);
+            } else {
+              console.log(`[CLICK] Cannot attack — no moves remaining`);
+              if (actions?.addNotification) {
+                actions.addNotification({
+                  type: "warning",
+                  message: "Unit has no moves remaining",
+                });
+              }
+            }
+          } else if (
+            isUnitSelectionMode &&
+            selectedUnit &&
+            !(
+              cityAt &&
+              currentPlayer &&
+              cityAt.civilizationId !== currentPlayer.id
+            )
+          ) {
+            // Moving a selected unit takes precedence over city selection: while
+            // a unit is selected, clicking a tile issues a GoTo order. (Enemy
+            // cities are handled above — a civilian clicking one inspects it.)
+            assignUnitPath(selectedUnit, hex.col, hex.row);
+          } else if (cityAt) {
           // Own cities are always visible; a foreign city may still be drawn on
           // explored terrain from the last-seen snapshot. You can only inspect
           // a city you can actually see.

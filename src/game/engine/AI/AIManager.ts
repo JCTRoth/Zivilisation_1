@@ -14,6 +14,7 @@ import { AIStrategySelector } from './AIStrategySelector';
 import { AICoordinator } from './AICoordinator';
 import { AIResearch } from './AIResearch';
 import { computeAggression, planBulkAttack, BULK_ATTACK_STRENGTH_RATIO, type KnownTarget, type AggressionAssessment } from './AIAggression';
+import { notify } from '@/utils/NotificationUtils';
 import {
   createDefaultAIState,
   resolveAICivStrategy,
@@ -101,12 +102,7 @@ export class AIManager {
           }
 
           // Notify the player
-          if (store?.addNotification) {
-            store.addNotification({
-              type: 'warning',
-              message: `Enemy ${enemy.type} spotted near your ${sleeping.type}!`,
-            });
-          }
+          notify('warning', `Enemy ${enemy.type} spotted near your ${sleeping.type}!`);
 
           return true;
         }
