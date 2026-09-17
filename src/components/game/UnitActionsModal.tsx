@@ -63,11 +63,19 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
       >
         {/* Header */}
         <div className="unit-context-menu__header">
-          <strong className="unit-context-menu__title">
-            {contextMenu.unit ? `${contextMenu.unit.type}` :
-             contextMenu.city ? `${contextMenu.city.name}` :
-             'Menu'}
-          </strong>
+          <div>
+            <strong className="unit-context-menu__title">ORDERS</strong>
+            {contextMenu.unit && (
+              <div className="unit-context-menu__unit-type">
+                {contextMenu.unit.type}
+              </div>
+            )}
+            {!contextMenu.unit && contextMenu.city && (
+              <div className="unit-context-menu__unit-type">
+                {contextMenu.city.name}
+              </div>
+            )}
+          </div>
           <div className="unit-context-menu__coords">
             ({contextMenu.hex.col}, {contextMenu.hex.row})
           </div>
