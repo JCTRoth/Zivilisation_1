@@ -22,7 +22,7 @@ import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } f
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import { getUnitIcon } from '@/utils/UnitIconLoader';
-import { TERRAIN_FONT_FAMILY } from '@/utils/terrainFont';
+import { TERRAIN_FONT_FAMILY } from '@/utils/TerrainFont';
 import { MathUtils } from '@/utils/MathUtils';
 import { HUMAN_PLAYER_ID } from '@/utils/PlayerConstants';
 import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, TurnMarker } from '../../../types/game';

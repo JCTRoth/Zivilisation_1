@@ -224,7 +224,6 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                         <td>{formatTechName(requiredTech)}</td>
                         <td>{stats}</td>
                         <td>
-                          <span className="text-warning">⛏️ {cost}</span>{' '}
                           <span className="text-info">{getTurnsText(cost)}</span>
                         </td>
                         <td>
@@ -315,7 +314,6 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                         <td>{formatTechName(requiredTech)}</td>
                         <td>{building.description}</td>
                         <td>
-                          <span className="text-warning">⛏️ {cost}</span>{' '}
                           <span className="text-info">{getTurnsText(cost)}</span>
                         </td>
                         <td>

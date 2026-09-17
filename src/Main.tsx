@@ -8,7 +8,7 @@ import './styles/main.css'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap-icons/font/bootstrap-icons.css'
 import ErrorBoundary from "@/components/ErrorBoundary";
-import { ensureTerrainFont } from "./utils/terrainFont";
+import { ensureTerrainFont } from "./utils/TerrainFont.js";
 
 // Register the Noto Emoji Light font used for terrain symbols before the app
 // mounts — the map canvas picks it up on the next frame once loaded.
