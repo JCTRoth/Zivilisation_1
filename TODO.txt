@@ -3,13 +3,11 @@ BUGS:
 -----
 
 --Open--
+- the GoTo and the MovePreview should be joint, code and visually
 - attacking doesnt work if it goes through a friendly unit
 - when moving units over enemy cities, they attack them instead
 - when attacking, don't set that as a path that will be done automatically next turn
   -> just because unit can't reach that path (because it is blocked by enemy unit) it shouldn't auto attack next turn
-
-- how to not get annoyed if city has nothing to build?
-  -> need an idea? -> only spawn message once? -> until that production had been slected and is done?
 
 
 ?--Fixed--?
