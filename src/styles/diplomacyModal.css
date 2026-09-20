@@ -122,10 +122,6 @@
   color: var(--color-accent-strong, #ffd75e);
 }
 
-.diplomacy-civ-icon {
-  font-size: 18px;
-  flex-shrink: 0;
-}
 
 .diplomacy-civ-name {
   flex: 1;

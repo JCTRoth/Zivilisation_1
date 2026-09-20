@@ -495,7 +495,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
   // Diplomacy Modal — Civ I–style negotiation interface with leader portraits
   const [selectedDiploCiv, setSelectedDiploCiv] = useState<number | null>(null);
-  const [diplomacyLog, setDiplomacyLog] = useState<string[]>([]);
+  const [, setDiplomacyLog] = useState<string[]>([]);
   const [showTreatyPanel, setShowTreatyPanel] = useState(false);
   const [counterProposal, setCounterProposal] = useState<{ fromCivId: number; toCivId: number; action: string; goldAmount?: number } | null>(null);
 
@@ -739,9 +739,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       className={`diplomacy-civ-row ${isSelected ? 'selected' : ''}`}
                       onClick={() => { setSelectedDiploCiv(civ.id); setShowTreatyPanel(false); setCounterProposal(null); }}
                     >
-                      <span className="diplomacy-civ-icon" style={{ color: civ.color || '#fff' }}>
-                        {civ.icon || '👤'}
-                      </span>
+
                       <span className="diplomacy-civ-name">
                         {civ.name}
                         {treaties.length > 0 && <span className="diplomacy-treaty-count">+{treaties.length}</span>}
@@ -958,18 +956,6 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       </>
                     )}
 
-                    {/* Diplomacy event log (session) */}
-                    {diplomacyLog.length > 0 && (
-                      <>
-                        <div className="diplomacy-section-label">RECENT EVENTS</div>
-                        <div className="diplomacy-log">
-                          {diplomacyLog.map((msg, i) => (
-                            <div key={i} className="diplomacy-log-entry">{msg}</div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-
                     {/* Global diplomacy history from DiplomacyManager */}
                     {(() => {
                       const events: Array<{ type: string; fromCivId: number; toCivId: number; goldAmount?: number; details?: string }> = dm?.getEventLog?.() ?? [];
@@ -990,7 +976,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                                 peace_made: `🕊️ Peace between ${from} and ${to}`,
                                 ceasefire_signed: `🏳️ Ceasefire between ${from} and ${to}`,
                                 alliance_formed: `🤝 Alliance between ${from} and ${to}`,
-                                alliance_broken: `💔 ${from} broke the alliance with ${to}`,
+                                alliance_broken: `⛓️‍💥 ${from} broke the alliance with ${to}`,
                                 tribute_paid: `💰 ${from} paid tribute to ${to}${e.goldAmount ? ` (${e.goldAmount}g)` : ''}`,
                                 treaty_rejected: `❌ ${to} rejected ${from}'s proposal`,
                                 unit_bribed: `🎭 ${from} bribed a unit`,
@@ -1216,26 +1202,17 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           </Tab>
           
           <Tab eventKey="about" title="About">
-            <h5>Civilization Browser</h5>
-            <p>A browser-based recreation inspired by the classic Civilization (1991).</p>
-            
-            <h6>Features:</h6>
-            <ul>
-              <li>Square grid map with fog of war</li>
-              <li>Turn-based gameplay with AI opponents</li>
-              <li>City building, management, and production</li>
-              <li>Unit movement, combat, and fortification</li>
-              <li>Technology research tree</li>
-              <li>Diplomacy system with treaties and negotiations</li>
-              <li>Tile improvements (roads, irrigation, mines, and more)</li>
-              <li>Save and load game support</li>
-            </ul>
-
             <p className="mt-3">
-              <small className="text-muted">
-                Fan-made recreation for educational purposes.
-                Original Civilization © MicroProse/Firaxis Games
-              </small>
+             <a href="mailto:info@mailbase.info">info@mailbase.info</a>
+            </p>
+            <p>
+              <a 
+                href="https://github.com/JCTRoth/Zivilisation_1" 
+                target="_blank" 
+                rel="noopener noreferrer"
+              >
+                GitHub - JCTRoth/Zivilisation_1
+              </a>
             </p>
           </Tab>
         </Tabs>
