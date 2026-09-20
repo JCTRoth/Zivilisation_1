@@ -7,7 +7,7 @@
  * army sizing) is delegated to AIEconomicManager.
  */
 
-import { BUILDING_PROPERTIES } from '../../data/BuildingConstants';
+import { BUILDING_PROPERTIES, BUILDING_TYPES } from '../../data/BuildingConstants';
 import { getGovernment } from '../../data/GovernmentData';
 import { CityUtils } from '../../utils/CityUtils';
 import { UNIT_PROPS } from '../../utils/Constants';
@@ -538,6 +538,62 @@ export class EconomicManager {
       trade: Math.max(trade, CITY_CENTER_COMMERCE),
     };
     city.scienceBonus = this.buildingBonuses(city).science;
+  }
+
+  /**
+   * The city's real food balance for this turn — the SAME math the growth
+   * pipeline uses (`TurnManager.processCityGrowth`): every citizen eats 2
+   * food, and settlers owned by the city eat 1 each (2 under Republic and
+   * Democracy). AI city management and production decisions consult this
+   * instead of re-deriving it, so famine prevention and settler support use
+   * exactly the numbers the engine charges.
+   */
+  cityFoodBalance(city: City, civ: Civilization | undefined): {
+    produced: number;
+    citizenConsumption: number;
+    settlerSupport: number;
+    /** produced − consumption (may be negative). */
+    surplus: number;
+    storage: number;
+    growthThreshold: number;
+    granaryLine: number;
+    hasGranary: boolean;
+    /** −1 when the city is not growing / not starving. */
+    turnsUntilGrowth: number;
+    turnsUntilStarvation: number;
+  } {
+    const population = city?.population ?? 1;
+    const government = String(civ?.government ?? 'despotism').toLowerCase();
+    const settlerFoodPerTurn = government === 'republic' || government === 'democracy' ? 2 : 1;
+    const settlerSupport = (this.gameEngine.units ?? []).filter(
+      (unit) =>
+        unit.type === 'settler' &&
+        unit.homeCityId === city.id &&
+        !unit.isNoneUnit,
+    ).length * settlerFoodPerTurn;
+
+    const produced = city?.yields?.food ?? city?.food ?? 0;
+    const citizenConsumption = population * 2;
+    const surplus = produced - citizenConsumption - settlerSupport;
+    const storage = city?.foodStored ?? 0;
+    const growthThreshold = (population + 1) * 10;
+    const hasGranary = city?.buildings?.includes?.(BUILDING_TYPES.GRANARY) ?? false;
+    const granaryLine = hasGranary ? Math.floor(growthThreshold / 2) : 0;
+
+    return {
+      produced,
+      citizenConsumption,
+      settlerSupport,
+      surplus,
+      storage,
+      growthThreshold,
+      granaryLine,
+      hasGranary,
+      turnsUntilGrowth:
+        surplus > 0 ? Math.ceil((growthThreshold - storage) / surplus) : -1,
+      turnsUntilStarvation:
+        surplus < 0 ? Math.ceil(storage / Math.abs(surplus)) : -1,
+    };
   }
 
   /** Happiness for one city (base + luxury + buildings + government bonus). */

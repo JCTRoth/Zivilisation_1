@@ -913,19 +913,12 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
 
   private processCityGrowth(city: City, inDisorder: boolean = false): void {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
-    const government = String(civ?.government ?? 'despotism').toLowerCase();
 
-    // Citizens consume two food each turn. Settlers consume one food under
-    // the older governments and two under Republic and Democracy.
-    const citizenFoodConsumption = (city.population ?? 1) * 2;
-    const settlerFoodPerTurn = government === 'republic' || government === 'democracy' ? 2 : 1;
-    const settlerFoodSupport = (this.gameEngine.units ?? []).filter(
-      (unit) => unit.type === 'settler'
-        && unit.homeCityId === city.id
-        && !unit.isNoneUnit,
-    ).length * settlerFoodPerTurn;
-
-    const netFood = (city.yields?.food ?? 0) - citizenFoodConsumption - settlerFoodSupport;
+    // Centralized food math: citizens consume two food each turn and owned
+    // settlers consume one (two under Republic/Democracy). AI city management
+    // uses the same helper so it can never mis-plan famine prevention.
+    const balance = this.gameEngine.economicManager?.cityFoodBalance(city, civ);
+    const netFood = balance?.surplus ?? ((city.yields?.food ?? 0) - (city.population ?? 1) * 2);
     city.foodStored = (city.foodStored ?? 0) + netFood;
 
     // Growth threshold: (population + 1) × 10 — Civ1: size-1 needs 20 food,
@@ -968,6 +961,10 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
   private processCivilizationResources(civ: Civilization): ProcessTurnResult | null {
     try {
       if (civ?.resources && this.gameEngine.economicManager) {
+        // AI rate policy runs BEFORE the economy is processed: it sets the
+        // Tax/Science/Luxury split that fits the civ's strategy and treasury
+        // (a no-op for human players), so the AI never sits on a stale rate.
+        this.gameEngine.aiEconomicManager?.preProcessTurn(civ);
         // Rate-based income (tax/science/luxury split) + upkeep + deficit
         // handling. Also resets per-turn resource accumulators, which fixes
         // the research compounding bug (science is now the per-turn amount).

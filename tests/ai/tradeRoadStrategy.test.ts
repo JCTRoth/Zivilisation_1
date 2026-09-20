@@ -85,7 +85,7 @@ describe('AI trade-road strategy (roads on worked tiles boost income)', () => {
     const tiles: MockTile[] = [
       { col: 5, row: 5, type: 'grassland', improvement: null },
     ];
-    const { chooseImprovementForSettler } = buildManager([city], tiles, () => true);
+    const { chooseImprovementForSettler } = buildManager([city], tiles, (type) => type !== 'irrigation');
     expect(chooseImprovementForSettler(settler('s1', 1, 5, 5))).toBe('road');
   });
 
@@ -94,7 +94,7 @@ describe('AI trade-road strategy (roads on worked tiles boost income)', () => {
     const tiles: MockTile[] = [
       { col: 5, row: 5, type: 'grassland', improvement: 'road' },
     ];
-    const { chooseImprovementForSettler } = buildManager([city], tiles, () => true);
+    const { chooseImprovementForSettler } = buildManager([city], tiles, (type) => type !== 'irrigation');
     // The `!tile.improvement` guard blocks the trade-road branch.
     expect(chooseImprovementForSettler(settler('s1', 1, 5, 5))).not.toBe('road');
   });
@@ -104,7 +104,7 @@ describe('AI trade-road strategy (roads on worked tiles boost income)', () => {
     const tiles: MockTile[] = [
       { col: 5, row: 5, type: 'forest', improvement: null },
     ];
-    const { chooseImprovementForSettler } = buildManager([city], tiles, () => true);
+    const { chooseImprovementForSettler } = buildManager([city], tiles, (type) => type !== 'irrigation');
     // Forest is not in road.tradeBonusTerrains → the branch must not fire.
     expect(chooseImprovementForSettler(settler('s1', 1, 5, 5))).not.toBe('road');
   });
@@ -119,7 +119,7 @@ describe('AI trade-road strategy (roads on worked tiles boost income)', () => {
       { col: 5, row: 6, type: 'plains', improvement: 'mines' }, // already improved → skip
       { col: 7, row: 7, type: 'desert', improvement: null },    // farther candidate
     ];
-    const { findTradeRoadTarget } = buildManager([city], tiles, () => true);
+    const { findTradeRoadTarget } = buildManager([city], tiles, (type) => type !== 'irrigation');
     expect(findTradeRoadTarget(settler('s1', 1, 4, 4))).toEqual({ col: 6, row: 5 });
   });
 
@@ -133,7 +133,7 @@ describe('AI trade-road strategy (roads on worked tiles boost income)', () => {
       { col: 7, row: 5, type: 'grassland', improvement: 'mines' }, // improved → skip
       { col: 8, row: 5, type: 'plains', improvement: null },       // candidate
     ];
-    const { findTradeRoadTarget } = buildManager([city], tiles, () => true);
+    const { findTradeRoadTarget } = buildManager([city], tiles, (type) => type !== 'irrigation');
     expect(findTradeRoadTarget(settler('s1', 1, 0, 0))).toEqual({ col: 8, row: 5 });
   });
 
@@ -145,7 +145,7 @@ describe('AI trade-road strategy (roads on worked tiles boost income)', () => {
     const tiles: MockTile[] = [
       { col: 6, row: 5, type: 'grassland', improvement: 'road' }, // already roaded
     ];
-    const { findTradeRoadTarget } = buildManager([city], tiles, () => true);
+    const { findTradeRoadTarget } = buildManager([city], tiles, (type) => type !== 'irrigation');
     expect(findTradeRoadTarget(settler('s1', 1, 4, 4))).toBeNull();
   });
 });

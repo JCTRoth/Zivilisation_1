@@ -8,7 +8,7 @@
 import { AIUtility, scanAreaForEnemies, findInterceptPosition, findPatrolWaypoint, type ThreatAlert } from './AIUtility';
 import { EnemySearcher } from '../EnemySearcher';
 import { UNIT_PROPS, TERRAIN_PROPS, IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '@/utils/Constants';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { BARBARIAN_CIV_ID, calculateVillageTakeChance, villageDecisionRoll } from '@/data/VillageConstants';
 import { SettlementEvaluator, MIN_CITY_CENTER_DISTANCE } from '../SettlementEvaluator';
 import { Pathfinding } from '../Pathfinding';
 import { AIStrategySelector } from './AIStrategySelector';
@@ -1767,14 +1767,45 @@ export class AIManager {
   }
 
   /**
+   * Improvement budget: at most ~2 improvements per city, so a big civ does
+   * not funnel every spare settler into endless road building. In the MID
+   * game (several techs researched) the budget grows so the AI invests
+   * properly in roads/mines/irrigation. Shared by `chooseImprovementForSettler`
+   * and `findTradeRoadTarget` so both use the same allowance.
+   */
+  private improvementBudget(civId: number): number {
+    const civ = this.gameEngine.civilizations?.[civId];
+    const friendlyCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civId).length;
+    const techs = Array.isArray(civ?.technologies) ? (civ.technologies ?? []) : [];
+    const midGameBoost = techs.length >= 14 ? 3 : techs.length >= 6 ? 2 : 1;
+    return Math.max(2, friendlyCities * 2) * midGameBoost;
+  }
+
+  /** How many tile improvements the civ already owns near its cities. */
+  private countOwnImprovements(civId: number): number {
+    return (this.gameEngine.map?.tiles ?? []).filter((t: MapTile) =>
+      !!t.improvement && ['road', 'railroad', 'mines', 'irrigation', 'fortress'].includes(t.improvement) &&
+      this.gameEngine.cities.some((c: City) =>
+        c.civilizationId === civId &&
+        this.gameEngine.squareGrid.squareDistance(t.col, t.row, c.col, c.row) <= 4
+      )
+    ).length;
+  }
+
+  /**
    * Decide whether an AI settler should improve the tile it stands on (Civ1),
    * returning the improvement type or null. Only tiles near a friendly city
    * are improved (so the effort feeds the economy instead of decorating the
    * wilderness), and the civ keeps an improvement budget so settlers don't
    * spend forever re-rolling the same tiles.
    *
-   * Priority: production (mines on hills/mountains) > food (irrigation near
-   * fresh water on fertile tiles) > railroad > road.
+   * Food/growth is now part of the decision, not an afterthought:
+   *  - the nearest friendly city's REAL food balance is consulted (it includes
+   *    the food this settler itself eats), and
+   *  - a growth/expansion strategy (or a food-constrained city) makes
+   *    irrigation the first choice; otherwise production (mine) comes first.
+   *  - `canBuildImprovement` is the single source of truth for fresh water, so
+   *    lakes and already-irrigated neighbours count too.
    */
   private chooseImprovementForSettler(unit: Unit): string | null {
     const civId = unit.civilizationId;
@@ -1791,36 +1822,48 @@ export class AIManager {
     );
     if (!nearCity) return null;
 
-    // Improvement budget: at most ~2 improvements per city, so a big civ does
-    // not funnel every spare settler into endless road building. In the MID
-    // game (once the civ has researched several techs) the budget grows so the
-    // AI invests properly in tile improvements (roads/mines/irrigation) that
-    // feed its cities' food, production and — via trade — gold.
-    const civ = this.gameEngine.civilizations?.[civId];
-    const friendlyCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civId).length;
-    const techs = Array.isArray(civ?.technologies) ? (civ.technologies ?? []) : [];
-    const techCount = techs.length;
-    const midGameBoost = techCount >= 6 ? techCount >= 14 ? 3 : 2 : 1;
-    const budget = Math.max(2, friendlyCities * 2) * midGameBoost;
-    const ownImprovements = (this.gameEngine.map?.tiles ?? []).filter((t: MapTile) =>
-      !!t.improvement && ['road', 'railroad', 'mines', 'irrigation', 'fortress'].includes(t.improvement) &&
-      this.gameEngine.cities.some((c: City) =>
-        c.civilizationId === civId &&
-        this.gameEngine.squareGrid.squareDistance(t.col, t.row, c.col, c.row) <= 4
-      )
-    ).length;
-    if (ownImprovements >= budget) return null;
+    if (this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
 
-    if ((terrain === 'hills' || terrain === 'mountains') &&
-        this.gameEngine.canBuildImprovement(unit.id, 'mine')) {
-      return 'mine';
-    }
+    const civ = this.gameEngine.civilizations?.[civId];
+    const strategy = resolveAICivStrategy(
+      civ,
+      this.gameEngine.getPlayerStorage?.(civId)?.turnData?.aiState as AIState | undefined,
+    );
+
+    // Nearest friendly city — its food balance decides whether the settler
+    // should farm first. `cityFoodBalance` already subtracts this settler's
+    // own food support, so the settler's cost is part of the equation.
+    const nearestCity = this.gameEngine.cities
+      .filter((c: City) => c.civilizationId === civId)
+      .sort((a: City, b: City) =>
+        this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, a.col, a.row) -
+        this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, b.col, b.row),
+      )[0];
+    const balance = nearestCity
+      ? this.gameEngine.economicManager?.cityFoodBalance?.(nearestCity, civ)
+      : null;
+    const foodConstrained = !!balance && (
+      balance.surplus < 1 ||
+      (balance.turnsUntilStarvation >= 0 && balance.turnsUntilStarvation <= 3)
+    );
+    const growthStrategy = strategy === 'early_expansion' || strategy === 'balanced_growth';
+    const prioritizeFood = foodConstrained || growthStrategy;
+
+    const terrainIrrigable = ['grassland', 'plains', 'desert', 'forest', 'jungle', 'swamp'].includes(terrain);
+    // The engine enforces fresh water (river/lake/irrigated neighbour).
+    const canIrrigate = terrainIrrigable && this.gameEngine.canBuildImprovement(unit.id, 'irrigation');
+    const canMine = (terrain === 'hills' || terrain === 'mountains') &&
+      this.gameEngine.canBuildImprovement(unit.id, 'mine');
+
+    // Food first when the city needs to grow; production first otherwise.
+    if (prioritizeFood && canIrrigate) return 'irrigation';
+    if (canMine) return 'mine';
+    if (canIrrigate) return 'irrigation';
 
     // Civ1 income strategy: a road on a tile a city WORKS grants +1 trade on
     // grassland/plains/desert (IMPROVEMENT_PROPERTIES.road.tradeBonusTerrains).
     // More trade → more tax + science, so building roads on worked tiles is a
-    // direct income boost. Ranks right after mines (production) and before
-    // irrigation/generic road so the strategy actually fires.
+    // direct income boost.
     const roadDef = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
     const workedByCity = this.gameEngine.cities.some((c: City) =>
       c.civilizationId === civId && c.workingTiles?.has(`${unit.col},${unit.row}`)
@@ -1833,15 +1876,6 @@ export class AIManager {
     if (workedByCity && !hasRoad && roadDef?.tradeBonusTerrains?.includes(terrain) &&
         !tile.improvement && this.gameEngine.canBuildImprovement(unit.id, 'road')) {
       return 'road';
-    }
-    const hasFreshWater = this.gameEngine.squareGrid.getNeighbors(unit.col, unit.row).some((neighbor: { col: number; row: number }) => {
-      const neighborTile = this.gameEngine.getTileAt(neighbor.col, neighbor.row);
-      const neighborTerrain = neighborTile?.terrain || neighborTile?.type;
-      return neighborTerrain === 'river';
-    });
-    if (hasFreshWater && ['grassland', 'plains', 'desert', 'forest', 'jungle', 'swamp'].includes(terrain) &&
-        this.gameEngine.canBuildImprovement(unit.id, 'irrigation')) {
-      return 'irrigation';
     }
     if (this.gameEngine.canBuildImprovement(unit.id, 'railroad')) return 'railroad';
     if (this.gameEngine.canBuildImprovement(unit.id, 'road')) return 'road';
@@ -1861,18 +1895,10 @@ export class AIManager {
     const roadDef = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
     if (!roadDef?.tradeBonusTerrains) return null;
 
-    // Same improvement budget as chooseImprovementForSettler (~2 per city).
+    // Same improvement budget as chooseImprovementForSettler.
     const friendlyCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civId);
     if (friendlyCities.length === 0) return null;
-    const budget = Math.max(2, friendlyCities.length * 2);
-    const ownImprovements = (this.gameEngine.map?.tiles ?? []).filter((t: MapTile) =>
-      !!t.improvement && ['road', 'railroad', 'mines', 'irrigation', 'fortress'].includes(t.improvement) &&
-      this.gameEngine.cities.some((c: City) =>
-        c.civilizationId === civId &&
-        this.gameEngine.squareGrid.squareDistance(t.col, t.row, c.col, c.row) <= 4
-      )
-    ).length;
-    if (ownImprovements >= budget) return null;
+    if (this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
 
     let best: { col: number; row: number } | null = null;
     let bestDist = Infinity;
@@ -2335,6 +2361,9 @@ export class AIManager {
     const endRow = Math.min(map.height - 1, unit.row + maxRadius);
 
     let nearest: { col: number; row: number; dist: number } | null = null;
+    const ownCities = this.gameEngine.cities.filter(
+      (c: City) => c.civilizationId === unit.civilizationId,
+    );
 
     for (let row = startRow; row <= endRow; row++) {
       for (let col = startCol; col <= endCol; col++) {
@@ -2347,9 +2376,14 @@ export class AIManager {
         const explored = storage?.explored?.[tileIndex] ?? tile.explored ?? false;
         if (!explored) continue;
 
-        // Don't target a village another unit is already heading to
         const dist = grid.squareDistance(unit.col, unit.row, col, row);
         if (dist === 0) continue;
+
+        // Risk model: popping a hut can spawn Barbarians, so a hut next to a
+        // town is dangerous while a far hut in a big empire is worth taking.
+        // The decision is deterministic per (civ, village) so the AI does not
+        // oscillate between taking and ignoring the same hut every turn.
+        if (!this.shouldTakeVillage(unit.civilizationId, col, row, ownCities)) continue;
 
         if (!nearest || dist < nearest.dist) {
           nearest = { col, row, dist };
@@ -2358,6 +2392,29 @@ export class AIManager {
     }
 
     return nearest ? { col: nearest.col, row: nearest.row } : null;
+  }
+
+  /**
+   * Whether the AI accepts the barbarian risk of a village. The farther the
+   * village from the nearest own city and the more cities the civ owns, the
+   * higher the chance (`calculateVillageTakeChance`). A stable hash makes the
+   * roll deterministic per village so a unit does not flip-flop each turn.
+   */
+  private shouldTakeVillage(
+    civId: number,
+    col: number,
+    row: number,
+    ownCities: City[],
+  ): boolean {
+    let nearestCityDistance = Infinity;
+    for (const city of ownCities) {
+      nearestCityDistance = Math.min(
+        nearestCityDistance,
+        this.gameEngine.squareGrid.squareDistance(city.col, city.row, col, row),
+      );
+    }
+    const chance = calculateVillageTakeChance(nearestCityDistance, ownCities.length);
+    return villageDecisionRoll(civId, col, row) <= chance;
   }
 
   /**

@@ -89,9 +89,20 @@ export class AutoProduction {
       // queue after war or an offensive plan has started.
       this.reconsiderAggressiveQueue(city);
 
+      const civ = this.gameEngine.civilizations?.[city.civilizationId];
       if (city.currentProduction) {
         if (threatAssessment?.needsDefense && !this.isDefensiveProduction(city.currentProduction)) {
           console.log('[AutoProduction] City under threat, overriding existing production');
+          this.gameEngine.removeCurrentProduction(city.id);
+        } else if (
+          this.isFoodEmergency(city, civ) &&
+          city.currentProduction.type === 'unit' &&
+          city.currentProduction.itemType === 'settler'
+        ) {
+          // A starving city must not train settlers: each one eats food from
+          // the city and consumes a citizen on completion. The governor fixes
+          // the tile assignment; cancelling the settler lets the city recover.
+          console.log('[AutoProduction] Food emergency — cancelling settler production');
           this.gameEngine.removeCurrentProduction(city.id);
         } else if (this.isHappinessCrisis(city) && !this.isHappinessBuilding(city.currentProduction)) {
           // A city in or approaching disorder produces (almost) nothing at all
@@ -184,9 +195,17 @@ export class AutoProduction {
           const inProgress = c.currentProduction?.type === 'unit' ? 1 : 0;
           return n + inQueue + inProgress;
         }, 0);
-        // Max sustainable units ≈ full-tax income minus the luxury the civ
-        // must keep for happiness (see EconomicManager.sustainableUnits).
-        const sustainableUnits = Math.max(cityCount, econ.sustainableUnits(civ));
+        // Max sustainable units ≈ income left after buildings, the strategy's
+        // gold reserve and the luxury the civ must keep for happiness. The
+        // reserve-aware AI model (AIEconomicManager.sustainableUnits) is used
+        // when available; the EconomicManager model stays as the floor so the
+        // cap never becomes stricter than before.
+        const aiSustainableUnits = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ) ?? 0;
+        const sustainableUnits = Math.max(
+          cityCount,
+          econ.sustainableUnits(civ),
+          aiSustainableUnits,
+        );
         unitCapExhausted = currentUnits + queuedUnits >= sustainableUnits;
       }
 
@@ -389,7 +408,16 @@ export class AutoProduction {
           Math.max(expansion.minSettlers, Math.ceil(civCities.length / expansion.settlersPerCities)) +
             (civCities.length < 3 && expansion.earlyBonus ? 1 : 0),
         );
-    if (!needsHappiness && city.population >= 1) {
+    // A city that cannot feed itself must not train settlers (they eat food
+    // and consume a citizen). The AI city governor re-assigns workers to food
+    // tiles in the same turn; this guard is the production-side half of the
+    // famine equation.
+    const foodBalance = this.cityFoodBalance(city, civ);
+    const starving = !!foodBalance && foodBalance.surplus < 0;
+    if (starving) {
+      console.log('[AutoProduction] City is losing food — settlers paused until it recovers');
+    }
+    if (!needsHappiness && city.population >= 1 && !starving) {
       // Civ1: Settlers consume food from the home city (not gold), so they
       // don't drain the treasury. However, building a Settler diverts shields
       // from other production — only allow settlers when the economy is healthy
@@ -427,6 +455,25 @@ export class AutoProduction {
           itemType: 'settler',
           name: UNIT_PROPS.settler?.name || 'Settler',
           cost: UNIT_PROPS.settler?.cost || 40
+        };
+      }
+    }
+
+    // 3b. Long-term food plan: an expansionist civ keeps a Granary in its
+    //     growing cities so settler production and population growth stay
+    //     steady (the growth box is half-refilled on growth). Ranked after
+    //     settlers so expansion itself is never blocked, before generic
+    //     buildings.
+    const foodPlan = this.gameEngine.aiCityManager?.foodSecurityBuilding?.(city, civ, strategy);
+    if (foodPlan) {
+      const planProps = BUILDING_PROPS[foodPlan] || BUILDING_PROPERTIES[foodPlan];
+      if (planProps && !plannedTypes.includes(foodPlan)) {
+        console.log(`[AutoProduction] Long-term food plan: building ${foodPlan}`);
+        return {
+          type: 'building',
+          itemType: foodPlan,
+          name: planProps.name,
+          cost: planProps.cost,
         };
       }
     }
@@ -734,6 +781,25 @@ export class AutoProduction {
       return false;
     }
     return (BUILDING_PROPERTIES[item.itemType]?.effects?.happiness ?? 0) > 0;
+  }
+
+  /**
+   * The city's real food balance (shared math with the growth pipeline).
+   * Returns null on lightweight test engines without an EconomicManager.
+   */
+  private cityFoodBalance(city: City, civ: Civilization | undefined) {
+    const econ = this.gameEngine.economicManager;
+    if (typeof econ?.cityFoodBalance !== 'function') return null;
+    try {
+      return econ.cityFoodBalance(city, civ);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Famine warning: negative net food and the city is about to lose a citizen. */
+  private isFoodEmergency(city: City, civ: Civilization | undefined): boolean {
+    return this.gameEngine.aiCityManager?.isFoodEmergency?.(city, civ) ?? false;
   }
 
   private buildDefenderProduction(city: City, threatAssessment?: CityThreatAssessment | null): ProductionItem {
@@ -1090,13 +1156,23 @@ export class AutoProduction {
       console.log('[AutoProduction] Processing auto-production for civilization', civilizationId);
       
       const civCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civilizationId);
+      const civ = this.gameEngine.civilizations?.[civilizationId];
+      const strategy = this.getStrategyForCiv(civilizationId);
       
       for (const city of civCities) {
-        // Before adjusting production, try to fix happiness problems by
-        // assigning Entertainer specialists. This is cheaper than raising
-        // the luxury rate (which drains commerce from ALL cities) and avoids
-        // the disorder → zero-income death spiral.  Keep assigning until
-        // the city is content or no more workers can be converted.
+        // Before adjusting production, run the AI city governor: it secures
+        // the food balance (workers/PROD-GOLD rebalancing, famine prevention),
+        // then converts spare, content citizens into Taxmen/Scientists to fit
+        // the strategy. Production decisions below see the updated yields.
+        if (city.autoProduction && civ) {
+          this.gameEngine.aiCityManager?.manageCity(city, civ, strategy);
+        }
+
+        // Then try to fix happiness problems by assigning Entertainer
+        // specialists. This is cheaper than raising the luxury rate (which
+        // drains commerce from ALL cities) and avoids the disorder →
+        // zero-income death spiral. Keep assigning until the city is content
+        // or no more workers can be converted.
         // After assigning, demote any Entertainers that are now redundant
         // (e.g. a building was completed that provides enough happiness).
         if (city.autoProduction) {

@@ -159,8 +159,14 @@ It should get and advanced management of the city.
 The AI should manage Food, Production, Money/Gold fitting the siution and strategy given by the AICoordinator
 The AI should by all means prevent femens therefor it uses city management, if needed granary (long term plan to have 
 build a lot of settlers/expansation) or a low surplus of food production over all.
-The AI should use irrigation of settlers around the city. Building irrigations requires settler that need food them self so this should be part of an equation but should be done if fitting in strategy and benefitting.
+The AI should use irrigation of settlers around the city.
+Building irrigations requires settler that need food them self so this should be part of an equation but should be done if fitting in strategy and benefitting.
+City growth is important, needs stable surplus of food.
+Also: Ai: the more far away a village from next town and the more towns the civ. hat the higher % that AI takes village instead of ignoring it to not get over runned by babrians.  
 
+* Remove "Forge" from the game and AI strategy also higher prio. to harbor when detects that on smaal island alone, harbor should in general get a little bit higher weight in the Auto Build
+* If AI detects by ship a smaal island with no city on it, send a settler and build a city there
+* 
 * Add new ship type, "Trade Ship" 
 A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
 and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.

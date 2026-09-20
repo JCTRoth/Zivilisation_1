@@ -11,6 +11,7 @@
  */
 
 import { getGovernment } from '../../../data/GovernmentData';
+import { BARBARIAN_CIV_ID } from '../../../data/VillageConstants';
 import { CityUtils } from '../../../utils/CityUtils';
 import type { City, Civilization } from '../../../../types/game';
 import { resolveAICivStrategy, type StrategyProfile } from './AITypes';
@@ -48,6 +49,9 @@ export class AIEconomicManager {
    */
   public preProcessTurn(civ: Civilization): void {
     if (!civ || civ.isHuman) return;
+    // Barbarians spend everything on war and do not research — leave their
+    // 100% tax / 0% science rates alone.
+    if (civ.id === BARBARIAN_CIV_ID) return;
     const cities = (this.gameEngine?.cities ?? []).filter(
       (c: City) => c.civilizationId === civ.id,
     );

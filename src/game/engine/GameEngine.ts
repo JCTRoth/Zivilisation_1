@@ -27,6 +27,8 @@ import { EnemySearcher, EnemyLocation, SearchResult } from './EnemySearcher';
 import { ScoutMemory } from './ScoutMemory';
 import { GoToManager } from './GoToManager';
 import { AIManager } from './AI/AIManager';
+import { AIEconomicManager } from './AI/AIEconomicManager';
+import { AICityManager } from './AI/AICityManager';
 import { BarbarianManager } from './BarbarianManager';
 import { UnitTurnQueue } from './UnitTurnQueue';
 import { DiplomacyManager } from './DiplomacyManager';
@@ -153,6 +155,10 @@ export default class GameEngine {
   isPaused: boolean; // When true, turn processing and AI actions are halted
   scoutMemory: ScoutMemory; // Phase 3.1: Scout persistence across turns
   aiManager: AIManager;
+  /** AI rate/reserve policy (Food/Money management hook before the economy runs). */
+  aiEconomicManager: AIEconomicManager | null;
+  /** AI city governor: food security, specialists, growth (Food/Production/Money). */
+  aiCityManager: AICityManager | null;
   barbarianManager: BarbarianManager; // Dedicated aggressive AI for the phantom barbarian civ
   unitTurnQueue: UnitTurnQueue; // Unit turn queue for managing unit order
   /** Monotonic per-(civ,type) unit-id suffix counters. Kept so a unit id is
@@ -213,6 +219,9 @@ export default class GameEngine {
     this.playerStorage = new Map();
     this.scoutMemory = new ScoutMemory(); // Phase 3.1: Initialize scout memory
     this.aiManager = new AIManager(this);
+    // Advanced AI economy: rate/reserve policy + the city governor.
+    this.aiEconomicManager = new AIEconomicManager(this, this.economicManager);
+    this.aiCityManager = new AICityManager(this, this.economicManager);
     this.barbarianManager = new BarbarianManager(this);
     this.unitTurnQueue = new UnitTurnQueue(this); // Initialize unit turn queue
     this.diplomacyManager = new DiplomacyManager(this);

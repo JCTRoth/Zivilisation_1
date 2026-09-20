@@ -110,6 +110,22 @@ describe('settler action availability (context menu gating)', () => {
     it('irrigation is not possible without fresh-water adjacency', async () => {
       const e = await setupEngine();
       const grassland = prepareTile(e, TERRAIN_TYPES.GRASSLAND);
+      // The generated map may place a river/lake (or an irrigated tile) next
+      // to the chosen tile; strip all neighbours so the scenario is really
+      // "no fresh water anywhere near" (map-randomness flake).
+      const around = [
+        [0, -1], [1, 0], [0, 1], [-1, 0],
+        [1, 1], [-1, -1], [1, -1], [-1, 1],
+      ] as const;
+      for (const [dc, dr] of around) {
+        const neighbor = e.getTileAt(grassland.col + dc, grassland.row + dr) as unknown as
+          | { type: string; terrain?: string; improvement: string | null }
+          | null;
+        if (!neighbor) continue;
+        neighbor.type = TERRAIN_TYPES.PLAINS;
+        neighbor.terrain = TERRAIN_TYPES.PLAINS;
+        neighbor.improvement = null;
+      }
       const s = spawnSettler(e, grassland.col, grassland.row);
       expect(e.canBuildImprovement(s.id, 'irrigation')).toBe(false);
     });
