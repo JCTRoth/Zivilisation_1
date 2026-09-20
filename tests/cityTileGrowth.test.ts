@@ -93,12 +93,12 @@ describe('City tile & growth rules (Civ1)', () => {
     expect(city.trade).toBeGreaterThanOrEqual(1);
   });
 
-  it('population N works N tiles including city center', () => {
-    // Set population 5
+  it('population N works N tiles in addition to the free city center', () => {
+    // Civ1: the city centre is worked for free; each citizen works one more.
     city.population = 5;
     city.optimizeWorkerAssignment(map as any);
 
-    expect(city.workingTiles.size).toBe(5);
+    expect(city.workingTiles.size).toBe(6); // center + 5 citizen tiles
     // city center present
     expect(city.workingTiles.has(`${city.col},${city.row}`)).toBe(true);
   });
@@ -131,11 +131,23 @@ describe('City tile & growth rules (Civ1)', () => {
     city.processFood(map as any);
 
     // foodSurplus = 25 - 2 = 23
-    // Since foodStorage (23) >= threshold (20) and population < maxPopulation, should grow.
-    // Without a granary the food box fully empties to the surplus above threshold:
-    // 23 - 20 = 3.
+    // Since foodStorage (23) >= threshold (20) and population < maxPopulation, the city grows.
+    // Civ1: without a granary the whole food box empties on growth.
     expect(city.population).toBe(2);
-    expect(city.foodStorage).toBe(3);
+    expect(city.foodStorage).toBe(0);
+  });
+
+  it('a Granary halves the food box on growth instead of emptying it', () => {
+    city.population = 1;
+    city.food = 25;
+    city.foodStorage = 0;
+    city.maxFoodStorage = 100;
+    city.buildings.add('granary');
+
+    city.processFood(map as any);
+
+    expect(city.population).toBe(2);
+    expect(city.foodStorage).toBe(11); // floor(23 / 2)
   });
 
   it('food shortage triggers starvation and reduces population', () => {

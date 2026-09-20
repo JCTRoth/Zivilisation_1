@@ -113,6 +113,22 @@ describe('Civ1 trade routes', () => {
 
   it('a foreign destination pays a higher lump sum than a domestic one', async () => {
     const e = await setup();
+    // Carve the corridors to land: a randomly generated ocean tile on the
+    // domestic line would grant it the intercontinental ×2 bonus and flip the
+    // comparison (map-randomness flake).
+    const carve = (fromCol: number, row: number, toCol: number): void => {
+      for (let col = Math.min(fromCol, toCol); col <= Math.max(fromCol, toCol); col++) {
+        for (let r = row - 1; r <= row + 1; r++) {
+          const tile = e.getTileAt(col, r) as unknown as { type: string; terrain?: string } | null;
+          if (!tile) continue;
+          tile.type = 'grassland';
+          tile.terrain = 'grassland';
+        }
+      }
+    };
+    carve(5, 5, 15);
+    carve(5, 10, 15);
+
     // Domestic route (both civ 0).
     addCity(e, 'a0', 0, 'A', 5, 5);
     addCity(e, 'a1', 0, 'A1', 15, 5);

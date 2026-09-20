@@ -418,8 +418,13 @@ export class EconomicManager {
     }): number => y.food + y.production + y.trade;
     candidates.sort((a, b) => total(b.yields) - total(a.yields));
 
+    // The city CENTRE is always worked for free; every citizen then
+    // works ONE additional tile in the radius. Counting the centre as a
+    // citizen's tile made a size-1 city work only the centre (2 food produced
+    // vs 2 eaten) — a permanent 0 surplus, so the city never grew.
     const specCount = (city.specialists ?? []).length;
-    const pop = Math.max(1, (city.population ?? 1) - specCount);
+    const workers = Math.max(0, (city.population ?? 1) - specCount);
+    const targetTiles = workers + 1; // free centre + one tile per citizen
 
     const chosenKeys = new Set<string>([`${city.col},${city.row}`]);
     const worked: Array<{
@@ -430,7 +435,7 @@ export class EconomicManager {
 
     const userAssigned = city.userAssignedTiles ?? new Set<string>();
     for (const cand of candidates) {
-      if (worked.length >= pop) break;
+      if (worked.length >= targetTiles) break;
       const key = `${cand.col},${cand.row}`;
       if (!userAssigned.has(key) || chosenKeys.has(key)) continue;
       chosenKeys.add(key);
@@ -438,7 +443,7 @@ export class EconomicManager {
     }
 
     for (const cand of candidates) {
-      if (worked.length >= pop) break;
+      if (worked.length >= targetTiles) break;
       const key = `${cand.col},${cand.row}`;
       if (chosenKeys.has(key)) continue;
       chosenKeys.add(key);

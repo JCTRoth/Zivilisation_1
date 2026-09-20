@@ -126,7 +126,32 @@ export class CityModalLogic {
   }
 
   getCityResources() {
-    return CityUtils.calculateCityResources(this.city, this.currentPlayer);
+    const base = CityUtils.calculateCityResources(this.city, this.currentPlayer);
+    // The engine owns the authoritative food math (citizens eat 2 each, the
+    // city's own settlers eat 1–2 more). Show exactly those numbers so the
+    // modal can never disagree with the growth pipeline.
+    const balance = this.gameEngine?.economicManager?.cityFoodBalance?.(
+      this.city,
+      this.currentPlayer,
+    );
+    if (!balance) return base;
+    return {
+      ...base,
+      food: {
+        ...base.food,
+        produced: balance.produced,
+        // "Needs" is what the city actually eats, settler support included.
+        needed: balance.citizenConsumption + balance.settlerSupport,
+        surplus: balance.surplus,
+        storage: balance.storage,
+        growthThreshold: balance.growthThreshold,
+        granaryLine: balance.granaryLine,
+        hasGranary: balance.hasGranary,
+        turnsUntilGrowth: balance.turnsUntilGrowth,
+        turnsUntilStarvation: balance.turnsUntilStarvation,
+        population: this.city.population ?? 1,
+      },
+    };
   }
 
   getTradeRoutes(): TradeRoute[] {

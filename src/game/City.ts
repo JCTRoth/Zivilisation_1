@@ -390,18 +390,15 @@ export class City {
     }
 
     // Grow city population
-    // Civ1: Granary preserves 50% of stored food; without granary the box fully empties.
+    // Civ1: a Granary only HALF empties the food box on growth; without a
+    // granary the whole box empties (excess food beyond the threshold is lost).
     grow(gameMap: GameMap): void {
-        const surplus = this.foodStorage - this.getGrowthThreshold();
+        const storedBeforeGrowth = this.foodStorage;
         this.population++;
 
-        // Granary: box only half-empties (drops to 50% of new threshold)
-        // Without granary: box fully empties
-        if (this.buildings.has(BUILDING_TYPES.GRANARY)) {
-            this.foodStorage = Math.floor(this.getGrowthThreshold() / 2) + Math.max(0, surplus);
-        } else {
-            this.foodStorage = Math.max(0, surplus);
-        }
+        this.foodStorage = this.buildings.has(BUILDING_TYPES.GRANARY)
+            ? Math.floor(storedBeforeGrowth / 2)
+            : 0;
 
         // Update max population based on buildings
         this.updateMaxPopulation();
@@ -969,7 +966,10 @@ export class City {
         this.workingTiles.add(cityCenter);
 
         const workableTiles = this.getWorkableTiles(gameMap);
-        const maxWorkers = Math.min(this.population, workableTiles.length + 1); // +1 for city center
+        // Civ1: the city centre is worked for free; every citizen works ONE
+        // additional tile. (Counting the centre as a citizen's tile made a
+        // size-1 city work only the centre → 0 surplus, no growth.)
+        const maxWorkers = Math.min(this.population + 1, workableTiles.length + 1);
 
         // Re-add manually assigned tiles first so growth never discards them;
         // the auto-assigner only fills the remaining slots with good tiles.

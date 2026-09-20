@@ -949,10 +949,13 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
       }
     } else if (!inDisorder && city.foodStored >= city.foodNeeded) {
       // Growth only happens when the city is NOT in disorder.
+      const storedBeforeGrowth = city.foodStored;
       city.population++;
       const hasGranary = city.buildings?.includes(BUILDING_TYPES.GRANARY) ?? false;
-      // Granary retains 50% of the growth threshold on growth (Civ1 spec).
-      city.foodStored = hasGranary ? Math.floor(city.foodNeeded / 2) : 0;
+      // Civ1 granary: the food box is only HALF emptied on growth; without a
+      // granary the whole box empties (excess food beyond the threshold is
+      // lost).
+      city.foodStored = hasGranary ? Math.floor(storedBeforeGrowth / 2) : 0;
       city.foodNeeded = (city.population + 1) * 10;
       console.log(`[TurnManager] City ${city.name} grew to population ${city.population}`);
     }

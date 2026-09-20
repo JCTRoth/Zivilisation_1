@@ -451,11 +451,11 @@ describe('EconomicManager tile-based commerce', () => {
     });
     const econ = new EconomicManager(engine);
 
-    const city = makeCity(0, 0, 2); // pop 2 → center + 1 worked tile
+    const city = makeCity(0, 0, 1); // pop 1 → free center + 1 worked tile
     city.col = 5;
     city.row = 5;
     // The player explicitly assigned (6,6); the fish (5,6) is "better" but
-    // must NOT steal the slot away from the manual assignment.
+    // must NOT steal the single worker slot away from the manual assignment.
     city.userAssignedTiles = new Set(['6,6']);
 
     econ.recomputeCityYields(city);
