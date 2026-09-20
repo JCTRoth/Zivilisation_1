@@ -3071,18 +3071,17 @@ export default class GameEngine {
       defender.health = Math.max(0, remaining - damage);
 
       if (defender.health <= 0) {
-        // Defender killed — move attacker to defender's position
+        // Defender killed — attacker survives but remains in its original tile
+        // (does not automatically move into the defender's tile).
         const fromCol = attacker.col;
         const fromRow = attacker.row;
 
-        attacker.col = defender.col;
-        attacker.row = defender.row;
         attacker.movesRemaining = 0;
         attacker.hasMovedThisTurn = true;
 
         this.updateUnitTurnsDoneFlag(attacker);
 
-        console.log(`[COMBAT] ${attacker.type} killed ${defender.type} (${damage} dmg) and moved to (${defender.col},${defender.row})`);
+        console.log(`[COMBAT] ${attacker.type} killed ${defender.type} (${damage} dmg) and remains at (${attacker.col},${attacker.row})`);
 
         defender.isDefeated = true;
         defender.defeatTimestamp = Date.now();
@@ -3106,6 +3105,9 @@ export default class GameEngine {
             attackerFromRow: fromRow,
             attackerSurvived: true,
             defenderSurvived: false,
+            damage,
+            attackerDamage: 0,
+            defenderDamage: damage,
           });
         }
 
@@ -3158,6 +3160,8 @@ export default class GameEngine {
           attackerSurvived: true,
           defenderSurvived: true,
           damage,
+          attackerDamage: 0,
+          defenderDamage: damage,
         });
       }
 
@@ -3201,6 +3205,9 @@ export default class GameEngine {
           attackerFromRow: attacker.row,
           attackerSurvived: attacker.health > 0,
           defenderSurvived: true,
+          damage: COMBAT_DAMAGE,
+          attackerDamage: COMBAT_DAMAGE,
+          defenderDamage: 0,
         });
       }
 

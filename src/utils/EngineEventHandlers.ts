@@ -463,17 +463,34 @@ export class EngineEventRouter {
     const preAttacker = attacker ? preStore.find(u => u.id === attacker.id) : undefined;
     const preDefender = defender ? preStore.find(u => u.id === defender.id) : undefined;
 
+    // Compute damage dealt to both units for display. Prefer explicit
+    // event payload (attackerDamage/defenderDamage), fallback to health delta
+    // derived from pre-store snapshot.
+    const attackerHealthBefore = preAttacker?.health ?? attacker?.health ?? 100;
+    const attackerHealthAfter = attacker?.health ?? 100;
+    const defenderHealthBefore = preDefender?.health ?? defender?.health ?? 100;
+    const defenderHealthAfter = defender?.health ?? 100;
+    const attackerDamage = (eventData.attackerDamage as number | undefined)
+      ?? Math.max(0, attackerHealthBefore - attackerHealthAfter);
+    const defenderDamage = (eventData.defenderDamage as number | undefined)
+      ?? Math.max(0, defenderHealthBefore - defenderHealthAfter);
+
     this.actions.updateUnits(this.gameEngine.getAllUnits());
     this.actions.updateVisibility();
     // Only toast fights that involve the human player (or a fight of another
     // civ's units — e.g. an AI battle) should be suppressed.
     const combatCivId = humanOrFirst(attacker?.civilizationId, defender?.civilizationId);
     const combatType = eventType === 'COMBAT_VICTORY' ? 'success' : eventType === 'COMBAT_HIT' ? 'info' : 'warning';
-    const combatMsg = eventType === 'COMBAT_VICTORY'
-      ? 'Victory in combat!'
-      : eventType === 'COMBAT_HIT'
-        ? 'Enemy unit wounded!'
-        : 'Unit defeated in combat!';
+    const attackerName = attacker?.type ?? 'Attacker';
+    const defenderName = defender?.type ?? 'Defender';
+    let combatMsg: string;
+    if (eventType === 'COMBAT_VICTORY') {
+      combatMsg = `Victory! ${attackerName} dealt ${defenderDamage} damage to ${defenderName} (${defenderHealthBefore}% → ${defenderHealthAfter}%). ${attackerName}: ${attackerHealthBefore}% → ${attackerHealthAfter}% (${attackerDamage} dmg taken), ${defenderName}: ${defenderDamage} dmg taken.`;
+    } else if (eventType === 'COMBAT_HIT') {
+      combatMsg = `Hit! ${attackerName} dealt ${defenderDamage} damage to ${defenderName} (${defenderHealthBefore}% → ${defenderHealthAfter}%). ${attackerName}: ${attackerHealthBefore}% (${attackerDamage} dmg), ${defenderName}: ${defenderDamage} dmg.`;
+    } else {
+      combatMsg = `Defeat! ${defenderName} dealt ${attackerDamage} damage to ${attackerName} (${attackerHealthBefore}% → ${attackerHealthAfter}%). ${attackerName}: ${attackerDamage} dmg taken, ${defenderName}: ${defenderDamage} dmg taken.`;
+    }
     notify(combatType, combatMsg, combatCivId);
 
     // Record a combat animation: a cloud appears at the defender's tile, the
@@ -493,10 +510,12 @@ export class EngineEventRouter {
         startTime: performance.now(),
         duration: 800, // Cloud blinks for 0.8s
         deathBlinkDuration: 2000, // Dead unit blinks for 2s after cloud
-        attackerHealthBefore: preAttacker?.health ?? attacker.health,
-        attackerHealthAfter: attacker.health,
-        defenderHealthBefore: preDefender?.health ?? defender.health,
-        defenderHealthAfter: defender.health,
+        attackerHealthBefore,
+        attackerHealthAfter,
+        defenderHealthBefore,
+        defenderHealthAfter,
+        attackerDamage,
+        defenderDamage,
       };
       // Where should the camera go for this fight? The player's own defender
       // always, or a visible AI attacker. Hidden fights get no camera move (that
