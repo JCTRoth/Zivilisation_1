@@ -707,10 +707,6 @@ export interface CombatAnimation {
   cityHealthBefore?: number;
   /** City HP after combat (for city HP bar tween). */
   cityHealthAfter?: number;
-  /** Damage dealt to attacker in this round (for display). */
-  attackerDamage?: number;
-  /** Damage dealt to defender in this round (for display). */
-  defenderDamage?: number;
 }
 
 export interface GameActions {

@@ -1779,39 +1779,6 @@ export class MapRenderer {
       ctx.fillText(emoji, x, y);
 
       ctx.restore();
-
-      // Display damage dealt to both units as floating numbers.
-      // Attacker damage (if any) above attacker's tile, defender damage above defender's tile.
-      const attackerDmg = anim.attackerDamage ?? 0;
-      const defenderDmg = anim.defenderDamage ?? 0;
-      if (attackerDmg > 0 || defenderDmg > 0) {
-        ctx.save();
-        ctx.globalAlpha = Math.min(1, fadeIn + 0.4);
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        // Style for damage numbers
-        ctx.font = `bold ${Math.round(12 * cameraZoom + 10)}px sans-serif`;
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = 'black';
-        if (attackerDmg > 0) {
-          const ax = squareToScreen(anim.attackerCol, anim.attackerRow);
-          const ay = ax.y - this.tileSize * cameraZoom * 0.7;
-          ctx.fillStyle = '#ff4444';
-          const text = `-${attackerDmg}`;
-          ctx.strokeText(text, ax.x, ay);
-          ctx.fillText(text, ax.x, ay);
-        }
-        if (defenderDmg > 0) {
-          const dx = squareToScreen(anim.defenderCol, anim.defenderRow);
-          // Offset defender damage slightly above cloud so both are visible even when stacked
-          const dy = dx.y - this.tileSize * cameraZoom * 0.9;
-          ctx.fillStyle = '#ffaa00';
-          const text = `-${defenderDmg}`;
-          ctx.strokeText(text, dx.x, dy);
-          ctx.fillText(text, dx.x, dy);
-        }
-        ctx.restore();
-      }
     }
   }
 

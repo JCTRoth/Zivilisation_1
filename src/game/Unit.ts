@@ -341,10 +341,13 @@ class Unit {
 
         const result = this.resolveCombat(target, gameMap);
 
-        // Handle unit destruction — attacker remains in its original tile
-        // even when victorious (defender destroyed).
+        // Handle unit destruction
         if (result.attackerWins) {
             target.destroy();
+
+            // Attacker moves into defender's tile if victorious
+            this.col = target.col;
+            this.row = target.row;
         } else {
             this.destroy();
         }
@@ -439,7 +442,9 @@ class Unit {
                 const result = this.resolveCombat(defender as Unit, gameMap);
                 if (result.attackerWins) {
                     defender.destroy();
-                    // Attacker remains in its original tile (no auto-advance)
+                    // Attacker moves to defender's tile
+                    this.col = defender.col;
+                    this.row = defender.row;
                     this.addExperience(20);
                     defender.addExperience(10);
                 } else {
