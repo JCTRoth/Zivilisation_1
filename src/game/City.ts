@@ -832,12 +832,13 @@ export class City {
         return true;
     }
 
-    // Check if a tile is coastal (adjacent to land)
+    // Check if a tile is coastal (adjacent to land). A lake is water, not
+    // land, so it does not make an ocean tile workable.
     private isCoastalTile(tileCol: number, tileRow: number, gameMap: GameMap): boolean {
         const neighbors = gameMap.grid.getNeighbors(tileCol, tileRow);
         return neighbors.some((neighbor: GridNeighbor) => {
             const neighborTile = gameMap.getTile(neighbor.col, neighbor.row);
-            return neighborTile && neighborTile.type !== 'ocean';
+            return neighborTile && neighborTile.type !== 'ocean' && neighborTile.type !== 'lake';
         });
     }
 

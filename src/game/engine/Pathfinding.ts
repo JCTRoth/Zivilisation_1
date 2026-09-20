@@ -1,6 +1,6 @@
-import { TERRAIN_PROPS } from '../../utils/Constants';
+import { TERRAIN_PROPS, UNIT_PROPS } from '../../utils/Constants';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '../../data/TileImprovementConstants';
-import { TERRAIN_TYPES } from '../../data/TerrainConstants';
+import { TERRAIN_TYPES, WATER_TERRAIN_TYPES } from '../../data/TerrainConstants';
 import type { MapTile } from './GameEngine';
 
 /**
@@ -36,6 +36,19 @@ export class Pathfinding {
     if (!tile) return false;
     const key = String(tile.type ?? tile.terrain ?? '').trim().toLowerCase();
     return key === TERRAIN_TYPES.RIVER;
+  }
+
+  /**
+   * Whether a unit type is naval. The unit-properties table is the source of
+   * truth (so every ship, including the Ferry, is handled); the legacy list is
+   * only a fallback for stubbed/synthetic unit types used in tests.
+   */
+  private static isNavalUnit(unitType: string): boolean {
+    const normalizedType = String(unitType ?? '').trim().toLowerCase();
+    const props = UNIT_PROPS[normalizedType];
+    if (props) return props.naval === true;
+    return ['trireme', 'caravel', 'ironclad', 'frigate', 'destroyer', 'cruiser', 'battleship', 'submarine', 'carrier', 'transport', 'sail', 'ferry']
+      .includes(normalizedType);
   }
 
   /**
@@ -78,9 +91,7 @@ export class Pathfinding {
     if (!this.isRiverTile(targetTile)) return true;
 
     // Naval units can enter river tiles freely
-    const normalizedType = String(unitType ?? '').trim().toLowerCase();
-    const isWaterUnit = ['trireme', 'caravel', 'ironclad', 'frigate', 'destroyer', 'cruiser', 'battleship', 'submarine', 'carrier', 'transport', 'sail'].includes(normalizedType);
-    if (isWaterUnit) return true;
+    if (this.isNavalUnit(unitType)) return true;
 
     // Units already on a river tile can move freely (walking along the river)
     const fromTile = getTileAt(fromCol, fromRow);
@@ -107,22 +118,27 @@ export class Pathfinding {
     const terrainProps = TERRAIN_PROPS[terrainKey];
 
     // Determine if unit is land or water based
-    const normalizedType = String(unitType ?? '').trim().toLowerCase();
-    const isWaterUnit = ['trireme', 'caravel', 'ironclad', 'frigate', 'destroyer', 'cruiser', 'battleship', 'submarine', 'carrier', 'transport', 'sail'].includes(normalizedType);
+    const isWaterUnit = this.isNavalUnit(unitType);
     const isLandUnit = !isWaterUnit;
 
     // Check passability
     if (terrainProps) {
-      // Civ1: only deep ocean is water; rivers are a land terrain type.
-      const isWaterTerrain = terrainKey === 'ocean' || terrainKey === 'sea';
+      // Civ1: only deep ocean is water; rivers are a land terrain type that
+      // naval units may also navigate. Lakes are fresh-water obstacles and are
+      // NEVER passable (for either land or naval units).
+      const isLake = terrainKey === TERRAIN_TYPES.LAKE;
+      if (isLake || terrainProps.passable === false && !isWaterUnit) {
+        return Infinity; // Impassable
+      }
+      const isWaterTerrain = WATER_TERRAIN_TYPES.includes(terrainKey);
 
       // Land units cannot pass deep water (ocean)
       if (isLandUnit && isWaterTerrain) {
         return Infinity; // Impassable
       }
 
-      // Water units cannot pass land
-      if (isWaterUnit && !isWaterTerrain) {
+      // Water units cannot pass land — except a navigable river.
+      if (isWaterUnit && !isWaterTerrain && terrainKey !== TERRAIN_TYPES.RIVER) {
         return Infinity; // Impassable
       }
 
@@ -168,7 +184,8 @@ export class Pathfinding {
     mapHeight: number,
     getUnitAt?: (col: number, row: number) => { civilizationId: number } | null,
     friendlyCivId?: number,
-    getCityAt?: (col: number, row: number) => { civilizationId: number } | null
+    getCityAt?: (col: number, row: number) => { civilizationId: number } | null,
+    blockedTiles?: Set<string>
   ): PathResult {
     const openSet: PathNode[] = [];
     const closedSet = new Set<string>();
@@ -232,6 +249,11 @@ export class Pathfinding {
 
         const neighborKey = `${col},${row}`;
         if (closedSet.has(neighborKey)) {
+          continue;
+        }
+
+        // Caller-supplied obstacles (units/cities a settler must avoid).
+        if (blockedTiles && blockedTiles.has(neighborKey)) {
           continue;
         }
 

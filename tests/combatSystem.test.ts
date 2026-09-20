@@ -177,7 +177,7 @@ describe('Combat: no weak-attacker one-shots', () => {
 // ---------------------------------------------------------------------------
 
 describe('Combat: decisive victories still work', () => {
-  it('an attacker at least as strong destroys the defender and takes its tile', () => {
+  it('an attacker at least as strong destroys the defender and stays in its tile', () => {
     vi.useFakeTimers();
     const random = spyRandom(0.01);
     const e = makeCombatEngine(TERRAIN_TYPES.PLAINS);
@@ -187,8 +187,10 @@ describe('Combat: decisive victories still work', () => {
 
     expect(attack()).toBe(true);
     expect(warrior.isDefeated).toBe(true);
-    expect(archer.col).toBe(2);
-    expect(archer.row).toBe(2);
+    // The victorious attacker survives but does NOT auto-advance onto the
+    // defender's tile.
+    expect(archer.col).toBe(1);
+    expect(archer.row).toBe(1);
     expect(archer.movesRemaining).toBe(0);
     random.mockRestore();
   });

@@ -306,6 +306,8 @@ export interface Unit {
   _exploreBearing?: { dx: number; dy: number };
   _blockedScoutTargets?: Set<string>;
   _aiCommittedTarget?: { target: { col: number; row: number }; round: number };
+  /** Destination of the GoTo path the AI last registered for this unit. */
+  _aiMoveTarget?: { col: number; row: number } | null;
   /** Scout: found an enemy city — return to friendly city to report. */
   enemyFound?: boolean;
   /** Scout: coordinates of the last enemy discovered. */

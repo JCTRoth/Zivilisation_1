@@ -10,6 +10,7 @@ import { EnemySearcher } from '../EnemySearcher';
 import { UNIT_PROPS, TERRAIN_PROPS, IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '@/utils/Constants';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { SettlementEvaluator, MIN_CITY_CENTER_DISTANCE } from '../SettlementEvaluator';
+import { Pathfinding } from '../Pathfinding';
 import { AIStrategySelector } from './AIStrategySelector';
 import { AICoordinator } from './AICoordinator';
 import { AIResearch } from './AIResearch';
@@ -661,7 +662,7 @@ export class AIManager {
             : (unit._blockedScoutTargets instanceof Set
                 ? new Set<string>(unit._blockedScoutTargets)
                 : new Set<string>());
-          const path = this.gameEngine.squareGrid.findPath(unit.col, unit.row, target.col, target.row, obstacles, this.gameEngine.getPassabilityFilter?.());
+          const path = this.pathForUnit(unit, target, obstacles);
           if (path.length > 1) {
             let next = path[1];
             console.log(`[AI] Path found, next step to (${next.col},${next.row}), path length: ${path.length}`);
@@ -689,9 +690,7 @@ export class AIManager {
                 break;
               }
               // Deviating from the A* path — the stored GoTo is no longer valid.
-              if (unit.type === 'scout' && this.gameEngine.roundManager) {
-                this.gameEngine.roundManager.clearUnitPath(unit.id);
-              }
+              this.gameEngine.roundManager?.clearUnitPath(unit.id);
               next = affordable;
             }
             const r = this.gameEngine.moveUnit(unit.id, next.col, next.row);
@@ -699,10 +698,8 @@ export class AIManager {
               // A scout blocked on this step should not repeat it next turn.
               this.blacklistScoutTarget(unit, next.col, next.row);
               // Clear any stale GoTo path so processAutomatedMovements
-              // doesn't try to walk the scout backward next turn.
-              if (unit.type === 'scout' && this.gameEngine.roundManager) {
-                this.gameEngine.roundManager.clearUnitPath(unit.id);
-              }
+              // doesn't try to walk the unit backward next turn.
+              this.gameEngine.roundManager?.clearUnitPath(unit.id);
 
               // A blocked path step must not freeze the unit (e.g. two units
               // facing off, or a step pinned by an allied unit / impassable
@@ -727,13 +724,12 @@ export class AIManager {
              this.gameEngine.skipUnit(unit.id);
               break;
             }
-            // Store remaining GoTo path (skip start pos + just-taken step)
-            // so processAutomatedMovements continues forward next turn
-            // instead of walking the scout back to its old position.
-            if (unit.type === 'scout' && this.gameEngine.roundManager && path.length > 2) {
-              this.gameEngine.roundManager.setUnitPath(unit.id, path.slice(2));
-              console.log(`[AI-SCOUT] Stored remaining GoTo path for ${unit.id}: ${path.length - 2} steps toward (${target.col},${target.row})`);
-            }
+            // Store the remaining GoTo path (skip start pos + just-taken step)
+            // and remember the destination, so processAutomatedMovements
+            // continues forward next turn instead of walking the unit back to
+            // its old position. If the AI picks a NEW target next turn,
+            // syncAIPath drops this stale route before registering the new one.
+            this.syncAIPath(unit, target, path);
             this.gameEngine.log('ai', `Move — ${civ.name} ${unit.type}(${unit.id}) → (${next.col},${next.row}) toward (${target.col},${target.row})`, { civilizationId, action: 'move', unitId: unit.id, unitType: unit.type, targetCol: target.col, targetRow: target.row });
           } else {
             // Unreachable target — a scout should drop it and pick another.
@@ -886,11 +882,177 @@ export class AIManager {
     return best;
   }
 
+  // ──────────────────────────────────────────────────────────────────────
+  // Naval AI
+  // ──────────────────────────────────────────────────────────────────────
+
+  /** Whether a unit type is a ship (naval). */
+  private isNavalUnitType(type: string): boolean {
+    return UNIT_PROPS[String(type ?? '').trim().toLowerCase()]?.naval === true;
+  }
+
+  /**
+   * Safe wrappers around the engine's connectivity helpers. Lightweight test
+   * doubles do not implement them; they fall back to the pre-lake behavior
+   * (everything reachable / no fleet) instead of crashing.
+   */
+  private areLandConnected(c1: number, r1: number, c2: number, r2: number): boolean {
+    const fn = this.gameEngine.areLandConnected;
+    return typeof fn === 'function' ? fn.call(this.gameEngine, c1, r1, c2, r2) : true;
+  }
+
+  private engineCanBuildShips(civilizationId: number): boolean {
+    const fn = this.gameEngine.civCanBuildShips;
+    return typeof fn === 'function' ? fn.call(this.gameEngine, civilizationId) : false;
+  }
+
+  private engineTileReachableByLand(civilizationId: number, col: number, row: number): boolean {
+    const fn = this.gameEngine.isTileReachableByLandFromCiv;
+    return typeof fn === 'function' ? fn.call(this.gameEngine, civilizationId, col, row) : true;
+  }
+
+  /**
+   * A naval unit's target, in priority order:
+   *   1. the nearest enemy ship (sea control),
+   *   2. a known enemy coastal city (blockade / escort the invasion),
+   *   3. unexplored open water (patrol/exploration).
+   */
+  private chooseNavalTarget(unit: Unit): { col: number; row: number } | null {
+    if (!this.gameEngine.squareGrid) return null;
+
+    const enemyShips = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId !== unit.civilizationId && !u.isDefeated && this.isNavalUnitType(u.type),
+    );
+    if (enemyShips.length > 0) {
+      let best: Unit | null = null;
+      let bestDist = Infinity;
+      for (const ship of enemyShips) {
+        const dist = this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, ship.col, ship.row);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = ship;
+        }
+      }
+      if (best) return { col: best.col, row: best.row };
+    }
+
+    const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
+    if (storage?.enemyLocations) {
+      let best: { col: number; row: number } | null = null;
+      let bestDist = Infinity;
+      for (const locations of storage.enemyLocations.values()) {
+        for (const loc of locations) {
+          if (loc.type !== 'city') continue;
+          // A ship can blockade/invade any city reachable by ocean OR river.
+          const hasNavalAccess = typeof this.gameEngine.tileHasNavalAccess === 'function'
+            ? this.gameEngine.tileHasNavalAccess(loc.col, loc.row)
+            : this.gameEngine.tileHasOceanAccess?.(loc.col, loc.row) === true;
+          if (!hasNavalAccess) continue;
+          const dist = this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, loc.col, loc.row);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = { col: loc.col, row: loc.row };
+          }
+        }
+      }
+      if (best) return best;
+    }
+
+    return this.findNavalPatrolTarget(unit);
+  }
+
+  /** Nearest unexplored ocean tile — keeps idle ships moving and scouting. */
+  private findNavalPatrolTarget(unit: Unit): { col: number; row: number } | null {
+    const map = this.gameEngine.map;
+    const grid = this.gameEngine.squareGrid;
+    if (!map || !grid) return null;
+    const explored = this.gameEngine.getPlayerStorage?.(unit.civilizationId)?.explored;
+
+    for (let radius = 2; radius <= 14; radius++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        for (let dr = -radius; dr <= radius; dr++) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+          const col = unit.col + dc;
+          const row = unit.row + dr;
+          if (!grid.isValidSquare(col, row)) continue;
+          const tile = this.gameEngine.getTileAt(col, row);
+          const key = String(tile?.type ?? tile?.terrain ?? '').trim().toLowerCase();
+          // Rivers are navigable too, so a river navy can patrol them.
+          if (key !== 'ocean' && key !== 'river') continue;
+          const index = row * map.width + col;
+          if (explored && explored[index] === true) continue; // prefer the unknown
+          if (this.gameEngine.getUnitAt(col, row)) continue;
+          return { col, row };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Unit-aware route computation through the terrain-aware `Pathfinding`, so
+   * the AI route obeys exactly what `moveUnit` enforces: terrain costs,
+   * roads, naval/lake rules and the wide-river crossing block.
+   */
+  private pathForUnit(
+    unit: Unit,
+    target: { col: number; row: number },
+    obstacles: Set<string>,
+  ): { col: number; row: number }[] {
+    const map = this.gameEngine.map;
+    const grid = this.gameEngine.squareGrid;
+    if (!map || !grid) return [];
+
+    // Both land and naval units use the terrain-aware Pathfinding so the AI
+    // route obeys the same rules as moveUnit — including the wide-river
+    // crossing block (a 2–3 tile river is impassable to land units, which
+    // `squareGrid.findPath`'s terrain-only filter never modelled).
+    const result = Pathfinding.findPath(
+      unit.col, unit.row, target.col, target.row,
+      (c, r) => this.gameEngine.getTileAt(c, r),
+      unit.type,
+      map.width, map.height,
+      (c, r) => this.gameEngine.getUnitAt(c, r),
+      unit.civilizationId,
+      (c, r) => this.gameEngine.getCityAt(c, r),
+      obstacles,
+    );
+    return result.path;
+  }
+
+  /**
+   * Keep the engine's GoTo path aligned with the AI's current destination.
+   * When the destination changed, the stale path is dropped and the freshly
+   * computed route is registered, so TurnManager can continue walking it next
+   * turn and processAutomatedMovements never walks the unit backward.
+   */
+  private syncAIPath(
+    unit: Unit,
+    target: { col: number; row: number },
+    path: { col: number; row: number }[],
+  ): void {
+    const roundManager = this.gameEngine.roundManager;
+    if (!roundManager) return;
+    const previous = unit._aiMoveTarget;
+    const changed = !previous || previous.col !== target.col || previous.row !== target.row;
+    if (changed) roundManager.clearUnitPath(unit.id);
+    unit._aiMoveTarget = { col: target.col, row: target.row };
+    if (path.length > 2) {
+      roundManager.setUnitPath(unit.id, path.slice(2));
+    }
+  }
+
   /**
    * Choose a target for AI unit
    */
   private chooseAITarget(unit: Unit): { col: number; row: number } | null {
     if (!this.gameEngine.map || !this.gameEngine.squareGrid) return null;
+
+    // Naval units never use the land targeting logic — they hunt enemy ships,
+    // blockade known enemy coastal cities, or patrol/explore open water.
+    if (this.isNavalUnitType(unit.type)) {
+      return this.chooseNavalTarget(unit);
+    }
 
     const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
     const aiState: AIState = (storage?.turnData?.aiState as AIState) ?? createDefaultAIState();
@@ -952,7 +1114,12 @@ export class AIManager {
         if (targetCivId === BARBARIAN_CIV_ID) return true;
         // Only target civs we are at war with
         return targetCivId !== undefined && (!dm || dm.isAtWar(unit.civilizationId, targetCivId));
-      });
+      }).filter(e =>
+        // Land units can only act on enemies on their own landmass. Targets on
+        // another continent are excluded until the civ can build ships and
+        // invade — a unit must never march to the coast and freeze there.
+        this.areLandConnected(unit.col, unit.row, e.col, e.row),
+      );
 
       if (nearbyEnemies.length > 0) {
         const closest = nearbyEnemies[0];
@@ -1830,6 +1997,20 @@ export class AIManager {
     const weights = this.getSettlementWeightsForStrategy(strategy);
     console.log(`[AI-SETTLER] Using strategy: ${strategy} with weights:`, weights);
 
+    // If the civ has no coastal city yet, strongly prefer founding on connected
+    // water: naval units can only ever be built from a coastal city, so a
+    // landlocked empire must deliberately claim a coast before it can project
+    // power (or defend against ships) on the sea.
+    const hasWaterCity = typeof this.gameEngine.civHasNavalCity === 'function'
+      ? this.gameEngine.civHasNavalCity(unit.civilizationId)
+      : (typeof this.gameEngine.civHasCoastalCity === 'function'
+        && this.gameEngine.civHasCoastalCity(unit.civilizationId));
+    const wantsCoast = !hasWaterCity;
+    const extraCoastalBonus = wantsCoast ? 8 : 0;
+    if (wantsCoast) {
+      console.log('[AI-SETTLER] Civ has no coastal city — favouring a coastal settlement site');
+    }
+
     // Use SettlementEvaluator to find best location
     const bestLocation = SettlementEvaluator.findBestSettlementLocation(
       unit.col,
@@ -1847,18 +2028,24 @@ export class AIManager {
         return tile && (tile.visible || tile.explored);
       },
       (fromCol, fromRow, toCol, toRow) => {
-        // Check if settler can reach the location (simple path check)
-        if (!this.gameEngine.squareGrid) return false;
-        const path = this.gameEngine.squareGrid.findPath(
-          fromCol,
-          fromRow,
-          toCol,
-          toRow,
+        // Check if settler can reach the location with the SAME rules the
+        // movement code enforces (wide rivers block land units). Without this
+        // the evaluator kept proposing a site across a 2–3 tile river.
+        const map = this.gameEngine.map;
+        if (!map || !this.gameEngine.squareGrid) return false;
+        const result = Pathfinding.findPath(
+          fromCol, fromRow, toCol, toRow,
+          (c, r) => this.gameEngine.getTileAt(c, r),
+          unit.type,
+          map.width, map.height,
+          (c, r) => this.gameEngine.getUnitAt(c, r),
+          unit.civilizationId,
+          (c, r) => this.gameEngine.getCityAt(c, r),
           this.getSettlerPathObstacles(unit.id, { col: toCol, row: toRow }),
-          this.gameEngine.getPassabilityFilter?.(),
         );
-        return path.length > 0;
-      }
+        return result.path.length > 0;
+      },
+      extraCoastalBonus,
     );
 
     if (bestLocation) {
@@ -1883,7 +2070,8 @@ export class AIManager {
           weights,
           unit.civilizationId,
           unit.col,
-          unit.row
+          unit.row,
+          extraCoastalBonus
         );
         const bestDist = Math.max(
           Math.abs(bestLocation.col - unit.col),
@@ -1953,11 +2141,11 @@ export class AIManager {
 
   /** Validate a cached destination without allowing the settler to chase it. */
   private isSettlementTargetValid(
-    unit: { col: number; row: number; civilizationId: number },
+    unit: Unit,
     target: { col: number; row: number },
   ): boolean {
     const tile = this.gameEngine.getTileAt?.(target.col, target.row);
-    if (!tile || tile.type === 'ocean' || tile.type === 'mountains') return false;
+    if (!tile || tile.type === 'ocean' || tile.type === 'lake' || tile.type === 'mountains') return false;
     if (this.gameEngine.getCityAt?.(target.col, target.row)) return false;
 
     const occupant = this.gameEngine.getUnitAt?.(target.col, target.row);
@@ -1983,15 +2171,23 @@ export class AIManager {
       return false;
     }
 
-    const path = this.gameEngine.squareGrid?.findPath(
-      unit.col,
-      unit.row,
-      target.col,
-      target.row,
-      this.getSettlerPathObstacles((unit as Unit).id, target),
-      this.gameEngine.getPassabilityFilter?.(),
+    const map = this.gameEngine.map;
+    const grid = this.gameEngine.squareGrid;
+    if (!map || !grid) return false;
+    // Use the engine-consistent Pathfinding so a wide river (impassable to
+    // land units) invalidates the cached target instead of producing a route
+    // the settler can never walk.
+    const result = Pathfinding.findPath(
+      unit.col, unit.row, target.col, target.row,
+      (c, r) => this.gameEngine.getTileAt(c, r),
+      unit.type,
+      map.width, map.height,
+      (c, r) => this.gameEngine.getUnitAt(c, r),
+      unit.civilizationId,
+      (c, r) => this.gameEngine.getCityAt(c, r),
+      this.getSettlerPathObstacles(unit.id, target),
     );
-    return Array.isArray(path) && path.length > 0;
+    return result.path.length > 0;
   }
 
   private settlementTargetKey(target: { col: number; row: number }): string {
@@ -2261,6 +2457,8 @@ export class AIManager {
   /** A committed target is still usable when passable and not our own city/unit. */
   private isCommittedTargetValid(unit: Unit, target: { col: number; row: number }): boolean {
     if (typeof this.gameEngine.isTilePassable === 'function' && !this.gameEngine.isTilePassable(target.col, target.row)) return false;
+    // A land unit must not stay committed to a target on another landmass.
+    if (!this.areLandConnected(unit.col, unit.row, target.col, target.row)) return false;
     const occupant = this.gameEngine.getUnitAt?.(target.col, target.row);
     if (occupant && occupant.civilizationId === unit.civilizationId) return false;
     const city = this.gameEngine.getCityAt?.(target.col, target.row);
@@ -2716,15 +2914,23 @@ export class AIManager {
   }
 
   /** Flatten stored enemy intelligence into the known-target list for bulk planning. */
-  private collectKnownTargets(_civilizationId: number, storage: PlayerTurnStorage, roundNumber: number): KnownTarget[] {
+  private collectKnownTargets(civilizationId: number, storage: PlayerTurnStorage, roundNumber: number): KnownTarget[] {
     const targets: KnownTarget[] = [];
     if (!storage?.enemyLocations) return targets;
+    // Before the civ can build ships, targets on another landmass are simply
+    // unreachable and must be excluded from war planning (they would stall the
+    // army at the coast). Once shipbuilding is possible they stay on the list
+    // as future naval-invasion targets.
+    const canBuildShips = this.engineCanBuildShips(civilizationId);
     for (const enemyList of storage.enemyLocations.values()) {
       for (const loc of enemyList) {
         const age = roundNumber - (loc.lastSeenRound ?? loc.discoveredRound ?? roundNumber);
         // Same 40-round window as planBulkAttack: intel that is not ancient
         // still feeds the war plan even if the two fronts are apart.
         if (age > 40) continue;
+        if (!canBuildShips && !this.engineTileReachableByLand(civilizationId, loc.col, loc.row)) {
+          continue;
+        }
         targets.push({
           col: loc.col,
           row: loc.row,
@@ -2898,9 +3104,14 @@ export class AIManager {
     }
 
     let bestTarget: { col: number; row: number; score: number } | null = null;
+    const canBuildShips = this.engineCanBuildShips(unit.civilizationId);
 
     for (const enemyList of storage.enemyLocations.values()) {
       for (const location of enemyList) {
+        // Unreachable over land and no fleet yet → not a valid assignment.
+        if (!canBuildShips && !this.engineTileReachableByLand(unit.civilizationId, location.col, location.row)) {
+          continue;
+        }
         const distance = this.gameEngine.squareGrid!.squareDistance(unit.col, unit.row, location.col, location.row);
         const isVisible = typeof this.gameEngine.isVisibleToPlayer === 'function'
           ? this.gameEngine.isVisibleToPlayer(unit.civilizationId, location.col, location.row)
@@ -3106,7 +3317,7 @@ export class AIManager {
       for (let dRow = -1; dRow <= 1; dRow++) {
         if (dCol === 0 && dRow === 0) continue;
         const tile = this.gameEngine.getTileAt?.(city.col + dCol, city.row + dRow);
-        if (tile?.type === 'ocean' || tile?.type === 'sea') return true;
+        if (tile?.type === 'ocean' || tile?.type === 'sea' || tile?.type === 'river') return true;
       }
     }
     return false;
@@ -3147,14 +3358,19 @@ export class AIManager {
 
   /** Get known enemy targets from player storage for army group formation */
   private getKnownEnemyTargets(
-    _civilizationId: number,
+    civilizationId: number,
     storage: PlayerTurnStorage
   ): Array<{ col: number; row: number; type: 'city' | 'unit'; estimatedStrength: number }> {
     const targets: Array<{ col: number; row: number; type: 'city' | 'unit'; estimatedStrength: number }> = [];
     if (!storage?.enemyLocations) return targets;
+    // Army groups only form against targets the army can actually march to.
+    const canBuildShips = this.engineCanBuildShips(civilizationId);
 
     for (const enemyList of storage.enemyLocations.values()) {
       for (const loc of enemyList) {
+        if (!canBuildShips && !this.engineTileReachableByLand(civilizationId, loc.col, loc.row)) {
+          continue;
+        }
         // Estimate strength: cities have higher estimated defense
         const estimatedStrength = loc.type === 'city' ? 8 : 3;
         targets.push({

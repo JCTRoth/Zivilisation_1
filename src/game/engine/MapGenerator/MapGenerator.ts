@@ -13,7 +13,7 @@
  *   9. Passability validation
  */
 
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import { TERRAIN_TYPES, WATER_TERRAIN_TYPES } from '@/data/TerrainConstants';
 import {
   type GenTile, type InternalTile, type MapGeneratorSettings,
   type MapGroup, type Point,
@@ -36,6 +36,13 @@ import {
   terrainIdForChar,
   type StaticMapDefinition,
 } from '@/data/maps';
+
+/**
+ * A connected water body smaller than this (4x6 = 24 tiles) is classified as
+ * a LAKE instead of ocean. Lakes are fresh-water obstacles: same yields as a
+ * river, but impassable (no naval access, no city founding, no crossing).
+ */
+export const LAKE_MAX_TILES = 24;
 
 export default class MapGenerator {
   // Parameters
@@ -120,6 +127,9 @@ export default class MapGenerator {
     // These stragglers come from river destinations or edge effects.
     this.fillIsolatedOceanHoles();
 
+    // Classify small enclosed water bodies as impassable LAKES.
+    this.classifyLakes();
+
     // Groups + scoring + validation
     this.stage7_FloodFillGroups();
     this.stage8_BuildSites();
@@ -161,6 +171,9 @@ export default class MapGenerator {
 
     // Fill any isolated ocean holes
     this.fillIsolatedOceanHoles();
+
+    // The static Earth map's small seas/inland waters are lakes too.
+    this.classifyLakes();
 
     // Compute groups, build sites, and passability
     this.stage7_FloodFillGroups();
@@ -205,6 +218,7 @@ export default class MapGenerator {
     }
 
     // Scale ocean features with map size — large maps need more water
+    // (mapScale: 1 on a 50x50 map).
     const mapScale = Math.max(1, Math.floor((this.width * this.height) / (50 * 50)));
 
     // ── Horizontal & Vertical Ocean Straits ──
@@ -1137,7 +1151,9 @@ export default class MapGenerator {
   }
 
   private cellGroupKind(col: number, row: number): GroupKind {
-    return this.cells[row][col].type === TERRAIN_TYPES.OCEAN ? GroupKind.Water : GroupKind.Land;
+    const type = this.cells[row][col].type;
+    if (type === TERRAIN_TYPES.LAKE) return GroupKind.Lake;
+    return type === TERRAIN_TYPES.OCEAN ? GroupKind.Water : GroupKind.Land;
   }
 
   private bfsFill(startCol: number, startRow: number, groupId: number, kind: GroupKind): void {
@@ -1222,7 +1238,7 @@ export default class MapGenerator {
     let totalLand = 0;
     for (let r = 0; r < this.height; r++) {
       for (let c = 0; c < this.width; c++) {
-        if (this.cells[r][c].type !== TERRAIN_TYPES.OCEAN) totalLand++;
+        if (!this.isWaterType(this.cells[r][c].type)) totalLand++;
       }
     }
     if (totalLand === 0) return;
@@ -1233,7 +1249,7 @@ export default class MapGenerator {
     }
 
     const queue: Point[] = [];
-    if (this.cells[centerRow][centerCol].type !== TERRAIN_TYPES.OCEAN) {
+    if (!this.isWaterType(this.cells[centerRow][centerCol].type)) {
       queue.push({ col: centerCol, row: centerRow });
       visited[centerRow][centerCol] = true;
     } else {
@@ -1242,7 +1258,7 @@ export default class MapGenerator {
           for (let dc = -dist; dc <= dist; dc++) {
             const nr = centerRow + dr;
             const nc = this.wrapCol(centerCol + dc);
-            if (this.isValid(nc, nr) && !visited[nr][nc] && this.cells[nr][nc].type !== TERRAIN_TYPES.OCEAN) {
+            if (this.isValid(nc, nr) && !visited[nr][nc] && !this.isWaterType(this.cells[nr][nc].type)) {
               queue.push({ col: nc, row: nr });
               visited[nr][nc] = true;
               break;
@@ -1276,7 +1292,7 @@ export default class MapGenerator {
         const nr = pos.row + d.row;
         if (!this.isValid(nc, nr) || visited[nr][nc]) continue;
         const nt = this.cells[nr][nc].type;
-        if (nt === TERRAIN_TYPES.OCEAN) continue;
+        if (this.isWaterType(nt)) continue;
         visited[nr][nc] = true;
         queue.push({ col: nc, row: nr });
       }
@@ -1292,7 +1308,7 @@ export default class MapGenerator {
             const nc = this.wrapCol(c + d.col);
             const nr = r + d.row;
             if (this.isValid(nc, nr) && !visited[nr][nc] &&
-                this.cells[nr][nc].type !== TERRAIN_TYPES.OCEAN) {
+                !this.isWaterType(this.cells[nr][nc].type)) {
               barriers.push({ col: c, row: r });
               break;
             }
@@ -1326,6 +1342,64 @@ export default class MapGenerator {
       }
     }
     return tiles;
+  }
+
+  // ── Stage 6b — Lake classification ──────────────────────────────
+
+  /**
+   * Classify every connected OCEAN body smaller than {@link LAKE_MAX_TILES}
+   * (4x6 tiles) as a LAKE. Lakes keep the fresh-water yields/defense of a
+   * river but are impassable, so they are neither navigable nor settleable.
+   *
+   * The flood fill is cardinal-only (a diagonal gap is not a connection) and
+   * must run AFTER `fillIsolatedOceanHoles()` so tiny pockets have already
+   * been filled or merged into larger bodies. Components connected to the
+   * world ocean (polar strips, straits, continent seas) exceed the threshold
+   * and stay OCEAN.
+   */
+  private classifyLakes(): void {
+    const visited: boolean[][] = [];
+    for (let r = 0; r < this.height; r++) {
+      visited[r] = new Array(this.width).fill(false);
+    }
+
+    const cardinals = [
+      { col: 0, row: -1 }, { col: 1, row: 0 },
+      { col: 0, row: 1 },  { col: -1, row: 0 },
+    ];
+
+    for (let r = 0; r < this.height; r++) {
+      for (let c = 0; c < this.width; c++) {
+        if (visited[r][c] || this.cells[r][c].type !== TERRAIN_TYPES.OCEAN) continue;
+
+        const component: Point[] = [];
+        const queue: Point[] = [{ col: c, row: r }];
+        visited[r][c] = true;
+        while (queue.length > 0) {
+          const pos = queue.shift()!;
+          component.push(pos);
+          for (const d of cardinals) {
+            const nc = this.wrapCol(pos.col + d.col);
+            const nr = pos.row + d.row;
+            if (!this.isValid(nc, nr) || visited[nr][nc]) continue;
+            if (this.cells[nr][nc].type !== TERRAIN_TYPES.OCEAN) continue;
+            visited[nr][nc] = true;
+            queue.push({ col: nc, row: nr });
+          }
+        }
+
+        if (component.length < LAKE_MAX_TILES) {
+          for (const p of component) {
+            this.cells[p.row][p.col].type = TERRAIN_TYPES.LAKE;
+          }
+        }
+      }
+    }
+  }
+
+  /** Whether a generated terrain type is water (ocean, legacy sea, or lake). */
+  private isWaterType(type: string | undefined | null): boolean {
+    return WATER_TERRAIN_TYPES.includes(String(type ?? '').trim().toLowerCase());
   }
 
   // ── Final cleanup ───────────────────────────────────────────────

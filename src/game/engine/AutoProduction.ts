@@ -457,6 +457,19 @@ export class AutoProduction {
       return this.buildOffensiveProduction(city);
     }
 
+    // 4b. Naval pivot: when every known enemy sits on another landmass, land
+    //     conquest is impossible. A coastal civ with naval tech starts
+    //     building ships (it must be able to project power across water). A
+    //     civ that cannot build ships yet keeps its land build-up — the
+    //     unreachable targets are excluded until shipbuilding is possible.
+    if (this.shouldBuildNavy(city)) {
+      const naval = this.buildNavalProduction(city);
+      if (naval) {
+        console.log(`[AutoProduction] Naval pivot: building ${naval.itemType} (no land-reachable enemy)`);
+        return naval;
+      }
+    }
+
     // Check if building is high-priority enough to build over a unit
     if (buildingPlan && AIBuildingStrategy.shouldBuildOverUnit(
       buildingPlan, hasDefender, !!threatAssessment?.needsDefense, numMilitary, civCities.length
@@ -930,6 +943,53 @@ export class AutoProduction {
       name: unitProps.name,
       cost: unitProps.cost
     };
+  }
+
+  /**
+   * Naval pivot condition: the civ knows enemies, none of them is reachable
+   * over land, it can actually build ships (coastal city + naval tech) and its
+   * navy is still below the desired size. The engine tracks which enemy
+   * locations share a landmass with one of our cities.
+   */
+  private shouldBuildNavy(city: City): boolean {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return false;
+    // Guard the new engine helpers: lightweight test doubles do not implement
+    // them, and the pre-lake behavior is "no navy".
+    const canBuildShips = typeof this.gameEngine.civCanBuildShips === 'function'
+      && this.gameEngine.civCanBuildShips(city.civilizationId);
+    if (!canBuildShips) return false;
+    const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
+    if (typeof pm?.cityHasHarborOrCoast !== 'function' || !pm.cityHasHarborOrCoast(city)) return false;
+    const needsNavy = typeof this.gameEngine.civNeedsNavy === 'function'
+      && this.gameEngine.civNeedsNavy(city.civilizationId);
+    if (!needsNavy) return false;
+
+    const existingNavy = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === city.civilizationId && UNIT_PROPS[u.type]?.naval === true,
+    ).length;
+    const civCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === city.civilizationId).length;
+    const desiredNavy = Math.max(2, civCities);
+    return existingNavy < desiredNavy;
+  }
+
+  /** Strongest naval unit the civ can actually build (tech-gated). */
+  private buildNavalProduction(city: City): ProductionItem | null {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return null;
+    const navalPreference = ['battleship', 'cruiser', 'destroyer', 'ironclad', 'frigate', 'caravel', 'trireme', 'sail'];
+    for (const unitType of navalPreference) {
+      const unitProps = UNIT_PROPS[unitType];
+      if (unitProps?.naval && canBuildUnit(civ, unitType)) {
+        return {
+          type: 'unit',
+          itemType: unitType,
+          name: unitProps.name,
+          cost: unitProps.cost,
+        };
+      }
+    }
+    return null;
   }
 
   /** Tech-gated offensive unit selection */

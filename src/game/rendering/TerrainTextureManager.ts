@@ -24,8 +24,9 @@ export const TERRAIN_TEXTURE_FILES: Record<string, string> = {
   SWAMP:     '/assets/tiles/terrain_swamp.png',
   TUNDRA:    '/assets/tiles/terrain_tundra.png',
   ARCTIC:    '/assets/tiles/terrain_arctic.png',
-  // River reuses the ocean water texture; banks come from colour transitions.
+  // River and Lake reuse the ocean water texture; banks come from colour transitions.
   RIVER:     '/assets/tiles/terrain_ocean.png',
+  LAKE:      '/assets/tiles/terrain_ocean.png',
   // Hills reuses the grass base texture; the hill feature sprite adds the relief.
   HILLS:     '/assets/tiles/terrain_plains.png',
 };
@@ -42,6 +43,7 @@ export const FEATURE_TEXTURE_FILES: Partial<Record<string, string>> = {
 export const TERRAIN_PRIORITY: Record<string, number> = {
   OCEAN:       0,
   RIVER:       0,
+  LAKE:        0,
   ARCTIC:      9,
   TUNDRA:      8,
   MOUNTAINS:   7,
@@ -58,6 +60,7 @@ export const TERRAIN_PRIORITY: Record<string, number> = {
 export const TERRAIN_BLEND_COLOR: Record<string, string> = {
   OCEAN:      'rgba( 30, 80,170,',
   RIVER:      'rgba( 30,100,200,',
+  LAKE:       'rgba( 60,150,230,',
   ARCTIC:     'rgba(220,235,255,',
   TUNDRA:     'rgba(150,175,210,',
   MOUNTAINS:  'rgba( 80, 80, 80,',

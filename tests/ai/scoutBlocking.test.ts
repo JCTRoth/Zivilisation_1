@@ -230,12 +230,16 @@ describe('AI scouts blocking each other', () => {
 
     const { positions, logs } = await runRounds(e, [scout], 6);
     const fallbackLogs = logs.filter((l) => l.includes('Fallback move'));
-    const pathStepFallbacks = logs.filter((l) => l.includes('path_step_fallback'));
+    // The AI pathfinder now avoids the allied unit during PLANNING and reports
+    // the route as blocked (`no_path_fallback`) instead of walking into the
+    // ally and failing the step (`path_step_fallback`). Either way the blocker
+    // must trigger a reroute rather than a freeze — proof the fix is live.
+    const blockerFallbacks = logs.filter(
+      (l) => l.includes('path_step_fallback') || l.includes('no_path_fallback'),
+    );
     const frozen = isFrozen(positions, scout);
     const roundTrace = positions.map((p, i) => `r${i}:${p[scout]}`).join(' ');
-    // The fallback move MUST have fired, and specifically the path-step one
-    // (the ally blocking the only path step) — proof the fix is live.
-    expect(pathStepFallbacks.length, `no path_step_fallback fired\n${logs.slice(0, 60).join('\n')}`).toBeGreaterThan(0);
+    expect(blockerFallbacks.length, `no blocker fallback fired\n${logs.slice(0, 60).join('\n')}`).toBeGreaterThan(0);
     expect(fallbackLogs.length, `no fallback moves fired\n${logs.slice(0, 60).join('\n')}`).toBeGreaterThan(0);
     // …and the scout must not sit in one tile for rounds on end.
     expect(frozen, `scout froze\npositions: ${roundTrace}\nLOGS:\n${logs.slice(0, 120).join('\n')}`).toBe(false);

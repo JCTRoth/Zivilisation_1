@@ -117,9 +117,10 @@ describe('UI attack (moveUnit vs adjacent enemy)', () => {
     expect(engine.diplomacyManager.getStatus(0, 1)).toBe('war');
     expect(emitted).toContain('WAR_DECLARED');
     expect(emitted).toContain('COMBAT_VICTORY');
-    // Attacker moved onto the defender's tile.
-    expect(attacker.col).toBe(pos.defender.col);
-    expect(attacker.row).toBe(pos.defender.row);
+    // The attacker survives but does NOT auto-advance: it must remain in its
+    // original tile even though the defender was destroyed.
+    expect(attacker.col).toBe(pos.attacker.col);
+    expect(attacker.row).toBe(pos.attacker.row);
     expect(attacker.movesRemaining).toBe(0);
     // Defender marked defeated (removed after the 5s delay).
     expect((defender as any).isDefeated).toBe(true);

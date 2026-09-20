@@ -31,8 +31,16 @@ export const TERRAIN_TYPES = {
     HILLS: 'hills',
     SWAMP: 'swamp',
     ARCTIC: 'arctic',
-    RIVER: 'river'
+    RIVER: 'river',
+    LAKE: 'lake'
 } as const;
+
+/** Water terrain keys (ocean, the legacy 'sea' alias, and inland lakes). */
+export const WATER_TERRAIN_TYPES: readonly string[] = [
+    TERRAIN_TYPES.OCEAN,
+    TERRAIN_TYPES.LAKE,
+    'sea',
+];
 
 export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
     [TERRAIN_TYPES.OCEAN]: {
@@ -55,6 +63,19 @@ export const TERRAIN_PROPERTIES: Record<string, TerrainProperties> = {
         color: '#38bdf8',
         passable: true,
         description: 'River valley',
+        buildModifier: 1
+    },
+    // A lake has the same yields/defense as a river (fresh water) but is NOT
+    // passable — a lake is an inland obstacle, not navigable ocean.
+    [TERRAIN_TYPES.LAKE]: {
+        movement: 1,
+        defense: 1.5,
+        food: 2,
+        production: 0,
+        trade: 1,
+        color: '#60a5fa',
+        passable: false,
+        description: 'Inland lake (fresh water, not navigable)',
         buildModifier: 1
     },
     [TERRAIN_TYPES.GRASSLAND]: {
@@ -270,7 +291,8 @@ export const TERRAIN_RESOURCES: Record<string, string | null> = {
     [TERRAIN_TYPES.TUNDRA]: 'Game',
     [TERRAIN_TYPES.GRASSLAND]: null,
     [TERRAIN_TYPES.DESERT]: 'Oasis',
-    [TERRAIN_TYPES.RIVER]: null
+    [TERRAIN_TYPES.RIVER]: null,
+    [TERRAIN_TYPES.LAKE]: null
 };
 
 /** Resolve a resource's Civ1 yield bonus for the terrain it occupies. */

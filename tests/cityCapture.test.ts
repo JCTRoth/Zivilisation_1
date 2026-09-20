@@ -92,12 +92,25 @@ describe('City capture & destruction', () => {
     const width = (engine as any).map?.width ?? 80;
     const height = (engine as any).map?.height ?? 50;
     let spot: { col: number; row: number } | null = null;
+    // A wide river city would be unreachable for a 1-move settler (`cannot_move`
+    // instead of the civilian rule under test), and an occupied tile would turn
+    // the scripted move into combat. Skip both so the scenario is deterministic.
+    const isWideRiver = (col: number, row: number): boolean => {
+      const tile = (engine as any).getTileAt?.(col, row);
+      if (String(tile?.type ?? '').toLowerCase() !== 'river') return false;
+      return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dc, dr]) => {
+        const n = (engine as any).getTileAt?.(col + dc, row + dr);
+        return String(n?.type ?? '').toLowerCase() === 'river';
+      });
+    };
     for (let row = 2; row < height - 2 && !spot; row++) {
       for (let col = 2; col < width - 2; col++) {
         if (!isLand(col, row)) continue;
         const tile = (engine as any).getTileAt?.(col, row);
         if (!tile || !CHEAP_TERRAIN.has(String(tile.type ?? '').toLowerCase())) continue;
+        if (isWideRiver(col, row)) continue;
         if (engine.cities.some((c: any) => Math.abs(c.col - col) + Math.abs(c.row - row) < 4)) continue;
+        if (engine.units.some((u: any) => Math.max(Math.abs(u.col - col), Math.abs(u.row - row)) <= 1)) continue;
         spot = { col, row };
         break;
       }

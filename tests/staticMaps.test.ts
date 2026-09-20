@@ -28,6 +28,10 @@ function disableWorldMapPostProcessing(): void {
   const proto = MapGenerator.prototype as unknown as Record<string, () => void>;
   vi.spyOn(proto, 'stage5_Rivers').mockImplementation(() => {});
   vi.spyOn(proto, 'fillIsolatedOceanHoles').mockImplementation(() => {});
+  // Lakes are a generated classification of small water bodies — without this
+  // the tile-for-tile comparison against the raw Freeciv map would see OCEAN
+  // tiles turned into LAKE.
+  vi.spyOn(proto, 'classifyLakes').mockImplementation(() => {});
 }
 
 let cachedWorldMap: GenTile[] | null = null;
@@ -71,10 +75,11 @@ describe('static maps registry', () => {
 
   it('maps every Freeciv character to a game terrain', () => {
     const terrains = new Set(Object.values(FREECIV_TERRAIN_LEGEND));
-    // Every terrain except river (rivers are added procedurally) must be
-    // reachable from the Freeciv legend.
+    // Every terrain except river and lake must be reachable from the Freeciv
+    // legend: rivers are added procedurally and lakes are DERIVED from small
+    // enclosed ocean bodies by the generator (never a raw map character).
     for (const type of Object.values(TERRAIN_TYPES)) {
-      if (type === TERRAIN_TYPES.RIVER) continue;
+      if (type === TERRAIN_TYPES.RIVER || type === TERRAIN_TYPES.LAKE) continue;
       expect(terrains.has(type), `no map character maps to '${type}'`).toBe(true);
     }
   });

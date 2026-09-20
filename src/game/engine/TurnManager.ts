@@ -464,7 +464,7 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
       for (let dRow = -1; dRow <= 1; dRow++) {
         if (dCol === 0 && dRow === 0) continue;
         const tile = this.gameEngine.getTileAt?.(city.col + dCol, city.row + dRow);
-        if (tile?.type === 'ocean' || tile?.type === 'sea') return true;
+        if (tile?.type === 'ocean' || tile?.type === 'sea' || tile?.type === 'river') return true;
       }
     }
     return false;

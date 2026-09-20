@@ -19,7 +19,8 @@ export const TERRAIN_TYPES: Record<string, TerrainInfo> = {
   SWAMP: { color: '#5B3A1E', char: '≈', name: 'Swamp' },
   TUNDRA: { color: '#B0C4DE', char: '_', name: 'Tundra' },
   ARCTIC: { color: '#F0F8FF', char: '*', name: 'Arctic' },
-  RIVER: { color: '#3b82f6', char: '~', name: 'River' }
+  RIVER: { color: '#3b82f6', char: '~', name: 'River' },
+  LAKE: { color: '#60a5fa', char: '≈', name: 'Lake' }
 };
 
 /**

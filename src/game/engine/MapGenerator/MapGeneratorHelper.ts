@@ -43,7 +43,7 @@ export interface MapGeneratorSettings {
   age?: number;
 }
 
-export enum GroupKind { Water, Land, PolarCap }
+export enum GroupKind { Water, Land, PolarCap, Lake }
 
 export interface MapGroup {
   id: number;

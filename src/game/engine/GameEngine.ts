@@ -1549,7 +1549,64 @@ export default class GameEngine {
 
   private isWaterTerrain(tile: { type?: string; terrain?: string } | null | undefined): boolean {
     const terrainKey = this.getTerrainKey(tile);
-    return terrainKey === 'ocean' || terrainKey === 'sea';
+    return terrainKey === 'ocean' || terrainKey === 'sea' || terrainKey === 'lake';
+  }
+
+  /** True for the inland LAKE terrain (fresh water, never passable). */
+  private isLakeTerrain(tile: { type?: string; terrain?: string } | null | undefined): boolean {
+    return this.getTerrainKey(tile) === TERRAIN_TYPES.LAKE;
+  }
+
+  /**
+   * True when one of the 8 neighbouring tiles is deep ocean. This is the
+   * "water connection" Civ1 requires for naval construction, and the only way
+   * a produced ship can leave (and re-enter) its home city.
+   */
+  tileHasOceanAccess(col: number, row: number): boolean {
+    if (!this.squareGrid || !this.squareGrid.isValidSquare(col, row)) return false;
+    for (let dc = -1; dc <= 1; dc++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        if (dc === 0 && dr === 0) continue;
+        const tile = this.getTileAt(col + dc, row + dr);
+        if (tile && this.getTerrainKey(tile) === 'ocean') return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * True when the tile itself is a river, or one of its 8 neighbours is. Rivers
+   * are navigable for ships, so a river gives a city its "water connection"
+   * even when the sea is far away.
+   */
+  tileHasRiverAccess(col: number, row: number): boolean {
+    if (!this.squareGrid || !this.squareGrid.isValidSquare(col, row)) return false;
+    const tile = this.getTileAt(col, row);
+    if (tile && this.getTerrainKey(tile) === TERRAIN_TYPES.RIVER) return true;
+    for (let dc = -1; dc <= 1; dc++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        if (dc === 0 && dr === 0) continue;
+        const neighbor = this.getTileAt(col + dc, row + dr);
+        if (neighbor && this.getTerrainKey(neighbor) === TERRAIN_TYPES.RIVER) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Any water a ship can actually sail on (deep ocean or navigable river). */
+  tileHasNavalAccess(col: number, row: number): boolean {
+    return this.tileHasOceanAccess(col, row) || this.tileHasRiverAccess(col, row);
+  }
+
+  /**
+   * Land tiles a naval unit may legitimately occupy: a navigable river, or a
+   * city tile with a naval connection (ships are built inside those cities and
+   * must be able to sail back home). A lake is NEVER entered (impassable).
+   */
+  private navalAllowedOnLandTile(col: number, row: number, terrainKey: string): boolean {
+    if (terrainKey === TERRAIN_TYPES.RIVER) return true;
+    const city = this.getCityAt(col, row);
+    return !!city && this.tileHasNavalAccess(col, row);
   }
 
   /**
@@ -1568,6 +1625,158 @@ export default class GameEngine {
   /** Passability callback for terrain-aware pathfinding (land units). */
   getPassabilityFilter(): (col: number, row: number) => boolean {
     return (col: number, row: number) => this.isTilePassable(col, row);
+  }
+
+  // ────────────────────────────────────────────────────────────────────
+  // Landmass connectivity (used by the AI to detect unreachable targets)
+  // ────────────────────────────────────────────────────────────────────
+
+  private landmassIds: Int32Array | null = null;
+  private landmassCacheKey: unknown = null;
+
+  /**
+   * Connected-component ids of passable land (8-directional). Water, lakes and
+   * impassable terrain get -2; distinct continents/islands get distinct ids.
+   * A WIDE RIVER (a river tile with a river neighbour, i.e. 2+ tiles across)
+   * also counts as a barrier: land units may not cross it (`canCrossRiver`),
+   * so two banks of a wide river must be different landmasses. A unit already
+   * standing ON a river can still leave it onto the bank.
+   * Recomputed lazily whenever the map object changes.
+   */
+  private computeLandmassIds(): Int32Array {
+    if (this.landmassIds && this.landmassCacheKey === this.map) return this.landmassIds;
+    const width = this.map?.width ?? 0;
+    const height = this.map?.height ?? 0;
+    const ids = new Int32Array(width * height).fill(-2);
+    let nextId = 0;
+    const queue: number[] = [];
+
+    for (let start = 0; start < ids.length; start++) {
+      if (ids[start] !== -2) continue;
+      const startCol = start % width;
+      const startRow = Math.floor(start / width);
+      const startTile = this.getTileAt(startCol, startRow);
+      if (!startTile) continue;
+      const startKey = this.getTerrainKey(startTile);
+      if (this.isWaterTerrain(startTile) || TERRAIN_PROPS[startKey]?.passable === false) continue;
+
+      const groupId = nextId++;
+      ids[start] = groupId;
+      queue.length = 0;
+      queue.push(start);
+      while (queue.length > 0) {
+        const idx = queue.shift()!;
+        const col = idx % width;
+        const row = Math.floor(idx / width);
+        const currentTile = this.getTileAt(col, row);
+        const currentIsRiver = !!currentTile && this.getTerrainKey(currentTile) === TERRAIN_TYPES.RIVER;
+        for (let dc = -1; dc <= 1; dc++) {
+          for (let dr = -1; dr <= 1; dr++) {
+            if (dc === 0 && dr === 0) continue;
+            const nc = col + dc;
+            const nr = row + dr;
+            if (nc < 0 || nc >= width || nr < 0 || nr >= height) continue;
+            const nIdx = nr * width + nc;
+            if (ids[nIdx] !== -2) continue;
+            const tile = this.getTileAt(nc, nr);
+            if (!tile) continue;
+            const key = this.getTerrainKey(tile);
+            if (this.isWaterTerrain(tile) || TERRAIN_PROPS[key]?.passable === false) continue;
+            // Crossing from land onto a wide river is forbidden for land units
+            // (Civ1 `canCrossRiver`). River→river and river→land stay open.
+            if (!currentIsRiver && key === TERRAIN_TYPES.RIVER && this.isWideRiver(nc, nr)) continue;
+            ids[nIdx] = groupId;
+            queue.push(nIdx);
+          }
+        }
+      }
+    }
+
+    this.landmassIds = ids;
+    this.landmassCacheKey = this.map;
+    return ids;
+  }
+
+  /** Landmass component id at a tile, or -1 for water/impassable/out of bounds. */
+  getLandmassId(col: number, row: number): number {
+    if (!this.map || !this.squareGrid?.isValidSquare(col, row)) return -1;
+    const ids = this.computeLandmassIds();
+    const id = ids[row * this.map.width + col];
+    return id >= 0 ? id : -1;
+  }
+
+  /** True when two tiles belong to the same passable landmass. */
+  areLandConnected(colA: number, rowA: number, colB: number, rowB: number): boolean {
+    const a = this.getLandmassId(colA, rowA);
+    const b = this.getLandmassId(colB, rowB);
+    return a >= 0 && a === b;
+  }
+
+  /** Whether the civ owns at least one city with an adjacent ocean tile. */
+  civHasCoastalCity(civId: number): boolean {
+    return this.cities.some((c: City) => c.civilizationId === civId && this.tileHasOceanAccess(c.col, c.row));
+  }
+
+  /** Whether the civ owns a city with any naval connection (ocean or river). */
+  civHasNavalCity(civId: number): boolean {
+    return this.cities.some((c: City) => c.civilizationId === civId && this.tileHasNavalAccess(c.col, c.row));
+  }
+
+  /**
+   * Whether the civ can build any naval unit right now: it must own a city
+   * with a water connection (ocean or a navigable river — a boat can sail the
+   * river to reach the target) and have the technology for at least one ship.
+   */
+  civCanBuildShips(civId: number): boolean {
+    const civ = this.civilizations?.[civId];
+    if (!civ) return false;
+    if (!this.civHasNavalCity(civId)) return false;
+    const candidates = ['sail', 'trireme', 'caravel', 'frigate', 'ironclad', 'destroyer', 'cruiser', 'battleship', 'ferry'];
+    return candidates.some((type) => !!UNIT_PROPS[type] && canBuildUnit(civ, type));
+  }
+
+  /**
+   * True when a navy is needed: either the civ knows of enemies NONE of which
+   * share a landmass with one of its cities, or its own cities are split
+   * across separate landmasses (a wide river or sea cuts the empire in two).
+   * In both cases land movement alone cannot reach every destination.
+   */
+  civNeedsNavy(civId: number): boolean {
+    const storage = this.getPlayerStorage(civId);
+    if (!storage) return false;
+    const ownCities = this.cities.filter((c: City) => c.civilizationId === civId);
+    if (ownCities.length === 0) return false;
+
+    // The empire itself is split (e.g. a wide river between its cities):
+    // ships are needed to connect/defend across the water gap.
+    for (let i = 0; i < ownCities.length; i++) {
+      for (let j = i + 1; j < ownCities.length; j++) {
+        if (!this.areLandConnected(ownCities[i].col, ownCities[i].row, ownCities[j].col, ownCities[j].row)) {
+          return true;
+        }
+      }
+    }
+
+    let hasKnownEnemy = false;
+    let reachableByLand = false;
+    for (const locations of storage.enemyLocations.values()) {
+      for (const loc of locations) {
+        hasKnownEnemy = true;
+        if (ownCities.some((c: City) => this.areLandConnected(c.col, c.row, loc.col, loc.row))) {
+          reachableByLand = true;
+          break;
+        }
+      }
+      if (reachableByLand) break;
+    }
+    return hasKnownEnemy && !reachableByLand;
+  }
+
+  /** Whether a tile is reachable by land from any of the civ's cities. */
+  isTileReachableByLandFromCiv(civId: number, col: number, row: number): boolean {
+    const ownCities = this.cities.filter((c: City) => c.civilizationId === civId);
+    if (ownCities.length === 0) return true;
+    return ownCities.some((c: City) => this.areLandConnected(c.col, c.row, col, row));
   }
 
   /**
@@ -1933,7 +2142,9 @@ export default class GameEngine {
 
   /**
    * Rough Civ1 intercontinental check: whether the straight line between the
-   * two cities crosses any water tile (they are on different landmasses).
+   * two cities crosses DEEP water (they are on different landmasses). Inland
+   * lakes are fresh water and must not turn a same-continent trade route into
+   * an "intercontinental" one.
    */
   private pathCrossesWater(fromCol: number, fromRow: number, toCol: number, toRow: number): boolean {
     const dx = Math.abs(toCol - fromCol);
@@ -1945,7 +2156,8 @@ export default class GameEngine {
     let y = fromRow;
     for (let guard = 0; guard < 2000; guard++) {
       const tile = this.getTileAt(x, y);
-      if (tile && this.isWaterTerrain(tile)) return true;
+      const key = this.getTerrainKey(tile);
+      if (key === 'ocean' || key === 'sea') return true;
       if (x === toCol && y === toRow) break;
       const e2 = 2 * err;
       if (e2 > -dy) { err -= dy; x += sx; }
@@ -2099,7 +2311,11 @@ export default class GameEngine {
       console.log(`[canUnitMoveTo] Target tile at (${targetCol}, ${targetRow}) is water and not passable for land unit ${unit.type}.`);
       return false;
     }
-    if (!isTargetWater && isUnitNaval) {
+    if (this.isLakeTerrain(targetTile)) {
+      console.log(`[canUnitMoveTo] Target tile at (${targetCol}, ${targetRow}) is a lake — never passable.`);
+      return false;
+    }
+    if (!isTargetWater && isUnitNaval && !this.navalAllowedOnLandTile(targetCol, targetRow, targetTerrain)) {
       console.log(`[canUnitMoveTo] Naval unit ${unit.type} cannot enter land tile at (${targetCol}, ${targetRow}).`);
       return false;
     }
@@ -2198,7 +2414,8 @@ export default class GameEngine {
 
     if (unit.type === 'settler' && isTargetWater) return false;
     if (isTargetWater && !isUnitNaval) return false;
-    if (!isTargetWater && isUnitNaval) return false;
+    if (this.isLakeTerrain(targetTile)) return false;
+    if (!isTargetWater && isUnitNaval && !this.navalAllowedOnLandTile(targetCol, targetRow, targetTerrain)) return false;
     if (TERRAIN_PROPS[targetTerrain]?.passable === false) return false;
 
     // Check if the unit can afford the terrain cost
@@ -2258,7 +2475,10 @@ export default class GameEngine {
     if (isTargetWater && !isUnitNaval) {
       return { success: false, reason: 'terrain_impassable' };
     }
-    if (!isTargetWater && isUnitNaval) {
+    if (this.isLakeTerrain(targetTile)) {
+      return { success: false, reason: 'terrain_impassable' };
+    }
+    if (!isTargetWater && isUnitNaval && !this.navalAllowedOnLandTile(targetCol, targetRow, targetTerrain)) {
       return { success: false, reason: 'terrain_impassable' };
     }
     if (TERRAIN_PROPS[targetTerrain]?.passable === false) return { success: false, reason: 'terrain_impassable' };
@@ -4653,7 +4873,7 @@ export default class GameEngine {
       const tile = this.getTileAt(nc, nr);
       if (!tile) continue;
       const terrain = tile.terrain || tile.type || '';
-      if (terrain === TERRAIN_TYPES.RIVER) return true;
+      if (terrain === TERRAIN_TYPES.RIVER || terrain === TERRAIN_TYPES.LAKE) return true;
       if (tile.improvement === IMPROVEMENT_TYPES.IRRIGATION) return true;
     }
     return false;

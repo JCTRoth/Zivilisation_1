@@ -64,6 +64,12 @@ export class ProductionManager {
         if (req && !techs.has(req)) {
           return { ok: false, reason: `requires_tech_${req}` };
         }
+        // Civ1 naval rule: a naval unit needs a coastal city (or a harbour).
+        // Enforced on EVERY production path, not just the build menu, so the
+        // AI/auto-production can never queue a ship inland.
+        if (unitProps.naval && !this.cityHasHarborOrCoast(city)) {
+          return { ok: false, reason: 'no_water_access' };
+        }
       }
 
       // Buildings: required tech lives on the building definition.
@@ -124,8 +130,13 @@ export class ProductionManager {
       || this.getBuildableBuildingTypes(cityId).length > 0;
   }
 
-  /** Civ1: naval units require a harbour or a coastal (ocean-adjacent) tile. */
-  private cityHasHarborOrCoast(city: City): boolean {
+  /**
+   * Naval units require a harbour or a water connection. In this clone
+   * rivers are navigable for ships, so an ocean-adjacent OR river-adjacent
+   * city can build them. Lakes do NOT count — a lake is impassable fresh
+   * water, not naval access.
+   */
+  cityHasHarborOrCoast(city: City): boolean {
     const ownsHarbor = (city.buildings ?? []).some((b: unknown) => {
       const id = typeof b === 'string'
         ? b
@@ -146,7 +157,7 @@ export class ProductionManager {
         | null
         | undefined;
       const terrain = tile?.terrain ?? tile?.type ?? '';
-      return terrain === 'ocean';
+      return terrain === 'ocean' || terrain === 'river';
     });
   }
 

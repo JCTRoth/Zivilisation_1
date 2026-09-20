@@ -175,7 +175,8 @@ export class SettlementEvaluator {
     getTileAt: (col: number, row: number) => TileLike | null,
     getCityAt: (col: number, row: number) => CityLike | null,
     weights: SettlementWeights,
-    currentCivilizationId?: number
+    currentCivilizationId?: number,
+    extraCoastalBonus: number = 0
   ): number {
     // console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Evaluating with penalties at (${centerCol}, ${centerRow}), civId: ${currentCivilizationId}`);
 
@@ -250,8 +251,11 @@ export class SettlementEvaluator {
     totalShields -= penaltyShields;
     totalGold -= penaltyGold;
 
-    // Add bonus for water access
-    const waterBonus = this.hasWaterAccess(centerCol, centerRow, getTileAt) ? 2 : 0;
+    // Add bonus for water access. `extraCoastalBonus` lets the AI strongly
+    // prefer a first coastal city when the civ has no naval access yet.
+    const waterBonus = this.hasWaterAccess(centerCol, centerRow, getTileAt)
+      ? 2 + extraCoastalBonus
+      : 0;
     if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Water bonus: ${waterBonus}, Total city penalty: ${totalCityPenalty}`);
 
     // Calculate weighted score
@@ -291,8 +295,9 @@ export class SettlementEvaluator {
       return false;
     }
 
-    // Cannot settle on ocean or mountains (typically)
-    if (tile.type === Constants.TERRAIN.OCEAN || tile.type === Constants.TERRAIN.MOUNTAINS) {
+    // Cannot settle on ocean, lakes (fresh water obstacles), or mountains.
+    if (tile.type === Constants.TERRAIN.OCEAN || tile.type === Constants.TERRAIN.LAKE
+        || tile.type === Constants.TERRAIN.MOUNTAINS) {
       if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] isValidSettlementLocation: Invalid terrain: ${tile.type}`);
       return false;
     }
@@ -332,7 +337,8 @@ export class SettlementEvaluator {
     minDistanceFromOtherCities: number = 3,
     currentCivilizationId?: number,
     _getVisibilityAt?: (col: number, row: number) => boolean,
-    canReach?: (fromCol: number, fromRow: number, toCol: number, toRow: number) => boolean
+    canReach?: (fromCol: number, fromRow: number, toCol: number, toRow: number) => boolean,
+    extraCoastalBonus: number = 0
   ): SettlementScore | null {
     console.log(`[SettlementEvaluator] findBestSettlementLocation: Starting search from (${centerCol}, ${centerRow})`);
     console.log(`[SettlementEvaluator] findBestSettlementLocation: Using weights:`, weights);
@@ -405,7 +411,8 @@ export class SettlementEvaluator {
           getTileAt,
           getCityAt,
           weights,
-          currentCivilizationId
+          currentCivilizationId,
+          extraCoastalBonus
         );
 
         if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] findBestSettlementLocation: Location (${col}, ${row}) score: ${score}`);
@@ -450,7 +457,8 @@ export class SettlementEvaluator {
     weights: SettlementWeights,
     currentCivilizationId?: number,
     settlerCol?: number,
-    settlerRow?: number
+    settlerRow?: number,
+    extraCoastalBonus: number = 0
   ): number | null {
     if (!this.isValidSettlementLocation(col, row, getTileAt, getCityAt, getUnitAt, settlerCol, settlerRow)) {
       return null;
@@ -461,7 +469,8 @@ export class SettlementEvaluator {
       getTileAt,
       getCityAt,
       weights,
-      currentCivilizationId
+      currentCivilizationId,
+      extraCoastalBonus
     );
   }
 

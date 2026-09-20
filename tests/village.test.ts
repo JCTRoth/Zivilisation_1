@@ -97,6 +97,11 @@ describe('Civ1 village trigger & outcomes', () => {
       if ((e as unknown as { cities: Array<{ col: number; row: number }> }).cities.some(
         (c) => Math.abs(c.col - tile.col) + Math.abs(c.row - tile.row) < 3,
       )) continue;
+      // The hut tile itself must be free: a unit standing on it turns the
+      // scripted move into combat/a blocked move and the hut never triggers.
+      if ((e as unknown as { units: Array<{ col: number; row: number }> }).units.some(
+        (u) => u.col === tile.col && u.row === tile.row,
+      )) continue;
       for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
         const ac = tile.col + dc;
         const ar = tile.row + dr;
