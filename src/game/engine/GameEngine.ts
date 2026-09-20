@@ -16,6 +16,7 @@ import {
   VILLAGE_BARBARIAN_MIN,
   VILLAGE_BARBARIAN_MAX,
 } from '@/data/VillageConstants';
+import { CombatSystem, unitIgnoresCityWalls } from './CombatSystem';
 import { ProductionManager } from './ProductionManager';
 import { AutoProduction } from './AutoProduction';
 import { UnitActionManager } from './UnitActionManager';
@@ -44,13 +45,6 @@ const BRIDGE_BUILDING_TECH = 'engineering';
 
 /** Max permanent trade routes a city can hold (Civ1). */
 export const MAX_TRADE_ROUTES = 3;
-
-/**
- * Health (%) a combat round inflicts on the loser. Used symmetrically: a
- * defeated attacker loses this much, and a weaker attacker that wins the roll
- * can only wear a stronger defender down by this much (see `combatUnit`).
- */
-const COMBAT_DAMAGE = 25;
 
 
 interface GameSettings {
@@ -83,6 +77,21 @@ export interface MapTile {
   railroad?: boolean;
   hasRoad?: boolean;
   hasRiver?: boolean;
+}
+
+/** Outcome of one city-assault round (see `GameEngine.resolveCityCombat`). */
+interface CityAssaultOutcome {
+  result: 'captured' | 'hit' | 'city_destroyed' | 'defended';
+  /** Damage dealt TO the attacker this round (0 on a won assault). */
+  attackerDamage: number;
+  /** Whether the attacker's health reached 0 this round. */
+  attackerDestroyed: boolean;
+  /** Garrison unit killed this round (for its damage popup), if any. */
+  killedDefender?: Unit;
+  /** Damage the killed garrison unit took. */
+  defenderDamage: number;
+  /** Whether the city itself was hit this round. */
+  cityHit: boolean;
 }
 
 interface MapData {
@@ -2645,7 +2654,8 @@ export default class GameEngine {
       }
       // City combat (native engine logic — the legacy Unit.attackCity API
       // is incompatible with engine plain-object units).
-      const result = this.resolveCityCombat(unit, targetCity);
+      const outcome = this.resolveCityCombat(unit, targetCity);
+      const result = outcome.result;
 
       // Drop the spent/destroyed attacker from the turn queue so the queue can
       // empty and auto-end-turn can trigger after attacking a city.
@@ -2680,6 +2690,8 @@ export default class GameEngine {
             city: targetCity,
             attacker: unit,
             result: { cityHit: true },
+            attackerDamage: outcome.attackerDamage,
+            defenderDamage: outcome.defenderDamage,
           });
         }
         return { success: true, reason: 'city_damaged' };
@@ -2697,6 +2709,18 @@ export default class GameEngine {
           });
         }
         return { success: true, reason: 'city_captured' };
+      }
+      // Failed assault: the attacker took counter-damage. Emit the event even
+      // though the city was not hit, so the player sees the fight and its
+      // damage popup instead of a silent no-op.
+      if (this.onStateChange) {
+        this.onStateChange('CITY_ATTACKED', {
+          city: targetCity,
+          attacker: unit,
+          result: { cityHit: false },
+          attackerDamage: outcome.attackerDamage,
+          defenderDamage: 0,
+        });
       }
       return { success: false, reason: 'attack_failed' };
     }
@@ -3251,58 +3275,31 @@ export default class GameEngine {
       }
     }
 
-    const attackerStrength = attacker.attack * (attacker.health / 100);
-    // Civ1: the defender's terrain defense bonus (mountains +200%, hills +100%,
-    // forest/jungle/swamp/river +50%), fortification (x1.5), and fortress
-    // (+100%, applied last) stack onto the defender's strength.
+    // One shared formula: the central CombatSystem computes strengths, the
+    // roll, the overrun rule and exactly how much damage each side takes.
     const defenderTile = this.getTileAt(defender.col, defender.row);
-    const defenderTerrain = defenderTile ? (defenderTile.type ?? defenderTile.terrain) : null;
-    const terrainDefense = defenderTerrain ? TERRAIN_PROPS[defenderTerrain]?.defense ?? 1 : 1;
-    let defenderStrength = defender.defense * (defender.health / 100) * Math.max(1, terrainDefense);
-    // Units inside a city automatically gain +50% fortification bonus,
-    // even without an explicit fortify order.
-    const isInCity = this.getCityAt(defender.col, defender.row) !== null;
-    const isFortified = (defender as { isFortified?: boolean }).isFortified || isInCity;
-    if (isFortified) {
-      defenderStrength *= 1.5;
-    }
-    const fortressDef = defenderTile?.improvement
-      ? IMPROVEMENT_PROPERTIES[String(defenderTile.improvement)]?.defenseMultiplier
-      : undefined;
-    if (fortressDef) {
-      defenderStrength *= fortressDef;
-    }
+    const outcome = CombatSystem.resolveUnitRound(attacker, defender, {
+      defenderTile: defenderTile as { type?: string; terrain?: string; improvement?: string | null } | null,
+      defenderTerrainKey: defenderTile ? this.getTerrainKey(defenderTile) : undefined,
+      defenderInCity: this.getCityAt(defender.col, defender.row) !== null,
+    });
 
-    const attackerWins = Math.random() * (attackerStrength + defenderStrength) < attackerStrength;
-    // Overrun rule ("no more run-overs"): only an attacker that is at least as
-    // strong as the defender can destroy it outright in one round. Before this
-    // guard, a Scout (attack 0.5) could one-shot a full-health Riflemen
-    // (defense 5) whenever its low-probability roll landed — combat ignored the
-    // power gap because the loser was always destroyed outright.
-    const canOverrun = attackerStrength >= defenderStrength;
+    if (outcome.attackerWins) {
+      const damage = outcome.defenderDamage;
+      defender.health = Math.max(0, (defender.health ?? 100) - damage);
 
-    if (attackerWins) {
-      // The losing side of the round always takes damage. A decisive overrun
-      // (attacker >= defender) is lethal; a weaker attacker only wounds the
-      // defender, which can then be ground down over several attacks.
-      const remaining = defender.health ?? 100;
-      const lethal = canOverrun || remaining <= COMBAT_DAMAGE;
-      const damage = lethal ? remaining : COMBAT_DAMAGE;
-      defender.health = Math.max(0, remaining - damage);
-
-      if (defender.health <= 0) {
-        // Defender killed — move attacker to defender's position
+      if (outcome.defenderDestroyed) {
+        // Defender killed — the attacker survives but remains in its ORIGINAL
+        // tile (it never auto-advances onto the defender's square).
         const fromCol = attacker.col;
         const fromRow = attacker.row;
 
-        attacker.col = defender.col;
-        attacker.row = defender.row;
         attacker.movesRemaining = 0;
         attacker.hasMovedThisTurn = true;
 
         this.updateUnitTurnsDoneFlag(attacker);
 
-        console.log(`[COMBAT] ${attacker.type} killed ${defender.type} (${damage} dmg) and moved to (${defender.col},${defender.row})`);
+        console.log(`[COMBAT] ${attacker.type} killed ${defender.type} (${damage} dmg) and remains at (${attacker.col},${attacker.row})`);
 
         defender.isDefeated = true;
         defender.defeatTimestamp = Date.now();
@@ -3326,6 +3323,10 @@ export default class GameEngine {
             attackerFromRow: fromRow,
             attackerSurvived: true,
             defenderSurvived: false,
+            damage,
+            attackerDamage: outcome.attackerDamage,
+            defenderDamage: damage,
+            canOverrun: outcome.canOverrun,
           });
         }
 
@@ -3340,12 +3341,12 @@ export default class GameEngine {
               && u.id !== defender.id,
           );
           if (!stillDefended) {
-            const captureResult = this.resolveCityCombat(attacker, cityHere);
-            if (captureResult === 'captured' || captureResult === 'city_destroyed') {
+            const capture = this.resolveCityCombat(attacker, cityHere);
+            if (capture.result === 'captured' || capture.result === 'city_destroyed') {
               attacker.movesRemaining = 0;
               attacker.hasMovedThisTurn = true;
               this.updateUnitTurnsDoneFlag(attacker);
-              if (captureResult === 'captured' && this.onStateChange) {
+              if (capture.result === 'captured' && this.onStateChange) {
                 this.onStateChange('CITY_CAPTURED', {
                   city: cityHere,
                   capturedBy: attacker.civilizationId,
@@ -3353,6 +3354,16 @@ export default class GameEngine {
                 });
               }
               return true;
+            }
+            // The follow-up assault failed: surface the counter-damage.
+            if (capture.result === 'defended' && this.onStateChange) {
+              this.onStateChange('CITY_ATTACKED', {
+                city: cityHere,
+                attacker,
+                result: { cityHit: false },
+                attackerDamage: capture.attackerDamage,
+                defenderDamage: 0,
+              });
             }
           }
         }
@@ -3378,6 +3389,9 @@ export default class GameEngine {
           attackerSurvived: true,
           defenderSurvived: true,
           damage,
+          attackerDamage: outcome.attackerDamage,
+          defenderDamage: damage,
+          canOverrun: outcome.canOverrun,
         });
       }
 
@@ -3385,7 +3399,7 @@ export default class GameEngine {
       return false;
     } else {
       // Defender wins - attacker is damaged (and destroyed at ≤ 0 health)
-      attacker.health -= COMBAT_DAMAGE;
+      attacker.health = Math.max(0, (attacker.health ?? 100) - outcome.attackerDamage);
       attacker.movesRemaining = 0;
       attacker.hasMovedThisTurn = true;
 
@@ -3421,6 +3435,10 @@ export default class GameEngine {
           attackerFromRow: attacker.row,
           attackerSurvived: attacker.health > 0,
           defenderSurvived: true,
+          damage: outcome.attackerDamage,
+          attackerDamage: outcome.attackerDamage,
+          defenderDamage: outcome.defenderDamage,
+          canOverrun: outcome.canOverrun,
         });
       }
 
@@ -3432,13 +3450,11 @@ export default class GameEngine {
   }
 
   /**
-   * Resolve an attack against an enemy city (native engine logic).
-   * Returns 'captured' | 'hit' | 'city_destroyed' | 'defended'.
-   * - The attacker's attack vs the city's defense (population, doubled with
-   *   city walls). On success the attacker is removed and the city changes
-   *   hands (or is destroyed if it had only 1 population).
+   * Resolve one attack round against an enemy city through the central
+   * CombatSystem. Garrison units die one by one; the city itself only falls
+   * when the garrison is empty and the assault roll is won.
    */
-  private resolveCityCombat(attacker: Unit, city: City): 'captured' | 'hit' | 'city_destroyed' | 'defended' {
+  private resolveCityCombat(attacker: Unit, city: City): CityAssaultOutcome {
     // Find the garrison: living military units standing on the city tile.
     // Units inside a city die one by one — the garrison is fought
     // unit-by-unit, not all at once. The city only falls when the garrison
@@ -3450,34 +3466,25 @@ export default class GameEngine {
         && u.id !== attacker.id,
     );
 
-    // Attack 0 units (civilians) must have zero strength — `attack || 1` would
-    // give a settler the same strength as a warrior and a 50/50 capture roll.
-    const attackerStrength = (attacker.attack && attacker.attack > 0 ? attacker.attack : 0)
-      * (attacker.health != null ? attacker.health / 100 : 1);
-
     // City defense: base = population. City walls TRIPLE the total defense
     // (Civ1) — but air units and siege artillery ignore the walls entirely.
-    const hasWalls = (city.buildings?.includes?.('city_walls') ?? false)
-      || (city.buildings?.includes?.('walls') ?? false);
-    let defense = Math.max(1, city.population || 1);
-    if (hasWalls && !this.unitIgnoresCityWalls(attacker)) {
-      defense *= 3;
-    }
-
-    const total = attackerStrength + defense;
-    const attackerWins = Math.random() * total < attackerStrength;
+    const round = CombatSystem.resolveCityRound(attacker, city, {
+      ignoresWalls: unitIgnoresCityWalls(attacker.type),
+    });
 
     // Spend the attacker's remaining movement either way.
     attacker.movesRemaining = 0;
     attacker.hasMovedThisTurn = true;
     this.updateUnitTurnsDoneFlag(attacker);
 
-    if (attackerWins) {
+    if (round.attackerWins) {
       // No Stack death rule: city units die one by one ──
       // If the garrison has defenders, only ONE dies per combat round.
       // The attacker does not enter the city until the garrison is empty.
       if (garrison.length > 0) {
         const defender = garrison[0]; // Kill the first garrison unit
+        const defenderDamage = Math.max(0, defender.health ?? 100);
+        defender.health = 0;
         defender.isDefeated = true;
         defender.defeatTimestamp = Date.now();
         if (this.onStateChange) {
@@ -3489,7 +3496,14 @@ export default class GameEngine {
           if (defender.type === 'scout') this.onScoutDeath(defender);
         }, 1200);
         console.log(`[COMBAT] ${attacker.type} defeated garrison ${defender.type} in ${city.name} (${garrison.length - 1} defenders remain)`);
-        return 'hit'; // City damaged but not captured yet
+        return {
+          result: 'hit',
+          attackerDamage: 0,
+          attackerDestroyed: false,
+          killedDefender: defender,
+          defenderDamage,
+          cityHit: true,
+        };
       }
 
       // No garrison left — the city falls.
@@ -3508,7 +3522,7 @@ export default class GameEngine {
         if (this.onStateChange) {
           this.onStateChange('CITY_DESTROYED', { city, attacker });
         }
-        return 'city_destroyed';
+        return { result: 'city_destroyed', attackerDamage: 0, attackerDestroyed: false, defenderDamage: 0, cityHit: true };
       }
 
       // Population drop and capture.
@@ -3551,14 +3565,15 @@ export default class GameEngine {
         this.governmentManager?.ensureCapital(oldCiv);
       }
       console.log(`[COMBAT] City ${city.name} captured by civ ${attacker.civilizationId} (pop ${city.population})`);
-      return 'captured';
+      return { result: 'captured', attackerDamage: 0, attackerDestroyed: false, defenderDamage: 0, cityHit: true };
     }
 
     // Attacker defeated — damage or destroy it. A failed ground assault may
     // still cost the city a citizen UNLESS it has walls (Civ1: walls shield
     // the population from conventional ground attacks).
-    attacker.health = Math.max(0, (attacker.health ?? 100) - 25);
-    if (attacker.health <= 0) {
+    attacker.health = Math.max(0, (attacker.health ?? 100) - round.attackerDamage);
+    const attackerDestroyed = attacker.health <= 0;
+    if (attackerDestroyed) {
       attacker.isDefeated = true;
       attacker.defeatTimestamp = Date.now();
       if (this.onStateChange) {
@@ -3570,22 +3585,17 @@ export default class GameEngine {
       }, 1200);
       console.log(`[COMBAT] ${attacker.type} destroyed attacking city ${city.name}`);
     }
-    if (!hasWalls && (city.population || 1) > 1 && Math.random() < 0.5) {
+    if (!round.cityHasWalls && (city.population || 1) > 1 && Math.random() < 0.5) {
       city.population -= 1;
       console.log(`[COMBAT] City ${city.name} lost a citizen to a failed attack (no city walls)`);
     }
-    return 'defended';
-  }
-
-  /**
-   * Civ1: air units (fighters/bombers) and siege artillery (cannon/artillery,
-   * the local stand-ins for the Howitzer) ignore city walls entirely.
-   */
-  private unitIgnoresCityWalls(attacker: Unit): boolean {
-    const type = String(attacker.type ?? '').toLowerCase();
-    const props = UNIT_PROPS[type];
-    if (props?.type === 'air') return true;
-    return type === 'cannon' || type === 'artillery';
+    return {
+      result: 'defended',
+      attackerDamage: round.attackerDamage,
+      attackerDestroyed,
+      defenderDamage: 0,
+      cityHit: false,
+    };
   }
 
   /**

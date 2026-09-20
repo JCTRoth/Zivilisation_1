@@ -1586,9 +1586,11 @@ export class MapRenderer {
       this.drawTurnMarkers(ctx, previewTurnMarkers, map, squareToScreen, scaledTileSize);
     }
 
-    // Draw combat clouds (on top of terrain/units).
+    // Draw combat clouds and the floating damage numbers (on top of units so
+    // the player always sees the hit feedback).
     if (combatAnimations && combatAnimations.length > 0) {
       this.drawCombatClouds(ctx, combatAnimations, squareToScreen, cameraZoom, canvasSize);
+      this.drawDamagePopups(ctx, combatAnimations, squareToScreen, cameraZoom, canvasSize);
     }
   }
 
@@ -1779,6 +1781,80 @@ export class MapRenderer {
       ctx.fillText(emoji, x, y);
 
       ctx.restore();
+    }
+  }
+
+  /** How long a floating damage number lives (rise + fade), in ms. */
+  private static readonly DAMAGE_POPUP_DURATION = 1300;
+
+  /**
+   * Floating damage numbers over the fighting units. Each side's number is
+   * drawn in that unit's civilization colour, carries a leading minus, rises
+   * above the tile and fades away. Only units that actually took damage show
+   * a number (the loser of the round; usually just one side).
+   */
+  private drawDamagePopups(
+    ctx: CanvasRenderingContext2D,
+    combatAnimations: CombatAnimation[],
+    squareToScreen: (col: number, row: number) => { x: number; y: number },
+    cameraZoom: number,
+    canvasSize: CanvasSize
+  ): void {
+    const now = performance.now();
+    const margin = this.tileSize * 2;
+    const duration = MapRenderer.DAMAGE_POPUP_DURATION;
+
+    for (const anim of combatAnimations) {
+      const elapsed = now - anim.startTime;
+      if (elapsed >= duration) continue;
+
+      const attackerDamage = anim.attackerDamage ?? 0;
+      const defenderDamage = anim.defenderDamage ?? 0;
+      if (attackerDamage <= 0 && defenderDamage <= 0) continue;
+
+      const progress = Math.max(0, Math.min(1, elapsed / duration));
+      // Rise fast at first, settling as it fades (ease-out cubic).
+      const rise = this.tileSize * cameraZoom * 0.3
+        + (1 - Math.pow(1 - progress, 3)) * this.tileSize * cameraZoom;
+      // Fully opaque for the first half, then fade away.
+      const alpha = progress < 0.5 ? 1 : Math.max(0, 1 - (progress - 0.5) / 0.5);
+      const fontSize = Math.max(12, Math.round(this.tileSize * cameraZoom * 0.55));
+
+      const drawNumber = (
+        col: number,
+        row: number,
+        amount: number,
+        color: string | undefined,
+        yOffset = 0,
+      ): void => {
+        const pos = squareToScreen(col, row);
+        if (this.isOutsideViewport(pos.x, pos.y, canvasSize.width, canvasSize.height, margin)) return;
+        const y = pos.y - rise - yOffset;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.font = `bold ${fontSize}px system-ui, "Noto Color Emoji", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = Math.max(2, fontSize * 0.18);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.fillStyle = color || '#ffffff';
+        const text = `-${amount}`;
+        ctx.strokeText(text, pos.x, y);
+        ctx.fillText(text, pos.x, y);
+        ctx.restore();
+      };
+
+      drawNumber(anim.attackerCol, anim.attackerRow, attackerDamage, anim.attackerColor);
+      // When both sides share a tile, drop the defender's number slightly so
+      // the two popups do not overlap into one unreadable blob.
+      const sameTile = anim.attackerCol === anim.defenderCol && anim.attackerRow === anim.defenderRow;
+      drawNumber(
+        anim.defenderCol,
+        anim.defenderRow,
+        defenderDamage,
+        anim.defenderColor,
+        sameTile ? -this.tileSize * cameraZoom * 0.35 : 0,
+      );
     }
   }
 

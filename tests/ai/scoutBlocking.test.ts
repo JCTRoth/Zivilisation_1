@@ -99,6 +99,14 @@ describe('AI scouts blocking each other', () => {
     const resetFor = (civId: number) => {
       for (const u of e.units) {
         if (u.civilizationId !== civId) continue;
+        // The scripted "allied blocker" must stay put: if the AI is allowed to
+        // move it too, the corridor opens randomly and the scenario tests
+        // nothing (pre-existing map/random flake).
+        if (String(u.id).startsWith('ally_')) {
+          u.movesRemaining = 0;
+          u.areTurnsDone = true;
+          continue;
+        }
         u.movesRemaining = UNIT_PROPS[u.type]?.movement ?? 1;
         u.hasMovedThisTurn = false;
         u.areTurnsDone = false;

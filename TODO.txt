@@ -133,6 +133,34 @@ if not exclude this as target until ship building is possible, to found a city o
 * The AI should start to build ships if no enemy is reachable on the land way.
 
 - DOTO -
+Rivers are walkable and passable for the Player, AI and pathfinding.
+Exmaple 1 (L: land, R: river, number: index):
+L R L
+L R L
+L R L
+Unit can pass the river from left to right and right to left
+Example 2:
+1 L R R L
+2 L R L L
+3 L R R L
+Unit can pass from left to right and right to left only here on index 2
+Unit can not walk down the river.
+Example 3:
+1 L R R L
+2 L R L L
+3 L R L L
+4 L R R L
+Unit can walk down up,down on 3,4 but and not move from index 3 R down to index 4 R
+Implement it in all of the game, centrlize and use constants where good and possible
+Rivers can contain fish also only 1/2 of % that tile as fish feature than Ocan tile.
+
+Improve the city managemnt of the AI.
+It should get and advanced management of the city.
+The AI should manage Food, Production, Money/Gold fitting the siution and strategy given by the AICoordinator
+The AI should by all means prevent femens therefor it uses city management, if needed granary (long term plan to have 
+build a lot of settlers/expansation) or a low surplus of food production over all.
+The AI should use irrigation of settlers around the city. Building irrigations requires settler that need food them self so this should be part of an equation but should be done if fitting in strategy and benefitting.
+
 * Add new ship type, "Trade Ship" 
 A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
 and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.

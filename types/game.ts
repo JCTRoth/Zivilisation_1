@@ -707,6 +707,14 @@ export interface CombatAnimation {
   cityHealthBefore?: number;
   /** City HP after combat (for city HP bar tween). */
   cityHealthAfter?: number;
+  /** Damage dealt TO the attacker this round (0 = none) — floating popup. */
+  attackerDamage?: number;
+  /** Damage dealt TO the defender this round (0 = none) — floating popup. */
+  defenderDamage?: number;
+  /** Civilization colour of the attacker, used for its damage popup. */
+  attackerColor?: string;
+  /** Civilization colour of the defender, used for its damage popup. */
+  defenderColor?: string;
 }
 
 export interface GameActions {

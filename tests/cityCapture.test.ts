@@ -433,9 +433,17 @@ describe('AI captures cities', () => {
     civ1.isAI = true;
 
     // Pick an undefended civ-0 city (no unit standing on it) and make it
-    // size 2 so the outcome is a capture (not destruction).
+    // size 2 so the outcome is a capture (not destruction). Skip river cities:
+    // a wide-river city tile is unreachable for a warrior on the bank, which
+    // would make the scenario map-dependent instead of testing the capture.
+    const isRiver = (col: number, row: number): boolean => {
+      const tile = (engine as any).getTileAt?.(col, row);
+      return String(tile?.type ?? '').toLowerCase() === 'river';
+    };
     const targetCity = engine.cities.find(
-      (c: any) => c.civilizationId === 0 && !(engine as any).getUnitAt(c.col, c.row)
+      (c: any) => c.civilizationId === 0
+        && !(engine as any).getUnitAt(c.col, c.row)
+        && !isRiver(c.col, c.row)
     );
     expect(targetCity).toBeDefined();
     targetCity.population = 2;
@@ -443,17 +451,12 @@ describe('AI captures cities', () => {
     // Strip all units so the only actors are the AI's own warriors.
     (engine as any).units = [];
 
-    const isLand = (col: number, row: number): boolean => {
-      const tile = (engine as any).getTileAt?.(col, row);
-      if (!tile) return false;
-      const type = String(tile.type ?? '').toLowerCase();
-      return type !== 'ocean' && type !== 'water';
-    };
+    // The staging tile must be passable land (not ocean/lake).
     let spot: { col: number; row: number } | null = null;
     for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const col = targetCity.col + dc;
       const row = targetCity.row + dr;
-      if (isLand(col, row)) { spot = { col, row }; break; }
+      if (engine.isTilePassable(col, row)) { spot = { col, row }; break; }
     }
     expect(spot).toBeTruthy();
 

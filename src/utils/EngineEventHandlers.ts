@@ -1,4 +1,5 @@
 import { useGameStore } from '../stores/GameStore';
+import { CombatSystem, type CombatEventKind } from '../game/engine/CombatSystem';
 import { firstUnresearchedInPath } from './ResearchPath';
 import { awaitCameraGlide, isCameraGliding } from '../game/engine/CameraGlideGate';
 import { HUMAN_PLAYER_ID } from './PlayerConstants';
@@ -340,6 +341,12 @@ export class EngineEventRouter {
     return this.isTileVisibleToHuman(unit.col, unit.row);
   }
 
+  /** Civilization colour used for a unit's damage popup. */
+  private civColor(civId?: number): string | undefined {
+    if (civId == null) return undefined;
+    return this.gameEngine.civilizations?.[civId]?.color;
+  }
+
   /** Whether a tile is currently within the human player's field of view. */
   private isTileVisibleToHuman(col: number, row: number): boolean {
     const state = useGameStore.getState();
@@ -463,21 +470,43 @@ export class EngineEventRouter {
     const preAttacker = attacker ? preStore.find(u => u.id === attacker.id) : undefined;
     const preDefender = defender ? preStore.find(u => u.id === defender.id) : undefined;
 
+    // Damage is part of the combat event payload (the engine resolved the
+    // round through CombatSystem). Fall back to the pre-store health delta for
+    // older event sources.
+    const attackerHealthBefore = preAttacker?.health ?? attacker?.health ?? 100;
+    const attackerHealthAfter = attacker?.health ?? 100;
+    const defenderHealthBefore = preDefender?.health ?? defender?.health ?? 100;
+    const defenderHealthAfter = defender?.health ?? 100;
+    const attackerDamage = (eventData.attackerDamage as number | undefined)
+      ?? Math.max(0, attackerHealthBefore - attackerHealthAfter);
+    const defenderDamage = (eventData.defenderDamage as number | undefined)
+      ?? Math.max(0, defenderHealthBefore - defenderHealthAfter);
+
     this.actions.updateUnits(this.gameEngine.getAllUnits());
     this.actions.updateVisibility();
     // Only toast fights that involve the human player (or a fight of another
-    // civ's units — e.g. an AI battle) should be suppressed.
+    // civ's units — e.g. an AI battle) should be suppressed. The message is
+    // built by the same CombatSystem that resolved the round, so the numbers
+    // always match what happened.
     const combatCivId = humanOrFirst(attacker?.civilizationId, defender?.civilizationId);
-    const combatType = eventType === 'COMBAT_VICTORY' ? 'success' : eventType === 'COMBAT_HIT' ? 'info' : 'warning';
-    const combatMsg = eventType === 'COMBAT_VICTORY'
-      ? 'Victory in combat!'
-      : eventType === 'COMBAT_HIT'
-        ? 'Enemy unit wounded!'
-        : 'Unit defeated in combat!';
-    notify(combatType, combatMsg, combatCivId);
+    const combatKind: CombatEventKind = eventType === 'COMBAT_VICTORY'
+      ? 'victory'
+      : eventType === 'COMBAT_HIT' ? 'hit' : 'defeat';
+    const combatType = combatKind === 'victory' ? 'success' : combatKind === 'hit' ? 'info' : 'warning';
+    const attackerName = attacker?.name || attacker?.type || 'Attacker';
+    const defenderName = defender?.name || defender?.type || 'Defender';
+    notify(
+      combatType,
+      CombatSystem.describeUnitRound(combatKind, attackerName, defenderName, {
+        attackerDamage,
+        defenderDamage,
+      }),
+      combatCivId,
+    );
 
     // Record a combat animation: a cloud appears at the defender's tile, the
-    // HP bars tween, and the survivor fades back in (2 seconds total).
+    // HP bars tween, the damage numbers float up, and the survivor fades back
+    // in (2 seconds total).
     if (attacker && defender) {
       const id = `combat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const animation = {
@@ -493,10 +522,15 @@ export class EngineEventRouter {
         startTime: performance.now(),
         duration: 800, // Cloud blinks for 0.8s
         deathBlinkDuration: 2000, // Dead unit blinks for 2s after cloud
-        attackerHealthBefore: preAttacker?.health ?? attacker.health,
-        attackerHealthAfter: attacker.health,
-        defenderHealthBefore: preDefender?.health ?? defender.health,
-        defenderHealthAfter: defender.health,
+        attackerHealthBefore,
+        attackerHealthAfter,
+        defenderHealthBefore,
+        defenderHealthAfter,
+        attackerDamage,
+        defenderDamage,
+        // Popup colours: each side's damage number is drawn in its civ colour.
+        attackerColor: this.civColor(attacker.civilizationId),
+        defenderColor: this.civColor(defender.civilizationId),
       };
       // Where should the camera go for this fight? The player's own defender
       // always, or a visible AI attacker. Hidden fights get no camera move (that
@@ -604,6 +638,16 @@ export class EngineEventRouter {
       const id = `city-combat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const cityHealthBefore = (preCity?.hitPoints ?? preCity?.population) ?? 1;
       const cityHealthAfter = (city.hitPoints ?? city.population) ?? 1;
+      const attackerDamage = (eventData.attackerDamage as number | undefined) ?? 0;
+      const defenderDamage = (eventData.defenderDamage as number | undefined) ?? 0;
+      // Human-facing toast only (AI-only city fights are filtered by civId).
+      const attackerName = attacker?.name || attacker?.type || 'An enemy';
+      const involvedCiv = humanOrFirst(attacker?.civilizationId, city.civilizationId);
+      if (defenderDamage > 0) {
+        notify('warning', `${attackerName} defeated a defender in ${city.name}`, involvedCiv);
+      } else if (attackerDamage > 0) {
+        notify('info', `${city.name} repelled ${attackerName}`, involvedCiv);
+      }
       const animation = {
         id,
         attackerId: attacker?.id ?? '',
@@ -621,6 +665,12 @@ export class EngineEventRouter {
         cityId: city.id,
         cityHealthBefore,
         cityHealthAfter,
+        // A failed assault damages the attacker; a won round kills one
+        // garrison unit (its remaining HP is the damage shown).
+        attackerDamage,
+        defenderDamage,
+        attackerColor: this.civColor(attacker?.civilizationId),
+        defenderColor: this.civColor(city.civilizationId),
       };
       this.actions.addCombatAnimation(animation);
 

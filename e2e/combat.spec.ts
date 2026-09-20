@@ -180,13 +180,15 @@ test.describe('Combat lab', () => {
     expect(result.attackerHealthAfter).toBe(100);
   });
 
-  test('a stronger attacker overruns the defender and takes its tile', async ({ page }) => {
+  test('a stronger attacker overruns the defender and stays in its tile', async ({ page }) => {
     // Legion (attack 3) vs Warrior (defense 1) on neutral terrain.
     const result = await fight(page, 1, 0);
 
     expect(result.defenderDefeated).toBe(true);
-    expect(result.attackerCol).toBe(result.toCol);
-    expect(result.attackerRow).toBe(result.toRow);
+    // The victorious attacker survives but does NOT advance into the
+    // defender's tile.
+    expect(result.attackerCol).toBe(result.fromCol);
+    expect(result.attackerRow).toBe(result.fromRow);
     expect(result.defenderHealthAfter).toBe(0);
   });
 
@@ -195,8 +197,8 @@ test.describe('Combat lab', () => {
     const result = await fight(page, 2, 0);
 
     expect(result.defenderDefeated).toBe(true);
-    expect(result.attackerCol).toBe(result.toCol);
-    expect(result.attackerRow).toBe(result.toRow);
+    expect(result.attackerCol).toBe(result.fromCol);
+    expect(result.attackerRow).toBe(result.fromRow);
   });
 
   test('a defending winner damages the attacker without killing it', async ({ page }) => {
