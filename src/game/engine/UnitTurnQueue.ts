@@ -51,6 +51,7 @@ export class UnitTurnQueue {
     const units = this.gameEngine.units.filter((u: Unit) => 
       u.civilizationId === civilizationId && 
       !u.areTurnsDone && // Unit must not have turns done
+      !u.embarkedOn && // A passenger aboard a ferry is not a separate actor
       (u.movesRemaining || 0) > 0 // Unit must have moves remaining
     );
 

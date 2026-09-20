@@ -36,7 +36,7 @@ describe('production tech-gating', () => {
   });
 
   it('buildings and wonders that should need tech have it', () => {
-    expect(BUILDING_PROPERTIES.forge?.requiredTechnology).toBe('iron_working');
+    expect(BUILDING_PROPERTIES.harbor?.requiredTechnology).toBe('masonry');
     expect(BUILDING_PROPERTIES.colosseum?.requiredTechnology).toBe('construction');
     expect(BUILDING_PROPERTIES.bank?.requiredTechnology).toBe('banking');
     expect(BUILDING_PROPERTIES.cathedral?.requiredTechnology).toBe('monotheism');
@@ -69,9 +69,9 @@ describe('production tech-gating', () => {
       engine!.productionManager.setCityProduction(city!.id, item, false) as { success: boolean; reason?: string };
 
     // Civ 0 starts with irrigation/mining/roads only.
-    const forge = set({ type: 'building', itemType: 'forge', name: 'Forge', cost: 80 });
-    expect(forge.success).toBe(false);
-    expect(forge.reason).toBe('requires_tech_iron_working');
+    const harbor = set({ type: 'building', itemType: 'harbor', name: 'Harbor', cost: 60 });
+    expect(harbor.success).toBe(false);
+    expect(harbor.reason).toBe('requires_tech_masonry');
 
     const granary = set({ type: 'building', itemType: 'granary', name: 'Granary', cost: 60 });
     expect(granary.success).toBe(false);

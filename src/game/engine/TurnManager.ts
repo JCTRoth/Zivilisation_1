@@ -605,6 +605,13 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
     console.log(`[TurnManager] Resetting moves for ${units.length} units of player ${playerId}`);
     
     units.forEach((unit) => {
+      // A passenger aboard a ferry is not a separate actor: it travels with
+      // the ship and only acts again after being unloaded.
+      if (unit.embarkedOn) {
+        unit.movesRemaining = 0;
+        unit.areTurnsDone = true;
+        return;
+      }
       const unitProps = UNIT_PROPS?.[unit.type];
       unit.movesRemaining = unitProps?.movement || 1;
       // Civ1: at the start of the owner's turn every unit is "fresh" — full

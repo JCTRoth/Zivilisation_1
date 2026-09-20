@@ -294,6 +294,10 @@ export interface Unit {
   defeatTimestamp?: number;
   /** Whether this unit is a naval unit. */
   isNaval?: boolean;
+  /** Ferry only: id of the land unit currently aboard (null when empty). */
+  cargoUnitId?: string | null;
+  /** Land unit only: id of the ferry carrying it (null when ashore). */
+  embarkedOn?: string | null;
   /** Unit sight range for fog of war. */
   sightRange?: number;
   // AI-specific runtime state (set dynamically by AIManager)

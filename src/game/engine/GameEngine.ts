@@ -1,6 +1,7 @@
 import { SquareGrid } from '../SquareGrid';
 import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
+import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES } from '@/data/GameConstants';
 import { WORLD_MAP } from '@/data/maps';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
@@ -1653,6 +1654,7 @@ export default class GameEngine {
   // ────────────────────────────────────────────────────────────────────
 
   private landmassIds: Int32Array | null = null;
+  private landmassSizes: number[] = [];
   private landmassCacheKey: unknown = null;
 
   /**
@@ -1669,6 +1671,7 @@ export default class GameEngine {
     const width = this.map?.width ?? 0;
     const height = this.map?.height ?? 0;
     const ids = new Int32Array(width * height).fill(-2);
+    const sizes: number[] = [];
     let nextId = 0;
     const queue: number[] = [];
 
@@ -1686,10 +1689,12 @@ export default class GameEngine {
 
       const groupId = nextId++;
       ids[start] = groupId;
+      let size = 0;
       queue.length = 0;
       queue.push(start);
       while (queue.length > 0) {
         const idx = queue.shift()!;
+        size++;
         const col = idx % width;
         const row = Math.floor(idx / width);
         for (let dc = -1; dc <= 1; dc++) {
@@ -1713,11 +1718,130 @@ export default class GameEngine {
           }
         }
       }
+      sizes[groupId] = size;
     }
 
     this.landmassIds = ids;
+    this.landmassSizes = sizes;
     this.landmassCacheKey = this.map;
     return ids;
+  }
+
+  /**
+   * Small, city-free islands the civ has seen and could colonize: each entry
+   * carries a landing tile (to unload a settler onto) and an adjacent ocean
+   * tile (for the ferry to wait on), sorted nearest-first to the civ's cities.
+   */
+  getColonizableIslands(
+    civId: number,
+    maxTiles: number = SMALL_ISLAND_MAX_TILES,
+  ): Array<{
+    landmassId: number;
+    size: number;
+    landTile: { col: number; row: number };
+    waterTile: { col: number; row: number };
+    distance: number;
+  }> {
+    if (!this.map || !this.squareGrid) return [];
+    const ids = this.computeLandmassIds();
+    const { width, height } = this.map;
+    const ownCities = this.cities.filter((c: City) => c.civilizationId === civId);
+    const occupiedLandmasses = new Set(
+      this.cities.map((c: City) => this.getLandmassId(c.col, c.row)).filter((id) => id >= 0),
+    );
+
+    const best = new Map<number, {
+      landmassId: number;
+      size: number;
+      landTile: { col: number; row: number };
+      waterTile: { col: number; row: number };
+      distance: number;
+    }>();
+
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        const id = ids[row * width + col];
+        if (id < 0) continue;
+        const size = this.landmassSizes[id] ?? 0;
+        if (size > maxTiles) continue;
+        if (occupiedLandmasses.has(id)) continue;
+        if (!this.isExploredByPlayer(civId, col, row)) continue;
+        const waterTile = this.findAdjacentOcean(col, row);
+        if (!waterTile) continue;
+        const distance = ownCities.length > 0
+          ? Math.min(...ownCities.map((c: City) =>
+              this.squareGrid!.squareDistance(c.col, c.row, col, row)))
+          : 0;
+        const existing = best.get(id);
+        if (!existing || distance < existing.distance) {
+          best.set(id, {
+            landmassId: id,
+            size,
+            landTile: { col, row },
+            waterTile,
+            distance,
+          });
+        }
+      }
+    }
+    return [...best.values()].sort((a, b) => a.distance - b.distance);
+  }
+
+  /** First adjacent deep-ocean tile (a ferry can wait there). */
+  findAdjacentOcean(col: number, row: number): { col: number; row: number } | null {
+    for (let dc = -1; dc <= 1; dc++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        if (dc === 0 && dr === 0) continue;
+        const tile = this.getTileAt(col + dc, row + dr);
+        if (tile && this.getTerrainKey(tile) === 'ocean') {
+          return { col: col + dc, row: row + dr };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Number of passable land tiles on the landmass at (col,row) (0 if none). */
+  getLandmassSize(col: number, row: number): number {
+    const id = this.getLandmassId(col, row);
+    return id >= 0 ? (this.landmassSizes[id] ?? 0) : 0;
+  }
+
+  /**
+   * The island/continent situation of a civilization: the landmass its cities
+   * sit on, its size, and how many own/enemy cities are there. Returns null
+   * when the civ has no city or its cities span several landmasses.
+   */
+  getIslandSituation(civId: number): {
+    landmassId: number;
+    size: number;
+    ownCities: number;
+    enemyCities: number;
+    isSmall: boolean;
+    isVerySmall: boolean;
+    isAlone: boolean;
+  } | null {
+    const ownCities = this.cities.filter((c: City) => c.civilizationId === civId);
+    if (ownCities.length === 0) return null;
+    const landmassId = this.getLandmassId(ownCities[0].col, ownCities[0].row);
+    if (landmassId < 0) return null;
+    // Only report a single-island civ; a civ spread over several landmasses is
+    // not "trapped on a small island".
+    if (!ownCities.every((c: City) => this.getLandmassId(c.col, c.row) === landmassId)) return null;
+
+    const size = this.getLandmassSize(ownCities[0].col, ownCities[0].row);
+    const enemyCities = this.cities.filter(
+      (c: City) => c.civilizationId !== civId && this.getLandmassId(c.col, c.row) === landmassId,
+    ).length;
+    return {
+      landmassId,
+      size,
+      ownCities: ownCities.length,
+      enemyCities,
+      isSmall: size <= SMALL_ISLAND_MAX_TILES,
+      isVerySmall: size <= VERY_SMALL_ISLAND_MAX_TILES,
+      isAlone: enemyCities === 0,
+    };
   }
 
   /** Landmass component id at a tile, or -1 for water/impassable/out of bounds. */
@@ -1812,7 +1936,7 @@ export default class GameEngine {
     // tile, and a defeated unit would otherwise mask it as a valid target /
     // blocker ("ghost" targeting).
     return this.units.find(
-      unit => unit.col === col && unit.row === row && !unit.isDefeated,
+      unit => unit.col === col && unit.row === row && !unit.isDefeated && !unit.embarkedOn,
     ) || null;
   }
 
@@ -1823,8 +1947,92 @@ export default class GameEngine {
    */
   getUnitsAt(col: number, row: number) {
     return this.units.filter(
-      unit => unit.col === col && unit.row === row && !unit.isDefeated,
+      unit => unit.col === col && unit.row === row && !unit.isDefeated && !unit.embarkedOn,
     );
+  }
+
+  // ────────────────────────────────────────────────────────────────────
+  // Ferry transport (Civ1: a Ferry carries one land unit across water)
+  // ────────────────────────────────────────────────────────────────────
+
+  /**
+   * Whether `unitId` may board `ferryId`: the ferry is a naval unit with no
+   * cargo, the passenger is a land unit standing on a tile adjacent to (or
+   * sharing) the ferry's water tile, and it is not already aboard.
+   */
+  canLoadFerry(ferryId: string, unitId: string): boolean {
+    const ferry = this.units.find((u) => u.id === ferryId);
+    const unit = this.units.find((u) => u.id === unitId);
+    if (!ferry || !unit || ferry.id === unit.id) return false;
+    if (ferry.isDefeated || unit.isDefeated) return false;
+    if (ferry.cargoUnitId) return false;
+    if (unit.embarkedOn) return false;
+    if (UNIT_PROPS[ferry.type]?.naval !== true) return false;
+    if (UNIT_PROPS[unit.type]?.naval === true) return false; // ships can't board
+    if (this.getTerrainKey(this.getTileAt(ferry.col, ferry.row)) !== 'ocean') return false;
+    return this.squareGrid.chebyshevDistance(ferry.col, ferry.row, unit.col, unit.row) <= 1;
+  }
+
+  /** Board a land unit onto an adjacent/co-located ferry. */
+  loadFerry(ferryId: string, unitId: string): boolean {
+    if (!this.canLoadFerry(ferryId, unitId)) return false;
+    const ferry = this.units.find((u) => u.id === ferryId)!;
+    const unit = this.units.find((u) => u.id === unitId)!;
+    ferry.cargoUnitId = unit.id;
+    unit.embarkedOn = ferry.id;
+    unit.col = ferry.col;
+    unit.row = ferry.row;
+    unit.movesRemaining = 0;
+    unit.hasMovedThisTurn = true;
+    if (this.onStateChange) this.onStateChange('UNIT_MOVED', { unit, targetCol: ferry.col, targetRow: ferry.row });
+    return true;
+  }
+
+  /** Whether the ferry's cargo may be put ashore at a land tile. */
+  canUnloadFerry(ferryId: string, col: number, row: number): boolean {
+    const ferry = this.units.find((u) => u.id === ferryId);
+    if (!ferry?.cargoUnitId) return false;
+    const unit = this.units.find((u) => u.id === ferry.cargoUnitId);
+    if (!unit || unit.isDefeated) return false;
+    const tile = this.getTileAt(col, row);
+    if (!tile) return false;
+    if (this.isWaterTerrain(tile) || this.isLakeTerrain(tile)) return false;
+    if (TERRAIN_PROPS[this.getTerrainKey(tile)]?.passable === false) return false;
+    if (this.squareGrid.chebyshevDistance(ferry.col, ferry.row, col, row) > 1) return false;
+    const occupant = this.getUnitAt(col, row);
+    return !occupant;
+  }
+
+  /** Put the ferry's cargo ashore on an adjacent free land tile. */
+  unloadFerry(ferryId: string, col: number, row: number): boolean {
+    if (!this.canUnloadFerry(ferryId, col, row)) return false;
+    const ferry = this.units.find((u) => u.id === ferryId)!;
+    const unit = this.units.find((u) => u.id === ferry.cargoUnitId)!;
+    unit.col = col;
+    unit.row = row;
+    unit.embarkedOn = null;
+    unit.movesRemaining = 0;
+    unit.hasMovedThisTurn = true;
+    ferry.cargoUnitId = null;
+    if (this.onStateChange) this.onStateChange('UNIT_MOVED', { unit, targetCol: col, targetRow: row });
+    return true;
+  }
+
+  /**
+   * When a Ferry is destroyed its passenger goes down with it (Civ1) — an
+   * orphaned embarked unit would be invisible and unable to act.
+   */
+  private destroyCargoOf(ferry: Unit): void {
+    if (!ferry.cargoUnitId) return;
+    const cargo = this.units.find((u) => u.id === ferry.cargoUnitId);
+    if (!cargo || cargo.isDefeated) return;
+    cargo.isDefeated = true;
+    cargo.defeatTimestamp = Date.now();
+    this.onStateChange?.('UNIT_DEFEATED', { unit: cargo });
+    setTimeout(() => {
+      this.units = this.units.filter((u) => u.id !== cargo.id);
+      this.onStateChange?.('UNIT_REMOVED', { unit: cargo });
+    }, 1200);
   }
 
   /**
@@ -2288,6 +2496,11 @@ export default class GameEngine {
       console.log(`[canUnitMoveTo] Invalid unitId: ${unitId}`);
       return false;
     }
+    // A unit aboard a ferry cannot act — it moves with the ship (unload it
+    // first).
+    if (unit.embarkedOn) {
+      return false;
+    }
     if (!this.squareGrid.isValidSquare(targetCol, targetRow)) {
       console.log(`[canUnitMoveTo] Invalid target square: (${targetCol}, ${targetRow})`);
       return false;
@@ -2325,7 +2538,9 @@ export default class GameEngine {
       console.log(`[canUnitMoveTo] Naval unit ${unit.type} cannot enter land tile at (${targetCol}, ${targetRow}).`);
       return false;
     }
-    if (TERRAIN_PROPS[targetTerrain]?.passable === false) {
+    // Ocean is "passable: false" because it is a barrier for LAND units;
+    // ships may always enter it (land-on-water was rejected above).
+    if (TERRAIN_PROPS[targetTerrain]?.passable === false && !isUnitNaval) {
       console.log(`[canUnitMoveTo] Target tile at (${targetCol}, ${targetRow}) is not passable.`);
       return false;
     }
@@ -2418,7 +2633,10 @@ export default class GameEngine {
     if (isTargetWater && !isUnitNaval) return false;
     if (this.isLakeTerrain(targetTile)) return false;
     if (!isTargetWater && isUnitNaval && !this.navalAllowedOnLandTile(targetCol, targetRow, targetTerrain)) return false;
-    if (TERRAIN_PROPS[targetTerrain]?.passable === false) return false;
+    // Ocean is "passable: false" in the terrain table because it is a barrier
+    // for LAND units — ships may always enter it (the water/naval checks above
+    // already rejected land units on water).
+    if (TERRAIN_PROPS[targetTerrain]?.passable === false && !isUnitNaval) return false;
     // River rule (RiverRules): land units may only enter 1-wide river sections.
     if (!isUnitNaval && this.isWideRiver(targetCol, targetRow)) return false;
 
@@ -2485,7 +2703,9 @@ export default class GameEngine {
     if (!isTargetWater && isUnitNaval && !this.navalAllowedOnLandTile(targetCol, targetRow, targetTerrain)) {
       return { success: false, reason: 'terrain_impassable' };
     }
-    if (TERRAIN_PROPS[targetTerrain]?.passable === false) return { success: false, reason: 'terrain_impassable' };
+    if (TERRAIN_PROPS[targetTerrain]?.passable === false && !isUnitNaval) {
+      return { success: false, reason: 'terrain_impassable' };
+    }
 
     // Check if there's another unit at target (combat or stacking rules).
     // `getUnitAt` returns the first unit on a tile — when the attacker shares
@@ -2749,6 +2969,16 @@ export default class GameEngine {
       // The unit has now executed a move this turn — the Minimum-1-Move
       // exception no longer applies to subsequent moves.
       unit.hasMovedThisTurn = true;
+
+      // Ferry transport: the passenger travels with the ship (its tile is
+      // always the ferry's tile while embarked).
+      if (unit.cargoUnitId) {
+        const passenger = this.units.find((u) => u.id === unit.cargoUnitId);
+        if (passenger) {
+          passenger.col = unit.col;
+          passenger.row = unit.row;
+        }
+      }
 
       // Civ1 village (goody hut) resolution — a military unit entering the
       // tile claims the village and rolls an outcome.
@@ -3298,6 +3528,7 @@ export default class GameEngine {
 
         defender.isDefeated = true;
         defender.defeatTimestamp = Date.now();
+        this.destroyCargoOf(defender);
         
         if (this.onStateChange) {
           this.onStateChange('UNIT_DEFEATED', { unit: defender });
@@ -3405,6 +3636,7 @@ export default class GameEngine {
         // Mark attacker as defeated and delay removal (5 seconds to show black X)
         attacker.isDefeated = true;
         attacker.defeatTimestamp = Date.now();
+        this.destroyCargoOf(attacker);
         
         if (this.onStateChange) {
           this.onStateChange('UNIT_DEFEATED', { unit: attacker });
@@ -3482,6 +3714,7 @@ export default class GameEngine {
         defender.health = 0;
         defender.isDefeated = true;
         defender.defeatTimestamp = Date.now();
+        this.destroyCargoOf(defender);
         if (this.onStateChange) {
           this.onStateChange('UNIT_DEFEATED', { unit: defender });
         }
@@ -3571,6 +3804,7 @@ export default class GameEngine {
     if (attackerDestroyed) {
       attacker.isDefeated = true;
       attacker.defeatTimestamp = Date.now();
+      this.destroyCargoOf(attacker);
       if (this.onStateChange) {
         this.onStateChange('UNIT_DEFEATED', { unit: attacker });
       }
@@ -4956,6 +5190,20 @@ export default class GameEngine {
     if (improvement && improvement !== IMPROVEMENT_TYPES.ROAD && improvement !== IMPROVEMENT_TYPES.RAILROAD) {
       tile.improvement = null;
     }
+    // Terrain type changes can change landmass connectivity (a river/lake
+    // conversion), so the cached graph must be rebuilt.
+    this.invalidateLandmassCache();
+  }
+
+  /**
+   * Drop the cached landmass graph. Call after ANY terrain-type mutation
+   * (improvements, scripted/test map edits) so `areLandConnected` and the
+   * island-size helpers never serve stale geography.
+   */
+  invalidateLandmassCache(): void {
+    this.landmassIds = null;
+    this.landmassSizes = [];
+    this.landmassCacheKey = null;
   }
 
   /**

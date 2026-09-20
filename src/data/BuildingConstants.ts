@@ -19,7 +19,8 @@ export const BUILDING_TYPES = {
     CATHEDRAL: 'cathedral',
     UNIVERSITY: 'university',
     COLOSSEUM: 'colosseum',
-    FORGE: 'forge',
+    // Naval infrastructure: enables ships and feeds the city from the sea.
+    HARBOR: 'harbor',
 
     // Renaissance Era
     FACTORY: 'factory',
@@ -203,17 +204,14 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         description: 'Increases happiness and culture through entertainment',
         icon: '🏟️'
     },
-    [BUILDING_TYPES.FORGE]: {
-        name: 'Forge',
-        cost: 80,
+    [BUILDING_TYPES.HARBOR]: {
+        name: 'Harbor',
+        cost: 30,
         maintenance: 1,
-        requiredTechnology: 'iron_working',
-        effects: {
-            production: 1,
-            unitProduction: 1
-        },
-        description: 'Increases production and military unit production',
-        icon: '⚒️'
+        requiredTechnology: 'masonry',
+        effects: {},
+        description: 'Allows building naval units and increases food from worked water tiles',
+        icon: '⚓'
     },
     [BUILDING_TYPES.FACTORY]: {
         name: 'Factory',
@@ -453,7 +451,6 @@ export const BUILDING_PREREQUISITES = {
     [BUILDING_TYPES.BANK]: [BUILDING_TYPES.MARKETPLACE],
     [BUILDING_TYPES.CATHEDRAL]: [BUILDING_TYPES.TEMPLE],
     [BUILDING_TYPES.UNIVERSITY]: [BUILDING_TYPES.LIBRARY],
-    [BUILDING_TYPES.FACTORY]: [BUILDING_TYPES.FORGE],
     [BUILDING_TYPES.HYDRO_PLANT]: [BUILDING_TYPES.FACTORY],
     [BUILDING_TYPES.NUCLEAR_PLANT]: [BUILDING_TYPES.FACTORY],
     [BUILDING_TYPES.POWER_PLANT]: [BUILDING_TYPES.FACTORY],

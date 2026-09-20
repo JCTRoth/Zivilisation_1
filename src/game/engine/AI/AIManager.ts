@@ -32,7 +32,7 @@ import {
   type CityThreatAssessment
 } from './AIStrategy';
 import type { DiplomatAction } from '../DiplomacyTypes';
-import type { Unit, City } from '../../../../types/game';
+import type { Unit, City, Civilization } from '../../../../types/game';
 import GameEngine, { type PlayerTurnStorage, type MapTile } from '../GameEngine';
 import { getShuffledAdjacentTiles } from '../MovementHelper';
 import { awaitPendingAnimations } from '../../rendering/GlideAnimation';
@@ -48,6 +48,22 @@ const MAX_SETTLE_WALK_DISTANCE = 4;
 
 const OSCILLATION_WINDOW = 6;
 const OSCILLATION_THRESHOLD = 3;
+
+/**
+ * An AI colony mission: ferry a settler to a small, city-free island and found
+ * a city there. Stages:
+ *   gather → the settler walks to the coast and the ferry comes alongside;
+ *   sail   → the settler is aboard and the ferry crosses to the island.
+ * The mission lives in the civ's player storage so it survives across turns.
+ */
+interface ColonyMission {
+  settlerId: string;
+  ferryId: string | null;
+  targetLandmassId: number;
+  landTile: { col: number; row: number };
+  waterTile: { col: number; row: number };
+  stage: 'gather' | 'sail';
+}
 
 export class AIManager {
   private gameEngine: GameEngine;
@@ -250,6 +266,9 @@ export class AIManager {
 
     this.updateOffensivePlan(civilizationId, storage, roundNumber);
 
+    // Island colonization: keep the ferry-a-settler mission up to date.
+    this.updateColonyMission(civ, storage);
+
     // A committed, aggressive civ declares war on its chosen bulk target —
     // this is the "rush": war is started deliberately instead of waiting for
     // first contact, and the bulk army then presses the city.
@@ -300,7 +319,9 @@ export class AIManager {
     }
 
     // ─── Phase 4: Process units ────────────────────────────────────────
-    const aiUnits = this.gameEngine.units.filter((u: Unit) => u.civilizationId === civilizationId && (u.movesRemaining || 0) > 0);
+    const aiUnits = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civilizationId && (u.movesRemaining || 0) > 0 && !u.embarkedOn,
+    );
     console.log(`[AI] Found ${aiUnits.length} units with moves remaining for civilization ${civilizationId}`);
 
     for (const unit of aiUnits) {
@@ -512,6 +533,13 @@ export class AIManager {
           this.gameEngine.combatUnit(unit, stackedEnemy);
           if (!this.gameEngine.units.includes(unit)) break; // attacker fell
           break; // combatUnit zeroes the attacker's moves
+        }
+
+        // Colony mission: a ferry alongside its settler boards it; a loaded
+        // ferry puts the settler ashore on the target island.
+        const colonyMission = this.getColonyMission(storage);
+        if (unit.type === 'ferry' && colonyMission?.ferryId === unit.id) {
+          if (this.tryColonyFerryAction(unit, colonyMission, storage)) break;
         }
 
         const target = this.chooseAITarget(unit);
@@ -911,6 +939,207 @@ export class AIManager {
     return typeof fn === 'function' ? fn.call(this.gameEngine, civilizationId, col, row) : true;
   }
 
+  // ──────────────────────────────────────────────────────────────────────
+  // Colony missions: ferry a settler to a small empty island
+  // ──────────────────────────────────────────────────────────────────────
+
+  private getColonyMission(storage?: PlayerTurnStorage): ColonyMission | null {
+    const raw = storage?.turnData?.colonyMission as ColonyMission | undefined;
+    return raw ?? null;
+  }
+
+  private setColonyMission(storage: PlayerTurnStorage | undefined, mission: ColonyMission): void {
+    if (!storage) return;
+    storage.turnData.colonyMission = mission;
+  }
+
+  private clearColonyMission(storage?: PlayerTurnStorage): void {
+    if (storage) delete storage.turnData.colonyMission;
+  }
+
+  /**
+   * Keep the civ's colony mission valid and (re)assign a ferry. A mission is
+   * created when the civ has seen a small city-free island, owns an idle
+   * settler that can reach a coast, and can either field a ferry or build one.
+   */
+  private updateColonyMission(civ: Civilization, storage?: PlayerTurnStorage): void {
+    if (!storage || typeof this.gameEngine.getColonizableIslands !== 'function') return;
+
+    const islands = this.gameEngine.getColonizableIslands(civ.id);
+    let mission = this.getColonyMission(storage);
+
+    if (mission) {
+      const settler = this.gameEngine.units.find(
+        (u: Unit) => u.id === mission.settlerId && !u.isDefeated,
+      );
+      const ferry = mission.ferryId
+        ? this.gameEngine.units.find((u: Unit) => u.id === mission.ferryId && !u.isDefeated)
+        : null;
+      const island = islands.find((i) => i.landmassId === mission.targetLandmassId);
+      const rendezvous = settler && !settler.embarkedOn
+        ? this.findColonyRendezvous(settler)
+        : null;
+      if (!settler || !island || (mission.ferryId && !ferry) || (!settler.embarkedOn && !rendezvous)) {
+        // The settler/ferry died, the island got settled, or the settler is
+        // landlocked — abandon the mission.
+        this.clearColonyMission(storage);
+        mission = null;
+      } else {
+        mission.landTile = island.landTile;
+        mission.waterTile = island.waterTile;
+        if (!mission.ferryId) {
+          const idle = this.findIdleFerry(civ.id);
+          if (idle) mission.ferryId = idle.id;
+        }
+        this.setColonyMission(storage, mission);
+      }
+    }
+    if (mission) return;
+
+    const idleFerry = this.findIdleFerry(civ.id);
+    const canBuildShips = typeof this.gameEngine.civCanBuildShips === 'function'
+      && this.gameEngine.civCanBuildShips(civ.id);
+    if (!idleFerry && !canBuildShips) return;
+
+    const settler = this.findColonySettler(civ.id);
+    if (!settler || !this.findColonyRendezvous(settler)) return;
+    const island = islands[0];
+    if (!island) return;
+
+    const newMission: ColonyMission = {
+      settlerId: settler.id,
+      ferryId: idleFerry?.id ?? null,
+      targetLandmassId: island.landmassId,
+      landTile: island.landTile,
+      waterTile: island.waterTile,
+      stage: 'gather',
+    };
+    this.setColonyMission(storage, newMission);
+    this.gameEngine.log?.('ai', `Colony mission — ${civ.name} targets a ${island.size}-tile island`, {
+      civilizationId: civ.id,
+      action: 'colony_mission',
+      settlerId: settler.id,
+      landmassId: island.landmassId,
+      targetCol: island.landTile.col,
+      targetRow: island.landTile.row,
+    });
+  }
+
+  /** An own ferry that is alive and not carrying anyone. */
+  private findIdleFerry(civId: number): Unit | null {
+    return this.gameEngine.units.find(
+      (u: Unit) => u.civilizationId === civId && u.type === 'ferry' && !u.isDefeated && !u.cargoUnitId,
+    ) ?? null;
+  }
+
+  /** An own settler available to be shipped to a new island. */
+  private findColonySettler(civId: number): Unit | null {
+    return this.gameEngine.units.find(
+      (u: Unit) => u.civilizationId === civId
+        && u.type === 'settler'
+        && !u.isDefeated
+        && !u.embarkedOn
+        && !u.workTarget,
+    ) ?? null;
+  }
+
+  /**
+   * Where the mission settler waits for the ferry: its own tile when it is
+   * already on the coast, otherwise the nearest coastal land tile on the SAME
+   * landmass (a settler can only walk there).
+   */
+  private findColonyRendezvous(unit: Unit): { col: number; row: number } | null {
+    if (this.gameEngine.findAdjacentOcean?.(unit.col, unit.row)) {
+      return { col: unit.col, row: unit.row };
+    }
+    const map = this.gameEngine.map;
+    const grid = this.gameEngine.squareGrid;
+    if (!map || !grid) return null;
+    const radius = 20;
+    let best: { col: number; row: number } | null = null;
+    let bestDist = Infinity;
+    for (let dc = -radius; dc <= radius; dc++) {
+      for (let dr = -radius; dr <= radius; dr++) {
+        const col = unit.col + dc;
+        const row = unit.row + dr;
+        if (!grid.isValidSquare(col, row)) continue;
+        const tile = this.gameEngine.getTileAt(col, row);
+        if (!tile) continue;
+        const key = String(tile.type ?? tile.terrain ?? '').trim().toLowerCase();
+        if (key === 'ocean' || key === 'lake') continue;
+        if (!this.areLandConnected(unit.col, unit.row, col, row)) continue;
+        if (!this.gameEngine.findAdjacentOcean?.(col, row)) continue;
+        const dist = grid.squareDistance(unit.col, unit.row, col, row);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { col, row };
+        }
+      }
+    }
+    return best;
+  }
+
+  /** Board/unload the mission settler when the ferry is in position. */
+  private tryColonyFerryAction(
+    unit: Unit,
+    mission: ColonyMission,
+    storage?: PlayerTurnStorage,
+  ): boolean {
+    if (!mission.ferryId || unit.id !== mission.ferryId) return false;
+    if (!unit.cargoUnitId) {
+      const settler = this.gameEngine.units.find(
+        (u: Unit) => u.id === mission.settlerId && !u.isDefeated,
+      );
+      if (!settler) return false;
+      if (typeof this.gameEngine.canLoadFerry === 'function'
+          && this.gameEngine.canLoadFerry(unit.id, settler.id)) {
+        this.gameEngine.loadFerry(unit.id, settler.id);
+        mission.stage = 'sail';
+        this.setColonyMission(storage, mission);
+        this.gameEngine.log?.('ai', `Colony ferry loaded ${settler.type}`, {
+          civilizationId: unit.civilizationId, action: 'colony_load', unitId: unit.id,
+        });
+        return true;
+      }
+      return false;
+    }
+    if (typeof this.gameEngine.canUnloadFerry === 'function'
+        && this.gameEngine.canUnloadFerry(unit.id, mission.landTile.col, mission.landTile.row)) {
+      this.gameEngine.unloadFerry(unit.id, mission.landTile.col, mission.landTile.row);
+      this.clearColonyMission(storage);
+      this.gameEngine.log?.('ai', `Colony ferry landed a settler on the island`, {
+        civilizationId: unit.civilizationId, action: 'colony_unload', unitId: unit.id,
+        targetCol: mission.landTile.col, targetRow: mission.landTile.row,
+      });
+      return true;
+    }
+    return false;
+  }
+
+  /** Nearest deep-ocean tile to a position (ferry staging when no coast yet). */
+  private findNearestOceanTo(col: number, row: number, radius = 12): { col: number; row: number } | null {
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return null;
+    let best: { col: number; row: number } | null = null;
+    let bestDist = Infinity;
+    for (let dc = -radius; dc <= radius; dc++) {
+      for (let dr = -radius; dr <= radius; dr++) {
+        const c = col + dc;
+        const r = row + dr;
+        if (!grid.isValidSquare(c, r)) continue;
+        const tile = this.gameEngine.getTileAt(c, r);
+        if (!tile) continue;
+        if (String(tile.type ?? tile.terrain ?? '').trim().toLowerCase() !== 'ocean') continue;
+        const dist = grid.squareDistance(col, row, c, r);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { col: c, row: r };
+        }
+      }
+    }
+    return best;
+  }
+
   /**
    * A naval unit's target, in priority order:
    *   1. the nearest enemy ship (sea control),
@@ -919,6 +1148,27 @@ export class AIManager {
    */
   private chooseNavalTarget(unit: Unit): { col: number; row: number } | null {
     if (!this.gameEngine.squareGrid) return null;
+
+    // A ferry on a colony mission ignores the war and runs its route.
+    const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
+    const mission = this.getColonyMission(storage);
+    if (mission?.ferryId === unit.id) {
+      if (unit.cargoUnitId) {
+        return mission.waterTile; // sail the settler to the island
+      }
+      const settler = this.gameEngine.units.find(
+        (u: Unit) => u.id === mission.settlerId && !u.isDefeated,
+      );
+      if (settler) {
+        const alongside = typeof this.gameEngine.findAdjacentOcean === 'function'
+          ? this.gameEngine.findAdjacentOcean(settler.col, settler.row)
+          : null;
+        if (alongside) return alongside;
+        const nearestWater = this.findNearestOceanTo(settler.col, settler.row);
+        if (nearestWater) return nearestWater;
+      }
+      return mission.waterTile;
+    }
 
     const enemyShips = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId !== unit.civilizationId && !u.isDefeated && this.isNavalUnitType(u.type),
@@ -936,7 +1186,6 @@ export class AIManager {
       if (best) return { col: best.col, row: best.row };
     }
 
-    const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
     if (storage?.enemyLocations) {
       let best: { col: number; row: number } | null = null;
       let bestDist = Infinity;
@@ -1276,6 +1525,16 @@ export class AIManager {
     // found (and no improvement to build) the settler falls through and
     // explores like any other civilian.
     if (unit.type === 'settler') {
+      // Colony mission: this settler is reserved for a small island. Walk to
+      // the coast and wait for the ferry instead of founding at home.
+      const mission = this.getColonyMission(storage);
+      if (mission && mission.settlerId === unit.id && mission.stage === 'gather') {
+        const rendezvous = this.findColonyRendezvous(unit);
+        if (rendezvous) {
+          return rendezvous;
+        }
+      }
+
       const cached = unit._aiSettlement;
       if (cached) {
         console.log(`[AI-SETTLER] Settler ${unit.id} heading to settlement (${cached.col},${cached.row})`);
@@ -1507,7 +1766,20 @@ export class AIManager {
       unit.row,
       (col, row) => this.gameEngine.squareGrid!.getNeighbors(col, row),
       (col, row) => this.gameEngine.getTileAt(col, row) as { type: string; explored?: boolean; resource?: string | null; fortress?: boolean; river?: boolean; passable?: boolean } | null | undefined,
-      (col, row) => this.gameEngine.isTilePassable?.(col, row) ?? true,
+      // Island movement + reachability filter:
+      //  - only unexplored tiles on the unit's own landmass are reachable by
+      //    land (across the water needs a ship),
+      //  - tiles the scout already failed to enter (blocked-target guard) are
+      //    skipped so it stops re-picking the same occupied/blocked tile,
+      //  - tiles held by a friendly unit are skipped (no stacking).
+      (col, row) => {
+        if (!(this.gameEngine.isTilePassable?.(col, row) ?? true)) return false;
+        if (!this.areLandConnected(unit.col, unit.row, col, row)) return false;
+        if (unit._blockedScoutTargets instanceof Set && unit._blockedScoutTargets.has(`${col},${row}`)) return false;
+        const occupant = this.gameEngine.getUnitAt?.(col, row);
+        if (occupant && occupant.civilizationId === unit.civilizationId) return false;
+        return true;
+      },
       (col, row) => typeof this.gameEngine.isExploredByPlayer === 'function'
         ? this.gameEngine.isExploredByPlayer(unit.civilizationId, col, row)
         : !!this.gameEngine.getTileAt(col, row)?.explored
@@ -2379,6 +2651,10 @@ export class AIManager {
         const dist = grid.squareDistance(unit.col, unit.row, col, row);
         if (dist === 0) continue;
 
+        // A land unit can only walk to a hut on its own landmass; a hut across
+        // the water is unreachable until ships can ferry it.
+        if (!this.areLandConnected(unit.col, unit.row, col, row)) continue;
+
         // Risk model: popping a hut can spawn Barbarians, so a hut next to a
         // town is dangerous while a far hut in a big empire is worth taking.
         // The decision is deterministic per (civ, village) so the AI does not
@@ -2465,6 +2741,8 @@ export class AIManager {
         if (col === unit.col && row === unit.row) continue;
         // Never send a unit onto impassable terrain (ocean etc.).
         if (typeof this.gameEngine.isTilePassable === 'function' && !this.gameEngine.isTilePassable(col, row)) continue;
+        // Island movement: a land unit can only reach its own landmass.
+        if (!this.areLandConnected(unit.col, unit.row, col, row)) continue;
 
         const isExplored = typeof this.gameEngine.isExploredByPlayer === 'function'
           ? this.gameEngine.isExploredByPlayer(unit.civilizationId, col, row)
@@ -2520,6 +2798,7 @@ export class AIManager {
   /** A locked probe tile is usable when still passable and unoccupied by us. */
   private isProbeTargetValid(unit: Unit, target: { col: number; row: number }): boolean {
     if (typeof this.gameEngine.isTilePassable === 'function' && !this.gameEngine.isTilePassable(target.col, target.row)) return false;
+    if (!this.areLandConnected(unit.col, unit.row, target.col, target.row)) return false;
     const occupant = this.gameEngine.getUnitAt?.(target.col, target.row);
     if (occupant && occupant.civilizationId === unit.civilizationId) return false;
     const city = this.gameEngine.getCityAt?.(target.col, target.row);
@@ -2592,6 +2871,8 @@ export class AIManager {
           : !!this.gameEngine.getTileAt(col, row)?.explored;
         if (explored) continue;
         if (typeof this.gameEngine.isTilePassable === 'function' && !this.gameEngine.isTilePassable(col, row)) continue;
+        // Island movement: never picket toward a tile on another landmass.
+        if (!this.areLandConnected(unit.col, unit.row, col, row)) continue;
         // Never target a tile occupied by our own city or unit.
         const occUnit = this.gameEngine.getUnitAt?.(col, row);
         if (occUnit && occUnit.civilizationId === unit.civilizationId) continue;
@@ -2692,6 +2973,11 @@ export class AIManager {
           // Skip impassable targets (e.g. ocean) — sending scouts after them only
           // wastes turns on failed moves (the old "move failed to row 0" spam).
           if (typeof this.gameEngine.isTilePassable === 'function' && !this.gameEngine.isTilePassable(col, row)) continue;
+
+          // Island movement: a scout must explore its OWN landmass. Without
+          // this it kept targeting the far shore across water and froze at the
+          // coast once the local island was explored.
+          if (!this.areLandConnected(unit.col, unit.row, col, row)) continue;
 
           // Never target a tile occupied by our own city or unit.
           const occUnit = this.gameEngine.getUnitAt?.(col, row);

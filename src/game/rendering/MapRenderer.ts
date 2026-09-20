@@ -1525,6 +1525,10 @@ export class MapRenderer {
             if ((unit as Unit).isDefeated) {
               continue;
             }
+            // A passenger aboard a ferry is drawn as cargo, not as a unit.
+            if ((unit as Unit).embarkedOn) {
+              continue;
+            }
 
             const hasMoves = (unit.movesRemaining || 0) > 0;
             let alpha = 1;

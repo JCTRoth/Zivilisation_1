@@ -317,6 +317,36 @@ export class AutoProduction {
       return this.buildDefenderProduction(city, threatAssessment);
     }
 
+    // 1c. Island strategy. A civ alone on a VERY SMALL island must escape:
+    //     building a ship is the highest production priority. On a small (but
+    //     livable) island a Harbor is promoted — it unlocks ships and feeds the
+    //     city from the sea.
+    const island = this.getIslandSituation(city.civilizationId);
+    if (island?.isAlone) {
+      if (island.isVerySmall) {
+        const ship = this.buildEscapeShipProduction(city);
+        if (ship) {
+          console.log(`[AutoProduction] Trapped on a ${island.size}-tile island — building ${ship.itemType} to escape`);
+          return ship;
+        }
+      }
+      if (island.isSmall) {
+        const harbor = this.buildHarborProduction(city);
+        if (harbor) {
+          console.log(`[AutoProduction] Isolated on a small island — building a Harbor`);
+          return harbor;
+        }
+      }
+    }
+
+    // 1d. Colony mission waiting for a hull: build the ferry that will carry
+    //     the settler to the small island.
+    const colonyFerry = this.buildColonyFerryProduction(city);
+    if (colonyFerry) {
+      console.log('[AutoProduction] Colony mission — building a ferry');
+      return colonyFerry;
+    }
+
     const civCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === city.civilizationId);
     const econ = this.gameEngine?.economicManager;
 
@@ -389,7 +419,7 @@ export class AutoProduction {
 
     // 3. Settler expansion FIRST (right after defense) so the civ actually
     //    grows. Previously buildings (and the happiness-emergency path) ran
-    //    before this branch, so a civ with 1 city queued forge/colosseum/
+    //    before this branch, so a civ with 1 city queued colosseum/
     //    factory/… forever and never produced a second settler.
     //    Expansion never hard-stops: each profile keeps a settler corps that
     //    scales with the civ's city count (EXPANSION_PARAMS), so a big empire
@@ -1037,6 +1067,86 @@ export class AutoProduction {
     const civCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === city.civilizationId).length;
     const desiredNavy = Math.max(2, civCities);
     return existingNavy < desiredNavy;
+  }
+
+  /** Safe island-situation lookup (lightweight test engines return null). */
+  private getIslandSituation(civilizationId: number): {
+    size: number;
+    isSmall: boolean;
+    isVerySmall: boolean;
+    isAlone: boolean;
+  } | null {
+    if (civilizationId === BARBARIAN_CIV_ID) return null;
+    if (typeof this.gameEngine.getIslandSituation !== 'function') return null;
+    try {
+      return this.gameEngine.getIslandSituation(civilizationId);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Escape ship for a civ trapped on a very small island. A Ferry is built
+   * first when the civ owns none (it can carry a settler to a new island),
+   * otherwise the strongest available warship.
+   */
+  private buildEscapeShipProduction(city: City): ProductionItem | null {
+    const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
+    if (typeof pm?.cityHasHarborOrCoast !== 'function' || !pm.cityHasHarborOrCoast(city)) return null;
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return null;
+
+    const ownsFerry = this.gameEngine.units.some(
+      (u: Unit) => u.civilizationId === city.civilizationId && u.type === 'ferry' && !u.isDefeated,
+    );
+    if (!ownsFerry && canBuildUnit(civ, 'ferry')) {
+      const props = UNIT_PROPS.ferry;
+      if (props) {
+        return { type: 'unit', itemType: 'ferry', name: props.name, cost: props.cost };
+      }
+    }
+    return this.buildNavalProduction(city);
+  }
+
+  /**
+   * Ferry for an active colony mission that has no hull yet. The mission is
+   * created by the AI when it has seen a small city-free island and owns a
+   * settler that can reach the coast.
+   */
+  private buildColonyFerryProduction(city: City): ProductionItem | null {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return null;
+    const storage = this.gameEngine.getPlayerStorage?.(civ.id);
+    const mission = storage?.turnData?.colonyMission as { ferryId?: string | null } | undefined;
+    if (!mission || mission.ferryId) return null;
+    const ownsFerry = this.gameEngine.units.some(
+      (u: Unit) => u.civilizationId === civ.id && u.type === 'ferry' && !u.isDefeated,
+    );
+    if (ownsFerry) return null;
+    const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
+    if (typeof pm?.cityHasHarborOrCoast !== 'function' || !pm.cityHasHarborOrCoast(city)) return null;
+    if (!canBuildUnit(civ, 'ferry')) return null;
+    const props = UNIT_PROPS.ferry;
+    if (!props) return null;
+    return { type: 'unit', itemType: 'ferry', name: props.name, cost: props.cost };
+  }
+
+  /** Harbor for a civ isolated on a small island (coastal cities only). */
+  private buildHarborProduction(city: City): ProductionItem | null {
+    const existing = new Set(city.buildings ?? []);
+    if (existing.has('harbor')) return null;
+    const pm = this.gameEngine.productionManager as {
+      cityHasHarborOrCoast?: (c: City) => boolean;
+      getBuildableBuildingTypes?: (id: string) => string[];
+    } | undefined;
+    if (typeof pm?.cityHasHarborOrCoast !== 'function' || !pm.cityHasHarborOrCoast(city)) return null;
+    const buildable = typeof pm.getBuildableBuildingTypes === 'function'
+      ? pm.getBuildableBuildingTypes(city.id)
+      : [];
+    if (!buildable.includes('harbor')) return null;
+    const props = BUILDING_PROPS.harbor || BUILDING_PROPERTIES.harbor;
+    if (!props) return null;
+    return { type: 'building', itemType: 'harbor', name: props.name, cost: props.cost };
   }
 
   /** Strongest naval unit the civ can actually build (tech-gated). */

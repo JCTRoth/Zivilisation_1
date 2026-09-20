@@ -131,8 +131,6 @@ Integrate it into the map generation, and into the game engine, and into the gam
 if not exclude this as target until ship building is possible, to found a city on a connected water should also be planned if not city on a connected water.
 * Units should in general use the GoTo pathfinding to reach there targets, and check on the way the the destination if new target gets set by them.
 * The AI should start to build ships if no enemy is reachable on the land way.
-
-- DOTO -
 Rivers are walkable and passable for the Player, AI and pathfinding.
 Exmaple 1 (L: land, R: river, number: index):
 L R L
@@ -165,8 +163,54 @@ City growth is important, needs stable surplus of food.
 Also: Ai: the more far away a village from next town and the more towns the civ. hat the higher % that AI takes village instead of ignoring it to not get over runned by babrians.  
 
 * Remove "Forge" from the game and AI strategy also higher prio. to harbor when detects that on smaal island alone, harbor should in general get a little bit higher weight in the Auto Build
+* If Island is very small than highest prio to building ship
 * If AI detects by ship a smaal island with no city on it, send a settler and build a city there
-* 
+* Improve the AI scout and in general unit movement on islands
+
+
+- DOTO -
+Remove this mechanic from the game: Civ1 Harbor: +1 food from every worked OCEAN tile. - 
+Instead intoduce new unit fisher boat that can drive out to the water 
+Build Cost: 20 Production
+Prerequisites: Harbort
+Collects fish, storage 6
+Stats:
+Movement: 2
+Attack: 0 / Defense: 1
+
+* The AI should load units into transport ships
+Here is the technical breakdown of the Civ 1 transport backend systems, adapted strictly for your game's specific rules (removing stack death and adding the unit selection modal):
+## 1. The Active Container & Array System
+In the Civ 1 engine, units do not possess an "embarked" flag status like in modern games. Instead, the game relies on a strict coordinate alignment :
+* **Tile Sharing Logic:** A land unit is considered "on board" a transport ship if its grid coordinates (X, Y) match the transport's grid coordinates exactly over a water tile.
+* **Capacity Cap Enforcement:** The engine actively checks the transport's data array capacity whenever a land unit moves onto its tile. If a ship already has its maximum number of land units sharing its X,Y coordinate, the engine treats that tile as an impassable barrier, completely blocking movement.
+* **The sleeping Automatic Boarding:** When a transport ship exits a city tile, the code executes a query check for any land units flagged as sleeping (S key) or Sleep inside that city. If found, the engine changes their coordinates to match the moving ship, dragging them along as cargo automatically.
+
+### 🆕 Unit Selection Modal (Cargo Management UI)
+Because multiple units can share the exact same transport tile, a **Unit Selection Modal** is required for player interaction. 
+* **Trigger:** When a player selects a transport ship and issues an "Unload" or "Activate" command.
+* **Functionality:** A modal popup appears displaying the icons and stats of the land units currently assigned to that ship's coordinates. The player selects the specific unit they wish to wake up or unload, preventing accidental activation of the wrong unit in a crowded tile.
+
+## 2. Deep Ocean Sinking Formula (Trireme Math)
+The early-game Trireme uses a specific probability check if it finishes its turn on a deep ocean tile (dark blue) rather than a coastal tile (light blue):
+* **The Cargo Wipe:** If the RNG determines the ship sinks, the engine executes a deletion loop for that tile's coordinates. It deletes the ship unit first, then systematically deletes every single land unit ID sharing those exact coordinates. **If the ship sinks, all units inside the ship are destroyed instantly.**
+* **The Lighthouse Counter:** Building The Lighthouse World Wonder modifies this logic. The wonder acts as a flag modifier that shifts the Trireme’s sinking probability function to 0%, making early-game deep-ocean transport perfectly safe.
+
+## 3. Combat Resolution (Individual Defense)
+*Note: The classic Civ 1 "Death Stack" mechanic does not exist in this game.*
+* **Individual Combat:** When an enemy naval unit attacks a tile containing your transport ship and any escort vessels, combat is resolved strictly on a 1-on-1 basis. The attacker engages the specific unit occupying the defensive slot; escort ships do not automatically absorb hits for the transport.
+* **Destruction Consequence:** If the transport ship is directly attacked and loses the combat resolution calculation, it is destroyed. Because of the Cargo Wipe logic, all land units stored in its coordinate array are instantly destroyed alongside it. 
+
+## 4. The Infinite Movement Exploit: "Ship Chaining"
+Because of how the Civ 1 engine resets and checks unit movement points (MP), players can take advantage of a logic loophole:
+* **The Movement Variable Reset:** When a transport ship moves, it consumes its own MP. However, the land units sitting inside the transport do not consume their land-based MP.
+* **The Relay Hand-off:** If you park two transport ships on the exact same tile, you can manually "wake up" (W key) the land units inside Transport A. The engine sees them as standing on a valid transport tile, so they still have full movement points. You can then command them to "Sleep" again, and the engine will register them as occupying Transport B.
+* **The Infinite Loop:** By lining up ships across the entire ocean map—each spaced exactly at the maximum movement range of the previous ship—you can hand off units from ship to ship. The engine allows you to move an army across a massive ocean map in a single turn, bypassing the turn timer mechanics entirely.
+
+## 5. Implement a new modal when clicked on a tile where multipile units are at the same time it opens, shows all units with there status (fortified, sleeping and so on, with health bar)
+by clicking on a defening or sleeping unit I activate the unit.
+
+
 * Add new ship type, "Trade Ship" 
 A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
 and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.

@@ -323,6 +323,24 @@ export class EconomicManager {
     return { food, production, trade };
   }
 
+  /**
+   * Civ1 Harbor: +1 food from every worked OCEAN tile. Applied on top of
+   * `tileYields` so the auto-assigner, manual refresh and the AI food balance
+   * all see the same number.
+   */
+  private tileYieldsForCity(
+    city: City,
+    tile: EconomyTile | null | undefined,
+  ): { food: number; production: number; trade: number } {
+    const yields = this.tileYields(tile);
+    if (!tile) return yields;
+    const hasHarbor = (city?.buildings ?? []).includes(BUILDING_TYPES.HARBOR);
+    if (!hasHarbor) return yields;
+    const terrain = String(tile.type ?? tile.terrain ?? '').toLowerCase();
+    if (terrain !== TERRAIN_TYPES.OCEAN) return yields;
+    return { ...yields, food: yields.food + 1 };
+  }
+
   private cityTerritory(city: City): Array<{ col: number; row: number }> {
     const territory: Array<{ col: number; row: number }> = [];
     for (let dCol = -CITY_RADIUS; dCol <= CITY_RADIUS; dCol++) {
@@ -408,7 +426,7 @@ export class EconomicManager {
       candidates.push({
         col: sq.col,
         row: sq.row,
-        yields: this.tileYields(tile),
+        yields: this.tileYieldsForCity(city, tile),
       });
     }
     const total = (y: {
@@ -532,7 +550,7 @@ export class EconomicManager {
       const col = Number(key.slice(0, sep));
       const row = Number(key.slice(sep + 1));
       if (Number.isNaN(col) || Number.isNaN(row)) continue;
-      const y = this.tileYields(this.getTile(col, row));
+      const y = this.tileYieldsForCity(city, this.getTile(col, row));
       food += y.food;
       production += y.production;
       trade += y.trade;
@@ -940,6 +958,13 @@ export class EconomicManager {
     }
 
     if (removedIds.size > 0) {
+      // A disbanded Ferry takes its passenger with it (an orphaned embarked
+      // unit would be invisible and stuck).
+      const cargoIds = this.gameEngine.units
+        .filter((u: Unit) => u.embarkedOn && removedIds.has(u.embarkedOn))
+        .map((u: Unit) => u.id);
+      for (const id of cargoIds) removedIds.add(id);
+
       const removedUnits = this.gameEngine.units.filter((u: Unit) =>
         removedIds.has(u.id),
       );

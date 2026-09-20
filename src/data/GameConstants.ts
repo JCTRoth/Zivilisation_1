@@ -2,6 +2,15 @@
 
 export const MAX_CARAVAN_TRADE_ROUTES = 3;
 
+/**
+ * Island-size thresholds (in passable land tiles) for the AI's naval strategy:
+ *  - a SMALL island makes the AI value a Harbor (and consider colonizing
+ *    elsewhere),
+ *  - a VERY SMALL island makes escaping by ship the top production priority.
+ */
+export const SMALL_ISLAND_MAX_TILES = 24;
+export const VERY_SMALL_ISLAND_MAX_TILES = 10;
+
 
 export interface TerrainProperties {
     movement: number;

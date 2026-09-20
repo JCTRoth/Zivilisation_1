@@ -43,7 +43,7 @@ function isCityUnhappy(city: City): boolean {
 
 const STRATEGY_BUILDING_BIAS: Record<StrategyProfile, Partial<Record<string, number>>> = {
   military_expansion: {
-    barracks: 2.0, city_walls: 1.5, forge: 1.5,
+    barracks: 2.0, city_walls: 1.5, harbor: 1.4,
     library: 0.5, temple: 0.6, marketplace: 0.8,
   },
   science_focus: {
@@ -59,7 +59,7 @@ const STRATEGY_BUILDING_BIAS: Record<StrategyProfile, Partial<Record<string, num
     library: 0.8, marketplace: 0.8, courthouse: 1.2,
   },
   wonder_rush: {
-    library: 1.8, forge: 1.5, marketplace: 1.2,
+    library: 1.8, marketplace: 1.2, harbor: 1.2,
     barracks: 0.4, city_walls: 0.6,
   },
   early_expansion: {
@@ -259,10 +259,14 @@ export class AIBuildingStrategy {
         if (city.population >= 6) { priority += 5; reasons.push('happiness'); }
         break;
 
-      case 'forge':
-        priority += 8;
-        priority += personality.military * 0.3;
-        reasons.push('production');
+      case 'harbor':
+        // General weight: a harbor unlocks naval construction and adds food
+        // from worked water tiles, so it gets a solid base priority. The
+        // AutoProduction small-island branch raises it to the top when the civ
+        // is isolated on a small island.
+        priority += 15;
+        priority += personality.economy * 0.4;
+        reasons.push('naval-food');
         break;
 
       case 'factory':
