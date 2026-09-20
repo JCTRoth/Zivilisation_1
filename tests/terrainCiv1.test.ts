@@ -64,7 +64,7 @@ describe('Civ1 terrain data', () => {
     expect(move(TERRAIN_TYPES.MOUNTAINS)).toBe(3);
   });
 
-  it('maps exactly one special resource per terrain (grassland/river none)', () => {
+  it('maps exactly one special resource per terrain (grassland/lake none)', () => {
     expect(TERRAIN_RESOURCES[TERRAIN_TYPES.ARCTIC]).toBe('Seal');
     expect(TERRAIN_RESOURCES[TERRAIN_TYPES.JUNGLE]).toBe('Gems');
     expect(TERRAIN_RESOURCES[TERRAIN_TYPES.PLAINS]).toBe('Horses');
@@ -75,7 +75,10 @@ describe('Civ1 terrain data', () => {
     expect(TERRAIN_RESOURCES[TERRAIN_TYPES.FOREST]).toBe('Game');
     expect(TERRAIN_RESOURCES[TERRAIN_TYPES.DESERT]).toBe('Oasis');
     expect(TERRAIN_RESOURCES[TERRAIN_TYPES.GRASSLAND]).toBeNull();
-    expect(TERRAIN_RESOURCES[TERRAIN_TYPES.RIVER]).toBeNull();
+    // Rivers can carry fish (at half the ocean spawn rate — see
+    // RESOURCE_SPAWN_CHANCE).
+    expect(TERRAIN_RESOURCES[TERRAIN_TYPES.RIVER]).toBe('Fish');
+    expect(TERRAIN_RESOURCES[TERRAIN_TYPES.LAKE]).toBeNull();
   });
 
   it('has Civ1 fortress / railroad / road properties', () => {

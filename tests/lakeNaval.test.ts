@@ -329,17 +329,19 @@ describe('Wide rivers act as water gaps', () => {
     const set = (type: string, c: number, r: number) => {
       tiles[`${c},${r}`] = { col: c, row: r, type, terrain: type, visible: true, explored: true };
     };
-    // 4x1: plains | river | river | plains
+    // 4x2 — the river is 2 tiles wide in BOTH axes, so it is a barrier for
+    // land units under the centralized RiverRules.
     set('plains', 0, 0); set('river', 1, 0); set('river', 2, 0); set('plains', 3, 0);
+    set('plains', 0, 1); set('river', 1, 1); set('river', 2, 1); set('plains', 3, 1);
     const getTileAt = (c: number, r: number) => tiles[`${c},${r}`] ?? null;
 
-    const landPath = Pathfinding.findPath(0, 0, 3, 0, getTileAt, 'warrior', 4, 1);
+    const landPath = Pathfinding.findPath(0, 0, 3, 0, getTileAt, 'warrior', 4, 2);
     expect(landPath.success).toBe(false);
     expect(landPath.path).toHaveLength(0);
 
     // A boat navigates the river — but only to water tiles (a ship can never
     // end its move on the far bank; the target here is the far river tile).
-    const boatPath = Pathfinding.findPath(1, 0, 2, 0, getTileAt, 'trireme', 4, 1);
+    const boatPath = Pathfinding.findPath(1, 0, 2, 0, getTileAt, 'trireme', 4, 2);
     expect(boatPath.success).toBe(true);
     expect(boatPath.path.length).toBeGreaterThan(0);
   });

@@ -358,9 +358,9 @@ export { UNIT_DATA_MAP as UNIT_TYPES } from './UnitConstants';
 
 // Game difficulty levels
 export const DIFFICULTY_LEVELS: Record<string, DifficultyLevel> = {
-  CHIEFTAIN: { name: 'Chieftain', aiBonus: 0, barbarianFrequency: 0.3 },
-  WARLORD: { name: 'Warlord', aiBonus: 0.5, barbarianFrequency: 0.5 },
-  PRINCE: { name: 'Prince', aiBonus: 1, barbarianFrequency: 0.7 },
-  KING: { name: 'King', aiBonus: 1.5, barbarianFrequency: 0.9 },
-  EMPEROR: { name: 'Emperor', aiBonus: 2, barbarianFrequency: 1.0 }
+  CHIEFTAIN: { name: 'Clan Leader', aiBonus: 0, barbarianFrequency: 0.2 },
+  WARLORD: { name: 'Warlord', aiBonus: 0.5, barbarianFrequency: 0.3 },
+  PRINCE: { name: 'Prince', aiBonus: 1, barbarianFrequency: 0.5 },
+  KING: { name: 'King', aiBonus: 1.5, barbarianFrequency: 0.6 },
+  EMPEROR: { name: 'Emperor', aiBonus: 2, barbarianFrequency: 0.7 }
 };

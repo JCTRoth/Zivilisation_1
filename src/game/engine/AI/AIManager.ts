@@ -1137,7 +1137,18 @@ export class AIManager {
         const intercept = findInterceptPosition(
           unit.col, unit.row, closest.col, closest.row,
           (c, r) => this.gameEngine.squareGrid!.getNeighbors(c, r),
-          (c, r) => this.gameEngine.getTileAt(c, r) as { type: string; explored?: boolean; resource?: string | null; fortress?: boolean; river?: boolean; passable?: boolean } | null | undefined,
+          (c, r) => {
+            const tile = this.gameEngine.getTileAt(c, r);
+            if (!tile) return null;
+            // Enrich the raw tile with the engine's position-aware land
+            // passability (includes the wide-river rule) — without this the
+            // intercept helper saw `passable === undefined` everywhere.
+            return {
+              ...tile,
+              type: String(tile.type ?? tile.terrain ?? ''),
+              passable: this.gameEngine.isTilePassable?.(c, r) ?? true,
+            };
+          },
           (c, r) => this.gameEngine.getUnitAt(c, r),
           distFn
         );
@@ -2089,20 +2100,25 @@ export class AIManager {
         console.log(`[AI-SETTLER] Best location clearly better (current=${currentScore?.toFixed(1)}, best=${bestLocation.score.toFixed(1)}, bestDist=${bestDist}) — walking there`);
       }
 
-      // If we have a pathfinding grid available, precompute and store a path
+      // If we have a pathfinding grid available, precompute and store a path.
+      // Uses the centralized Pathfinding so wide rivers (RiverRules) are
+      // avoided exactly like `moveUnit` would enforce.
       try {
-        if (this.gameEngine.squareGrid && this.gameEngine.roundManager) {
-          const path = this.gameEngine.squareGrid.findPath(
-            unit.col,
-            unit.row,
-            bestLocation.col,
-            bestLocation.row,
+        const map = this.gameEngine.map;
+        if (map && this.gameEngine.squareGrid && this.gameEngine.roundManager) {
+          const result = Pathfinding.findPath(
+            unit.col, unit.row, bestLocation.col, bestLocation.row,
+            (c, r) => this.gameEngine.getTileAt(c, r),
+            unit.type,
+            map.width, map.height,
+            (c, r) => this.gameEngine.getUnitAt(c, r),
+            unit.civilizationId,
+            (c, r) => this.gameEngine.getCityAt(c, r),
             this.getSettlerPathObstacles(unit.id, bestLocation),
-            this.gameEngine.getPassabilityFilter?.(),
           );
-          if (path && path.length > 0) {
-            console.log(`[AI-SETTLER] Precomputed path for settler ${unit.id} with ${path.length} steps`);
-            this.gameEngine.roundManager.setUnitPath(unit.id, path);
+          if (result.path.length > 0) {
+            console.log(`[AI-SETTLER] Precomputed path for settler ${unit.id} with ${result.path.length} steps`);
+            this.gameEngine.roundManager.setUnitPath(unit.id, result.path);
           } else {
             console.log(`[AI-SETTLER] No path found to best location for settler ${unit.id}`);
           }

@@ -239,11 +239,12 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
     {
         name: 'Fish',
         terrain: TERRAIN_TYPES.OCEAN,
-        terrains: `${TERRAIN_TYPES.OCEAN}`,
+        // Rivers can also hold fish (Civ1: at half the ocean rate).
+        terrains: `${TERRAIN_TYPES.OCEAN},${TERRAIN_TYPES.RIVER}`,
         food: 2,
         production: 0,
         trade: 0,
-        description: 'Food from the sea (Ocean)'
+        description: 'Food from the water (Ocean and River)'
     },
     {
         name: 'Oil',
@@ -276,7 +277,7 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
 
 /**
  * Default special resource for each terrain type (Civ1: exactly one per
- * terrain; Grassland and River have none). Used by map generation and by
+ * terrain; Grassland has none). Used by map generation and by
  * terrain-conversion rules (the new terrain carries its own resource).
  */
 export const TERRAIN_RESOURCES: Record<string, string | null> = {
@@ -291,8 +292,25 @@ export const TERRAIN_RESOURCES: Record<string, string | null> = {
     [TERRAIN_TYPES.TUNDRA]: 'Game',
     [TERRAIN_TYPES.GRASSLAND]: null,
     [TERRAIN_TYPES.DESERT]: 'Oasis',
-    [TERRAIN_TYPES.RIVER]: null,
+    // Rivers can carry fish, but only at half the ocean spawn rate.
+    [TERRAIN_TYPES.RIVER]: 'Fish',
     [TERRAIN_TYPES.LAKE]: null
+};
+
+/**
+ * Rivers hold fish at HALF the rate of an ocean tile (design rule). The
+ * per-tile spawn chance below is the single tunable point for resource
+ * density on generated maps.
+ */
+export const RIVER_FISH_CHANCE_MULTIPLIER = 0.5;
+
+/** Base per-tile chance that a non-special tile carries its default resource. */
+export const DEFAULT_RESOURCE_SPAWN_CHANCE = 0.15;
+
+/** Per-terrain override of {@link DEFAULT_RESOURCE_SPAWN_CHANCE}. */
+export const RESOURCE_SPAWN_CHANCE: Record<string, number> = {
+    [TERRAIN_TYPES.OCEAN]: DEFAULT_RESOURCE_SPAWN_CHANCE,
+    [TERRAIN_TYPES.RIVER]: DEFAULT_RESOURCE_SPAWN_CHANCE * RIVER_FISH_CHANCE_MULTIPLIER,
 };
 
 /** Resolve a resource's Civ1 yield bonus for the terrain it occupies. */

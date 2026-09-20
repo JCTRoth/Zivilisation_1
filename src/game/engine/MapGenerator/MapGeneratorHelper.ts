@@ -8,7 +8,7 @@
  * what is handed to them.
  */
 
-import { TERRAIN_TYPES, TERRAIN_RESOURCES } from '@/data/TerrainConstants';
+import { TERRAIN_TYPES, TERRAIN_RESOURCES, RESOURCE_SPAWN_CHANCE, DEFAULT_RESOURCE_SPAWN_CHANCE } from '@/data/TerrainConstants';
 
 // ── Shared types ────────────────────────────────────────────────────────
 
@@ -197,7 +197,9 @@ export function baseYield(t: string): number {
 
 /**
  * Civ1 resource placement: each terrain type has one associated resource.
- * Tiles flagged `hasSpecial` always receive one; otherwise ~15% chance.
+ * Tiles flagged `hasSpecial` always receive one; otherwise the terrain's
+ * `RESOURCE_SPAWN_CHANCE` applies (15% by default — rivers roll fish at half
+ * that, see `RIVER_FISH_CHANCE_MULTIPLIER`).
  */
 export function rollResource(
   terrain: string,
@@ -207,7 +209,8 @@ export function rollResource(
   const name = TERRAIN_RESOURCES[terrain];
   if (!name) return null;
   if (hasSpecial) return name;
-  return random() < 0.15 ? name : null;
+  const chance = RESOURCE_SPAWN_CHANCE[terrain] ?? DEFAULT_RESOURCE_SPAWN_CHANCE;
+  return random() < chance ? name : null;
 }
 
 // ── Moisture application ────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import {
   VILLAGE_BARBARIAN_MAX,
 } from '@/data/VillageConstants';
 import { CombatSystem, unitIgnoresCityWalls } from './CombatSystem';
+import { isWideRiverTile } from './RiverRules';
 import { ProductionManager } from './ProductionManager';
 import { AutoProduction } from './AutoProduction';
 import { UnitActionManager } from './UnitActionManager';
@@ -1628,6 +1629,8 @@ export default class GameEngine {
     if (!tile) return false;
     const terrainKey = this.getTerrainKey(tile);
     if (this.isWaterTerrain(tile)) return false;
+    // A 2+ wide river is impassable to land units (RiverRules).
+    if (terrainKey === TERRAIN_TYPES.RIVER && this.isWideRiver(col, row)) return false;
     return TERRAIN_PROPS[terrainKey]?.passable !== false;
   }
 
@@ -1668,6 +1671,9 @@ export default class GameEngine {
       if (!startTile) continue;
       const startKey = this.getTerrainKey(startTile);
       if (this.isWaterTerrain(startTile) || TERRAIN_PROPS[startKey]?.passable === false) continue;
+      // A wide river tile is impassable to land units — it never belongs to a
+      // land component (RiverRules).
+      if (startKey === TERRAIN_TYPES.RIVER && this.isWideRiver(startCol, startRow)) continue;
 
       const groupId = nextId++;
       ids[start] = groupId;
@@ -1677,8 +1683,6 @@ export default class GameEngine {
         const idx = queue.shift()!;
         const col = idx % width;
         const row = Math.floor(idx / width);
-        const currentTile = this.getTileAt(col, row);
-        const currentIsRiver = !!currentTile && this.getTerrainKey(currentTile) === TERRAIN_TYPES.RIVER;
         for (let dc = -1; dc <= 1; dc++) {
           for (let dr = -1; dr <= 1; dr++) {
             if (dc === 0 && dr === 0) continue;
@@ -1691,9 +1695,10 @@ export default class GameEngine {
             if (!tile) continue;
             const key = this.getTerrainKey(tile);
             if (this.isWaterTerrain(tile) || TERRAIN_PROPS[key]?.passable === false) continue;
-            // Crossing from land onto a wide river is forbidden for land units
-            // (Civ1 `canCrossRiver`). River→river and river→land stay open.
-            if (!currentIsRiver && key === TERRAIN_TYPES.RIVER && this.isWideRiver(nc, nr)) continue;
+            // A wide river tile cannot be entered from ANY direction, so it
+            // splits landmasses. A 1-wide river is fordable and connects the
+            // banks (RiverRules).
+            if (key === TERRAIN_TYPES.RIVER && this.isWideRiver(nc, nr)) continue;
             ids[nIdx] = groupId;
             queue.push(nIdx);
           }
@@ -2224,30 +2229,13 @@ export default class GameEngine {
   }
 
   /**
-   * Civ1 movement cost to ENTER a tile. Base terrain cost (1/2/3), discounted
-   * to 1/3 when the tile carries a road, and to ~0 (tiny epsilon) when it
-   * carries a railroad — railroads make movement effectively free. Mirrors
-   * Pathfinding.getTileCost so the path the AI plans is charged the same way
-   * a manual move is.
+   * Whether the river at (col,row) is too wide for land units to enter.
+   * Delegates to the centralized `RiverRules` (only 1-tile-wide river
+   * sections are fordable; the rule is shared by movement, pathfinding, the
+   * AI and connectivity).
    */
   private isWideRiver(col: number, row: number): boolean {
-    const tile = this.getTileAt(col, row);
-    if (!tile) return false;
-    const key = String(tile.type ?? tile.terrain ?? '').trim().toLowerCase();
-    if (key !== TERRAIN_TYPES.RIVER) return false;
-    // Check 4-directional neighbors for adjacent river tiles
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    for (const [dc, dr] of dirs) {
-      const nc = col + dc;
-      const nr = row + dr;
-      if (!this.squareGrid.isValidSquare(nc, nr)) continue;
-      const neighbor = this.getTileAt(nc, nr);
-      if (neighbor) {
-        const nKey = String(neighbor.type ?? neighbor.terrain ?? '').trim().toLowerCase();
-        if (nKey === TERRAIN_TYPES.RIVER) return true;
-      }
-    }
-    return false;
+    return isWideRiverTile(col, row, (c, r) => this.getTileAt(c, r));
   }
 
   private getMoveCost(tile: MapTile | null): number {
@@ -2333,15 +2321,11 @@ export default class GameEngine {
       return false;
     }
 
-    // River crossing check: land units can't cross wide rivers (2+ tiles)
-    // unless they are already on a river tile or are naval units.
-    if (!isUnitNaval && targetTerrain === TERRAIN_TYPES.RIVER) {
-      const fromTile = this.getTileAt(unit.col, unit.row);
-      const isOnRiver = fromTile && (String(fromTile.type ?? fromTile.terrain ?? '').trim().toLowerCase() === TERRAIN_TYPES.RIVER);
-      if (!isOnRiver && this.isWideRiver(targetCol, targetRow)) {
-        console.log(`[canUnitMoveTo] Wide river at (${targetCol}, ${targetRow}) — crossing blocked.`);
-        return false;
-      }
+    // River rule (RiverRules): land units may only enter 1-tile-wide river
+    // sections. A 2+ wide river tile is a barrier from every direction.
+    if (!isUnitNaval && this.isWideRiver(targetCol, targetRow)) {
+      console.log(`[canUnitMoveTo] Wide river at (${targetCol}, ${targetRow}) — crossing blocked.`);
+      return false;
     }
 
     // Caravans may always enter a city tile (to establish a trade route),
@@ -2426,6 +2410,8 @@ export default class GameEngine {
     if (this.isLakeTerrain(targetTile)) return false;
     if (!isTargetWater && isUnitNaval && !this.navalAllowedOnLandTile(targetCol, targetRow, targetTerrain)) return false;
     if (TERRAIN_PROPS[targetTerrain]?.passable === false) return false;
+    // River rule (RiverRules): land units may only enter 1-wide river sections.
+    if (!isUnitNaval && this.isWideRiver(targetCol, targetRow)) return false;
 
     // Check if the unit can afford the terrain cost
     const moveCost = this.getMoveCost(targetTile);

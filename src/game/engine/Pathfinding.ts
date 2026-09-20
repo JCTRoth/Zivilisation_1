@@ -1,6 +1,7 @@
 import { TERRAIN_PROPS, UNIT_PROPS } from '../../utils/Constants';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '../../data/TileImprovementConstants';
 import { TERRAIN_TYPES, WATER_TERRAIN_TYPES } from '../../data/TerrainConstants';
+import { isRiverTile, isWideRiverTile } from './RiverRules';
 import type { MapTile } from './GameEngine';
 
 /**
@@ -30,15 +31,6 @@ export interface PathResult {
 export class Pathfinding {
 
   /**
-   * Check if a tile is a river tile.
-   */
-  private static isRiverTile(tile: MapTile | null): boolean {
-    if (!tile) return false;
-    const key = String(tile.type ?? tile.terrain ?? '').trim().toLowerCase();
-    return key === TERRAIN_TYPES.RIVER;
-  }
-
-  /**
    * Whether a unit type is naval. The unit-properties table is the source of
    * truth (so every ship, including the Ferry, is handled); the legacy list is
    * only a fallback for stubbed/synthetic unit types used in tests.
@@ -52,53 +44,24 @@ export class Pathfinding {
   }
 
   /**
-   * Check if a river is "wide" (2+ tiles) at a given crossing point.
-   * A river crossing from non-river → river is blocked when the river tile
-   * has at least one adjacent river tile (making it part of a group ≥2).
-   * Units already ON a river tile can move freely.
-   */
-  private static isWideRiverAt(
-    col: number, row: number,
-    getTileAt: (c: number, r: number) => MapTile | null,
-    mapWidth: number, mapHeight: number,
-  ): boolean {
-    const tile = getTileAt(col, row);
-    if (!this.isRiverTile(tile)) return false;
-    // Count adjacent river tiles (4-directional for width measurement)
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    for (const [dc, dr] of dirs) {
-      const nc = col + dc;
-      const nr = row + dr;
-      if (nc < 0 || nc >= mapWidth || nr < 0 || nr >= mapHeight) continue;
-      if (this.isRiverTile(getTileAt(nc, nr))) return true;
-    }
-    return false;
-  }
-
-  /**
-   * Check if a unit can cross a river at a given edge.
-   * Returns true if movement is allowed, false if blocked by a wide river.
-   * Land units without bridge tech cannot cross wide rivers.
+   * Check if a unit can cross a river at a given edge. Land units may only
+   * enter 1-tile-wide (fordable) river sections — a 2+ wide river tile is a
+   * barrier from every direction. Naval units navigate any river.
+   * See `RiverRules` for the full rule and worked examples.
    */
   private static canCrossRiver(
-    fromCol: number, fromRow: number,
+    _fromCol: number, _fromRow: number,
     toCol: number, toRow: number,
     getTileAt: (c: number, r: number) => MapTile | null,
-    mapWidth: number, mapHeight: number,
     unitType: string,
   ): boolean {
     const targetTile = getTileAt(toCol, toRow);
-    if (!this.isRiverTile(targetTile)) return true;
+    if (!isRiverTile(targetTile)) return true;
 
-    // Naval units can enter river tiles freely
+    // Naval units can enter river tiles freely.
     if (this.isNavalUnit(unitType)) return true;
 
-    // Units already on a river tile can move freely (walking along the river)
-    const fromTile = getTileAt(fromCol, fromRow);
-    if (this.isRiverTile(fromTile)) return true;
-
-    // Check if this river crossing is wide (2+ tiles)
-    return !this.isWideRiverAt(toCol, toRow, getTileAt, mapWidth, mapHeight);
+    return !isWideRiverTile(toCol, toRow, getTileAt);
   }
   /**
    * Calculate movement cost for a tile.
@@ -265,7 +228,7 @@ export class Pathfinding {
         }
 
         // River crossing check: land units can't cross wide rivers
-        if (!this.canCrossRiver(current.col, current.row, col, row, getTileAt, mapWidth, mapHeight, unitType)) {
+        if (!this.canCrossRiver(current.col, current.row, col, row, getTileAt, unitType)) {
           continue;
         }
 
@@ -407,7 +370,7 @@ export class Pathfinding {
         }
 
         // River crossing check: land units can't cross wide rivers
-        if (!this.canCrossRiver(current.col, current.row, col, row, getTileAt, mapWidth, mapHeight, unitType)) {
+        if (!this.canCrossRiver(current.col, current.row, col, row, getTileAt, unitType)) {
           continue;
         }
 
