@@ -590,6 +590,53 @@ const CityModal: React.FC<CityModalProps> = ({
                             </div>
                           </div>
                         )}
+                        {regularBuildings.includes('harbor') && isPlayerCity && (() => {
+                          const fisher = logic.getFisherBoatStatus();
+                          const stageLabel = fisher.stage === 'fishing'
+                            ? 'Fishing'
+                            : fisher.stage === 'inbound'
+                              ? 'Returning to port'
+                              : fisher.stage === 'outbound'
+                                ? 'Sailing to the fishing ground'
+                                : null;
+                          return (
+                            <div className="mt-3">
+                              <div className="buildings-section-title mb-2">
+                                <i className="bi bi-water"></i> Fisher Boat
+                              </div>
+                              <div className="building-card">
+                                <div className="building-card__header">
+                                  <span className="building-icon">🎣</span>
+                                  <div className="building-card__body">
+                                    <h6 className="building-name mb-1">
+                                      Fisher Boat <span className="small text-muted">(max 1 per city)</span>
+                                    </h6>
+                                    {fisher.exists ? (
+                                      <div className="small">
+                                        <div>
+                                          {stageLabel}
+                                          {(fisher.stage === 'fishing' || fisher.stage === 'inbound') && (
+                                            <> — hold {fisher.fishStored}/{fisher.capacity}</>
+                                          )}
+                                          {fisher.tile && <> at ({fisher.tile.col}, {fisher.tile.row})</>}
+                                        </div>
+                                        <div className="text-muted">
+                                          Distance {fisher.distance} · {fisher.foodPerFish} food per fish · full catch {fisher.catchValue} food
+                                        </div>
+                                      </div>
+                                    ) : fisher.underConstruction ? (
+                                      <div className="small text-muted">Under construction (20 shields)</div>
+                                    ) : (
+                                      <div className="small text-muted">
+                                        Not built — 20 shields, requires this Harbor. Fish tiles with a net feed the city.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </>
                     );
                   })()

@@ -569,6 +569,23 @@ export class AIManager {
           if (this.tryColonyFerryAction(unit, colonyMission, storage)) break;
         }
 
+        // Fisher Boat: deploy the net the moment it reaches a fish tile; with
+        // an active route the engine's state machine owns its movement.
+        if (unit.type === 'fisher_boat') {
+          if (unit.fishingRoute) {
+            this.gameEngine.skipUnit(unit.id);
+            break;
+          }
+          if (this.gameEngine.canDeployFishingNet?.(unit.id)) {
+            const deployed = this.gameEngine.deployFishingNet(unit.id);
+            if (deployed) {
+              console.log(`[AI-FISHER] ${civ.name} fisher ${unit.id} deploys net at (${unit.col},${unit.row})`);
+              this.gameEngine.log('ai', `Fishing net — ${civ.name} deploys at (${unit.col},${unit.row})`, { civilizationId, action: 'fishing_net', unitId: unit.id, unitType: unit.type, targetCol: unit.col, targetRow: unit.row });
+              break;
+            }
+          }
+        }
+
         const target = this.chooseAITarget(unit);
         if (!target) {
           // No valid target. A combat unit parked at/next to a friendly city is
@@ -1168,6 +1185,36 @@ export class AIManager {
   }
 
   /**
+   * Nearest explored fish tile (ocean or river) for a Fisher Boat without a
+   * route. Returns null when the civ has not discovered any fish yet.
+   */
+  private findFishingGround(unit: Unit): { col: number; row: number } | null {
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return null;
+    let best: { col: number; row: number } | null = null;
+    let bestDist = Infinity;
+    const width = grid.width ?? 0;
+    const height = grid.height ?? 0;
+    for (let col = 0; col < width; col++) {
+      for (let row = 0; row < height; row++) {
+        const tile = this.gameEngine.getTileAt(col, row);
+        const resource = String((tile as { resource?: string } | null)?.resource ?? '').toLowerCase();
+        if (resource !== 'fish') continue;
+        if (typeof this.gameEngine.isExploredByPlayer === 'function'
+            && !this.gameEngine.isExploredByPlayer(unit.civilizationId, col, row)) {
+          continue;
+        }
+        const dist = grid.chebyshevDistance(unit.col, unit.row, col, row);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { col, row };
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
    * A naval unit's target, in priority order:
    *   1. the nearest enemy ship (sea control),
    *   2. a known enemy coastal city (blockade / escort the invasion),
@@ -1323,6 +1370,14 @@ export class AIManager {
    */
   private chooseAITarget(unit: Unit): { col: number; row: number } | null {
     if (!this.gameEngine.map || !this.gameEngine.squareGrid) return null;
+
+    // Fisher Boats: a routed boat is driven by the engine's automatic fishing
+    // state machine (advanceFishing); an unrouted one heads for the nearest
+    // known fish tile, where it deploys its net.
+    if (unit.type === 'fisher_boat') {
+      if (unit.fishingRoute) return null;
+      return this.findFishingGround(unit);
+    }
 
     // Naval units never use the land targeting logic — they hunt enemy ships,
     // blockade known enemy coastal cities, or patrol/explore open water.
@@ -2640,7 +2695,7 @@ export class AIManager {
 
   /** A unit that can actually defend a city (non-civilian, non-scout, has defense). */
   private isDefensiveUnit(u: Unit): boolean {
-    const civilian = new Set(['settler', 'worker', 'caravan', 'diplomat', 'scout']);
+    const civilian = new Set(['settler', 'worker', 'caravan', 'diplomat', 'scout', 'ferry', 'fisher_boat']);
     if (civilian.has(u.type)) return false;
     const props = UNIT_PROPS[u.type];
     return !!props && (props.defense || 0) > 0;

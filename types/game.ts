@@ -298,6 +298,20 @@ export interface Unit {
   cargoUnitId?: string | null;
   /** Land unit only: id of the ferry carrying it (null when ashore). */
   embarkedOn?: string | null;
+  /** Fisher Boat only: fish currently in the hold (0..FISHER_BOAT_STORAGE). */
+  fishStored?: number;
+  /**
+   * Fisher Boat only: the repeating fishing route. The net tile is remembered
+   * across the loop; `stage` drives the automatic state machine.
+   *   outbound → sailing to the net tile
+   *   fishing  → net deployed, collecting fish until the hold is full
+   *   inbound  → sailing home to unload
+   */
+  fishingRoute?: {
+    homeCityId: string;
+    fishingTile: { col: number; row: number };
+    stage: 'outbound' | 'fishing' | 'inbound';
+  } | null;
   /** Unit sight range for fog of war. */
   sightRange?: number;
   // AI-specific runtime state (set dynamically by AIManager)
@@ -356,6 +370,11 @@ export interface City {
   };
   foodStored?: number;
   foodNeeded?: number;
+  /**
+   * Fisher Boat overflow: when a delivered catch did not fit into the food
+   * box, the city gets this many food at its next growth step.
+   */
+  fishingOverflowBonus?: number;
   foodRequired?: number;
   productionStored?: number;
   buildings?: string[];

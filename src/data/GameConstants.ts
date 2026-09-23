@@ -41,6 +41,8 @@ export interface UnitProperties {
     type?: 'civilian' | 'military' | 'siege' | 'naval' | 'scout' | 'air';
     /** Technology required to produce this unit (null/undefined = no requirement). */
     requires?: string | null;
+    /** Building that must exist in the city to produce this unit (null/undefined = none). */
+    requiredBuilding?: string | null;
 }
 
 export interface BuildingProperties {

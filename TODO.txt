@@ -212,19 +212,25 @@ Dont show the units fortified in the city directly on the map but show the forti
 
 
 - TODo -
-Focuse on this: Remove this mechanic from the game: Civ1 Harbor: +1 food from every worked OCEAN tile. - 
-Instead intoduce new unit fisher boat that can drive out to the water 
-Build Cost: 20 Production
-Prerequisites: Harbort
-Collects fish, storage 6
-Stats:
-Movement: 2
-Attack: 0 / Defense: 1
-Ability — "Deploy Fishing Net" add to the contect menu.
-Only possible on fish tiles.  -- Return me a calulation formular more far way fish after fishing ---- 
-When fishing boat comes back into city it fills with the garnerie/city sorage by what is stored in the boat, if all full adds for one round +2 food,
-drives automatic back to the fishing ground where "Deploy Fishing Net" was setted before stays there until fished and drives automatic back, add to conect menu also remove button
-for the ""Deploy Fishing Net"  route
+DONE — Harbor ocean-food replaced by the Fisher Boat:
+* Removed the Civ1 Harbor "+1 food from every worked OCEAN tile" bonus
+  (EconomicManager.tileYieldsForCity is gone).
+* Fisher Boat (fisher_boat): 20 shields, requires the Harbor BUILDING, hold 6
+  fish, movement 2, attack 0 / defense 1, max ONE per city (ProductionManager
+  rejects a second; the city modal shows its status for harbor cities).
+* "Deploy Fishing Net" in the unit context menu (fish tiles only, ocean or
+  river). "Remove Fishing Net" is a recall: home to unload, then automatically
+  back to the same net tile (route kept).
+* Auto-route: outbound → fishing (1 fish/turn until 6) → inbound → unload →
+  outbound, driven by GameEngine.advanceFishing each turn.
+* Distance formula (unchanged): foodPerFish = min(3, 1 + floor(d/4)) with d =
+  Chebyshev distance home city ↔ net tile → 6 / 12 / 18 food per full catch.
+* Unload fills city.foodStored up to foodNeeded; a catch that does not fit
+  grants a one-round +2 food bonus at the next growth step.
+* NEW: a Fish tile only pays its full food to a city while a Fisher Boat is
+  actively using it — without a boat the city draws 1 food less per fish tile.
+* AI: AutoProduction builds one boat per harbor city under food pressure, and
+  AIManager sails it to the nearest known fish tile and deploys the net.
 
 
 * Add new ship type, "Trade Ship" 

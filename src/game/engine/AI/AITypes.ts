@@ -277,6 +277,7 @@ const UNIT_TECH_REQUIREMENTS: Record<string, string | null> = {
   diplomat: 'writing',
   caravan: 'trade',
   ferry: 'sailing',
+  fisher_boat: null,
   sail: 'sailing',
   trireme: 'map_making',
   caravel: 'navigation',

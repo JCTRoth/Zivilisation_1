@@ -22,6 +22,8 @@ import type { City, Civilization, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 
 interface EconomyTile {
+  col?: number;
+  row?: number;
   type?: string;
   terrain?: string;
   resource?: string | null;
@@ -324,21 +326,35 @@ export class EconomicManager {
   }
 
   /**
-   * Civ1 Harbor: +1 food from every worked OCEAN tile. Applied on top of
-   * `tileYields` so the auto-assigner, manual refresh and the AI food balance
-   * all see the same number.
+   * Whether a Fisher Boat has its net on this fishing ground. ANY stage of the
+   * route counts as "actively using" the ground — the boat is assigned to it
+   * even while sailing home to unload or back out to the net.
    */
-  private tileYieldsForCity(
-    city: City,
+  private hasActiveFishingNet(col: number, row: number): boolean {
+    const units = this.gameEngine?.units ?? [];
+    return units.some((u) => {
+      if (u.isDefeated || !u.fishingRoute) return false;
+      const tile = u.fishingRoute.fishingTile;
+      return !!tile && tile.col === col && tile.row === row;
+    });
+  }
+
+  /**
+   * Yields of a tile as worked by a city. Fishing grounds only pay their full
+   * fish bonus when a Fisher Boat is actively using them: without a boat the
+   * city draws one food less from a Fish tile, so the boat (and its catch) is
+   * what makes the ground valuable. Public so the AI and the UI rank/display
+   * the same numbers the growth pipeline uses.
+   */
+  cityTileYields(
     tile: EconomyTile | null | undefined,
   ): { food: number; production: number; trade: number } {
     const yields = this.tileYields(tile);
     if (!tile) return yields;
-    const hasHarbor = (city?.buildings ?? []).includes(BUILDING_TYPES.HARBOR);
-    if (!hasHarbor) return yields;
-    const terrain = String(tile.type ?? tile.terrain ?? '').toLowerCase();
-    if (terrain !== TERRAIN_TYPES.OCEAN) return yields;
-    return { ...yields, food: yields.food + 1 };
+    if (String(tile.resource ?? '').toLowerCase() !== 'fish') return yields;
+    if (typeof tile.col !== 'number' || typeof tile.row !== 'number') return yields;
+    if (this.hasActiveFishingNet(tile.col, tile.row)) return yields;
+    return { ...yields, food: Math.max(0, yields.food - 1) };
   }
 
   private cityTerritory(city: City): Array<{ col: number; row: number }> {
@@ -426,7 +442,7 @@ export class EconomicManager {
       candidates.push({
         col: sq.col,
         row: sq.row,
-        yields: this.tileYieldsForCity(city, tile),
+        yields: this.cityTileYields(tile),
       });
     }
     const total = (y: {
@@ -550,7 +566,7 @@ export class EconomicManager {
       const col = Number(key.slice(0, sep));
       const row = Number(key.slice(sep + 1));
       if (Number.isNaN(col) || Number.isNaN(row)) continue;
-      const y = this.tileYieldsForCity(city, this.getTile(col, row));
+      const y = this.cityTileYields(this.getTile(col, row));
       food += y.food;
       production += y.production;
       trade += y.trade;

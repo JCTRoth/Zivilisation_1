@@ -629,6 +629,12 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
       if (unit.workTarget) {
         this.gameEngine.advanceUnitWork(unit.id);
       }
+
+      // Fisher Boat: the automatic fishing route is advanced at the start of
+      // the turn (collect / sail home / sail back out) with fresh moves.
+      if (unit.fishingRoute) {
+        this.gameEngine.advanceFishing(unit.id);
+      }
     });
   }
 
@@ -965,6 +971,13 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
       city.foodStored = hasGranary ? Math.floor(storedBeforeGrowth / 2) : 0;
       city.foodNeeded = (city.population + 1) * 10;
       console.log(`[TurnManager] City ${city.name} grew to population ${city.population}`);
+    }
+
+    // Fisher Boat overflow: a delivered catch that did not fully fit into the
+    // food box grants +2 food at this growth step (once).
+    if ((city.fishingOverflowBonus ?? 0) > 0) {
+      city.foodStored = (city.foodStored ?? 0) + (city.fishingOverflowBonus ?? 0);
+      city.fishingOverflowBonus = 0;
     }
   }
 

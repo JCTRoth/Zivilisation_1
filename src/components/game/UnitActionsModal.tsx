@@ -88,6 +88,17 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
           </div>
         )}
 
+        {/* Fisher Boat route status */}
+        {contextMenu.unit?.fishingRoute && (
+          <div className="unit-context-menu__work">
+            🎣 {contextMenu.unit.fishingRoute.stage === 'fishing'
+              ? `Fishing ${contextMenu.unit.fishStored ?? 0}/6`
+              : contextMenu.unit.fishingRoute.stage === 'inbound'
+                ? `Returning to port (${contextMenu.unit.fishStored ?? 0}/6)`
+                : 'Sailing to the fishing ground'}
+          </div>
+        )}
+
         <div className="unit-context-menu__scroll">
           {/* Unit Actions */}
           {contextMenu.unit && (
@@ -171,6 +182,31 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                       onClick={() => handleAction('build_railroad')}
                     >
                       <span aria-hidden="true">🚆</span>Build Railroad
+                    </button>
+                  )}
+                </>
+              )}
+
+              {contextMenu.unit.type === 'fisher_boat' && (
+                <>
+                  {(gameEngine?.canDeployFishingNet?.(contextMenu.unit.id) ?? false) && (
+                    <button
+                      type="button"
+                      className="context-menu-item"
+                      disabled={isFortified || isSleeping}
+                      onClick={() => handleAction('deploy_fishing_net')}
+                    >
+                      <span aria-hidden="true">🎣</span>Deploy Fishing Net
+                    </button>
+                  )}
+                  {contextMenu.unit.fishingRoute && (
+                    <button
+                      type="button"
+                      className="context-menu-item"
+                      disabled={isFortified || isSleeping}
+                      onClick={() => handleAction('remove_fishing_net')}
+                    >
+                      <span aria-hidden="true">❌</span>Remove Fishing Net (recall)
                     </button>
                   )}
                 </>

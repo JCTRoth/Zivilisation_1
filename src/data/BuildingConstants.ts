@@ -210,7 +210,7 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         maintenance: 1,
         requiredTechnology: 'masonry',
         effects: {},
-        description: 'Allows building naval units and increases food from worked water tiles',
+        description: 'Allows building naval units and the Fisher Boat',
         icon: '⚓'
     },
     [BUILDING_TYPES.FACTORY]: {

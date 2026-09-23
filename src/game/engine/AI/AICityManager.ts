@@ -207,7 +207,7 @@ export class AICityManager {
       const [col, row] = key.split(',').map(Number);
       const tile = this.gameEngine.getTileAt?.(col, row);
       if (!tile) continue;
-      const y = this.econ.tileYields(tile);
+      const y = this.econ.cityTileYields(tile);
       worked.push({ key, food: y.food, production: y.production, trade: y.trade });
     }
     if (worked.length === 0) return false;
@@ -228,7 +228,7 @@ export class AICityManager {
           (other) => other.id !== city.id && other.workingTiles?.has(key),
         );
         if (claimedElsewhere) continue;
-        const y = this.econ.tileYields(tile);
+        const y = this.econ.cityTileYields(tile);
         available.push({ key, food: y.food, production: y.production, trade: y.trade });
       }
     }

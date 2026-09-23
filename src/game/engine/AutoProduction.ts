@@ -322,6 +322,14 @@ export class AutoProduction {
       return colonyFerry;
     }
 
+    // 1e. Fisher Boat: a harbor city that is short on food sends a boat to the
+    //     nearest known fish tile (replaces the old harbor ocean-food bonus).
+    const fisherBoat = this.buildFisherBoatProduction(city, unitCapExhausted);
+    if (fisherBoat) {
+      console.log('[AutoProduction] Food pressure — building a Fisher Boat');
+      return fisherBoat;
+    }
+
     const civCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === city.civilizationId);
     const econ = this.gameEngine?.economicManager;
 
@@ -1184,6 +1192,80 @@ export class AutoProduction {
     return { type: 'unit', itemType: 'ferry', name: props.name, cost: props.cost };
   }
 
+  /** Whether the city owns a specific building (string or object form). */
+  private cityOwnsBuilding(city: City, buildingId: string): boolean {
+    return (city.buildings ?? []).some((b: unknown) => {
+      const id = typeof b === 'string'
+        ? b
+        : ((b as { id?: string })?.id ?? (b as { type?: string })?.type ?? '');
+      return String(id) === buildingId;
+    });
+  }
+
+  /** Nearest explored fish tile to `city`, or null when none is known yet. */
+  private findFishingGroundForCity(city: City): { col: number; row: number } | null {
+    const grid = this.gameEngine.squareGrid;
+    if (!grid || typeof this.gameEngine.getTileAt !== 'function') return null;
+    let best: { col: number; row: number } | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    const width = grid.width ?? 0;
+    const height = grid.height ?? 0;
+    for (let col = 0; col < width; col++) {
+      for (let row = 0; row < height; row++) {
+        const tile = this.gameEngine.getTileAt(col, row);
+        const resource = String((tile as { resource?: string } | null)?.resource ?? '').toLowerCase();
+        if (resource !== 'fish') continue;
+        if (typeof this.gameEngine.isExploredByPlayer === 'function'
+            && !this.gameEngine.isExploredByPlayer(city.civilizationId, col, row)) {
+          continue;
+        }
+        const distance = grid.chebyshevDistance(city.col, city.row, col, row);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = { col, row };
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Fisher Boat for a harbor city with a known fish tile and food pressure.
+   * The boat replaces the old harbor "food from the sea" bonus: it deploys a
+   * net on a fish tile and ships the catch home (GameEngine.advanceFishing).
+   * One boat per city — ProductionManager enforces the cap centrally.
+   */
+  private buildFisherBoatProduction(city: City, unitCapExhausted: boolean): ProductionItem | null {
+    // The boat has upkeep: never grow the army further at the economy cap.
+    if (unitCapExhausted) return null;
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return null;
+    // The Fisher Boat requires the Harbor BUILDING, not just a coast.
+    if (!this.cityOwnsBuilding(city, 'harbor')) return null;
+    if (!canBuildUnit(civ, 'fisher_boat')) return null;
+
+    // One per city: alive at sea or already under construction.
+    const hasFisher = this.gameEngine.units.some(
+      (u: Unit) => u.civilizationId === civ.id && u.type === 'fisher_boat'
+        && u.homeCityId === city.id && !u.isDefeated,
+    );
+    const queuedFisher = String(city.currentProduction?.itemType ?? '') === 'fisher_boat'
+      || (city.buildQueue ?? []).some(
+        (q: QueueItem) => String(q?.itemType ?? q?.type ?? '') === 'fisher_boat',
+      );
+    if (hasFisher || queuedFisher) return null;
+
+    // Only worth it when the city actually needs more food.
+    const balance = this.cityFoodBalance(city, civ);
+    if (!balance || balance.surplus >= 2) return null;
+
+    if (!this.findFishingGroundForCity(city)) return null;
+
+    const props = UNIT_PROPS.fisher_boat;
+    if (!props) return null;
+    return { type: 'unit', itemType: 'fisher_boat', name: props.name, cost: props.cost };
+  }
+
   /** Harbor for a civ isolated on a small island (coastal cities only). */
   private buildHarborProduction(city: City): ProductionItem | null {
     const existing = new Set(city.buildings ?? []);
@@ -1448,7 +1530,7 @@ export class AutoProduction {
       const row = Number(key.slice(sep + 1));
       const tile = this.gameEngine.getTileAt(col, row);
       if (!tile) continue;
-      const y = econ.tileYields(tile);
+      const y = econ.cityTileYields(tile);
       if (y.food < worstFood) {
         worstFood = y.food;
         worstFoodKey = key;

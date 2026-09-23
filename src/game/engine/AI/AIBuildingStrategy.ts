@@ -261,10 +261,10 @@ export class AIBuildingStrategy {
 
       case 'harbor':
         // A harbor is only worth building when it is NEEDED: it unlocks naval
-        // construction and adds food from worked water tiles, so an inland
-        // city gets ZERO priority (never build it there). Coastal cities get a
-        // solid weight; the AutoProduction island branch raises it further
-        // when the civ is isolated on a small island.
+        // construction (incl. the Fisher Boat), so an inland city gets ZERO
+        // priority (never build it there). Coastal cities get a solid weight;
+        // the AutoProduction island branch raises it further when the civ is
+        // isolated on a small island.
         if (gameState.cityCoastal === false) {
           priority = 0;
           reasons.push('inland-no-water');
@@ -276,7 +276,7 @@ export class AIBuildingStrategy {
           priority += 4;
           reasons.push('coastal');
         }
-        reasons.push('naval-food');
+        reasons.push('naval');
         break;
 
       case 'factory':

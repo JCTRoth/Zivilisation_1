@@ -14,6 +14,8 @@ const PRODUCTION_FAILURE_TEXTS: Record<string, string> = {
   city_not_found: 'the city no longer exists',
   already_purchased_this_turn: 'this city already bought something this turn',
   not_enough_gold: 'there is not enough gold',
+  no_water_access: 'the city has no water access',
+  fisher_boat_limit: 'this city already has a Fisher Boat',
   exception: 'the production manager reported an error',
 };
 
@@ -26,6 +28,10 @@ export function productionFailureText(reason?: string | null): string {
   if (reason.startsWith('requires_tech_')) {
     const tech = reason.slice('requires_tech_'.length).replace(/_/g, ' ');
     return `it requires the ${tech} technology`;
+  }
+  if (reason.startsWith('requires_building_')) {
+    const building = reason.slice('requires_building_'.length).replace(/_/g, ' ');
+    return `it requires a ${building} in this city`;
   }
   return PRODUCTION_FAILURE_TEXTS[reason] ?? reason.replace(/_/g, ' ');
 }

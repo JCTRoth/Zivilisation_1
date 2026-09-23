@@ -77,6 +77,9 @@ export class EngineEventRouter {
       case 'IMPROVEMENT_BUILT':
         this.onImprovementBuilt(eventData);
         break;
+      case 'FISH_DELIVERED':
+        this.onFishDelivered(eventData);
+        break;
       case 'AUTO_END_TURN':
         this.onAutoEndTurn(eventData);
         break;
@@ -812,6 +815,23 @@ export class EngineEventRouter {
   private onAIFinished() {
     this.actions.updateUnits(this.gameEngine.getAllUnits());
     // this.actions.addNotification({ type: 'info', message: 'AI finished its turn' });
+  }
+
+  /**
+   * Fisher Boat unloaded its catch into a city. Only the owning human gets a
+   * toast (AI-vs-AI stays quiet).
+   */
+  private onFishDelivered(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const city = eventData?.city as City | undefined;
+    if (!city) return;
+    const food = (eventData.food as number) ?? 0;
+    const stored = (eventData.stored as number) ?? 0;
+    const overflow = eventData.overflow === true;
+    const message = overflow
+      ? `${city.name}: Fisher Boat unloaded ${stored} food (storage full, +2 next round)`
+      : `${city.name}: Fisher Boat unloaded ${food} food`;
+    notify('success', message, city.civilizationId);
   }
 
   private onImprovementBuilt(eventData: Record<string, unknown>) {

@@ -117,6 +117,28 @@ function addResource(engine: GameEngine, col: number, row: number, resource: str
   if (tile) tile.resource = resource;
 }
 
+/**
+ * Put a Fisher Boat's net on a fishing ground. Since the harbor ocean-food
+ * removal, a Fish tile only pays its full food value while a boat is actively
+ * using it — these fixtures need nets to model "fish tiles are the fix".
+ */
+function addFishingNet(engine: GameEngine, col: number, row: number, homeCityId = 'city-1'): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (engine as any).units.push({
+    id: `fisher-${col}-${row}`,
+    type: 'fisher_boat',
+    civilizationId: 0,
+    col,
+    row,
+    health: 100,
+    movesRemaining: 0,
+    isDefeated: false,
+    homeCityId,
+    fishStored: 0,
+    fishingRoute: { homeCityId, fishingTile: { col, row }, stage: 'fishing' },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Food balance helper
 // ---------------------------------------------------------------------------
@@ -159,6 +181,9 @@ describe('AI city management: famine prevention', () => {
     addResource(engine, 1, 1, 'Fish');
     addResource(engine, 2, 1, 'Fish');
     addResource(engine, 3, 1, 'Fish');
+    // Two boats work the best grounds, so those tiles pay full value.
+    addFishingNet(engine, 1, 1);
+    addFishingNet(engine, 2, 1);
     engine.economicManager.refreshYieldsFromWorkingTiles(city as never);
     const before = engine.economicManager.cityFoodBalance(city as never, civ as never);
     expect(before.surplus).toBeLessThan(AI_MIN_FOOD_SURPLUS);
@@ -185,6 +210,7 @@ describe('AI city management: famine prevention', () => {
     addResource(engine, 1, 1, 'Fish');
     addResource(engine, 3, 1, 'Fish');
     addResource(engine, 2, 1, 'Fish');
+    addFishingNet(engine, 1, 1);
     // The plains tile carries Horses (+2 production) — more valuable than the
     // surplus fish tile when food is already abundant.
     addResource(engine, 1, 2, 'Horses');
@@ -213,13 +239,14 @@ describe('AI city management: specialist policy', () => {
       [O, O, O, O, O],
       [O, O, O, O, O],
     ], {
-      population: 4,
+      population: 3,
       buildings: ['temple'],
       workingTiles: new Set(['2,2', '1,1', '3,1', '2,1']),
     });
     addResource(engine, 1, 1, 'Fish');
     addResource(engine, 3, 1, 'Fish');
     addResource(engine, 2, 1, 'Fish');
+    addFishingNet(engine, 1, 1);
     engine.economicManager.refreshYieldsFromWorkingTiles(city as never);
     expect(engine.economicManager.cityFoodBalance(city as never, civ as never).surplus).toBeGreaterThanOrEqual(3);
 
@@ -258,6 +285,7 @@ describe('AI city management: granary plan', () => {
     ], { population: 3, workingTiles: new Set(['2,2', '1,1', '3,1']) });
     addResource(engine, 1, 1, 'Fish');
     addResource(engine, 3, 1, 'Fish');
+    addFishingNet(engine, 1, 1);
     engine.economicManager.refreshYieldsFromWorkingTiles(city as never);
     expect(engine.economicManager.cityFoodBalance(city as never, civ as never).surplus).toBeGreaterThanOrEqual(1);
 

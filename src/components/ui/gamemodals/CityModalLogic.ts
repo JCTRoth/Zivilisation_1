@@ -2,6 +2,7 @@
 
 import { ModalUtils } from './ModalUtils';
 import {CityUtils} from "@/utils/CityUtils";
+import { FISHER_BOAT_STORAGE, fisherCatchValue, fisherFoodPerFish } from '@/data/UnitConstants';
 import type { City, Civilization, ProductionItem, TradeRoute } from '../../../../types/game';
 import GameEngine from '@/game/engine/GameEngine';
 
@@ -58,6 +59,69 @@ export class CityModalLogic {
 
   getQueueItems(): ProductionItem[] {
     return this.city.buildQueue || [];
+  }
+
+  /**
+   * Fisher Boat status for this city (max one per city). Returns the boat
+   * bound to the city — alive at sea (with its route stage and hold) or under
+   * construction — plus the distance-based catch value of its fishing ground.
+   */
+  getFisherBoatStatus(): {
+    exists: boolean;
+    underConstruction: boolean;
+    stage: 'outbound' | 'fishing' | 'inbound' | null;
+    fishStored: number;
+    capacity: number;
+    tile: { col: number; row: number } | null;
+    distance: number;
+    foodPerFish: number;
+    catchValue: number;
+  } {
+    const capacity = FISHER_BOAT_STORAGE;
+    const base = {
+      exists: false,
+      underConstruction: false,
+      stage: null as 'outbound' | 'fishing' | 'inbound' | null,
+      fishStored: 0,
+      capacity,
+      tile: null as { col: number; row: number } | null,
+      distance: 0,
+      foodPerFish: 1,
+      catchValue: capacity,
+    };
+
+    const boat = this.gameEngine?.units?.find(
+      (u) => u.type === 'fisher_boat' && u.homeCityId === this.city.id && !u.isDefeated,
+    );
+    if (boat) {
+      const route = boat.fishingRoute ?? null;
+      const tile = route?.fishingTile ?? { col: boat.col, row: boat.row };
+      const distance = this.gameEngine.squareGrid?.chebyshevDistance
+        ? this.gameEngine.squareGrid.chebyshevDistance(
+            this.city.col,
+            this.city.row,
+            tile.col,
+            tile.row,
+          )
+        : Math.max(Math.abs(this.city.col - tile.col), Math.abs(this.city.row - tile.row));
+      return {
+        ...base,
+        exists: true,
+        stage: route?.stage ?? null,
+        fishStored: boat.fishStored ?? 0,
+        tile,
+        distance,
+        foodPerFish: fisherFoodPerFish(distance),
+        catchValue: fisherCatchValue(distance),
+      };
+    }
+
+    const underConstruction =
+      String(this.city.currentProduction?.itemType ?? '') === 'fisher_boat'
+      || (this.city.buildQueue ?? []).some(
+        (q) => String((q as ProductionItem | undefined)?.itemType ?? '') === 'fisher_boat',
+      );
+    return { ...base, underConstruction };
   }
 
   canPurchase(item: ProductionItem): boolean {

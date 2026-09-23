@@ -64,11 +64,39 @@ export class ProductionManager {
         if (req && !techs.has(req)) {
           return { ok: false, reason: `requires_tech_${req}` };
         }
+        // Some units are gated on a BUILDING the city must own (the Fisher
+        // Boat needs a Harbor). Checked before the coast rule so the more
+        // specific requirement is reported first.
+        const requiredBuilding = unitProps.requiredBuilding ?? null;
+        if (requiredBuilding) {
+          const ownsBuilding = (city.buildings ?? []).some((b: unknown) => {
+            const id = typeof b === 'string'
+              ? b
+              : ((b as { id?: string })?.id ?? (b as { type?: string })?.type ?? '');
+            return String(id) === String(requiredBuilding);
+          });
+          if (!ownsBuilding) {
+            return { ok: false, reason: `requires_building_${requiredBuilding}` };
+          }
+        }
         // Civ1 naval rule: a naval unit needs a coastal city (or a harbour).
         // Enforced on EVERY production path, not just the build menu, so the
         // AI/auto-production can never queue a ship inland.
         if (unitProps.naval && !this.cityHasHarborOrCoast(city)) {
           return { ok: false, reason: 'no_water_access' };
+        }
+        // Fisher Boat: at most ONE per city. The boat is bound to its home
+        // city (alive at sea or under construction both count), so a city
+        // cannot field a fishing fleet.
+        if (itemType === 'fisher_boat') {
+          const hasLiving = this.gameEngine.units?.some(
+            (u) => u.type === 'fisher_boat' && u.homeCityId === city.id && !u.isDefeated,
+          );
+          const queued = String(city.currentProduction?.itemType ?? '') === 'fisher_boat'
+            || (city.buildQueue ?? []).some((q) => String(q?.itemType ?? '') === 'fisher_boat');
+          if (hasLiving || queued) {
+            return { ok: false, reason: 'fisher_boat_limit' };
+          }
         }
       }
 
@@ -79,7 +107,7 @@ export class ProductionManager {
         if (req && !techs.has(req)) {
           return { ok: false, reason: `requires_tech_${req}` };
         }
-        // A Harbor is only useful with a water connection (ships + sea food):
+        // A Harbor is only useful with a water connection (ships):
         // never let an inland city waste shields on one.
         if (itemType === 'harbor' && !this.cityHasHarborOrCoast(city)) {
           return { ok: false, reason: 'no_water_access' };

@@ -2082,6 +2082,34 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         }
         break;
 
+      case "deploy_fishing_net":
+        if (unit && gameEngine?.deployFishingNet) {
+          const deployed = gameEngine.deployFishingNet(unit.id);
+          if (actions?.updateUnits)
+            actions.updateUnits(getAllUnitsFromEngine());
+          if (actions?.addNotification)
+            actions.addNotification(
+              deployed
+                ? { type: "success", message: `${unit.type} deployed its fishing net` }
+                : { type: "warning", message: "Cannot deploy the fishing net here" },
+            );
+        }
+        break;
+
+      case "remove_fishing_net":
+        if (unit && gameEngine?.recallFishingBoat) {
+          const recalled = gameEngine.recallFishingBoat(unit.id);
+          if (actions?.updateUnits)
+            actions.updateUnits(getAllUnitsFromEngine());
+          if (actions?.addNotification)
+            actions.addNotification(
+              recalled
+                ? { type: "info", message: `${unit.type} is returning to port to unload` }
+                : { type: "warning", message: "No fishing route to remove" },
+            );
+        }
+        break;
+
       case "sleep":
         if (unit && gameEngine) {
           if (unit.isSleeping && gameEngine.unitWake) {

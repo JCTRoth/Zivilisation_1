@@ -32,6 +32,7 @@ export const UNIT_TYPES = {
     SUBMARINE: 'submarine',
     CARRIER: 'carrier',
     TRANSPORT: 'transport',
+    FISHER_BOAT: 'fisher_boat',
 
     // Civilian Units
     SETTLER: 'settler',
@@ -468,6 +469,24 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         requires: 'trade',
         type: 'civilian'
     },
+    [UNIT_TYPES.FISHER_BOAT]: {
+        name: 'Fisher Boat',
+        attack: 0,
+        defense: 1,
+        movement: 2,
+        sightRange: 2,
+        cost: 20,
+        maintenance: 1,
+        canSettle: false,
+        canWork: false,
+        naval: true,
+        icon: '🎣',
+        requires: null,
+        // A Fisher Boat needs the Harbor BUILDING (not just a coast): it is
+        // the replacement for the old harbor "food from the sea" bonus.
+        requiredBuilding: 'harbor',
+        type: 'civilian'
+    },
     [UNIT_TYPES.FERRY]: {
         name: 'Ferry',
         attack: 0,
@@ -529,6 +548,29 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         type: 'air'
     }
 };
+
+/** Fisher Boat hold capacity: fish collected per full catch. */
+export const FISHER_BOAT_STORAGE = 6;
+
+/**
+ * Food value of a single fish based on the Chebyshev distance `d` between the
+ * Fisher Boat's home city and its net tile:
+ *
+ *     foodPerFish = min(3, 1 + floor(d / 4))
+ *
+ * Far fishing grounds pay more per fish to compensate for the longer trip:
+ * d 0-3 → 1, d 4-7 → 2, d 8+ → 3. A full catch (6 fish) therefore delivers
+ * 6 / 12 / 18 food.
+ */
+export function fisherFoodPerFish(distance: number): number {
+    const d = Math.max(0, Math.floor(distance));
+    return Math.min(3, 1 + Math.floor(d / 4));
+}
+
+/** Food delivered by a full hold fished at Chebyshev distance `d`. */
+export function fisherCatchValue(distance: number): number {
+    return FISHER_BOAT_STORAGE * fisherFoodPerFish(distance);
+}
 
 
 // Create GameData-compatible format: Record<string, UnitDataObject>

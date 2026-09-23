@@ -7,6 +7,7 @@ import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { TERRAIN_RESOURCES, TERRAIN_TYPES } from '@/data/TerrainConstants';
+import { FISHER_BOAT_STORAGE, fisherFoodPerFish } from '@/data/UnitConstants';
 import {
   BARBARIAN_CIV_ID,
   VILLAGE_OUTCOME,
@@ -2035,6 +2036,258 @@ export default class GameEngine {
     }, 1200);
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // Fisher Boat — automatic fishing route (replaces the old Harbor
+  // "food from worked ocean tiles" bonus)
+  // ────────────────────────────────────────────────────────────────────
+
+  /** Whether a tile holds the Fish resource (ocean or river). */
+  isFishTile(tile: { resource?: string | null } | null | undefined): boolean {
+    return String(tile?.resource ?? '').toLowerCase() === 'fish';
+  }
+
+  /**
+   * The Fisher Boat's home city: its `homeCityId` while it still belongs to
+   * the same civ, else the nearest own city (a captured home city must not
+   * strand the boat). Null when the civ has no city at all.
+   */
+  private getFishingHomeCity(unit: Unit): City | null {
+    if (unit.homeCityId) {
+      const home = this.cities.find(
+        (c) => c.id === unit.homeCityId && c.civilizationId === unit.civilizationId,
+      );
+      if (home) return home;
+    }
+    let best: City | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const city of this.cities) {
+      if (city.civilizationId !== unit.civilizationId) continue;
+      const distance = this.squareGrid.chebyshevDistance(unit.col, unit.row, city.col, city.row);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = city;
+      }
+    }
+    return best;
+  }
+
+  /** Register the GoTo path that drives a boat to `target` (idempotent). */
+  private setFishingPath(unit: Unit, target: { col: number; row: number }): void {
+    if (!this.goToManager?.calculatePath) return;
+    const existing = this.goToManager.getUnitPath?.(unit.id);
+    if (existing && existing.length > 0) {
+      const last = existing[existing.length - 1];
+      if (last.col === target.col && last.row === target.row) return;
+    }
+    const result = this.goToManager.calculatePath(
+      unit,
+      target.col,
+      target.row,
+      (col, row) => this.getTileAt(col, row),
+      this.squareGrid?.width ?? 0,
+      this.squareGrid?.height ?? 0,
+    );
+    if (result.success && result.path.length > 0) {
+      this.goToManager.setUnitPath(unit.id, result.path);
+    }
+  }
+
+  /**
+   * Refresh the yields of every city working the given tile — a Fish tile's
+   * food depends on whether a Fisher Boat has its net on it, so deploying or
+   * clearing a net changes the working city's yields immediately.
+   */
+  private refreshCitiesWorkingTile(col: number, row: number): void {
+    const key = `${col},${row}`;
+    for (const city of this.cities) {
+      const works = city.workingTiles as unknown;
+      const isWorking = works instanceof Set
+        ? works.has(key)
+        : Array.isArray(works)
+          ? works.includes(key)
+          : false;
+      if (isWorking) {
+        this.economicManager?.refreshYieldsFromWorkingTiles?.(city);
+      }
+    }
+  }
+
+  /** Whether the boat may deploy its net here (on a fish tile, with moves). */
+  canDeployFishingNet(unitId: string): boolean {
+    const unit = this.units.find((u) => u.id === unitId);
+    if (!unit || unit.isDefeated) return false;
+    if (unit.type !== 'fisher_boat') return false;
+    if (unit.fishingRoute) return false;
+    if ((unit.movesRemaining ?? 0) <= 0) return false;
+    if (!this.isFishTile(this.getTileAt(unit.col, unit.row))) return false;
+    return this.getFishingHomeCity(unit) !== null;
+  }
+
+  /**
+   * Deploy the fishing net on the tile the boat is standing on, starting the
+   * repeating outbound → fishing → inbound route. Consumes the boat's moves.
+   */
+  deployFishingNet(unitId: string): boolean {
+    if (!this.canDeployFishingNet(unitId)) return false;
+    const unit = this.units.find((u) => u.id === unitId)!;
+    const home = this.getFishingHomeCity(unit)!;
+    unit.fishingRoute = {
+      homeCityId: home.id,
+      fishingTile: { col: unit.col, row: unit.row },
+      stage: 'fishing',
+    };
+    unit.fishStored = unit.fishStored ?? 0;
+    unit.movesRemaining = 0;
+    this.updateUnitTurnsDoneFlag(unit);
+    // The ground now pays full fish yields to any city working it.
+    this.refreshCitiesWorkingTile(unit.col, unit.row);
+    this.onStateChange?.('FISHING_NET_DEPLOYED', {
+      unit,
+      tile: this.getTileAt(unit.col, unit.row),
+      city: home,
+    });
+    return true;
+  }
+
+  /**
+   * "Remove Fishing Net" in the UI is a RECALL, not a cancel: the boat
+   * immediately sails home to unload its hold and then automatically returns
+   * to the same net tile. The route lives until the boat is disbanded.
+   */
+  recallFishingBoat(unitId: string): boolean {
+    const unit = this.units.find((u) => u.id === unitId);
+    if (!unit?.fishingRoute || unit.isDefeated) return false;
+    const home = this.getFishingHomeCity(unit);
+    if (!home) {
+      this.clearFishingRoute(unitId);
+      return false;
+    }
+    unit.fishingRoute.homeCityId = home.id;
+    unit.fishingRoute.stage = 'inbound';
+    this.setFishingPath(unit, { col: home.col, row: home.row });
+    this.onStateChange?.('FISHING_RECALLED', { unit, city: home });
+    return true;
+  }
+
+  /** Drop a boat's fishing route and any carry (home city lost, disband…). */
+  clearFishingRoute(unitId: string): void {
+    const unit = this.units.find((u) => u.id === unitId);
+    if (!unit) return;
+    const had = !!unit.fishingRoute;
+    unit.fishingRoute = null;
+    if (had) {
+      this.goToManager?.clearUnitPath?.(unit.id);
+      // Without a boat the ground is worth less to the cities working it.
+      this.refreshCitiesWorkingTile(unit.col, unit.row);
+    }
+    unit.fishStored = 0;
+  }
+
+  /**
+   * Advance a Fisher Boat's automatic route by one turn. Called at the start
+   * of the owner's turn (after moves were restored) so the state machine can
+   * register the GoTo path the movement phase walks this turn.
+   */
+  advanceFishing(unitId: string): void {
+    const unit = this.units.find((u) => u.id === unitId);
+    const route = unit?.fishingRoute;
+    if (!unit || !route || unit.isDefeated) return;
+
+    const home = this.getFishingHomeCity(unit);
+    if (!home) {
+      this.clearFishingRoute(unit.id);
+      return;
+    }
+    route.homeCityId = home.id;
+
+    const atHome = unit.col === home.col && unit.row === home.row;
+    const atNet = unit.col === route.fishingTile.col && unit.row === route.fishingTile.row;
+
+    if (route.stage === 'outbound') {
+      if (atNet) {
+        route.stage = 'fishing';
+      } else {
+        this.setFishingPath(unit, route.fishingTile);
+        return;
+      }
+    }
+
+    if (route.stage === 'fishing') {
+      if (!atNet) {
+        // A manual detour took the boat off the net: sail back.
+        route.stage = 'outbound';
+        this.setFishingPath(unit, route.fishingTile);
+        return;
+      }
+      const before = unit.fishStored ?? 0;
+      unit.fishStored = Math.min(FISHER_BOAT_STORAGE, before + 1);
+      if (unit.fishStored > before) {
+        this.onStateChange?.('FISH_CAUGHT', {
+          unit,
+          stored: unit.fishStored,
+          capacity: FISHER_BOAT_STORAGE,
+        });
+      }
+      if (unit.fishStored >= FISHER_BOAT_STORAGE) {
+        route.stage = 'inbound';
+      } else {
+        // Fishing occupies the boat for the turn.
+        unit.movesRemaining = 0;
+        this.updateUnitTurnsDoneFlag(unit);
+        return;
+      }
+    }
+
+    if (route.stage === 'inbound') {
+      if (atHome) {
+        this.deliverFishingCatch(unit, home);
+        route.stage = 'outbound';
+        this.setFishingPath(unit, route.fishingTile);
+      } else {
+        this.setFishingPath(unit, { col: home.col, row: home.row });
+      }
+    }
+  }
+
+  /**
+   * Unload the hold into the home city's food box. `foodPerFish` grows with
+   * the distance between city and net tile (see `fisherFoodPerFish`); a catch
+   * that does not fully fit leaves the city with a one-round +2 food bonus
+   * applied at its next growth step.
+   */
+  private deliverFishingCatch(unit: Unit, city: City): void {
+    const stored = unit.fishStored ?? 0;
+    if (stored <= 0) return;
+    const route = unit.fishingRoute;
+    const distance = route
+      ? this.squareGrid.chebyshevDistance(
+          city.col,
+          city.row,
+          route.fishingTile.col,
+          route.fishingTile.row,
+        )
+      : 0;
+    const foodPerFish = fisherFoodPerFish(distance);
+    const delivered = stored * foodPerFish;
+    const threshold = city.foodNeeded ?? ((city.population ?? 1) + 1) * 10;
+    const current = city.foodStored ?? 0;
+    const space = Math.max(0, threshold - current);
+    const added = Math.min(space, delivered);
+    city.foodStored = current + added;
+    if (added < delivered) {
+      city.fishingOverflowBonus = 2;
+    }
+    unit.fishStored = 0;
+    this.onStateChange?.('FISH_DELIVERED', {
+      unit,
+      city,
+      food: delivered,
+      stored: added,
+      foodPerFish,
+      overflow: added < delivered,
+    });
+  }
+
   /**
    * Get city at coordinates
    */
@@ -2140,7 +2393,7 @@ export default class GameEngine {
       const row = Number(key.slice(sep + 1));
       const tile = this.getTileAt(col, row);
       if (!tile) continue;
-      const y = this.economicManager?.tileYields(tile);
+      const y = this.economicManager?.cityTileYields(tile);
       if (!y) continue;
       const total = y.food + y.production + y.trade;
       if (total < worstYield) {
@@ -2159,7 +2412,7 @@ export default class GameEngine {
         const row = Number(key.slice(sep + 1));
         const tile = this.getTileAt(col, row);
         if (!tile) continue;
-        const y = this.economicManager?.tileYields(tile);
+        const y = this.economicManager?.cityTileYields(tile);
         if (!y) continue;
         const total = y.food + y.production + y.trade;
         if (total < worstYield) {
