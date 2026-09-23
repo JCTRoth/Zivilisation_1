@@ -23,6 +23,7 @@ describe('enemy sighting detection', () => {
     row,
     movesRemaining: 1,
     health: 100,
+    icon: '⚔️',
   });
 
   const setup = (opts: { units: Unit[]; visibleTiles: number[]; devMode?: boolean }) => {

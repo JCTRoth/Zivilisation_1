@@ -254,6 +254,8 @@ export interface Unit {
   positionHistory?: [col: number, row: number][];
   type: string;
   civilizationId: number;
+  /** Legacy alias of `civilizationId` kept for old save data. */
+  owner?: number;
   col: number;
   row: number;
   movesRemaining: number;

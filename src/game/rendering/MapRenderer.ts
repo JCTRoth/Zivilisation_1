@@ -687,7 +687,7 @@ export class MapRenderer {
       movementAnimations: params.movementAnimations
     });
 
-    this.drawUnitPaths(ctx, unitPaths, units, gameState, squareToScreen);
+    this.drawUnitPaths(ctx, unitPaths, units, cities, map, gameState, squareToScreen);
   }
 
   /**
@@ -798,7 +798,7 @@ export class MapRenderer {
       movementAnimations
     });
 
-    this.drawUnitPaths(ctx, unitPaths, units, gameState, squareToScreen);
+    this.drawUnitPaths(ctx, unitPaths, units, cities, map, gameState, squareToScreen);
   }
 
   /**
@@ -1876,11 +1876,13 @@ export class MapRenderer {
     ctx: CanvasRenderingContext2D,
     unitPaths: Map<string, UnitPathStep[]>,
     units: Unit[],
+    cities: City[],
+    map: MapState,
     gameState: GameState,
     squareToScreen: (col: number, row: number) => { x: number; y: number }
   ): void {
     unitPaths.forEach((path, unitId) => {
-      this.drawUnitPath(ctx, unitId, path, units, gameState, squareToScreen);
+      this.drawUnitPath(ctx, unitId, path, units, cities, map, gameState, squareToScreen);
     });
   }
 
@@ -2237,7 +2239,7 @@ export class MapRenderer {
     const zoomFactor = typeof cameraZoom === 'number' ? Math.min(Math.max(cameraZoom, 0.5), 1.5) : 1;
     const radius = Math.round(20 * zoomFactor);
 
-    const civIndex = unit.civilizationId ?? (unit as any).owner;
+    const civIndex = unit.civilizationId ?? unit.owner;
     const civ = civilizations.find(c => c.id === civIndex);
     const civColor = civ?.color || (civIndex === 0 ? '#4169E1' : '#DC143C');
 
@@ -2412,7 +2414,7 @@ export class MapRenderer {
     const zoomFactor = typeof cameraZoom === 'number' ? Math.min(Math.max(cameraZoom, 0.5), 1.5) : 1;
     const radius = Math.round(20 * zoomFactor);
 
-    const civIndex = unit.civilizationId ?? (unit as any).owner;
+    const civIndex = unit.civilizationId ?? unit.owner;
     const civ = civilizations.find(c => c.id === civIndex);
     const civColor = civ?.color || (civIndex === 0 ? '#4169E1' : '#DC143C');
 
@@ -2592,6 +2594,8 @@ export class MapRenderer {
     unitId: string,
     path: UnitPathStep[] | undefined,
     units: Unit[],
+    cities: City[],
+    map: MapState,
     gameState: GameState,
     squareToScreen: (col: number, row: number) => { x: number; y: number }
   ): void {
@@ -2606,15 +2610,13 @@ export class MapRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Get map data for checking explored tiles
-    const mapData = (gameState as any).mapData;
-    const mapWidth = mapData?.width || 0;
-    
-    // Filter path to only include explored tiles for line drawing
+    // Only draw path lines through tiles the player has revealed.
+    const mapWidth = map.width || 0;
+    const revealed = map.revealed;
     const visiblePath = path.filter((pos) => {
-      if (!mapData || !mapData.revealed) return true;
+      if (!revealed) return true;
       const tileIndex = pos.row * mapWidth + pos.col;
-      return mapData.revealed[tileIndex] === true;
+      return revealed[tileIndex] === true;
     });
 
     // Draw path lines only through explored tiles
@@ -2633,10 +2635,9 @@ export class MapRenderer {
 
     // --- Intermediate enemy markers: show ⚔ at every enemy tile along the path ---
     // Only show on explored tiles (no fog of war)
-    const cities = (gameState as unknown as Record<string, unknown>).cities as City[] || [];
     const isExplored = (col: number, row: number): boolean => {
-      if (!mapData || !mapData.revealed) return true;
-      return mapData.revealed[row * mapWidth + col] === true;
+      if (!revealed) return true;
+      return revealed[row * mapWidth + col] === true;
     };
     for (let si = 1; si < path.length; si++) {
       const step = path[si];

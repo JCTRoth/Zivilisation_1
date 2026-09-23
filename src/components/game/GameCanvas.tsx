@@ -659,6 +659,23 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, [gameEngine, minimap]);
 
+  /** All units from the engine — stable for the keyboard handler effect. */
+  const getAllUnitsFromEngine = useCallback((): Unit[] => {
+    if (!gameEngine) return [];
+    try {
+      if (typeof gameEngine.getAllUnits === "function")
+        return gameEngine.getAllUnits();
+      const unitsArr = gameEngine.units;
+      if (Array.isArray(unitsArr)) return unitsArr;
+      const mapObj = gameEngine.map as { getAllUnits?: () => Unit[] } | null;
+      if (mapObj && typeof mapObj.getAllUnits === "function")
+        return mapObj.getAllUnits();
+    } catch (err) {
+      console.error("[GameCanvas] getAllUnitsFromEngine error", err);
+    }
+    return [];
+  }, [gameEngine]);
+
   // Keyboard event handler for unit actions using KeyboardHandler class
   useEffect(() => {
     if (minimap) {
@@ -711,6 +728,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     gameEngine,
     actions,
     triggerRender,
+    getAllUnitsFromEngine,
   ]);
 
   // Sync unit paths from RoundManager when turn changes
@@ -873,22 +891,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     },
     [gameEngine],
   );
-
-  const getAllUnitsFromEngine = (): Unit[] => {
-    if (!gameEngine) return [];
-    try {
-      if (typeof gameEngine.getAllUnits === "function")
-        return gameEngine.getAllUnits();
-      const unitsArr = gameEngine.units;
-      if (Array.isArray(unitsArr)) return unitsArr;
-      const mapObj = gameEngine.map as { getAllUnits?: () => Unit[] } | null;
-      if (mapObj && typeof mapObj.getAllUnits === "function")
-        return mapObj.getAllUnits();
-    } catch (err) {
-      console.error("[GameCanvas] getAllUnitsFromEngine error", err);
-    }
-    return [];
-  };
 
   const getAllCitiesFromEngine = (): City[] => {
     if (!gameEngine) return [];

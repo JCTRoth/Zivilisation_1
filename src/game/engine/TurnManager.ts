@@ -289,14 +289,16 @@ export class TurnManager {
         }
         
         // Human movement waits for UI. AI movement triggered asynchronously below.
-        const civ = this.gameEngine.civilizations?.[this.currentPlayer];
-        if (civ?.isAI) {
-          this.runAIUnitMovementPhase(this.currentPlayer);
-        } else if (civ?.isHuman) {
-          // For human players, auto-select and focus on the first unit in the queue
-          this.selectCurrentQueueUnit(this.currentPlayer);
+        {
+          const civ = this.gameEngine.civilizations?.[this.currentPlayer];
+          if (civ?.isAI) {
+            this.runAIUnitMovementPhase(this.currentPlayer);
+          } else if (civ?.isHuman) {
+            // For human players, auto-select and focus on the first unit in the queue
+            this.selectCurrentQueueUnit(this.currentPlayer);
+          }
         }
-        
+
         // After GoTo paths are processed and queue is initialized, check if turn should auto-end
         // (GoTo movements may have consumed all unit moves, leaving nothing for the player to do)
         if (this.gameEngine.checkAndEndTurnIfNoMoves) {

@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-// @ts-ignore
+// @ts-expect-error - Vite resolves the .tsx extension; tsc rejects it without allowImportingTsExtensions
 import App from './App.tsx'
 import './styles/design-system.css'
 import './styles/index.css'

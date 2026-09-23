@@ -332,8 +332,8 @@ describe('previewEconomy — projected per-turn numbers', () => {
   // ---------------------------------------------------------------
   describe('multi-city', () => {
     it('two cities contribute additively (no corruption when no capital)', () => {
-      const city1 = makeCity(5);
-      const city2 = makeCity(8);
+      makeCity(5); // city1: commerce 5
+      makeCity(8); // city2: commerce 8
       // Null the capital so corruption = 0 for both (no capital = no corruption)
       civ().capital = null;
 

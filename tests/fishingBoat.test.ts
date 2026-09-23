@@ -19,67 +19,98 @@ import { SquareGrid } from '@/game/SquareGrid';
 import { AutoProduction } from '@/game/engine/AutoProduction';
 import { UNIT_PROPERTIES, FISHER_BOAT_STORAGE, fisherFoodPerFish, fisherCatchValue } from '@/data/UnitConstants';
 import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import type { City, ProductionItem, SpecialistType, TradeRoute, Unit } from '../types/game';
 
 const G = TERRAIN_TYPES.GRASSLAND;
 const O = TERRAIN_TYPES.OCEAN;
 
-function makeEngine(rows: string[][]) {
+/** Test city: the mock guarantees the optional production fields exist. */
+type TestCity = City & {
+  foodStored: number;
+  foodNeeded: number;
+  fishingOverflowBonus: number;
+  yields: { food: number; production: number; trade: number };
+  workingTiles: Set<string>;
+};
+
+/** Test unit: home city + fish hold are always set by the helper. */
+type TestUnit = Unit & { homeCityId: string | null; fishStored: number };
+
+/** Private AutoProduction method the tests exercise directly. */
+function proposeFisherBoat(
+  auto: AutoProduction,
+  city: TestCity,
+  unitCapExhausted: boolean,
+): ProductionItem | null {
+  const api = auto as unknown as {
+    buildFisherBoatProduction(city: City, capExhausted: boolean): ProductionItem | null;
+  };
+  return api.buildFisherBoatProduction(city, unitCapExhausted);
+}
+
+function makeEngine(rows: string[][]): GameEngine {
   const height = rows.length;
   const width = rows[0].length;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const e = new GameEngine(null) as any;
-  e.units = [];
-  e.cities = [];
-  e.civilizations = [
-    { id: 0, name: 'Portland', technologies: ['masonry', 'sailing'], resources: { gold: 100 }, personality: {} },
-  ];
-  e.onStateChange = null;
-  e.unitTurnQueue = null;
-  e.diplomacyManager = null;
-  e.isPaused = true;
-  e.activePlayer = 0;
-  e.devMode = true; // everything explored
-  e.currentTurn = 1;
-  e.squareGrid = new SquareGrid(width, height);
-  e.map = {
-    width,
-    height,
-    tiles: rows.flatMap((row, r) =>
-      row.map((t, c) => ({ col: c, row: r, type: t, terrain: t, resource: null, visible: true, explored: true })),
-    ),
-  };
-  e.checkAndEndTurnIfNoMoves = () => undefined;
-  e.initializePlayerStorage(0);
+  const e = new GameEngine(null);
+  // Object.assign keeps the real engine type while replacing its state with a
+  // hand-authored map (the private MapData shape is not exported).
+  Object.assign(e, {
+    units: [],
+    cities: [],
+    civilizations: [
+      { id: 0, name: 'Portland', technologies: ['masonry', 'sailing'], resources: { gold: 100 }, personality: {} },
+    ],
+    onStateChange: null,
+    unitTurnQueue: null,
+    diplomacyManager: null,
+    isPaused: true,
+    activePlayer: 0,
+    devMode: true, // everything explored
+    currentTurn: 1,
+    squareGrid: new SquareGrid(width, height),
+    map: {
+      width,
+      height,
+      tiles: rows.flatMap((row, r) =>
+        row.map((t, c) => ({ col: c, row: r, type: t, terrain: t, resource: null, visible: true, explored: true })),
+      ),
+    },
+    checkAndEndTurnIfNoMoves: () => undefined,
+  });
+  // Player storage is private engine setup — expose just that call locally.
+  (e as unknown as { initializePlayerStorage(id: number): void }).initializePlayerStorage(0);
   // roundManager/goToManager/productionManager/economicManager are created by
   // the real GameEngine constructor and are reused as-is.
-  return e as GameEngine;
+  return e;
 }
 
 function addCity(
   e: GameEngine,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   id: string, civId: number, col: number, row: number, buildings: string[] = [],
-) {
-  const city = {
+): TestCity {
+  const city: TestCity = {
     id,
     name: id,
     civilizationId: civId,
     col,
     row,
     population: 3,
+    production: 0,
+    food: 0,
+    gold: 0,
+    science: 0,
     buildings: [...buildings],
-    specialists: [],
+    specialists: [] as SpecialistType[],
     workingTiles: new Set([`${col},${row}`]),
     currentProduction: null,
-    buildQueue: [],
+    buildQueue: [] as ProductionItem[],
     foodStored: 0,
     foodNeeded: 40,
     fishingOverflowBonus: 0,
     yields: { food: 6, production: 1, trade: 1 },
-    tradeRoutes: [],
+    tradeRoutes: [] as TradeRoute[],
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (e as any).cities.push(city);
+  e.cities.push(city);
   return city;
 }
 
@@ -90,15 +121,16 @@ function addUnit(
   col: number,
   row: number,
   extra: Record<string, unknown> = {},
-) {
+): TestUnit {
   const props = UNIT_PROPERTIES[type];
-  const unit = {
+  const unit: TestUnit = {
     id,
     type,
     civilizationId: 0,
     col,
     row,
     health: 100,
+    icon: props?.icon ?? '',
     movesRemaining: props?.movement ?? 1,
     maxMoves: props?.movement ?? 1,
     hasMovedThisTurn: false,
@@ -109,17 +141,14 @@ function addUnit(
     fishStored: 0,
     fishingRoute: null,
     ...extra,
-  };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (e as any).units.push(unit);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return unit as any;
+  } as TestUnit;
+  e.units.push(unit);
+  return unit;
 }
 
-function setFish(e: GameEngine, col: number, row: number): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tile = (e as any).getTileAt(col, row);
-  tile.resource = 'fish';
+function setFish(e: GameEngine, col: number, row: number, resource: string | null = 'fish'): void {
+  const tile = e.getTileAt(col, row);
+  if (tile) tile.resource = resource ?? undefined;
 }
 
 afterEach(() => {
@@ -180,8 +209,9 @@ describe('Fishing grounds need an active boat', () => {
     // fishing ground is half as valuable.
     expect(city.yields?.food).toBe(2);
     // The old harbor per-tile helper is gone entirely.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((e.economicManager as any).tileYieldsForCity).toBeUndefined();
+    expect(
+      (e.economicManager as unknown as Record<string, unknown>).tileYieldsForCity,
+    ).toBeUndefined();
 
     // Deploying a net restores the full fish value for the working city.
     const boat = addUnit(e, 'f1', 'fisher_boat', 0, 0, { homeCityId: 'port' });
@@ -238,7 +268,6 @@ describe('Fisher Boat production gating', () => {
     expect(alive.reason).toBe('fisher_boat_limit');
 
     // A defeated boat does not block a replacement.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     e.units[0].isDefeated = true;
     const replacement = e.productionManager.setCityProduction('port', item as never);
     expect(replacement.success).toBe(true);
@@ -269,8 +298,7 @@ describe('Fishing route', () => {
     return { e, city, boat };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const advance = (e: GameEngine) => (e as any).advanceFishing('f1');
+  const advance = (e: GameEngine) => e.advanceFishing('f1');
 
   it('can only deploy on a fish tile with moves left', () => {
     const { e, boat } = routeEngine();
@@ -338,8 +366,10 @@ describe('Fishing route', () => {
 
     // The next growth step consumes the bonus (+2 into the fresh box).
     city.yields = { food: 6, production: 1, trade: 1 }; // net 0 at pop 3
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (e.turnManager as any).processCityGrowth(city, false);
+    const growth = e.turnManager as unknown as {
+      processCityGrowth(city: City, inDisorder?: boolean): void;
+    };
+    growth.processCityGrowth(city, false);
     expect(city.fishingOverflowBonus).toBe(0);
     expect(city.foodStored).toBe(2);
   });
@@ -414,8 +444,7 @@ describe('Fishing route', () => {
   it('clears the route when its home city is gone', () => {
     const { e, boat } = routeEngine();
     e.deployFishingNet('f1');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (e as any).cities = [];
+    e.cities = [];
     advance(e);
     expect(boat.fishingRoute).toBeNull();
     expect(boat.fishStored).toBe(0);
@@ -438,38 +467,31 @@ describe('AI builds Fisher Boats', () => {
     if (withFisher) {
       addUnit(e, 'f1', 'fisher_boat', 4, 0, { homeCityId: 'port' });
     }
-    type Extra = { homeCityId: string | null };
     const auto = new AutoProduction(e);
-    return { e, city, auto, _extra: undefined as Extra | undefined };
+    return { e, city, auto };
   }
 
   it('proposes a Fisher Boat in a harbor city short on food with known fish', () => {
     const { city, auto } = aiEngine(true, false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const plan = (auto as any).buildFisherBoatProduction(city, false);
+    const plan = proposeFisherBoat(auto, city, false);
     expect(plan?.itemType).toBe('fisher_boat');
     expect(plan?.cost).toBe(20);
   });
 
   it('stays quiet without a Harbor, without fish, or with a boat already', () => {
     const noHarbor = aiEngine(false, false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((noHarbor.auto as any).buildFisherBoatProduction(noHarbor.city, false)).toBeNull();
+    expect(proposeFisherBoat(noHarbor.auto, noHarbor.city, false)).toBeNull();
 
     const withFisher = aiEngine(true, true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((withFisher.auto as any).buildFisherBoatProduction(withFisher.city, false)).toBeNull();
+    expect(proposeFisherBoat(withFisher.auto, withFisher.city, false)).toBeNull();
 
     const noFish = aiEngine(true, false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (noFish.e.getTileAt(4, 0) as any).resource = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((noFish.auto as any).buildFisherBoatProduction(noFish.city, false)).toBeNull();
+    setFish(noFish.e, 4, 0, null);
+    expect(proposeFisherBoat(noFish.auto, noFish.city, false)).toBeNull();
   });
 
   it('respects the economy unit cap', () => {
     const { city, auto } = aiEngine(true, false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((auto as any).buildFisherBoatProduction(city, true)).toBeNull();
+    expect(proposeFisherBoat(auto, city, true)).toBeNull();
   });
 });

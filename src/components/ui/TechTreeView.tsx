@@ -31,7 +31,10 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
   // If store hasn't populated technologies yet, fall back to static data
   const techs = (technologies && technologies.length > 0) ? technologies : TECHNOLOGIES_DATA;
   // Helper: is this tech researched by the current player?
-  const isPlayerResearched = (techId: string) => playerResearchedIds?.has(techId) ?? false;
+  const isPlayerResearched = useCallback(
+    (techId: string) => playerResearchedIds?.has(techId) ?? false,
+    [playerResearchedIds],
+  );
   // Whether the PLAYER can pick this tech: every prerequisite is in the
   // player's own research list. The shared tree's `available` flag is the
   // union across all civs (it unlocks on ANY civ's progress), so with the
@@ -41,17 +44,16 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
     const prereqs = tech.prerequisites ?? [];
     return prereqs.length === 0 || prereqs.every((p) => playerResearchedIds.has(p));
   };
-  // compute depth per tech
-  const getDepth = (techId: string, visited = new Set()): number => {
-    const tech = techs.find(t => t.id === techId);
-    if (!tech || visited.has(techId)) return 0;
-    visited.add(techId);
-    if (!tech.prerequisites || tech.prerequisites.length === 0) return 0;
-    const depths = tech.prerequisites.map(p => getDepth(p, new Set(visited)));
-    return Math.max(...depths) + 1;
-  };
-
   const grouped = useMemo(() => {
+    // compute depth per tech (local helper so the memo owns its dependency)
+    const getDepth = (techId: string, visited = new Set<string>()): number => {
+      const tech = techs.find(t => t.id === techId);
+      if (!tech || visited.has(techId)) return 0;
+      visited.add(techId);
+      if (!tech.prerequisites || tech.prerequisites.length === 0) return 0;
+      const depths = tech.prerequisites.map(p => getDepth(p, new Set(visited)));
+      return Math.max(...depths) + 1;
+    };
     const byDepth: Record<number, Technology[]> = {};
     techs.forEach(t => {
       const d = getDepth(t.id);
@@ -226,7 +228,7 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
     } else {
       setAnimatingNodes(new Set());
     }
-  }, [selectedPath, techs]);
+  }, [selectedPath, techs, isPlayerResearched]);
 
   const isLinkOnPath = (fromId: string, toId: string) => {
     if (!selectedPath) return false;

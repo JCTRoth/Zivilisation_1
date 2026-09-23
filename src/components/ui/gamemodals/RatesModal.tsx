@@ -45,7 +45,6 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
       science: clamp(currentPlayer.scienceRate ?? 50, 0, 100),
       luxury: clamp(currentPlayer.luxuryRate ?? 0, 0, 100),
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, currentPlayer]);
 
   /**

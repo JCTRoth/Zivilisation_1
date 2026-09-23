@@ -605,11 +605,7 @@ function App() {
       // A restarted game is a fresh game: ask for a research again.
       researchPromptedRef.current = null;
       // Restart the progression tracker for the fresh game.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      gameProgression.startSession(
-        gameEngine,
-        (gameEngine as any)?.gameSettings ?? {},
-      );
+      gameProgression.startSession(gameEngine, gameEngine.gameSettings);
       actions.clearGameResult();
       setActiveMenu(null);
       setShowHexDetail(false);

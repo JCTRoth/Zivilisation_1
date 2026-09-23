@@ -38,6 +38,7 @@ import type {
 } from '../../types/progression';
 import type { City, Unit, Civilization } from '../../types/game';
 import GameEngine from '@/game/engine/GameEngine';
+import type { GameSettings } from '@/game/engine/GameEngine';
 
 /** Change this one value to alter how often full world snapshots are emitted. */
 export const PROGRESSION_SNAPSHOT_INTERVAL = 20;
@@ -271,7 +272,7 @@ class GameProgression {
   private lastCivState: Record<string, ProgressionCivSnapshot> = {};
 
   /** Start a new session (call right after the engine is initialized). */
-  startSession(engine: GameEngine | null, settings: Record<string, unknown> = {}): void {
+  startSession(engine: GameEngine | null, settings: Partial<GameSettings> = {}): void {
     this.snapshots = [];
     this.lastRecordedRound = -1;
     this.lastCivState = {};
@@ -300,8 +301,7 @@ class GameProgression {
    * cheap no-op unless the engine has advanced to a new round.
    */
   recordIfNewRound(engine: GameEngine | null): void {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const round = (engine as any)?.currentTurn ?? 0;
+    const round = engine?.currentTurn ?? 0;
     if (round === this.lastRecordedRound) return;
     this.lastRecordedRound = round;
     this.snapshots.push(this.buildRound(engine, round));

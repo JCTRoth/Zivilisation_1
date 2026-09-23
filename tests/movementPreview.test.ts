@@ -97,12 +97,12 @@ describe('computeTurnMarkers', () => {
 
 describe('computeMovementPreview', () => {
   it('returns null when the target is the unit’s own tile', () => {
-    const unit = { col: 0, row: 0, type: 'warriors', movesRemaining: 3, maxMoves: 3, hasMovedThisTurn: false };
+    const unit = { col: 0, row: 0, type: 'warriors', movesRemaining: 3, maxMoves: 3, hasMovedThisTurn: false, civilizationId: 0 };
     expect(computeMovementPreview(unit, 0, 0, lookup({}), 10, 10)).toBeNull();
   });
 
   it('returns null when no path exists (land unit targeting ocean)', () => {
-    const unit = { col: 0, row: 0, type: 'warriors', movesRemaining: 3, maxMoves: 3, hasMovedThisTurn: false };
+    const unit = { col: 0, row: 0, type: 'warriors', movesRemaining: 3, maxMoves: 3, hasMovedThisTurn: false, civilizationId: 0 };
     const tiles: Record<string, MapTile> = {
       '0,0': makeTile(0, 0, 'grassland'),
       '1,0': makeTile(1, 0, 'ocean'),
@@ -111,7 +111,7 @@ describe('computeMovementPreview', () => {
   });
 
   it('excludes the start tile and reports turn markers for a long path', () => {
-    const unit = { col: 0, row: 0, type: 'warriors', movesRemaining: 1, maxMoves: 1, hasMovedThisTurn: false };
+    const unit = { col: 0, row: 0, type: 'warriors', movesRemaining: 1, maxMoves: 1, hasMovedThisTurn: false, civilizationId: 0 };
     const tiles: Record<string, MapTile> = { '0,0': makeTile(0, 0, 'grassland') };
     for (let col = 1; col <= 3; col++) tiles[`${col},0`] = makeTile(col, 0, 'grassland');
 

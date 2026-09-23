@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
 import { AIResearch } from '@/game/engine/AI/AIResearch';
+import { AIEconomicManager } from '@/game/engine/AI/AIEconomicManager';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import type { City, Civilization, Unit } from '../../types/game';
 
 /**
  * AI-vs-AI aggression & research regression tests.
@@ -26,7 +28,7 @@ import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 describe('AI-vs-AI research + aggression', () => {
   it('setResearch allows a tech another civ already researched (per-civ research)', async () => {
     const engine = new GameEngine(null);
-    (engine as any).sleep = () => Promise.resolve();
+    engine.sleep = () => Promise.resolve();
     await engine.initialize({
       numberOfCivilizations: 2,
       mapType: 'CLOSEUP_1V1',
@@ -41,7 +43,7 @@ describe('AI-vs-AI research + aggression', () => {
     civ1.technologies = [...civ1.technologies, 'bronze_working'];
     engine.updateTechnologyAvailability();
     // The shared tree now marks bronze_working researched (union).
-    expect(engine.technologies.find((t: any) => t.id === 'bronze_working')?.researched).toBe(true);
+    expect(engine.technologies.find((t) => t.id === 'bronze_working')?.researched).toBe(true);
 
     // Civ 0 must still be offered and able to research it.
     const available0 = AIResearch.getAvailableTechnologies(civ0);
@@ -49,49 +51,47 @@ describe('AI-vs-AI research + aggression', () => {
 
     engine.setResearch(civ0.id, 'bronze_working');
     expect(civ0.currentResearch).toBeTruthy();
-    expect((civ0.currentResearch as any)?.id ?? (civ0.currentResearch as any)).toBe('bronze_working');
+    expect(civ0.currentResearch?.id ?? civ0.currentResearch).toBe('bronze_working');
 
     // A tech the civ doesn't have prereqs for is still rejected.
     engine.setResearch(civ0.id, 'gunpowder'); // requires iron_working/metallurgy
     expect(civ0.currentResearch).toBeTruthy(); // unchanged (still bronze_working)
-    expect((civ0.currentResearch as any)?.id ?? (civ0.currentResearch as any)).toBe('bronze_working');
+    expect(civ0.currentResearch?.id ?? civ0.currentResearch).toBe('bronze_working');
   });
 
-  it('raiseTaxForAI never slams rates to 100/0/0 or 0/0/100 (stable economy)', async () => {
+  it('AI tax policy never slams rates to 100/0/0 or 0/0/100 (stable economy)', async () => {
     const engine = new GameEngine(null);
-    (engine as any).sleep = () => Promise.resolve();
+    engine.sleep = () => Promise.resolve();
     await engine.initialize({
       numberOfCivilizations: 2,
       mapType: 'MANY_CITIES',
       devMode: false,
       startingGold: 50,
     });
-    const econ = (engine as any).economicManager;
     const civ = engine.civilizations[0];
-    const cities = engine.cities.filter((c: any) => c.civilizationId === civ.id);
+    const cities = engine.cities.filter((c) => c.civilizationId === civ.id);
     expect(cities.length).toBeGreaterThan(0);
 
     // Give the civ a population + upkeep load that previously triggered the
     // death oscillation.
     for (const city of cities) city.population = 6;
-    (engine as any).units = [
-      { id: 'u1', civilizationId: 0, type: 'warrior', col: cities[0].col, row: cities[0].row, attack: 2, defense: 1 },
-      { id: 'u2', civilizationId: 0, type: 'warrior', col: cities[0].col, row: cities[0].row, attack: 2, defense: 1 },
-      { id: 'u3', civilizationId: 0, type: 'archer', col: cities[0].col, row: cities[0].row, attack: 2, defense: 1 },
-      { id: 'u4', civilizationId: 0, type: 'archer', col: cities[0].col, row: cities[0].row, attack: 2, defense: 1 },
-    ];
+    engine.units = [
+      { id: 'u1', civilizationId: 0, type: 'warrior', col: cities[0].col, row: cities[0].row, attack: 2, defense: 1, isDefeated: false },
+      { id: 'u2', civilizationId: 0, type: 'warrior', col: cities[0].col, row: cities[0].row, attack: 2, defense: 1, isDefeated: false },
+      { id: 'u3', civilizationId: 0, type: 'archer', col: cities[0].col, row: cities[0].row, attack: 2, defense: 1, isDefeated: false },
+      { id: 'u4', civilizationId: 0, type: 'archer', col: cities[0].col, row: cities[0].row, attack: 2, defense: 1, isDefeated: false },
+    ] as unknown as Unit[];
     civ.resources.gold = -10;
 
-    // raiseTaxForAI was moved to AIEconomicManager.adjustRatesForAI and is
-    // no longer a public method on EconomicManager. Skip gracefully.
-    if (typeof (econ as any).raiseTaxForAI !== 'function') {
-      expect(true).toBe(true); // method removed — test is now stale
-      return;
-    }
-    // Run the AI rate logic for several turns — it must settle on a stable
-    // mix, never 100% tax with 0 luxury or 100% luxury with 0 tax.
+    // The old EconomicManager.raiseTaxForAI now lives in AIEconomicManager
+    // (adjustRatesForAI) where the AI pre-turn hook calls it. Exercise it
+    // directly — several times in a row — and require a stable mix.
+    const aiEcon = new AIEconomicManager(engine, engine.economicManager);
+    const rates = aiEcon as unknown as {
+      adjustRatesForAI(civ: Civilization, cities: City[]): void;
+    };
     for (let i = 0; i < 20; i++) {
-      (econ as any).raiseTaxForAI(civ, cities);
+      rates.adjustRatesForAI(civ, cities);
       const { taxRate, scienceRate, luxuryRate } = civ;
       const sum = taxRate + scienceRate + luxuryRate;
       expect(sum).toBeCloseTo(100, 0);
@@ -109,7 +109,7 @@ describe('AI-vs-AI research + aggression', () => {
     const origLog = console.log;
     const origWarn = console.warn;
     const origError = console.error;
-    console.log = (...a: any[]) => { logs.push(a.map(String).join(' ')); };
+    console.log = (...a: unknown[]) => { logs.push(a.map(String).join(' ')); };
     console.warn = () => {};
     console.error = () => {};
 
@@ -117,7 +117,7 @@ describe('AI-vs-AI research + aggression', () => {
     let randomSpy: ReturnType<typeof vi.spyOn> | null = null;
     try {
       engine = new GameEngine(null);
-      (engine as any).sleep = () => Promise.resolve();
+      engine.sleep = () => Promise.resolve();
 
       // Deterministic RNG so the sim's outcome doesn't depend on the random
       // map layout (some layouts never see contact within the round budget
@@ -149,14 +149,14 @@ describe('AI-vs-AI research + aggression', () => {
       // the round limit or game-over is reached.
       const MAX_ITERATIONS = TARGET_ROUNDS * 12;
       let iterations = 0;
-      while ((engine as any).turnManager.getRoundNumber() < TARGET_ROUNDS && iterations < MAX_ITERATIONS && !(engine as any).isGameOver) {
+      while (engine.turnManager.getRoundNumber() < TARGET_ROUNDS && iterations < MAX_ITERATIONS && !engine.isGameOver) {
         iterations++;
         // The barbarian faction (if it appears) does not take a normal turn.
-        const activeCivs = engine.civilizations.filter((c: any) => c.isAlive !== false && c.id !== BARBARIAN_CIV_ID);
+        const activeCivs = engine.civilizations.filter((c) => c.isAlive !== false && c.id !== BARBARIAN_CIV_ID);
         for (const civ of activeCivs) {
-          if ((engine as any).turnManager.getRoundNumber() >= TARGET_ROUNDS) break;
-          (engine as any).turnManager.startTurn(civ.id);
-          (engine as any).activePlayer = civ.id;
+          if (engine.turnManager.getRoundNumber() >= TARGET_ROUNDS) break;
+          engine.turnManager.startTurn(civ.id);
+          engine.activePlayer = civ.id;
           if (civ.isAI && engine.processAITurn) {
             try { await engine.processAITurn(civ.id); } catch { /* ignore */ }
           }
@@ -164,11 +164,11 @@ describe('AI-vs-AI research + aggression', () => {
           // this, but the guard (currentPlayer !== civId) prevents it from
           // double-advancing when the test already advanced. This guard
           // prevents the infinite selection/deselection loop.
-          const phase = (engine as any).turnManager.getPhase();
+          const phase = engine.turnManager.getPhase();
           if (phase && phase !== 'END') {
-            (engine as any).turnManager.nextPhase();
-            (engine as any).turnManager.nextPhase();
-            (engine as any).turnManager.nextPhase();
+            engine.turnManager.nextPhase();
+            engine.turnManager.nextPhase();
+            engine.turnManager.nextPhase();
           }
         }
       }
@@ -177,14 +177,14 @@ describe('AI-vs-AI research + aggression', () => {
       console.warn = origWarn;
       console.error = origError;
 
-      const round = (engine as any).turnManager.getRoundNumber();
-      const gameEnded = (engine as any).isGameOver === true;
+      const round = engine.turnManager.getRoundNumber();
+      const gameEnded = engine.isGameOver === true;
       expect(gameEnded || round >= TARGET_ROUNDS - 2).toBe(true);
 
       const disbands = logs.filter(l => l.includes('UNIT_DISBANDED')).length;
       const attacks = logs.filter(l => l.includes('[AI] Unit') && l.includes('attacking')).length;
 
-      const researchableCivs = engine.civilizations.filter((c: any) => c.id !== BARBARIAN_CIV_ID);
+      const researchableCivs = engine.civilizations.filter((c) => c.id !== BARBARIAN_CIV_ID);
       for (const civ of researchableCivs) {
         // No research freeze: civs should have advanced well past the 3
         // starting techs and be actively researching (or have completed many).
@@ -199,7 +199,7 @@ describe('AI-vs-AI research + aggression', () => {
           expect(techCount).toBeGreaterThanOrEqual(5);
         }
       }
-      const maxTechs = Math.max(...researchableCivs.map((c: any) => (c.technologies ?? []).length));
+      const maxTechs = Math.max(...researchableCivs.map((c) => (c.technologies ?? []).length));
       expect(maxTechs).toBeGreaterThanOrEqual(6);
 
       // The AI should have attempted attacks — but this is inherently flaky
@@ -214,7 +214,7 @@ describe('AI-vs-AI research + aggression', () => {
       console.warn = origWarn;
       console.error = origError;
       randomSpy?.mockRestore();
-      if (engine) { (engine as any).units = []; (engine as any).cities = []; (engine as any).civilizations = []; }
+      if (engine) { engine.units = []; engine.cities = []; engine.civilizations = []; }
     }
   }, 120000);
 });

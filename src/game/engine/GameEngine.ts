@@ -52,7 +52,7 @@ const BRIDGE_BUILDING_TECH = 'engineering';
 export const MAX_TRADE_ROUTES = 3;
 
 
-interface GameSettings {
+export interface GameSettings {
   difficulty: string;
   mapType: string;
   numberOfCivilizations: number;
@@ -1034,7 +1034,7 @@ export default class GameEngine {
   private createStartingUnits(civId: number, startPos: { col: number; row: number }, mapType: string) {
     console.log(`[UNITS] createStartingUnits called for civId ${civId}, mapType: ${mapType}, position: (${startPos.col},${startPos.row})`);
     switch (mapType) {
-      case 'ALL_UNITS':
+      case 'ALL_UNITS': {
         // Create every single unit type on the board
         console.log(`[UNITS] Creating ALL unit types for civ ${civId}`);
         const allUnitTypes = Object.keys(UNIT_PROPS);
@@ -1055,7 +1055,8 @@ export default class GameEngine {
           }
         });
         break;
-        
+      }
+
       case 'NORMAL_SKIRMISH':
       case 'CLOSEUP_1V1':
       case 'AI_VS_AI':
@@ -4312,61 +4313,6 @@ export default class GameEngine {
     this.checkAndEndTurnIfNoMoves('city-founded');
 
     return true;
-  }
-
-  /**
-   * After a city is founded, check if any enemy settler is adjacent. If so,
-   * 50% chance the enemy settler rushes in and captures the brand-new city.
-   * The capturing settler is consumed (removed from the map).
-   */
-  private checkSettlerRushCapture(city: City): void {
-    if (!this.squareGrid) return;
-
-    const neighbors = this.squareGrid.getNeighbors(city.col, city.row);
-    for (const n of neighbors) {
-      const unit = this.getUnitAt(n.col, n.row);
-      if (!unit || unit.type !== 'settler' || unit.civilizationId === city.civilizationId) continue;
-
-      // 50% chance to rush-capture
-      if (Math.random() >= 0.50) {
-        console.log(`[SETTLER RUSH] Enemy settler ${unit.id} (${unit.civilizationId}) adjacent to ${city.name} — rush failed (50% miss)`);
-        continue;
-      }
-
-      // Rush succeeds — transfer the city
-      const oldCiv = city.civilizationId;
-      const capturingCiv = unit.civilizationId;
-      console.log(`[SETTLER RUSH] Settler ${unit.id} (${capturingCiv}) rushes and captures ${city.name} from civ ${oldCiv}!`);
-
-      city.civilizationId = capturingCiv;
-      city.capturedTurns = 5;
-      city.currentProduction = null;
-      if (Array.isArray(city.buildQueue)) city.buildQueue.length = 0;
-      city.productionStored = 0;
-      city.productionProgress = 0;
-
-      // A captured capital loses its Palace — original civ re-establishes.
-      if (city.isCapital === true) {
-        city.isCapital = false;
-        const pIdx = (city.buildings ?? []).indexOf('palace');
-        if (pIdx !== -1) city.buildings.splice(pIdx, 1);
-        this.governmentManager?.ensureCapital(oldCiv);
-      }
-
-      // Consume the capturing settler — it "founded" the city.
-      unit.movesRemaining = 0;
-      this.units = this.units.filter(u => u.id !== unit.id);
-      this.unitTurnQueue?.removeUnit(unit.id);
-
-      if (this.onStateChange) {
-        this.onStateChange('CITY_CAPTURED', {
-          city,
-          capturedBy: capturingCiv,
-          originalCiv: oldCiv,
-        });
-      }
-      break; // only one settler can rush per founding
-    }
   }
 
   /**

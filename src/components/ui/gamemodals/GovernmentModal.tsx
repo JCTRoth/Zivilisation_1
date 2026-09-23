@@ -49,7 +49,6 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
   // Reset selection when the modal opens or the current government changes.
   useEffect(() => {
     if (show) setSelected(currentPlayer?.government ?? 'despotism');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, currentPlayer]);
 
   const handleRevolution = (): void => {

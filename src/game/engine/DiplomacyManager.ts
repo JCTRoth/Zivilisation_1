@@ -893,13 +893,14 @@ export class DiplomacyManager {
       case 'propose_alliance':
         willingness -= 10; // Alliances require more trust
         break;
-      case 'demand_tribute':
+      case 'demand_tribute': {
         willingness -= 20; // Nobody likes demands
         // Weaker civs more likely to comply
         const ownStr = this.estimateMilitaryStrength(decidingCivId);
         const proposerStr = this.estimateMilitaryStrength(proposerCivId);
         if (proposerStr > ownStr * 1.5) willingness += 25;
         break;
+      }
       case 'offer_open_borders':
         willingness += 5; // Generally harmless
         break;
