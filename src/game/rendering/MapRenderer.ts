@@ -25,6 +25,7 @@ import { getUnitIcon } from '@/utils/UnitIconLoader';
 import { TERRAIN_FONT_FAMILY } from '@/utils/TerrainFont';
 import { MathUtils } from '@/utils/MathUtils';
 import { HUMAN_PLAYER_ID } from '@/utils/PlayerConstants';
+import { computeTurnMarkers, type TileLookup } from '@/utils/MovementPreview';
 import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, TurnMarker } from '../../../types/game';
 import { TerrainTextureManager } from './TerrainTextureManager';
 
@@ -687,7 +688,7 @@ export class MapRenderer {
       movementAnimations: params.movementAnimations
     });
 
-    this.drawUnitPaths(ctx, unitPaths, units, cities, map, gameState, squareToScreen);
+    this.drawUnitPaths(ctx, unitPaths, units, cities, map, gameState, squareToScreen, cameraZoom);
   }
 
   /**
@@ -798,7 +799,7 @@ export class MapRenderer {
       movementAnimations
     });
 
-    this.drawUnitPaths(ctx, unitPaths, units, cities, map, gameState, squareToScreen);
+    this.drawUnitPaths(ctx, unitPaths, units, cities, map, gameState, squareToScreen, cameraZoom);
   }
 
   /**
@@ -1182,10 +1183,18 @@ export class MapRenderer {
     // The loop below used to run three linear `Array.find` scans per tile
     // (~240k comparisons per frame). These maps are cheap to build (one pass)
     // and keep the first match per tile, exactly like `Array.find` did.
-    const unitAtTileKey = new Map<string, Unit>();
+    // Civ1 stacking: a tile can hold several friendly units. Keep the full
+    // stack for drawing + a "first unit" map for the existing lookups.
+    const unitsAtTileKey = new Map<string, Unit[]>();
     for (const unit of units) {
       const key = `${unit.col},${unit.row}`;
-      if (!unitAtTileKey.has(key)) unitAtTileKey.set(key, unit);
+      const list = unitsAtTileKey.get(key);
+      if (list) list.push(unit);
+      else unitsAtTileKey.set(key, [unit]);
+    }
+    const unitAtTileKey = new Map<string, Unit>();
+    for (const [key, list] of unitsAtTileKey) {
+      if (list.length > 0) unitAtTileKey.set(key, list[0]);
     }
     const cityAtTileKey = new Map<string, City>();
     for (const city of cities) {
@@ -1514,21 +1523,19 @@ export class MapRenderer {
         // players' units only while their tile is currently visible. Using the
         // human id (not `activePlayer`) matters here: during an AI turn
         // `activePlayer` is that AI, which leaked every AI unit through the fog.
-        const unit = unitAtTileKey.get(`${col},${row}`);
-        if (unit && isExplored) {
-          const isOwnUnit = unit.civilizationId === HUMAN_PLAYER_ID;
-          const shouldDrawUnit = isOwnUnit || isVisible;
-
-          if (shouldDrawUnit) {
+        // A tile can hold a STACK (Civ1 stacking): draw every unit with a small
+        // offset and badge the tile with the stack size.
+        const stack = unitsAtTileKey.get(`${col},${row}`);
+        if (stack && isExplored) {
+          let drawnOnTile = 0;
+          for (const unit of stack) {
+            const isOwnUnit = unit.civilizationId === HUMAN_PLAYER_ID;
+            if (!isOwnUnit && !isVisible) continue;
             // Killed units (marked isDefeated) are never drawn again — the
             // combat animation replaces the old "black X" death marker.
-            if ((unit as Unit).isDefeated) {
-              continue;
-            }
+            if (unit.isDefeated) continue;
             // A passenger aboard a ferry is drawn as cargo, not as a unit.
-            if ((unit as Unit).embarkedOn) {
-              continue;
-            }
+            if (unit.embarkedOn) continue;
 
             const hasMoves = (unit.movesRemaining || 0) > 0;
             let alpha = 1;
@@ -1543,22 +1550,54 @@ export class MapRenderer {
             // Combat animation: hide both units while the cloud is shown, then
             // fade the survivor back in. The destroyed unit stays hidden.
             const combat = this.getCombatRenderState(unit, combatAnimations);
-            if (combat.hidden) {
-              continue;
-            }
+            if (combat.hidden) continue;
             alpha *= combat.alpha;
 
             const displayTile = this.getUnitDisplayTile(unit, movementAnimations);
             const unitPos = squareToScreen(displayTile.col, displayTile.row);
-            this.drawUnit(ctx, unitPos.x, unitPos.y, unit, alpha, cameraZoom, civilizations, combatAnimations);
+            // Stagger stacked units slightly so every member stays visible.
+            const stackOffset = drawnOnTile * Math.max(3, cameraZoom * 3);
+            this.drawUnit(
+              ctx,
+              unitPos.x + stackOffset,
+              unitPos.y + stackOffset,
+              unit,
+              alpha,
+              cameraZoom,
+              civilizations,
+              combatAnimations,
+            );
+            drawnOnTile++;
+          }
+
+          // Stack badge (×N) when more than one unit shares the tile.
+          if (drawnOnTile > 1) {
+            const { x, y } = squareToScreen(col, row);
+            const badgeX = x + scaledTileSize * 0.34;
+            const badgeY = y - scaledTileSize * 0.34;
+            const badgeRadius = Math.max(8, cameraZoom * 8);
+            ctx.save();
+            ctx.beginPath();
+            ctx.fillStyle = 'rgba(20, 20, 20, 0.85)';
+            ctx.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold ${Math.max(9, cameraZoom * 10)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`×${drawnOnTile}`, badgeX, badgeY + 0.5);
+            ctx.restore();
           }
         }
 
         // Draw selected unit highlight (on top of everything)
         const selectedUnitId = gameState.selectedUnit;
-        const unitAtTile = unitAtTileKey.get(`${col},${row}`);
-        if (selectedUnitId && unitAtTile && unitAtTile.id === selectedUnitId) {
-          const displayTile = this.getUnitDisplayTile(unitAtTile, movementAnimations);
+        const selectedOnTile = stack?.some((u) => u.id === selectedUnitId);
+        if (selectedUnitId && selectedOnTile) {
+          const displayTile = this.getUnitDisplayTile(unitAtTileKey.get(`${col},${row}`)!, movementAnimations);
           const unitPos = squareToScreen(displayTile.col, displayTile.row);
           const half = scaledTileSize / 2;
           ctx.strokeStyle = '#FF0000';
@@ -1576,18 +1615,25 @@ export class MapRenderer {
       }
     }
 
-    // Hover path preview (dashed) + turn numbers, drawn above units so the
-    // destination and ETA stay readable.
+    // Hover path preview — drawn with the SAME overlay as the committed GoTo
+    // route (identical line, ⚔ markers, destination ring and ETA numbers).
     if (previewPath && previewPath.length > 0) {
       const previewUnit = gameState.selectedUnit
         ? units.find(u => u.id === gameState.selectedUnit) ?? null
         : null;
       if (previewUnit) {
-        this.drawPreviewPath(ctx, previewUnit, previewPath, map, squareToScreen, cameraZoom, units);
+        this.drawPathOverlay(
+          ctx,
+          previewUnit,
+          previewPath,
+          map,
+          squareToScreen,
+          cameraZoom,
+          units,
+          cities,
+          previewTurnMarkers ?? [],
+        );
       }
-    }
-    if (previewTurnMarkers && previewTurnMarkers.length > 0) {
-      this.drawTurnMarkers(ctx, previewTurnMarkers, map, squareToScreen, scaledTileSize);
     }
 
     // Draw combat clouds and the floating damage numbers (on top of units so
@@ -1879,10 +1925,11 @@ export class MapRenderer {
     cities: City[],
     map: MapState,
     gameState: GameState,
-    squareToScreen: (col: number, row: number) => { x: number; y: number }
+    squareToScreen: (col: number, row: number) => { x: number; y: number },
+    cameraZoom: number
   ): void {
     unitPaths.forEach((path, unitId) => {
-      this.drawUnitPath(ctx, unitId, path, units, cities, map, gameState, squareToScreen);
+      this.drawUnitPath(ctx, unitId, path, units, cities, map, gameState, squareToScreen, cameraZoom);
     });
   }
 
@@ -2597,157 +2644,46 @@ export class MapRenderer {
     cities: City[],
     map: MapState,
     gameState: GameState,
-    squareToScreen: (col: number, row: number) => { x: number; y: number }
+    squareToScreen: (col: number, row: number) => { x: number; y: number },
+    cameraZoom: number
   ): void {
-    if (!path || path.length < 2) return;
+    if (!path || path.length === 0) return;
     const unit = units.find(u => u.id === unitId);
     if (!unit) return;
     if (gameState.selectedUnit !== unitId) return;
 
-    ctx.save();
-    ctx.strokeStyle = 'red';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // Only draw path lines through tiles the player has revealed.
+    // The committed GoTo route uses the exact same overlay as the hover
+    // preview — including the turn-end ETA numbers, computed from the route.
     const mapWidth = map.width || 0;
-    const revealed = map.revealed;
-    const visiblePath = path.filter((pos) => {
-      if (!revealed) return true;
-      const tileIndex = pos.row * mapWidth + pos.col;
-      return revealed[tileIndex] === true;
-    });
+    const tileAt: TileLookup = (col, row) => map.tiles[row * mapWidth + col] ?? null;
+    const turnMarkers = computeTurnMarkers(
+      path,
+      tileAt,
+      unit.type,
+      unit.movesRemaining || 0,
+      unit.maxMoves,
+      unit.hasMovedThisTurn === true,
+    );
 
-    // Draw path lines only through explored tiles
-    if (visiblePath.length >= 2) {
-      ctx.beginPath();
-      visiblePath.forEach((pos, index) => {
-        const { x, y } = squareToScreen(pos.col, pos.row);
-        if (index === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-      });
-      ctx.stroke();
-    }
-
-    // --- Intermediate enemy markers: show ⚔ at every enemy tile along the path ---
-    // Only show on explored tiles (no fog of war)
-    const isExplored = (col: number, row: number): boolean => {
-      if (!revealed) return true;
-      return revealed[row * mapWidth + col] === true;
-    };
-    for (let si = 1; si < path.length; si++) {
-      const step = path[si];
-      if (!isExplored(step.col, step.row)) continue;
-      const enemyHere = units.find(u => u.col === step.col && u.row === step.row && u.civilizationId !== unit.civilizationId && !u.isDefeated);
-      const enemyCityHere = cities.find((c: City) => c.col === step.col && c.row === step.row && c.civilizationId !== unit.civilizationId);
-      if (enemyHere || enemyCityHere) {
-        const { x: sx, y: sy } = squareToScreen(step.col, step.row);
-        ctx.save();
-        ctx.fillStyle = '#FF4444';
-        ctx.font = 'bold 20px serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 2.5;
-        ctx.strokeText('⚔', sx, sy - 12);
-        ctx.fillText('⚔', sx, sy - 12);
-        ctx.restore();
-      }
-    }
-
-    // Always show destination marker (even on unexplored terrain)
-    // Check if path ends at an enemy unit or city - if so, show combat icon instead of arrow
-    const lastPathStep = path[path.length - 1];
-    const targetUnit = units.find(u => u.col === lastPathStep.col && u.row === lastPathStep.row);
-    const isEnemyAtUnit = targetUnit && targetUnit.civilizationId !== unit.civilizationId;
-    
-    // Check for enemy city at destination
-    const targetCity = cities.find((c: City) => c.col === lastPathStep.col && c.row === lastPathStep.row);
-    const isEnemyAtCity = targetCity && targetCity.civilizationId !== unit.civilizationId;
-    const isEnemyAtDestination = isEnemyAtUnit || isEnemyAtCity;
-
-    // Destination marker: only show on explored tiles (no fog of war)
-    if (path.length >= 1) {
-      const last = path[path.length - 1];
-      // Don't draw destination marker on fog-of-war tiles
-      if (!isExplored(last.col, last.row)) {
-        ctx.restore();
-        return;
-      }
-      const { x: x2, y: y2 } = squareToScreen(last.col, last.row);
-      
-      if (isEnemyAtDestination) {
-        // Draw red crossed swords icon (⚔) for combat
-        ctx.save();
-        ctx.fillStyle = '#FF0000';
-        ctx.font = 'bold 24px serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        // Add white outline for visibility
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 3;
-        ctx.strokeText('⚔', x2, y2 - 15);
-        ctx.fillText('⚔', x2, y2 - 15);
-        ctx.restore();
-      } else {
-        // Draw normal arrow for movement
-        // Use visiblePath if available to get proper direction from last visible segment
-        const arrowSourcePath = visiblePath.length >= 2 ? visiblePath : path;
-        if (arrowSourcePath.length >= 2) {
-          const secondLast = arrowSourcePath[arrowSourcePath.length - 2];
-          const { x: x1, y: y1 } = squareToScreen(secondLast.col, secondLast.row);
-          const dx = x2 - x1;
-          const dy = y2 - y1;
-          const len = Math.sqrt(dx * dx + dy * dy);
-          if (len > 0) {
-            const arrowLen = 10;
-            const arrowAngle = Math.PI / 6;
-            const angle = Math.atan2(dy, dx);
-            const leftAngle = angle - arrowAngle;
-            const rightAngle = angle + arrowAngle;
-            const leftX = x2 - arrowLen * Math.cos(leftAngle);
-            const leftY = y2 - arrowLen * Math.sin(leftAngle);
-            const rightX = x2 - arrowLen * Math.cos(rightAngle);
-            const rightY = y2 - arrowLen * Math.sin(rightAngle);
-            ctx.beginPath();
-            ctx.moveTo(x2, y2);
-            ctx.lineTo(leftX, leftY);
-            ctx.moveTo(x2, y2);
-            ctx.lineTo(rightX, rightY);
-            ctx.stroke();
-          }
-        } else {
-          // If no direction available, draw a simple target marker
-          ctx.beginPath();
-          ctx.arc(x2, y2, 8, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(x2, y2, 4, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-      }
-    }
-
-    ctx.restore();
+    this.drawPathOverlay(ctx, unit, path, map, squareToScreen, cameraZoom, units, cities, turnMarkers);
   }
 
   /**
-   * Draws the dashed hover shortest-path preview for the selected unit.
-   * Only explored tiles are connected (fog of war hides the rest); a ring marks
-   * the hovered destination.
+   * The single path overlay used by BOTH the committed GoTo route and the
+   * hover preview: dashed yellow line, ⚔ on every enemy (unit or city) along
+   * the way, a ring — or ⚔ for an attack — at the destination, and the turn-end
+   * ETA numbers. One renderer keeps preview and order visually identical.
    */
-  private drawPreviewPath(
+  private drawPathOverlay(
     ctx: CanvasRenderingContext2D,
     unit: Unit,
     steps: UnitPathStep[],
     map: MapState,
     squareToScreen: (col: number, row: number) => { x: number; y: number },
     cameraZoom: number,
-    units?: Unit[]
+    units: Unit[],
+    cities: City[],
+    turnMarkers: TurnMarker[]
   ): void {
     if (steps.length === 0) return;
 
@@ -2787,36 +2723,73 @@ export class MapRenderer {
       }
     }
     ctx.stroke();
-
-    // Destination ring on the hovered tile — or ⚔ if an enemy is there.
-    const dest = steps[steps.length - 1];
-    const { x: dx, y: dy } = squareToScreen(dest.col, dest.row);
     ctx.setLineDash([]);
-    const destUnit = units?.find(u => u.col === dest.col && u.row === dest.row && !u.isDefeated);
-    const destIsEnemy = destUnit && unit && destUnit.civilizationId !== unit.civilizationId;
-    if (destIsEnemy) {
-      // Attack destination: red ring + ⚔ icon
-      ctx.strokeStyle = '#FF4444';
-      ctx.lineWidth = Math.max(3, cameraZoom * 3);
-      ctx.beginPath();
-      ctx.arc(dx, dy, Math.max(8, cameraZoom * 8), 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.font = `bold ${Math.max(16, cameraZoom * 18)}px serif`;
+
+    // ⚔ on every enemy unit/city the path runs over (explored tiles only).
+    for (const step of steps) {
+      if (!isExplored(step.col, step.row)) continue;
+      const enemyUnit = units.find(
+        u => u.col === step.col && u.row === step.row
+          && u.civilizationId !== unit.civilizationId && !u.isDefeated
+      );
+      const enemyCity = cities.find(
+        c => c.col === step.col && c.row === step.row
+          && c.civilizationId !== unit.civilizationId
+      );
+      if (!enemyUnit && !enemyCity) continue;
+      const { x: sx, y: sy } = squareToScreen(step.col, step.row);
+      ctx.save();
       ctx.fillStyle = '#FF4444';
+      ctx.font = `bold ${Math.max(16, cameraZoom * 18)}px serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.strokeStyle = '#FFFFFF';
       ctx.lineWidth = 2.5;
-      ctx.strokeText('\u2694', dx, dy - Math.max(8, cameraZoom * 8) - 10);
-      ctx.fillText('\u2694', dx, dy - Math.max(8, cameraZoom * 8) - 10);
-    } else {
-      ctx.strokeStyle = 'rgba(255, 224, 102, 0.95)';
-      ctx.lineWidth = Math.max(2, cameraZoom * 2);
-      ctx.beginPath();
-      ctx.arc(dx, dy, Math.max(6, cameraZoom * 7), 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.strokeText('⚔', sx, sy - Math.max(8, cameraZoom * 8) - 6);
+      ctx.fillText('⚔', sx, sy - Math.max(8, cameraZoom * 8) - 6);
+      ctx.restore();
+    }
+
+    // Destination marker: ring for a move, ⚔ for an attack.
+    const dest = steps[steps.length - 1];
+    if (isExplored(dest.col, dest.row)) {
+      const { x: dx, y: dy } = squareToScreen(dest.col, dest.row);
+      const destUnit = units.find(
+        u => u.col === dest.col && u.row === dest.row && !u.isDefeated
+      );
+      const destCity = cities.find(c => c.col === dest.col && c.row === dest.row);
+      const destIsEnemy =
+        (!!destUnit && destUnit.civilizationId !== unit.civilizationId) ||
+        (!!destCity && destCity.civilizationId !== unit.civilizationId);
+
+      if (destIsEnemy) {
+        ctx.strokeStyle = '#FF4444';
+        ctx.lineWidth = Math.max(3, cameraZoom * 3);
+        ctx.beginPath();
+        ctx.arc(dx, dy, Math.max(8, cameraZoom * 8), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.font = `bold ${Math.max(16, cameraZoom * 18)}px serif`;
+        ctx.fillStyle = '#FF4444';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2.5;
+        ctx.strokeText('⚔', dx, dy - Math.max(8, cameraZoom * 8) - 10);
+        ctx.fillText('⚔', dx, dy - Math.max(8, cameraZoom * 8) - 10);
+      } else {
+        ctx.strokeStyle = 'rgba(255, 224, 102, 0.95)';
+        ctx.lineWidth = Math.max(2, cameraZoom * 2);
+        ctx.beginPath();
+        ctx.arc(dx, dy, Math.max(6, cameraZoom * 7), 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
     ctx.restore();
+
+    // Turn-end ETA numbers (same walk the engine performs).
+    if (turnMarkers.length > 0) {
+      this.drawTurnMarkers(ctx, turnMarkers, map, squareToScreen, 0);
+    }
   }
 
   /**

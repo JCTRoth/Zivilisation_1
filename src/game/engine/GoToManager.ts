@@ -1,5 +1,6 @@
 import { Unit } from '../../../types/game';
-import { Pathfinding } from './Pathfinding';
+import type { TurnMarker } from '../../../types/game';
+import { computeMovementPreview } from '../../utils/MovementPreview';
 import GameEngine, { type MapTile } from './GameEngine';
 import type { TurnManager } from './TurnManager';
 import {
@@ -40,52 +41,48 @@ export class GoToManager {
     getTileAt: (col: number, row: number) => MapTile | null,
     mapWidth: number,
     mapHeight: number
-  ): { success: boolean; path: Array<{ col: number; row: number }> } {
+  ): {
+    success: boolean;
+    path: Array<{ col: number; row: number }>;
+    turnMarkers: TurnMarker[];
+    isAttack: boolean;
+    attackStepIndex: number;
+  } {
     console.log(`[GoToManager] Calculating path for unit ${unit.id} from (${unit.col},${unit.row}) to (${targetCol},${targetRow})`);
 
     try {
-      // Provide a getUnitAt callback so the pathfinder avoids friendly units.
-      const getUnitAt = (col: number, row: number) => {
-        const u = this.gameEngine.units.find(u => u.col === col && u.row === row);
-        return u ? { civilizationId: u.civilizationId } : null;
-      };
-
-      // Provide a getCityAt callback so the pathfinder avoids enemy cities.
-      const getCityAt = (col: number, row: number) => {
-        const c = this.gameEngine.getCityAt(col, row);
-        return c ? { civilizationId: c.civilizationId } : null;
-      };
-
-      const pathResult = Pathfinding.findPath(
-        unit.col,
-        unit.row,
+      // ONE shared computation for the GoTo order and the hover preview, so the
+      // line the player sees and the route the engine walks always match.
+      // Friendly units are passable (stacking), enemy cities are attacked on
+      // the way by military units, and the first enemy on the path marks the
+      // attack that will end the order.
+      const preview = computeMovementPreview(
+        unit,
         targetCol,
         targetRow,
         getTileAt,
-        unit.type,
         mapWidth,
         mapHeight,
-        getUnitAt,
-        unit.civilizationId,
-        getCityAt
+        (col, row) => this.gameEngine.getUnitAt?.(col, row) ?? null,
+        (col, row) => this.gameEngine.getCityAt?.(col, row) ?? null,
       );
 
-      if (pathResult.success && pathResult.path.length > 1) {
-        // Exclude starting position
-        const path = pathResult.path.slice(1).map((step: { col: number; row: number }) => ({
-          col: step.col,
-          row: step.row
-        }));
-
-        console.log(`[GoToManager] Path calculated for unit ${unit.id}, ${path.length} steps`);
-        return { success: true, path };
-      } else {
+      if (!preview || preview.steps.length === 0) {
         console.log(`[GoToManager] No valid path found for unit ${unit.id}`);
-        return { success: false, path: [] };
+        return { success: false, path: [], turnMarkers: [], isAttack: false, attackStepIndex: -1 };
       }
+
+      console.log(`[GoToManager] Path calculated for unit ${unit.id}, ${preview.steps.length} steps`);
+      return {
+        success: true,
+        path: preview.steps,
+        turnMarkers: preview.turnMarkers,
+        isAttack: preview.isAttack,
+        attackStepIndex: preview.attackStepIndex,
+      };
     } catch (error) {
       console.error(`[GoToManager] Pathfinding error for unit ${unit.id}:`, error);
-      return { success: false, path: [] };
+      return { success: false, path: [], turnMarkers: [], isAttack: false, attackStepIndex: -1 };
     }
   }
 
@@ -154,6 +151,16 @@ export class GoToManager {
       const moveResult = this.gameEngine.moveUnit(unitId, nextPos.col, nextPos.row);
       
       if (moveResult && moveResult.success) {
+        // A fight ends the automated order. Combat zeroes the unit's moves and
+        // the rest of the route is dropped — the unit must never auto-attack
+        // next turn just because the ordered destination was beyond the enemy.
+        const wasCombat = moveResult.combat === true;
+        if (wasCombat) {
+          this.clearUnitPath(unitId);
+          console.log(`[GoToManager] Unit ${unitId} fought at (${nextPos.col}, ${nextPos.row}) — order complete`);
+          return { success: true, reason: 'combat', remainingPath: [] };
+        }
+
         // Remove completed step from path
         const remainingPath = path.slice(1);
         this.setUnitPath(unitId, remainingPath);

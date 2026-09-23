@@ -194,13 +194,12 @@ describe('AI scouts blocking each other', () => {
     expect(result.frozenA || result.frozenB, `stuck!\n${JSON.stringify(result.skipLogs.slice(0, 20), null, 2)}`).toBe(false);
   }, 120000);
 
-  it('a scout whose ONLY path is blocked by an ALLIED unit keeps moving (fallback) instead of freezing', async () => {
+  it('a scout whose ONLY route runs through an ALLIED unit marches through the stack instead of freezing', async () => {
     // ── Deterministic corridor ─────────────────────────────────────────────
     // A village sits at the end of a corridor. The ONLY route to it runs
-    // through an ALLIED civ-0 warrior. Before the fix, moveUnit failed on the
-    // ally every round and the scout logged "Path step failed → skip" forever
-    // (real log: Huns scout stuck on (21,1) for 30+ rounds). With the fix it
-    // steps onto a fallback tile and keeps moving.
+    // through an ALLIED civ-0 warrior. Civ1 stacking lets the scout pass
+    // through/onto the allied tile: it must keep moving (no freeze, no
+    // permanent "Path step failed → skip" loop).
     engine = await makeEngine();
     const e = engine;
     (e as unknown as { units: unknown[] }).units = [];
@@ -249,21 +248,19 @@ describe('AI scouts blocking each other', () => {
     ps.explored[17 * grid.width + 20] = true;
 
     const { positions, logs, movesPerRound } = await runRounds(e, [scout], 6);
-    const fallbackLogs = logs.filter((l) => l.includes('Fallback move'));
-    // The AI pathfinder now avoids the allied unit during PLANNING and reports
-    // the route as blocked (`no_path_fallback`) instead of walking into the
-    // ally and failing the step (`path_step_fallback`). Either way the blocker
-    // must trigger a reroute rather than a freeze — proof the fix is live.
-    const blockerFallbacks = logs.filter(
-      (l) => l.includes('path_step_fallback') || l.includes('no_path_fallback'),
-    );
     // "Frozen" means NO movement for several rounds. End-of-round position is
     // not a valid freeze signal: a scout can patrol several tiles inside one
     // round and still finish where it started.
     const frozen = movesPerRound.slice(-3).every((moves) => moves === 0);
     const roundTrace = positions.map((p, i) => `r${i}:${p[scout]}`).join(' ');
-    expect(blockerFallbacks.length, `no blocker fallback fired\n${logs.slice(0, 60).join('\n')}`).toBeGreaterThan(0);
-    expect(fallbackLogs.length, `no fallback moves fired\n${logs.slice(0, 60).join('\n')}`).toBeGreaterThan(0);
+    // Civ1 stacking: an ALLIED unit no longer blocks the route — the scout
+    // marches through/onto the allied tile (row <= 19 in the corridor) instead
+    // of freezing or being forced onto a fallback lane.
+    const passedBlocker = positions.some((p) => {
+      const [col, row] = String(p[scout] ?? '').split(',').map(Number);
+      return col === 20 && Number.isFinite(row) && row <= 19;
+    });
+    expect(passedBlocker, `scout never used the allied tile\npositions: ${roundTrace}\nLOGS:\n${logs.slice(0, 120).join('\n')}`).toBe(true);
     // …and the scout must not sit still for rounds on end.
     expect(frozen, `scout froze\npositions: ${roundTrace}\nmoves: ${movesPerRound.join(',')}\nLOGS:\n${logs.slice(0, 120).join('\n')}`).toBe(false);
   }, 120000);

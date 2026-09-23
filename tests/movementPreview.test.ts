@@ -126,3 +126,69 @@ describe('computeMovementPreview', () => {
     expect(preview!.turnMarkers.map(m => m.turn)).toEqual([1, 2, 3]);
   });
 });
+
+describe('computeMovementPreview: Civ1 path rules', () => {
+  const warrior = { col: 0, row: 0, type: 'warrior', movesRemaining: 3, maxMoves: 3, hasMovedThisTurn: false, civilizationId: 0 };
+  const settler = { col: 0, row: 0, type: 'settler', movesRemaining: 1, maxMoves: 1, hasMovedThisTurn: false, civilizationId: 0 };
+
+  it('marches through a friendly unit instead of failing (stacking)', () => {
+    const tiles: Record<string, MapTile> = {
+      '0,0': makeTile(0, 0, 'grassland'),
+      '1,0': makeTile(1, 0, 'grassland'),
+      '2,0': makeTile(2, 0, 'grassland'),
+    };
+    const friendlyAt = (col: number, row: number) =>
+      col === 1 && row === 0 ? { civilizationId: 0 } : null;
+
+    const preview = computeMovementPreview(warrior, 2, 0, lookup(tiles), 5, 5, friendlyAt, () => null);
+
+    expect(preview).not.toBeNull();
+    expect(preview!.steps).toContainEqual({ col: 1, row: 0 });
+    expect(preview!.steps[preview!.steps.length - 1]).toEqual({ col: 2, row: 0 });
+  });
+
+  it('runs military paths over an enemy city (attack on the way), civilians around it', () => {
+    const tiles: Record<string, MapTile> = {
+      '0,0': makeTile(0, 0, 'grassland'),
+      '1,0': makeTile(1, 0, 'grassland'),
+      '2,0': makeTile(2, 0, 'grassland'),
+      '3,0': makeTile(3, 0, 'grassland'),
+      '0,1': makeTile(0, 1, 'grassland'),
+      '1,1': makeTile(1, 1, 'grassland'),
+      '2,1': makeTile(2, 1, 'grassland'),
+      '3,1': makeTile(3, 1, 'grassland'),
+    };
+    const enemyCityAt = (col: number, row: number) =>
+      col === 2 && row === 0 ? { civilizationId: 1 } : null;
+
+    const military = computeMovementPreview(warrior, 3, 0, lookup(tiles), 5, 5, () => null, enemyCityAt);
+    expect(military).not.toBeNull();
+    expect(military!.steps.some((s) => s.col === 2 && s.row === 0)).toBe(true);
+    expect(military!.attackStepIndex).toBe(1);
+    expect(military!.isAttack).toBe(false); // the destination itself is free
+
+    const civilian = computeMovementPreview(settler, 3, 0, lookup(tiles), 5, 5, () => null, enemyCityAt);
+    expect(civilian).not.toBeNull();
+    expect(civilian!.steps.some((s) => s.col === 2 && s.row === 0)).toBe(false);
+    expect(civilian!.attackStepIndex).toBe(-1);
+  });
+
+  it('never expands through an enemy unit — it is an attack target only', () => {
+    const tiles: Record<string, MapTile> = {
+      '0,0': makeTile(0, 0, 'grassland'),
+      '1,0': makeTile(1, 0, 'grassland'),
+      '2,0': makeTile(2, 0, 'grassland'),
+      '0,1': makeTile(0, 1, 'grassland'),
+      '1,1': makeTile(1, 1, 'grassland'),
+      '2,1': makeTile(2, 1, 'grassland'),
+    };
+    const enemyAt = (col: number, row: number) =>
+      col === 1 && row === 0 ? { civilizationId: 1 } : null;
+
+    const preview = computeMovementPreview(warrior, 2, 0, lookup(tiles), 5, 5, enemyAt, () => null);
+
+    expect(preview).not.toBeNull();
+    expect(preview!.steps.some((s) => s.col === 1 && s.row === 0)).toBe(false);
+    expect(preview!.steps[preview!.steps.length - 1]).toEqual({ col: 2, row: 0 });
+  });
+});

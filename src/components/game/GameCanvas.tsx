@@ -1421,16 +1421,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         return;
       }
 
-      // An ATTACK order (target tile holds an enemy unit or an enemy city) must
-      // not linger in the engine as a GoTo path for the next turn: the player
-      // ordered a fight, and the unit stops when it runs out of moves — it
-      // should never auto-attack next turn just because the target was beyond
-      // reach this turn (tasks 5/6).
-      const targetUnit = getUnitAtFromEngine(targetCol, targetRow);
-      const targetCity = getCityAtFromEngine(targetCol, targetRow);
-      const isAttackOrder =
-        (!!targetUnit && targetUnit.civilizationId !== unit.civilizationId) ||
-        (!!targetCity && targetCity.civilizationId !== unit.civilizationId);
+      // An ATTACK order — the destination holds an enemy OR the route runs over
+      // an enemy city (military paths cross enemy cities and attack them on
+      // arrival) — must not linger in the engine as a GoTo path: the player
+      // ordered a fight, and combat ends the order. It must never auto-attack
+      // next turn just because the target was beyond reach this turn.
+      // (`attackStepIndex` comes from the shared preview/GoTo path plan.)
+      const isAttackOrder = pathResult.attackStepIndex >= 0;
 
       goToManager.setUnitPath(unit.id, pathResult.path);
       setUnitPaths((prev) => {
@@ -1478,7 +1475,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         goToManager.clearUnitPath(unit.id);
       }
     },
-    [gameEngine, mapData, getTileAt, actions, triggerRender, getUnitAtFromEngine, getCityAtFromEngine],
+    [gameEngine, mapData, getTileAt, actions, triggerRender],
   );
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {

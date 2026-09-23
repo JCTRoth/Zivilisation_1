@@ -44,6 +44,19 @@ export class Pathfinding {
   }
 
   /**
+   * Whether a unit type may attack/capture an enemy city. Military units may
+   * path straight through enemy cities and attack them on arrival (Civ1:
+   * "moving over an enemy city attacks it"); civilians must route around them
+   * because `moveUnit` rejects a civilian entering an enemy city.
+   */
+  static canAttackCities(unitType: string): boolean {
+    const normalizedType = String(unitType ?? '').trim().toLowerCase();
+    const props = UNIT_PROPS[normalizedType];
+    if (!props) return true; // unknown/synthetic types keep the old behaviour
+    return props.type !== 'civilian' && (props.attack || 0) > 0;
+  }
+
+  /**
    * Check if a unit can cross a river at a given edge. Land units may only
    * enter 1-tile-wide (fordable) river sections — a 2+ wide river tile is a
    * barrier from every direction. Naval units navigate any river.
@@ -232,22 +245,30 @@ export class Pathfinding {
           continue;
         }
 
-        // Skip tiles occupied by friendly units (can't stack).
-        // The target tile is exempted — the unit needs to reach its destination.
+        // Friendly units do NOT block the path: Civ1 lets units stack/pass
+        // through each other (armies gather in cities, columns march through
+        // the same chokepoint), and the engine's moveUnit allows entering a
+        // friendly-occupied tile. Blocking them here made an attack fail
+        // whenever the route ran through a friendly unit.
         const isTarget = col === targetCol && row === targetRow;
-        if (!isTarget && getUnitAt && friendlyCivId != null) {
+
+        // An enemy unit may be the destination (attack) but is never expanded
+        // through — a fight ends the journey, so the path must route around any
+        // other enemy instead of walking past it.
+        if (getUnitAt && friendlyCivId != null) {
           const occupant = getUnitAt(col, row);
-          if (occupant && occupant.civilizationId === friendlyCivId) {
-            continue; // Friendly unit blocking — path around it
+          if (occupant && occupant.civilizationId !== friendlyCivId && !isTarget) {
+            continue;
           }
         }
 
-        // Skip tiles with enemy cities (can't pass through — must attack or go around).
-        // The target tile is exempted — if the destination IS an enemy city, allow it.
-        if (!isTarget && getCityAt && friendlyCivId != null) {
+        // Enemy cities block CIVILIAN routes (they cannot fight, and moveUnit
+        // rejects a civilian entering an enemy city). Military units path
+        // straight through: landing on the city attacks it.
+        if (!isTarget && getCityAt && friendlyCivId != null && !this.canAttackCities(unitType)) {
           const city = getCityAt(col, row);
           if (city && city.civilizationId !== friendlyCivId) {
-            continue; // Enemy city — path around it
+            continue; // Enemy city — civilians path around it
           }
         }
 

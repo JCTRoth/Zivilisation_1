@@ -1148,6 +1148,13 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
           const next = path[0];
           const result = this.gameEngine.moveUnit(unit.id, next.col, next.row);
           if (result?.success) {
+            // A fight ends the automated order: drop the remaining route so the
+            // unit never auto-attacks on a later turn.
+            if (result.combat === true) {
+              console.log(`[TurnManager] ⚔️ Unit ${unit.id} fought at (${next.col}, ${next.row}) — clearing GoTo path`);
+              this.clearUnitPath(unit.id);
+              break;
+            }
             path.shift();
             console.log(`[TurnManager] ✅ Unit ${unit.id} moved to (${next.col}, ${next.row}), ${path.length} steps remaining in path`);
             // Pace automated AI movement so visible enemy moves animate instead

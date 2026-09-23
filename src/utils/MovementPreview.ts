@@ -20,8 +20,15 @@ export interface MovementPreview {
    * path fits in the current turn (no numbers are drawn in that case).
    */
   turnMarkers: TurnMarker[];
-  /** True when the final step lands on an enemy unit (attack move). */
+  /** True when the final step lands on an enemy unit or city (attack move). */
   isAttack: boolean;
+  /**
+   * Index into `steps` of the first enemy unit/city the path runs over, or -1.
+   * Military paths may cross enemy cities (they attack on arrival); this marks
+   * where the fight happens so an attack order never becomes a silent
+   * auto-attack on a later turn.
+   */
+  attackStepIndex: number;
 }
 
 /** Floating-point tolerance for "no movement points left". */
@@ -35,16 +42,18 @@ const EPSILON = 1e-6;
  * {@link computeTurnMarkers}, which mirrors the engine's movement rules so the
  * preview matches what `GameEngine.moveUnit` will actually do.
  *
- * When `getUnitAt` is provided, the result includes `isAttack: true` if the
- * destination tile is occupied by an enemy unit. This flag is shared by the
- * GoToManager path drawing and the hover preview.
+ * This is THE path computation shared by the GoTo order and the hover preview
+ * (`GoToManager.calculatePath` delegates here), so the line the player sees and
+ * the route the engine walks are always identical.
  *
  * Both `getUnitAt` and `getCityAt` are forwarded to the pathfinder so the
- * preview matches the real GoTo path: friendly units and enemy cities are
- * routed around (unless they are the attack target itself). Without this the
- * preview draws a line straight through units the unit cannot actually step
- * on, so the order then "doesn't work" (`GoToManager.calculatePath` returns a
- * different path or none at all).
+ * preview matches what `moveUnit` will do:
+ * - friendly units are passable (Civ1 stacking — armies march through each
+ *   other and gather in cities),
+ * - enemy cities are passable for military units (landing on one attacks it)
+ *   but routed around by civilians,
+ * - enemy units are never routed through: the first one the path touches is an
+ *   attack (`attackStepIndex`), and combat ends the order.
  */
 export function computeMovementPreview(
   unit: MovementPreviewUnit,
@@ -84,14 +93,24 @@ export function computeMovementPreview(
     unit.hasMovedThisTurn === true
   );
 
-  // Detect attack: destination occupied by an enemy.
-  let isAttack = false;
-  if (getUnitAt) {
-    const occupant = getUnitAt(targetCol, targetRow);
-    isAttack = !!occupant && occupant.civilizationId !== unit.civilizationId;
+  // Detect attacks along the path: an enemy unit (only the destination can be
+  // one — the pathfinder never expands through a fight) or an enemy city the
+  // military path crosses and attacks on arrival.
+  let attackStepIndex = -1;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const occupant = getUnitAt ? getUnitAt(step.col, step.row) : null;
+    const isEnemyUnit = !!occupant && occupant.civilizationId !== unit.civilizationId;
+    const city = getCityAt ? getCityAt(step.col, step.row) : null;
+    const isEnemyCity = !!city && city.civilizationId !== unit.civilizationId;
+    if (isEnemyUnit || isEnemyCity) {
+      attackStepIndex = i;
+      break;
+    }
   }
+  const isAttack = attackStepIndex === steps.length - 1;
 
-  return { steps, turnMarkers, isAttack };
+  return { steps, turnMarkers, isAttack, attackStepIndex };
 }
 
 /**

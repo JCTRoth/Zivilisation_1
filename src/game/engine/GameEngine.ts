@@ -2844,9 +2844,12 @@ export default class GameEngine {
     if (this.settlerDestinationInEnemyZoC(unit, targetCol, targetRow)) {
       return false;
     }
+    // Civ1 stacking: friendly units may share a tile. Armies gather in a city
+    // and columns march through the same tile — without this, any attack whose
+    // route ran through a friendly unit was impossible. The move cost check
+    // below still applies.
     if (targetUnit && targetUnit.civilizationId === unit.civilizationId) {
-      console.log(`[canUnitMoveTo] Target occupied by allied unit. Movement not allowed.`);
-      return false;
+      console.log(`[canUnitMoveTo] Target holds a friendly unit — stacking allowed.`);
     }
 
     // Calculate move cost (terrain, discounted by road/railroad — Civ1)
@@ -2900,15 +2903,11 @@ export default class GameEngine {
       return false;
     }
 
-    // Check if there's an enemy unit blocking the tile (combat is possible, so we return true)
-    // If there is a friendly unit on the tile, assume we cannot move there (no stacking)
+    // Enemy unit on the tile → valid combat move. A friendly unit does NOT
+    // block: Civ1 allows stacking, and the move cost was already validated.
     const targetUnit = this.getUnitAt(targetCol, targetRow);
-    if (targetUnit) {
-      if (targetUnit.civilizationId === unit.civilizationId) {
-        return false; // Friendly unit blocking
-      }
-      // If it's an enemy unit, it's a valid combat move
-      return true; 
+    if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
+      return true; // valid combat move
     }
 
     // Check for enemy city (valid attack target)
@@ -2994,9 +2993,11 @@ export default class GameEngine {
         this.checkAndEndTurnIfNoMoves('combat-unit-done');
       }
 
-      // combatUnit returns boolean success currently; normalize
+      // combatUnit returns boolean success currently; normalize. `combat: true`
+      // marks a fight for the GoTo executors, which must end the automated
+      // order instead of auto-attacking again next turn.
       const success = !!combatResult;
-      return { success, reason: success ? 'combat_victory' : 'combat_defeat' };
+      return { success, reason: success ? 'combat_victory' : 'combat_defeat', combat: true };
     }
     
     // Check if there's an enemy city at target. Caravans are EXCLUDED — they
@@ -3108,7 +3109,7 @@ export default class GameEngine {
               originalCiv: oldCiv,
             });
           }
-          return { success: true, reason: 'scout_rush_captured' };
+          return { success: true, reason: 'scout_rush_captured', combat: true };
         }
 
         // Rush failed — scout cannot enter defended or contested cities
@@ -3153,7 +3154,7 @@ export default class GameEngine {
             originalCiv: targetCity.civilizationId,
           });
         }
-        return { success: true, reason: 'city_captured' };
+        return { success: true, reason: 'city_captured', combat: true };
       }
       if (result === 'hit') {
         if (this.onStateChange) {
@@ -3165,7 +3166,7 @@ export default class GameEngine {
             defenderDamage: outcome.defenderDamage,
           });
         }
-        return { success: true, reason: 'city_damaged' };
+        return { success: true, reason: 'city_damaged', combat: true };
       }
       // Attacker survived (or city was destroyed by attacker — treat as captured)
       if (result === 'city_destroyed') {
@@ -3179,7 +3180,7 @@ export default class GameEngine {
             originalCiv: targetCity.civilizationId,
           });
         }
-        return { success: true, reason: 'city_captured' };
+        return { success: true, reason: 'city_captured', combat: true };
       }
       // Failed assault: the attacker took counter-damage. Emit the event even
       // though the city was not hit, so the player sees the fight and its
@@ -3193,7 +3194,7 @@ export default class GameEngine {
           defenderDamage: 0,
         });
       }
-      return { success: false, reason: 'attack_failed' };
+      return { success: false, reason: 'attack_failed', combat: true };
     }
 
     // Move the unit — Civ1 terrain cost, discounted by road (1/3) / railroad (~free).
