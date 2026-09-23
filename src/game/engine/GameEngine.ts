@@ -2800,6 +2800,7 @@ export default class GameEngine {
           if ((targetCity.population || 1) <= 1) {
             this.destroyGarrisonOnCapture(targetCity, oldCiv);
             this.cities = this.cities.filter(c => c.id !== targetCity.id);
+            this.markCityLost(oldCiv, unit.civilizationId);
             console.log(`[SCOUT RUSH] City ${targetCity.name} destroyed by scout rush`);
             if (targetCity.isCapital === true) {
               this.governmentManager?.ensureCapital(oldCiv);
@@ -2812,6 +2813,7 @@ export default class GameEngine {
             targetCity.population -= 1;
             targetCity.civilizationId = unit.civilizationId;
             targetCity.buildings = targetCity.buildings ?? [];
+            this.markCityLost(oldCiv, unit.civilizationId);
             if (unit.civilizationId === BARBARIAN_CIV_ID) {
               // A barbarian-held city is auto-managed (military units only) and
               // the barbarians become a faction the moment they hold it.
@@ -3742,6 +3744,7 @@ export default class GameEngine {
         const wasCapital = city.isCapital === true;
         this.destroyGarrisonOnCapture(city, oldCiv);
         this.cities = this.cities.filter(c => c.id !== city.id);
+        this.markCityLost(oldCiv, attacker.civilizationId);
         console.log(`[COMBAT] City ${city.name} (civ ${oldCiv}) destroyed by ${attacker.type}`);
         if (wasCapital) {
           // Capital lost — the civ re-establishes a seat of government.
@@ -3757,6 +3760,7 @@ export default class GameEngine {
       city.population -= 1;
       city.civilizationId = attacker.civilizationId;
       city.buildings = city.buildings ?? [];
+      this.markCityLost(oldCiv, attacker.civilizationId);
 
       // A barbarian-captured city is auto-managed and produces military units
       // only (see AutoProduction). Barbarians become a real faction in the
@@ -3857,6 +3861,18 @@ export default class GameEngine {
     if (removals.length > 0) {
       console.log(`[COMBAT] Capture destroyed improvements in ${city.name}: ${removals.join(', ')}`);
     }
+  }
+
+  /**
+   * Record that `oldCivId` just lost a city to `attackerCivId`. The AI reads
+   * this to retaliate: a recent loss boosts its aggression and makes it prefer
+   * the capturer's cities as targets.
+   */
+  private markCityLost(oldCivId: number, attackerCivId: number): void {
+    const storage = this.playerStorage.get(oldCivId);
+    if (!storage) return;
+    storage.turnData.lastCityLostRound = this.currentTurn;
+    storage.turnData.lastCityLostTo = attackerCivId;
   }
 
   /**

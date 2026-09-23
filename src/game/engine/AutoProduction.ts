@@ -39,6 +39,9 @@ interface QueueItem {
 /** How many follow-up items auto-production keeps lined up in a city's queue. */
 const AUTO_QUEUE_TARGET = 3;
 
+/** Absolute ceiling on the AI's scout corps (the desired count caps at 3 too). */
+const AI_ABSOLUTE_MAX_SCOUTS = 3;
+
 /**
  * Per-profile expansion cadence. A civ always keeps a small settler corps so
  * expansion NEVER hard-stops; the corps size scales with the civ's city count
@@ -175,39 +178,7 @@ export class AutoProduction {
       // queuing more units — it only produces an army it immediately disbands
       // for upkeep (the AI-vs-AI produce→disband churn). Buildings are still
       // allowed; only military/explorer/settler units are capped.
-      const civ = this.gameEngine?.civilizations?.[city.civilizationId];
-      const econ = this.gameEngine?.economicManager;
-      let unitCapExhausted = false;
-      if (civ && econ) {
-        const civCities = this.gameEngine.cities.filter(
-          (c: City) => c.civilizationId === city.civilizationId
-        );
-        const cityCount = civCities.length;
-        const currentUnits = this.gameEngine.units.filter(
-          (u: Unit) => u.civilizationId === city.civilizationId
-        ).length;
-        // Count units queued in EVERY city (not just this one) so the civ
-        // doesn't overshoot the cap by queuing across multiple cities.
-        const queuedUnits = civCities.reduce((n: number, c: City) => {
-          const inQueue = Array.isArray(c.buildQueue)
-            ? c.buildQueue.filter((q: QueueItem) => (q.type ?? q.itemType) === 'unit').length
-            : 0;
-          const inProgress = c.currentProduction?.type === 'unit' ? 1 : 0;
-          return n + inQueue + inProgress;
-        }, 0);
-        // Max sustainable units ≈ income left after buildings, the strategy's
-        // gold reserve and the luxury the civ must keep for happiness. The
-        // reserve-aware AI model (AIEconomicManager.sustainableUnits) is used
-        // when available; the EconomicManager model stays as the floor so the
-        // cap never becomes stricter than before.
-        const aiSustainableUnits = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ) ?? 0;
-        const sustainableUnits = Math.max(
-          cityCount,
-          econ.sustainableUnits(civ),
-          aiSustainableUnits,
-        );
-        unitCapExhausted = currentUnits + queuedUnits >= sustainableUnits;
-      }
+      const unitCapExhausted = this.isUnitCapExhausted(city.civilizationId);
 
       let added = 0;
       let guard = 0;
@@ -282,6 +253,10 @@ export class AutoProduction {
 
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     const strategy: StrategyProfile = this.getStrategyForCiv(city.civilizationId);
+    // Economy-aware army cap: at/over it the city must not PRODUCE more
+    // military units (only defense/settlers/scouts are exempt) — otherwise the
+    // army grows until the treasury starves and units are disbanded.
+    const unitCapExhausted = this.isUnitCapExhausted(city.civilizationId);
 
     // Check for city defenders: any friendly unit with a defensive role
     // within 2 tiles of the city counts as garrison. Counting ONLY units ON
@@ -511,6 +486,7 @@ export class AutoProduction {
     // 4. Evaluate buildings via AIBuildingStrategy
     const gameState = this.buildGameState(city.civilizationId);
     gameState.isUnderThreat = !!threatAssessment?.needsDefense;
+    gameState.cityCoastal = this.cityHasWaterAccess(city);
     const buildingPlans = civ
       ? AIBuildingStrategy.evaluateBuildings(city, civ, strategy, gameState)
       : [];
@@ -528,7 +504,7 @@ export class AutoProduction {
     ).length;
 
     const aggressivePosture = this.isAggressivePosture(city.civilizationId);
-    if (aggressivePosture &&
+    if (!unitCapExhausted && aggressivePosture &&
         (this.isCivAtWar(city.civilizationId) || this.shouldSupportOffensivePlan(city))) {
       console.log('[AutoProduction] Aggressive posture: prioritizing attacker over buildings');
       return this.buildOffensiveProduction(city);
@@ -563,8 +539,8 @@ export class AutoProduction {
       }
     }
 
-    // 5. Support offensive plan
-    if (this.shouldSupportOffensivePlan(city)) {
+    // 5. Support offensive plan (never over the sustainable unit cap)
+    if (!unitCapExhausted && this.shouldSupportOffensivePlan(city)) {
       console.log('[AutoProduction] Supporting offensive plan with new attacker');
       return this.buildOffensiveProduction(city);
     }
@@ -593,7 +569,7 @@ export class AutoProduction {
     //      offensive plan depends on). Without a standing force the bulk
     //      attack can never form and the civ stays purely defensive.
     const AGGRESSIVE_ARMY_MIN = 3;
-    if (aggressivePosture && this.countOffensiveUnits(city.civilizationId) < AGGRESSIVE_ARMY_MIN) {
+    if (!unitCapExhausted && aggressivePosture && this.countOffensiveUnits(city.civilizationId) < AGGRESSIVE_ARMY_MIN) {
       console.log('[AutoProduction] Aggressive posture: building standing army (attacker)');
       return this.buildOffensiveProduction(city);
     }
@@ -676,7 +652,23 @@ export class AutoProduction {
     const defenders = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === city.civilizationId && this.isDefensiveUnitType(u.type)
     ).length + plannedDefensive;
-    const needsAttackers = offensiveUnits < defenders || this.shouldSupportOffensivePlan(city);
+    // Over the sustainable unit cap: keep the city productive with a building
+    // instead of growing an army the treasury cannot pay for.
+    if (unitCapExhausted) {
+      const fallback = this.determineFallbackBuilding(city, threatAssessment, plannedTypes);
+      if (fallback) {
+        console.log('[AutoProduction] Unit cap reached — building instead of another unit');
+        return fallback;
+      }
+    }
+
+    // Composition balance: never let the garrison grow past ~2 per city while
+    // the offense lags — the AI-vs-AI logs showed endless phalanx/archer
+    // queues. Defenders are still prioritized under threat.
+    const defenderCapReached = defenders >= civCities.length * 2;
+    const needsAttackers = offensiveUnits < defenders
+      || this.shouldSupportOffensivePlan(city)
+      || (defenderCapReached && !threatAssessment?.needsDefense);
 
     console.log(`[AutoProduction] Building default military unit (offense: ${offensiveUnits}, defense: ${defenders})`);
     return needsAttackers
@@ -699,6 +691,7 @@ export class AutoProduction {
     if (!civ) return null;
     const gameState = this.buildGameState(city.civilizationId);
     gameState.isUnderThreat = !!threatAssessment?.needsDefense;
+    gameState.cityCoastal = this.cityHasWaterAccess(city);
     const strategy: StrategyProfile = this.getStrategyForCiv(city.civilizationId);
 
     const buildingPlans = AIBuildingStrategy.evaluateBuildings(city, civ, strategy, gameState);
@@ -937,11 +930,29 @@ export class AutoProduction {
     return 1;
   }
 
-  /** Whether the civilization should build another scout to reach its target. */
+  /**
+   * Whether the civilization should build another scout to reach its target.
+   * Counts scouts queued in EVERY city (two cities queueing one each used to
+   * overshoot the corps target) and enforces an absolute cap so the civ never
+   * fields more than `AI_ABSOLUTE_MAX_SCOUTS` scouts.
+   */
   private needsScout(civilizationId: number, plannedScouts: number = 0): boolean {
-    const scoutCount = this.gameEngine.units.filter(
-      (u: Unit) => u.civilizationId === civilizationId && u.type === 'scout'
-    ).length + plannedScouts;
+    const aliveScouts = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civilizationId && u.type === 'scout' && !u.isDefeated,
+    ).length;
+    const queuedScouts = this.gameEngine.cities
+      .filter((c: City) => c.civilizationId === civilizationId)
+      .reduce((count: number, c: City) => {
+        const inProgress = c.currentProduction?.type === 'unit'
+          && c.currentProduction?.itemType === 'scout' ? 1 : 0;
+        const inQueue = Array.isArray(c.buildQueue)
+          ? c.buildQueue.filter((q: QueueItem) =>
+              q.type === 'unit' && (q.itemType === 'scout' || q.name?.toLowerCase() === 'scout')).length
+          : 0;
+        return count + inProgress + inQueue;
+      }, 0);
+    const scoutCount = aliveScouts + queuedScouts + plannedScouts;
+    if (scoutCount >= AI_ABSOLUTE_MAX_SCOUTS) return false;
     return scoutCount < this.getDesiredScoutCount(civilizationId);
   }
 
@@ -1067,6 +1078,48 @@ export class AutoProduction {
     const civCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === city.civilizationId).length;
     const desiredNavy = Math.max(2, civCities);
     return existingNavy < desiredNavy;
+  }
+
+  /**
+   * Economy-aware unit cap: the civ can only maintain as many units as its
+   * income supports (reserve-aware model when available, EconomicManager as
+   * the floor). When the cap is exhausted the AI must stop PRODUCING military
+   * units too — not just stop queueing follow-ups — or the army grows until
+   * the treasury starves and units are disbanded for upkeep.
+   */
+  private isUnitCapExhausted(civilizationId: number): boolean {
+    const civ = this.gameEngine?.civilizations?.[civilizationId];
+    const econ = this.gameEngine?.economicManager;
+    if (!civ || !econ) return false;
+    const civCities = this.gameEngine.cities.filter(
+      (c: City) => c.civilizationId === civilizationId,
+    );
+    const cityCount = civCities.length;
+    const currentUnits = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civilizationId && !u.isDefeated,
+    ).length;
+    const queuedUnits = civCities.reduce((n: number, c: City) => {
+      const inQueue = Array.isArray(c.buildQueue)
+        ? c.buildQueue.filter((q: QueueItem) => (q.type ?? q.itemType) === 'unit').length
+        : 0;
+      const inProgress = c.currentProduction?.type === 'unit' ? 1 : 0;
+      return n + inQueue + inProgress;
+    }, 0);
+    const aiSustainableUnits = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ) ?? 0;
+    // Lightweight test doubles may not implement sustainableUnits — fall back
+    // to the free one-unit-per-city support so the cap never blocks them.
+    const econSustainableUnits = typeof econ.sustainableUnits === 'function'
+      ? econ.sustainableUnits(civ)
+      : cityCount;
+    const sustainableUnits = Math.max(cityCount, econSustainableUnits, aiSustainableUnits);
+    return currentUnits + queuedUnits >= sustainableUnits;
+  }
+
+  /** Safe coastal check used to gate the Harbor building (unknown → allow). */
+  private cityHasWaterAccess(city: City): boolean {
+    const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
+    if (typeof pm?.cityHasHarborOrCoast !== 'function') return true;
+    return pm.cityHasHarborOrCoast(city);
   }
 
   /** Safe island-situation lookup (lightweight test engines return null). */
@@ -1218,6 +1271,7 @@ export class AutoProduction {
     isBorderCity: boolean;
     isUnderThreat: boolean;
     builtWonders: string[];
+    cityCoastal: boolean;
   } {
     const cities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === civilizationId) || [];
     const civ = this.gameEngine.civilizations?.[civilizationId];
@@ -1255,6 +1309,7 @@ export class AutoProduction {
       isBorderCity: false, // default, overridden per-city in determineProductionItem
       isUnderThreat: false,
       builtWonders,
+      cityCoastal: false, // overridden per-city before evaluateBuildings
     };
   }
 

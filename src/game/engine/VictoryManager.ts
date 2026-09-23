@@ -1,6 +1,7 @@
 import type GameEngine from './GameEngine';
 import type { Civilization, GameActions } from '../../../types/game';
 import { GameResult, type VictoryReason } from '../../../types/game';
+import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '../../data/BuildingConstants';
 
 /**
  * Centralized victory and defeat detection that runs at the end of each turn.
@@ -52,6 +53,13 @@ export class VictoryManager {
       const alive = this.isCivilizationOperational(civ.id);
       aliveStatus.set(civ.id, alive);
       civ.isAlive = alive;
+      // Peace-years tracking for the score bonus: consecutive rounds without
+      // war. A declaration resets the streak.
+      const atWar = (civ.warWith?.size ?? 0) > 0;
+      civ.peaceTurns = atWar ? 0 : (civ.peaceTurns ?? 0) + 1;
+      // Keep the live scoreboard current (was permanently 0 before — the
+      // statistics screen and the exported progression CSV read this).
+      civ.score = this.calculateScore(civ);
     });
 
     this.pushCivilizationUpdates();
@@ -93,6 +101,69 @@ export class VictoryManager {
     }
 
     return false;
+  }
+
+  /**
+   * Civ1 score (GAMEPLAY.md): population (1/citizen), land area (1/tile the
+   * civ's cities work), cities (5 each), technologies (5 each) and wonders
+   * (20 each). Recomputed every turn end so the scoreboard and the exported
+   * progression CSV show live values.
+   */
+  private calculateScore(civ: Civilization): number {
+    const cities = (this.gameEngine.cities ?? []).filter(
+      (c) => c.civilizationId === civ.id,
+    );
+    const population = cities.reduce((sum, c) => sum + (c.population ?? 0), 0);
+    const technologies = (civ.technologies ?? []).length;
+    const wonders = cities.reduce(
+      (sum, c) =>
+        sum + (c.buildings ?? []).filter((b) => !!WONDER_PROPERTIES[String(b)]).length,
+      0,
+    );
+
+    // Land area: every unique tile in a city's workable radius, plus the city
+    // centre tiles themselves. Lightweight test engines may not implement the
+    // map helpers — the score then falls back to population/cities/techs.
+    const landTiles = new Set<string>();
+    if (typeof this.gameEngine.isTileInCityRadius === 'function') {
+      for (const city of cities) {
+        for (let dc = -2; dc <= 2; dc++) {
+          for (let dr = -2; dr <= 2; dr++) {
+            const col = city.col + dc;
+            const row = city.row + dr;
+            if (!this.gameEngine.isTileInCityRadius(city, col, row)) continue;
+            const tile = this.gameEngine.getTileAt?.(col, row);
+            if (tile) landTiles.add(`${col},${row}`);
+          }
+        }
+      }
+    }
+
+    // Pollution penalty: every pollution point from the civ's buildings
+    // subtracts from the score (GAMEPLAY.md).
+    const pollution = cities.reduce(
+      (sum, c) =>
+        sum +
+        (c.buildings ?? []).reduce(
+          (p, b) => p + ((BUILDING_PROPERTIES[String(b)]?.effects?.pollution as number | undefined) ?? 0),
+          0,
+        ),
+      0,
+    );
+
+    // Peace bonus: 1 point per 5 consecutive peace rounds.
+    const peaceBonus = Math.floor((civ.peaceTurns ?? 0) / 5);
+
+    return (
+      population +
+      landTiles.size +
+      cities.length + // the city centres
+      cities.length * 5 +
+      technologies * 5 +
+      wonders * 20 +
+      peaceBonus -
+      pollution
+    );
   }
 
   private detectMoonshotWinner(): Civilization | null {

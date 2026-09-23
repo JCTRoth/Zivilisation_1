@@ -50,6 +50,16 @@ const OSCILLATION_WINDOW = 6;
 const OSCILLATION_THRESHOLD = 3;
 
 /**
+ * A committed bulk-attack plan is kept (without re-planning/resetting unit
+ * assignments) for at most this many rounds, so an assault actually reaches
+ * its target instead of being wiped mid-march.
+ */
+const OFFENSIVE_PLAN_MAX_AGE_ROUNDS = 20;
+
+/** How long a lost city keeps the AI in "retaliate" mode. */
+const RETALIATION_WINDOW_ROUNDS = 15;
+
+/**
  * An AI colony mission: ferry a settler to a small, city-free island and found
  * a city there. Stages:
  *   gather → the settler walks to the coast and the ferry comes alongside;
@@ -289,23 +299,40 @@ export class AIManager {
       }
     }
 
-    // Build army groups from known enemy positions
+    // Build army groups from known enemy positions. Army groups are LAND
+    // formations: a target on another landmass (or behind water) is dropped
+    // here — the navy/colony pipeline handles those — so a group can never
+    // march to the coast and stall.
     const combatUnits = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civilizationId && this.isCombatUnit(u)
     );
     const reserveIds = this.getCityDefenseReserveIds(civilizationId, combatUnits);
     const offensiveUnits = combatUnits.filter((unit: Unit) => !reserveIds.has(unit.id));
-    const targets = this.getKnownEnemyTargets(civilizationId, storage);
+    const targets = this.getKnownEnemyTargets(civilizationId, storage)
+      .filter((t) => this.engineTileReachableByLand(civilizationId, t.col, t.row));
 
     if (offensiveUnits.length >= 3 && targets.length > 0) {
       const distFn = (c1: number, r1: number, c2: number, r2: number) =>
         this.gameEngine.squareGrid?.squareDistance(c1, r1, c2, r2) ?? Infinity;
 
       aiState.armyGroups = AICoordinator.formArmyGroups(
-        offensiveUnits, targets, aiState.armyGroups, distFn
+        offensiveUnits, targets, aiState.armyGroups, distFn, {
+          // Rally points must be passable land the group can walk to.
+          isPassable: (col, row) => this.gameEngine.isTilePassable(col, row),
+          // A unit on another landmass cannot join a land march.
+          isReachable: (unit, target) => this.areLandConnected(unit.col, unit.row, target.col, target.row),
+          // Drop groups whose target was captured/killed.
+          isTargetValid: (target) => {
+            const enemyUnit = this.gameEngine.getUnitAt(target.col, target.row);
+            if (enemyUnit && enemyUnit.civilizationId !== civilizationId) return true;
+            const enemyCity = this.gameEngine.getCityAt(target.col, target.row);
+            return !!enemyCity && enemyCity.civilizationId !== civilizationId;
+          },
+          roundNumber,
+        }
       );
       AICoordinator.updateGroupStatuses(
-        aiState.armyGroups, offensiveUnits, distFn
+        aiState.armyGroups, offensiveUnits, distFn, roundNumber
       );
     } else if (aiState.armyGroups.length > 0) {
       // Do not keep stale groups when all available combat units are needed
@@ -1306,27 +1333,32 @@ export class AIManager {
     const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
     const aiState: AIState = (storage?.turnData?.aiState as AIState) ?? createDefaultAIState();
 
-    // ── Retreat check for combat units ──
-    if (this.isCombatUnit(unit)) {
-      const localEnemyStrength = this.estimateLocalEnemyStrength(unit);
-      const unitStrength = Math.max(1, unit.attack || 0) + (unit.defense || 0) * 0.5;
-      const isInGroup = aiState.armyGroups.some(g => g.unitIds.includes(unit.id));
-
-      if (AICoordinator.shouldRetreat(unitStrength, localEnemyStrength, isInGroup)) {
-        console.log(`[AI] Unit ${unit.id} retreating (own: ${unitStrength.toFixed(1)}, enemy: ${localEnemyStrength.toFixed(1)})`);
-        const friendlyCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === unit.civilizationId);
-        const distFn = (c1: number, r1: number, c2: number, r2: number) =>
-          this.gameEngine.squareGrid?.squareDistance(c1, r1, c2, r2) ?? Infinity;
-        const retreat = AICoordinator.getRetreatTarget(
-          unit.col, unit.row, friendlyCities, aiState.armyGroups, distFn
-        );
-        if (retreat) return retreat;
-      }
-    }
-
     // ── Army group targeting for combat units ──
+    // A committed group (marching/attacking) overrides the retreat check: a
+    // unit that breaks formation mid-assault leaves the group too weak to
+    // fight and the assault never happens.
     if (this.isCombatUnit(unit)) {
       const groupTarget = AICoordinator.getGroupTarget(unit.id, aiState.armyGroups);
+      const groupCommitted = groupTarget?.groupStatus === 'marching' || groupTarget?.groupStatus === 'attacking';
+
+      if (!groupCommitted) {
+        // ── Retreat check for uncommitted combat units ──
+        const localEnemyStrength = this.estimateLocalEnemyStrength(unit);
+        const unitStrength = Math.max(1, unit.attack || 0) + (unit.defense || 0) * 0.5;
+        const isInGroup = aiState.armyGroups.some(g => g.unitIds.includes(unit.id));
+
+        if (AICoordinator.shouldRetreat(unitStrength, localEnemyStrength, isInGroup)) {
+          console.log(`[AI] Unit ${unit.id} retreating (own: ${unitStrength.toFixed(1)}, enemy: ${localEnemyStrength.toFixed(1)})`);
+          const friendlyCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === unit.civilizationId);
+          const distFn = (c1: number, r1: number, c2: number, r2: number) =>
+            this.gameEngine.squareGrid?.squareDistance(c1, r1, c2, r2) ?? Infinity;
+          const retreat = AICoordinator.getRetreatTarget(
+            unit.col, unit.row, friendlyCities, aiState.armyGroups, distFn
+          );
+          if (retreat) return retreat;
+        }
+      }
+
       if (groupTarget) {
         console.log(`[AI] Army group target for ${unit.id}: (${groupTarget.col},${groupTarget.row}) [${groupTarget.groupStatus}]`);
         return { col: groupTarget.col, row: groupTarget.row };
@@ -2811,6 +2843,11 @@ export class AIManager {
     if (typeof this.gameEngine.isTilePassable === 'function' && !this.gameEngine.isTilePassable(target.col, target.row)) return false;
     // A land unit must not stay committed to a target on another landmass.
     if (!this.areLandConnected(unit.col, unit.row, target.col, target.row)) return false;
+    // …nor to a tile it already failed to enter (stuck-target guard).
+    if (unit._blockedScoutTargets instanceof Set
+        && unit._blockedScoutTargets.has(`${target.col},${target.row}`)) {
+      return false;
+    }
     const occupant = this.gameEngine.getUnitAt?.(target.col, target.row);
     if (occupant && occupant.civilizationId === unit.civilizationId) return false;
     const city = this.gameEngine.getCityAt?.(target.col, target.row);
@@ -2893,12 +2930,13 @@ export class AIManager {
   }
 
   /**
-   * Remember a tile a scout could not reach so the scout stops re-targeting
-   * the same unreachable square every turn (the old behavior produced 10+
-   * consecutive `move_failed` rounds and starved the civ of intelligence).
+   * Remember a tile a unit could not enter so it stops re-targeting the same
+   * unreachable square every turn (the old behavior produced 10+ consecutive
+   * `move_failed` rounds). Used for scouts AND military units: the blacklist
+   * is fed to pathfinding as obstacles, so routes go around the blocker
+   * instead of repeating the failed step.
    */
   private blacklistScoutTarget(unit: Unit, col: number, row: number): void {
-    if (unit.type !== 'scout') return;
     const key = `${col},${row}`;
     const blocked = unit._blockedScoutTargets instanceof Set
       ? unit._blockedScoutTargets
@@ -3153,6 +3191,18 @@ export class AIManager {
       return;
     }
 
+    // Keep a committed, still-valid plan instead of re-planning (and wiping
+    // the unit assignments) every single turn. The old churn cleared the
+    // assault mid-march, so the bulk attack never reached the target.
+    const existingPlan = storage.turnData.offensivePlan as AIState['offensivePlan'] | undefined;
+    if (
+      existingPlan?.target &&
+      this.isOffensivePlanTargetValid(existingPlan) &&
+      roundNumber - (existingPlan.roundPrepared ?? roundNumber) < OFFENSIVE_PLAN_MAX_AGE_ROUNDS
+    ) {
+      return;
+    }
+
     // Situational aggression: how much this civ should push right now. Without
     // an aggression read the AI only ever defended, so it never started wars.
     const aggression = this.getAggressionState(civilizationId, storage, roundNumber);
@@ -3170,6 +3220,14 @@ export class AIManager {
     // the AI must not trigger an assault it cannot win, and it withdraws an
     // existing one when the target grows too strong.
     const knownTargets = this.collectKnownTargets(civilizationId, storage, roundNumber);
+    // Retaliation: within the window, prefer the civ that took our city.
+    const lostRound = storage.turnData.lastCityLostRound as number | undefined;
+    const lostTo = storage.turnData.lastCityLostTo as number | undefined;
+    const preferredCivId = typeof lostRound === 'number'
+      && typeof lostTo === 'number'
+      && roundNumber - lostRound <= RETALIATION_WINDOW_ROUNDS
+      ? lostTo
+      : undefined;
     const bulkPlan = planBulkAttack(
       this.gameEngine,
       civilizationId,
@@ -3178,6 +3236,7 @@ export class AIManager {
       offensiveUnits.length,
       roundNumber,
       aggressive,
+      preferredCivId,
     );
 
     if (!bulkPlan) {
@@ -3248,6 +3307,10 @@ export class AIManager {
   private evaluateAggression(civilizationId: number, gameState: { ownMilitaryStrength: number; averageEnemyStrength: number; criticalThreatsCount: number; threatenedCitiesCount: number; numOwnCities: number; isAtWar: boolean; currentYear: number }): AggressionAssessment {
     const personality = this.gameEngine.civilizations?.[civilizationId]?.personality;
     const storage = this.gameEngine.getPlayerStorage?.(civilizationId);
+    // Retaliation window: a city lost recently makes the civ fight back.
+    const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const lostRound = storage?.turnData?.lastCityLostRound as number | undefined;
+    const recentlyLostCity = typeof lostRound === 'number' && roundNumber - lostRound <= RETALIATION_WINDOW_ROUNDS;
 
     let knownEnemyCities = 0;
     if (storage?.enemyLocations) {
@@ -3269,6 +3332,7 @@ export class AIManager {
       numEnemyCities: knownEnemyCities,
       isAtWar: gameState.isAtWar,
       currentYear: gameState.currentYear,
+      recentlyLostCity,
     });
   }
 
@@ -3276,18 +3340,16 @@ export class AIManager {
   private collectKnownTargets(civilizationId: number, storage: PlayerTurnStorage, roundNumber: number): KnownTarget[] {
     const targets: KnownTarget[] = [];
     if (!storage?.enemyLocations) return targets;
-    // Before the civ can build ships, targets on another landmass are simply
-    // unreachable and must be excluded from war planning (they would stall the
-    // army at the coast). Once shipbuilding is possible they stay on the list
-    // as future naval-invasion targets.
-    const canBuildShips = this.engineCanBuildShips(civilizationId);
-    for (const enemyList of storage.enemyLocations.values()) {
+    // The bulk attack is a LAND army plan: targets on another landmass would
+    // stall the army at the coast, so they are excluded here (the navy pivot
+    // and colony missions handle cross-water enemies).
+    for (const [enemyCivId, enemyList] of storage.enemyLocations) {
       for (const loc of enemyList) {
         const age = roundNumber - (loc.lastSeenRound ?? loc.discoveredRound ?? roundNumber);
         // Same 40-round window as planBulkAttack: intel that is not ancient
         // still feeds the war plan even if the two fronts are apart.
         if (age > 40) continue;
-        if (!canBuildShips && !this.engineTileReachableByLand(civilizationId, loc.col, loc.row)) {
+        if (!this.engineTileReachableByLand(civilizationId, loc.col, loc.row)) {
           continue;
         }
         targets.push({
@@ -3297,10 +3359,28 @@ export class AIManager {
           id: loc.id,
           lastSeenRound: loc.lastSeenRound,
           discoveredRound: loc.discoveredRound,
+          civId: enemyCivId,
         });
       }
     }
     return targets;
+  }
+
+  /**
+   * Whether a committed offensive plan's target still exists and belongs to
+   * the enemy it was planned against (a captured city / killed unit makes the
+   * plan stale).
+   */
+  private isOffensivePlanTargetValid(plan: NonNullable<AIState['offensivePlan']>): boolean {
+    if (!plan.target) return false;
+    if (plan.targetType === 'city') {
+      const city = this.gameEngine.getCityAt(plan.target.col, plan.target.row);
+      if (!city) return false;
+      return plan.targetCivId == null || city.civilizationId === plan.targetCivId;
+    }
+    const enemy = this.gameEngine.getUnitAt(plan.target.col, plan.target.row);
+    if (!enemy) return false;
+    return plan.targetCivId == null || enemy.civilizationId === plan.targetCivId;
   }
 
   private getOffensivePlanTarget(unit: Unit, storage: PlayerTurnStorage): { col: number; row: number } | null {
@@ -3313,7 +3393,23 @@ export class AIManager {
       return null;
     }
 
-    plan.assignedUnitIds = plan.assignedUnitIds || [];
+    // Prune dead/removed units from the assignment list — stale ids used to
+    // occupy the required-unit slots forever, so the plan silently stopped
+    // assigning attackers.
+    plan.assignedUnitIds = (plan.assignedUnitIds ?? []).filter((id) => {
+      const assigned = this.gameEngine.units.find((u: Unit) => u.id === id);
+      return !!assigned && !assigned.isDefeated;
+    });
+
+    // The target may have been captured or killed since the plan was made —
+    // drop the plan instead of marching at an empty tile.
+    if (plan.targetType === 'city') {
+      const targetCity = this.gameEngine.getCityAt(plan.target.col, plan.target.row);
+      if (!targetCity || targetCity.civilizationId === unit.civilizationId) {
+        storage.turnData.offensivePlan = null;
+        return null;
+      }
+    }
 
     // Withdraw: if the target has become too strong since the plan was made,
     // units fall back to defensive/other assignments instead of suiciding into
@@ -3346,7 +3442,17 @@ export class AIManager {
       .filter((city: City) => city.civilizationId === civilizationId);
     const reserves = new Set<string>();
 
+    // Keep at least a MIN_GROUP_SIZE (3) force free for offense. A full
+    // one-unit-per-city garrison is only affordable when the army is larger
+    // than cities + 3; otherwise reserving every unit left the AI with no
+    // offensive units at all, so army groups never formed ("groups never
+    // attack").
+    const maxReserves = units.length >= cities.length + 3
+      ? cities.length
+      : Math.max(0, units.length - 3);
+
     for (const city of cities) {
+      if (reserves.size >= maxReserves) break;
       const candidates = units
         .filter((unit: Unit) => !reserves.has(unit.id))
         .map((unit: Unit) => ({
@@ -3722,12 +3828,11 @@ export class AIManager {
   ): Array<{ col: number; row: number; type: 'city' | 'unit'; estimatedStrength: number }> {
     const targets: Array<{ col: number; row: number; type: 'city' | 'unit'; estimatedStrength: number }> = [];
     if (!storage?.enemyLocations) return targets;
-    // Army groups only form against targets the army can actually march to.
-    const canBuildShips = this.engineCanBuildShips(civilizationId);
-
+    // Army groups are land formations: only targets the army can actually
+    // march to. Cross-water enemies are handled by the navy/colony pipeline.
     for (const enemyList of storage.enemyLocations.values()) {
       for (const loc of enemyList) {
-        if (!canBuildShips && !this.engineTileReachableByLand(civilizationId, loc.col, loc.row)) {
+        if (!this.engineTileReachableByLand(civilizationId, loc.col, loc.row)) {
           continue;
         }
         // Estimate strength: cities have higher estimated defense

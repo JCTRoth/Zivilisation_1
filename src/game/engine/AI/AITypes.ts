@@ -67,6 +67,8 @@ export interface ArmyGroup {
   status: 'forming' | 'marching' | 'attacking';
   requiredStrength: number;
   currentStrength: number;
+  /** Round the group was formed — used to break out of a stalled rally. */
+  formedRound?: number;
 }
 
 export interface BuildingPlan {

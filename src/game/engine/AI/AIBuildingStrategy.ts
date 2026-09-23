@@ -86,7 +86,7 @@ export class AIBuildingStrategy {
     city: City,
     civ: Civilization,
     strategy: StrategyProfile,
-    gameState: { currentYear: number; roundNumber: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number }
+    gameState: { currentYear: number; roundNumber: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number; cityCoastal?: boolean }
   ): BuildingPlan[] {
     const plans: BuildingPlan[] = [];
     const cityBuildings: string[] = city.buildings || [];
@@ -137,7 +137,7 @@ export class AIBuildingStrategy {
     city: City,
     personality: Personality,
     strategy: StrategyProfile,
-    gameState: { currentYear: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number }
+    gameState: { currentYear: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number; cityCoastal?: boolean }
   ): BuildingPlan {
     let priority = 5; // Base priority
     const reasons: string[] = [];
@@ -260,12 +260,22 @@ export class AIBuildingStrategy {
         break;
 
       case 'harbor':
-        // General weight: a harbor unlocks naval construction and adds food
-        // from worked water tiles, so it gets a solid base priority. The
-        // AutoProduction small-island branch raises it to the top when the civ
-        // is isolated on a small island.
+        // A harbor is only worth building when it is NEEDED: it unlocks naval
+        // construction and adds food from worked water tiles, so an inland
+        // city gets ZERO priority (never build it there). Coastal cities get a
+        // solid weight; the AutoProduction island branch raises it further
+        // when the civ is isolated on a small island.
+        if (gameState.cityCoastal === false) {
+          priority = 0;
+          reasons.push('inland-no-water');
+          break;
+        }
         priority += 15;
         priority += personality.economy * 0.4;
+        if (gameState.cityCoastal === true) {
+          priority += 4;
+          reasons.push('coastal');
+        }
         reasons.push('naval-food');
         break;
 

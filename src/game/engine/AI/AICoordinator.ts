@@ -25,6 +25,32 @@ const RETREAT_THRESHOLD = 2.0;
 /** Minimum strength required relative to estimated target defense */
 const ATTACK_READINESS_MULTIPLIER = 1.5;
 
+/**
+ * If a group cannot gather at its rally point within this many rounds it stops
+ * waiting and marches anyway. Without this a rally point that units cannot
+ * reach (water, a blocked pass, a strait) kept the group in `forming` forever
+ * — the "groups form but never attack" stalemate.
+ */
+const RALLY_TIMEOUT_ROUNDS = 6;
+
+/** How far from the centroid we search for a passable rally tile. */
+const RALLY_SEARCH_RADIUS = 6;
+
+/** Options injected by the engine-aware caller (AIManager). */
+export interface ArmyGroupOptions {
+  /** Whether a rally tile is passable for the group's (land) units. */
+  isPassable?: (col: number, row: number) => boolean;
+  /** Whether a unit can actually march to the target (same landmass). */
+  isReachable?: (
+    unit: Unit,
+    target: { col: number; row: number },
+  ) => boolean;
+  /** Whether the group's target still holds an enemy (else the group drops). */
+  isTargetValid?: (target: { col: number; row: number }) => boolean;
+  /** Current round, used for the rally timeout. */
+  roundNumber?: number;
+}
+
 // ---------------------------------------------------------------------------
 // AICoordinator class
 // ---------------------------------------------------------------------------
@@ -43,7 +69,8 @@ export class AICoordinator {
     combatUnits: Unit[],
     targets: Array<{ col: number; row: number; type: 'city' | 'unit'; estimatedStrength: number }>,
     existingGroups: ArmyGroup[],
-    distanceFn: (col1: number, row1: number, col2: number, row2: number) => number
+    distanceFn: (col1: number, row1: number, col2: number, row2: number) => number,
+    options: ArmyGroupOptions = {},
   ): ArmyGroup[] {
     if (combatUnits.length < MIN_GROUP_SIZE || targets.length === 0) {
       return existingGroups;
@@ -52,8 +79,13 @@ export class AICoordinator {
     const groups: ArmyGroup[] = [];
     const assignedUnitIds = new Set<string>();
 
-    // Carry forward existing groups that still have valid units and targets
+    // Carry forward existing groups that still have valid units and targets.
+    // A group whose target no longer holds an enemy (captured city, killed
+    // unit) is dropped so its units can be re-tasked.
     for (const group of existingGroups) {
+      if (options.isTargetValid && !options.isTargetValid(group.targetLocation)) {
+        continue;
+      }
       const validUnits = group.unitIds.filter(id => combatUnits.some(u => u.id === id));
       if (validUnits.length >= 2) {
         groups.push({
@@ -62,6 +94,7 @@ export class AICoordinator {
           currentStrength: AICoordinator.calculateGroupStrength(
             validUnits.map(id => combatUnits.find(u => u.id === id)!).filter(Boolean)
           ),
+          formedRound: group.formedRound ?? options.roundNumber ?? 0,
         });
         validUnits.forEach(id => assignedUnitIds.add(id));
       }
@@ -71,9 +104,11 @@ export class AICoordinator {
     for (const target of targets) {
       const requiredStrength = target.estimatedStrength * ATTACK_READINESS_MULTIPLIER;
 
-      // Find nearby unassigned combat units
+      // Find nearby unassigned combat units that can actually march to the
+      // target (a unit on another landmass would stall the whole group).
       const nearbyUnits = combatUnits
         .filter(u => !assignedUnitIds.has(u.id))
+        .filter(u => (options.isReachable ? options.isReachable(u, target) : true))
         .map(u => ({
           unit: u,
           distance: distanceFn(u.col, u.row, target.col, target.row),
@@ -98,24 +133,54 @@ export class AICoordinator {
       }
 
       if (groupUnits.length >= MIN_GROUP_SIZE) {
-        // Calculate rally point: centroid of the group units
-        const rallyCol = Math.round(groupUnits.reduce((sum, u) => sum + u.col, 0) / groupUnits.length);
-        const rallyRow = Math.round(groupUnits.reduce((sum, u) => sum + u.row, 0) / groupUnits.length);
+        // Rally point: the centroid, snapped to the nearest passable land tile
+        // so the group can actually gather there.
+        const rallyPoint = AICoordinator.findRallyPoint(groupUnits, options.isPassable);
+        if (!rallyPoint) continue; // nowhere to gather — do not form the group
 
         groups.push({
           id: `army_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           unitIds: groupUnits.map(u => u.id),
           targetLocation: { col: target.col, row: target.row },
-          rallyPoint: { col: rallyCol, row: rallyRow },
+          rallyPoint,
           status: 'forming',
           requiredStrength,
           currentStrength: groupStrength,
+          formedRound: options.roundNumber ?? 0,
         });
       }
     }
 
     // Limit to max 2 concurrent groups
     return groups.slice(0, 2);
+  }
+
+  /**
+   * The group's rally point: the centroid of its units, snapped outward to the
+   * nearest passable tile. Returns null when no passable tile is found within
+   * `RALLY_SEARCH_RADIUS` (the caller then skips the group).
+   */
+  private static findRallyPoint(
+    units: Unit[],
+    isPassable?: (col: number, row: number) => boolean,
+  ): { col: number; row: number } | null {
+    if (units.length === 0) return null;
+    const cx = Math.round(units.reduce((sum, u) => sum + u.col, 0) / units.length);
+    const cy = Math.round(units.reduce((sum, u) => sum + u.row, 0) / units.length);
+    if (!isPassable) return { col: cx, row: cy };
+    if (isPassable(cx, cy)) return { col: cx, row: cy };
+
+    for (let radius = 1; radius <= RALLY_SEARCH_RADIUS; radius++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        for (let dr = -radius; dr <= radius; dr++) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+          const col = cx + dc;
+          const row = cy + dr;
+          if (isPassable(col, row)) return { col, row };
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -131,7 +196,12 @@ export class AICoordinator {
 
       switch (group.status) {
         case 'forming':
-          // Move to rally point
+          // A group that already has enough strength does not wait for the
+          // last straggler — it presses on to the target.
+          if (group.currentStrength >= group.requiredStrength) {
+            return { col: group.targetLocation.col, row: group.targetLocation.row, groupStatus: 'forming' };
+          }
+          // Otherwise move to the rally point.
           return { col: group.rallyPoint.col, row: group.rallyPoint.row, groupStatus: 'forming' };
         case 'marching':
         case 'attacking':
@@ -149,7 +219,8 @@ export class AICoordinator {
   static updateGroupStatuses(
     armyGroups: ArmyGroup[],
     units: Unit[],
-    distanceFn: (col1: number, row1: number, col2: number, row2: number) => number
+    distanceFn: (col1: number, row1: number, col2: number, row2: number) => number,
+    roundNumber?: number,
   ): void {
     for (const group of armyGroups) {
       const groupUnits = group.unitIds
@@ -178,17 +249,28 @@ export class AICoordinator {
         const gatheredUnits = groupUnits.filter((unit) =>
           distanceFn(unit.col, unit.row, group.rallyPoint.col, group.rallyPoint.row) <= 2
         ).length;
-        if (avgDistToRally <= 2 || gatheredUnits >= groupUnits.length * 0.75) {
+        // Escalation: a rally that cannot be reached must not freeze the
+        // group forever — after the timeout it marches anyway.
+        const rallyTimedOut =
+          typeof roundNumber === 'number' &&
+          typeof group.formedRound === 'number' &&
+          roundNumber - group.formedRound >= RALLY_TIMEOUT_ROUNDS;
+        if (avgDistToRally <= 2 || gatheredUnits >= groupUnits.length * 0.75 || rallyTimedOut) {
           group.status = 'marching';
-          console.log(`[AICoordinator] Army group ${group.id}: forming -> marching (${gatheredUnits}/${groupUnits.length} gathered, avg rally dist: ${avgDistToRally.toFixed(1)})`);
+          console.log(`[AICoordinator] Army group ${group.id}: forming -> marching (${gatheredUnits}/${groupUnits.length} gathered, avg rally dist: ${avgDistToRally.toFixed(1)}${rallyTimedOut ? ', rally timeout' : ''})`);
         }
       }
 
       if (group.status === 'marching') {
-        // Transition to attacking when close to target
-        if (avgDistToTarget <= 3) {
+        // Transition to attacking when close to target — or immediately when
+        // any group unit is already in attack range (a vanguard must not wait
+        // for the rest of the army).
+        const anyAdjacent = groupUnits.some(
+          (unit) => distanceFn(unit.col, unit.row, group.targetLocation.col, group.targetLocation.row) <= 1,
+        );
+        if (avgDistToTarget <= 3 || anyAdjacent) {
           group.status = 'attacking';
-          console.log(`[AICoordinator] Army group ${group.id}: marching -> attacking (avg target dist: ${avgDistToTarget.toFixed(1)})`);
+          console.log(`[AICoordinator] Army group ${group.id}: marching -> attacking (avg target dist: ${avgDistToTarget.toFixed(1)}${anyAdjacent ? ', vanguard in range' : ''})`);
         }
       }
 

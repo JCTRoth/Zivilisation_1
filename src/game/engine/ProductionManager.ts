@@ -79,6 +79,11 @@ export class ProductionManager {
         if (req && !techs.has(req)) {
           return { ok: false, reason: `requires_tech_${req}` };
         }
+        // A Harbor is only useful with a water connection (ships + sea food):
+        // never let an inland city waste shields on one.
+        if (itemType === 'harbor' && !this.cityHasHarborOrCoast(city)) {
+          return { ok: false, reason: 'no_water_access' };
+        }
         // Buildings are one-per-city (Civ1): never let the player/AI queue a
         // building the city already owns — it would silently waste shields on
         // completion (addBuildingToCity skips the duplicate).

@@ -162,21 +162,14 @@ Building irrigations requires settler that need food them self so this should be
 City growth is important, needs stable surplus of food.
 Also: Ai: the more far away a village from next town and the more towns the civ. hat the higher % that AI takes village instead of ignoring it to not get over runned by babrians.  
 
-* Remove "Forge" from the game and AI strategy also higher prio. to harbor when detects that on smaal island alone, harbor should in general get a little bit higher weight in the Auto Build
+- TODo -
+* improve the budget keeping / money handling of the AI, not overweight but should better do it use all mesures for it
+* Remove "Forge" from the game and AI strategy also higher prio. to harbor when detects that on smaal island alone,
+harbor should in general get a higher weight in the Auto Build when needed,
+never build if not needed, on very smaal islands even more
 * If Island is very small than highest prio to building ship
 * If AI detects by ship a smaal island with no city on it, send a settler and build a city there
 * Improve the AI scout and in general unit movement on islands
-
-
-- DOTO -
-Remove this mechanic from the game: Civ1 Harbor: +1 food from every worked OCEAN tile. - 
-Instead intoduce new unit fisher boat that can drive out to the water 
-Build Cost: 20 Production
-Prerequisites: Harbort
-Collects fish, storage 6
-Stats:
-Movement: 2
-Attack: 0 / Defense: 1
 
 * The AI should load units into transport ships
 Here is the technical breakdown of the Civ 1 transport backend systems, adapted strictly for your game's specific rules (removing stack death and adding the unit selection modal):
@@ -211,6 +204,29 @@ Because of how the Civ 1 engine resets and checks unit movement points (MP), pla
 by clicking on a defening or sleeping unit I activate the unit.
 
 
+## 6. Cities have no limit on units inside them.
+Extend the city menu by new tab that works the same way the modal for unit managment works
+Dont show the units fortified in the city directly on the map but show the fortified icon of it on the city
+
+
+
+
+- TODo -
+Focuse on this: Remove this mechanic from the game: Civ1 Harbor: +1 food from every worked OCEAN tile. - 
+Instead intoduce new unit fisher boat that can drive out to the water 
+Build Cost: 20 Production
+Prerequisites: Harbort
+Collects fish, storage 6
+Stats:
+Movement: 2
+Attack: 0 / Defense: 1
+Ability — "Deploy Fishing Net" add to the contect menu.
+Only possible on fish tiles.  -- Return me a calulation formular more far way fish after fishing ---- 
+When fishing boat comes back into city it fills with the garnerie/city sorage by what is stored in the boat, if all full adds for one round +2 food,
+drives automatic back to the fishing ground where "Deploy Fishing Net" was setted before stays there until fished and drives automatic back, add to conect menu also remove button
+for the ""Deploy Fishing Net"  route
+
+
 * Add new ship type, "Trade Ship" 
 A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
 and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.
@@ -230,3 +246,45 @@ Assume: The traget city in the formular is the ship.
 D is distance to ship.
 Pop is the population of the city the sunk ship came from.
 T is the population of the city the sunk ship came from.
+
+- AI vs AI analysis (session aivsai-2026-09-20T23-11-44-788Z) -
+Fixed directly:
+* civ.score was 0 for the whole game in the progression CSV. VictoryManager
+  now computes the Civ1 score every turn end (population, land area, cities,
+  techs, wonders).
+* Harbor: inland cities can no longer build it (ProductionManager rejects
+  'no_water_access'); the AI gives it 0 priority inland and a coastal bonus.
+* Failed-move memory is now used by ALL land units (not only scouts), so
+  repeated move_failed loops stop sooner.
+* Army groups: reachable rally points, rally timeout, vanguard attack,
+  committed groups ignore retreat, land-only targets, reserve keeps 3 units
+  free, persistent bulk plans.
+
+Also fixed after the analysis:
+* War commitment: aggression at war is weighted higher (+12) and a recent
+  city loss triggers retaliation (+15, and the capturer is preferred as a
+  bulk-attack target for 15 rounds).
+* Army upkeep / gold starvation: the sustainable-unit cap is now enforced for
+  the CURRENT production too (not just queued follow-ups), and the default
+  army mix caps defenders at ~2 per city unless the city is threatened.
+* Move failures/skips: the failed-tile memory is shared by all land units and
+  a committed target on a blocked tile is dropped (stuck recovery).
+* Scout overproduction: scouts queued across ALL cities are counted and the
+  corps is hard-capped at 3.
+* Score completeness: pollution penalty and peace-years bonus implemented.
+* Eliminated civs are emitted once in the compact CSV and then dropped.
+
+Still to do (bigger):
+* Verify war commitment in fresh AI-vs-AI runs: do wars actually produce
+  sustained offensives and city captures now? Watch attacks/round and
+  citiesCaptured in the next progression CSV.
+* Naval invasion: land armies still cannot attack across water; the navy pivot
+  builds ships but there is no transport/invasion mission (only colonies).
+* Multi-group offensives / siege commitment: two groups can form, but there is
+  no coordination between them (no pincer/second-front planning).
+* Army composition by era: the AI still over-produces the era's default
+  defender; add stronger era/threat-aware composition weights.
+* Economy buildings earlier: the AI reaches 0-8 gold with big armies; build
+  marketplace/bank/temple earlier when upkeep pressure starts.
+* Scout/mercenary grants from huts can exceed the corps cap (only production
+  is capped); decide whether to convert/dismiss extras.

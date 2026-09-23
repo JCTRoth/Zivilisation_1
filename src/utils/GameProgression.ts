@@ -382,10 +382,16 @@ class GameProgression {
     // Carry each civ's state forward across rounds (the snapshots are
     // delta-encoded: omitted fields stay unchanged from the previous round).
     const carried: Record<string, ProgressionCivSnapshot> = {};
+    // Eliminated civs are emitted once (the elimination round) and then
+    // dropped, instead of filling the CSV with 0-everything rows forever.
+    const emittedElimination = new Set<string>();
     for (const round of this.snapshots) {
       for (const [civId, delta] of Object.entries(round.civs)) {
         const full = hydrateCiv(carried[civId], delta);
         carried[civId] = full;
+        const eliminated = full.alive === false && (full.cities ?? 0) === 0 && (full.units ?? 0) === 0;
+        if (eliminated && emittedElimination.has(civId)) continue;
+        if (eliminated) emittedElimination.add(civId);
         const diag = diagnostics.get(String(round.round) + '|' + String(full.id)) ?? emptyRoundDiagnostics();
         lines.push(
           [

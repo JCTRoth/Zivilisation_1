@@ -453,6 +453,8 @@ export interface Civilization {
   researchProgress?: number;
   technologies?: string[];
   score?: number;
+  /** Consecutive rounds without war (score's peace bonus, reset on war). */
+  peaceTurns?: number;
   isHuman?: boolean;
   isAI?: boolean;
   /** Fixed per-civ AI identity — drives AutoProduction (and seeds research). */

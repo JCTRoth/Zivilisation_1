@@ -46,6 +46,8 @@ export interface AggressionInput {
   numEnemyCities: number;
   isAtWar: boolean;
   currentYear: number;
+  /** The civ lost a city within the retaliation window. */
+  recentlyLostCity?: boolean;
 }
 
 export interface AggressionAssessment {
@@ -71,6 +73,8 @@ export interface KnownTarget {
   id: string;
   lastSeenRound?: number;
   discoveredRound?: number;
+  /** Owner civilization of the target (the intelligence map key). */
+  civId?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,8 +182,14 @@ export function computeAggression(
 
   // Already committed: finish the war instead of stalling.
   if (input.isAtWar) {
-    score += 8;
+    score += 12;
     reasons.push('at war');
+  }
+
+  // Retaliation: a civ that just lost a city must fight back, not turtle.
+  if (input.recentlyLostCity) {
+    score += 15;
+    reasons.push('lost a city — retaliate');
   }
 
   // Empire advantage: push to take as many cities as possible.
@@ -253,6 +263,7 @@ export function planBulkAttack(
   eligibleUnits: number,
   roundNumber: number,
   aggressive: boolean,
+  preferredCivId?: number,
 ): BulkAttackPlan | null {
   if (!aggressive) return null;
 
@@ -291,7 +302,11 @@ export function planBulkAttack(
     // Prefer cities (take territory), fresher intel, and near targets.
     const cityBonus = target.type === 'city' ? 60 : 20;
     const freshness = Math.max(0, 20 - age);
-    const score = cityBonus + freshness * 2 - nearestOwnDist;
+    let score = cityBonus + freshness * 2 - nearestOwnDist;
+    // Retaliation: strongly prefer the civ that just took one of our cities.
+    if (preferredCivId != null && target.civId === preferredCivId) {
+      score += 80;
+    }
 
     if (score > bestScore) {
       bestScore = score;
