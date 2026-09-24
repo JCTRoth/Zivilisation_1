@@ -129,6 +129,81 @@ describe('Harbor is only built when needed', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Coastal cities build a Harbor as soon as they are safe
+// ---------------------------------------------------------------------------
+
+function makeCoastalProductionEngine() {
+  const city = {
+    id: 'city-1', name: 'Port', civilizationId: 1, col: 1, row: 1,
+    population: 3, buildings: [], specialists: [], workingTiles: new Set(['1,1']),
+    currentProduction: null, autoProduction: true,
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const engine: any = {
+    cities: [city],
+    units: [{
+      id: 'def', type: 'warrior', civilizationId: 1, col: 1, row: 1,
+      attack: 1, defense: 2, health: 100, movesRemaining: 1, isDefeated: false,
+    }],
+    civilizations: [null, {
+      id: 1, name: 'Civ', technologies: ['masonry', 'pottery'],
+      resources: { gold: 100 }, personality: {}, luxuryRate: 0,
+    }],
+    economicManager: {
+      sustainableUnits: () => 5,
+      cityHappiness: () => ({ disorder: false, unhappiness: 0, happiness: 2 }),
+    },
+    productionManager: {
+      cityHasHarborOrCoast: () => true,
+      getBuildableBuildingTypes: () => ['harbor', 'granary'],
+    },
+    getPlayerStorage: () => ({ turnData: {} }),
+    squareGrid: { squareDistance: () => 1 },
+    roundManager: { getRoundNumber: () => 0 },
+    currentYear: -500,
+    gameSettings: { difficulty: 'PRINCE' },
+    getCityAt: () => null,
+    getUnitAt: () => city,
+    map: { width: 20, height: 20 },
+  };
+  return { engine, city, auto: new AutoProduction(engine) };
+}
+
+describe('Coastal city builds a Harbor early', () => {
+  it('proposes a Harbor for a safe coastal city', () => {
+    const { auto, city } = makeCoastalProductionEngine();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const item = (auto as any).determineProductionItem(city, { needsDefense: false, netThreat: 0 }, []);
+    expect(item?.type).toBe('building');
+    expect(item?.itemType).toBe('harbor');
+  });
+
+  it('builds defenders instead while under direct threat', () => {
+    const { auto, city } = makeCoastalProductionEngine();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const item = (auto as any).determineProductionItem(city, { needsDefense: true, netThreat: 3 }, []);
+    expect(item?.itemType).not.toBe('harbor');
+    expect(item?.type).toBe('unit');
+  });
+
+  it('never proposes a Harbor in a landlocked city', () => {
+    const { auto, city, engine } = makeCoastalProductionEngine();
+    engine.productionManager.getBuildableBuildingTypes = () => ['granary'];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const item = (auto as any).determineProductionItem(city, { needsDefense: false, netThreat: 0 }, []);
+    expect(item?.itemType).not.toBe('harbor');
+  });
+
+  it('does not queue a second Harbor once one exists', () => {
+    const { auto, city } = makeCoastalProductionEngine();
+    city.buildings.push('harbor');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const item = (auto as any).determineProductionItem(city, { needsDefense: false, netThreat: 0 }, []);
+    expect(item?.itemType).not.toBe('harbor');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Economy-aware army cap + scout cap
 // ---------------------------------------------------------------------------
 

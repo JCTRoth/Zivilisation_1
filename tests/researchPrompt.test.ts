@@ -64,6 +64,8 @@ describe('Research selection (start of game)', () => {
     const turnManager = (engine as unknown as { turnManager?: { endHumanTurn: () => Promise<void> } }).turnManager;
     expect(turnManager).toBeDefined();
 
+    // Research only starts after the opening rounds — unlock it first.
+    engine.roundManager.restoreState({ roundNumber: 3 });
     engine.turnManager.startTurn(0);
     expect(engine.civilizations[0].currentResearch).toBeFalsy();
 
@@ -72,5 +74,19 @@ describe('Research selection (start of game)', () => {
     const research = engine.civilizations[0].currentResearch;
     expect(research).toBeTruthy();
     expect((engine.civilizations[0].technologies ?? []).map(String)).not.toContain(research!.id);
+  });
+
+  it('the opening rounds run without research and without auto-selecting one', async () => {
+    expect(engine.isResearchUnlocked()).toBe(false);
+
+    const turnManager = (engine as unknown as { turnManager?: { endHumanTurn: () => Promise<void> } }).turnManager;
+    engine.turnManager.startTurn(0);
+    await turnManager!.endHumanTurn();
+
+    // No prompt/auto-pick yet: the science simply waits for the unlock round.
+    expect(engine.civilizations[0].currentResearch).toBeFalsy();
+
+    engine.roundManager.restoreState({ roundNumber: 3 });
+    expect(engine.isResearchUnlocked()).toBe(true);
   });
 });

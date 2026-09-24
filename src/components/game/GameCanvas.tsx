@@ -256,6 +256,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     return () => window.removeEventListener("keydown", onKey);
   }, [citizenReassign, actions, triggerRender]);
 
+  // ESC also drops a multi-unit group selection (the gold-ringed units stay
+  // where they are; only the pending move order is abandoned).
+  useEffect(() => {
+    if ((gameState.selectedUnitIds?.length ?? 0) === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        actions.setSelectedUnitIds?.([]);
+        triggerRender();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [gameState.selectedUnitIds, actions, triggerRender]);
+
   // Check if game state has changed significantly
   const hasGameStateChanged = useCallback(() => {
     const currentState = {
@@ -1600,6 +1614,93 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           actions.selectHex(hex);
         }
 
+        // Own units on this tile (used by the group selection / cycling paths).
+        const ownUnitsOnTile = (
+          unitAt && currentPlayer && unitAt.civilizationId === currentPlayer.id
+            ? (gameEngine?.getUnitsAt?.(hex.col, hex.row) ?? [unitAt])
+            : []
+        ).filter((u) => u.civilizationId === currentPlayer.id);
+
+        // Shift/Ctrl/Cmd-click extends the multi-unit group selection instead
+        // of replacing the single selection: every own unit on the tile toggles
+        // in or out of the group, and the unit that was selected by hand joins
+        // it too. This lets the player gather a group from several tiles.
+        if (
+          currentPlayer &&
+          (e.shiftKey || e.ctrlKey || e.metaKey) &&
+          ownUnitsOnTile.length > 0
+        ) {
+          const currentIds = gameState.selectedUnitIds ?? [];
+          const movableOnTile = ownUnitsOnTile.filter(
+            (u) => !u.isDefeated && (u.movesRemaining || 0) > 0,
+          );
+          const clickable = movableOnTile.length > 0
+            ? movableOnTile
+            : ownUnitsOnTile.filter((u) => !u.isDefeated);
+          const allInGroup =
+            clickable.length > 0 && clickable.every((u) => currentIds.includes(u.id));
+          let next: string[];
+          if (allInGroup) {
+            next = currentIds.filter((id) => !clickable.some((u) => u.id === id));
+          } else {
+            next = [...currentIds];
+            for (const u of clickable) {
+              if (!next.includes(u.id)) next.push(u.id);
+            }
+            const selectedId = gameState.selectedUnit;
+            if (selectedId && !next.includes(selectedId)) {
+              const selUnit = units.find((x) => x.id === selectedId);
+              if (
+                selUnit &&
+                selUnit.civilizationId === currentPlayer.id &&
+                !selUnit.isDefeated &&
+                (selUnit.movesRemaining || 0) > 0
+              ) {
+                next.push(selectedId);
+              }
+            }
+          }
+          actions.setSelectedUnitIds?.(next);
+          if (actions?.addNotification) {
+            actions.addNotification({
+              type: next.length > 0 ? "info" : "warning",
+              message:
+                next.length > 0
+                  ? `${next.length} unit${next.length === 1 ? "" : "s"} selected — click a destination to move them (right-click / Esc cancels)`
+                  : "Group selection cleared",
+            });
+          }
+          setContextMenu(null);
+          triggerRender();
+          return;
+        }
+
+        // Group move: the player ticked units in the stack modal (or gathered
+        // them with shift-click) — the next map click orders every selected
+        // unit that still has movement points to this tile. Runs BEFORE the
+        // own-unit branch so a group can also be ordered onto a tile that
+        // already holds friendly units.
+        if ((gameState.selectedUnitIds?.length ?? 0) > 0) {
+          const selectedIds = gameState.selectedUnitIds ?? [];
+          let ordered = 0;
+          for (const id of selectedIds) {
+            const u = units.find((x) => x.id === id);
+            if (!u || u.isDefeated || (u.movesRemaining || 0) <= 0) continue;
+            assignUnitPath(u, hex.col, hex.row);
+            ordered++;
+          }
+          actions.setSelectedUnitIds?.([]);
+          if (actions?.addNotification) {
+            actions.addNotification(
+              ordered > 0
+                ? { type: "info", message: `Moving ${ordered} unit${ordered === 1 ? "" : "s"}` }
+                : { type: "warning", message: "None of the selected units can move" },
+            );
+          }
+          triggerRender();
+          return;
+        }
+
         if (
           unitAt &&
           currentPlayer &&
@@ -1610,9 +1711,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           // the first unit. A lone unit keeps the old behaviour — re-clicking
           // it cancels its GoTo path (also available as "Cancel orders" in the
           // ORDERS menu).
-          const ownUnitsOnTile = (
-            gameEngine?.getUnitsAt?.(hex.col, hex.row) ?? [unitAt]
-          ).filter((u) => u.civilizationId === currentPlayer.id);
           const ownCityOnTile =
             cityAt && cityAt.civilizationId === currentPlayer.id
               ? cityAt
@@ -1686,27 +1784,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           }
           console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type})`);
           triggerRender();
-        } else if ((gameState.selectedUnitIds?.length ?? 0) > 0) {
-          // Group move: the player ticked units in the stack modal — order
-          // every selected unit that still has movement points to this tile.
-          const selectedIds = gameState.selectedUnitIds ?? [];
-          let ordered = 0;
-          for (const id of selectedIds) {
-            const u = units.find((x) => x.id === id);
-            if (!u || u.isDefeated || (u.movesRemaining || 0) <= 0) continue;
-            assignUnitPath(u, hex.col, hex.row);
-            ordered++;
-          }
-          actions.setSelectedUnitIds?.([]);
-          if (actions?.addNotification) {
-            actions.addNotification(
-              ordered > 0
-                ? { type: "info", message: `Moving ${ordered} unit${ordered === 1 ? "" : "s"}` }
-                : { type: "warning", message: "None of the selected units can move" },
-            );
-          }
-          triggerRender();
-          return;
         } else if (
           unitAt &&
           currentPlayer &&
@@ -1856,9 +1933,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       return;
     }
 
-    // Right-click always ends unit selection mode. The context menu below is
-    // independent of selection (the unit is not re-selected by it).
-    if (gameState.selectedUnit) {
+    // Right-click always ends the unit / group selection mode. The context menu
+    // below is independent of selection (the unit is not re-selected by it).
+    if (gameState.selectedUnit || (gameState.selectedUnitIds?.length ?? 0) > 0) {
       console.log("[RightClick] Clearing unit selection");
       clearHoverPreview();
       setReachableTiles(new Map());

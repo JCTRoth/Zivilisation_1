@@ -2,13 +2,26 @@
 BUGS:
 -----
 
-- When a city was builded at the water and is not under direct thread than Build there a habort.
-- Around a city the icons Food, Production, Trade replace the black dots with icons above the numbers.
-- When a unit is selected it gets deselected by the turn manager when turn is changed
-
 --Open--
 
 ?--Fixed--?
+- Coastal auto-production builds a Harbor in a safe coastal city (right after
+  defense; defenders still come first and a city under direct threat never
+  diverts to the Harbor). Adopted on small islands already.
+- The selected-city map preview now shows the Food/Production/Trade yield ICONS
+  with the amount underneath instead of the old dark number dots.
+- A selected unit survives the turn change completely: emptying the unit queue
+  at the END phase no longer wipes a human unit the player is watching, so
+  TURN_END / AI_CLEAR_HIGHLIGHTS re-assert it and the player resumes with the
+  same unit selected (a group selection does clear at the boundary).
+- Research only starts after the first 3 rounds: no "No Research Selected"
+  prompt and no auto-pick before the unlock round; the top-bar indicator says
+  "Research starts soon" during the opening rounds instead of nagging.
+- Multi-unit selection: shift/ctrl/cmd-click gathers units from several tiles
+  into the group, a group can be ordered onto friendly-occupied tiles, the
+  stack modal has All-movable/Clear buttons, and right-click/ESC cancels.
+- City screen has a new "Units" tab: garrison + units supported by the city
+  (status, HP, attack/defense, veteran badges) with a Select button.
 - Selecting a unit no longer stops the auto turn manager: a hand-made selection
   lock is released as soon as the selected unit cannot act anymore (no moves /
   sleeping / fortified / skipped / dead), so the automatic next-unit focus and

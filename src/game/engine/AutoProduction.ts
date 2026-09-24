@@ -400,6 +400,20 @@ export class AutoProduction {
       return this.buildDefenderProduction(city, threatAssessment);
     }
 
+    // 2b. Coastal infrastructure: a city FOUNDED ON THE WATER with no direct
+    //     threat builds its Harbor early. The Harbor is the city's gateway to
+    //     the sea (naval units and the Fisher Boat) and is cheap (30 shields);
+    //     without it a coastal AI city can never build a fleet. A city under
+    //     direct threat already built defenders above; a small isolated island
+    //     promotes its Harbor even earlier (step 1c).
+    if (!threatAssessment?.needsDefense) {
+      const harbor = this.buildHarborProduction(city);
+      if (harbor) {
+        console.log('[AutoProduction] Coastal city with no threat — building a Harbor');
+        return harbor;
+      }
+    }
+
     // 3. Settler expansion FIRST (right after defense) so the civ actually
     //    grows. Previously buildings (and the happiness-emergency path) ran
     //    before this branch, so a civ with 1 city queued colosseum/

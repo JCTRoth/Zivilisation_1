@@ -127,6 +127,15 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
         <span className="research-indicator-name">Research: {nextInPath.name}</span>
       </>
     );
+  } else if (gameEngine && typeof gameEngine.isResearchUnlocked === 'function' && !gameEngine.isResearchUnlocked()) {
+    // Opening rounds: research has not started yet by design, so don't nag the
+    // player with a "No research" warning.
+    label = (
+      <>
+        <i className="bi bi-flask" aria-hidden="true" />
+        <span className="research-indicator-name">Research starts soon</span>
+      </>
+    );
   } else {
     label = (
       <>

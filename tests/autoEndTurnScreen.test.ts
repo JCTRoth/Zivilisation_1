@@ -137,7 +137,9 @@ describe('Auto End Turn defers while a screen is open', () => {
   });
 
   it('defers auto-end while no technology is selected — and asks for a choice', () => {
-    // No research selected: the turn must not be auto-ended with idle research.
+    // No research selected (past the opening rounds): the turn must not be
+    // auto-ended with idle research.
+    engine.roundManager.restoreState({ roundNumber: 3 });
     engine.civilizations[0].currentResearch = null;
     makeAllUnitsDone();
 
@@ -155,5 +157,17 @@ describe('Auto End Turn defers while a screen is open', () => {
     useGameStore.getState().actions.hideDialog();
     router.handle('CHECK_AUTO_END_TURN', { civilizationId: 0 });
     expect(prompts).toContain('showEndTurnConfirmation');
+  });
+
+  it('does NOT defer auto-end for missing research during the opening rounds', () => {
+    // Round 0: research intentionally has not started yet, so an empty
+    // research slot is expected and must not block the end of the turn.
+    engine.civilizations[0].currentResearch = null;
+    makeAllUnitsDone();
+
+    router.handle('CHECK_AUTO_END_TURN', { civilizationId: 0 });
+
+    expect(prompts).toContain('showEndTurnConfirmation');
+    expect(useGameStore.getState().uiState.activeDialog).not.toBe('research-required');
   });
 });

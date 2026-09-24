@@ -941,13 +941,19 @@ export class EngineEventRouter {
 
     // Never auto-end the turn while the player still has no technology
     // selected: the turn would be thrown away with research sitting idle.
-    // Once per "no research" gap an informational modal points this out (the
-    // player decides there whether to open the tech tree or keep playing) —
-    // they may still end the turn manually, and the engine then auto-selects
-    // a random available tech (see GameEngine.autoSelectResearch /
+    // Research only starts after the opening rounds though — before that an
+    // empty research slot is expected and must NOT defer the auto-end. Once per
+    // "no research" gap an informational modal points this out (the player
+    // decides there whether to open the tech tree or keep playing) — they may
+    // still end the turn manually, and the engine then auto-selects a random
+    // available tech (see GameEngine.autoSelectResearch /
     // TurnManager.endHumanTurn).
+    const researchUnlocked = typeof this.gameEngine?.isResearchUnlocked === 'function'
+      ? this.gameEngine.isResearchUnlocked()
+      : true;
     const human = (this.gameEngine?.civilizations ?? []).find((c: Civilization) => c.isHuman);
-    const needsResearch = !!human
+    const needsResearch = researchUnlocked
+      && !!human
       && !human.currentResearch
       && typeof this.gameEngine?.hasResearchableTech === 'function'
       && this.gameEngine.hasResearchableTech(human.id);
@@ -1037,6 +1043,9 @@ export class EngineEventRouter {
    * from deselecting the unit the player is looking at when the turn rolls.
    */
   private keepHumanUnitSelection(): void {
+    // A pending multi-unit group order does not survive the turn boundary:
+    // movement points are reset and the destination click belongs to this turn.
+    this.actions.setSelectedUnitIds?.([]);
     const state = useGameStore.getState();
     const id = state.gameState.selectedUnit;
     if (!id) {
@@ -1184,9 +1193,21 @@ export class EngineEventRouter {
         this.focusOnUnit(unit);
       }
     } else if (civ?.isHuman && !unitId) {
-      // Queue is empty for human player - deselect unit (ignored when the
-      // player is holding a selection of their own)
-      this.actions.selectUnit(null);
+      // Queue is empty for the human player. Do NOT throw away a living unit
+      // the player is watching: TURN_END / AI_CLEAR_HIGHLIGHTS re-assert a
+      // human-owned selection across the turn boundary (see
+      // keepHumanUnitSelection), so it must survive the queue clearing at the
+      // END phase. Only clear when the stale selection is not the human's own
+      // unit (a user-held selection is also protected by selectUnit's origin
+      // rule).
+      const selectedId = useGameStore.getState().gameState.selectedUnit;
+      const watched = selectedId
+        ? this.gameEngine?.units?.find((u) => u.id === selectedId)
+        : undefined;
+      const keepWatched = !!watched
+        && watched.civilizationId === HUMAN_PLAYER_ID
+        && watched.isDefeated !== true;
+      if (!keepWatched) this.actions.selectUnit(null);
     }
 
     const queueLength = typeof eventData?.queueLength === 'number'

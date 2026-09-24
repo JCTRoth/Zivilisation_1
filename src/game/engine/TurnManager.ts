@@ -262,11 +262,15 @@ export class TurnManager {
       return;
     }
 
-    // Research must never sit idle: if the player ends the turn without a
-    // selected technology, research a random available one. The auto-end gate
-    // only PROMPTS for a choice — this is the safety net for "selected
-    // nothing" so the turn's science is not wasted.
-    if (!civ.currentResearch && typeof this.gameEngine.autoSelectResearch === 'function') {
+    // Research must never sit idle — but ONLY after the opening rounds: the
+    // first RESEARCH_UNLOCK_ROUND rounds intentionally run without research, so
+    // the human is neither prompted nor auto-assigned a technology there. From
+    // the unlock round on, ending the turn with no selected technology
+    // auto-researches a random available one.
+    const researchUnlocked = typeof this.gameEngine.isResearchUnlocked === 'function'
+      ? this.gameEngine.isResearchUnlocked()
+      : true;
+    if (researchUnlocked && !civ.currentResearch && typeof this.gameEngine.autoSelectResearch === 'function') {
       const autoPicked = this.gameEngine.autoSelectResearch(civId);
       if (autoPicked) {
         console.log(`[TurnManager] No research selected — auto-selected '${autoPicked}' for ${civ.name}`);

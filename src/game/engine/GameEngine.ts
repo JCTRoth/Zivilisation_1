@@ -1,7 +1,7 @@
 import { SquareGrid } from '../SquareGrid';
 import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
-import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES } from '@/data/GameConstants';
+import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
 import { WORLD_MAP } from '@/data/maps';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
@@ -4688,6 +4688,19 @@ export default class GameEngine {
   /** Whether the civ still has any technology it could research. */
   hasResearchableTech(civId: number): boolean {
     return this.availableResearchFor(civId).length > 0;
+  }
+
+  /**
+   * Whether research may start yet. The opening rounds deliberately run with
+   * no research target: the human player is neither prompted nor auto-assigned
+   * a technology until the first `RESEARCH_UNLOCK_ROUND` rounds are over (the
+   * science produced during them is banked/saved for later, not wasted).
+   */
+  isResearchUnlocked(): boolean {
+    const round = this.roundManager?.getRoundNumber?.();
+    if (typeof round === 'number') return round >= RESEARCH_UNLOCK_ROUND;
+    // Fallback for lightweight engines without a round manager.
+    return (this.currentTurn ?? 1) - 1 >= RESEARCH_UNLOCK_ROUND;
   }
 
   /**

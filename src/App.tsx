@@ -279,14 +279,21 @@ function App() {
     handleGameStart(quickSettings);
   }, [gameEngine, showGameSetup, handleGameStart]);
 
-  // Ask the player to pick a technology when a game starts with no research
-  // selected. (Civilizations start with a few free techs, so the old "no techs
-  // at all" condition never matched.) Fires once per game/engine instance, on
-  // turn 1.
+  // Ask the player to pick a technology when the opening rounds are over and
+  // still no research is selected. (Civilizations start with a few free techs,
+  // so the old "no techs at all" condition never matched; and research only
+  // starts after the first RESEARCH_UNLOCK_ROUND rounds.) Fires once per
+  // game/engine instance.
   const researchPromptedRef = useRef<GameEngine | null>(null);
   useEffect(() => {
     if (!gameEngine || !gameState.isGameStarted) return;
-    if (gameState.currentTurn > 1) return;
+    // Research only starts after the opening rounds — no prompt before then.
+    if (
+      typeof gameEngine.isResearchUnlocked === "function" &&
+      !gameEngine.isResearchUnlocked()
+    ) {
+      return;
+    }
     if (researchPromptedRef.current === gameEngine) return;
     const civ = gameEngine.civilizations?.find((c) => c.isHuman);
     if (!civ) return;

@@ -56,6 +56,13 @@ export function getUnitDisplayTile(
 }
 
 
+/** Yield icons shown on the selected-city tile preview (Food, Production, Trade). */
+const TILE_YIELD_ICONS = {
+  food: '🍞',
+  production: '⛏️',
+  trade: '💰',
+} as const;
+
 /** Civ1 special-resource glyphs rendered on the map (keyed by lowercase name). */
 const RESOURCE_GLYPHS: Record<string, string> = {
   seal: '🦭',
@@ -1710,8 +1717,9 @@ export class MapRenderer {
   }
 
   /**
-  * Draw a compact neutral yield indicator at the bottom of a tile. All
-  * numbers are bold white; the order is Food, Production, Trade.
+   * Draw the Food / Production / Trade a tile contributes when worked, as the
+   * familiar yield icons with the amount underneath (the old dark number dots
+   * are gone). Order is Food, Production, Trade.
    */
   private drawTileYieldPreview(
     ctx: CanvasRenderingContext2D,
@@ -1722,37 +1730,68 @@ export class MapRenderer {
   ): void {
     if (scaledTileSize < 22) return;
 
-    const dotR = 8;
-    const fs = 11;
-    const gap = 5;
-    const rowW = dotR * 2 * 3 + gap * 2;
+    const iconFs = Math.round(Math.max(8, Math.min(15, scaledTileSize * 0.3)));
+    const numFs = Math.round(Math.max(7, Math.min(12, iconFs * 0.8)));
+    const chipW = iconFs + 7;
+    const chipH = iconFs + numFs + 6;
+    const gap = 4;
+    const totalW = chipW * 3 + gap * 2;
 
     const cx = tileCenterX;
-    const cy = tileCenterY + scaledTileSize / 2 - dotR - 2;
+    const bottom = tileCenterY + scaledTileSize / 2 - 2;
+    const top = bottom - chipH;
 
     ctx.save();
-    ctx.textBaseline = 'middle';
-    ctx.font = `bold ${fs}px sans-serif`;
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
 
-    const items = [yields.food, yields.production, yields.trade];
+    const entries: Array<[string, number]> = [
+      [TILE_YIELD_ICONS.food, yields.food],
+      [TILE_YIELD_ICONS.production, yields.production],
+      [TILE_YIELD_ICONS.trade, yields.trade],
+    ];
 
-    items.forEach((val, i) => {
-      const dx = cx - rowW / 2 + dotR + i * (dotR * 2 + gap);
+    entries.forEach(([icon, val], i) => {
+      const left = cx - totalW / 2 + i * (chipW + gap);
 
-      ctx.beginPath();
-      ctx.arc(dx, cy, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(20, 20, 20, 0.78)';
+      // Readable dark plate behind each icon + number pair.
+      this.roundedRectPath(ctx, left, top, chipW, chipH, 4);
+      ctx.fillStyle = 'rgba(20, 20, 20, 0.72)';
       ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
+      // The yield icon sits above its amount.
+      ctx.font = `${iconFs}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(String(val), dx, cy + 0.5);
+      ctx.fillText(icon, left + chipW / 2, top + iconFs / 2 + 1);
+
+      ctx.font = `bold ${numFs}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(String(val), left + chipW / 2, top + iconFs + numFs / 2 + 2);
     });
 
     ctx.restore();
+  }
+
+  /** Trace a rounded-rectangle path (keeps older canvas implementations working). */
+  private roundedRectPath(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number,
+  ): void {
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    ctx.closePath();
   }
 
   /**

@@ -11,6 +11,15 @@ export const MAX_CARAVAN_TRADE_ROUTES = 3;
 export const SMALL_ISLAND_MAX_TILES = 24;
 export const VERY_SMALL_ISLAND_MAX_TILES = 10;
 
+/**
+ * Research stays idle for the opening rounds: the first three full rounds let
+ * the player settle in (move the starting units, found the first cities) before
+ * the "No Research Selected" prompt and the turn-end auto-select fallback start.
+ * Compared against the engine's 0-based round counter (rounds 0, 1, 2 are the
+ * opening rounds; research unlocks when round 3 begins).
+ */
+export const RESEARCH_UNLOCK_ROUND = 3;
+
 
 export interface TerrainProperties {
     movement: number;

@@ -3,7 +3,7 @@
 import { ModalUtils } from './ModalUtils';
 import {CityUtils} from "@/utils/CityUtils";
 import { FISHER_BOAT_STORAGE, fisherCatchValue, fisherFoodPerFish } from '@/data/UnitConstants';
-import type { City, Civilization, ProductionItem, TradeRoute } from '../../../../types/game';
+import type { City, Civilization, ProductionItem, TradeRoute, Unit } from '../../../../types/game';
 import GameEngine from '@/game/engine/GameEngine';
 
 export class CityModalLogic {
@@ -225,5 +225,31 @@ export class CityModalLogic {
   /** Total per-turn trade contributed by this city's permanent trade routes. */
   getRouteTrade(): number {
     return this.getTradeRoutes().reduce((total: number, r: TradeRoute) => total + (r.trade ?? 0), 0);
+  }
+
+  /**
+   * Units tied to this city, for the city screen's Units tab:
+   *  - the garrison standing on the city tile, then
+   *  - every unit the city supports (matching `homeCityId`).
+   * Defeated units are excluded; each unit appears once.
+   */
+  getCityUnits(): Unit[] {
+    const units = this.gameEngine?.units ?? [];
+    const seen = new Set<string>();
+    const result: Unit[] = [];
+    const add = (u: Unit) => {
+      if (!u || u.isDefeated || seen.has(u.id)) return;
+      seen.add(u.id);
+      result.push(u);
+    };
+    for (const u of units) {
+      if (u.civilizationId !== this.city.civilizationId) continue;
+      if (u.col === this.city.col && u.row === this.city.row) add(u);
+    }
+    for (const u of units) {
+      if (u.civilizationId !== this.city.civilizationId) continue;
+      if (u.homeCityId === this.city.id) add(u);
+    }
+    return result;
   }
 }

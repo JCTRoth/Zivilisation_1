@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Button, Badge, ProgressBar } from 'react-bootstrap';
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
+import { unitStatus } from '@/utils/UnitStatus';
 import type { City, Unit } from '../../../types/game';
 
 /**
@@ -21,17 +22,6 @@ export interface UnitStackModalProps {
   onConfirmGroup: (unitIds: string[]) => void;
   onShowCity?: (cityId: string) => void;
   onClose: () => void;
-}
-
-function unitStatus(unit: Unit): { label: string; variant: string } {
-  if (unit.isDefeated) return { label: 'Destroyed', variant: 'secondary' };
-  if (unit.isFortified) return { label: 'Fortified', variant: 'primary' };
-  if (unit.isSleeping) return { label: 'Sleeping', variant: 'info' };
-  if (unit.isSkipped) return { label: 'Skipped', variant: 'warning' };
-  if ((unit.movesRemaining || 0) > 0) {
-    return { label: `Ready (${unit.movesRemaining} moves)`, variant: 'success' };
-  }
-  return { label: 'No moves left', variant: 'secondary' };
 }
 
 const UnitStackModal: React.FC<UnitStackModalProps> = ({
@@ -71,8 +61,31 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
       <Modal.Body style={{ background: '#12181f', color: '#e9ecef' }}>
         <p className="small text-muted mb-3">
           Click a unit to activate it, or tick several and then click the map destination to move
-          them together (units without movement points stay put).
+          them together (units without movement points stay put). Shift-click units on the map to
+          add them to the group from other tiles.
         </p>
+
+        <div className="d-flex align-items-center gap-2 mb-3">
+          <Button
+            size="sm"
+            variant="outline-light"
+            disabled={movable.length === 0}
+            onClick={() => setChecked(movable.map((u) => u.id))}
+          >
+            <i className="bi bi-check2-square"></i> All movable ({movable.length})
+          </Button>
+          <Button
+            size="sm"
+            variant="outline-light"
+            disabled={checked.length === 0}
+            onClick={() => setChecked([])}
+          >
+            <i className="bi bi-x-square"></i> Clear
+          </Button>
+          <span className="small text-muted ms-auto">
+            {checkedMovable.length} selected
+          </span>
+        </div>
 
         <div className="list-group">
           {units.map((unit) => {

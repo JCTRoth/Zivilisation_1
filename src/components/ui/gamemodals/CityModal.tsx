@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Modal, Button, Tab, Tabs } from 'react-bootstrap';
+import { Modal, Button, Badge, ProgressBar, Tab, Tabs } from 'react-bootstrap';
 import { CityModalLogic } from './CityModalLogic';
 import { ModalUtils } from './ModalUtils';
 import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
@@ -7,6 +7,7 @@ import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import ProductionSelectionModal from './ProductionSelectionModal';
 import { productionFailureText } from '@/utils/ProductionUtils';
+import { unitStatus } from '@/utils/UnitStatus';
 import GameEngine from '@/game/engine/GameEngine';
 import type { City, Civilization, GameActions, ProductionItem, SpecialistType } from '../../../../types/game';
 import '../../../styles/cityModal.css';
@@ -830,6 +831,95 @@ const CityModal: React.FC<CityModalProps> = ({
                         <div>Population: {pop} · Tile workers: {tileWorkers} · Specialists: {specs.length}</div>
                         {freeCitizens > 0 && <div className="text-warning">{freeCitizens} unassigned citizen(s)</div>}
                       </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </Tab>
+            <Tab eventKey="units" title={`Units (${logic.getCityUnits().length})`}>
+              <div className="city-units-content">
+                {(() => {
+                  const cityUnits = logic.getCityUnits();
+                  if (cityUnits.length === 0) {
+                    return (
+                      <div className="city-buildings-empty">
+                        <i className="bi bi-people fs-1 d-block mb-2 text-muted"></i>
+                        No units stationed here or supported by this city.
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      <p className="small text-muted mb-3">
+                        Units on the city tile (garrison) and units this city supports
+                        (settlers, boats, …). Select one to take command of it.
+                      </p>
+                      <div className="d-flex flex-column gap-2">
+                        {cityUnits.map((unit) => {
+                          const props = UNIT_PROPS[unit.type];
+                          const status = unitStatus(unit);
+                          const health = Math.max(0, Math.min(100, unit.health ?? 100));
+                          const hpText =
+                            typeof unit.hitPoints === 'number' && typeof unit.maxHitPoints === 'number'
+                              ? `${unit.hitPoints}/${unit.maxHitPoints} HP`
+                              : `${Math.round(health)}% HP`;
+                          const isGarrison =
+                            unit.col === selectedCity.col && unit.row === selectedCity.row;
+                          return (
+                            <div
+                              key={unit.id}
+                              className="p-2 rounded bg-dark border border-secondary d-flex align-items-center gap-3"
+                            >
+                              <span style={{ fontSize: '1.4rem', width: 28, textAlign: 'center' }}>
+                                {unit.icon || props?.icon || '⚔️'}
+                              </span>
+                              <div className="flex-grow-1 min-width-0">
+                                <div className="d-flex align-items-center gap-2 flex-wrap">
+                                  <strong>{props?.name ?? unit.type}</strong>
+                                  {isGarrison && <Badge bg="success">Garrison</Badge>}
+                                  {unit.isVeteran && (
+                                    <Badge bg="warning" text="dark">★ Veteran</Badge>
+                                  )}
+                                  <Badge bg={status.variant}>{status.label}</Badge>
+                                  {unit.embarkedOn && (
+                                    <Badge bg="info" text="dark">Aboard ferry</Badge>
+                                  )}
+                                </div>
+                                <div className="d-flex align-items-center gap-2 mt-1 flex-wrap">
+                                  <ProgressBar
+                                    now={health}
+                                    variant={health > 60 ? 'success' : health > 30 ? 'warning' : 'danger'}
+                                    style={{ height: 6, flex: 1, maxWidth: 220 }}
+                                  />
+                                  <span className="small text-muted">{hpText}</span>
+                                  <span className="small text-muted">
+                                    A{unit.attack ?? props?.attack ?? 0}/D{unit.defense ?? props?.defense ?? 0}
+                                  </span>
+                                  <span className="small text-muted">({unit.col},{unit.row})</span>
+                                </div>
+                              </div>
+                              {isPlayerCity && (
+                                <Button
+                                  size="sm"
+                                  variant="outline-light"
+                                  title="Select and centre this unit"
+                                  onClick={() => {
+                                    actions.selectUnit?.(unit.id, 'user');
+                                    actions.focusCameraOnTile?.(unit.col, unit.row, true, true);
+                                  }}
+                                >
+                                  <i className="bi bi-crosshair"></i> Select
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {isPlayerCity && (
+                        <small className="text-muted d-block mt-2">
+                          Tip: shift-click units on the map to gather a group and move several at once.
+                        </small>
+                      )}
                     </>
                   );
                 })()}
