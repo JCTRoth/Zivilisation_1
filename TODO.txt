@@ -2,15 +2,40 @@
 BUGS:
 -----
 
+- When a city was builded at the water and is not under direct thread than Build there a habort.
+- Around a city the icons Food, Production, Trade replace the black dots with icons above the numbers.
+- When a unit is selected it gets deselected by the turn manager when turn is changed
+
 --Open--
+
+?--Fixed--?
+- Selecting a unit no longer stops the auto turn manager: a hand-made selection
+  lock is released as soon as the selected unit cannot act anymore (no moves /
+  sleeping / fortified / skipped / dead), so the automatic next-unit focus and
+  the end-turn flow resume.
+- A selected unit now STAYS selected when the auto turn manager advances the
+  turn (TURN_END / AI_CLEAR_HIGHLIGHTS / nextTurn keep the human's own unit and
+  re-assert it as a hand-made selection; a dead unit is dropped on turn start).
+- Save/Load restores fog of war: the human visibility/explored arrays are saved
+  with the map and rebuilt on the store map on load; the fog arrays now use the
+  real map width as stride (the 80-column default corrupted fog on smaller
+  maps); turn manager round/player/phase, the turn queue and GoTo paths are
+  restored too (paths through the GoToManager so both stores agree).
+- Unit stack modal: clicking a city or a field with multiple own units opens a
+  list (icon, name, veteran/status badges, health bar, attack/defense) where the
+  player activates one unit or ticks 0..N units and then clicks a map
+  destination to move every selected unit that still has movement points (gold
+  rings mark the group selection; cities get a "City details" button).
+- The store's activePlayer/currentTurn are now synced from the engine at turn
+  start (the store previously kept its initial value, so turn-dependent UI ran
+  for the wrong player).
+
 - the GoTo and the MovePreview should be joint, code and visually
 - attacking doesnt work if it goes through a friendly unit
 - when moving units over enemy cities, they attack them instead
 - when attacking, don't set that as a path that will be done automatically next turn
   -> just because unit can't reach that path (because it is blocked by enemy unit) it shouldn't auto attack next turn
 
-
-?--Fixed--?
 - when citiy is selected, tiles could preview which resources they support
 - improve building stuff ui in cities
 - Only show the Tosts that are related to the player 
@@ -209,9 +234,6 @@ Extend the city menu by new tab that works the same way the modal for unit manag
 Dont show the units fortified in the city directly on the map but show the fortified icon of it on the city
 
 
-
-
-- TODo -
 DONE — Harbor ocean-food replaced by the Fisher Boat:
 * Removed the Civ1 Harbor "+1 food from every worked OCEAN tile" bonus
   (EconomicManager.tileYieldsForCity is gone).
@@ -232,7 +254,7 @@ DONE — Harbor ocean-food replaced by the Fisher Boat:
 * AI: AutoProduction builds one boat per harbor city under food pressure, and
   AIManager sails it to the nearest known fish tile and deploys the net.
 
-
+-Open-
 * Add new ship type, "Trade Ship" 
 A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
 and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.

@@ -37,6 +37,7 @@ const createInitialGameState = (): GameState => ({
   selectedUnit: null,
   activeUnit: null,
   selectedCity: null,
+  selectedUnitIds: [],
   focusedCity: null,
   selectionOrigin: null,
   activePlayer: 0,
@@ -295,6 +296,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       };
     }),
 
+    setSelectedUnitIds: (ids: string[]) => set(state => ({
+      gameState: { ...state.gameState, selectedUnitIds: [...ids] }
+    })),
+
     nextTurn: () => set(state => {
       // Get only active (alive) civilizations for turn cycling
       const activeCivs = state.civilizations.filter(civ => civ.isAlive !== false);
@@ -328,21 +333,37 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         }
       }
 
+      // Keep a unit the player selected by hand selected across the turn
+      // boundary: the auto turn manager should not deselect it when it rolls
+      // into the next turn (the player keeps their focus and can continue
+      // moving it once its turn comes back around). Only the human's own,
+      // still-alive units are kept; everything else clears as before.
+      const previousSelectionId = state.gameState.selectedUnit;
+      const keepSelection =
+        (state.gameState.selectionOrigin ?? null) === 'user' && previousSelectionId
+          ? state.units.find(
+              (u) => u.id === previousSelectionId
+                && u.civilizationId === HUMAN_PLAYER_ID
+                && u.isDefeated !== true,
+            ) ?? null
+          : null;
+
       return {
         gameState: {
           ...state.gameState,
           activePlayer: nextPlayer,
           currentTurn: nextTurn,
           currentYear: nextYear,
-          selectedUnit: null,
+          selectedUnit: keepSelection ? keepSelection.id : null,
+          selectedUnitIds: [],
           selectedCity: null,
           focusedCity: null,
-          selectionOrigin: null,
-          selectedHex: null
+          selectionOrigin: keepSelection ? 'user' : null,
+          selectedHex: keepSelection ? { col: keepSelection.col, row: keepSelection.row } : null
         },
         uiState: {
           ...state.uiState,
-          showUnitPanel: false,
+          showUnitPanel: !!keepSelection,
           showCityPanel: false
         }
       };

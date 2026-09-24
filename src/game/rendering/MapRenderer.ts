@@ -256,6 +256,8 @@ export interface RenderPulsingUnitsParams {
   currentQueueUnitId?: string | null;
   /** ID of the manually selected unit — pulses in addition to the queue unit. */
   selectedUnitId?: string | null;
+  /** Extra units selected in the stack modal — pulse + gold ring (group move). */
+  selectedUnitIds?: string[];
   /** Active combat animations (hide units + apply survivor fade) */
   combatAnimations?: CombatAnimation[];
   /** Active unit-movement glides (position interpolation between tiles) */
@@ -818,7 +820,8 @@ export class MapRenderer {
       squareToScreen,
       cameraZoom,
       currentQueueUnitId,
-      selectedUnitId
+      selectedUnitId,
+      selectedUnitIds
     } = params;
 
     // Pulse the current turn-queue unit and (when supplied) the manually
@@ -827,6 +830,8 @@ export class MapRenderer {
     const ids = new Set<string>();
     if (currentQueueUnitId) ids.add(currentQueueUnitId);
     if (selectedUnitId) ids.add(selectedUnitId);
+    const groupIds = new Set<string>(selectedUnitIds ?? []);
+    for (const id of groupIds) ids.add(id);
 
     let unitsToPulse: Unit[];
     if (ids.size > 0) {
@@ -866,6 +871,19 @@ export class MapRenderer {
         const displayTile = this.getUnitDisplayTile(unit, params.movementAnimations);
         const { x, y } = squareToScreen(displayTile.col, displayTile.row);
         this.drawUnitWithPulse(ctx, x, y, unit, pulseValue, cameraZoom, civilizations, combat.alpha);
+
+        // Group-move selection (stack modal): a steady gold ring so every
+        // ticked unit is visible on the map, not just in the modal.
+        if (groupIds.has(unit.id)) {
+          const radius = Math.max(10, cameraZoom * 12);
+          ctx.save();
+          ctx.strokeStyle = '#FFD54A';
+          ctx.lineWidth = Math.max(2, cameraZoom * 2.5);
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
     });
   }

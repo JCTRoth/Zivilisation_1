@@ -122,6 +122,13 @@ export class EngineEventRouter {
       case 'UNIT_SKIPPED':
         this.onUnitSkipped(eventData);
         break;
+      case 'UNIT_SLEPT':
+      case 'UNIT_FORTIFIED':
+      case 'UNIT_UNFORTIFIED':
+      case 'UNIT_WOKE':
+      case 'UNIT_DEFEATED':
+        this.releaseSpentUserSelection();
+        break;
       case 'AI_TARGET_HIGHLIGHT':
         this.onAITargetHighlight(eventData);
         break;
@@ -249,9 +256,27 @@ export class EngineEventRouter {
     // A new turn may legitimately look at every city's production again.
     if (civ?.isHuman) this.idleCityPrompted.clear();
 
+    // Sync the store's active player / turn with the engine. Without this the
+    // store kept whatever it was initialized with (usually the human), so
+    // turn-dependent UI (movement mode, fog, auto-end) ran for the wrong
+    // player during AI turns.
+    this.actions.updateGameState({
+      activePlayer: active,
+      currentTurn: this.gameEngine.currentTurn,
+      currentYear: this.gameEngine.currentYear,
+    });
+
     // Refresh visibility for the current player so the minimap and main view
     // reflect the correct per-player fog of war on turn start
     this.actions.updateVisibility();
+
+    // A selection preserved across the turn boundary must not survive its unit:
+    // if the unit died during the AI turns, clear the (user-held) selection.
+    const selectedId = useGameStore.getState().gameState.selectedUnit;
+    if (selectedId && !this.gameEngine.units.some((u) => u.id === selectedId && u.isDefeated !== true)) {
+      console.log(`[SELECTION] Clearing preserved selection ${selectedId} — unit no longer exists`);
+      this.actions.selectUnit(null, 'user');
+    }
   }
 
   private onPhaseChange(eventData: Record<string, unknown>) {
@@ -315,20 +340,49 @@ export class EngineEventRouter {
           this.actions.selectUnit(moved.id);
         }
       } else if (!isEnemyAction) {
-        // The unit that just ran out of moves is the one the player is
-        // watching: their selection has served its purpose, so release the
-        // hand-made-selection lock and let the turn queue focus the next unit.
-        // (If the player has meanwhile selected something else — which is the
-        // city-click bug — the ids differ and the lock stays.)
-        const selectedUnitId = useGameStore.getState().gameState.selectedUnit;
-        if (selectedUnitId && selectedUnitId === moved.id) {
-          this.actions.updateGameState({ selectionOrigin: null });
-        }
+        // The moved unit is done: release a spent hand-made selection so the
+        // auto turn manager (queue focus / next-unit selection) resumes.
+        this.releaseSpentUserSelection();
         // focusOnNextUnit applies the same visibility rule before moving the camera.
         this.actions.focusOnNextUnit();
       }
       // Glide any AI unit the human can currently see (human units are handled by MoveAnimator).
       this.glideVisibleAIMove(moved, fromCol, fromRow);
+    }
+  }
+
+  /**
+   * Release a hand-made selection once the selected unit can no longer act
+   * (no moves, sleeping, fortified, skipped, done, dead or gone). The
+   * user-selection lock exists so the engine never steals a selection the
+   * player made by hand — but while it is held the automatic next-unit focus
+   * and the end-turn flow are suppressed. A spent unit must therefore let the
+   * lock go so the auto turn manager keeps running. During another player's
+   * turn the lock is kept (the human's unit will get its moves back).
+   */
+  private releaseSpentUserSelection(): void {
+    const state = useGameStore.getState();
+    if ((state.gameState.selectionOrigin ?? null) !== 'user') return;
+    const selectedId = state.gameState.selectedUnit;
+    if (!selectedId) {
+      // A dangling user lock without a unit: release it.
+      this.actions.updateGameState({ selectionOrigin: null });
+      return;
+    }
+    const unit = this.gameEngine?.units?.find((u) => u.id === selectedId);
+    const activeIsHuman = this.gameEngine?.activePlayer === HUMAN_PLAYER_ID;
+    const spent = !unit
+      || unit.isDefeated === true
+      || (activeIsHuman && (
+        (unit.movesRemaining || 0) <= 0
+        || unit.isSleeping === true
+        || unit.isFortified === true
+        || unit.isSkipped === true
+        || unit.areTurnsDone === true
+      ));
+    if (spent) {
+      console.log(`[SELECTION] Releasing spent user selection ${selectedId} (${unit?.type ?? 'gone'}) — auto turn manager resumes`);
+      this.actions.updateGameState({ selectionOrigin: null });
     }
   }
 
@@ -852,8 +906,8 @@ export class EngineEventRouter {
 
   private onAutoEndTurn(eventData: Record<string, unknown>) {
     console.log('[EngineEventRouter] AUTO_END_TURN for civ', eventData?.civilizationId);
-    // Pure UI updates only - no game logic
-    this.actions.selectUnit(null);
+    // Pure UI updates only - no game logic. The selection is NOT cleared here:
+    // `nextTurn` preserves a hand-made unit selection across the turn boundary.
     this.actions.nextTurn();
     // Note: TurnManager now handles turn advancement internally
   }
@@ -872,6 +926,9 @@ export class EngineEventRouter {
   }
 
   private onCheckAutoEndTurn() {
+    // A selection the player made is never a reason to keep the turn open: if
+    // the selected unit is spent, release the lock first.
+    this.releaseSpentUserSelection();
     const state = useGameStore.getState();
     const settings = state.settings;
     const activePlayer = this.gameEngine?.activePlayer ?? '?';
@@ -952,8 +1009,9 @@ export class EngineEventRouter {
 
   private onTurnEnd(eventData: Record<string, unknown>) {
     console.log('[EngineEventRouter] TURN_END: Clearing UI state, civ:', eventData?.civilizationId);
-    // Pure UI cleanup only
-    this.actions.selectUnit(null);
+    // Pure UI cleanup only — but keep the unit the human is watching selected
+    // across the turn boundary (the auto turn manager must not deselect it).
+    this.keepHumanUnitSelection();
     
     // Flash the top bar when the human player's turn ends (auto and manual)
     const civId = eventData?.civilizationId as number | undefined;
@@ -967,7 +1025,29 @@ export class EngineEventRouter {
 
   private onAIClearHighlights(eventData: Record<string, unknown>) {
     console.log('[EngineEventRouter] AI_CLEAR_HIGHLIGHTS for civ', eventData?.civilizationId);
-    // Clear any UI highlights when AI finishes its turn
+    // Clear UI highlights when an AI finishes its turn — but keep a unit the
+    // human is watching selected.
+    this.keepHumanUnitSelection();
+  }
+
+  /**
+   * Turn-boundary selection handling: the human's own, still-alive unit stays
+   * selected (re-asserted as a hand-made selection so nothing steals it), while
+   * anything else clears as before. This is what stops the auto turn manager
+   * from deselecting the unit the player is looking at when the turn rolls.
+   */
+  private keepHumanUnitSelection(): void {
+    const state = useGameStore.getState();
+    const id = state.gameState.selectedUnit;
+    if (!id) {
+      this.actions.selectUnit(null);
+      return;
+    }
+    const unit = this.gameEngine?.units?.find((u) => u.id === id);
+    if (unit && unit.civilizationId === HUMAN_PLAYER_ID && unit.isDefeated !== true) {
+      this.actions.selectUnit(id, 'user');
+      return;
+    }
     this.actions.selectUnit(null);
   }
 
@@ -1036,6 +1116,8 @@ export class EngineEventRouter {
     if (this.actions?.updateUnits) {
       this.actions.updateUnits(this.gameEngine.getAllUnits());
     }
+    // A skipped unit cannot act again this turn — let the auto turn manager go.
+    this.releaseSpentUserSelection();
   }
 
   private onAITargetHighlight(eventData: Record<string, unknown>) {

@@ -63,6 +63,12 @@ export interface GameState {
   selectedUnit: string | null;
   activeUnit: string | null;
   selectedCity: string | null;
+  /**
+   * Extra units selected together in the stack modal ("select 0 to N"). While
+   * this is non-empty the next map click issues a move order for every listed
+   * unit that still has movement points.
+   */
+  selectedUnitIds?: string[];
   // The city the player last opened/selected (e.g. its details modal). Unlike
   // `selectedCity`, this marker is NOT cleared by transient selection changes
   // (selecting a unit, clicking a field, right-click, ESC), so the map keeps
@@ -749,6 +755,8 @@ export interface GameActions {
   selectHex: (hex: { col: number; row: number }) => void;
   selectUnit: (unitId: string | null, origin?: SelectionOrigin) => void;
   selectCity: (cityId: string | null, origin?: SelectionOrigin) => void;
+  /** Set the multi-selection from the unit stack modal (empty array clears). */
+  setSelectedUnitIds: (ids: string[]) => void;
   nextTurn: () => void;
   focusOnNextUnit: () => void;
   updateCamera: (cameraUpdate: Partial<CameraState>) => void;

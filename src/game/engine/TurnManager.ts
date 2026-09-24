@@ -55,6 +55,22 @@ export class TurnManager {
   isProcessingGoTo(): boolean { return this.isProcessingGoToPaths; }
   isAITurnInProgress(): boolean { return this.aiTurnInProgress; }
 
+  /**
+   * Restore turn state after loading a save: the round counter, whose turn it
+   * is and which phase they are in. Without this the manager stayed at
+   * round 0 / no player after a load and turn processing misbehaved.
+   */
+  restoreState(state: {
+    roundNumber?: number;
+    currentPlayer?: number | null;
+    currentPhase?: TurnPhase | null;
+  }): void {
+    if (typeof state.roundNumber === 'number') this.roundNumber = state.roundNumber;
+    if (state.currentPlayer !== undefined) this.currentPlayer = state.currentPlayer;
+    if (state.currentPhase !== undefined) this.currentPhase = state.currentPhase;
+    console.log(`[TurnManager] Restored state — round ${this.roundNumber}, player ${this.currentPlayer}, phase ${this.currentPhase}`);
+  }
+
   /** Reset all turn manager state for a new game. */
   reset(): void {
     this.unitPaths.clear();

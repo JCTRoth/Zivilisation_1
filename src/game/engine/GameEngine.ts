@@ -317,13 +317,24 @@ export default class GameEngine {
   }
 
   /**
+   * Index into a player's fog arrays. The storage arrays are allocated with the
+   * default 80x50 size, but the stride MUST be the actual map width — using
+   * `Constants.MAP_WIDTH` shifted the whole fog pattern on non-80-wide maps
+   * (e.g. the 40x40 AI-vs-AI map) and corrupted save/load of visibility.
+   */
+  private fogIndex(col: number, row: number): number {
+    const width = this.map?.width ?? Constants.MAP_WIDTH;
+    return row * width + col;
+  }
+
+  /**
    * Update visibility for a player at a specific tile
    */
   setPlayerVisibility(civilizationId: number, col: number, row: number, visible: boolean, explored: boolean = false): void {
     const storage = this.playerStorage.get(civilizationId);
     if (!storage) return;
     
-    const index = row * Constants.MAP_WIDTH + col;
+    const index = this.fogIndex(col, row);
     storage.visibility[index] = visible;
     if (explored) {
       storage.explored[index] = true;
@@ -340,7 +351,7 @@ export default class GameEngine {
     const storage = this.playerStorage.get(civilizationId);
     if (!storage) return false;
     
-    const index = row * Constants.MAP_WIDTH + col;
+    const index = this.fogIndex(col, row);
     return storage.visibility[index] || false;
   }
 
@@ -354,7 +365,7 @@ export default class GameEngine {
     const storage = this.playerStorage.get(civilizationId);
     if (!storage) return false;
     
-    const index = row * Constants.MAP_WIDTH + col;
+    const index = this.fogIndex(col, row);
     return storage.explored[index] || false;
   }
 
@@ -429,7 +440,7 @@ export default class GameEngine {
           if (this.isValidHex(targetCol, targetRow)) {
             const distance = Math.max(Math.abs(dc), Math.abs(dr));
             if (distance <= sightRange) {
-              const index = targetRow * Constants.MAP_WIDTH + targetCol;
+              const index = this.fogIndex(targetCol, targetRow);
               storage.visibility[index] = true;
               storage.explored[index] = true;
             }
@@ -451,7 +462,7 @@ export default class GameEngine {
           if (this.isValidHex(targetCol, targetRow)) {
             const distance = Math.max(Math.abs(dc), Math.abs(dr));
             if (distance <= citySightRange) {
-              const index = targetRow * Constants.MAP_WIDTH + targetCol;
+              const index = this.fogIndex(targetCol, targetRow);
               storage.visibility[index] = true;
               storage.explored[index] = true;
             }
@@ -1049,8 +1060,11 @@ export default class GameEngine {
           const col = startPos.col + offsetCol * 2; // Space units 2 tiles apart
           const row = startPos.row + offsetRow * 2;
           
-          // Ensure the position is valid
-          if (col >= 0 && col < Constants.MAP_WIDTH && row >= 0 && row < Constants.MAP_HEIGHT) {
+          // Ensure the position is valid (use the ACTUAL map bounds, not the
+          // 80x50 default, so units are never placed outside a smaller map).
+          if (this.squareGrid?.isValidSquare(col, row)
+              ?? (col >= 0 && col < (this.map?.width ?? Constants.MAP_WIDTH)
+                && row >= 0 && row < (this.map?.height ?? Constants.MAP_HEIGHT))) {
             this.createUnit(civId, unitType, col, row);
           }
         });
@@ -1245,7 +1259,7 @@ export default class GameEngine {
           if (this.isValidHex(col, row)) {
             const distance = Math.max(Math.abs(col - centerCol), Math.abs(row - centerRow));
             if (distance <= radius) {
-              const index = row * Constants.MAP_WIDTH + col;
+              const index = this.fogIndex(col, row);
               storage.visibility[index] = true;
               storage.explored[index] = true;
             }
@@ -5805,6 +5819,26 @@ export default class GameEngine {
         }
       }
 
+      // Human fog-of-war: the UI renders fog from the STORE's map arrays, which
+      // are not part of the engine map. Persist them (derived from the human's
+      // player storage, map-width stride) so loading restores the explored
+      // overlay instead of a fully dark or stale map.
+      const humanCiv = this.civilizations.find((c) => c.isHuman) ?? this.civilizations[0];
+      const humanStorage = humanCiv ? this.playerStorage.get(humanCiv.id) : undefined;
+      const saveMapWidth = this.map?.width ?? Constants.MAP_WIDTH;
+      const saveMapHeight = this.map?.height ?? Constants.MAP_HEIGHT;
+      const humanVisibility: boolean[] = [];
+      const humanExplored: boolean[] = [];
+      if (humanStorage) {
+        for (let row = 0; row < saveMapHeight; row++) {
+          for (let col = 0; col < saveMapWidth; col++) {
+            const idx = row * saveMapWidth + col;
+            humanVisibility.push(humanStorage.visibility[idx] === true);
+            humanExplored.push(humanStorage.explored[idx] === true);
+          }
+        }
+      }
+
       const saveData = {
         version: 2, // bumped from 1 to 2 with new fields
         timestamp: Date.now(),
@@ -5812,6 +5846,10 @@ export default class GameEngine {
         currentTurn: this.currentTurn,
         currentYear: this.currentYear,
         activePlayer: this.activePlayer,
+        phase: this.roundManager?.getPhase?.() ?? null,
+        humanCivId: humanCiv?.id ?? null,
+        humanVisibility,
+        humanExplored,
         roundNumber: this.roundManager ? this.roundManager.getRoundNumber() : 0,
         map: this.map,
         units: this.units.map(u => ({ ...u })),
@@ -5988,11 +6026,15 @@ export default class GameEngine {
       }
 
       // ── Restore unit GoTo paths ──
+      // Restore through the GoToManager (it mirrors into the TurnManager);
+      // writing only to the TurnManager left the manager's own map empty, so
+      // "cancel path"/step execution disagreed about the route after a load.
       if (saveData.version >= 2 && saveData.unitPaths && this.roundManager) {
         for (const [unitId, path] of Object.entries(saveData.unitPaths)) {
           const typedPath = path as Array<{ col: number; row: number }>;
           if (typedPath.length > 0) {
-            this.roundManager.setUnitPath(unitId, typedPath);
+            if (this.goToManager) this.goToManager.setUnitPath(unitId, typedPath);
+            else this.roundManager.setUnitPath(unitId, typedPath);
           }
         }
       }
@@ -6003,13 +6045,50 @@ export default class GameEngine {
         // It will be set when advanceTurn recalculates
       }
 
+      // ── Restore the turn manager's round/player/phase ──
+      if (this.roundManager) {
+        this.roundManager.restoreState({
+          roundNumber: typeof saveData.roundNumber === 'number' ? saveData.roundNumber : this.currentTurn,
+          currentPlayer: this.activePlayer,
+          currentPhase: (saveData.phase as ReturnType<typeof this.roundManager.getPhase>) ?? null,
+        });
+      }
+
       // ── Rebuild unit turn queue for the active player ──
+      // `initializeQueue` already fills the queue with every unit that has
+      // moves — the old extra `addUnit` loop added each one a second time.
       if (this.unitTurnQueue) {
         this.unitTurnQueue.initializeQueue(this.activePlayer);
-        for (const unit of this.units) {
-          if (unit.civilizationId === this.activePlayer) {
-            this.unitTurnQueue.addUnit(unit.civilizationId, unit.id);
+      }
+
+      // ── Restore the human fog-of-war onto the map ──
+      // The store's updateMap/updateVisibility keep `map.revealed` as the
+      // permanent explored overlay; without this a load produced a stale or
+      // fully-dark map (the reported "fog of war is not restored").
+      if (this.map) {
+        const humanCivId = typeof saveData.humanCivId === 'number'
+          ? saveData.humanCivId
+          : (this.civilizations.find((c) => c.isHuman) ?? this.civilizations[0])?.id;
+        const storage = humanCivId != null ? this.playerStorage.get(humanCivId) : undefined;
+        const mapWidth = this.map.width;
+        const mapHeight = this.map.height;
+        if (Array.isArray(saveData.humanVisibility) && Array.isArray(saveData.humanExplored)
+            && saveData.humanVisibility.length === mapWidth * mapHeight) {
+          this.map.visibility = saveData.humanVisibility.map(Boolean);
+          this.map.revealed = saveData.humanExplored.map(Boolean);
+        } else if (storage) {
+          // Older saves (or saves without the arrays): rebuild from storage.
+          const visibility: boolean[] = [];
+          const revealed: boolean[] = [];
+          for (let row = 0; row < mapHeight; row++) {
+            for (let col = 0; col < mapWidth; col++) {
+              const idx = row * mapWidth + col;
+              visibility.push(storage.visibility[idx] === true);
+              revealed.push(storage.explored[idx] === true);
+            }
           }
+          this.map.visibility = visibility;
+          this.map.revealed = revealed;
         }
       }
 
@@ -6024,6 +6103,7 @@ export default class GameEngine {
         this.storeActions.updateGameState({
           currentTurn: this.currentTurn,
           currentYear: this.currentYear,
+          activePlayer: this.activePlayer,
           isLoading: false,
           gamePhase: 'playing',
           mapGenerated: true,

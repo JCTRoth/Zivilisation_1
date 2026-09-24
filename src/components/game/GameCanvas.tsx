@@ -32,6 +32,7 @@ import type {
 import GameEngine from "@/game/engine/GameEngine";
 import "../../styles/civ1GameCanvas.css";
 import UnitActionsModal from "./UnitActionsModal";
+import UnitStackModal from "./UnitStackModal";
 import { Pathfinding } from "@/game/engine/Pathfinding";
 import {
   computeMovementPreview,
@@ -136,6 +137,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const [unitPaths, setUnitPaths] = useState<Map<string, UnitPathStep[]>>(
     new Map(),
   );
+  /** Tile whose unit stack modal is open (null = closed). */
+  const [stackModal, setStackModal] = useState<HexCoordinates | null>(null);
   const [reachableTiles, setReachableTiles] = useState<Map<string, number>>(
     new Map(),
   );
@@ -1106,6 +1109,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         cameraZoom: camera.zoom,
         currentQueueUnitId: currentQueueUnitId ?? undefined,
         selectedUnitId,
+        selectedUnitIds: gameState.selectedUnitIds ?? [],
         combatAnimations,
         movementAnimations,
       });
@@ -1614,6 +1618,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               ? cityAt
               : null;
 
+          // A stack of 2+ own units opens the unit stack modal: the player
+          // picks one to activate or ticks several for a group move instead of
+          // blind click-cycling.
+          if (ownUnitsOnTile.length >= 2) {
+            console.log(`[CLICK] Opening unit stack modal at (${hex.col}, ${hex.row}) — ${ownUnitsOnTile.length} units`);
+            actions.setSelectedUnitIds?.([]);
+            setStackModal({ col: hex.col, row: hex.row });
+            setContextMenu(null);
+            triggerRender();
+            return;
+          }
+
           const cycleKeys: string[] = [
             ...ownUnitsOnTile.map((u) => `unit:${u.id}`),
             ...(ownCityOnTile ? [`city:${ownCityOnTile.id}`] : []),
@@ -1658,16 +1674,39 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           // Sleeping units: clicking wakes them immediately (no movement mode)
           if (unitAt.isSleeping) {
             console.log(`[CLICK] Clicking sleeping unit ${unitAt.id} - waking it`);
+            actions.setSelectedUnitIds?.([]);
             gameEngine?.unitWake?.(unitAt.id);
             triggerRender();
             return;
           }
 
+          actions.setSelectedUnitIds?.([]);
           if (actions && typeof actions.selectUnit === "function") {
             actions.selectUnit(unitAt.id, "user");
           }
           console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type})`);
           triggerRender();
+        } else if ((gameState.selectedUnitIds?.length ?? 0) > 0) {
+          // Group move: the player ticked units in the stack modal — order
+          // every selected unit that still has movement points to this tile.
+          const selectedIds = gameState.selectedUnitIds ?? [];
+          let ordered = 0;
+          for (const id of selectedIds) {
+            const u = units.find((x) => x.id === id);
+            if (!u || u.isDefeated || (u.movesRemaining || 0) <= 0) continue;
+            assignUnitPath(u, hex.col, hex.row);
+            ordered++;
+          }
+          actions.setSelectedUnitIds?.([]);
+          if (actions?.addNotification) {
+            actions.addNotification(
+              ordered > 0
+                ? { type: "info", message: `Moving ${ordered} unit${ordered === 1 ? "" : "s"}` }
+                : { type: "warning", message: "None of the selected units can move" },
+            );
+          }
+          triggerRender();
+          return;
         } else if (
           unitAt &&
           currentPlayer &&
@@ -1774,7 +1813,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             if (actions && typeof actions.selectCity === "function") {
               actions.selectCity(cityAt.id, "user");
             }
-            if (
+            const ownGarrison = isOwnCity
+              ? (gameEngine?.getUnitsAt?.(hex.col, hex.row) ?? []).filter(
+                  (u) => u.civilizationId === currentPlayer.id && !u.isDefeated,
+                )
+              : [];
+            if (ownGarrison.length >= 1) {
+              // The city holds units — show the stack modal (it has a
+              // "City details" button) so the garrison is manageable.
+              console.log(`[CLICK] Opening city stack modal for ${cityAt.name} — ${ownGarrison.length} units`);
+              setStackModal({ col: hex.col, row: hex.row });
+            } else if (
               isOwnCity &&
               actions &&
               typeof actions.showDialog === "function"
@@ -1816,6 +1865,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       if (actions && typeof actions.selectUnit === "function") {
         actions.selectUnit(null, "user");
       }
+      actions.setSelectedUnitIds?.([]);
       triggerRender();
     }
 
@@ -2756,6 +2806,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     };
   }, [minimap]);
 
+  // Data for the unit stack modal (recomputed on render so dead units vanish).
+  const stackModalUnits = stackModal
+    ? (gameEngine?.getUnitsAt?.(stackModal.col, stackModal.row) ?? []).filter(
+        (u) => u.civilizationId === HUMAN_PLAYER_ID && !u.isDefeated,
+      )
+    : [];
+  const stackModalCity = stackModal
+    ? getCityAtFromEngine(stackModal.col, stackModal.row) ?? null
+    : null;
+
   return (
     <div className="position-relative w-100 h-100">
       <canvas
@@ -2818,6 +2878,40 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           onExecuteAction={executeContextAction}
           onClose={() => setContextMenu(null)}
           gameEngine={gameEngine}
+        />
+      )}
+
+      {/* Unit stack modal — city or field holding multiple own units */}
+      {!minimap && stackModal && (
+        <UnitStackModal
+          show={!!stackModal}
+          col={stackModal.col}
+          row={stackModal.row}
+          units={stackModalUnits}
+          city={stackModalCity}
+          onSelectUnit={(id) => {
+            actions.selectUnit?.(id, "user");
+            actions.setSelectedUnitIds?.([]);
+            setStackModal(null);
+            triggerRender();
+          }}
+          onConfirmGroup={(ids) => {
+            actions.setSelectedUnitIds?.(ids);
+            if (ids.length > 0) actions.selectUnit?.(ids[0], "user");
+            setStackModal(null);
+            if (actions?.addNotification) {
+              actions.addNotification({
+                type: "info",
+                message: `Select a destination for ${ids.length} unit${ids.length === 1 ? "" : "s"}`,
+              });
+            }
+            triggerRender();
+          }}
+          onShowCity={(id) => {
+            actions.selectCity?.(id, "user");
+            actions.showDialog?.("city-details");
+          }}
+          onClose={() => setStackModal(null)}
         />
       )}
     </div>
