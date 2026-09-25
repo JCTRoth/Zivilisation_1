@@ -37,6 +37,10 @@ describe('Unit states', () => {
       mapType: 'CLOSEUP_1V1',
       devMode: false,
       startingGold: 100,
+      // Pinned: this suite searches the generated map for a passable tile, so a
+      // random world made it fail whenever a start position happened to be
+      // boxed in by ocean (it threw "no passable neighbour" on ~1 run in 8).
+      mapSeed: 20260925,
     });
   });
 

@@ -922,7 +922,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       }
     })),
 
-    resetGameState: () => set(_state => ({
+    // New Game. `settings` is kept so display preferences (scale, fonts, minimap
+    // height, animation speed) survive — but the end-turn behaviour is reset,
+    // because auto-ending a turn is opt-in and must never be inherited from a
+    // previous game: a player who once ticked "don't ask again" would otherwise
+    // start every later game with turns ending on their own.
+    resetGameState: () => set(state => ({
       gameState: createInitialGameState(),
       map: createInitialMapState(),
       camera: createInitialCameraState(),
@@ -938,7 +943,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       disbandNotice: null,
       starvationNotice: null,
       disorderNotice: null,
-      tradeRouteResult: null
+      tradeRouteResult: null,
+      settings: {
+        ...state.settings,
+        autoEndTurn: false,
+        skipEndTurnConfirmation: false,
+      },
     })),
 
     resetFogOfWar: () => set(state => {

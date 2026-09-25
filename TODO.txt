@@ -1,10 +1,6 @@
 -------------------
 FUNCTIONAL TOODO'S:
 -------------------
-- Auto. turn ending should be not enabled by default
-- 
-
-
 * Diplomatie: Exchange technologie with others, offer tech. for tech. offer tech. for money, AI should also do all of this. Tech. can only be exchanged when two units meet.
 Gifting betters meaing of civ. about other civ. emensly. Recive of tech. only possible if tech. is unknown until now to civ. 
 * Diplomatie: Add possiblity to send gold to other civs, and to request gold from other civs. The AI should be bribable, and the player should be able to bribe the AI. The AI should also be able to request gold from the player, and the player should be able to refuse or accept the request.
@@ -62,12 +58,8 @@ Still to do (bigger):
   are intent only and no longer counted as attacks.
 * Naval invasion: land armies still cannot attack across water; the navy pivot
   builds ships but there is no transport/invasion mission (only colonies).
-  This is why AI_VS_AI maps are now generated as a single landmass instead
-  (requireSingleLandmass) — with no human to ferry a boat, a split map is an
-  unwinnable stalemate (465-round run: 17 wars, 3 attacks, no result). A real
-  invasion mission (load army -> sail -> unload -> siege) would let naval maps
-  and multi-continent worlds work again, and would make the landmass guarantee
-  unnecessary.
+  Until this exists, an AI_VS_AI map whose strait splits the civs across two
+  continents is an unwinnable stalemate (465-round run: 17 wars, 3 attacks).
 * Multi-group offensives / siege commitment: two groups can form, but there is
   no coordination between them (no pincer/second-front planning).
 * Army composition by era: the AI still over-produces the era's default

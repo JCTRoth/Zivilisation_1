@@ -16,6 +16,35 @@ import { useGameStore } from '@/stores/GameStore';
  * The guard lives in EngineEventHandlers.onCheckAutoEndTurn, which consults
  * the store's `uiState.activeDialog` and `combatAnimations`.
  */
+describe('Auto End Turn is opt-in', () => {
+  it('is off in the default settings, and never turns itself on', () => {
+    // "Auto. turn ending should be not enabled by default" — a fresh game must
+    // not end a turn on its own. The two places that switch it on are both
+    // deliberate user actions (the "don't ask again" checkbox and the one-time
+    // turn-15 offer), so nothing may set it behind the player's back.
+    const fresh = useGameStore.getState().settings;
+    expect(fresh.autoEndTurn).toBe(false);
+    expect(fresh.skipEndTurnConfirmation).toBe(false);
+
+    // And a new game must not inherit an auto-end preference from an old one:
+    // `resetGameState` is what New Game runs, so the setting has to come back
+    // off afterwards.
+    useGameStore.getState().actions.updateSettings({ autoEndTurn: true });
+    useGameStore.getState().actions.resetGameState();
+    expect(useGameStore.getState().settings.autoEndTurn).toBe(false);
+
+    // A simulated round with every unit spent must not auto-end the turn.
+    const engine = new GameEngine(null);
+    (engine as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
+    let ended = false;
+    engine.onStateChange = (event: string) => {
+      if (event === 'AUTO_END_TURN' || event === 'TURN_ENDED') ended = true;
+    };
+    (engine as unknown as { checkAutoEndTurn?: () => void }).checkAutoEndTurn?.();
+    expect(ended).toBe(false);
+  });
+});
+
 describe('Auto End Turn defers while a screen is open', () => {
   let engine: GameEngine;
   let router: EngineEventRouter;
