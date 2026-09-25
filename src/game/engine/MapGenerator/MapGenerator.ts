@@ -50,6 +50,7 @@ export default class MapGenerator {
   private readonly width: number;
   private readonly height: number;
   private readonly landMass: number;
+  private readonly requireSingleLandmass: boolean;
   private readonly temperature: number;
   private readonly climate: number;
   private readonly age: number;
@@ -66,6 +67,7 @@ export default class MapGenerator {
     this.width      = settings.mapWidth;
     this.height     = settings.mapHeight;
     this.landMass     = Math.max(0, Math.min(2, settings.landMass ?? 1));
+    this.requireSingleLandmass = settings.requireSingleLandmass === true;
     this.temperature  = Math.max(0, Math.min(2, settings.temperature ?? 1));
     this.climate      = Math.max(0, Math.min(2, settings.climate ?? 1));
     this.age          = Math.max(0, Math.min(2, settings.age ?? 1));
@@ -129,6 +131,11 @@ export default class MapGenerator {
 
     // Classify small enclosed water bodies as impassable LAKES.
     this.classifyLakes();
+
+    // Repair a split world (see `ensureSingleLandmass`).
+    if (this.requireSingleLandmass) {
+      this.ensureSingleLandmass();
+    }
 
     // Groups + scoring + validation
     this.stage7_FloodFillGroups();
@@ -1398,6 +1405,110 @@ export default class MapGenerator {
   }
 
   /** Whether a generated terrain type is water (ocean, legacy sea, or lake). */
+  /**
+   * Guarantee that every landmass is reachable ON FOOT from the main one.
+   *
+   * `landMass: 1` (Standard) draws up to one horizontal and one vertical strait.
+   * A single strait is enough to cut a continent in two, and on a 40x40 map that
+   * regularly produced a 341-tile island plus a 1101-tile mainland. In an
+   * AI-vs-AI game nobody has a boat, so the two sides simply stare at each
+   * other: 17 declarations, 3 attacks, 465 rounds, no result.
+   *
+   * The repair is deliberately minimal and deterministic: find the smallest
+   * landmass (ties broken by top-left position), then fill the water straight
+   * between it and the main landmass. Only real water is turned into land, and
+   * a narrow land bridge is preferred over a fat new continent. Repeat until
+   * everything is connected (a bridge can itself be split, so the loop is not
+   * a single pass).
+   */
+  private ensureSingleLandmass(): void {
+    const isLand = (c: number, r: number): boolean =>
+      !this.isWaterType(this.cells[r]?.[c]?.type);
+
+    /** Cardinal-neighbour flood fill of a single landmass. */
+    const floodFrom = (startCol: number, startRow: number): Set<string> => {
+      const seen = new Set<string>();
+      if (!isLand(startCol, startRow)) return seen;
+      const queue: Point[] = [{ col: startCol, row: startRow }];
+      seen.add(`${startCol},${startRow}`);
+      while (queue.length > 0) {
+        const p = queue.shift()!;
+        for (const [dc, dr] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+          const c = this.wrapCol(p.col + dc);
+          const r = p.row + dr;
+          if (r < 0 || r >= this.height) continue;
+          const key = `${c},${r}`;
+          if (seen.has(key) || !isLand(c, r)) continue;
+          seen.add(key);
+          queue.push({ col: c, row: r });
+        }
+      }
+      return seen;
+    };
+
+    for (let attempt = 0; attempt < 12; attempt++) {
+      // Label every landmass.
+      const label = new Map<string, Set<string>>();
+      for (let r = 0; r < this.height; r++) {
+        for (let c = 0; c < this.width; c++) {
+          if (!isLand(c, r) || label.has(`${c},${r}`)) continue;
+          const comp = floodFrom(c, r);
+          if (comp.size === 0) continue;
+          for (const key of comp) label.set(key, comp);
+        }
+      }
+      const components = [...new Set(label.values())];
+      if (components.length <= 1) return; // one landmass (or none) — done
+
+      const main = components.reduce((a, b) => (b.size > a.size ? b : a));
+      // The smallest landmass is the one to bridge: bridging the big one would
+      // rewrite most of the map.
+      const orphan = components
+        .filter((c) => c !== main)
+        .reduce((a, b) => (b.size < a.size ? b : a));
+
+      // The orphan tile closest to the main landmass, and the main tile closest
+      // to it — a straight bridge between the two is the shortest fix.
+      let best: { from: Point; to: Point } | null = null;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const key of orphan) {
+        const [c, r] = key.split(',').map(Number);
+        for (const mainKey of main) {
+          const [mc, mr] = mainKey.split(',').map(Number);
+          const d = Math.abs(mc - c) + Math.abs(mr - r);
+          if (d < bestDist) {
+            bestDist = d;
+            best = { from: { col: c, row: r }, to: { col: mc, row: mr } };
+          }
+        }
+      }
+      if (!best) return;
+
+      // Walk from the orphan towards the main landmass, turning water into
+      // plains. A one-tile-wide isthmus is enough for passability.
+      const steps: Point[] = [];
+      const { from, to } = best;
+      let cur = { ...from };
+      while (cur.col !== to.col || cur.row !== to.row) {
+        if (this.isWaterType(this.cells[cur.row]?.[cur.col]?.type)) {
+          steps.push({ ...cur });
+        }
+        if (cur.col !== to.col) cur = { col: cur.col + Math.sign(to.col - cur.col), row: cur.row };
+        else if (cur.row !== to.row) cur = { col: cur.col, row: cur.row + Math.sign(to.row - cur.row) };
+        if (steps.length > this.width + this.height) break; // safety
+      }
+      for (const p of steps) {
+        const r = p.row;
+        const c = this.wrapCol(p.col);
+        if (r < 0 || r >= this.height) continue;
+        this.cells[r][c].type = TERRAIN_TYPES.PLAINS;
+        this.cells[r][c].terrain = TERRAIN_TYPES.PLAINS;
+        this.cells[r][c].specialResource = false;
+      }
+      if (steps.length === 0) return; // nothing left to fill — bail out
+    }
+  }
+
   private isWaterType(type: string | undefined | null): boolean {
     return WATER_TERRAIN_TYPES.includes(String(type ?? '').trim().toLowerCase());
   }

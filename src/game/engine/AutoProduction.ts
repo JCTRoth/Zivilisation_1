@@ -1132,13 +1132,22 @@ export class AutoProduction {
       const inProgress = c.currentProduction?.type === 'unit' ? 1 : 0;
       return n + inQueue + inProgress;
     }, 0);
-    const aiSustainableUnits = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ) ?? 0;
-    // Lightweight test doubles may not implement sustainableUnits — fall back
-    // to the free one-unit-per-city support so the cap never blocks them.
+    // Take the MOST CONSERVATIVE credible cap, not the most optimistic one.
+    // `Math.max` of every source let the 100%-tax projection win over the AI's
+    // own figure (which already subtracts building upkeep and keeps a reserve),
+    // which is how the AI built a bigger army than it could maintain and then
+    // disbanded it again, round after round.
+    const aiSustainableUnits = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ);
     const econSustainableUnits = typeof econ.sustainableUnits === 'function'
       ? econ.sustainableUnits(civ)
-      : cityCount;
-    const sustainableUnits = Math.max(cityCount, econSustainableUnits, aiSustainableUnits);
+      : null;
+    // Prefer the AI's model (tax floor + buildings + reserve); fall back to the
+    // economic one. Lightweight test doubles may implement neither — the free
+    // one-unit-per-city support then applies so the cap never blocks them.
+    const sustainableUnits = Math.max(
+      cityCount,
+      aiSustainableUnits ?? econSustainableUnits ?? cityCount,
+    );
     return currentUnits + queuedUnits >= sustainableUnits;
   }
 

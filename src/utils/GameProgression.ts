@@ -697,7 +697,10 @@ export function buildRoundDiagnostics(entries: ProgressionLogEntry[]): Map<strin
       diag.aiActions++;
       const action = typeof data.action === 'string' ? data.action : '';
       const reason = typeof data.reason === 'string' ? data.reason : '';
-      if (action === 'attack' || message.startsWith('Attack —')) diag.attacks++;
+      // NOTE: an AI "Attack —" line is an *intent* to attack, and combatUnit
+      // can still fail it. The authoritative `attacks` counter is driven by
+      // the real COMBAT_* events below, so a game that fought a war is never
+      // exported as having zero attacks.
       if (action === 'move_failed' || message.includes('Move failed') || message.includes('Path step failed')) {
         diag.moveFailures++; addMisbehavior(diag, unitType, reason || 'move_failed');
       }
@@ -712,8 +715,8 @@ export function buildRoundDiagnostics(entries: ProgressionLogEntry[]): Map<strin
     }
     if (entry.event === 'UNIT_MOVED') diag.moves++;
     if (entry.event === 'UNIT_SKIPPED') diag.skips++;
-    if (entry.event === 'COMBAT_VICTORY') diag.combatWins++;
-    if (entry.event === 'COMBAT_DEFEAT') diag.combatLosses++;
+    if (entry.event === 'COMBAT_VICTORY') { diag.combatWins++; diag.attacks++; }
+    if (entry.event === 'COMBAT_DEFEAT') { diag.combatLosses++; diag.attacks++; }
     if (entry.event === 'UNIT_DEFEATED') { diag.unitsLost++; if (unitType) addMisbehavior(diag, unitType, 'lost'); }
     if (entry.event === 'CITY_FOUNDED') diag.citiesFounded++;
     if (entry.event === 'CITY_CAPTURED') diag.citiesCaptured++;

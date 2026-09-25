@@ -41,6 +41,12 @@ export interface MapGeneratorSettings {
   temperature?: number;
   climate?: number;
   age?: number;
+  /**
+   * Force every landmass to be reachable on foot from the main one. AI-vs-AI
+   * games have no human to ferry a boat across, so a map that splits the civs
+   * across two continents is an instant, unwinnable stalemate.
+   */
+  requireSingleLandmass?: boolean;
 }
 
 export enum GroupKind { Water, Land, PolarCap, Lake }

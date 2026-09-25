@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
+import type { Unit } from '../../types/game';
 
 /**
  * AI diplomat unit tests (Civ I: diplomats physically move to an enemy
@@ -33,6 +34,42 @@ describe('AI diplomat units', () => {
     });
     return engine;
   }
+
+  it('releases a fortified garrison to fight a reachable enemy at war', async () => {
+    // An AI-vs-AI run ended with 9 units permanently fortified and 1,916 hold
+    // actions: a garrison was kept because it sat next to a city, never
+    // because the city needed it, so the army could never march.
+    const engine = await makeEngine('CLOSEUP_1V1', 2);
+    const aiManager = (engine as any).aiManager;
+
+    const home = engine.cities[0] ?? engine.foundCity(10, 10, 0, 'Home')!;
+    const enemyCity = engine.cities.find((c) => c.civilizationId === 1)
+      ?? engine.foundCity(14, 10, 1, 'EnemyTown')!;
+    engine.diplomacyManager.declareWar(0, 1);
+
+    // A combat unit entrenched in its own city, sitting out the turn.
+    (engine as unknown as { createUnit(civId: number, type: string, col: number, row: number): Unit })
+      .createUnit(home.civilizationId, 'warrior', home.col, home.row);
+    const garrison = engine.units.find(
+      (u) => u.civilizationId === 0 && u.type === 'warrior' && !u.isDefeated,
+    )!;
+    engine.unitFortify(garrison.id);
+    expect(garrison.isFortified).toBe(true);
+
+    const keep = (aiManager as any).shouldKeepGarrisonFortified.bind(aiManager);
+    // The enemy city is land-connected, so this garrison must mobilise.
+    expect(engine.areLandConnected(home.col, home.row, enemyCity.col, enemyCity.row)).toBe(true);
+    expect(keep(garrison, engine.getPlayerStorage(0))).toBe(false);
+
+    // A unit with no reachable enemy keeps entrenching (peacetime garrison).
+    engine.diplomacyManager.makePeace?.(0, 1);
+    const diplomacy = engine.diplomacyManager as unknown as {
+      relations?: Map<string, { atWar?: boolean }>;
+    };
+    const rel = diplomacy.relations?.get('0-1');
+    if (rel) rel.atWar = false;
+    expect(keep(garrison, engine.getPlayerStorage(0))).toBe(true);
+  });
 
   it('chooseDiplomatTarget picks a known enemy city, preferring civs not at war', async () => {
     const engine = await makeEngine('CLOSEUP_1V1', 2);

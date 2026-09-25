@@ -26,6 +26,51 @@ import type { City, Civilization, Unit } from '../../types/game';
  * `researched` flag is the union across civs and only drives UI coloring.
  */
 describe('AI-vs-AI research + aggression', () => {
+  it('never starves science while maxed out on tax', async () => {
+    // An AI-vs-AI export ended with a civ sitting at tax 100 / science 0. The
+    // gradual MAX_DELTA cap kept tax above the target for many turns and only
+    // luxury was trimmed to get back to the science floor — so a civ with no
+    // luxury could never recover. The floor is now a law.
+    const engine = new GameEngine(null);
+    engine.sleep = () => Promise.resolve();
+    await engine.initialize({
+      numberOfCivilizations: 2,
+      mapType: 'CLOSEUP_1V1',
+      devMode: false,
+      startingGold: 500,
+    });
+    const civ = engine.civilizations[0];
+    const city = engine.cities[0] ?? engine.foundCity(10, 10, 0, 'Rich')!;
+    const cities = [city];
+
+    // Worst case: already pinned at 100% tax, 0% science, and a treasury so
+    // healthy that the AI wants to drop tax immediately.
+    civ.taxRate = 100;
+    civ.scienceRate = 0;
+    civ.luxuryRate = 0;
+    civ.resources.gold = 5000;
+
+    const aiEcon = new AIEconomicManager(engine, engine.economicManager);
+    const adjust = (aiEcon as unknown as {
+      adjustRatesForAI(civ: Civilization, cities: City[]): void;
+    }).adjustRatesForAI.bind(aiEcon);
+
+    adjust(civ, cities);
+    expect(civ.taxRate + civ.scienceRate + civ.luxuryRate).toBe(100);
+    expect(civ.scienceRate).toBeGreaterThanOrEqual(20);
+    expect(civ.taxRate).toBeLessThan(100);
+
+    // And it must hold as the treasury drains (the case the export showed).
+    for (let i = 0; i < 30; i++) {
+      civ.resources.gold = Math.max(0, (civ.resources.gold ?? 0) - 20);
+      adjust(civ, cities);
+      expect(civ.taxRate + civ.scienceRate + civ.luxuryRate).toBe(100);
+      expect(civ.scienceRate).toBeGreaterThanOrEqual(20);
+      expect(civ.taxRate).toBeGreaterThanOrEqual(0);
+      expect(civ.luxuryRate).toBeGreaterThanOrEqual(0);
+    }
+  });
+
   it('setResearch allows a tech another civ already researched (per-civ research)', async () => {
     const engine = new GameEngine(null);
     engine.sleep = () => Promise.resolve();

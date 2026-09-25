@@ -289,7 +289,20 @@ export class AIManager {
       // "declare war" on them (a no-op); just attack.
       if (typeof targetCivId === 'number' && targetCivId !== civilizationId && targetCivId !== BARBARIAN_CIV_ID) {
         const dm = this.gameEngine.diplomacyManager;
-        if (!dm.isAtWar(civilizationId, targetCivId)) {
+        // Never start a war the AI cannot prosecute. An AI-vs-AI run produced 17
+        // declarations and 3 attacks: the Huns declared war on Russia from
+        // another continent, mobilised nothing, and the war simply sat there
+        // burning the treasury via upkeep. A war needs a reachable target.
+        const canReachTarget = this.hasReachableEnemyTarget(civilizationId, {
+          col: this.civCentroid(civilizationId).col,
+          row: this.civCentroid(civilizationId).row,
+        } as Unit, targetCivId);
+        if (!canReachTarget) {
+          console.log(`[AI] ${civ.name} skips war on civ ${targetCivId} — no reachable target`);
+          this.gameEngine.log?.('ai', `War declaration skipped — ${civ.name} cannot reach civ ${targetCivId}`, {
+            civilizationId, action: 'declare_war_skipped', target: targetCivId, reason: 'no_reachable_target',
+          });
+        } else if (!dm.isAtWar(civilizationId, targetCivId)) {
           console.log(`[AI] ${civ.name} declares war (aggression ${aggressionState.score}) — rush against civ ${targetCivId}`);
           this.gameEngine.log?.('ai', `War declaration — ${civ.name} rushes civ ${targetCivId}`, {
             civilizationId, action: 'declare_war', target: targetCivId, score: aggressionState.score,
@@ -354,7 +367,10 @@ export class AIManager {
     for (const unit of this.gameEngine.units) {
       if (unit.civilizationId !== civilizationId) continue;
       if (!unit.isFortified || unit.isDefeated || unit.embarkedOn) continue;
-      const isGarrison = this.isCombatUnit(unit) && this.isAtOrAdjacentToFriendlyCity(unit);
+      const isGarrison =
+        this.isCombatUnit(unit) &&
+        this.isAtOrAdjacentToFriendlyCity(unit) &&
+        this.shouldKeepGarrisonFortified(unit, storage);
       if (isGarrison) continue;
       this.gameEngine.unfortifyUnit(unit.id);
     }
@@ -3197,6 +3213,74 @@ export class AIManager {
    */
   private shouldFortifyForDefense(unit: Unit): boolean {
     return this.isCombatUnit(unit) && !unit.isFortified && this.isAtOrAdjacentToFriendlyCity(unit);
+  }
+
+  /**
+   * Should a fortified garrison stay entrenched for another turn?
+   *
+   * "Adjacent to a friendly city" is only a POSITION, not a need. Treating it
+   * as a need froze the AI's army permanently: once units garrisonsed a city
+   * they were never offered to the turn queue again, so an AI-vs-AI run ended
+   * with 9 units sitting fortified while its civ was at war — 1,916 hold
+   * actions and no attack. A garrison now only holds when the city actually
+   * needs defending; at war with a reachable enemy the unit is released.
+   */
+  private shouldKeepGarrisonFortified(unit: Unit, storage: PlayerTurnStorage): boolean {
+    const civId = unit.civilizationId;
+    if (!this.gameEngine.isCivAtWar?.(civId)) return true; // peace: entrench
+
+    const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+
+    // The city this unit guards is under attack — stay, whatever else happens.
+    const threatened = this.identifyThreatenedCities(civId, storage, roundNumber);
+    if (threatened.some((t) => t.city.col === unit.col && t.city.row === unit.row)) return true;
+
+    // An offensive plan explicitly wants this unit.
+    if (this.getOffensivePlanTarget(unit, storage)) return false;
+
+    // At war with an enemy we can actually march to: mobilise, even from a city.
+    if (this.hasReachableEnemyTarget(civId, unit)) return false;
+
+    return true;
+  }
+
+  /** Midpoint of a civ's cities, used as "where this civ is" for reachability. */
+  private civCentroid(civilizationId: number): { col: number; row: number } {
+    const owned = this.gameEngine.cities.filter((c) => c.civilizationId === civilizationId);
+    if (owned.length === 0) {
+      const unit = this.gameEngine.units.find((u) => u.civilizationId === civilizationId);
+      return { col: unit?.col ?? 0, row: unit?.row ?? 0 };
+    }
+    const sum = owned.reduce((acc, c) => ({ col: acc.col + c.col, row: acc.row + c.row }), { col: 0, row: 0 });
+    return { col: Math.round(sum.col / owned.length), row: Math.round(sum.row / owned.length) };
+  }
+
+  /**
+   * True if a land-connected enemy city or combat unit exists for this civ.
+   * `onlyEnemyCivId` narrows the check to one opponent (used before declaring a
+   * war on a specific civ).
+   */
+  private hasReachableEnemyTarget(civilizationId: number, unit: Unit, onlyEnemyCivId?: number): boolean {
+    const enemies = new Set(
+      (this.gameEngine.diplomacyManager?.getEnemies?.(civilizationId) ?? []).map(Number),
+    );
+    if (onlyEnemyCivId !== undefined) {
+      enemies.clear();
+      enemies.add(onlyEnemyCivId);
+    }
+    if (enemies.size === 0) return false;
+    const hostile = (civId: unknown) => enemies.has(Number(civId));
+    return (
+      this.gameEngine.cities.some(
+        (c) => hostile(c.civilizationId) && this.areLandConnected(unit.col, unit.row, c.col, c.row),
+      ) ||
+      this.gameEngine.units.some(
+        (u) =>
+          hostile(u.civilizationId) &&
+          !u.isDefeated &&
+          this.areLandConnected(unit.col, unit.row, u.col, u.row),
+      )
+    );
   }
 
   private selectStrategicTarget(unit: Unit): { col: number; row: number } | null {

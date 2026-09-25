@@ -259,16 +259,22 @@ export class EconomicManager {
       (c: City) => c.civilizationId === civId,
     );
     const cityCount = cities.length;
-    // Full-tax income: every city's commerce at 100% tax rate × TRADE_GOLD_MULTIPLIER
-    const fullTaxIncome = cities.reduce((total: number, city: City) => {
+    // Taxable income at the civ's ACTUAL tax rate, not at 100%. Planning at
+    // 100% made the unit cap systematically too high, so the AI kept building
+    // past what it could pay for and then disbanded the surplus for upkeep —
+    // an AI-vs-AI run produced 84 units and disbanded 84.
+    const taxShare = Math.min(100, Math.max(0, civ.taxRate ?? 50)) / 100;
+    const taxIncome = cities.reduce((total: number, city: City) => {
       const commerce = this.cityCommerce(city);
       const gov = getGovernment(civ.government);
       const effective = commerce * (1 - gov.commercePenalty);
       const corruption = CityUtils.calculateCorruption(city, civ, effective);
-      return total + Math.max(0, Math.floor(effective - corruption)) * TRADE_GOLD_MULTIPLIER;
+      const taxable = Math.max(0, Math.floor(effective - corruption));
+      return total + Math.floor(taxable * taxShare) * TRADE_GOLD_MULTIPLIER;
     }, 0);
     const specialistGold = this.maxSpecialistGold(civ);
-    const totalIncome = fullTaxIncome + specialistGold;
+    // Buildings are paid for before units are, so they come off first.
+    const totalIncome = Math.max(0, taxIncome + specialistGold - this.buildingUpkeep(civId));
     // Each unit costs 1 gold/turn upkeep; one free unit per city
     const upkeepSlots = Math.max(0, totalIncome - cityCount);
     return upkeepSlots;

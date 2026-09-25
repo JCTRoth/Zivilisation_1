@@ -924,6 +924,13 @@ export default class GameEngine {
       temperature: this.gameSettings.temperature,
       climate: this.gameSettings.climate,
       age: this.gameSettings.age,
+      // A computer-vs-computer game has nobody to ferry a boat across, so a
+      // strait that splits the civs across two continents is an instant
+      // unwinnable stalemate (465-round run: 17 wars, 3 attacks). Keep every
+      // civ on one landmass. Naval maps are untouched — that IS the point.
+      requireSingleLandmass:
+        this.gameSettings.mapType === 'AI_VS_AI' ||
+        this.gameSettings.mapType === 'AI_VS_AI_SMALL',
     });
 
     let tiles: ReturnType<MapGenerator['generate']>;

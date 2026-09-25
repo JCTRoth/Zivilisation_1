@@ -326,3 +326,24 @@ describe('Failed-move memory for all units', () => {
     expect(blocked.has('2,1')).toBe(true);
   });
 });
+
+describe('the unit cap never relies on an optimistic 100% tax projection', () => {
+  it('uses the AI sustainable cap when both models exist', () => {
+    // The civ can field 5 units sustainably, but a 100%-tax projection claims
+    // 20. `Math.max` of the two let the optimistic number win, so the AI built
+    // an army it could not pay for and disbanded the surplus (84 built / 84
+    // disbanded in one AI-vs-AI run).
+    const { auto } = makeProductionEngine(6, 5);
+    const engine = (auto as unknown as { gameEngine: Record<string, unknown> }).gameEngine;
+    engine.aiEconomicManager = { sustainableUnits: () => 5 };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((auto as any).isUnitCapExhausted(1)).toBe(true);
+
+    // Fewer units than the conservative cap → room to build.
+    const { auto: smaller } = makeProductionEngine(3, 5);
+    const engine2 = (smaller as unknown as { gameEngine: Record<string, unknown> }).gameEngine;
+    engine2.aiEconomicManager = { sustainableUnits: () => 5 };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((smaller as any).isUnitCapExhausted(1)).toBe(false);
+  });
+});

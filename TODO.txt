@@ -54,11 +54,20 @@ Pop is the population of the city the sunk ship came from.
 T is the population of the city the sunk ship came from.
 
 Still to do (bigger):
-* Verify war commitment in fresh AI-vs-AI runs: do wars actually produce
-  sustained offensives and city captures now? Watch attacks/round and
-  citiesCaptured in the next progression CSV.
+* Verify war commitment in a fresh AI-vs-AI run: with garrisons now able to
+  mobilise, war declarations gated on a reachable target, and the unit cap
+  taking the most conservative estimate, do wars produce sustained offensives
+  and city captures? Watch attacks/round (counted from real COMBAT_* events now)
+  and citiesCaptured in the next progression CSV. The AI's own "Attack —" lines
+  are intent only and no longer counted as attacks.
 * Naval invasion: land armies still cannot attack across water; the navy pivot
   builds ships but there is no transport/invasion mission (only colonies).
+  This is why AI_VS_AI maps are now generated as a single landmass instead
+  (requireSingleLandmass) — with no human to ferry a boat, a split map is an
+  unwinnable stalemate (465-round run: 17 wars, 3 attacks, no result). A real
+  invasion mission (load army -> sail -> unload -> siege) would let naval maps
+  and multi-continent worlds work again, and would make the landmass guarantee
+  unnecessary.
 * Multi-group offensives / siege commitment: two groups can form, but there is
   no coordination between them (no pincer/second-front planning).
 * Army composition by era: the AI still over-produces the era's default

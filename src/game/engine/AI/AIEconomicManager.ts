@@ -184,18 +184,29 @@ export class AIEconomicManager {
     const belowReserve = gold < reserveTarget && !inDeficit;
     const MAX_DELTA = deepCrisis ? 100 : crisis ? 50 : belowReserve ? 20 : 10;
 
-    const newTax =
+    let newTax =
       targetTax >= rates.tax
         ? Math.min(targetTax, rates.tax + MAX_DELTA)
         : Math.max(targetTax, rates.tax - MAX_DELTA);
 
-    // 4. Fill Luxury, then Science
+    // 4. Fill Luxury, then Science.
+    // The science floor is a LAW, not a preference: the gradual MAX_DELTA cap
+    // can leave `newTax` above `targetTax` for many turns, and previously only
+    // luxury was trimmed to get back to the floor. A civ that was already at
+    // 100% tax therefore kept science at 0% indefinitely (an AI-vs-AI export
+    // caught exactly that) — so trim luxury first, then hand the remainder back
+    // from tax.
+    const scienceFloor = inDeficit ? 0 : AI_SCIENCE_FLOOR;
     let newLuxury = Math.min(luxury, 100 - newTax);
     let newScience = 100 - newTax - newLuxury;
-    if (newScience < AI_SCIENCE_FLOOR && newLuxury > 0) {
-      const trim = Math.min(newLuxury, AI_SCIENCE_FLOOR - newScience);
-      newLuxury -= trim;
-      newScience += trim;
+    if (newScience < scienceFloor) {
+      const trimLux = Math.min(newLuxury, scienceFloor - newScience);
+      newLuxury -= trimLux;
+      newScience += trimLux;
+    }
+    if (newScience < scienceFloor) {
+      newTax = Math.max(0, 100 - newLuxury - scienceFloor);
+      newScience = 100 - newTax - newLuxury;
     }
 
     this.econ.setRates(civ.id, newTax, newScience, newLuxury);

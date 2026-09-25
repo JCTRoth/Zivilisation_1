@@ -77,6 +77,32 @@ describe('Diagnostics contract: stall reasons', () => {
   });
 });
 
+describe('attacks are counted from real combat, not AI intent', () => {
+  it('an AI that only ever announces attacks never reports an attack', () => {
+    const entries: ProgressionLogEntry[] = [
+      // The AI keeps *trying* to attack (and keeping failing to reach anyone).
+      entry('GAME_LOG', 'Attack — warrior(1) → (5,5)', { category: 'ai', action: 'attack' }),
+      entry('GAME_LOG', 'Attack — warrior(2) → (6,6)', { category: 'ai', action: 'attack' }),
+      entry('GAME_LOG', 'Already at target — holds', { category: 'ai', action: 'hold', reason: 'already_at_target' }),
+    ];
+    const row = [...buildRoundDiagnostics(entries).values()][0];
+    expect(row.attacks).toBe(0);
+    expect(row.aiActions).toBe(3);
+  });
+
+  it('every real combat counts once, whoever won', () => {
+    const entries: ProgressionLogEntry[] = [
+      entry('COMBAT_VICTORY', 'Victory'),
+      entry('COMBAT_DEFEAT', 'Defeat'),
+      entry('COMBAT_VICTORY', 'Victory'),
+    ];
+    const row = [...buildRoundDiagnostics(entries).values()][0];
+    expect(row.attacks).toBe(3);
+    expect(row.combatWins).toBe(2);
+    expect(row.combatLosses).toBe(1);
+  });
+});
+
 describe('Diagnostics contract: a realistic round of entries', () => {
   it('counts attacks, failures, stalls and losses', () => {
     const entries: ProgressionLogEntry[] = [
@@ -97,7 +123,11 @@ describe('Diagnostics contract: a realistic round of entries', () => {
     const diag = buildRoundDiagnostics(entries);
     const row = [...diag.values()][0];
 
+    // `attacks` counts REAL combats (one COMBAT_VICTORY here), not the AI's
+    // declared intent — an AI-vs-AI export once reported 3 attacks for a game
+    // with thousands of hold actions because the number was intent-only.
     expect(row.attacks).toBe(1);
+    expect(row.combatWins).toBe(1);
     expect(row.moveFailures).toBe(1);
     expect(row.stalls).toBeGreaterThanOrEqual(2); // the move failure + no target
     expect(row.noTarget).toBe(1);
