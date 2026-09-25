@@ -15,6 +15,7 @@
  */
 
 import { vi } from 'vitest';
+import { getGovernment } from '@/data/GovernmentData';
 import GameEngine from '@/game/engine/GameEngine';
 import { SquareGrid } from '@/game/SquareGrid';
 import type { City, Unit } from '../../types/game';
@@ -290,6 +291,30 @@ export function checkInvariants(engine: GameEngine): InvariantViolation[] {
     if (gold < 0) add('gold >= 0', `${civ.name}: ${gold}`);
     const science = civ.resources?.science ?? 0;
     if (!Number.isFinite(science)) add('science is finite', `${civ.name}: ${science}`);
+
+    // Tax/science/luxury are a budget split: they must always add up to 100%
+    // (or all be 0 for a government with no tax base, e.g. Anarchy). An
+    // AI-vs-AI export showed `100/0/50`, which silently collects 150% of a
+    // city's commerce — every downstream economy number was then wrong.
+    const tax = civ.taxRate ?? 0;
+    const sci = civ.scienceRate ?? 0;
+    const lux = civ.luxuryRate ?? 0;
+    if (!Number.isFinite(tax) || !Number.isFinite(sci) || !Number.isFinite(lux)) {
+      add('rates are finite', `${civ.name}: ${tax}/${sci}/${lux}`);
+    } else {
+      const total = tax + sci + lux;
+      const forcesZero = Boolean(
+        (getGovernment(civ.government as never) as { forcesZeroRates?: boolean } | undefined)?.forcesZeroRates,
+      );
+      if (forcesZero) {
+        if (total !== 0) add('zero-rate government has no rates', `${civ.name} (${civ.government}): ${tax}/${sci}/${lux}`);
+      } else if (total !== 100) {
+        add('tax + science + luxury == 100', `${civ.name} (${civ.government}): ${tax}/${sci}/${lux} = ${total}`);
+      }
+      for (const [label, v] of [['tax', tax], ['science', sci], ['luxury', lux]] as const) {
+        if (v < 0 || v > 100) add('rate within 0..100', `${civ.name} ${label}: ${v}`);
+      }
+    }
     if (civ.researchProgress && !Number.isFinite(civ.researchProgress)) {
       add('researchProgress is finite', `${civ.name}: ${civ.researchProgress}`);
     }
@@ -380,9 +405,20 @@ export function makeGridEngine(
     ),
   };
   // One human + one AI civ, so the invariants have a real world to check.
-  engine.civilizations = [
-    { id: 0, name: 'TestCiv', isHuman: true, resources: { gold: 100, science: 0, food: 0, production: 0, trade: 0 } },
-    { id: 1, name: 'OtherCiv', isHuman: false, resources: { gold: 100, science: 0, food: 0, production: 0, trade: 0 } },
-  ];
+  // Rates mirror what GameEngine gives a real civ (50/50/0 under Despotism) so
+  // the `tax + science + luxury == 100` law holds on the bare fixtures too.
+  const civ = (id: number, name: string, isHuman: boolean) => ({
+    id,
+    name,
+    isHuman,
+    government: 'despotism',
+    taxRate: 50,
+    scienceRate: 50,
+    luxuryRate: 0,
+    technologies: [],
+    researchProgress: 0,
+    resources: { gold: 100, science: 0, food: 0, production: 0, trade: 0 },
+  });
+  engine.civilizations = [civ(0, 'TestCiv', true), civ(1, 'OtherCiv', false)];
   return engine as GameEngine;
 }

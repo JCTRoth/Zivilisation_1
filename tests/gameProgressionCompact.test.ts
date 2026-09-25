@@ -233,6 +233,18 @@ describe('hydrateCiv (compact CSV)', () => {
   });
 });
 
+/** Parse a compact CSV into typed rows keyed by the export's column names. */
+function csvRows(csv: string): Record<string, string | number>[] {
+  const lines = csv.trim().split('\n').filter((l) => !l.startsWith('#'));
+  const header = lines[0].split(',');
+  return lines.slice(1).map((line) => {
+    const cells = line.split(',');
+    const row: Record<string, string | number> = {};
+    header.forEach((h, i) => { row[h] = /^-?\d+(\.\d+)?$/.test(cells[i]) ? Number(cells[i]) : (cells[i] ?? ''); });
+    return row;
+  });
+}
+
 describe('buildCompactCsv (strongly reduced export)', () => {
   let engine: GameEngine;
 
@@ -286,6 +298,36 @@ describe('buildCompactCsv (strongly reduced export)', () => {
     expect(lines[2]).toMatch(/^1,/); // round 1 first
     for (const row of lines.slice(2)) {
       expect(row.split(',')).toHaveLength(lines[1].split(',').length);
+    }
+  });
+
+  it('seeds the first exported row per civ from live state (not delta defaults)', async () => {
+    // Regression from an AI-vs-AI export: the export keeps only the last 200
+    // round-deltas, but each delta only carries what changed in THAT round, so
+    // the first exported row hydrated from defaults and the whole file inherited
+    // `cities 0 / units 0 / techs 0 / tax 0` forever (a civ with 7 cities was
+    // exported as having none).
+    const civ = engine.civilizations[0];
+    expect(civ).toBeDefined();
+    advanceRounds(2);
+    const rowsForCiv0 = csvRows(await gameProgression.buildCompactCsv(engine)).filter((r) => String(r.civId) === '0');
+
+    const liveCities = engine.getAllCities().filter((c) => c.civilizationId === 0).length;
+    const liveUnits = engine.getAllUnits().filter((u) => u.civilizationId === 0).length;
+    const liveTechs = civ?.technologies?.length ?? 0;
+
+    const rows = rowsForCiv0;
+    expect(rows.length).toBeGreaterThan(0);
+    // The FIRST row for the civ already matches the live engine, even though its
+    // delta carried only the fields that changed in that single round.
+    expect(rows[0].cities).toBe(liveCities);
+    expect(rows[0].units).toBe(liveUnits);
+    expect(rows[0].techs).toBe(liveTechs);
+    // Rates are a real, normalised vector — never the 0/50/50 default.
+    expect(Number(rows[0].tax) + Number(rows[0].scirate) + Number(rows[0].lux)).toBe(100);
+    // A civ with cities must never be exported as city-less.
+    for (const row of rows) {
+      if (liveCities > 0) expect(row.cities).toBe(liveCities);
     }
   });
 

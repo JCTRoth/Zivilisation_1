@@ -385,6 +385,27 @@ describe('City capture & destruction', () => {
     expect(engine.cities.find((c: any) => c.id === walled.id)?.population).toBe(3);
   });
 
+  it('city ids are never reused after a city is destroyed (found twice at one site)', () => {
+    // Regression from an AI-vs-AI session: a size-1 city was razed, the next
+    // founding on the same tile re-used its id (`city_1_7`), and two live cities
+    // ended up sharing an id — every `cities.find(c => c.id === …)` then hit the
+    // wrong city.
+    const first = engine.foundCity(30, 20, 0, 'First')!;
+    const firstId = first.id;
+    expect(first).toBeTruthy();
+
+    // Destroy it, then found again (the r149 Karaganda → Aktobe episode).
+    engine.cities = engine.cities.filter((c) => c.id !== firstId);
+    const second = engine.foundCity(30, 20, 0, 'Second')!;
+
+    expect(second.id).not.toBe(firstId);
+    expect(engine.cities.filter((c) => c.id === second.id)).toHaveLength(1);
+    // And a third founding keeps counting up.
+    const third = engine.foundCity(31, 20, 0, 'Third')!;
+    expect(third.id).not.toBe(firstId);
+    expect(third.id).not.toBe(second.id);
+  });
+
   it('metallurgy discovery scraps city walls', () => {
     const city = makeEnemyCity(2, { buildings: ['city_walls', 'temple'] });
 

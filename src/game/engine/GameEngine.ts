@@ -184,6 +184,16 @@ export default class GameEngine {
    *  removal-by-id could delete a brand-new unit that inherited the corpse's id
    *  (units silently going missing). */
   private unitIdCounters: Map<string, number> = new Map();
+  /**
+   * Monotonic per-civ city-id suffix counter.
+   *
+   * The old scheme was `city_${civId}_${this.cities.length}`, which REUSED an
+   * id as soon as a city was destroyed: a razed size-1 city freed a slot, the
+   * next founding took the freed number, and two live cities ended up with the
+   * same id. Every `cities.find(c => c.id === …)` (production, governor,
+   * capital, save/load, the city screen) then addressed the wrong city.
+   */
+  private cityIdCounters: Map<number, number> = new Map();
   diplomacyManager: DiplomacyManager; // Civ I–style diplomacy system
 
   // Human-readable recap of the most recent auto-end (what was skipped), used
@@ -1161,6 +1171,25 @@ export default class GameEngine {
    * id is never reused after a unit dies (which would otherwise make
    * removal-by-id delete the corpse AND a newly spawned unit sharing the id).
    */
+  /**
+   * A city id that is never reused, even after the city is destroyed.
+   * Mirrors `nextUnitId`: the live-array length is only a floor for ids that
+   * already exist (e.g. loaded from a save), the counter guarantees novelty.
+   */
+  private nextCityId(civId: number): string {
+    const prefix = `city_${civId}_`;
+    let maxSuffix = -1;
+    for (const city of this.cities) {
+      if (!city || city.civilizationId !== civId || typeof city.id !== 'string') continue;
+      if (!city.id.startsWith(prefix)) continue;
+      const n = parseInt(city.id.slice(prefix.length), 10);
+      if (Number.isInteger(n) && n > maxSuffix) maxSuffix = n;
+    }
+    const next = Math.max(this.cityIdCounters.get(civId) ?? -1, maxSuffix) + 1;
+    this.cityIdCounters.set(civId, next);
+    return `${prefix}${next}`;
+  }
+
   private nextUnitId(civId: number, type: string): string {
     const key = `${civId}:${type}`;
     const prefix = `${type}_${civId}_`;
@@ -1239,7 +1268,7 @@ export default class GameEngine {
         // this.civilizations yet at init, so pass it explicitly).
         const cityName = this.getNextCityName(civId, civ);
         
-        const cityId = `city_${civId}_${this.cities.length}`;
+        const cityId = this.nextCityId(civId);
         const city = {
           id: cityId,
           name: cityName,
@@ -1492,7 +1521,7 @@ export default class GameEngine {
     const civ = this.civilizations[civilizationId];
     if (!civ) return null;
 
-    const cityId = `city_${civilizationId}_${this.cities.length}`;
+    const cityId = this.nextCityId(civilizationId);
     const cityName = customName || this.getNextCityName(civilizationId);
 
     const city = {
@@ -3587,7 +3616,7 @@ export default class GameEngine {
     const cityName = this.getNextCityName(civId);
     const building = VILLAGE_FREE_BUILDINGS[Math.floor(Math.random() * VILLAGE_FREE_BUILDINGS.length)];
     const city: City = {
-      id: `city_${civId}_${this.cities.length}`,
+      id: this.nextCityId(civId),
       name: cityName,
       civilizationId: civId,
       col: unit.col,
@@ -4432,7 +4461,7 @@ export default class GameEngine {
 
     // Create new city
     const city = {
-      id: `city_${civId}_${this.cities.length}`,
+      id: this.nextCityId(civId),
       name: cityName,
       civilizationId: civId,
       col: settler.col,

@@ -385,9 +385,27 @@ class GameProgression {
     // Eliminated civs are emitted once (the elimination round) and then
     // dropped, instead of filling the CSV with 0-everything rows forever.
     const emittedElimination = new Set<string>();
+    // The export only keeps the last 200 rounds, but the deltas were computed
+    // against the round BEFORE that — so the first row for a civ is missing
+    // every field that had not changed recently. Seed it from the live engine
+    // state, otherwise the whole file inherits defaults (cities 0, units 0,
+    // techs 0, tax 0) for the rest of the session.
+    const liveCivs = engine?.civilizations ?? [];
+    const liveCities = engine?.getAllCities?.() ?? [];
+    const liveUnits = engine?.getAllUnits?.() ?? [];
     for (const round of this.snapshots) {
       for (const [civId, delta] of Object.entries(round.civs)) {
-        const full = hydrateCiv(carried[civId], delta);
+        let full: ProgressionCivSnapshot;
+        if (carried[civId] === undefined) {
+          const live = liveCivs.find((c) => String(c?.id) === String(civId));
+          const seed = live ? this.civSnapshot(engine, live, liveCities, liveUnits) : undefined;
+          // The round's own delta wins over the live state (it is the older one).
+          full = seed
+            ? hydrateCiv(seed, { ...(seed as unknown as ProgressionCivDelta), ...delta })
+            : hydrateCiv(undefined, delta);
+        } else {
+          full = hydrateCiv(carried[civId], delta);
+        }
         carried[civId] = full;
         const eliminated = full.alive === false && (full.cities ?? 0) === 0 && (full.units ?? 0) === 0;
         if (eliminated && emittedElimination.has(civId)) continue;
@@ -468,19 +486,22 @@ class GameProgression {
     };
   }
 
-  private buildRound(engine: GameEngine | null, round: number): ProgressionRound {
-    const year = engine?.currentYear ?? 0;
-    const civs: Record<string, ProgressionCivDelta> = {};
-    const cities: City[] = engine?.getAllCities?.() ?? [];
-    const units: Unit[] = engine?.getAllUnits?.() ?? [];
-    const civList: Civilization[] = engine?.civilizations ?? [];
-    const snapshot: ProgressionWorldSnapshot | undefined =
-      round > 0 && round % PROGRESSION_SNAPSHOT_INTERVAL === 0
-        ? { units: units.map(serializeUnitCompact), cities: cities.map((city) => serializeCityCompact(city)) }
-        : undefined;
-
-    for (const civ of civList) {
-      const civId = String(civ?.id ?? '?');
+  /**
+   * One civ's COMPLETE progression snapshot (not a delta). Used for the delta
+   * rows and — critically — to seed the export's first row for a civ, because
+   * the export keeps only the last 200 rounds while the deltas are computed
+   * against the round before that. Without this the first exported row hydrates
+   * from defaults: `cities 0`, `units 0`, `techs 0`, `tax 0` and it then keeps
+   * those wrong values for the whole file (an AI-vs-AI export showed a civ with
+   * seven cities reporting zero).
+   */
+  private civSnapshot(
+    engine: GameEngine | null,
+    civ: Civilization,
+    cities: City[],
+    units: Unit[],
+  ): ProgressionCivSnapshot {
+    const civId = String(civ?.id ?? '?');
       const civCities = cities.filter((c) => String(c?.civilizationId) === civId);
       const civUnitList = units.filter((u) => String(u?.civilizationId) === civId);
       const unitComposition: Record<string, number> = {};
@@ -552,6 +573,23 @@ class GameProgression {
         priorities: { ...(civ?.priorities ?? {}) },
       };
 
+    return full;
+  }
+
+  private buildRound(engine: GameEngine | null, round: number): ProgressionRound {
+    const year = engine?.currentYear ?? 0;
+    const civs: Record<string, ProgressionCivDelta> = {};
+    const cities: City[] = engine?.getAllCities?.() ?? [];
+    const units: Unit[] = engine?.getAllUnits?.() ?? [];
+    const civList: Civilization[] = engine?.civilizations ?? [];
+    const snapshot: ProgressionWorldSnapshot | undefined =
+      round > 0 && round % PROGRESSION_SNAPSHOT_INTERVAL === 0
+        ? { units: units.map(serializeUnitCompact), cities: cities.map((city) => serializeCityCompact(city)) }
+        : undefined;
+
+    for (const civ of civList) {
+      const civId = String(civ?.id ?? '?');
+      const full = this.civSnapshot(engine, civ, cities, units);
       civs[civId] = computeCivDelta(full, this.lastCivState[civId]);
       this.lastCivState[civId] = full;
     }
