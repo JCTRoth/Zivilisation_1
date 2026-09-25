@@ -4,7 +4,7 @@
 
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
-import type { City, Civilization } from '../../../types/game';
+import type { City, Civilization, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 
 /** A production item that can be queued in a city's build queue. */
@@ -41,7 +41,7 @@ export class ProductionManager {
    */
   private canBuildItem(cityId: string, item: ProductionItem | string): { ok: boolean; reason?: string } {
     try {
-      const city: City | undefined = this.gameEngine.cities?.find((c) => c.id === cityId)
+      const city: City | undefined = this.gameEngine.cities?.find((c: City) => c.id === cityId)
         || (this.gameEngine.map && typeof (this.gameEngine.map as { getCity?: (id: string) => City | undefined }).getCity === 'function' && (this.gameEngine.map as unknown as { getCity: (id: string) => City | undefined }).getCity(cityId))
         || undefined;
       if (!city) return { ok: true }; // City not found — don't block in validation
@@ -90,10 +90,10 @@ export class ProductionManager {
         // cannot field a fishing fleet.
         if (itemType === 'fisher_boat') {
           const hasLiving = this.gameEngine.units?.some(
-            (u) => u.type === 'fisher_boat' && u.homeCityId === city.id && !u.isDefeated,
+            (u: Unit) => u.type === 'fisher_boat' && u.homeCityId === city.id && !u.isDefeated,
           );
           const queued = String(city.currentProduction?.itemType ?? '') === 'fisher_boat'
-            || (city.buildQueue ?? []).some((q) => String(q?.itemType ?? '') === 'fisher_boat');
+            || (city.buildQueue ?? []).some((q: { itemType?: string }) => String(q?.itemType ?? '') === 'fisher_boat');
           if (hasLiving || queued) {
             return { ok: false, reason: 'fisher_boat_limit' };
           }
@@ -139,7 +139,7 @@ export class ProductionManager {
    * Used by the city production UI and the "idle city" auto-end gate.
    */
   getBuildableUnitTypes(cityId: string): string[] {
-    const city = this.gameEngine.cities?.find((c) => c.id === cityId);
+    const city = this.gameEngine.cities?.find((c: City) => c.id === cityId);
     if (!city) return [];
     return Object.keys(UNIT_PROPERTIES).filter((key) => {
       if (!this.canBuildItem(cityId, key).ok) return false;
@@ -234,7 +234,7 @@ export class ProductionManager {
     // Try city manager if available
     try {
       if (this.gameEngine.map && typeof (this.gameEngine.map as { getCity?: (id: string) => City | undefined }).getCity === 'function') {
-        const cityRaw: City | undefined = (this.gameEngine.map as unknown as { getCity: (id: string) => City | undefined }).getCity(cityId) || this.gameEngine.cities.find((c) => c.id === cityId);
+        const cityRaw: City | undefined = (this.gameEngine.map as unknown as { getCity: (id: string) => City | undefined }).getCity(cityId) || this.gameEngine.cities.find((c: City) => c.id === cityId);
           if (!cityRaw) return { success: false, reason: 'city_not_found' };
           const city = cityRaw;
 
