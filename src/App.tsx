@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useGameStore } from "./stores/GameStore";
 import { CIVILIZATIONS } from "@/data/GameData";
+import { AUTO_END_TURN_OFFER_TURN, AUTO_END_TURN_OFFER_FLAG } from "@/data/GameConstants";
 import GameEngine from "@/game/engine/GameEngine";
 import GameCanvas from "./components/game/GameCanvas";
 import SettingsModal from "./components/ui/SettingsModal";
@@ -312,6 +313,24 @@ function App() {
       setTimeout(() => actions.showDialog("research-required"), 500);
     }
   }, [gameEngine, gameState.isGameStarted, gameState.currentTurn, actions]);
+
+  // Offer "Auto. turn ending" once, after AUTO_END_TURN_OFFER_TURN moves: by
+  // then the player knows what ending a turn by hand costs. The offer is a
+  // single question (and the checkbox lives in the side panel under the gold),
+  // so it is remembered per browser and never shown twice.
+  const autoEndOfferShownRef = useRef(false);
+  useEffect(() => {
+    if (!gameState.isGameStarted) return;
+    if (gameState.currentTurn < AUTO_END_TURN_OFFER_TURN) return;
+    if (autoEndOfferShownRef.current) return;
+    // Already answered in this browser? Never ask again.
+    if (localStorage.getItem(AUTO_END_TURN_OFFER_FLAG) === '1') {
+      autoEndOfferShownRef.current = true;
+      return;
+    }
+    autoEndOfferShownRef.current = true;
+    actions.showDialog('auto-end-offer');
+  }, [gameState.isGameStarted, gameState.currentTurn, actions]);
 
   // End the human turn and, when it was auto-triggered, surface a recap of
   // what the engine auto-resolved (e.g. "2 units skipped"). Shared by the

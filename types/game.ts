@@ -502,6 +502,12 @@ export interface Civilization {
   nextCityNameIndex?: number;
   currentResearch?: Technology | null;
   researchProgress?: number;
+  /**
+   * Science earned while research was not possible yet (the opening rounds, or
+   * before a technology is chosen). Spent as soon as research starts, so the
+   * early turns are not wasted.
+   */
+  bankedScience?: number;
   technologies?: string[];
   score?: number;
   /** Consecutive rounds without war (score's peace bonus, reset on war). */
@@ -554,7 +560,7 @@ export interface UIState {
   showTechTree: boolean;
   showDiplomacy: boolean;
   showGameMenu: boolean;
-  activeDialog: 'city' | 'tech' | 'diplomacy' | 'diplomacy-report' | 'game-menu' | 'help' | 'pause' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | 'rates' | 'government' | 'statistics' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'research-required' | null;
+  activeDialog: 'city' | 'tech' | 'diplomacy' | 'diplomacy-report' | 'game-menu' | 'help' | 'pause' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | 'rates' | 'government' | 'statistics' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'research-required' | 'auto-end-offer' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
   /** Active citizen pick-up origin ({cityId, col, row}) while reassigning. Null when idle. */

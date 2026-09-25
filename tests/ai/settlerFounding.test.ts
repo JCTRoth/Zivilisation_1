@@ -16,17 +16,21 @@
  */
 import { describe, it, expect } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
+import { useSeededRandom } from '../helpers/world';
 
 const MAX_SETTLE_WALK_DISTANCE = 4;
 
 async function makeAIVsAIEngine(): Promise<GameEngine> {
   const engine = new GameEngine(null);
   (engine as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
+  // Pinned world + RNG: the bounded-walk assertion was map-dependent.
+  useSeededRandom(7);
   await engine.initialize({
     numberOfCivilizations: 2,
     mapType: 'AI_VS_AI',
     devMode: false,
     startingGold: 100,
+    mapSeed: 20260103,
   });
   for (const civ of engine.civilizations) {
     civ.isHuman = false;

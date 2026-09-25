@@ -55,7 +55,7 @@ export class VictoryManager {
       civ.isAlive = alive;
       // Peace-years tracking for the score bonus: consecutive rounds without
       // war. A declaration resets the streak.
-      const atWar = (civ.warWith?.size ?? 0) > 0;
+      const atWar = this.gameEngine?.isCivAtWar?.(civ.id) ?? ((civ.warWith?.size ?? 0) > 0);
       civ.peaceTurns = atWar ? 0 : (civ.peaceTurns ?? 0) + 1;
       // Keep the live scoreboard current (was permanently 0 before — the
       // statistics screen and the exported progression CSV read this).

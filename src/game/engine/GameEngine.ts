@@ -74,6 +74,11 @@ export interface GameSettings {
   temperature?: number;
   climate?: number;
   age?: number;
+  /**
+   * Pin the generated world. Left undefined in real games (a new map every
+   * time); tests and AI-vs-AI diagnostics set it so a run is reproducible.
+   */
+  mapSeed?: number;
 }
 
 export interface MapTile {
@@ -851,8 +856,9 @@ export default class GameEngine {
     // Create hex grid system with appropriate size
     this.squareGrid = new SquareGrid(mapWidth, mapHeight);
     
-    // Generate initial game state
-    await this.generateWorld(mapWidth, mapHeight, mapType);
+    // Generate initial game state. `mapSeed` makes the world reproducible
+    // (tests and diagnostics pin it); games leave it undefined for variety.
+    await this.generateWorld(mapWidth, mapHeight, mapType, settings.mapSeed);
     await this.createCivilizations(mapType);
     await this.initializeTechnologies(mapType);
 
@@ -892,13 +898,18 @@ export default class GameEngine {
    * The generator is seeded from `Date.now()` so every game gets a unique
    * but reproducible world.
    */
-  async generateWorld(mapWidth: number = Constants.MAP_WIDTH, mapHeight: number = Constants.MAP_HEIGHT, mapType: string = 'NORMAL_SKIRMISH') {
+  async generateWorld(mapWidth: number = Constants.MAP_WIDTH, mapHeight: number = Constants.MAP_HEIGHT, mapType: string = 'NORMAL_SKIRMISH', seed?: number) {
     console.log(`[GameEngine] Generating world: ${mapWidth}x${mapHeight}, type: ${mapType}`);
+
+    // A caller may pin the world (tests, replays, AI-vs-AI diagnostics). Without
+    // it the map is different on every run, which is why so many engine tests
+    // had to tolerate random continents.
+    const worldSeed = seed ?? Date.now();
 
     const generator = new MapGenerator({
       mapWidth,
       mapHeight,
-      seed: Date.now(),
+      seed: worldSeed,
       landMass: this.gameSettings.landMass,
       temperature: this.gameSettings.temperature,
       climate: this.gameSettings.climate,
@@ -2334,6 +2345,24 @@ export default class GameEngine {
   /**
    * Get city at coordinates
    */
+  /**
+   * Whether a civilization is at war with anyone.
+   *
+   * The single source of truth for "at war". Previously six call sites read
+   * `civ.warWith`, a field that only the dead legacy Civilization class ever
+   * wrote — live civs are plain objects, so every one of those reads was
+   * `undefined > 0` → false. The AI therefore never mobilised, wartime queues
+   * were never reconsidered, military research was never boosted and the
+   * score's peace-years bonus never reset. Read the diplomacy manager instead.
+   */
+  isCivAtWar(civilizationId: number): boolean {
+    const enemies = this.diplomacyManager?.getEnemies?.(civilizationId);
+    if (Array.isArray(enemies)) return enemies.length > 0;
+    // Fallback for a bare engine without a diplomacy manager.
+    const warWith = this.civilizations?.[civilizationId]?.warWith as Set<number> | undefined;
+    return (warWith?.size ?? 0) > 0;
+  }
+
   getCityAt(col: number, row: number) {
     return this.cities.find(city => city.col === col && city.row === row) || null;
   }
@@ -3177,6 +3206,7 @@ export default class GameEngine {
           } else {
             // Capture the city
             targetCity.population -= 1;
+            this.economicManager?.fitWorkedTilesToPopulation(targetCity);
             targetCity.civilizationId = unit.civilizationId;
             targetCity.buildings = targetCity.buildings ?? [];
             this.markCityLost(oldCiv, unit.civilizationId);
@@ -3327,8 +3357,11 @@ export default class GameEngine {
 
       unit.col = targetCol;
       unit.row = targetRow;
-      // Moving breaks fortification (Civ1).
+      // Moving breaks fortification and wakes the unit (Civ1): a sleeping unit
+      // that the player orders somewhere has acted, so it must not stay
+      // flagged asleep (it would be skipped again next turn).
       unit.isFortified = false;
+      unit.isSleeping = false;
       // Standard case: subtract the tile cost. Civ1 exception case: the tile
       // cost more than we had left, so the (forced) move spends everything.
       unit.movesRemaining = (unit.movesRemaining || 0) >= moveCost
@@ -3838,6 +3871,14 @@ export default class GameEngine {
       return false;
     }
 
+    // Attacking means the unit acts: a sleeping unit wakes (Civ1) and a
+    // fortified unit loses its entrenchment, so neither flag can outlive the
+    // action and silently skip the unit again next turn.
+    if (attacker) {
+      if (attacker.isSleeping === true) attacker.isSleeping = false;
+      if (attacker.isFortified === true) attacker.isFortified = false;
+    }
+
     // Auto-declare war if not already at war. Barbarian units (phantom civ id
     // < 0) never participate in diplomacy — combat with them is always hostile
     // and must not create phantom war relations or UI events.
@@ -4142,8 +4183,10 @@ export default class GameEngine {
         return { result: 'city_destroyed', attackerDamage: 0, attackerDestroyed: false, defenderDamage: 0, cityHit: true };
       }
 
-      // Population drop and capture.
+      // Population drop and capture. A lost citizen frees a tile, so the city
+      // must not keep working it (free food).
       city.population -= 1;
+      this.economicManager?.fitWorkedTilesToPopulation(city);
       city.civilizationId = attacker.civilizationId;
       city.buildings = city.buildings ?? [];
       this.markCityLost(oldCiv, attacker.civilizationId);
@@ -4210,6 +4253,7 @@ export default class GameEngine {
     }
     if (!round.cityHasWalls && (city.population || 1) > 1 && Math.random() < 0.5) {
       city.population -= 1;
+      this.economicManager?.fitWorkedTilesToPopulation(city);
       console.log(`[COMBAT] City ${city.name} lost a citizen to a failed attack (no city walls)`);
     }
     return {
@@ -4786,7 +4830,10 @@ export default class GameEngine {
       // Don't allow researching a tech the civ already owns.
       if (prereqsMet && !hasTech(techId)) {
         civ.currentResearch = tech;
-        civ.researchProgress = savedProgress || 0;
+        // Beakers earned before research was possible (the opening rounds) are
+        // spent first, so the early turns are not thrown away.
+        civ.researchProgress = (savedProgress || 0) + (civ.bankedScience ?? 0);
+        civ.bankedScience = 0;
       }
     }
   }
@@ -5144,13 +5191,15 @@ export default class GameEngine {
 
     // A sleeping unit keeps its movement points, but if it is woken after the
     // turn reset it may have none left — hand them back so the wake-up is
-    // actually actionable.
+    // actually actionable. The turn-done flag is ALWAYS re-evaluated: a woken
+    // unit that still has movement must become this turn's actor again
+    // (otherwise it kept the sleeping "turns done" mark and was never queued).
     if (!unit.isDefeated && !unit.embarkedOn && (unit.movesRemaining || 0) <= 0) {
       const unitProps = GameEngine.UNIT_PROPS?.[unit.type];
       unit.movesRemaining = unitProps?.movement || 1;
       unit.hasMovedThisTurn = false;
-      this.updateUnitTurnsDoneFlag(unit);
     }
+    this.updateUnitTurnsDoneFlag(unit);
 
     if (this.onStateChange) {
       this.onStateChange('UNIT_WOKE', { unit });

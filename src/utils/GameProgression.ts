@@ -49,7 +49,7 @@ export const PROGRESSION_SNAPSHOT_INTERVAL = 20;
  * improving the computer player. Kept events cover the per-move trace, war,
  * city lifecycle, combat, economy, diplomacy and rates.
  */
-const LOG_EVENT_ALLOWLIST: ReadonlySet<string> = new Set<string>([
+export const LOG_EVENT_ALLOWLIST: ReadonlySet<string> = new Set<string>([
   'app',
   'TURN_START',
   'TURN_END',
@@ -568,7 +568,7 @@ class GameProgression {
 
 export const gameProgression = new GameProgression();
 
-interface RoundDiagnostics {
+export interface RoundDiagnostics {
   aiActions: number; moves: number; moveFailures: number; attacks: number;
   combatWins: number; combatLosses: number; unitsLost: number;
   citiesFounded: number; citiesCaptured: number; skips: number; stalls: number;
@@ -634,8 +634,17 @@ function addMisbehavior(diag: RoundDiagnostics, unitType: string, reason: string
   const key = unitType ? `${unitType}:${reason}` : reason;
   diag.misbehavingUnits[key] = (diag.misbehavingUnits[key] ?? 0) + 1;
 }
+/**
+ * `reason` codes that count as a stall in the per-round diagnostics. The AI
+ * emits these; renaming one without updating this set silently zeroes the
+ * `stalls` column of the exported CSV, which is what the AI is tuned from.
+ */
+export const DIAGNOSTIC_STALL_REASONS: ReadonlySet<string> = new Set<string>([
+  'stuck', 'no_path', 'no_affordable_step', 'insufficient_moves', 'max_movement_attempts',
+]);
+
 /** Aggregate structured engine and AI events into one compact row per civ/round. */
-function buildRoundDiagnostics(entries: ProgressionLogEntry[]): Map<string, RoundDiagnostics> {
+export function buildRoundDiagnostics(entries: ProgressionLogEntry[]): Map<string, RoundDiagnostics> {
   const result = new Map<string, RoundDiagnostics>();
   for (const entry of entries) {
     const data = logData(entry);
@@ -657,7 +666,7 @@ function buildRoundDiagnostics(entries: ProgressionLogEntry[]): Map<string, Roun
       if (action === 'no_target' || message.includes('No target')) {
         diag.noTarget++; diag.stalls++; addMisbehavior(diag, unitType, reason || 'no_target');
       }
-      if (['stuck', 'no_path', 'no_affordable_step', 'insufficient_moves', 'max_movement_attempts'].includes(reason)) {
+      if (DIAGNOSTIC_STALL_REASONS.has(reason)) {
         diag.stalls++; addMisbehavior(diag, unitType, reason);
       }
       if (message.includes('Research —') || action === 'research') diag.aiNotes.push('research:' + String(data.tech ?? ''));

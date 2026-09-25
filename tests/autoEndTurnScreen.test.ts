@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
+import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
 import { EngineEventRouter } from '@/utils/EngineEventHandlers';
 import { useGameStore } from '@/stores/GameStore';
 
@@ -139,7 +140,7 @@ describe('Auto End Turn defers while a screen is open', () => {
   it('defers auto-end while no technology is selected — and asks for a choice', () => {
     // No research selected (past the opening rounds): the turn must not be
     // auto-ended with idle research.
-    engine.roundManager.restoreState({ roundNumber: 3 });
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     engine.civilizations[0].currentResearch = null;
     makeAllUnitsDone();
 

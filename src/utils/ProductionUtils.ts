@@ -13,9 +13,14 @@ const PRODUCTION_FAILURE_TEXTS: Record<string, string> = {
   already_in_production: 'it is already being produced',
   city_not_found: 'the city no longer exists',
   already_purchased_this_turn: 'this city already bought something this turn',
+  // ProductionManager emits `insufficient_gold`; the older `not_enough_gold`
+  // spelling is still accepted so both codes render as a sentence (the mismatch
+  // used to fall through to the raw code and show "insufficient gold").
+  insufficient_gold: 'there is not enough gold',
   not_enough_gold: 'there is not enough gold',
   no_water_access: 'the city has no water access',
   fisher_boat_limit: 'this city already has a Fisher Boat',
+  civ_not_found: 'this civilization no longer exists',
   exception: 'the production manager reported an error',
 };
 

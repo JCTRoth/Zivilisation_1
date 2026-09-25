@@ -21,6 +21,7 @@
  */
 import { describe, expect, it, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
+import { useSeededRandom } from '../helpers/world';
 
 describe('AI-vs-AI scouts explore', () => {
   let engine: GameEngine | null = null;
@@ -40,11 +41,16 @@ describe('AI-vs-AI scouts explore', () => {
     // Pause BEFORE initialize so startTurn defers and no AI auto-loop races us.
     (engine as unknown as { isPaused: boolean }).isPaused = true;
 
+    // Pinned world + RNG: this test used to fail at random because the map was
+    // generated with Date.now() and every roll differed. A regression gate that
+    // is red one run in five is worse than no gate.
+    useSeededRandom(7);
     await engine.initialize({
       numberOfCivilizations: 2,
       mapType: 'AI_VS_AI',
       devMode: false,
       startingGold: 100,
+      mapSeed: 20260101,
     });
     for (const civ of engine.civilizations) {
       civ.isHuman = false;

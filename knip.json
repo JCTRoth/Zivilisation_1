@@ -1,6 +1,12 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/App.tsx"],
-  "project": ["src/**/*.{ts,tsx}", "types/**/*.ts"],
-  "ignore": []
+  "entry": ["src/App.tsx", "tests/**/*.test.ts", "e2e/**/*.spec.ts", "e2e/**/*.ts", "scripts/**/*.mjs"],
+  "project": ["src/**/*.{ts,tsx}", "types/**/*.ts", "tests/**/*.ts", "e2e/**/*.ts"],
+  "ignore": [
+    "src/game/City.ts",
+    "src/game/Civilization.ts",
+    "src/game/Unit.ts",
+    "src/game/Terrain.ts"
+  ],
+  "ignoreDependencies": ["@vitest/coverage-v8"]
 }

@@ -353,3 +353,147 @@
   font-size: 3.5rem;
   line-height: 1;
 }
+/* ── "Auto. turn ending" offer (shown once, on move 15) ────────────────── */
+
+.auto-end-offer-modal .modal-content {
+  background: linear-gradient(180deg, #1b2430 0%, #141b25 100%);
+  border: 1px solid rgba(127, 209, 138, 0.28);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.auto-end-offer {
+  padding: 1.5rem 1.5rem 1.25rem;
+  text-align: center;
+  color: #dce6ef;
+}
+
+.auto-end-offer-hero {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  line-height: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%, rgba(127, 209, 138, 0.35), rgba(127, 209, 138, 0.08));
+  border: 1px solid rgba(127, 209, 138, 0.45);
+  box-shadow: 0 0 0 6px rgba(127, 209, 138, 0.05);
+}
+
+.auto-end-offer-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #f2f7fb;
+}
+
+.auto-end-offer-lead {
+  margin: 0 auto 1rem;
+  max-width: 30rem;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: #a9bac8;
+}
+
+.auto-end-offer-lead strong {
+  color: #dff5e2;
+}
+
+/* Miniature of the side-panel header: shows WHERE the checkbox lives. */
+.auto-end-offer-where {
+  margin: 0 auto 1.15rem;
+  max-width: 17rem;
+}
+
+.auto-end-offer-mock {
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  background: rgba(9, 13, 18, 0.75);
+  border: 1px solid rgba(140, 165, 190, 0.28);
+  border-radius: 10px;
+}
+
+.auto-end-offer-mock-gold {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.auto-end-offer-mock-coin {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.auto-end-offer-mock-goldbar {
+  height: 8px;
+  flex: 1;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(240, 195, 60, 0.75), rgba(240, 195, 60, 0.2));
+}
+
+.auto-end-offer-mock-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: #cfe0ea;
+  cursor: default;
+}
+
+.auto-end-offer-mock-box {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 2px solid rgba(127, 209, 138, 0.85);
+  background: rgba(127, 209, 138, 0.12);
+  box-shadow: 0 0 10px rgba(127, 209, 138, 0.35);
+}
+
+.auto-end-offer-caption {
+  margin-top: 0.4rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  color: #8fa2b1;
+}
+
+.auto-end-offer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.auto-end-offer-later {
+  color: #93a5b3 !important;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.auto-end-offer-later:hover {
+  color: #dce6ef !important;
+}
+
+.auto-end-offer-yes {
+  min-width: 8.5rem;
+  font-weight: 600;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #3f9c52, #2f7f43);
+  border-color: rgba(127, 209, 138, 0.6);
+}
+
+.auto-end-offer-yes:hover,
+.auto-end-offer-yes:active {
+  background: linear-gradient(135deg, #4bb35f, #368d4c) !important;
+  border-color: rgba(127, 209, 138, 0.85) !important;
+}
+
+.auto-end-offer-fineprint {
+  margin-top: 0.7rem;
+  font-size: 0.68rem;
+  color: #7d8f9d;
+}

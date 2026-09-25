@@ -12,13 +12,24 @@ export const SMALL_ISLAND_MAX_TILES = 24;
 export const VERY_SMALL_ISLAND_MAX_TILES = 10;
 
 /**
- * Research stays idle for the opening rounds: the first three full rounds let
+ * Research stays idle for the opening rounds: the first five full rounds let
  * the player settle in (move the starting units, found the first cities) before
  * the "No Research Selected" prompt and the turn-end auto-select fallback start.
- * Compared against the engine's 0-based round counter (rounds 0, 1, 2 are the
- * opening rounds; research unlocks when round 3 begins).
+ * Compared against the engine's 0-based round counter (rounds 0-4 are the
+ * opening rounds; research unlocks when round 5 begins).
  */
-export const RESEARCH_UNLOCK_ROUND = 3;
+export const RESEARCH_UNLOCK_ROUND = 5;
+
+/**
+ * Turn at which the game offers the "Auto. turn ending" option once: by then
+ * the player has the units and cities the feature is about, and has seen what
+ * clicking "End turn" by hand costs. The offer is shown a single time per
+ * browser (localStorage flag) so it never nags.
+ */
+export const AUTO_END_TURN_OFFER_TURN = 15;
+
+/** localStorage key: the "Auto. turn ending" offer was already answered. */
+export const AUTO_END_TURN_OFFER_FLAG = 'civ1_auto_end_turn_offered';
 
 
 export interface TerrainProperties {

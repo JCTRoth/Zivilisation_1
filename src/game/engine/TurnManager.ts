@@ -462,8 +462,8 @@ export class TurnManager {
           roundNumber: this.roundNumber,
           numCities: cities.length,
           numEnemyCitiesKnown: 0,
-          isAtWar: (civ.warWith?.size ?? 0) > 0,
-hasLibrary: cities.some((c) => c.buildings?.includes('library')),
+          isAtWar: this.atWar(civilizationId),
+          hasLibrary: cities.some((c) => c.buildings?.includes('library')),
             totalScience: this.gameEngine.cities?.reduce((s: number, c) => s + (c.science || 0), 0) ?? 0,
           hasWaterAccess: cities.some((city) => this.cityHasDirectWaterAccess(city)),
         };
@@ -988,6 +988,9 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
       // Disorder does NOT prevent starvation — citizens still eat.
       city.population = Math.max(0, (city.population ?? 1) - 1);
       city.foodStored = 0;
+      // A dead citizen frees a tile: keeping the old set would hand the city
+      // free food (tiles are counted per tile, consumption per citizen).
+      this.gameEngine.economicManager?.fitWorkedTilesToPopulation(city);
 
       if (city.population <= 0) {
         // City eliminated — remove it from the map.
@@ -1099,6 +1102,21 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
     return null;
   }
 
+  /**
+   * Whether a civ is at war. `GameEngine.isCivAtWar` is the source of truth
+   * (it reads the diplomacy manager); the `warWith` fallback keeps partial
+   * test doubles working.
+   */
+  private atWar(civilizationId: number): boolean {
+    const engine = this.gameEngine as unknown as {
+      isCivAtWar?: (id: number) => boolean;
+      civilizations?: Array<{ id: number; warWith?: Set<number> }>;
+    };
+    if (typeof engine.isCivAtWar === 'function') return engine.isCivAtWar(civilizationId);
+    const civ = engine.civilizations?.[civilizationId];
+    return (civ?.warWith?.size ?? 0) > 0;
+  }
+
   private processCivilizationResearch(civ: Civilization): void {
     try {
       if (!civ.currentResearch) return;
@@ -1152,7 +1170,7 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
             roundNumber: this.roundNumber,
             numCities: cities.length,
             numEnemyCitiesKnown: 0,
-            isAtWar: (civ.warWith?.size ?? 0) > 0,
+            isAtWar: this.atWar(civ.id),
             hasLibrary: cities.some((c) => c.buildings?.includes('library')),
             totalScience: this.gameEngine.cities?.reduce((s: number, c) => s + (c.science || 0), 0) ?? 0,
           };

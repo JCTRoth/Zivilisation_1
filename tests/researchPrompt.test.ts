@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
+import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
 
 describe('Research selection (start of game)', () => {
   let engine: GameEngine;
@@ -65,7 +66,7 @@ describe('Research selection (start of game)', () => {
     expect(turnManager).toBeDefined();
 
     // Research only starts after the opening rounds — unlock it first.
-    engine.roundManager.restoreState({ roundNumber: 3 });
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     engine.turnManager.startTurn(0);
     expect(engine.civilizations[0].currentResearch).toBeFalsy();
 
@@ -86,7 +87,16 @@ describe('Research selection (start of game)', () => {
     // No prompt/auto-pick yet: the science simply waits for the unlock round.
     expect(engine.civilizations[0].currentResearch).toBeFalsy();
 
-    engine.roundManager.restoreState({ roundNumber: 3 });
+    // Research unlocks on round 5, so round 4 is still an opening round …
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND - 1 });
+    expect(engine.isResearchUnlocked()).toBe(false);
+    // … and round 5 is the first one that may research.
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     expect(engine.isResearchUnlocked()).toBe(true);
+  });
+
+  it('research stays locked for the first five rounds', () => {
+    // Guard rail: the opening period is a design decision, not an accident.
+    expect(RESEARCH_UNLOCK_ROUND).toBe(5);
   });
 });

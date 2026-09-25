@@ -1,0 +1,50 @@
+name: Unit Tests
+
+# The Playwright workflow only ran the browser suite. This one gates the
+# fast feedback loop: type safety, lint, the 850+ vitest cases (engine rules,
+# AI, economy, combat, turn flow) and dead-code detection. Every one of those
+# was previously ungated, so a regression could land and sit unnoticed.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: unit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      # Dead code (knip.json). A dead engine module is how a false-green test
+      # happens: tests/cityTileGrowth.test.ts used to pin growth rules against
+      # src/game/City.ts, which nothing in src/ imports. The repo has a
+      # pre-existing backlog of unused exports, so this step reports but does
+      # not fail the build yet — the backlog is tracked in TODO.txt.
+      - name: Dead code (knip, advisory)
+        continue-on-error: true
+        run: npm run knip
+
+      - name: Unit tests
+        run: npm test

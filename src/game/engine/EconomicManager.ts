@@ -532,6 +532,44 @@ export class EconomicManager {
     return { luxury, gold, science };
   }
 
+  /**
+   * Fit a city's worked-tile set to the citizens it actually has: the centre is
+   * free, so a city works `1 + population - specialists` tiles. Called whenever
+   * the population changes (growth, starvation, capture, a settler joining).
+   *
+   * Without it a city that just lost a citizen kept working its old tiles, and
+   * since `cityFoodBalance` charges consumption per CITIZEN while the tile
+   * yields are counted per TILE, the extra tiles were free food. Excess tiles
+   * are dropped worst-first, never a manually assigned one.
+   */
+  fitWorkedTilesToPopulation(city: City): boolean {
+    const working = city.workingTiles;
+    if (!(working instanceof Set) || working.size === 0) return false;
+    const target = 1 + (city.population ?? 1) - (city.specialists ?? []).length;
+    if (working.size <= target) return false;
+
+    const centerKey = `${city.col},${city.row}`;
+    const manual = city.userAssignedTiles instanceof Set ? city.userAssignedTiles : new Set<string>();
+    const droppable: Array<{ key: string; total: number }> = [];
+    for (const key of working) {
+      if (key === centerKey) continue;
+      if (manual.has(key)) continue; // the player's choice stays
+      const sep = key.indexOf(',');
+      const y = this.cityTileYields(this.getTile(Number(key.slice(0, sep)), Number(key.slice(sep + 1))));
+      droppable.push({ key, total: y.food + y.production + y.trade });
+    }
+    // Worst tile first, so the city keeps its best land.
+    droppable.sort((a, b) => a.total - b.total);
+    let excess = working.size - target;
+    for (const { key } of droppable) {
+      if (excess <= 0) break;
+      working.delete(key);
+      excess--;
+    }
+    city.workingTiles = working;
+    return true;
+  }
+
   recomputeCityYields(city: City): void {
     const worked = this.cityWorkedTiles(city);
     if (!worked) return;
@@ -1054,6 +1092,15 @@ export class EconomicManager {
     accumulateOutputs();
 
     civ.resources.trade = commerceTotal;
+    // Research is locked for the first RESEARCH_UNLOCK_ROUND rounds, and the
+    // research step does nothing while no technology is selected — so the
+    // science of those rounds used to be overwritten here and lost forever
+    // (the docstring claimed it was "banked"). Bank it on the civ instead: when
+    // a technology is finally chosen, the stored beakers are spent first.
+    const banking = scienceTotal > 0 && !civ.currentResearch;
+    if (banking) {
+      civ.bankedScience = (civ.bankedScience ?? 0) + scienceTotal;
+    }
     civ.resources.science = scienceTotal;
     civ.resources.production = 0;
     civ.resources.food = 0;

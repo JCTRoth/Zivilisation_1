@@ -3833,7 +3833,9 @@ export class AIManager {
       averageEnemyStrength: avgEnemyStrength,
       ownMilitaryStrength: ownStrength,
       numTechnologies: civ?.technologies?.length ?? 0,
-      isAtWar: civ?.warWith?.size > 0,
+      // `isCivAtWar` is the source of truth; the fallback keeps partial
+      // test doubles working.
+      isAtWar: this.gameEngine.isCivAtWar?.(civ?.id ?? 0) ?? ((civ?.warWith?.size ?? 0) > 0),
       knownEnemyCities,
       numEnemyCitiesKnown: knownEnemyCities,
       threatenedCitiesCount: threatened.length,

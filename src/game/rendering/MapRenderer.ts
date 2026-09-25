@@ -26,7 +26,7 @@ import { TERRAIN_FONT_FAMILY } from '@/utils/TerrainFont';
 import { MathUtils } from '@/utils/MathUtils';
 import { HUMAN_PLAYER_ID } from '@/utils/PlayerConstants';
 import { computeTurnMarkers, type TileLookup } from '@/utils/MovementPreview';
-import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, TurnMarker } from '../../../types/game';
+import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, SpecialistType, TurnMarker } from '../../../types/game';
 import { TerrainTextureManager } from './TerrainTextureManager';
 
 /**
@@ -55,6 +55,60 @@ export function getUnitDisplayTile(
   return { col: unit.col, row: unit.row };
 }
 
+
+/**
+ * The specialist row under a city IS the specialist selector: three icons
+ * (Entertainer, Taxman, Scientist) that the player clicks to turn a citizen
+ * that works a tile into that specialist. Assigned specialists are filled and
+ * carry their count; the rest are drawn hollow.
+ *
+ * The geometry lives in one exported function so the click hit-test in
+ * GameCanvas can never drift from what is drawn.
+ */
+export const CITY_SPECIALIST_ORDER: SpecialistType[] = ['entertainer', 'taxman', 'scientist'];
+
+export interface CitySpecialistButton {
+  type: SpecialistType;
+  /** Screen position of the icon centre. */
+  x: number;
+  y: number;
+  /** Hit radius (a little larger than the drawn circle). */
+  r: number;
+  fontSize: number;
+}
+
+export function getCitySpecialistButtons(
+  centerX: number,
+  centerY: number,
+  city: { buildings?: readonly unknown[] | null },
+  cameraZoom: number,
+): CitySpecialistButton[] {
+  const overlayScale = Math.min(2, Math.max(0.85, cameraZoom));
+  const size = Math.min(56, Math.max(28, 28 * overlayScale));
+  const hasWalls = (city.buildings ?? []).some((b) => {
+    const id = typeof b === 'string' ? b : ((b as { id?: string })?.id ?? (b as { type?: string })?.type ?? '');
+    return id === 'city_walls' || id === 'walls';
+  });
+  const wallPad = hasWalls ? Math.max(5, Math.round(7 * overlayScale)) : 0;
+  const wallFont = hasWalls ? Math.min(14, Math.max(8, 8 * overlayScale)) : 0;
+  const nameOffset = hasWalls
+    ? wallPad + wallFont * 0.6 + Math.max(6, 8 * overlayScale)
+    : 12 * overlayScale;
+
+  const fontSize = Math.min(15, Math.max(7, 7 * overlayScale));
+  const iconW = fontSize * 1.4;
+  const totalW = CITY_SPECIALIST_ORDER.length * iconW;
+  const startX = centerX - totalW / 2 + iconW / 2;
+  const specY = centerY + size / 2 + nameOffset + fontSize * 0.2;
+
+  return CITY_SPECIALIST_ORDER.map((type, i) => ({
+    type,
+    x: startX + i * iconW,
+    y: specY + fontSize * 0.4,
+    r: Math.max(8, fontSize * 0.85),
+    fontSize,
+  }));
+}
 
 /** Yield icons shown on the selected-city tile preview (Food, Production, Trade). */
 const TILE_YIELD_ICONS = {
@@ -2306,34 +2360,56 @@ export class MapRenderer {
     ctx.fillStyle = '#000';
     ctx.fillText(city.name, centerX, centerY + size / 2 + nameOffset);
 
-    // Draw specialist icons below the city name, flowing left to right.
+    // The specialist row under the city is the specialist SELECTOR: all three
+    // types, filled with their count when assigned, hollow when free. Clicking
+    // one turns a citizen that works a tile into that specialist (see the
+    // hit-test in GameCanvas, which shares this layout).
     const specs = city.specialists ?? [];
-    if (specs.length > 0) {
-      const specFontSize = Math.min(15, Math.max(7, 7 * overlayScale));
-      ctx.font = `${specFontSize}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      const iconW = specFontSize * 1.4;
-      const totalW = specs.length * iconW;
-      const startX = centerX - totalW / 2 + iconW / 2;
-      const specY = centerY + size / 2 + nameOffset + specFontSize * 0.2;
-      for (let i = 0; i < specs.length; i++) {
-        const def = SPECIALIST_YIELDS[specs[i]];
-        if (def) {
-          const x = startX + i * iconW;
-          // Coloured circle background for each specialist type
-          const bg =
-            specs[i] === 'entertainer' ? 'rgba(80, 220, 192, 0.7)' :
-            specs[i] === 'taxman'      ? 'rgba(220,180,40,0.7)' :
-                                          'rgba(80,160,220,0.7)';
-          ctx.beginPath();
-          ctx.arc(x, specY + specFontSize * 0.4, specFontSize * 0.65, 0, Math.PI * 2);
+    const specCount = (type: SpecialistType) => specs.filter((s) => s === type).length;
+    const buttons = getCitySpecialistButtons(centerX, centerY, city, cameraZoom);
+    if (buttons.length > 0) {
+      ctx.save();
+      for (const b of buttons) {
+        const def = SPECIALIST_YIELDS[b.type];
+        if (!def) continue;
+        const count = specCount(b.type);
+        ctx.font = `${b.fontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const bg =
+          b.type === 'entertainer' ? 'rgba(80, 220, 192, 0.85)' :
+          b.type === 'taxman'      ? 'rgba(220,180,40,0.85)' :
+                                    'rgba(80,160,220,0.85)';
+        // Circle: filled + coloured when assigned, hollow and dim when free.
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.fontSize * 0.65, 0, Math.PI * 2);
+        if (count > 0) {
           ctx.fillStyle = bg;
           ctx.fill();
+        } else {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+          ctx.fill();
+        }
+        ctx.lineWidth = count > 0 ? 1.5 : 1;
+        ctx.strokeStyle = count > 0 ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.35)';
+        ctx.stroke();
+        ctx.fillStyle = count > 0 ? '#FFF' : 'rgba(255,255,255,0.55)';
+        ctx.fillText(def.icon, b.x, b.y);
+        // Count badge when a type is used more than once.
+        if (count > 1) {
+          const badgeR = b.fontSize * 0.34;
+          const bx = b.x + b.fontSize * 0.62;
+          const by = b.y - b.fontSize * 0.55;
+          ctx.beginPath();
+          ctx.arc(bx, by, badgeR, 0, Math.PI * 2);
+          ctx.fillStyle = '#000';
+          ctx.fill();
           ctx.fillStyle = '#FFF';
-          ctx.fillText(def.icon, x, specY);
+          ctx.font = `bold ${Math.max(7, b.fontSize * 0.55)}px monospace`;
+          ctx.fillText(String(count), bx, by + 0.5);
         }
       }
+      ctx.restore();
     }
 
     // Show fire icon below the city when in disorder (civil unrest)
@@ -2343,7 +2419,7 @@ export class MapRenderer {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       const fireY = centerY + size / 2 + nameOffset + fireFontSize * 0.5 +
-        (specs.length > 0 ? fireFontSize * 1.2 : 0);
+        (getCitySpecialistButtons(centerX, centerY, city, cameraZoom).length > 0 ? fireFontSize * 1.6 : 0);
       ctx.fillText('🔥', centerX, fireY);
     }
 

@@ -13,6 +13,7 @@ import {
   TerrainRenderGrid,
   TerrainTileRenderInfo,
   UnitPathStep,
+  getCitySpecialistButtons,
 } from "@/game/rendering/MapRenderer";
 import MoveAnimator from "@/game/rendering/MoveAnimator";
 import { MathUtils } from "@/utils/MathUtils";
@@ -1888,6 +1889,39 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             // cities are handled above — a civilian clicking one inspects it.)
             assignUnitPath(selectedUnit, hex.col, hex.row);
           } else if (cityAt) {
+          // The specialist row drawn UNDER the city is the specialist selector:
+          // clicking one of those icons turns a citizen that currently works a
+          // tile into that specialist. Checked before the city selection so the
+          // click does not open the city screen.
+          if (
+            currentPlayer &&
+            cityAt.civilizationId === currentPlayer.id &&
+            gameEngine?.promoteCitizenToSpecialist
+          ) {
+            // `cityAt` is a narrow local shape; the store has the full city
+            // (its buildings decide where the row sits under the sprite).
+            const fullCity = cities.find((c) => c.id === cityAt!.id) ?? null;
+            const { x: cityX, y: cityY } = squareToScreen(cityAt.col, cityAt.row);
+            const hit = fullCity
+              ? getCitySpecialistButtons(cityX, cityY, fullCity, camera.zoom).find(
+                  (b) => Math.hypot(x - b.x, y - b.y) <= b.r,
+                )
+              : undefined;
+            if (hit && fullCity) {
+              const ok = gameEngine.promoteCitizenToSpecialist(fullCity.id, hit.type);
+              console.log(
+                `[CLICK] Specialist icon ${hit.type} under ${cityAt.name} — ${ok ? 'converted' : 'no free hand'}`,
+              );
+              if (!ok && actions?.addNotification) {
+                actions.addNotification({
+                  type: "warning",
+                  message: "No citizen free to become a specialist.",
+                });
+              }
+              triggerRender();
+              return;
+            }
+          }
           // Own cities are always visible; a foreign city may still be drawn on
           // explored terrain from the last-seen snapshot. You can only inspect
           // a city you can actually see.

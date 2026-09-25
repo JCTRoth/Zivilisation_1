@@ -896,6 +896,12 @@ export class AutoProduction {
   }
 
   private isCivAtWar(civilizationId: number): boolean {
+    // `GameEngine.isCivAtWar` reads the diplomacy manager (the old
+    // `civ.warWith` was never written for live civs); the fallback keeps
+    // partial test doubles working.
+    if (typeof this.gameEngine.isCivAtWar === 'function') {
+      return this.gameEngine.isCivAtWar(civilizationId);
+    }
     return (this.gameEngine.civilizations?.[civilizationId]?.warWith?.size ?? 0) > 0;
   }
 
@@ -1369,7 +1375,6 @@ export class AutoProduction {
     cityCoastal: boolean;
   } {
     const cities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === civilizationId) || [];
-    const civ = this.gameEngine.civilizations?.[civilizationId];
     const storage = typeof this.gameEngine.getPlayerStorage === 'function'
       ? this.gameEngine.getPlayerStorage(civilizationId)
       : undefined;
@@ -1399,7 +1404,7 @@ export class AutoProduction {
       numMilitaryUnits: this.gameEngine.units?.filter(
         (u: Unit) => u.civilizationId === civilizationId && (UNIT_PROPS[u.type]?.attack || 0) > 0
       ).length ?? 0,
-      isAtWar: civ?.warWith?.size > 0,
+      isAtWar: this.isCivAtWar(civilizationId),
       knownEnemyCities,
       isBorderCity: false, // default, overridden per-city in determineProductionItem
       isUnderThreat: false,

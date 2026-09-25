@@ -10,6 +10,7 @@ import StatisticsModal from './gamemodals/StatisticsModal';
 import VillageModal from './gamemodals/VillageModal';
 import ResearchRequiredModal from './ResearchRequiredModal';
 import { useGameStore } from '@/stores/GameStore';
+import { AUTO_END_TURN_OFFER_FLAG } from '@/data/GameConstants';
 import { UNIT_PROPS } from '@/utils/Constants';
 import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
 import { DomUtils } from '@/utils/DomUtils';
@@ -1709,6 +1710,71 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     </Modal>
   );
 
+  // "Auto. turn ending" — offered once, mid-game. Deliberately short: a hero
+  // line, one sentence of what it does, and a small mock-up of where the
+  // checkbox lives (a picture beats a paragraph telling you to look for it).
+  const renderAutoEndOffer = () => {
+    const answer = (enable: boolean) => {
+      try {
+        localStorage.setItem(AUTO_END_TURN_OFFER_FLAG, '1');
+      } catch {
+        // Private mode / storage disabled: the offer simply shows again later.
+      }
+      if (enable) {
+        actions.updateSettings?.({ autoEndTurn: true });
+        actions.addNotification?.({
+          type: 'success',
+          message: 'Auto. turn ending is ON — the turn now ends as soon as your units are done.',
+        });
+      }
+      handleCloseDialog();
+    };
+
+    return (
+      <Modal
+        show={uiState.activeDialog === 'auto-end-offer'}
+        onHide={() => answer(false)}
+        centered
+        className="auto-end-offer-modal"
+      >
+        <Modal.Body className="auto-end-offer">
+          <div className="auto-end-offer-hero" aria-hidden="true">⏩</div>
+
+          <h2 className="auto-end-offer-title">Tired of clicking End turn?</h2>
+          <p className="auto-end-offer-lead">
+            Switch it on and the turn hands over <strong>the moment your units run out of
+            moves</strong> — fortified and sleeping units included, so your garrisons never
+            hold it up.
+          </p>
+
+          <div className="auto-end-offer-where">
+            <div className="auto-end-offer-mock">
+              <div className="auto-end-offer-mock-gold">
+                <span className="auto-end-offer-mock-coin">🪙</span>
+                <span className="auto-end-offer-mock-goldbar" />
+              </div>
+              <label className="auto-end-offer-mock-check">
+                <span className="auto-end-offer-mock-box" aria-hidden="true" />
+                <span>Auto. turn ending</span>
+              </label>
+            </div>
+            <div className="auto-end-offer-caption">In the side panel, right under your gold</div>
+          </div>
+
+          <div className="auto-end-offer-actions">
+            <Button variant="link" className="auto-end-offer-later" onClick={() => answer(false)}>
+              Not now
+            </Button>
+            <Button variant="success" className="auto-end-offer-yes" onClick={() => answer(true)}>
+              Turn it on
+            </Button>
+          </div>
+          <div className="auto-end-offer-fineprint">Asked once. You can switch it off again there.</div>
+        </Modal.Body>
+      </Modal>
+    );
+  };
+
   // City disorder — entering or leaving civil unrest
   const renderCityDisorder = () => {
     const entering = disorderNotice?.enteringDisorder ?? true;
@@ -1845,6 +1911,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       {renderUpkeepDisbanded()}
       {renderCityStarved()}
       {renderCityDisorder()}
+      {renderAutoEndOffer()}
       {renderTradeRouteResult()}
       {renderCityProduction()}
       {renderCityPurchase()}

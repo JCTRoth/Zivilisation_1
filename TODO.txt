@@ -1,8 +1,79 @@
+-------------------
+FUNCTIONAL TOODO'S:
+-------------------
+* Diplomatie: Exchange technologie with others, offer tech. for tech. offer tech. for money, AI should also do all of this. Tech. can only be exchanged when two units meet.
+Gifting betters meaing of civ. about other civ. emensly. Recive of tech. only possible if tech. is unknown until now to civ. 
+* Diplomatie: Add possiblity to send gold to other civs, and to request gold from other civs. The AI should be bribable, and the player should be able to bribe the AI. The AI should also be able to request gold from the player, and the player should be able to refuse or accept the request.
+* One AI should be able to call other AI that is allied with for help when gets attacked of wants to attack others
+* Sending money to the AI should improve the AI's relationship with the player, and requesting money from the AI should be possible in two ways: 1. The Player and the AI have a very good relationship, and the AI will give the player money for free. 2. Threten the AI with war, and the AI will give the player money to avoid war. Depending on the AI's personality, and Military strength, the AI may or may not give the player money. The AI should also be able to request money from the player, and the player should be able to refuse or accept the request. The AI should also be able to request money from the player, and the player should be able to refuse or accept the request. The AI should also be able to request money from the player, and the player should be able to refuse or accept the request.
+  * AI to AI use this behavior as well, and the player should be able to observe this behavior in the Diplomacy screen if he has a embassy in boath civs.
+* On the Auto End Turn screen, Inform about thr Auto End Turn feature, add there a check box to enable/disable the feature.
+* Implement Human and Human (on one computer) against AI vs AI game modes.
+* Implement End of game statistics that show the player how they did, enconmics, military, and science wise.
+* Implement Civ1 ingame statistics screen that shows the player greatest cities in the worl, and there rank in the world wide demographics.
+* High score system for single player games, including a list of high scores, and the ability to submit high scores to a server.
+* Select the civilization on the start screen on initialization by the country the web browser is set to, or by the country the player is in (IP address).
+    Therefor create a matrix mapping country codes to civilization ids, and use the country code to select the civilization on the start screen.
+
+
+Far further development of the game engine is planned, including:
+
+* Splitting up the game into client and server so that the game can be played over network.
+* Networked multiplayer is not yet implemented, but the game engine is designed to support it in the future.
+* Lobby system for multiplayer games, including a list of available games, and the ability to create and join games.
+* Replay to play replays, I think it would make sense to use the save game, turn log, and map download do the replay stuff.
+* Hall of fame for multiplayer games, including a list of high scores, and the ability to submit high scores to a server.
+
+* Database backup and restore system, including the ability to backup and restore the database, and the ability to export and import the database.
+
+-Open-
+
+* TODO IMPORTANT FIND A GOOD WAY TO MANAGE THE SPECIALISTS!
+* Add new ship type, "Trade Ship" 
+A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
+and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.
+Everytime it was in one of city of your civilisation and than reaches than another city of your civilisation or of another civ.
+the players get money.
+One ship owner civ. gets 80% of the following calulation and the owner of the raget city 20%:
+[(1+F*X)*(5*(P-10))+100+Cap)* (Minimum ([T*50%], [D*70%]))*20%/100]
+F is 150% (1.5) if it is a Foreign Trade Route, 0 if domestic
+X = 2*Enemy Civ. , 1*Your Own, 1.2 Friend, Peach Agreement NOT war.
+P is the population of the city Getting the trade route
+T is the population of the City the Trade Route is With
+D is the Distance to the City
+Cap is 25 if one of the cities is conected to the Capital, 0 if not
+[] indicates rounding down
+If this ship gets sunk by another ship than the owner civ. that where sinking the ship gets 100% of what the formular would had resulted,
+Assume: The traget city in the formular is the ship.
+D is distance to ship.
+Pop is the population of the city the sunk ship came from.
+T is the population of the city the sunk ship came from.
+
+Still to do (bigger):
+* Verify war commitment in fresh AI-vs-AI runs: do wars actually produce
+  sustained offensives and city captures now? Watch attacks/round and
+  citiesCaptured in the next progression CSV.
+* Naval invasion: land armies still cannot attack across water; the navy pivot
+  builds ships but there is no transport/invasion mission (only colonies).
+* Multi-group offensives / siege commitment: two groups can form, but there is
+  no coordination between them (no pincer/second-front planning).
+* Army composition by era: the AI still over-produces the era's default
+  defender; add stronger era/threat-aware composition weights.
+* Economy buildings earlier: the AI reaches 0-8 gold with big armies; build
+  marketplace/bank/temple earlier when upkeep pressure starts.
+* Scout/mercenary grants from huts can exceed the corps cap (only production
+  is capped); decide whether to convert/dismiss extras.
+
+
+
+
+
+
+
 -----
 BUGS:
 -----
 
---Open--
 
 - 
 
@@ -31,12 +102,43 @@ BUGS:
   queue. Unfortifying or waking hands the movement back, and the AI releases a
   fortified unit that is no longer a garrison so it can fight again.
 - Side panel: the "1 citizen selected for reassignment" banner is gone. While a
-  citizen is in hand the panel IS the citizen menu — the city's idle tiles with
-  their yields, click one to place the citizen (or click the map as before).
+  citizen is in hand a compact line above the "Selected City" heading says what
+  is happening and how many idle tiles are available; placement stays a map
+  action (the map highlights the idle tiles with a pulsing "+").
+- Specialists are assigned on the MAP: the three icons drawn under the city
+  sprite (Entertainer, Taxman, Scientist) are the selector — filled with a count
+  when assigned, hollow when free. Clicking one converts a citizen that currently
+  works a tile into that specialist; the click no longer opens the city screen.
+  The drawing and the click hit-test share one exported layout function
+  (getCitySpecialistButtons) so they can never drift apart.
+- Side panel: "Specialists" is a read-only tally of how many the city has, by
+  type (e.g. "🕺 Entertainer 2"), with no buttons — assigning is a map action.
+- Side panel: while a citizen is being placed, one plain line inside the city
+  block says where it came from, how many idle tiles there are and how to
+  cancel. No farmer emoji, no close button, no yellow highlight.
 - Side panel: the citizen block (specialist toggles + worked tiles + the city
-  readout) now belongs to the selected CITY and no longer disappears when the
-  selected hex is a worked tile or a radius tile (picking a citizen up used to
-  empty the panel). It hides when a unit is selected or the city is deselected.
+  readout) now belongs to the selected CITY and is ALWAYS shown while that city
+  is selected — neither the selected hex (picking a citizen up, clicking a
+  radius tile) nor the turn manager's automatic unit focus can hide it. Only a
+  selection the player made (a unit, or empty ground) hands the panel over.
+- Research starts after the first 5 rounds instead of 3 (RESEARCH_UNLOCK_ROUND).
+- New one-time "Tired of clicking End turn?" offer on move 15: a hero badge, one
+  sentence of what Auto. turn ending does, and a miniature of the side-panel
+  header (gold bar + the checkbox, glowing) that shows WHERE it lives instead of
+  a paragraph about it. Two buttons, a fine print, never asked twice.
+- Fix: waking a unit did not clear areTurnsDone, so a woken unit was never put
+  back in the turn queue; moving or attacking did not clear isSleeping either,
+  so a manually moved unit was skipped again the next turn.
+- tests/unitStates.test.ts pins the meaning of every unit state (fortified,
+  sleeping, skipped, waiting, embarked, defeated) against the turn reset, the
+  unit queue and the can-I-act API, so a regression names the state that broke.
+- CI: a new "Unit Tests" workflow (type-check, lint, vitest) gates every push and
+  PR. The Playwright workflow only ran the browser suite, so all engine tests
+  were ungated. knip runs there too, advisory for now: the repo has ~54 unused
+  exports to clean up (tracked below) before it can fail the build.
+- knip.json now includes tests/ and e2e/ as entry+project files (test-only
+  exports used to look unused) and ignores the four legacy engine classes
+  (src/game/{City,Civilization,Unit,Terrain}.ts) that nothing imports.
 - ESC now deselects the city as well (with no dialog open): it clears the
   transient selection AND the persistent "focused city" marker, so the city net
   and its worked tiles disappear from the map too. A pending action still wins —
@@ -165,33 +267,6 @@ the food storage will eventually drop below zero, and a citizen will die regardl
 of whether a Granary is present.If you are trying to calculate the exact food storage
 capacity threshold for a specific city size to plug into your formulas.
 
--------------------
-FUNCTIONAL TOODO'S:
--------------------
-* Diplomatie: Exchange technologie with others, offer tech. for tech. offer tech. for money, AI should also do all of this. Tech. can only be exchanged when two units meet.
-Gifting betters meaing of civ. about other civ. emensly. Recive of tech. only possible if tech. is unknown until now to civ. 
-* Diplomatie: Add possiblity to send gold to other civs, and to request gold from other civs. The AI should be bribable, and the player should be able to bribe the AI. The AI should also be able to request gold from the player, and the player should be able to refuse or accept the request.
-* One AI should be able to call other AI that is allied with for help when gets attacked of wants to attack others
-* Sending money to the AI should improve the AI's relationship with the player, and requesting money from the AI should be possible in two ways: 1. The Player and the AI have a very good relationship, and the AI will give the player money for free. 2. Threten the AI with war, and the AI will give the player money to avoid war. Depending on the AI's personality, and Military strength, the AI may or may not give the player money. The AI should also be able to request money from the player, and the player should be able to refuse or accept the request. The AI should also be able to request money from the player, and the player should be able to refuse or accept the request. The AI should also be able to request money from the player, and the player should be able to refuse or accept the request.
-  * AI to AI use this behavior as well, and the player should be able to observe this behavior in the Diplomacy screen if he has a embassy in boath civs.
-* On the Auto End Turn screen, Inform about thr Auto End Turn feature, add there a check box to enable/disable the feature.
-* Implement Human and Human (on one computer) against AI vs AI game modes.
-* Implement End of game statistics that show the player how they did, enconmics, military, and science wise.
-* Implement Civ1 ingame statistics screen that shows the player greatest cities in the worl, and there rank in the world wide demographics.
-* High score system for single player games, including a list of high scores, and the ability to submit high scores to a server.
-* Select the civilization on the start screen on initialization by the country the web browser is set to, or by the country the player is in (IP address).
-    Therefor create a matrix mapping country codes to civilization ids, and use the country code to select the civilization on the start screen.
-
-
-Far further development of the game engine is planned, including:
-
-* Splitting up the game into client and server so that the game can be played over network.
-* Networked multiplayer is not yet implemented, but the game engine is designed to support it in the future.
-* Lobby system for multiplayer games, including a list of available games, and the ability to create and join games.
-* Replay to play replays, I think it would make sense to use the save game, turn log, and map download do the replay stuff.
-* Hall of fame for multiplayer games, including a list of high scores, and the ability to submit high scores to a server.
-
-* Database backup and restore system, including the ability to backup and restore the database, and the ability to export and import the database.
 
 ------------
 Water stuff
@@ -331,47 +406,7 @@ Also fixed after the analysis:
 * Score completeness: pollution penalty and peace-years bonus implemented.
 * Eliminated civs are emitted once in the compact CSV and then dropped.
 
-
--Open-
-
 - Implement City Wall functionality also show the city wall on the city visually
-- After first 5 moves instead of first 3 moves the research should start
-- After 15 moves show a modal explaining to the play how and where "Auto. turn ending" is placed,
-ask if user wants to enable it
-- Implement tests that make sure Sleep, Fortify and other unit states are correctly handled, they should indicate if regression is on going
-
-* Add new ship type, "Trade Ship" 
-A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
-and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.
-Everytime it was in one of city of your civilisation and than reaches than another city of your civilisation or of another civ.
-the players get money.
-One ship owner civ. gets 80% of the following calulation and the owner of the raget city 20%:
-[(1+F*X)*(5*(P-10))+100+Cap)* (Minimum ([T*50%], [D*70%]))*20%/100]
-F is 150% (1.5) if it is a Foreign Trade Route, 0 if domestic
-X = 2*Enemy Civ. , 1*Your Own, 1.2 Friend, Peach Agreement NOT war.
-P is the population of the city Getting the trade route
-T is the population of the City the Trade Route is With
-D is the Distance to the City
-Cap is 25 if one of the cities is conected to the Capital, 0 if not
-[] indicates rounding down
-If this ship gets sunk by another ship than the owner civ. that where sinking the ship gets 100% of what the formular would had resulted,
-Assume: The traget city in the formular is the ship.
-D is distance to ship.
-Pop is the population of the city the sunk ship came from.
-T is the population of the city the sunk ship came from.
-
-Still to do (bigger):
-* Verify war commitment in fresh AI-vs-AI runs: do wars actually produce
-  sustained offensives and city captures now? Watch attacks/round and
-  citiesCaptured in the next progression CSV.
-* Naval invasion: land armies still cannot attack across water; the navy pivot
-  builds ships but there is no transport/invasion mission (only colonies).
-* Multi-group offensives / siege commitment: two groups can form, but there is
-  no coordination between them (no pincer/second-front planning).
-* Army composition by era: the AI still over-produces the era's default
-  defender; add stronger era/threat-aware composition weights.
-* Economy buildings earlier: the AI reaches 0-8 gold with big armies; build
-  marketplace/bank/temple earlier when upkeep pressure starts.
-* Scout/mercenary grants from huts can exceed the corps cap (only production
-  is capped); decide whether to convert/dismiss extras.
-
+- CLEANUP: ~54 unused exports reported by knip (mostly exported-but-internal
+  tuning constants in src/game/engine/AI/*). Either un-export them or reference
+  them from a test, then make the knip CI step a hard failure.

@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
+import { useSeededRandom } from '../helpers/world';
 
 describe('AI scouts blocking each other', () => {
   let engine: GameEngine | null = null;
@@ -22,7 +23,15 @@ describe('AI scouts blocking each other', () => {
     const e = new GameEngine(null);
     (e as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
     (e as unknown as { isPaused: boolean }).isPaused = true;
-    await e.initialize({ numberOfCivilizations: 2, mapType: 'AI_VS_AI', devMode: false, startingGold: 100 });
+    // Pinned world + RNG: the "stuck!" assertion was map-dependent.
+    useSeededRandom(7);
+    await e.initialize({
+      numberOfCivilizations: 2,
+      mapType: 'AI_VS_AI',
+      devMode: false,
+      startingGold: 100,
+      mapSeed: 20260102,
+    });
     for (const civ of e.civilizations) { civ.isHuman = false; civ.isAI = true; }
     return e;
   }

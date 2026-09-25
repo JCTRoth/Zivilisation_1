@@ -4,7 +4,7 @@ import { CIVILIZATIONS } from '@/data/GameData';
 import { TILE_SIZE } from '@/data/TerrainData';
 import { getResourceYields, TERRAIN_PROPERTIES } from '@/data/TerrainConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
-import { governorOption, terrainLabel } from '@/utils/CityGovernorUtils';
+import { governorOption } from '@/utils/CityGovernorUtils';
 import MiniMap from './MiniMap';
 import '../../styles/sidePanel.css';
 import type { City, Civilization, SpecialistType } from '../../../types/game';
@@ -22,6 +22,8 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
   const cities = useGameStore((s) => s.cities);
   const selectedUnit = useGameStore((s) => s.units.find((u) => u.id === s.gameState.selectedUnit) || null);
   const selectedCityId = useGameStore((s) => s.gameState.selectedCity);
+  const focusedCityId = useGameStore((s) => s.gameState.focusedCity ?? null);
+  const selectionOrigin = useGameStore((s) => s.gameState.selectionOrigin ?? null);
   const uiState = useGameStore((s) => s.uiState);
   const actions = useGameStore((s) => s.actions);
   const selectedHex = useGameStore((s) => s.gameState.selectedHex);
@@ -94,20 +96,23 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     };
   }, [selectedHex, map]);
 
-  const selectedCity = useMemo(() => cities.find((c) => c.id === selectedCityId), [cities, selectedCityId]);
-  
   /**
-   * Which city the panel is currently "about". The citizen block (specialists,
-   * worked tiles, city readout) belongs to the SELECTED CITY and stays visible
-   * for as long as it is selected — the selected hex must not hide it (picking
-   * a citizen up puts the hex on a worked tile, and clicking a radius tile to
-   * read its yield must not empty the panel). A selected unit, or a click on
-   * empty ground (which clears the city selection), does hide it.
+   * Which city the panel is currently "about".
+   *
+   * The citizen block (specialists, worked tiles, city readout) belongs to the
+   * SELECTED CITY and is shown for as long as that city is selected — the
+   * selected hex must never hide it (picking a citizen up puts the hex on a
+   * worked tile; clicking a radius tile to read a yield does the same), and
+   * neither may the turn manager's automatic unit focus, because the city is
+   * still the marked/selected city on the map. Only a selection the PLAYER
+   * made (a unit or a tile) hands the panel over; clicking empty ground clears
+   * the city selection, which hides it again.
    */
   const panelCity = useMemo(() => {
-    if (selectedUnit) return null;
-    return selectedCity ?? null;
-  }, [selectedUnit, selectedCity]);
+    if (selectedUnit && selectionOrigin === 'user') return null;
+    const id = selectedCityId ?? (selectionOrigin === 'user' ? null : focusedCityId);
+    return id ? cities.find((c) => c.id === id) ?? null : null;
+  }, [selectedUnit, selectionOrigin, selectedCityId, focusedCityId, cities]);
 
   const unitAtSelectedTile = useMemo(() => {
     if (!selectedHex || !units) return null;
@@ -147,17 +152,7 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     }
   }, [displayPlayer, cities, actions]);
 
-  const handlePromote = useCallback((cityId: string, type: SpecialistType) => {
-    if (gameEngine && typeof gameEngine.promoteCitizenToSpecialist === 'function') {
-      gameEngine.promoteCitizenToSpecialist(cityId, type);
-    }
-  }, [gameEngine]);
 
-  const handleDemote = useCallback((cityId: string, index: number) => {
-    if (gameEngine && typeof gameEngine.demoteSpecialistToWorker === 'function') {
-      gameEngine.demoteSpecialistToWorker(cityId, index);
-    }
-  }, [gameEngine]);
 
   // ─── Render Helpers ──────────────────────────────────────────
   const selectionTitle = selectedUnit 
@@ -188,9 +183,10 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     
     if (panelCity) {
       // The citizen block leads the panel: with a city selected you always want
-      // to see (and set) who works what, before any numbers.
+      // to see who works what, before any numbers.
       return (
         <div>
+          {uiState?.citizenReassign && renderCitizenMenu()}
           {renderCitySpecialists(panelCity)}
           {renderWorkedTiles(panelCity)}
           <div className="side-panel-section-divider" />
@@ -253,75 +249,45 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
   };
 
   /**
-   * Specialist assignment lives HERE, not in the city screen: one toggle per
-   * specialist. Clicking assigns a citizen (taken off the worst field), clicking
-   * an active one puts that citizen back on the tiles. The Entertainer is the
-   * default — it is listed first and drawn as the primary toggle.
+   * Specialists are a READ-ONLY indicator here: how many the city has, by type.
+   * Assigning a specialist is a map action — the three icons drawn under the
+   * city sprite are the selector (clicking one converts a citizen that works a
+   * tile into that specialist), and the governor manages the rest.
    */
   const renderCitySpecialists = (city: City) => {
     const specs = city.specialists ?? [];
-    const workedTiles = city.workingTiles ?? new Set<string>();
     const pop = city.population ?? 1;
-    const isPlayerCity = currentPlayer && city.civilizationId === currentPlayer.id;
-    if (!isPlayerCity) return null;
+    if (!(currentPlayer && city.civilizationId === currentPlayer.id)) return null;
 
-    // A specialist needs a free hand: the city centre is free, so a city needs
-    // at least one more worked tile to give one up.
-    const canAdd = workedTiles.size > 1 && specs.length < pop;
-    const countOf = (type: SpecialistType) => specs.filter((s) => s === type).length;
-    const describe = (type: SpecialistType) => {
-      const def = SPECIALIST_YIELDS[type];
-      const parts: string[] = [];
-      if (def.luxury) parts.push(`+${def.luxury} Luxury`);
-      if (def.gold) parts.push(`+${def.gold} Gold`);
-      if (def.science) parts.push(`+${def.science} Science`);
-      const gains = parts.length ? parts.join(', ') : 'no yield';
-      const isDefault = type === 'entertainer';
-      return isDefault
-        ? `${def.name} (default) — ${gains}. Off a field, so the city loses that tile's food/shields/trade. Click to ${countOf(type) ? 'send back to the tiles' : 'assign a citizen'}.`
-        : `${def.name} — ${gains}. Off a field, so the city loses that tile's food/shields/trade. Click to ${countOf(type) ? 'send back to the tiles' : 'assign a citizen'}.`;
-    };
-
-    const order: SpecialistType[] = ['entertainer', 'taxman', 'scientist'];
+    const counts = (Object.keys(SPECIALIST_YIELDS) as SpecialistType[])
+      .map((type) => ({ type, count: specs.filter((s) => s === type).length }))
+      .filter((entry) => entry.count > 0);
 
     return (
       <div className="mt-2">
         <div className="side-panel-small-muted fw-bold mb-1">
           Specialists <span className="fw-normal">({specs.length}/{pop})</span>
         </div>
-        <div className="d-flex flex-wrap gap-1">
-          {order.map((type) => {
-            const def = SPECIALIST_YIELDS[type];
-            const count = countOf(type);
-            const active = count > 0;
-            const isDefault = type === 'entertainer';
-            return (
-              <button
-                key={type}
-                type="button"
-                className={`side-panel-specialist-toggle${active ? ' active' : ''}${isDefault ? ' primary' : ''}`}
-                disabled={!active && !canAdd}
-                aria-pressed={active}
-                title={describe(type)}
-                onClick={() => {
-                  if (active) {
-                    const last = specs.lastIndexOf(type);
-                    if (last >= 0) handleDemote(city.id, last);
-                  } else {
-                    handlePromote(city.id, type);
-                  }
-                }}
-              >
-                <span className="side-panel-specialist-toggle-icon">{def.icon}</span>
-                <span className="side-panel-specialist-toggle-name">{def.name}</span>
-                {count > 0 && <span className="side-panel-specialist-toggle-count">{count}</span>}
-                {isDefault && !active && <span className="side-panel-specialist-toggle-default">default</span>}
-              </button>
-            );
-          })}
-        </div>
-        {!canAdd && specs.length === 0 && (
-          <div className="side-panel-small-muted mt-1">Every citizen is already on a tile or a specialist.</div>
+        {counts.length === 0 ? (
+          <div className="side-panel-small-muted">None — everyone works the tiles.</div>
+        ) : (
+          <div className="side-panel-specialist-tally">
+            {counts.map(({ type, count }) => {
+              const def = SPECIALIST_YIELDS[type];
+              const gains = [
+                def.luxury ? `+${def.luxury} Luxury` : null,
+                def.gold ? `+${def.gold} Gold` : null,
+                def.science ? `+${def.science} Science` : null,
+              ].filter(Boolean).join(', ');
+              return (
+                <span key={type} className="side-panel-specialist-tally-item" title={`${def.name} — ${gains}`}>
+                  <span className="side-panel-specialist-tally-icon">{def.icon}</span>
+                  <span className="side-panel-specialist-tally-name">{def.name}</span>
+                  <span className="side-panel-specialist-tally-count">{count}</span>
+                </span>
+              );
+            })}
+          </div>
         )}
       </div>
     );
@@ -526,10 +492,9 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
   };
 
   /**
-   * The citizen menu shown while a citizen is being carried. Placement is a map
-   * action, so this lists the idle tiles of that city's workable radius with
-   * their yields — click one (or click the tile on the map) to place the
-   * citizen there. Replaces the old "1 citizen selected" banner.
+   * One plain line inside the city block while a citizen is being carried: what
+   * is happening and how to abort. Placement itself is a map action (the idle
+   * tiles light up there), so nothing is listed in the panel.
    */
   const renderCitizenMenu = () => {
     const re = uiState?.citizenReassign;
@@ -538,84 +503,31 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     if (!currentPlayer || city.civilizationId !== currentPlayer.id) return null;
 
     const worked = city.workingTiles ?? new Set<string>();
-    const isCenter = (col: number, row: number) => col === city.col && row === city.row;
-    const options: Array<{ col: number; row: number; terrain: string; food: number; production: number; trade: number }> = [];
-
+    let idleTiles = 0;
     for (let dCol = -2; dCol <= 2; dCol++) {
       for (let dRow = -2; dRow <= 2; dRow++) {
         if (dCol === 0 && dRow === 0) continue;
-        if (Math.abs(dCol) === 2 && Math.abs(dRow) === 2) continue; // radius corners
+        if (Math.abs(dCol) === 2 && Math.abs(dRow) === 2) continue;
         const col = city.col + dCol;
         const row = city.row + dRow;
-        if (isCenter(col, row)) continue;
+        if (col === city.col && row === city.row) continue;
         if (!gameEngine?.isTileInCityRadius?.(city, col, row)) continue;
-        if (worked.has(`${col},${row}`)) continue; // already has a citizen
-        const tile = map?.tiles?.[row * map.width + col];
-        if (!tile) continue;
-        const y = gameEngine.economicManager?.cityTileYields(tile);
-        options.push({
-          col,
-          row,
-          terrain: String(tile.type ?? tile.terrain ?? ''),
-          food: y?.food ?? 0,
-          production: y?.production ?? 0,
-          trade: y?.trade ?? 0,
-        });
+        if (worked.has(`${col},${row}`)) continue;
+        if (!map?.tiles?.[row * map.width + col]) continue;
+        idleTiles++;
       }
     }
-    // Best food first, then production, then trade — the order a governor would
-    // pick them in.
-    options.sort((a, b) =>
-      (b.food - a.food) || (b.production - a.production) || (b.trade - a.trade),
-    );
 
     return (
-      <div className="citizen-menu" role="region" aria-label="Place citizen">
-        <div className="citizen-menu-head">
-          <span className="citizen-menu-icon" aria-hidden="true">🧑‍🌾</span>
-          <div>
-            <div className="citizen-menu-title">Placing a citizen — from ({re.col},{re.row})</div>
-            <div className="citizen-menu-sub">Pick a tile for {city.name} · Esc or right-click cancels</div>
-          </div>
-          <button
-            type="button"
-            className="citizen-menu-cancel"
-            title="Put the citizen back (Esc)"
-            onClick={() => actions.endCitizenReassign()}
-          >
-            ✕
-          </button>
+      <div className="citizen-menu">
+        <div className="citizen-menu-title">
+          Placing a citizen — from ({re.col},{re.row})
         </div>
-        {options.length === 0 ? (
-          <div className="citizen-menu-empty">No idle tile left in this city's radius.</div>
-        ) : (
-          <div className="citizen-menu-list">
-            {options.map((o) => (
-              <button
-                key={`${o.col},${o.row}`}
-                type="button"
-                className="citizen-menu-tile"
-                title={`Place the citizen on (${o.col},${o.row})`}
-                onClick={() => {
-                  if (!gameEngine) return;
-                  const ok = gameEngine.reassignCitizen(city.id, re.col, re.row, o.col, o.row);
-                  if (!ok) {
-                    actions.addNotification?.({ type: 'warning', message: 'Cannot place the citizen there.' });
-                  }
-                  actions.endCitizenReassign();
-                }}
-              >
-                <span className="citizen-menu-tile-terrain">{terrainLabel(o.terrain)}</span>
-                <span className="citizen-menu-tile-coords">({o.col},{o.row})</span>
-                <span className="citizen-menu-tile-yields">
-                  {o.food > 0 && <span title="Food">🍞{o.food}</span>}
-                  {o.production > 0 && <span title="Production">⛏️{o.production}</span>}
-                  {o.trade > 0 && <span title="Trade">💰{o.trade}</span>}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="citizen-menu-sub">
+          {idleTiles > 0
+            ? `Click one of the ${idleTiles} idle tiles in ${city.name}'s radius · Esc or right-click cancels`
+            : 'No idle tile left in this city\'s radius · Esc or right-click cancels'}
+        </div>
       </div>
     );
   };
@@ -633,10 +545,6 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
       )}
 
       <div className="side-panel-scroll">
-        {/* While a citizen is in hand the panel IS the citizen menu: the tiles
-            it can be placed on, listed with their yields. No banner needed. */}
-        {uiState?.citizenReassign && renderCitizenMenu()}
-
         {/* Header */}
         <div className="side-panel-header">
           <div className="header-flex">
