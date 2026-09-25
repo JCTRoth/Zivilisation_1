@@ -24,6 +24,7 @@
  */
 
 import { TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
+import { MathUtils } from '@/utils/MathUtils';
 import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
 
 /** HP (%) a lost combat round costs a unit. */
@@ -245,12 +246,12 @@ export class CombatSystem {
     damage: Pick<UnitCombatOutcome, 'attackerDamage' | 'defenderDamage'>,
   ): string {
     if (kind === 'victory') {
-      return `${attackerName} destroyed ${defenderName} (−${damage.defenderDamage} HP)`;
+      return `${attackerName} destroyed ${defenderName} (−${MathUtils.formatDamage(damage.defenderDamage)} HP)`;
     }
     if (kind === 'hit') {
-      return `${attackerName} hit ${defenderName} for ${damage.defenderDamage} HP`;
+      return `${attackerName} hit ${defenderName} for ${MathUtils.formatDamage(damage.defenderDamage)} HP`;
     }
-    return `${defenderName} hit ${attackerName} for ${damage.attackerDamage} HP`;
+    return `${defenderName} hit ${attackerName} for ${MathUtils.formatDamage(damage.attackerDamage)} HP`;
   }
 }
 

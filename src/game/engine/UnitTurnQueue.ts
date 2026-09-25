@@ -48,10 +48,13 @@ export class UnitTurnQueue {
    * Fills the queue with all active units that have movement remaining.
    */
   initializeQueue(civilizationId: number): void {
-    const units = this.gameEngine.units.filter((u: Unit) => 
-      u.civilizationId === civilizationId && 
+    const units = this.gameEngine.units.filter((u: Unit) =>
+      u.civilizationId === civilizationId &&
+      !u.isDefeated && // a unit killed last turn is only waiting for its removal
       !u.areTurnsDone && // Unit must not have turns done
       !u.embarkedOn && // A passenger aboard a ferry is not a separate actor
+      !u.isFortified && // a fortified unit sits this turn out — never call it up
+      !u.isSleeping && // a sleeping unit is only woken by an event, not by us
       (u.movesRemaining || 0) > 0 // Unit must have moves remaining
     );
 
@@ -130,8 +133,9 @@ export class UnitTurnQueue {
       return this.nextUnit(civilizationId);
     }
 
-    // If unit is inactive or has no moves, remove it and try next
-    if (unit.areTurnsDone || (unit.movesRemaining || 0) <= 0) {
+    // If unit is inactive, has no moves, or deliberately sits this turn out
+    // (fortified / sleeping), remove it and try the next one.
+    if (unit.areTurnsDone || unit.isFortified || unit.isSleeping || (unit.movesRemaining || 0) <= 0) {
       queue.shift();
       console.log(`[UnitTurnQueue] Unit ${unitId} (${unit.type}) inactive or no moves, trying next`);
       return this.nextUnit(civilizationId);

@@ -399,96 +399,8 @@
 }
 
 /* Citizen reassignment banner (pick-up & drop) */
-.citizen-reassign-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  margin: 8px 10px;
-  padding: 10px 12px;
-  background: rgba(240, 195, 60, 0.12);
-  border: 1px solid var(--color-accent, #f0c33c);
-  border-radius: var(--radius-md, 10px);
-  color: var(--color-text, #e8eef3);
-}
+/* ── Specialist toggles (assignment happens here) ───────────────── */
 
-.citizen-reassign-icon {
-  font-size: 1.3rem;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.citizen-reassign-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--color-accent-strong, #ffd75e);
-}
-
-.citizen-reassign-hint {
-  font-size: 12px;
-  color: var(--color-text-secondary, #ffffff);
-  margin-top: 2px;
-}
-
-/* ── Specialist chips & buttons (side panel) ─────────────────────── */
-.side-panel-specialist-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 1px 4px;
-  font-size: 13px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-  cursor: default;
-}
-
-.side-panel-specialist-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  margin: 0;
-  font-size: 10px;
-  line-height: 1;
-  color: #ef4444;
-  background: transparent;
-  border: none;
-  border-radius: 2px;
-  cursor: pointer;
-  transition: background var(--dur-fast, 120ms);
-}
-
-.side-panel-specialist-remove:hover {
-  background: rgba(239, 68, 68, 0.2);
-}
-
-.side-panel-specialist-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  font-size: 16px;
-  line-height: 1;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background var(--dur-fast, 120ms), border-color var(--dur-fast, 120ms);
-}
-
-.side-panel-specialist-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.side-panel-specialist-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
 
 /* Worked tiles list in city details */
 .worked-tiles-list {
@@ -511,4 +423,185 @@
 
 .worked-tile-row:hover {
   background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Active city governor, shown next to the worked-tile list */
+.side-panel-governor-badge {
+  padding: 0.05rem 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 3px;
+  color: #cfe9d4;
+  background: rgba(60, 120, 70, 0.35);
+  border: 1px solid rgba(127, 209, 138, 0.5);
+  cursor: help;
+}
+
+/* ── Specialist toggles (assignment happens here, not in the city screen) ── */
+
+.side-panel-specialist-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+  color: #b9c4d0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(120, 140, 160, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.side-panel-specialist-toggle:hover:not(:disabled) {
+  border-color: #7fd18a;
+  color: #eaf6ec;
+}
+
+.side-panel-specialist-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.side-panel-specialist-toggle.active {
+  color: #dff5e2;
+  background: rgba(60, 120, 70, 0.3);
+  border-color: rgba(127, 209, 138, 0.6);
+}
+
+.side-panel-specialist-toggle.primary {
+  border-style: solid;
+  border-color: rgba(127, 209, 138, 0.35);
+}
+
+.side-panel-specialist-toggle-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.side-panel-specialist-toggle-count {
+  min-width: 1.1em;
+  padding: 0 0.25rem;
+  font-size: 0.62rem;
+  text-align: center;
+  border-radius: 999px;
+  color: #0d1a10;
+  background: #9ecfa8;
+  font-weight: 700;
+}
+
+.side-panel-specialist-toggle-default {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8fa79a;
+}
+
+/* Divider between the citizen block and the city readout */
+.side-panel-section-divider {
+  height: 1px;
+  margin: 0.6rem 0 0.45rem;
+  background: rgba(120, 140, 160, 0.25);
+}
+
+/* ── Citizen menu (shown while a citizen is being placed) ──────────── */
+
+.citizen-menu {
+  margin: 8px 10px;
+  padding: 10px 12px;
+  background: rgba(240, 195, 60, 0.1);
+  border: 1px solid var(--color-accent, #f0c33c);
+  border-radius: var(--radius-md, 10px);
+  color: var(--color-text, #e8eef3);
+}
+
+.citizen-menu-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.citizen-menu-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.citizen-menu-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-accent-strong, #ffd75e);
+}
+
+.citizen-menu-sub {
+  font-size: 11px;
+  color: var(--color-text-secondary, #ffffff);
+  opacity: 0.8;
+}
+
+.citizen-menu-cancel {
+  margin-left: auto;
+  padding: 0 0.35rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  color: inherit;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.citizen-menu-cancel:hover {
+  border-color: var(--color-accent, #f0c33c);
+}
+
+.citizen-menu-empty {
+  margin-top: 0.5rem;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.citizen-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.6rem;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.citizen-menu-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.75rem;
+  text-align: left;
+  color: var(--color-text, #e8eef3);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.citizen-menu-tile:hover {
+  border-color: var(--color-accent, #f0c33c);
+  background: rgba(240, 195, 60, 0.14);
+}
+
+.citizen-menu-tile-terrain {
+  white-space: nowrap;
+}
+
+.citizen-menu-tile-coords {
+  font-size: 0.68rem;
+  opacity: 0.7;
+}
+
+.citizen-menu-tile-yields {
+  display: inline-flex;
+  gap: 0.35rem;
+  margin-left: auto;
+  font-size: 0.7rem;
 }

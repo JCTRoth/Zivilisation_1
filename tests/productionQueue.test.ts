@@ -14,6 +14,8 @@ import GameEngine from '@/game/engine/GameEngine';
 import type { City, ProductionItem } from '../types/game';
 
 const warrior: ProductionItem = { type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 };
+const archer: ProductionItem = { type: 'unit', itemType: 'archer', name: 'Archer', cost: 30 };
+const settler: ProductionItem = { type: 'unit', itemType: 'settler', name: 'Settlers', cost: 40 };
 const barracks: ProductionItem = { type: 'building', itemType: 'barracks', name: 'Barracks', cost: 40 };
 
 /** Count queued entries of a given item type. */
@@ -120,7 +122,6 @@ describe('production queue duplicates', () => {
     const city = cityOf(e);
 
     // Something is already being built.
-    const settler: ProductionItem = { type: 'unit', itemType: 'settler', name: 'Settlers', cost: 40 };
     e.productionManager.setCityProduction(city.id, settler, false);
     expect(city.currentProduction?.itemType).toBe('settler');
 
@@ -130,5 +131,88 @@ describe('production queue duplicates', () => {
 
     expect(city.currentProduction?.itemType).toBe('settler');
     expect(queued(city, 'warrior')).toBe(2);
+  });
+
+  it('postpones the current production: it swaps with the next queued item', async () => {
+    const e = await setupCity();
+    const city = cityOf(e);
+    // Auto-production fills the queue when the city is founded — start clean.
+    city.buildQueue = [];
+
+    e.productionManager.setCityProduction(city.id, warrior, false);
+    e.productionManager.setCityProduction(city.id, archer, true);
+    e.productionManager.setCityProduction(city.id, settler, true);
+    expect(city.currentProduction?.itemType).toBe('warrior');
+
+    const result = e.productionManager.moveCurrentProductionDown(city.id);
+
+    expect(result.success).toBe(true);
+    // The Archer takes over, the Warrior goes behind everything queued.
+    expect(city.currentProduction?.itemType).toBe('archer');
+    expect(city.buildQueue.map((q) => q.itemType)).toEqual(['settler', 'warrior']);
+  });
+
+  it('refuses to postpone when nothing is queued behind the current item', async () => {
+    const e = await setupCity();
+    const city = cityOf(e);
+    city.buildQueue = [];
+
+    e.productionManager.setCityProduction(city.id, warrior, false);
+    expect(city.buildQueue).toHaveLength(0);
+
+    const result = e.productionManager.moveCurrentProductionDown(city.id);
+
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('no_queued_items');
+    expect(city.currentProduction?.itemType).toBe('warrior');
+  });
+
+  it('the up button on queue entry #1 swaps it with the current production', async () => {
+    const e = await setupCity();
+    const city = cityOf(e);
+    city.buildQueue = [];
+
+    e.productionManager.setCityProduction(city.id, warrior, false);
+    e.productionManager.setCityProduction(city.id, archer, true);
+    e.productionManager.setCityProduction(city.id, settler, true);
+    expect(city.currentProduction?.itemType).toBe('warrior');
+
+    // ▲ on the first queued item: the Archer starts now and the Warrior moves
+    // one down into that slot (the rest of the queue keeps its order).
+    const result = e.productionManager.promoteQueuedItemToCurrent(city.id, 0);
+
+    expect(result.success).toBe(true);
+    expect(city.currentProduction?.itemType).toBe('archer');
+    expect(city.buildQueue.map((q) => q.itemType)).toEqual(['warrior', 'settler']);
+  });
+
+  it('promoting a queue item further up only reorders the queue', async () => {
+    const e = await setupCity();
+    const city = cityOf(e);
+    city.buildQueue = [];
+
+    e.productionManager.setCityProduction(city.id, warrior, false);
+    e.productionManager.setCityProduction(city.id, archer, true);
+    e.productionManager.setCityProduction(city.id, settler, true);
+
+    // Promoting queue #2 swaps it with the current production, so the former
+    // current item lands exactly in that slot.
+    const result = e.productionManager.promoteQueuedItemToCurrent(city.id, 1);
+
+    expect(result.success).toBe(true);
+    expect(city.currentProduction?.itemType).toBe('settler');
+    expect(city.buildQueue.map((q) => q.itemType)).toEqual(['archer', 'warrior']);
+  });
+
+  it('refuses to promote when nothing is being produced', async () => {
+    const e = await setupCity();
+    const city = cityOf(e);
+    city.buildQueue = [{ type: 'unit', itemType: 'archer', name: 'Archer', cost: 30 }];
+    city.currentProduction = null;
+
+    const result = e.productionManager.promoteQueuedItemToCurrent(city.id, 0);
+
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('no_current_production');
   });
 });

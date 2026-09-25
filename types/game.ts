@@ -167,10 +167,27 @@ export interface DisbandNotice {
 /**
  * Data shown by the city-starved modal: a city lost population due to famine.
  */
+/**
+ * How a city is governed (who works which tile). Every mode starts with the
+ * same mandatory food-security pass, so a city can never be starved by its
+ * governor; the mode then decides what the surplus is spent on:
+ *  - growth:     fill the food box, only the extra becomes shields
+ *  - production: food floor first, then maximise shields
+ *  - commerce:   food floor first, then maximise trade + Taxmen/Scientists
+ *  - balanced:   food floor, small surplus, then production+trade mix
+ */
+export type CityGovernorMode = 'growth' | 'production' | 'commerce' | 'balanced';
+
 export interface StarvationNotice {
   cityId: string;
   cityName: string;
   newPopulation: number;
+  /**
+   * Tiles the player pinned manually that keep a citizen on worse food than a
+   * free tile in the radius. The governor never moves pinned tiles, so these
+   * are what the player must release to let the city rebalance.
+   */
+  blockingManualTiles?: Array<{ col: number; row: number; food: number }>;
 }
 
 /**
@@ -408,8 +425,15 @@ export interface City {
   /** Tile keys (e.g. "col,row") that citizens are currently working. */
   workingTiles?: Set<string>;
   /** Tile keys (e.g. "col,row") the player manually assigned. The auto-assign
-   *  algorithm never overrides these, so manual assignments survive growth. */
+   *  algorithm never overrides these, so manual assignments survive growth —
+   *  the city governor treats them as untouchable too. */
   userAssignedTiles?: Set<string>;
+  /** How this city is governed (defaults to 'balanced'). */
+  governor?: CityGovernorMode;
+  /** Set when the governor mode changed and the layout still has to be
+   *  re-evaluated. The city screen applies it once the modal is closed so the
+   *  map never reshuffles while the player is looking at it. */
+  governorDirty?: boolean;
   /** Items purchased this turn (queued for next turn creation). */
   purchasedThisTurn?: Array<{ type?: string; itemType?: string; name?: string; cost?: number }>;
   /** Whether a building was sold this turn (one sell per city per turn). */
@@ -700,9 +724,9 @@ export interface CameraPanRequest {
 }
 
 /**
- * A combat animation: during its window the two involved units are hidden and
- * a cloud emoji is drawn at the defender's tile; afterwards the surviving unit
- * fades back in and the destroyed unit stays hidden.
+ * A combat animation: during its window the two involved units are shown with
+ * a cloud emoji over the defender's tile; afterwards the surviving unit stays
+ * and the destroyed unit quickly fades out and is gone.
  */
 export interface CombatAnimation {
   id: string;
@@ -722,8 +746,8 @@ export interface CombatAnimation {
   startTime: number;
   /** Cloud duration in ms (units stay visible, cloud blinks). */
   duration: number;
-  /** How long the dead unit blinks after the cloud disappears (ms). */
-  deathBlinkDuration: number;
+  /** How long the destroyed unit takes to fade out after the cloud (ms). */
+  deathFadeDuration: number;
   /** Whether this is a city attack (draws 💥 instead of 🫯). */
   cityAttack?: boolean;
   /** Attacker health (%) at combat start (for HP bar tween). */

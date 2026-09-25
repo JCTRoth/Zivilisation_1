@@ -578,7 +578,7 @@ export class EngineEventRouter {
         defenderSurvived: !!eventData.defenderSurvived,
         startTime: performance.now(),
         duration: 800, // Cloud blinks for 0.8s
-        deathBlinkDuration: 2000, // Dead unit blinks for 2s after cloud
+        deathFadeDuration: 450, // the destroyed unit fades out fast
         attackerHealthBefore,
         attackerHealthAfter,
         defenderHealthBefore,
@@ -612,13 +612,13 @@ export class EngineEventRouter {
         this.actions.addCombatAnimation(animation);
         // Animate a visible AI attacker's lunge (and recoil if it didn't advance).
         this.animateAIAttacker(attacker, defender, animation.attackerCol, animation.attackerRow);
-        // Remove the animation once it has fully played out (cloud + death blink).
+        // Remove the animation once it has fully played out (cloud + fade).
         setTimeout(() => {
           this.actions.removeCombatAnimation(id);
           if (this.gameEngine && typeof this.gameEngine.checkAndEndTurnIfNoMoves === 'function') {
             this.gameEngine.checkAndEndTurnIfNoMoves('combat-animation-ended');
           }
-        }, animation.duration + animation.deathBlinkDuration + 200);
+        }, animation.duration + animation.deathFadeDuration + 120);
       };
       trackAIAnimation(startCombatVisuals());
     }
@@ -717,7 +717,7 @@ export class EngineEventRouter {
         defenderSurvived: true,
         startTime: performance.now(),
         duration: 800, // Cloud blinks for 0.8s
-        deathBlinkDuration: 2000, // Dead unit blinks for 2s after cloud
+        deathFadeDuration: 450, // no unit dies in a city fight — the cloud just fades
         cityAttack: true,
         cityId: city.id,
         cityHealthBefore,
@@ -741,7 +741,7 @@ export class EngineEventRouter {
         if (this.gameEngine && typeof this.gameEngine.checkAndEndTurnIfNoMoves === 'function') {
           this.gameEngine.checkAndEndTurnIfNoMoves('combat-animation-ended');
         }
-      }, animation.duration + animation.deathBlinkDuration + 100);
+      }, animation.duration + animation.deathFadeDuration + 100);
     }
   }
 

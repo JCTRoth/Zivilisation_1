@@ -1297,6 +1297,11 @@ export class MapRenderer {
 
       // ── Layer 2: selected city radius (full diamond) ──
       const workedTiles = selectedCity.workingTiles;
+      // Tiles the player assigned by hand: drawn darker with a solid light-green
+      // edge so a manual allocation is never mistaken for a governor choice.
+      const manualTiles = selectedCity.userAssignedTiles instanceof Set
+        ? selectedCity.userAssignedTiles
+        : new Set<string>();
       // While reassigning, remember the origin tile (the citizen being carried)
       // so it can be dimmed/pulsed, and treat the other unworked radius tiles as
       // bright "available drop" targets.
@@ -1329,7 +1334,8 @@ export class MapRenderer {
 
           if (isOrigin) {
             // Origin tile being carried — dimmed + pulsing dashed green so the
-            // player remembers where the citizen came from (still worked).
+            // player remembers where the citizen came from (still worked), with
+            // a 🧑‍🌾 badge marking the citizen currently in hand.
             ctx.fillStyle = 'rgba(50, 200, 80, 0.10)';
             ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
             ctx.strokeStyle = `rgba(50, 200, 80, ${0.45 + 0.5 * pulse})`;
@@ -1337,23 +1343,36 @@ export class MapRenderer {
             ctx.setLineDash([6, 4]);
             ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
             ctx.setLineDash([]);
+            ctx.font = `${Math.max(11, scaledTileSize * 0.4)}px system-ui, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🧑‍🌾', x, y);
           } else if (isWorked) {
-            // Actively worked tile — strong green tint
-            ctx.fillStyle = 'rgba(50, 200, 80, 0.28)';
+            const isManual = manualTiles.has(tileKey);
+            // Actively worked tile — green tint. A manual allocation gets a
+            // slightly deeper wash and a hairline edge: distinguishable at a
+            // glance, but not louder than the tile itself.
+            ctx.fillStyle = isManual ? 'rgba(40, 92, 56, 0.5)' : 'rgba(50, 200, 80, 0.28)';
             ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
-            ctx.strokeStyle = 'rgba(50, 200, 80, 0.9)';
-            ctx.lineWidth = Math.max(1.5, cameraZoom);
+            ctx.strokeStyle = isManual ? 'rgba(140, 220, 155, 0.6)' : 'rgba(50, 200, 80, 0.9)';
+            ctx.lineWidth = isManual ? Math.max(1.5, cameraZoom) : Math.max(1.5, cameraZoom);
             ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
           } else if (blockedByOtherCity.has(tileKey)) {
             // Already drawn as red blocked — skip yellow overlay
             // (red layer was drawn first)
           } else if (isHolding) {
-            // Available drop target while carrying a citizen — brighter gold
+            // Available drop target while carrying a citizen — brighter gold,
+            // with a pulsing "+" so it reads as "place the citizen here".
             ctx.fillStyle = 'rgba(255, 214, 0, 0.20)';
             ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
             ctx.strokeStyle = 'rgba(255, 214, 0, 0.95)';
             ctx.lineWidth = Math.max(1.5, cameraZoom);
             ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
+            ctx.fillStyle = `rgba(255, 214, 0, ${0.45 + 0.5 * pulse})`;
+            ctx.font = `bold ${Math.max(12, scaledTileSize * 0.5)}px system-ui, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('+', x, y);
           } else {
             // Unworked radius tile — subtle gold
             ctx.fillStyle = 'rgba(255, 214, 0, 0.12)';
@@ -1556,9 +1575,11 @@ export class MapRenderer {
           for (const unit of stack) {
             const isOwnUnit = unit.civilizationId === HUMAN_PLAYER_ID;
             if (!isOwnUnit && !isVisible) continue;
-            // Killed units (marked isDefeated) are never drawn again — the
-            // combat animation replaces the old "black X" death marker.
-            if (unit.isDefeated) continue;
+            // Killed units are never drawn again — EXCEPT while their combat
+            // animation is still running, where the 💥 cloud / death blink
+            // replaces the old static "black X" marker (getCombatRenderState
+            // hides it once the blink is over).
+            if (unit.isDefeated && !this.isInCombatAnimation(unit.id, combatAnimations)) continue;
             // A passenger aboard a ferry is drawn as cargo, not as a unit.
             if (unit.embarkedOn) continue;
 
@@ -1794,13 +1815,26 @@ export class MapRenderer {
     ctx.closePath();
   }
 
+  /** Fallback fade-out of a destroyed unit when the animation omits a duration. */
+  private static readonly DEFAULT_DEATH_FADE_MS = 450;
+
+  /** Whether a unit is still part of a running combat animation (its 💥 cloud /
+   *  death blink is on screen). Used to keep a just-killed unit drawn until the
+   *  animation finishes instead of making it vanish mid-fight. */
+  private isInCombatAnimation(unitId: string, combatAnimations?: CombatAnimation[]): boolean {
+    if (!combatAnimations || combatAnimations.length === 0) return false;
+    return combatAnimations.some(
+      (anim) => anim.attackerId === unitId || anim.defenderId === unitId,
+    );
+  }
+
   /**
    * Determine how a unit should render given the active combat animations.
    *
    * Timeline:
-   *   0 … duration     → both units VISIBLE; 💥 cloud blinks at defender tile
-   *   duration … duration+deathBlink → survivor shown; dead unit blinks fast
-   *   duration+deathBlink … ∞       → dead unit hidden forever
+   *   0 … duration          → both units VISIBLE; 💥 cloud blinks at defender tile
+   *   duration … +deathFade  → survivor shown; the destroyed unit FADES OUT
+   *   after that            → destroyed unit hidden (gone)
    */
   private getCombatRenderState(
     unit: Unit,
@@ -1831,16 +1865,14 @@ export class MapRenderer {
         return { hidden: false, alpha: 1 };
       }
 
-      // Destroyed unit: blink rapidly for deathBlinkDuration, then vanish.
-      const blinkElapsed = elapsed - anim.duration;
-      const blinkDuration = anim.deathBlinkDuration ?? 2000;
-      if (blinkElapsed >= blinkDuration) {
+      // Destroyed unit: a short fade-out, then gone. No blinking, no corpse
+      // marker — the unit simply dissolves where it fell.
+      const fadeDuration = Math.max(1, anim.deathFadeDuration ?? MapRenderer.DEFAULT_DEATH_FADE_MS);
+      const fadeElapsed = elapsed - anim.duration;
+      if (fadeElapsed >= fadeDuration) {
         return { hidden: true, alpha: 0 };
       }
-      // Fast blink: ~150ms on / ~150ms off
-      const blinkCycle = 150;
-      const visible = Math.floor(blinkElapsed / blinkCycle) % 2 === 0;
-      return { hidden: !visible, alpha: visible ? 1 : 0 };
+      return { hidden: false, alpha: Math.max(0, 1 - fadeElapsed / fadeDuration) };
     }
 
     return { hidden: false, alpha: 1 };
@@ -1934,6 +1966,9 @@ export class MapRenderer {
         color: string | undefined,
         yOffset = 0,
       ): void => {
+        // Nothing to report (and never a "-0"): health deltas can be
+        // fractional, so a side that took less than a point would show "-0".
+        if (!(amount > 0)) return;
         const pos = squareToScreen(col, row);
         if (this.isOutsideViewport(pos.x, pos.y, canvasSize.width, canvasSize.height, margin)) return;
         const y = pos.y - rise - yOffset;
@@ -1945,7 +1980,7 @@ export class MapRenderer {
         ctx.lineWidth = Math.max(2, fontSize * 0.18);
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
         ctx.fillStyle = color || '#ffffff';
-        const text = `-${amount}`;
+        const text = `-${MathUtils.formatDamage(amount)}`;
         ctx.strokeText(text, pos.x, y);
         ctx.fillText(text, pos.x, y);
         ctx.restore();
@@ -2203,11 +2238,30 @@ export class MapRenderer {
   ): void {
     const civ = civilizations.find(c => c.id === city.civilizationId);
     const civColor = civ?.color || (city.civilizationId === 0 ? '#FFD700' : '#FF6347');
-    ctx.fillStyle = civColor;
     // Keep the city marker readable at every zoom level without letting it
     // become tiny when the map is zoomed in.
     const overlayScale = Math.min(2, Math.max(0.85, cameraZoom));
     const size = Math.min(56, Math.max(28, 28 * overlayScale));
+
+    // ── City Walls (Civ1) ──────────────────────────────────────────────
+    // A walled city is marked with the word "WALLS" written as a little text
+    // ring around the city image (top, bottom, left, right) — no castle
+    // emoji, no graphic. The pad is also what the name/specialist rows and
+    // the HP bar are offset by so nothing overlaps the ring.
+    const hasWalls = (city.buildings ?? []).some((b) => {
+      const id = typeof b === 'string'
+        ? b
+        : ((b as { id?: string })?.id ?? (b as { type?: string })?.type ?? '');
+      return id === 'city_walls' || id === 'walls';
+    });
+    const wallPad = hasWalls ? Math.max(5, Math.round(7 * overlayScale)) : 0;
+    const wallFont = hasWalls ? Math.min(14, Math.max(8, 8 * overlayScale)) : 0;
+    /** Vertical gap between the city square and the rows drawn under it. */
+    const nameOffset = hasWalls
+      ? wallPad + wallFont * 0.6 + Math.max(6, 8 * overlayScale)
+      : 12 * overlayScale;
+
+    ctx.fillStyle = civColor;
     ctx.fillRect(centerX - size / 2, centerY - size / 2, size, size);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
@@ -2219,9 +2273,38 @@ export class MapRenderer {
     ctx.textBaseline = 'middle';
     ctx.fillText('🏛️', centerX, centerY);
 
+    // ── The "WALLS" text ring around the city image ─────────────────────
+    if (hasWalls) {
+      const half = size / 2;
+      const text = 'WALLS';
+      ctx.save();
+      ctx.font = `bold ${wallFont}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = Math.max(1.5, wallFont * 0.22);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+      ctx.fillStyle = '#d8d2c4';
+
+      // Top and bottom read horizontally.
+      for (const y of [centerY - half - wallPad, centerY + half + wallPad]) {
+        ctx.strokeText(text, centerX, y);
+        ctx.fillText(text, centerX, y);
+      }
+      // Left and right read vertically (rotated towards the city).
+      for (const x of [centerX - half - wallPad, centerX + half + wallPad]) {
+        ctx.save();
+        ctx.translate(x, centerY);
+        ctx.rotate(x < centerX ? -Math.PI / 2 : Math.PI / 2);
+        ctx.strokeText(text, 0, 0);
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
     ctx.font = `${Math.min(18, Math.max(10, 10 * overlayScale))}px monospace`;
     ctx.fillStyle = '#000';
-    ctx.fillText(city.name, centerX, centerY + size / 2 + 12 * overlayScale);
+    ctx.fillText(city.name, centerX, centerY + size / 2 + nameOffset);
 
     // Draw specialist icons below the city name, flowing left to right.
     const specs = city.specialists ?? [];
@@ -2233,7 +2316,7 @@ export class MapRenderer {
       const iconW = specFontSize * 1.4;
       const totalW = specs.length * iconW;
       const startX = centerX - totalW / 2 + iconW / 2;
-      const specY = centerY + size / 2 + 12 * overlayScale + specFontSize * 0.2;
+      const specY = centerY + size / 2 + nameOffset + specFontSize * 0.2;
       for (let i = 0; i < specs.length; i++) {
         const def = SPECIALIST_YIELDS[specs[i]];
         if (def) {
@@ -2259,7 +2342,7 @@ export class MapRenderer {
       ctx.font = `${fireFontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const fireY = centerY + size / 2 + 12 * overlayScale + fireFontSize * 0.5 +
+      const fireY = centerY + size / 2 + nameOffset + fireFontSize * 0.5 +
         (specs.length > 0 ? fireFontSize * 1.2 : 0);
       ctx.fillText('🔥', centerX, fireY);
     }
@@ -2297,7 +2380,7 @@ export class MapRenderer {
       // Draw damaged HP bar
       const hpBarWidth = 40 * cameraZoom;
       const hpBarHeight = 6 * cameraZoom;
-      const hpBarY = centerY - size / 2 - 10 * cameraZoom;
+      const hpBarY = centerY - size / 2 - 10 * cameraZoom - (hasWalls ? wallPad + wallFont * 0.6 : 0);
       
       // Background (max HP)
       ctx.fillStyle = '#333';
@@ -2649,36 +2732,8 @@ export class MapRenderer {
       ctx.fillText(pctText, centerX, hpBarY + hpBarHeight + 1);
     }
 
-    // Draw black X on defeated units (blinks with the unit during combat
-    // animation; invisible once the unit is hidden after the death blink).
-    if ((unit as Unit).isDefeated) {
-      ctx.save();
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 4;
-      ctx.lineCap = 'round';
-      
-      const xSize = innerRadius * 1.2;
-      // Draw X
-      ctx.beginPath();
-      ctx.moveTo(centerX - xSize, centerY - xSize);
-      ctx.lineTo(centerX + xSize, centerY + xSize);
-      ctx.moveTo(centerX + xSize, centerY - xSize);
-      ctx.lineTo(centerX - xSize, centerY + xSize);
-      ctx.stroke();
-      
-      // Add white outline for visibility
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(centerX - xSize, centerY - xSize);
-      ctx.lineTo(centerX + xSize, centerY + xSize);
-      ctx.moveTo(centerX + xSize, centerY - xSize);
-      ctx.lineTo(centerX - xSize, centerY + xSize);
-      ctx.stroke();
-      
-      ctx.restore();
-    }
-
+    // No death marker: a destroyed unit just fades out where it fell (see
+    // getCombatRenderState) — no black X, no blinking corpse.
     ctx.restore();
   }
 

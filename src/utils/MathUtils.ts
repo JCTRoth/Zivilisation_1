@@ -49,7 +49,19 @@ export const MathUtils = {
     /**
      * Select random element from array
      * @param array - Array to choose from
-     * @returns Random element from array
+     * @returns Random element of the array
      */
-    randomChoice: <T>(array: T[]): T => array[Math.floor(Math.random() * array.length)]
+    randomChoice: <T>(array: T[]): T => array[Math.floor(Math.random() * array.length)],
+
+    /**
+     * Format a damage amount for display: negative values collapse to 0, whole
+     * numbers stay whole ("100") and fractions keep one decimal (12.5) — a
+     * sub-half value never renders as "-0" / "-0.5".
+     */
+    formatDamage: (amount: number): string => {
+        const value = Number.isFinite(amount) && amount > 0 ? amount : 0;
+        if (value === 0) return '0';
+        if (Number.isInteger(value)) return String(value);
+        return value < 0.5 ? '0' : value.toFixed(1);
+    }
 };

@@ -5,11 +5,12 @@ import { ModalUtils } from './ModalUtils';
 import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
+import { CITY_GOVERNOR_OPTIONS, governorOption, terrainLabel } from '@/utils/CityGovernorUtils';
 import ProductionSelectionModal from './ProductionSelectionModal';
 import { productionFailureText } from '@/utils/ProductionUtils';
 import { unitStatus } from '@/utils/UnitStatus';
 import GameEngine from '@/game/engine/GameEngine';
-import type { City, Civilization, GameActions, ProductionItem, SpecialistType } from '../../../../types/game';
+import type { City, Civilization, GameActions, ProductionItem } from '../../../../types/game';
 import '../../../styles/cityModal.css';
 
 interface CityModalProps {
@@ -20,6 +21,13 @@ interface CityModalProps {
   actions: GameActions;
   currentPlayer: Civilization;
   isPlayerCity: boolean;
+}
+
+/** Emoji glyph for a production item (unit icon, building icon, or a generic one). */
+function productionIcon(item: ProductionItem | null | undefined): string {
+  const key = item?.itemType ?? item?.type ?? '';
+  if (!key) return '🏗️';
+  return UNIT_PROPS[key]?.icon ?? BUILDING_PROPS[key]?.icon ?? (item?.type === 'unit' ? '⚔️' : '🏗️');
 }
 
 const CityModal: React.FC<CityModalProps> = ({
@@ -174,69 +182,90 @@ const CityModal: React.FC<CityModalProps> = ({
                       })()}
 
                       {/* Queue box — current production is always item #0 */}
-                      <div className="queue-box bg-dark border border-secondary rounded p-2" ref={queueBoxRef} style={{maxHeight: '320px', overflowY: 'auto'}}>
+                      <div className="queue-box" ref={queueBoxRef}>
                         {/* Current production (always first) */}
                         {selectedCity.currentProduction ? (
-                          <div className="queue-item queue-item--active p-2 mb-1 rounded">
-                            <div className="d-flex justify-content-between align-items-start gap-2">
-                              <div className="flex-grow-1 min-width-0">
-                                <div className="d-flex align-items-center gap-2">
-                                  <span className="badge bg-warning text-dark">▶</span>
-                                  <strong className="text-truncate">{logic.getCurrentProductionName()}</strong>
-                                </div>
-                                {/* Progress bar */}
-                                <div className="progress mt-1 mb-1" style={{height: '6px'}}>
-                                  <div
-                                    className="progress-bar bg-warning"
-                                    style={{width: `${logic.getProgressPercent()}%`}}
-                                  ></div>
-                                </div>
-                                <div className="d-flex justify-content-between small text-muted">
-                                  <span>{logic.getProductionProgressValue()}/{logic.getCurrentProductionCost()} shields · {logic.getProductionPerTurn()}/turn</span>
-                                  <span>{logic.getFormattedTurns()} turns left</span>
-                                </div>
+                          <div className="queue-item queue-item--active">
+                            <div className="queue-item-icon" aria-hidden="true">
+                              {productionIcon(selectedCity.currentProduction)}
+                            </div>
+                            <div className="queue-item-body">
+                              <div className="queue-item-title">
+                                <strong className="text-truncate">{logic.getCurrentProductionName()}</strong>
                               </div>
-                              <div className="d-flex gap-1 flex-shrink-0">
-                                {(() => {
-                                  const totalCost = logic.getCurrentProductionCost();
-                                  const progress = logic.getProductionProgressValue();
-                                  const remaining = Math.max(0, totalCost - progress);
-                                  const gold = currentPlayer?.resources?.gold ?? 0;
-                                  const purchased = (selectedCity.purchasedThisTurn?.length ?? 0) > 0;
-                                  const goldCost = remaining * 2;
-                                  const canBuy = remaining > 0 && gold >= goldCost && !purchased;
-                                  return (
-                                    <button
-                                      type="button"
-                                      className="btn btn-sm city-buy-button"
-                                      disabled={!canBuy}
-                                      title={purchased ? 'Already purchased' : canBuy ? `Rush for ${goldCost}g` : `Need ${goldCost}g`}
-                                      onClick={() => {
-                                        if (gameEngine && typeof gameEngine.rushCityProduction === 'function') {
-                                          gameEngine.rushCityProduction(selectedCity.id);
-                                          if (actions?.addNotification) {
-                                            actions.addNotification({ type: 'success', message: `Rushed ${logic.getCurrentProductionName()} for ${goldCost}g!` });
-                                          }
+                              <div className="progress queue-item-progress">
+                                <div
+                                  className="progress-bar bg-warning"
+                                  style={{width: `${logic.getProgressPercent()}%`}}
+                                ></div>
+                              </div>
+                              <div className="queue-item-meta">
+                                {logic.getProductionProgressValue()}/{logic.getCurrentProductionCost()} shields
+                                {' · '}
+                                {logic.getProductionPerTurn()}/turn
+                                {' · '}
+                                {logic.getFormattedTurns()} turns left
+                              </div>
+                            </div>
+                            <div className="queue-item-actions">
+                              {(() => {
+                                const totalCost = logic.getCurrentProductionCost();
+                                const progress = logic.getProductionProgressValue();
+                                const remaining = Math.max(0, totalCost - progress);
+                                const gold = currentPlayer?.resources?.gold ?? 0;
+                                const purchased = (selectedCity.purchasedThisTurn?.length ?? 0) > 0;
+                                const goldCost = remaining * 2;
+                                const canBuy = remaining > 0 && gold >= goldCost && !purchased;
+                                return (
+                                  <button
+                                    type="button"
+                                    className="queue-action-btn queue-action-btn--rush"
+                                    disabled={!canBuy}
+                                    title={purchased ? 'Already purchased' : canBuy ? `Rush for ${goldCost}g` : `Need ${goldCost}g`}
+                                    onClick={() => {
+                                      if (gameEngine && typeof gameEngine.rushCityProduction === 'function') {
+                                        gameEngine.rushCityProduction(selectedCity.id);
+                                        if (actions?.addNotification) {
+                                          actions.addNotification({ type: 'success', message: `Rushed ${logic.getCurrentProductionName()} for ${goldCost}g!` });
                                         }
-                                      }}
-                                    >
-                                      🪙 {goldCost}g
-                                    </button>
-                                  );
-                                })()}
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-outline-danger"
-                                  title="Cancel production"
-                                  onClick={() => {
-                                    if (gameEngine && typeof gameEngine.removeCurrentProduction === 'function') {
-                                      gameEngine.removeCurrentProduction(selectedCity.id);
-                                    }
-                                  }}
-                                >
-                                  <i className="bi bi-x-lg"></i>
-                                </button>
-                              </div>
+                                      }
+                                    }}
+                                  >
+                                    🪙 {goldCost}g
+                                  </button>
+                                );
+                              })()}
+                              <button
+                                type="button"
+                                className="queue-action-btn"
+                                title="Build the next queued item first"
+                                disabled={!logic.hasQueueItems()}
+                                onClick={() => {
+                                  const result = logic.moveCurrentProductionDown();
+                                  if (result.success === false && actions?.addNotification) {
+                                    actions.addNotification({
+                                      type: 'warning',
+                                      message: result.reason === 'no_queued_items'
+                                        ? 'Nothing is queued behind this item.'
+                                        : 'Cannot postpone production.',
+                                    });
+                                  }
+                                }}
+                              >
+                                <i className="bi bi-arrow-down"></i>
+                              </button>
+                              <button
+                                type="button"
+                                className="queue-action-btn queue-action-btn--danger"
+                                title="Cancel production"
+                                onClick={() => {
+                                  if (gameEngine && typeof gameEngine.removeCurrentProduction === 'function') {
+                                    gameEngine.removeCurrentProduction(selectedCity.id);
+                                  }
+                                }}
+                              >
+                                <i className="bi bi-x-lg"></i>
+                              </button>
                             </div>
                           </div>
                         ) : (
@@ -245,31 +274,56 @@ const CityModal: React.FC<CityModalProps> = ({
 
                         {/* Queued items */}
                         {logic.hasQueueItems() && logic.getQueueItems().map((q: ProductionItem, i: number) => (
-                          <div key={i} className="queue-item p-2 mb-1 rounded">
-                            <div className="d-flex justify-content-between align-items-center gap-2">
-                              <div className="flex-grow-1 min-width-0">
-                                <div className="d-flex align-items-center gap-2">
-                                  <span className="badge bg-secondary">#{i + 1}</span>
-                                  <span className="text-truncate">{q.name}</span>
-                                </div>
-                                <div className="small text-muted ms-4">
-                                  {q.cost} shields · ~{ModalUtils.getTurnsRemaining(0, q.cost, logic.getProductionPerTurn())} turns
-                                </div>
+                          <div key={i} className="queue-item">
+                            <div className="queue-item-icon" aria-hidden="true">
+                              {productionIcon(q)}
+                            </div>
+                            <div className="queue-item-body">
+                              <div className="queue-item-title">
+                                <span className="queue-item-badge">#{i + 1}</span>
+                                <span className="text-truncate">{q.name}</span>
                               </div>
-                              <div className="queue-item-actions">
-                                <button type="button" className="btn btn-outline-light btn-sm queue-action-btn" disabled={i === 0}
-                                  onClick={(e) => { e.stopPropagation(); logic.moveQueueItem(i, i - 1); }}>
-                                  <i className="bi bi-arrow-up"></i>
-                                </button>
-                                <button type="button" className="btn btn-outline-light btn-sm queue-action-btn" disabled={i === logic.getQueueItems().length - 1}
-                                  onClick={(e) => { e.stopPropagation(); logic.moveQueueItem(i, i + 1); }}>
-                                  <i className="bi bi-arrow-down"></i>
-                                </button>
-                                <button type="button" className="btn btn-outline-danger btn-sm queue-action-btn"
-                                  onClick={(e) => { e.stopPropagation(); logic.removeQueueItem(i); }}>
-                                  <i className="bi bi-trash"></i>
-                                </button>
+                              <div className="queue-item-meta">
+                                {q.cost} shields
+                                {' · ~'}
+                                {ModalUtils.getTurnsRemaining(0, q.cost, logic.getProductionPerTurn())} turns
                               </div>
+                            </div>
+                            <div className="queue-item-actions">
+                              <button type="button" className="queue-action-btn"
+                                disabled={i === 0 && !selectedCity.currentProduction}
+                                title={i === 0
+                                  ? selectedCity.currentProduction
+                                    ? 'Build this first — the current production moves one down'
+                                    : 'Nothing is being produced yet'
+                                  : 'Move up'}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (i === 0) {
+                                    // Swap with the item being produced right now.
+                                    const result = logic.promoteQueueItem(0);
+                                    if (result.success === false && actions?.addNotification) {
+                                      actions.addNotification({
+                                        type: 'warning',
+                                        message: 'Cannot change production right now.',
+                                      });
+                                    }
+                                    return;
+                                  }
+                                  logic.moveQueueItem(i, i - 1);
+                                }}>
+                                <i className="bi bi-arrow-up"></i>
+                              </button>
+                              <button type="button" className="queue-action-btn" disabled={i === logic.getQueueItems().length - 1}
+                                title="Move down"
+                                onClick={(e) => { e.stopPropagation(); logic.moveQueueItem(i, i + 1); }}>
+                                <i className="bi bi-arrow-down"></i>
+                              </button>
+                              <button type="button" className="queue-action-btn queue-action-btn--danger"
+                                title="Remove from queue"
+                                onClick={(e) => { e.stopPropagation(); logic.removeQueueItem(i); }}>
+                                <i className="bi bi-trash"></i>
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -649,187 +703,191 @@ const CityModal: React.FC<CityModalProps> = ({
                 )}
               </div>
             </Tab>
-            <Tab eventKey="trade" title="Trade Routes">
-              <div className="city-trade-routes-content">
-                {(() => {
-                  const routes = logic.getTradeRoutes();
-                  const routeTrade = logic.getRouteTrade();
-                  return (
-                    <>
-                      <p className="hex-detail-city-info">
-                        <strong>Trade routes:</strong> {routes.length}/3
-                        {routeTrade > 0 && (
-                          <span className="ms-2 text-info">
-                            <i className="bi bi-arrow-left-right"></i> +{routeTrade} trade/turn
-                          </span>
-                        )}
-                      </p>
-                      <p className="small text-muted">
-                        A Caravan establishes a permanent route when it delivers to another city
-                        (lump-sum Gold + Science). Each route adds per-turn trade to both cities.
-                        At most 3 routes; a stronger new route replaces the weakest.
-                      </p>
-                      {routes.length > 0 ? (
-                        <div className="d-flex flex-column gap-2">
-                          {routes.map((route, i) => {
-                            const destCiv = gameEngine.civilizations?.find(
-                              (c: Civilization) => c.id === route.civilizationId,
-                            );
-                            const isForeign = route.civilizationId !== selectedCity.civilizationId;
-                            return (
-                              <div key={i} className="p-2 rounded bg-dark border border-secondary d-flex justify-content-between align-items-center">
-                                <div>
-                                  <div>
-                                    <strong>{route.cityName}</strong>
-                                    {isForeign && <span className="text-warning ms-2 small">foreign ×2</span>}
-                                  </div>
-                                  <div className="small text-muted">
-                                    {destCiv?.name ?? `Civ ${route.civilizationId}`} · {route.distance} tiles away
-                                  </div>
-                                </div>
-                                <div className="text-info fw-semibold">+{route.trade} trade/turn</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="text-muted">
-                          No trade routes yet. Build a Caravan (requires Trade) and deliver it to
-                          another city to establish a route.
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            </Tab>
             <Tab eventKey="citizens" title="Citizens">
               <div className="city-citizens-content">
                 {(() => {
                   const pop = selectedCity.population ?? 1;
                   const specs = selectedCity.specialists ?? [];
                   const workedTiles = selectedCity.workingTiles ?? new Set<string>();
+                  const manualTiles = selectedCity.userAssignedTiles ?? new Set<string>();
                   const tileWorkers = workedTiles.size;
                   const freeCitizens = Math.max(0, pop - tileWorkers - specs.length);
-
-                  const handlePromote = (type: SpecialistType) => {
-                    if (gameEngine && typeof gameEngine.promoteCitizenToSpecialist === 'function') {
-                      const ok = gameEngine.promoteCitizenToSpecialist(selectedCity.id, type);
-                      if (!ok && actions?.addNotification) {
-                        actions.addNotification({ type: 'warning', message: 'Cannot convert citizen — all tile workers are protected or city is full.' });
-                      }
-                    }
-                  };
-
-                  const handleDemote = (index: number) => {
-                    if (gameEngine && typeof gameEngine.demoteSpecialistToWorker === 'function') {
-                      gameEngine.demoteSpecialistToWorker(selectedCity.id, index);
-                    }
-                  };
-
-                  const handlePickUp = (col: number, row: number) => {
-                    actions.setCitizenReassign({ cityId: selectedCity.id, col, row });
-                    if (actions?.addNotification) {
-                      actions.addNotification({ type: 'info', message: '🧑‍🌾 Citizen selected for reassignment — click a tile on the map to place' });
-                    }
-                  };
 
                   return (
                     <>
                       <p className="small text-muted mb-3">
-                        Pull a citizen off a tile to make them a <strong>Specialist</strong>. You lose the tile's
-                        Food/Production/Trade but gain a fixed city yield: <strong>Entertainer</strong> (+2 Luxury),
-                        <strong> Taxman</strong> (+2 Gold), or <strong>Scientist</strong> (+2 Science).
+                        The <strong>city governor</strong> keeps the city fed and decides which tiles your citizens
+                        work. Here you choose the governor and who becomes a <strong>specialist</strong>; the tiles
+                        themselves are set on the map.
                       </p>
 
-                      {/* Specialist summary */}
-                      {specs.length > 0 && (
-                        <div className="mb-3">
-                          <h6>Specialists ({specs.length})</h6>
-                          <div className="d-flex flex-wrap gap-2">
-                            {specs.map((type, i) => {
-                              const def = SPECIALIST_YIELDS[type];
-                              return (
-                                <div key={i} className="d-flex align-items-center gap-1 p-1 px-2 rounded bg-dark border border-secondary">
-                                  <span>{def.icon}</span>
-                                  <span className="small">{def.name}</span>
-                                  {isPlayerCity && (
-                                    <button
-                                      type="button"
-                                      className="btn btn-outline-danger btn-sm p-0 px-1 ms-1"
-                                      style={{ fontSize: '0.65rem', lineHeight: 1 }}
-                                      title="Convert back to tile worker"
-                                      onClick={() => handleDemote(i)}
-                                    >
-                                      ×
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Worked tiles with reassignment */}
-                      {isPlayerCity && tileWorkers > 1 && (
-                        <div className="mb-3">
-                          <h6>Worked Tiles ({tileWorkers})</h6>
-                          <div className="d-flex flex-wrap gap-2">
-                            {Array.from(workedTiles).map((key) => {
-                              const sep = key.indexOf(',');
-                              const col = Number(key.slice(0, sep));
-                              const row = Number(key.slice(sep + 1));
-                              const isCenter = col === selectedCity.col && row === selectedCity.row;
-                              if (isCenter) return null; // City center is always worked, can't reassign
-                              return (
-                                <button
-                                  key={key}
-                                  type="button"
-                                  className="btn btn-outline-success btn-sm"
-                                  title={`Move citizen from (${col},${row}) to another tile`}
-                                  onClick={() => handlePickUp(col, row)}
-                                >
-                                  🧑‍🌾 ({col},{row})
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <small className="text-muted d-block mt-1">Click a tile to pick up its citizen, then click an empty tile on the map to place it.</small>
-                        </div>
-                      )}
-
-                      {/* Convert citizen buttons */}
+                      {/* Governor switcher */}
                       {isPlayerCity && (
                         <div className="mb-3">
-                          <h6>Convert Tile Citizen → Specialist</h6>
-                          <div className="d-flex flex-wrap gap-2">
-                            {(Object.keys(SPECIALIST_YIELDS) as SpecialistType[]).map((type) => {
-                              const def = SPECIALIST_YIELDS[type];
+                          <h6 className="mb-2">City Governor</h6>
+                          <div className="city-governor-grid">
+                            {CITY_GOVERNOR_OPTIONS.map((option) => {
+                              const active = (selectedCity.governor ?? 'balanced') === option.mode;
                               return (
                                 <button
-                                  key={type}
+                                  key={option.mode}
                                   type="button"
-                                  className="btn btn-outline-secondary btn-sm"
-                                  disabled={tileWorkers <= 1}
-                                  title={tileWorkers <= 1 ? 'Need at least one tile worker' : `Convert a tile citizen to ${def.name}`}
-                                  onClick={() => handlePromote(type)}
+                                  className={`city-governor-card${active ? ' active' : ''}`}
+                                  aria-pressed={active}
+                                  onClick={() => {
+                                    if (typeof gameEngine.setCityGovernor === 'function') {
+                                      gameEngine.setCityGovernor(selectedCity.id, option.mode);
+                                    }
+                                    actions?.addNotification?.({
+                                      type: 'info',
+                                      message: `${selectedCity.name}: ${option.name} governor selected — the city will be rebalanced when you close this screen.`,
+                                    });
+                                  }}
                                 >
-                                  {def.icon} {def.name} <span className="text-muted ms-1">+{type === 'entertainer' ? '2 Luxury' : type === 'taxman' ? '2 Gold' : '2 Science'}</span>
+                                  <span className="city-governor-card-icon">{option.icon}</span>
+                                  <span className="city-governor-card-name">{option.name}</span>
                                 </button>
                               );
                             })}
                           </div>
-                          {tileWorkers <= 1 && (
-                            <small className="text-muted d-block mt-1">All citizens are already specialists or on the city center.</small>
+                          <small className="text-muted d-block mt-2">
+                            {governorOption(selectedCity.governor).description}
+                          </small>
+                          {selectedCity.governorDirty && (
+                            <div className="small text-warning mt-1">
+                              Pending rebalance — applied when you close the city screen.
+                            </div>
                           )}
+                          <small className="text-muted d-block mt-1">
+                            Every governor secures food first. Tiles you place a citizen on by hand are marked{' '}
+                            <span className="city-tile-manual-badge-inline">manual</span> and are never moved
+                            automatically.
+                          </small>
                         </div>
                       )}
 
-                      {/* Stats */}
-                      <div className="small text-muted">
-                        <div>Population: {pop} · Tile workers: {tileWorkers} · Specialists: {specs.length}</div>
-                        {freeCitizens > 0 && <div className="text-warning">{freeCitizens} unassigned citizen(s)</div>}
+                      {/* Specialists — a pure indicator: assigning them is a side-panel action */}
+                      {isPlayerCity && (
+                        <div className="mb-3">
+                          <h6>
+                            Specialists{' '}
+                            <span className="text-muted fw-normal">
+                              ({specs.length} of {pop} citizens)
+                            </span>
+                          </h6>
+                          {specs.length > 0 ? (
+                            <div className="d-flex flex-wrap gap-2">
+                              {specs.map((type, i) => {
+                                const def = SPECIALIST_YIELDS[type];
+                                return (
+                                  <div
+                                    key={i}
+                                    className="d-flex align-items-center gap-1 p-1 px-2 rounded bg-dark border border-secondary"
+                                    title={`${def.name} — +${def.luxury ?? 0} Luxury, +${def.gold ?? 0} Gold, +${def.science ?? 0} Science`}
+                                  >
+                                    <span>{def.icon}</span>
+                                    <span className="small">{def.name}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="small text-muted">Everyone works the tiles.</div>
+                          )}
+                          <small className="text-muted d-block mt-1">
+                            Specialists give a fixed city yield instead of a tile&apos;s. Take a citizen off a field
+                            with the 🎭 toggle in the side panel — a city starts them as an Entertainer.
+                          </small>
+                        </div>
+                      )}
+
+                      {/* Worked tiles — read-only: they are set on the map */}
+                      {tileWorkers > 0 && (
+                        <div className="mb-3">
+                          <h6>
+                            Worked Tiles{' '}
+                            <span className="text-muted fw-normal">
+                              ({tileWorkers} · the city centre is worked for free)
+                            </span>
+                          </h6>
+                          <div className="city-worked-tile-list">
+                            {Array.from(workedTiles)
+                              .map((key) => {
+                                const sep = key.indexOf(',');
+                                const col = Number(key.slice(0, sep));
+                                const row = Number(key.slice(sep + 1));
+                                return { key, col, row };
+                              })
+                              .sort((a, b) => (a.row - b.row) || (a.col - b.col))
+                              .map(({ key, col, row }) => {
+                                const isCenter = col === selectedCity.col && row === selectedCity.row;
+                                const manual = !isCenter && manualTiles.has(key);
+                                const tile = gameEngine.getTileAt?.(col, row);
+                                const yields = tile && gameEngine.economicManager
+                                  ? gameEngine.economicManager.cityTileYields(tile)
+                                  : null;
+                                const resource = tile?.resource ? String(tile.resource) : '';
+                                return (
+                                  <div
+                                    key={key}
+                                    className={`city-worked-tile-row${manual ? ' manual' : ''}`}
+                                  >
+                                    <span className="city-worked-tile-terrain">
+                                      {isCenter ? '🏛️' : terrainLabel(tile?.terrain)}
+                                    </span>
+                                    <span className="city-worked-tile-coords text-muted">
+                                      ({col},{row})
+                                    </span>
+                                    {resource && (
+                                      <span className="badge text-bg-dark border border-secondary">
+                                        {resource}
+                                      </span>
+                                    )}
+                                    {yields && (
+                                      <span className="city-worked-tile-yields">
+                                        {yields.food > 0 && <span title="Food">🍞{yields.food}</span>}
+                                        {yields.production > 0 && <span title="Production">⛏️{yields.production}</span>}
+                                        {yields.trade > 0 && <span title="Trade">💰{yields.trade}</span>}
+                                      </span>
+                                    )}
+                                    {manual ? (
+                                      <span className="city-tile-manual-badge" title="Placed by hand — the governor never moves it">
+                                        manual
+                                      </span>
+                                    ) : (
+                                      <span className="city-tile-auto-badge">auto</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* How citizens are actually set — the map is the only place */}
+                      <div className="city-citizens-howto">
+                        <div className="city-citizens-howto-title">🗺️ Setting citizens is a map action</div>
+                        <ol className="city-citizens-howto-steps">
+                          <li>Close this screen so you can see the city.</li>
+                          <li>
+                            Click a <strong>worked tile</strong> (green) to pick up its citizen.
+                          </li>
+                          <li>
+                            Click an <strong>idle tile</strong> in the yellow radius — the citizen moves there and the
+                            new tile turns <span className="city-tile-manual-badge-inline">manual</span>. Tiles that
+                            already have a citizen are not valid targets.
+                          </li>
+                        </ol>
+                        <div className="city-citizens-howto-note">
+                          <strong>Esc</strong> or a right-click puts the citizen back. The governor never moves a{' '}
+                          <span className="city-tile-manual-badge-inline">manual</span> tile.
+                          {freeCitizens > 0 && (
+                            <span className="text-warning">
+                              {' '}
+                              {freeCitizens} citizen{freeCitizens === 1 ? '' : 's'} still need a tile.
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </>
                   );
@@ -844,15 +902,15 @@ const CityModal: React.FC<CityModalProps> = ({
                     return (
                       <div className="city-buildings-empty">
                         <i className="bi bi-people fs-1 d-block mb-2 text-muted"></i>
-                        No units stationed here or supported by this city.
+                        No units are inside this city.
                       </div>
                     );
                   }
                   return (
                     <>
                       <p className="small text-muted mb-3">
-                        Units on the city tile (garrison) and units this city supports
-                        (settlers, boats, …). Select one to take command of it.
+                        Units inside the city (garrison, settlers or boats standing
+                        here). Select one to take command of it.
                       </p>
                       <div className="d-flex flex-column gap-2">
                         {cityUnits.map((unit) => {
@@ -925,8 +983,59 @@ const CityModal: React.FC<CityModalProps> = ({
                 })()}
               </div>
             </Tab>
-            <Tab eventKey="raw" title="Raw JSON">
-              <pre className="city-raw-json">{JSON.stringify(selectedCity, null, 2)}</pre>
+            <Tab eventKey="trade" title="Trade Routes">
+              <div className="city-trade-routes-content">
+                {(() => {
+                  const routes = logic.getTradeRoutes();
+                  const routeTrade = logic.getRouteTrade();
+                  return (
+                    <>
+                      <p className="hex-detail-city-info">
+                        <strong>Trade routes:</strong> {routes.length}/3
+                        {routeTrade > 0 && (
+                          <span className="ms-2 text-info">
+                            <i className="bi bi-arrow-left-right"></i> +{routeTrade} trade/turn
+                          </span>
+                        )}
+                      </p>
+                      <p className="small text-muted">
+                        A Caravan establishes a permanent route when it delivers to another city
+                        (lump-sum Gold + Science). Each route adds per-turn trade to both cities.
+                        At most 3 routes; a stronger new route replaces the weakest.
+                      </p>
+                      {routes.length > 0 ? (
+                        <div className="d-flex flex-column gap-2">
+                          {routes.map((route, i) => {
+                            const destCiv = gameEngine.civilizations?.find(
+                              (c: Civilization) => c.id === route.civilizationId,
+                            );
+                            const isForeign = route.civilizationId !== selectedCity.civilizationId;
+                            return (
+                              <div key={i} className="p-2 rounded bg-dark border border-secondary d-flex justify-content-between align-items-center">
+                                <div>
+                                  <div>
+                                    <strong>{route.cityName}</strong>
+                                    {isForeign && <span className="text-warning ms-2 small">foreign ×2</span>}
+                                  </div>
+                                  <div className="small text-muted">
+                                    {destCiv?.name ?? `Civ ${route.civilizationId}`} · {route.distance} tiles away
+                                  </div>
+                                </div>
+                                <div className="text-info fw-semibold">+{route.trade} trade/turn</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-muted">
+                          No trade routes yet. Build a Caravan (requires Trade) and deliver it to
+                          another city to establish a route.
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
             </Tab>
           </Tabs>
         </Modal.Body>

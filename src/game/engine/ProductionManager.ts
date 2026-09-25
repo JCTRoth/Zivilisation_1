@@ -438,6 +438,76 @@ export class ProductionManager {
   }
 
   /**
+   * Promote a QUEUED item to the front of the queue: the first queued item
+   * swaps with what is being produced right now (it starts immediately, the
+   * item it replaced moves down one slot and keeps its progress waiting).
+   * This is the mirror of `moveCurrentProductionDown` and what the city
+   * screen's ▲ button on queue entry #1 does.
+   */
+  promoteQueuedItemToCurrent(cityId: string, index: number): ProductionResult {
+    try {
+      const city: City | undefined = this.gameEngine.cities.find(c => c.id === cityId) || (this.gameEngine.map && typeof (this.gameEngine.map as { getCity?: (id: string) => City | undefined }).getCity === 'function' ? (this.gameEngine.map as unknown as { getCity: (id: string) => City | undefined }).getCity(cityId) : undefined);
+      if (!city) return { success: false, reason: 'city_not_found' };
+      if (!Array.isArray(city.buildQueue)) return { success: false, reason: 'no_build_queue' };
+      if (index < 0 || index >= city.buildQueue.length) return { success: false, reason: 'invalid_index' };
+      if (!city.currentProduction) return { success: false, reason: 'no_current_production' };
+
+      const previous = city.currentProduction;
+      const [promoted] = city.buildQueue.splice(index, 1);
+      city.currentProduction = promoted;
+      // The shields already invested move to the item that is now produced.
+      city.carriedOverProgress = 0;
+      city.buildQueue.splice(index, 0, previous);
+
+      console.log('[ProductionManager] promoted queued item to current production', { cityId, index, promoted, previous });
+      if (this.gameEngine.onStateChange) {
+        this.gameEngine.onStateChange('CITY_QUEUE_UPDATED', { cityId, fromIndex: index, toIndex: 0 });
+        this.gameEngine.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item: promoted });
+      }
+      return { success: true, moved: promoted };
+    } catch (e) {
+      console.error('[ProductionManager] promoteQueuedItemToCurrent error', e);
+      return { success: false, reason: 'exception' };
+    }
+  }
+
+  /**
+   * Postpone the item being produced by one slot: it swaps places with the
+   * first queued item (the one that would have started next). The progress
+   * already spent stays with the new current item, so the swapped-in item
+   * starts at that progress. No-op when nothing is queued behind it.
+   */
+  moveCurrentProductionDown(cityId: string): ProductionResult {
+    try {
+      const city: City | undefined = this.gameEngine.cities.find(c => c.id === cityId) || (this.gameEngine.map && typeof (this.gameEngine.map as { getCity?: (id: string) => City | undefined }).getCity === 'function' ? (this.gameEngine.map as unknown as { getCity: (id: string) => City | undefined }).getCity(cityId) : undefined);
+      if (!city) return { success: false, reason: 'city_not_found' };
+      if (!city.currentProduction) return { success: false, reason: 'no_current_production' };
+      if (!Array.isArray(city.buildQueue) || city.buildQueue.length === 0) {
+        return { success: false, reason: 'no_queued_items' };
+      }
+
+      const current = city.currentProduction;
+      const next = city.buildQueue.shift() as ProductionItem;
+      city.currentProduction = next;
+      // The shields already invested move to the item that is now produced;
+      // the postponed item goes to the back of the queue.
+      city.productionProgress = city.productionProgress || 0;
+      city.carriedOverProgress = 0;
+      city.buildQueue.push(current);
+
+      console.log('[ProductionManager] moved current production down', { cityId, current, next });
+      if (this.gameEngine.onStateChange) {
+        this.gameEngine.onStateChange('CITY_QUEUE_UPDATED', { cityId, fromIndex: 0, toIndex: 1 });
+        this.gameEngine.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item: next });
+      }
+      return { success: true, moved: current };
+    } catch (e) {
+      console.error('[ProductionManager] moveCurrentProductionDown error', e);
+      return { success: false, reason: 'exception' };
+    }
+  }
+
+  /**
    * Remove current production from a city
    */
   removeCurrentProduction(cityId: string): ProductionResult {

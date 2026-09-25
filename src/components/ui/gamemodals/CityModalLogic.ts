@@ -166,6 +166,30 @@ export class CityModalLogic {
   }
 
   /**
+   * Promote a queued item to be produced right now. Queue entry #1 swaps with
+   * the current production (which moves one slot down and keeps its progress).
+   */
+  promoteQueueItem(index: number): { success: boolean; reason?: string } {
+    if (this.gameEngine && this.gameEngine.productionManager) {
+      const result = this.gameEngine.productionManager.promoteQueuedItemToCurrent(this.city.id, index);
+      return { success: result.success !== false, reason: result.reason };
+    }
+    return { success: false, reason: 'production_manager_unavailable' };
+  }
+
+  /**
+   * Postpone the item being produced: it swaps places with the first queued
+   * item. Returns the engine result so the UI can explain a refusal.
+   */
+  moveCurrentProductionDown(): { success: boolean; reason?: string } {
+    if (this.gameEngine && this.gameEngine.productionManager) {
+      const result = this.gameEngine.productionManager.moveCurrentProductionDown(this.city.id);
+      return { success: result.success !== false, reason: result.reason };
+    }
+    return { success: false, reason: 'production_manager_unavailable' };
+  }
+
+  /**
    * Unit types this city could start building. Delegates to the engine so the
    * UI, the purchase modal and the auto-end "idle city" gate all agree.
    */
@@ -228,28 +252,21 @@ export class CityModalLogic {
   }
 
   /**
-   * Units tied to this city, for the city screen's Units tab:
-   *  - the garrison standing on the city tile, then
-   *  - every unit the city supports (matching `homeCityId`).
-   * Defeated units are excluded; each unit appears once.
+   * Units IN this city for the city screen's Units tab: only the units
+   * standing on the city tile (the garrison, plus a settler/boat that is
+   * sitting in the city). Units that merely have this city as their home city
+   * but are out on the map are NOT listed here — that is the turn queue's
+   * business, not the city's. Defeated units are excluded.
    */
   getCityUnits(): Unit[] {
     const units = this.gameEngine?.units ?? [];
-    const seen = new Set<string>();
-    const result: Unit[] = [];
-    const add = (u: Unit) => {
-      if (!u || u.isDefeated || seen.has(u.id)) return;
-      seen.add(u.id);
-      result.push(u);
-    };
-    for (const u of units) {
-      if (u.civilizationId !== this.city.civilizationId) continue;
-      if (u.col === this.city.col && u.row === this.city.row) add(u);
-    }
-    for (const u of units) {
-      if (u.civilizationId !== this.city.civilizationId) continue;
-      if (u.homeCityId === this.city.id) add(u);
-    }
-    return result;
+    return units.filter(
+      (u: Unit) =>
+        !!u &&
+        u.civilizationId === this.city.civilizationId &&
+        u.col === this.city.col &&
+        u.row === this.city.row &&
+        u.isDefeated !== true,
+    );
   }
 }

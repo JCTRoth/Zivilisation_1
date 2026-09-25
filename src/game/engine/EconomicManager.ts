@@ -468,9 +468,13 @@ export class EconomicManager {
     }> = [{ col: city.col, row: city.row, yields: centerYields }];
 
     const userAssigned = city.userAssignedTiles ?? new Set<string>();
+    // Manual allocations are the PLAYER's decision: they are picked first, and
+    // the remaining citizens get the best free tiles. (Filling with the auto
+    // pick first would silently out-vote the player whenever the city grows.)
     for (const cand of candidates) {
       if (worked.length >= targetTiles) break;
       const key = `${cand.col},${cand.row}`;
+      if (key === `${city.col},${city.row}`) continue;
       if (!userAssigned.has(key) || chosenKeys.has(key)) continue;
       chosenKeys.add(key);
       worked.push(cand);

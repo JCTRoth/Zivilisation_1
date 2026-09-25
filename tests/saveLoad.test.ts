@@ -38,6 +38,13 @@ describe('Save/load', () => {
     const exploredBefore = storageBefore.explored.filter(Boolean).length;
     expect(exploredBefore).toBeGreaterThan(0);
 
+    // City governor state: a manual citizen allocation plus a chosen mode.
+    const city = engine.cities.find((c) => c.civilizationId === human.id)!;
+    const pinnedKey = `${city.col + 1},${city.row}`;
+    city.workingTiles = new Set<string>([`${city.col},${city.row}`, pinnedKey]);
+    city.userAssignedTiles = new Set<string>([pinnedKey]);
+    city.governor = 'commerce';
+
     // A GoTo path + non-default turn state.
     const unit = engine.units.find((u) => u.civilizationId === human.id)!;
     engine.goToManager.setUnitPath(unit.id, [{ col: unit.col + 1, row: unit.row }]);
@@ -79,5 +86,16 @@ describe('Save/load', () => {
     expect(loaded.cities.length).toBe(engine.cities.length);
     expect(loaded.goToManager.hasPath(unit.id)).toBe(true);
     expect(loaded.roundManager.getUnitPath(unit.id)?.length).toBe(1);
+
+    // Citizen tiles are Sets, which JSON turns into `{}` — they must be
+    // rehydrated, otherwise the layout and the manual pins are lost on reload.
+    const restoredCity = loaded.cities.find((c) => c.id === city.id)!;
+    expect(restoredCity.workingTiles instanceof Set).toBe(true);
+    expect(restoredCity.userAssignedTiles instanceof Set).toBe(true);
+    expect([...restoredCity.workingTiles].sort()).toEqual(
+      [`${city.col},${city.row}`, pinnedKey].sort(),
+    );
+    expect([...restoredCity.userAssignedTiles]).toEqual([pinnedKey]);
+    expect(restoredCity.governor).toBe('commerce');
   });
 });

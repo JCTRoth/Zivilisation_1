@@ -339,6 +339,31 @@ describe('City capture & destruction', () => {
     expect(emitted).toContain('CITY_CAPTURED');
   });
 
+  it('a won garrison fight is never punished by the city (the winner survives)', () => {
+    // Regression: after the last defender died, the follow-up city assault
+    // rolled the city roll too. On a lost roll the city counter-struck, so a
+    // unit that had just WON (and was told so by the toast) could be killed
+    // moments later — it vanished right after the fight.
+    const city = makeEnemyCity(2);
+    addUnit('garrison2', 1, { col: city.col, row: city.row }, 'warrior', 1);
+    const pos = adjacentLand(city);
+    addUnit('atkE', 0, pos, 'legion', 3);
+
+    // 0.01 → the unit round is won; 0.99 → the (now empty) city repels.
+    randomSpy.mockReturnValueOnce(0.01).mockReturnValue(0.99);
+
+    (engine as any).moveUnit('atkE', city.col, city.row);
+
+    const attacker: any = engine.units.find((u: any) => u.id === 'atkE');
+    expect(attacker).toBeDefined();
+    expect(attacker.isDefeated).not.toBe(true);
+    expect(attacker.health).toBe(100);
+    // The city held out and the player is told about it (no damage numbers).
+    expect(engine.cities.find((c: any) => c.id === city.id)?.civilizationId).toBe(1);
+    const cityAttacked = emitted.includes('CITY_ATTACKED');
+    expect(cityAttacked).toBe(true);
+  });
+
   it('a failed attack can cost an unwalled city a citizen, but walls protect it', () => {
     // Unwalled: attacker loses (0.99), then the population-loss roll succeeds
     // (0.1 < 0.5) → the city drops to population 2.

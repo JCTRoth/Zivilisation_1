@@ -270,6 +270,19 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     return () => window.removeEventListener("keydown", onKey);
   }, [gameState.selectedUnitIds, actions, triggerRender]);
 
+  // When the city selection is dropped (ESC, or clicking the same city/hex
+  // again) the local hex highlight has to go with it, otherwise the tile keeps
+  // its selected frame on a map that no longer shows a selection.
+  const lastSelectedCityRef = useRef<string | null>(null);
+  useEffect(() => {
+    const currentCity = gameState.selectedCity ?? null;
+    const previous = lastSelectedCityRef.current;
+    lastSelectedCityRef.current = currentCity;
+    if (!previous || currentCity) return;
+    if (gameState.selectedUnit) return; // a unit took over the selection
+    setSelectedHex({ col: -1, row: -1 });
+  }, [gameState.selectedCity, gameState.selectedUnit]);
+
   // Check if game state has changed significantly
   const hasGameStateChanged = useCallback(() => {
     const currentState = {
@@ -1341,9 +1354,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   };
 
   // ---- Citizen reassignment (pick up & drop) ----
-  // A left-click while a citizen is being carried: DROP it on an available
-  // (unworked, in-radius) tile, or ABORT when clicking far outside the city's
-  // workable radius. Clicking the origin/another worked tile keeps the grab.
+  // A left-click while a citizen is being carried: PLACE it on an idle in-radius
+  // tile, or ABORT when clicking far outside the city's workable radius.
+  // Clicking a worked tile (the origin, another worked tile, or the city centre)
+  // keeps the grab: every worked tile already has its citizen, since the worked
+  // set is one tile per citizen plus the free centre.
   const handleCitizenDrop = (hex: HexCoordinates) => {
     const re = citizenReassign;
     if (!re) return;
@@ -1358,7 +1373,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const isCenter = hex.col === city.col && hex.row === city.row;
     const worked = city.workingTiles ?? new Set<string>();
     const key = `${hex.col},${hex.row}`;
-    if (!isCenter && inRadius && !worked.has(key)) {
+    const isOrigin = key === `${re.col},${re.row}`;
+    if (!isCenter && !isOrigin && inRadius && !worked.has(key)) {
       const ok = !!gameEngine?.reassignCitizen?.(
         re.cityId,
         re.col,
@@ -1379,7 +1395,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       actions.endCitizenReassign();
       triggerRender();
     }
-    // Clicking the origin / another worked tile / the center keeps the grab.
+    // Worked tile / origin / centre: keep carrying the citizen.
   };
 
   /** Remove a unit's assigned GoTo path (engine + local render state). */
@@ -1547,10 +1563,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             ? (gameEngine.isTileInCityRadius?.(selCity, hex.col, hex.row) ??
               false)
             : false;
+          // A SLEEPING unit is skipped: it is not holding the tile, so it must
+          // not block picking up the citizen that works it. Only an awake unit
+          // of yours on the tile takes the click.
           const ownUnitOnTile = !!(
             onTileUnit &&
             currentPlayer &&
-            onTileUnit.civilizationId === currentPlayer.id
+            onTileUnit.civilizationId === currentPlayer.id &&
+            !onTileUnit.isSleeping
           );
           if (
             selCity &&
@@ -2722,7 +2742,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         ) ||
         combatAnimationsRef.current.some(
           (a) =>
-            nowMs - a.startTime < a.duration + (a.deathBlinkDuration ?? 1000),
+            nowMs - a.startTime < a.duration + (a.deathFadeDuration ?? 450),
         );
       if (
         needsRender.current ||

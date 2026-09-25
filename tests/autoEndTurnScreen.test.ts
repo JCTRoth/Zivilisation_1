@@ -97,7 +97,7 @@ describe('Auto End Turn defers while a screen is open', () => {
       defenderSurvived: false,
       startTime: performance.now(),
       duration: 2000,
-      deathBlinkDuration: 500,
+      deathFadeDuration: 450,
     });
     makeAllUnitsDone();
 

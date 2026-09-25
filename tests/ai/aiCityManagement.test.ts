@@ -192,8 +192,9 @@ describe('AI city management: famine prevention', () => {
 
     const after = engine.economicManager.cityFoodBalance(city as never, civ as never);
     expect(after.surplus).toBeGreaterThanOrEqual(AI_MIN_FOOD_SURPLUS);
-    // The pinned assignment protects the new food tiles from the auto-assigner.
-    expect(city.userAssignedTiles.size).toBeGreaterThan(0);
+    // `userAssignedTiles` is the PLAYER's manual allocation only — the governor
+    // must never write its own choices there or they would show up as manual.
+    expect(city.userAssignedTiles.size).toBe(0);
     expect(engine.economicManager.cityFoodBalance(city as never, civ as never).turnsUntilStarvation).toBe(-1);
   });
 

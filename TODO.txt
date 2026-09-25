@@ -4,7 +4,44 @@ BUGS:
 
 --Open--
 
+- 
+
 ?--Fixed--?
+- The winning attacker no longer vanishes: only the loser is ever collected by
+  the delayed corpse removal, and a city that is ASSAULTED in the same action in
+  which its last garrison unit died no longer counter-strikes the unit that
+  just won (that is what killed it "shortly after" the fight). All four winning
+  paths (field kill, city capture, repelled city, losing attacker) are pinned by
+  fake-timer tests in tests/defeatedUnitsStayDead.test.ts.
+- City modal: the Raw JSON tab is gone (and its dead CSS with it).
+- City modal queue: the first queued item can be moved up again — it is
+  promoted to the current production (the old production drops one slot).
+- City modal -> Citizens is now only an indicator: specialists are assigned from
+  the side panel with icon/emoji toggles (hover explains the yields; the
+  Entertainer is the default) and the worked-tile rows are read-only, because
+  citizens are placed on the map (pick up a worked tile, drop on an idle tile).
+- Manual citizen allocations are marked much more quietly (soft green wash +
+  hairline edge) and the governor never writes its own choices into the manual
+  set, so "manual" always means "the player put it there".
+- Map: a sleeping unit no longer blocks picking up the citizen on its tile.
+- Fortified and sleeping units are never called up by the turn manager: a
+  fortified unit keeps 0 movement and stays "turns done" across turns (a garrison
+  inside a city is not even drawn on the map, so there was nothing to act
+  with), and a sleeping unit keeps its movement but is skipped by the unit
+  queue. Unfortifying or waking hands the movement back, and the AI releases a
+  fortified unit that is no longer a garrison so it can fight again.
+- Side panel: the "1 citizen selected for reassignment" banner is gone. While a
+  citizen is in hand the panel IS the citizen menu — the city's idle tiles with
+  their yields, click one to place the citizen (or click the map as before).
+- Side panel: the citizen block (specialist toggles + worked tiles + the city
+  readout) now belongs to the selected CITY and no longer disappears when the
+  selected hex is a worked tile or a radius tile (picking a citizen up used to
+  empty the panel). It hides when a unit is selected or the city is deselected.
+- ESC now deselects the city as well (with no dialog open): it clears the
+  transient selection AND the persistent "focused city" marker, so the city net
+  and its worked tiles disappear from the map too. A pending action still wins —
+  a carried citizen is put back, a group selection is dropped — and the map's
+  hex highlight is cleared along with the city.
 - Coastal auto-production builds a Harbor in a safe coastal city (right after
   defense; defenders still come first and a city under direct threat never
   diverts to the Harbor). Adopted on small islands already.
@@ -267,27 +304,6 @@ DONE — Harbor ocean-food replaced by the Fisher Boat:
 * AI: AutoProduction builds one boat per harbor city under food pressure, and
   AIManager sails it to the nearest known fish tile and deploys the net.
 
--Open-
-* Add new ship type, "Trade Ship" 
-A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
-and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.
-Everytime it was in one of city of your civilisation and than reaches than another city of your civilisation or of another civ.
-the players get money.
-One ship owner civ. gets 80% of the following calulation and the owner of the raget city 20%:
-[(1+F*X)*(5*(P-10))+100+Cap)* (Minimum ([T*50%], [D*70%]))*20%/100]
-F is 150% (1.5) if it is a Foreign Trade Route, 0 if domestic
-X = 2*Enemy Civ. , 1*Your Own, 1.2 Friend, Peach Agreement NOT war.
-P is the population of the city Getting the trade route
-T is the population of the City the Trade Route is With
-D is the Distance to the City
-Cap is 25 if one of the cities is conected to the Capital, 0 if not
-[] indicates rounding down
-If this ship gets sunk by another ship than the owner civ. that where sinking the ship gets 100% of what the formular would had resulted,
-Assume: The traget city in the formular is the ship.
-D is distance to ship.
-Pop is the population of the city the sunk ship came from.
-T is the population of the city the sunk ship came from.
-
 - AI vs AI analysis (session aivsai-2026-09-20T23-11-44-788Z) -
 Fixed directly:
 * civ.score was 0 for the whole game in the progression CSV. VictoryManager
@@ -315,6 +331,35 @@ Also fixed after the analysis:
 * Score completeness: pollution penalty and peace-years bonus implemented.
 * Eliminated civs are emitted once in the compact CSV and then dropped.
 
+
+-Open-
+
+- Implement City Wall functionality also show the city wall on the city visually
+- After first 5 moves instead of first 3 moves the research should start
+- After 15 moves show a modal explaining to the play how and where "Auto. turn ending" is placed,
+ask if user wants to enable it
+- Implement tests that make sure Sleep, Fortify and other unit states are correctly handled, they should indicate if regression is on going
+
+* Add new ship type, "Trade Ship" 
+A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
+and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.
+Everytime it was in one of city of your civilisation and than reaches than another city of your civilisation or of another civ.
+the players get money.
+One ship owner civ. gets 80% of the following calulation and the owner of the raget city 20%:
+[(1+F*X)*(5*(P-10))+100+Cap)* (Minimum ([T*50%], [D*70%]))*20%/100]
+F is 150% (1.5) if it is a Foreign Trade Route, 0 if domestic
+X = 2*Enemy Civ. , 1*Your Own, 1.2 Friend, Peach Agreement NOT war.
+P is the population of the city Getting the trade route
+T is the population of the City the Trade Route is With
+D is the Distance to the City
+Cap is 25 if one of the cities is conected to the Capital, 0 if not
+[] indicates rounding down
+If this ship gets sunk by another ship than the owner civ. that where sinking the ship gets 100% of what the formular would had resulted,
+Assume: The traget city in the formular is the ship.
+D is distance to ship.
+Pop is the population of the city the sunk ship came from.
+T is the population of the city the sunk ship came from.
+
 Still to do (bigger):
 * Verify war commitment in fresh AI-vs-AI runs: do wars actually produce
   sustained offensives and city captures now? Watch attacks/round and
@@ -329,3 +374,4 @@ Still to do (bigger):
   marketplace/bank/temple earlier when upkeep pressure starts.
 * Scout/mercenary grants from huts can exceed the corps cap (only production
   is capped); decide whether to convert/dismiss extras.
+

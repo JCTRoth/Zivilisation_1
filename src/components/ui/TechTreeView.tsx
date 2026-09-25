@@ -299,7 +299,7 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
               onMouseEnter={(e) => handleNodeMouseEnter(tech, e)}
               onMouseLeave={handleNodeMouseLeave}
               className={`tech-tree-node ${isAnimating ? 'pulse' : ''} ${isCurrentResearch ? 'is-researching' : ''} ${isUnavailable ? 'unavailable' : ''}`}
-              style={{ cursor: isUnavailable ? 'not-allowed' : 'pointer', opacity: isUnavailable ? 0.5 : 1 }}
+              style={{ cursor: isUnavailable ? 'default' : 'pointer', opacity: isUnavailable ? 0.5 : 1 }}
             >
               <rect width={nodeWidth} height={nodeHeight} rx={6} ry={6} fill={fill} stroke={isCurrentResearch ? '#ffd700' : '#0b00a4ff'} strokeWidth={isCurrentResearch ? 3 : 1} />
               <text x={12} y={20} className="tech-tree-node-text">{tech.name}</text>

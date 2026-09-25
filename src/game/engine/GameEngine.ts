@@ -42,7 +42,7 @@ import { ResearchManager } from './ResearchManager';
 import { AIResearch } from './AI/AIResearch';
 import MapGenerator from './MapGenerator/MapGenerator';
 import { MIN_CITY_CENTER_DISTANCE } from './SettlementEvaluator';
-import type { GameActions, Unit, City, Civilization, VillageResult, Technology, ProductionItem, TradeRoute, SpecialistType } from '../../../types/game';
+import type { GameActions, Unit, City, CityGovernorMode, Civilization, VillageResult, Technology, ProductionItem, TradeRoute, SpecialistType } from '../../../types/game';
 
 
 /** Civ1 "Bridge Building" tech — mapped to the existing Engineering tech. */
@@ -50,6 +50,16 @@ const BRIDGE_BUILDING_TECH = 'engineering';
 
 /** Max permanent trade routes a city can hold (Civ1). */
 export const MAX_TRADE_ROUTES = 3;
+
+
+/**
+ * How long a defeated unit stays in `units` before it is really removed.
+ * It must cover the combat animation the renderer plays (💥 cloud 800 ms +
+ * a short death fade 450 ms) — otherwise the corpse is yanked from the map
+ * while it is still fading out. It is inert in the meantime: it is skipped by
+ * targeting, the turn queue, movement and combat.
+ */
+export const DEFEATED_UNIT_REMOVAL_DELAY_MS = 1500;
 
 
 export interface GameSettings {
@@ -500,6 +510,22 @@ export default class GameEngine {
    */
   moveCityQueueItem(cityId: string, fromIndex: number, toIndex: number) {
     return this.productionManager.moveCityQueueItem(cityId, fromIndex, toIndex);
+  }
+
+  /**
+   * Promote a queued item to be produced right now (it swaps with the current
+   * production, which moves one slot down). Used by the city screen's queue.
+   */
+  promoteQueuedItemToCurrent(cityId: string, index: number) {
+    return this.productionManager.promoteQueuedItemToCurrent(cityId, index);
+  }
+
+  /**
+   * Postpone the item being produced by one slot (swap with the next queued
+   * item). Used by the city screen's production queue.
+   */
+  moveCurrentProductionDown(cityId: string) {
+    return this.productionManager.moveCurrentProductionDown(cityId);
   }
 
   /**
@@ -1478,6 +1504,8 @@ export default class GameEngine {
       buildings: [],
       wonders: [],
       workingTiles: new Set<string>(), // Tiles being worked by citizens
+      userAssignedTiles: new Set<string>(), // Player's manual citizen placements
+      governor: 'balanced' as const, // Who works the tiles (independent of Auto)
       isCapital: this.cities.filter(c => c.civilizationId === civilizationId).length === 0,
       happiness: {
         happy: 0,
@@ -2048,7 +2076,7 @@ export default class GameEngine {
     setTimeout(() => {
       this.units = this.units.filter((u) => u.id !== cargo.id);
       this.onStateChange?.('UNIT_REMOVED', { unit: cargo });
-    }, 1200);
+    }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
   }
 
   // ────────────────────────────────────────────────────────────────────
@@ -2324,11 +2352,13 @@ export default class GameEngine {
   }
 
   /**
-   * Manually move a citizen from one worked tile to an available tile inside
-   * the city's radius ("pick up & drop"). The target tile is marked
-   * user-assigned so the auto-assign algorithm never overrides it on the next
-   * population growth. Yields are refreshed immediately for the current turn.
-   * Returns true on success.
+   * Manually move a citizen inside the city's workable radius ("pick up &
+   * drop"). The target must be an IDLE tile: `workingTiles` is a set of tiles,
+   * and the citizen count is derived from the population, so a tile that is
+   * already worked cannot take a second citizen (and "swapping" two worked
+   * tiles would not change the set at all). Both tiles end up user-assigned, so
+   * neither the auto-assign nor the city governor moves them. Yields are
+   * refreshed immediately. Returns true on success.
    */
   reassignCitizen(
     cityId: string,
@@ -2344,12 +2374,13 @@ export default class GameEngine {
     const fromKey = `${fromCol},${fromRow}`;
     const toKey = `${toCol},${toRow}`;
     if (fromKey === centerKey || toKey === centerKey) return false;
+    if (fromKey === toKey) return false;
     if (!this.isTileInCityRadius(city, toCol, toRow)) return false;
     if (!this.squareGrid?.isValidSquare?.(toCol, toRow)) return false;
 
     const workingTiles = city.workingTiles ?? (city.workingTiles = new Set<string>());
     if (!workingTiles.has(fromKey)) return false; // must pick up a worked tile
-    if (workingTiles.has(toKey)) return false;    // target must be unworked
+    if (workingTiles.has(toKey)) return false;    // target must be an IDLE tile
 
     const tile = this.getTileAt(toCol, toRow);
     if (!tile) return false;
@@ -2372,6 +2403,57 @@ export default class GameEngine {
       this.storeActions.updateCities([...this.cities]);
     }
     return true;
+  }
+
+  // ── City governor ─────────────────────────────────────────────────────
+
+  /**
+   * Choose how a city is governed. The new mode is stored immediately (so it
+   * survives a save) but the layout is NOT reshuffled here: the city is marked
+   * dirty and the re-layout happens when the city screen closes, so the map
+   * never changes under the player's eyes.
+   */
+  setCityGovernor(cityId: string, mode: CityGovernorMode): boolean {
+    const city = this.cities.find((c) => c.id === cityId);
+    if (!city) return false;
+    city.governor = mode;
+    city.governorDirty = true;
+    if (this.storeActions?.updateCities) {
+      this.storeActions.updateCities([...this.cities]);
+    }
+    return true;
+  }
+
+  /**
+   * Run the city governor for this city right now (idempotent). Called when
+   * the city screen closes with a pending mode change, and by the starvation
+   * modal's "Release & rebalance" action.
+   */
+  applyCityGovernor(cityId: string): boolean {
+    const city = this.cities.find((c) => c.id === cityId);
+    if (!city) return false;
+    const civ = this.civilizations?.[city.civilizationId];
+    if (!civ) return false;
+    if (civ.id === BARBARIAN_CIV_ID) return false;
+    this.aiCityManager?.manageCity(city, civ);
+    if (this.storeActions?.updateCities) {
+      this.storeActions.updateCities([...this.cities]);
+    }
+    if (this.storeActions?.updateUnits) {
+      this.storeActions.updateUnits(this.getAllUnits());
+    }
+    return true;
+  }
+
+  /**
+   * Drop the player's manual citizen allocations so the governor owns the
+   * whole layout again, then re-apply it immediately.
+   */
+  releaseManualAllocations(cityId: string): boolean {
+    const city = this.cities.find((c) => c.id === cityId);
+    if (!city) return false;
+    city.userAssignedTiles = new Set<string>();
+    return this.applyCityGovernor(cityId);
   }
 
   // ── Specialists ──────────────────────────────────────────────────────
@@ -2769,6 +2851,12 @@ export default class GameEngine {
     if (unit.embarkedOn) {
       return false;
     }
+    // A unit killed in combat is already out of the game (it only lingers for
+    // the death animation) — it must not be moved, ordered or counted.
+    if (unit.isDefeated === true) {
+      console.log(`[canUnitMoveTo] Unit ${unitId} is defeated.`);
+      return false;
+    }
     if (!this.squareGrid.isValidSquare(targetCol, targetRow)) {
       console.log(`[canUnitMoveTo] Invalid target square: (${targetCol}, ${targetRow})`);
       return false;
@@ -2884,8 +2972,9 @@ export default class GameEngine {
    * Returns true if the move is valid and possible, false otherwise.
    */
   canMoveUnit(id: string, targetCol: number, targetRow: number): boolean {
-    const unit = this.units.find(u => u.id === id);
+    const unit = this.units.find((u) => u.id === id);
     if (!unit) return false;
+    if (unit.isDefeated === true) return false;
 
     if (!this.squareGrid.isValidSquare(targetCol, targetRow)) return false;
 
@@ -2938,6 +3027,14 @@ export default class GameEngine {
    * Move unit to new position
    */
   moveUnit(unitId: string, targetCol: number, targetRow: number) {
+    // A unit killed in combat lingers in `this.units` until its delayed removal
+    // fires so the death animation can play. It is already gone as far as the
+    // game is concerned: it must not move, fight or be ordered anything.
+    const existingUnit = this.units.find((u) => u.id === unitId);
+    if (existingUnit?.isDefeated === true) {
+      return { success: false, reason: 'unit_defeated' };
+    }
+
     // First check if the move is possible
     if (!this.canUnitMoveTo(unitId, targetCol, targetRow)) {
       return { success: false, reason: 'cannot_move' };
@@ -3735,6 +3832,12 @@ export default class GameEngine {
    * Combat between units
    */
   combatUnit(attacker: Unit, defender: Unit) {
+    // A unit already killed in combat (it lingers only for the death animation)
+    // cannot start or take part in a new fight.
+    if (attacker?.isDefeated === true || defender?.isDefeated === true) {
+      return false;
+    }
+
     // Auto-declare war if not already at war. Barbarian units (phantom civ id
     // < 0) never participate in diplomacy — combat with them is always hostile
     // and must not create phantom war relations or UI events.
@@ -3810,7 +3913,7 @@ export default class GameEngine {
           if (defender.type === 'scout') {
             this.onScoutDeath(defender);
           }
-        }, 1200);
+        }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
 
         if (this.onStateChange) {
           this.onStateChange('COMBAT_VICTORY', {
@@ -3838,7 +3941,11 @@ export default class GameEngine {
               && u.id !== defender.id,
           );
           if (!stillDefended) {
-            const capture = this.resolveCityCombat(attacker, cityHere);
+            // The garrison is dead, so the city gets no counter-strike: an
+            // attacker that just WON a fight must not be killed by the city
+            // moments later (that made the winner vanish right after the
+            // "victory"). It only tries to take the (now undefended) city.
+            const capture = this.resolveCityCombat(attacker, cityHere, { counterDamage: false });
             if (capture.result === 'captured' || capture.result === 'city_destroyed') {
               attacker.movesRemaining = 0;
               attacker.hasMovedThisTurn = true;
@@ -3852,13 +3959,14 @@ export default class GameEngine {
               }
               return true;
             }
-            // The follow-up assault failed: surface the counter-damage.
-            if (capture.result === 'defended' && this.onStateChange) {
+            // The city held out (walls / population roll). Surface it so the
+            // player knows the city is still theirs — no damage, no death.
+            if (this.onStateChange) {
               this.onStateChange('CITY_ATTACKED', {
                 city: cityHere,
                 attacker,
                 result: { cityHit: false },
-                attackerDamage: capture.attackerDamage,
+                attackerDamage: 0,
                 defenderDamage: 0,
               });
             }
@@ -3922,7 +4030,7 @@ export default class GameEngine {
           if (attacker.type === 'scout') {
             this.onScoutDeath(attacker);
           }
-        }, 1200);
+        }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
       }
       
       if (this.onStateChange) {
@@ -3950,9 +4058,18 @@ export default class GameEngine {
   /**
    * Resolve one attack round against an enemy city through the central
    * CombatSystem. Garrison units die one by one; the city itself only falls
-   * when the garrison is empty and the assault roll is won.
+   * when the garrison is empty and the attacker wins the population-vs-attack roll.
+   *
+   * `options.counterDamage === false` suppresses the city counter-strike. It is
+   * used for the follow-up assault that happens in the SAME action in which the
+   * last garrison unit died: the attacker already won that fight and must not
+   * be punished (or killed) by the city a moment later.
    */
-  private resolveCityCombat(attacker: Unit, city: City): CityAssaultOutcome {
+  private resolveCityCombat(
+    attacker: Unit,
+    city: City,
+    options: { counterDamage?: boolean } = {},
+  ): CityAssaultOutcome {
     // Find the garrison: living military units standing on the city tile.
     // Units inside a city die one by one — the garrison is fought
     // unit-by-unit, not all at once. The city only falls when the garrison
@@ -3993,7 +4110,7 @@ export default class GameEngine {
           this.units = this.units.filter(u => u.id !== defender.id);
           this.onStateChange?.('UNIT_REMOVED', { unit: defender });
           if (defender.type === 'scout') this.onScoutDeath(defender);
-        }, 1200);
+        }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
         console.log(`[COMBAT] ${attacker.type} defeated garrison ${defender.type} in ${city.name} (${garrison.length - 1} defenders remain)`);
         return {
           result: 'hit',
@@ -4071,9 +4188,13 @@ export default class GameEngine {
 
     // Attacker defeated — damage or destroy it. A failed ground assault may
     // still cost the city a citizen UNLESS it has walls (Civ1: walls shield
-    // the population from conventional ground attacks).
-    attacker.health = Math.max(0, (attacker.health ?? 100) - round.attackerDamage);
-    const attackerDestroyed = attacker.health <= 0;
+    // the population from conventional ground attacks). Suppressed when the
+    // caller already resolved a fight for this attacker this action.
+    const counterDamage = options.counterDamage !== false;
+    if (counterDamage) {
+      attacker.health = Math.max(0, (attacker.health ?? 100) - round.attackerDamage);
+    }
+    const attackerDestroyed = counterDamage && attacker.health <= 0;
     if (attackerDestroyed) {
       attacker.isDefeated = true;
       attacker.defeatTimestamp = Date.now();
@@ -4084,7 +4205,7 @@ export default class GameEngine {
       setTimeout(() => {
         this.units = this.units.filter(u => u.id !== attacker.id);
         this.onStateChange?.('UNIT_REMOVED', { unit: attacker });
-      }, 1200);
+      }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
       console.log(`[COMBAT] ${attacker.type} destroyed attacking city ${city.name}`);
     }
     if (!round.cityHasWalls && (city.population || 1) > 1 && Math.random() < 0.5) {
@@ -4093,7 +4214,8 @@ export default class GameEngine {
     }
     return {
       result: 'defended',
-      attackerDamage: round.attackerDamage,
+      // No counter-strike → no damage to report either.
+      attackerDamage: counterDamage ? round.attackerDamage : 0,
       attackerDestroyed,
       defenderDamage: 0,
       cityHit: false,
@@ -5020,6 +5142,16 @@ export default class GameEngine {
 
     UnitActionManager.wakeUnit(unit);
 
+    // A sleeping unit keeps its movement points, but if it is woken after the
+    // turn reset it may have none left — hand them back so the wake-up is
+    // actually actionable.
+    if (!unit.isDefeated && !unit.embarkedOn && (unit.movesRemaining || 0) <= 0) {
+      const unitProps = GameEngine.UNIT_PROPS?.[unit.type];
+      unit.movesRemaining = unitProps?.movement || 1;
+      unit.hasMovedThisTurn = false;
+      this.updateUnitTurnsDoneFlag(unit);
+    }
+
     if (this.onStateChange) {
       this.onStateChange('UNIT_WOKE', { unit });
     }
@@ -5038,6 +5170,14 @@ export default class GameEngine {
     }
 
     unit.isFortified = false;
+    // Unfortifying is a request to ACT with the unit, so give it its movement
+    // back — a fortified unit is reset to 0 moves at the start of the turn and
+    // would otherwise be unable to move even after being woken.
+    if (!unit.isDefeated && !unit.embarkedOn && (unit.movesRemaining || 0) <= 0) {
+      const unitProps = GameEngine.UNIT_PROPS?.[unit.type];
+      unit.movesRemaining = unitProps?.movement || 1;
+      unit.hasMovedThisTurn = false;
+    }
     this.updateUnitTurnsDoneFlag(unit);
 
     if (this.onStateChange) {
@@ -5866,7 +6006,14 @@ export default class GameEngine {
         roundNumber: this.roundManager ? this.roundManager.getRoundNumber() : 0,
         map: this.map,
         units: this.units.map(u => ({ ...u })),
-        cities: this.cities.map(c => ({ ...c })),
+        // `workingTiles` / `userAssignedTiles` are Sets, which JSON serialises
+        // as `{}` — store them as plain arrays so a reload keeps the citizen
+        // layout and the player's manual allocations.
+        cities: this.cities.map(c => ({
+          ...c,
+          workingTiles: [...(c.workingTiles ?? [])],
+          userAssignedTiles: [...(c.userAssignedTiles ?? [])],
+        })),
         civilizations: this.civilizations.map(c => ({ ...c })),
         technologies: this.technologies,
         // New fields for full state restoration
@@ -5950,6 +6097,18 @@ export default class GameEngine {
       this.cities = saveData.cities;
       this.civilizations = saveData.civilizations;
       this.technologies = saveData.technologies;
+
+      // Citizen tile sets are `Set`s, which JSON turns into `{}` — rehydrate
+      // them (pins included) or every `.has()` call on a restored city throws
+      // and the player's manual allocations would silently be lost.
+      for (const city of this.cities) {
+        city.workingTiles = new Set<string>(
+          Array.isArray(city.workingTiles) ? city.workingTiles : [],
+        );
+        city.userAssignedTiles = new Set<string>(
+          Array.isArray(city.userAssignedTiles) ? city.userAssignedTiles : [],
+        );
+      }
       this.isInitialized = true;
       this.isGameOver = false;
 

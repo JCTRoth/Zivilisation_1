@@ -346,6 +346,19 @@ export class AIManager {
     }
 
     // ─── Phase 4: Process units ────────────────────────────────────────
+    // Fortified units keep zero movement and sit out the turn (a garrison
+    // inside a city is not even drawn on the map, so calling it up would be
+    // noise). Release the ones that are no longer garrisons — a unit parked at
+    // its own city stays entrenched, anything else is unfortified so it can act
+    // again (unfortifying hands its movement back).
+    for (const unit of this.gameEngine.units) {
+      if (unit.civilizationId !== civilizationId) continue;
+      if (!unit.isFortified || unit.isDefeated || unit.embarkedOn) continue;
+      const isGarrison = this.isCombatUnit(unit) && this.isAtOrAdjacentToFriendlyCity(unit);
+      if (isGarrison) continue;
+      this.gameEngine.unfortifyUnit(unit.id);
+    }
+
     const aiUnits = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civilizationId && (u.movesRemaining || 0) > 0 && !u.embarkedOn,
     );

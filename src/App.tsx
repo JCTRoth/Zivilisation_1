@@ -1009,16 +1009,28 @@ function App() {
             // If a modal/dialog is open, ESC is closing that dialog (its
             // onHide → hideDialog fires too) — so DON'T also clear the unit or
             // city selection underneath. Otherwise closing e.g. the city modal
-            // would deselect the city. When no dialog is open, ESC cancels the
-            // current map selection.
-            const dialogOpen =
-              useGameStore.getState().uiState.activeDialog != null;
-            if (
-              !dialogOpen &&
-              actions &&
-              typeof actions.selectUnit === "function"
-            ) {
+            // would deselect the city.
+            const store = useGameStore.getState();
+            if (store.uiState.activeDialog != null) {
+              break;
+            }
+            // A pending map action owns this ESC press: a citizen being carried
+            // is put back and a group selection is dropped by GameCanvas's own
+            // handlers. Deselecting on top of that would do two things at once.
+            if (store.uiState.citizenReassign) break;
+            if ((store.gameState.selectedUnitIds?.length ?? 0) > 0) break;
+            // Nothing pending: ESC clears the map selection — the unit AND the
+            // city. The city needs selectCity(null) too, because selectUnit
+            // alone keeps the persistent "focused city" marker, which would
+            // leave the city net and its worked tiles drawn on the map.
+            if (actions && typeof actions.selectUnit === "function") {
               actions.selectUnit(null, "user");
+            }
+            if (actions && typeof actions.selectCity === "function") {
+              actions.selectCity(null, "user");
+            }
+            if (actions && typeof actions.setSelectedUnitIds === "function") {
+              actions.setSelectedUnitIds([]);
             }
             // Add more modal closures as needed
             break;

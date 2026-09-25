@@ -433,9 +433,9 @@ export class TurnManager {
     console.log(`[TurnManager] City production phase for civ ${civilizationId}`);
     try {
       const civ = this.gameEngine.civilizations?.[civilizationId];
-      // Auto Production applies to human cities too. processAutoProduction
-      // internally only touches cities with autoProduction enabled, so cities
-      // where the player turned it off are left alone.
+      // Runs for human cities too: the CITY GOVERNOR (who works the tiles) runs
+      // for every city, while building automation only touches the cities that
+      // have Auto Production enabled.
       if (civ && this.gameEngine.autoProduction) {
         this.gameEngine.autoProduction.processAutoProductionForCivilization(civilizationId);
       }
@@ -627,6 +627,14 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
     console.log(`[TurnManager] Resetting moves for ${units.length} units of player ${playerId}`);
     
     units.forEach((unit) => {
+      // A unit killed in combat only lingers for its death animation: it must
+      // NOT get fresh movement points at the start of a turn (it would come
+      // back to life as a zombie until the delayed removal fires).
+      if (unit.isDefeated === true) {
+        unit.movesRemaining = 0;
+        unit.areTurnsDone = true;
+        return;
+      }
       // A passenger aboard a ferry is not a separate actor: it travels with
       // the ship and only acts again after being unloaded.
       if (unit.embarkedOn) {
@@ -635,12 +643,26 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
         return;
       }
       const unitProps = UNIT_PROPS?.[unit.type];
+
+      // A FORTIFIED unit has already chosen to sit this one out: it keeps zero
+      // movement and stays out of the turn, so the turn manager never calls it
+      // up (a garrison inside a city is not even drawn on the map). It is woken
+      // by unfortifying, by an enemy coming into sight, or by an attack.
+      if (unit.isFortified) {
+        unit.movesRemaining = 0;
+        unit.areTurnsDone = true;
+        return;
+      }
+
+      // A SLEEPING unit keeps its movement (waking it must leave it ready to
+      // act) but is likewise not called up — the queue skips it, so it only
+      // acts when something wakes it or the player picks it.
       unit.movesRemaining = unitProps?.movement || 1;
       // Civ1: at the start of the owner's turn every unit is "fresh" — full
       // movement restored and no action taken yet, so the Minimum-1-Move
       // exception applies to its first move.
       unit.hasMovedThisTurn = false;
-      unit.areTurnsDone = false;
+      unit.areTurnsDone = unit.isSleeping === true;
       unit.isSkipped = false; // "Skip turn" only applies to the current turn
 
       // Civ1 multi-turn settler construction: a settler with in-progress
@@ -980,6 +1002,7 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
         this.gameEngine.onStateChange?.('CITY_STARVED', {
           city,
           newPopulation: city.population,
+          blockingManualTiles: this.manualTilesHoldingBackFood(city),
         });
       }
     } else if (!inDisorder && city.foodStored >= city.foodNeeded) {
@@ -998,8 +1021,63 @@ hasLibrary: cities.some((c) => c.buildings?.includes('library')),
     // Fisher Boat overflow: a delivered catch that did not fully fit into the
     // food box grants +2 food at this growth step (once).
     if ((city.fishingOverflowBonus ?? 0) > 0) {
-      city.foodStored = (city.foodStored ?? 0) + (city.fishingOverflowBonus ?? 0);
+      city.foodStored = city.foodStored + city.fishingOverflowBonus;
       city.fishingOverflowBonus = 0;
+    }
+  }
+
+  /**
+   * Manual tile allocations that keep a citizen on worse food than a free tile
+   * in the radius. The city governor never moves pinned tiles, so these are
+   * what the player has to release to let a starving city rebalance (shown in
+   * the starvation modal).
+   */
+  private manualTilesHoldingBackFood(
+    city: City,
+  ): Array<{ col: number; row: number; food: number }> {
+    try {
+      const pins = city.userAssignedTiles;
+      if (!(pins instanceof Set) || pins.size === 0) return [];
+      const econ = this.gameEngine.economicManager;
+      if (!econ) return [];
+
+      const centerKey = `${city.col},${city.row}`;
+      const working = city.workingTiles instanceof Set ? city.workingTiles : new Set<string>();
+      const foodOf = (col: number, row: number): number | null => {
+        const tile = this.gameEngine.getTileAt?.(col, row);
+        if (!tile) return null;
+        return econ.cityTileYields(tile).food;
+      };
+
+      // Best free food tile in the radius (what the governor would move to).
+      let bestFree = -1;
+      for (let dCol = -2; dCol <= 2; dCol++) {
+        for (let dRow = -2; dRow <= 2; dRow++) {
+          if (dCol === 0 && dRow === 0) continue;
+          const col = city.col + dCol;
+          const row = city.row + dRow;
+          if (!this.gameEngine.isTileInCityRadius?.(city, col, row)) continue;
+          const key = `${col},${row}`;
+          if (key === centerKey || working.has(key)) continue;
+          const food = foodOf(col, row);
+          if (food != null && food > bestFree) bestFree = food;
+        }
+      }
+
+      const blocking: Array<{ col: number; row: number; food: number }> = [];
+      for (const key of pins) {
+        if (key === centerKey) continue;
+        if (!working.has(key)) continue;
+        const sep = key.indexOf(',');
+        const col = Number(key.slice(0, sep));
+        const row = Number(key.slice(sep + 1));
+        const food = foodOf(col, row);
+        if (food == null) continue;
+        if (food < bestFree) blocking.push({ col, row, food });
+      }
+      return blocking;
+    } catch {
+      return [];
     }
   }
 

@@ -116,6 +116,8 @@ interface SerializedCity {
     carriedOverProgress: number;
     workingTiles: string[];
     userAssignedTiles?: string[];
+    governor?: string;
+    governorDirty?: boolean;
     founded: number;
     supportedUnitIds: string[];
     hitPoints: number;
@@ -1056,6 +1058,8 @@ export class City {
             carriedOverProgress: this.carriedOverProgress,
             workingTiles: Array.from(this.workingTiles),
             userAssignedTiles: this.userAssignedTiles.size > 0 ? Array.from(this.userAssignedTiles) : undefined,
+            governor: (this as unknown as { governor?: string }).governor,
+            governorDirty: (this as unknown as { governorDirty?: boolean }).governorDirty,
             founded: this.founded,
             supportedUnitIds: Array.from(this.supportedUnitIds),
             hitPoints: this.hitPoints
@@ -1075,6 +1079,9 @@ export class City {
         city.carriedOverProgress = data.carriedOverProgress || 0;
         city.workingTiles = new Set(data.workingTiles);
         city.userAssignedTiles = data.userAssignedTiles ? new Set(data.userAssignedTiles) : new Set();
+        const withGovernor = city as unknown as { governor?: string; governorDirty?: boolean };
+        withGovernor.governor = data.governor;
+        withGovernor.governorDirty = data.governorDirty;
         city.founded = data.founded;
         city.supportedUnitIds = new Set(data.supportedUnitIds || []);
         city.hitPoints = data.hitPoints || data.population;

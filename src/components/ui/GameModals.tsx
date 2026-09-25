@@ -128,6 +128,15 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     if (closing === 'city-disorder') {
       actions.clearCityDisorder();
     }
+    // A governor change is only *marked* while the city screen is open so the
+    // map never reshuffles under the player's eyes — now that it is closed,
+    // run the governor for that city.
+    if (closing === 'city-details' && selectedCity && gameEngine) {
+      if (selectedCity.governorDirty) {
+        gameEngine.applyCityGovernor?.(selectedCity.id);
+        selectedCity.governorDirty = false;
+      }
+    }
     // The "No Research Selected" prompt and the tech tree defer auto-end while
     // no research is selected, so closing them IS a decision point: with a
     // research chosen the turn may proceed, with an empty one the auto-end gate
@@ -1642,11 +1651,41 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           The granaries in <strong>{starvationNotice?.cityName ?? 'your city'}</strong> are
           completely empty! 🏚️ Your citizens are starving, and the situation is rapidly decaying.
         </p>
+        {starvationNotice?.blockingManualTiles && starvationNotice.blockingManualTiles.length > 0 && (
+          <div className="alert alert-warning py-2 px-3 mb-2">
+            <div className="fw-bold mb-1">Manual allocations are holding the city back</div>
+            <div className="small mb-2">
+              You placed citizens on these tiles by hand, so the governor never moves them — even to stop a
+              famine. They yield less food than tiles sitting idle in this city&apos;s radius.
+            </div>
+            <ul className="small mb-2 ps-3">
+              {starvationNotice.blockingManualTiles.map((t) => (
+                <li key={`${t.col},${t.row}`}>
+                  ({t.col},{t.row}) — {t.food} 🍞
+                </li>
+              ))}
+            </ul>
+            <div className="small">Release them and let the governor rebalance the city?</div>
+          </div>
+        )}
         <p className="mb-0">
           Take action immediately before people starve to death!
         </p>
       </Modal.Body>
       <Modal.Footer className="bg-dark">
+        {starvationNotice?.blockingManualTiles && starvationNotice.blockingManualTiles.length > 0 && (
+          <Button
+            variant="warning"
+            onClick={() => {
+              if (starvationNotice.cityId) {
+                gameEngine?.releaseManualAllocations?.(starvationNotice.cityId);
+              }
+              handleCloseDialog();
+            }}
+          >
+            <span role="img" aria-label="release">🔓</span> Release &amp; Rebalance
+          </Button>
+        )}
         <Button variant="outline-secondary" onClick={handleCloseDialog}>
           <span role="img" aria-label="close">❌</span> Close
         </Button>
