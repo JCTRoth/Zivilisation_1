@@ -4,6 +4,7 @@ import {
   openSidePanel,
   closeSidePanel,
   openTopMenu,
+  closeResearchPrompt,
 } from './helpers/game';
 
 // ---------------------------------------------------------------------------
@@ -372,6 +373,13 @@ async function endTurn(page: Page): Promise<void> {
   // Let the confirm modal finish its fade-out before returning, so the next
   // endTurn call does not race with a detaching modal.
   await waitForModalClosed(page);
+
+  // From RESEARCH_UNLOCK_ROUND (5) on, ending a turn with no technology
+  // selected pops the "No Research Selected" prompt a beat later. Handle it
+  // here, while this turn is still the one that caused it — waiting for it at
+  // the end of a multi-turn loop is a race, and while it is open it swallows
+  // every click in the test with "…intercepts pointer events".
+  await closeResearchPrompt(page);
 }
 
 /**
@@ -382,29 +390,55 @@ async function advanceTurns(page: Page, n: number): Promise<void> {
     await endTurn(page);
   }
   // Dismiss the auto-appearing "All Your Units Have Moved!" dialog if it shows
-  await dismissEndTurnDialog(page);
+  await dismissBlockingDialogs(page);
 }
 
 /**
- * Dismiss the "End Turn?" confirmation dialog if it is visible.
- * Keeps dismissing until it stays closed, because the auto
+ * Modal dialogs a plain "end turn" can leave open, and the button that closes
+ * each without changing the game state.
+ *
+ *  - "All Your Units Have Moved!" / "End Turn?" -> Cancel
+ *  - "No Research Selected"                     -> Decide Later
+ *
+ * The second one is not a test artefact: research unlocks at
+ * RESEARCH_UNLOCK_ROUND (5), and from then on ending a turn with nothing
+ * selected opens a prompt. Left open it swallows every later click with
+ * "…intercepts pointer events" — that is how the AI-city-founding test died.
+ */
+const BLOCKING_DIALOGS: ReadonlyArray<{ text: string; button: string }> = [
+  { text: 'End Turn?', button: 'Cancel' },
+  { text: 'No Research Selected', button: 'Decide Later' },
+];
+
+/**
+ * Dismiss the known blocking dialogs if any are visible.
+ * Keeps dismissing until things stay closed, because the auto
  * "All Your Units Have Moved!" dialog can reappear while a GoTo path
  * animation is still running (each queue change can re-trigger the prompt).
  */
-async function dismissEndTurnDialog(page: Page): Promise<void> {
-  const modal = page.locator('[role="dialog"]').filter({ hasText: 'End Turn?' });
+async function dismissBlockingDialogs(page: Page): Promise<void> {
+  const visibleDialog = async (timeout: number) => {
+    for (const dialog of BLOCKING_DIALOGS) {
+      const modal = page.locator('[role="dialog"]').filter({ hasText: dialog.text });
+      if (await modal.isVisible({ timeout }).catch(() => false)) return { dialog, modal };
+    }
+    return null;
+  };
+
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
-    if (await modal.isVisible({ timeout: 1_500 }).catch(() => false)) {
-      await modal.locator('button').filter({ hasText: 'Cancel' }).click({ timeout: 3_000 });
+    const open = await visibleDialog(1_500);
+    if (open) {
+      await open.modal
+        .locator('button')
+        .filter({ hasText: open.dialog.button })
+        .click({ timeout: 3_000 });
       await waitForModalClosed(page);
     } else {
-      // Modal is closed — wait briefly and confirm it stays closed (the GoTo
-      // animation may still be running and could re-open it).
+      // Nothing open — wait briefly and confirm nothing comes back (the GoTo
+      // animation may still be running and could re-open the prompt).
       await page.waitForTimeout(500);
-      if (!(await modal.isVisible({ timeout: 500 }).catch(() => false))) {
-        return;
-      }
+      if (!(await visibleDialog(500))) return;
     }
   }
 }
@@ -836,7 +870,7 @@ test.describe('AI Behavior', () => {
       }
       await expect(foundBtn).toBeVisible({ timeout: 5_000 });
       await foundBtn.click();
-      await dismissEndTurnDialog(page);
+      await dismissBlockingDialogs(page);
 
       // Ctrl+1 selects the first city and opens the city screen.
       await page.keyboard.press('Control+1');
@@ -924,7 +958,7 @@ test.describe('AI Behavior', () => {
       // does not block the bottom bar.
       const canvas = page.locator('.game-canvas canvas').first();
       await canvas.click();
-      await dismissEndTurnDialog(page);
+      await dismissBlockingDialogs(page);
 
       // After interacting with the settler tile, "Selected Unit" or unit type should appear
       await openSidePanel(page);
