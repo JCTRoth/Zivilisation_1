@@ -306,6 +306,16 @@ export class AIResearch {
     if (naval > 0 && techId === 'sailing') {
       score += 18 + 4 * naval;
       reasons.push('naval-relevance');
+      // A civ that BEGAN on an island is stranded until it has a boat: it
+      // cannot settle a second city, reach an enemy, or touch another landmass.
+      // That makes Sailing a prerequisite rather than one candidate among many,
+      // so it has to outrank the whole category-weighted field — otherwise a
+      // science_focus civ happily researches Alphabet for a century and never
+      // sails.
+      if (gameState.startsOnIsland === true) {
+        score += 40;
+        reasons.push('stranded-must-sail');
+      }
     }
     if (naval > 0 && techId === 'map_making') {
       score += 6 + 2 * naval;

@@ -49,15 +49,19 @@ const rng = mulberry32(0x5eaf00d);
  * landmass, and each gets a start position on its coast.
  */
 const ISLANDS = [
-  // col, row, radius — spread over the whole map, no two neighbours touching.
-  { col: 12, row: 12, r: 7 },   // north-west
-  { col: 48, row: 9, r: 5 },    // north-centre
-  { col: 82, row: 14, r: 8 },   // north-east
-  { col: 20, row: 30, r: 6 },   // west
-  { col: 47, row: 29, r: 8 },   // centre  (the prize)
-  { col: 76, row: 31, r: 6 },   // east
-  { col: 30, row: 49, r: 7 },   // south-west
-  { col: 66, row: 50, r: 7 },   // south-east
+  // Six bigger islands, not eight small ones. The first cut used 8 islands of
+  // 52-133 tiles and it was unplayable: a civ that starts on a 52-tile rock
+  // never gets past one city, never finishes Sailing and never fields a ship,
+  // so no naval war could ever start. ~200 tiles each is enough to found a
+  // small empire and pay for a ferry.
+  { col: 14, row: 13, r: 11 },  // north-west
+  { col: 50, row: 11, r: 9 },   // north-centre
+  { col: 82, row: 15, r: 11 },  // north-east
+  { col: 18, row: 34, r: 10 },  // west
+  { col: 48, row: 33, r: 13 },  // centre  (the prize)
+  { col: 79, row: 36, r: 10 },  // east
+  { col: 33, row: 50, r: 9 },   // south-west
+  { col: 65, row: 51, r: 9 },   // south-east
 ];
 
 /** Terrain by distance from an island's centre: coasts are beaches/hills, the interior green. */
@@ -118,21 +122,51 @@ for (let row = 0; row < HEIGHT; row++) {
   specials.push(specLine);
 }
 
-/** A passable, coastal-ish start tile per island (grass/plains, not ocean/mountains). */
+/**
+ * A start tile per island that is passable AND coastal.
+ *
+ * Coastal is not a nicety: a civ whose first city cannot see water has
+ * `civCanBuildShips() === false`, so it can never research into a fleet, never
+ * colonise and never invade. The first cut of this map put 7 of 8 starts
+ * inland and the whole naval game was dead on arrival.
+ */
 const startPositions = [];
+const isWater = (col, row) => {
+  const ch = rows[row]?.[col] ?? ' ';
+  return ch === ' ';
+};
 for (const isle of ISLANDS) {
   let spot = null;
-  for (let attempt = 0; attempt < 400 && !spot; attempt++) {
+  let bestInland = null;
+  for (let attempt = 0; attempt < 600 && !spot; attempt++) {
     const angle = rng() * Math.PI * 2;
-    const dist = isle.r * (0.35 + rng() * 0.4);
+    // Walk outwards so the search naturally finds the shoreline.
+    const dist = isle.r * (0.55 + rng() * 0.45);
     const col = Math.round(isle.col + Math.cos(angle) * dist);
     const row = Math.round(isle.row + Math.sin(angle) * dist * 0.75);
     if (row < 4 || row >= HEIGHT - 4 || col < 2 || col >= WIDTH - 2) continue;
     const terrain = rows[row][col];
     if (terrain === ' ' || terrain === 'm' || terrain === 'a') continue;
-    spot = { col, row };
+    const candidate = { col, row };
+    const coastal =
+      [-1, 0, 1].some((dc) =>
+        [-1, 0, 1].some((dr) => {
+          if (dc === 0 && dr === 0) return false;
+          const nc = col + dc;
+          const nr = row + dr;
+          if (nc < 0 || nr < 0 || nc >= WIDTH || nr >= HEIGHT) return false;
+          return isWater(nc, nr);
+        }),
+      );
+    if (coastal) {
+      spot = candidate;
+    } else if (!bestInland) {
+      bestInland = candidate;
+    }
   }
-  if (spot) startPositions.push(spot);
+  // Fall back to an inland tile only if the island has no coast at all (a bug
+  // in the island itself), and let the verification below catch it.
+  startPositions.push(spot ?? bestInland);
 }
 
 // ── Verify the archipelago is actually naval ───────────────────────────────
@@ -171,16 +205,31 @@ function landmasses() {
 }
 
 const comps = landmasses();
-const bigEnough = comps.filter((c) => c.length >= 40);
+const bigEnough = comps.filter((c) => c.length >= 120);
 const errors = [];
 if (comps.length !== ISLANDS.length) {
   errors.push(`expected ${ISLANDS.length} landmasses, got ${comps.length} (sizes ${comps.map((c) => c.length).join('/')})`);
 }
-if (bigEnough.length < 5) {
-  errors.push(`only ${bigEnough.length} islands with >= 40 tiles — too small to found cities on`);
+if (bigEnough.length < 6) {
+  errors.push(`only ${bigEnough.length} islands with >= 120 tiles — too small to fund a navy`);
+}
+if (Math.min(...comps.map((c) => c.length)) < 60) {
+  errors.push(`smallest island is only ${Math.min(...comps.map((c) => c.length))} tiles`);
 }
 if (startPositions.length < 4) {
   errors.push(`only ${startPositions.length} usable start positions`);
+}
+for (const start of startPositions) {
+  const coastal = [-1, 0, 1].some((dc) =>
+    [-1, 0, 1].some((dr) => {
+      if (dc === 0 && dr === 0) return false;
+      const nc = start.col + dc;
+      const nr = start.row + dr;
+      if (nc < 0 || nr < 0 || nc >= WIDTH || nr >= HEIGHT) return false;
+      return rows[nr][nc] === ' ';
+    }),
+  );
+  if (!coastal) errors.push(`start ${start.col},${start.row} has no water next to it — that civ could never sail`);
 }
 
 const map = {

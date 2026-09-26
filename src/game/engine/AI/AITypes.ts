@@ -47,6 +47,12 @@ interface OffensivePlan {
   targetDefense?: number;
   /** Owner of the target city (used to declare the rush war). */
   targetCivId?: number;
+  /**
+   * How the plan's target is reached. 'sea' means the enemy is on another
+   * island: the plan justifies a war declaration and the invasion mission
+   * ferries troops over, but no land army is sent at it.
+   */
+  reachableBy?: 'land' | 'sea';
 }
 
 /** Situational aggression state, refreshed a few times per turn. */

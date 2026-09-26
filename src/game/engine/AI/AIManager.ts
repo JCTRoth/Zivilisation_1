@@ -3602,6 +3602,28 @@ export class AIManager {
   }
 
   /**
+   * True if this particular known enemy position could be attacked from the
+   * sea: it sits on another landmass, has a beach a ferry can reach, and we
+   * can put a hull in the water. Land positions are never 'sea' reachable —
+   * a walker is always better.
+   */
+  private isSeaInvasionTarget(
+    civilizationId: number,
+    loc: { col: number; row: number; type: 'city' | 'unit' },
+  ): boolean {
+    if (!this.engineCanBuildShips(civilizationId)) return false;
+    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civilizationId);
+    if (ownCities.length === 0) return false;
+    if (!ownCities.some((c) => this.gameEngine.findAdjacentOcean?.(c.col, c.row))) return false;
+    const homeLandmass = this.gameEngine.getLandmassId?.(ownCities[0].col, ownCities[0].row) ?? -1;
+    if (homeLandmass < 0) return false;
+    const targetLandmass = this.gameEngine.getLandmassId?.(loc.col, loc.row) ?? -1;
+    if (targetLandmass < 0 || targetLandmass === homeLandmass) return false;
+    // A ferry can only put troops ashore where a land tile touches water.
+    return this.gameEngine.findAdjacentOcean?.(loc.col, loc.row) != null;
+  }
+
+  /**
    * True if a hostile city sits on another landmass that a ferry could reach:
    * the civ can build (or already has) a hull, owns a city to sail from, and
    * the target has a beach.
@@ -3761,6 +3783,7 @@ export class AIManager {
       roundPrepared: roundNumber,
       targetDefense: bulkPlan.targetDefense,
       targetCivId: bulkPlan.targetCivId,
+      reachableBy: bulkPlan.reachableBy ?? 'land',
     };
 
     this.gameEngine.log?.('ai', `Bulk attack — ${this.gameEngine.civilizations?.[civilizationId]?.name ?? civilizationId} assaults (${bulkPlan.target.col},${bulkPlan.target.row})`, {
@@ -3831,18 +3854,20 @@ export class AIManager {
   private collectKnownTargets(civilizationId: number, storage: PlayerTurnStorage, roundNumber: number): KnownTarget[] {
     const targets: KnownTarget[] = [];
     if (!storage?.enemyLocations) return targets;
-    // The bulk attack is a LAND army plan: targets on another landmass would
-    // stall the army at the coast, so they are excluded here (the navy pivot
-    // and colony missions handle cross-water enemies).
+    // Land targets feed the land army plan. Sea targets are kept, but marked:
+    // an enemy city across the water is a perfectly good reason to go to WAR
+    // (the invasion mission ferries troops over), and dropping it here is why
+    // an archipelago game never saw a single declaration — the plan had no
+    // target, so there was no `targetCivId` to declare against.
     for (const [enemyCivId, enemyList] of storage.enemyLocations) {
       for (const loc of enemyList) {
         const age = roundNumber - (loc.lastSeenRound ?? loc.discoveredRound ?? roundNumber);
         // Same 40-round window as planBulkAttack: intel that is not ancient
         // still feeds the war plan even if the two fronts are apart.
         if (age > 40) continue;
-        if (!this.engineTileReachableByLand(civilizationId, loc.col, loc.row)) {
-          continue;
-        }
+        const reachableByLand = this.engineTileReachableByLand(civilizationId, loc.col, loc.row);
+        const reachableBySea = !reachableByLand && this.isSeaInvasionTarget(civilizationId, loc);
+        if (!reachableByLand && !reachableBySea) continue;
         targets.push({
           col: loc.col,
           row: loc.row,
@@ -3851,6 +3876,7 @@ export class AIManager {
           lastSeenRound: loc.lastSeenRound,
           discoveredRound: loc.discoveredRound,
           civId: enemyCivId,
+          reachableBy: reachableByLand ? 'land' : 'sea',
         });
       }
     }
@@ -3881,6 +3907,15 @@ export class AIManager {
     }
 
     if (this.getCityDefenseReserveIds(unit.civilizationId).has(unit.id)) {
+      return null;
+    }
+
+    // A plan aimed at an enemy island is a REASON TO GO TO WAR, not a marching
+    // order: the invasion mission ferries one unit at a time across. A land
+    // unit sent at it would walk to the shoreline and hold there every turn
+    // (the "Already at target" treadmill), so it gets no target from this plan
+    // and falls through to its normal assignment.
+    if (plan.reachableBy === 'sea') {
       return null;
     }
 

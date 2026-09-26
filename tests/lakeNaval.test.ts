@@ -445,7 +445,17 @@ describe('AI naval production pivot', () => {
     expect(productionManager.setCityProduction).toHaveBeenCalled();
     const item = productionManager.setCityProduction.mock.calls[0][1];
     expect(item.type).toBe('unit');
+    // A Ferry is the hull that actually does something: it is the only unit
+    // that can carry a land unit, so a navy of pure warships can neither
+    // settle another island nor invade anybody. It is therefore built FIRST.
+    expect(item.itemType).toBe('ferry');
+
+    // Once a transport exists, the next ship is a warship.
+    units.push({ id: 'fer', type: 'ferry', civilizationId: 1, col: 0, row: 0, attack: 0, defense: 0 });
+    productionManager.setCityProduction.mockClear();
+    autoProduction.setAutoProduction('city-1');
+    const warship = productionManager.setCityProduction.mock.calls[0]?.[1];
     expect(['sail', 'trireme', 'caravel', 'frigate', 'ironclad', 'destroyer', 'cruiser', 'battleship'])
-      .toContain(item.itemType);
+      .toContain(warship?.itemType);
   });
 });

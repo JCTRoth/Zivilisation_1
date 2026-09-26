@@ -1,7 +1,10 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
 import { CIVILIZATIONS, DIFFICULTY_LEVELS } from '@/data/GameData';
 import '../../styles/gameSetupModal.css';
+
+/** Map types that switch Dev Mode on when selected (see the effect below). */
+const DEV_MODE_MAP_TYPES: ReadonlySet<string> = new Set(['AI_VS_AI_NAVAL']);
 
 function GameSetupModal({ show, onStart }) {
   // Drag-to-scroll: when the user presses on an empty area of the page and
@@ -86,6 +89,14 @@ function GameSetupModal({ show, onStart }) {
   const [temperature, setTemperature] = useState(1);
   const [climate, setClimate] = useState(1);
   const [age, setAge] = useState(1);
+
+  // Scenarios that are unwatchable without it switch Dev Mode on by itself.
+  // The naval archipelago is a fully automatic AI duel: fog, invisible enemies
+  // and a hidden minimax make it impossible to follow, so watching it is the
+  // whole point. One-way on map-type change — the player can still untick it.
+  useEffect(() => {
+    if (DEV_MODE_MAP_TYPES.has(mapType)) setDevMode(true);
+  }, [mapType]);
 
   const totalSteps = 2;
   const isFinalStep = currentStep === totalSteps;

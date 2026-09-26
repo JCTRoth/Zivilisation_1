@@ -1,0 +1,1046 @@
+= Leader Doctrines — civ identity carried by diplomacy
+:toc:
+:toclevels: 2
+:sectnums:
+:status: proposal
+:source: `src/game/engine/DiplomacyManager.ts`, `src/game/engine/AI/AITypes.ts`, `src/data/GameData.ts`, `src/data/LeaderPortraits.ts`, `src/components/ui/GameModals.tsx`
+
+Scope: civ ↔ leader identity. The constraint that shapes everything below: *the
+player may pick any of the 14 civs, on any of the 12 map types*, and the layer
+that must stay identical in all 168 combinations is diplomacy.
+
+Related: `doc/DIPLOMACY_SYSTEM.md` (current mechanics),
+`doc/space-bunny-free_ai_gov.adoc` (AI architecture; already uses the word
+*doctrine* for the goal set), `doc/AI_PRODUCTION.md:6-24` (the index → profile
+table this document replaces), `TODO.txt:1-16` (diplomacy to-dos),
+`doc/AI_VS_AI_ANALYSIS.md` (the stalemate that motivates a peace-with-terms
+model).
+
+== Terminology — the term I propose
+
+=== The term: *Doctrine*
+
+Each civ gets a named personality package: **the Doctrine**. Its diplomatic
+rule-set — the thresholds and predicates that decide war, peace, alliance,
+tribute, treaties, gifts and betrayal — is **the Charter**.
+
+[source,text]
+....
+DOCTRINE  "The Flower-War Doctrine"   <- civ identity: archetype + traits + charter + agenda + dossier
+├── ARCHETYPE   military_expansion    <- today's StrategyProfile (behavioural family)
+├── TRAITS      aggression 8 · diplomacy 3 · military 8 · expansion 8 · science 4 · economy 5
+│                                            <- today's Civilization.personality (1-10)
+├── CHARTER     doW 1.4x · tribute 1.8x · no peace offers · breaks non-aggression pacts
+│                                            <- NEW: replaces the hard-coded thresholds
+├── SIGNATURE   attacks launched from Forest/Jungle/Hills get +1 attack
+├── AGENDA      "Eight cities, and no neighbour left untributed."
+└── DOSSIER     title, portrait scene, greeting/demand/refusal lines
+                                            <- today's LeaderPortraits.ts, extended
+....
+
+Why *doctrine* and not something else:
+
+[cols="2,3"]
+|===
+| Term | Verdict
+
+| *Doctrine*
+| The industry term for a package of playstyle rules that decides how a faction
+acts — Paradox (EU4/HOI4) use it for exactly this, and `doc/space-bunny-free_ai_gov.adoc`
+already names the AI's goal set the *doctrine*. Adopting it unifies the two
+documents instead of inventing a second word.
+
+| *Charter*
+| The right sub-term for the diplomatic half specifically: a standing set of
+binding rules of engagement. A leader's *Charter* is what you learn by playing
+against them.
+
+| Unique Ability / Unique Trait (Civ V)
+| Too narrow. It names a single bonus; we need a rule-set.
+
+| Legacy (Civ V)
+| Wrong meaning — in Civ V a *Legacy* is what a dead civ leaves to its
+successor. We want the leader's own character.
+
+| National Spirit (HOI4)
+| Wrong polarity — a spirit is a temporary state modifier. A Doctrine is
+permanent and identity-bearing.
+
+| Archetype
+| Right word, wrong level: an archetype is the *template* (there are 6 of
+them). The instance is a Doctrine.
+
+| Agenda
+| Already used in the layer cake for the goal, which is what it means in Civ V.
+Keep it there.
+
+| Profile / Personality
+| *Personality* is already taken in the codebase for the six 1–10 numbers
+(`AITypes.Personality`), so those become *Traits* and the name is freed.
+*Profile* says nothing.
+
+| Behaviour / AI config
+| Not player-facing language.
+|===
+
+=== The layer cake in code terms
+
+[cols="2,3,3"]
+|===
+| Layer | New name | Today
+
+| Civ identity | `doctrine` | implicit — a `name` + a `leader` string in `GameData.ts:31-133`
+| Behavioural family | `archetype` | `productionProfile` / `StrategyProfile` (`AITypes.ts:14-20`)
+| Six 1–10 sliders | `traits` | `personality` (`AITypes.ts:26-33`)
+| Diplomatic rules | `charter` | *hard-coded inside `processAIDiplomacy`* (`DiplomacyManager.ts:675-783`)
+| One mechanical rule | `signature` | *nothing*
+| Standing goal | `agenda` | *nothing* (only `STRATEGY_GOAL_TECHS`, tech ids)
+| Flavour | `dossier` | `LEADER_PORTRAITS` (`LeaderPortraits.ts:51-262`), title + scene only
+|===
+
+== Why diplomacy is the layer to hang civ identity on
+
+=== Today, choosing a civ changes nothing
+
+The civ picker offers 14 civilizations (`GameSetupModal.tsx:119-122`), each with
+its own colour, icon, leader and 40–70 city names. Mechanically the choice is
+**cosmetic**. The evidence: every single read of `personality` and
+`productionProfile` in the codebase reads *the acting civ's own* value —
+
+`GovernmentManager.ts:100`, `DiplomacyManager.ts:181` (`fromCiv.personality`),
+`DiplomacyManager.ts:683`, `AI/AIAggression.ts:122`, `AI/AIBuildingStrategy.ts:96-101`,
+`AI/AIResearch.ts:187-192`, `AI/AIStrategySelector.ts:64-69`,
+`AI/AIManager.ts:2401,3744,3799,4082`, `AutoProduction.ts:903,1019`
+
+— and *all of those are AI code paths for the civ that is running the AI*. No
+code anywhere reads a **foreign** civ's doctrine
+(`grep -rn "otherCiv\.\(personality\|productionProfile\)" src/` → 0 hits).
+The human's civ is never the actor, so its profile is never consulted.
+
+Worse, the profile is chosen by **slot index**, not by civ
+(`getCivProductionProfile(i)`, `AITypes.ts:135-137`, called from
+`GameEngine.ts:1050-1051`). So the same civ plays differently depending on where
+it lands in the shuffled start order, and the human's civ is always slot 0 →
+always `early_expansion`.
+
+=== Three reasons diplomacy is the right layer
+
+. **It is the only layer that is identical on all 12 map types.** Production
+  depends on terrain, tile counts and coastlines; research depends on what is
+  reachable. The diplomatic ruleset reads only turn number, strength ratio,
+  treaties and reputation — so a Doctrine behaves the same on `EARTH`
+  (180×90), on `CLOSEUP_1V1` (20×20), on `NAVAL_CLOSEUP` (mostly water) and on
+  `AI_VS_AI_NAVAL` (8 islands). A civ must be playable in all 168 civ × map
+  combinations; the charter is the only place that can guarantee it.
+. **It is the layer the player actually reads.** The diplomacy screen is the
+  only place a leader's name, title, portrait scene, attitude, reputation,
+  strength ratio and event history appear together (`GameModals.tsx:740-1012`).
+  A Doctrine that only touched `determineProductionItem` would be invisible.
+. **It is unfinished, so the differentiation is free.** Attitude has no memory
+  (`getAttitude` recomputes from scratch, `:175-231`), willingness reads no
+  personality at all (`:869-932`), refusing an offer costs nothing, peace is
+  unconditional, there is no war weariness, gold gifting does not exist, tech
+  exchange is unreachable from any UI (`:518-541`), and there is no third-party
+  reaction to a war declaration. All of that is room to build in.
+
+=== What changes for the player (the global gameplay effect)
+
+* **Your civ's Charter is public.** It appears in the setup screen and in the
+  diplomacy screen, and the AI follows it *toward you*. A Huns player is
+  treated by the exact same rules as a Huns AI.
+* **Attitude stops being one-sided.** Today `getAttitude(from, toward)` reads
+  only the *actor's* traits (`:181-188`), so being a Huns makes people angry at
+  you and being a Gandhi makes them like you — for no reason. The Charter adds
+  a *target* term: fear of a strong doctrine, contempt for a weak one, warmth
+  for a shared school.
+* **The leaders start behaving differently from each other in the first 10
+  turns**, instead of all of them offering an alliance or nothing.
+* **The player's own aggression has a price.** `notoriety` (§ world-opinion
+  ledger) means a player who plays the Grande Armée Doctrine loses allies
+  whether or not they wanted them.
+* **No leader is a pushover and no leader is unkillable.** Every Charter is
+  exploitable: Gandhi will *not* retaliate, Caesar will *not* break a pact, and
+  Shaka has literally one move.
+
+== The data model
+
+[source,typescript]
+----
+/** src/data/LeaderDoctrines.ts — one entry per civ, keyed by civ name. */
+export type DiplomacySchool =
+  | 'hegemon'        // takes what it wants; tribute or conquest
+  | 'merchant'       // trade, open borders, no war without a reason
+  | 'neutral'        // arbiter; will not initiate, will not be pushed
+  | 'nonviolent'     // never initiates; coalition + tech trade
+  | 'autocrat';      // cold, transactional, remembers refusals
+
+export interface LeaderCharter {
+  school: DiplomacySchool;
+
+  /** Declare war when own/their strength ratio >= this. Infinity = never. */
+  doW: {
+    conquestRatio: number;
+    /** The `aggression >= 7 && hostile` DoW, per-leader. Infinity = never. */
+    hostileRatio: number;
+    /** Ignore this many turns of peace after making peace (default 0). */
+    noWarTurnsAfterPeace: number;
+    /** Max simultaneous wars this leader will open (default 2). */
+    maxOpenWars: number;
+    /** Only attack a civ that is already at war (opportunist). */
+    onlyOpportunists: boolean;
+  };
+
+  /** What it demands to end a war. */
+  peace: {
+    /** Propose a ceasefire when outmatched by this ratio (default 1.3). */
+    atWeakeningRatio: number;
+    /** ...but only after this many turns at war (default 5). */
+    afterTurns: number;
+    /** 'white' = no conditions, 'tribute' = gold demand, 'city' = cede a city. */
+    terms: 'white' | 'tribute' | 'city';
+    /** Offer peace at all (the Napoleon "I need one city" rule). */
+    minimumWarScore: number;
+  };
+
+  alliance: {
+    offers: boolean;          // proposes alliances
+    acceptsWillingnessBonus: number;   // added to calculateWillingness
+    /** Chance per 5-turn check to betray a pact of N turns standing. */
+    betraysAfterTurns: number | null;
+    betrayalChance: number;   // 0-100
+    /** 'defensive' = today's alliance cascade; 'joint' = calls for help. */
+    helpClause: 'none' | 'defensive' | 'joint';
+  };
+
+  tribute: { demands: boolean; atRatio: number; afterTurns: number;
+             /** Amount multiplier, and +25% per refusal (Stalin). */ scale: number; escalates: boolean; };
+
+  /** Gold and technology flows. Most are TODO.txt:4-8, unwired today. */
+  trade: { offersTreatyAfterTurns: number; goldPerTurn: number;
+           giftGoldWhenPoor: number; sellsTechForGold: number; stealsTech: boolean; };
+
+  /** New offer types this leader may send. */
+  offers: DiplomatAction[];   // e.g. ['demand_non_aggression'] for Napoleon
+
+  /** Lines. Replace the fixed strings at :702/:709/:742/:753 and getRejectReason :955. */
+  tone: { greeting: string; demand: string; peace: string; refuse: string; betray: string; };
+}
+
+export interface LeaderDoctrine {
+  civ: string;               // 'Zulus' — matches Civilization.name
+  leader: string;
+  name: string;              // 'The Buffalo Doctrine'
+  tagline: string;           // one line for the setup card
+  archetype: StrategyProfile;
+  traits: Personality;
+  signature: { name: string; text: string };
+  agenda: string;
+  charter: LeaderCharter;
+  dossier: { title: string; scene: LeaderPortraitConfig['scene']; brief: string };
+}
+----
+
+`CIVILIZATIONS` entries stay untouched; the doctrine table is a parallel
+`Record<name, LeaderDoctrine>` so the join key stays `name` (as it already is in
+`MiniMapRenderer.ts:105-112`, `SidePanel.tsx:133`,
+`GameSetupModal.tsx:79,194`).
+
+== The Charter's hooks into today's code
+
+Every charter field replaces something that is currently hard-coded. This table
+is the contract between the design and the implementation.
+
+[cols="2,2,3"]
+|===
+| Charter field | Replaces | Where
+
+| `doW.conquestRatio`
+| `conquestThreshold` = 1.6 / 2.0 / ∞ by archetype
+| `DiplomacyManager.ts:720-723`
+
+| `doW.hostileRatio`
+| the hard-coded `1.5` in `classicDoW`
+| `DiplomacyManager.ts:727`
+
+| `doW.maxOpenWars`, `onlyOpportunists`
+| *nothing* — a leader can open N wars at once, today
+| —
+
+| `peace.atWeakeningRatio`, `afterTurns`
+| `theirStrength > ownStrength * 1.3 && turnsSince > 5`
+| `DiplomacyManager.ts:702`
+
+| `peace.terms`, `minimumWarScore`
+| unconditional `makePeace`; the counter-offer's gold is computed and then dropped
+| `DiplomacyManager.ts:709`, `:461-463`, `:843-849`
+
+| `alliance.offers`
+| `personality.diplomacy >= 6` (a trait used as a boolean)
+| `DiplomacyManager.ts:748`
+
+| `alliance.betraysAfterTurns`, `betrayalChance`
+| `turnsSince > 20 && aggression >= 7 && rand < 8`, and `hostile && rand < 40`
+| `DiplomacyManager.ts:764-765`
+
+| `alliance.acceptsWillingnessBonus`, `trade.*`
+| `calculateWillingness` reads **no personality at all** — this is the single biggest hook
+| `DiplomacyManager.ts:869-932`
+
+| `trade.stealsTech`, `sellsTechForGold`
+| `offer_tech_exchange` exists, is unreachable from any UI or AI decision, and skips the "unknown to the receiver" check
+| `DiplomacyManager.ts:518-541`; `GameEngine.ts:5391-5431`
+
+| `tone.*`
+| five fixed strings + `getRejectReason`'s four fixed strings
+| `DiplomacyManager.ts:702,709,742,753`, `:955-962`
+
+| *(new)* target-side attitude term
+| attitude ignores the target entirely
+| `DiplomacyManager.ts:175-231`
+
+| *(new)* `notoriety`
+| `declareWar` has no third-party consequence — the world is passive
+| `DiplomacyManager.ts:235-270`
+|===
+
+== The fourteen Doctrines
+
+=== Charter matrix
+
+Traits: aggression / diplomacy / military / expansion / science / economy, 1–10.
+`doW` = conquest ratio, `∞` = will not open a war. `tribute` = the strength
+ratio at which it demands money.
+
+[cols="2,2,1,1,1,1,1,1,1,1,1,1,1"]
+|===
+| Civ | Doctrine | School | A | D | M | E | S | Ec | doW | tribute | war ends | alliance betrays
+
+| Americans | The Union Doctrine | merchant | 4 | 7 | 5 | 7 | 6 | 7 | 3.0 | never | white | no
+| Aztecs | The Flower-War Doctrine | hegemon | 8 | 3 | 8 | 8 | 4 | 5 | 1.4 | 1.8 | tribute | 10 turns / 30%
+| Babylonians | The Code Doctrine | merchant | 3 | 8 | 4 | 5 | 8 | 7 | ∞ | never | white | no
+| Chinese | The Long March Doctrine | hegemon | 7 | 2 | 9 | 8 | 4 | 5 | 1.2 (max 3.0) | 2.0 | tribute | 20 turns / 15%
+| Egyptians | The Karnak Doctrine | neutral | 4 | 6 | 5 | 5 | 7 | 6 | ∞ | never | white | no
+| English | The Armada Doctrine | merchant | 5 | 7 | 6 | 7 | 6 | 7 | 3.0 (2.0 while trading) | 1.8 | tribute | no
+| French | The Grande Armée Doctrine | hegemon | 9 | 3 | 9 | 7 | 5 | 5 | 1.4 | 2.0 | city | 20 turns / 8%
+| Germans | The Iron Crown Doctrine | autocrat | 6 | 4 | 9 | 5 | 6 | 6 | 1.5 (1 front) | 2.0 | tribute | no
+| Greeks | The Anabasis Doctrine | hegemon | 8 | 4 | 9 | 8 | 6 | 5 | 1.5 | 2.0 | white | no
+| Indians | The Sarvodaya Doctrine | nonviolent | 1 | 10 | 2 | 6 | 6 | 6 | ∞ | never | white | no
+| Huns | The Steppe Storm Doctrine | hegemon | 10 | 2 | 10 | 8 | 2 | 4 | 1.2 | 1.8 | never (ceasefire) | 20 turns / 25%
+| Romans | The Legion Doctrine | merchant | 6 | 5 | 8 | 6 | 5 | 8 | 2.2 | 2.0 | white | no
+| Russians | The Five-Year Plan Doctrine | autocrat | 8 | 2 | 9 | 5 | 5 | 8 | 1.5 (1 war) | 1.8 escalating | tribute | no
+| Zulus | The Buffalo Doctrine | hegemon | 9 | 3 | 10 | 6 | 3 | 4 | 1.4 | 1.7 | never | n/a
+|===
+
+=== Americans — Abraham Lincoln — *The Union Doctrine*
+
+*Effect on gameplay.* Lincoln is the only leader in the game who will hand you an
+alliance before you have earned it, and the only one you can grow past without
+provoking. His conquest ratio is **3.0** — he needs to be three times your size
+before he considers a war, and the tribute branch is disabled entirely. Five
+turns after meeting you he proposes a trade agreement, then open borders, then
+an alliance, in that order, regardless of who is stronger; and the alliance
+offer itself is the most generous in the game — the strength gate is 0.5 (you
+can be *half* his size and still qualify) and with `diplomacy 7` he clears the
+`diplomacy >= 6` gate on every single check. He counters every alliance
+proposal you send with a non-aggression pact instead — he wants the peace
+without the obligation. He never offers you peace, ceasefire or tribute: he
+simply never starts what he would have to end.
+
+Because an alliance is *real* — attacking you drags every ally of yours into the
+war (`GameEngine.ts:4013-4030`) — the Americans are the best shield in the game
+and the best target for everyone else's first war. That is the whole design
+intent: the United States is the civ other leaders want to be on the right side
+of.
+
+*If you play the Americans.* You start with an ally in every 7-civ game by turn
+25 and a functioning trade web; what you give up is the cheapest way to end a
+war by yourself — you cannot bully anyone into a tribute payment, ever.
+
+*Counter-play.* A Lincoln civ has a small army and a 2-turn cycle between wars.
+The classic play is to wait for his war to end, then attack him in the same
+window: he cannot open a second front while at war, and his peace ask is
+unconditional, so the cleanest peace is the one you offer first.
+
+Charter notes:
+
+* `doW.conquestRatio 3.0`, `tribute.demands false`
+* `peace.terms 'white'`, `atWeakeningRatio 1.6`, `afterTurns 8` — he hangs on longer than anyone
+* `alliance.offers true`, `acceptsWillingnessBonus +15` (the most trusted in the game)
+* `alliance.betraysAfterTurns null` — Lincoln does not stab
+* `trade.offersTreatyAfterTurns 5`, `goldPerTurn 2`
+* Tone: *"We seek no quarrel with you, and we ask none of you."*
+
+=== Aztecs — Montezuma — *The Flower-War Doctrine*
+
+*Effect on gameplay.* You will be asked for money before you have been asked
+for anything else. With `tribute.atRatio 1.8` and `doW.conquestRatio 1.4`, a
+Montezuma civ is the most likely of all fourteen to open a war inside the first
+30 turns, and the *first* thing it does at peace is demand tribute — the demand
+fires as soon as it is 1.8× your strength and 10 turns past contact, which on a
+slow map means you get the demand before your first city is finished. He never
+proposes peace. When he is losing (1.6× for 8 turns) he offers a *ceasefire*
+and then counters with a tribute demand of `max(20, strength × 5)` — the harshest
+peace price in the game, because it scales with how badly he is losing, not with
+how rich you are.
+
+The Flower-War rule is the interesting one: a war he declares on a civ that has
+broken a treaty with him is *free* (`notoriety +6` instead of +12), while a war
+on an innocent neighbour is the most expensive in the game. This is the one
+leader you can befriend as an aggressive player — a player who is already the
+world's least popular can take the Aztecs as a partner without paying anything
+extra for it.
+
+*If you play the Aztecs.* Every AI knows you are dangerous from turn 1, so the
+tribute demands are aimed at you too, and your wars are the ones other civs
+refuse to join.
+
+*Counter-play.* He is science 4 and signs anything you hand him — sign a
+non-aggression pact, take one city, let him break it (−30 reputation,
+`DiplomacyManager.ts:250-256`) and he turns on the next civ for you.
+
+Charter notes:
+
+* `doW.conquestRatio 1.4`, `hostileRatio 1.2`, `maxOpenWars 1`
+* `peace.terms 'tribute'`, `atWeakeningRatio 1.6`, `afterTurns 8`
+* `alliance.betraysAfterTurns 10`, `betrayalChance 30` — signs anything, breaks it routinely
+* `signature` *flower war*: war on a treaty-breaker costs half notoriety
+* Tone: *"The temple has weighed your offerings, and found them wanting."*
+
+=== Babylonians — Hammurabi — *The Code Doctrine*
+
+*Effect on gameplay.* Hammurabi is the only leader who cannot start a war at
+all (`doW ∞`), and the only one whose willingness to accept your proposals does
+not depend on how strong you are — he has no fear term, because he has no
+conquest. Five turns after contact he proposes a trade agreement, then open
+borders; he will sell you a technology for gold at `sellsTechForGold +15`
+willingness, the highest rate in the game, which makes him the only civ you can
+buy a technology from. He accepts mutual defence too. The result is that the
+Babylonians are the best neighbour to have and the *worst* ally to hold, because
+he also offers the same package to whoever is next to him — in a 7-civ game
+Babylon eventually ends up allied to someone you are at war with.
+
+*If you play the Babylonians.* Your peace is never in danger, your science is
+the best in the game, and your cities are undefended. The one thing you must
+watch: `expand 5` means an enemy can walk through you to reach someone else.
+
+*Counter-play.* There is no defensive answer to a code — take his cities in the
+first 60 turns while his army is four units. He will defend, he just will not
+retaliate beyond his own borders.
+
+Charter notes:
+
+* `doW.conquestRatio Infinity`, `tribute.demands false`, `peace.terms 'white'`
+* `alliance.offers true`, `acceptsWillingnessBonus +20`, `betrayalChance 0`
+* `trade.sellsTechForGold 15`, `offersTreatyAfterTurns 5`
+* `signature` *the Code*: no fear or contempt term in his attitude at all, ever
+* Tone: *"A contract honoured is a wall built without a single stone."*
+
+=== Chinese — Mao Tse Tung — *The Long March Doctrine*
+
+*Effect on gameplay.* Mao signs nothing. Not alliances, not open borders, not
+non-aggression, not trade agreements — all four are refused at `-30`
+willingness, which is the single most reachable refusal in the game. His war
+trigger is inverted relative to everyone else's: he declares at **1.2×** (the
+cheapest war in the game) but he will not attack a civ more than **3×** stronger
+than him, so what you see is a relentless series of small wars against whoever is
+next to him, never a single decisive one. He demands tribute at 2×, and because
+his demand amount is the fixed `max(25, ratio × 20)` it is the only demand in
+the game you can budget for in advance. He never proposes peace, only a
+ceasefire, and only when he is outmatched 1.5× for 10 turns. If you make peace
+with him he re-opens the war after 20 turns at 15% per check — a Mao peace is a
+20-turn ceasefire with a clause attached.
+
+*If you play the Chinese.* Every neighbour knows you will eventually declare on
+them, so the whole table reacts to you before you have done anything. In return
+you get the one doctrine that never needs an ally: `doW 1.2` means you are always
+fighting someone.
+
+*Counter-play.* He is at war with someone in most turns of a 7-civ game, and he
+never sues for peace. Do not give him a ceasefire; a war you refuse to end is
+the only way to stop the 20-turn clock.
+
+Charter notes:
+
+* `doW.conquestRatio 1.2` with `strengthCeiling 3.0`, `hostileRatio ∞`
+* `offers []` — he never sends an unsolicited offer except `demand_tribute`
+* `peace.terms 'tribute'`, `atWeakeningRatio 1.5`, `afterTurns 10`
+* `alliance.betraysAfterTurns 20`, `betrayalChance 15`; no alliance exists to betray
+* Tone: *"The road is long. You are already on it."*
+
+=== Egyptians — Ramesses II — *The Karnak Doctrine*
+
+*Effect on gameplay.* The most boring leader in the game, on purpose. He never
+declares a war, never demands tribute, and never opens a hostile act. What he
+does is *mediate*: once he has seen you lose a war to anyone, there is a 20%
+chance per 5-turn check that he offers you a ceasefire, and the offer goes
+through the normal acceptance path — so accepting is a real, signed ceasefire
+and not a trap. He is also the leader most likely to be an ally and least
+likely to be attacked, which in a 7-civ game makes him the swing voter: a
+Ramesses alliance is the alliance that decides who the hegemon does not touch.
+
+*If you play the Egyptians.* You will spend the game being courted and almost
+never be the reason anything happens. Your `wonder_rush` archetype means you
+lose the actual race for territory, and the neutrality is not much compensation.
+
+*Counter-play.* Neutral leaders are the *target*, not the threat — a Huns or
+Zulu civ needs a tribute target and you are the one that will pay without a
+war. If you cannot stand that, do not play Egypt; play a hegemon and take him.
+
+Charter notes:
+
+* `doW.conquestRatio Infinity`, `tribute.demands false`
+* `signature` *the Karnak rule*: a 20% chance per check to offer a ceasefire to the loser of any war he can see
+* `alliance.offers true` at `diplomacy 6`, `acceptsWillingnessBonus +10`
+* `peace.terms 'white'`
+* Tone: *"The walls have stood for three thousand years. So have we."*
+
+=== English — Elizabeth I — *The Armada Doctrine*
+
+*Effect on gameplay.* Elizabeth is the only leader whose diplomacy is a *ledger*.
+Everything she does is priced: willingness to accept her proposals rises by +10
+per 10 gold offered, capped at +25, so she is the only civ that can be bought;
+she pays 4 gold/turn under a trade agreement instead of the treaty default of 2,
+which makes English alliances the only alliance that pays for itself; and she
+raises her own war threshold to 3.0 for the whole duration of a trade agreement,
+so signing one with her genuinely removes her from the list of people who will
+attack you.
+
+Her one aggressive act is privateering: she demands tribute from a civ at 1.8×
+*that is already at war with someone else* (`onlyOpportunists`), which is the
+cheapest war in the game to start because you are already occupied. On
+`AI_VS_AI_NAVAL` she is the strongest civ; on `CLOSEUP_1V1` the exact same
+Charter runs and she is simply a rich merchant with a small army. That is the
+map-agnostic guarantee doing its job: the water is an advantage, never a
+requirement.
+
+*If you play the English.* You are the civ that can solve the diplomacy screen
+with gold instead of armies — every offer is negotiable, and the trade web is
+the strongest in the game. What you do not get is a fast war.
+
+*Counter-play.* Break a trade agreement and you lose 5 attitude *and* gain a
+permanent −15 per broken treaty (`:192-193`) — she is the leader with the best
+memory of ingratitude, and `willingness` is reduced by `broken × 15`, so she
+stops answering your offers entirely.
+
+Charter notes:
+
+* `doW.conquestRatio 3.0`, reduced to 2.0 by an active trade agreement
+* `tribute.atRatio 1.8`, `doW.onlyOpportunists true`
+* `alliance.acceptsWillingnessBonus +gold/10 (max 25)`, `betrayalChance 0`
+* `trade.goldPerTurn 4`, `offersTreatyAfterTurns 5`
+* Tone: *"We do business, sir. Terms are terms."*
+
+=== French — Napoleon Bonaparte — *The Grande Armée Doctrine*
+
+*Effect on gameplay.* The most player-facing Doctrine in the game, because
+Napoleon is the only leader who writes to you before he fights you. Within five
+turns of contact he sends an **ultimatum** — a new offer type,
+`demand_non_aggression`: sign a non-aggression pact and pay 50 gold, or he
+declares war. That single rule turns a French civ from a background threat into
+a scheduled event on the calendar, and it is the only demand in the game the
+player can simply pay.
+
+If you do not pay, he declares at 1.4×, demands tribute at 2×, and — uniquely —
+he only offers peace once he has *taken something*: `minimumWarScore 1` means his
+`propose_peace` branch requires a captured city. So every French war is a war
+with a public, visible end point, and the moment you lose a city to him the
+offer arrives. That is the most exploitable tell in the game, and it comes for
+free from the fact that his peace is the only conditional one in the table.
+
+*If you play the French.* You will be asked for money by every leader within ten
+turns and you will have to decide whether paying sets a precedent. Your `peace`
+terms are `city`, so you *can* end a losing war by giving one city — the only
+leader who lets you.
+
+*Counter-play.* Pay the 50. It buys 15 turns and a pact he will honour for 20
+(`betrayalChance 8`, the lowest of the hegemons). Do not pay and you are at war
+with military 9, aggression 9, on turn 6.
+
+Charter notes:
+
+* `offers ['demand_non_aggression']`, `signature` *the ultimatum* (new offer type)
+* `doW.conquestRatio 1.4`, `hostileRatio 1.3`, `maxOpenWars 2`
+* `peace.terms 'city'`, `minimumWarScore 1`, `atWeakeningRatio 1.3`, `afterTurns 12`
+* `alliance.betraysAfterTurns 20`, `betrayalChance 8`
+* Tone: *"I have come to offer you a choice. There is no third one."*
+
+=== Germans — Frederick the Great — *The Iron Crown Doctrine*
+
+*Effect on gameplay.* Frederick is the neighbour who answers every war with a
+counter-offer instead of a peace. He will not propose peace or a ceasefire
+until he is outmatched 1.3× for **10** turns — double today's threshold of 5
+(`DiplomacyManager.ts:702`) — and when he finally does, he counters with a
+tribute demand of `max(20, strength × 5)`, so his surrender is priced and
+rising. He declares war at 1.5× but with `maxOpenWars 1`: one front at a time,
+always. A Prussian war is therefore a long, single-front, attritional thing, and
+that is exactly what makes him the most predictable aggressor in the game.
+
+He is also the only leader who comes to *you*: he sends a diplomat to propose a
+non-aggression pact you did not ask for, and he accepts a mutual defence pact
+after a 10-turn delay (the longest handshake in the game).
+
+*If you play the Germans.* Your wars are slow, total and hard to escape; your
+build order is walls first, and the whole table learns that attacking you costs
+them a city per defender.
+
+*Counter-play.* Take one city, then offer peace. He is rich and slow, and his
+own peace ask is tribute rather than territory, so a fast single-city war is
+cheap against him — the mirror of what he does to you.
+
+Charter notes:
+
+* `doW.conquestRatio 1.5`, `maxOpenWars 1`, `hostileRatio ∞`
+* `peace.atWeakeningRatio 1.3`, `afterTurns 10`, `terms 'tribute'`
+* `alliance.offers true` (unsolicited non-aggression), `acceptsWillingnessBonus +5`
+* `trade.offersTreatyAfterTurns 15` — the last to open relations
+* Tone: *"I did not seek this war. I will end it on my terms, or not at all."*
+
+=== Greeks — Alexander the Great — *The Anabasis Doctrine*
+
+*Effect on gameplay.* Alexander is the most negotiable conqueror in the game,
+and it is entirely a diplomacy-layer trick. His declaration of war is always
+preceded by an offer — a 20-turn non-aggression pact priced at 100 gold, which
+auto-accepts if you pay. So there is a window in which an Alexander civ is
+bought off instead of fought, and the window is a fixed, learnable number. When
+the war does come it is at 1.5×, and he offers *unconditional* peace the moment
+he is 1.3× ahead — the only hegemon in the game whose peace is free.
+
+His second rule is the most distinctive in the table: a 25% chance per 5-turn
+check that he offers an **alliance to a civ he is currently at war with**. The
+offer both signs the alliance and ends the war (a Pax offer). It is the only
+mechanism in the game by which a war ends in an alliance, and it is why the
+Greeks are terrifying in a long game: a war with Alexander is a recruitment
+strategy.
+
+*If you play the Greeks.* You fight constantly and lose nothing permanent. A
+Græcan alliance eventually drags you into everyone else's wars, which is either
+the strongest army in the game or a fast death.
+
+*Counter-play.* Buy him off, and keep the 100 gold ready. He will ask again.
+
+Charter notes:
+
+* `signature` *the ultimatum offer*: war declarations are preceded by a priced pact, auto-accepted on payment
+* `signature` *Pax*: 25% per check to offer alliance-and-peace to a civ at war
+* `doW.conquestRatio 1.5`, `peace.terms 'white'`, `atWeakeningRatio 1.3`
+* `alliance.betraysAfterTurns null`, `betrayalChance 0` — he keeps every pact
+* Tone: *"Come with me, and you will see the world. Refuse, and I will take it anyway."*
+
+=== Indians — Mahatma Gandhi — *The Sarvodaya Doctrine*
+
+*Effect on gameplay.* The civ you cannot take and should not. Gandhi cannot
+declare a war (`doW ∞`) and cannot demand tribute. Every offer he makes is
+`+25` willingness, the highest rate in the game, so his proposals are the
+cheapest to accept — and he is the only leader who *gives*: after 10 peaceful
+turns he offers 25 gold if your treasury is under 20 ("to fund your schools"),
+and he sells a technology for gold at `+20`. In practice the Indians are the
+economically safest neighbour in the game and the only one that helps you.
+
+The balancing rule is the important part, and it is what makes four hegemon
+Doctrines legal in the same game: **attacking Gandhi costs you the room.** Every
+civ that is not currently at war with you takes a −6 attitude hit the moment
+you declare, permanently, and a civ whose `helpClause` is `joint` will open a
+mutual defence against you within 5 turns. Attacking him is always possible, it
+just costs you every alliance you have, and his defence is four units, so the
+maths is completely in the player's hands.
+
+*If you play the Indians.* You will never be attacked, you will be the most
+trusted civ in the game, and you will be unable to take a single city without
+paying a diplomatic price that the game does not itemise. `stealsTech: true`
+means your diplomats are a real tool, not a ceremony — this is `TODO.txt:4-5`
+wired to one leader.
+
+*Counter-play.* There isn't one, by design. That is the point: the nonviolent
+Doctrine is not weak, it is *expensive to violate*. A player who wants to
+conquer must accept becoming the world's enemy, which is a real cost in a 7-civ
+game and the reason the hegemons stay balanced.
+
+Charter notes:
+
+* `doW.conquestRatio Infinity`, `tribute.demands false`, `peace.terms 'white'`
+* `alliance.acceptsWillingnessBonus +25`, `offers true`, `betrayalChance 0`
+* `trade.giftGoldWhenPoor 25`, `sellsTechForGold 20`, `stealsTech true`
+* `signature` *satyagraha*: attacking this civ costs every third party −6 attitude
+* Tone: *"We have no army to impress you with. We have only the truth."*
+
+=== Huns — Dschingis Khan — *The Steppe Storm Doctrine*
+
+*Effect on gameplay.* The world enemy, and the only leader whose Doctrine has
+no off switch. `doW.conquestRatio 1.2` is the cheapest war trigger in the game
+and it is aimed at *everyone*, not at the weak: his casus belli is the steppe
+having a neighbour. He demands tribute at 1.8× — a lower bar than anyone else's,
+so you will be asked for money even when you are nearly his match — and he never
+proposes peace at all, only a ceasefire, only when outmatched 1.6×. If you do
+make peace he re-opens the war after 20 turns at **25%** per check, three times
+the current rate (`:764-765`).
+
+This is why the Doctrine needs a *cost*, and `notoriety` is it: each war adds
++12 notoriety (+25 if from an alliance, +30 if from a ceasefire), the whole
+table reads it, and at ≥ 40 every non-hegemon civ opens a mutual defence against
+him within 5 turns; at ≥ 60 the coalition declares. So a Huns civ is either a
+world war from turn 40 or a civ that has burned out. Attacking him while he is
+already at war costs half the notoriety, which is the only cheap way in.
+
+*If you play the Huns.* You will be at war with everyone by turn 30 and the
+world will unite against you by turn 60 unless you have taken someone with you
+in the first 40. The doctrine is the highest-variance in the game and it is the
+only one where the *player* has to solve the diplomacy layer or the game
+resolves itself.
+
+*Counter-play.* Alliance early — the English, the Romans and the Indians will
+all take you, because all three offer `helpClause: 'joint'` — and then refuse
+every ceasefire. A war you refuse to end is the only weapon that beats a civ
+that will not sue for peace.
+
+Charter notes:
+
+* `doW.conquestRatio 1.2`, `hostileRatio 1.2`, `maxOpenWars 6`
+* `peace.terms 'tribute'`, `atWeakeningRatio 1.6`, `afterTurns 10`, no peace offers
+* `alliance.betraysAfterTurns 20`, `betrayalChance 25`
+* `tribute.atRatio 1.8`, `offers ['demand_tribute']` only
+* Tone: *"The steppe does not recognise your borders. It recognises your horses."*
+
+=== Romans — Julius Caesar — *The Legion Doctrine*
+
+*Effect on gameplay.* Caesar is the only leader whose treaties are enforceable.
+Every proposal you send is `+20` willingness — the highest acceptance modifier in
+the game — and `betrayalChance` is 0 unless he is simultaneously at war with a
+third civ, so an alliance or a trade agreement with Rome is the closest thing
+this game has to a binding contract. Within 5 turns of contact he has proposed a
+trade agreement, open borders and an alliance, in that order. He also *pays*:
+`trade.goldPerTurn 4` on top of the treaty default, so a Roman alliance is the
+only alliance with a positive income line, which is how a civ with
+`aggression 6` and `military 8` funds its own wars.
+
+The price is a very high bar for war: `doW.conquestRatio 2.2` for an army of 8.
+He is the second most dangerous defensive civ in the game and the most
+expensive one to invade, because his peace is unconditional and he never asks
+you for anything except tribute at 2× — which, on the highest gold income in the
+game, is the smallest actual sum in the table.
+
+*If you play the Romans.* You are the civ that can fund an ally, and the only
+one the AI will believe a treaty with. You are also the civ that must win its
+war quickly, because `doW 2.2` is a doctrine that punishes a long one.
+
+*Counter-play.* There is no cheap war against Rome. The only attack is
+diplomatic: make him the aggressor by gifting him gold and a friendly attitude,
+then let `doW 2.2` do the rest of the work for you.
+
+Charter notes:
+
+* `alliance.acceptsWillingnessBonus +20`, `betrayalChance 0` (unless at war elsewhere)
+* `doW.conquestRatio 2.2`, `hostileRatio ∞`
+* `trade.goldPerTurn 4`, `offersTreatyAfterTurns 5`, `giftGoldWhenPoor 0`
+* `signature` *foedus*: treaties pay 4/turn instead of 2, and are never broken
+* Tone: *"I am prepared to treat with you — on terms that survive both of us."*
+
+=== Russians — Joseph Stalin — *The Five-Year Plan Doctrine*
+
+*Effect on gameplay.* The only leader with a *memory*. Refusing a Stalin tribute
+demand costs 8 attitude, permanently — `reputationModifier` decay of 1/turn is
+switched off for him, and that is the only reason the demand is a real decision
+instead of a free roll (`DiplomacyManager.ts:628-635` recovers both signs toward
+0 today, and nothing ever grants positive reputation, so the positive branch is
+dead code). His demand *escalates by 25% per refusal*, so the second demand is
+1.25× the first and the third is 1.56×. He demands tribute at 1.8× — the lowest
+of the autocrats — and declares war at 1.5× but only while he is already at
+peace, so the table sees him attack exactly once, completely, and then stop
+starting wars for a long time.
+
+He accepts nothing as a standalone offer: a non-aggression pact is only
+acceptable if bundled with a trade agreement (`packageDeals: true`), and he
+never proposes peace or alliance to anyone. He sues for peace only at 1.6× with
+a tribute demand attached.
+
+*If you play the Russians.* You are the ideal neighbour for a moderate player —
+you can pay the first demand and be left alone, and you will never be asked for
+an alliance you do not want. What you cannot do is stall: the escalation clock
+starts on the first refusal.
+
+*Counter-play.* Out-tribute him. His demands are deterministic and his economy
+is the second best in the game, so a rich civ can absorb three escalations and
+buy the longest peace in the table.
+
+Charter notes:
+
+* `signature` *the escalation*: `+25%` demand per refusal, refusal = −8 permanent attitude
+* `tribute.atRatio 1.8`, `escalates true`
+* `doW.conquestRatio 1.5`, `maxOpenWars 1`, `hostileRatio 1.5`
+* `peace.atWeakeningRatio 1.6`, `terms 'tribute'`, `alliance.offers false`
+* `signature` *the package*: non-aggression only acceptable with a trade agreement
+* Tone: *"There is no public opinion here. There are only plans."*
+
+=== Zulus — Shaka — *The Buffalo Doctrine*
+
+*Effect on gameplay.* Shaka is the control group: he has exactly one move. His
+`offers` array contains only `demand_tribute`, so the only thing that will ever
+appear in your diplomacy screen from a Zulu civ is a money demand — no alliance
+proposal, no peace, no ceasefire, no counter-proposal, no treaty, no greeting
+beyond the fixed one. He declares at 1.4×, demands tribute at 1.7×, and never
+betrays an alliance because he never forms one. The absence of a diplomatic
+state machine is the design: against Shaka, the other thirteen leaders look like
+politicians, and the player learns what the diplomacy layer is actually doing by
+contrast.
+
+The one tool that works against him is `bribeUnit` (`:574-623`) — 60% base
+chance, +20 if you are hostile, −20 if friendly, cost `25 × (attack + defence)`,
+and it **auto-declares war** on success (`:619-622`), so a successful bribe is a
+one-sided declaration that arrives with a stolen defender already in your army.
+That is the cheapest war in the game and it works on precisely the leader who
+has nothing else to offer.
+
+*If you play the Zulus.* You get the fastest, cheapest, largest army in the game
+and a completely empty diplomacy tab. Nobody will ever ally with you, nobody
+will ever demand peace, and every war you start is a war you have to end
+yourself.
+
+*Counter-play.* Bribe the defender, take the city, and use his predictability:
+he will demand tribute from you on a fixed 5-turn cadence and never respond to
+anything else you say.
+
+Charter notes:
+
+* `offers ['demand_tribute']` — all other branches disabled
+* `doW.conquestRatio 1.4`, `hostileRatio 1.3`, `maxOpenWars 3`
+* `peace` — never proposes, never counters
+* `alliance.offers false`, `betrayalChance 0` (no alliance possible)
+* `signature` *iLifa*: the tribute demand is the only diplomacy he has
+* Tone: *"Gold, or war. Choose quickly."*
+
+== The world-opinion ledger
+
+Four hegemons, three non-aggressors and six merchant/autocrat/neutral doctrines
+cannot coexist in a 7-civ game unless aggression has a *price* that is visible
+and paid in the same currency as diplomacy. `declareWar` today has no
+third-party consequence at all (`:235-270`) — the world is passive, which is
+precisely why the hegemon Doctrines would dominate if they were merely more
+aggressive.
+
+[source,typescript]
+----
+/** One number per civ, public, shown in the diplomacy screen. */
+notoriety: number;   // 0-100, starts at 0
+----
+
+[cols="3,1,3"]
+|===
+| Event | Δ | Note
+
+| Declare war from peace | +12 | `SURPRISE_ATTACK_PENALTY` already costs the *victim* −20 pair reputation
+| Declare war from an alliance | +25 | the worst thing you can do
+| Declare war from a ceasefire | +30 | breaks the 5-turn cooldown rule
+| Refuse a tribute demand | +4 | the first real cost for a free action in the game
+| Cancel a treaty | +3 | today this costs the pair −5 and nothing else
+| Tribute paid | −6 | makes extorting expensive
+| Alliance honoured (defender joins your war) | −10 | rewards the *merchant* doctrines
+| Peace made | −2 |
+| Non-aggression pact honoured for 10 turns | −3 |
+|===
+
+Consequences, all keyed off the leader you are dealing with:
+
+* `notoriety < 40` — every civ starts its attitude toward you `−0.25 × notoriety`.
+* `notoriety ≥ 40` — any civ with `helpClause: 'joint'` offers a mutual defence
+  pact against you within 5 turns of the next check, if it is at war.
+* `notoriety ≥ 60` — the coalition declares on the leader's turn.
+* Hegemon Doctrines pay this constantly (4 of 14 have `doW ≤ 1.4`); nonviolent
+  and merchant Doctrines bank it. That is the exchange rate that makes
+  `Indians` a valid pick in a game that also contains `Huns`, and it is why the
+  player's own choice of Doctrine is a real decision rather than a colour.
+
+== The map-agnostic guarantee
+
+Because the player may pick any civ on any of the twelve map types
+(`GameSetupModal.tsx:279-291`), three rules make that safe.
+
+=== Rule 1 — the Charter reads no terrain
+
+A charter field may read: turn number, military strength ratio, treaty state,
+reputation, notoriety, traits. Nothing else. No terrain, no map id, no tile
+count, no coastline, no city count. Everything else in the game may read
+terrain; the Charter may not. This is why the English get their naval advantage
+from *trade treaties* rather than from ships.
+
+=== Rule 2 — no Signature may require a terrain or a unit class
+
+A Signature that references mountains, ocean or a specific tile is a civ that is
+dead on four of the twelve maps. Every Signature in the fourteen above is
+positional (attacking, defending, at war, at peace, rich, poor) or diplomatic
+(a pact, an offer, a price). This is a hard rule, and it is the reason
+`AI_VS_AI_NAVAL` and `CLOSEUP_1V1` are both playable with the Germans and the
+Zulus.
+
+=== Rule 3 — the stress map types must stay legal
+
+Four of the twelve map types attack the whole premise of a Doctrine, and each
+one gets an explicit charter clause:
+
+[cols="2,3"]
+|===
+| Map type | What it breaks | Charter clause
+
+| `NO_SETTLERS`
+| No expansion is possible, so `expansion 8` is a wasted stat and the hegemons have no land to take
+| `doW.casualtyRule: 'opportunist'` — a leader with `expansion ≥ 8` switches its trigger from conquest to `hostileRatio` and opens war at 1.3× regardless of expansion potential
+
+| `MANY_CITIES`
+| Four cities each, all borders touching: the hegemon Doctrines become the *most* powerful, not the least
+| No clause needed — this is the map where the Huns win, and it should
+
+| `TECH_LEVEL_10`
+| No tech tree to shape, so the merchant/technocrat Doctrines lose their engine
+| `trade.sellsTechForGold` becomes the *only* tech route, so the Babylonians and Indians are stronger here, not weaker
+
+| `ALL_UNITS` / `CLOSEUP_BEATUP`
+| Armies from turn 1, so every strength ratio is 1.0 and no conquest trigger fires
+| `doW` falls through to the school default: hegemon 1.5, autocrat 1.6, merchant ∞, nonviolent ∞. Nobody declares on turn 1 — which is the correct outcome for a showcase map
+|===
+
+=== Verification matrix
+
+Fourteen civs × six representative map types, run through
+`AI_VS_AI_SMALL`-style headless sessions with the existing export harness
+(`src/utils/GameProgression.ts`, `scripts/run-naval-session.mjs`):
+
+[cols="2,2,2"]
+|===
+| Assertion | Threshold | Fails if
+
+| No doctrine wins more than 45% of 20 sessions
+| per civ, per map
+| A hegemony or a non-aggression doctrine is strictly dominant
+
+| Win-rate spread across the 14 doctrines on one map
+| < 25 points between best and worst
+| A doctrine is dead on a map type
+
+| Wars declared per session
+| 0.8 – 4.0
+| A doctrine opens no war at all, or the table is permanently at war
+
+| Peace treaties signed per session
+| ≥ 0.4
+| Wars can only be won, never ended — the current `AI_VS_AI_ANALYSIS` stalemate
+
+| Mean turns at war
+| < 45
+| A Doctrine cannot end its own wars (the Huns clause)
+|===
+
+== Five bugs in the current diplomacy layer that this design has to fix anyway
+
+Found while mapping the system; all five change how the leaders feel, and all
+five sit in the Charter's path.
+
+. **Reputation is stored on the shared pair record** (`applyReputationPenalty`,
+   `:941-946`), but `getAttitude` reads it as `score += rel.reputationModifier`
+   (`:194`) in *both* directions. A civ's own −20 surprise-attack penalty
+   therefore lowers its attitude toward its own victim — the aggressor dislikes
+   its victim less the more unjust the war was. Reputation must become directed
+   (`reputationToward[civId]`) before any Charter is trustworthy.
+. **"Contempt" is a friendly shift** (`:211`):
+   `if (ownStrength > theirStrength * 2) score += 5;` — being three times the
+   size of your neighbour makes them *like you more*. The comment says "more
+   aggressive but not hostile"; the sign is backwards. This is why a player who
+   out-grows everyone currently gets a world full of friends.
+. **The ceasefire cooldown gates the penalty, not the war** (`:250-256`). A civ
+   may legally declare war the turn after signing a ceasefire and pay nothing,
+   because the check lives inside the penalty branch. That makes a ceasefire free
+   to break, which makes the whole treaty layer decorative.
+. **Refusing an offer costs nothing.** There is no insult tracking anywhere
+   (`getRejectReason` is the only consequence, `:955-962`). Every diplomatic
+   interaction is therefore free-riding, and the Stalin escalation rule in this
+   document is the first feature to need a refusal cost.
+. **There is no war weariness.** `peaceTurns` is a score field only
+   (`VictoryManager.ts:155`); nothing in the engine wants peace. A war can only
+   end by strength ratio or by turn 15, which is exactly the stalemate recorded
+   in `doc/AI_VS_AI_ANALYSIS.md`. `peace.terms` and `minimumWarScore` need a
+   `warScore` to compare against, and `warScore` is where "Stalin's war" vs.
+   "Caesar's war" becomes a number the player can see in the diplomacy screen.
+
+== UI surface
+
+* **Setup screen** (`GameSetupModal.tsx:171-205`): each civ card shows the
+  doctrine name, the tagline, the six traits as a 6-bar micro-chart, and the
+  school icon (sword / scroll / balance / dove / star). This is the first time
+  the player sees anything mechanical about a civ, so it is also the fix for
+  the cosmetic-picker problem.
+* **Diplomacy screen header** (`GameModals.tsx:782-812`): under the existing
+  leader name, title and attitude badge, add the doctrine name and a
+  "World Standing" bar for `notoriety`. The existing reputation chip
+  (`:803-808`) becomes the *directed* reputation, so it can be negative for one
+  civ and positive for another.
+* **Offer banners** (`:722-734`, `:867-883`): the two flat accept/reject
+  buttons become the offer's terms — "Napoleon Bonaparte demands 50 gold and a
+  non-aggression pact. Refusing means war on your next turn." — generated from
+  the Charter's `tone` and the offer's own terms, so no message text is
+  hard-coded in the engine any more.
+* **Negotiations block** (`:886-931`): buttons the target's Charter forbids are
+  shown disabled with a reason, e.g. *Mutual Defence — Shaka signs nothing.* That
+  single change is what makes fourteen different leaders legible.
+* **Diplomat context menu** (`UnitActionsModal.tsx:215-258`): the five fixed
+  actions become the leader's `offers` list, plus tech exchange and gold gift
+  (`TODO.txt:4,6`), both of which exist in the engine and are unreachable today.
+* **History panel** (`:970-1012`): three event types gain a leader's colour, so
+  the log reads as a political history rather than a log of status changes.
+
+== Implementation order
+
+Each step is independently shippable and independently testable.
+
+. **Move the doctrine data in, without changing behaviour.** New
+  `src/data/LeaderDoctrines.ts` with all fourteen entries, keyed by civ name.
+  `GameEngine.createCivilizations` (`:1026-1053`) reads the doctrine instead of
+  `getCivProductionProfile(i)`, so the profile follows the civ rather than the
+  slot. This alone fixes the index bug and makes the choice real. Tests:
+  `tests/ai/leaderDoctrines.test.ts` — every civ has an entry, every entry has a
+  valid archetype and 1–10 traits, no duplicate doctrine names.
+. **Charter part 1 — thresholds.** Replace the hard-coded numbers in
+  `processAIDiplomacy` with charter reads, keeping the current values as the
+  default when a field is absent. No behaviour change for a civ without a
+  charter. Tests: existing `tests/ai/DiplomacyManager.test.ts` and
+  `tests/diplomacyOffers.test.ts` must pass **unchanged** — that is the proof
+  the refactor is inert.
+. **Charter part 2 — the attitude model.** Directed reputation, fix the contempt
+  sign, add the target-side term. Tests: a new table-driven test over the whole
+  attitude matrix.
+. **Charter part 3 — willingness and tone.** `calculateWillingness` gains a
+  per-leader bonus; `getRejectReason` and the five offer messages come from
+  `tone`. Tests: acceptance thresholds per leader.
+. **`notoriety` + the ledger.** New per-civ field, the ten event deltas, the
+  `≥40` / `≥60` consequences, save/load. Tests: a session where a hegemon
+  provokes a coalition.
+. **Offers the engine already has but nobody can reach:** tech exchange
+  (`:518-541`), and the missing validation from `TODO.txt:4` ("only if the tech
+   is unknown to the receiver", "only when two units meet"). Add `offer_gold` and
+   `request_gold` (`TODO.txt:6,8`) with the refusal cost they require.
+. **The two new offer types** — `demand_non_aggression` (Napoleon's ultimatum)
+  and the Pax offer (Alexander), both expressed as existing
+  `DiplomacyProposal`s with a `goldAmount`, so no new plumbing.
+. **War score and conditional peace** — the last piece, and the one that unlocks
+  `peace.terms` and `minimumWarScore`. War weariness follows immediately, since
+  `warScore` is the number both need.
+. **UI pass.** Setup cards, doctrine header, disabled-forbidden buttons, World
+  Standing bar, leader-tinted history.
+
+== Open questions
+
+* **Do the trait sliders stay 1–10?** They are read by production and research
+  code as absolute values (`getPersonalityModifier` maps 1–10 → 0.6–1.4). If the
+  Charter becomes the real identity, the sliders could be replaced by the
+  Charter alone, which would let a leader be gentle at home and brutal abroad.
+  That is a bigger refactor and is not required for this document.
+* **Should the player's own Charter be visible to the AI?** Today the AI cannot
+  see the human's doctrine at all, and cannot tell a Huns player from a Romans
+  player. Letting the AI *know* the human's school is what makes e.g. the
+  Indians' `satyagraha` clause work. The alternative — the AI only ever sees
+  behaviour — is more realistic and much less legible.
+* **Can a leader be talked out of a Doctrine?** E.g. a Huns civ that has lost
+  three wars in a row sues for peace with real terms. Nice, and it is the natural
+  use of `warScore` once it exists.
+* **The Huns are named `Huns` in `GameData.ts:103` and `Kazakhs` in `README.adoc:198`
+  and `GAMEPLAY.md:23`.** Before the doctrine table is written, pick one — the
+  leader is `Dschingis Khan` either way, and the city names are Kazakh.
+* **`bribeUnit` destroys the gold it takes** (`:611-621` deducts from the
+  thief and never credits anyone). If bribery is going to be the counter-play
+  against Shaka, that asymmetry needs fixing first.

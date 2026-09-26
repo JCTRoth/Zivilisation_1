@@ -64,6 +64,8 @@ export interface BulkAttackPlan {
   targetDefense: number;
   requiredUnits: number;
   reason: string;
+  /** How the target is reached — 'sea' plans are wars, not marches. */
+  reachableBy?: 'land' | 'sea';
 }
 
 export interface KnownTarget {
@@ -75,6 +77,14 @@ export interface KnownTarget {
   discoveredRound?: number;
   /** Owner civilization of the target (the intelligence map key). */
   civId?: number;
+  /**
+   * How the target can be reached: on foot, or by sea with a ferry. Defaults
+   * to 'land'. A 'sea' target is a legitimate object for a WAR plan (the
+   * invasion mission ferries troops over) but never for a land army group,
+   * which would stand at the shoreline waiting for a boat that is not coming
+   * on this turn.
+   */
+  reachableBy?: 'land' | 'sea';
 }
 
 // ---------------------------------------------------------------------------
@@ -299,10 +309,18 @@ export function planBulkAttack(
           )
         : 0;
 
+    // A lone enemy unit on another island is not worth a war: you cannot ferry
+    // a horde after one scout. Cities are the only worthwhile far-water target.
+    if (target.reachableBy === 'sea' && target.type !== 'city') continue;
+
     // Prefer cities (take territory), fresher intel, and near targets.
     const cityBonus = target.type === 'city' ? 60 : 20;
     const freshness = Math.max(0, 20 - age);
-    let score = cityBonus + freshness * 2 - nearestOwnDist;
+    // Land targets win ties: an army on foot is already assembled, while a sea
+    // target needs a ferry built, loaded and sailed. Once the naval branch is
+    // up, the penalty is small enough that a rich island will still cross.
+    const reachPenalty = target.reachableBy === 'sea' ? 25 : 0;
+    let score = cityBonus + freshness * 2 - nearestOwnDist - reachPenalty;
     // Retaliation: strongly prefer the civ that just took one of our cities.
     if (preferredCivId != null && target.civId === preferredCivId) {
       score += 80;
@@ -341,6 +359,12 @@ export function planBulkAttack(
     targetType: best.type,
     targetDefense,
     requiredUnits,
-    reason: best.type === 'city' ? 'bulk city assault' : 'bulk unit hunt',
+    reason:
+      best.reachableBy === 'sea'
+        ? 'bulk city assault by sea'
+        : best.type === 'city'
+          ? 'bulk city assault'
+          : 'bulk unit hunt',
+    reachableBy: best.reachableBy ?? 'land',
   };
 }

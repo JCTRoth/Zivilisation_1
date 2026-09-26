@@ -11,8 +11,7 @@
  * (see the generated spec) rather than node directly.
  */
 import { spawnSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -102,15 +101,21 @@ describe('naval session', () => {
 });
 `;
 
-const dir = mkdtempSync(join(tmpdir(), 'naval-'));
+// The spec has to live where vitest's transform + the `@/` alias work, but it
+// is a throwaway: write it into tests/ and delete it afterwards, whatever
+// happens, so a crashed run can never leave scratch specs in the repo (four of
+// them were committed once).
 const specPath = join(ROOT, 'tests', 'ai', 'tmpNavalSession.test.ts');
 writeFileSync(specPath, spec);
+const cleanup = () => { try { rmSync(specPath, { force: true }); } catch {} };
+process.on('exit', cleanup);
 
 const res = spawnSync(
   'npx',
   ['vitest', 'run', 'tests/ai/tmpNavalSession.test.ts', '--no-file-parallelism'],
   { cwd: ROOT, env: { ...process.env, NAVAL_CSV_OUT: process.env.NAVAL_CSV_OUT ?? '/tmp/naval.csv', NAVAL_JSON_OUT: process.env.NAVAL_JSON_OUT ?? '/tmp/naval.json' }, encoding: 'utf8', maxBuffer: 1024 * 1024 * 64 },
 );
+cleanup();
 const out = `${res.stdout ?? ''}${res.stderr ?? ''}`;
 const lines = out.split('\n');
 const start = lines.findIndex((l) => l.includes('=== SUMMARY ==='));
