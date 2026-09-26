@@ -564,3 +564,40 @@
 .lightbox-close:hover {
   background: rgba(255,255,255,0.25);
 }
+
+/* Feature-on-tile composition button + status (gallery header) */
+.btn-compose-features {
+  padding: 7px 12px;
+  background: rgba(120, 200, 120, 0.12);
+  border: 1px solid var(--green, #6bbf6b);
+  border-radius: 6px;
+  color: var(--green, #6bbf6b);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.btn-compose-features:hover:not(:disabled) {
+  background: rgba(120, 200, 120, 0.22);
+}
+
+.btn-compose-features:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.compose-status {
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Composed strip: a full-height flex item like a group row, so the vertical
+   flex layout of .gallery-body never squashes the 130px-tall cards. */
+.variants-strip.composed-strip {
+  flex-shrink: 0;
+}

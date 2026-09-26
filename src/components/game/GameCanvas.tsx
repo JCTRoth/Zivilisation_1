@@ -19,7 +19,7 @@ import MoveAnimator from "@/game/rendering/MoveAnimator";
 import { MathUtils } from "@/utils/MathUtils";
 import { centerCameraOnTile } from "@/utils/CameraUtils";
 import { HUMAN_PLAYER_ID } from "@/utils/PlayerConstants";
-import { finishCameraGlide } from "@/game/engine/CameraGlideGate";
+import { finishCameraGlide } from "@/game/rendering/CameraGlideGate";
 import { MiniMapRenderer } from "@/game/rendering/MiniMapRenderer";
 import { TerrainTextureManager } from "@/game/rendering/TerrainTextureManager";
 import type {
@@ -417,6 +417,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         terrainRebuildNeededRef.current = true;
         needsRender.current = true;
         setTexturesLoaded(true);
+      });
+      // The optional pre-rendered resource tiles never gate terrain boot; once
+      // they settle, invalidate the cached base so resource tiles swap to the
+      // composed texture on the next render.
+      tm.resourceTilesReady.then(() => {
+        terrainTypesHashRef.current = "";
+        terrainRebuildNeededRef.current = true;
+        needsRender.current = true;
       });
       textureManagerRef.current = tm;
       mapRendererRef.current.textureManager = tm;

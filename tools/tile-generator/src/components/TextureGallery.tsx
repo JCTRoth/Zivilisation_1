@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as api from '../api';
-import type { GameTile, TextureGroup, TextureVariant } from '../types';
+import type { ComposedTile, GameTile, TextureGroup, TextureVariant } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import './TextureGallery.css';
 
@@ -21,6 +21,9 @@ export default function TextureGallery({ refreshKey, onUseAsSource }: Props) {
   const [refresh, setRefresh] = useState(0);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [composed, setComposed] = useState<ComposedTile[]>([]);
+  const [composing, setComposing] = useState(false);
+  const [composeMessage, setComposeMessage] = useState('');
 
   const doRefresh = useCallback(() => setRefresh(r => r + 1), []);
 
@@ -29,7 +32,29 @@ export default function TextureGallery({ refreshKey, onUseAsSource }: Props) {
     api.fetchTextures()
       .then(g => { setGroups(g); setLoading(false); })
       .catch(() => setLoading(false));
+    api.fetchComposedTiles()
+      .then(setComposed)
+      .catch(() => {});
   }, [refreshKey, refresh]);
+
+  async function handleComposeFeatures() {
+    setComposing(true);
+    setComposeMessage('Rendering feature tiles…');
+    try {
+      const result = await api.composeFeatureTiles();
+      if (result.ok) {
+        const count = result.tiles?.length ?? 0;
+        setComposed(result.tiles ?? []);
+        setComposeMessage(`${count} feature-on-tile render${count === 1 ? '' : 's'} ready.`);
+      } else {
+        setComposeMessage(result.error || 'Composition failed.');
+      }
+    } catch (e) {
+      setComposeMessage(String(e));
+    } finally {
+      setComposing(false);
+    }
+  }
 
   const filtered = search.trim()
     ? groups.filter(g => g.name.toLowerCase().includes(search.toLowerCase()))
@@ -64,6 +89,15 @@ export default function TextureGallery({ refreshKey, onUseAsSource }: Props) {
           {groups.reduce((n, g) => n + g.variants.length, 0)} variants
           {selected.size > 0 && ` · ${selected.size} selected`}
         </span>
+        <button
+          className="btn-compose-features"
+          disabled={composing}
+          onClick={handleComposeFeatures}
+          title="Bake the feature SVGs onto the matching terrain tiles (compose_feature_tiles.mjs)"
+        >
+          {composing ? '⏳ Rendering…' : '🧩 Render Features on Tiles'}
+        </button>
+        {composeMessage && <span className="compose-status">{composeMessage}</span>}
         <input
           className="gallery-search"
           placeholder="Filter by name…"
@@ -80,6 +114,22 @@ export default function TextureGallery({ refreshKey, onUseAsSource }: Props) {
             <div className="gallery-empty-icon">🎲</div>
             {search ? 'No groups match your filter.' : 'No textures yet. Generate some!'}
           </div>
+        )}
+
+        {composed.length > 0 && (
+          <>
+            <h3 className="gallery-section-title">🧩 Feature on Tiles</h3>
+            <div className="variants-strip composed-strip">
+              {composed.map(tile => (
+                <ComposedCard
+                  key={tile.filename}
+                  tile={tile}
+                  onRefresh={doRefresh}
+                  onPreview={setPreview}
+                />
+              ))}
+            </div>
+          </>
         )}
 
         {terrainGroups.length > 0 && (
@@ -427,6 +477,107 @@ function VariantCard({
         open={confirmDelete}
         title="Delete variant"
         message={`Are you sure you want to delete ${variant.filename}? This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        busy={busy === 'del'}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete(false)}
+      />
+    </div>
+  );
+}
+
+function ComposedCard({
+  tile,
+  onRefresh,
+  onPreview,
+}: {
+  tile: ComposedTile;
+  onRefresh: () => void;
+  onPreview: (state: PreviewState) => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function handleUseInGame() {
+    setBusy('use');
+    try {
+      await api.useComposedInGame(tile.filename);
+      onRefresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleRemoveFromGame() {
+    setBusy('remove');
+    try {
+      await api.removeComposedFromGame(tile.filename);
+      onRefresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleConfirmDelete() {
+    setConfirmDelete(false);
+    setBusy('del');
+    try {
+      await api.deleteComposedTile(tile.filename);
+      onRefresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const isBusy = busy !== null;
+
+  return (
+    <div className={`variant-card${isBusy ? ' variant-busy' : ''}`}>
+      {tile.inGame && <div className="card-badge-live">IN GAME</div>}
+      <div className="card-img-wrap" onClick={() => onPreview({ variant: tile.path })}>
+        {isBusy && <div className="card-spinner">⏳</div>}
+        <img src={tile.path} alt={tile.filename} loading="lazy" />
+      </div>
+      <div className="card-footer">
+        <span className="card-label">{tile.filename}</span>
+        <span className="card-size">{formatSize(tile.size)}</span>
+      </div>
+      <div className="card-actions">
+        {tile.inGame ? (
+          <button
+            className="btn-remove-game"
+            disabled={isBusy}
+            onClick={handleRemoveFromGame}
+            title="Remove from game assets"
+          >
+            {busy === 'remove' ? '…' : '✕ Remove from Game'}
+          </button>
+        ) : (
+          <button
+            className="btn-use-game"
+            disabled={isBusy}
+            onClick={handleUseInGame}
+            title="Copy to game assets"
+          >
+            {busy === 'use' ? '…' : '▶ Use in Game'}
+          </button>
+        )}
+        <div className="card-actions-row2">
+          <button
+            className="btn-icon btn-del"
+            disabled={isBusy}
+            onClick={() => setConfirmDelete(true)}
+            title="Delete from the generator tiles folder"
+          >
+            {busy === 'del' ? '…' : '🗑'}
+          </button>
+        </div>
+      </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete composed tile"
+        message={`Delete ${tile.filename} from the generator tiles folder? The game copy (if any) is left alone.`}
         confirmLabel="Delete"
         danger
         busy={busy === 'del'}

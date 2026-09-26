@@ -52,6 +52,10 @@ const OUTPUT_DIR = join(__dirname, '..', '..', 'public', 'assets', 'tiles');
 const ARCHIVE_DIR = join(__dirname, '..', '..', 'archive', 'tiles');
 // Generated variants live here; copied to OUTPUT_DIR via "Use in Game"
 const TEXTURES_DIR = join(__dirname, 'textures');
+// Feature-on-tile compositions (terrain + resource SVG), produced by
+// compose_feature_tiles.mjs; copied to OUTPUT_DIR via "Use in Game".
+const COMPOSED_DIR = join(__dirname, 'tiles');
+const COMPOSE_SCRIPT = join(__dirname, 'compose_feature_tiles.mjs');
 
 /** Parse "terrain_grassland_3.png" → { group: "terrain_grassland", n: 3 } */
 function parseTextureName(filename) {
@@ -123,6 +127,27 @@ function renumberGroup(groupName) {
     }
   }
   return renames;
+}
+
+/**
+ * Composed feature-on-tile renders (tools/tile-generator/tiles), newest last.
+ * `inGame` marks the ones already copied into public/assets/tiles.
+ */
+function listComposedTiles() {
+  if (!existsSync(COMPOSED_DIR)) return [];
+  return readdirSync(COMPOSED_DIR)
+    .filter((f) => /\.png$/i.test(f))
+    .map((f) => {
+      const st = statSync(join(COMPOSED_DIR, f));
+      return {
+        filename: f,
+        path: `/api/composed/${encodeURIComponent(f)}`,
+        size: st.size,
+        mtime: st.mtimeMs,
+        inGame: existsSync(join(OUTPUT_DIR, f)),
+      };
+    })
+    .sort((a, b) => a.filename.localeCompare(b.filename));
 }
 
 const MIME = {
@@ -426,6 +451,96 @@ const server = createServer(async (req, res) => {
     } catch {
       return json(res, { ok: false, error: 'Delete failed' }, 500);
     }
+  }
+
+  // ─── API: list composed feature-on-tile renders ─────────────────────
+  if (pathname === '/api/composed' && req.method === 'GET') {
+    return json(res, { tiles: listComposedTiles() });
+  }
+
+  // ─── API: run the feature-on-tile composition script ────────────────
+  if (pathname === '/api/compose-features' && req.method === 'POST') {
+    // The script derives the combinations from the game data (terrain +
+    // special-resource rules) and writes tools/tile-generator/tiles. Copying
+    // into the game is left to the explicit "Use in Game" action.
+    const result = spawnSync('node', [COMPOSE_SCRIPT], {
+      cwd: __dirname,
+      env: { ...process.env, SKIP_COPY: '1' },
+      encoding: 'utf8',
+      timeout: 120_000,
+    });
+    if (result.status !== 0) {
+      const details = (result.stderr || result.stdout || 'compose script failed').trim();
+      console.error('[compose-features]', details);
+      return json(res, { ok: false, error: details, output: result.stdout }, 500);
+    }
+    console.log('[compose-features] composed', listComposedTiles().length, 'tile(s)');
+    return json(res, { ok: true, output: result.stdout, tiles: listComposedTiles() });
+  }
+
+  // ─── API: copy composed tile(s) into the game ───────────────────────
+  if (pathname === '/api/composed/use-in-game' && req.method === 'POST') {
+    const body = await readBody(req);
+    let params;
+    try { params = JSON.parse(body); } catch { return json(res, { error: 'Invalid JSON' }, 400); }
+    const filenames = params.filenames || (params.filename ? [params.filename] : []);
+    if (filenames.length === 0) return json(res, { error: 'Missing filename(s)' }, 400);
+    if (!existsSync(OUTPUT_DIR)) mkdirSync(OUTPUT_DIR, { recursive: true });
+
+    const results = [];
+    for (const filename of filenames) {
+      const safeFilename = filename.replace(/[^a-z0-9_.-]/gi, '_');
+      const srcPath = join(COMPOSED_DIR, safeFilename);
+      const destPath = join(OUTPUT_DIR, safeFilename);
+      if (!srcPath.startsWith(COMPOSED_DIR) || !existsSync(srcPath)) {
+        results.push({ filename, ok: false, error: `Not found: ${safeFilename}` });
+        continue;
+      }
+      copyFileSync(srcPath, destPath);
+      console.log(`[composed] ${safeFilename} → game tiles/`);
+      results.push({ filename, ok: true, targetName: safeFilename });
+    }
+    return json(res, { ok: results.every(r => r.ok), results });
+  }
+
+  // ─── API: remove composed tile(s) from the game ─────────────────────
+  if (pathname === '/api/composed/remove-from-game' && req.method === 'POST') {
+    const body = await readBody(req);
+    let params;
+    try { params = JSON.parse(body); } catch { return json(res, { error: 'Invalid JSON' }, 400); }
+    const filenames = params.filenames || (params.filename ? [params.filename] : []);
+    if (filenames.length === 0) return json(res, { error: 'Missing filename(s)' }, 400);
+
+    const results = [];
+    for (const filename of filenames) {
+      const safeFilename = filename.replace(/[^a-z0-9_.-]/gi, '_');
+      const targetPath = join(OUTPUT_DIR, safeFilename);
+      if (!targetPath.startsWith(OUTPUT_DIR) || !existsSync(targetPath)) {
+        results.push({ filename, ok: false, error: `Not in game: ${safeFilename}` });
+        continue;
+      }
+      unlinkSync(targetPath);
+      console.log(`[composed] ${safeFilename} ← game tiles/`);
+      results.push({ filename, ok: true, targetName: safeFilename });
+    }
+    return json(res, { ok: results.every(r => r.ok), results });
+  }
+
+  // ─── API: serve composed tile image ─────────────────────────────────
+  if (pathname.startsWith('/api/composed/') && req.method === 'GET') {
+    const fname = decodeURIComponent(pathname.slice('/api/composed/'.length));
+    const safe = join(COMPOSED_DIR, fname);
+    if (!safe.startsWith(COMPOSED_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
+    return serveFile(res, safe, MIME[extname(fname).toLowerCase()] || 'image/png');
+  }
+
+  // ─── API: delete composed tile ──────────────────────────────────────
+  if (pathname.startsWith('/api/composed/') && req.method === 'DELETE') {
+    const fname = decodeURIComponent(pathname.slice('/api/composed/'.length));
+    const safe = join(COMPOSED_DIR, fname);
+    if (!safe.startsWith(COMPOSED_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
+    try { unlinkSync(safe); return json(res, { ok: true }); }
+    catch { return json(res, { ok: false, error: 'Delete failed' }, 500); }
   }
 
   // ─── API: generate tile (local Stable Diffusion) ────────────────────

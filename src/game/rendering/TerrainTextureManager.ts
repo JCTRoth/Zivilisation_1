@@ -39,6 +39,24 @@ export const FEATURE_TEXTURE_FILES: Partial<Record<string, string>> = {
   SWAMP:     '/assets/tiles/terrain_swamp_feature.png',
 };
 
+/**
+ * Pre-rendered feature-on-tile textures, keyed `TERRAIN.RESOURCE` (uppercase).
+ * They are produced by `tools/tile-generator/compose_feature_tiles.mjs`, which
+ * bakes the resource SVG onto the terrain texture with the same box size and
+ * anchor the old per-frame overlay used. When a tile has a matching texture the
+ * base pass draws it directly — no overlay, no per-frame artwork work. Variants
+ * (`..._horses.png`, `..._horses_2.png`) are probed like feature sprites.
+ *
+ * Loading is deliberately NOT part of `ready`: the optional artwork must never
+ * delay terrain boot; `resourceTilesReady` settles separately and the caller
+ * can rebuild the cached base when it does.
+ */
+export const RESOURCE_TILE_FILES: Record<string, string> = {
+  'OCEAN.FISH':   '/assets/tiles/terrain_ocean_fish.png',
+  'RIVER.FISH':   '/assets/tiles/terrain_river_fish.png',
+  'PLAINS.HORSES': '/assets/tiles/terrain_plains_horses.png',
+};
+
 /** Higher value bleeds color over lower-value terrain at border transitions. */
 export const TERRAIN_PRIORITY: Record<string, number> = {
   OCEAN:       0,
@@ -86,18 +104,27 @@ export class TerrainTextureManager {
   /** Arrays hold the primary image at index 0, then any loaded variants. */
   private readonly baseCache    = new Map<string, HTMLImageElement[]>();
   private readonly featureCache = new Map<string, HTMLImageElement[]>();
+  /** Pre-rendered feature-on-tile textures, keyed `TERRAIN.RESOURCE`. */
+  private readonly resourceTileCache = new Map<string, HTMLImageElement[]>();
   /** Reusable offscreen canvas for texture-based transition compositing. */
   private transitionCanvas: HTMLCanvasElement | null = null;
   /** Dedicated offscreen canvas for feature blending (wider than a tile). */
   private featureCanvas: HTMLCanvasElement | null = null;
 
   readonly ready: Promise<void>;
+  /**
+   * Settles when every optional feature-on-tile texture has loaded (or
+   * failed). Never rejects and never gates {@link ready} — callers rebuild
+   * their cached terrain once it resolves so the composed tiles appear.
+   */
+  readonly resourceTilesReady: Promise<void>;
   private loadedCount = 0;
   private totalCount  = 0;
 
   constructor(onLoad?: () => void) {
     const baseTypes    = Object.keys(TERRAIN_TEXTURE_FILES);
     const featureTypes = Object.keys(FEATURE_TEXTURE_FILES);
+    const resourceTileTypes = Object.keys(RESOURCE_TILE_FILES);
     // Count primary + all variant probes so onLoad fires only after everything settles.
     this.totalCount = (baseTypes.length + featureTypes.length) * (1 + MAX_VARIANT_PROBES);
 
@@ -109,15 +136,15 @@ export class TerrainTextureManager {
       if (this.loadedCount >= this.totalCount) { resolve(); onLoad?.(); }
     };
 
-    const probeVariants = (baseUrl: string, arr: HTMLImageElement[]) => {
+    const probeVariants = (baseUrl: string, arr: HTMLImageElement[], settled: () => void = done) => {
       // Strip any trailing _N so "feature_1.png" and "feature.png" probe the same variants.
       const stem = baseUrl.replace(/(_\d+)?\.png$/, '');
       const explicitN = baseUrl.match(/_(\d+)\.png$/)?.[1];
       const start = explicitN ? parseInt(explicitN, 10) + 1 : 1;
       for (let v = start; v < start + MAX_VARIANT_PROBES; v++) {
         const img = new Image();
-        img.onload = () => { arr.push(img); done(); };
-        img.onerror = done; // missing variant — still counts toward total
+        img.onload = () => { arr.push(img); settled(); };
+        img.onerror = settled; // missing variant — still counts toward total
         img.src = `${stem}_${v}.png`;
       }
     };
@@ -138,6 +165,20 @@ export class TerrainTextureManager {
       img.onerror = () => { probeVariants(FEATURE_TEXTURE_FILES[type]!, arr); done(); };
       img.src = FEATURE_TEXTURE_FILES[type]!;
     }
+
+    // Optional resource tiles: their load completion drives resourceTilesReady
+    // instead of the terrain ready gate.
+    const resourceTilePromises = resourceTileTypes.map((type) => new Promise<void>((resolveTile) => {
+      const arr: HTMLImageElement[] = [];
+      this.resourceTileCache.set(type, arr);
+      let pending = 1 + MAX_VARIANT_PROBES;
+      const settled = () => { if (--pending === 0) resolveTile(); };
+      const img = new Image();
+      img.onload = () => { arr.push(img); probeVariants(RESOURCE_TILE_FILES[type]!, arr, settled); settled(); };
+      img.onerror = () => { probeVariants(RESOURCE_TILE_FILES[type]!, arr, settled); settled(); };
+      img.src = RESOURCE_TILE_FILES[type]!;
+    }));
+    this.resourceTilesReady = Promise.all(resourceTilePromises).then(() => undefined);
   }
 
   /** Stable variant selection based on tile grid position. */
@@ -163,6 +204,36 @@ export class TerrainTextureManager {
     return this.pickVariant(ready, col, row);
   }
 
+  /** Cache key of a pre-rendered feature-on-tile texture (`TERRAIN.RESOURCE`). */
+  private resourceTileKey(terrainType?: string | null, resource?: string | null): string {
+    if (!terrainType || !resource) return '';
+    return `${terrainType.toUpperCase()}.${resource.toUpperCase()}`;
+  }
+
+  /** Whether a pre-rendered tile exists for this terrain + resource pairing. */
+  hasResourceTile(terrainType?: string | null, resource?: string | null): boolean {
+    return this.resourceTileCache.has(this.resourceTileKey(terrainType, resource));
+  }
+
+  /**
+   * Texture for a tile: the pre-rendered resource tile when one exists and has
+   * decoded, otherwise the plain terrain base. Variant picking is stable per
+   * tile so neighbouring resource tiles can show different poses.
+   */
+  getTileTexture(
+    terrainType?: string | null,
+    resource?: string | null,
+    col = 0,
+    row = 0,
+  ): HTMLImageElement | null {
+    const arr = this.resourceTileCache.get(this.resourceTileKey(terrainType, resource));
+    if (arr) {
+      const ready = arr.filter(img => img.complete && img.naturalWidth > 0);
+      if (ready.length > 0) return this.pickVariant(ready, col, row);
+    }
+    return this.getTexture(terrainType, col, row);
+  }
+
   getPriority(type?: string | null): number {
     if (!type) return 0;
     return TERRAIN_PRIORITY[type.toUpperCase()] ?? 0;
@@ -179,8 +250,9 @@ export class TerrainTextureManager {
     fallbackColor: string,
     topLeft = false,
     col = 0, row = 0,
+    resource: string | null = null,
   ): void {
-    const img = this.getTexture(terrainType, col, row);
+    const img = this.getTileTexture(terrainType, resource, col, row);
     const px  = topLeft ? x : x - size / 2;
     const py  = topLeft ? y : y - size / 2;
     if (img && img.complete && img.naturalWidth > 0) {

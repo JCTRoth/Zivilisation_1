@@ -24,7 +24,6 @@ import { GameUtils } from "@/utils/GameUtils";
 import { DomUtils } from "@/utils/DomUtils";
 import { enrichMapForExport } from "@/utils/MapExportUtils";
 import { preloadAllUnitIcons } from "@/utils/UnitIconLoader";
-import { preloadResourceIcons } from "@/utils/ResourceIconLoader";
 import { centerCameraOnTile, getGameViewport } from "@/utils/CameraUtils";
 import { gameLogger } from "@/utils/GameLogger";
 import { gameProgression } from "@/utils/GameProgression";
@@ -127,14 +126,6 @@ function App() {
   useEffect(() => {
     preloadAllUnitIcons().catch((err) => {
       console.warn("Failed to preload some unit icons:", err);
-    });
-  }, []);
-
-  // Preload resource artwork (fish, horses…) while the setup screen is up, so
-  // the map can draw the SVGs instead of the fallback glyphs from turn one.
-  useEffect(() => {
-    preloadResourceIcons().catch((err) => {
-      console.warn("Failed to preload some resource artwork:", err);
     });
   }, []);
 

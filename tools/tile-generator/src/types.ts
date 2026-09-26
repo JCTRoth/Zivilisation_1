@@ -20,6 +20,15 @@ export interface TextureGroup {
   inGameTiles: GameTile[];
 }
 
+/** A pre-rendered feature-on-tile PNG from tools/tile-generator/tiles. */
+export interface ComposedTile {
+  filename: string;
+  path: string;
+  size: number;
+  mtime: number;
+  inGame: boolean;
+}
+
 export interface FalModel {
   id: string;
   name: string;

@@ -6,7 +6,8 @@
     "dev": "concurrently -n server,vite -c cyan,green \"node server.mjs\" \"vite\"",
     "start": "node server.mjs",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "compose-features": "node compose_feature_tiles.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

@@ -22,7 +22,6 @@ import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } f
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import { getUnitIcon } from '@/utils/UnitIconLoader';
-import { getResourceIcon } from '@/utils/ResourceIconLoader';
 import { TERRAIN_FONT_FAMILY } from '@/utils/TerrainFont';
 import { MathUtils } from '@/utils/MathUtils';
 import { HUMAN_PLAYER_ID } from '@/utils/PlayerConstants';
@@ -338,11 +337,6 @@ interface DrawTerrainSymbolOptions {
   zoom?: number;
   /** Draw dynamic resource and village overlays rather than cached terrain symbols. */
   dynamicOverlays?: boolean;
-  /**
-   * Stable per-tile number (`row * mapWidth + col`) used to pick a resource
-   * artwork variant. The same tile always shows the same pose.
-   */
-  variantSeed?: number;
 }
 
 /**
@@ -535,7 +529,7 @@ export class MapRenderer {
 
         const terrainInfo = this.resolveTerrain(tile.type);
         if (tm) {
-          tm.drawTile(ctx, tile.type, x, y, scaledTile, terrainInfo.color, true, col, row);
+          tm.drawTile(ctx, tile.type, x, y, scaledTile, terrainInfo.color, true, col, row, tile.resource ?? null);
         } else {
           ctx.fillStyle = terrainInfo.color;
           ctx.fillRect(x, y, scaledTile, scaledTile);
@@ -1117,7 +1111,7 @@ export class MapRenderer {
 
         // Draw base terrain texture
         if (tm) {
-          tm.drawTile(ctx, tile.type, tileX, tileY, scaledTileSize, terrainInfo.color, true, col, row);
+          tm.drawTile(ctx, tile.type, tileX, tileY, scaledTileSize, terrainInfo.color, true, col, row, tile.resource ?? null);
         } else {
           ctx.fillStyle = terrainInfo.color;
           ctx.fillRect(tileX, tileY, scaledTileSize, scaledTileSize);
@@ -1195,13 +1189,7 @@ export class MapRenderer {
               );
             }
           } else {
-            this.drawTerrainSymbol(ctx, x, y, tile, {
-              drawBase: false,
-              drawRivers: true,
-              zoom: camera.zoom,
-              dynamicOverlays: true,
-              variantSeed: row * (terrainGrid[row]?.length ?? 0) + col,
-            });
+            this.drawTerrainSymbol(ctx, x, y, tile, { drawBase: false, drawRivers: true, zoom: camera.zoom, dynamicOverlays: true });
           }
         }
 
@@ -1606,13 +1594,7 @@ export class MapRenderer {
           // Draw improvements using the same drawTerrainSymbol function, but only improvements/roads
           // (no base terrain symbols, as those are already in the offscreen layer)
           try {
-            this.drawTerrainSymbol(ctx, x, y, improvementTile, {
-              drawBase: false,
-              drawRivers: false,
-              zoom: cameraZoom,
-              dynamicOverlays: true,
-              variantSeed: row * map.width + col,
-            });
+            this.drawTerrainSymbol(ctx, x, y, improvementTile, { drawBase: false, drawRivers: false, zoom: cameraZoom, dynamicOverlays: true });
           } catch (err) {
             console.warn('[MapRenderer] drawDynamicContent: failed to draw improvement', err);
           }
@@ -2160,44 +2142,31 @@ export class MapRenderer {
   }
 
   /**
-   * Draws a resource's vector artwork (Fish, Horses…) over a tile in the
-   * dynamic overlay pass — the same layer units and emoji glyphs use, so it
-   * appears the moment the SVG has decoded and never blocks terrain boot.
-   *
-   * The decoded SVG is blitted as a scaled bitmap (no shadow, no per-frame
-   * variant work) and the sprite is fitted into a box that always stays inside
-   * the tile. Returns false while the artwork is still loading or missing, so
-   * the caller can draw the Civ1 glyph instead.
-   *
-   * @param seed - Stable per-tile number; picks the artwork variant.
+   * Draws a resource's Civ1 glyph over a tile in the dynamic overlay pass.
+   * Resources with a pre-rendered feature-on-tile texture (see
+   * TerrainTextureManager.RESOURCE_TILE_FILES) skip this: their artwork is
+   * already baked into the base texture, so only resources without artwork
+   * still need a glyph here.
    */
-  private drawResourceArtwork(
+  private drawResourceGlyph(
     ctx: CanvasRenderingContext2D,
     resourceKey: string,
     centerX: number,
     centerY: number,
-    zoom: number,
-    seed?: number
-  ): boolean {
-    const icon = getResourceIcon(resourceKey, seed ?? 0);
-    if (!icon) return false;
-    const srcW = icon.naturalWidth || icon.width;
-    const srcH = icon.naturalHeight || icon.height;
-    if (srcW <= 0 || srcH <= 0) return false;
-
-    const overlayScale = Math.max(0.5, zoom);
-    const box = this.tileSize * 0.8 * overlayScale;
-    const scale = Math.min(box / srcW, box / srcH);
-    const drawW = srcW * scale;
-    const drawH = srcH * scale;
-    // Centre the sprite on the tile, then clamp it inward so it never spills
-    // into a neighbour.
-    const half = (this.tileSize * overlayScale) / 2;
-    const drawX = Math.min(Math.max(centerX - drawW / 2, centerX - half), centerX + half - drawW);
-    const drawY = Math.min(Math.max(centerY - drawH / 2, centerY - half), centerY + half - drawH);
-
-    ctx.drawImage(icon, drawX, drawY, drawW, drawH);
-    return true;
+    zoom: number
+  ): void {
+    if (!RESOURCE_GLYPHS[resourceKey]) return;
+    try {
+      const overlayScale = Math.max(0.5, zoom);
+      const isFish = resourceKey === 'fish';
+      ctx.font = isFish
+        ? `bold ${Math.round(16 * overlayScale)}px sans-serif`
+        : `${Math.round(16 * overlayScale)}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+      ctx.fillStyle = isFish ? '#ffffff' : '#000';
+      ctx.fillText(RESOURCE_GLYPHS[resourceKey], centerX - 10 * overlayScale, centerY + 10 * overlayScale);
+    } catch (err) {
+      console.warn('[MapRenderer] drawResourceGlyph fillText failed', err);
+    }
   }
 
   private drawTerrainSymbol(
@@ -2230,23 +2199,14 @@ export class MapRenderer {
       }
     }
 
-    // Resources are drawn in the dynamic pass at a fixed screen size. Keeping
-    // them out of the terrain layer prevents emoji from scaling with zoom.
+    // Resource artwork is baked into the pre-rendered tile texture (drawn by
+    // drawTile). Only resources that have no such texture — and no other
+    // artwork — fall back to their Civ1 glyph here.
     const resource = terrain.resource ? String(terrain.resource) : null;
     if (dynamicOverlays && resource && RESOURCE_GLYPHS[resource.toLowerCase()]) {
       const resourceKey = resource.toLowerCase();
-      if (!this.drawResourceArtwork(ctx, resourceKey, centerX, centerY, zoom, options.variantSeed)) {
-        try {
-          const overlayScale = Math.max(0.5, zoom);
-          const isFish = resourceKey === 'fish';
-          ctx.font = isFish
-            ? `bold ${Math.round(16 * overlayScale)}px sans-serif`
-            : `${Math.round(16 * overlayScale)}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
-          ctx.fillStyle = isFish ? '#ffffff' : '#000';
-          ctx.fillText(RESOURCE_GLYPHS[resourceKey], centerX - 10 * overlayScale, centerY + 10 * overlayScale);
-        } catch (err) {
-          console.warn('[MapRenderer] drawTerrainSymbol resource fillText failed', err);
-        }
+      if (!this.textureManager?.hasResourceTile(terrain.type, resource)) {
+        this.drawResourceGlyph(ctx, resourceKey, centerX, centerY, zoom);
       }
     }
 
