@@ -6,7 +6,7 @@ import { SquareGrid } from '../game/SquareGrid';
 import { UNIT_TYPES } from '../data/GameData';
 import { UNIT_PROPERTIES } from '../data/UnitConstants';
 import { HUMAN_PLAYER_ID } from '../utils/PlayerConstants';
-import { beginCameraGlide } from '../game/engine/CameraGlideGate';
+import { beginCameraGlide } from '../game/rendering/CameraGlideGate';
 import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City } from '../../types/game';
 
 // Internal store property types for cached/computed state

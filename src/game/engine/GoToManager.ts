@@ -10,7 +10,7 @@ import {
   resolveAnimationDuration,
   sleep,
 } from '../rendering/GlideAnimation';
-import { awaitCameraGlide, isCameraGliding } from './CameraGlideGate';
+import { awaitCameraGlide, isCameraGliding } from '../rendering/CameraGlideGate';
 import { findNewlySightedEnemies, getVisibleEnemyUnitIds } from './EnemySighting';
 import { notify } from '../../utils/NotificationUtils';
 import { HUMAN_PLAYER_ID } from '../../utils/PlayerConstants';

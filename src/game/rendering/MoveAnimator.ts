@@ -7,7 +7,7 @@ import {
   resolveAnimationDuration,
   sleep,
 } from './GlideAnimation';
-import { awaitCameraGlide, isCameraGliding } from '../engine/CameraGlideGate';
+import { awaitCameraGlide, isCameraGliding } from './CameraGlideGate';
 
 /** The narrow slice of the engine MoveAnimator needs, so the engine class
  * instance is assignable without inheriting the unrelated interface mismatch

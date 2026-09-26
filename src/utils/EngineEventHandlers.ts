@@ -1,7 +1,7 @@
 import { useGameStore } from '../stores/GameStore';
 import { CombatSystem, type CombatEventKind } from '../game/engine/CombatSystem';
 import { firstUnresearchedInPath } from './ResearchPath';
-import { awaitCameraGlide, isCameraGliding } from '../game/engine/CameraGlideGate';
+import { awaitCameraGlide, isCameraGliding } from '../game/rendering/CameraGlideGate';
 import { HUMAN_PLAYER_ID } from './PlayerConstants';
 import { humanOrFirst, notify } from './NotificationUtils';
 import type GameEngine from '../game/engine/GameEngine';
