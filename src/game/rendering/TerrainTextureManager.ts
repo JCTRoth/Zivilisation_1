@@ -39,6 +39,21 @@ export const FEATURE_TEXTURE_FILES: Partial<Record<string, string>> = {
   SWAMP:     '/assets/tiles/terrain_swamp_feature.png',
 };
 
+/**
+ * Special-resource overlay sprites, keyed by uppercase resource name. The SVG
+ * artwork is bundled by Vite (the same `new URL(..., import.meta.url)` pattern
+ * the unit icons use), so production builds get content-hashed files. Several
+ * files per resource are variants picked per tile. Resources without an entry
+ * keep the MapRenderer glyph fallback.
+ */
+export const RESOURCE_TEXTURE_URLS: Record<string, readonly string[]> = {
+  FISH: [new URL('../../assets/resources/fish.svg', import.meta.url).href],
+  HORSES: [
+    new URL('../../assets/resources/horses.svg', import.meta.url).href,
+    new URL('../../assets/resources/horses_2.svg', import.meta.url).href,
+  ],
+};
+
 /** Higher value bleeds color over lower-value terrain at border transitions. */
 export const TERRAIN_PRIORITY: Record<string, number> = {
   OCEAN:       0,
@@ -86,6 +101,7 @@ export class TerrainTextureManager {
   /** Arrays hold the primary image at index 0, then any loaded variants. */
   private readonly baseCache    = new Map<string, HTMLImageElement[]>();
   private readonly featureCache = new Map<string, HTMLImageElement[]>();
+  private readonly resourceCache = new Map<string, HTMLImageElement[]>();
   /** Reusable offscreen canvas for texture-based transition compositing. */
   private transitionCanvas: HTMLCanvasElement | null = null;
   /** Dedicated offscreen canvas for feature blending (wider than a tile). */
@@ -96,10 +112,17 @@ export class TerrainTextureManager {
   private totalCount  = 0;
 
   constructor(onLoad?: () => void) {
-    const baseTypes    = Object.keys(TERRAIN_TEXTURE_FILES);
-    const featureTypes = Object.keys(FEATURE_TEXTURE_FILES);
-    // Count primary + all variant probes so onLoad fires only after everything settles.
-    this.totalCount = (baseTypes.length + featureTypes.length) * (1 + MAX_VARIANT_PROBES);
+    const baseTypes     = Object.keys(TERRAIN_TEXTURE_FILES);
+    const featureTypes  = Object.keys(FEATURE_TEXTURE_FILES);
+    const resourceTypes = Object.keys(RESOURCE_TEXTURE_URLS);
+    const resourceCount = resourceTypes.reduce(
+      (count, type) => count + RESOURCE_TEXTURE_URLS[type].length,
+      0,
+    );
+    // Count base/feature primaries + all variant probes, plus each explicitly
+    // listed resource variant, so onLoad fires only after everything settles.
+    this.totalCount =
+      (baseTypes.length + featureTypes.length) * (1 + MAX_VARIANT_PROBES) + resourceCount;
 
     let resolve!: () => void;
     this.ready = new Promise(r => { resolve = r; });
@@ -138,6 +161,16 @@ export class TerrainTextureManager {
       img.onerror = () => { probeVariants(FEATURE_TEXTURE_FILES[type]!, arr); done(); };
       img.src = FEATURE_TEXTURE_FILES[type]!;
     }
+    for (const type of resourceTypes) {
+      const arr: HTMLImageElement[] = [];
+      this.resourceCache.set(type, arr);
+      for (const url of RESOURCE_TEXTURE_URLS[type]) {
+        const img = new Image();
+        img.onload = () => { arr.push(img); done(); };
+        img.onerror = done;
+        img.src = url;
+      }
+    }
   }
 
   /** Stable variant selection based on tile grid position. */
@@ -157,6 +190,15 @@ export class TerrainTextureManager {
   getFeatureTexture(type?: string | null, col = 0, row = 0): HTMLImageElement | null {
     if (!type) return null;
     const arr = this.featureCache.get(type.toUpperCase());
+    if (!arr || arr.length === 0) return null;
+    const ready = arr.filter(img => img.complete && img.naturalWidth > 0);
+    if (ready.length === 0) return null;
+    return this.pickVariant(ready, col, row);
+  }
+
+  getResourceTexture(resource?: string | null, col = 0, row = 0): HTMLImageElement | null {
+    if (!resource) return null;
+    const arr = this.resourceCache.get(resource.toUpperCase());
     if (!arr || arr.length === 0) return null;
     const ready = arr.filter(img => img.complete && img.naturalWidth > 0);
     if (ready.length === 0) return null;
@@ -452,6 +494,37 @@ export class TerrainTextureManager {
     fCtx.globalCompositeOperation = 'source-over';
 
     ctx.drawImage(fc, 0, 0, drawW, drawH, drawX, drawY, drawW, drawH);
+  }
+
+  // ── Resource overlay sprite ──────────────────────────────────────────────
+  //
+  // Drawn on top of the terrain/feature layers — and therefore baked into the
+  // cached terrain base, never redrawn per frame. The SVG is decoded once and
+  // then blitted like any bitmap; the sprite keeps its aspect ratio and is
+  // fitted into a box that always stays inside the tile, so no resource bleeds
+  // into a neighbour at any zoom. Returns false when the resource has no
+  // artwork (or it is still loading) so the caller can fall back to a glyph.
+
+  drawResource(
+    ctx: CanvasRenderingContext2D,
+    resource: string,
+    tileX: number, tileY: number, tileSize: number,
+    col = 0, row = 0,
+    boxFraction = 0.8,
+  ): boolean {
+    const img = this.getResourceTexture(resource, col, row);
+    if (!img || !img.complete || img.naturalWidth === 0) return false;
+
+    const box   = tileSize * boxFraction;
+    const scale = Math.min(box / img.naturalWidth, box / img.naturalHeight);
+    const drawW = img.naturalWidth * scale;
+    const drawH = img.naturalHeight * scale;
+    // Centred, then clamped: rounding can only ever move the sprite inward.
+    const drawX = Math.min(Math.max(tileX + (tileSize - drawW) / 2, tileX), tileX + tileSize - drawW);
+    const drawY = Math.min(Math.max(tileY + (tileSize - drawH) / 2, tileY), tileY + tileSize - drawH);
+
+    ctx.drawImage(img, drawX, drawY, drawW, drawH);
+    return true;
   }
 
   /**

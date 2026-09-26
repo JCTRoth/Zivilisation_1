@@ -10,8 +10,10 @@ fi
 for svg_file in *.svg; do
     if [ -f "$svg_file" ]; then
         echo "Cropping: $svg_file"
-        # Use a temporary file to avoid corruption
-        temp_file="${svg_file}.tmp"
+        # Use a temporary file to avoid corruption. Inkscape 1.x refuses to
+        # export to a filename whose extension doesn't match the export type,
+        # so the temp name must keep the .svg suffix.
+        temp_file="${svg_file%.svg}.tmp.svg"
         inkscape --export-type=svg --export-filename="$temp_file" --export-plain-svg "$svg_file" --export-area-drawing
         mv "$temp_file" "$svg_file"
     fi

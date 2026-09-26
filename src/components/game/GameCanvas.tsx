@@ -337,7 +337,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     units.length,
   ]);
 
-  /** Build a cheap hash of terrain types + exploration (not visibility). */
+  /** Build a cheap hash of terrain types + resources + exploration (not visibility). */
   const hashTerrainTypes = useCallback((grid: TerrainRenderGrid): string => {
     let h = 0;
     for (let r = 0; r < grid.length; r++) {
@@ -346,8 +346,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       for (let c = 0; c < row.length; c++) {
         const t = row[c];
         if (!t) continue;
-        // Simple hash: type char codes + explored flag
-        const s = t.type + (t.explored ? "1" : "0");
+        // Simple hash: type + resource + explored flag. Resources are baked
+        // into the cached terrain base, so a resource change (irrigation,
+        // mining, …) must invalidate it even when the type stays the same.
+        const s = t.type + (t.explored ? "1" : "0") + (t.resource ?? "");
         for (let i = 0; i < s.length; i++) {
           h = ((h << 5) - h + s.charCodeAt(i)) | 0;
         }

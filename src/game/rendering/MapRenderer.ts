@@ -335,7 +335,7 @@ interface DrawTerrainSymbolOptions {
   drawRivers?: boolean;
   /** Camera zoom used by dynamic tile overlays. */
   zoom?: number;
-  /** Draw dynamic resource and village overlays rather than cached terrain symbols. */
+  /** Draw the dynamically changing village (goody hut) overlay. */
   dynamicOverlays?: boolean;
 }
 
@@ -621,7 +621,7 @@ export class MapRenderer {
       }
     }
 
-    // ── Pass 3a: terrain symbols (rivers, resources) — no fog ───────────
+    // ── Pass 3a: terrain symbols (river glyphs) — no fog ─────────────────
     for (let row = 0; row < map.height; row++) {
       for (let col = 0; col < map.width; col++) {
         const tile = terrainGrid[row]?.[col];
@@ -647,6 +647,16 @@ export class MapRenderer {
           const y = row * scaledTile;
           tm.drawFeature(ctx, tile.type, x, y, scaledTile, col, row);
         }
+      }
+    }
+
+    // ── Pass 5: resource overlays (same row order as the features so a
+    // sprite overhanging from the row below still sits in front) ─────────
+    for (let row = 0; row < map.height; row++) {
+      for (let col = 0; col < map.width; col++) {
+        const tile = terrainGrid[row]?.[col];
+        if (!tile?.explored || !tile.resource) continue;
+        this.drawResourceMark(ctx, tile.resource, col * scaledTile, row * scaledTile, scaledTile, col, row);
       }
     }
   }
@@ -1200,9 +1210,12 @@ export class MapRenderer {
       }
     }
 
-    // Feature sprites pass — drawn row by row for correct depth sorting
-    if (this.textureManager?.isReady) {
+    // Feature + resource overlay pass — drawn row by row for correct depth
+    // sorting. Resources sit on top of their tile's feature but below a feature
+    // that overhangs from the row beneath, exactly like the offscreen pass.
+    {
       const tm = this.textureManager;
+      const featuresReady = tm?.isReady ?? false;
       for (let row = bounds.startRow; row < bounds.endRow; row++) {
         for (let col = bounds.startCol; col < bounds.endCol; col++) {
           const tile = terrainGrid[row]?.[col];
@@ -1211,9 +1224,14 @@ export class MapRenderer {
           const { x, y } = squareToScreen(col, row);
           if (this.isOutsideViewport(x, y + scaledTileSize / 2, canvasSize.width, canvasSize.height, scaledTileSize * 2)) continue;
           const half = scaledTileSize / 2;
-          tm.drawFeature(ctx, tile.type, x - half, y - half, scaledTileSize, col, row);
-          // Features are drawn after the per-tile fog fill above, so a feature
-          // on an explored-but-not-visible tile must be dimmed here too —
+          if (featuresReady) {
+            tm!.drawFeature(ctx, tile.type, x - half, y - half, scaledTileSize, col, row);
+          }
+          if (tile.resource) {
+            this.drawResourceMark(ctx, tile.resource, x - half, y - half, scaledTileSize, col, row);
+          }
+          // This pass runs after the per-tile fog fill above, so anything drawn
+          // here for an explored-but-not-visible tile must be dimmed too —
           // matching the offscreen path, where fog is composited last.
           if (!tile.visible) {
             ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
@@ -2106,15 +2124,56 @@ export class MapRenderer {
   }
 
   /**
-   * Draws terrain symbols including base terrain characters, rivers, and improvements.
-   * Handles glyph rendering for roads, railroads, and other terrain features.
+   * Paints the resource overlay of one tile into the terrain layer: the sprite
+   * from {@link TerrainTextureManager} when the resource ships artwork,
+   * otherwise its Civ1 glyph.
    *
-   * @param ctx - Canvas rendering context
-   * @param centerX - Center X coordinate for the symbol
-   * @param centerY - Center Y coordinate for the symbol
-   * @param terrain - Terrain tile information
-   * @param options - Drawing options for base symbols and rivers
+   * Called only from the terrain passes, never from the dynamic per-frame pass.
+   * The 2×-resolution base is rebuilt only when terrain/exploration/resources
+   * change, so a tile's resource is rasterised once and then blitted with the
+   * rest of the terrain — and it dims under fog like any other tile content.
+   *
+   * @param tileX - Left edge of the tile in the target canvas
+   * @param tileY - Top edge of the tile in the target canvas
+   * @param tileSize - Rendered tile size (2× tile size in the base layer)
+   * @param col - Tile column (picks the stable artwork variant)
+   * @param row - Tile row (picks the stable artwork variant)
    */
+  private drawResourceMark(
+    ctx: CanvasRenderingContext2D,
+    resource: string | null | undefined,
+    tileX: number,
+    tileY: number,
+    tileSize: number,
+    col: number,
+    row: number,
+  ): void {
+    if (!resource) return;
+    const key = String(resource).toLowerCase();
+    const glyph = RESOURCE_GLYPHS[key];
+    if (!glyph) return;
+
+    const tm = this.textureManager;
+    if (tm && tm.drawResource(ctx, key, tileX, tileY, tileSize, col, row)) return;
+
+    // Glyph fallback for resources without artwork (or while it is loading).
+    try {
+      const scale = Math.max(0.5, tileSize / this.tileSize);
+      const isFish = key === 'fish';
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = isFish
+        ? `bold ${Math.round(16 * scale)}px sans-serif`
+        : `${Math.round(16 * scale)}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+      ctx.fillStyle = isFish ? '#ffffff' : '#000';
+      ctx.fillText(glyph, tileX + tileSize / 2 - 10 * scale, tileY + tileSize / 2 + 10 * scale);
+      ctx.restore();
+    } catch (err) {
+      console.warn('[MapRenderer] drawResourceMark fillText failed', err);
+    }
+  }
+
   /**
    * Draw a Civ1 village (goody hut) marker (🛖) at a tile. `dimmed` renders a
    * ghost hut — used for huts seen through the fog of war.
@@ -2141,6 +2200,16 @@ export class MapRenderer {
     }
   }
 
+  /**
+   * Draws terrain symbols including base terrain characters, rivers, and improvements.
+   * Handles glyph rendering for roads, railroads, and other terrain features.
+   *
+   * @param ctx - Canvas rendering context
+   * @param centerX - Center X coordinate for the symbol
+   * @param centerY - Center Y coordinate for the symbol
+   * @param terrain - Terrain tile information
+   * @param options - Drawing options for base symbols and rivers
+   */
   private drawTerrainSymbol(
     ctx: CanvasRenderingContext2D,
     centerX: number,
@@ -2171,23 +2240,9 @@ export class MapRenderer {
       }
     }
 
-    // Resources are drawn in the dynamic pass at a fixed screen size. Keeping
-    // them out of the terrain layer prevents emoji from scaling with zoom.
-    const resource = terrain.resource ? String(terrain.resource) : null;
-    if (dynamicOverlays && resource && RESOURCE_GLYPHS[resource.toLowerCase()]) {
-      try {
-        const overlayScale = Math.max(0.5, zoom);
-        const resourceKey = resource.toLowerCase();
-        const isFish = resourceKey === 'fish';
-        ctx.font = isFish
-          ? `bold ${Math.round(16 * overlayScale)}px sans-serif`
-          : `${Math.round(16 * overlayScale)}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
-        ctx.fillStyle = isFish ? '#ffffff' : '#000';
-        ctx.fillText(RESOURCE_GLYPHS[resourceKey], centerX - 10 * overlayScale, centerY + 10 * overlayScale);
-      } catch (err) {
-        console.warn('[MapRenderer] drawTerrainSymbol resource fillText failed', err);
-      }
-    }
+    // Resources are painted into the terrain layer by drawResourceMark (see
+    // the resource pass), not here: they belong to the cached base so they are
+    // drawn once per terrain change instead of once per frame.
 
     // Civ1 village (goody hut) marker. Drawn only in the dynamic pass
     // (drawBase === false) so it always reflects the authoritative map state
