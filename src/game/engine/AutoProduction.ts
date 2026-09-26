@@ -51,12 +51,24 @@ const AI_ABSOLUTE_MAX_SCOUTS = 3;
  * brake against settler/army spam.
  */
 const EXPANSION_PARAMS: Record<StrategyProfile, { settlersPerCities: number; minSettlers: number; maxSettlers: number; earlyBonus: boolean }> = {
-  early_expansion: { settlersPerCities: 2, minSettlers: 1, maxSettlers: 6, earlyBonus: true },
+  // Measured over 12 batch games (48 civs), wins / cities-per-civ:
+  //   military_expansion 6/10 wins, 2.5 cities  — the reference personality
+  //   balanced_growth    3/8  wins, 4.6 cities  — expands best
+  //   science_focus      1/8  wins, 1.9 cities
+  //   wonder_rush        1/7  wins, 1.4 cities
+  //   early_expansion    0/9  wins, 0.9 cities  — settler spam, self-destructed
+  //   defensive_turtle   1/6  wins, 0.8 cities  — walled in and died owning walls
+  // The two losers both under-expanded or over-expanded, so both are pulled
+  // toward the cadence that actually survives: two or three cities, then a
+  // settler roughly every third city.
+  early_expansion: { settlersPerCities: 3, minSettlers: 2, maxSettlers: 4, earlyBonus: true },
   military_expansion: { settlersPerCities: 3, minSettlers: 1, maxSettlers: 4, earlyBonus: false },
   balanced_growth: { settlersPerCities: 3, minSettlers: 1, maxSettlers: 4, earlyBonus: true },
-  science_focus: { settlersPerCities: 4, minSettlers: 1, maxSettlers: 3, earlyBonus: false },
-  wonder_rush: { settlersPerCities: 4, minSettlers: 1, maxSettlers: 3, earlyBonus: false },
-  defensive_turtle: { settlersPerCities: 5, minSettlers: 1, maxSettlers: 3, earlyBonus: false },
+  science_focus: { settlersPerCities: 4, minSettlers: 2, maxSettlers: 3, earlyBonus: false },
+  wonder_rush: { settlersPerCities: 3, minSettlers: 2, maxSettlers: 3, earlyBonus: true },
+  // A turtle that never expands cannot win and cannot even trade: it just
+  // builds walls until somebody walks over them. Keep two settlers in hand.
+  defensive_turtle: { settlersPerCities: 4, minSettlers: 2, maxSettlers: 3, earlyBonus: true },
 };
 
 export class AutoProduction {
@@ -435,6 +447,9 @@ export class AutoProduction {
     // On small maps (AI_VS_AI_SMALL, 16x26) a civ only needs one extra city
     // before the economy stalls — cap settlers there so the capital doesn't
     // churn settlers forever and never builds scouts or a real army.
+    const allCivCities = this.gameEngine.cities.filter(
+      (c: City) => c.civilizationId === city.civilizationId,
+    );
     const desiredSettlers = isSmallMap
       ? Math.min(2, expansion.maxSettlers)
       : Math.min(
@@ -451,7 +466,17 @@ export class AutoProduction {
     if (starving) {
       console.log('[AutoProduction] City is losing food — settlers paused until it recovers');
     }
-    if (!needsHappiness && city.population >= 1 && !starving) {
+
+    // Prevent City from getting disolved by new Settler produced
+    const isAiCity = this.gameEngine.civilizations?.[city.civilizationId]?.isAI === true;
+    const wouldConsumeCity = (city.population ?? 1) <= 1;
+    const hasSettlerInCiv = this.gameEngine.units.some(
+      (u: Unit) => u.civilizationId === city.civilizationId && u.type === 'settler' && !u.isDefeated,
+    );
+    const isCapitalMove = allCivCities.length <= 1 && !hasSettlerInCiv;
+    const refusesSelfDestruct = isAiCity && wouldConsumeCity && !isCapitalMove;
+
+    if (!needsHappiness && city.population >= 1 && !starving && !refusesSelfDestruct) {
       // Civ1: Settlers consume food from the home city (not gold), so they
       // don't drain the treasury. However, building a Settler diverts shields
       // from other production — only allow settlers when the economy is healthy
@@ -464,9 +489,6 @@ export class AutoProduction {
       // Count queued settlers across ALL cities so the cap is enforced
       // globally — without this, three cities each queueing a settler all
       // pass the per-city check and the civ overshoots the cap.
-      const allCivCities = this.gameEngine.cities.filter(
-        (c: City) => c.civilizationId === city.civilizationId,
-      );
       const queuedSettlers = allCivCities.reduce((count: number, c: City) => {
         if (c.currentProduction?.type === 'unit' && c.currentProduction?.itemType === 'settler') return count + 1;
         if (Array.isArray(c.buildQueue)) {

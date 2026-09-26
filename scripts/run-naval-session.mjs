@@ -107,7 +107,7 @@ describe('naval session', () => {
 // them were committed once).
 const specPath = join(ROOT, 'tests', 'ai', 'tmpNavalSession.test.ts');
 writeFileSync(specPath, spec);
-const cleanup = () => { try { rmSync(specPath, { force: true }); } catch {} };
+const cleanup = () => { try { rmSync(specPath, { force: true }); } catch {console.log("specPath cleanup failed! {}", ROOT)} };
 process.on('exit', cleanup);
 
 const res = spawnSync(

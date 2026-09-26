@@ -548,10 +548,40 @@ export class EconomicManager {
    * yields are counted per TILE, the extra tiles were free food. Excess tiles
    * are dropped worst-first, never a manually assigned one.
    */
+  /**
+   * Bring a city back inside its own population after losing citizens.
+   *
+   * Two things are sized by population and both have to shrink together: the
+   * specialists (entertainers, taxmen…) and the worked tiles. Trimming only the
+   * tiles left cities with MORE specialists than citizens — a settler
+   * completing in a size-2 city took one pop and left "2 specialists, pop 1",
+   * which the long-run invariant suite correctly refused.
+   */
+  fitCityToPopulation(city: City): boolean {
+    let changed = false;
+    const population = Math.max(1, city.population ?? 1);
+    const specialists = city.specialists ?? [];
+    if (specialists.length > population) {
+      // Entertainers are the most expendable — a temple replaces them — so they
+      // go first; anything after that drops from the end.
+      const kept = [...specialists];
+      while (kept.length > population) {
+        const entertainer = kept.lastIndexOf('entertainer');
+        kept.splice(entertainer >= 0 ? entertainer : kept.length - 1, 1);
+      }
+      city.specialists = kept;
+      changed = true;
+    }
+    if (this.fitWorkedTilesToPopulation(city)) changed = true;
+    return changed;
+  }
+
   fitWorkedTilesToPopulation(city: City): boolean {
     const working = city.workingTiles;
     if (!(working instanceof Set) || working.size === 0) return false;
-    const target = 1 + (city.population ?? 1) - (city.specialists ?? []).length;
+    // The centre tile is always worked, so the target never drops below 1 —
+    // otherwise a city that lost citizens would try to shed its own centre.
+    const target = Math.max(1, 1 + (city.population ?? 1) - (city.specialists ?? []).length);
     if (working.size <= target) return false;
 
     const centerKey = `${city.col},${city.row}`;

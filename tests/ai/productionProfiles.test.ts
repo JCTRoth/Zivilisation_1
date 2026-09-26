@@ -99,10 +99,12 @@ describe('expansion-first AutoProduction', () => {
   });
 
   it('keeps expanding past 4 cities — cadence scales with empire size (no hard cap)', () => {
-    // 8 cities, 3 settlers already on hand.
-    const aggressive = makeEngine({ cityCount: 8, population: 3, profile: 'early_expansion', settlerCount: 3 });
+    // 8 cities, 2 settlers on hand. early_expansion keeps a settler roughly
+    // every third city (its corps was retuned from every 2nd/6 settlers to
+    // every 3rd/4 after it went 0-for-9 in a 12-game batch), so 2 < 3 → build.
+    const aggressive = makeEngine({ cityCount: 8, population: 3, profile: 'early_expansion', settlerCount: 2 });
     new AutoProduction(aggressive.engine).setAutoProduction('city-1');
-    // early_expansion target = ceil(8/2) = 4 → 3 < 4 → still builds settlers.
+    // early_expansion target = ceil(8/3) = 3 → 2 < 3 → still builds settlers.
     expect(producedItem(aggressive.productionManager).itemType).toBe('settler');
 
     const balanced = makeEngine({ cityCount: 8, population: 3, profile: 'balanced_growth', settlerCount: 3 });
@@ -112,8 +114,10 @@ describe('expansion-first AutoProduction', () => {
   });
 
   it('never hard-stops expansion, even for a large empire', () => {
-    // 15 cities, early_expansion corps capped at 6 → still replaces settlers.
-    const { engine, productionManager } = makeEngine({ cityCount: 15, population: 3, profile: 'early_expansion', settlerCount: 5 });
+    // 15 cities, 3 settlers on hand, corps capped at 4 → 3 < 4 → keeps
+    // replacing settlers a big empire consumes. (The cap is the cap: a civ
+    // already holding 5 is told to spend the shields elsewhere.)
+    const { engine, productionManager } = makeEngine({ cityCount: 15, population: 3, profile: 'early_expansion', settlerCount: 3 });
     new AutoProduction(engine).setAutoProduction('city-1');
     expect(producedItem(productionManager).itemType).toBe('settler');
   });

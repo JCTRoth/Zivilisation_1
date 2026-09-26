@@ -35,7 +35,7 @@ import { BarbarianManager } from './BarbarianManager';
 import { UnitTurnQueue } from './UnitTurnQueue';
 import { DiplomacyManager } from './DiplomacyManager';
 import type { DiplomatAction } from './DiplomacyTypes';
-import { canBuildUnit, getCivProductionProfile, getCivPersonality } from './AI/AITypes';
+import { CIV_PRODUCTION_PROFILES, canBuildUnit, getCivProductionProfile, getCivPersonality } from './AI/AITypes';
 import { EconomicManager } from './EconomicManager';
 import { GovernmentManager } from './GovernmentManager';
 import { ResearchManager } from './ResearchManager';
@@ -1014,8 +1014,27 @@ export default class GameEngine {
       [staticStarts[i], staticStarts[j]] = [staticStarts[j], staticStarts[i]];
     }
 
+    // Which strategic personality each AI slot gets. In a normal game slot 0 is
+    // the human, so profiles stay pinned to the index (a civ keeps its identity
+    // across saves). In an all-AI game nothing depends on the order, and pinning
+    // it meant every duel was the same match-up: "early_expansion" sat in slot 0
+    // and lost all six batch games, which looked like a bad personality when it
+    // could equally have been a bad start. Rotating by seed makes each game a
+    // different match-up and makes batch results mean something.
+    const profileOrder = [...CIV_PRODUCTION_PROFILES];
+    const rotateProfiles =
+      mapType === 'AI_VS_AI' || mapType === 'AI_VS_AI_SMALL' || mapType === 'AI_VS_AI_NAVAL';
+    if (rotateProfiles && typeof this.gameSettings.mapSeed === 'number') {
+      const profileRng = this.makeSeededRng(this.gameSettings.mapSeed, 0x9109d);
+      const offset = Math.floor(profileRng() * profileOrder.length);
+      profileOrder.push(...profileOrder.splice(0, offset));
+    }
+
     for (let i = 0; i < selectedCivs.length; i++) {
       const civData = selectedCivs[i];
+      const profileForSlot = rotateProfiles
+        ? (profileOrder[i % profileOrder.length] ?? 'balanced_growth')
+        : getCivProductionProfile(i);
       
       // In AI_VS_AI mode every civilization is AI-controlled (no human player).
       const isHuman =
@@ -1047,8 +1066,13 @@ export default class GameEngine {
         taxRate: 50,
         luxuryRate: 0,
         government: 'despotism',
-        productionProfile: getCivProductionProfile(i),
-        personality: getCivPersonality(getCivProductionProfile(i)),
+        productionProfile: profileForSlot,
+        // Personality must follow the ROTATED profile, not the slot index: they
+        // drive different systems (personality weights research and aggression),
+        // so deriving one from the index and the other from the rotation gave
+        // civs a military_expansion build order with an early_expansion
+        // temperament.
+        personality: getCivPersonality(profileForSlot),
         // Filled in once the start tile is known (see below): a civ that begins
         // on an island knows from turn one that a fleet is the only way out.
         startsOnIsland: false,
@@ -1075,8 +1099,12 @@ export default class GameEngine {
       }
 
       while (!startPos && attempts < 100) {
-        const col = Math.floor(Math.random() * (mapWidth - 4)) + 2;
-        const row = Math.floor(Math.random() * (mapHeight - 4)) + 2;
+        // Seeded like everything else in setup, so a pinned mapSeed gives the
+        // same start positions every time. With Math.random here, two runs of
+        // "seed 101" were different games and no before/after comparison was
+        // worth anything.
+        const col = Math.floor(startRng() * (mapWidth - 4)) + 2;
+        const row = Math.floor(startRng() * (mapHeight - 4)) + 2;
         
         const tile = this.getTileAt(col, row);
         if (tile && tile.type !== Constants.TERRAIN.OCEAN &&
@@ -3321,7 +3349,7 @@ export default class GameEngine {
           } else {
             // Capture the city
             targetCity.population -= 1;
-            this.economicManager?.fitWorkedTilesToPopulation(targetCity);
+            this.economicManager?.fitCityToPopulation(targetCity);
             targetCity.civilizationId = unit.civilizationId;
             targetCity.buildings = targetCity.buildings ?? [];
             this.markCityLost(oldCiv, unit.civilizationId);
@@ -4301,7 +4329,7 @@ export default class GameEngine {
       // Population drop and capture. A lost citizen frees a tile, so the city
       // must not keep working it (free food).
       city.population -= 1;
-      this.economicManager?.fitWorkedTilesToPopulation(city);
+      this.economicManager?.fitCityToPopulation(city);
       city.civilizationId = attacker.civilizationId;
       city.buildings = city.buildings ?? [];
       this.markCityLost(oldCiv, attacker.civilizationId);
@@ -4368,7 +4396,7 @@ export default class GameEngine {
     }
     if (!round.cityHasWalls && (city.population || 1) > 1 && Math.random() < 0.5) {
       city.population -= 1;
-      this.economicManager?.fitWorkedTilesToPopulation(city);
+      this.economicManager?.fitCityToPopulation(city);
       console.log(`[COMBAT] City ${city.name} lost a citizen to a failed attack (no city walls)`);
     }
     return {

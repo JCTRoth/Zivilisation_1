@@ -876,6 +876,11 @@ export class TurnManager {
       city.population = population - 1;
       city.foodNeeded = (city.population + 1) * 10;
       if (typeof city.hitPoints === 'number') city.hitPoints = Math.min(city.hitPoints, city.population);
+      // The lost citizen takes a specialist or a worked tile with it, whichever
+      // the city can spare. Without this a size-2 city kept 2 specialists after
+      // dropping to pop 1 — an impossible city, and the long-run invariant
+      // suite failed on it.
+      this.gameEngine.economicManager?.fitCityToPopulation(city);
     }
 
     // Mirror GameEngine.createUnit so produced units have full combat stats
@@ -990,7 +995,7 @@ export class TurnManager {
       city.foodStored = 0;
       // A dead citizen frees a tile: keeping the old set would hand the city
       // free food (tiles are counted per tile, consumption per citizen).
-      this.gameEngine.economicManager?.fitWorkedTilesToPopulation(city);
+      this.gameEngine.economicManager?.fitCityToPopulation(city);
 
       if (city.population <= 0) {
         // City eliminated — remove it from the map.
