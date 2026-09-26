@@ -37,6 +37,16 @@ interface GameStateSnapshot {
   totalScience: number;
   /** True when at least one own city directly borders ocean/sea. */
   hasWaterAccess?: boolean;
+  /**
+   * How much a fleet is worth to this civ right now (0 on an ordinary land
+   * map): >0 when the world has more than one landmass and we border water,
+   * higher again when we know an enemy city sits on another landmass. On a
+   * naval map this is the difference between Sailing being researched in the
+   * first few turns and never being researched at all.
+   */
+  navalRelevance?: number;
+  /** True when the civ's start tile was on an island (known from turn one). */
+  startsOnIsland?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,9 +155,13 @@ export class AIResearch {
   }
 
   private static isEarlyLandlocked(gameState: GameStateSnapshot): boolean {
-    // Treat missing/unknown access as landlocked for this early-game gate.
-    // Research should not assume naval infrastructure is useful without a
-    // confirmed coastal city.
+    // A civ that starts on an island is not landlocked, whatever its cities
+    // look like right now: the open water is on its doorstep from turn one.
+    // Judging only by "has a coastal city yet" meant the whole naval branch
+    // stayed locked until a city existed — and on the archipelago the AI had
+    // already picked its next research by then, so Sailing never came up.
+    if (gameState.startsOnIsland === true) return false;
+    // Otherwise treat missing/unknown access as landlocked for this gate.
     return gameState.currentYear < -1000 && gameState.hasWaterAccess !== true;
   }
 
@@ -281,6 +295,21 @@ export class AIResearch {
     if (AIResearch.isNavalTech(techId) && AIResearch.isEarlyLandlocked(gameState)) {
       score -= 100;
       reasons.push('no-coastal-city');
+    }
+
+    // …and the mirror image: when the world is split by water, Sailing is not
+    // a dead end, it is the only way to reach anybody. An AI-vs-AI naval game
+    // where nobody picks Sailing never fields a ship, so it never colonises,
+    // invades or even goes to war — 120 rounds produced 0 ferries and 0 attacks
+    // on the archipelago because Sailing had no key-unlock score at all.
+    const naval = gameState.navalRelevance ?? 0;
+    if (naval > 0 && techId === 'sailing') {
+      score += 18 + 4 * naval;
+      reasons.push('naval-relevance');
+    }
+    if (naval > 0 && techId === 'map_making') {
+      score += 6 + 2 * naval;
+      reasons.push('naval-relevance');
     }
 
     // 7. Era progression — slight bonus for advancing to new eras

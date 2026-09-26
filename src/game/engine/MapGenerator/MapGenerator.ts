@@ -162,9 +162,20 @@ export default class MapGenerator {
       console.warn('[MapGenerator] No static world map registered — falling back to procedural generation');
       return this.generate();
     }
+    return this.generateFromStatic(WORLD_MAP);
+  }
 
+  /**
+   * Build a world from a hand-tuned static map (src/data/maps/*.json).
+   *
+   * The static file defines the terrain and its bonus resources; rivers are
+   * still added procedurally (the source maps have none). Groups, build sites
+   * and passability are computed exactly as for a procedural map, so a
+   * scenario world behaves like any other in the engine.
+   */
+  generateFromStatic(def: StaticMapDefinition): GenTile[] {
     const rng = mulberry32(this.seed);
-    this.loadStaticMap(WORLD_MAP);
+    this.loadStaticMap(def);
 
     // Add rivers via pathfinding (same as procedural generation)
     this.stage5_Rivers(rng);
@@ -172,7 +183,7 @@ export default class MapGenerator {
     // Fill any isolated ocean holes
     this.fillIsolatedOceanHoles();
 
-    // The static Earth map's small seas/inland waters are lakes too.
+    // Small enclosed seas are lakes, exactly as on the Earth map.
     this.classifyLakes();
 
     // Compute groups, build sites, and passability

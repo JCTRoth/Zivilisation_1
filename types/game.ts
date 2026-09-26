@@ -516,6 +516,12 @@ export interface Civilization {
   isAI?: boolean;
   /** Fixed per-civ AI identity — drives AutoProduction (and seeds research). */
   productionProfile?: AIProductionProfile;
+  /**
+   * True when the civ's start tile was on an island rather than the main
+   * landmass. Set once at game start, so the AI knows from turn one that a
+   * fleet is the only way to reach anybody else.
+   */
+  startsOnIsland?: boolean;
   icon?: string;
   /** AI personality traits (optional, set by AI systems). */
   personality?: {

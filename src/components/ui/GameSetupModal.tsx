@@ -287,6 +287,7 @@ function GameSetupModal({ show, onStart }) {
                       <option value="ALL_UNITS">All Units Showcase · Every unit type on the board</option>
                       <option value="AI_VS_AI">Computer vs Computer · Auto-playing AI duel</option>
                       <option value="AI_VS_AI_SMALL">Computer vs Computer (Small) · Tall narrow corridor</option>
+                      <option value="AI_VS_AI_NAVAL">Computer vs Computer · Naval Archipelago (8 islands, ferries)</option>
                     </Form.Select>
                     <span className="setup-setting__hint">Choose your game mode.</span>
                   </div>
@@ -487,6 +488,15 @@ function GameSetupModal({ show, onStart }) {
                       <li>Map: <strong>40x40 tiles</strong></li>
                       <li>Players: <strong>All civilizations are AI</strong></li>
                       <li>Mode: <strong>Fully automatic — no human input</strong></li>
+                      <li>Log: <strong>Every move is written to a log file</strong></li>
+                    </ul>
+                  )}
+                  {mapType === 'AI_VS_AI_NAVAL' && (
+                    <ul>
+                      <li>Map: <strong>96x60 tiles — 8 hand-tuned islands</strong></li>
+                      <li>Players: <strong>All civilizations are AI, one island each</strong></li>
+                      <li>Mode: <strong>Fully automatic naval duel</strong></li>
+                      <li>Requires: <strong>ferries — nobody can walk to the enemy</strong></li>
                       <li>Log: <strong>Every move is written to a log file</strong></li>
                     </ul>
                   )}

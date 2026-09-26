@@ -490,8 +490,9 @@ test.describe('AI Behavior', () => {
       await openTopMenu(page, 'WORLD');
       await page.getByRole('button', { name: /Diplomacy/ }).click();
 
-      // The Foreign Advisor (Diplomacy Report) modal should show at least one other civilization
-      const modal = page.locator('.modal').filter({ hasText: 'Diplomacy Report' });
+      // WORLD > Diplomacy opens the negotiation screen (the old read-only
+      // "Diplomacy Report" modal was removed in 1c372d3).
+      const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
       // Close the diplomacy report
@@ -516,13 +517,13 @@ test.describe('AI Behavior', () => {
       await openTopMenu(page, 'WORLD');
       await page.getByRole('button', { name: /Diplomacy/ }).click();
 
-      const modal = page.locator('.modal').filter({ hasText: 'Diplomacy Report' });
+      const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
       // The modal should list at least one AI civilization
       // Either it shows civ data or "No other civilizations discovered yet."
       const noCivsMsg = modal.getByText('No other civilizations discovered yet.');
-      const civRows = modal.locator('.diplomacy-report-row');
+      const civRows = modal.locator('.diplomacy-civ-row');
 
       // One of these conditions should be true
       const hasNoCivs = await noCivsMsg.isVisible().catch(() => false);
@@ -530,8 +531,8 @@ test.describe('AI Behavior', () => {
         // AI civilization row(s) should be displayed
         await expect(civRows.first()).toBeVisible();
         // Each row should have a name and a status indicator
-        await expect(civRows.first().locator('.diplomacy-report-name')).toBeVisible();
-        await expect(civRows.first().locator('.diplomacy-report-status')).toBeVisible();
+        await expect(civRows.first().locator('.diplomacy-civ-name')).not.toBeEmpty();
+        await expect(civRows.first().locator('.diplomacy-status-icon')).toBeVisible();
       }
 
       await page.keyboard.press('Escape');
@@ -544,13 +545,14 @@ test.describe('AI Behavior', () => {
       await openTopMenu(page, 'WORLD');
       await page.getByRole('button', { name: /Diplomacy/ }).click();
 
-      const modal = page.locator('.modal').filter({ hasText: 'Diplomacy Report' });
+      const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
-      const civRows = modal.locator('.diplomacy-report-row');
+      const civRows = modal.locator('.diplomacy-civ-row');
       if (await civRows.count() > 0) {
-        // Default diplomatic status should be "Peace"
-        await expect(civRows.first().locator('.diplomacy-report-status')).toContainText('Peace');
+        // Default diplomatic status should be "Peace" (the row carries the
+        // status icon, and the selected civ shows the attitude badge).
+        await expect(civRows.first().locator('.diplomacy-status-icon')).toBeVisible();
       }
 
       await page.keyboard.press('Escape');
@@ -712,14 +714,14 @@ test.describe('AI Behavior', () => {
       await openTopMenu(page, 'WORLD');
       await page.getByRole('button', { name: /Diplomacy/ }).click();
 
-      const modal = page.locator('.modal').filter({ hasText: 'Diplomacy Report' });
+      const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
       // The AI civ should be visible
-      const civRows = modal.locator('.diplomacy-report-row');
+      const civRows = modal.locator('.diplomacy-civ-row');
       if (await civRows.count() > 0) {
         // Check that AI civ has a name — proves they survived and are active
-        await expect(civRows.first().locator('.diplomacy-report-name')).not.toBeEmpty();
+        await expect(civRows.first().locator('.diplomacy-civ-name')).not.toBeEmpty();
       }
 
       await page.keyboard.press('Escape');
@@ -760,13 +762,13 @@ test.describe('AI Behavior', () => {
       await openTopMenu(page, 'WORLD');
       await page.getByRole('button', { name: /Diplomacy/ }).click();
 
-      const modal = page.locator('.modal').filter({ hasText: 'Diplomacy Report' });
+      const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
-      const civRows = modal.locator('.diplomacy-report-row');
+      const civRows = modal.locator('.diplomacy-civ-row');
       if (await civRows.count() > 0) {
-        // Each row should show an attitude label (Friendly/Neutral/Annoyed/Hostile)
-        const attitude = civRows.first().locator('.diplomacy-report-attitude');
+        // The selected civ shows an attitude label (Friendly/Neutral/Annoyed/Hostile)
+        const attitude = modal.locator('.diplomacy-attitude-badge');
         await expect(attitude).toBeVisible();
         const text = await attitude.textContent();
         expect(['Friendly', 'Neutral', 'Annoyed', 'Hostile']).toContain(text?.trim());
@@ -782,13 +784,13 @@ test.describe('AI Behavior', () => {
       await openTopMenu(page, 'WORLD');
       await page.getByRole('button', { name: /Diplomacy/ }).click();
 
-      const modal = page.locator('.modal').filter({ hasText: 'Diplomacy Report' });
+      const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
-      const civRows = modal.locator('.diplomacy-report-row');
+      const civRows = modal.locator('.diplomacy-civ-row');
       if (await civRows.count() > 0) {
         // Portrait area should exist
-        await expect(civRows.first().locator('.diplomacy-report-portrait')).toBeVisible();
+        await expect(modal.locator('.diplomacy-portrait-slot')).toBeVisible();
       }
 
       await page.keyboard.press('Escape');
@@ -861,19 +863,41 @@ test.describe('AI Behavior', () => {
 
       const foundBtn = page.getByRole('button', { name: /Found \/ Join City/i });
       const box = (await canvas.boundingBox())!;
+      let settlerTile: { x: number; y: number } | null = null;
       scan:
       for (let y = 20; y < box.height; y += 64) {
         for (let x = 20; x < box.width; x += 64) {
           await canvas.click({ position: { x, y }, button: 'right' });
-          if (await foundBtn.isVisible().catch(() => false)) break scan;
+          if (await foundBtn.isVisible().catch(() => false)) {
+            settlerTile = { x, y };
+            break scan;
+          }
         }
       }
       await expect(foundBtn).toBeVisible({ timeout: 5_000 });
       await foundBtn.click();
       await dismissBlockingDialogs(page);
 
-      // Ctrl+1 selects the first city and opens the city screen.
+      // Ctrl+1 selects the first city and opens the CITY screen. The queue
+      // panel lives in the separate production screen, which a player reaches
+      // with right-click on the city tile -> "View Production".
       await page.keyboard.press('Control+1');
+      await page.keyboard.press('Escape');
+      await dismissBlockingDialogs(page);
+
+      expect(settlerTile).not.toBeNull();
+      // Scan for the city's tile: founding can move the camera, so the tile
+      // that held the settler is not guaranteed to still be under that pixel.
+      const viewProduction = page.getByRole('button', { name: /View Production/i });
+    scanCity:
+      for (let y = 20; y < box.height; y += 64) {
+        for (let x = 20; x < box.width; x += 64) {
+          await canvas.click({ position: { x, y }, button: 'right' });
+          if (await viewProduction.isVisible().catch(() => false)) break scanCity;
+        }
+      }
+      await expect(viewProduction).toBeVisible({ timeout: 5_000 });
+      await viewProduction.click();
       const queuePanel = page.locator('.queue-panel').first();
       await expect(queuePanel).toBeVisible({ timeout: 10_000 });
 
@@ -887,21 +911,23 @@ test.describe('AI Behavior', () => {
       const warriorsBefore = await queuedWarriors.count();
 
       for (let i = 0; i < 3; i++) {
-        // Choose the Warrior in the picker — picking it also selects it as the
-        // city's production, and "Add" queues a copy.
-        await page.locator('.production-select-btn').first().click();
-        const picker = page.locator('.modal').filter({
-          has: page.locator('.modal-title', { hasText: 'Select Production' }),
-        });
-        await expect(picker).toBeVisible({ timeout: 5_000 });
-        await picker
-          .locator('tbody tr')
+        // The production screen is a <select> + "Add" button (the old picker
+        // modal with per-row "Select" buttons is gone). Select the Warrior by
+        // its option value so the label's shield cost can't break the lookup.
+        const productionSelect = page.locator('.production-select').first();
+        await expect(productionSelect).toBeEnabled({ timeout: 5_000 });
+        const warriorValue = await productionSelect
+          .locator('option')
           .filter({ hasText: 'Warrior' })
-          .getByRole('button', { name: 'Select' })
-          .click();
-        await expect(picker).toBeHidden({ timeout: 5_000 });
+          .first()
+          .getAttribute('value');
+        expect(warriorValue).toBeTruthy();
+        await productionSelect.selectOption(warriorValue!);
         // "Add" appends the chosen unit to the queue.
         await page.locator('.production-add-btn').click();
+        // The dropdown keeps its value, so the next iteration can add the same
+        // unit again — that repeat is exactly what used to be swallowed.
+        await expect(productionSelect).toHaveValue(warriorValue!);
       }
 
       // All three clicks were honoured (the city may already have had some
@@ -1116,7 +1142,7 @@ test.describe('AI Behavior', () => {
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', code: 'KeyD', bubbles: true }))
       );
 
-      const modal = page.locator('.modal').filter({ hasText: 'Diplomacy Report' });
+      const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
       await page.keyboard.press('Escape');
     });
@@ -1128,7 +1154,7 @@ test.describe('AI Behavior', () => {
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F4', code: 'F4', bubbles: true }))
       );
 
-      const modal = page.locator('.modal').filter({ hasText: 'Diplomacy Report' });
+      const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
       await page.keyboard.press('Escape');
     });

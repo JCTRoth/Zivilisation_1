@@ -2015,22 +2015,31 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       console.error("[ContextMenu] Error getting unit from gameEngine:", e);
     }
 
-    // Check if it's a player's unit
-    if (!unitAtHex || unitAtHex.civilizationId !== currentPlayer?.id) {
-      console.log("[ContextMenu] Not player unit, skipping menu");
-      return;
-    }
-
-    console.log(
-      `[ContextMenu] Right-clicked player unit ${unitAtHex.id} (${unitAtHex.type})`,
-    );
-
     // Get city at this location
     let cityAtHex = null;
     try {
       cityAtHex = getCityAtFromEngine(hex.col, hex.row);
     } catch {
       // City not found, that's OK
+    }
+
+    // A tile of yours opens the menu whether it holds your unit OR your city.
+    // The city branch carries "View Production", the only route to the
+    // production/queue screen — and a city tile normally has no unit on it, so
+    // the old unit-only gate made that whole screen unreachable.
+    const isOwnUnit = Boolean(unitAtHex) && unitAtHex.civilizationId === currentPlayer?.id;
+    const isOwnCity = Boolean(cityAtHex) && cityAtHex.civilizationId === currentPlayer?.id;
+    if (!isOwnUnit && !isOwnCity) {
+      console.log("[ContextMenu] Nothing of the player's here, skipping menu");
+      return;
+    }
+
+    if (isOwnUnit) {
+      console.log(
+        `[ContextMenu] Right-clicked player unit ${unitAtHex.id} (${unitAtHex.type})`,
+      );
+    } else {
+      console.log(`[ContextMenu] Right-clicked player city ${cityAtHex.name}`);
     }
 
     const tile = terrain[hex.row]?.[hex.col];

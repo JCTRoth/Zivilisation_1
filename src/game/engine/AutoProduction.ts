@@ -321,6 +321,14 @@ export class AutoProduction {
       return colonyFerry;
     }
 
+    // 1d-2. Invasion waiting for a hull: the troop that will be ferried to the
+    //        enemy city on the far shore. A war is a ferry, so build one.
+    const invasionFerry = this.buildInvasionFerryProduction(city);
+    if (invasionFerry) {
+      console.log('[AutoProduction] Invasion — building a ferry');
+      return invasionFerry;
+    }
+
     // 1e. Fisher Boat: a harbor city that is short on food sends a boat to the
     //     nearest known fish tile (replaces the old harbor ocean-food bonus).
     const fisherBoat = this.buildFisherBoatProduction(city, unitCapExhausted);
@@ -1202,6 +1210,29 @@ export class AutoProduction {
    * created by the AI when it has seen a small city-free island and owns a
    * settler that can reach the coast.
    */
+  /**
+   * A ferry for an active invasion mission that has no hull yet. The mission is
+   * planned by AIManager (an enemy city on a landmass we cannot walk to); all
+   * this does is make sure a hull is actually on the way.
+   */
+  private buildInvasionFerryProduction(city: City): ProductionItem | null {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return null;
+    const storage = this.gameEngine.getPlayerStorage?.(civ.id);
+    const mission = storage?.turnData?.invasionMission as { ferryId?: string | null } | undefined;
+    if (!mission || mission.ferryId) return null;
+    const ownsFerry = this.gameEngine.units.some(
+      (u: Unit) => u.civilizationId === civ.id && u.type === 'ferry' && !u.isDefeated,
+    );
+    if (ownsFerry) return null; // a hull exists; the AI will assign it
+    const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
+    if (typeof pm?.cityHasHarborOrCoast !== 'function' || !pm.cityHasHarborOrCoast(city)) return null;
+    if (!canBuildUnit(civ, 'ferry')) return null;
+    const props = UNIT_PROPS.ferry;
+    if (!props) return null;
+    return { type: 'unit', itemType: 'ferry', name: props.name, cost: props.cost };
+  }
+
   private buildColonyFerryProduction(city: City): ProductionItem | null {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     if (!civ) return null;
@@ -1312,11 +1343,22 @@ export class AutoProduction {
     return { type: 'building', itemType: 'harbor', name: props.name, cost: props.cost };
   }
 
-  /** Strongest naval unit the civ can actually build (tech-gated). */
+  /**
+   * The most useful naval unit the civ can actually build (tech-gated).
+   *
+   * A Ferry comes first: it is the only hull that carries a land unit, so a
+   * fleet of warships can neither settle another island nor invade anybody —
+   * it just sits there. Build the transports, then the warships.
+   */
   private buildNavalProduction(city: City): ProductionItem | null {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     if (!civ) return null;
-    const navalPreference = ['battleship', 'cruiser', 'destroyer', 'ironclad', 'frigate', 'caravel', 'trireme', 'sail'];
+    const ownsTransport = this.gameEngine.units.some(
+      (u: Unit) => u.civilizationId === city.civilizationId && u.type === 'ferry' && !u.isDefeated,
+    );
+    const navalPreference = ownsTransport
+      ? ['battleship', 'cruiser', 'destroyer', 'ironclad', 'frigate', 'caravel', 'trireme', 'sail']
+      : ['ferry', 'battleship', 'cruiser', 'destroyer', 'ironclad', 'frigate', 'caravel', 'trireme', 'sail'];
     for (const unitType of navalPreference) {
       const unitProps = UNIT_PROPS[unitType];
       if (unitProps?.naval && canBuildUnit(civ, unitType)) {

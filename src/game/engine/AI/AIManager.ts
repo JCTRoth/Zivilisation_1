@@ -75,6 +75,32 @@ interface ColonyMission {
   stage: 'gather' | 'sail';
 }
 
+/**
+ * A naval invasion: one combat unit ferried to an enemy city on a landmass we
+ * cannot walk to.
+ *
+ * In Civ1 a Ferry carries exactly one land unit, so a mission is one troop and
+ * one hull — the AI repeats it to land an army, exactly as a human would. The
+ * stages mirror the colony mission:
+ *   gather → the troop walks to a coastal tile on its own landmass.
+ *   sail   → the ferry is alongside, boards it, and crosses.
+ *   siege  → the troop is ashore and marches on the target city.
+ *
+ * Without this an AI-vs-AI game whose strait splits the civs is an unwinnable
+ * stalemate: neither side can reach the other, so they trade declarations and
+ * upkeep forever (a 465-round run: 17 wars, 3 attacks).
+ */
+interface InvasionMission {
+  unitId: string;
+  ferryId: string | null;
+  targetCityId: string;
+  targetLandmassId: number;
+  landTile: { col: number; row: number };
+  waterTile: { col: number; row: number };
+  rendezvous: { col: number; row: number };
+  stage: 'gather' | 'sail' | 'siege';
+}
+
 export class AIManager {
   private gameEngine: GameEngine;
 
@@ -278,6 +304,9 @@ export class AIManager {
 
     // Island colonization: keep the ferry-a-settler mission up to date.
     this.updateColonyMission(civ, storage);
+
+    // Naval invasion: ferry a combat unit to an enemy city we cannot walk to.
+    this.updateInvasionMission(civ, storage);
 
     // A committed, aggressive civ declares war on its chosen bulk target —
     // this is the "rush": war is started deliberately instead of waiting for
@@ -596,6 +625,13 @@ export class AIManager {
         const colonyMission = this.getColonyMission(storage);
         if (unit.type === 'ferry' && colonyMission?.ferryId === unit.id) {
           if (this.tryColonyFerryAction(unit, colonyMission, storage)) break;
+        }
+
+        // Invasion mission: the ferry boards the troop, or lands it on the far
+        // shore. Both are one-shot actions; anything else is plain sailing.
+        const invasionMission = this.getInvasionMission(storage);
+        if (unit.type === 'ferry' && invasionMission?.ferryId === unit.id) {
+          if (this.tryInvasionFerryAction(unit, invasionMission, storage)) break;
         }
 
         // Fisher Boat: deploy the net the moment it reaches a fish tile; with
@@ -1030,6 +1066,243 @@ export class AIManager {
     if (storage) delete storage.turnData.colonyMission;
   }
 
+  // ── Naval invasion ──────────────────────────────────────────────────────
+
+  private getInvasionMission(storage?: PlayerTurnStorage): InvasionMission | null {
+    const raw = storage?.turnData?.invasionMission as InvasionMission | undefined;
+    return raw ?? null;
+  }
+
+  private setInvasionMission(storage: PlayerTurnStorage | undefined, mission: InvasionMission): void {
+    if (!storage) return;
+    storage.turnData.invasionMission = mission;
+  }
+
+  private clearInvasionMission(storage?: PlayerTurnStorage): void {
+    if (storage) delete storage.turnData.invasionMission;
+  }
+
+  /**
+   * Keep the civ's invasion mission valid and (re)assign a ferry, and plan a
+   * new one when there is a worthwhile push: at war with a civ that owns a city
+   * on a landmass we cannot walk to, a combat unit that can reach our coast,
+   * and either an idle ferry or the tech to build one.
+   *
+   * The mission is abandoned as soon as it cannot work — the troop or ferry
+   * died, the target city was captured, the landing beach was taken, or the
+   * war ended.
+   */
+  private updateInvasionMission(civ: Civilization, storage?: PlayerTurnStorage): void {
+    if (!storage) return;
+
+    let mission = this.getInvasionMission(storage);
+    if (mission) {
+      const troop = this.gameEngine.units.find((u: Unit) => u.id === mission!.unitId && !u.isDefeated);
+      const ferry = mission.ferryId
+        ? this.gameEngine.units.find((u: Unit) => u.id === mission!.ferryId && !u.isDefeated)
+        : null;
+      const targetCity = this.gameEngine.cities.find((c) => c.id === mission!.targetCityId);
+      const beachTaken =
+        mission.stage !== 'siege' &&
+        (this.gameEngine.getUnitAt(mission.landTile.col, mission.landTile.row) != null ||
+          this.gameEngine.getCityAt(mission.landTile.col, mission.landTile.row) != null);
+
+      if (!troop || !targetCity || targetCity.civilizationId === civ.id || beachTaken) {
+        this.clearInvasionMission(storage);
+        mission = null;
+      } else {
+        if (mission.ferryId && !ferry) mission.ferryId = null; // hull sunk: re-plan
+        if (mission.stage !== 'siege' && !mission.ferryId) {
+          const idle = this.findIdleFerry(civ.id);
+          if (idle) mission.ferryId = idle.id;
+        }
+        this.setInvasionMission(storage, mission);
+      }
+    }
+    if (mission) return;
+
+    this.planInvasionMission(civ, storage);
+  }
+
+  /** Look for an enemy city across water worth landing a troop for. */
+  private planInvasionMission(civ: Civilization, storage: PlayerTurnStorage): void {
+    const enemies = new Set(
+      (this.gameEngine.diplomacyManager?.getEnemies?.(civ.id) ?? []).map(Number),
+    );
+    const canBuildShips = this.engineCanBuildShips(civ.id);
+    const idleFerry = this.findIdleFerry(civ.id);
+    // Nothing to row with and nothing to build a hull with: no mission.
+    if (!idleFerry && !canBuildShips) return;
+
+    // Our own landmass: everything the troop can walk to before boarding.
+    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civ.id);
+    if (ownCities.length === 0) return;
+    const homeLandmass = this.gameEngine.getLandmassId?.(ownCities[0].col, ownCities[0].row) ?? -1;
+    if (homeLandmass < 0) return;
+
+    // A troop that can make it to a coastal rendezvous on our own landmass.
+    const troop = this.gameEngine.units.find((u: Unit) => {
+      if (u.civilizationId !== civ.id || u.isDefeated || u.embarkedOn) return false;
+      if (!this.isCombatUnit(u)) return false;
+      if (this.gameEngine.getLandmassId?.(u.col, u.row) !== homeLandmass) return false;
+      return this.findColonyRendezvous(u) != null;
+    });
+    if (!troop) return;
+    const rendezvous = this.findColonyRendezvous(troop);
+    if (!rendezvous) return;
+
+    // Target: the least-defended enemy city on another landmass that has a
+    // beach we can put a ferry next to.
+    const seaDistance = (a: { col: number; row: number }, b: { col: number; row: number }) => {
+      const grid = this.gameEngine.squareGrid;
+      return grid ? grid.squareDistance(a.col, a.row, b.col, b.row) : 0;
+    };
+
+    let best:
+      | {
+          city: City;
+          landmassId: number;
+          landTile: { col: number; row: number };
+          waterTile: { col: number; row: number };
+          score: number;
+        }
+      | null = null;
+
+    for (const enemyCity of this.gameEngine.cities) {
+      if (enemyCity.civilizationId === civ.id) continue;
+      if (!enemies.has(enemyCity.civilizationId)) continue;
+      const landmassId = this.gameEngine.getLandmassId?.(enemyCity.col, enemyCity.row) ?? -1;
+      if (landmassId < 0 || landmassId === homeLandmass) continue; // already walkable
+
+      const beach = this.findInvasionBeach(landmassId, enemyCity);
+      if (!beach) continue;
+
+      const defenders = this.gameEngine.units.filter(
+        (u: Unit) =>
+          u.civilizationId === enemyCity.civilizationId &&
+          !u.isDefeated &&
+          this.areLandConnected(enemyCity.col, enemyCity.row, u.col, u.row),
+      ).length;
+      // Prefer a soft target close to home over a fortress on the far side.
+      const score = seaDistance(rendezvous, beach.waterTile) + defenders * 6;
+      if (!best || score < best.score) {
+        best = { city: enemyCity, landmassId, landTile: beach.landTile, waterTile: beach.waterTile, score };
+      }
+    }
+    if (!best) return;
+
+    const mission: InvasionMission = {
+      unitId: troop.id,
+      ferryId: idleFerry?.id ?? null,
+      targetCityId: best.city.id,
+      targetLandmassId: best.landmassId,
+      landTile: best.landTile,
+      waterTile: best.waterTile,
+      rendezvous,
+      stage: 'gather',
+    };
+    this.setInvasionMission(storage, mission);
+    this.gameEngine.log?.('ai', `Invasion — ${civ.name} sails against ${best.city.name}`, {
+      civilizationId: civ.id,
+      action: 'invasion_planned',
+      unitId: troop.id,
+      ferryId: mission.ferryId,
+      targetCityId: best.city.id,
+      targetCol: best.city.col,
+      targetRow: best.city.row,
+      landCol: best.landTile.col,
+      landRow: best.landTile.row,
+    });
+    console.log(
+      `[AI] ${civ.name} plans an invasion of ${best.city.name} (${best.city.civilizationId}) ` +
+      `with ${troop.type} — landing at (${best.landTile.col},${best.landTile.row})`,
+    );
+  }
+
+  /**
+   * A free, passable land tile on `landmassId` that a ferry can sit next to.
+   * Tiles next to the enemy city come first so the troop can attack the turn
+   * after it lands.
+   */
+  private findInvasionBeach(
+    landmassId: number,
+    enemyCity: City,
+  ): { landTile: { col: number; row: number }; waterTile: { col: number; row: number } } | null {
+    const grid = this.gameEngine.squareGrid;
+    const map = this.gameEngine.map;
+    if (!grid || !map) return null;
+
+    let best: {
+      landTile: { col: number; row: number };
+      waterTile: { col: number; row: number };
+      score: number;
+    } | null = null;
+
+    for (let row = 0; row < (map.height ?? 0); row++) {
+      for (let col = 0; col < (map.width ?? 0); col++) {
+        if (this.gameEngine.getLandmassId?.(col, row) !== landmassId) continue;
+        // Never land on the city we are coming for (or on anything sitting there).
+        if (this.gameEngine.getCityAt(col, row) || this.gameEngine.getUnitAt(col, row)) continue;
+        const water = this.gameEngine.findAdjacentOcean?.(col, row);
+        if (!water) continue; // no ferry can reach this tile
+        const score = grid.squareDistance(col, row, enemyCity.col, enemyCity.row);
+        if (!best || score < best.score) {
+          best = { landTile: { col, row }, waterTile: water, score };
+        }
+      }
+    }
+    return best;
+  }
+
+  /** Board/unload the invasion troop when its ferry is in position. */
+  private tryInvasionFerryAction(
+    unit: Unit,
+    mission: InvasionMission,
+    storage?: PlayerTurnStorage,
+  ): boolean {
+    if (!mission.ferryId || unit.id !== mission.ferryId) return false;
+
+    if (!unit.cargoUnitId) {
+      const troop = this.gameEngine.units.find((u: Unit) => u.id === mission.unitId && !u.isDefeated);
+      if (!troop || troop.embarkedOn) return false;
+      if (
+        typeof this.gameEngine.canLoadFerry === 'function' &&
+        this.gameEngine.canLoadFerry(unit.id, troop.id)
+      ) {
+        this.gameEngine.loadFerry(unit.id, troop.id);
+        mission.stage = 'sail';
+        this.setInvasionMission(storage, mission);
+        this.gameEngine.log?.('ai', `Invasion — ${unit.type} boards with ${troop.type}`, {
+          civilizationId: unit.civilizationId,
+          action: 'invasion_load',
+          unitId: unit.id,
+          troopId: troop.id,
+        });
+        return true;
+      }
+      return false;
+    }
+
+    // Loaded: put the troop ashore on the beach.
+    if (
+      typeof this.gameEngine.canUnloadFerry === 'function' &&
+      this.gameEngine.canUnloadFerry(unit.id, mission.landTile.col, mission.landTile.row)
+    ) {
+      this.gameEngine.unloadFerry(unit.id, mission.landTile.col, mission.landTile.row);
+      mission.stage = 'siege';
+      this.setInvasionMission(storage, mission);
+      this.gameEngine.log?.('ai', `Invasion — ${unit.type} lands the troop at (${mission.landTile.col},${mission.landTile.row})`, {
+        civilizationId: unit.civilizationId,
+        action: 'invasion_unload',
+        unitId: unit.id,
+        targetCol: mission.landTile.col,
+        targetRow: mission.landTile.row,
+      });
+      return true;
+    }
+    return false;
+  }
+
   /**
    * Keep the civ's colony mission valid and (re)assign a ferry. A mission is
    * created when the civ has seen a small city-free island, owns an idle
@@ -1252,8 +1525,27 @@ export class AIManager {
   private chooseNavalTarget(unit: Unit): { col: number; row: number } | null {
     if (!this.gameEngine.squareGrid) return null;
 
-    // A ferry on a colony mission ignores the war and runs its route.
     const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
+
+    // A ferry on an invasion runs its invasion route, not its patrol: sit next
+    // to the waiting troop, then cross to the landing beach with it aboard.
+    const invasion = this.getInvasionMission(storage);
+    if (invasion?.ferryId === unit.id) {
+      if (unit.cargoUnitId) return invasion.waterTile;
+      const troop = this.gameEngine.units.find(
+        (u: Unit) => u.id === invasion.unitId && !u.isDefeated,
+      );
+      if (troop) {
+        const alongside = this.gameEngine.findAdjacentOcean?.(troop.col, troop.row)
+          ?? this.gameEngine.findAdjacentOcean?.(invasion.rendezvous.col, invasion.rendezvous.row);
+        if (alongside) return alongside;
+        const nearestWater = this.findNearestOceanTo(troop.col, troop.row);
+        if (nearestWater) return nearestWater;
+      }
+      return invasion.waterTile;
+    }
+
+    // A ferry on a colony mission ignores the war and runs its route.
     const mission = this.getColonyMission(storage);
     if (mission?.ferryId === unit.id) {
       if (unit.cargoUnitId) {
@@ -1399,6 +1691,24 @@ export class AIManager {
    */
   private chooseAITarget(unit: Unit): { col: number; row: number } | null {
     if (!this.gameEngine.map || !this.gameEngine.squareGrid) return null;
+
+    // A unit reserved for a naval invasion ignores everything else: walk to
+    // the boarding beach, and once it is ashore, march on the enemy city. It
+    // is usually the only way to reach that city at all.
+    const invasionStorage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
+    const invasion = this.getInvasionMission(invasionStorage);
+    if (invasion && invasion.unitId === unit.id) {
+      if (invasion.stage === 'gather') return invasion.rendezvous;
+      if (invasion.stage === 'siege') {
+        const targetCity = this.gameEngine.cities.find((c) => c.id === invasion.targetCityId);
+        if (targetCity) return { col: targetCity.col, row: targetCity.row };
+        // The city is gone (captured or razed): the job is done.
+        this.clearInvasionMission(invasionStorage);
+        return null;
+      }
+      // stage 'sail' — the unit is aboard the ferry and the ferry is driving.
+      return null;
+    }
 
     // Fisher Boats: a routed boat is driven by the engine's automatic fishing
     // state machine (advanceFishing); an unrouted one heads for the nearest
@@ -3256,9 +3566,14 @@ export class AIManager {
   }
 
   /**
-   * True if a land-connected enemy city or combat unit exists for this civ.
+   * True if a reachable enemy city or combat unit exists for this civ.
    * `onlyEnemyCivId` narrows the check to one opponent (used before declaring a
    * war on a specific civ).
+   *
+   * Land connectivity is the usual answer, but an enemy across a strait counts
+   * too once the civ can put a hull in the water: the invasion mission ferries
+   * a unit over and marches on the city. Without that the two sides simply
+   * never meet (a 465-round AI-vs-AI run: 17 declarations, 3 attacks).
    */
   private hasReachableEnemyTarget(civilizationId: number, unit: Unit, onlyEnemyCivId?: number): boolean {
     const enemies = new Set(
@@ -3270,7 +3585,7 @@ export class AIManager {
     }
     if (enemies.size === 0) return false;
     const hostile = (civId: unknown) => enemies.has(Number(civId));
-    return (
+    if (
       this.gameEngine.cities.some(
         (c) => hostile(c.civilizationId) && this.areLandConnected(unit.col, unit.row, c.col, c.row),
       ) ||
@@ -3280,7 +3595,31 @@ export class AIManager {
           !u.isDefeated &&
           this.areLandConnected(unit.col, unit.row, u.col, u.row),
       )
-    );
+    ) {
+      return true;
+    }
+    return this.hasSeaInvasionTarget(civilizationId, onlyEnemyCivId);
+  }
+
+  /**
+   * True if a hostile city sits on another landmass that a ferry could reach:
+   * the civ can build (or already has) a hull, owns a city to sail from, and
+   * the target has a beach.
+   */
+  private hasSeaInvasionTarget(civilizationId: number, onlyEnemyCivId?: number): boolean {
+    if (!this.engineCanBuildShips(civilizationId)) return false;
+    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civilizationId);
+    if (ownCities.length === 0) return false;
+    if (!ownCities.some((c) => this.gameEngine.findAdjacentOcean?.(c.col, c.row))) return false;
+    const homeLandmass = this.gameEngine.getLandmassId?.(ownCities[0].col, ownCities[0].row) ?? -1;
+    if (homeLandmass < 0) return false;
+    return this.gameEngine.cities.some((c: City) => {
+      if (c.civilizationId === civilizationId) return false;
+      if (onlyEnemyCivId !== undefined && c.civilizationId !== onlyEnemyCivId) return false;
+      const landmassId = this.gameEngine.getLandmassId?.(c.col, c.row) ?? -1;
+      if (landmassId < 0 || landmassId === homeLandmass) return false;
+      return this.gameEngine.findAdjacentOcean?.(c.col, c.row) != null;
+    });
   }
 
   private selectStrategicTarget(unit: Unit): { col: number; row: number } | null {
@@ -3862,6 +4201,14 @@ export class AIManager {
     hasLibrary: boolean;
     totalScience: number;
     hasWaterAccess: boolean;
+    /**
+     * 0 on a single-continent world; grows with the number of other
+     * landmasses and jumps when a known enemy city sits on one of them.
+     * AIResearch uses it to decide whether the naval branch is worth opening.
+     */
+    navalRelevance?: number;
+    /** True when the civ's start tile was on an island (known from turn one). */
+    startsOnIsland?: boolean;
   } {
     const cities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === civilizationId) || [];
     const civ = this.gameEngine.civilizations?.[civilizationId];
@@ -3905,6 +4252,28 @@ export class AIManager {
     const totalScience = cities.reduce((sum: number, c: City) => sum + (c.science || 0), 0);
     const hasWaterAccess = cities.some((city: City) => this.cityHasDirectWaterAccess(city));
 
+    // How naval is this world for us? More than one landmass plus a coastal
+    // city means there is somewhere to sail to; a known enemy city on another
+    // landmass means there is no other way to reach it. Zero on an ordinary
+    // land map, so land games research exactly as before.
+    const landmassCount = this.gameEngine.getLandmassCount?.() ?? 1;
+    const homeLandmass =
+      cities.length > 0 ? (this.gameEngine.getLandmassId?.(cities[0].col, cities[0].row) ?? -1) : -1;
+    let enemyCitiesOffShore = 0;
+    if (homeLandmass >= 0 && storage?.enemyLocations) {
+      for (const enemies of storage.enemyLocations.values()) {
+        enemyCitiesOffShore += enemies.filter(
+          (e) =>
+            e.type === 'city' &&
+            (this.gameEngine.getLandmassId?.(e.col, e.row) ?? -1) !== homeLandmass,
+        ).length;
+      }
+    }
+    const startsOnIsland = civ?.startsOnIsland === true;
+    const navalRelevance =
+      ((hasWaterAccess || startsOnIsland) ? Math.min(2, Math.max(0, landmassCount - 1)) : 0) +
+      (enemyCitiesOffShore > 0 ? 3 : 0);
+
     return {
       currentYear: this.gameEngine.currentYear ?? -4000,
       roundNumber,
@@ -3927,6 +4296,8 @@ export class AIManager {
       hasLibrary,
       totalScience,
       hasWaterAccess,
+      navalRelevance,
+      startsOnIsland,
     };
   }
 

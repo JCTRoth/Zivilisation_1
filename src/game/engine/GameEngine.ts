@@ -2,7 +2,7 @@ import { SquareGrid } from '../SquareGrid';
 import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
 import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
-import { WORLD_MAP } from '@/data/maps';
+import { staticMapForMapType } from '@/data/maps';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
@@ -861,6 +861,12 @@ export default class GameEngine {
       mapWidth = 16;
       mapHeight = 26;
       console.log(`[GameEngine] Using small tall map for ${mapType}: ${mapWidth}x${mapHeight}`);
+    } else if (mapType === 'AI_VS_AI_NAVAL') {
+      // Static archipelago (src/data/maps/naval-archipelago-96x60.json) — must
+      // match the static map's dimensions so every tile of it is used.
+      mapWidth = 96;
+      mapHeight = 60;
+      console.log(`[GameEngine] Using naval archipelago map size for ${mapType}: ${mapWidth}x${mapHeight}`);
     }
     
     // Create hex grid system with appropriate size
@@ -908,6 +914,22 @@ export default class GameEngine {
    * The generator is seeded from `Date.now()` so every game gets a unique
    * but reproducible world.
    */
+  /**
+   * A small deterministic PRNG for setup decisions (civ assignment, start
+   * shuffling). Falls back to Math.random when no seed is pinned, so an
+   * ordinary game still varies.
+   */
+  private makeSeededRng(seed: number | undefined, salt: number): () => number {
+    if (typeof seed !== 'number') return Math.random;
+    let a = (seed ^ salt) >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
   async generateWorld(mapWidth: number = Constants.MAP_WIDTH, mapHeight: number = Constants.MAP_HEIGHT, mapType: string = 'NORMAL_SKIRMISH', seed?: number) {
     console.log(`[GameEngine] Generating world: ${mapWidth}x${mapHeight}, type: ${mapType}`);
 
@@ -928,12 +950,20 @@ export default class GameEngine {
 
     let tiles: ReturnType<MapGenerator['generate']>;
 
+    const staticMap = staticMapForMapType(mapType);
+
     if (mapType === 'NAVAL_CLOSEUP') {
       // Water-only map — no land, no rivers.
       tiles = generator.generateWaterOnly();
     } else if (mapType === 'EARTH') {
       // Predefined Earth geography map.
       tiles = generator.generateEarth();
+    } else if (staticMap) {
+      // A scenario world that ships a hand-tuned static map (the naval
+      // archipelago). Generated data would give a different archipelago on
+      // every machine, and a naval game needs the same islands every time.
+      console.log(`[GameEngine] Generating static map "${staticMap.id}" for ${mapType}`);
+      tiles = generator.generateFromStatic(staticMap);
     } else {
       // Full Civ1-style terrain generation.
       tiles = generator.generate();
@@ -959,9 +989,15 @@ export default class GameEngine {
     selectedCivs.push(CIVILIZATIONS[this.gameSettings.playerCivilization]);
     
     // Add other random civilizations
+    // Which civ gets which island must be reproducible when a seed is pinned,
+    // otherwise two runs of the same scenario are different games and no
+    // before/after comparison means anything (the naval archipelago produced
+    // wildly different 120-round outcomes run to run).
+    const startRng = this.makeSeededRng(this.gameSettings.mapSeed, 0x5eed);
+
     const availableCivs = CIVILIZATIONS.filter((_, idx) => idx !== this.gameSettings.playerCivilization);
     for (let i = 1; i < numCivs; i++) {
-      const randomIdx = Math.floor(Math.random() * availableCivs.length);
+      const randomIdx = Math.floor(startRng() * availableCivs.length);
       selectedCivs.push(availableCivs.splice(randomIdx, 1)[0]);
     }
 
@@ -972,9 +1008,9 @@ export default class GameEngine {
     // Static world maps ship hand-placed start positions (the Freeciv Earth map
     // has 30 balanced grassland spawns) — shuffle them once so each civ gets a
     // different, far-apart spawn instead of a random tile (which could be ice).
-    const staticStarts = mapType === 'EARTH' ? [...(WORLD_MAP?.startPositions ?? [])] : [];
+    const staticStarts = [...(staticMapForMapType(mapType)?.startPositions ?? [])];
     for (let i = staticStarts.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(startRng() * (i + 1));
       [staticStarts[i], staticStarts[j]] = [staticStarts[j], staticStarts[i]];
     }
 
@@ -982,7 +1018,11 @@ export default class GameEngine {
       const civData = selectedCivs[i];
       
       // In AI_VS_AI mode every civilization is AI-controlled (no human player).
-      const isHuman = i === 0 && mapType !== 'AI_VS_AI' && mapType !== 'AI_VS_AI_SMALL';
+      const isHuman =
+        i === 0 &&
+        mapType !== 'AI_VS_AI' &&
+        mapType !== 'AI_VS_AI_SMALL' &&
+        mapType !== 'AI_VS_AI_NAVAL';
       const civ = {
         id: i,
         name: civData.name,
@@ -1009,6 +1049,9 @@ export default class GameEngine {
         government: 'despotism',
         productionProfile: getCivProductionProfile(i),
         personality: getCivPersonality(getCivProductionProfile(i)),
+        // Filled in once the start tile is known (see below): a civ that begins
+        // on an island knows from turn one that a fleet is the only way out.
+        startsOnIsland: false,
         score: 0
       };
 
@@ -1058,8 +1101,14 @@ export default class GameEngine {
       }
 
       if (startPos) {
+        // Remember whether this civ begins on an island. The AI needs it from
+        // turn one: before the first city exists there is no "coastal city" to
+        // judge by, and a landlocked-looking civ never opens the naval branch —
+        // which on an archipelago meant no ship was ever built.
+        civ.startsOnIsland = this.isOnIsland(startPos.col, startPos.row);
+
         // Create starting units based on map type
-        console.log(`[INIT] Creating starting units for civ ${i} (${civData.name}) at (${startPos.col},${startPos.row}), mapType: ${mapType}`);
+        console.log(`[INIT] Creating starting units for civ ${i} (${civData.name}) at (${startPos.col},${startPos.row}), mapType: ${mapType} island=${civ.startsOnIsland}`);
         this.createStartingUnits(i, startPos, mapType);
         
         // Create starting cities for MANY_CITIES mode
@@ -1928,6 +1977,32 @@ export default class GameEngine {
     };
   }
 
+  /** Size (in tiles) of the biggest landmass on the map. */
+  getLargestLandmassSize(): number {
+    this.computeLandmassIds();
+    return this.landmassSizes.reduce((max, size) => (size > max ? size : max), 0);
+  }
+
+  /**
+   * True when (col,row) sits on something smaller than the biggest landmass,
+   * i.e. the tile is on an island rather than the main continent.
+   */
+  isOnIsland(col: number, row: number): boolean {
+    const own = this.getLandmassSize(col, row);
+    if (own <= 0) return false;
+    return own < this.getLargestLandmassSize();
+  }
+
+  /**
+   * How many separate landmasses the map has (1 = one continent, 0 = open
+   * water). The AI uses it to tell a naval world from a land one: with more
+   * than one landmass, a civ that cannot walk to the others needs a fleet.
+   */
+  getLandmassCount(): number {
+    this.computeLandmassIds();
+    return this.landmassSizes.length;
+  }
+
   /** Landmass component id at a tile, or -1 for water/impassable/out of bounds. */
   getLandmassId(col: number, row: number): number {
     if (!this.map || !this.squareGrid?.isValidSquare(col, row)) return -1;
@@ -2000,7 +2075,18 @@ export default class GameEngine {
       }
       if (reachableByLand) break;
     }
-    return hasKnownEnemy && !reachableByLand;
+    if (hasKnownEnemy && !reachableByLand) return true;
+
+    // A world split by water needs a fleet even before an enemy is known.
+    // Waiting for contact deadlocks the whole game: a land scout cannot cross
+    // the sea, so on an archipelago nobody ever meets anybody, so `hasKnownEnemy`
+    // stays false, so no navy is ever built, so nobody ever meets anybody. A
+    // 120-round naval game ended with 0 ships and 4 isolated civs.
+    if (this.getLandmassCount() > 1 && this.civHasNavalCity(civId)) {
+      return true;
+    }
+
+    return false;
   }
 
   /** Whether a tile is reachable by land from any of the civ's cities. */
