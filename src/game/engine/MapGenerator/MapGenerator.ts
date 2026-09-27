@@ -1346,13 +1346,42 @@ export default class MapGenerator {
         tiles.push({
           col: src.col, row: src.row,
           type: src.type, terrain: src.type,
-          resource: rollResource(src.type, src.specialResource, random),
+          resource: rollResource(
+            src.type,
+            src.specialResource,
+            random,
+            // Fish belongs to the shoreline, not the open sea: a water tile
+            // with no land in its 8-neighbourhood is not a fishery.
+            this.isCoastalWater(col, row),
+          ),
           visible: false, explored: false,
           groupId: src.groupId,
         });
       }
     }
     return tiles;
+  }
+
+  /**
+   * Whether a water tile touches land — the same 8-neighbour, "not ocean and
+   * not lake" test `City.isCoastalTile` uses, so a fish tile is always a tile
+   * whose neighbouring land a city could work. Land tiles are trivially
+   * "coastal" for this purpose: only water is being asked about.
+   */
+  private isCoastalWater(col: number, row: number): boolean {
+    const own = this.cells[row]?.[col]?.type;
+    if (own !== TERRAIN_TYPES.OCEAN && own !== TERRAIN_TYPES.RIVER) return true;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dc === 0 && dr === 0) continue;
+        const neighbour = this.cells[row + dr]?.[col + dc];
+        if (!neighbour) continue;
+        if (neighbour.type === TERRAIN_TYPES.OCEAN) continue;
+        if (neighbour.type === TERRAIN_TYPES.LAKE) continue;
+        return true; // land (or a river mouth) within reach
+      }
+    }
+    return false;
   }
 
   // ── Stage 6b — Lake classification ──────────────────────────────

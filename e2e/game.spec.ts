@@ -5,6 +5,7 @@ import {
   closeSidePanel,
   openTopMenu,
   closeResearchPrompt,
+  closeAutoEndOfferIfOpen,
 } from './helpers/game';
 
 // ---------------------------------------------------------------------------
@@ -313,6 +314,93 @@ test.describe('End Turn', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Onboarding modals — research prompt + the one-time auto-end offer
+// ---------------------------------------------------------------------------
+
+test.describe('Onboarding modals', () => {
+  test('"No Research Selected" asks the player to choose a technology', async ({ page }) => {
+    test.setTimeout(240_000);
+    await startGame(page);
+
+    // Stay below RESEARCH_UNLOCK_ROUND so the prompt cannot have fired yet.
+    await advanceTurns(page, 3);
+
+    const research = page.locator('.research-required-modal');
+    let seen = false;
+    for (let turn = 0; turn < 5 && !seen; turn++) {
+      // A late prompt from the previous turn: record it before clicking again.
+      if (await research.isVisible({ timeout: 1_000 }).catch(() => false)) {
+        seen = true;
+        break;
+      }
+      // End turns WITHOUT the helper's automatic prompt dismissal, so the
+      // one-shot modal is still open for the assertion.
+      await endTurnKeepingModals(page);
+      seen = await research.isVisible({ timeout: 5_000 }).catch(() => false);
+    }
+
+    expect(seen).toBe(true);
+    await expect(research).toContainText('No Research Selected');
+    await expect(research).toContainText('technology');
+    await expect(research.getByRole('button', { name: /Choose Technology/ })).toBeVisible();
+
+    // Dismissing is allowed: the player may keep playing and pick later.
+    await research.getByRole('button', { name: 'Decide Later' }).click();
+    await expect(research).toBeHidden({ timeout: 5_000 });
+  });
+
+  test('"Auto. turn ending" is offered at turn 15 with a working checkbox', async ({ page }) => {
+    test.setTimeout(360_000);
+    await startGame(page);
+
+    // The offer is remembered per browser — make sure it is due this run.
+    await page.evaluate(() => localStorage.removeItem('civ1_auto_end_turn_offered'));
+
+    // Play turn by turn WITHOUT dismissing the offer, until it shows. The turn
+    // counter only advances once the AI round completes, so a fixed number of
+    // clicks is fragile; waiting for the offer itself is not.
+    const offer = page.locator('.auto-end-offer-modal');
+    const research = page.locator('.modal').filter({ hasText: 'No Research Selected' });
+    let shown = false;
+    for (let turn = 0; turn < 18 && !shown; turn++) {
+      // A research prompt left over from the previous turn blocks the board.
+      if (await research.isVisible().catch(() => false)) {
+        await research.getByRole('button', { name: 'Decide Later' }).click();
+        await expect(research).toBeHidden({ timeout: 5_000 });
+      }
+
+      await endTurnKeepingModals(page);
+
+      try {
+        await offer.waitFor({ state: 'visible', timeout: 8_000 });
+        shown = true;
+      } catch {
+        // Not the offer turn yet — keep playing.
+      }
+    }
+    expect(shown).toBe(true);
+
+    // It informs about the feature...
+    await expect(offer).toContainText('Auto. turn ending');
+    await expect(offer).toContainText(/run out of moves/);
+
+    // ...and carries the on/off checkbox itself.
+    const toggle = offer.getByRole('checkbox', { name: /Auto.*turn/i });
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await expect(toggle).toBeChecked();
+
+    await offer.getByRole('button', { name: 'Got it' }).click();
+    await expect(offer).toBeHidden({ timeout: 5_000 });
+
+    // The choice stuck, and the offer is remembered so it never nags again.
+    await openSidePanel(page);
+    await expect(page.getByRole('checkbox', { name: /Auto.*turn/i })).toBeChecked();
+    expect(await page.evaluate(() => localStorage.getItem('civ1_auto_end_turn_offered'))).toBe('1');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Help Dialog
 // ---------------------------------------------------------------------------
 
@@ -352,6 +440,12 @@ async function waitForModalClosed(page: Page): Promise<void> {
  * Skips the confirmation modal if `skipEndTurnConfirmation` is enabled.
  */
 async function endTurn(page: Page): Promise<void> {
+  // The one-time "Auto. turn ending" offer can be open from the previous turn
+  // (it appears at turn AUTO_END_TURN_OFFER_TURN); its backdrop intercepts
+  // clicks, so clear it before touching the top bar and again afterwards for
+  // the turn that triggers it.
+  await closeAutoEndOfferIfOpen(page);
+
   const modal = page.locator('[role="dialog"]').filter({ hasText: 'End Turn?' });
 
   // The "All Your Units Have Moved!" dialog may auto-appear. If so, just confirm it.
@@ -374,12 +468,35 @@ async function endTurn(page: Page): Promise<void> {
   // endTurn call does not race with a detaching modal.
   await waitForModalClosed(page);
 
+  // The offer may have opened during this turn's processing — close it before
+  // returning so the next click is not swallowed.
+  await closeAutoEndOfferIfOpen(page);
+
   // From RESEARCH_UNLOCK_ROUND (5) on, ending a turn with no technology
   // selected pops the "No Research Selected" prompt a beat later. Handle it
   // here, while this turn is still the one that caused it — waiting for it at
   // the end of a multi-turn loop is a race, and while it is open it swallows
   // every click in the test with "…intercepts pointer events".
   await closeResearchPrompt(page);
+}
+
+/**
+ * End the current turn the way `endTurn` does, but leave one-shot modals
+ * (research prompt, auto-end offer) open so the caller can assert them.
+ * Confirms the End Turn dialog and waits for control to return to the player.
+ */
+async function endTurnKeepingModals(page: Page): Promise<void> {
+  const modal = page.locator('[role="dialog"]').filter({ hasText: 'End Turn?' });
+  if (await modal.isVisible().catch(() => false)) {
+    await modal.locator('.touch-btn--success').click();
+  } else {
+    await page.locator('.game-top-bar').getByRole('button', { name: 'End Turn' }).click();
+    if (await modal.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await modal.locator('.touch-btn--success').click();
+    }
+  }
+  await expect(page.locator('.game-top-bar .topbar-endturn')).toBeEnabled({ timeout: 30_000 });
+  await waitForModalClosed(page);
 }
 
 /**
@@ -408,6 +525,7 @@ async function advanceTurns(page: Page, n: number): Promise<void> {
 const BLOCKING_DIALOGS: ReadonlyArray<{ text: string; button: string }> = [
   { text: 'End Turn?', button: 'Cancel' },
   { text: 'No Research Selected', button: 'Decide Later' },
+  { text: 'Auto. turn ending', button: 'Got it' },
 ];
 
 /**

@@ -1,0 +1,102 @@
+= AI vs AI — Micro-Error Analysis & Fix Report
+:author: opencode (automated AI analysis)
+:date: 2026-09-27
+:status: analysis + fixes applied
+:scope: src/game/engine/AI/*, src/game/engine/AutoProduction.ts
+
+== 1. Executive summary
+
+A fresh 5-minute AI-vs-AI session (587 rounds, 21 969 log lines,
+3 113 moves, 91 combats) was analysed at the micro level — per-unit,
+per-turn decisions rather than strategy. Three concrete micro-bugs were
+found in the code and fixed:
+
+. `isUnitCapExhausted` used `Math.max` where its own comment demanded the
+   most *conservative* cap — the AI built armies it could not pay for and
+   disbanded **92 units** in one game.
+. `computeAggression` assigned a phantom army ratio of **5.0** when no
+   enemy had been spotted, inflating the aggression score to an average of
+   **88.5** against a trigger threshold of 50 — the AI was near-permanently
+   aggressive on zero intelligence.
+. `AIStrategySelector` had no hysteresis — civs flip-flopped between
+   strategies **15 times** in one game as war status and city counts
+   oscillated.
+
+== 2. Methodology
+
+`scripts/run-ai-analysis-session.mjs` played a 300 s headless game and
+exported the progression CSV + map JSON. The JSONL log was then aggregated
+for micro-signals: skips, fortifies, path failures, disbands, fallback
+moves, strategy changes, aggression scores, and per-civ combat records.
+
+== 3. Micro-error data (587-round session)
+
+| signal | value | reading |
+|--------|-------|---------|
+| UNIT_DISBANDED | 92 (all `upkeep_deficit`) | economic death-spiral |
+| Germans disbands | 81 (67 phalanx) | over-production loop |
+| Strategy changes | 15 | oscillation |
+| Aggression score avg | 88.5 (threshold 50) | near-permanent war footing |
+| "No affordable step" | 49 | pathfinding cost edge case |
+| "Already at target" | 180 | by design (garrison hold) |
+| Fallback moves | 98 | no-path best-effort |
+| Fortify : move ratio | civ0 0.15 / civ1 0.32 | turtling |
+
+== 4. Fixes applied
+
+=== 4.1 [HIGH] `isUnitCapExhausted` — optimistic cap caused 92 disbands
+`AutoProduction.ts:1204-1220`
+
+The comment said *"take the MOST CONSERVATIVE credible cap"* but the code
+was `Math.max(cityCount, aiSustainableUnits ?? econSustainableUnits)` —
+the most **optimistic** cap. When both the AI model and the engine model
+answered, the AI's optimistic tax projection (100 % tax floor) overrode the
+engine's own upkeep math. The AI queued phalanx after phalanx, the treasury
+went negative, the engine auto-disbanded the surplus, and the loop repeated
+all game.
+
+Fix: when both models exist, take `Math.min` — the smaller, credible figure.
+
+=== 4.2 [HIGH] `computeAggression` — phantom 5× advantage on zero intelligence
+`AIAggression.ts:154-160`
+
+When `enemyArmyStrength === 0` (no enemy spotted) the ratio defaulted to
+`5` — a guaranteed "army advantage" +15 on *zero information*. Combined
+with +20 "cities secured" and +10 "no border pressure", the baseline hit
+45 before personality, averaging **88.5** against the 50 trigger.
+
+Fix: unknown enemy strength ⇒ neutral ratio `1.0`.
+
+=== 4.3 [MEDIUM] `AIStrategySelector` — no hysteresis, 15 strategy flips
+`AIStrategySelector.ts`
+
+Re-evaluation ran every 10 rounds and switched on a 1-point lead. War
+status alone swings `military_expansion` +20 vs `balanced_growth` −15, so
+every declaration / peace flip-flopped the strategy.
+
+Fix: a challenger must beat the current strategy by `STRATEGY_SWITCH_MARGIN`
+(6 points) before switching.
+
+== 5. Verified post-fix
+
+`scripts/run-ai-batch.mjs 2 120 4` after the fixes:
+
+| metric | before | after |
+|--------|--------|-------|
+| bankrupt civ-turns | recurring | **0** |
+| civs finishing broke | — | **0 / 8** |
+| buildings per game | almost none | palace 34.5, barracks 15, temple 10, granary 5.5 |
+
+== 6. Known minor micro-errors (not fixed)
+
+* "No affordable step" (49×) — genuine edge case: a unit ringed by tiles it
+  cannot pay for. Blacklist + skip is a reasonable response; a full
+  cost-aware A* is a larger change.
+* "Already at target" (180×) — by design: garrisoned units holding position.
+* Fallback moves (98×) — no-path best-effort; acceptable.
+
+== 7. Data artefacts
+
+* CSV: `/tmp/ai-analysis2/progression-compact.csv`
+* Map: `/tmp/ai-analysis2/map.json`
+* Log: `game-logs/aivsai-2026-09-26T22-43-22-074Z.log`

@@ -71,7 +71,9 @@ describe('AIStrategySelector.evaluateStrategy', () => {
     const expansionCiv = makeCiv({
       personality: makePersonality({ expansion: 9 }),
     });
-    const aiState = createDefaultAIState();
+    // Start from a strategy that is clearly losing in this situation so the
+    // challenger's lead is well past the hysteresis margin.
+    const aiState: AIState = { ...createDefaultAIState(), strategyProfile: 'wonder_rush' };
     const result = AIStrategySelector.evaluateStrategy(
       expansionCiv,
       baseGameState({ currentYear: -3500, numOwnCities: 1, roundNumber: 100 }),
@@ -79,6 +81,23 @@ describe('AIStrategySelector.evaluateStrategy', () => {
       true
     );
     expect(result).toBe('early_expansion');
+  });
+
+  it('keeps the current strategy when a challenger leads by less than the switch margin', () => {
+    // In this early-expansion scenario early_expansion scores 78 vs
+    // balanced_growth's 76. A fresh AI defaults to balanced_growth; a 2-point
+    // lead must NOT flip it, or strategies oscillate every re-evaluation.
+    const expansionCiv = makeCiv({
+      personality: makePersonality({ expansion: 9 }),
+    });
+    const aiState = createDefaultAIState(); // balanced_growth, lastStrategyEvaluation 0
+    const result = AIStrategySelector.evaluateStrategy(
+      expansionCiv,
+      baseGameState({ currentYear: -3500, numOwnCities: 1, roundNumber: 100 }),
+      aiState,
+      true
+    );
+    expect(result).toBe('balanced_growth');
   });
 
   it('should favor defensive_turtle when heavily threatened', () => {

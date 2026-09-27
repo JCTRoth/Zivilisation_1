@@ -7,6 +7,7 @@
  */
 import earth180x90 from './earth-180x90.json';
 import navalArchipelago from './naval-archipelago-96x60.json';
+import navalArchipelagoTropical from './naval-archipelago-tropical-96x60.json';
 import { validateStaticMap, type StaticMapDefinition } from './types';
 
 export * from './types';
@@ -15,6 +16,7 @@ export * from './types';
 export const STATIC_MAPS: Record<string, StaticMapDefinition> = {
   'earth-180x90': earth180x90 as StaticMapDefinition,
   'naval-archipelago-96x60': navalArchipelago as StaticMapDefinition,
+  'naval-archipelago-tropical-96x60': navalArchipelagoTropical as StaticMapDefinition,
 };
 
 /** Id of the map used for the in-game world map ("Earth" map type). */
@@ -32,6 +34,7 @@ export const WORLD_MAP: StaticMapDefinition | undefined = STATIC_MAPS[WORLD_MAP_
 export const STATIC_MAP_FOR_MAP_TYPE: Readonly<Record<string, string>> = {
   EARTH: WORLD_MAP_ID,
   AI_VS_AI_NAVAL: 'naval-archipelago-96x60',
+  AI_VS_AI_NAVAL_TROPICAL: 'naval-archipelago-tropical-96x60',
 };
 
 /** The static map a map type uses, or undefined when it is generated. */

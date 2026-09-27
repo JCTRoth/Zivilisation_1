@@ -982,7 +982,13 @@ export class EconomicManager {
       (u: Unit) =>
         u.civilizationId === civId &&
         !u.isDefeated &&
-        (u.health == null || u.health > 0),
+        (u.health == null || u.health > 0) &&
+        // A Fisher Boat on an active route is a food producer: the
+        // FisherEconomics equation approved the boat because its food value
+        // beats its 1-gold upkeep. Disbanding it to save that upkeep destroys
+        // value (and the whole catch in its hold), so a working boat is never
+        // a disband candidate — an idle one still is.
+        !(u.type === 'fisher_boat' && u.fishingRoute),
     );
     if (allUnits.length === 0) return 0;
 

@@ -103,7 +103,10 @@ export class SettlementEvaluator {
   }
 
   /**
-   * Evaluate a 3x3 area around a potential settlement location
+   * Evaluate the full city radius (5x5, Chebyshev distance 2) around a
+   * potential settlement location. The inner ring (distance 0-1) is worked
+   * sooner and is therefore weighted higher than the outer ring (distance 2),
+   * but all 25 tiles contribute to the score.
    */
   private static evaluateArea(
     centerCol: number,
@@ -111,15 +114,15 @@ export class SettlementEvaluator {
     getTileAt: (col: number, row: number) => TileLike | null,
     weights: SettlementWeights
   ): number {
-    if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateArea: Evaluating 3x3 area around (${centerCol}, ${centerRow}) with weights:`, weights);
+    if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateArea: Evaluating 5x5 area around (${centerCol}, ${centerRow}) with weights:`, weights);
 
     let totalFood = 0;
     let totalShields = 0;
     let totalGold = 0;
 
-    // Evaluate 3x3 area around the center
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
+    // Evaluate the full 5x5 city radius (2 tiles in each direction)
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
         const col = centerCol + dx;
         const row = centerRow + dy;
         const tile = getTileAt(col, row);
@@ -142,9 +145,15 @@ export class SettlementEvaluator {
           console.log(`[SettlementEvaluator] evaluateArea: Resource bonus at (${col}, ${row}): ${tile.resource}`);
         }
 
-        totalFood += foodYield;
-        totalShields += shieldsYield;
-        totalGold += goldYield;
+        // Distance weighting: inner ring (Chebyshev distance 0-1) counts
+        // fully; outer ring (distance 2) is discounted because it is worked
+        // later and may be contested by a second city.
+        const dist = Math.max(Math.abs(dx), Math.abs(dy));
+        const tileWeight = dist <= 1 ? 1 : 0.5;
+
+        totalFood += foodYield * tileWeight;
+        totalShields += shieldsYield * tileWeight;
+        totalGold += goldYield * tileWeight;
 
         console.log(`[SettlementEvaluator] evaluateArea: Tile (${col}, ${row}) - ${tile.type}: food=${foodYield}, shields=${shieldsYield}, gold=${goldYield}`);
       }
@@ -185,9 +194,9 @@ export class SettlementEvaluator {
     let totalGold = 0;
     let totalCityPenalty = 0;
 
-    // Evaluate 3x3 area around the center
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
+    // Evaluate the full 5x5 city radius (2 tiles in each direction)
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
         const col = centerCol + dx;
         const row = centerRow + dy;
         const tile = getTileAt(col, row);
@@ -214,9 +223,10 @@ export class SettlementEvaluator {
         let cityPenalty = 0;
 
         if (currentCivilizationId !== undefined) {
-          // Check for cities within 3x3 area of this tile
-          for (let cityCheckDy = -1; cityCheckDy <= 1; cityCheckDy++) {
-            for (let cityCheckDx = -1; cityCheckDx <= 1; cityCheckDx++) {
+          // Check for cities whose 5x5 workable radius reaches this tile.
+          // A city at Chebyshev distance 2 or less competes for the tile.
+          for (let cityCheckDy = -2; cityCheckDy <= 2; cityCheckDy++) {
+            for (let cityCheckDx = -2; cityCheckDx <= 2; cityCheckDx++) {
               const nearbyCity = getCityAt(col + cityCheckDx, row + cityCheckDy);
               if (nearbyCity) {
                 if (nearbyCity.civilizationId === currentCivilizationId) {
@@ -233,9 +243,16 @@ export class SettlementEvaluator {
           }
         }
 
-        totalFood += foodYield;
-        totalShields += shieldsYield;
-        totalGold += goldYield;
+        // Distance weighting: inner ring (Chebyshev distance 0-1) counts
+        // fully; outer ring (distance 2) is discounted (worked later, may be
+        // contested). The city penalty is NOT discounted — overlap with an
+        // existing city is bad regardless of which ring it sits in.
+        const dist = Math.max(Math.abs(dx), Math.abs(dy));
+        const tileWeight = dist <= 1 ? 1 : 0.5;
+
+        totalFood += foodYield * tileWeight;
+        totalShields += shieldsYield * tileWeight;
+        totalGold += goldYield * tileWeight;
         totalCityPenalty += cityPenalty;
 
         if (this.VERBOSE_LOGGING) console.log(`[SettlementEvaluator] evaluateAreaWithCityPenalties: Tile (${col}, ${row}) - ${tile.type}: food=${foodYield}, shields=${shieldsYield}, gold=${goldYield}, penalty=${cityPenalty}`);

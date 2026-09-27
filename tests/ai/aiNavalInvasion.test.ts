@@ -119,7 +119,8 @@ function addUnit(engine: ReturnType<typeof makeEngine>, opts: Partial<Unit> & { 
 const managerOf = (engine: ReturnType<typeof makeEngine>) => engine.aiManager as any;
 
 interface TestMission {
-  unitId: string;
+  troopIds: string[];
+  landedIds: string[];
   ferryId: string | null;
   targetCityId: string;
   landTile: { col: number; row: number };
@@ -146,7 +147,7 @@ describe('naval invasion mission', () => {
 
     const mission = storage.turnData.invasionMission as TestMission;
     expect(mission).toBeDefined();
-    expect(mission.unitId).toBe('troop');
+    expect(mission.troopIds).toEqual(['troop']);
     expect(mission.ferryId).toBe('fer');
     expect(mission.targetCityId).toBe(enemyCity.id);
     expect(mission.stage).toBe('gather');
@@ -189,6 +190,7 @@ describe('naval invasion mission', () => {
 
     // The ferry's naval target is the far shore, not a patrol route.
     expect(managerOf(engine).chooseNavalTarget(ferry)).toEqual(mission.waterTile);
+    expect(engine.getFerryCargo(ferry)).toEqual(['troop']);
 
     // Stage 3 — cross and unload.
     ferry.col = mission.waterTile.col;

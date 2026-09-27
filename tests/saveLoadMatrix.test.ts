@@ -151,15 +151,38 @@ describe('Save/load: unit state', () => {
     const ferry = w.spawnUnit({ id: 'ferry', col: 9, row: 9, type: 'galley' });
     const cargo = w.spawnUnit({ id: 'passenger', col: 9, row: 9, type: 'warrior' });
     (cargo as unknown as { embarkedOn: string }).embarkedOn = ferry.id;
-    (ferry as unknown as { cargoUnitId: string }).cargoUnitId = cargo.id;
+    (ferry as unknown as { cargoUnitIds: string[] }).cargoUnitIds = [cargo.id];
 
     const loaded = await roundTrip(engine);
     const afterFerry = loaded.units.find((u) => u.id === 'ferry');
     const afterCargo = loaded.units.find((u) => u.id === 'passenger');
-    expect((afterFerry as unknown as { cargoUnitId: string }).cargoUnitId).toBe('passenger');
+    expect(afterFerry?.cargoUnitIds).toEqual(['passenger']);
+    expect(loaded.getFerryCargo(afterFerry!)).toEqual(['passenger']);
     expect((afterCargo as unknown as { embarkedOn: string }).embarkedOn).toBe('ferry');
     // And the passenger still cannot act after the reload.
     expect(loaded.canUnitMoveTo('passenger', 8, 9)).toBe(false);
+  });
+
+  it('migrates a pre-multi-cargo save that stored one passenger in cargoUnitId', async () => {
+    const { engine } = await makeEngine({ seed: 408, mapType: 'MANY_CITIES' });
+    const w = world(engine);
+    const ferry = w.spawnUnit({ id: 'ferry', col: 9, row: 9, type: 'ferry' });
+    const cargo = w.spawnUnit({ id: 'passenger', col: 9, row: 9, type: 'warrior' });
+    (cargo as unknown as { embarkedOn: string }).embarkedOn = ferry.id;
+    // A v2 save: the old scalar field, and no list at all.
+    (ferry as unknown as { cargoUnitId: string }).cargoUnitId = cargo.id;
+    delete (ferry as unknown as { cargoUnitIds?: string[] }).cargoUnitIds;
+    // The engine writes v3 now, so downgrade the payload to emulate a v2 file.
+    const raw = (engine.getSaveJSON() as string).replace('"version":3', '"version":2');
+
+    const reloaded = new GameEngine(null);
+    (reloaded as unknown as { storeActions: unknown }).storeActions = {};
+    localStorage.setItem('civ1_savegame', raw);
+    await reloaded.loadGame();
+
+    const afterFerry = reloaded.units.find((u) => u.id === 'ferry');
+    expect(afterFerry?.cargoUnitIds).toEqual(['passenger']);
+    expect(reloaded.getFerryCargo(afterFerry!)).toEqual(['passenger']);
   });
 
   it('restores unit states (fortified / sleeping) so they are not re-armed', async () => {

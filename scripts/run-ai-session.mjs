@@ -21,7 +21,10 @@ function latestLogFile() {
 }
 
 async function main() {
-  const browser = await chromium.launch({ headless: !HEADFUL });
+  const browser = await chromium.launch({
+    headless: !HEADFUL,
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+  });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
   console.log(`[session] Opening ${BASE} ...`);
@@ -33,7 +36,7 @@ async function main() {
 
   // Step 2 – Game settings: pick AI_VS_AI (last map type option)
   await page.getByText('Fine-tune Your Challenge').waitFor({ state: 'visible' });
-  await page.locator('.control-card__select').last().selectOption('AI_VS_AI');
+  await page.locator('select.setup-setting__control').last().selectOption('AI_VS_AI');
   await page.getByRole('button', { name: '🏛️ Start Game' }).click();
 
   // Wait for the game canvas to mount

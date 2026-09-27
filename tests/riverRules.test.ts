@@ -22,7 +22,7 @@ import {
   TERRAIN_TYPES,
   TERRAIN_RESOURCES,
   RESOURCE_SPAWN_CHANCE,
-  DEFAULT_RESOURCE_SPAWN_CHANCE,
+  COASTAL_FISH_CHANCE,
   RIVER_FISH_CHANCE_MULTIPLIER,
   getResourceYields,
 } from '@/data/TerrainConstants';
@@ -266,14 +266,33 @@ describe('River fish', () => {
   it('river fish spawns at half the ocean probability', () => {
     expect(RESOURCE_SPAWN_CHANCE[TERRAIN_TYPES.RIVER])
       .toBeCloseTo(RESOURCE_SPAWN_CHANCE[TERRAIN_TYPES.OCEAN] * RIVER_FISH_CHANCE_MULTIPLIER);
-    expect(RESOURCE_SPAWN_CHANCE[TERRAIN_TYPES.RIVER])
-      .toBeCloseTo(DEFAULT_RESOURCE_SPAWN_CHANCE * 0.5);
+    // The ocean rate is its own constant now (fish is coastal-only, so it is no
+    // longer the generic per-tile default) — assert the relationship, not a
+    // literal, so retuning the fish density does not break this rule.
+    expect(RESOURCE_SPAWN_CHANCE[TERRAIN_TYPES.OCEAN]).toBeCloseTo(COASTAL_FISH_CHANCE);
 
-    // Just below the river threshold → fish; at the ocean threshold → no fish.
-    expect(rollResource(TERRAIN_TYPES.RIVER, false, () => 0.05)).toBe('Fish');
-    expect(rollResource(TERRAIN_TYPES.RIVER, false, () => 0.1)).toBeNull();
-    expect(rollResource(TERRAIN_TYPES.OCEAN, false, () => 0.1)).toBe('Fish');
+    const riverChance = RESOURCE_SPAWN_CHANCE[TERRAIN_TYPES.RIVER];
+    // Just below the river threshold → fish; between the two → no river fish.
+    expect(rollResource(TERRAIN_TYPES.RIVER, false, () => riverChance * 0.5)).toBe('Fish');
+    expect(rollResource(TERRAIN_TYPES.RIVER, false, () => riverChance + 0.01)).toBeNull();
+    // …but the same roll does put fish on a coastal ocean tile.
+    expect(rollResource(TERRAIN_TYPES.OCEAN, false, () => riverChance + 0.01)).toBe('Fish');
     // A tile flagged as special always receives its terrain resource.
     expect(rollResource(TERRAIN_TYPES.RIVER, true, () => 0.99)).toBe('Fish');
+  });
+
+  it('open-ocean water carries no fish at all', () => {
+    // Fish is a shoreline resource: a water tile with no land in reach is not
+    // a fishery, whatever the roll says. This is what cut the naval map from
+    // 606 fish (89% of them hundreds of tiles from any shore) to 170, all of
+    // them hugging a coast.
+    for (const roll of [0, 0.01, 0.5, 0.99]) {
+      expect(rollResource(TERRAIN_TYPES.OCEAN, false, () => roll, false)).toBeNull();
+      expect(rollResource(TERRAIN_TYPES.RIVER, false, () => roll, false)).toBeNull();
+    }
+    // …unless the tile is flagged, which the map format uses deliberately.
+    expect(rollResource(TERRAIN_TYPES.OCEAN, true, () => 0.99, false)).toBe('Fish');
+    // Land resources are untouched: the coastal test is about water only.
+    expect(rollResource(TERRAIN_TYPES.HILLS, false, () => 0.01, false)).toBe('Coal');
   });
 });

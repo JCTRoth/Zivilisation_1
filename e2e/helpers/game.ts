@@ -56,6 +56,21 @@ export async function closeResearchPrompt(page: Page): Promise<void> {
 }
 
 /**
+ * Dismiss the one-time "Auto. turn ending" offer if it is open.
+ *
+ * The offer appears when the game reaches AUTO_END_TURN_OFFER_TURN (15) and
+ * its modal backdrop swallows every click on the board, so multi-turn flows
+ * must clear it. Never waits: callers that want to observe the offer assert it
+ * themselves before calling this.
+ */
+export async function closeAutoEndOfferIfOpen(page: Page): Promise<void> {
+  const offer = page.locator('.auto-end-offer-modal');
+  if (!(await offer.isVisible().catch(() => false))) return;
+  await offer.getByRole('button', { name: 'Got it' }).click({ timeout: 3_000 }).catch(() => {});
+  await expect(offer).toBeHidden({ timeout: 3_000 }).catch(() => {});
+}
+
+/**
  * Helper: open the info panel.
  * - Desktop (>= 992px): the panel is a static sidebar that starts open.
  * - Mobile: it is a drawer toggled via the "Panel" button in the bottom bar.

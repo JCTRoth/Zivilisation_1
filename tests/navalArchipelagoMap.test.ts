@@ -3,14 +3,16 @@
  *
  * A static scenario world is only worth shipping if its shape is what the
  * scenario is about, so these are hard invariants: real islands (not one blob
- * or confetti), every civ able to start on its own, and a start tile that is
- * actually coastal — otherwise a civ begins boxed in and never sails.
+ * or confetti), every civ able to start on its own, a start tile that is
+ * actually coastal — otherwise a civ begins boxed in and never sails — and
+ * small islets for the AI to colonise by sea, which is the whole point.
  */
 import { describe, it, expect } from 'vitest';
 import { validateStaticMap } from '@/data/maps/types';
 import { STATIC_MAPS, staticMapForMapType } from '@/data/maps';
 import { TERRAIN_TYPES } from '@/data/TerrainConstants';
 import { terrainIdForChar } from '@/data/maps/types';
+import { SMALL_ISLAND_MAX_TILES } from '@/data/GameConstants';
 
 const NAV4: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
@@ -73,11 +75,28 @@ describe('naval archipelago map', () => {
   it('is split into real islands, not one blob or confetti', () => {
     const islands = landmasses();
     expect(islands.length).toBeGreaterThanOrEqual(6);
-    // Every island must be big enough to found a small empire and pay for a
-    // ferry — the first cut used 52-133 tile islands and no civ could ever
-    // finish Sailing.
-    for (const island of islands) {
+    // Every HOME island must be big enough to found a small empire and pay for
+    // a ferry — the first cut used 52-133 tile islands and no civ could ever
+    // finish Sailing. Small islets are excluded here and covered below.
+    const home = islands.filter((island) => island.length > SMALL_ISLAND_MAX_TILES);
+    expect(home.length).toBeGreaterThanOrEqual(6);
+    for (const island of home) {
       expect(island.length).toBeGreaterThanOrEqual(60);
+    }
+  });
+
+  it('has small islets the AI can actually colonise by sea', () => {
+    const islands = landmasses();
+    const islets = islands.filter((island) => island.length <= SMALL_ISLAND_MAX_TILES);
+    // Without these, getColonizableIslands() can never return anything and the
+    // whole ferry-a-settler-to-an-island feature is unreachable dead code: a
+    // 417-round game on the old map produced 0 colony missions.
+    expect(islets.length).toBeGreaterThanOrEqual(4);
+    for (const islet of islets) {
+      // A colonisable islet needs a landing tile and a beach to unload from.
+      expect(islet.some(([c, r]) => touchesWater(c, r))).toBe(true);
+      // No mountains: a settler has to be able to found a city on it.
+      expect(islet.some(([c, r]) => def.rows[r][c] === 'm')).toBe(false);
     }
   });
 

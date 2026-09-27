@@ -2,9 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Modal, Button, Form } from 'react-bootstrap';
 import { CIVILIZATIONS, DIFFICULTY_LEVELS } from '@/data/GameData';
 import '../../styles/gameSetupModal.css';
-
-/** Map types that switch Dev Mode on when selected (see the effect below). */
-const DEV_MODE_MAP_TYPES: ReadonlySet<string> = new Set(['AI_VS_AI_NAVAL']);
+import { isAutoScenario } from '@/data/GameConstants';
 
 function GameSetupModal({ show, onStart }) {
   // Drag-to-scroll: when the user presses on an empty area of the page and
@@ -90,12 +88,13 @@ function GameSetupModal({ show, onStart }) {
   const [climate, setClimate] = useState(1);
   const [age, setAge] = useState(1);
 
-  // Scenarios that are unwatchable without it switch Dev Mode on by itself.
-  // The naval archipelago is a fully automatic AI duel: fog, invisible enemies
-  // and a hidden minimax make it impossible to follow, so watching it is the
-  // whole point. One-way on map-type change — the player can still untick it.
+  // Every AI-vs-AI scenario is a spectator mode, and it is unwatchable without
+  // Dev Mode: fog hides the enemy, invisible units cannot be followed, and the
+  // game is supposed to play itself. One-way on map-type change — the player
+  // can still untick it here, though App forces it back on for these scenarios
+  // (see `isAutoScenario`).
   useEffect(() => {
-    if (DEV_MODE_MAP_TYPES.has(mapType)) setDevMode(true);
+    if (isAutoScenario(mapType)) setDevMode(true);
   }, [mapType]);
 
   const totalSteps = 2;
@@ -299,6 +298,7 @@ function GameSetupModal({ show, onStart }) {
                       <option value="AI_VS_AI">Computer vs Computer · Auto-playing AI duel</option>
                       <option value="AI_VS_AI_SMALL">Computer vs Computer (Small) · Tall narrow corridor</option>
                       <option value="AI_VS_AI_NAVAL">Computer vs Computer · Naval Archipelago (8 islands, ferries)</option>
+                    <option value="AI_VS_AI_NAVAL_TROPICAL">Computer vs Computer · Tropical Archipelago (8 islands, jungle, mountain)</option>
                     </Form.Select>
                     <span className="setup-setting__hint">Choose your game mode.</span>
                   </div>
@@ -507,6 +507,16 @@ function GameSetupModal({ show, onStart }) {
                       <li>Map: <strong>96x60 tiles — 8 hand-tuned islands</strong></li>
                       <li>Players: <strong>All civilizations are AI, one island each</strong></li>
                       <li>Mode: <strong>Fully automatic naval duel</strong></li>
+                      <li>Requires: <strong>ferries — nobody can walk to the enemy</strong></li>
+                      <li>Log: <strong>Every move is written to a log file</strong></li>
+                    </ul>
+                  )}
+                  {mapType === 'AI_VS_AI_NAVAL_TROPICAL' && (
+                    <ul>
+                      <li>Map: <strong>96x60 tiles — 8 islands with tropical biomes</strong></li>
+                      <li>Players: <strong>All civilizations are AI, one island each</strong></li>
+                      <li>Mode: <strong>Fully automatic naval duel</strong></li>
+                      <li>Features: <strong>jungle, swamp, and a mountain-rich Dragon Island</strong></li>
                       <li>Requires: <strong>ferries — nobody can walk to the enemy</strong></li>
                       <li>Log: <strong>Every move is written to a log file</strong></li>
                     </ul>

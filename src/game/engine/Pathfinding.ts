@@ -147,6 +147,34 @@ export class Pathfinding {
   }
 
   /**
+   * A naval unit may enter its OWN coastal city (that is where it was built,
+   * and where a Fisher Boat unloads / a Ferry picks up troops). The engine's
+   * `moveUnit` allows it, so the pathfinder must too — otherwise a boat can
+   * never sail home, the GoTo path fails, and the fishing route stalls at sea
+   * forever with a full hold.
+   */
+  private static isFriendlyNavalCity(
+    col: number,
+    row: number,
+    getTileAt: (c: number, r: number) => MapTile | null,
+    getCityAt?: (c: number, r: number) => { civilizationId: number } | null,
+    friendlyCivId?: number,
+  ): boolean {
+    if (!getCityAt || friendlyCivId == null) return false;
+    const city = getCityAt(col, row);
+    if (!city || city.civilizationId !== friendlyCivId) return false;
+    // Naval access: the city tile itself or a neighbour is navigable water.
+    for (let dCol = -1; dCol <= 1; dCol++) {
+      for (let dRow = -1; dRow <= 1; dRow++) {
+        const tile = getTileAt(col + dCol, row + dRow);
+        const key = String(tile?.type ?? tile?.terrain ?? '').trim().toLowerCase();
+        if (key === 'ocean' || key === 'sea' || key === 'river') return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Find path using A* algorithm
    */
   static findPath(
@@ -234,10 +262,19 @@ export class Pathfinding {
         }
 
         const tile = getTileAt(col, row);
-        const cost = this.getMovementCost(tile, unitType);
+        let cost = this.getMovementCost(tile, unitType);
 
         if (cost === Infinity) {
-          continue; // Impassable
+          // Ships may still enter their own coastal city (see helper) — the
+          // one land tile a naval unit is allowed to occupy.
+          if (
+            this.isNavalUnit(unitType) &&
+            this.isFriendlyNavalCity(col, row, getTileAt, getCityAt, friendlyCivId)
+          ) {
+            cost = 1;
+          } else {
+            continue; // Impassable
+          }
         }
 
         // River crossing check: land units can't cross wide rivers

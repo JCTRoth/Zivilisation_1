@@ -2,6 +2,16 @@
 
 import { UnitProperties } from './GameConstants';
 
+/**
+ * How many land units a Ferry carries.
+ *
+ * A one-unit hull made every sea crossing a single-unit bet: a lone phalanx
+ * lands, dies to the garrison, and the hull crosses back empty. A landing
+ * force of three is enough to take a lightly held beach and hold it, without
+ * letting one ship carry an entire army across the ocean.
+ */
+export const FERRY_CAPACITY = 3;
+
 export const UNIT_TYPES = {
     // Military Units
     WARRIOR: 'warrior',
@@ -500,6 +510,7 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         naval: true,
         icon: '⛴️',
         requires: 'sailing',
+        transportCapacity: FERRY_CAPACITY,
         type: 'civilian'
     },
     [UNIT_TYPES.FIGHTER]: {

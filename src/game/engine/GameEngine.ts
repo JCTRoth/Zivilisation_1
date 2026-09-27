@@ -861,7 +861,7 @@ export default class GameEngine {
       mapWidth = 16;
       mapHeight = 26;
       console.log(`[GameEngine] Using small tall map for ${mapType}: ${mapWidth}x${mapHeight}`);
-    } else if (mapType === 'AI_VS_AI_NAVAL') {
+    } else if (mapType === 'AI_VS_AI_NAVAL' || mapType === 'AI_VS_AI_NAVAL_TROPICAL') {
       // Static archipelago (src/data/maps/naval-archipelago-96x60.json) — must
       // match the static map's dimensions so every tile of it is used.
       mapWidth = 96;
@@ -1023,7 +1023,7 @@ export default class GameEngine {
     // different match-up and makes batch results mean something.
     const profileOrder = [...CIV_PRODUCTION_PROFILES];
     const rotateProfiles =
-      mapType === 'AI_VS_AI' || mapType === 'AI_VS_AI_SMALL' || mapType === 'AI_VS_AI_NAVAL';
+      mapType === 'AI_VS_AI' || mapType === 'AI_VS_AI_SMALL' || mapType === 'AI_VS_AI_NAVAL' || mapType === 'AI_VS_AI_NAVAL_TROPICAL';
     if (rotateProfiles && typeof this.gameSettings.mapSeed === 'number') {
       const profileRng = this.makeSeededRng(this.gameSettings.mapSeed, 0x9109d);
       const offset = Math.floor(profileRng() * profileOrder.length);
@@ -1041,7 +1041,8 @@ export default class GameEngine {
         i === 0 &&
         mapType !== 'AI_VS_AI' &&
         mapType !== 'AI_VS_AI_SMALL' &&
-        mapType !== 'AI_VS_AI_NAVAL';
+        mapType !== 'AI_VS_AI_NAVAL' &&
+        mapType !== 'AI_VS_AI_NAVAL_TROPICAL';
       const civ = {
         id: i,
         name: civData.name,
@@ -2150,20 +2151,43 @@ export default class GameEngine {
   }
 
   // ────────────────────────────────────────────────────────────────────
-  // Ferry transport (Civ1: a Ferry carries one land unit across water)
+  // Ferry transport (a Ferry carries a landing force across water)
   // ────────────────────────────────────────────────────────────────────
 
+  /** How many land units this hull can carry at once. */
+  transportCapacityOf(ferry: Unit): number {
+    return Math.max(0, UNIT_PROPS[ferry.type]?.transportCapacity ?? 0);
+  }
+
   /**
-   * Whether `unitId` may board `ferryId`: the ferry is a naval unit with no
-   * cargo, the passenger is a land unit standing on a tile adjacent to (or
-   * sharing) the ferry's water tile, and it is not already aboard.
+   * The land units aboard `ferry`, oldest boarding first.
+   *
+   * Folds in the pre-multi-cargo `cargoUnitId` so a save written when a Ferry
+   * held exactly one unit still reads its cargo.
+   */
+  getFerryCargo(ferry: Unit): string[] {
+    const ids = Array.isArray(ferry.cargoUnitIds) ? ferry.cargoUnitIds.filter(Boolean) : [];
+    const legacy = ferry.cargoUnitId;
+    if (legacy && !ids.includes(legacy)) ids.push(legacy);
+    return ids;
+  }
+
+  /** Whether `unitId` is aboard `ferry`. */
+  isAboard(ferry: Unit, unitId: string): boolean {
+    return this.getFerryCargo(ferry).includes(unitId);
+  }
+
+  /**
+   * Whether `unitId` may board `ferryId`: the hull is naval and has room, the
+   * passenger is a land unit standing on a tile adjacent to (or sharing) the
+   * hull's water tile, and it is not already aboard.
    */
   canLoadFerry(ferryId: string, unitId: string): boolean {
     const ferry = this.units.find((u) => u.id === ferryId);
     const unit = this.units.find((u) => u.id === unitId);
     if (!ferry || !unit || ferry.id === unit.id) return false;
     if (ferry.isDefeated || unit.isDefeated) return false;
-    if (ferry.cargoUnitId) return false;
+    if (this.getFerryCargo(ferry).length >= this.transportCapacityOf(ferry)) return false;
     if (unit.embarkedOn) return false;
     if (UNIT_PROPS[ferry.type]?.naval !== true) return false;
     if (UNIT_PROPS[unit.type]?.naval === true) return false; // ships can't board
@@ -2171,12 +2195,14 @@ export default class GameEngine {
     return this.squareGrid.chebyshevDistance(ferry.col, ferry.row, unit.col, unit.row) <= 1;
   }
 
-  /** Board a land unit onto an adjacent/co-located ferry. */
+  /** Board a land unit onto an adjacent/co-located hull that still has room. */
   loadFerry(ferryId: string, unitId: string): boolean {
     if (!this.canLoadFerry(ferryId, unitId)) return false;
     const ferry = this.units.find((u) => u.id === ferryId)!;
     const unit = this.units.find((u) => u.id === unitId)!;
-    ferry.cargoUnitId = unit.id;
+    ferry.cargoUnitIds = this.getFerryCargo(ferry);
+    ferry.cargoUnitIds.push(unit.id);
+    ferry.cargoUnitId = null; // drop the legacy pointer once the list owns it
     unit.embarkedOn = ferry.id;
     unit.col = ferry.col;
     unit.row = ferry.row;
@@ -2186,51 +2212,71 @@ export default class GameEngine {
     return true;
   }
 
-  /** Whether the ferry's cargo may be put ashore at a land tile. */
-  canUnloadFerry(ferryId: string, col: number, row: number): boolean {
+  /**
+   * Whether the hull's cargo may be put ashore at a land tile. `unitId` picks
+   * one specific passenger; omit it to pick the first one still aboard. Our own
+   * units already standing there do not block the landing — an amphibious force
+   * has to be able to pile onto one beach tile — only enemies and cities do.
+   */
+  canUnloadFerry(ferryId: string, col: number, row: number, unitId?: string): boolean {
     const ferry = this.units.find((u) => u.id === ferryId);
-    if (!ferry?.cargoUnitId) return false;
-    const unit = this.units.find((u) => u.id === ferry.cargoUnitId);
+    if (!ferry) return false;
+    const cargoIds = this.getFerryCargo(ferry);
+    if (cargoIds.length === 0) return false;
+    const id = unitId && cargoIds.includes(unitId) ? unitId : cargoIds[0];
+    const unit = this.units.find((u) => u.id === id);
     if (!unit || unit.isDefeated) return false;
     const tile = this.getTileAt(col, row);
     if (!tile) return false;
     if (this.isWaterTerrain(tile) || this.isLakeTerrain(tile)) return false;
     if (TERRAIN_PROPS[this.getTerrainKey(tile)]?.passable === false) return false;
     if (this.squareGrid.chebyshevDistance(ferry.col, ferry.row, col, row) > 1) return false;
+    // Unloading straight into a city is only safe on our own side: a landing
+    // force that steps onto an ENEMY city tile is inside its walls, where it
+    // cannot be ordered to attack the garrison that holds it. A friendly city
+    // is the normal place a returning transport puts its cargo down.
+    const city = this.getCityAt(col, row);
+    if (city && city.civilizationId !== unit.civilizationId) return false;
     const occupant = this.getUnitAt(col, row);
-    return !occupant;
+    return !occupant || occupant.civilizationId === unit.civilizationId;
   }
 
-  /** Put the ferry's cargo ashore on an adjacent free land tile. */
-  unloadFerry(ferryId: string, col: number, row: number): boolean {
-    if (!this.canUnloadFerry(ferryId, col, row)) return false;
+  /** Put one passenger (or the first) ashore on an adjacent free land tile. */
+  unloadFerry(ferryId: string, col: number, row: number, unitId?: string): boolean {
+    if (!this.canUnloadFerry(ferryId, col, row, unitId)) return false;
     const ferry = this.units.find((u) => u.id === ferryId)!;
-    const unit = this.units.find((u) => u.id === ferry.cargoUnitId)!;
+    const cargoIds = this.getFerryCargo(ferry);
+    const id = unitId && cargoIds.includes(unitId) ? unitId : cargoIds[0];
+    const unit = this.units.find((u) => u.id === id)!;
     unit.col = col;
     unit.row = row;
     unit.embarkedOn = null;
     unit.movesRemaining = 0;
     unit.hasMovedThisTurn = true;
+    ferry.cargoUnitIds = cargoIds.filter((existing) => existing !== id);
     ferry.cargoUnitId = null;
     if (this.onStateChange) this.onStateChange('UNIT_MOVED', { unit, targetCol: col, targetRow: row });
     return true;
   }
 
   /**
-   * When a Ferry is destroyed its passenger goes down with it (Civ1) — an
+   * When a transport is destroyed its whole cargo goes down with it (Civ1) — an
    * orphaned embarked unit would be invisible and unable to act.
    */
   private destroyCargoOf(ferry: Unit): void {
-    if (!ferry.cargoUnitId) return;
-    const cargo = this.units.find((u) => u.id === ferry.cargoUnitId);
-    if (!cargo || cargo.isDefeated) return;
-    cargo.isDefeated = true;
-    cargo.defeatTimestamp = Date.now();
-    this.onStateChange?.('UNIT_DEFEATED', { unit: cargo });
-    setTimeout(() => {
-      this.units = this.units.filter((u) => u.id !== cargo.id);
-      this.onStateChange?.('UNIT_REMOVED', { unit: cargo });
-    }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
+    for (const cargoId of this.getFerryCargo(ferry)) {
+      const cargo = this.units.find((u) => u.id === cargoId);
+      if (!cargo || cargo.isDefeated) continue;
+      cargo.isDefeated = true;
+      cargo.defeatTimestamp = Date.now();
+      this.onStateChange?.('UNIT_DEFEATED', { unit: cargo });
+      setTimeout(() => {
+        this.units = this.units.filter((u) => u.id !== cargo.id);
+        this.onStateChange?.('UNIT_REMOVED', { unit: cargo });
+      }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
+    }
+    ferry.cargoUnitIds = [];
+    ferry.cargoUnitId = null;
   }
 
   // ────────────────────────────────────────────────────────────────────
@@ -3514,10 +3560,10 @@ export default class GameEngine {
       // exception no longer applies to subsequent moves.
       unit.hasMovedThisTurn = true;
 
-      // Ferry transport: the passenger travels with the ship (its tile is
+      // Ferry transport: every passenger travels with the ship (its tile is
       // always the ferry's tile while embarked).
-      if (unit.cargoUnitId) {
-        const passenger = this.units.find((u) => u.id === unit.cargoUnitId);
+      for (const cargoId of this.getFerryCargo(unit)) {
+        const passenger = this.units.find((u) => u.id === cargoId);
         if (passenger) {
           passenger.col = unit.col;
           passenger.row = unit.row;
@@ -6185,7 +6231,7 @@ export default class GameEngine {
       }
 
       const saveData = {
-        version: 2, // bumped from 1 to 2 with new fields
+        version: 3, // bumped from 2 with multi-unit transport cargo
         timestamp: Date.now(),
         gameSettings: this.gameSettings,
         currentTurn: this.currentTurn,
@@ -6256,7 +6302,7 @@ export default class GameEngine {
       }
 
       const saveData = JSON.parse(json);
-      if (!saveData || (saveData.version !== 1 && saveData.version !== 2)) {
+      if (!saveData || (saveData.version !== 1 && saveData.version !== 2 && saveData.version !== 3)) {
         console.warn('[GameEngine] Invalid or incompatible save data, version:', saveData?.version);
         return false;
       }
@@ -6286,6 +6332,15 @@ export default class GameEngine {
       this.activePlayer = saveData.activePlayer;
       this.map = saveData.map;
       this.units = saveData.units;
+      // v1/v2 saves stored a hull's single passenger in `cargoUnitId`. Fold it
+      // into `cargoUnitIds` so a loaded Ferry reads its cargo through
+      // `getFerryCargo()` instead of appearing empty.
+      for (const unit of this.units) {
+        if (unit.cargoUnitId && !Array.isArray(unit.cargoUnitIds)) {
+          unit.cargoUnitIds = [unit.cargoUnitId];
+        }
+        unit.cargoUnitId = null;
+      }
       this.cities = saveData.cities;
       this.civilizations = saveData.civilizations;
       this.technologies = saveData.technologies;

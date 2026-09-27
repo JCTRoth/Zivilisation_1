@@ -31,6 +31,56 @@ export const AUTO_END_TURN_OFFER_TURN = 15;
 /** localStorage key: the "Auto. turn ending" offer was already answered. */
 export const AUTO_END_TURN_OFFER_FLAG = 'civ1_auto_end_turn_offered';
 
+/**
+ * Map types that are AI-vs-AI spectator scenarios: every civilization is
+ * computer-controlled, nobody is watching a human, and the game is supposed to
+ * play itself.
+ *
+ * This used to be seven hardcoded `mapType === 'AI_VS_AI' || …` checks spread
+ * over four files, and they had drifted: `AIManager` and `App` listed only two
+ * of the four types, so the naval scenarios were paying a 200 ms sleep per
+ * move, never got the `aivsai-` log session, never auto-restarted after a win
+ * and never auto-ticked Dev Mode. One predicate, one list.
+ */
+export const AUTO_SCENARIO_MAP_TYPES: readonly string[] = [
+    'AI_VS_AI',
+    'AI_VS_AI_SMALL',
+    'AI_VS_AI_NAVAL',
+    'AI_VS_AI_NAVAL_TROPICAL',
+];
+
+/** Whether a map type is a self-playing AI-vs-AI scenario. */
+export function isAutoScenario(mapType: string | null | undefined): boolean {
+    return !!mapType && AUTO_SCENARIO_MAP_TYPES.includes(mapType);
+}
+
+/**
+ * Milliseconds the AI movement phase may take before a civ's turn is force-
+ * ended.
+ *
+ * A force-ended turn silently skips every unit that had not been processed
+ * yet, which looks exactly like a broken AI when you are watching a demo — so
+ * the budget has to be generous. The base is the figure tuned for the 40x40
+ * AI duel, and bigger maps get a linear add-on because the extra cost is
+ * pathfinding: a 96x60 archipelago with 7 civs does an order of magnitude more
+ * of it per turn, and at 200 ms of debug sleep per move it will blow a 30 s
+ * budget on its own.
+ */
+export const AI_TURN_TIMEOUT_MS = 30_000;
+/** Map size the base budget above was tuned for (the 40x40 duel). */
+export const AI_TURN_TIMEOUT_REFERENCE_TILES = 40 * 40;
+/** Added per tile beyond the reference map, in ms. */
+export const AI_TURN_TIMEOUT_MS_PER_TILE = 25;
+/** Hard ceiling, so a 180x90 Earth game cannot wait five minutes per civ. */
+export const AI_TURN_TIMEOUT_MAX_MS = 180_000;
+
+/** The AI turn budget for a map of `tiles` squares. */
+export function aiTurnTimeoutMs(tiles: number): number {
+  if (!tiles || tiles <= 0) return AI_TURN_TIMEOUT_MS;
+  const extra = Math.max(0, tiles - AI_TURN_TIMEOUT_REFERENCE_TILES);
+  return Math.min(AI_TURN_TIMEOUT_MAX_MS, AI_TURN_TIMEOUT_MS + extra * AI_TURN_TIMEOUT_MS_PER_TILE);
+}
+
 
 export interface TerrainProperties {
     movement: number;
@@ -63,6 +113,12 @@ export interface UnitProperties {
     requires?: string | null;
     /** Building that must exist in the city to produce this unit (null/undefined = none). */
     requiredBuilding?: string | null;
+    /**
+     * Naval hulls only: how many land units the ship can carry at once.
+     * 0/undefined for everything else. A Ferry takes several, so one hull can
+     * land a landing force instead of a lone spear.
+     */
+    transportCapacity?: number;
 }
 
 export interface BuildingProperties {

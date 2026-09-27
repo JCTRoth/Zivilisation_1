@@ -22,6 +22,7 @@ export enum TurnPhase {
 
 import { AIResearch } from './AI/AIResearch';
 import { createDefaultAIState, resolveAICivStrategy } from './AI/AITypes';
+import { fishingRelevanceForCiv } from './FisherEconomics';
 import { serializeCities } from '../../utils/CitySnapshots';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { BUILDING_TYPES } from '@/data/BuildingConstants';
@@ -29,11 +30,22 @@ import type { ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 import { awaitPendingAnimations } from '../rendering/GlideAnimation';
+import { aiTurnTimeoutMs } from '@/data/GameConstants';
 
 export class TurnManager {
   private gameEngine: GameEngine;
   private unitPaths: Map<string, Array<{ col: number; row: number }>>;
-  private AI_MAX_TURN_MS = 30000; // timeout for AI movement phase
+  /**
+   * Timeout for the AI movement phase of one civ, in ms. Scaled by map area:
+   * the budget was tuned for the 40x40 AI duel, but the 96x60 archipelago does
+   * an order of magnitude more pathfinding per turn, and a force-ended turn
+   * silently skips every unit that had not been processed — which is
+   * indistinguishable from a broken AI when you are watching a demo.
+   */
+  private get aiTurnTimeoutMs(): number {
+    const map = this.gameEngine.map;
+    return aiTurnTimeoutMs(map ? map.width * map.height : 0);
+  }
   private isProcessingGoToPaths = false; // Prevents auto-end while GoTo is executing
   private aiTurnInProgress = false; // Prevents auto-end / re-entrant phase advances while the AI turn is running
 
@@ -393,10 +405,13 @@ export class TurnManager {
     let finished = false;
     const timeoutHandle = setTimeout(() => {
       if (!finished && this.currentPlayer === civilizationId) {
-        console.warn(`[TurnManager] ⏰ AI movement timeout for civ ${civilizationId}`);
+        console.warn(
+          `[TurnManager] ⏰ AI movement timeout for civ ${civilizationId} `
+          + `(budget ${this.aiTurnTimeoutMs}ms)`,
+        );
         this.forceEndAITurn(civilizationId, 'timeout');
       }
-    }, this.AI_MAX_TURN_MS);
+    }, this.aiTurnTimeoutMs);
 
       promise.then(() => {
       if (finished) return;
@@ -464,8 +479,11 @@ export class TurnManager {
           numEnemyCitiesKnown: 0,
           isAtWar: this.atWar(civilizationId),
           hasLibrary: cities.some((c) => c.buildings?.includes('library')),
-            totalScience: this.gameEngine.cities?.reduce((s: number, c) => s + (c.science || 0), 0) ?? 0,
+            totalScience: this.gameEngine.cities?.reduce((s: number, c: City) => s + (c.science || 0), 0) ?? 0,
           hasWaterAccess: cities.some((city) => this.cityHasDirectWaterAccess(city)),
+          // The Harbor (Fisher Boat) prerequisite is scored by AIResearch from
+          // this; without it the naval branch never unlocked the boat.
+          fishingRelevance: fishingRelevanceForCiv(this.gameEngine, civilizationId),
         };
 
         const techChoice = AIResearch.selectResearch(civ, strategy, gameState);
@@ -1177,7 +1195,9 @@ export class TurnManager {
             numEnemyCitiesKnown: 0,
             isAtWar: this.atWar(civ.id),
             hasLibrary: cities.some((c) => c.buildings?.includes('library')),
-            totalScience: this.gameEngine.cities?.reduce((s: number, c) => s + (c.science || 0), 0) ?? 0,
+            totalScience: this.gameEngine.cities?.reduce((s: number, c: City) => s + (c.science || 0), 0) ?? 0,
+            hasWaterAccess: cities.some((city) => this.cityHasDirectWaterAccess(city)),
+            fishingRelevance: fishingRelevanceForCiv(this.gameEngine, civ.id),
           };
 
           const techChoice = AIResearch.selectResearch(civ, strategy, gameState);

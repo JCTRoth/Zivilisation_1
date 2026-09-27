@@ -47,6 +47,13 @@ interface GameStateSnapshot {
   navalRelevance?: number;
   /** True when the civ's start tile was on an island (known from turn one). */
   startsOnIsland?: boolean;
+  /**
+   * How much a Fisher Boat would be worth to this civ right now (0 when no
+   * coastal city has a worthwhile fishing ground). The Harbor that unlocks it
+   * needs Masonry, so a fishing civ researches Masonry instead of never
+   * getting the boat the economics asked for.
+   */
+  fishingRelevance?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +327,18 @@ export class AIResearch {
     if (naval > 0 && techId === 'map_making') {
       score += 6 + 2 * naval;
       reasons.push('naval-relevance');
+    }
+
+    // Fishing: the Harbor (and through it the Fisher Boat) needs Masonry. A
+    // coastal civ whose fishing grounds repay the boat should research it
+    // promptly, otherwise the AI never unlocked the feature at all. A clearly
+    // worthwhile ground (relevance 2) gets the same decisive push the stranded
+    // island civ gets for Sailing — the food equation already proved the boat
+    // pays for itself.
+    const fishing = gameState.fishingRelevance ?? 0;
+    if (fishing > 0 && techId === 'masonry') {
+      score += 40 + 20 * fishing;
+      reasons.push('fishing-harbor');
     }
 
     // 7. Era progression — slight bonus for advancing to new eras

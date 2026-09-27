@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Modal, Button, Tab, Tabs, Card, ListGroup } from 'react-bootstrap';
+import { Modal, Button, Tab, Tabs, Card, ListGroup, Form } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import { getTechIcon } from '@/data/TechnologyIcons';
 import { findPathToTech, firstResearchableInPath } from '@/utils/ResearchPath';
@@ -28,6 +28,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   // console.log('[GameModals] Component rendering, gameEngine present:', !!gameEngine);
   const uiState = useGameStore(state => state.uiState);
   const actions = useGameStore(state => state.actions);
+  const settings = useGameStore(state => state.settings);
   const isGameStarted = useGameStore(state => state.gameState.isGameStarted);
   const selectedCityId: string | null = useGameStore(state => state.gameState.selectedCity);
   const cities = useGameStore(state => state.cities);
@@ -1710,22 +1711,15 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     </Modal>
   );
 
-  // "Auto. turn ending" — offered once, mid-game. Deliberately short: a hero
-  // line, one sentence of what it does, and a small mock-up of where the
-  // checkbox lives (a picture beats a paragraph telling you to look for it).
+  // "Auto. turn ending" — offered once, mid-game. It informs what the feature
+  // does and carries the actual on/off checkbox, so the player can decide
+  // right here (answering either way marks the offer as seen for this browser).
   const renderAutoEndOffer = () => {
-    const answer = (enable: boolean) => {
+    const finish = () => {
       try {
         localStorage.setItem(AUTO_END_TURN_OFFER_FLAG, '1');
       } catch {
         // Private mode / storage disabled: the offer simply shows again later.
-      }
-      if (enable) {
-        actions.updateSettings?.({ autoEndTurn: true });
-        actions.addNotification?.({
-          type: 'success',
-          message: 'Auto. turn ending is ON — the turn now ends as soon as your units are done.',
-        });
       }
       handleCloseDialog();
     };
@@ -1733,43 +1727,47 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     return (
       <Modal
         show={uiState.activeDialog === 'auto-end-offer'}
-        onHide={() => answer(false)}
+        onHide={finish}
         centered
         className="auto-end-offer-modal"
       >
         <Modal.Body className="auto-end-offer">
           <div className="auto-end-offer-hero" aria-hidden="true">⏩</div>
 
-          <h2 className="auto-end-offer-title">Tired of clicking End turn?</h2>
+          <h2 className="auto-end-offer-title">Auto. turn ending</h2>
           <p className="auto-end-offer-lead">
-            Switch it on and the turn hands over <strong>the moment your units run out of
-            moves</strong> — fortified and sleeping units included, so your garrisons never
-            hold it up.
+            With <strong>Auto. turn ending</strong> the turn hands over <strong>the moment your
+            units run out of moves</strong> — fortified and sleeping units included, so your
+            garrisons never hold it up. You stay in control until then, and can switch it off
+            again at any time.
           </p>
 
-          <div className="auto-end-offer-where">
-            <div className="auto-end-offer-mock">
-              <div className="auto-end-offer-mock-gold">
-                <span className="auto-end-offer-mock-coin">🪙</span>
-                <span className="auto-end-offer-mock-goldbar" />
-              </div>
-              <label className="auto-end-offer-mock-check">
-                <span className="auto-end-offer-mock-box" aria-hidden="true" />
-                <span>Auto. turn ending</span>
-              </label>
-            </div>
-            <div className="auto-end-offer-caption">In the side panel, right under your gold</div>
+          <div className="auto-end-offer-choice">
+            <Form.Check
+              type="checkbox"
+              id="auto-end-offer-toggle"
+              className="auto-end-offer-toggle"
+              checked={settings.autoEndTurn}
+              onChange={(e) => actions.updateSettings?.({ autoEndTurn: e.target.checked })}
+              label={
+                <>
+                  <span className="auto-end-offer-choice-title">Auto. turn ending</span>
+                  <span className="auto-end-offer-choice-hint">
+                    End my turn automatically once every unit is done
+                  </span>
+                </>
+              }
+            />
           </div>
 
           <div className="auto-end-offer-actions">
-            <Button variant="link" className="auto-end-offer-later" onClick={() => answer(false)}>
-              Not now
-            </Button>
-            <Button variant="success" className="auto-end-offer-yes" onClick={() => answer(true)}>
-              Turn it on
+            <Button variant="success" className="auto-end-offer-yes" onClick={finish}>
+              Got it
             </Button>
           </div>
-          <div className="auto-end-offer-fineprint">Asked once. You can switch it off again there.</div>
+          <div className="auto-end-offer-fineprint">
+            Asked once. You can switch it off again in the side panel, right under your gold.
+          </div>
         </Modal.Body>
       </Modal>
     );

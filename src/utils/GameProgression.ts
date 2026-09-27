@@ -676,9 +676,14 @@ function addMisbehavior(diag: RoundDiagnostics, unitType: string, reason: string
  * `reason` codes that count as a stall in the per-round diagnostics. The AI
  * emits these; renaming one without updating this set silently zeroes the
  * `stalls` column of the exported CSV, which is what the AI is tuned from.
+ *
+ * `already_at_target` is included: a unit that logs "Already at target" every
+ * turn is a unit that never acts, and a naval mission that never advances its
+ * stage produced dozens of these per ship per game while staying invisible.
  */
 export const DIAGNOSTIC_STALL_REASONS: ReadonlySet<string> = new Set<string>([
   'stuck', 'no_path', 'no_affordable_step', 'insufficient_moves', 'max_movement_attempts',
+  'already_at_target',
 ]);
 
 /** Aggregate structured engine and AI events into one compact row per civ/round. */

@@ -19,6 +19,16 @@ import type { Civilization } from '../../../../types/game';
 /** Re-evaluate strategy every N rounds (unless a major event triggers early) */
 const REEVALUATION_INTERVAL = 10;
 
+/**
+ * Hysteresis margin: a new strategy must beat the CURRENT one by this many
+ * points before the AI switches. Without it the scores sit within a few
+ * points of each other and a single event (war declared / war ended, a city
+ * founded) flips the strategy every re-evaluation — the 15 "Strategy change"
+ * log lines in one 587-round AI-vs-AI game, where civs oscillated
+ * military_expansion → balanced_growth → military_expansion endlessly.
+ */
+const STRATEGY_SWITCH_MARGIN = 6;
+
 // ---------------------------------------------------------------------------
 // AIStrategySelector class
 // ---------------------------------------------------------------------------
@@ -88,6 +98,13 @@ export class AIStrategySelector {
         bestScore = score;
         bestStrategy = strategy;
       }
+    }
+
+    // Hysteresis: only switch when the challenger beats the CURRENT strategy
+    // by a clear margin. A bare 1-point lead just oscillates.
+    const currentScore = scores.get(aiState.strategyProfile) ?? -Infinity;
+    if (bestStrategy !== aiState.strategyProfile && bestScore < currentScore + STRATEGY_SWITCH_MARGIN) {
+      return aiState.strategyProfile;
     }
 
     if (bestStrategy !== aiState.strategyProfile) {

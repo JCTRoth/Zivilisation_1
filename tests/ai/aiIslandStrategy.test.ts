@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
 import { SquareGrid } from '@/game/SquareGrid';
+import type { Unit } from '../../types/game';
 import { AutoProduction } from '@/game/engine/AutoProduction';
 import { TERRAIN_TYPES } from '@/data/TerrainConstants';
 
@@ -26,7 +27,7 @@ interface TestUnit {
   movesRemaining: number;
   health: number;
   isDefeated: boolean;
-  cargoUnitId?: string | null;
+  cargoUnitIds?: string[];
   embarkedOn?: string | null;
   homeCityId?: string | null;
   isNoneUnit?: boolean;
@@ -65,7 +66,7 @@ function addUnit(e: GameEngine, unit: Partial<TestUnit> & { id: string; type: st
     movesRemaining: 3,
     health: 100,
     isDefeated: false,
-    cargoUnitId: null,
+    cargoUnitIds: [],
     embarkedOn: null,
     ...unit,
   };
@@ -107,7 +108,7 @@ describe('Ferry transport', () => {
 
     expect(e.canLoadFerry(ferry.id, settler.id)).toBe(true);
     expect(e.loadFerry(ferry.id, settler.id)).toBe(true);
-    expect(ferry.cargoUnitId).toBe('set');
+    expect(e.getFerryCargo(ferry as unknown as Unit)).toEqual(['set']);
     expect(settler.embarkedOn).toBe('fer');
     expect(settler.col).toBe(3);
     // The passenger no longer occupies the shore tile.
@@ -159,7 +160,7 @@ describe('Ferry transport', () => {
     expect(settler.embarkedOn).toBeNull();
     expect(settler.col).toBe(6);
     expect(settler.row).toBe(3);
-    expect(ferry.cargoUnitId).toBeNull();
+    expect(e.getFerryCargo(ferry as unknown as Unit)).toEqual([]);
     // Unloading onto water is refused.
     expect(e.canUnloadFerry(ferry.id, 5, 3)).toBe(false);
   });

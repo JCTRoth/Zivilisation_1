@@ -130,6 +130,39 @@ describe('AIResearch.scoreTechnology', () => {
   });
 });
 
+describe('AIResearch fishing relevance (Fisher Boat unlock)', () => {
+  const personality = baseCiv().personality;
+
+  it('values Masonry (the Harbor prerequisite) when a coastal city fishes', () => {
+    const without = AIResearch.scoreTechnology(
+      'masonry', personality, 'balanced_growth', baseGameState({ fishingRelevance: 0 }),
+    );
+    const marginal = AIResearch.scoreTechnology(
+      'masonry', personality, 'balanced_growth', baseGameState({ fishingRelevance: 1 }),
+    );
+    const worthwhile = AIResearch.scoreTechnology(
+      'masonry', personality, 'balanced_growth', baseGameState({ fishingRelevance: 2 }),
+    );
+
+    // The bonus scales with how good the best ground is and is decisive at 2:
+    // the AI must actually unlock the Harbor instead of never researching it.
+    expect(marginal.score).toBeGreaterThan(without.score);
+    expect(worthwhile.score).toBeGreaterThan(marginal.score);
+    expect(worthwhile.score - without.score).toBeGreaterThanOrEqual(60);
+    expect(worthwhile.reason).toContain('fishing-harbor');
+  });
+
+  it('leaves other techs untouched by fishing relevance', () => {
+    const withFishing = AIResearch.scoreTechnology(
+      'pottery', personality, 'balanced_growth', baseGameState({ fishingRelevance: 2 }),
+    );
+    const without = AIResearch.scoreTechnology(
+      'pottery', personality, 'balanced_growth', baseGameState({ fishingRelevance: 0 }),
+    );
+    expect(withFishing.score).toBe(without.score);
+  });
+});
+
 describe('AIResearch.getAvailableTechnologies', () => {
   it('should return techs for a fresh civ', () => {
     const civ = baseCiv();

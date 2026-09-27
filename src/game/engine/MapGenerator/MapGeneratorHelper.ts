@@ -8,7 +8,7 @@
  * what is handed to them.
  */
 
-import { TERRAIN_TYPES, TERRAIN_RESOURCES, RESOURCE_SPAWN_CHANCE, DEFAULT_RESOURCE_SPAWN_CHANCE } from '@/data/TerrainConstants';
+import { TERRAIN_TYPES, TERRAIN_RESOURCES, RESOURCE_SPAWN_CHANCE, DEFAULT_RESOURCE_SPAWN_CHANCE, COASTAL_FISH_BONUS_CHANCE } from '@/data/TerrainConstants';
 
 // ── Shared types ────────────────────────────────────────────────────────
 
@@ -198,17 +198,28 @@ export function baseYield(t: string): number {
 /**
  * Civ1 resource placement: each terrain type has one associated resource.
  * Tiles flagged `hasSpecial` always receive one; otherwise the terrain's
- * `RESOURCE_SPAWN_CHANCE` applies (15% by default — rivers roll fish at half
- * that, see `RIVER_FISH_CHANCE_MULTIPLIER`).
+ * `RESOURCE_SPAWN_CHANCE` applies (rivers roll fish at half the ocean rate,
+ * see `RIVER_FISH_CHANCE_MULTIPLIER`).
+ *
+ * `isCoastalWater` is the fish realism rule and defaults to `true`, which keeps
+ * this function's long-standing three-argument behaviour for every caller that
+ * has no grid. Pass `false` for a water tile with no shoreline anywhere near it
+ * and it gets no fish — see `COASTAL_FISH_CHANCE`. The flag is consulted for
+ * Fish only: it is the one resource a crew has to physically reach, and only a
+ * shoreline is reachable. Every land resource sits on ground you stand on.
  */
 export function rollResource(
   terrain: string,
   hasSpecial: boolean,
   random: () => number = Math.random,
+  isCoastalWater: boolean = true,
 ): string | null {
   const name = TERRAIN_RESOURCES[terrain];
   if (!name) return null;
   if (hasSpecial) return name;
+  if (name === 'Fish' && !isCoastalWater) {
+    return random() < COASTAL_FISH_BONUS_CHANCE ? name : null;
+  }
   const chance = RESOURCE_SPAWN_CHANCE[terrain] ?? DEFAULT_RESOURCE_SPAWN_CHANCE;
   return random() < chance ? name : null;
 }

@@ -15,7 +15,41 @@ import {
   type CityThreatAssessment
 } from './AI/AIStrategy';
 import { canBuildUnit, type StrategyProfile, type AIState, resolveAICivStrategy, type BuildingPlan } from './AI/AITypes';
+import { bestFishingGround } from './FisherEconomics';
 import { AIBuildingStrategy } from './AI/AIBuildingStrategy';
+import {
+  navalDoctrine,
+  type AvailableShip,
+  type NavalDoctrineInput,
+  type NavalDoctrineResult,
+} from './AI/NavalDoctrine';
+import { AI_RESERVE_TURNS } from './AI/AIEconomicManager';
+
+/**
+ * Hulls the AI will consider, cheapest first. The order only decides *which*
+ * transport to build when several are available and which techs are worth
+ * researching; `NavalDoctrine` decides whether a ship is wanted at all and
+ * `bestAvailableShip` decides how strong a warship should be.
+ */
+const NAVAL_BUILD_ORDER = [
+  'ferry',
+  'sail',
+  'trireme',
+  'caravel',
+  'frigate',
+  'ironclad',
+  'destroyer',
+  'cruiser',
+  'battleship',
+  'submarine',
+  'carrier',
+] as const;
+
+/** The doctrine's answer plus the counts the caller needs to act on it. */
+type NavalDoctrineVerdict = NavalDoctrineInput & NavalDoctrineResult & {
+  ownTransports: number;
+  ownWarships: number;
+};
 import type { City, Civilization, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 
@@ -202,12 +236,14 @@ export class AutoProduction {
         // Skip unit items when the civ can't afford to maintain more units.
         // (Fall back to a building so the city still has something to do.)
         if (unitCapExhausted && item.type === 'unit') {
-          // Scouts and settlers are cheap and grow the economy — never block
+          // Scouts, settlers and Fisher Boats grow the economy — never block
           // them behind the army-upkeep cap. A scout is the civ's eyes on the
           // map; a settler founds a new city that adds free unit support and
-          // tax income, so it pays for itself instead of straining the budget.
+          // tax income; the Fisher Boat only reaches this point when the
+          // FisherEconomics equation says its food value beats its upkeep, so
+          // it pays for itself instead of straining the budget.
           // (Settler count is still limited by the expansion params.)
-          if (item.itemType === 'scout' || item.itemType === 'settler') {
+          if (item.itemType === 'scout' || item.itemType === 'settler' || item.itemType === 'fisher_boat') {
             const growthResult = this.gameEngine.productionManager.setCityProduction(cityId, item, true);
             if (!growthResult || growthResult.success === false) break;
             plannedTypes.push(item.itemType);
@@ -342,8 +378,9 @@ export class AutoProduction {
     }
 
     // 1e. Fisher Boat: a harbor city that is short on food sends a boat to the
-    //     nearest known fish tile (replaces the old harbor ocean-food bonus).
-    const fisherBoat = this.buildFisherBoatProduction(city, unitCapExhausted);
+    //     ground the FisherEconomics equation approves (replaces the old harbor
+    //     ocean-food bonus).
+    const fisherBoat = this.buildFisherBoatProduction(city);
     if (fisherBoat) {
       console.log('[AutoProduction] Food pressure — building a Fisher Boat');
       return fisherBoat;
@@ -417,6 +454,45 @@ export class AutoProduction {
     if (threatAssessment && threatAssessment.netThreat > 0) {
       console.log('[AutoProduction] Elevated threat detected, reinforcing garrison');
       return this.buildDefenderProduction(city, threatAssessment);
+    }
+
+    // 2a. Minimum city infrastructure. The AI-vs-AI CSV showed cities stuck
+    //     queueing one unit type for a dozen turns while a 16-pop city had no
+    //     marketplace and no granary — leaving gold and growth on the table.
+    //     Once a city is defended it must complete a small core building set
+    //     (granary → temple → marketplace) before mass-queueing further units.
+    //     Tech-gated and skipped when already owned or queued. Only fires
+    //     once the civ holds several cities, so early expansion (settler
+    //     production) is never blocked by an infrastructure detour.
+    if (civCities.length >= 3) {
+      const existingBuildings = new Set(city.buildings ?? []);
+      const civTechs = new Set<string>();
+      const techs = civ.technologies;
+      if (Array.isArray(techs)) {
+        for (const t of techs) civTechs.add(String(t));
+      } else if (techs && typeof (techs as Iterable<string>)[Symbol.iterator] === 'function') {
+        for (const t of techs as Iterable<string>) civTechs.add(String(t));
+      }
+      const CORE_BUILDINGS = ['granary', 'temple', 'marketplace'];
+      const missingCore = CORE_BUILDINGS.find((b) => {
+        if (existingBuildings.has(b) || plannedTypes.includes(b)) return false;
+        const props = BUILDING_PROPS[b] || BUILDING_PROPERTIES[b];
+        if (!props) return false;
+        if (props.requiredTechnology && !civTechs.has(props.requiredTechnology)) return false;
+        return true;
+      });
+      if (missingCore) {
+        const bProps = BUILDING_PROPS[missingCore] || BUILDING_PROPERTIES[missingCore];
+        if (bProps) {
+          console.log(`[AutoProduction] Minimum infrastructure: building ${missingCore} (city lacks core building)`);
+          return {
+            type: 'building',
+            itemType: missingCore,
+            name: bProps.name,
+            cost: bProps.cost
+          };
+        }
+      }
     }
 
     // 2b. Coastal infrastructure: a city FOUNDED ON THE WATER with no direct
@@ -1125,16 +1201,20 @@ export class AutoProduction {
     if (!canBuildShips) return false;
     const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
     if (typeof pm?.cityHasHarborOrCoast !== 'function' || !pm.cityHasHarborOrCoast(city)) return false;
+
+    // A civ boxed in on a rock, or facing an enemy it cannot walk to, needs a
+    // fleet to function at all. That overrides the economy gate, because
+    // "we cannot pay for warships" must never stop us building the transports
+    // that let us leave.
     const needsNavy = typeof this.gameEngine.civNeedsNavy === 'function'
       && this.gameEngine.civNeedsNavy(city.civilizationId);
-    if (!needsNavy) return false;
+    if (needsNavy) return true;
 
-    const existingNavy = this.gameEngine.units.filter(
-      (u: Unit) => u.civilizationId === city.civilizationId && UNIT_PROPS[u.type]?.naval === true,
-    ).length;
-    const civCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === city.civilizationId).length;
-    const desiredNavy = Math.max(2, civCities);
-    return existingNavy < desiredNavy;
+    // Otherwise the doctrine decides, from economy + threat. The old rule was
+    // `navalUnits < max(2, cities)`, which counted fisher boats as warships and
+    // ignored both the treasury and the enemy fleet.
+    const decision = this.navalDoctrineFor(city.civilizationId);
+    return decision?.choice != null;
   }
 
   /**
@@ -1166,18 +1246,25 @@ export class AutoProduction {
     // `Math.max` of every source let the 100%-tax projection win over the AI's
     // own figure (which already subtracts building upkeep and keeps a reserve),
     // which is how the AI built a bigger army than it could maintain and then
-    // disbanded it again, round after round.
+    // disbanded it again, round after round (92 upkeep disbands in one
+    // 587-round AI-vs-AI log).
     const aiSustainableUnits = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ);
     const econSustainableUnits = typeof econ.sustainableUnits === 'function'
       ? econ.sustainableUnits(civ)
       : null;
-    // Prefer the AI's model (tax floor + buildings + reserve); fall back to the
-    // economic one. Lightweight test doubles may implement neither — the free
-    // one-unit-per-city support then applies so the cap never blocks them.
-    const sustainableUnits = Math.max(
-      cityCount,
-      aiSustainableUnits ?? econSustainableUnits ?? cityCount,
-    );
+    // When BOTH models answer, the SMALLER figure is the credible one — the
+    // AI's optimistic tax projection must not override the engine's own
+    // upkeep math. Fall back to whichever source exists; lightweight test
+    // doubles implement neither, so the free one-unit-per-city support then
+    // applies and the cap never blocks them.
+    let sustainableUnits = cityCount;
+    if (aiSustainableUnits != null && econSustainableUnits != null) {
+      sustainableUnits = Math.min(aiSustainableUnits, econSustainableUnits);
+    } else if (aiSustainableUnits != null) {
+      sustainableUnits = Math.max(cityCount, aiSustainableUnits);
+    } else if (econSustainableUnits != null) {
+      sustainableUnits = Math.max(cityCount, econSustainableUnits);
+    }
     return currentUnits + queuedUnits >= sustainableUnits;
   }
 
@@ -1283,42 +1370,20 @@ export class AutoProduction {
     });
   }
 
-  /** Nearest explored fish tile to `city`, or null when none is known yet. */
-  private findFishingGroundForCity(city: City): { col: number; row: number } | null {
-    const grid = this.gameEngine.squareGrid;
-    if (!grid || typeof this.gameEngine.getTileAt !== 'function') return null;
-    let best: { col: number; row: number } | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    const width = grid.width ?? 0;
-    const height = grid.height ?? 0;
-    for (let col = 0; col < width; col++) {
-      for (let row = 0; row < height; row++) {
-        const tile = this.gameEngine.getTileAt(col, row);
-        const resource = String((tile as { resource?: string } | null)?.resource ?? '').toLowerCase();
-        if (resource !== 'fish') continue;
-        if (typeof this.gameEngine.isExploredByPlayer === 'function'
-            && !this.gameEngine.isExploredByPlayer(city.civilizationId, col, row)) {
-          continue;
-        }
-        const distance = grid.chebyshevDistance(city.col, city.row, col, row);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          best = { col, row };
-        }
-      }
-    }
-    return best;
-  }
-
   /**
    * Fisher Boat for a harbor city with a known fish tile and food pressure.
-   * The boat replaces the old harbor "food from the sea" bonus: it deploys a
-   * net on a fish tile and ships the catch home (GameEngine.advanceFishing).
+   *
+   * The decision is the FisherEconomics equation, not a hunch: over one full
+   * cycle the boat delivers `FISHER_BOAT_STORAGE * fisherFoodPerFish(d)` food
+   * and the deployed net adds +1 food/turn to the tile when the city can work
+   * it. Priced in gold-equivalents against the boat's upkeep and amortised
+   * build cost, a close ground the city works pays for the boat, while a
+   * distant ground only pays when the richer catch covers the longer round
+   * trip. `bestFishingGround` picks the best ground by that equation.
+   *
    * One boat per city — ProductionManager enforces the cap centrally.
    */
-  private buildFisherBoatProduction(city: City, unitCapExhausted: boolean): ProductionItem | null {
-    // The boat has upkeep: never grow the army further at the economy cap.
-    if (unitCapExhausted) return null;
+  private buildFisherBoatProduction(city: City): ProductionItem | null {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     if (!civ) return null;
     // The Fisher Boat requires the Harbor BUILDING, not just a coast.
@@ -1340,10 +1405,24 @@ export class AutoProduction {
     const balance = this.cityFoodBalance(city, civ);
     if (!balance || balance.surplus >= 2) return null;
 
-    if (!this.findFishingGroundForCity(city)) return null;
+    // Does any known ground beat the boat's upkeep? Pick the best by net value.
+    const ground = bestFishingGround(this.gameEngine, city);
+    if (!ground) return null;
+    if (!ground.worthwhile) {
+      console.log(
+        `[AutoProduction] Fisher Boat skipped — best ground (${ground.col},${ground.row}) is ` +
+          `${ground.distance} tiles out: ${ground.foodPerTurn.toFixed(2)} food/turn ` +
+          `(net ${ground.netValuePerTurn.toFixed(2)} gold/turn)`,
+      );
+      return null;
+    }
 
     const props = UNIT_PROPS.fisher_boat;
     if (!props) return null;
+    console.log(
+      `[AutoProduction] Fisher Boat — ground (${ground.col},${ground.row}) d=${ground.distance}, ` +
+        `${ground.foodPerTurn.toFixed(2)} food/turn, +${ground.netValuePerTurn.toFixed(2)} gold/turn`,
+    );
     return { type: 'unit', itemType: 'fisher_boat', name: props.name, cost: props.cost };
   }
 
@@ -1366,33 +1445,158 @@ export class AutoProduction {
   }
 
   /**
-   * The most useful naval unit the civ can actually build (tech-gated).
+   * The most useful naval unit the civ can actually build, decided by the
+   * doctrine equation in `AI/NavalDoctrine` rather than a hardcoded
+   * strongest-first list.
    *
-   * A Ferry comes first: it is the only hull that carries a land unit, so a
-   * fleet of warships can neither settle another island nor invade anybody —
-   * it just sits there. Build the transports, then the warships.
+   * Transports come first while the civ still needs hulls to move troops — a
+   * fleet of warships can neither settle an island nor invade anybody, so it
+   * just sits there. Once the transports are covered, warships are bought up to
+   * what the treasury can sustain, weighted by how much pressure the enemy
+   * fleet, their coastal cities and threats to our own coast put us under.
+   * Returns null when the doctrine is satisfied or the economy cannot carry a
+   * hull, so the caller falls through to land production.
    */
   private buildNavalProduction(city: City): ProductionItem | null {
-    const civ = this.gameEngine.civilizations?.[city.civilizationId];
-    if (!civ) return null;
-    const ownsTransport = this.gameEngine.units.some(
-      (u: Unit) => u.civilizationId === city.civilizationId && u.type === 'ferry' && !u.isDefeated,
+    const decision = this.navalDoctrineFor(city.civilizationId);
+    if (!decision) return null;
+    const { bestAvailableShip, cheapestAvailableShip, ownTransports, ownWarships } = decision;
+
+    const wanted = ownTransports < decision.wantTransports
+      ? cheapestAvailableShip
+      : ownWarships < decision.wantWarships
+        ? bestAvailableShip
+        : null;
+    if (!wanted) return null;
+    const props = UNIT_PROPS[wanted.type];
+    if (!props) return null;
+    console.log(
+      `[AutoProduction] Naval doctrine: ${wanted.type} (${decision.reason}; `
+      + `budget ${decision.budget.toFixed(1)}, pressure ${decision.pressure.toFixed(1)})`,
     );
-    const navalPreference = ownsTransport
-      ? ['battleship', 'cruiser', 'destroyer', 'ironclad', 'frigate', 'caravel', 'trireme', 'sail']
-      : ['ferry', 'battleship', 'cruiser', 'destroyer', 'ironclad', 'frigate', 'caravel', 'trireme', 'sail'];
-    for (const unitType of navalPreference) {
-      const unitProps = UNIT_PROPS[unitType];
-      if (unitProps?.naval && canBuildUnit(civ, unitType)) {
-        return {
-          type: 'unit',
-          itemType: unitType,
-          name: unitProps.name,
-          cost: unitProps.cost,
-        };
-      }
+    return { type: 'unit', itemType: wanted.type, name: props.name, cost: props.cost };
+  }
+
+  /**
+   * Gather everything the doctrine equation needs for a civ and run it.
+   *
+   * Degrades rather than giving up: if the engine helpers the inputs need are
+   * missing (lightweight test doubles, or a partially built engine) it falls
+   * back to assuming there is somewhere worth sailing to whenever the civ owns
+   * troops, so a naval civ still gets a hull instead of silently falling
+   * through to land production.
+   */
+  private navalDoctrineFor(civId: number): NavalDoctrineVerdict | null {
+    const civ = this.gameEngine.civilizations?.[civId];
+    if (!civ) return null;
+    const engine = this.gameEngine as {
+      getColonizableIslands?: (id: number) => unknown[];
+      hasSeaInvasionTarget?: (id: number) => boolean;
+      isCivAtWar?: (id: number) => boolean;
+      tileHasNavalAccess?: (c: number, r: number) => boolean;
+    };
+    const hasIslandProbe = typeof engine.getColonizableIslands === 'function';
+
+    // Which hulls the tech actually allows. `transportCapacity > 0` marks a
+    // transport; everything else with real attack power is a warship.
+    const available: AvailableShip[] = [];
+    for (const type of NAVAL_BUILD_ORDER) {
+      const props = UNIT_PROPS[type];
+      if (!props?.naval) continue;
+      if (!canBuildUnit(civ, type)) continue;
+      available.push({
+        type,
+        cost: props.cost,
+        maintenance: props.maintenance ?? 1,
+        attack: props.attack,
+        defense: props.defense,
+        transportCapacity: props.transportCapacity ?? 0,
+      });
     }
-    return null;
+    const transports = available.filter((s) => s.transportCapacity > 0);
+    const warships = available.filter((s) => s.transportCapacity === 0 && s.attack > 0.5);
+    const cheapest = transports[0] ?? available[0] ?? null;
+    const strongest = [...warships].sort((a, b) => b.attack - a.attack)[0] ?? cheapest;
+
+    const econ = this.gameEngine.economicManager as {
+      maxTaxIncome?: (c: unknown) => number;
+      totalUpkeep?: (id: number) => number;
+    } | undefined;
+    // "We cannot afford a warship" and "we have no idea what the economy is
+    // doing" are different answers. With no EconomicManager there is no
+    // economic information at all, so the budget is left permissive and the
+    // doctrine expresses intent rather than declaring bankruptcy. A real engine
+    // always has one, and then a collapsing treasury really does mean no hulls.
+    const hasEconomy = typeof econ?.maxTaxIncome === 'function'
+      && typeof econ?.totalUpkeep === 'function';
+    const income = hasEconomy ? econ!.maxTaxIncome!(civ) : 0;
+    const upkeep = hasEconomy ? econ!.totalUpkeep!(civId) : 0;
+    // The AI's own reserve policy, in turns of upkeep it wants kept spare.
+    const reserveTurns = AI_RESERVE_TURNS[this.getStrategyForCiv(civId)]
+      ?? AI_RESERVE_TURNS.balanced_growth;
+    const reserve = hasEconomy ? Math.max(8, upkeep * reserveTurns) : 0;
+
+    const ownNaval = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civId && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true,
+    );
+    const isTransport = (u: Unit): boolean => (UNIT_PROPS[u.type]?.transportCapacity ?? 0) > 0;
+    const ownTransports = ownNaval.filter(isTransport).length;
+    const ownWarships = ownNaval.length - ownTransports;
+
+    const enemies = new Set<number>(
+      (this.gameEngine.diplomacyManager?.getEnemies?.(civId) ?? []).map(Number),
+    );
+    const enemyNaval = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId !== civId && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true,
+    );
+    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civId);
+    const hasNavalAccess = typeof engine.tileHasNavalAccess === 'function'
+      ? engine.tileHasNavalAccess.bind(this.gameEngine)
+      : () => false;
+    const ownCoastal = ownCities.filter((c: City) => hasNavalAccess(c.col, c.row));
+    // A threatened city inland is a land problem; only coastal exposure is a
+    // reason to buy a warship, so cap the signal at what the coast can offer.
+    const threatCount = this.gameEngine.aiManager?.countThreatenedCities?.(civId) ?? 0;
+    const threatenedCoastal = Math.min(threatCount, ownCoastal.length);
+
+    const input: NavalDoctrineInput = {
+      // No economic data at all means no treasury reading either; the
+      // permissive budget above is what carries the decision in that case.
+      treasury: hasEconomy ? civ.resources?.gold ?? 0 : 0,
+      incomePerTurn: income,
+      upkeepPerTurn: upkeep,
+      reservePerTurn: reserve,
+      ownTransports,
+      ownWarships,
+      ownCities: ownCities.length,
+      ownCoastalCities: ownCoastal.length,
+      threatenedOwnCoastalCities: threatenedCoastal,
+      // Without the probe we cannot know about islands, so assume a naval civ
+      // with troops has somewhere to sail: that reproduces the pre-doctrine
+      // "build a transport first" behaviour instead of building nothing.
+      colonisableIslands: hasIslandProbe
+        ? engine.getColonizableIslands(civId)?.length ?? 0
+        : (this.gameEngine.units.some((u: Unit) => u.civilizationId === civId
+          && !u.isDefeated && !u.embarkedOn && (u.attack ?? 0) > 0.5) ? 1 : 0),
+      seaInvasionTargets: typeof engine.hasSeaInvasionTarget === 'function'
+        && engine.hasSeaInvasionTarget(civId) ? 1 : 0,
+      troopsAvailable: this.gameEngine.units.some(
+        (u: Unit) => u.civilizationId === civId && !u.isDefeated
+          && !u.embarkedOn && (u.attack ?? 0) > 0.5 && !UNIT_PROPS[u.type]?.naval,
+      ),
+      atWar: enemies.size > 0
+        || (typeof engine.isCivAtWar === 'function' && engine.isCivAtWar(civId)),
+      enemyTransports: enemyNaval.filter(isTransport).length,
+      enemyWarships: enemyNaval.length - enemyNaval.filter(isTransport).length,
+      enemyCoastalCities: this.gameEngine.cities.filter(
+        (c: City) => c.civilizationId !== civId
+          && enemies.has(c.civilizationId)
+          && hasNavalAccess(c.col, c.row),
+      ).length,
+      bestAvailableShip: strongest,
+      cheapestAvailableShip: cheapest,
+    };
+    return { ...input, ...navalDoctrine(input), ownTransports, ownWarships };
   }
 
   /** Tech-gated offensive unit selection */

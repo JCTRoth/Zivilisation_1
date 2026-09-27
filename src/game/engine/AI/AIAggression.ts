@@ -21,8 +21,14 @@ import type GameEngine from '../GameEngine';
 export const AGGRESSION_TRIGGER_THRESHOLD = 50;
 /** Width of the stochastic band around the threshold. */
 export const AGGRESSION_TRIGGER_BAND = 15;
-/** Bulk attacks require this much available strength relative to target defense. */
-export const BULK_ATTACK_STRENGTH_RATIO = 0.7;
+/**
+ * Bulk attacks require this much available strength relative to target
+ * defense. Combat favours the defender (terrain, walls, fortification),
+ * so attacking below parity bleeds units. 1.3 keeps assaults profitable;
+ * walled targets are additionally required to clear `requiredUnits` (see
+ * planBulkAssault) which scales with city defense.
+ */
+export const BULK_ATTACK_STRENGTH_RATIO = 1.3;
 /** Default defensive strength assumed for an unknown/unbuilt enemy city. */
 export const UNKNOWN_CITY_DEFENSE = 8;
 /** Default defensive strength assumed for an enemy unit. */
@@ -145,13 +151,15 @@ export function computeAggression(
     reasons.push('no border pressure');
   }
 
-  // Relative army strength.
+  // Relative army strength. When no enemy army has been SPOTTED the ratio is
+  // unknown — treat it as neutral (1.0), not as a maximum advantage. The old
+  // `? 5` handed the AI a phantom +15 "army advantage" on zero intelligence,
+  // inflating the aggression score to an average of 88.5 against a threshold
+  // of 50 (near-permanent aggressive posture).
   const ratio =
     input.enemyArmyStrength > 0
       ? input.ownArmyStrength / input.enemyArmyStrength
-      : input.ownArmyStrength > 0
-        ? 5
-        : 1;
+      : 1;
   if (ratio >= 1.6) {
     score += 15;
     reasons.push('army advantage');

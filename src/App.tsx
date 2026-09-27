@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useGameStore } from "./stores/GameStore";
 import { CIVILIZATIONS } from "@/data/GameData";
-import { AUTO_END_TURN_OFFER_TURN, AUTO_END_TURN_OFFER_FLAG } from "@/data/GameConstants";
+import { AUTO_END_TURN_OFFER_FLAG, isAutoScenario } from "@/data/GameConstants";
+import { shouldOfferAutoEndTurn, shouldPromptForResearch } from "@/utils/ModalTriggers";
 import GameEngine from "@/game/engine/GameEngine";
 import GameCanvas from "./components/game/GameCanvas";
 import SettingsModal from "./components/ui/SettingsModal";
@@ -34,6 +35,8 @@ declare global {
     /** Dev-only test hook: exposed engine for Playwright/console driving. */
     __gameEngine?: GameEngine;
     __gameStore?: unknown;
+    /** Dev-only test hook: progression recorder for CSV export. */
+    __gameProgression?: { buildCompactCsv: (e: GameEngine | null) => Promise<string> };
   }
 }
 
@@ -141,9 +144,7 @@ function App() {
 
         // Start a named game-log session for every game. AI vs AI sessions get
         // a dedicated timestamped session id; others share a per-run id.
-        const isAIVsAI =
-          gameSettings.mapType === "AI_VS_AI" ||
-          gameSettings.mapType === "AI_VS_AI_SMALL";
+        const isAIVsAI = isAutoScenario(gameSettings.mapType);
         const logSessionId = isAIVsAI
           ? `aivsai-${new Date().toISOString().replace(/[:.]/g, "-")}`
           : `game-${Date.now()}`;
@@ -160,8 +161,11 @@ function App() {
           console.log("[App] Developer mode:", gameSettings.devMode);
         }
 
-        // AI vs AI sessions auto-enable dev mode so the whole map is observable.
+        // Every AI-vs-AI scenario is a spectator mode, so Dev Mode is FORCED
+        // on: the whole map is observable, and nothing in the game ever waits
+        // for a human. Covers all four scenario types, not just the duel.
         if (isAIVsAI) {
+          gameSettings.devMode = true;
           actions.updateSettings({ devMode: true });
         }
 
@@ -192,6 +196,7 @@ function App() {
         // and inspect game state (units, combat, movement). Mirrors __gameStore.
         if (import.meta.env.DEV && typeof window !== "undefined") {
           window.__gameEngine = engine;
+          window.__gameProgression = gameProgression;
         }
 
         // Get player's starting settler position
@@ -226,9 +231,36 @@ function App() {
   // modal and launch directly into a game with sensible defaults and
   // developer mode enabled.  Useful for rapid iteration during development.
   const quickstartRef = useRef(false);
+  // Settings handed over by the URL (`?maptype=…&civs=…&seed=…`), read once.
+  const urlSettingsRef = useRef<Record<string, unknown> | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+
+    // `?maptype=…` (with optional `civs`, `difficulty`, `dev`, `seed`, `gold`)
+    // launches that scenario straight into the game with no setup wizard. The
+    // point is that an AI-vs-AI spectator game is then genuinely unattended:
+    // open the URL and the map plays itself, with nothing to click and no
+    // modal that can appear over the board. An AI-vs-AI mapType implies Dev
+    // Mode, which `handleGameStart` forces anyway.
+    const mapTypeParam = params.get("maptype");
+    if (mapTypeParam) {
+      const num = (key: string, fallback: number) => {
+        const raw = params.get(key);
+        const parsed = raw === null ? NaN : Number(raw);
+        return Number.isFinite(parsed) ? parsed : fallback;
+      };
+      urlSettingsRef.current = {
+        mapType: mapTypeParam.toUpperCase(),
+        numberOfCivilizations: Math.max(2, Math.min(7, num("civs", 4))),
+        difficulty: (params.get("difficulty") ?? "PRINCE").toUpperCase(),
+        devMode: params.get("dev") !== "0" && params.get("dev") !== "false",
+        startingGold: num("gold", 50),
+        ...(params.has("seed") ? { mapSeed: num("seed", 0) } : {}),
+      };
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
     if (params.has("quickstart")) {
       quickstartRef.current = true;
       // Clean up the URL so a page refresh doesn't loop.
@@ -254,10 +286,27 @@ function App() {
   }, [actions]);
 
   useEffect(() => {
-    if ((!quickstartRef.current && !combatLabRef.current) || gameEngine || !showGameSetup) return;
+    const fromUrl = urlSettingsRef.current;
+    if (
+      (!quickstartRef.current && !combatLabRef.current && !fromUrl)
+      || gameEngine
+      || !showGameSetup
+    ) return;
     const defaultCivIndex = CIVILIZATIONS.findIndex(
       (c) => c.name === "Germans",
     );
+    if (fromUrl) {
+      console.log("[App] URL scenario — launching game:", fromUrl);
+      handleGameStart({
+        playerCivilization: defaultCivIndex >= 0 ? defaultCivIndex : 0,
+        landMass: 1,
+        temperature: 1,
+        climate: 1,
+        age: 1,
+        ...fromUrl,
+      } as never);
+      return;
+    }
     const quickSettings = {
       playerCivilization: defaultCivIndex >= 0 ? defaultCivIndex : 0,
       difficulty: "PRINCE",
@@ -284,53 +333,67 @@ function App() {
   // still no research is selected. (Civilizations start with a few free techs,
   // so the old "no techs at all" condition never matched; and research only
   // starts after the first RESEARCH_UNLOCK_ROUND rounds.) Fires once per
-  // game/engine instance.
+  // game/engine instance. The decision itself lives in `shouldPromptForResearch`
+  // so it can be unit-tested without a DOM.
   const researchPromptedRef = useRef<GameEngine | null>(null);
   useEffect(() => {
-    if (!gameEngine || !gameState.isGameStarted) return;
-    // Research only starts after the opening rounds — no prompt before then.
-    if (
-      typeof gameEngine.isResearchUnlocked === "function" &&
-      !gameEngine.isResearchUnlocked()
-    ) {
-      return;
-    }
-    if (researchPromptedRef.current === gameEngine) return;
+    if (!gameEngine) return;
     const civ = gameEngine.civilizations?.find((c) => c.isHuman);
-    if (!civ) return;
-    const canResearch =
-      typeof gameEngine.hasResearchableTech === "function" &&
-      gameEngine.hasResearchableTech(civ.id);
-    if (!civ.currentResearch && canResearch) {
-      researchPromptedRef.current = gameEngine;
-      actions.addNotification({
-        type: "info",
-        message: "Choose a technology to research.",
-      });
-      // Short delay so the game board renders first. Opens the informational
-      // "No Research Selected" modal — NOT the tech tree directly; the player
-      // chooses there whether to pick a tech or continue without one.
-      setTimeout(() => actions.showDialog("research-required"), 500);
-    }
+    const shouldPrompt = shouldPromptForResearch({
+      isGameStarted: gameState.isGameStarted,
+      alreadyPrompted: researchPromptedRef.current === gameEngine,
+      researchUnlocked:
+        typeof gameEngine.isResearchUnlocked === "function" &&
+        gameEngine.isResearchUnlocked(),
+      hasHumanCiv: !!civ,
+      hasCurrentResearch: !!civ?.currentResearch,
+      hasResearchableTech:
+        !!civ &&
+        typeof gameEngine.hasResearchableTech === "function" &&
+        gameEngine.hasResearchableTech(civ.id),
+    });
+    if (!shouldPrompt) return;
+
+    researchPromptedRef.current = gameEngine;
+    actions.addNotification({
+      type: "info",
+      message: "Choose a technology to research.",
+    });
+    // Short delay so the game board renders first. Opens the informational
+    // "No Research Selected" modal — NOT the tech tree directly; the player
+    // chooses there whether to pick a tech or continue without one.
+    setTimeout(() => actions.showDialog("research-required"), 500);
   }, [gameEngine, gameState.isGameStarted, gameState.currentTurn, actions]);
 
   // Offer "Auto. turn ending" once, after AUTO_END_TURN_OFFER_TURN moves: by
-  // then the player knows what ending a turn by hand costs. The offer is a
-  // single question (and the checkbox lives in the side panel under the gold),
-  // so it is remembered per browser and never shown twice.
+  // then the player knows what ending a turn by hand costs. The offer informs
+  // about the feature and carries the on/off checkbox itself, so it is
+  // remembered per browser and never shown twice. The decision lives in
+  // `shouldOfferAutoEndTurn` for unit testing.
   const autoEndOfferShownRef = useRef(false);
   useEffect(() => {
-    if (!gameState.isGameStarted) return;
-    if (gameState.currentTurn < AUTO_END_TURN_OFFER_TURN) return;
-    if (autoEndOfferShownRef.current) return;
-    // Already answered in this browser? Never ask again.
-    if (localStorage.getItem(AUTO_END_TURN_OFFER_FLAG) === '1') {
-      autoEndOfferShownRef.current = true;
+    let answeredInBrowser = false;
+    try {
+      answeredInBrowser = localStorage.getItem(AUTO_END_TURN_OFFER_FLAG) === '1';
+    } catch {
+      // Private mode / storage disabled: treat as "not answered" so the offer
+      // can still be made once per session.
+    }
+    if (
+      isAutoScenario(gameEngine?.gameSettings?.mapType) ||
+      !shouldOfferAutoEndTurn({
+        isGameStarted: gameState.isGameStarted,
+        currentTurn: gameState.currentTurn,
+        alreadyOffered: autoEndOfferShownRef.current,
+        answeredInBrowser,
+        autoEndTurnEnabled: useGameStore.getState().settings.autoEndTurn,
+      })
+    ) {
       return;
     }
     autoEndOfferShownRef.current = true;
     actions.showDialog('auto-end-offer');
-  }, [gameState.isGameStarted, gameState.currentTurn, actions]);
+  }, [gameState.isGameStarted, gameState.currentTurn, gameEngine, actions]);
 
   // End the human turn and, when it was auto-triggered, surface a recap of
   // what the engine auto-resolved (e.g. "2 units skipped"). Shared by the
@@ -584,9 +647,10 @@ function App() {
       try {
         const text = await file.text();
         const saveData = JSON.parse(text);
-        // Accept saved-state versions 1 and 2 — the engine's `loadGame` supports
-        // both, so the menu Load Game must too.
-        if (!saveData || (saveData.version !== 1 && saveData.version !== 2)) {
+        // Accept saved-state versions 1, 2 and 3 — the engine's `loadGame`
+        // supports all three (3 adds multi-unit transport cargo), so the menu
+        // Load Game must too.
+        if (!saveData || (saveData.version !== 1 && saveData.version !== 2 && saveData.version !== 3)) {
           showToast("Invalid or incompatible save file.", "error");
           setActiveMenu(null);
           return;
@@ -650,10 +714,7 @@ function App() {
     if (!gameResult) {
       return;
     }
-    const isAIVsAI =
-      gameEngine?.gameSettings?.mapType === "AI_VS_AI" ||
-      gameEngine?.gameSettings?.mapType === "AI_VS_AI_SMALL";
-    if (!isAIVsAI) {
+    if (!isAutoScenario(gameEngine?.gameSettings?.mapType)) {
       return;
     }
     // Debounce: only restart once per concluded game (result timestamp changes).

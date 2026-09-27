@@ -319,9 +319,22 @@ export interface Unit {
   defeatTimestamp?: number;
   /** Whether this unit is a naval unit. */
   isNaval?: boolean;
-  /** Ferry only: id of the land unit currently aboard (null when empty). */
+  /**
+   * Naval hull only: ids of the land units currently aboard, in boarding order.
+   * The single source of truth for cargo — a Ferry carries
+   * `UNIT_PROPS[type].transportCapacity` units, so a landing force travels
+   * together. Read it through `getFerryCargo()` rather than directly, so a
+   * save written before multi-cargo (which stored one id in `cargoUnitId`)
+   * still loads.
+   */
+  cargoUnitIds?: string[];
+  /**
+   * @deprecated Pre-multi-cargo cargo pointer. Kept only so an old save still
+   * round-trips; `getFerryCargo()` folds it into `cargoUnitIds`. New code must
+   * use `cargoUnitIds` / `getFerryCargo()`.
+   */
   cargoUnitId?: string | null;
-  /** Land unit only: id of the ferry carrying it (null when ashore). */
+  /** Land unit only: id of the transport carrying it (null when ashore). */
   embarkedOn?: string | null;
   /** Fisher Boat only: fish currently in the hold (0..FISHER_BOAT_STORAGE). */
   fishStored?: number;

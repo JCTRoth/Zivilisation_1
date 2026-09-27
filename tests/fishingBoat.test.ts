@@ -37,15 +37,11 @@ type TestCity = City & {
 type TestUnit = Unit & { homeCityId: string | null; fishStored: number };
 
 /** Private AutoProduction method the tests exercise directly. */
-function proposeFisherBoat(
-  auto: AutoProduction,
-  city: TestCity,
-  unitCapExhausted: boolean,
-): ProductionItem | null {
+function proposeFisherBoat(auto: AutoProduction, city: TestCity): ProductionItem | null {
   const api = auto as unknown as {
-    buildFisherBoatProduction(city: City, capExhausted: boolean): ProductionItem | null;
+    buildFisherBoatProduction(city: City): ProductionItem | null;
   };
-  return api.buildFisherBoatProduction(city, unitCapExhausted);
+  return api.buildFisherBoatProduction(city);
 }
 
 function makeEngine(rows: string[][]): GameEngine {
@@ -432,6 +428,40 @@ describe('Fishing route', () => {
     expect(e.goToManager.getUnitPath('f1')?.length).toBeGreaterThan(0);
   });
 
+  it('sails home into its LAND city and unloads (the pathfinder allows the port)', () => {
+    // A real city sits on land; only its own ships may enter it. Without that
+    // rule in the pathfinder the GoTo home failed and the boat sat at its net
+    // with a full hold forever, so no catch was ever delivered.
+    const e = makeEngine([
+      [O, O, O, O, O],
+      [O, G, G, O, O],
+      [O, O, O, O, O],
+    ]);
+    const city = addCity(e, 'port', 0, 0, 1, ['harbor']);
+    setFish(e, 3, 1);
+    const boat = addUnit(e, 'f1', 'fisher_boat', 3, 1, { homeCityId: 'port' });
+    e.deployFishingNet('f1');
+    for (let i = 0; i < FISHER_BOAT_STORAGE; i++) advance(e);
+    expect(boat.fishingRoute?.stage).toBe('inbound');
+
+    // The route home exists even though the city tile is land…
+    const preview = e.goToManager.calculatePath(
+      boat, city.col, city.row, (c, r) => e.getTileAt(c, r), 5, 3,
+    );
+    expect(preview.success).toBe(true);
+    expect(preview.path[preview.path.length - 1]).toEqual({ col: 0, row: 1 });
+
+    // …and the boat may move onto it (fresh moves, as restored each turn).
+    boat.movesRemaining = boat.maxMoves ?? 2;
+    expect(e.moveUnit('f1', city.col, city.row).success).toBe(true);
+
+    // At home the hold is unloaded and the route turns around.
+    advance(e);
+    expect(boat.fishStored).toBe(0);
+    expect(city.foodStored).toBeGreaterThan(0);
+    expect(boat.fishingRoute?.stage).toBe('outbound');
+  });
+
   it('recovers when the boat is manually moved off the net', () => {
     const { e, boat } = routeEngine();
     e.deployFishingNet('f1');
@@ -456,42 +486,71 @@ describe('Fishing route', () => {
 // ---------------------------------------------------------------------------
 
 describe('AI builds Fisher Boats', () => {
-  function aiEngine(withHarbor = true, withFisher = false) {
-    const e = makeEngine([
+  function aiEngine(
+    withHarbor = true,
+    withFisher = false,
+    fish: Array<[number, number]> = [[3, 1]],
+    mapRows?: string[][],
+  ) {
+    const e = makeEngine(mapRows ?? [
       [O, O, O, O, O, O],
       [O, G, G, O, O, O],
       [O, O, O, O, O, O],
     ]);
     const city = addCity(e, 'port', 0, 1, 1, withHarbor ? ['harbor'] : []);
-    setFish(e, 4, 0);
+    for (const [col, row] of fish) setFish(e, col, row);
     if (withFisher) {
-      addUnit(e, 'f1', 'fisher_boat', 4, 0, { homeCityId: 'port' });
+      addUnit(e, 'f1', 'fisher_boat', fish[0]?.[0] ?? 3, fish[0]?.[1] ?? 1, { homeCityId: 'port' });
     }
     const auto = new AutoProduction(e);
     return { e, city, auto };
   }
 
-  it('proposes a Fisher Boat in a harbor city short on food with known fish', () => {
-    const { city, auto } = aiEngine(true, false);
-    const plan = proposeFisherBoat(auto, city, false);
+  it('proposes a Fisher Boat when the ground pays for it (city works the net)', () => {
+    // Fish at (3,1): d=2, workable → the +1 net-tile food makes the boat
+    // clearly worth its upkeep under the FisherEconomics equation.
+    const { city, auto } = aiEngine(true, false, [[3, 1]]);
+    const plan = proposeFisherBoat(auto, city);
     expect(plan?.itemType).toBe('fisher_boat');
     expect(plan?.cost).toBe(20);
   });
 
-  it('stays quiet without a Harbor, without fish, or with a boat already', () => {
-    const noHarbor = aiEngine(false, false);
-    expect(proposeFisherBoat(noHarbor.auto, noHarbor.city, false)).toBeNull();
-
-    const withFisher = aiEngine(true, true);
-    expect(proposeFisherBoat(withFisher.auto, withFisher.city, false)).toBeNull();
-
-    const noFish = aiEngine(true, false);
-    setFish(noFish.e, 4, 0, null);
-    expect(proposeFisherBoat(noFish.auto, noFish.city, false)).toBeNull();
+  it('skips a ground the round trip cannot pay for', () => {
+    // Fish at (4,0): d=3 and outside the work radius. 6 food / 10 turns =
+    // 0.6 food/turn → 1.2 gold value vs 2.0 upkeep → no boat.
+    const { city, auto } = aiEngine(true, false, [[4, 0]]);
+    expect(proposeFisherBoat(auto, city)).toBeNull();
   });
 
-  it('respects the economy unit cap', () => {
-    const { city, auto } = aiEngine(true, false);
-    expect(proposeFisherBoat(auto, city, true)).toBeNull();
+  it('builds for a rich far ground when the per-fish value covers the trip', () => {
+    // Fish at (8,1): d=7 → 2 food/fish, 12 food / 12 turns = 1.0/turn → 2.0
+    // value vs 2.0 upkeep is a tie; at d=8 → 18/14 ≈ 1.29 → net positive.
+    const rows = [
+      [O, O, O, O, O, O, O, O, O, O],
+      [O, G, G, O, O, O, O, O, O, O],
+      [O, O, O, O, O, O, O, O, O, O],
+    ];
+    const { city, auto } = aiEngine(true, false, [[9, 1]], rows);
+    const plan = proposeFisherBoat(auto, city);
+    expect(plan?.itemType).toBe('fisher_boat');
+  });
+
+  it('stays quiet without a Harbor, without fish, or with a boat already', () => {
+    const noHarbor = aiEngine(false, false, [[3, 1]]);
+    expect(proposeFisherBoat(noHarbor.auto, noHarbor.city)).toBeNull();
+
+    const withFisher = aiEngine(true, true, [[3, 1]]);
+    expect(proposeFisherBoat(withFisher.auto, withFisher.city)).toBeNull();
+
+    const noFish = aiEngine(true, false, []);
+    expect(proposeFisherBoat(noFish.auto, noFish.city)).toBeNull();
+  });
+
+  it('is still proposed at the army unit cap — the equation pays its upkeep', () => {
+    // The boat is not military spam: it reaches the build decision only when
+    // FisherEconomics shows its food value beats its upkeep, so the army cap
+    // must not veto a self-financing food unit.
+    const { city, auto } = aiEngine(true, false, [[3, 1]]);
+    expect(proposeFisherBoat(auto, city)?.itemType).toBe('fisher_boat');
   });
 });

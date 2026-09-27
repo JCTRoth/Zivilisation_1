@@ -307,10 +307,33 @@ export const RIVER_FISH_CHANCE_MULTIPLIER = 0.5;
 /** Base per-tile chance that a non-special tile carries its default resource. */
 export const DEFAULT_RESOURCE_SPAWN_CHANCE = 0.15;
 
+/**
+ * Fish only exist in the water a crew can actually work.
+ *
+ * An ocean tile 40 tiles from any shore is not a fishery, and Civ1 never put
+ * fish there. Restricting fish to COASTAL water is both the realistic rule and
+ * the interesting one: the whole value of a Fisher Boat is that it can reach a
+ * shoreline, so spreading fish over open ocean made deep water the most
+ * profitable ground in the game (it is priced as further away, so worth more
+ * per fish) while being unreachable by any real boat.
+ *
+ * A shoreline is a water tile with at least one non-water, non-lake neighbour
+ * in the 8 directions — the same test `City.isCoastalTile` uses, so the map and
+ * the city workability rule agree.
+ */
+export const COASTAL_FISH_CHANCE = 0.18;
+
+/**
+ * Water tile that is not next to any land gets no fish at all, rather than a
+ * reduced chance: a "slightly less likely deep-ocean fish" is still a deep
+ * ocean fish.
+ */
+export const COASTAL_FISH_BONUS_CHANCE = 0.0;
+
 /** Per-terrain override of {@link DEFAULT_RESOURCE_SPAWN_CHANCE}. */
 export const RESOURCE_SPAWN_CHANCE: Record<string, number> = {
-    [TERRAIN_TYPES.OCEAN]: DEFAULT_RESOURCE_SPAWN_CHANCE,
-    [TERRAIN_TYPES.RIVER]: DEFAULT_RESOURCE_SPAWN_CHANCE * RIVER_FISH_CHANCE_MULTIPLIER,
+    [TERRAIN_TYPES.OCEAN]: COASTAL_FISH_CHANCE,
+    [TERRAIN_TYPES.RIVER]: COASTAL_FISH_CHANCE * RIVER_FISH_CHANCE_MULTIPLIER,
 };
 
 /** Resolve a resource's Civ1 yield bonus for the terrain it occupies. */
