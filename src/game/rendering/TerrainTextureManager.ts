@@ -100,6 +100,13 @@ export const TRANSITION_DISTANCE = 0.15;
 /** Max number of numbered variants to probe per type beyond the primary image. */
 const MAX_VARIANT_PROBES = 4;
 
+/**
+ * Resource tiles probe more variants than terrain textures: the Fisher Boat
+ * ships five fish poses (fish1..fish5.png → terrain_ocean_fish(_2.._5).png),
+ * and every pose should appear on the map.
+ */
+const RESOURCE_TILE_MAX_PROBES = 5;
+
 export class TerrainTextureManager {
   /** Arrays hold the primary image at index 0, then any loaded variants. */
   private readonly baseCache    = new Map<string, HTMLImageElement[]>();
@@ -136,12 +143,17 @@ export class TerrainTextureManager {
       if (this.loadedCount >= this.totalCount) { resolve(); onLoad?.(); }
     };
 
-    const probeVariants = (baseUrl: string, arr: HTMLImageElement[], settled: () => void = done) => {
+    const probeVariants = (
+      baseUrl: string,
+      arr: HTMLImageElement[],
+      settled: () => void = done,
+      maxProbes: number = MAX_VARIANT_PROBES,
+    ) => {
       // Strip any trailing _N so "feature_1.png" and "feature.png" probe the same variants.
       const stem = baseUrl.replace(/(_\d+)?\.png$/, '');
       const explicitN = baseUrl.match(/_(\d+)\.png$/)?.[1];
       const start = explicitN ? parseInt(explicitN, 10) + 1 : 1;
-      for (let v = start; v < start + MAX_VARIANT_PROBES; v++) {
+      for (let v = start; v < start + maxProbes; v++) {
         const img = new Image();
         img.onload = () => { arr.push(img); settled(); };
         img.onerror = settled; // missing variant — still counts toward total
@@ -171,11 +183,11 @@ export class TerrainTextureManager {
     const resourceTilePromises = resourceTileTypes.map((type) => new Promise<void>((resolveTile) => {
       const arr: HTMLImageElement[] = [];
       this.resourceTileCache.set(type, arr);
-      let pending = 1 + MAX_VARIANT_PROBES;
+      let pending = 1 + RESOURCE_TILE_MAX_PROBES;
       const settled = () => { if (--pending === 0) resolveTile(); };
       const img = new Image();
-      img.onload = () => { arr.push(img); probeVariants(RESOURCE_TILE_FILES[type]!, arr, settled); settled(); };
-      img.onerror = () => { probeVariants(RESOURCE_TILE_FILES[type]!, arr, settled); settled(); };
+      img.onload = () => { arr.push(img); probeVariants(RESOURCE_TILE_FILES[type]!, arr, settled, RESOURCE_TILE_MAX_PROBES); settled(); };
+      img.onerror = () => { probeVariants(RESOURCE_TILE_FILES[type]!, arr, settled, RESOURCE_TILE_MAX_PROBES); settled(); };
       img.src = RESOURCE_TILE_FILES[type]!;
     }));
     this.resourceTilesReady = Promise.all(resourceTilePromises).then(() => undefined);

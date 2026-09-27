@@ -63,12 +63,14 @@ const UNIT_ICON_OVERRIDES: UnitIconOverride[] = [
   },
   {
     unitType: 'artillery',
-    svgPath: 'artillery.svg',
+    // The artwork ships with its German filename.
+    svgPath: 'artillerie.svg',
     fallbackEmoji: UNIT_PROPERTIES['artillery']?.icon
   },
   {
     unitType: 'submarine',
-    svgPath: 'submarine.svg',
+    // The artwork ships with its German filename.
+    svgPath: 'submarin.svg',
     fallbackEmoji: UNIT_PROPERTIES['submarine']?.icon
   },
   {
@@ -91,6 +93,11 @@ const UNIT_ICON_OVERRIDES: UnitIconOverride[] = [
     unitType: 'musketeer',
     svgPath: 'musketeer.svg',
     fallbackEmoji: UNIT_PROPERTIES['musketeer']?.icon
+  },
+  {
+    unitType: 'trireme',
+    svgPath: 'trireme.svg',
+    fallbackEmoji: UNIT_PROPERTIES['trireme']?.icon
   }
 ];
 

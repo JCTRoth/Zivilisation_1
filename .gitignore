@@ -125,3 +125,4 @@ test-results/
 /playwright/.cache/
 /playwright/.auth/
 TODO.txt
+/.tmp-playwright/

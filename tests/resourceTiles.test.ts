@@ -29,6 +29,11 @@ const AVAILABLE = new Set([
   'terrain_river.png',
   'terrain_forest.png',
   'terrain_ocean_fish.png',
+  // Five fish poses ship as variants (fish1..fish5.png → _2.._5).
+  'terrain_ocean_fish_2.png',
+  'terrain_ocean_fish_3.png',
+  'terrain_ocean_fish_4.png',
+  'terrain_ocean_fish_5.png',
   'terrain_river_fish.png',
   'terrain_plains_horses.png',
   'terrain_plains_horses_2.png',
@@ -162,6 +167,23 @@ describe('pre-rendered resource tiles', () => {
       }
     }
     expect(poses.size).toBe(2);
+  });
+
+  it('spreads fish over all five shipped poses', async () => {
+    const tm = await loadedManager();
+    const poses = new Set<string>();
+    // A 6x6 patch is enough for the hash to hit every variant; each tile keeps
+    // its own pose between frames.
+    for (let row = 0; row < 6; row++) {
+      for (let col = 0; col < 6; col++) {
+        const first = tm.getTileTexture('OCEAN', 'Fish', col, row);
+        expect(first).not.toBeNull();
+        expect(tm.getTileTexture('OCEAN', 'Fish', col, row)).toBe(first);
+        expect(first!.src).toMatch(/terrain_ocean_fish(_[2-5])?\.png$/);
+        poses.add(first!.src);
+      }
+    }
+    expect(poses.size).toBe(5);
   });
 });
 
