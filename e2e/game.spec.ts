@@ -547,10 +547,18 @@ async function dismissBlockingDialogs(page: Page): Promise<void> {
   while (Date.now() < deadline) {
     const open = await visibleDialog(1_500);
     if (open) {
-      await open.modal
-        .locator('button')
-        .filter({ hasText: open.dialog.button })
-        .click({ timeout: 3_000 });
+      // The dialog can re-render mid-click (Bootstrap fade + queue updates),
+      // which makes Playwright's stability check time out or detach the
+      // button. Dismissal is best-effort; the loop re-checks and retries.
+      try {
+        await open.modal
+          .locator('button')
+          .filter({ hasText: open.dialog.button })
+          .first()
+          .click({ timeout: 3_000, force: true });
+      } catch {
+        /* re-rendered mid-click — retry on the next loop iteration */
+      }
       await waitForModalClosed(page);
     } else {
       // Nothing open — wait briefly and confirm nothing comes back (the GoTo

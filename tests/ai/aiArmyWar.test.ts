@@ -15,6 +15,8 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import GameEngine from '@/game/engine/GameEngine';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { useSeededRandom } from '../helpers/world';
@@ -221,18 +223,23 @@ describe('AI war watch (test game)', () => {
         ? '  no civ massed an army without attacking'
         : `  HOARDERS: ${hoarders.map((t) => `${t.name} (max ${t.maxArmy})`).join(', ')}`,
     );
-    writeFileSync(
-      '/tmp/opencode/ai-war-watch.txt',
-      [
-        `rounds: ${engine.turnManager.getRoundNumber()}`,
-        ...timeline,
-        ...[...telemetry.values()].map(
-          (t) =>
-            `${t.name}: max ${t.maxArmy}, final ${t.finalArmy}, attacks ${t.attacks}, captures ${t.captures}, ` +
-            `wars ${t.warsStarted}, bigArmyRounds ${t.roundsWithBigArmy}, idleBigRounds ${t.roundsWithBigArmyNoAttack}`,
-        ),
-      ].join('\n'),
-    );
+    // Diagnostic dump only — never let an unwritable temp dir fail the test.
+    try {
+      writeFileSync(
+        join(tmpdir(), 'ai-war-watch.txt'),
+        [
+          `rounds: ${engine.turnManager.getRoundNumber()}`,
+          ...timeline,
+          ...[...telemetry.values()].map(
+            (t) =>
+              `${t.name}: max ${t.maxArmy}, final ${t.finalArmy}, attacks ${t.attacks}, captures ${t.captures}, ` +
+              `wars ${t.warsStarted}, bigArmyRounds ${t.roundsWithBigArmy}, idleBigRounds ${t.roundsWithBigArmyNoAttack}`,
+          ),
+        ].join('\n'),
+      );
+    } catch {
+      /* diagnostic output only */
+    }
 
     // The claim of this test game: an army that big must see combat.
     expect(
