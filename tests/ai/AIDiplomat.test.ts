@@ -23,7 +23,13 @@ describe('AI diplomat units', () => {
     vi.restoreAllMocks();
   });
 
-  async function makeEngine(mapType: string = 'CLOSEUP_1V1', civs: number = 2): Promise<GameEngine> {
+  async function makeEngine(
+    mapType: string = 'CLOSEUP_1V1',
+    civs: number = 2,
+    // Pin the map: the garrison test asserts land connectivity between the two
+    // start cities, which an unseeded world only sometimes provides (CI flake).
+    seed: number = 20260925,
+  ): Promise<GameEngine> {
     const engine = new GameEngine(null);
     (engine as any).sleep = () => Promise.resolve();
     await engine.initialize({
@@ -31,6 +37,7 @@ describe('AI diplomat units', () => {
       mapType,
       devMode: false,
       startingGold: 50,
+      mapSeed: seed,
     });
     return engine;
   }
