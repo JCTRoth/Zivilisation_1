@@ -969,6 +969,18 @@ export class AIManager {
       this.gameEngine.onStateChange('AI_FINISHED', { civilizationId });
     }
 
+    // Auto scenarios skip every pacing sleep, which left the whole turn chain
+    // running as promise microtasks: the phase/turn handoff resolves
+    // immediately, so timers, canvas rendering and the game-log fetch starved
+    // and the browser locked up at 100% CPU (tens of thousands of rounds, no
+    // repaint, CDP unresponsive). Yield one macrotask per AI turn so the event
+    // loop — and with it the UI — keeps running. The timeout is real but
+    // tiny; the browser clamps it to a few ms, which still plays hundreds of
+    // turns per second in spectator mode.
+    if (isAutoScenario(this.gameEngine.gameSettings?.mapType)) {
+      await this.gameEngine.sleep(0);
+    }
+
     // RoundManager now responsible for evaluating end-of-turn and timeouts
   }
 
