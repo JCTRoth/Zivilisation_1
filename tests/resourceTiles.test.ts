@@ -1,16 +1,17 @@
 /**
  * Pre-rendered feature-on-tile textures — the composed PNGs produced by
- * tools/tile-generator/compose_feature_tiles.mjs are drawn as the terrain base
- * for tiles that carry the matching resource, replacing the old per-frame SVG
- * overlay. These tests lock in:
+ * tools/tile-generator/compose_feature_tiles.mjs for every legal resource ×
+ * terrain pairing. Resources never move, so their picture belongs to the
+ * static terrain layer; the dynamic layer only draws units and cities. These
+ * tests lock in:
  *
  *  - every mapped composed tile exists in public/assets/tiles,
  *  - loading them never gates the terrain boot (`ready`), only the separate
  *    `resourceTilesReady`,
  *  - `getTileTexture` picks the composed variant for a resource tile and the
  *    plain terrain texture otherwise,
- *  - MapRenderer passes the tile's resource to `drawTile` and only falls back
- *    to a Civ1 glyph when no composed tile exists for the pairing.
+ *  - MapRenderer lifts the composed picture above the feature sprites and only
+ *    falls back to a Civ1 glyph when no composed tile has decoded.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { existsSync } from 'node:fs';
@@ -27,7 +28,16 @@ const AVAILABLE = new Set([
   'terrain_ocean.png',
   'terrain_plains.png',
   'terrain_river.png',
-  'terrain_forest.png',
+  'terrain_forest_1.png',
+  // Every composed resource tile, glyph or artwork.
+  'terrain_arctic_seal.png',
+  'terrain_desert_oasis.png',
+  'terrain_forest_game.png',
+  'terrain_hills_coal.png',
+  'terrain_jungle_gems.png',
+  'terrain_mountains_gold.png',
+  'terrain_swamp_oil.png',
+  'terrain_tundra_game.png',
   'terrain_ocean_fish.png',
   // Five fish poses ship as variants (fish1..fish5.png → _2.._5).
   'terrain_ocean_fish_2.png',
@@ -106,8 +116,21 @@ function createStubContext(): { ctx: CanvasRenderingContext2D; draws: RecordedDr
 }
 
 describe('pre-rendered resource tiles', () => {
-  it('ships a composed PNG for every mapped tile', () => {
-    expect(Object.keys(RESOURCE_TILE_FILES).sort()).toEqual(['OCEAN.FISH', 'PLAINS.HORSES', 'RIVER.FISH']);
+  it('maps every legal resource × terrain pairing and ships its composed PNG', () => {
+    // Derived from SPECIAL_RESOURCES: one entry per legal pairing.
+    expect(Object.keys(RESOURCE_TILE_FILES).sort()).toEqual([
+      'ARCTIC.SEAL',
+      'DESERT.OASIS',
+      'FOREST.GAME',
+      'HILLS.COAL',
+      'JUNGLE.GEMS',
+      'MOUNTAINS.GOLD',
+      'OCEAN.FISH',
+      'PLAINS.HORSES',
+      'RIVER.FISH',
+      'SWAMP.OIL',
+      'TUNDRA.GAME',
+    ]);
     for (const [key, url] of Object.entries(RESOURCE_TILE_FILES)) {
       expect(url).toMatch(/^\/assets\/tiles\/terrain_.+\.png$/);
       expect(existsSync(join(process.cwd(), 'public', url)), `${key} → ${url}`).toBe(true);
@@ -195,11 +218,11 @@ interface FakeTextureManager {
   drawCornerTransition4: ReturnType<typeof vi.fn>;
   drawRiver: ReturnType<typeof vi.fn>;
   getPriority: ReturnType<typeof vi.fn>;
-  hasResourceTile: (terrain: string, resource: string | null) => boolean;
+  drawResourceTile: ReturnType<typeof vi.fn>;
 }
 
 function createFakeTextureManager(
-  hasTile: boolean | ((terrain: string, resource: string | null) => boolean) = false,
+  drawResourceTile: boolean | ((terrain: string, resource: string | null) => boolean) = false,
 ): FakeTextureManager {
   return {
     isReady: true,
@@ -209,9 +232,21 @@ function createFakeTextureManager(
     drawCornerTransition4: vi.fn(),
     drawRiver: vi.fn(),
     getPriority: vi.fn(() => 0),
-    hasResourceTile: (terrain, resource) =>
-      typeof hasTile === 'function' ? hasTile(terrain, resource) : hasTile,
+    drawResourceTile: vi.fn((_ctx, terrain, resource) =>
+      typeof drawResourceTile === 'function' ? drawResourceTile(terrain, resource) : drawResourceTile),
   };
+}
+
+function renderBase(
+  renderer: MapRenderer,
+  grid: TerrainRenderGrid,
+  ctx: CanvasRenderingContext2D,
+): void {
+  renderer.renderTerrainBase({
+    offscreenCanvas: { width: 0, height: 0, getContext: () => ctx } as unknown as HTMLCanvasElement,
+    map: { width: grid[0]?.length ?? 0, height: grid.length } as MapState,
+    terrainGrid: grid,
+  } as never);
 }
 
 describe('MapRenderer integration', () => {
@@ -227,47 +262,73 @@ describe('MapRenderer integration', () => {
       ],
     ];
     const { ctx } = createStubContext();
-    renderer.renderTerrainBase({
-      offscreenCanvas: { width: 0, height: 0, getContext: () => ctx } as unknown as HTMLCanvasElement,
-      map: { width: 2, height: 1 } as MapState,
-      terrainGrid: grid,
-    } as never);
+    renderBase(renderer, grid, ctx);
 
     expect(tm.drawTile).toHaveBeenCalledTimes(2);
     expect(tm.drawTile.mock.calls[0][9]).toBe('Fish'); // resource argument
     expect(tm.drawTile.mock.calls[1][9]).toBeNull();
   });
 
-  it('draws a glyph only for resources without a composed tile', () => {
+  it('lifts the composed resource picture above the feature pass', () => {
     const renderer = new MapRenderer(32);
-    const withTiles = createFakeTextureManager(
-      (terrain, resource) =>
-        RESOURCE_TILE_FILES[`${terrain.toUpperCase()}.${String(resource).toUpperCase()}`] !== undefined,
-    );
-    renderer.textureManager = withTiles as unknown as TerrainTextureManager;
+    const tm = createFakeTextureManager(true);
+    renderer.textureManager = tm as unknown as TerrainTextureManager;
 
+    const grid: TerrainRenderGrid = [[
+      { type: 'jungle', resource: 'Gems', explored: true, visible: true },
+    ]];
+    const { ctx } = createStubContext();
+    renderBase(renderer, grid, ctx);
+
+    expect(tm.drawResourceTile).toHaveBeenCalledTimes(1);
+    expect(tm.drawResourceTile.mock.calls[0][1]).toBe('jungle');
+    expect(tm.drawResourceTile.mock.calls[0][2]).toBe('Gems');
+  });
+
+  it('draws villages and improvements in the static terrain pass', () => {
+    const renderer = new MapRenderer(32);
+    const tm = createFakeTextureManager(true);
+    renderer.textureManager = tm as unknown as TerrainTextureManager;
+
+    const texts: string[] = [];
     const ctx = {
-      fillText: (text: string) => glyphs.push(text),
+      fillText: (text: string) => texts.push(text),
+      clearRect: () => {},
       save: () => {}, restore: () => {},
     } as unknown as CanvasRenderingContext2D;
+
+    const grid: TerrainRenderGrid = [[
+      { type: 'grassland', village: true, explored: true, visible: true },
+      { type: 'plains', improvement: 'road', hasRoad: true, explored: true, visible: true },
+    ]];
+    renderBase(renderer, grid, ctx);
+
+    expect(texts).toContain('🛖');
+    expect(texts).toContain('R');
+  });
+
+  it('draws the glyph fallback in the static pass only without a composed tile', () => {
+    const renderer = new MapRenderer(32);
+    // Fish has a composed tile ready, Gold does not (e.g. generator not run).
+    const tm = createFakeTextureManager((_terrain, resource) => resource === 'Fish');
+    renderer.textureManager = tm as unknown as TerrainTextureManager;
+
     const glyphs: string[] = [];
+    const ctx = {
+      fillText: (text: string) => glyphs.push(text),
+      clearRect: () => {},
+      save: () => {}, restore: () => {},
+    } as unknown as CanvasRenderingContext2D;
 
-    const draw = (resource: string) => (
-      renderer as unknown as {
-        drawTerrainSymbol: (
-          ctx: CanvasRenderingContext2D, x: number, y: number,
-          tile: Record<string, unknown>, options: Record<string, unknown>,
-        ) => void;
-      }
-    ).drawTerrainSymbol(ctx, 100, 100, { type: 'ocean', resource, explored: true }, {
-      drawBase: false, drawRivers: false, zoom: 2, dynamicOverlays: true,
-    });
+    const grid: TerrainRenderGrid = [[
+      { type: 'ocean', resource: 'Fish', explored: true, visible: true },
+      { type: 'mountains', resource: 'Gold', explored: true, visible: true },
+    ]];
+    renderBase(renderer, grid, ctx);
 
-    draw('Fish'); // composed tile exists → no glyph
-    expect(glyphs).toEqual([]);
-
-    // No composed tile for Gold → the Civ1 glyph is drawn.
-    draw('Gold');
-    expect(glyphs).toEqual(['💰']);
+    // The fish "F" fallback is suppressed, the gold bag glyph is drawn.
+    expect(glyphs).toContain('💰');
+    expect(glyphs).not.toContain('F');
+    expect(tm.drawResourceTile).toHaveBeenCalledTimes(2);
   });
 });

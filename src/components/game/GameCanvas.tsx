@@ -337,7 +337,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     units.length,
   ]);
 
-  /** Build a cheap hash of terrain types + exploration (not visibility). */
+  /**
+   * Build a cheap hash of everything baked into the static terrain layer:
+   * terrain type, exploration and the tile-bound features (resource,
+   * improvement/road, river, village) that never move. Visibility is NOT part
+   * of it — fog is composited separately on every visibility change.
+   */
   const hashTerrainTypes = useCallback((grid: TerrainRenderGrid): string => {
     let h = 0;
     for (let r = 0; r < grid.length; r++) {
@@ -346,8 +351,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       for (let c = 0; c < row.length; c++) {
         const t = row[c];
         if (!t) continue;
-        // Simple hash: type char codes + explored flag
-        const s = t.type + (t.explored ? "1" : "0");
+        const improvement =
+          typeof t.improvement === "string"
+            ? t.improvement
+            : t.improvement
+              ? JSON.stringify(t.improvement)
+              : "";
+        const s =
+          t.type +
+          (t.explored ? "1" : "0") +
+          (t.resource ?? "") +
+          improvement +
+          (t.hasRoad ? "r" : "") +
+          (t.hasRiver ? "w" : "") +
+          (t.village ? "v" : "");
         for (let i = 0; i < s.length; i++) {
           h = ((h << 5) - h + s.charCodeAt(i)) | 0;
         }
@@ -542,10 +559,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     renderTerrainToOffscreen,
   ]);
 
-  // Note: Improvements (roads, etc.) are now rendered directly from mapData.tiles
-  // in MapRenderer.drawDynamicContent, so we don't need to update the terrain grid
-  // or re-render the offscreen canvas when improvements change. This avoids
-  // expensive re-renders and prevents infinite loops.
+  // Note: resources, villages and improvements belong to the static terrain
+  // layer (MapRenderer.renderTerrainBase) and are read from the terrain grid.
+  // `hashTerrainTypes` includes them, so the offscreen base is rebuilt exactly
+  // once whenever one of them changes.
 
   // Update terrain visibility when game state changes
   useEffect(() => {
@@ -596,6 +613,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 improvement?: string;
                 visible?: boolean;
                 explored?: boolean;
+                hasRoad?: boolean;
+                hasRiver?: boolean;
+                village?: boolean;
               }) || {};
             rebuilt[row][col] = {
               type: tile.type || "OCEAN",
@@ -603,6 +623,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               improvement: tile.improvement ?? null,
               visible: mapData.visibility?.[idx] ?? tile.visible ?? false,
               explored: mapData.revealed?.[idx] ?? tile.explored ?? false,
+              hasRoad: tile.hasRoad ?? false,
+              hasRiver: tile.hasRiver ?? false,
+              village: tile.village ?? false,
             };
           }
         }

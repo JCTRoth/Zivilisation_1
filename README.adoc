@@ -632,6 +632,7 @@ Provides consistent, responsive UI without custom CSS framework development.
 Additional documentation is available in the `doc/` folder:
 
 * link:doc/save-load-system.adoc[Save & Load System] — Implementation details for game save/load and Diplomacy Report leader portrait system
+* link:doc/RENDERING_ASSETS.md[Rendering & Tile Assets] — Static vs. dynamic layers, adding/updating feature images and tiles, the tile generator, zoom quality
 
 === Testing Strategy
 

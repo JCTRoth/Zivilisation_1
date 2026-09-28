@@ -93,7 +93,7 @@ export default function TextureGallery({ refreshKey, onUseAsSource }: Props) {
           className="btn-compose-features"
           disabled={composing}
           onClick={handleComposeFeatures}
-          title="Bake the feature SVGs onto the matching terrain tiles (compose_feature_tiles.mjs)"
+          title="Bake every special resource — artwork or emoji glyph — onto its terrain tiles (compose_feature_tiles.mjs)"
         >
           {composing ? '⏳ Rendering…' : '🧩 Render Features on Tiles'}
         </button>

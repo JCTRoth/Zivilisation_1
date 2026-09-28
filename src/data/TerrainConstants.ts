@@ -276,6 +276,25 @@ export const SPECIAL_RESOURCES: SpecialResource[] = [
 ];
 
 /**
+ * Character glyphs for the special resources (keyed by lowercase resource
+ * name). Resources never move, so they belong to the static terrain layer:
+ * `compose_feature_tiles.mjs` bakes these glyphs onto the matching terrain
+ * tiles for resources without hand-drawn artwork, and the renderer uses the
+ * same table as its on-map fallback when no composed tile is available.
+ */
+export const RESOURCE_GLYPHS: Record<string, string> = {
+    seal: '🦭',
+    gems: '💎',
+    horses: '🐎',
+    gold: '💰',
+    coal: '🪨',
+    fish: 'F',
+    oil: '🛢️',
+    game: '🦌',
+    oasis: '🌴',
+};
+
+/**
  * Default special resource for each terrain type (Civ1: exactly one per
  * terrain; Grassland has none). Used by map generation and by
  * terrain-conversion rules (the new terrain carries its own resource).

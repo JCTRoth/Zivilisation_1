@@ -13,6 +13,8 @@
  *    so mountain peaks / tree tops extend a little into the row above.
  */
 
+import { SPECIAL_RESOURCES } from '@/data/TerrainConstants';
+
 export const TERRAIN_TEXTURE_FILES: Record<string, string> = {
   OCEAN:     '/assets/tiles/terrain_ocean.png',
   PLAINS:    '/assets/tiles/terrain_plains.png',
@@ -40,22 +42,34 @@ export const FEATURE_TEXTURE_FILES: Partial<Record<string, string>> = {
 };
 
 /**
- * Pre-rendered feature-on-tile textures, keyed `TERRAIN.RESOURCE` (uppercase).
- * They are produced by `tools/tile-generator/compose_feature_tiles.mjs`, which
- * bakes the resource SVG onto the terrain texture with the same box size and
- * anchor the old per-frame overlay used. When a tile has a matching texture the
- * base pass draws it directly — no overlay, no per-frame artwork work. Variants
+ * Build the pre-rendered feature-on-tile texture map from the game's own
+ * special-resource rules: every legal resource × terrain pairing maps to the
+ * tile `compose_feature_tiles.mjs` writes (`terrain_<terrain>_<resource>.png`).
+ * The script bakes artwork or the resource glyph onto the terrain texture, so
+ * resources — which never move — are one static picture on the map and the
+ * renderer never has to compose them per frame. Variants
  * (`..._horses.png`, `..._horses_2.png`) are probed like feature sprites.
  *
  * Loading is deliberately NOT part of `ready`: the optional artwork must never
  * delay terrain boot; `resourceTilesReady` settles separately and the caller
  * can rebuild the cached base when it does.
  */
-export const RESOURCE_TILE_FILES: Record<string, string> = {
-  'OCEAN.FISH':   '/assets/tiles/terrain_ocean_fish.png',
-  'RIVER.FISH':   '/assets/tiles/terrain_river_fish.png',
-  'PLAINS.HORSES': '/assets/tiles/terrain_plains_horses.png',
-};
+function buildResourceTileFiles(): Record<string, string> {
+  const files: Record<string, string> = {};
+  for (const resource of SPECIAL_RESOURCES) {
+    const terrains = (resource.terrains ?? resource.terrain ?? '')
+      .split(',')
+      .map((terrain) => terrain.trim().toLowerCase())
+      .filter(Boolean);
+    for (const terrain of terrains) {
+      files[`${terrain.toUpperCase()}.${resource.name.toUpperCase()}`] =
+        `/assets/tiles/terrain_${terrain}_${resource.name.toLowerCase()}.png`;
+    }
+  }
+  return files;
+}
+
+export const RESOURCE_TILE_FILES: Record<string, string> = buildResourceTileFiles();
 
 /** Higher value bleeds color over lower-value terrain at border transitions. */
 export const TERRAIN_PRIORITY: Record<string, number> = {
@@ -222,9 +236,31 @@ export class TerrainTextureManager {
     return `${terrainType.toUpperCase()}.${resource.toUpperCase()}`;
   }
 
-  /** Whether a pre-rendered tile exists for this terrain + resource pairing. */
+  /** Whether a pre-rendered tile is mapped for this terrain + resource pairing. */
   hasResourceTile(terrainType?: string | null, resource?: string | null): boolean {
     return this.resourceTileCache.has(this.resourceTileKey(terrainType, resource));
+  }
+
+  /**
+   * Draw the pre-rendered feature-on-tile texture for a resource tile and
+   * report whether one was available. Used by the static terrain pass to lift
+   * the composed picture above the feature-sprite pass (so a resource on a
+   * featured terrain stays visible). Returns false when no mapped tile has
+   * decoded yet — the caller then draws the resource glyph fallback.
+   */
+  drawResourceTile(
+    ctx: CanvasRenderingContext2D,
+    terrainType: string | null | undefined,
+    resource: string | null | undefined,
+    x: number, y: number, size: number,
+    col = 0, row = 0,
+  ): boolean {
+    const arr = this.resourceTileCache.get(this.resourceTileKey(terrainType, resource));
+    if (!arr) return false;
+    const ready = arr.filter(img => img.complete && img.naturalWidth > 0);
+    if (ready.length === 0) return false;
+    ctx.drawImage(this.pickVariant(ready, col, row), x, y, size, size);
+    return true;
   }
 
   /**
