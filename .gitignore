@@ -126,3 +126,7 @@ test-results/
 /playwright/.auth/
 TODO.txt
 /.tmp-playwright/
+
+# Scratch analysis harnesses (ad-hoc perf/CPU profilers, one-off probes).
+# Anything named tmp-*.mjs is a throwaway; the durable ones live in scripts/.
+/tmp-*.mjs

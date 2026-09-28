@@ -1,0 +1,2018 @@
+:toc:
+:toclevels: 2
+:sectnums:
+:icons: font
+
+= Game Rules Reference
+
+The single authoritative source for *what the game actually does*.
+Every number below was read out of the source, not out of an older document.
+
+[IMPORTANT]
+====
+If you are changing a balance value, this is the file to update.
+Source of truth per section is named in the "Defined in" note.
+====
+
+Where this document and `GAMEPLAY.md` disagree, *this document is right* and
+`GAMEPLAY.md` is out of date.
+
+== Conventions
+
+* Stats are written `attack / defense / movement`.
+* Gold costs are shields for units and buildings.
+* `Def` in a terrain table is a *multiplier* on the defender's strength
+  (`1.5` = +50 %).
+* Technology `cost` is the *base* beaker cost. The real cost is scaled — see
+  <<Research costs>>.
+
+== The turn cycle
+
+Defined in: `src/game/engine/TurnManager.ts`
+
+=== Phases
+
+Every civilization's turn runs the same five phases:
+
+[cols="1,1,3", options="header"]
+|===
+|Phase |Constant |What happens
+
+|1. START
+|`START`
+|Sets the active player, emits `TURN_START`. AI civilizations register themselves
+immediately; the human player registers from the UI.
+
+|2. UNIT MOVEMENT
+|`UNIT_MOVEMENT`
+|Queued GoTo paths walk first, then the unit turn queue is built and units act.
+AI runs `runAIUnitMovementPhase`; the human gets `selectCurrentQueueUnit`.
+
+|3. CITY PRODUCTION
+|`CITY_PRODUCTION`
+|Auto-production fills build queues for every city. Emits `CITY_PRODUCTION_PHASE`.
+
+|4. RESEARCH
+|`RESEARCH`
+|AI without a current research picks one via `AIResearch.selectResearch`.
+Banked science is spent on completion.
+
+|5. END
+|`END`
+|Clears the unit queue, emits `TURN_END` with a per-civilization city dump, then
+hands over to `advanceTurn`.
+|===
+
+=== At the round boundary
+
+`advanceTurn()` does this, in order:
+
+. Roll over into a new round if the next player is the first active player:
+. `roundNumber += 1`
+. `advanceYear()` — see <<The calendar>>
+. `scoutMemory.setCurrentRound()`
+. `barbarianManager.processBarbarians()` — the horde acts once per round,
+before anybody else
+. Log the round banner and push the turn/year to the store
+. `diplomacyManager.processTurn(roundNumber)` — reputation recovery, treaty
+income, mutual-defense joins
+. `victoryManager.evaluateEndOfTurn()` — the game may end right here
+. Hand over to the next civilization:
+. `resetUnitsForPlayer(next)`
+. `processTurnEvents(next)` — the whole economic pipeline, see below
+. `startTurn(next)`
+
+=== Unit reset
+
+`resetUnitsForPlayer` runs per unit:
+
+[cols="2,3", options="header"]
+|===
+|Unit state |Result
+
+|`isDefeated`
+|Moves 0, `areTurnsDone`. A dead unit never comes back.
+
+|Passenger of a ferry (`embarkedOn`)
+|Moves 0, `areTurnsDone`. It resumes when unloaded.
+
+|Fortified
+|Moves 0, `areTurnsDone`. Fortification is never "called up" on its own.
+
+|Asleep
+|Refreshed moves, `areTurnsDone = true`.
+
+|Building an improvement
+|Refreshed moves, then `advanceUnitWork` — construction is multi-turn.
+
+|Fishing an active route
+|Refreshed moves, then `advanceFishing` — the fishing cycle is multi-turn.
+
+|Normal
+|Moves restored to the unit's full movement, `hasMovedThisTurn = false`.
+|===
+
+=== The economic pipeline
+
+`processTurnEvents` order matters — yields are computed for *all* cities before
+any city grows or produces:
+
+. Deliver everything the city `purchase`d, and clear the "sold a building" flag
+. **Pass 1 — yields:** `recomputeCityYields` then `applyCityOutputs` for every city
+. **Pass 2 — growth and production:**
+. Decrement `capturedTurns`; emit `CITY_DISORDER` only on the transition
+. `processCityGrowth`
+. `processCityProduction`
+. `governmentManager.processTurn(civ)` — a revolution that just ended applies
+*before* the economy is charged, so the new tax rate takes effect immediately
+. `aiEconomicManager.preProcessTurn` then `economicManager.processTurn` — taxes,
+science, luxury, upkeep, and the disband-if-broke pass
+. `researchManager.advanceResearch`
+. Push cities, civilizations and units to the store; emit `TURN_PROCESSED`
+
+=== The calendar
+
+The year advances once per round, never per turn.
+
+* Game starts in *4000 BC* (`currentYear = -4000`).
+* The year advances once per round, never per turn.
+* Year `0` is skipped: 1 BC is followed by 1 AD.
+
+[cols="1,1", options="header"]
+|===
+|From |Years per round
+
+|Before 1000 AD
+|+20
+
+|1000 – 1499 AD
+|+10
+
+|1500 – 1749 AD
+|+5
+
+|1750 – 1849 AD
+|+2
+
+|1850 AD and later
+|+1
+|===
+
+Roughly 250 rounds to reach 1850, ~370 to reach 2100.
+
+[NOTE]
+====
+`GameConstants.TURNS_PER_YEAR = 10` still exists and `GameUtils.turnToYear`
+still uses it, but it is *not* what drives the game. `turnToYear` is marked
+`@deprecated` in favour of `TurnManager.advanceYear()`. Do not use
+`TURNS_PER_YEAR` to reason about the calendar.
+====
+
+=== Auto end of turn
+
+See link:auto-end-turn.adoc[Auto. turn ending] for the full rules. In short: a
+unit is *active* when it has moves left and is not asleep, fortified, skipped or
+done. The turn auto-ends for a human only when **no** unit is active **and** the
+queue is empty **and** no manually-managed city still has a build queue or an
+empty-but-buildable one.
+
+== The map
+
+=== The grid
+
+* **8-way square grid**, not hexagonal. `src/game/SquareGrid.ts`.
+* Default map is 80 × 50.
+* Cities work a 5 × 5 block minus the centre and the four extreme corners —
+  **20 workable tiles** (`isTileInCityRadius`).
+* `MIN_CITY_CENTER_DISTANCE = 5` (Chebyshev) is enforced **for AI civilizations
+  only**. A human may found adjacent cities.
+
+=== Map types
+
+Chosen in the setup screen, or forced with `?maptype=`.
+Defined in `GameEngine.generateWorld` and `src/data/maps/index.ts`.
+
+[cols="2,1,1,3", options="header"]
+|===
+|Map type |Size |Civs |Notes
+
+|`NORMAL_SKIRMISH`
+|80×50
+|2–7
+|Default. Procedurally generated, seeded by `?seed=`.
+
+|`EARTH`
+|180×90
+|2–7
+|Real-world geography from a static Freeciv map. 60 % ocean, 16 % arctic.
+
+|`CLOSEUP_1V1`
+|20×20
+|2
+|Hand-to-hand duel.
+
+|`CLOSEUP_BEATUP`
+|20×20
+|2
+|Same size, combat focus.
+
+|`NAVAL_CLOSEUP`
+|20×20
+|2
+|Generated as open water with fish. You start with 2 triremes.
+
+|`NO_SETTLERS`
+|80×50
+|2–7
+|Starts with 5 military units instead of a settler.
+
+|`MANY_CITIES`
+|80×50
+|2–7
+|Starts with 2 warriors.
+
+|`TECH_LEVEL_10`
+|80×50
+|2–7
+|Grants the whole technology tree at start.
+
+|`ALL_UNITS`
+|80×50
+|2–7
+|Every unit type on the board. A showcase, not a game.
+
+|`AI_VS_AI`
+|40×40
+|2–7
+|Unattended spectator game. Auto end-of-turn is on.
+
+|`AI_VS_AI_SMALL`
+|16×26
+|2–7
+|Tall narrow corridor. Unattended.
+
+|`AI_VS_AI_NAVAL`
+|96×60
+|2–7
+|Static 8-island archipelago. Unattended, ferries are the whole game.
+
+|`AI_VS_AI_NAVAL_TROPICAL`
+|96×60
+|2–7
+|Same archipelago bytes; different map id.
+|===
+
+The four `AI_VS_AI*` types are *auto scenarios* (`isAutoScenario`) — they force
+Dev Mode on, disable the 250 ms AI think delay, and start already playing.
+
+=== Static maps
+
+See link:STATIC_MAPS.md[Static Maps] and link:NEW_MAP_GUIDE.adoc[Adding a new map].
+
+[cols="2,1,1,1", options="header"]
+|===
+|Map |Size |Starts |Bonus resources
+
+|`earth-180x90`
+|180×90
+|30
+|342
+
+|`naval-archipelago-96x60`
+|96×60
+|8
+|195
+
+|`naval-archipelago-tropical-96x60`
+|96×60
+|8
+|195
+|===
+
+A static map is raw Freeciv terrain characters, one string per row, plus a
+parallel `specials` layer. Terrain letters: `space`=ocean, `a`=arctic,
+`t`=tundra, `d`=desert, `p`=plains, `g`=grassland, `f`=forest, `j`=jungle,
+`s`=swamp, `h`=hills, `m`=mountains.
+
+== Terrains
+
+Defined in: `src/data/TerrainConstants.ts`
+
+[cols="2,1,1,1,1,1,1,1,2", options="header"]
+|===
+|Terrain |Move |Def |Food |Prod |Trade |Passable |Build mod |Notes
+
+|Ocean
+|1
+|1
+|1
+|0
+|2
+|no
+|1
+|Impassable to land units. `sea` is an alias.
+
+|River
+|1
+|1.5
+|2
+|0
+|1
+|yes
+|1
+|Navigable by ships, fordable by land if narrow.
+
+|Lake
+|1
+|1.5
+|2
+|0
+|1
+|**no**
+|1
+|Fresh water, but *nobody* may enter — not even ships.
+
+|Grassland
+|1
+|1
+|2
+|1
+|0
+|yes
+|1
+|The breadbasket.
+
+|Plains
+|1
+|1
+|1
+|1
+|0
+|yes
+|1
+|Horses live here.
+
+|Tundra
+|1
+|1
+|1
+|0
+|0
+|yes
+|1
+|
+
+|Desert
+|1
+|1
+|0
+|1
+|0
+|yes
+|1
+|Oasis resource.
+
+|Forest
+|2
+|1.5
+|1
+|2
+|0
+|yes
+|2
+|Slow, good shields.
+
+|Jungle
+|2
+|1.5
+|1
+|0
+|0
+|yes
+|2
+|Almost worthless, and slow.
+
+|Mountains
+|**3**
+|**3**
+|0
+|1
+|0
+|yes
+|3
+|Defence ×3. Slower than everything else.
+
+|Hills
+|2
+|2
+|1
+|0
+|0
+|yes
+|2
+|Coal lives here.
+
+|Swamp
+|2
+|1.5
+|1
+|0
+|0
+|yes
+|3
+|Oil lives here. Slowest land to improve.
+
+|Arctic
+|2
+|1
+|0
+|0
+|0
+|yes
+|1
+|Seals.
+|===
+
+`Build mod` multiplies how many worker-turns an improvement takes on that terrain.
+
+=== Yields
+
+Base yields above are the *terrain* yields. A tile's real yield is
+terrain + improvement + special resource, and then the city centre gets its own
+floor of **2 food / 1 production / 1 trade**, plus **+1 trade** if the city sits
+on a river.
+
+== Special resources
+
+Defined in: `src/data/TerrainConstants.ts`
+
+[cols="2,2,1,1,1", options="header"]
+|===
+|Resource |Terrains |Food |Prod |Trade
+
+|Seal
+|Arctic
+|2
+|0
+|0
+
+|Gems
+|Jungle
+|0
+|0
+|4
+
+|Horses
+|Plains
+|0
+|2
+|0
+
+|Gold
+|Mountains
+|0
+|0
+|6
+
+|Coal
+|Hills
+|0
+|2
+|0
+
+|Fish
+|Ocean, River
+|2
+|0
+|0
+
+|Oil
+|Swamp
+|0
+|4
+|0
+
+|Game
+|Forest, Tundra
+|2 (tundra 3)
+|0
+|0
+
+|Oasis
+|Desert
+|3
+|0
+|0
+|===
+
+=== Spawn chances
+
+[cols="2,1", options="header"]
+|===
+|Rule |Value
+
+|Base chance a tile gets its terrain's default resource
+|`DEFAULT_RESOURCE_SPAWN_CHANCE = 0.15`
+
+|Ocean override
+|`0.18`
+
+|River override
+|`0.09` (half the ocean rate)
+
+|Coastal fish
+|Only water tiles with land in the 8 surrounding tiles, chance `0.18`
+
+|Deep ocean
+|**No** fish at all — `COASTAL_FISH_BONUS_CHANCE = 0.0`
+
+|Village density
+|One per 150 tiles, minimum 1
+|===
+
+== Tile improvements
+
+Defined in: `src/data/TileImprovementConstants.ts`
+
+Worker-turns to build, by terrain. A dash means *cannot be built there*.
+
+[cols="2,1,1,1,1,1,1,1,1,1,1", options="header"]
+|===
+|Improvement |Default |Desert |Grass |Plains |River |Forest/Jungle/Swamp |Hills |Mountains |Tundra |Arctic
+
+|Irrigation
+|2
+|5
+|5
+|5
+|5
+|15
+|not buildable
+|not buildable
+|not buildable
+|not buildable
+
+|Road
+|1
+|2
+|2
+|2
+|2
+|4
+|4
+|6
+|2
+|6
+
+|Railroad
+|1
+|4
+|4
+|4
+|4
+|8
+|8
+|12
+|4
+|—
+
+|Mines
+|5
+|5
+|10
+|15
+|not buildable
+|not buildable
+|10
+|10
+|not buildable
+|not buildable
+
+|Fortress
+|6
+|5
+|5
+|5
+|5
+|6
+|6
+|7
+|5
+|not buildable
+|===
+
+=== Effects
+
+[cols="2,3,2", options="header"]
+|===
+|Improvement |Effect |Extra rules
+
+|Irrigation
+|+1 food
+|Converts forest→plains, jungle→grassland, swamp→grassland. Needs orthogonally
+adjacent fresh water (river or lake), or an already-irrigated neighbour.
+
+|Road
+|Movement cost × 1/3. +1 trade, but *only* on grassland, plains and desert
+|Buildable almost anywhere.
+
+|Railroad
+|Movement cost 0.05. +0.5 food, +0.5 production, +0.5 trade
+|Requires the `railroad` technology *and* an existing road.
+
+|Mines
+|+3 production on hills, +1 on mountains
+|Converts grassland and plains into forest. Only desert, grassland, hills,
+mountains and plains.
+
+|Fortress
+|Defence ×2
+|Requires the `construction` technology. Healing is *not* implemented despite
+the data comment.
+
+|Pollution
+|−1 food, −1 production, −1 trade, −1 health
+|Not built by settlers. Removed by `cleanPollution`, which costs 2 movement
+points.
+|===
+
+A road's +1 trade is a common misconception — it is a flat +1 on the three
+tile types above, not a percentage of the tile's trade.
+
+== Units
+
+Defined in: `src/data/UnitConstants.ts`
+
+Every unit has **2 hit points**. A lost combat round costs 25 HP unless the round
+is decisive, so a normal combat is two rounds.
+
+=== Land military
+
+[cols="2,1,1,1,1,1,1,2", options="header"]
+|===
+|Unit |Atk |Def |Mov |Sight |Cost |Maint |Requires
+
+|Warrior
+|1
+|1
+|1
+|1
+|10
+|1
+|—
+
+|Scout
+|0.5
+|1
+|**2**
+|2
+|15
+|1
+|—
+
+|Archer
+|3
+|2
+|1
+|1
+|30
+|1
+|—
+
+|Phalanx
+|1
+|2
+|1
+|1
+|50
+|1
+|Bronze Working
+
+|Chariot
+|4
+|2
+|2
+|1
+|40
+|1
+|The Wheel
+
+|Knights
+|4
+|2
+|2
+|1
+|40
+|1
+|Horseback Riding
+
+|Legion
+|3
+|1
+|1
+|1
+|60
+|1
+|Iron Working
+
+|Catapult
+|6
+|1
+|1
+|1
+|70
+|1
+|Mathematics
+
+|Musketeer
+|3
+|3
+|1
+|1
+|80
+|1
+|Gunpowder
+
+|Riflemen
+|3
+|5
+|1
+|1
+|30
+|1
+|Gunpowder
+
+|Cavalry
+|5
+|2
+|3
+|2
+|100
+|2
+|Horseback Riding
+
+|Mech. Inf.
+|6
+|6
+|3
+|1
+|50
+|2
+|Combustion
+
+|Cannon
+|8
+|1
+|1
+|1
+|120
+|2
+|Metallurgy
+
+|Artillery
+|12
+|2
+|1
+|2
+|150
+|3
+|Steel
+
+|Tank
+|16
+|8
+|3
+|2
+|200
+|4
+|Combustion
+|===
+
+Catapult, Cannon and Artillery are *siege* units: they ignore city walls.
+
+=== Naval
+
+[cols="2,1,1,1,1,1,1,2", options="header"]
+|===
+|Unit |Atk |Def |Mov |Sight |Cost |Maint |Requires
+
+|Sail
+|1
+|1
+|3
+|2
+|40
+|1
+|Sailing
+
+|Trireme
+|3
+|2
+|4
+|2
+|80
+|2
+|Map Making
+
+|Caravel
+|2
+|1
+|4
+|2
+|60
+|1
+|Navigation
+
+|Frigate
+|4
+|2
+|4
+|2
+|80
+|2
+|Navigation
+
+|Ironclad
+|6
+|4
+|4
+|2
+|120
+|3
+|Steel
+
+|Destroyer
+|8
+|6
+|5
+|2
+|160
+|4
+|Combustion
+
+|Cruiser
+|12
+|8
+|5
+|2
+|200
+|5
+|Combustion
+
+|Battleship
+|**18**
+|**12**
+|4
+|2
+|280
+|6
+|Steel
+
+|Submarine
+|14
+|3
+|3
+|2
+|240
+|5
+|Combustion
+
+|Carrier
+|1
+|12
+|5
+|2
+|160
+|5
+|Flight
+|===
+
+Every ship needs a coastal city — a Harbor, or any of the 9 surrounding tiles
+being ocean or river. Lakes do not count.
+
+=== Civilians, transport and fishing
+
+[cols="2,1,1,1,1,1,2", options="header"]
+|===
+|Unit |Atk |Def |Mov |Cost |Maint |Notes
+
+|Settler
+|0
+|1
+|1
+|40
+|**0**
+|Founds and joins cities, builds improvements, sight 3. Eats 1 food a turn
+(2 under Republic/Democracy) instead of paying upkeep.
+
+|Diplomat
+|0
+|0
+|2
+|30
+|1
+|Requires Writing. Opens the diplomacy screen. Consumed on a successful bribe.
+
+|Caravan
+|0
+|0
+|1
+|50
+|**0**
+|Requires Trade. Establishes a trade route, then is consumed delivering it.
+
+|Ferry
+|0
+|0
+|3
+|30
+|1
+|Requires Sailing. Carries **3** units.
+
+|Fisher Boat
+|0
+|1
+|2
+|20
+|1
+|Needs a Harbor building. See <<Fishing>>.
+|===
+
+=== Air
+
+[cols="2,1,1,1,1,1,2", options="header"]
+|===
+|Unit |Atk |Def |Mov |Cost |Maint |Requires
+
+|Fighter
+|4
+|2
+|10
+|60
+|2
+|Flight
+
+|Bomber
+|12
+|1
+|8
+|120
+|3
+|Flight
+
+|Nuclear
+|**99**
+|0
+|16
+|160
+|5
+|Nuclear Power
+|===
+
+Air units ignore city walls, do not trigger villages, and may fly over anything.
+
+=== Not implemented
+
+* **No veteran units.** `isVeteran` exists and the UI shows a badge, but every
+  runtime creation path sets it to `false` and the combat formula has no veteran
+  term. The Barracks `veteranUnits` effect is a display string only.
+* **`transport`** is declared in `UNIT_TYPES` but has no properties entry.
+
+== Combat
+
+Defined in: `src/game/engine/CombatSystem.ts` and `GameEngine.resolveCityCombat`
+
+=== Strength
+
+[source]
+----
+attackerStrength = attack × (health / 100)
+
+defenderStrength = defense
+                × (health / 100)
+                × max(1, terrainDefence)
+                × 1.5            if fortified, or the tile holds a friendly city
+                × fortressMult   if the tile has a Fortress (×2)
+
+winChance = attackerStrength / (attackerStrength + defenderStrength)
+----
+
+The roll is `random() × (A + D) < A`.
+
+=== Damage
+
+`COMBAT_DAMAGE = 25` — **only the loser takes damage.**
+
+[cols="2,3", options="header"]
+|===
+|Outcome |Damage
+
+|Attacker wins, and outguns the defender (`A >= D`) or the defender is already at 25 HP or less
+|Destroyed outright.
+
+|Attacker wins otherwise
+|Defender takes 25 HP.
+
+|Defender wins
+|Attacker takes 25 HP. The defender takes nothing.
+|===
+
+=== Cities
+
+`cityDefense = max(1, population)`, **× 3 with city walls**.
+
+[cols="2,3", options="header"]
+|===
+|Rule |Detail
+
+|Garrison
+|Garrison units die **one per round**. There is no "all defenders die at once"
+rule. The city only falls once the garrison is empty.
+
+|Walls
+|Walls are ignored by air units, Cannons and Artillery.
+
+|Fall
+|Population 1 or less → the city is *razed*. Otherwise population −1 and the
+city is captured.
+
+|Aftermath
+|Walls are always destroyed, plus 1 random non-Palace/non-wonder building per
+population point lost. The whole garrison is wiped. Production is reset.
+`capturedTurns = 5` — unrest decays 1 per round.
+
+|Plunder
+|The attacker takes `min(floor(treasury × 0.2), 100)`.
+
+|Capital
+|A captured capital loses its Palace; the old owner gets a new capital assigned.
+|===
+
+=== Other combat rules
+
+* Attacking **auto-declares war**, and the war cascades to the defender's allies.
+* The attacker never advances into the defeated unit's tile automatically.
+* A dead unit is removed after a 1.5 s delay so the death animation can play.
+  It is already invisible to every lookup.
+* Destroying a transport **sinks its whole cargo**.
+* Civilians (settler, worker, caravan, diplomat) cannot attack or capture cities.
+  A caravan may still *enter* an enemy city to deliver.
+* A Scout may enter an **undefended** enemy city with a 30 % chance. Failure
+  rejects the move.
+
+== Movement
+
+=== Costs
+
+* Terrain cost from the <<Terrains>> table: 1, 2, or 3 for mountains.
+* Road × 1/3, Railroad 0.05.
+* *Minimum 1 move*: a unit that has not moved yet this turn may always enter one
+  adjacent tile even if it costs more than it has left. That move spends
+  everything it has.
+* Moving breaks fortification and wakes the unit. Abandoning a construction site
+  cancels the work.
+
+=== Rivers
+
+Defined in: `src/game/engine/RiverRules.ts`
+
+* A river tile is fordable if the river run through it is 1 tile wide.
+* A river **2 or more wide in both axes** is impassable to land units from every
+  direction. Ships still navigate it.
+* `MAX_FORDABLE_RIVER_WIDTH = 1`.
+* Lakes are impassable to everyone, ships included.
+
+=== Where ships may go
+
+Ocean, a navigable river, or **their own** city that has naval access. Nothing
+else.
+
+=== Zones of control
+
+A settler may not enter a tile adjacent to an enemy military unit with attack
+above 0.
+
+== Fishing
+
+Defined in: `src/game/engine/FisherEconomics.ts`
+
+A Fisher Boat needs a Harbor building and then sails a repeating cycle out to a
+fish tile and back.
+
+[cols="2,3", options="header"]
+|===
+|Quantity |Formula
+
+|Cycle length
+|`6 + 2 × ceil(distance / movement)` turns
+
+|Food per fish
+|`min(3, 1 + floor(distance / 4))` — 1, 2 or 3
+
+|Catch value
+|`6 × food per fish` — 6, 12 or 18 food
+
+|Food per turn
+|`catch value / cycle length`
+
+|Net value per turn
+|`(food per turn + net tile food) × 2`, minus upkeep
+
+|Worth building
+|Only if net value per turn > 0
+
+|Overhead
+|`maintenance + cost / 20` per turn
+|===
+
+Without an active net, a Fish tile pays **1 less food** than its printed yield.
+Overflow that does not fit in the food box grants a one-off +2 food.
+
+Only one Fisher Boat per city, and one net at a time.
+
+== Trade routes
+
+A caravan walks to a friendly or foreign city and opens a route.
+
+[source]
+----
+payout       = max(1, round((homePop + destPop) × (1 + distance / 4) × multiplier))
+multiplier   = 1 × (foreign ? 2 : 1) × (intercontinental ? 2 : 1)
+routeTrade   = max(1, round((homePop + destPop) / 4))
+----
+
+* Payout arrives as **both gold and science**.
+* *Intercontinental* means a Bresenham line between the two cities crosses
+  ocean or sea. A lake does not count.
+* Maximum **3** trade routes per civilization. A new route replaces the weakest.
+* The caravan is consumed on delivery.
+* `MAX_CARAVAN_TRADE_ROUTES = 3`.
+
+== The economy
+
+Defined in: `src/game/engine/EconomicManager.ts`
+
+=== Commerce
+
+[source]
+----
+commerce             = max(tileTrade, CITY_CENTER_COMMERCE=2) + Σ tradeRoutes
+afterGovPenalty      = commerce × (1 − government.commercePenalty)
+corruption           = floor(afterGovPenalty × corruptionRate)
+afterCorruption      = max(0, floor(afterGovPenalty − corruption))
+
+tax                  = floor(afterCorruption × taxRate / 100)  × 2
+science              = round(afterCorruption × scienceRate / 100)
+                       + buildingScience + specialistScience
+luxury               = floor(afterCorruption × luxuryRate / 100)
+----
+
+Tax rate, science rate and luxury rate must sum to 100.
+
+=== Corruption
+
+[source]
+----
+distance     = euclidean distance from the capital
+distanceMult = min(distance / 10, 2)
+rate         = 0.30 × distanceMult          <- hard-coded base, not government-based
+if courthouse: rate = rate / 2
+corruption   = floor(trade × rate)
+----
+
+The capital itself is never corrupt. A Courthouse halves the rate. Note the base
+`0.30` is hard-coded in `CityUtils.calculateCorruption` and does **not** read
+`government.corruptionRate` — the government table's corruption column is
+currently only used by the AI's own reasoning.
+
+=== Food and growth
+
+[source]
+----
+consumption = population × 2  +  settlers × (1, or 2 under Republic/Democracy)
+surplus     = produced − consumption
+
+foodStored += surplus
+threshold  = (population + 1) × 10
+----
+
+[cols="2,4", options="header"]
+|===
+|Event |Result
+
+|Growth
+|Food stored ≥ threshold, and the city is **not** in disorder. Population +1.
+The food box is emptied — unless there is a Granary, in which case
+`floor(stored / 2)` is kept.
+
+|Starvation
+|Food stored < 0. Population −1 and the box is reset to 0. Disorder does **not**
+prevent starvation. At population 0 the city is destroyed.
+
+|Size 1 and a settler completes
+|The city is **destroyed** and the settler becomes a NONE unit with no home
+city — unless the difficulty is Chieftain.
+|===
+
+There is **no** housing cap. An Aqueduct does not gate city size; the AI only
+treats it as a growth prerequisite in its own planning.
+
+=== Happiness and disorder
+
+[source]
+----
+unhappiness = max(0, population − government.tolerance)
+             + 3 if the city is freshly captured
+
+happiness   = luxury + specialistLuxury + martialLaw
+            + buildingHappiness + government.happinessBonus
+            + 2 (base contentment)
+
+disorder    = unhappiness > happiness
+----
+
+* Martial law can suppress up to 4 in Despotism and Anarchy, 3 in Monarchy and
+  Communism, and **0** in Republic and Democracy.
+* A disordered city produces **no** tax, science, luxury or commerce.
+* `CAPTURED_CITY_UNHAPPY = 3`.
+
+=== Specialists
+
+[cols="2,1,1,1", options="header"]
+|===
+|Specialist |Luxury |Gold |Science
+
+|Entertainer
+|2
+|0
+|0
+
+|Taxman
+|0
+|2
+|0
+
+|Scientist
+|0
+|0
+|2
+|===
+
+A city works `1 + (population − specialists)` tiles. The centre is free, and each
+remaining citizen takes one tile. Ties break on total `food + production + trade`.
+Manually assigned tiles are always honoured first.
+
+=== Upkeep
+
+[source]
+----
+upkeep = 1 per unit that has a home city and is not a NONE unit
+       + Σ building.upkeep
+----
+
+[cols="2,1", options="header"]
+|===
+|Building |Upkeep
+
+|Temple, Marketplace, Courthouse, Library, Granary, Bank, Colosseum
+|1
+
+|City Walls, Aqueduct, University, Cathedral, Harbor, Hydro Plant, Mass Transit, Power Plant
+|2
+
+|Factory
+|3
+
+|SDI Defense
+|4
+
+|Palace and all wonders
+|0
+|===
+
+=== Bankruptcy
+
+If gold goes negative:
+
+. Emergency tax — tax to maximum, science and luxury to 0, re-accumulate.
+. Still short → disband units, in this order:
+. units that are not the only defender of their city
+. non-scouts
+. descending maintenance
+. descending cost
+. A second pass breaks the last-defender rule if it must.
+. Treasuries are never dropped below `ABSOLUTE_MIN_GOLD = 8`.
+. A Fisher Boat on an *active* route is never a disband candidate.
+
+== Research
+
+Defined in: `src/game/engine/ResearchManager.ts`
+
+=== The tree
+
+45 technologies. Roots are marked ★ — they are available from turn one.
+
+[cols="2,2,1,3", options="header"]
+|===
+|Technology |Cost |Prereq |Unlocks
+
+|Pottery ★
+|20
+|—
+|Granary
+
+|Bronze Working ★
+|30
+|—
+|Phalanx, Barracks
+
+|Alphabet ★
+|20
+|—
+|Writing, Code of Laws
+
+|The Wheel ★
+|25
+|—
+|Chariot, Mathematics
+
+|Masonry ★
+|30
+|—
+|City Walls, Harbor, Great Wall, Pyramids
+
+|Sailing ★
+|35
+|—
+|Ferry, Map Making
+
+|Ceremonial Burial ★
+|20
+|—
+|Temple, Hanging Gardens, Polytheism
+
+|Horseback Riding ★
+|20
+|—
+|Knights, Cavalry
+
+|Iron Working
+|50
+|Bronze Working
+|Legion
+
+|Writing
+|40
+|Alphabet
+|Diplomat, Literacy
+
+|Mathematics
+|50
+|The Wheel
+|Catapult, Engineering, Construction, Astronomy
+
+|Map Making
+|40
+|Sailing
+|Trireme, Navigation
+
+|Code of Laws
+|40
+|Alphabet
+|Courthouse, Monarchy
+
+|Currency
+|60
+|Bronze Working
+|Marketplace
+
+|Monarchy
+|60
+|Code of Laws
+|Monarchy government
+
+|Literacy
+|60
+|Writing
+|Philosophy
+
+|Polytheism
+|60
+|Ceremonial Burial, Bronze Working
+|Monotheism
+
+|Trade
+|70
+|Currency
+|Caravan, Banking
+
+|Construction
+|70
+|Masonry, Mathematics
+|Aqueduct
+
+|Philosophy
+|80
+|Literacy
+|Oracle, Astronomy, Monotheism, Democracy, Communism
+
+|Republic
+|80
+|Monarchy
+|Republic government
+
+|Engineering
+|90
+|Mathematics
+|Hospital, Industrialization, Railroad, Combustion, river bridges
+
+|University
+|90
+|Philosophy
+|University building, Newton's University
+
+|Metallurgy
+|100
+|Iron Working
+|Cannon, Gunpowder, Steel
+
+|Theology
+|100
+|Monotheism
+|Cathedral
+
+|Monotheism
+|80
+|Philosophy, Polytheism
+|Michelangelo's Chapel
+
+|Banking
+|100
+|Trade
+|Bank, Stock Exchange, Industrialization
+
+|Astronomy
+|70
+|Philosophy, Mathematics
+|Navigation
+
+|Navigation
+|80
+|Map Making, Astronomy
+|Caravel, Frigate, Magellan's Voyage
+
+|Gunpowder
+|100
+|Metallurgy
+|Musketeer, Riflemen
+
+|Democracy
+|120
+|Theology, Philosophy
+|Democracy government, United Nations, Women's Suffrage
+
+|Industrialization
+|120
+|Banking, Engineering
+|Factory, Mass Production, Communism
+
+|Railroad
+|140
+|Engineering
+|Railroad improvement
+
+|Scientific Theory
+|140
+|University, Philosophy
+|Electricity
+
+|Steel
+|160
+|Metallurgy
+|Ironclad, Battleship
+
+|Electricity
+|160
+|Scientific Theory
+|Power Plant
+
+|Communism
+|160
+|Industrialization, Philosophy
+|Communism government
+
+|Mass Production
+|170
+|Industrialization
+|Mass Transit, Recycling Center
+
+|Electronics
+|180
+|Electricity
+|Hydro Plant, Nuclear Power, Computers
+
+|Combustion
+|180
+|Engineering, Electricity
+|Mech. Inf., Tank, Destroyer, Cruiser, Submarine
+
+|Flight
+|200
+|Combustion
+|Fighter, Bomber, Carrier
+
+|Nuclear Power
+|200
+|Electronics
+|Nuclear Plant, Nuclear
+
+|Computers
+|220
+|Electronics
+|Space Flight
+
+|Space Flight
+|250
+|Flight, Computers
+|SDI Defense, Moonshot
+
+|Moonshot
+|300
+|Space Flight
+|**Instant victory**
+|===
+
+Moonshot is flagged `available: false` in the data — it cannot be selected in
+the tech tree, and completing it wins the game on the spot.
+
+A few technology *descriptions* name things that do not exist as units or
+buildings in this codebase — "Horsemen" (the unit is `knights`), "Crusader
+units", "Observatory", "Research Labs". The unlock column above is what the code
+actually gates on.
+
+=== Research costs
+
+[source]
+----
+mapTechRate        = clamp(round((mapWidth + mapHeight) / 45), 1, 3)
+difficultyFactor   = CHIEFTAIN 1.2 | WARLORD 1.1 | PRINCE 1.0 | KING 0.9 | EMPEROR 0.8
+techCountFactor    = clamp(1 + (myTechs − maxTechs) × 0.1, 0.8, 1.2)
+
+effectiveCost      = max(10, floor(baseCost × mapTechRate / difficultyFactor
+                                        × techCountFactor))
+
+knownCivsModifier  = clamp(1 − knownCivs × 0.1, 0.6, 1)
+prereqModifier     = clamp(1 − (missingPrereqs / totalPrereqs) × 0.4, 0.6, 1)
+beakers            = floor(floor((baseCost + 1) × knownCivsModifier) × prereqModifier)
+
+perTurnProgress    = clamp(beakers, ceil(effectiveCost / 32), remaining)
+----
+
+* A **larger map is harder**: the tech rate scales with map size.
+* A **higher difficulty is easier**: the factor divides, and Emperor is 0.8.
+* `MIN_RESEARCH_TURNS = 4`, `MAX_RESEARCH_TURNS = 32` per technology.
+* Research is locked for the **first 5 rounds**.
+* Science produced with nothing selected banks in `civ.bankedScience` and is
+  spent as soon as a technology is chosen.
+* Completing Metallurgy scraps every city wall in the empire.
+
+== Government
+
+Defined in: `src/data/GovernmentData.ts` and `src/game/engine/GovernmentManager.ts`
+
+[cols="2,1,1,1,1,1,1,2", options="header"]
+|===
+|Government |Max tax |Tolerance |Corruption |Commerce penalty |Happiness |Zeroes rates |Requires
+
+|Despotism
+|100
+|2
+|0.30
+|0
+|0
+|no
+|start
+
+|Monarchy
+|100
+|3
+|0.25
+|0
+|+1
+|no
+|Monarchy
+
+|Republic
+|100
+|4
+|0.15
+|0
+|+2
+|no
+|Republic
+
+|Democracy
+|**10**
+|5
+|0.05
+|0
+|+4
+|no
+|Democracy
+
+|Communism
+|100
+|3
+|0.10
+|**−25 %**
+|+1
+|no
+|Communism
+
+|Anarchy
+|0
+|1
+|0.30
+|0
+|0
+|**yes**
+|revolution only
+|===
+
+* `Tolerance` is how many citizens can be unhappy before rioting.
+* Anarchy lasts `ANARCHY_TURNS = 3` and forces all rates to 0.
+* A revolution only happens when the best candidate beats the current government
+  by `SWITCH_MARGIN = 5`. The score weights corruption, scaled by
+  `empireScale = 1 + cities × 0.6 + population × 0.05`, plus commerce penalty,
+  happiness, tolerance, tax need and science. Republic and Democracy are
+  penalised for an expansionist empire, because their 1-shield-per-settler rule
+  punishes settler-heavy empires.
+* The capital is whichever city holds the Palace. `ensureCapital` reassigns one
+  if a capital is captured or its Palace is sold.
+
+=== The settler shield tax
+
+Under Republic and Democracy, each of your own settlers **costs the city 1
+shield** per turn. Every other government pays nothing. This is the main reason
+Democracy is hard for an expansionist, and it is the real cost of a settler —
+not the 0 upkeep in the unit table.
+
+== Barbarians
+
+Defined in: `src/game/engine/BarbarianManager.ts`
+
+* Barbarians are a **phantom civilization** with id `BARBARIAN_CIV_ID = -1`. They
+  are excluded from the turn rotation and act once per round, before anyone
+  else.
+* They only become a real faction — a civilization you can see, score, and must
+  destroy — the moment they **hold a city**. Until then they cannot be a loss
+  condition.
+* Horde strength is `Σ(max(0.5, attack) + defense × 0.3)`.
+* An assault needs at least 2 units and `hordeStrength >= cityDefense × 1.5`.
+* `estimateCityDefense = max(1, population) × (3 with walls) + Σ(attack + defense × 0.5)`
+  for units within Chebyshev distance 2.
+* A captured barbarian city has all its buildings sold, switches to
+  auto-production, and pumps out raiders once per round.
+
+== Villages (goody huts)
+
+Defined in: `src/data/VillageConstants.ts`
+
+* Density: one per 150 tiles, minimum 1 per map.
+* Never on ocean, mountains or a river tile. Never on a special-resource tile.
+  Never within Chebyshev 2 of a starting settler.
+* Only **land** units trigger a village. Air units fly over.
+* The hut is consumed the instant it is triggered.
+
+Five outcomes, **20 % each**:
+
+[cols="2,4", options="header"]
+|===
+|Outcome |Effect
+
+|Advanced Tribe
+|Only for a settler, and not on a tile next to a city. Founds a size-1 city with
+a random free building from Barracks, Granary, Temple.
+
+|Scroll of Ancient Wisdom
+|A free technology.
+
+|Valuable Metals
+|25, 50 or 100 gold — equal chance.
+
+|Friendly Mercenaries
+|A settler-triggered hut gives a Settler with a NONE home city. Any other land
+unit gets the strongest buildable military unit.
+
+|Barbarian Ambush
+|1 to 3 Warriors or Legions on free adjacent tiles. Each one **attacks the
+triggering unit in the same turn**.
+|===
+
+An invalid roll is re-rolled up to 10 times, then falls back to gold.
+
+== Diplomacy
+
+Defined in: `src/game/engine/DiplomacyManager.ts`. Full detail in
+link:DIPLOMACY_SYSTEM.md[Diplomacy System].
+
+[cols="2,3", options="header"]
+|===
+|Status |Meaning
+
+|Alliance
+|Shared enemy, mutual defence.
+
+|Peace
+|Default.
+
+|Ceasefire
+|Temporary. Breaking one costs 30 reputation.
+
+|War
+|Cascades to the defender's allies.
+|===
+
+=== Reputation
+
+[source]
+----
+attitude = (personality.diplomacy − 5) × 3
+         − (personality.aggression − 5) × 2
+         − brokenTreaties × 15
+         + reputationModifier
+         + statusBonus        (+20 alliance, −30 war, −10 ceasefire)
+         + treatyBonus        (trade +5, open borders +3, mutual defence +8,
+                               non-aggression +4)
+         + strengthModifier   (−10 if the enemy is 1.5× stronger,
+                               +5 if you are 2× stronger)
+         + borderFriction     (−8 within 4 tiles, −3 within 7)
+----
+
+Bands: `≥ 15` friendly, `≥ −5` neutral, `≥ −20` annoyed, else hostile.
+
+Penalties: ceasefire cooldown 5 turns, peace broken −30, alliance broken −50,
+surprise attack −20. Reputation recovers 1 per turn.
+
+=== Willingness
+
+Base by attitude: friendly 75, neutral 50, annoyed 30, hostile 10. Then treaty
+modifiers — peace +15, ceasefire +20, alliance −10, tribute −20 (+25 if you are
+1.5× stronger), open borders +5, trade +10, mutual defence −15, non-aggression
++15, embargo −10, tech exchange +5. Minus 15 per treaty broken. Clamped 0–100.
+
+=== Bribery
+
+Cost is `25 × (attack + defense)`, success chance 60 % — +20 % against a hostile
+target, −20 % against a friendly one. A success transfers the unit **and
+auto-declares war**. The diplomat is consumed.
+
+== Victory
+
+Defined in: `src/game/engine/VictoryManager.ts`
+
+There are exactly **two** win conditions and no third fallback.
+
+[cols="2,4", options="header"]
+|===
+|Condition |Detail
+
+|Moonshot
+|Any civilization that completes Moonshot wins immediately.
+
+|Elimination
+|Only one civilization is still *operational* — it owns at least one unit or one
+city.
+|===
+
+[IMPORTANT]
+====
+There is deliberately **no** "capture every city" shortcut, and **no**
+score-based win at 2100 AD. A rival with one surviving unit keeps the game
+running.
+
+The human loses when their civilization is eliminated, or when an AI wins while
+the human is still alive.
+
+On any result the engine sets `isGameOver` and `setPaused(true)`, which freezes
+all AI and turn logic.
+====
+
+=== Score
+
+Recomputed every turn end, so the scoreboard and the exported CSV stay live.
+
+[source]
+----
+score = population
+      + unique workable tiles in your cities' radii
+      + number of cities
+      + cities × 5
+      + technologies × 5
+      + wonders × 20
+      + floor(consecutivePeaceRounds / 5)
+      − pollution from your buildings
+----
+
+`peaceTurns` increments each round at peace and resets to 0 when you go to war.
+
+== Difficulty
+
+[cols="2,1,1,1", options="header"]
+|===
+|Difficulty |AI bonus |Barbarian frequency
+
+|Chieftain
+|0
+|0.2
+
+|Warlord
+|0.5
+|0.3
+
+|Prince
+|1
+|0.5
+
+|King
+|1.5
+|0.6
+
+|Emperor
+|2
+|0.7
+|===
+
+Difficulty also sets `difficultyFactor` in <<Research costs>> — Chieftain 1.2 down
+to Emperor 0.8 — and disables the "settler destroys a size-1 city" penalty at
+Chieftain.
+
+== Civilizations
+
+[cols="2,2,1", options="header"]
+|===
+|Civilization |Leader |Color
+
+|Americans
+|Abraham Lincoln
+|Blue
+
+|Aztecs
+|Montezuma
+|Teal green
+
+|Babylonians
+|Hammurabi
+|Orange-brown
+
+|Chinese
+|Mao Tse Tung
+|Yellow
+
+|Egyptians
+|Ramesses II
+|Gold
+
+|English
+|Elizabeth I
+|Red
+
+|French
+|Napoleon Bonaparte
+|White
+
+|Germans
+|Frederick the Great
+|Gray
+
+|Greeks
+|Alexander the Great
+|Blue
+
+|Indians
+|Mahatma Gandhi
+|Saffron orange
+
+|Huns
+|Dschingis Khan
+|Turquoise
+
+|Romans
+|Julius Caesar
+|Black
+
+|Russians
+|Joseph Stalin
+|Soviet red
+
+|Zulus
+|Shaka
+|Brown
+|===
+
+Choosing a civilization currently changes only your colour, leader portrait and
+city-name list — there is no per-civ gameplay advantage.
+`doc/leader-doctrines.adoc` is a design proposal for giving each one a doctrine.
+
+== Developer URL parameters
+
+All of these are read once, on load, and then stripped from the address bar.
+
+[cols="2,4", options="header"]
+|===
+|Parameter |Effect
+
+|`?maptype=NAME`
+|Launch that scenario straight into the game, skipping the setup wizard. Implies
+Dev Mode.
+
+|`?civs=N`
+|Number of civilizations, clamped to 2–7. Default 4.
+
+|`?difficulty=NAME`
+|Default `PRINCE`.
+
+|`?seed=N`
+|Pins the map seed. With a pinned seed the whole start assignment, including
+which AI gets which production profile, is reproducible.
+
+|`?gold=N`
+|Starting gold. Default 50.
+
+|`?dev=0`
+|Turns Dev Mode off even for an AI-vs-AI map.
+
+|`?quickstart`
+|Skips the wizard into a normal skirmish with 2 civs and Dev Mode on.
+
+|`?combatlab`
+|Small 20×20 game with three pairs of units already posed for combat.
+
+|`?noanim`
+|Disables all movement, combat and camera animation.
+|===
+
+Example — an unattended, reproducible naval spectator game:
+
+[source]
+----
+http://localhost:5173/?maptype=AI_VS_AI_NAVAL&civs=7&seed=123&gold=50&noanim
+----
+
+== Where the numbers live
+
+[cols="2,2", options="header"]
+|===
+|Area |File
+
+|Terrains, resources, spawn chances
+|`src/data/TerrainConstants.ts`
+
+|Units
+|`src/data/UnitConstants.ts`
+
+|Buildings and wonders
+|`src/data/BuildingConstants.ts`
+
+|Technologies
+|`src/data/TechnologyData.ts`
+
+|Governments
+|`src/data/GovernmentData.ts`
+
+|Improvements
+|`src/data/TileImprovementConstants.ts`
+
+|Villages
+|`src/data/VillageConstants.ts`
+
+|Global constants, map types, specialists
+|`src/data/GameConstants.ts`
+
+|Combat
+|`src/game/engine/CombatSystem.ts`
+
+|Economy
+|`src/game/engine/EconomicManager.ts`
+
+|Turn order
+|`src/game/engine/TurnManager.ts`
+
+|Research cost scaling
+|`src/game/engine/ResearchManager.ts`
+
+|Diplomacy
+|`src/game/engine/DiplomacyManager.ts`
+
+|Victory and score
+|`src/game/engine/VictoryManager.ts`
+
+|Barbarians
+|`src/game/engine/BarbarianManager.ts`
+
+|Fishing
+|`src/game/engine/FisherEconomics.ts`
+
+|Fishing, rivers, AI, rendering
+|see `doc/` index in the main README
+|===
