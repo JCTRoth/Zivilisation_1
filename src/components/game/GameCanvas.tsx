@@ -342,32 +342,32 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
    * terrain type, exploration and the tile-bound features (resource,
    * improvement/road, river, village) that never move. Visibility is NOT part
    * of it — fog is composited separately on every visibility change.
+   *
+   * Fields are mixed straight into the hash instead of concatenating a string
+   * per tile. An improvement contributes only its string form: that is the only
+   * form the renderer draws (anything else is stringified to a non-matching
+   * key), so serializing legacy object values per tile just allocated garbage.
    */
   const hashTerrainTypes = useCallback((grid: TerrainRenderGrid): string => {
     let h = 0;
+    const mix = (s: string): void => {
+      for (let i = 0; i < s.length; i++) {
+        h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+      }
+    };
     for (let r = 0; r < grid.length; r++) {
       const row = grid[r];
       if (!row) continue;
       for (let c = 0; c < row.length; c++) {
         const t = row[c];
         if (!t) continue;
-        const improvement =
-          typeof t.improvement === "string"
-            ? t.improvement
-            : t.improvement
-              ? JSON.stringify(t.improvement)
-              : "";
-        const s =
-          t.type +
-          (t.explored ? "1" : "0") +
-          (t.resource ?? "") +
-          improvement +
-          (t.hasRoad ? "r" : "") +
-          (t.hasRiver ? "w" : "") +
-          (t.village ? "v" : "");
-        for (let i = 0; i < s.length; i++) {
-          h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-        }
+        mix(t.type ?? "");
+        h = ((h << 5) - h + (t.explored ? 1 : 0)) | 0;
+        mix(t.resource ?? "");
+        mix(typeof t.improvement === "string" ? t.improvement : "");
+        h = ((h << 5) - h + (t.hasRoad ? 1 : 0)) | 0;
+        h = ((h << 5) - h + (t.hasRiver ? 1 : 0)) | 0;
+        h = ((h << 5) - h + (t.village ? 1 : 0)) | 0;
       }
     }
     return String(h);

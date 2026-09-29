@@ -1930,10 +1930,16 @@ export default class GameEngine {
         if (!this.isExploredByPlayer(civId, col, row)) continue;
         const waterTile = this.findAdjacentOcean(col, row);
         if (!waterTile) continue;
-        const distance = ownCities.length > 0
-          ? Math.min(...ownCities.map((c: City) =>
-              this.squareGrid!.squareDistance(c.col, c.row, col, row)))
-          : 0;
+        // Nearest own city, as a plain loop: `Math.min(...cities.map(...))`
+        // allocated an array for every land tile of the map on every scan.
+        let distance = 0;
+        if (ownCities.length > 0) {
+          distance = Infinity;
+          for (const c of ownCities) {
+            const d = this.squareGrid!.squareDistance(c.col, c.row, col, row);
+            if (d < distance) distance = d;
+          }
+        }
         const existing = best.get(id);
         if (!existing || distance < existing.distance) {
           best.set(id, {

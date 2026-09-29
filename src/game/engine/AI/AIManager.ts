@@ -1130,6 +1130,12 @@ export class AIManager {
     return typeof fn === 'function' ? fn.call(this.gameEngine, civilizationId, col, row) : true;
   }
 
+  buildLandReachableLookup(civilizationId: number): (col: number, row: number) => boolean {
+    const fn = this.gameEngine.isTileReachableByLandFromCiv;
+    if (typeof fn !== 'function') return () => true;
+    return (col, row) => fn.call(this.gameEngine, civilizationId, col, row);
+  }
+
   // ──────────────────────────────────────────────────────────────────────
   // Colony missions: ferry a settler to a small empty island
   // ──────────────────────────────────────────────────────────────────────

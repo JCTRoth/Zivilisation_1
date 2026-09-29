@@ -299,3 +299,96 @@ describe('AutoProduction happiness emergency', () => {
     expect(item.itemType).not.toBe('phalanx');
   });
 });
+
+/**
+ * The doctrine probes the map (colonisable islands), per-city threats and the
+ * economy, and auto-production asks for it once per city per queue slot. The
+ * verdict is cached per civ on the cheap counts it consumes; these tests pin
+ * both halves of that: repeats are free, and any count change re-runs it.
+ */
+describe('AutoProduction naval doctrine caching', () => {
+  const createDoctrineMockEngine = () => {
+    const city = {
+      id: 'city-1',
+      name: 'Testopolis',
+      civilizationId: 1,
+      col: 0,
+      row: 0,
+      population: 3,
+      buildings: [],
+      currentProduction: null,
+      autoProduction: true,
+    };
+    const engine: any = {
+      cities: [city],
+      units: [],
+      civilizations: [
+        null,
+        {
+          id: 1,
+          name: 'TestCiv',
+          technologies: new Set<string>(),
+          resources: { gold: 100 },
+          personality: { aggression: 5, expansion: 5, diplomacy: 5, science: 5, military: 5, economy: 5 },
+          warWith: new Set(),
+        },
+      ],
+      getPlayerStorage: () => ({ turnData: {} }),
+      roundManager: { getRoundNumber: () => 7 },
+      currentYear: -500,
+      gameSettings: { difficulty: 'PRINCE' },
+      getCityAt: () => null,
+      getUnitAt: () => null,
+      map: { width: 20, height: 20 },
+      // The expensive probe the cache must keep off the hot path.
+      getColonizableIslands: vi.fn(() => []),
+    };
+    return { engine };
+  };
+
+  it('answers repeated queries for an unchanged civ from the cache', () => {
+    const { engine } = createDoctrineMockEngine();
+    const autoProduction = new AutoProduction(engine);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const forCiv = (autoProduction as any).navalDoctrineFor.bind(autoProduction);
+
+    const first = forCiv(1);
+    expect(first).not.toBeNull();
+    expect(forCiv(1)).toBe(first);
+    expect(forCiv(1)).toBe(first);
+    expect(engine.getColonizableIslands).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-runs the doctrine when a count it consumes changes', () => {
+    const { engine } = createDoctrineMockEngine();
+    const autoProduction = new AutoProduction(engine);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const forCiv = (autoProduction as any).navalDoctrineFor.bind(autoProduction);
+
+    const first = forCiv(1);
+    // A new unit changes the naval counts even though `round` is unchanged.
+    engine.units.push({
+      id: 'fer', type: 'ferry', civilizationId: 1, col: 0, row: 0, isDefeated: false, attack: 0, defense: 0,
+    });
+    const second = forCiv(1);
+    expect(second).not.toBe(first);
+    expect(engine.getColonizableIslands).toHaveBeenCalledTimes(2);
+
+    // …and a treasury change too.
+    engine.civilizations[1].resources.gold = 50;
+    forCiv(1);
+    expect(engine.getColonizableIslands).toHaveBeenCalledTimes(3);
+  });
+
+  it('re-runs the doctrine on the next round even with no count change', () => {
+    const { engine } = createDoctrineMockEngine();
+    const autoProduction = new AutoProduction(engine);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const forCiv = (autoProduction as any).navalDoctrineFor.bind(autoProduction);
+
+    forCiv(1);
+    engine.roundManager.getRoundNumber = () => 8;
+    forCiv(1);
+    expect(engine.getColonizableIslands).toHaveBeenCalledTimes(2);
+  });
+});

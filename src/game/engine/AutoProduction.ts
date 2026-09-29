@@ -108,6 +108,15 @@ const EXPANSION_PARAMS: Record<StrategyProfile, { settlersPerCities: number; min
 export class AutoProduction {
   private gameEngine: GameEngine;
 
+  /**
+   * Per-civ naval doctrine verdict for the current state of the world. The
+   * doctrine probes the map (colonisable islands), every own city's threat and
+   * the whole economy, and AutoProduction asks for it once per city per queue
+   * slot — dozens of identical answers per turn. The cache key is the cheap set
+   * of counts the doctrine consumes, so any of them changing re-runs it.
+   */
+  private readonly navalDoctrineCache = new Map<number, { key: string; verdict: NavalDoctrineVerdict | null }>();
+
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
   }
@@ -1497,6 +1506,39 @@ export class AutoProduction {
     };
     const hasIslandProbe = typeof engine.getColonizableIslands === 'function';
 
+    // Cheap, always-fresh counts. They are part of the doctrine input AND the
+    // cache key, so a repeated query inside one turn's production pass skips
+    // the expensive probes below (island scan, per-city threat, economy).
+    const isTransport = (u: Unit): boolean => (UNIT_PROPS[u.type]?.transportCapacity ?? 0) > 0;
+    const ownNaval = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civId && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true,
+    );
+    const ownTransports = ownNaval.filter(isTransport).length;
+    const ownWarships = ownNaval.length - ownTransports;
+    const enemyNaval = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId !== civId && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true,
+    );
+    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civId);
+    const strategy = this.getStrategyForCiv(civId);
+    // Technologies are a Set on the engine and an array on some test doubles.
+    const techCount = civ.technologies instanceof Set
+      ? civ.technologies.size
+      : (civ.technologies?.length ?? 0);
+
+    const cacheKey = [
+      this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
+      strategy,
+      civ.resources?.gold ?? 0,
+      techCount,
+      this.gameEngine.units.length,
+      this.gameEngine.cities.length,
+      ownNaval.length,
+      enemyNaval.length,
+      ownCities.length,
+    ].join('|');
+    const cached = this.navalDoctrineCache.get(civId);
+    if (cached && cached.key === cacheKey) return cached.verdict;
+
     // Which hulls the tech actually allows. `transportCapacity > 0` marks a
     // transport; everything else with real attack power is a warship.
     const available: AvailableShip[] = [];
@@ -1532,24 +1574,13 @@ export class AutoProduction {
     const income = hasEconomy ? econ!.maxTaxIncome!(civ) : 0;
     const upkeep = hasEconomy ? econ!.totalUpkeep!(civId) : 0;
     // The AI's own reserve policy, in turns of upkeep it wants kept spare.
-    const reserveTurns = AI_RESERVE_TURNS[this.getStrategyForCiv(civId)]
+    const reserveTurns = AI_RESERVE_TURNS[strategy]
       ?? AI_RESERVE_TURNS.balanced_growth;
     const reserve = hasEconomy ? Math.max(8, upkeep * reserveTurns) : 0;
-
-    const ownNaval = this.gameEngine.units.filter(
-      (u: Unit) => u.civilizationId === civId && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true,
-    );
-    const isTransport = (u: Unit): boolean => (UNIT_PROPS[u.type]?.transportCapacity ?? 0) > 0;
-    const ownTransports = ownNaval.filter(isTransport).length;
-    const ownWarships = ownNaval.length - ownTransports;
 
     const enemies = new Set<number>(
       (this.gameEngine.diplomacyManager?.getEnemies?.(civId) ?? []).map(Number),
     );
-    const enemyNaval = this.gameEngine.units.filter(
-      (u: Unit) => u.civilizationId !== civId && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true,
-    );
-    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civId);
     const hasNavalAccess = typeof engine.tileHasNavalAccess === 'function'
       ? engine.tileHasNavalAccess.bind(this.gameEngine)
       : () => false;
@@ -1596,7 +1627,9 @@ export class AutoProduction {
       bestAvailableShip: strongest,
       cheapestAvailableShip: cheapest,
     };
-    return { ...input, ...navalDoctrine(input), ownTransports, ownWarships };
+    const verdict = { ...input, ...navalDoctrine(input), ownTransports, ownWarships };
+    this.navalDoctrineCache.set(civId, { key: cacheKey, verdict });
+    return verdict;
   }
 
   /** Tech-gated offensive unit selection */

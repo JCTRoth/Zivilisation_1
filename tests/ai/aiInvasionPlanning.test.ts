@@ -111,6 +111,7 @@ const managerOf = (engine: GameEngine) => (engine as any).aiManager as {
     type: 'city' | 'unit';
     reachableBy?: 'land' | 'sea';
   }>;
+  buildLandReachableLookup(civilizationId: number): (col: number, row: number) => boolean;
 };
 
 describe('defence grid', () => {
@@ -185,5 +186,38 @@ describe('sea invasion context', () => {
     // The land target still feeds the war plan; the island city does not.
     expect(targets.map((t) => t.type)).toEqual(['unit']);
     expect(targets[0].reachableBy).toBe('land');
+  });
+});
+
+describe('land reachability test', () => {
+  function reachEngine(): GameEngine {
+    const engine = makeEngine();
+    addCity(engine, 'Islandport', 2, 2, 0);
+    // A second civ-0 city on the far landmass: the test must accept every
+    // landmass the civ's cities occupy, not just the first city's.
+    addCity(engine, 'Colony', 8, 4, 0);
+    addCity(engine, 'Mainport', 6, 2, 1);
+    return engine;
+  }
+
+  it('agrees with isTileReachableByLandFromCiv on every tile', () => {
+    const engine = reachEngine();
+    const isLandReachable = managerOf(engine).buildLandReachableLookup(0);
+    for (let row = 0; row < engine.map.height; row++) {
+      for (let col = 0; col < engine.map.width; col++) {
+        expect(isLandReachable(col, row), `tile (${col},${row})`).toBe(
+          engine.isTileReachableByLandFromCiv(0, col, row),
+        );
+      }
+    }
+  });
+
+  it('falls back to the engine wrapper when the landmass index is unavailable', () => {
+    const engine = reachEngine();
+    // Lightweight test doubles have no landmass index; the wrapper's fallback
+    // treats everything as reachable and must be preserved.
+    (engine as { isTileReachableByLandFromCiv?: unknown }).isTileReachableByLandFromCiv = undefined;
+    const isLandReachable = managerOf(engine).buildLandReachableLookup(0);
+    expect(isLandReachable(6, 2)).toBe(true);
   });
 });

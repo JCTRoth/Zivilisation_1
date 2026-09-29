@@ -332,35 +332,63 @@ export class EconomicManager {
   }
 
   /**
-   * Whether a Fisher Boat has its net on this fishing ground. ANY stage of the
-   * route counts as "actively using" the ground — the boat is assigned to it
-   * even while sailing home to unload or back out to the net.
+   * Fishing grounds currently occupied by an active Fisher Boat, keyed
+   * `col,row`. ANY stage of the route counts as "actively using" the ground —
+   * the boat is assigned to it even while sailing home to unload or back out
+   * to the net.
    */
-  private hasActiveFishingNet(col: number, row: number): boolean {
-    const units = this.gameEngine?.units ?? [];
-    return units.some((u) => {
-      if (u.isDefeated || !u.fishingRoute) return false;
+  private activeFishingGrounds(): Set<string> {
+    const grounds = new Set<string>();
+    for (const u of this.gameEngine?.units ?? []) {
+      if (u.isDefeated || !u.fishingRoute) continue;
       const tile = u.fishingRoute.fishingTile;
-      return !!tile && tile.col === col && tile.row === row;
-    });
+      if (tile) grounds.add(`${tile.col},${tile.row}`);
+    }
+    return grounds;
   }
 
   /**
-   * Yields of a tile as worked by a city. Fishing grounds only pay their full
-   * fish bonus when a Fisher Boat is actively using them: without a boat the
-   * city draws one food less from a Fish tile, so the boat (and its catch) is
-   * what makes the ground valuable. Public so the AI and the UI rank/display
-   * the same numbers the growth pipeline uses.
+   * A lazily-built fishing-net lookup for a pass over many tiles. `cityTileYields`
+   * scanned every unit for EVERY fish tile it was asked about; a city working
+   * several fishing grounds (or a fit that ranks all its worked tiles) paid that
+   * scan once per tile. The set is built on the first query, so a pass with no
+   * fish tile still costs nothing.
    */
-  cityTileYields(
+  private fishingGroundLookup(): (col: number, row: number) => boolean {
+    let grounds: Set<string> | null = null;
+    return (col: number, row: number): boolean => {
+      grounds ??= this.activeFishingGrounds();
+      return grounds.has(`${col},${row}`);
+    };
+  }
+
+  /**
+   * Yields of a tile as worked by a city, given a fishing-net lookup. Fishing
+   * grounds only pay their full fish bonus when a Fisher Boat is actively using
+   * them: without a boat the city draws one food less from a Fish tile, so the
+   * boat (and its catch) is what makes the ground valuable.
+   */
+  private cityTileYieldsWith(
     tile: EconomyTile | null | undefined,
+    hasFishingNet: (col: number, row: number) => boolean,
   ): { food: number; production: number; trade: number } {
     const yields = this.tileYields(tile);
     if (!tile) return yields;
     if (String(tile.resource ?? '').toLowerCase() !== 'fish') return yields;
     if (typeof tile.col !== 'number' || typeof tile.row !== 'number') return yields;
-    if (this.hasActiveFishingNet(tile.col, tile.row)) return yields;
+    if (hasFishingNet(tile.col, tile.row)) return yields;
     return { ...yields, food: Math.max(0, yields.food - 1) };
+  }
+
+  /**
+   * Yields of a tile as worked by a city. Public so the AI and the UI
+   * rank/display the same numbers the growth pipeline uses; passes that walk
+   * many tiles should use {@link cityTileYieldsWith} with one shared lookup.
+   */
+  cityTileYields(
+    tile: EconomyTile | null | undefined,
+  ): { food: number; production: number; trade: number } {
+    return this.cityTileYieldsWith(tile, this.fishingGroundLookup());
   }
 
   private cityTerritory(city: City): Array<{ col: number; row: number }> {
@@ -440,6 +468,7 @@ export class EconomicManager {
       row: number;
       yields: { food: number; production: number; trade: number };
     }> = [];
+    const hasFishingNet = this.fishingGroundLookup();
     for (const sq of this.cityTerritory(city)) {
       const owner = this.territoryOwner(sq.col, sq.row);
       if (owner && owner.id !== city.id) continue;
@@ -448,7 +477,7 @@ export class EconomicManager {
       candidates.push({
         col: sq.col,
         row: sq.row,
-        yields: this.cityTileYields(tile),
+        yields: this.cityTileYieldsWith(tile, hasFishingNet),
       });
     }
     const total = (y: {
@@ -587,11 +616,15 @@ export class EconomicManager {
     const centerKey = `${city.col},${city.row}`;
     const manual = city.userAssignedTiles instanceof Set ? city.userAssignedTiles : new Set<string>();
     const droppable: Array<{ key: string; total: number }> = [];
+    const hasFishingNet = this.fishingGroundLookup();
     for (const key of working) {
       if (key === centerKey) continue;
       if (manual.has(key)) continue; // the player's choice stays
       const sep = key.indexOf(',');
-      const y = this.cityTileYields(this.getTile(Number(key.slice(0, sep)), Number(key.slice(sep + 1))));
+      const y = this.cityTileYieldsWith(
+        this.getTile(Number(key.slice(0, sep)), Number(key.slice(sep + 1))),
+        hasFishingNet,
+      );
       droppable.push({ key, total: y.food + y.production + y.trade });
     }
     // Worst tile first, so the city keeps its best land.
@@ -638,13 +671,14 @@ export class EconomicManager {
     let food = 0;
     let production = 0;
     let trade = 0;
+    const hasFishingNet = this.fishingGroundLookup();
     for (const key of city.workingTiles ?? []) {
       const sep = key.indexOf(',');
       if (sep === -1) continue;
       const col = Number(key.slice(0, sep));
       const row = Number(key.slice(sep + 1));
       if (Number.isNaN(col) || Number.isNaN(row)) continue;
-      const y = this.cityTileYields(this.getTile(col, row));
+      const y = this.cityTileYieldsWith(this.getTile(col, row), hasFishingNet);
       food += y.food;
       production += y.production;
       trade += y.trade;
