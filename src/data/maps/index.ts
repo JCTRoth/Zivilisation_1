@@ -31,7 +31,7 @@ export const WORLD_MAP: StaticMapDefinition | undefined = STATIC_MAPS[WORLD_MAP_
  * procedural generator, so their layout — and their start positions — are the
  * same on every machine and every run.
  */
-export const STATIC_MAP_FOR_MAP_TYPE: Readonly<Record<string, string>> = {
+const STATIC_MAP_FOR_MAP_TYPE: Readonly<Record<string, string>> = {
   EARTH: WORLD_MAP_ID,
   AI_VS_AI_NAVAL: 'naval-archipelago-96x60',
   AI_VS_AI_NAVAL_TROPICAL: 'naval-archipelago-tropical-96x60',

@@ -73,12 +73,13 @@ export interface CivEconomyPreview {
 }
 
 export const UNIT_MAINTENANCE = 1;
-export const CITY_CENTER_COMMERCE = 2;
-export const TRADE_GOLD_MULTIPLIER = 2;
-export const BASE_CONTENTMENT = 2;
-export const CAPTURED_CITY_UNHAPPY = 3;
+const CITY_CENTER_COMMERCE = 2;
+const TRADE_GOLD_MULTIPLIER = 2;
+/** Contentment every citizen contributes before any modifiers. */
+const BASE_CONTENTMENT = 2;
+const CAPTURED_CITY_UNHAPPY = 3;
 export const CITY_RADIUS = 2;
-export const CITY_CENTER_MIN = { food: 2, production: 1, trade: 1 };
+const CITY_CENTER_MIN = { food: 2, production: 1, trade: 1 };
 
 /**
  * Floor the treasury is reset to after the AI is forced to disband.
@@ -435,6 +436,41 @@ export class EconomicManager {
         .sort((a, b) => a.distance - b.distance || a.index - b.index)[0]
         ?.candidate ?? null
     );
+  }
+
+  /**
+   * Tiles a citizen of this city COULD be put on: inside the real city radius
+   * (Civ 1 drops the four far corners), not owned by a rival city, not the
+   * centre, and not already worked. This is the single source of truth for the
+   * "Available Tiles" list and for validating a manual assignment — the naive
+   * `max(|dx|,|dy|) <= 2` box wrongly offered corner tiles and other cities'
+   * land, which the engine would then refuse anyway.
+   */
+  getWorkableTiles(city: City): Array<{ col: number; row: number; key: string }> {
+    if (!city) return [];
+    const worked = city.workingTiles ?? new Set<string>();
+    const out: Array<{ col: number; row: number; key: string }> = [];
+    for (const sq of this.cityTerritory(city)) {
+      const key = `${sq.col},${sq.row}`;
+      if (worked.has(key)) continue;
+      const owner = this.territoryOwner(sq.col, sq.row);
+      if (owner && owner.id !== city.id) continue;
+      out.push({ col: sq.col, row: sq.row, key });
+    }
+    return out;
+  }
+
+  /**
+   * Whether one specific tile is a legal work assignment for this city.
+   */
+  canWorkTile(city: City, col: number, row: number): boolean {
+    if (!city) return false;
+    const key = `${col},${row}`;
+    if (key === `${city.col},${city.row}`) return false;
+    if ((city.workingTiles ?? new Set<string>()).has(key)) return false;
+    const owner = this.territoryOwner(col, row);
+    if (owner && owner.id !== city.id) return false;
+    return this.cityTerritory(city).some((sq) => sq.col === col && sq.row === row);
   }
 
   private cityWorkedTiles(

@@ -42,7 +42,7 @@ export const CITY_GOVERNOR_OPTIONS: GovernorOption[] = [
   },
 ];
 
-export const GOVERNOR_BY_MODE: Record<CityGovernorMode, GovernorOption> = CITY_GOVERNOR_OPTIONS.reduce(
+const GOVERNOR_BY_MODE: Record<CityGovernorMode, GovernorOption> = CITY_GOVERNOR_OPTIONS.reduce(
   (acc, option) => {
     acc[option.mode] = option;
     return acc;

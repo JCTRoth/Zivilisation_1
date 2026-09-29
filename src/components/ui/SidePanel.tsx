@@ -248,47 +248,90 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     );
   };
 
-  /**
-   * Specialists are a READ-ONLY indicator here: how many the city has, by type.
-   * Assigning a specialist is a map action — the three icons drawn under the
-   * city sprite are the selector (clicking one converts a citizen that works a
-   * tile into that specialist), and the governor manages the rest.
-   */
   const renderCitySpecialists = (city: City) => {
     const specs = city.specialists ?? [];
     const pop = city.population ?? 1;
     if (!(currentPlayer && city.civilizationId === currentPlayer.id)) return null;
 
-    const counts = (Object.keys(SPECIALIST_YIELDS) as SpecialistType[])
-      .map((type) => ({ type, count: specs.filter((s) => s === type).length }))
-      .filter((entry) => entry.count > 0);
+    const workedTiles = city.workingTiles ?? new Set<string>();
+    const freeCitizens = Math.max(0, pop - (workedTiles.size - 1) - specs.length);
+    const canAdd = freeCitizens > 0 || workedTiles.size > 0;
+    const locked = city.lockSpecialists ?? false;
 
     return (
       <div className="mt-2">
-        <div className="side-panel-small-muted fw-bold mb-1">
-          Specialists <span className="fw-normal">({specs.length}/{pop})</span>
-        </div>
-        {counts.length === 0 ? (
-          <div className="side-panel-small-muted">None — everyone works the tiles.</div>
-        ) : (
-          <div className="side-panel-specialist-tally">
-            {counts.map(({ type, count }) => {
-              const def = SPECIALIST_YIELDS[type];
-              const gains = [
-                def.luxury ? `+${def.luxury} Luxury` : null,
-                def.gold ? `+${def.gold} Gold` : null,
-                def.science ? `+${def.science} Science` : null,
-              ].filter(Boolean).join(', ');
-              return (
-                <span key={type} className="side-panel-specialist-tally-item" title={`${def.name} — ${gains}`}>
-                  <span className="side-panel-specialist-tally-icon">{def.icon}</span>
-                  <span className="side-panel-specialist-tally-name">{def.name}</span>
-                  <span className="side-panel-specialist-tally-count">{count}</span>
-                </span>
-              );
-            })}
+        <div className="d-flex justify-content-between align-items-center mb-1">
+          <div className="side-panel-small-muted fw-bold">
+            Specialists <span className="fw-normal">({specs.length}/{pop})</span>
+            {locked && <i className="bi bi-lock-fill ms-1 text-warning" title="Specialists locked"></i>}
           </div>
-        )}
+          {specs.length > 0 && (
+            <button
+              type="button"
+              className="side-panel-specialist-demote-all-btn"
+              onClick={() => {
+                let demoted = 0;
+                for (let i = specs.length - 1; i >= 0; i--) {
+                  if (gameEngine?.demoteSpecialistToWorker(city.id, i)) {
+                    demoted++;
+                  }
+                }
+                if (demoted > 0) {
+                  actions?.addNotification?.({ type: 'info', message: `${city.name}: ${demoted} specialist${demoted > 1 ? 's' : ''} back to tiles.` });
+                }
+              }}
+            >
+              Demote All
+            </button>
+          )}
+        </div>
+        <div className="side-panel-specialist-tally">
+          {(Object.keys(SPECIALIST_YIELDS) as SpecialistType[]).map((type) => {
+            const def = SPECIALIST_YIELDS[type];
+            const count = specs.filter((s) => s === type).length;
+            const gains = [
+              def.luxury ? `+${def.luxury} Luxury` : null,
+              def.gold ? `+${def.gold} Gold` : null,
+              def.science ? `+${def.science} Science` : null,
+            ].filter(Boolean).join(', ');
+            return (
+              <span key={type} className="side-panel-specialist-tally-item" title={`${def.name} — ${gains}`}>
+                <span className="side-panel-specialist-tally-icon">{def.icon}</span>
+                <span className="side-panel-specialist-tally-name">{def.name}</span>
+                <span className="side-panel-specialist-tally-count">{count}</span>
+                <span className="side-panel-specialist-btns">
+                  <button
+                    type="button"
+                    className="side-panel-specialist-btn"
+                    disabled={!canAdd}
+                    title={canAdd ? `Promote to ${def.name}` : 'No citizens available'}
+                    onClick={() => {
+                      if (gameEngine?.promoteCitizenToSpecialist(city.id, type)) {
+                        actions?.addNotification?.({ type: 'info', message: `${city.name}: promoted to ${def.name}.` });
+                      }
+                    }}
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    className="side-panel-specialist-btn"
+                    disabled={count === 0}
+                    title={count > 0 ? `Demote ${def.name}` : 'None assigned'}
+                    onClick={() => {
+                      const idx = specs.lastIndexOf(type);
+                      if (idx >= 0 && gameEngine?.demoteSpecialistToWorker(city.id, idx)) {
+                        actions?.addNotification?.({ type: 'info', message: `${city.name}: ${def.name} back to tiles.` });
+                      }
+                    }}
+                  >
+                    −
+                  </button>
+                </span>
+              </span>
+            );
+          })}
+        </div>
       </div>
     );
   };

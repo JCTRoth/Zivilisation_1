@@ -32,7 +32,7 @@ export const BULK_ATTACK_STRENGTH_RATIO = 1.3;
 /** Default defensive strength assumed for an unknown/unbuilt enemy city. */
 export const UNKNOWN_CITY_DEFENSE = 8;
 /** Default defensive strength assumed for an enemy unit. */
-export const UNKNOWN_UNIT_DEFENSE = 3;
+const UNKNOWN_UNIT_DEFENSE = 3;
 
 // ---------------------------------------------------------------------------
 // Types

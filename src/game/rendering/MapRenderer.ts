@@ -73,7 +73,7 @@ export function getUnitDisplayTile(
  * The geometry lives in one exported function so the click hit-test in
  * GameCanvas can never drift from what is drawn.
  */
-export const CITY_SPECIALIST_ORDER: SpecialistType[] = ['entertainer', 'taxman', 'scientist'];
+const CITY_SPECIALIST_ORDER: SpecialistType[] = ['entertainer', 'taxman', 'scientist'];
 
 export interface CitySpecialistButton {
   type: SpecialistType;
@@ -83,12 +83,14 @@ export interface CitySpecialistButton {
   /** Hit radius (a little larger than the drawn circle). */
   r: number;
   fontSize: number;
+  /** Whether promotion is currently possible (false = dimmed). */
+  enabled: boolean;
 }
 
 export function getCitySpecialistButtons(
   centerX: number,
   centerY: number,
-  city: { buildings?: readonly unknown[] | null },
+  city: { buildings?: readonly unknown[] | null; population?: number; workingTiles?: Set<string>; specialists?: SpecialistType[] },
   cameraZoom: number,
 ): CitySpecialistButton[] {
   const overlayScale = Math.min(2, Math.max(0.85, cameraZoom));
@@ -109,12 +111,19 @@ export function getCitySpecialistButtons(
   const startX = centerX - totalW / 2 + iconW / 2;
   const specY = centerY + size / 2 + nameOffset + fontSize * 0.2;
 
+  const pop = city.population ?? 1;
+  const workedTiles = city.workingTiles ?? new Set<string>();
+  const specs = city.specialists ?? [];
+  const freeCitizens = Math.max(0, pop - (workedTiles.size - 1) - specs.length);
+  const canAdd = freeCitizens > 0 || workedTiles.size > 0;
+
   return CITY_SPECIALIST_ORDER.map((type, i) => ({
     type,
     x: startX + i * iconW,
     y: specY + fontSize * 0.4,
     r: Math.max(8, fontSize * 0.85),
     fontSize,
+    enabled: canAdd,
   }));
 }
 
@@ -2290,14 +2299,14 @@ export class MapRenderer {
         const def = SPECIALIST_YIELDS[b.type];
         if (!def) continue;
         const count = specCount(b.type);
+        const dimmed = !b.enabled;
         ctx.font = `${b.fontSize}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const bg =
           b.type === 'entertainer' ? 'rgba(80, 220, 192, 0.85)' :
           b.type === 'taxman'      ? 'rgba(220,180,40,0.85)' :
-                                    'rgba(80,160,220,0.85)';
-        // Circle: filled + coloured when assigned, hollow and dim when free.
+                                     'rgba(80,160,220,0.85';
         ctx.beginPath();
         ctx.arc(b.x, b.y, b.fontSize * 0.65, 0, Math.PI * 2);
         if (count > 0) {
@@ -2312,7 +2321,16 @@ export class MapRenderer {
         ctx.stroke();
         ctx.fillStyle = count > 0 ? '#FFF' : 'rgba(255,255,255,0.55)';
         ctx.fillText(def.icon, b.x, b.y);
-        // Count badge when a type is used more than once.
+        if (dimmed) {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(b.x - b.fontSize * 0.4, b.y - b.fontSize * 0.4);
+          ctx.lineTo(b.x + b.fontSize * 0.4, b.y + b.fontSize * 0.4);
+          ctx.stroke();
+        }
         if (count > 1) {
           const badgeR = b.fontSize * 0.34;
           const bx = b.x + b.fontSize * 0.62;
@@ -2325,6 +2343,18 @@ export class MapRenderer {
           ctx.font = `bold ${Math.max(7, b.fontSize * 0.55)}px monospace`;
           ctx.fillText(String(count), bx, by + 0.5);
         }
+      }
+      if (city.lockSpecialists) {
+        const lockSize = Math.max(8, buttons[0].fontSize * 0.5);
+        const lockX = buttons[0].x - buttons[0].fontSize * 0.8;
+        const lockY = buttons[0].y - buttons[0].fontSize * 0.8;
+        ctx.font = `${lockSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillText('🔒', lockX + 1, lockY + 1);
+        ctx.fillStyle = '#4ecdc4';
+        ctx.fillText('🔒', lockX, lockY);
       }
       ctx.restore();
     }

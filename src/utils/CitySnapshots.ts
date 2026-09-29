@@ -140,7 +140,7 @@ export function serializeCityCompact(city: City): CompactCity {
 }
 
 /** Engine event names whose payload carries a city object. */
-export const CITY_EVENTS: ReadonlySet<string> = new Set<string>([
+const CITY_EVENTS: ReadonlySet<string> = new Set<string>([
   'CITY_FOUNDED',
   'CITY_JOINED',
   'CITY_CAPTURED',

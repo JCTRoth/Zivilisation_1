@@ -54,7 +54,7 @@ export function isRiverTile(tile?: RiverTileLike | null): boolean {
  * Length of the consecutive river run through (col,row) along one axis
  * (including the tile itself). Returns 0 when the tile is not a river.
  */
-export function riverRunLength(
+function riverRunLength(
   col: number,
   row: number,
   dCol: number,

@@ -41,11 +41,13 @@ const CityModal: React.FC<CityModalProps> = ({
 }) => {
   const [showProductionModal, setShowProductionModal] = useState<boolean>(false);
   const [autoProduction, setAutoProduction] = useState<boolean>(selectedCity?.autoProduction || false);
+  const [specialistsLocked, setSpecialistsLocked] = useState<boolean>(selectedCity?.lockSpecialists ?? false);
 
   // Sync local state when selectedCity changes
   useEffect(() => {
     if (!selectedCity) return;
     setAutoProduction(selectedCity?.autoProduction || false);
+    setSpecialistsLocked(selectedCity?.lockSpecialists ?? false);
   }, [selectedCity]);
 
   // Keep the queue box scrolled to its bottom so a freshly added item is
@@ -711,7 +713,7 @@ const CityModal: React.FC<CityModalProps> = ({
                   const workedTiles = selectedCity.workingTiles ?? new Set<string>();
                   const manualTiles = selectedCity.userAssignedTiles ?? new Set<string>();
                   const tileWorkers = workedTiles.size;
-                  const freeCitizens = Math.max(0, pop - tileWorkers - specs.length);
+                  const freeCitizens = Math.max(0, pop - (tileWorkers - 1) - specs.length);
 
                   return (
                     <>
@@ -740,7 +742,7 @@ const CityModal: React.FC<CityModalProps> = ({
                                     }
                                     actions?.addNotification?.({
                                       type: 'info',
-                                      message: `${selectedCity.name}: ${option.name} governor selected — the city will be rebalanced when you close this screen.`,
+                                      message: `${selectedCity.name}: ${option.name} governor selected — tiles and specialists will be reassigned when you close this screen. Lock specialists to prevent changes.`,
                                     });
                                   }}
                                 >
@@ -766,42 +768,132 @@ const CityModal: React.FC<CityModalProps> = ({
                         </div>
                       )}
 
-                      {/* Specialists — a pure indicator: assigning them is a side-panel action */}
+                      {/* Lock Specialists toggle */}
                       {isPlayerCity && (
                         <div className="mb-3">
-                          <h6>
-                            Specialists{' '}
-                            <span className="text-muted fw-normal">
-                              ({specs.length} of {pop} citizens)
-                            </span>
-                          </h6>
-                          {specs.length > 0 ? (
-                            <div className="d-flex flex-wrap gap-2">
-                              {specs.map((type, i) => {
-                                const def = SPECIALIST_YIELDS[type];
-                                return (
-                                  <div
-                                    key={i}
-                                    className="d-flex align-items-center gap-1 p-1 px-2 rounded bg-dark border border-secondary"
-                                    title={`${def.name} — +${def.luxury ?? 0} Luxury, +${def.gold ?? 0} Gold, +${def.science ?? 0} Science`}
-                                  >
-                                    <span>{def.icon}</span>
-                                    <span className="small">{def.name}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="small text-muted">Everyone works the tiles.</div>
-                          )}
+                          <button
+                            type="button"
+                            className={`city-specialist-lock-btn${specialistsLocked ? ' locked' : ''}`}
+                            onClick={() => {
+                              const newLock = !specialistsLocked;
+                              gameEngine.setCityLockSpecialists(selectedCity.id, newLock);
+                              setSpecialistsLocked(newLock);
+                              actions?.addNotification?.({
+                                type: 'info',
+                                message: newLock
+                                  ? `${selectedCity.name}: specialists locked — the governor will not change them.`
+                                  : `${selectedCity.name}: specialists unlocked — the governor may manage them.`,
+                              });
+                            }}
+                          >
+                            <i className={`bi ${specialistsLocked ? 'bi-lock-fill' : 'bi-unlock-fill'} me-1`}></i>
+                            {specialistsLocked ? 'Specialists Locked' : 'Lock Specialists'}
+                          </button>
                           <small className="text-muted d-block mt-1">
-                            Specialists give a fixed city yield instead of a tile&apos;s. Take a citizen off a field
-                            with the 🎭 toggle in the side panel — a city starts them as an Entertainer.
+                            When locked, the governor will not promote or demote specialists in this city.
                           </small>
                         </div>
                       )}
 
-                      {/* Worked tiles — read-only: they are set on the map */}
+                      {/* Specialists — interactive management */}
+                      {isPlayerCity && (
+                        <div className="mb-3">
+                          <div className="d-flex justify-content-between align-items-center mb-2">
+                            <h6 className="mb-0">
+                              Specialists{' '}
+                              <span className="text-muted fw-normal">
+                                ({specs.length} of {pop} citizens)
+                              </span>
+                            </h6>
+                            {specs.length > 0 && (
+                              <button
+                                type="button"
+                                className="city-specialist-demote-all-btn"
+                                onClick={() => {
+                                  let demoted = 0;
+                                  for (let i = specs.length - 1; i >= 0; i--) {
+                                    if (gameEngine.demoteSpecialistToWorker(selectedCity.id, i)) {
+                                      demoted++;
+                                    }
+                                  }
+                                  if (demoted > 0) {
+                                    actions?.addNotification?.({
+                                      type: 'info',
+                                      message: `${selectedCity.name}: ${demoted} specialist${demoted > 1 ? 's' : ''} returned to tile work.`,
+                                    });
+                                  }
+                                }}
+                              >
+                                Demote All
+                              </button>
+                            )}
+                          </div>
+                          <div className="city-specialist-list">
+                            {(Object.keys(SPECIALIST_YIELDS) as Array<keyof typeof SPECIALIST_YIELDS>).map((type) => {
+                              const def = SPECIALIST_YIELDS[type];
+                              const count = specs.filter((s) => s === type).length;
+                              const canAdd = freeCitizens > 0 || tileWorkers > 0;
+                              const canRemove = count > 0;
+                              return (
+                                <div key={type} className="city-specialist-row">
+                                  <span className="city-specialist-icon">{def.icon}</span>
+                                  <span className="city-specialist-name">{def.name}</span>
+                                  <span className="city-specialist-yield text-muted">
+                                    {def.luxury ? `+${def.luxury} Lux` : ''}
+                                    {def.gold ? `+${def.gold} Gold` : ''}
+                                    {def.science ? `+${def.science} Sci` : ''}
+                                  </span>
+                                  <span className="city-specialist-count">{count}</span>
+                                  <button
+                                    type="button"
+                                    className="city-specialist-btn city-specialist-btn-add"
+                                    disabled={!canAdd}
+                                    title={canAdd ? `Promote a citizen to ${def.name} (frees worst tile)` : 'No citizens available'}
+                                    onClick={() => {
+                                      if (gameEngine.promoteCitizenToSpecialist(selectedCity.id, type)) {
+                                        actions?.addNotification?.({
+                                          type: 'info',
+                                          message: `${selectedCity.name}: citizen promoted to ${def.name}.`,
+                                        });
+                                      } else {
+                                        actions?.addNotification?.({
+                                          type: 'warning',
+                                          message: `No citizen free to become ${def.name} in ${selectedCity.name}.`,
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    +
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="city-specialist-btn city-specialist-btn-remove"
+                                    disabled={!canRemove}
+                                    title={canRemove ? `Demote ${def.name} back to tile worker` : 'None assigned'}
+                                    onClick={() => {
+                                      const idx = specs.lastIndexOf(type);
+                                      if (idx >= 0 && gameEngine.demoteSpecialistToWorker(selectedCity.id, idx)) {
+                                        actions?.addNotification?.({
+                                          type: 'info',
+                                          message: `${selectedCity.name}: ${def.name} returned to tile work.`,
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    −
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <small className="text-muted d-block mt-1">
+                            Specialists give a fixed city yield instead of a tile&apos;s. Click + to promote a citizen
+                            from a worked tile, − to return them. Right-click map icons to demote.
+                          </small>
+                        </div>
+                      )}
+
+                      {/* Worked tiles — interactive: - to unassign citizen */}
                       {tileWorkers > 0 && (
                         <div className="mb-3">
                           <h6>
@@ -857,9 +949,100 @@ const CityModal: React.FC<CityModalProps> = ({
                                     ) : (
                                       <span className="city-tile-auto-badge">auto</span>
                                     )}
+                                    {!isCenter && (
+                                      <button
+                                        type="button"
+                                        className="city-tile-unassign-btn"
+                                        title="Remove citizen from this tile"
+                                        onClick={() => {
+                                          if (gameEngine.unassignCitizenFromTile(selectedCity.id, col, row)) {
+                                            actions?.addNotification?.({
+                                              type: 'info',
+                                              message: `${selectedCity.name}: citizen removed from (${col},${row}).`,
+                                            });
+                                          } else {
+                                            actions?.addNotification?.({
+                                              type: 'warning',
+                                              message: `${selectedCity.name}: could not remove the citizen from (${col},${row}).`,
+                                            });
+                                          }
+                                        }}
+                                      >
+                                        −
+                                      </button>
+                                    )}
                                   </div>
                                 );
                               })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Unworked tiles — + to assign citizen */}
+                      {freeCitizens > 0 && (
+                        <div className="mb-3">
+                          <h6>
+                            Available Tiles{' '}
+                            <span className="text-muted fw-normal">
+                              ({freeCitizens} citizen{freeCitizens === 1 ? '' : 's'} available)
+                            </span>
+                          </h6>
+                          <div className="city-worked-tile-list">
+                            {gameEngine
+                              .getWorkableTiles(selectedCity.id)
+                              .map(({ col, row, key }) => {
+                                const tile = gameEngine.getTileAt?.(col, row);
+                                if (!tile) return null;
+                                const yields = tile && gameEngine.economicManager
+                                  ? gameEngine.economicManager.cityTileYields(tile)
+                                  : null;
+                                const total = yields
+                                  ? yields.food + yields.production + yields.trade
+                                  : 0;
+                                const resource = tile?.resource ? String(tile.resource) : '';
+                                return (
+                                  <div key={key} className="city-worked-tile-row city-tile-available">
+                                    <span className="city-worked-tile-terrain">
+                                      {terrainLabel(tile?.terrain)}
+                                    </span>
+                                    <span className="city-worked-tile-coords text-muted">
+                                      ({col},{row})
+                                    </span>
+                                    {resource && (
+                                      <span className="badge text-bg-dark border border-secondary">
+                                        {resource}
+                                      </span>
+                                    )}
+                                    {yields && (
+                                      <span className="city-worked-tile-yields">
+                                        {yields.food > 0 && <span title="Food">🍞{yields.food}</span>}
+                                        {yields.production > 0 && <span title="Production">⛏️{yields.production}</span>}
+                                        {yields.trade > 0 && <span title="Trade">💰{yields.trade}</span>}
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="city-tile-assign-btn"
+                                      title={`Put a citizen on this tile (${total} total)`}
+                                      onClick={() => {
+                                        if (gameEngine.assignCitizenToTile(selectedCity.id, col, row)) {
+                                          actions?.addNotification?.({
+                                            type: 'info',
+                                            message: `${selectedCity.name}: citizen assigned to (${col},${row}).`,
+                                          });
+                                        } else {
+                                          actions?.addNotification?.({
+                                            type: 'warning',
+                                            message: `${selectedCity.name}: (${col},${row}) cannot be worked.`,
+                                          });
+                                        }
+                                      }}
+                                    >
+                                      +
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}

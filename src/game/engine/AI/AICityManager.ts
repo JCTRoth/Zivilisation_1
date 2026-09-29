@@ -40,22 +40,22 @@ import type { EconomicManager } from '../EconomicManager';
 /** Stable growth needs at least this much food surplus per turn. */
 export const AI_MIN_FOOD_SURPLUS = 1;
 /** Surplus above this is converted into production/trade (growth stays safe). */
-export const AI_FOOD_SURPLUS_CAP = 4;
+const AI_FOOD_SURPLUS_CAP = 4;
 /** Turns of stored food left before starvation counts as an emergency. */
-export const AI_FAMINE_WARNING_TURNS = 2;
+const AI_FAMINE_WARNING_TURNS = 2;
 /** Extra surplus required before converting a farmer into a specialist. */
-export const AI_SPECIALIST_FOOD_HEADROOM = 2;
-export const AI_SPECIALIST_MIN_POP = 3;
-export const AI_MAX_SPECIALISTS_PER_CITY = 2;
+const AI_SPECIALIST_FOOD_HEADROOM = 2;
+const AI_SPECIALIST_MIN_POP = 3;
+const AI_MAX_SPECIALISTS_PER_CITY = 2;
 /** Gold comfort level used to pick Taxman vs Scientist for balanced civs. */
-export const AI_SPECIALIST_GOLD_COMFORT = 50;
+const AI_SPECIALIST_GOLD_COMFORT = 50;
 /** Granary-for-growth is only worth it while the empire is still expanding. */
-export const AI_GRANARY_MIN_POP = 2;
+const AI_GRANARY_MIN_POP = 2;
 /** How many Entertainers the contentment pass keeps on staff. */
 export const MAX_ENTERTAINERS_PER_CITY = 2;
-export const AI_GRANARY_CITY_TARGET = 10;
+const AI_GRANARY_CITY_TARGET = 10;
 /** Strategies that keep building settlers (and therefore value granaries). */
-export const AI_EXPANSIONIST_STRATEGIES: StrategyProfile[] = [
+const AI_EXPANSIONIST_STRATEGIES: StrategyProfile[] = [
   'early_expansion',
   'balanced_growth',
   'military_expansion',
@@ -178,10 +178,18 @@ export class AICityManager {
       ? GOVERNOR_PROFILES[city.governor ?? 'balanced']
       : AI_GOVERNOR_PROFILE;
 
-    this.secureContentment(city, civ);
-    this.secureFood(city, civ, profile);
+    // When the player locks specialists, the governor only manages tiles —
+    // it will not promote or demote any specialist.
+    const specialistsLocked = city.lockSpecialists === true;
+
+    if (!specialistsLocked) {
+      this.secureContentment(city, civ);
+      this.secureFood(city, civ, profile);
+    }
     this.steerSurplus(city, civ, profile);
-    this.manageSpecialists(city, civ, profile, resolved);
+    if (!specialistsLocked) {
+      this.manageSpecialists(city, civ, profile, resolved);
+    }
     city.governorDirty = false;
   }
 
@@ -490,5 +498,3 @@ export class AICityManager {
     return pm.getBuildableBuildingTypes(city.id).includes(buildingType);
   }
 }
-
-export default AICityManager;

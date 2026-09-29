@@ -137,10 +137,6 @@ export const MOVE_OFFSETS: Point[] = [
 
 // ── Pure geometric helpers ──────────────────────────────────────────────
 
-export function manhattan(a: Point, b: Point): number {
-  return Math.abs(a.col - b.col) + Math.abs(a.row - b.row);
-}
-
 /**
  * Deterministic multi-octave hash noise in [0,1].  Hashing the integer
  * position keeps the noise reproducible across runs (unlike Math.random),
@@ -155,25 +151,6 @@ export function hashNoise(col: number, row: number, salt = 0): number {
 }
 
 // ── Terrain property tables ─────────────────────────────────────────────
-
-/** Lower weight = more stubborn terrain (less likely to be smoothed away). */
-export function terrainWeight(type: string): number {
-  switch (type) {
-    case TERRAIN_TYPES.OCEAN:      return 0;
-    case TERRAIN_TYPES.RIVER:      return 0;
-    case TERRAIN_TYPES.MOUNTAINS:  return 1;
-    case TERRAIN_TYPES.ARCTIC:     return 1;
-    case TERRAIN_TYPES.HILLS:      return 2;
-    case TERRAIN_TYPES.FOREST:     return 3;
-    case TERRAIN_TYPES.JUNGLE:     return 3;
-    case TERRAIN_TYPES.TUNDRA:     return 3;
-    case TERRAIN_TYPES.SWAMP:      return 3;
-    case TERRAIN_TYPES.PLAINS:     return 4;
-    case TERRAIN_TYPES.GRASSLAND:  return 4;
-    case TERRAIN_TYPES.DESERT:     return 5;
-    default:                       return 3;
-  }
-}
 
 /** Civ1-style base yield (food*3 + trade + production) for a terrain type. */
 export function baseYield(t: string): number {

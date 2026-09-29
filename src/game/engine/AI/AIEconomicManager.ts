@@ -22,8 +22,8 @@ import {
   ABSOLUTE_MIN_GOLD,
 } from '../EconomicManager';
 
-export const AI_SCIENCE_FLOOR = 20;
-export const AI_MIN_TAX = 35;
+const AI_SCIENCE_FLOOR = 20;
+const AI_MIN_TAX = 35;
 export const AI_RESERVE_TURNS: Record<StrategyProfile, number> = {
   military_expansion: 3,
   defensive_turtle: 3,
@@ -32,8 +32,8 @@ export const AI_RESERVE_TURNS: Record<StrategyProfile, number> = {
   wonder_rush: 2,
   science_focus: 2,
 };
-export const AI_RESERVE_REBUILD = 0.1;
-export const AI_MIN_GOLD_RESERVE = ABSOLUTE_MIN_GOLD;
+const AI_RESERVE_REBUILD = 0.1;
+const AI_MIN_GOLD_RESERVE = ABSOLUTE_MIN_GOLD;
 
 export class AIEconomicManager {
   private gameEngine: GameEngine;

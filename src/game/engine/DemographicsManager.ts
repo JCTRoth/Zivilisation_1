@@ -16,10 +16,10 @@ const hasBuilding = (c: City, building: string): boolean => {
   return b.includes(building);
 };
 
-// ── Single-metric helpers (exported for unit tests) ────────────────────────
+// ── Single-metric helpers ──────────────────────────────────────────────────
 
 /** Civ1 triangular population: Size × (Size + 1) / 2 × 10,000 */
-export const civ1Population = (size: number): number =>
+const civ1Population = (size: number): number =>
   Math.round((size * (size + 1)) / 2) * 10_000;
 
 /** Empire-wide "real" population across all of a civ's cities. */
@@ -29,7 +29,7 @@ export const realPopulation = (civId: number, cities: City[]): number =>
     .reduce((sum, c) => sum + civ1Population(numberValue(c.population)), 0);
 
 /** GNP = Taxes + Luxuries before upkeep (Civ1 definition). */
-export const gnp = (civ: Civilization): number => {
+const gnp = (civ: Civilization): number => {
   const trade = numberValue(civ.resources?.trade);
   const tax = Math.floor(trade * (numberValue(civ.taxRate ?? 50) / 100)) * 2;
   const luxury = Math.floor(trade * (numberValue(civ.luxuryRate ?? 0) / 100));
@@ -37,17 +37,17 @@ export const gnp = (civ: Civilization): number => {
 };
 
 /** Mfg. Goods — cumulative raw production (shields) across all cities. */
-export const mfgGoods = (civId: number, cities: City[]): number =>
+const mfgGoods = (civId: number, cities: City[]): number =>
   cities
     .filter(c => c.civilizationId === civId)
     .reduce((sum, c) => sum + numberValue(c.yields?.production ?? c.production), 0);
 
 /** Land Area — explored tiles × scaling factor. */
-export const landArea = (explored: boolean[]): number =>
+const landArea = (explored: boolean[]): number =>
   explored.filter(Boolean).length * 100;
 
 /** Literacy — % of population in cities with Library or University. 0% if tech not researched. */
-export const literacy = (civId: number, cities: City[], techs: string[]): number => {
+const literacy = (civId: number, cities: City[], techs: string[]): number => {
   if (!techs.includes('literacy')) return 0;
   const civCities = cities.filter(c => c.civilizationId === civId);
   const total = civCities.reduce((s, c) => s + numberValue(c.population), 0);
@@ -59,7 +59,7 @@ export const literacy = (civId: number, cities: City[], techs: string[]): number
 };
 
 /** Approval — happy / (happy + unhappy) × 100. */
-export const approval = (civId: number, cities: City[]): number => {
+const approval = (civId: number, cities: City[]): number => {
   let happy = 0;
   let unhappy = 0;
   for (const c of cities.filter(c => c.civilizationId === civId)) {
@@ -70,7 +70,7 @@ export const approval = (civId: number, cities: City[]): number => {
 };
 
 /** Pollution — industrial output squared / 100 per city. */
-export const pollution = (civId: number, cities: City[]): number =>
+const pollution = (civId: number, cities: City[]): number =>
   cities
     .filter(c => c.civilizationId === civId)
     .reduce((sum, c) => {
@@ -79,7 +79,7 @@ export const pollution = (civId: number, cities: City[]): number =>
     }, 0);
 
 /** Disease — base 10% per city, reduced by Aqueducts/Granaries, increased by pollution. */
-export const disease = (civId: number, cities: City[]): number => {
+const disease = (civId: number, cities: City[]): number => {
   const cc = cities.filter(c => c.civilizationId === civId);
   if (cc.length === 0) return 0;
   let total = 0;
@@ -95,7 +95,7 @@ export const disease = (civId: number, cities: City[]): number => {
 };
 
 /** Life Expectancy — base 40 years, boosted by Aqueducts, Granaries, Hospitals. */
-export const lifeExpectancy = (civId: number, cities: City[]): number => {
+const lifeExpectancy = (civId: number, cities: City[]): number => {
   const cc = cities.filter(c => c.civilizationId === civId);
   if (cc.length === 0) return 40;
   let total = 0;
@@ -110,7 +110,7 @@ export const lifeExpectancy = (civId: number, cities: City[]): number => {
 };
 
 /** Family Size — baseline 3.0, boosted by Granaries and food surplus. */
-export const familySize = (civId: number, cities: City[]): number => {
+const familySize = (civId: number, cities: City[]): number => {
   const cc = cities.filter(c => c.civilizationId === civId);
   if (cc.length === 0) return 3.0;
   let total = 0;
@@ -125,17 +125,17 @@ export const familySize = (civId: number, cities: City[]): number => {
 };
 
 /** Military Service — years of conscription based on government type. */
-export const militaryService = (civ: Civilization): number => {
+const militaryService = (civ: Civilization): number => {
   const gov = String(civ.government ?? 'despotism').toLowerCase();
   return gov === 'republic' || gov === 'democracy' ? 1 : 2;
 };
 
 /** Annual Income — gold per capita. */
-export const annualIncome = (gold: number, population: number): number =>
+const annualIncome = (gold: number, population: number): number =>
   population > 0 ? Math.round((gold * 1_000_000) / population) : 0;
 
 /** Productivity — production per citizen × 100. */
-export const productivity = (civId: number, cities: City[]): number => {
+const productivity = (civId: number, cities: City[]): number => {
   const cc = cities.filter(c => c.civilizationId === civId);
   const totalPop = cc.reduce((s, c) => s + numberValue(c.population), 0);
   if (totalPop === 0) return 0;
@@ -148,7 +148,7 @@ export const productivity = (civId: number, cities: City[]): number => {
 export const ordinal = (n: number): string =>
   n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`;
 
-export const rankByValue = (entries: Array<{ id: number; value: number }>): Map<number, number> => {
+const rankByValue = (entries: Array<{ id: number; value: number }>): Map<number, number> => {
   const sorted = [...entries].sort((a, b) => b.value - a.value);
   const ranks = new Map<number, number>();
   let currentRank = 1;
@@ -169,7 +169,7 @@ export interface DemographicRow {
   metric: string;
 }
 
-export interface DemographicData {
+interface DemographicData {
   civId: number;
   civName: string;
   civColor: string;

@@ -23,7 +23,7 @@ import type { City, Unit } from '../../types/game';
 // ── Deterministic randomness ───────────────────────────────────────────────
 
 /** Mulberry32: small, fast, and repeatable across runs. */
-export function seededRandom(seed: number): () => number {
+function seededRandom(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -367,14 +367,6 @@ export function checkInvariants(engine: GameEngine): InvariantViolation[] {
   }
 
   return bad;
-}
-
-/** Throw with a readable report when a law is broken. */
-export function expectInvariants(engine: GameEngine, context = ''): void {
-  const bad = checkInvariants(engine);
-  if (bad.length === 0) return;
-  const detail = bad.map((v) => `  - [${v.law}] ${v.detail}`).join('\n');
-  throw new Error(`Engine invariants violated${context ? ` (${context})` : ''}:\n${detail}`);
 }
 
 // ── Grid helper ────────────────────────────────────────────────────────────

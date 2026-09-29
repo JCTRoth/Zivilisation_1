@@ -8,7 +8,7 @@
  *   - sail back out (ceil(d / movement) turns).
  *
  *     cycleTurns(d)  = FISHER_BOAT_STORAGE + 2 * ceil(d / movement)
- *     catchValue(d)  = FISHER_BOAT_STORAGE * fisherFoodPerFish(d)   [food]
+ *     catchValue(d)  = FISHER_BOAT_STORAGE * foodPerFish(d)        [food]
  *     foodPerTurn(d) = catchValue(d) / cycleTurns(d)
  *
  * The net also upgrades the tile it sits on: a fish tile pays +1 food to the
@@ -36,7 +36,6 @@ import {
   FISHER_BOAT_STORAGE,
   UNIT_PROPERTIES,
   fisherCatchValue,
-  fisherFoodPerFish,
 } from '@/data/UnitConstants';
 
 /** Gold-equivalent value of one food delivered (growth ≈ a taxman's 2 gold). */
@@ -257,6 +256,3 @@ export function fishingRelevanceForCiv(
 export function fisherFoodPerTurn(distance: number, movement = 2): number {
   return fisherEconomics(distance, { movement }).foodPerTurn;
 }
-
-/** Keep the per-fish formula discoverable next to the economics that use it. */
-export { fisherFoodPerFish };

@@ -2723,26 +2723,6 @@ export default class GameEngine {
       }
     }
 
-    // If all remaining worked tiles are player-assigned, free the lowest-yield
-    // one — the player explicitly chose to convert a citizen.
-    if (!worstKey) {
-      for (const key of workingTiles) {
-        if (key === centerKey) continue;
-        const sep = key.indexOf(',');
-        const col = Number(key.slice(0, sep));
-        const row = Number(key.slice(sep + 1));
-        const tile = this.getTileAt(col, row);
-        if (!tile) continue;
-        const y = this.economicManager?.cityTileYields(tile);
-        if (!y) continue;
-        const total = y.food + y.production + y.trade;
-        if (total < worstYield) {
-          worstYield = total;
-          worstKey = key;
-        }
-      }
-    }
-
     if (!worstKey) return false;
 
     workingTiles.delete(worstKey);
@@ -2760,8 +2740,8 @@ export default class GameEngine {
 
   /**
    * Demote a specialist back to a tile worker. The specialist is removed
-   * from the list and the freed citizen is immediately reassigned to the
-   * best available tile in the city's radius.
+   * from the list and the freed citizen is placed on the best unworked
+   * tile in the city's radius. Existing tile assignments are NOT changed.
    *
    * @returns true on success.
    */
@@ -2773,13 +2753,50 @@ export default class GameEngine {
 
     specs.splice(specialistIndex, 1);
 
-    // Immediately recompute yields — this calls cityWorkedTiles which
-    // reassigns the freed citizen to the best available tile in the radius.
-    this.economicManager?.recomputeCityYields?.(city);
+    // Find the best unworked tile in the city's radius and assign the
+    // freed citizen there. Do NOT reshuffle existing assignments.
+    const centerKey = `${city.col},${city.row}`;
+    const userAssigned = city.userAssignedTiles ?? new Set<string>();
+    let bestKey: string | null = null;
+    let bestYield = -Infinity;
+    for (let r = city.row - 2; r <= city.row + 2; r++) {
+      for (let c = city.col - 2; c <= city.col + 2; c++) {
+        const key = `${c},${r}`;
+        if (key === centerKey) continue;
+        if (city.workingTiles.has(key)) continue;
+        if (userAssigned.has(key)) continue;
+        const tile = this.getTileAt(c, r);
+        if (!tile) continue;
+        const y = this.economicManager?.cityTileYields(tile);
+        if (!y) continue;
+        const total = y.food + y.production + y.trade;
+        if (total > bestYield) {
+          bestYield = total;
+          bestKey = key;
+        }
+      }
+    }
+    if (bestKey) {
+      city.workingTiles.add(bestKey);
+    }
+
+    this.economicManager?.refreshYieldsFromWorkingTiles?.(city);
     if (this.storeActions?.updateCities) {
       this.storeActions.updateCities([...this.cities]);
-    }else {
-      console.warn('Store actions not available to update cities after demoting specialist');
+    }
+    return true;
+  }
+
+  /**
+   * Lock or unlock specialist management for a city. When locked, the AI
+   * governor will not change specialist assignments.
+   */
+  setCityLockSpecialists(cityId: string, locked: boolean): boolean {
+    const city = this.cities.find((c: City) => c.id === cityId);
+    if (!city) return false;
+    city.lockSpecialists = locked;
+    if (this.storeActions?.updateCities) {
+      this.storeActions.updateCities([...this.cities]);
     }
     return true;
   }
@@ -2812,6 +2829,95 @@ export default class GameEngine {
       this.storeActions.updateCities([...this.cities]);
     }
     return true;
+  }
+
+  /**
+   * Assign a citizen to work a specific tile. The tile must be a legal work
+   * target (real city radius, not a rival's land, not the centre, not already
+   * worked) and there must be an unemployed citizen to put on it.
+   *
+   * @returns true on success.
+   */
+  assignCitizenToTile(cityId: string, col: number, row: number): boolean {
+    const city = this.cities.find((c: City) => c.id === cityId);
+    if (!city) return false;
+
+    const key = `${col},${row}`;
+    // The centre is worked for free and is never a drop target.
+    if (key === `${city.col},${city.row}`) return false;
+
+    // A city that has never grown has no workingTiles set yet.
+    if (!city.workingTiles) city.workingTiles = new Set<string>([`${city.col},${city.row}`]);
+    const workingTiles = city.workingTiles;
+    if (workingTiles.has(key)) return false;
+
+    // The centre must be in the set for the free-centre maths to hold.
+    const centerKey = `${city.col},${city.row}`;
+    if (!workingTiles.has(centerKey)) workingTiles.add(centerKey);
+
+    // Is there an unemployed citizen to place?
+    const pop = city.population ?? 1;
+    const specs = (city.specialists ?? []).length;
+    const freeCitizens = pop - (workingTiles.size - 1) - specs;
+    if (freeCitizens <= 0) return false;
+
+    // Ask the economy which tiles are legal — it knows the real Civ1 radius
+    // (which drops the four far corners) and whose land a tile is on.
+    if (this.economicManager?.canWorkTile) {
+      if (!this.economicManager.canWorkTile(city, col, row)) return false;
+    } else {
+      const dist = Math.max(Math.abs(col - city.col), Math.abs(row - city.row));
+      if (dist > 2) return false;
+    }
+
+    workingTiles.add(key);
+    // Write the Set back onto the city — `city.userAssignedTiles ?? new Set()`
+    // would add to a throwaway Set and silently lose the "manual" mark.
+    if (!city.userAssignedTiles) city.userAssignedTiles = new Set<string>();
+    city.userAssignedTiles.add(key);
+
+    this.economicManager?.refreshYieldsFromWorkingTiles?.(city);
+    if (this.storeActions?.updateCities) {
+      this.storeActions.updateCities([...this.cities]);
+    }
+    return true;
+  }
+
+  /**
+   * Remove a citizen from a worked tile. The citizen becomes "unemployed"
+   * (not a specialist). The tile must not be the center tile.
+   *
+   * @returns true on success.
+   */
+  unassignCitizenFromTile(cityId: string, col: number, row: number): boolean {
+    const city = this.cities.find((c: City) => c.id === cityId);
+    if (!city) return false;
+
+    const centerKey = `${city.col},${city.row}`;
+    const key = `${col},${row}`;
+    if (key === centerKey) return false;
+
+    const workingTiles = city.workingTiles;
+    if (!workingTiles || !workingTiles.has(key)) return false;
+
+    workingTiles.delete(key);
+    if (city.userAssignedTiles) city.userAssignedTiles.delete(key);
+
+    this.economicManager?.refreshYieldsFromWorkingTiles?.(city);
+    if (this.storeActions?.updateCities) {
+      this.storeActions.updateCities([...this.cities]);
+    }
+    return true;
+  }
+
+  /**
+   * The tiles a citizen of this city could be put on right now — drives the
+   * "Available Tiles" list in the city screen.
+   */
+  getWorkableTiles(cityId: string): Array<{ col: number; row: number; key: string }> {
+    const city = this.cities.find((c: City) => c.id === cityId);
+    if (!city) return [];
+    return this.economicManager?.getWorkableTiles?.(city) ?? [];
   }
 
   /**

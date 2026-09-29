@@ -511,3 +511,53 @@
   background: #9ecfa8;
   font-weight: 700;
 }
+
+.side-panel-specialist-btns {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 2px;
+}
+
+.side-panel-specialist-btn {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #cfdae4;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.side-panel-specialist-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.side-panel-specialist-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.side-panel-specialist-demote-all-btn {
+  padding: 1px 6px;
+  font-size: 0.65rem;
+  border-radius: 3px;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  background: rgba(244, 67, 54, 0.08);
+  color: #f44336;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.side-panel-specialist-demote-all-btn:hover {
+  background: rgba(244, 67, 54, 0.15);
+  border-color: rgba(244, 67, 54, 0.5);
+}

@@ -9,26 +9,6 @@ export type VictoryReason = 'elimination' | 'moonshot' | 'domination';
  */
 export type SpecialistType = 'entertainer' | 'taxman' | 'scientist';
 
-export interface EnemyLocation {
-  col: number;
-  row: number;
-  type: 'unit' | 'city';
-  id: string;
-  discoveredRound: number;
-  lastSeenRound: number;
-}
-
-export interface PlayerTurnStorage {
-  civilizationId: number;
-  visibility: boolean[];
-  explored: boolean[];
-  lastKnownUnits: Map<string, Unit>;
-  lastKnownCities: Map<string, City>;
-  enemyLocations: Map<number, EnemyLocation[]>;
-  scoutZones: Array<{ minCol: number; maxCol: number; minRow: number; maxRow: number }>;
-  turnData: Record<string, unknown>;
-}
-
 export class GameResult {
   outcome: 'victory' | 'defeat';
   civilizationId: number;
@@ -89,7 +69,7 @@ export interface GameState {
 }
 
 /** Where a unit/city selection came from (see `GameState.selectionOrigin`). */
-export type SelectionOrigin = 'user' | 'auto';
+type SelectionOrigin = 'user' | 'auto';
 
 export interface MapState {
   width: number;
@@ -158,7 +138,7 @@ export interface VillageResult {
  * Data shown by the upkeep-disbanded modal: a unit was scrapped because the
  * treasury could not cover its upkeep (bankruptcy).
  */
-export interface DisbandNotice {
+interface DisbandNotice {
   civId: number;
   unitType: string;
   unitName: string;
@@ -178,7 +158,7 @@ export interface DisbandNotice {
  */
 export type CityGovernorMode = 'growth' | 'production' | 'commerce' | 'balanced';
 
-export interface StarvationNotice {
+interface StarvationNotice {
   cityId: string;
   cityName: string;
   newPopulation: number;
@@ -193,7 +173,7 @@ export interface StarvationNotice {
 /**
  * Data shown by the city-disorder modal (civil unrest / order restored).
  */
-export interface DisorderNotice {
+interface DisorderNotice {
   cityId: string;
   cityName: string;
   newPopulation: number;
@@ -222,7 +202,7 @@ export interface TradeRoute {
 }
 
 /** Shown after a Caravan establishes a trade route (lump-sum payout). */
-export interface TradeRouteResult {
+interface TradeRouteResult {
   homeCityName: string;
   destCityName: string;
   destCivId: number;
@@ -239,7 +219,7 @@ export interface TradeRouteResult {
  * screen. Surfaced via `showIncomingDiplomacyOffer`; cleared once the player
  * responds.
  */
-export interface IncomingDiplomacyOffer {
+interface IncomingDiplomacyOffer {
   /** Civilization that made the offer. */
   fromCivId: number;
   /** Diplomatic action being proposed (e.g. 'propose_peace'). */
@@ -447,6 +427,9 @@ export interface City {
    *  re-evaluated. The city screen applies it once the modal is closed so the
    *  map never reshuffles while the player is looking at it. */
   governorDirty?: boolean;
+  /** When true, the AI governor will NOT change specialist assignments.
+   *  The player has manual control. Default: false (governor manages). */
+  lockSpecialists?: boolean;
   /** Items purchased this turn (queued for next turn creation). */
   purchasedThisTurn?: Array<{ type?: string; itemType?: string; name?: string; cost?: number }>;
   /** Whether a building was sold this turn (one sell per city per turn). */
@@ -477,7 +460,7 @@ export interface City {
  * Fixed per-civilization AI identity that drives production (and later
  * research). See CIV_PRODUCTION_PROFILES in src/game/engine/AITypes.ts.
  */
-export type AIProductionProfile =
+type AIProductionProfile =
   | 'military_expansion'
   | 'science_focus'
   | 'balanced_growth'
@@ -739,7 +722,7 @@ export interface GlideRequest {
 /**
  * A request to smoothly pan the camera to a tile (consumed by GameCanvas).
  */
-export interface CameraPanRequest {
+interface CameraPanRequest {
   col: number;
   row: number;
   /** Keep the current zoom (true) or also animate zoom to a target (false). */
@@ -875,173 +858,4 @@ export interface GameActions {
   setUnitAnimating: (isAnimating: boolean) => void;
   focusCameraOnTile: (col: number, row: number, keepZoom?: boolean, force?: boolean) => void;
   clearCameraPanRequest: () => void;
-}
-
-export interface GameEngine {
-  isInitialized: boolean;
-  map: MapState | null;
-  units: Unit[];
-  cities: City[];
-  civilizations: Civilization[];
-  technologies: Technology[];
-  onStateChange: ((eventType: string, eventData?: Record<string, unknown>) => void) | null;
-  goToManager: { setUnitPath(unitId: string, path: Array<{ col: number; row: number }>): void; getUnitPath(unitId: string): Array<{ col: number; row: number }> | undefined; clearUnitPath(unitId: string): void; executePathWithAnimation?(unitId: string, delayMs: number): Promise<{ success: boolean; stepsCompleted: number }> } | null;
-  /** Log a game event with category, message, and optional detail object. */
-  log(category: string, message: string, detail?: Record<string, unknown>): void;
-  newGame(): void;
-  processTurn(): void;
-  moveUnit(unitId: string, col: number, row: number): { success: boolean; reason?: string };
-  canUnitMoveTo: (unitId: string, col: number, row: number) => boolean;
-  /** End the current player's turn automatically if every unit is done/skipped. */
-  checkAndEndTurnIfNoMoves(): void;
-  foundCity(col: number, row: number, civilizationId: number, customName?: string | null): City | null;
-  foundCityWithSettler(settlerId: string): boolean;
-  setResearch(civId: number, techId: string, savedProgress?: number): void;
-  /** Set Tax/Science/Luxury rates (sum always 100). */
-  setRates(civId: number, tax: number, science: number, luxury: number): void;
-  /** Switch a civilization's government and re-apply rate caps/anarchy rules. */
-  setGovernment(civId: number, government: string): void;
-  /** Begin a revolution (anarchy for several turns) toward a new government. */
-  startRevolution(civId: number, government: string): boolean;
-  /** Governments currently unlocked by a civ's researched technologies. */
-  getAvailableGovernments(civ: Civilization): string[];
-  /** Make a city the seat of government (moves the Palace, updates flags). */
-  designateCapital(civId: number, city: City): void;
-  /** Ensure the civ has a capital (replaces one lost to capture/destruction). */
-  ensureCapital(civId: number): void;
-  calculateCivScience(civId: number): number;
-  calculateCivGold(civId: number): number;
-  unitSleep(unitId: string): void;
-  unitWake(unitId: string): void;
-  unitFortify(unitId: string): void;
-  skipUnit(unitId: string): void;
-  buildImprovement(unitId: string, improvement: string): boolean;
-  /** Whether a unit could build this improvement on its current tile (ignores moves). */
-  canBuildImprovement(unitId: string, improvementType: string): boolean;
-  /** Whether the unit can start/continue improvement work this turn (has moves, not fortified). */
-  hasMovesForImprovement(unitId: string, improvementType: string): boolean;
-  /** Civ1 worker-turns to build an improvement on a terrain type. */
-  improvementBuildTurns(type: string, terrain: string): number;
-  /** Advance an in-progress improvement by one worker-turn; true when completed. */
-  advanceUnitWork(unitId: string): boolean;
-  /** Whether a settler can found a city on its current tile. */
-  canFoundCity(settlerId: string): boolean;
-  cleanPollution(unitId: string): boolean;
-  disbandUnit(unitId: string): boolean;
-  rushCityProduction(cityId: string): boolean;
-  cycleUnitsInTile(unitId: string): string | null;
-  selectCityByIndex(index: number): boolean;
-  saveGame(): boolean;
-  getSaveJSON(): string | null;
-  loadGame(): Promise<boolean>;
-  getDiplomatActions(diplomatId: string): { targetCivId: number; actions: string[] } | null;
-  executeDiplomatAction(diplomatId: string, action: string, targetCivId: number): { success: boolean; type?: string; report?: unknown; reason?: string; response?: unknown; message?: string };
-  diplomacyManager: {
-    getStatus(civA: number, civB: number): string;
-    declareWar(attacker: number, defender: number): void;
-    getEnemies(civId: number): number[];
-    acceptOffer(proposal: { fromCivId: number; toCivId: number; action: string; goldAmount?: number }): { accepted: boolean; reason?: string; goldTransferred?: number };
-    processProposal(proposal: { fromCivId: number; toCivId: number; action: string; gold?: number; [key: string]: unknown }): { accepted?: boolean; counterProposal?: { fromCivId: number; toCivId: number; action: string; goldAmount?: number }; reason?: string; goldTransferred?: number };
-    cancelTreaty(civA: number, civB: number, treaty: string): void;
-    getAttitude(civA: number, civB: number): string;
-    getRelation(civA: number, civB: number): { status: string; reputationModifier?: number; since?: number; treatiesBrokenByA?: number; treatiesBrokenByB?: number };
-    getActiveTreaties(civA: number, civB: number): string[];
-    getEventLog(): Array<{ type: string; fromCivId: number; toCivId: number; goldAmount?: number; details?: string }>;
-    estimateMilitaryStrength(civId: number): number;
-    isAtWar(civA: number, civB: number): boolean;
-    processAIDiplomacy(civId: number): void;
-    presentOffer(fromCivId: number, toCivId: number, action: string, gold: number, message: string): void;
-    reset(): void;
-    processTurn(roundNumber: number): void;
-  };
-  /** Auto-production manager for AI/human city queues. */
-  autoProduction: { processAutoProductionForCivilization(civId: number): void };
-  /** Production manager for city build queues. */
-  productionManager: { setCityProduction(cityId: string, item: ProductionItem, queue?: boolean): { success: boolean; reason?: string; city?: City }; purchaseCityProduction(cityId: string, item: ProductionItem, civId?: number): { success: boolean; reason?: string }; removeCurrentProduction(cityId: string): { success: boolean; reason?: string; removed?: ProductionItem }; removeCityQueueItem(cityId: string, index: number): { success: boolean; reason?: string; removed?: ProductionItem }; moveCityQueueItem(cityId: string, fromIndex: number, toIndex: number): { success: boolean; reason?: string; moved?: ProductionItem } };
-  /** Economic manager for tax/science/luxury rates and upkeep. */
-  economicManager: { setGovernment(civId: number, government: string): void; calculateCityTrade?(city: City): number; processTurn?(civ: Civilization): { upkeep: number; deficit: number; disbanded: number }; recomputeCityYields?(city: City): void; applyCityOutputs?(city: City, civ: Civilization): void; totalUpkeep?(civId: number): number };
-  /** Civ I–style research manager (tech cost, beaker modifiers, turn caps). */
-  researchManager: { processTurn(): void; effectiveTechCost?(civ: Civilization, techId: string | Technology): number; estimatedTurns?(civ: Civilization, techId: string | Technology, perTurnScience: number): number; advanceResearch?(civ: Civilization, techId: string, totalScience: number): string | null };
-  /** Per-civilization persistent turn storage (AI state, explored tiles…). */
-  getPlayerStorage(civilizationId: number): PlayerTurnStorage;
-  /** Square grid backing the map (null until a game is initialized). */
-  squareGrid: {
-    isValidSquare(col: number, row: number): boolean;
-    squareDistance(col1: number, row1: number, col2: number, row2: number): number;
-    findPath(fromCol: number, fromRow: number, toCol: number, toRow: number, obstacles?: Set<string>, passabilityFn?: (col: number, row: number) => boolean): Array<{ col: number; row: number }>;
-    getNeighbors(col: number, row: number): Array<{ col: number; row: number }>;
-  } | null;
-  /** Get the map tile at a grid position (null when out of bounds). */
-  getTileAt(col: number, row: number): Tile | null;
-  /** Get the unit at a grid position (null if empty). */
-  getUnitAt(col: number, row: number): Unit | null;
-  /** Get the city at a grid position (null if empty). */
-  getCityAt(col: number, row: number): City | null;
-  /** Whether a tile has been permanently explored by a player. */
-  isExploredByPlayer(civId: number, col: number, row: number): boolean;
-  /** Whether a tile is currently visible (in fog of war) for a player. */
-  isVisibleToPlayer(civId: number, col: number, row: number): boolean;
-  /** Whether a tile is passable by ground units. */
-  isTilePassable(col: number, row: number): boolean;
-  /** Returns a passability filter function for pathfinding. */
-  getPassabilityFilter(): (col: number, row: number) => boolean;
-  /** Resolve combat between two units. */
-  combatUnit(attacker: Unit, defender: Unit): void;
-  /** Whether a unit can afford to move (enough movement points). */
-  canUnitAffordMove(unit: Unit, moveCost: number): boolean;
-  /** Whether a settler can join an adjacent city. */
-  canJoinCity(unitId: string): boolean;
-  /** Async sleep for AI delays. */
-  sleep(ms: number): Promise<void>;
-  /** Measure execution time of a function (debug). */
-  measurePerformance<T>(label: string, fn: () => T): T;
-  /** Record an enemy location for AI intelligence. */
-  recordEnemyLocation(civId: number, enemy: EnemyLocation): void;
-  /** Assign exploration zones to scouts. */
-  assignScoutZones(civId: number): void;
-  /** Check if a tile is within a scout's assigned zone. */
-  isInScoutZone(civId: number, scoutIdx: number, col: number, row: number): boolean;
-  /** Turn/phase manager. */
-  roundManager: { setUnitPath(unitId: string, path: Array<{ col: number; row: number }>): void; getPhase(): string; getCurrentPlayer(): number | null; getRoundNumber(): number; isAITurnInProgress(): boolean; clearUnitPath(unitId: string): void; getAllUnitPaths(): Map<string, Array<{ col: number; row: number }>> };
-  /** Current in-game year (negative = BC). */
-  currentYear: number;
-  /** Current game settings (difficulty, map type, civilizations…). */
-  gameSettings: { difficulty: string; mapType: string; numberOfCivilizations: number; playerCivilization: number; startingYear: number; startingGold: number };
-  /** Remove the active production item from a city. */
-  removeCurrentProduction(cityId: string): void;
-  getAllUnits(): Unit[];
-  getAllCities(): City[];
-  restartCurrentGame(): Promise<void>;
-  shutdownToMenu(): void;
-  isGameOver: boolean;
-  /** Toggle auto-production for a city. */
-  toggleAutoProduction?(cityId: string, enabled: boolean): boolean;
-  /** Purchase city production. */
-  purchaseCityProduction?(cityId: string, item: ProductionItem): { success: boolean; reason?: string };
-  /** Active player index. */
-  activePlayer: number;
-  /** Store actions for UI updates. */
-  storeActions: GameActions | null;
-  /** Whether the game is paused. */
-  isPaused?: boolean;
-  /** Current game turn number. */
-  currentTurn?: number;
-  /** Unit turn queue for managing unit order. */
-  unitTurnQueue?: { initializeQueue(civId: number): void; clearQueue(civId: number): void };
-  /** Scout memory for persistence across turns. */
-  scoutMemory?: { setCurrentRound(round: number): void; getNearestStaleTarget?(fromCol: number, fromRow: number, seekerCivId: number, maxAge?: number): EnemyLocation | null };
-  /** Barbarian manager for aggressive AI. */
-  barbarianManager?: { processBarbarians(): void };
-  /** Victory manager for end-game detection. */
-  victoryManager?: { evaluateEndOfTurn(): boolean };
-  /** Government manager for revolution and capital. */
-  governmentManager?: { processTurn(civ: Civilization): void; ensureCapital?(civId: number): void; designateCapital?(civId: number, city: City): void; isInRevolution(civ: Civilization): boolean; bestGovernmentForCiv(civ: Civilization): string | null };
-  /** Called when a scout is created. */
-  onScoutCreated?(unit: Unit): void;
-  /** Process AI turn for a civilization. */
-  processAITurn?(civilizationId: number): Promise<void>;
-  /** Scrap obsolete city walls when metallurgy is discovered. */
-  scrapObsoleteCityWalls?(civId: number): void;
-  /** Update technology availability based on researched techs. */
-  updateTechnologyAvailability?(): void;
 }

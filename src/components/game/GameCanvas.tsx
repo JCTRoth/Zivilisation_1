@@ -1549,6 +1549,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       const rect = canvasRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
+      const isRightClick = e.button === 2;
 
       // Minimap click - jump to location
       if (minimap) {
@@ -1921,16 +1922,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             assignUnitPath(selectedUnit, hex.col, hex.row);
           } else if (cityAt) {
           // The specialist row drawn UNDER the city is the specialist selector:
-          // clicking one of those icons turns a citizen that currently works a
-          // tile into that specialist. Checked before the city selection so the
-          // click does not open the city screen.
+          // left-click promotes, right-click demotes. Checked before the city
+          // selection so the click does not open the city screen.
           if (
             currentPlayer &&
             cityAt.civilizationId === currentPlayer.id &&
             gameEngine?.promoteCitizenToSpecialist
           ) {
-            // `cityAt` is a narrow local shape; the store has the full city
-            // (its buildings decide where the row sits under the sprite).
             const fullCity = cities.find((c) => c.id === cityAt!.id) ?? null;
             const { x: cityX, y: cityY } = squareToScreen(cityAt.col, cityAt.row);
             const hit = fullCity
@@ -1939,6 +1937,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 )
               : undefined;
             if (hit && fullCity) {
+              if (isRightClick) {
+                const specs = fullCity.specialists ?? [];
+                const idx = specs.lastIndexOf(hit.type);
+                if (idx >= 0 && gameEngine.demoteSpecialistToWorker(fullCity.id, idx)) {
+                  actions?.addNotification?.({
+                    type: 'info',
+                    message: `${cityAt.name}: ${hit.type} returned to tile work.`,
+                  });
+                  triggerRender();
+                }
+                return;
+              }
               const ok = gameEngine.promoteCitizenToSpecialist(fullCity.id, hit.type);
               console.log(
                 `[CLICK] Specialist icon ${hit.type} under ${cityAt.name} — ${ok ? 'converted' : 'no free hand'}`,

@@ -46,9 +46,9 @@ export const VILLAGE_BARBARIAN_MAX = 3;
 // far away and a large empire are safer: the farther the village from the
 // nearest own city and the more cities the civ has, the higher the chance the
 // AI takes it instead of leaving it for later/recon.
-export const AI_VILLAGE_TAKE_BASE = 0.25;
-export const AI_VILLAGE_TAKE_DISTANCE_WEIGHT = 0.5;
-export const AI_VILLAGE_TAKE_CITY_WEIGHT = 0.3;
+const AI_VILLAGE_TAKE_BASE = 0.25;
+const AI_VILLAGE_TAKE_DISTANCE_WEIGHT = 0.5;
+const AI_VILLAGE_TAKE_CITY_WEIGHT = 0.3;
 /** Distance (tiles) at which the "far away" bonus saturates. */
 export const AI_VILLAGE_SAFE_DISTANCE = 8;
 /** City count at which the "big empire" bonus saturates. */

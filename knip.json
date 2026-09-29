@@ -7,6 +7,5 @@
     "src/game/Civilization.ts",
     "src/game/Unit.ts",
     "src/game/Terrain.ts"
-  ],
-  "ignoreDependencies": ["@vitest/coverage-v8"]
+  ]
 }

@@ -28,10 +28,10 @@ import { MathUtils } from '@/utils/MathUtils';
 import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
 
 /** HP (%) a lost combat round costs a unit. */
-export const COMBAT_DAMAGE = 25;
+const COMBAT_DAMAGE = 25;
 
 /** Terrain-ish shape needed for defence bonuses. */
-export interface CombatTerrainLike {
+interface CombatTerrainLike {
   type?: string;
   terrain?: string;
   improvement?: string | null;
@@ -254,5 +254,3 @@ export class CombatSystem {
     return `${defenderName} hit ${attackerName} for ${MathUtils.formatDamage(damage.attackerDamage)} HP`;
   }
 }
-
-export default CombatSystem;

@@ -15,7 +15,7 @@
 
 import { SPECIAL_RESOURCES } from '@/data/TerrainConstants';
 
-export const TERRAIN_TEXTURE_FILES: Record<string, string> = {
+const TERRAIN_TEXTURE_FILES: Record<string, string> = {
   OCEAN:     '/assets/tiles/terrain_ocean.png',
   PLAINS:    '/assets/tiles/terrain_plains.png',
   GRASSLAND: '/assets/tiles/terrain_grassland.png',
@@ -33,7 +33,7 @@ export const TERRAIN_TEXTURE_FILES: Record<string, string> = {
   HILLS:     '/assets/tiles/terrain_plains.png',
 };
 
-export const FEATURE_TEXTURE_FILES: Partial<Record<string, string>> = {
+const FEATURE_TEXTURE_FILES: Partial<Record<string, string>> = {
   FOREST:    '/assets/tiles/terrain_forest_feature_1.png',
   JUNGLE:    '/assets/tiles/terrain_jungle_feature.png',
   HILLS:     '/assets/tiles/terrain_hills_feature.png',
@@ -72,7 +72,7 @@ function buildResourceTileFiles(): Record<string, string> {
 export const RESOURCE_TILE_FILES: Record<string, string> = buildResourceTileFiles();
 
 /** Higher value bleeds color over lower-value terrain at border transitions. */
-export const TERRAIN_PRIORITY: Record<string, number> = {
+const TERRAIN_PRIORITY: Record<string, number> = {
   OCEAN:       0,
   RIVER:       0,
   LAKE:        0,
@@ -89,7 +89,7 @@ export const TERRAIN_PRIORITY: Record<string, number> = {
 };
 
 /** rgba prefix for each terrain's dominant blend color (no closing paren). */
-export const TERRAIN_BLEND_COLOR: Record<string, string> = {
+const TERRAIN_BLEND_COLOR: Record<string, string> = {
   OCEAN:      'rgba( 30, 80,170,',
   RIVER:      'rgba( 30,100,200,',
   LAKE:       'rgba( 60,150,230,',
@@ -109,7 +109,7 @@ export const TERRAIN_BLEND_COLOR: Record<string, string> = {
  * How far terrain transitions bleed into the current tile, as a fraction
  * of the tile size (0–0.5).  Tweak this to control edge/corner distance.
  */
-export const TRANSITION_DISTANCE = 0.15;
+const TRANSITION_DISTANCE = 0.15;
 
 /** Max number of numbered variants to probe per type beyond the primary image. */
 const MAX_VARIANT_PROBES = 4;

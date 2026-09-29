@@ -71,7 +71,42 @@ Still to do (bigger):
 
 
 
+## Next Steps (Priority Order)
 
+### 1. Naval Invasion / Transport Missions
+The navy pivot builds ships but there is **no transport/invasion mission** — only colony missions exist. Until this is implemented, an AI-vs-AI map whose strait splits civs across two continents is an unwinnable stalemate (465-round run: 17 wars, 3 attacks). This is the single biggest gameplay gap.
+
+### 2. Multi-Group Offensives / Siege Commitment
+Two army groups can form, but there is **no coordination** between them — no pincer/second-front planning. Groups operate independently.
+
+### 3. Army Composition by Era
+The AI still over-produces the era's default defender. Needs stronger era/threat-aware composition weights so armies evolve with technology.
+
+### 4. Economy Buildings Earlier
+The AI reaches 0–8 gold with big armies. Marketplace/Bank/Temple should be built earlier when upkeep pressure starts.
+
+### 5. Diplomacy Overhaul
+- Tech exchange (offer tech for tech, tech for money)
+- Gold transfer (send/request gold, bribe the AI, AI bribes the player)
+- AI-to-AI alliance calls for help
+- Embassy-based observation of AI-to-AI diplomacy
+
+### 6. End-of-Game Statistics & High Scores
+- End-of-game statistics screen (economics, military, science)
+- Civ1-style demographics screen (greatest cities, world rankings)
+- High score system with server submission
+
+### 7. Dead Code Cleanup
+DONE — the 57 unused exports knip reported are gone. Tuning constants and
+helpers that are genuinely used inside their own module were un-exported; the
+rest (getTerrainInfo, manhattan, terrainWeight, BASE_CONTENTMENT's stale
+comment, the duplicate `export default` on AICityManager/CombatSystem, the
+`MoveAnimator` named export, the dead `GameEngine` interface and the duplicated
+`EnemyLocation`/`PlayerTurnStorage` in types/game.ts, and the unused
+`expectInvariants` test helper) were deleted. knip now reports nothing.
+
+### 8. Client/Server Split
+The game engine is designed to support networked multiplayer but it is not yet implemented. A lobby system, network multiplayer, and replay system are all planned.
 
 
 
@@ -139,8 +174,8 @@ BUGS:
   unit queue and the can-I-act API, so a regression names the state that broke.
 - CI: a new "Unit Tests" workflow (type-check, lint, vitest) gates every push and
   PR. The Playwright workflow only ran the browser suite, so all engine tests
-  were ungated. knip runs there too, advisory for now: the repo has ~54 unused
-  exports to clean up (tracked below) before it can fail the build.
+  were ungated. knip runs there too, advisory for now: the unused exports it
+  found have since been cleaned up, so the step can become a hard failure.
 - knip.json now includes tests/ and e2e/ as entry+project files (test-only
   exports used to look unused) and ignores the four legacy engine classes
   (src/game/{City,Civilization,Unit,Terrain}.ts) that nothing imports.
@@ -412,6 +447,6 @@ Also fixed after the analysis:
 * Eliminated civs are emitted once in the compact CSV and then dropped.
 
 - Implement City Wall functionality also show the city wall on the city visually
-- CLEANUP: ~54 unused exports reported by knip (mostly exported-but-internal
-  tuning constants in src/game/engine/AI/*). Either un-export them or reference
-  them from a test, then make the knip CI step a hard failure.
+- CLEANUP: DONE — the ~54 unused exports knip reported are removed (un-exported
+  where the module uses them, deleted where nothing did). knip is now clean, so
+  its CI step can be made a hard failure.

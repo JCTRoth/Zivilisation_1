@@ -579,3 +579,169 @@
   color: #9fb0c0;
   font-size: 0.72rem;
 }
+
+/* ── Interactive Specialist Management ────────────────────────────────── */
+.city-specialist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.city-specialist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.city-specialist-icon {
+  font-size: 1.1rem;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.city-specialist-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-width: 80px;
+}
+
+.city-specialist-yield {
+  font-size: 0.75rem;
+  flex: 1;
+}
+
+.city-specialist-count {
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+  color: #4ecdc4;
+}
+
+.city-specialist-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6edf3;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.city-specialist-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.city-specialist-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.city-specialist-btn-add {
+  color: #4caf50;
+}
+
+.city-specialist-btn-remove {
+  color: #f44336;
+}
+
+.city-specialist-lock-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #cfdae4;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.city-specialist-lock-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.city-specialist-lock-btn.locked {
+  background: rgba(78, 205, 196, 0.15);
+  border-color: rgba(78, 205, 196, 0.4);
+  color: #4ecdc4;
+}
+
+.city-specialist-demote-all-btn {
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  border-radius: 3px;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  background: rgba(244, 67, 54, 0.08);
+  color: #f44336;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.city-specialist-demote-all-btn:hover {
+  background: rgba(244, 67, 54, 0.15);
+  border-color: rgba(244, 67, 54, 0.5);
+}
+
+.city-tile-unassign-btn,
+.city-tile-assign-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s;
+  margin-left: auto;
+}
+
+.city-tile-unassign-btn {
+  color: #f44336;
+}
+
+.city-tile-unassign-btn:hover {
+  background: rgba(244, 67, 54, 0.12);
+  border-color: rgba(244, 67, 54, 0.3);
+}
+
+.city-tile-assign-btn {
+  color: #4caf50;
+}
+
+.city-tile-assign-btn:hover {
+  background: rgba(76, 175, 80, 0.12);
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+.city-tile-available {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.city-tile-available:hover {
+  opacity: 1;
+  background: rgba(76, 175, 80, 0.05);
+}

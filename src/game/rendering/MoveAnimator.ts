@@ -39,7 +39,7 @@ const BASE_RECOIL_DURATION = 250; // attacker retreats after a failed attack
  * instant (`enableAnimations=false` or `animationSpeed=0`) every duration is 0,
  * so the move commits immediately — which the unit tests rely on.
  */
-export class MoveAnimator {
+class MoveAnimator {
   private engine: MoveEngine;
 
   constructor(engine: MoveEngine) {

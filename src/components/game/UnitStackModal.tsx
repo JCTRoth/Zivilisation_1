@@ -12,7 +12,7 @@ import type { City, Unit } from '../../../types/game';
  *   - tick 0..N units and confirm a group move: the next map click orders
  *     every selected unit that still has movement points to that destination.
  */
-export interface UnitStackModalProps {
+interface UnitStackModalProps {
   show: boolean;
   col: number;
   row: number;

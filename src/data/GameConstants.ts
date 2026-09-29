@@ -70,7 +70,7 @@ export const AI_TURN_TIMEOUT_MS = 30_000;
 /** Map size the base budget above was tuned for (the 40x40 duel). */
 export const AI_TURN_TIMEOUT_REFERENCE_TILES = 40 * 40;
 /** Added per tile beyond the reference map, in ms. */
-export const AI_TURN_TIMEOUT_MS_PER_TILE = 25;
+const AI_TURN_TIMEOUT_MS_PER_TILE = 25;
 /** Hard ceiling, so a 180x90 Earth game cannot wait five minutes per civ. */
 export const AI_TURN_TIMEOUT_MAX_MS = 180_000;
 
