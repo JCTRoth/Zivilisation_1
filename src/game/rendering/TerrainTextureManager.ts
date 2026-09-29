@@ -122,7 +122,12 @@ const MAX_VARIANT_PROBES = 4;
 const RESOURCE_TILE_MAX_PROBES = 5;
 
 export class TerrainTextureManager {
-  /** Arrays hold the primary image at index 0, then any loaded variants. */
+  /**
+   * Cache arrays hold only images that have already decoded: the primary image
+   * is pushed from its `onload`, then each loaded variant. Draw code can index
+   * them directly — never scan them per call (that allocated and filtered once
+   * per tile per frame).
+   */
   private readonly baseCache    = new Map<string, HTMLImageElement[]>();
   private readonly featureCache = new Map<string, HTMLImageElement[]>();
   /** Pre-rendered feature-on-tile textures, keyed `TERRAIN.RESOURCE`. */
@@ -225,9 +230,7 @@ export class TerrainTextureManager {
     if (!type) return null;
     const arr = this.featureCache.get(type.toUpperCase());
     if (!arr || arr.length === 0) return null;
-    const ready = arr.filter(img => img.complete && img.naturalWidth > 0);
-    if (ready.length === 0) return null;
-    return this.pickVariant(ready, col, row);
+    return this.pickVariant(arr, col, row);
   }
 
   /** Cache key of a pre-rendered feature-on-tile texture (`TERRAIN.RESOURCE`). */
@@ -256,10 +259,8 @@ export class TerrainTextureManager {
     col = 0, row = 0,
   ): boolean {
     const arr = this.resourceTileCache.get(this.resourceTileKey(terrainType, resource));
-    if (!arr) return false;
-    const ready = arr.filter(img => img.complete && img.naturalWidth > 0);
-    if (ready.length === 0) return false;
-    ctx.drawImage(this.pickVariant(ready, col, row), x, y, size, size);
+    if (!arr || arr.length === 0) return false;
+    ctx.drawImage(this.pickVariant(arr, col, row), x, y, size, size);
     return true;
   }
 
@@ -275,10 +276,7 @@ export class TerrainTextureManager {
     row = 0,
   ): HTMLImageElement | null {
     const arr = this.resourceTileCache.get(this.resourceTileKey(terrainType, resource));
-    if (arr) {
-      const ready = arr.filter(img => img.complete && img.naturalWidth > 0);
-      if (ready.length > 0) return this.pickVariant(ready, col, row);
-    }
+    if (arr && arr.length > 0) return this.pickVariant(arr, col, row);
     return this.getTexture(terrainType, col, row);
   }
 

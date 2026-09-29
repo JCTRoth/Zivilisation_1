@@ -113,6 +113,17 @@ interface InvasionMission {
   stage: 'gather' | 'sail' | 'siege';
 }
 
+/**
+ * Civ-wide facts a sea-invasion reachability test needs. `null` stands for
+ * "this civ cannot mount a sea invasion at all". Built once and passed down so
+ * a loop over many remembered enemy positions does not re-filter the civ's
+ * cities and re-check its buildable tech for every entry.
+ */
+interface SeaInvasionContext {
+  /** Landmass the civ would sail from. */
+  homeLandmass: number;
+}
+
 export class AIManager {
   private gameEngine: GameEngine;
 
@@ -1253,13 +1264,19 @@ export class AIManager {
 
     const landingPower = force.reduce((sum: number, u: Unit) => sum + this.combatPowerOf(u), 0);
 
+    // Built lazily on the first cross-water target: one O(units × 9) sweep so
+    // each beach on every enemy landmass is a O(1) lookup instead of an
+    // O(units) scan (the old shape was O(beaches × units) per planning pass).
+    let defenceGrid: number[][] | null = null;
+
     for (const enemyCity of this.gameEngine.cities) {
       if (enemyCity.civilizationId === civ.id) continue;
       if (!enemies.has(enemyCity.civilizationId)) continue;
       const landmassId = this.gameEngine.getLandmassId?.(enemyCity.col, enemyCity.row) ?? -1;
       if (landmassId < 0 || landmassId === homeLandmass) continue; // already walkable
 
-      const beach = this.findInvasionBeach(landmassId, enemyCity, rendezvous, landingPower);
+      defenceGrid ??= this.buildDefenceGrid(1);
+      const beach = this.findInvasionBeach(landmassId, enemyCity, rendezvous, landingPower, defenceGrid);
       if (!beach) continue;
 
       const defenders = this.gameEngine.units.filter(
@@ -1320,8 +1337,9 @@ export class AIManager {
   private findInvasionBeach(
     landmassId: number,
     enemyCity: City,
-    rendezvous?: { col: number; row: number },
-    landingPower = 0,
+    rendezvous: { col: number; row: number } | undefined,
+    landingPower: number,
+    defenceGrid: number[][],
   ): { landTile: { col: number; row: number }; waterTile: { col: number; row: number } } | null {
     const grid = this.gameEngine.squareGrid;
     const map = this.gameEngine.map;
@@ -1329,7 +1347,7 @@ export class AIManager {
 
     // What the landing would have to beat: the city itself plus everything that
     // can reach the beach to defend it.
-    const cityDefence = this.defenceOf(enemyCity, 1);
+    const cityDefence = this.defenceAt(defenceGrid, enemyCity);
     let best: {
       landTile: { col: number; row: number };
       waterTile: { col: number; row: number };
@@ -1355,7 +1373,7 @@ export class AIManager {
             ? grid.chebyshevDistance(rendezvous.col, rendezvous.row, water.col, water.row)
             : 0,
           landingForce: landingPower,
-          beachDefence: this.defenceOf({ col, row } as City, 1),
+          beachDefence: this.defenceAt(defenceGrid, { col, row }),
           targetCityDefence: cityDefence,
           tileYield: this.tileYieldAt(col, row),
           adjacentToTarget,
@@ -1382,6 +1400,43 @@ export class AIManager {
       total += Math.max(0, (u.attack ?? 0) + (u.defense ?? 0));
     }
     return total;
+  }
+
+  /**
+   * `defenceOf` for every tile of the map, precomputed in one pass: each unit
+   * adds its weight to the tiles within Chebyshev `radius` of it. Callers that
+   * score many tiles in a row (`findInvasionBeach` walks every coastal tile on
+   * a landmass) go from O(beaches × units) to O(units × radius² + beaches).
+   *
+   * Unit positions must not change between building and use; the grid is built
+   * for the duration of a single synchronous planning pass.
+   */
+  private buildDefenceGrid(radius: number): number[][] {
+    const map = this.gameEngine.map;
+    const height = map?.height ?? 0;
+    const width = map?.width ?? 0;
+    const grid: number[][] = Array.from({ length: height }, () => new Array<number>(width).fill(0));
+    for (const u of this.gameEngine.units) {
+      if (u.isDefeated) continue;
+      const power = Math.max(0, (u.attack ?? 0) + (u.defense ?? 0));
+      if (power === 0) continue;
+      const rowStart = Math.max(0, u.row - radius);
+      const rowEnd = Math.min(height - 1, u.row + radius);
+      const colStart = Math.max(0, u.col - radius);
+      const colEnd = Math.min(width - 1, u.col + radius);
+      for (let r = rowStart; r <= rowEnd; r++) {
+        const rowValues = grid[r];
+        for (let c = colStart; c <= colEnd; c++) {
+          rowValues[c] += power;
+        }
+      }
+    }
+    return grid;
+  }
+
+  /** Defence of a tile from a grid produced by {@link buildDefenceGrid}. */
+  private defenceAt(grid: number[][], anchor: { col: number; row: number }): number {
+    return grid[anchor.row]?.[anchor.col] ?? 0;
   }
 
   /** food + production + trade of a tile, for weighing colonisable land. */
@@ -4029,45 +4084,47 @@ export class AIManager {
   }
 
   /**
+   * The civ-wide preconditions for any sea invasion: it can put a hull in the
+   * water, owns a coastal city to sail from, and that city has a landmass.
+   * Returns null when those fail. Everything here is independent of the target,
+   * so callers test many targets against one context instead of recomputing it.
+   */
+  private buildSeaInvasionContext(civilizationId: number): SeaInvasionContext | null {
+    if (!this.engineCanBuildShips(civilizationId)) return null;
+    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civilizationId);
+    if (ownCities.length === 0) return null;
+    if (!ownCities.some((c) => this.gameEngine.findAdjacentOcean?.(c.col, c.row))) return null;
+    const homeLandmass = this.gameEngine.getLandmassId?.(ownCities[0].col, ownCities[0].row) ?? -1;
+    if (homeLandmass < 0) return null;
+    return { homeLandmass };
+  }
+
+  /**
    * True if this particular known enemy position could be attacked from the
-   * sea: it sits on another landmass, has a beach a ferry can reach, and we
-   * can put a hull in the water. Land positions are never 'sea' reachable —
-   * a walker is always better.
+   * sea: it sits on another landmass and has a beach a ferry can reach. Land
+   * positions are never 'sea' reachable — a walker is always better.
    */
   private isSeaInvasionTarget(
-    civilizationId: number,
-    loc: { col: number; row: number; type: 'city' | 'unit' },
+    loc: { col: number; row: number },
+    context: SeaInvasionContext | null,
   ): boolean {
-    if (!this.engineCanBuildShips(civilizationId)) return false;
-    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civilizationId);
-    if (ownCities.length === 0) return false;
-    if (!ownCities.some((c) => this.gameEngine.findAdjacentOcean?.(c.col, c.row))) return false;
-    const homeLandmass = this.gameEngine.getLandmassId?.(ownCities[0].col, ownCities[0].row) ?? -1;
-    if (homeLandmass < 0) return false;
+    if (!context) return false;
     const targetLandmass = this.gameEngine.getLandmassId?.(loc.col, loc.row) ?? -1;
-    if (targetLandmass < 0 || targetLandmass === homeLandmass) return false;
+    if (targetLandmass < 0 || targetLandmass === context.homeLandmass) return false;
     // A ferry can only put troops ashore where a land tile touches water.
     return this.gameEngine.findAdjacentOcean?.(loc.col, loc.row) != null;
   }
 
   /**
-   * True if a hostile city sits on another landmass that a ferry could reach:
-   * the civ can build (or already has) a hull, owns a city to sail from, and
-   * the target has a beach.
+   * True if a hostile city sits on another landmass that a ferry could reach.
    */
   private hasSeaInvasionTarget(civilizationId: number, onlyEnemyCivId?: number): boolean {
-    if (!this.engineCanBuildShips(civilizationId)) return false;
-    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civilizationId);
-    if (ownCities.length === 0) return false;
-    if (!ownCities.some((c) => this.gameEngine.findAdjacentOcean?.(c.col, c.row))) return false;
-    const homeLandmass = this.gameEngine.getLandmassId?.(ownCities[0].col, ownCities[0].row) ?? -1;
-    if (homeLandmass < 0) return false;
+    const context = this.buildSeaInvasionContext(civilizationId);
+    if (!context) return false;
     return this.gameEngine.cities.some((c: City) => {
       if (c.civilizationId === civilizationId) return false;
       if (onlyEnemyCivId !== undefined && c.civilizationId !== onlyEnemyCivId) return false;
-      const landmassId = this.gameEngine.getLandmassId?.(c.col, c.row) ?? -1;
-      if (landmassId < 0 || landmassId === homeLandmass) return false;
-      return this.gameEngine.findAdjacentOcean?.(c.col, c.row) != null;
+      return this.isSeaInvasionTarget(c, context);
     });
   }
 
@@ -4286,6 +4343,10 @@ export class AIManager {
     // (the invasion mission ferries troops over), and dropping it here is why
     // an archipelago game never saw a single declaration — the plan had no
     // target, so there was no `targetCivId` to declare against.
+    //
+    // The sea-invasion preconditions are target-independent, so they are built
+    // once on the first unreachable location and reused for the whole list.
+    let seaContext: SeaInvasionContext | null | undefined;
     for (const [enemyCivId, enemyList] of storage.enemyLocations) {
       for (const loc of enemyList) {
         const age = roundNumber - (loc.lastSeenRound ?? loc.discoveredRound ?? roundNumber);
@@ -4293,7 +4354,11 @@ export class AIManager {
         // still feeds the war plan even if the two fronts are apart.
         if (age > 40) continue;
         const reachableByLand = this.engineTileReachableByLand(civilizationId, loc.col, loc.row);
-        const reachableBySea = !reachableByLand && this.isSeaInvasionTarget(civilizationId, loc);
+        let reachableBySea = false;
+        if (!reachableByLand) {
+          seaContext ??= this.buildSeaInvasionContext(civilizationId);
+          reachableBySea = this.isSeaInvasionTarget(loc, seaContext);
+        }
         if (!reachableByLand && !reachableBySea) continue;
         targets.push({
           col: loc.col,
