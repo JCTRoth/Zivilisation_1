@@ -31,6 +31,7 @@ import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 import { awaitPendingAnimations } from '../rendering/GlideAnimation';
 import { aiTurnTimeoutMs } from '@/data/GameConstants';
+import { debugLog } from '../../utils/DevLog';
 
 export class TurnManager {
   private gameEngine: GameEngine;
@@ -57,7 +58,7 @@ export class TurnManager {
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
     this.unitPaths = new Map();
-    console.log('[TurnManager] Initialized');
+    debugLog('[TurnManager] Initialized');
   }
 
   // --- Public accessors ---
@@ -80,7 +81,7 @@ export class TurnManager {
     if (typeof state.roundNumber === 'number') this.roundNumber = state.roundNumber;
     if (state.currentPlayer !== undefined) this.currentPlayer = state.currentPlayer;
     if (state.currentPhase !== undefined) this.currentPhase = state.currentPhase;
-    console.log(`[TurnManager] Restored state — round ${this.roundNumber}, player ${this.currentPlayer}, phase ${this.currentPhase}`);
+    debugLog(`[TurnManager] Restored state — round ${this.roundNumber}, player ${this.currentPlayer}, phase ${this.currentPhase}`);
   }
 
   /** Reset all turn manager state for a new game. */
@@ -152,19 +153,19 @@ export class TurnManager {
     }
     
     this.gameEngine.currentYear = newYear;
-    console.log(`[TurnManager] Year advanced: ${this.formatYear(currentYear)} -> ${this.formatYear(newYear)} (+${increment})`);
+    debugLog(`[TurnManager] Year advanced: ${this.formatYear(currentYear)} -> ${this.formatYear(newYear)} (+${increment})`);
   }
 
   // --- Unit path management (compatibility with previous RoundManager) ---
   setUnitPath(unitId: string, path: Array<{ col: number; row: number }>): void {
-    console.log(`[TurnManager] Setting path for unit ${unitId}:`, path);
+    debugLog(`[TurnManager] Setting path for unit ${unitId}:`, path);
     this.unitPaths.set(unitId, path);
   }
   getUnitPath(unitId: string): Array<{ col: number; row: number }> | undefined {
     return this.unitPaths.get(unitId);
   }
   clearUnitPath(unitId: string): void {
-    console.log(`[TurnManager] Clearing path for unit ${unitId}`);
+    debugLog(`[TurnManager] Clearing path for unit ${unitId}`);
     this.unitPaths.delete(unitId);
   }
   getAllUnitPaths(): Map<string, Array<{ col: number; row: number }>> {
@@ -173,7 +174,7 @@ export class TurnManager {
   cleanupDestroyedUnits(existingUnitIds: string[]): void {
     for (const id of Array.from(this.unitPaths.keys())) {
       if (!existingUnitIds.includes(id)) {
-        console.log(`[TurnManager] Cleaning path for destroyed unit ${id}`);
+        debugLog(`[TurnManager] Cleaning path for destroyed unit ${id}`);
         this.unitPaths.delete(id);
       }
     }
@@ -195,7 +196,7 @@ export class TurnManager {
     const currentYear = this.gameEngine.currentYear || -4000;
     const yearDisplay = this.formatYear(currentYear);
     
-    console.log(`[TurnManager] Starting turn for civ ${civilizationId} | Round: ${this.roundNumber} | Year: ${yearDisplay}`);
+    debugLog(`[TurnManager] Starting turn for civ ${civilizationId} | Round: ${this.roundNumber} | Year: ${yearDisplay}`);
     this.emit('TURN_START', {
       civilizationId,
       roundNumber: this.roundNumber,
@@ -211,10 +212,10 @@ export class TurnManager {
       // AI auto-registration
       this.registerPlayer(civilizationId);
     } else {
-      console.log('[TurnManager] Awaiting human registration (call turnManager.registerPlayer(civId))');
+      debugLog('[TurnManager] Awaiting human registration (call turnManager.registerPlayer(civId))');
       setTimeout(() => {
         if (!this.playerRegistered && this.currentPlayer === civilizationId) {
-          console.log('[TurnManager] Reminder: human not registered yet for this turn');
+          debugLog('[TurnManager] Reminder: human not registered yet for this turn');
         }
       }, 3000);
     }
@@ -226,11 +227,11 @@ export class TurnManager {
       return false;
     }
     if (this.playerRegistered) {
-      console.log('[TurnManager] Player already registered');
+      debugLog('[TurnManager] Player already registered');
       return true;
     }
     this.playerRegistered = true;
-    console.log(`[TurnManager] Player ${civilizationId} registered`);
+    debugLog(`[TurnManager] Player ${civilizationId} registered`);
     this.emit('PLAYER_REGISTERED', { civilizationId });
     // Move to first actionable phase
     await this.advanceToPhase(TurnPhase.UNIT_MOVEMENT);
@@ -249,7 +250,7 @@ export class TurnManager {
       case TurnPhase.RESEARCH:
         await this.advanceToPhase(TurnPhase.END); break;
       case TurnPhase.END:
-        console.log('[TurnManager] nextPhase: At END phase, not advancing further (finalization happens via advanceToPhase)');
+        debugLog('[TurnManager] nextPhase: At END phase, not advancing further (finalization happens via advanceToPhase)');
         break;
     }
   }
@@ -285,11 +286,11 @@ export class TurnManager {
     if (researchUnlocked && !civ.currentResearch && typeof this.gameEngine.autoSelectResearch === 'function') {
       const autoPicked = this.gameEngine.autoSelectResearch(civId);
       if (autoPicked) {
-        console.log(`[TurnManager] No research selected — auto-selected '${autoPicked}' for ${civ.name}`);
+        debugLog(`[TurnManager] No research selected — auto-selected '${autoPicked}' for ${civ.name}`);
       }
     }
     
-    console.log(`[TurnManager] endHumanTurn: Ending turn for human player ${civId}, current phase: ${this.currentPhase}`);
+    debugLog(`[TurnManager] endHumanTurn: Ending turn for human player ${civId}, current phase: ${this.currentPhase}`);
     
     // Advance through remaining phases. advanceToPhase handles END phase finalization.
     if (this.currentPhase === TurnPhase.UNIT_MOVEMENT) {
@@ -302,13 +303,13 @@ export class TurnManager {
       await this.advanceToPhase(TurnPhase.END);
     }
     
-    console.log(`[TurnManager] endHumanTurn: Human player ${civId} turn completed`);
+    debugLog(`[TurnManager] endHumanTurn: Human player ${civId} turn completed`);
   }
 
   private async advanceToPhase(phase: TurnPhase): Promise<void> {
     if (this.currentPlayer == null) return;
     this.currentPhase = phase;
-    console.log(`[TurnManager] Phase -> ${phase} for civ ${this.currentPlayer}`);
+    debugLog(`[TurnManager] Phase -> ${phase} for civ ${this.currentPlayer}`);
     this.emit('PHASE_CHANGE', { civilizationId: this.currentPlayer, phase });
 
     switch (phase) {
@@ -366,7 +367,7 @@ export class TurnManager {
     
     const currentUnit = queue.getCurrentUnit(civilizationId);
     if (currentUnit) {
-      console.log(`[TurnManager] Auto-selecting queue unit: ${currentUnit.id} (${currentUnit.type}) at (${currentUnit.col}, ${currentUnit.row})`);
+      debugLog(`[TurnManager] Auto-selecting queue unit: ${currentUnit.id} (${currentUnit.type}) at (${currentUnit.col}, ${currentUnit.row})`);
       
       // Emit event to select and focus on this unit
       this.emit('SELECT_QUEUE_UNIT', { 
@@ -379,13 +380,13 @@ export class TurnManager {
         this.gameEngine.storeActions.selectUnit(currentUnit.id);
       }
     } else {
-      console.log(`[TurnManager] No units in queue for civ ${civilizationId}`);
+      debugLog(`[TurnManager] No units in queue for civ ${civilizationId}`);
     }
   }
 
   // --- Phase handlers ---
   private runAIUnitMovementPhase(civilizationId: number) {
-    console.log(`[TurnManager] AI movement phase for civ ${civilizationId}`);
+    debugLog(`[TurnManager] AI movement phase for civ ${civilizationId}`);
     if (!this.gameEngine.processAITurn) {
       this.nextPhase();
       return;
@@ -445,7 +446,7 @@ export class TurnManager {
   }
 
   private handleCityProduction(civilizationId: number) {
-    console.log(`[TurnManager] City production phase for civ ${civilizationId}`);
+    debugLog(`[TurnManager] City production phase for civ ${civilizationId}`);
     try {
       const civ = this.gameEngine.civilizations?.[civilizationId];
       // Runs for human cities too: the CITY GOVERNOR (who works the tiles) runs
@@ -461,7 +462,7 @@ export class TurnManager {
   }
 
   private handleResearch(civilizationId: number) {
-    console.log(`[TurnManager] Research phase for civ ${civilizationId}`);
+    debugLog(`[TurnManager] Research phase for civ ${civilizationId}`);
     
     // If AI has no current research, select one via AIResearch
     const civ = this.gameEngine.civilizations?.[civilizationId];
@@ -489,7 +490,7 @@ export class TurnManager {
         const techChoice = AIResearch.selectResearch(civ, strategy, gameState);
         if (techChoice) {
           this.gameEngine.setResearch(civilizationId, techChoice);
-          console.log(`[TurnManager] AI ${civ.name} selected research: ${techChoice}`);
+          debugLog(`[TurnManager] AI ${civ.name} selected research: ${techChoice}`);
         }
       } catch (err) {
         console.warn('[TurnManager] Failed to select AI research in handleResearch', err);
@@ -511,7 +512,7 @@ export class TurnManager {
   }
 
   private finalizeEndPhase(civilizationId: number) {
-    console.log(`[TurnManager] Finalizing end phase for civ ${civilizationId}`);
+    debugLog(`[TurnManager] Finalizing end phase for civ ${civilizationId}`);
     
     // Emit event for UI to clear highlights and selection; include the active
     // player's full city JSONs so the game log carries them on every turn end.
@@ -533,7 +534,7 @@ export class TurnManager {
    * This is the core turn management logic - no external calls needed.
    */
   advanceTurn(): void {
-    console.log('[TurnManager] advanceTurn: Advancing from player', this.currentPlayer);
+    debugLog('[TurnManager] advanceTurn: Advancing from player', this.currentPlayer);
     
     // Do not advance to the next player while paused — this freezes the whole
     // turn cycle (human AND AI) so nothing continues behind the pause screen.
@@ -585,9 +586,9 @@ export class TurnManager {
       // the horde's actions are visible within the round.
       this.gameEngine.barbarianManager?.processBarbarians();
 
-      console.log(`[TurnManager] ═══════════════════════════════════════════════`);
-      console.log(`[TurnManager] NEW ROUND ${this.roundNumber} | Year: ${this.formatYear(this.gameEngine.currentYear)}`);
-      console.log(`[TurnManager] ═══════════════════════════════════════════════`);
+      debugLog(`[TurnManager] ═══════════════════════════════════════════════`);
+      debugLog(`[TurnManager] NEW ROUND ${this.roundNumber} | Year: ${this.formatYear(this.gameEngine.currentYear)}`);
+      debugLog(`[TurnManager] ═══════════════════════════════════════════════`);
       this.gameEngine.log?.('turn', `ROUND ${this.roundNumber} | Year: ${this.formatYear(this.gameEngine.currentYear)}`);
       
       // Sync turn and year to the store
@@ -611,10 +612,10 @@ export class TurnManager {
       });
     }
     
-    console.log(`[TurnManager] advanceTurn: Moving from player ${previousPlayer} to ${nextPlayer} (${nextCiv.name}, ${nextCiv.isHuman ? 'human' : 'AI'})`);
+    debugLog(`[TurnManager] advanceTurn: Moving from player ${previousPlayer} to ${nextPlayer} (${nextCiv.name}, ${nextCiv.isHuman ? 'human' : 'AI'})`);
 
     if (this.gameEngine.victoryManager && this.gameEngine.victoryManager.evaluateEndOfTurn()) {
-      console.log('[TurnManager] advanceTurn: VictoryManager reported game end; halting further turn processing.');
+      debugLog('[TurnManager] advanceTurn: VictoryManager reported game end; halting further turn processing.');
       this.currentPlayer = null;
       this.currentPhase = null;
       return;
@@ -642,7 +643,7 @@ export class TurnManager {
       || (globalThis as { UNIT_PROPS?: typeof GameEngine['UNIT_PROPS'] }).UNIT_PROPS;
     const units = this.gameEngine.units.filter((u) => u.civilizationId === playerId);
     
-    console.log(`[TurnManager] Resetting moves for ${units.length} units of player ${playerId}`);
+    debugLog(`[TurnManager] Resetting moves for ${units.length} units of player ${playerId}`);
     
     units.forEach((unit) => {
       // A unit killed in combat only lingers for its death animation: it must
@@ -704,7 +705,7 @@ export class TurnManager {
    * Process turn events: city production, purchases, research
    */
   private processTurnEvents(playerId: number): void {
-    console.log(`[TurnManager] Processing turn events for player ${playerId}`);
+    debugLog(`[TurnManager] Processing turn events for player ${playerId}`);
     
     // Process purchased items from previous turn
     this.gameEngine.cities?.forEach((city) => {
@@ -764,7 +765,7 @@ export class TurnManager {
         // Disorder halts growth (stability) but NOT production — otherwise a
         // low-commerce economy (trade ~0) would deadlock forever. Commerce is
         // already lost to unrest in EconomicManager.applyCityOutputs.
-        console.log(`[TurnManager] City ${city.name} is in disorder — growth halted`);
+        debugLog(`[TurnManager] City ${city.name} is in disorder — growth halted`);
       }
       this.processCityProduction(city);
     });
@@ -851,7 +852,7 @@ export class TurnManager {
   }
 
   private completeProduction(city: City): void {
-    console.log(`[TurnManager] City ${city.name} completed production: ${city.currentProduction.type} ${city.currentProduction.itemType}`);
+    debugLog(`[TurnManager] City ${city.name} completed production: ${city.currentProduction.type} ${city.currentProduction.itemType}`);
     
     city.productionStored = 0;
     city.productionProgress = 0;
@@ -931,7 +932,7 @@ export class TurnManager {
     };
 
     this.gameEngine.units.push(unit);
-    console.log(`[TurnManager] Created unit ${unit.type} at city ${city.name}`);
+    debugLog(`[TurnManager] Created unit ${unit.type} at city ${city.name}`);
 
     if (destroysCity) {
       this.destroyCityForSettler(city, unit);
@@ -965,7 +966,7 @@ export class TurnManager {
       reason: 'size_one_settler_completion',
       settler,
     });
-    console.log(`[TurnManager] Settler completion destroyed size-1 city ${city.name}; settler is now NONE`);
+    debugLog(`[TurnManager] Settler completion destroyed size-1 city ${city.name}; settler is now NONE`);
   }
 
   private addBuildingToCity(city: City, buildingType: string, isPurchased: boolean): void {
@@ -973,7 +974,7 @@ export class TurnManager {
     // Buildings are one-per-city in Civ1 — never add a duplicate (the AI
     // purchase + production paths could otherwise double-add the same item).
     if (city.buildings.includes(buildingType)) {
-      console.log(`[TurnManager] Skipping duplicate building ${buildingType} in city ${city.name}`);
+      debugLog(`[TurnManager] Skipping duplicate building ${buildingType} in city ${city.name}`);
       return;
     }
     city.buildings.push(buildingType);
@@ -983,7 +984,7 @@ export class TurnManager {
       this.gameEngine.governmentManager?.designateCapital(city.civilizationId, city);
     }
 
-    console.log(`[TurnManager] Added ${isPurchased ? 'purchased' : 'produced'} building ${buildingType} to city ${city.name}`);
+    debugLog(`[TurnManager] Added ${isPurchased ? 'purchased' : 'produced'} building ${buildingType} to city ${city.name}`);
     
     this.emit(isPurchased ? 'BUILDING_PURCHASED' : 'BUILDING_COMPLETED', { 
       cityId: city.id, 
@@ -1017,14 +1018,14 @@ export class TurnManager {
 
       if (city.population <= 0) {
         // City eliminated — remove it from the map.
-        console.log(`[TurnManager] City ${city.name} destroyed by starvation`);
+        debugLog(`[TurnManager] City ${city.name} destroyed by starvation`);
         this.gameEngine.onStateChange?.('CITY_DESTROYED', { city, reason: 'starvation' });
         this.gameEngine.cities = this.gameEngine.cities.filter(
           (c) => c.id !== city.id,
         );
       } else {
         city.foodNeeded = (city.population + 1) * 10;
-        console.log(`[TurnManager] City ${city.name} starves — population ${city.population}`);
+        debugLog(`[TurnManager] City ${city.name} starves — population ${city.population}`);
         this.gameEngine.onStateChange?.('CITY_STARVED', {
           city,
           newPopulation: city.population,
@@ -1041,7 +1042,7 @@ export class TurnManager {
       // lost).
       city.foodStored = hasGranary ? Math.floor(storedBeforeGrowth / 2) : 0;
       city.foodNeeded = (city.population + 1) * 10;
-      console.log(`[TurnManager] City ${city.name} grew to population ${city.population}`);
+      debugLog(`[TurnManager] City ${city.name} grew to population ${city.population}`);
     }
 
     // Fisher Boat overflow: a delivered catch that did not fully fit into the
@@ -1155,7 +1156,10 @@ export class TurnManager {
       if (!completedTechId) return;
 
       const completedId = completedTechId;
-      if (Array.isArray(civ.technologies)) {
+      // Dedupe: a tech can complete more than once (research switched back,
+      // duplicate completion events), and each push used to append a second
+      // entry — inflating the tech count and re-running completion effects.
+      if (Array.isArray(civ.technologies) && !civ.technologies.includes(completedId)) {
         civ.technologies.push(completedId);
       }
       civ.researchProgress = 0;
@@ -1171,7 +1175,7 @@ export class TurnManager {
         this.gameEngine.updateTechnologyAvailability();
       }
 
-      console.log(`[TurnManager] Civilization ${civ.name} completed research: ${completedId}`);
+      debugLog(`[TurnManager] Civilization ${civ.name} completed research: ${completedId}`);
 
       // Notify listeners (UI research-complete modal, log, progression…).
       this.emit('TECH_RESEARCHED', { civilizationId: civ.id, techId: completedId });
@@ -1203,7 +1207,7 @@ export class TurnManager {
           const techChoice = AIResearch.selectResearch(civ, strategy, gameState);
           if (techChoice) {
             this.gameEngine.setResearch(civ.id, techChoice);
-            console.log(`[TurnManager] AI ${civ.name} auto-selected next research: ${techChoice}`);
+            debugLog(`[TurnManager] AI ${civ.name} auto-selected next research: ${techChoice}`);
           }
         } catch (err) {
           console.warn('[TurnManager] Failed to auto-select AI research', err);
@@ -1236,8 +1240,8 @@ export class TurnManager {
     this.isProcessingGoToPaths = true;
     
     try {
-      console.log(`[TurnManager] 🚀 Processing automated GoTo paths for civ ${civilizationId}`);
-      console.log(`[TurnManager] Found ${unitsWithPaths.length} units with GoTo paths`);
+      debugLog(`[TurnManager] 🚀 Processing automated GoTo paths for civ ${civilizationId}`);
+      debugLog(`[TurnManager] Found ${unitsWithPaths.length} units with GoTo paths`);
     
     // Check if this is a human player (for animated movement)
     const civ = this.gameEngine.civilizations.find((c) => c.id === civilizationId);
@@ -1262,21 +1266,21 @@ export class TurnManager {
         continue;
       }
       
-      console.log(`[TurnManager] ➡️ Unit ${unit.id} (${unit.type}) has GoTo path with ${path.length} steps, ${unit.movesRemaining} moves remaining`);
+      debugLog(`[TurnManager] ➡️ Unit ${unit.id} (${unit.type}) has GoTo path with ${path.length} steps, ${unit.movesRemaining} moves remaining`);
       
       if (isHumanPlayer) {
         // Use animated movement for human players so they can see the unit moving
-        console.log(`[TurnManager] 🎬 Using animated GoTo movement for human player unit ${unit.id}`);
+        debugLog(`[TurnManager] 🎬 Using animated GoTo movement for human player unit ${unit.id}`);
         try {
           const result = await this.gameEngine.goToManager.executePathWithAnimation(unit.id, 200); // 200ms delay between moves
           if (result.success) {
-            console.log(`[TurnManager] ✅ Animated path completed for unit ${unit.id}, ${result.stepsCompleted} steps taken`);
+            debugLog(`[TurnManager] ✅ Animated path completed for unit ${unit.id}, ${result.stepsCompleted} steps taken`);
             if (this.unitPaths.get(unit.id)?.length === 0) {
-              console.log(`[TurnManager] 🎯 Unit ${unit.id} completed GoTo path - destination reached!`);
+              debugLog(`[TurnManager] 🎯 Unit ${unit.id} completed GoTo path - destination reached!`);
               this.clearUnitPath(unit.id);
             }
           } else {
-            console.log(`[TurnManager] ❌ Animated path failed for unit ${unit.id}`);
+            debugLog(`[TurnManager] ❌ Animated path failed for unit ${unit.id}`);
           }
         } catch (error) {
           console.error(`[TurnManager] Error in animated GoTo for unit ${unit.id}:`, error);
@@ -1292,20 +1296,20 @@ export class TurnManager {
             // A fight ends the automated order: drop the remaining route so the
             // unit never auto-attacks on a later turn.
             if (result.combat === true) {
-              console.log(`[TurnManager] ⚔️ Unit ${unit.id} fought at (${next.col}, ${next.row}) — clearing GoTo path`);
+              debugLog(`[TurnManager] ⚔️ Unit ${unit.id} fought at (${next.col}, ${next.row}) — clearing GoTo path`);
               this.clearUnitPath(unit.id);
               break;
             }
             path.shift();
-            console.log(`[TurnManager] ✅ Unit ${unit.id} moved to (${next.col}, ${next.row}), ${path.length} steps remaining in path`);
+            debugLog(`[TurnManager] ✅ Unit ${unit.id} moved to (${next.col}, ${next.row}), ${path.length} steps remaining in path`);
             // Pace automated AI movement so visible enemy moves animate instead
             // of teleporting. No-op (and instant) when animations are disabled.
             await awaitPendingAnimations();
           } else {
-            console.log(`[TurnManager] ❌ Path step failed for unit ${unit.id}, reason=${result?.reason}`);
+            debugLog(`[TurnManager] ❌ Path step failed for unit ${unit.id}, reason=${result?.reason}`);
             // Only clear path if blocked, not if just out of moves
             if (result?.reason !== 'no_moves' && result?.reason !== 'insufficient_moves') {
-              console.log(`[TurnManager] 🚫 Clearing path due to blocking issue`);
+              debugLog(`[TurnManager] 🚫 Clearing path due to blocking issue`);
               this.clearUnitPath(unit.id);
             }
             break;
@@ -1314,16 +1318,16 @@ export class TurnManager {
         
         // Only clear path if actually completed (reached destination)
         if (path.length === 0) {
-          console.log(`[TurnManager] 🎯 Unit ${unit.id} completed GoTo path - destination reached!`);
+          debugLog(`[TurnManager] 🎯 Unit ${unit.id} completed GoTo path - destination reached!`);
           this.clearUnitPath(unit.id);
         } else {
-          console.log(`[TurnManager] ⏸️ Unit ${unit.id} path incomplete: ${path.length} steps remaining, will continue next turn`);
+          debugLog(`[TurnManager] ⏸️ Unit ${unit.id} path incomplete: ${path.length} steps remaining, will continue next turn`);
         }
       }
     }
     
     if (unitsWithPaths.length === 0) {
-      console.log(`[TurnManager] No units with active GoTo paths for civ ${civilizationId}`);
+      debugLog(`[TurnManager] No units with active GoTo paths for civ ${civilizationId}`);
     }
     } finally {
       // Reset the flag after GoTo path processing is complete
@@ -1348,7 +1352,7 @@ export class TurnManager {
     }
     // Emit event for UI to clear highlights
     this.emit('AI_TURN_COMPLETE', { civilizationId, reason });
-    console.log(`[TurnManager] Forced AI turn end for civ ${civilizationId} due to ${reason}`);
+    debugLog(`[TurnManager] Forced AI turn end for civ ${civilizationId} due to ${reason}`);
     this.finalizeEndPhase(civilizationId);
   }
 }

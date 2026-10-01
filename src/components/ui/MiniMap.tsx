@@ -50,54 +50,56 @@ const MiniMap: React.FC<MiniMapProps> = ({ gameEngine = null }) => {
 
   // Render minimap
   useEffect(() => {
-    const canvas: HTMLCanvasElement | null = canvasRef.current;
-    const container: HTMLDivElement | null = containerRef.current;
-    if (!canvas || !container) return;
+    // A running AI-vs-AI game pushes dozens of store updates per second, each
+    // one re-running this effect — and each draw repaints every tile (5760 on
+    // the 96x60 maps). Coalesce them into a single draw per animation frame:
+    // the last params win, and the frame after the last update still renders
+    // (so a final state is never dropped).
+    const frame = requestAnimationFrame(() => drawMinimap());
+    return () => cancelAnimationFrame(frame);
 
-    const dataSource = mapData;
-    if (!dataSource || !Array.isArray(dataSource.tiles) || dataSource.tiles.length === 0) return;
+    function drawMinimap(): void {
+      const canvas: HTMLCanvasElement | null = canvasRef.current;
+      const container: HTMLDivElement | null = containerRef.current;
+      if (!canvas || !container) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+      const dataSource = mapData;
+      if (!dataSource || !Array.isArray(dataSource.tiles) || dataSource.tiles.length === 0) return;
 
-    const cssWidth = Math.max(1, Math.floor(container.clientWidth));
-    const cssHeightFromContainer = Math.max(0, Math.floor(container.clientHeight || 0));
-    const cssHeight = cssHeightFromContainer > 32 ? cssHeightFromContainer : Math.max(1, Math.floor((cssWidth * MINIMAP_HEIGHT) / MINIMAP_WIDTH));
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-    canvas.style.width = `${cssWidth}px`;
-    canvas.style.height = `${cssHeight}px`;
-    canvas.width = Math.round(cssWidth * dpr);
-    canvas.height = Math.round(cssHeight * dpr);
+      const cssWidth = Math.max(1, Math.floor(container.clientWidth));
+      const cssHeightFromContainer = Math.max(0, Math.floor(container.clientHeight || 0));
+      const cssHeight = cssHeightFromContainer > 32 ? cssHeightFromContainer : Math.max(1, Math.floor((cssWidth * MINIMAP_HEIGHT) / MINIMAP_WIDTH));
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1.0;
-    ctx.imageSmoothingEnabled = false;
+      canvas.style.width = `${cssWidth}px`;
+      canvas.style.height = `${cssHeight}px`;
+      canvas.width = Math.round(cssWidth * dpr);
+      canvas.height = Math.round(cssHeight * dpr);
 
-    const civilizationsSource = effectiveCivilizations && effectiveCivilizations.length > 0 ? effectiveCivilizations : civilizations;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1.0;
+      ctx.imageSmoothingEnabled = false;
 
-    // Show all units and cities, rely on fog-of-war visibility in renderer.
-    // This ensures enemy movement appears on the minimap only when inside player vision.
-    const visibleUnits = units;
-    const visibleCities = cities;
-    if (!settings.devMode) {
-      console.log('[MiniMap] Normal mode: Showing all units/cities but respecting fog');
-    } else {
-      console.log('[MiniMap] Developer mode: Showing all units/cities');
+      const civilizationsSource = effectiveCivilizations && effectiveCivilizations.length > 0 ? effectiveCivilizations : civilizations;
+
+      // Show all units and cities, rely on fog-of-war visibility in renderer.
+      // This ensures enemy movement appears on the minimap only when inside player vision.
+      miniMapRendererRef.current.renderMinimap({
+        ctx,
+        map: dataSource,
+        cssWidth,
+        cssHeight,
+        camera,
+        units,
+        cities,
+        civilizations: civilizationsSource || [],
+        ignoreFog: !!settings.devMode
+      });
     }
-
-    miniMapRendererRef.current.renderMinimap({
-      ctx,
-      map: dataSource,
-      cssWidth,
-      cssHeight,
-      camera,
-      units: visibleUnits,
-      cities: visibleCities,
-      civilizations: civilizationsSource || [],
-      ignoreFog: !!settings.devMode
-    });
   }, [camera, mapData, cities, units, civilizations, effectiveCivilizations, settings.devMode, activePlayer, sizeKey]);
 
   // Resize observer to redraw when container width changes

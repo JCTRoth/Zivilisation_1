@@ -1,4 +1,5 @@
 import type { Unit } from '../../../types/game';
+import { debugLog } from '../../utils/DevLog';
 
 /**
  * Unit Action utilities for handling unit commands
@@ -18,7 +19,7 @@ export class UnitActionManager {
     unit.movesRemaining = 0;
     unit.isSkipped = true;
 
-    console.log(`[UnitActionManager] Unit ${unit.id} (${unit.type}) skipped turn. Previous moves: ${previousMoves}, Current moves: ${unit.movesRemaining}`);
+    debugLog(`[UnitActionManager] Unit ${unit.id} (${unit.type}) skipped turn. Previous moves: ${previousMoves}, Current moves: ${unit.movesRemaining}`);
     return true;
   }
 
@@ -35,7 +36,7 @@ export class UnitActionManager {
     unit.isSleeping = true;
     unit.isSkipped = false;
 
-    console.log(`[UnitActionManager] Unit ${unit.id} (${unit.type}) went to sleep. Moves remaining: ${unit.movesRemaining}`);
+    debugLog(`[UnitActionManager] Unit ${unit.id} (${unit.type}) went to sleep. Moves remaining: ${unit.movesRemaining}`);
     return true;
   }
 
@@ -55,7 +56,7 @@ export class UnitActionManager {
 
     // Increase defense temporarily (typically 50% bonus in Civ1)
     const defenseBonusMultiplier = 1.5;
-    console.log(`[UnitActionManager] Unit ${unit.id} (${unit.type}) fortified. Defense bonus: ${(defenseBonusMultiplier - 1) * 100}%`);
+    debugLog(`[UnitActionManager] Unit ${unit.id} (${unit.type}) fortified. Defense bonus: ${(defenseBonusMultiplier - 1) * 100}%`);
 
     return true;
   }
@@ -67,7 +68,7 @@ export class UnitActionManager {
     if (!unit) return;
 
     unit.isSleeping = false;
-    console.log(`[UnitActionManager] Unit ${unit.id} (${unit.type}) woke up`);
+    debugLog(`[UnitActionManager] Unit ${unit.id} (${unit.type}) woke up`);
   }
 
   /**
@@ -77,7 +78,7 @@ export class UnitActionManager {
     if (!unit) return;
 
     unit.isFortified = false;
-    console.log(`[UnitActionManager] Unit ${unit.id} (${unit.type}) removed fortification`);
+    debugLog(`[UnitActionManager] Unit ${unit.id} (${unit.type}) removed fortification`);
   }
 
   /**
@@ -100,8 +101,8 @@ export class UnitActionManager {
       return false;
     }
 
-    console.log(`[UnitActionManager] Checking if unit ${unit.id} can perform "${action}" (cost: ${costInMoves} moves)`);
-    console.log(`[UnitActionManager] Unit state:`, {
+    debugLog(`[UnitActionManager] Checking if unit ${unit.id} can perform "${action}" (cost: ${costInMoves} moves)`);
+    debugLog(`[UnitActionManager] Unit state:`, {
       movesRemaining: unit.movesRemaining,
       isFortified: unit.isFortified,
       type: unit.type
@@ -114,7 +115,7 @@ export class UnitActionManager {
       const reason = !hasEnoughMoves ? 'insufficient_moves' : 'unit_fortified';
       console.warn(`[UnitActionManager] ❌ Unit ${unit.id} cannot perform "${action}": ${reason}`);
     } else {
-      console.log(`[UnitActionManager] ✅ Unit ${unit.id} can perform "${action}"`);
+      debugLog(`[UnitActionManager] ✅ Unit ${unit.id} can perform "${action}"`);
     }
 
     return canPerform;

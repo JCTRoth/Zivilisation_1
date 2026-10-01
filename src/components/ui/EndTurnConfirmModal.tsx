@@ -26,24 +26,21 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
   const actions = useGameStore(state => state.actions);
   const [skipNextTime, setSkipNextTime] = useState(settings.skipEndTurnConfirmation);
 
+  // The checkbox is a pure interface preference ("don't show this confirmation
+  // next time") and must not touch auto-end turn. It used to flip `autoEndTurn`
+  // on confirm and off on cancel, which meant ticking the box and pressing
+  // "End Turn" silently switched Auto Turn Ending on — after that the engine
+  // ends turns on its own, which the checkbox never promised. Cancelling had the
+  // mirror problem: it switched OFF an auto-end setting the player had chosen
+  // deliberately elsewhere. The preference is persisted by the checkbox's own
+  // onChange, so both buttons only report their result.
   const handleConfirm = () => {
     console.log('EndTurnConfirmModal: Confirmed end turn');
-    // If "Don't show again" was checked, the player wants this choice to apply
-    // automatically going forward, so enable auto-end.
-    if (skipNextTime) {
-      actions.updateSettings({ autoEndTurn: true });
-    }
-    // Setting is already updated via onChange - just confirm
     onConfirm();
   };
 
   const handleCancel = () => {
     console.log('EndTurnConfirmModal: Cancelled end turn');
-    // If "Don't show again" was checked, the player opted out of auto-ending,
-    // so disable auto-end.
-    if (skipNextTime) {
-      actions.updateSettings({ autoEndTurn: false });
-    }
     onCancel();
   };
 

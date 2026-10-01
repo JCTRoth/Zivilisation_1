@@ -17,7 +17,10 @@ export default defineConfig({
     // Configure environment
     environment: 'node',
     // e2e specs use Playwright's runner — exclude them from vitest
-    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
+    // `tmp*` files are ad-hoc diagnostics, not tests: they play hundreds of
+    // turns to print telemetry and exhaust the heap (tmpEconDiag.test.ts says
+    // so in its own header). Run them by hand when you need their output.
+    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**', '**/tmp*.test.ts'],
   },
   resolve: {
     alias: {

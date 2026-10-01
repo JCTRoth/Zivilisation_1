@@ -76,11 +76,17 @@ export class ResearchManager {
 
   /** < 1.0 when contacted civs already know the researched tech. */
   knownCivsModifier(civ: Civilization, tech: Technology): number {
-    const dm = this.gameEngine.diplomacyManager as { getStatus?: (a: number, b: number) => string | undefined } | undefined;
+    const dm = this.gameEngine.diplomacyManager as {
+      hasContacted?: (a: number, b: number) => boolean;
+    } | undefined;
     let known = 0;
     for (const other of this.gameEngine.civilizations ?? []) {
       if (other.id === civ.id || other.isAlive === false) continue;
-      const contacted = dm && typeof dm.getStatus === 'function' ? dm.getStatus(civ.id, other.id) !== undefined : true;
+      // Only civs this one has actually met count. (`getStatus` never returned
+      // undefined, so the old check was always true and this bonus applied even
+      // to civs on the far side of the map.)
+      const contacted =
+        dm && typeof dm.hasContacted === 'function' ? dm.hasContacted(civ.id, other.id) : true;
       if (!contacted) continue;
       if (Array.isArray(other.technologies) && other.technologies.includes(tech.id)) known++;
     }

@@ -6,6 +6,7 @@ import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
 import type { City, Civilization, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
+import { debugLog } from '../../utils/DevLog';
 
 /** A production item that can be queued in a city's build queue. */
 interface ProductionItem {
@@ -220,7 +221,7 @@ export class ProductionManager {
   }
 
   setCityProduction(cityId: string, item: ProductionItem, queue: boolean = false): ProductionResult {
-    console.log('[ProductionManager] setCityProduction called', { cityId, item, queue });
+    debugLog('[ProductionManager] setCityProduction called', { cityId, item, queue });
 
     // Enforce tech requirements before anything is queued or set.
     const gate = this.canBuildItem(cityId, item);
@@ -240,7 +241,7 @@ export class ProductionManager {
 
           // Ensure buildQueue exists on the city instance (defensive)
           if (!Array.isArray(city.buildQueue)) city.buildQueue = [];
-          console.log('[ProductionManager] After buildQueue init', { cityId, buildQueue: city.buildQueue, city });
+          debugLog('[ProductionManager] After buildQueue init', { cityId, buildQueue: city.buildQueue, city });
 
           if (queue && typeof (city as { queueProduction?: (item: ProductionItem) => void }).queueProduction === 'function') {
             // Only buildings are unique per city — the same unit may be queued
@@ -251,7 +252,7 @@ export class ProductionManager {
             } else {
               rejectReason = duplicate;
             }
-            console.log('[ProductionManager] city.queueProduction executed', { cityId, buildQueue: city.buildQueue, rejected: duplicate });
+            debugLog('[ProductionManager] city.queueProduction executed', { cityId, buildQueue: city.buildQueue, rejected: duplicate });
             // If no current production, start the first queued item with
             // carried over progress. The item must be REMOVED from the queue
             // (shift): keeping it in both places made one queued item show up
@@ -260,7 +261,7 @@ export class ProductionManager {
               city.currentProduction = city.buildQueue.shift() ?? null;
               city.productionProgress = city.carriedOverProgress || 0;
               city.carriedOverProgress = 0;
-              console.log('[ProductionManager] started queued item as currentProduction', { cityId, currentProduction: city.currentProduction, productionProgress: city.productionProgress });
+              debugLog('[ProductionManager] started queued item as currentProduction', { cityId, currentProduction: city.currentProduction, productionProgress: city.productionProgress });
             }
           } else if (!queue && typeof (city as { setProduction?: (item: ProductionItem) => void }).setProduction === 'function') {
             (city as { setProduction: (item: ProductionItem) => void }).setProduction(item);
@@ -271,14 +272,14 @@ export class ProductionManager {
             } else {
               rejectReason = duplicate;
             }
-            console.log('[ProductionManager] pushed to city.buildQueue', { cityId, buildQueue: city.buildQueue, rejected: duplicate });
+            debugLog('[ProductionManager] pushed to city.buildQueue', { cityId, buildQueue: city.buildQueue, rejected: duplicate });
             // If no current production, promote the queued item AND remove it
             // from the queue (otherwise the same item is listed twice).
             if (!city.currentProduction && city.buildQueue.length > 0) {
               city.currentProduction = city.buildQueue.shift() ?? null;
               city.productionProgress = city.carriedOverProgress || 0;
               city.carriedOverProgress = 0;
-              console.log('[ProductionManager] started single queued item as currentProduction', { cityId, currentProduction: city.currentProduction, productionProgress: city.productionProgress });
+              debugLog('[ProductionManager] started single queued item as currentProduction', { cityId, currentProduction: city.currentProduction, productionProgress: city.productionProgress });
             }
           } else if (!queue) {
             city.currentProduction = item;
@@ -308,20 +309,20 @@ export class ProductionManager {
         } else {
           rejectReason = duplicate2;
         }
-        console.log('[ProductionManager] fallback pushed to city2.buildQueue', { cityId, buildQueue: city2.buildQueue, rejected: duplicate2 });
+        debugLog('[ProductionManager] fallback pushed to city2.buildQueue', { cityId, buildQueue: city2.buildQueue, rejected: duplicate2 });
         // If no current production, promote the queued item AND remove it
         // from the queue (otherwise the same item is listed twice).
         if (!city2.currentProduction && city2.buildQueue.length > 0) {
           city2.currentProduction = city2.buildQueue.shift() ?? null;
           city2.productionProgress = city2.carriedOverProgress || 0;
           city2.carriedOverProgress = 0;
-          console.log('[ProductionManager] fallback started queued item as currentProduction', { cityId, currentProduction: city2.currentProduction, productionProgress: city2.productionProgress });
+          debugLog('[ProductionManager] fallback started queued item as currentProduction', { cityId, currentProduction: city2.currentProduction, productionProgress: city2.productionProgress });
         }
       } else {
         city2.currentProduction = item;
         city2.productionProgress = city2.carriedOverProgress || 0;
         city2.carriedOverProgress = 0;
-        console.log('[ProductionManager] fallback set currentProduction', { cityId, currentProduction: city2.currentProduction, productionProgress: city2.productionProgress });
+        debugLog('[ProductionManager] fallback set currentProduction', { cityId, currentProduction: city2.currentProduction, productionProgress: city2.productionProgress });
       }
 
       if (this.gameEngine.onStateChange) this.gameEngine.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item, queued: !!queue });
@@ -336,7 +337,7 @@ export class ProductionManager {
 
   purchaseCityProduction(cityId: string, item: ProductionItem, civId?: number): ProductionResult {
     try {
-      console.log('[ProductionManager] purchaseCityProduction called', { cityId, item, civId });
+      debugLog('[ProductionManager] purchaseCityProduction called', { cityId, item, civId });
       const city: City | undefined = this.gameEngine.cities.find(c => c.id === cityId) || (this.gameEngine.map && typeof (this.gameEngine.map as { getCity?: (id: string) => City | undefined }).getCity === 'function' ? (this.gameEngine.map as unknown as { getCity: (id: string) => City | undefined }).getCity(cityId) : undefined);
       if (!city) return { success: false, reason: 'city_not_found' };
 
@@ -372,7 +373,7 @@ export class ProductionManager {
         cost: cost
       });
 
-      console.log('[ProductionManager] queued purchase for next turn', { cityId, item: item.itemType });
+      debugLog('[ProductionManager] queued purchase for next turn', { cityId, item: item.itemType });
       if (this.gameEngine.onStateChange) this.gameEngine.onStateChange('CITY_ITEM_PURCHASED', { cityId, item: item.itemType });
       return { success: true };
     } catch (e) {
@@ -386,7 +387,7 @@ export class ProductionManager {
    */
   removeCityQueueItem(cityId: string, index: number): ProductionResult {
     try {
-      console.log('[ProductionManager] removeCityQueueItem called', { cityId, index });
+      debugLog('[ProductionManager] removeCityQueueItem called', { cityId, index });
       const city: City | undefined = this.gameEngine.cities.find(c => c.id === cityId) || (this.gameEngine.map && typeof (this.gameEngine.map as { getCity?: (id: string) => City | undefined }).getCity === 'function' ? (this.gameEngine.map as unknown as { getCity: (id: string) => City | undefined }).getCity(cityId) : undefined);
       if (!city) return { success: false, reason: 'city_not_found' };
 
@@ -401,7 +402,7 @@ export class ProductionManager {
 
       const removed = buildQueue.splice(index, 1)[0];
 
-      console.log('[ProductionManager] removed item from queue', { cityId, index, removed, remainingQueue: buildQueue });
+      debugLog('[ProductionManager] removed item from queue', { cityId, index, removed, remainingQueue: buildQueue });
       if (this.gameEngine.onStateChange) this.gameEngine.onStateChange('CITY_QUEUE_UPDATED', { cityId, removed, index });
       return { success: true, removed };
     } catch (e) {
@@ -428,7 +429,7 @@ export class ProductionManager {
       const [moved] = buildQueue.splice(fromIndex, 1);
       buildQueue.splice(toIndex, 0, moved);
 
-      console.log('[ProductionManager] moved queue item', { cityId, fromIndex, toIndex, moved, queue: buildQueue });
+      debugLog('[ProductionManager] moved queue item', { cityId, fromIndex, toIndex, moved, queue: buildQueue });
       if (this.gameEngine.onStateChange) this.gameEngine.onStateChange('CITY_QUEUE_UPDATED', { cityId, fromIndex, toIndex });
       return { success: true, moved };
     } catch (e) {
@@ -459,7 +460,7 @@ export class ProductionManager {
       city.carriedOverProgress = 0;
       city.buildQueue.splice(index, 0, previous);
 
-      console.log('[ProductionManager] promoted queued item to current production', { cityId, index, promoted, previous });
+      debugLog('[ProductionManager] promoted queued item to current production', { cityId, index, promoted, previous });
       if (this.gameEngine.onStateChange) {
         this.gameEngine.onStateChange('CITY_QUEUE_UPDATED', { cityId, fromIndex: index, toIndex: 0 });
         this.gameEngine.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item: promoted });
@@ -495,7 +496,7 @@ export class ProductionManager {
       city.carriedOverProgress = 0;
       city.buildQueue.push(current);
 
-      console.log('[ProductionManager] moved current production down', { cityId, current, next });
+      debugLog('[ProductionManager] moved current production down', { cityId, current, next });
       if (this.gameEngine.onStateChange) {
         this.gameEngine.onStateChange('CITY_QUEUE_UPDATED', { cityId, fromIndex: 0, toIndex: 1 });
         this.gameEngine.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, item: next });
@@ -512,7 +513,7 @@ export class ProductionManager {
    */
   removeCurrentProduction(cityId: string): ProductionResult {
     try {
-      console.log('[ProductionManager] removeCurrentProduction called', { cityId });
+      debugLog('[ProductionManager] removeCurrentProduction called', { cityId });
       const city: City | undefined = this.gameEngine.cities.find(c => c.id === cityId) || (this.gameEngine.map && typeof (this.gameEngine.map as { getCity?: (id: string) => City | undefined }).getCity === 'function' ? (this.gameEngine.map as unknown as { getCity: (id: string) => City | undefined }).getCity(cityId) : undefined);
       if (!city) return { success: false, reason: 'city_not_found' };
 
@@ -531,10 +532,10 @@ export class ProductionManager {
         city.currentProduction = nextItem;
         city.productionProgress = city.carriedOverProgress || 0;
         city.carriedOverProgress = 0;
-        console.log('[ProductionManager] started next queued item as currentProduction', { cityId, currentProduction: city.currentProduction });
+        debugLog('[ProductionManager] started next queued item as currentProduction', { cityId, currentProduction: city.currentProduction });
       }
 
-      console.log('[ProductionManager] removed current production', { cityId, removed });
+      debugLog('[ProductionManager] removed current production', { cityId, removed });
       if (this.gameEngine.onStateChange) this.gameEngine.onStateChange('CITY_PRODUCTION_CHANGED', { cityId, removed });
       return { success: true, removed };
     } catch (e) {

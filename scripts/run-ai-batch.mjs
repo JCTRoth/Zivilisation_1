@@ -68,7 +68,17 @@ describe('ai batch', () => {
       console.log = (...a: unknown[]) => {
         const s = String(a[0] ?? '');
         // Only the interesting AI lines; the engine is far too chatty to keep.
-        for (const key of ['Invasion —', 'declares war', 'colony', 'ferry', 'disband', 'Revolt', 'anarchy']) {
+        // 'DIPLOMACY] Civ' catches every war declaration, whichever system
+        // declared it. 'declares war' is the AI military-rush line only, so on
+        // its own it cannot show what the diplomacy model is doing.
+        // The diplomacy outcomes, which are the point of the model: a system
+        // that only reports wars cannot tell restraint from paralysis.
+        for (const key of [
+          'Invasion —', 'declares war', 'DIPLOMACY] Civ',
+          'DIPLOMACY] Peace between', 'DIPLOMACY] Ceasefire between', 'DIPLOMACY] Alliance between',
+          'DIPLOMACY] Treaty signed', 'DIPLOMACY] Cancelled', 'refused their last',
+          'colony', 'ferry', 'disband', 'Revolt', 'anarchy',
+        ]) {
           if (s.includes(key)) logCounts[key] = (logCounts[key] ?? 0) + 1;
         }
       };
@@ -287,7 +297,21 @@ console.log('  wiped civs by personality: ' + (Object.entries(dead).sort((a, b) 
 
 console.log('\n--- war ---');
 console.log(`declarations per game               : ${avg((g) => g.logCounts['declares war'] ?? 0).toFixed(1)}`);
+console.log(`all war declarations per game       : ${avg((g) => g.logCounts['DIPLOMACY] Civ'] ?? 0).toFixed(1)}`);
+console.log(`AI military rushes per game         : ${avg((g) => g.logCounts['declares war'] ?? 0).toFixed(1)}`);
 console.log(`invasions per game                  : ${avg((g) => g.logCounts['Invasion —'] ?? 0).toFixed(1)}`);
+
+// What diplomacy actually produced, not just what it started.
+console.log('\n--- diplomacy ---');
+for (const [label, key] of [
+  ['peace treaties per game   ', 'DIPLOMACY] Peace between'],
+  ['ceasefires per game       ', 'DIPLOMACY] Ceasefire between'],
+  ['alliances per game        ', 'DIPLOMACY] Alliance between'],
+  ['treaties signed per game  ', 'DIPLOMACY] Treaty signed'],
+  ['treaties cancelled / game ', 'DIPLOMACY] Cancelled'],
+]) {
+  console.log(`${label}: ${avg((g) => g.logCounts[key] ?? 0).toFixed(2)}`);
+}
 console.log(`civs with a navy at the end          : ${allCivs.filter((c) => c.ships + c.ferries > 0).length} / ${allCivs.length}`);
 
 console.log(`\n(full data in ${OUT})`);

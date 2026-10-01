@@ -60,6 +60,20 @@ interface MinimapFogState {
  */
 export class MiniMapRenderer {
   /**
+   * The terrain + fog layer only changes when the map, the fog, the canvas size
+   * or the ignoreFog setting changes — never when a unit moves or the camera
+   * pans. Cities, units and the viewport are drawn on top of this cache, so a
+   * redraw with only movement blits one image instead of repainting every tile.
+   *
+   * Without it, drawMinimapTerrain ran a full per-tile pass (5760 tiles on the
+   * 96x60 archipelago, with a toUpperCase() allocation each) on EVERY React
+   * commit, and an AI-vs-AI turn produces dozens of commits per second. CDP
+   * profiles of the tropical map showed ~200 ms stalls from this pass alone.
+   */
+  private terrainLayerCanvas: HTMLCanvasElement | null = null;
+  private terrainLayerKey = '';
+
+  /**
    * Renders the minimap showing the entire map with fog of war and viewport indicator.
    * Displays terrain, cities, units, and the current camera viewport.
    *
@@ -75,10 +89,95 @@ export class MiniMapRenderer {
 
     const civColors = this.buildCivilizationColors(civilizations);
 
-    this.drawMinimapTerrain(ctx, map, cssWidth, cssHeight, fogState);
+    this.blitTerrainLayer(ctx, map, cssWidth, cssHeight, fogState, !!ignoreFog);
     this.drawMinimapCities(ctx, map, cities, civColors, cssWidth, cssHeight);
     this.drawMinimapUnits(ctx, map, units, civColors, cssWidth, cssHeight, !!ignoreFog);
     this.drawMinimapViewport(ctx, map, camera, cssWidth, cssHeight);
+  }
+
+  /**
+   * Blits the cached terrain+fog layer onto the minimap, rebuilding it only
+   * when something it actually draws changed.
+   */
+  private blitTerrainLayer(
+    ctx: CanvasRenderingContext2D,
+    map: MapState,
+    width: number,
+    height: number,
+    fogState: MinimapFogState,
+    ignoreFog: boolean
+  ): void {
+    if (typeof document === 'undefined') {
+      // No offscreen canvas (unit tests, SSR): draw the layer directly.
+      this.drawMinimapTerrain(ctx, map, width, height, fogState);
+      return;
+    }
+
+    const dpr = Math.max(1, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+    const key = this.buildTerrainLayerKey(map, width, height, dpr, ignoreFog);
+
+    if (this.terrainLayerKey !== key || !this.terrainLayerCanvas) {
+      const layer = this.ensureTerrainLayerCanvas(width * dpr, height * dpr);
+      const layerCtx = layer.getContext('2d');
+      if (!layerCtx) return;
+      layerCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      layerCtx.globalCompositeOperation = 'source-over';
+      layerCtx.globalAlpha = 1;
+      layerCtx.imageSmoothingEnabled = false;
+      layerCtx.clearRect(0, 0, width, height);
+      layerCtx.fillStyle = '#1a1a1a';
+      layerCtx.fillRect(0, 0, width, height);
+      this.drawMinimapTerrain(layerCtx, map, width, height, fogState);
+      this.terrainLayerKey = key;
+    }
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this.terrainLayerCanvas!, 0, 0, width, height);
+  }
+
+  private ensureTerrainLayerCanvas(pixelWidth: number, pixelHeight: number): HTMLCanvasElement {
+    if (!this.terrainLayerCanvas) {
+      this.terrainLayerCanvas = document.createElement('canvas');
+    }
+    const layer = this.terrainLayerCanvas;
+    if (layer.width !== pixelWidth || layer.height !== pixelHeight) {
+      layer.width = pixelWidth;
+      layer.height = pixelHeight;
+    }
+    return layer;
+  }
+
+  /**
+   * Hash of everything drawMinimapTerrain reads. Cheap relative to a full
+   * repaint: the terrain types and the fog bits.
+   */
+  private buildTerrainLayerKey(
+    map: MapState,
+    width: number,
+    height: number,
+    dpr: number,
+    ignoreFog: boolean
+  ): string {
+    const tiles = map.tiles;
+    if (!tiles) return `${width}x${height}@${dpr}:empty`;
+
+    let h = ignoreFog ? 5381 : 5381 * 33;
+    h = ((h << 5) - h + map.width) | 0;
+    h = ((h << 5) - h + map.height) | 0;
+    const revealed = ignoreFog ? undefined : map.revealed;
+    const visibility = ignoreFog ? undefined : map.visibility;
+    for (let i = 0; i < tiles.length; i++) {
+      const t = tiles[i];
+      if (!t) continue;
+      const type = t.type ?? '';
+      for (let j = 0; j < type.length; j++) {
+        h = ((h << 5) - h + type.charCodeAt(j)) | 0;
+      }
+      if (revealed) h = ((h << 5) - h + (revealed[i] ? 1 : 0)) | 0;
+      if (visibility) h = ((h << 5) - h + (visibility[i] ? 2 : 0)) | 0;
+    }
+    return `${width}x${height}@${dpr}:${h}`;
   }
 
   /**
@@ -158,6 +257,10 @@ export class MiniMapRenderer {
     const tileWidth = width / map.width;
     const tileHeight = height / map.height;
 
+    // Resolve each terrain type's colour once instead of calling
+    // `toUpperCase()` for every tile (5760 of them on the naval maps).
+    const colorCache = new Map<string, string>();
+
     for (let row = 0; row < map.height; row++) {
       for (let col = 0; col < map.width; col++) {
         const tileIndex = this.getTileIndex(row, col, map.width);
@@ -174,8 +277,12 @@ export class MiniMapRenderer {
           }
         }
 
-        const terrainProps = this.resolveTerrain(tile.type);
-        ctx.fillStyle = terrainProps.color;
+        let color = colorCache.get(tile.type);
+        if (color === undefined) {
+          color = this.resolveTerrain(tile.type).color;
+          colorCache.set(tile.type, color);
+        }
+        ctx.fillStyle = color;
         ctx.fillRect(col * tileWidth, row * tileHeight, tileWidth + 1, tileHeight + 1);
 
         // Apply semi-transparent overlay for explored but not currently visible tiles

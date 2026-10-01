@@ -7,6 +7,7 @@
  */
 
 import { EnemyLocation } from './EnemySearcher';
+import { debugLog } from '../../utils/DevLog';
 
 interface DiscoveryRecord extends EnemyLocation {
   lastSeenRound: number;
@@ -48,7 +49,7 @@ export class ScoutMemory {
       // Update existing discovery
       civDiscoveries[existingIndex].lastSeenRound = this.currentRound;
       civDiscoveries[existingIndex].confirmationCount++;
-      console.log(`[SCOUT-MEMORY] Updated discovery: ${location.type} at (${location.col}, ${location.row}), confirmations: ${civDiscoveries[existingIndex].confirmationCount}`);
+      debugLog(`[SCOUT-MEMORY] Updated discovery: ${location.type} at (${location.col}, ${location.row}), confirmations: ${civDiscoveries[existingIndex].confirmationCount}`);
     } else {
       // Add new discovery
       const record: DiscoveryRecord = {
@@ -57,7 +58,7 @@ export class ScoutMemory {
         confirmationCount: 1
       };
       civDiscoveries.push(record);
-      console.log(`[SCOUT-MEMORY] New discovery: ${location.type} at (${location.col}, ${location.row})`);
+      debugLog(`[SCOUT-MEMORY] New discovery: ${location.type} at (${location.col}, ${location.row})`);
       // Prune old discoveries to prevent unbounded growth (keep last 50)
       if (civDiscoveries.length > 50) {
         civDiscoveries.sort((a, b) => b.lastSeenRound - a.lastSeenRound);
@@ -113,7 +114,7 @@ export class ScoutMemory {
     }
     
     if (nearestLocation) {
-      console.log(`[SCOUT-MEMORY] Found stale target at (${nearestLocation.col}, ${nearestLocation.row}), age: ${this.currentRound - (nearestLocation as DiscoveryRecord).lastSeenRound} rounds`);
+      debugLog(`[SCOUT-MEMORY] Found stale target at (${nearestLocation.col}, ${nearestLocation.row}), age: ${this.currentRound - (nearestLocation as DiscoveryRecord).lastSeenRound} rounds`);
     }
     
     return nearestLocation;
@@ -151,7 +152,7 @@ export class ScoutMemory {
     }
 
     if (nearestLocation) {
-      console.log(`[SCOUT-MEMORY] Found stale target at (${nearestLocation.col}, ${nearestLocation.row}), age: ${this.currentRound - nearestLocation.lastSeenRound} rounds`);
+      debugLog(`[SCOUT-MEMORY] Found stale target at (${nearestLocation.col}, ${nearestLocation.row}), age: ${this.currentRound - nearestLocation.lastSeenRound} rounds`);
     }
 
     return nearestLocation;
@@ -186,7 +187,7 @@ export class ScoutMemory {
     const idx = civDiscoveries.findIndex(d => d.col === col && d.row === row && d.type === type);
     if (idx >= 0) {
       civDiscoveries.splice(idx, 1);
-      console.log(`[SCOUT-MEMORY] Removed discovery: ${type} at (${col}, ${row}) for civ ${enemyCivId}`);
+      debugLog(`[SCOUT-MEMORY] Removed discovery: ${type} at (${col}, ${row}) for civ ${enemyCivId}`);
       return true;
     }
 
@@ -199,7 +200,7 @@ export class ScoutMemory {
   public clear(): void {
     this.discoveries.clear();
     this.currentRound = 0;
-    console.log(`[SCOUT-MEMORY] Cleared all discoveries`);
+    debugLog(`[SCOUT-MEMORY] Cleared all discoveries`);
   }
 
   /** Restore discoveries from saved data (for load game) */

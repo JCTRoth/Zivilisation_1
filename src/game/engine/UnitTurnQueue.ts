@@ -18,6 +18,7 @@ import type { Unit } from '../../../types/game';
 
 
 import GameEngine from './GameEngine';
+import { debugLog } from '../../utils/DevLog';
 
 export class UnitTurnQueue {
   private gameEngine: GameEngine;
@@ -33,7 +34,7 @@ export class UnitTurnQueue {
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
-    console.log('[UnitTurnQueue] Initialized');
+    debugLog('[UnitTurnQueue] Initialized');
   }
 
   /**
@@ -62,7 +63,7 @@ export class UnitTurnQueue {
     this.playerQueues.set(civilizationId, unitIds);
     this.currentUnitId.set(civilizationId, null);
 
-    console.log(`[UnitTurnQueue] Initialized queue for civ ${civilizationId} with ${unitIds.length} units:`, unitIds);
+    debugLog(`[UnitTurnQueue] Initialized queue for civ ${civilizationId} with ${unitIds.length} units:`, unitIds);
 
     // Start processing the first unit
     if (unitIds.length > 0) {
@@ -118,7 +119,7 @@ export class UnitTurnQueue {
     if (!queue || queue.length === 0) {
       this.currentUnitId.set(civilizationId, null);
       this.emitQueueChange(civilizationId);
-      console.log(`[UnitTurnQueue] Queue empty for civ ${civilizationId}`);
+      debugLog(`[UnitTurnQueue] Queue empty for civ ${civilizationId}`);
       return null;
     }
 
@@ -129,7 +130,7 @@ export class UnitTurnQueue {
     // If unit doesn't exist anymore (destroyed), remove it and try next
     if (!unit) {
       queue.shift();
-      console.log(`[UnitTurnQueue] Unit ${unitId} no longer exists, trying next`);
+      debugLog(`[UnitTurnQueue] Unit ${unitId} no longer exists, trying next`);
       return this.nextUnit(civilizationId);
     }
 
@@ -137,7 +138,7 @@ export class UnitTurnQueue {
     // (fortified / sleeping), remove it and try the next one.
     if (unit.areTurnsDone || unit.isFortified || unit.isSleeping || (unit.movesRemaining || 0) <= 0) {
       queue.shift();
-      console.log(`[UnitTurnQueue] Unit ${unitId} (${unit.type}) inactive or no moves, trying next`);
+      debugLog(`[UnitTurnQueue] Unit ${unitId} (${unit.type}) inactive or no moves, trying next`);
       return this.nextUnit(civilizationId);
     }
 
@@ -145,7 +146,7 @@ export class UnitTurnQueue {
     this.currentUnitId.set(civilizationId, unitId);
     this.emitQueueChange(civilizationId);
 
-    console.log(`[UnitTurnQueue] Current unit for civ ${civilizationId}: ${unitId} (${unit.type}) at (${unit.col}, ${unit.row}), ${queue.length} units in queue`);
+    debugLog(`[UnitTurnQueue] Current unit for civ ${civilizationId}: ${unitId} (${unit.type}) at (${unit.col}, ${unit.row}), ${queue.length} units in queue`);
     return unit;
   }
 
@@ -165,7 +166,7 @@ export class UnitTurnQueue {
     const index = queue.indexOf(currentId);
     if (index !== -1) {
       queue.splice(index, 1);
-      console.log(`[UnitTurnQueue] Unit ${currentId} marked done, removed from queue. ${queue.length} remaining`);
+      debugLog(`[UnitTurnQueue] Unit ${currentId} marked done, removed from queue. ${queue.length} remaining`);
     }
 
     // If it was the current unit, move to next
@@ -195,7 +196,7 @@ export class UnitTurnQueue {
     if (index !== -1) {
       queue.splice(index, 1);
       queue.push(currentId);
-      console.log(`[UnitTurnQueue] Unit ${currentId} waiting, moved to end of queue. Queue:`, queue);
+      debugLog(`[UnitTurnQueue] Unit ${currentId} waiting, moved to end of queue. Queue:`, queue);
     }
 
     // Move to the next unit (which is now first in queue)
@@ -218,7 +219,7 @@ export class UnitTurnQueue {
       const index = queue.indexOf(unitId);
       if (index !== -1) {
         queue.splice(index, 1);
-        console.log(`[UnitTurnQueue] Unit ${unitId} removed from queue for civ ${civId}`);
+        debugLog(`[UnitTurnQueue] Unit ${unitId} removed from queue for civ ${civId}`);
         
         // If it was the current unit, move to next
         if (this.currentUnitId.get(civId) === unitId) {
@@ -244,13 +245,13 @@ export class UnitTurnQueue {
 
     // If unit has no moves remaining, mark as done
     if ((unit.movesRemaining || 0) <= 0) {
-      console.log(`[UnitTurnQueue] Unit ${unitId} (${unit.type}) has no moves remaining, marking done`);
+      debugLog(`[UnitTurnQueue] Unit ${unitId} (${unit.type}) has no moves remaining, marking done`);
       this.unitDone(unit.civilizationId, unitId);
     }
 
     // If unit became inactive, mark as done
     if (unit.areTurnsDone) {
-      console.log(`[UnitTurnQueue] Unit ${unitId} (${unit.type}) became inactive, marking done`);
+      debugLog(`[UnitTurnQueue] Unit ${unitId} (${unit.type}) became inactive, marking done`);
       this.unitDone(unit.civilizationId, unitId);
     }
   }
@@ -262,7 +263,7 @@ export class UnitTurnQueue {
     this.playerQueues.set(civilizationId, []);
     this.currentUnitId.set(civilizationId, null);
     this.emitQueueChange(civilizationId);
-    console.log(`[UnitTurnQueue] Cleared queue for civ ${civilizationId}`);
+    debugLog(`[UnitTurnQueue] Cleared queue for civ ${civilizationId}`);
   }
 
   /**
@@ -272,7 +273,7 @@ export class UnitTurnQueue {
     const queue = this.playerQueues.get(civilizationId);
     if (queue && !queue.includes(unitId)) {
       queue.push(unitId);
-      console.log(`[UnitTurnQueue] Added unit ${unitId} to queue for civ ${civilizationId}`);
+      debugLog(`[UnitTurnQueue] Added unit ${unitId} to queue for civ ${civilizationId}`);
       this.emitQueueChange(civilizationId);
     }
   }

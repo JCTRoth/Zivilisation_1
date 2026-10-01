@@ -29,6 +29,7 @@ import { centerCameraOnTile, getGameViewport } from "@/utils/CameraUtils";
 import { gameLogger } from "@/utils/GameLogger";
 import { gameProgression } from "@/utils/GameProgression";
 import type { TerrainTileRenderInfo } from "@/game/rendering/MapRenderer";
+import { debugLog } from '@/utils/DevLog';
 
 declare global {
   interface Window {
@@ -78,7 +79,7 @@ function App() {
   useEffect(() => {
     if (turnFlashTrigger === 0 || !topBarRef.current) return;
 
-    console.log("[App] Turn flash triggered, count:", turnFlashTrigger);
+    debugLog("[App] Turn flash triggered, count:", turnFlashTrigger);
     const el = topBarRef.current;
 
     // Apply flash styles directly to DOM

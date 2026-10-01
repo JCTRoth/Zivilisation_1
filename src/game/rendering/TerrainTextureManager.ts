@@ -132,8 +132,21 @@ export class TerrainTextureManager {
   private readonly featureCache = new Map<string, HTMLImageElement[]>();
   /** Pre-rendered feature-on-tile textures, keyed `TERRAIN.RESOURCE`. */
   private readonly resourceTileCache = new Map<string, HTMLImageElement[]>();
-  /** Reusable offscreen canvas for texture-based transition compositing. */
-  private transitionCanvas: HTMLCanvasElement | null = null;
+  /**
+   * Masked transition tiles, keyed by neighbour texture + edge direction + fade.
+   *
+   * The gradient mask depends only on the direction, the fade distance and the
+   * tile size — never on which texture is being masked. Building one per call
+   * meant a gradient, a composite and a clip for every single tile edge, and
+   * the whole-map pass on the 96x60 archipelago has 2766 of those (plus 5526
+   * radial corner masks) — about 8300 gradient composites and clips, five to
+   * ten times over during one map load. Keyed on the resolved image `src` so
+   * per-tile texture variants still render exactly as before.
+   */
+  private readonly maskedEdgeCache = new Map<string, HTMLCanvasElement>();
+  private readonly maskedCornerCache = new Map<string, HTMLCanvasElement>();
+  /** Keep the caches bounded: tileSize changes with zoom. */
+  private static readonly MASK_CACHE_LIMIT = 512;
   /** Dedicated offscreen canvas for feature blending (wider than a tile). */
   private featureCanvas: HTMLCanvasElement | null = null;
 
@@ -332,26 +345,33 @@ export class TerrainTextureManager {
       return;
     }
 
-    // Lazily create / resize the shared offscreen canvas.
-    if (!this.transitionCanvas) {
-      this.transitionCanvas = document.createElement('canvas');
-    }
-    const tc = this.transitionCanvas;
-    if (tc.width !== tileSize || tc.height !== tileSize) {
-      tc.width  = tileSize;
-      tc.height = tileSize;
-    }
-    const tCtx = tc.getContext('2d')!;
-    tCtx.clearRect(0, 0, tileSize, tileSize);
-
-    // Draw the neighbor texture positioned so the shared edge shows its texture.
-    // For seamless textures we just fill the offscreen canvas with the neighbor
-    // texture — the gradient mask determines how far it bleeds inward.
-    tCtx.drawImage(img, 0, 0, tileSize, tileSize);
-
     // Scale blend strength with priority difference; clamp to a reasonable range.
     const edgeAlpha = 1.0;
     const fadeFrac  = Math.min(0.45, TRANSITION_DISTANCE + priorityDiff * 0.03);
+
+    const masked = this.cachedMasked(
+      this.maskedEdgeCache,
+      `${img.src}|${direction}|${fadeFrac.toFixed(3)}|${tileSize}`,
+      tileSize,
+      (tCtx) => this.maskEdge(tCtx, img, tileSize, direction, edgeAlpha, fadeFrac),
+    );
+
+    // The masked canvas is exactly one tile and already transparent where the
+    // mask fades, so it needs neither a clip nor a composite — one blit.
+    ctx.drawImage(masked, tileX, tileY);
+  }
+
+  /** Builds (once) the neighbour texture faded out from the shared edge. */
+  private maskEdge(
+    tCtx: CanvasRenderingContext2D,
+    img: HTMLImageElement,
+    tileSize: number,
+    direction: 'N' | 'E' | 'S' | 'W',
+    edgeAlpha: number,
+    fadeFrac: number,
+  ): void {
+    tCtx.clearRect(0, 0, tileSize, tileSize);
+    tCtx.drawImage(img, 0, 0, tileSize, tileSize);
 
     // Mask with a gradient: opaque at the shared edge, transparent at fadeFrac.
     tCtx.globalCompositeOperation = 'destination-in';
@@ -370,15 +390,32 @@ export class TerrainTextureManager {
     tCtx.fillStyle = g;
     tCtx.fillRect(0, 0, tileSize, tileSize);
     tCtx.globalCompositeOperation = 'source-over';
-
-    // Composite the masked texture onto the main canvas, clipped to this tile.
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(tileX, tileY, tileSize, tileSize);
-    ctx.clip();
-    ctx.drawImage(tc, tileX, tileY);
-    ctx.restore();
   }
+
+  /**
+   * Returns a cached masked tile for `key`, building it with `build` on a miss.
+   * Clearing the cache wholesale is fine: it only costs one rebuild per entry.
+   */
+  private cachedMasked(
+    cache: Map<string, HTMLCanvasElement>,
+    key: string,
+    size: number,
+    build: (tCtx: CanvasRenderingContext2D) => void,
+  ): HTMLCanvasElement {
+    const hit = cache.get(key);
+    if (hit) return hit;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const tCtx = canvas.getContext('2d');
+    if (!tCtx) return canvas;
+    build(tCtx);
+
+    if (cache.size >= TerrainTextureManager.MASK_CACHE_LIMIT) cache.clear();
+    cache.set(key, canvas);
+    return canvas;
+  }
+
 
   /**
    * Draw corner transition considering all 4 tiles that meet at this corner.
@@ -402,54 +439,59 @@ export class TerrainTextureManager {
     westType: string | null,
     diagonalType: string | null,
   ): void {
-    // Collect all 4 tiles that meet at this corner
-    const tiles: Array<{ type: string | null; priority: number }> = [];
-    
-    // For NW corner: current tile is at (row, col), the 4 tiles are:
-    // - current (row, col)
-    // - north (row-1, col) 
-    // - west (row, col-1)
-    // - diagonal (row-1, col-1)
-    tiles.push({ type: currentType, priority: this.getPriority(currentType) });
-    if (northType) tiles.push({ type: northType, priority: this.getPriority(northType) });
-    if (westType) tiles.push({ type: westType, priority: this.getPriority(westType) });
-    if (diagonalType) tiles.push({ type: diagonalType, priority: this.getPriority(diagonalType) });
-
-    // Find the tile with the highest priority
-    let winner = tiles[0];
-    for (const tile of tiles) {
-      if (tile.priority > winner.priority) {
-        winner = tile;
+    // Pick the highest-priority tile of the four meeting here. Done without
+    // building an array: this runs four times for every tile on the map
+    // (23036 calls on the 96x60 archipelago) and almost always finds that the
+    // current tile already wins, in which case nothing is drawn.
+    const currentPriority = this.getPriority(currentType);
+    let winnerType: string | null = null;
+    let winnerPriority = currentPriority;
+    for (const candidate of [northType, westType, diagonalType]) {
+      if (!candidate) continue;
+      const p = this.getPriority(candidate);
+      if (p > winnerPriority) {
+        winnerPriority = p;
+        winnerType = candidate;
       }
     }
 
     // If the current tile wins, no transition needed
-    if (winner.type === currentType) return;
+    if (winnerType === null) return;
 
     // Draw the corner transition with the winning texture
-    const img = this.getTexture(winner.type!, tileX, tileY);
+    const img = this.getTexture(winnerType, tileX, tileY);
     if (!img || !img.complete || img.naturalWidth === 0) return;
 
-    if (!this.transitionCanvas) {
-      this.transitionCanvas = document.createElement('canvas');
-    }
-    const tc = this.transitionCanvas;
-    if (tc.width !== tileSize || tc.height !== tileSize) {
-      tc.width  = tileSize;
-      tc.height = tileSize;
-    }
-    const tCtx = tc.getContext('2d')!;
+    // Radius shrinks the mask the further the neighbour outranks this tile.
+    const priorityDiff = winnerPriority - currentPriority;
+    const radius = Math.min(0.45, TRANSITION_DISTANCE + priorityDiff * 0.03) * tileSize;
+
+    const masked = this.cachedMasked(
+      this.maskedCornerCache,
+      `${img.src}|${corner}|${radius.toFixed(2)}|${tileSize}`,
+      tileSize,
+      (tCtx) => this.maskCorner(tCtx, img, tileSize, corner, radius),
+    );
+
+    // One blit: the mask already handles the falloff, so no clip is needed.
+    ctx.drawImage(masked, tileX, tileY);
+  }
+
+  /** Builds (once) the winner texture faded out radially from the corner. */
+  private maskCorner(
+    tCtx: CanvasRenderingContext2D,
+    img: HTMLImageElement,
+    tileSize: number,
+    corner: 'NW' | 'NE' | 'SW' | 'SE',
+    radius: number,
+  ): void {
     tCtx.clearRect(0, 0, tileSize, tileSize);
     tCtx.drawImage(img, 0, 0, tileSize, tileSize);
 
     // Radial gradient centered at the corner vertex
     const cx = corner === 'NW' || corner === 'SW' ? 0        : tileSize;
     const cy = corner === 'NW' || corner === 'NE' ? 0        : tileSize;
-    
-    // Calculate priority difference for gradient strength
-    const priorityDiff = winner.priority - this.getPriority(currentType);
-    const radius = Math.min(0.45, TRANSITION_DISTANCE + priorityDiff * 0.03) * tileSize;
-    const peak   = 1.0;
+    const peak = 1.0;
 
     tCtx.globalCompositeOperation = 'destination-in';
     const g = tCtx.createRadialGradient(cx, cy, 0, cx, cy, radius);
@@ -459,13 +501,6 @@ export class TerrainTextureManager {
     tCtx.fillStyle = g;
     tCtx.fillRect(0, 0, tileSize, tileSize);
     tCtx.globalCompositeOperation = 'source-over';
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(tileX, tileY, tileSize, tileSize);
-    ctx.clip();
-    ctx.drawImage(tc, tileX, tileY);
-    ctx.restore();
   }
 
   // ── Color-based edge transitions (fallback) ──────────────────────────────

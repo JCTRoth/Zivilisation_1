@@ -8,6 +8,7 @@
 
 import type { Unit, City } from '../../../../types/game';
 import type { ArmyGroup } from './AITypes';
+import { debugLog } from '../../../utils/DevLog';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -257,7 +258,7 @@ export class AICoordinator {
           roundNumber - group.formedRound >= RALLY_TIMEOUT_ROUNDS;
         if (avgDistToRally <= 2 || gatheredUnits >= groupUnits.length * 0.75 || rallyTimedOut) {
           group.status = 'marching';
-          console.log(`[AICoordinator] Army group ${group.id}: forming -> marching (${gatheredUnits}/${groupUnits.length} gathered, avg rally dist: ${avgDistToRally.toFixed(1)}${rallyTimedOut ? ', rally timeout' : ''})`);
+          debugLog(`[AICoordinator] Army group ${group.id}: forming -> marching (${gatheredUnits}/${groupUnits.length} gathered, avg rally dist: ${avgDistToRally.toFixed(1)}${rallyTimedOut ? ', rally timeout' : ''})`);
         }
       }
 
@@ -270,7 +271,7 @@ export class AICoordinator {
         );
         if (avgDistToTarget <= 3 || anyAdjacent) {
           group.status = 'attacking';
-          console.log(`[AICoordinator] Army group ${group.id}: marching -> attacking (avg target dist: ${avgDistToTarget.toFixed(1)}${anyAdjacent ? ', vanguard in range' : ''})`);
+          debugLog(`[AICoordinator] Army group ${group.id}: marching -> attacking (avg target dist: ${avgDistToTarget.toFixed(1)}${anyAdjacent ? ', vanguard in range' : ''})`);
         }
       }
 

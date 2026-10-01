@@ -19,9 +19,11 @@ import { useGameStore } from '@/stores/GameStore';
 describe('Auto End Turn is opt-in', () => {
   it('is off in the default settings, and never turns itself on', () => {
     // "Auto. turn ending should be not enabled by default" — a fresh game must
-    // not end a turn on its own. The two places that switch it on are both
-    // deliberate user actions (the "don't ask again" checkbox and the one-time
-    // turn-15 offer), so nothing may set it behind the player's back.
+    // not end a turn on its own. Only one place switches it on now, and it is a
+    // deliberate user action (the one-time turn-15 offer), so nothing may set it
+    // behind the player's back. In particular the End Turn modal's "Don't show
+    // this confirmation next time" checkbox is an interface preference only: it
+    // must never turn auto-end on (see the checkbox test below).
     const fresh = useGameStore.getState().settings;
     expect(fresh.autoEndTurn).toBe(false);
     expect(fresh.skipEndTurnConfirmation).toBe(false);
@@ -152,7 +154,7 @@ describe('Auto End Turn defers while a screen is open', () => {
   });
 
   it('defers auto-end while a diplomacy dialog is open (a leader may be awaiting a response)', () => {
-    useGameStore.getState().actions.showDialog('diplomacy-report');
+    useGameStore.getState().actions.showDialog('diplomacy');
     makeAllUnitsDone();
 
     // While the diplomacy screen is open → deferred.
@@ -199,5 +201,57 @@ describe('Auto End Turn defers while a screen is open', () => {
 
     expect(prompts).toContain('showEndTurnConfirmation');
     expect(useGameStore.getState().uiState.activeDialog).not.toBe('research-required');
+  });
+});
+
+/**
+ * "Don't show this confirmation next time" is an interface preference. It must
+ * never turn Auto Turn Ending on or off — the modal used to flip `autoEndTurn`
+ * on confirm and off on cancel, so ticking the box and pressing "End Turn"
+ * silently switched auto-end on, and cancelling silently switched off an
+ * auto-end setting the player had chosen elsewhere.
+ */
+describe("the End Turn checkbox does not drive auto-end turn", () => {
+  /** The checkbox's whole contract: it writes this one setting, nothing else. */
+  function checkboxChange(): void {
+    const settings = useGameStore.getState().settings;
+    const actions = useGameStore.getState().actions;
+    // Mirrors EndTurnConfirmModal's onChange.
+    actions.updateSettings({ skipEndTurnConfirmation: !settings.skipEndTurnConfirmation });
+  }
+
+  beforeEach(() => {
+    useGameStore.setState((state) => ({
+      settings: { ...state.settings, autoEndTurn: false, skipEndTurnConfirmation: false },
+    }));
+  });
+
+  it("turning the checkbox on leaves auto-end off", () => {
+    checkboxChange();
+    const s = useGameStore.getState().settings;
+    expect(s.skipEndTurnConfirmation).toBe(true);
+    expect(s.autoEndTurn).toBe(false);
+  });
+
+  it("turning the checkbox off leaves a chosen auto-end setting alone", () => {
+    useGameStore.getState().actions.updateSettings({ autoEndTurn: true });
+    useGameStore.getState().actions.updateSettings({ skipEndTurnConfirmation: true });
+
+    checkboxChange();
+
+    const s = useGameStore.getState().settings;
+    expect(s.skipEndTurnConfirmation).toBe(false);
+    // Cancel/confirm must not have flipped the player's own choice.
+    expect(s.autoEndTurn).toBe(true);
+  });
+
+  it("does not couple the two settings in either direction", () => {
+    for (const autoEndTurn of [true, false]) {
+      useGameStore.setState((state) => ({
+        settings: { ...state.settings, autoEndTurn, skipEndTurnConfirmation: false },
+      }));
+      checkboxChange();
+      expect(useGameStore.getState().settings.autoEndTurn).toBe(autoEndTurn);
+    }
   });
 });

@@ -99,19 +99,23 @@ describe('DiplomacyManager', () => {
       expect(ge.onStateChange).toHaveBeenCalledWith('WAR_DECLARED', { aggressorId: 0, targetId: 1 });
     });
 
-    it('should add reputation penalty for surprise attack from peace', () => {
+    it('should cost the attacked civ goodwill for a surprise attack from peace', () => {
+      const before = dm.getAttitudeScore(1, 0);
       dm.declareWar(0, 1);
-      const rel = dm.getRelation(0, 1)!;
-      expect(rel.reputationModifier).toBeLessThan(0);
-      expect(rel.treatiesBrokenByA).toBe(1);
+      // The victim is the one who forms the opinion — a directed ledger, so
+      // this is where a betrayal shows up.
+      expect(dm.getAttitudeScore(1, 0)).toBeLessThan(before);
+      // The ledger is directed: the grievance is the victim's, held about the
+      // aggressor. (`getOpinion(1, 0)` is civ 1's view of civ 0.)
+      expect(dm.getOpinion(1, 0).grievance).toBeGreaterThan(0);
+      expect(dm.getOpinion(0, 1).grievance).toBe(0);
     });
 
     it('should be a no-op if already at war', () => {
       dm.declareWar(0, 1);
-      const rel = dm.getRelation(0, 1)!;
-      const prevRep = rel.reputationModifier;
+      const after = dm.getAttitudeScore(1, 0);
       dm.declareWar(0, 1); // second call
-      expect(rel.reputationModifier).toBe(prevRep); // no additional penalty
+      expect(dm.getAttitudeScore(1, 0)).toBe(after); // no additional impact
     });
 
     it('getEnemies returns the target after war declared', () => {
@@ -179,11 +183,16 @@ describe('DiplomacyManager', () => {
       expect(dm.getAllies(2)).toContain(0);
     });
 
-    it('breaking alliance by declaring war should penalize reputation', () => {
+    it('breaking an alliance by declaring war costs more than a surprise attack', () => {
+      // Same two civs, same strength: the only difference is what was broken,
+      // which is the point of the relationship-state multiplier.
+      const alliance = dm.getAttitudeScore(2, 0);
       dm.formAlliance(0, 2);
+      const afterAlliance = dm.getAttitudeScore(2, 0);
       dm.declareWar(0, 2);
-      const rel = dm.getRelation(0, 2)!;
-      expect(rel.reputationModifier).toBeLessThan(-40); // alliance break penalty = -50
+      const afterBetrayal = dm.getAttitudeScore(2, 0);
+      expect(afterAlliance).toBeGreaterThan(alliance);
+      expect(afterBetrayal).toBeLessThan(afterAlliance - 30);
     });
   });
 
@@ -271,14 +280,16 @@ describe('DiplomacyManager', () => {
   // ─── Turn processing ──────────────────────────────────────────────
 
   describe('processTurn', () => {
-    it('should recover negative reputation toward 0', () => {
-      dm.declareWar(0, 1); // creates negative reputation
-      const relBefore = dm.getRelation(0, 1)!;
-      const repBefore = relBefore.reputationModifier;
-      expect(repBefore).toBeLessThan(0);
+    it('should let grievance fade slowly rather than vanish', () => {
+      dm.declareWar(0, 1); // writes a real grievance in the victim's ledger
+      const grievance = dm.getOpinion(1, 0).grievance;
+      expect(grievance).toBeGreaterThan(0);
 
       dm.processTurn(2);
-      expect(relBefore.reputationModifier).toBeGreaterThan(repBefore);
+      const after = dm.getOpinion(1, 0).grievance;
+      expect(after).toBeLessThan(grievance);
+      // ...but one turn must not wipe it out, or consequences evaporate.
+      expect(after).toBeGreaterThan(grievance * 0.5);
     });
   });
 
@@ -317,12 +328,38 @@ describe('DiplomacyManager', () => {
       ge.cities = [{ id: 'c1', civilizationId: 0, col: 10, row: 10 }];
       dm = new DiplomacyManager(ge);
       dm.initialize([0, 1]);
+      // Diplomacy only happens between civs that have met; a bare manager has
+      // seen nobody, so the AI would (correctly) ignore this pair entirely.
+      dm.markContact(0, 1);
 
-      ge.roundManager.getRoundNumber = () => 5;
+      // Round 15, not 5: a peace treaty has to have had time to become a habit
+      // before the other side may attack it (PEACE_COOLDOWN).
+      ge.roundManager.getRoundNumber = () => 15;
       dm.processAIDiplomacy(1);
 
-      // Strength: civ1 = 3 * (2 + 0.5) = 7.5 vs civ0 = 1 + 0.5 = 1.5 → ratio 5 ≥ 1.6.
+      // Strength: civ1 = 3 * (2 + 0.5) = 7.5 vs civ0 = 1 + 0.5 = 1.5 → ratio 5.
       expect(dm.isAtWar(1, 0)).toBe(true);
+    });
+
+    it('a young peace treaty cannot be attacked, however lopsided the armies', () => {
+      ge.civilizations = [
+        { id: 0, name: 'Americans', isAlive: true, isHuman: true, resources: { gold: 200 }, personality: { aggression: 5, diplomacy: 5, military: 5, expansion: 5, science: 5, economy: 5 } },
+        { id: 1, name: 'Aztecs', isAlive: true, isAI: true, resources: { gold: 100 }, personality: { aggression: 8, diplomacy: 3, military: 9, expansion: 8, science: 3, economy: 4 }, productionProfile: 'military_expansion' },
+      ];
+      ge.units = [
+        { id: 'a1', type: 'warriors', civilizationId: 1, attack: 20, defense: 10, col: 5, row: 5 },
+        { id: 'd1', type: 'warriors', civilizationId: 0, attack: 1, defense: 1, col: 10, row: 10 },
+      ];
+      ge.cities = [{ id: 'c1', civilizationId: 0, col: 10, row: 10 }];
+      dm = new DiplomacyManager(ge);
+      dm.initialize([0, 1]);
+      dm.markContact(0, 1);
+
+      // Round 3: the peace is three turns old.
+      ge.roundManager.getRoundNumber = () => 3;
+      dm.processAIDiplomacy(1);
+
+      expect(dm.isAtWar(1, 0)).toBe(false);
     });
 
     it('a defensive_turtle civ does not declare war even when stronger', () => {
@@ -339,8 +376,11 @@ describe('DiplomacyManager', () => {
       ge.cities = [{ id: 'c1', civilizationId: 0, col: 10, row: 10 }];
       dm = new DiplomacyManager(ge);
       dm.initialize([0, 1]);
+      dm.markContact(0, 1);
 
-      ge.roundManager.getRoundNumber = () => 5;
+      // Same round as the conquest case, so this is a statement about
+      // temperament and not about the post-peace cooldown.
+      ge.roundManager.getRoundNumber = () => 15;
       dm.processAIDiplomacy(1);
 
       expect(dm.isAtWar(1, 0)).toBe(false);
@@ -496,12 +536,12 @@ describe('DiplomacyManager', () => {
       expect(dm.hasTreaty(0, 1, 'non_aggression')).toBe(true);
     });
 
-    it('should cancel treaty and apply reputation penalty', () => {
+    it('should cancel treaty and cost goodwill with the other side', () => {
       dm.signTreaty(0, 1, 'trade_agreement', { goldPerTurn: 2 });
-      const repBefore = dm.getRelation(0, 1)!.reputationModifier;
+      const goodwillBefore = dm.getAttitudeScore(1, 0);
       dm.cancelTreaty(0, 1, 'trade_agreement');
       expect(dm.hasTreaty(0, 1, 'trade_agreement')).toBe(false);
-      expect(dm.getRelation(0, 1)!.reputationModifier).toBeLessThan(repBefore);
+      expect(dm.getAttitudeScore(1, 0)).toBeLessThan(goodwillBefore);
       expect(dm.getRelation(0, 1)!.tradeGoldPerTurn).toBe(0);
     });
 

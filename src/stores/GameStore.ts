@@ -69,7 +69,6 @@ const createInitialUIState = (): UIState => ({
   showUnitPanel: false,
   showCityPanel: false,
   showTechTree: false,
-  showDiplomacy: false,
   showGameMenu: false,
   activeDialog: null,
   // The info panel is a slide-in drawer on phones (starts closed so the map
@@ -649,6 +648,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     })),
 
     addNotification: (notification) => {
+      // AI-vs-AI spectator games have no human to read the toasts, and an
+      // unattended duel emits dozens per second ("Queued Harbor" ×N). They
+      // piled up in the store and re-rendered the whole notification list on
+      // every update, so drop them at the source — including the auto-dismiss
+      // timer below, which would otherwise churn the state for an entry that
+      // was never added.
+      const civs = get().civilizations;
+      if (civs.length > 0 && civs.every(c => !c.isHuman)) {
+        return;
+      }
+
       const id = ++_notificationCounter;
       set(state => ({
         uiState: {
@@ -724,8 +734,27 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       }
 
       if (disableFog) {
-        // If developer mode enabled or fog disabled via env var, mark everything visible
+        // This runs on every visibility update, i.e. after every unit move.
+        // With dev mode on (the naval AI maps auto-enable it) it used to
+        // rebuild fresh 5760-entry arrays plus 5760 tile objects each time and
+        // hand React a new map identity — enough garbage to dominate the CPU
+        // profile in an AI-vs-AI game. Once everything is already lit there is
+        // nothing to recompute, and returning the same state is zustand's
+        // no-op (no notification, no re-render).
         const totalTiles = map.tiles.length;
+        const alreadyLit =
+          Array.isArray(map.visibility) &&
+          map.visibility.length === totalTiles &&
+          map.visibility.every(Boolean) &&
+          Array.isArray(map.revealed) &&
+          map.revealed.length === totalTiles &&
+          map.revealed.every(Boolean) &&
+          (!Array.isArray(map.tiles) || map.tiles.every(t => !t || (t.visible && t.explored)));
+        if (alreadyLit) {
+          return state;
+        }
+
+        // If developer mode enabled or fog disabled via env var, mark everything visible
         const allVisible = new Array(totalTiles).fill(true);
         return {
           ...state,
@@ -790,6 +819,21 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           const cityViewRadius = 2; // Cities can see 2 tiles away
           setVisibilityAreaInternal(newVisibility, newRevealed, city.col, city.row, cityViewRadius, map.width, map.height);
         }
+      }
+
+      // Fog frequently ends up exactly where it was (an AI-only turn, or the
+      // human's units did not move). Reusing the previous state keeps the map
+      // object stable so nothing downstream re-renders for a no-op update.
+      const visibilityUnchanged =
+        Array.isArray(map.visibility) &&
+        map.visibility.length === newVisibility.length &&
+        newVisibility.every((v, i) => v === map.visibility![i]);
+      const revealedUnchanged =
+        Array.isArray(map.revealed) &&
+        map.revealed.length === newRevealed.length &&
+        newRevealed.every((v, i) => v === map.revealed![i]);
+      if (visibilityUnchanged && revealedUnchanged) {
+        return state;
       }
 
       return {

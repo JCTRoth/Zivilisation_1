@@ -91,9 +91,14 @@ describe('Diplomacy: interactive AI offers', () => {
     const rel = dm.getRelation(1, 0);
     if (rel) rel.since = 1;
 
-    vi.spyOn(dm, 'getAttitude').mockReturnValue('neutral');
     vi.spyOn(dm, 'estimateMilitaryStrength').mockImplementation((civId: number) => (civId === 1 ? 100 : 10));
     (engine as any).roundManager.getRoundNumber = () => 20;
+
+    // A 19-turn war has left the AI worn down, which is what turns a winning
+    // side into one willing to negotiate. The policy scores this rather than
+    // rolling for it, so the outcome is deterministic.
+    dm.getWarExhaustion(1);
+    dm.processTurn(19);
 
     dm.processAIDiplomacy(1);
 
@@ -128,21 +133,25 @@ describe('Diplomacy: alliances can collapse', () => {
     const rel = dm.getRelation(1, 0);
     if (rel) rel.since = 1;
 
-    vi.spyOn(dm, 'getAttitude').mockReturnValue('hostile');
     vi.spyOn(dm, 'estimateMilitaryStrength').mockReturnValue(50);
-    vi.spyOn(Math, 'random').mockReturnValue(0.1); // force the betrayal roll
     (engine as any).roundManager.getRoundNumber = () => 20;
+
+    // The AI has come to fear its partner — the reason an alliance turns. Fear
+    // is a stored meter, so this is set directly rather than by mocking a
+    // function the policy no longer consults.
+    dm.getOpinion(1, 0).fear = 80;
+    dm.getOpinion(1, 0).grievance = 40;
 
     dm.processAIDiplomacy(1);
 
     expect(dm.getStatus(0, 1)).toBe('war');
     expect(events.some(e => e.type === 'ALLIANCE_BROKEN')).toBe(true);
     expect(events.some(e => e.type === 'WAR_DECLARED')).toBe(true);
-    // Breaking an alliance carries the reputation penalty.
-    expect(rel?.reputationModifier ?? 0).toBeLessThan(0);
+    // Breaking an alliance costs the betrayed side real goodwill.
+    expect(dm.getAttitudeScore(0, 1)).toBeLessThan(0);
   });
 
-  it('aggressive AI backstabs a long-standing alliance (turnsSince > 20)', async () => {
+  it('a warlike leader outgrows a long-standing alliance', async () => {
     const engine = new GameEngine(null);
     (engine as any).sleep = () => Promise.resolve();
     await engine.initialize({
@@ -164,9 +173,7 @@ describe('Diplomacy: alliances can collapse', () => {
     (civ1 as any).personality = { aggression: 8, diplomacy: 4, military: 8 };
     (civ1 as any).productionProfile = 'military_expansion';
 
-    vi.spyOn(dm, 'getAttitude').mockReturnValue('friendly'); // not hostile — backstab path
     vi.spyOn(dm, 'estimateMilitaryStrength').mockReturnValue(50);
-    vi.spyOn(Math, 'random').mockReturnValue(0.01); // 1 < 8 → betrayal
     (engine as any).roundManager.getRoundNumber = () => 25; // turnsSince = 24 > 20
 
     dm.processAIDiplomacy(1);
@@ -175,7 +182,10 @@ describe('Diplomacy: alliances can collapse', () => {
     expect(events.some(e => e.type === 'ALLIANCE_BROKEN')).toBe(true);
   });
 
-  it('a friendly long alliance does NOT collapse when the roll misses', async () => {
+  // The two tests above and below are the same pair, same turn count, differing
+  // only in personality. Under the old coin-flip model they were arbitrary; the
+  // point of the rewrite is that they are now guaranteed to differ.
+  it('a diplomatic leader keeps the same long alliance', async () => {
     const engine = new GameEngine(null);
     (engine as any).sleep = () => Promise.resolve();
     await engine.initialize({
@@ -192,12 +202,13 @@ describe('Diplomacy: alliances can collapse', () => {
     const rel = dm.getRelation(1, 0);
     if (rel) rel.since = 1;
 
+    // Same shape as the warlike case above, but a diplomatic leader: low
+    // warmongering and high loyalty keep the pact.
     const civ1 = engine.civilizations[1];
-    (civ1 as any).personality = { aggression: 8, diplomacy: 4, military: 8 };
+    (civ1 as any).personality = { aggression: 2, diplomacy: 9, military: 3, economy: 5 };
+    (civ1 as any).productionProfile = 'science_focus';
 
-    vi.spyOn(dm, 'getAttitude').mockReturnValue('friendly');
     vi.spyOn(dm, 'estimateMilitaryStrength').mockReturnValue(50);
-    vi.spyOn(Math, 'random').mockReturnValue(0.99); // 99 < 8 → false
     (engine as any).roundManager.getRoundNumber = () => 25;
 
     dm.processAIDiplomacy(1);

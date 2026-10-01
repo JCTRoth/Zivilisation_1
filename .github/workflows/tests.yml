@@ -39,11 +39,9 @@ jobs:
 
       # Dead code (knip.json). A dead engine module is how a false-green test
       # happens: tests/cityTileGrowth.test.ts used to pin growth rules against
-      # src/game/City.ts, which nothing in src/ imports. The repo has a
-      # pre-existing backlog of unused exports, so this step reports but does
-      # not fail the build yet — the backlog is tracked in TODO.txt.
-      - name: Dead code (knip, advisory)
-        continue-on-error: true
+      # src/game/City.ts, which nothing in src/ imports. The backlog that made
+      # this advisory has been cleared, so it now gates the build.
+      - name: Dead code (knip)
         run: npm run knip
 
       - name: Unit tests

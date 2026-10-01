@@ -176,6 +176,20 @@ export interface TerrainLayerParams {
 }
 
 /**
+ * Half-open tile window for a partial {@link MapRenderer.renderTerrainBase}
+ * repaint: columns `[startCol, endCol)`, rows `[startRow, endRow)`.
+ *
+ * A region repaint replaces only those tiles, so callers must include the
+ * neighbouring tiles whose transitions, features and overlays bleed into them.
+ */
+export interface TileRegion {
+  startRow: number;
+  endRow: number;
+  startCol: number;
+  endCol: number;
+}
+
+/**
  * Represents a single step in a unit's movement path.
  */
 export interface UnitPathStep {
@@ -445,7 +459,7 @@ export class MapRenderer {
    * Does NOT include fog overlay — call renderFogOverlay separately for that.
    * This is meant to be cached and only rebuilt when terrain *types* change.
    */
-  renderTerrainBase(params: TerrainLayerParams): void {
+  renderTerrainBase(params: TerrainLayerParams & { region?: TileRegion }): void {
     const { offscreenCanvas, map, terrainGrid } = params;
     if (!offscreenCanvas || !terrainGrid) return;
 
@@ -457,30 +471,47 @@ export class MapRenderer {
     const mapWidth    = map.width  * scaledTile;
     const mapHeight   = map.height * scaledTile;
 
-    if (offscreenCanvas.width !== mapWidth || offscreenCanvas.height !== mapHeight) {
+    // A region repaint is only valid on an already-correct canvas: if the size
+    // changed every pixel has to be laid down again, so fall back to a full pass.
+    const resized = offscreenCanvas.width !== mapWidth || offscreenCanvas.height !== mapHeight;
+    if (resized) {
       offscreenCanvas.width  = mapWidth;
       offscreenCanvas.height = mapHeight;
     }
+    const region = params.region && !resized ? params.region : undefined;
+    const startRow = Math.max(0, region?.startRow ?? 0);
+    const endRow   = Math.min(map.height, region?.endRow ?? map.height);
+    const startCol = Math.max(0, region?.startCol ?? 0);
+    const endCol   = Math.min(map.width,  region?.endCol ?? map.width);
 
-    ctx.clearRect(0, 0, mapWidth, mapHeight);
+    if (region) {
+      // Erase just this window: transitions, features and overlays all bleed
+      // outside their own tile, so the clear is padded by the caller.
+      ctx.clearRect(
+        startCol * scaledTile,
+        startRow * scaledTile,
+        (endCol - startCol) * scaledTile,
+        (endRow - startRow) * scaledTile,
+      );
+    } else {
+      ctx.clearRect(0, 0, mapWidth, mapHeight);
+    }
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
     const tm = this.textureManager;
 
     // ── Pass 1: base ground textures ─────────────────────────────────────
-    for (let row = 0; row < map.height; row++) {
-      for (let col = 0; col < map.width; col++) {
+    // Deliberately NOT gated on `explored`: the base is rebuilt only when
+    // terrain types/features change, so a tile revealed later must already be
+    // here. The opaque unexplored mask is composited on top by
+    // renderFogOverlay — plain fills, cheap.
+    for (let row = startRow; row < endRow; row++) {
+      for (let col = startCol; col < endCol; col++) {
         const tile = terrainGrid[row]?.[col];
         if (!tile) continue;
         const x = col * scaledTile;
         const y = row * scaledTile;
-
-        if (!tile.explored) {
-          ctx.fillStyle = '#111118';
-          ctx.fillRect(x, y, scaledTile, scaledTile);
-          continue;
-        }
 
         const terrainInfo = this.resolveTerrain(tile.type);
         if (tm) {
@@ -494,10 +525,10 @@ export class MapRenderer {
 
     // ── Pass 2: texture-based edge transitions (Wesnoth-style) ──────────
     if (tm && tm.isReady) {
-      for (let row = 0; row < map.height; row++) {
-        for (let col = 0; col < map.width; col++) {
+      for (let row = startRow; row < endRow; row++) {
+        for (let col = startCol; col < endCol; col++) {
           const tile = terrainGrid[row]?.[col];
-          if (!tile?.explored) continue;
+          if (!tile) continue;
           const x = col * scaledTile;
           const y = row * scaledTile;
           const tPriority = tm.getPriority(tile.type);
@@ -510,7 +541,7 @@ export class MapRenderer {
           ];
           for (const { dcol, drow, dir } of edges) {
             const n = terrainGrid[row + drow]?.[col + dcol];
-            if (!n?.explored || n.type === tile.type) continue;
+            if (!n || n.type === tile.type) continue;
             const nPriority = tm.getPriority(n.type);
             if (nPriority <= tPriority) continue;
             const diff = nPriority - tPriority;
@@ -535,15 +566,14 @@ export class MapRenderer {
             const westTile = terrainGrid[westRow]?.[westCol];
             const diagTile = terrainGrid[diagRow]?.[diagCol];
 
-            // Only draw if at least one neighbor is explored
-            if (!northTile?.explored && !westTile?.explored && !diagTile?.explored) continue;
+            if (!northTile && !westTile && !diagTile) continue;
 
             tm.drawCornerTransition4(
               ctx, x, y, scaledTile, corner,
               tile.type,
-              northTile?.explored ? northTile.type : null,
-              westTile?.explored ? westTile.type : null,
-              diagTile?.explored ? diagTile.type : null,
+              northTile?.type ?? null,
+              westTile?.type ?? null,
+              diagTile?.type ?? null,
             );
           }
         }
@@ -554,10 +584,10 @@ export class MapRenderer {
     // Replaces the old blue "~" glyph with directional water arms that
     // connect to adjacent river tiles and show natural banks.
     if (tm && tm.isReady) {
-      for (let row = 0; row < map.height; row++) {
-        for (let col = 0; col < map.width; col++) {
+      for (let row = startRow; row < endRow; row++) {
+        for (let col = startCol; col < endCol; col++) {
           const tile = terrainGrid[row]?.[col];
-          if (!tile?.explored || !tile.hasRiver) continue;
+          if (!tile?.hasRiver) continue;
           const x = col * scaledTile;
           const y = row * scaledTile;
 
@@ -566,10 +596,10 @@ export class MapRenderer {
           const e = terrainGrid[row]?.[col + 1];
           const s = terrainGrid[row + 1]?.[col];
           const w = terrainGrid[row]?.[col - 1];
-          const connectN = !!n?.hasRiver && n.explored;
-          const connectE = !!e?.hasRiver && e.explored;
-          const connectS = !!s?.hasRiver && s.explored;
-          const connectW = !!w?.hasRiver && w.explored;
+          const connectN = !!n?.hasRiver;
+          const connectE = !!e?.hasRiver;
+          const connectS = !!s?.hasRiver;
+          const connectW = !!w?.hasRiver;
 
           tm.drawRiver(ctx, tile.type, x, y, scaledTile, connectN, connectE, connectS, connectW);
         }
@@ -580,10 +610,10 @@ export class MapRenderer {
     // Only when the water-arm textures are unavailable; otherwise pass 2b
     // already drew the river and a "~" on top of it would just be noise.
     if (!(tm && tm.isReady)) {
-      for (let row = 0; row < map.height; row++) {
-        for (let col = 0; col < map.width; col++) {
+      for (let row = startRow; row < endRow; row++) {
+        for (let col = startCol; col < endCol; col++) {
           const tile = terrainGrid[row]?.[col];
-          if (!tile?.explored || !tile.hasRiver) continue;
+          if (!tile?.hasRiver) continue;
           const x = col * scaledTile;
           const y = row * scaledTile;
           this.drawTerrainSymbol(ctx, x + scaledTile / 2, y + scaledTile / 2, tile, {
@@ -596,13 +626,15 @@ export class MapRenderer {
 
     // ── Pass 4: feature sprites (painter's algorithm — row 0 first) ──────
     if (tm && tm.isReady) {
-      for (let row = 0; row < map.height; row++) {
-        for (let col = 0; col < map.width; col++) {
+      for (let row = startRow; row < endRow; row++) {
+        for (let col = startCol; col < endCol; col++) {
           const tile = terrainGrid[row]?.[col];
           // Features are remembered: once a tile has been explored its
           // forest/jungle/hills sprite stays on the map even after the unit
           // that revealed it has moved on (explored-but-not-visible fog).
-          if (!tile?.explored) continue;
+          // Like the ground textures, every tile is baked eagerly and the
+          // never-explored mask hides the ones not yet revealed.
+          if (!tile) continue;
           const x = col * scaledTile;
           const y = row * scaledTile;
           tm.drawFeature(ctx, tile.type, x, y, scaledTile, col, row);
@@ -616,10 +648,10 @@ export class MapRenderer {
     // after the feature sprites: a resource on a featured terrain (gems in
     // jungle, gold in mountains, …) must stay visible on top of the canopy or
     // relief rather than being buried under it.
-    for (let row = 0; row < map.height; row++) {
-      for (let col = 0; col < map.width; col++) {
+    for (let row = startRow; row < endRow; row++) {
+      for (let col = startCol; col < endCol; col++) {
         const tile = terrainGrid[row]?.[col];
-        if (!tile?.explored) continue;
+        if (!tile) continue;
         const x = col * scaledTile;
         const y = row * scaledTile;
         const centerX = x + scaledTile / 2;
@@ -681,11 +713,21 @@ export class MapRenderer {
     for (let row = 0; row < map.height; row++) {
       for (let col = 0; col < map.width; col++) {
         const tile = terrainGrid[row]?.[col];
-        if (!tile?.explored) continue;
-        if (tile.visible) continue;  // visible tiles get no fog
+        if (!tile) continue;
 
         const x = col * scaledTile;
         const y = row * scaledTile;
+
+        // Never explored: opaque mask. The base bakes every tile so that fog
+        // reveals never need a terrain rebuild; hiding the unseen tiles is
+        // this overlay's job.
+        if (!tile.explored) {
+          ctx.fillStyle = '#111118';
+          ctx.fillRect(x, y, scaledTile, scaledTile);
+          continue;
+        }
+
+        if (tile.visible) continue;  // visible tiles get no fog
         ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
         ctx.fillRect(x, y, scaledTile, scaledTile);
       }

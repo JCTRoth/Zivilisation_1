@@ -23,6 +23,7 @@ import { LEADER_PORTRAITS, MOOD_COLORS } from '@/data/LeaderPortraits';
 import type { City, Civilization } from '../../../types/game';
 import GameEngine from '@/game/engine/GameEngine';
 import type { DiplomatAction, TreatyType } from '@/game/engine/DiplomacyTypes';
+import { attitudeFromScore } from '@/game/engine/DiplomacyTypes';
 
 const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   // console.log('[GameModals] Component rendering, gameEngine present:', !!gameEngine);
@@ -506,9 +507,18 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
   // Diplomacy Modal — Civ I–style negotiation interface with leader portraits
   const [selectedDiploCiv, setSelectedDiploCiv] = useState<number | null>(null);
-  const [, setDiplomacyLog] = useState<string[]>([]);
+  // Outcome feed for proposals the player sends from this screen. Previously
+  // this state was written and thrown away, so a rejected proposal produced no
+  // visible feedback at all.
+  const [diplomacyFeed, setDiplomacyLog] = useState<string[]>([]);
   const [showTreatyPanel, setShowTreatyPanel] = useState(false);
   const [counterProposal, setCounterProposal] = useState<{ fromCivId: number; toCivId: number; action: string; goldAmount?: number } | null>(null);
+  // Advanced-negotiation inputs: how much tribute to demand, which met civ to
+  // embargo, and the tech exchange terms.
+  const [tributeAmount, setTributeAmount] = useState<number>(50);
+  const [embargoTarget, setEmbargoTarget] = useState<number | ''>('');
+  const [techOffer, setTechOffer] = useState<string>('');
+  const [techRequest, setTechRequest] = useState<string>('');
 
   const addDiploLog = (msg: string): void => {
     setDiplomacyLog(prev => [msg, ...prev].slice(0, 20));
@@ -526,14 +536,20 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       setCounterProposal(null);
       actions.clearDiplomacyFocus();
     } else if (selectedDiploCiv === null) {
-      const first = civilizations.find((c: Civilization) => c.id !== (currentPlayer?.id ?? 0) && c.isAlive !== false);
+      const first = civilizations.find((c: Civilization) =>
+        c.id !== (currentPlayer?.id ?? 0) &&
+        c.isAlive !== false &&
+        (typeof gameEngine?.diplomacyManager?.hasContacted === 'function'
+          ? gameEngine.diplomacyManager.hasContacted(currentPlayer?.id ?? 0, c.id)
+          : true),
+      );
       if (first) {
         setSelectedDiploCiv(first.id);
         setShowTreatyPanel(false);
         setCounterProposal(null);
       }
     }
-  }, [uiState.activeDialog, diplomacyFocusCivId, selectedDiploCiv, civilizations, currentPlayer, actions]);
+  }, [uiState.activeDialog, diplomacyFocusCivId, selectedDiploCiv, civilizations, currentPlayer, actions, gameEngine]);
 
   // Accept or reject the AI's pending proposal shown in the incoming-offer
   // banner. Accepting executes the proposal directly (no willingness roll —
@@ -561,7 +577,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const renderDiplomacy = () => {
     const dm = gameEngine?.diplomacyManager;
     const playerId = currentPlayer?.id ?? 0;
-    const otherCivs = civilizations.filter((c: Civilization) => c.id !== playerId && c.isAlive !== false);
+    // Only civilizations the player has actually met may be negotiated with —
+    // rivals are discovered by scouting, not handed over on turn 1.
+    const metCivIds = typeof dm?.getMetCivs === 'function' ? new Set(dm.getMetCivs(playerId)) : null;
+    const otherCivs = civilizations.filter((c: Civilization) =>
+      c.id !== playerId &&
+      c.isAlive !== false &&
+      (metCivIds === null || metCivIds.has(c.id)),
+    );
 
     const STATUS_ICONS: Record<string, string> = {
       peace: '🕊️',
@@ -585,13 +608,18 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       embargo_target: { icon: '🚫', label: 'Embargo' },
     };
 
-    const handleDiplomacyAction = (targetId: number, action: string, extra?: { treaty?: string }) => {
+    const handleDiplomacyAction = (
+      targetId: number,
+      action: string,
+      extra?: { treaty?: string; goldAmount?: number; embargoTargetId?: number; techOffered?: string; techRequested?: string },
+    ) => {
       if (!dm) return;
       let result: { accepted?: boolean; counterProposal?: typeof counterProposal; reason?: string; goldTransferred?: number } | null = null;
       switch (action) {
         case 'declare_war':
+          // declareWar emits WAR_DECLARED itself — re-emitting here duplicated
+          // the player's war toast.
           dm.declareWar(playerId, targetId);
-          gameEngine?.onStateChange?.('WAR_DECLARED', { aggressorId: playerId, targetId });
           addDiploLog(`You declared war on ${civilizations[targetId]?.name}!`);
           break;
         case 'propose_peace':
@@ -628,7 +656,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           }
           break;
         case 'demand_tribute': {
-          const demand = 50;
+          const demand = extra?.goldAmount ?? 50;
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'demand_tribute', goldAmount: demand });
           if (result.counterProposal) {
             setCounterProposal(result.counterProposal);
@@ -664,6 +692,29 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
             ? `Non-aggression pact signed with ${civilizations[targetId]?.name}.`
             : `${civilizations[targetId]?.name} refused the pact.`);
           break;
+        case 'propose_embargo':
+          result = dm.processProposal({
+            fromCivId: playerId,
+            toCivId: targetId,
+            action: 'propose_embargo',
+            embargoTargetId: extra?.embargoTargetId,
+          });
+          addDiploLog(result.accepted
+            ? `Embargo agreed with ${civilizations[targetId]?.name} against ${civilizations[extra?.embargoTargetId ?? -1]?.name ?? 'the target'}.`
+            : `${civilizations[targetId]?.name} rejected the embargo: "${result.reason}"`);
+          break;
+        case 'offer_tech_exchange':
+          result = dm.processProposal({
+            fromCivId: playerId,
+            toCivId: targetId,
+            action: 'offer_tech_exchange',
+            techOffered: extra?.techOffered,
+            techRequested: extra?.techRequested,
+          });
+          addDiploLog(result.accepted
+            ? `Technology exchanged with ${civilizations[targetId]?.name}!`
+            : `${civilizations[targetId]?.name} rejected the exchange: "${result.reason}"`);
+          break;
         case 'cancel_treaty': {
           const treaty = extra?.treaty as TreatyType | undefined;
           if (treaty) {
@@ -695,8 +746,29 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
     const selectedCivData = selectedDiploCiv !== null ? civilizations[selectedDiploCiv] : null;
     const selectedStatus = selectedDiploCiv !== null ? (dm?.getStatus(playerId, selectedDiploCiv) ?? 'peace') : 'peace';
-    const selectedAttitude = selectedDiploCiv !== null ? (dm?.getAttitude(playerId, selectedDiploCiv) ?? 'neutral') : 'neutral';
+    // Raw score drives both the tier (via the engine's shared bands) and the
+    // meter, so the bar and the word can never disagree.
+    const selectedAttitudeScore = selectedDiploCiv !== null ? (dm?.getAttitudeScore?.(playerId, selectedDiploCiv) ?? 0) : 0;
+    const selectedAttitude = attitudeFromScore(selectedAttitudeScore);
     const selectedRelation = selectedDiploCiv !== null ? dm?.getRelation(playerId, selectedDiploCiv) : null;
+    // The three readouts the new model adds: the raw goodwill points, the
+    // opinion THEY hold of us (which is what a proposal is judged against),
+    // and the reason list behind it.
+    const selectedGoodwill = selectedDiploCiv !== null ? (dm?.getAttitudeScore?.(playerId, selectedDiploCiv) ?? 0) : 0;
+    const selectedTheirOpinion = selectedDiploCiv !== null
+      ? (dm?.getTheirOpinion?.(playerId, selectedDiploCiv) ?? { goodwill: 0, grievance: 0, fear: 0, respect: 0, offersRefused: 0, lastOfferRound: -1, reasons: [] })
+      : { goodwill: 0, grievance: 0, fear: 0, respect: 0, offersRefused: 0, lastOfferRound: -1, reasons: [] };
+    const selectedReasons = selectedTheirOpinion.reasons ?? [];
+    // A preview of the terms currently in the input boxes, so the player can
+    // see the engine's own arithmetic before committing to a deal.
+    const verdict = selectedDiploCiv !== null && dm
+      ? dm.previewProposal?.({
+        fromCivId: playerId,
+        toCivId: selectedDiploCiv,
+        action: 'demand_tribute',
+        goldAmount: Number.isFinite(tributeAmount) ? tributeAmount : 50,
+      })
+      : null;
 
     // Leader portrait lookup
     const leaderName = selectedCivData?.leader || selectedCivData?.leaderName || '';
@@ -731,6 +803,15 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 <button className="diplomacy-btn btn-peace" onClick={() => handleIncomingOffer(true)}>✓ Accept</button>
                 <button className="diplomacy-btn btn-war" onClick={() => handleIncomingOffer(false)}>✗ Reject</button>
               </div>
+            </div>
+          )}
+          {/* Outcome of the last few proposals — without this the buttons gave
+              no feedback unless a counter-offer happened to come back. */}
+          {diplomacyFeed.length > 0 && (
+            <div className="diplomacy-log diplomacy-feed">
+              {diplomacyFeed.slice(0, 4).map((line, i) => (
+                <div key={i} className="diplomacy-log-entry">{line}</div>
+              ))}
             </div>
           )}
           {otherCivs.length === 0 ? (
@@ -790,6 +871,25 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         }}>
                           {ATTITUDE_LABELS[selectedAttitude]?.label || 'Unknown'}
                         </div>
+                        {/* Attitude meter: hostile ← → friendly. The scale is
+                            clamped to ±40, the range the bands actually use. */}
+                        <div
+                          className="diplomacy-attitude-meter"
+                          title={`Attitude score: ${selectedAttitudeScore > 0 ? '+' : ''}${Math.round(selectedAttitudeScore)}`}
+                        >
+                          <div
+                            className="diplomacy-attitude-marker"
+                            style={{
+                              left: `${((Math.max(-40, Math.min(40, selectedAttitudeScore)) + 40) / 80) * 100}%`,
+                              background: ATTITUDE_LABELS[selectedAttitude]?.color || '#9e9e9e',
+                            }}
+                          />
+                        </div>
+                        <div className="diplomacy-attitude-scale">
+                          <span>Hostile</span>
+                          <span>{selectedAttitudeScore > 0 ? '+' : ''}{Math.round(selectedAttitudeScore)}</span>
+                          <span>Friendly</span>
+                        </div>
                       </div>
 
                       {/* Status panel */}
@@ -801,12 +901,26 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         </div>
                         {selectedRelation && (
                           <>
+                            {/* Goodwill is the one number the whole model turns
+                                on, so it is shown as points and as a meter. */}
                             <div className="diplomacy-stat">
-                              <span className="diplomacy-stat-label">Reputation</span>
-                              <span style={{ color: selectedRelation.reputationModifier < 0 ? '#f44336' : selectedRelation.reputationModifier > 0 ? '#4caf50' : '#9e9e9e' }}>
-                                {selectedRelation.reputationModifier > 0 ? '+' : ''}{selectedRelation.reputationModifier}
+                              <span className="diplomacy-stat-label">Goodwill</span>
+                              <span style={{ color: selectedGoodwill < 0 ? '#f44336' : selectedGoodwill > 0 ? '#4caf50' : '#9e9e9e' }}>
+                                {selectedGoodwill > 0 ? '+' : ''}{selectedGoodwill}
                               </span>
                             </div>
+                            {selectedTheirOpinion.grievance >= 10 && (
+                              <div className="diplomacy-stat">
+                                <span className="diplomacy-stat-label">Grievance</span>
+                                <span style={{ color: '#ff9800' }}>{Math.round(selectedTheirOpinion.grievance)}</span>
+                              </div>
+                            )}
+                            {selectedTheirOpinion.fear >= 20 && (
+                              <div className="diplomacy-stat">
+                                <span className="diplomacy-stat-label">Their fear of you</span>
+                                <span style={{ color: '#ba68c8' }}>{Math.round(selectedTheirOpinion.fear)}</span>
+                              </div>
+                            )}
                             <div className="diplomacy-stat">
                               <span className="diplomacy-stat-label">Since turn</span>
                               <span style={{ color: '#aaa' }}>{selectedRelation.since}</span>
@@ -857,10 +971,41 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       </div>
                     )}
 
-                    {/* Treaty broken warning */}
-                    {selectedRelation && (selectedRelation.treatiesBrokenByA > 0 || selectedRelation.treatiesBrokenByB > 0) && (
-                      <div className="diplomacy-warning">
-                        ⚠️ Treaties broken: {(selectedRelation.treatiesBrokenByA || 0) + (selectedRelation.treatiesBrokenByB || 0)}
+                    {/* The engine's own arithmetic for the demand currently in
+                        the box. Same function the AI uses to decide, so this is
+                        a forecast rather than a hint. */}
+                    {verdict && selectedStatus !== 'war' && (
+                      <div className={`diplomacy-verdict ${verdict.accepted ? 'likely' : 'unlikely'}`}>
+                        <span className="diplomacy-verdict-headline">
+                          {verdict.accepted ? 'Likely to be paid' : 'Likely to be refused'}
+                        </span>
+                        <span className="diplomacy-verdict-score">
+                          {verdict.score} vs {verdict.threshold}
+                        </span>
+                        <span className="diplomacy-verdict-why">
+                          decisive: {verdict.decisiveFactor}
+                          {verdict.vetoed ? ' · pride forbids it' : ''}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* What they remember, with the points it cost. This is the
+                        "why do they hate me" list — the model records a reason
+                        for every single thing that moved the number above. */}
+                    {selectedReasons.length > 0 && (
+                      <div className="diplomacy-reasons">
+                        <div className="diplomacy-reasons-title">What they remember</div>
+                        {selectedReasons.map((r, i) => (
+                          <div key={`${r.event}-${r.round}-${i}`} className="diplomacy-reason-row">
+                            <span className={`diplomacy-reason-delta ${r.delta >= 0 ? 'good' : 'bad'}`}>
+                              {r.delta >= 0 ? '+' : ''}{r.delta}
+                            </span>
+                            <span className="diplomacy-reason-text">
+                              {dm?.impactLabel?.(r.event) ?? r.event}
+                              {r.detail ? <em> — {r.detail}</em> : null}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     )}
 
@@ -911,9 +1056,23 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                           <button className="diplomacy-btn btn-alliance" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_alliance')}>
                             🤝 Propose Alliance
                           </button>
-                          <button className="diplomacy-btn btn-tribute" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'demand_tribute')}>
-                            💰 Demand Tribute
-                          </button>
+                          <span className="diplomacy-tribute-group">
+                            <input
+                              type="number"
+                              min={0}
+                              step={10}
+                              className="diplomacy-tribute-input"
+                              value={tributeAmount}
+                              onChange={(e) => setTributeAmount(Math.max(0, Number(e.target.value) || 0))}
+                              title="How much gold to demand"
+                            />
+                            <button
+                              className="diplomacy-btn btn-tribute"
+                              onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'demand_tribute', { goldAmount: tributeAmount })}
+                            >
+                              💰 Demand Tribute
+                            </button>
+                          </span>
                           <button className="diplomacy-btn btn-war" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'declare_war')}>
                             ⚔️ Declare War
                           </button>
@@ -921,9 +1080,23 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       )}
                       {selectedStatus === 'alliance' && (
                         <>
-                          <button className="diplomacy-btn btn-tribute" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'demand_tribute')}>
-                            💰 Demand Tribute
-                          </button>
+                          <span className="diplomacy-tribute-group">
+                            <input
+                              type="number"
+                              min={0}
+                              step={10}
+                              className="diplomacy-tribute-input"
+                              value={tributeAmount}
+                              onChange={(e) => setTributeAmount(Math.max(0, Number(e.target.value) || 0))}
+                              title="How much gold to demand"
+                            />
+                            <button
+                              className="diplomacy-btn btn-tribute"
+                              onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'demand_tribute', { goldAmount: tributeAmount })}
+                            >
+                              💰 Demand Tribute
+                            </button>
+                          </span>
                           <button className="diplomacy-btn btn-war" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'declare_war')}>
                             ⚔️ Break Alliance &amp; Declare War
                           </button>
@@ -961,6 +1134,68 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                               <button className="diplomacy-btn btn-treaty" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_non_aggression')}>
                                 🤚 Non-Aggression Pact
                               </button>
+                            )}
+
+                            {/* Embargo a third party together */}
+                            {otherCivs.filter((c: Civilization) => c.id !== selectedDiploCiv).length > 0 && (
+                              <span className="diplomacy-treaty-group">
+                                <select
+                                  className="diplomacy-select"
+                                  value={embargoTarget}
+                                  onChange={(e) => setEmbargoTarget(e.target.value === '' ? '' : Number(e.target.value))}
+                                  title="Which civilization to embargo"
+                                >
+                                  <option value="">Embargo target…</option>
+                                  {otherCivs
+                                    .filter((c: Civilization) => c.id !== selectedDiploCiv)
+                                    .map((c: Civilization) => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </select>
+                                <button
+                                  className="diplomacy-btn btn-treaty"
+                                  disabled={embargoTarget === ''}
+                                  onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_embargo', { embargoTargetId: Number(embargoTarget) })}
+                                >
+                                  🚫 Embargo
+                                </button>
+                              </span>
+                            )}
+
+                            {/* Exchange technologies: offer one of yours, name
+                                the one you want. The engine validates both
+                                sides, so no foreign tech list is leaked. */}
+                            {(currentPlayer?.technologies?.length ?? 0) > 0 && (
+                              <span className="diplomacy-treaty-group">
+                                <select
+                                  className="diplomacy-select"
+                                  value={techOffer}
+                                  onChange={(e) => setTechOffer(e.target.value)}
+                                  title="Technology you offer"
+                                >
+                                  <option value="">Offer tech…</option>
+                                  {(currentPlayer?.technologies ?? []).map((id: string) => (
+                                    <option key={id} value={id}>
+                                      {technologies.find((t) => t.id === id)?.name ?? id}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="text"
+                                  className="diplomacy-tech-input"
+                                  placeholder="Request tech id"
+                                  value={techRequest}
+                                  onChange={(e) => setTechRequest(e.target.value)}
+                                  title="Technology you want from them"
+                                />
+                                <button
+                                  className="diplomacy-btn btn-treaty"
+                                  disabled={!techOffer || !techRequest}
+                                  onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'offer_tech_exchange', { techOffered: techOffer, techRequested: techRequest })}
+                                >
+                                  🔬 Tech Exchange
+                                </button>
+                              </span>
                             )}
                           </div>
                         )}

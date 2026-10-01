@@ -40,6 +40,7 @@ import {
   type TileLookup,
 } from "@/utils/MovementPreview";
 import { KeyboardHandler } from "@/game/engine/KeyboardHandler";
+import { debugLog } from '@/utils/DevLog';
 
 /**
  * Frame rate of the single render loop that drives the map. Animations are
@@ -70,6 +71,13 @@ interface ContextMenuState {
 
 /** Civ1 non-military units — they cannot attack (settlers build, diplomats
  *  negotiate, caravans trade, workers improve). */
+/**
+ * Above this many changed tiles a full base repaint is cheaper than walking the
+ * dirty list one 3x3 window at a time. 512 keeps the worst-case partial repaint
+ * bounded at roughly a tenth of a full pass on a 96x60 map.
+ */
+const MAX_REGION_REPAINT_TILES = 512;
+
 const NON_COMBAT_UNITS = new Set(['settler', 'worker', 'caravan', 'diplomat']);
 const isCombatUnitType = (type: string): boolean => !NON_COMBAT_UNITS.has(type);
 
@@ -82,6 +90,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const terrainBaseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const terrainTypesHashRef = useRef<string>("");
+  /**
+   * Per-tile signature of everything the cached base layer bakes in. Lets a
+   * rebuild touch only the tiles that moved instead of the whole map.
+   */
+  const baseSignaturesRef = useRef<Int32Array | null>(null);
+  /**
+   * Hash of the fog bits (explored/visible), so the composite is only rebuilt
+   * when exploration actually moved. Without it, every no-op terrain update
+   * (unit moves, engine bookkeeping) cleared and re-blitted the whole
+   * 6144x3840 composite — a ~200 ms stall per update in profiles.
+   */
+  const fogStateHashRef = useRef<string>("");
   const mapRendererRef = useRef<MapRenderer>(new MapRenderer());
   const miniMapRendererRef = useRef<MiniMapRenderer>(new MiniMapRenderer());
   const textureManagerRef = useRef<TerrainTextureManager | null>(null);
@@ -339,9 +359,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   /**
    * Build a cheap hash of everything baked into the static terrain layer:
-   * terrain type, exploration and the tile-bound features (resource,
-   * improvement/road, river, village) that never move. Visibility is NOT part
-   * of it — fog is composited separately on every visibility change.
+   * terrain type and the tile-bound features (resource, improvement/road,
+   * river, village) that never move.
+   *
+   * Exploration/visibility are deliberately NOT part of it. Folding `explored`
+   * in meant every tile the fog revealed re-ran the whole-map base pass — on
+   * the 96x60 maps that is a 6144x3840 texture pass with transitions and
+   * features, synchronously inside React's passive-effect phase, and in an
+   * AI-vs-AI game the fog reveals constantly so it never settles. The base
+   * now bakes every tile and the fog overlay (plain fills) hides the
+   * unexplored ones.
    *
    * Fields are mixed straight into the hash instead of concatenating a string
    * per tile. An improvement contributes only its string form: that is the only
@@ -362,7 +389,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const t = row[c];
         if (!t) continue;
         mix(t.type ?? "");
-        h = ((h << 5) - h + (t.explored ? 1 : 0)) | 0;
         mix(t.resource ?? "");
         mix(typeof t.improvement === "string" ? t.improvement : "");
         h = ((h << 5) - h + (t.hasRoad ? 1 : 0)) | 0;
@@ -372,6 +398,70 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     return String(h);
   }, []);
+
+  /** Hash of the fog state (explored/visible) for the cheap overlay pass. */
+  const hashFogState = useCallback((grid: TerrainRenderGrid): string => {
+    let h = 0;
+    for (let r = 0; r < grid.length; r++) {
+      const row = grid[r];
+      if (!row) continue;
+      for (let c = 0; c < row.length; c++) {
+        const t = row[c];
+        if (!t) continue;
+        h = ((h << 5) - h + (t.explored ? (t.visible ? 3 : 2) : 0)) | 0;
+      }
+    }
+    return String(h);
+  }, []);
+
+  /**
+   * Signature of one tile's static (base-layer) content. Anything the base
+   * bakes in has to be here, or a change to it would be missed by the diff.
+   */
+  const tileSignature = useCallback((tile: TerrainTileRenderInfo | undefined): number => {
+    if (!tile) return 0;
+    const text = `${tile.type ?? ''}|${tile.resource ?? ''}|` +
+      `${typeof tile.improvement === 'string' ? tile.improvement : ''}|` +
+      `${tile.hasRoad ? 1 : 0}|${tile.hasRiver ? 1 : 0}|${tile.village ? 1 : 0}`;
+    let h = 0;
+    for (let i = 0; i < text.length; i++) h = ((h << 5) - h + text.charCodeAt(i)) | 0;
+    return h;
+  }, []);
+
+  /** Records the current grid's signatures; call after repainting. */
+  const rememberSignatures = useCallback((grid: TerrainRenderGrid): void => {
+    const rows = grid.length;
+    const cols = rows > 0 ? (grid[0]?.length ?? 0) : 0;
+    const next = new Int32Array(rows * cols);
+    for (let r = 0; r < rows; r++) {
+      const row = grid[r];
+      if (!row) continue;
+      for (let c = 0; c < cols; c++) next[r * cols + c] = tileSignature(row[c]);
+    }
+    baseSignaturesRef.current = next;
+  }, [tileSignature]);
+
+  /**
+   * Flat `[row, col, row, col, ...]` list of tiles whose base-layer content
+   * changed since the last repaint. Empty when nothing moved.
+   */
+  const dirtyTiles = useCallback((grid: TerrainRenderGrid): number[] => {
+    const prev = baseSignaturesRef.current;
+    const rows = grid.length;
+    const cols = rows > 0 ? (grid[0]?.length ?? 0) : 0;
+    if (!prev || prev.length !== rows * cols) return [];
+
+    const out: number[] = [];
+    for (let r = 0; r < rows; r++) {
+      const row = grid[r];
+      if (!row) continue;
+      for (let c = 0; c < cols; c++) {
+        const i = r * cols + c;
+        if (prev[i] !== tileSignature(row[c])) out.push(r, c);
+      }
+    }
+    return out;
+  }, [tileSignature]);
 
   const renderTerrainToOffscreen = useCallback(
     (terrainGrid: TerrainRenderGrid | null) => {
@@ -383,18 +473,65 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       const mr = mapRendererRef.current;
       const newHash = hashTerrainTypes(terrainGrid);
       const typesChanged = newHash !== terrainTypesHashRef.current;
+      // An explicit invalidation (textures finished loading, resource tiles
+      // settled) means the pixels are stale even though no tile changed, so it
+      // must always repaint in full.
+      const forcedFullRepaint = terrainTypesHashRef.current === "";
+      let repainted = false;
 
       if (typesChanged) {
-        // Expensive path: terrain types or exploration changed — rebuild base
         terrainTypesHashRef.current = newHash;
-        mr.renderTerrainBase({
-          offscreenCanvas: baseCanvas,
-          map: mapData,
-          terrainGrid,
-        });
+
+        // Which tiles actually changed? A single tile changing used to repaint
+        // the whole map: with AI civs founding cities several times a second,
+        // that was a 5760-tile pass every time and the game ground to a halt.
+        // Diffing per tile turns "one tile moved" into "nine tiles repainted".
+        const dirty = forcedFullRepaint ? null : dirtyTiles(terrainGrid);
+        rememberSignatures(terrainGrid);
+
+        if (dirty && dirty.length > 0 && dirty.length * 9 <= MAX_REGION_REPAINT_TILES) {
+          // Transitions, features and overlays bleed one tile outwards, so
+          // repaint each dirty tile's 3x3 neighbourhood.
+          for (let i = 0; i < dirty.length; i += 2) {
+            const row = dirty[i];
+            const col = dirty[i + 1];
+            mr.renderTerrainBase({
+              offscreenCanvas: baseCanvas,
+              map: mapData,
+              terrainGrid,
+              region: {
+                startRow: Math.max(0, row - 1),
+                endRow: Math.min(mapData.height, row + 2),
+                startCol: Math.max(0, col - 1),
+                endCol: Math.min(mapData.width, col + 2),
+              },
+            });
+          }
+          repainted = true;
+        } else if (dirty && dirty.length === 0) {
+          // The hash moved without a single tile changing: nothing to repaint.
+        } else {
+          // First paint, a texture invalidation, or a genuinely large change.
+          mr.renderTerrainBase({
+            offscreenCanvas: baseCanvas,
+            map: mapData,
+            terrainGrid,
+          });
+          repainted = true;
+        }
       }
 
-      // Always composite: base canvas + fog overlay (cheap)
+      // Composite the base + fog overlay — but only when one of the two
+      // actually moved. Without this guard every no-op terrain update (unit
+      // moves, engine bookkeeping) cleared and re-blitted the whole 6144x3840
+      // composite, a ~200 ms stall per update in CDP profiles.
+      const newFogHash = hashFogState(terrainGrid);
+      const fogChanged = newFogHash !== fogStateHashRef.current;
+      if (!repainted && !fogChanged) {
+        return;
+      }
+      fogStateHashRef.current = newFogHash;
+
       const mapWidth = mapData.width * (TILE_SIZE * 2);
       const mapHeight = mapData.height * (TILE_SIZE * 2);
       if (
@@ -413,7 +550,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       // render rebuilds the cached viewport-sized terrain blit.
       terrainVersionRef.current += 1;
     },
-    [mapData, hashTerrainTypes],
+    [mapData, hashTerrainTypes, hashFogState, dirtyTiles, rememberSignatures],
   );
 
   useEffect(() => {
@@ -662,9 +799,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       terrainRef.current = updatedTerrain;
       renderTerrainToOffscreen(updatedTerrain);
       setTerrain(updatedTerrain);
-      console.log("[GameCanvas] Terrain visibility updated");
     } else {
-      console.log(
+      console.warn(
         "[GameCanvas] Skipping terrain visibility update - missing data",
       );
     }
@@ -741,14 +877,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   // Keyboard event handler for unit actions using KeyboardHandler class
   useEffect(() => {
     if (minimap) {
-      console.log("[GameCanvas] Skipping keyboard handler - minimap mode");
       return;
     }
 
     if (!gameEngine || !actions) {
-      console.log(
-        "[GameCanvas] Skipping keyboard handler - no gameEngine or actions",
-      );
       return;
     }
 
@@ -756,9 +888,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       gameEngine,
       actions,
       () => {
-        const selectedUnitId = gameState?.selectedUnit;
+        // Read the live store rather than closing over render state: the
+        // handler outlives individual renders, and depending on `units` /
+        // `selectedUnit` here tore it down and rebuilt it on every AI move
+        // (hundreds of times per turn, each one logging init/dispose).
+        const state = useGameStore.getState();
+        const selectedUnitId = state.gameState?.selectedUnit;
         return selectedUnitId
-          ? units.find((u) => u.id === selectedUnitId) || null
+          ? state.units.find((u) => u.id === selectedUnitId) || null
           : null;
       },
       () => getAllUnitsFromEngine(),
@@ -783,9 +920,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       keyboardHandler.dispose();
     };
   }, [
-    gameState?.selectedUnit,
-    units,
-    currentPlayer,
     minimap,
     gameEngine,
     actions,
@@ -797,7 +931,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   useEffect(() => {
     const roundManager = gameEngine?.roundManager;
     if (roundManager && typeof roundManager.getAllUnitPaths === "function") {
-      console.log(
+      debugLog(
         "[GameCanvas] Syncing unit paths from RoundManager on turn change",
       );
       const paths = roundManager.getAllUnitPaths();
@@ -2644,12 +2778,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               const resp = result.response as
                 | Record<string, unknown>
                 | undefined;
-              if (actions?.addNotification)
+              // Success is announced by the engine's UNIT_BRIBED event (which
+              // also covers an AI bribing the player). Only failures need a
+              // toast here.
+              if (!resp?.accepted && actions?.addNotification)
                 actions.addNotification({
-                  type: resp?.accepted ? "success" : "warning",
-                  message: resp?.accepted
-                    ? "Unit bribed!"
-                    : `Bribe failed: ${resp?.reason || "not enough gold"}`,
+                  type: "warning",
+                  message: `Bribe failed: ${resp?.reason || "not enough gold"}`,
                 });
             }
           } else {

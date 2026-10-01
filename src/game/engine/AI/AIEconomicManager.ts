@@ -118,6 +118,11 @@ export class AIEconomicManager {
       projectedIncome - buildingUpkeep - reserveContribution;
     const affordableUnits = Math.floor(availableForUnits / UNIT_MAINTENANCE);
 
+    // Units are never free: `unitUpkeep` charges every unit its full
+    // maintenance (the "each city supports one unit for free" note in
+    // doc/AI_ECONOMY.md does not match the implementation), so this is a hard
+    // budget ceiling. A building-heavy empire can therefore legitimately
+    // compute a cap of zero.
     return Math.max(0, affordableUnits);
   }
 

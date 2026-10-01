@@ -52,6 +52,7 @@ type NavalDoctrineVerdict = NavalDoctrineInput & NavalDoctrineResult & {
 };
 import type { City, Civilization, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
+import { debugLog } from '../../utils/DevLog';
 
 /** A production item pushed onto a city's build queue. */
 interface ProductionItem {
@@ -124,6 +125,7 @@ export class AutoProduction {
   /** Reset any per-game state when starting a new game. */
   reset(): void {
     // All production decisions are derived from the engine's current state.
+    this.navalDoctrineCache.clear();
   }
 
   /**
@@ -131,7 +133,7 @@ export class AutoProduction {
    */
   setAutoProduction(cityId: string): boolean {
     try {
-      console.log('[AutoProduction] setAutoProduction called for city', cityId);
+      debugLog('[AutoProduction] setAutoProduction called for city', cityId);
       
       const city = this.gameEngine.cities.find((c: City) => c.id === cityId);
       if (!city) {
@@ -149,7 +151,7 @@ export class AutoProduction {
       const civ = this.gameEngine.civilizations?.[city.civilizationId];
       if (city.currentProduction) {
         if (threatAssessment?.needsDefense && !this.isDefensiveProduction(city.currentProduction)) {
-          console.log('[AutoProduction] City under threat, overriding existing production');
+          debugLog('[AutoProduction] City under threat, overriding existing production');
           this.gameEngine.removeCurrentProduction(city.id);
         } else if (
           this.isFoodEmergency(city, civ) &&
@@ -159,25 +161,35 @@ export class AutoProduction {
           // A starving city must not train settlers: each one eats food from
           // the city and consumes a citizen on completion. The governor fixes
           // the tile assignment; cancelling the settler lets the city recover.
-          console.log('[AutoProduction] Food emergency — cancelling settler production');
+          debugLog('[AutoProduction] Food emergency — cancelling settler production');
           this.gameEngine.removeCurrentProduction(city.id);
         } else if (this.isHappinessCrisis(city) && !this.isHappinessBuilding(city.currentProduction)) {
           // A city in or approaching disorder produces (almost) nothing at all
-          // (applyCityOutputs zeroes a disordered city's output), so the temple
-          // that would fix it must preempt EVERYTHING else — otherwise the civ
-          // is stuck forever producing 0 shields and can never recover.
-          console.log('[AutoProduction] Happiness crisis, overriding existing production');
-          this.gameEngine.removeCurrentProduction(city.id);
+          // (applyCityOutputs zeroes a disordered city's output), so the
+          // happiness building that would fix it must preempt EVERYTHING else.
+          // Only override when such a building is actually available, though:
+          // with the tech missing (no Ceremonial Burial → no temple) removing
+          // the current item every turn made the city churn production forever
+          // and never complete anything — the profiled run logged 2,283
+          // production changes on Berlin alone. Without a fix available, let
+          // the current item finish instead.
+          const happyFix = this.chooseHappinessBuilding(city, civ, []);
+          if (happyFix) {
+            debugLog('[AutoProduction] Happiness crisis, overriding existing production');
+            this.gameEngine.removeCurrentProduction(city.id);
+          } else {
+            debugLog('[AutoProduction] Happiness crisis but no happiness building available — keeping current production');
+          }
         } else if (
           city.currentProduction.type === 'building' &&
           (city.buildings ?? []).includes(city.currentProduction.itemType)
         ) {
           // Never keep producing a building the city already owns (the queue
           // item can outlive the building it produced). Re-pick a fresh item.
-          console.log('[AutoProduction] City already has', city.currentProduction.itemType, '- re-picking production');
+          debugLog('[AutoProduction] City already has', city.currentProduction.itemType, '- re-picking production');
           this.gameEngine.removeCurrentProduction(city.id);
         } else {
-          console.log('[AutoProduction] City already has production:', city.currentProduction);
+          debugLog('[AutoProduction] City already has production:', city.currentProduction);
           // Keep the current item and top up the queue with sensible follow-ups.
           this.ensureProductionQueue(city.id);
           return true;
@@ -188,7 +200,7 @@ export class AutoProduction {
       const productionItem = this.determineProductionItem(city, threatAssessment, []);
       
       if (productionItem) {
-        console.log('[AutoProduction] Setting production item:', productionItem);
+        debugLog('[AutoProduction] Setting production item:', productionItem);
         
         // Use ProductionManager to set production
         if (this.gameEngine.productionManager) {
@@ -222,6 +234,12 @@ export class AutoProduction {
         .map((q: QueueItem) => q.itemType || q.type)
         .filter((t: string) => !!t);
 
+      // A full queue needs no top-up: every call after the first in a turn is
+      // already a no-op. (The high `CITY_PRODUCTION_CHANGED` counts in the
+      // logs are real per-completion throughput, not churn — a city producing
+      // an item a turn legitimately refills its queue an equal number of
+      // times. A signature-based throttle here was redundant and could skip a
+      // retry after the world changed without the queue changing.)
       const slots = AUTO_QUEUE_TARGET - existingQueue.length;
       if (slots <= 0) return;
 
@@ -233,6 +251,10 @@ export class AutoProduction {
       // for upkeep (the AI-vs-AI produce→disband churn). Buildings are still
       // allowed; only military/explorer/settler units are capped.
       const unitCapExhausted = this.isUnitCapExhausted(city.civilizationId);
+      // Growth units (scouts/settlers/fisher boats) are exempt from the army
+      // cap, but not from solvency: queueing one the treasury cannot pay for
+      // just feeds the produce→disband loop.
+      const canAffordGrowthUnit = this.canAffordAnotherUnit(city.civilizationId);
 
       let added = 0;
       let guard = 0;
@@ -246,13 +268,15 @@ export class AutoProduction {
         // (Fall back to a building so the city still has something to do.)
         if (unitCapExhausted && item.type === 'unit') {
           // Scouts, settlers and Fisher Boats grow the economy — never block
-          // them behind the army-upkeep cap. A scout is the civ's eyes on the
-          // map; a settler founds a new city that adds free unit support and
-          // tax income; the Fisher Boat only reaches this point when the
-          // FisherEconomics equation says its food value beats its upkeep, so
-          // it pays for itself instead of straining the budget.
-          // (Settler count is still limited by the expansion params.)
-          if (item.itemType === 'scout' || item.itemType === 'settler' || item.itemType === 'fisher_boat') {
+          // them behind the army-upkeep cap while the civ can still pay one
+          // more unit. A scout is the civ's eyes on the map; a settler founds
+          // a new city that adds free unit support and tax income; the Fisher
+          // Boat only reaches this point when the FisherEconomics equation says
+          // its food value beats its upkeep, so it pays for itself instead of
+          // straining the budget. (Settler count is still limited by the
+          // expansion params.)
+          const isGrowthUnit = item.itemType === 'scout' || item.itemType === 'settler' || item.itemType === 'fisher_boat';
+          if (isGrowthUnit && canAffordGrowthUnit) {
             const growthResult = this.gameEngine.productionManager.setCityProduction(cityId, item, true);
             if (!growthResult || growthResult.success === false) break;
             plannedTypes.push(item.itemType);
@@ -264,10 +288,11 @@ export class AutoProduction {
             // No buildable building (very early game). Keep the queue from
             // appearing empty by queueing the already-chosen unit `item`
             // instead of leaving the city idle once its current item
-            // completes. Only guarantee the FIRST follow-up this way — if the
+            // completes — but never queue a unit the treasury will disband on
+            // arrival. Only guarantee the FIRST follow-up this way; if the
             // queue already has something, a missing building just stops
             // topping up.
-            if (added > 0) break;
+            if (added > 0 || !canAffordGrowthUnit) break;
             followUp = item;
           }
           const result = this.gameEngine.productionManager.setCityProduction(cityId, followUp, true);
@@ -291,6 +316,45 @@ export class AutoProduction {
   /**
    * Determine what production item a city should build
    */
+  /**
+   * The next happiness building this city should complete: the first of
+   * temple → colosseum → cathedral that the civ can build, does not own and
+   * has not already planned. `null` when none is available (typically the
+   * required technology is missing), in which case the caller falls through
+   * to its other items.
+   */
+  private chooseHappinessBuilding(
+    city: City,
+    civ: Civilization | undefined,
+    plannedTypes: string[],
+  ): ProductionItem | null {
+    const existingBuildings = new Set(city.buildings ?? []);
+    const civTechs = new Set<string>();
+    const techs = civ?.technologies;
+    if (Array.isArray(techs)) {
+      for (const t of techs) civTechs.add(String(t));
+    } else if (techs && typeof (techs as Iterable<string>)[Symbol.iterator] === 'function') {
+      for (const t of techs as Iterable<string>) civTechs.add(String(t));
+    }
+    const happyBuilding = ['temple', 'colosseum', 'cathedral'].find((b) => {
+      if (existingBuildings.has(b) || plannedTypes.includes(b)) return false;
+      const props = BUILDING_PROPS[b] || BUILDING_PROPERTIES[b];
+      if (!props) return false;
+      // Only consider buildings the civ has the tech for
+      if (props.requiredTechnology && !civTechs.has(props.requiredTechnology)) return false;
+      return true;
+    });
+    if (!happyBuilding) return null;
+    const bProps = BUILDING_PROPS[happyBuilding] || BUILDING_PROPERTIES[happyBuilding];
+    if (!bProps) return null;
+    return {
+      type: 'building',
+      itemType: happyBuilding,
+      name: bProps.name,
+      cost: bProps.cost,
+    };
+  }
+
   private determineProductionItem(city: City, threatAssessment?: CityThreatAssessment | null, plannedTypes: string[] = []): ProductionItem | null {    // Priority order:
     // 1. Urgent defender if city has none
     // 2. Emergency reinforcements for threatened cities
@@ -344,8 +408,31 @@ export class AutoProduction {
     // 1. A city under direct threat must build a defender FIRST (survival
     //    beats comfort). Minor border pressure alone does not preempt it.
     if (threatAssessment?.needsDefense) {
-      console.log('[AutoProduction] City needs defender (threat-triggered)');
+      debugLog('[AutoProduction] City needs defender (threat-triggered)');
       return this.buildDefenderProduction(city, threatAssessment);
+    }
+
+    // 1a. Disorder emergency runs before ANY naval or expansion project: a
+    //     disordered city produces nothing (applyCityOutputs zeroes its
+    //     output), so ordering a ferry or settler there just feeds the
+    //     treasury spiral — the profiled naval run queued ferries for 200
+    //     rounds in a city that never left disorder. Also trigger when the
+    //     city's own trade is zero while citizens are unhappy: that is
+    //     disorder/luxury eating the commerce, and the fix is a happiness
+    //     building, not another hull.
+    const earlyEcon = this.gameEngine?.economicManager;
+    if (civ && earlyEcon) {
+      const happyState = earlyEcon.cityHappiness(city, civ);
+      const cityTrade = city.yields?.trade ?? 0;
+      const disorderEmergency = happyState.disorder
+        || (cityTrade <= 0 && happyState.unhappiness > 0);
+      if (disorderEmergency) {
+        const happyBuilding = this.chooseHappinessBuilding(city, civ, plannedTypes);
+        if (happyBuilding) {
+          debugLog(`[AutoProduction] Disorder emergency: building ${happyBuilding.itemType} (trade ${cityTrade}, disorder ${happyState.disorder})`);
+          return happyBuilding;
+        }
+      }
     }
 
     // 1c. Island strategy. A civ alone on a VERY SMALL island must escape:
@@ -357,14 +444,14 @@ export class AutoProduction {
       if (island.isVerySmall) {
         const ship = this.buildEscapeShipProduction(city);
         if (ship) {
-          console.log(`[AutoProduction] Trapped on a ${island.size}-tile island — building ${ship.itemType} to escape`);
+          debugLog(`[AutoProduction] Trapped on a ${island.size}-tile island — building ${ship.itemType} to escape`);
           return ship;
         }
       }
       if (island.isSmall) {
         const harbor = this.buildHarborProduction(city);
         if (harbor) {
-          console.log(`[AutoProduction] Isolated on a small island — building a Harbor`);
+          debugLog(`[AutoProduction] Isolated on a small island — building a Harbor`);
           return harbor;
         }
       }
@@ -374,7 +461,7 @@ export class AutoProduction {
     //     the settler to the small island.
     const colonyFerry = this.buildColonyFerryProduction(city);
     if (colonyFerry) {
-      console.log('[AutoProduction] Colony mission — building a ferry');
+      debugLog('[AutoProduction] Colony mission — building a ferry');
       return colonyFerry;
     }
 
@@ -382,7 +469,7 @@ export class AutoProduction {
     //        enemy city on the far shore. A war is a ferry, so build one.
     const invasionFerry = this.buildInvasionFerryProduction(city);
     if (invasionFerry) {
-      console.log('[AutoProduction] Invasion — building a ferry');
+      debugLog('[AutoProduction] Invasion — building a ferry');
       return invasionFerry;
     }
 
@@ -391,7 +478,7 @@ export class AutoProduction {
     //     ocean-food bonus).
     const fisherBoat = this.buildFisherBoatProduction(city);
     if (fisherBoat) {
-      console.log('[AutoProduction] Food pressure — building a Fisher Boat');
+      debugLog('[AutoProduction] Food pressure — building a Fisher Boat');
       return fisherBoat;
     }
 
@@ -424,44 +511,21 @@ export class AutoProduction {
     const luxuryRate = civ?.luxuryRate ?? 0;
     const hasEntertainers = entertainerCount > 0;
     if (needsHappiness || luxuryRate >= 40 || hasEntertainers) {
-      const existingBuildings = new Set(city.buildings ?? []);
-      const civTechs = new Set<string>();
-      const techs = civ.technologies;
-      if (Array.isArray(techs)) {
-        for (const t of techs) civTechs.add(String(t));
-      } else if (techs && typeof (techs as Iterable<string>)[Symbol.iterator] === 'function') {
-        for (const t of techs as Iterable<string>) civTechs.add(String(t));
-      }
-      const happyBuilding = ['temple', 'colosseum', 'cathedral']
-        .find((b) => {
-          if (existingBuildings.has(b) || plannedTypes.includes(b)) return false;
-          const props = BUILDING_PROPS[b] || BUILDING_PROPERTIES[b];
-          if (!props) return false;
-          // Only consider buildings the civ has the tech for
-          if (props.requiredTechnology && !civTechs.has(props.requiredTechnology)) return false;
-          console.log(`[AutoProduction] Happiness emergency: considering ${b} (luxury ${luxuryRate}%, disorder ${needsHappiness}, entertainers ${entertainerCount})`);
-          return true;
-        });
-      const bProps = happyBuilding ? (BUILDING_PROPS[happyBuilding] || BUILDING_PROPERTIES[happyBuilding]) : null;
-      if (bProps) {
-        console.log(`[AutoProduction] Happiness emergency: building ${happyBuilding} (luxury ${luxuryRate}%, disorder ${needsHappiness})`);
-        return {
-          type: 'building',
-          itemType: happyBuilding,
-          name: bProps.name,
-          cost: bProps.cost
-        };
+      const happyBuilding = this.chooseHappinessBuilding(city, civ, plannedTypes);
+      if (happyBuilding) {
+        debugLog(`[AutoProduction] Happiness emergency: building ${happyBuilding.itemType} (luxury ${luxuryRate}%, disorder ${needsHappiness}, entertainers ${entertainerCount})`);
+        return happyBuilding;
       }
     }
 
     // 2. Build a defender if none exists
     if (!hasDefender) {
-      console.log('[AutoProduction] City needs defender');
+      debugLog('[AutoProduction] City needs defender');
       return this.buildDefenderProduction(city, threatAssessment);
     }
 
     if (threatAssessment && threatAssessment.netThreat > 0) {
-      console.log('[AutoProduction] Elevated threat detected, reinforcing garrison');
+      debugLog('[AutoProduction] Elevated threat detected, reinforcing garrison');
       return this.buildDefenderProduction(city, threatAssessment);
     }
 
@@ -493,7 +557,7 @@ export class AutoProduction {
       if (missingCore) {
         const bProps = BUILDING_PROPS[missingCore] || BUILDING_PROPERTIES[missingCore];
         if (bProps) {
-          console.log(`[AutoProduction] Minimum infrastructure: building ${missingCore} (city lacks core building)`);
+          debugLog(`[AutoProduction] Minimum infrastructure: building ${missingCore} (city lacks core building)`);
           return {
             type: 'building',
             itemType: missingCore,
@@ -513,7 +577,7 @@ export class AutoProduction {
     if (!threatAssessment?.needsDefense) {
       const harbor = this.buildHarborProduction(city);
       if (harbor) {
-        console.log('[AutoProduction] Coastal city with no threat — building a Harbor');
+        debugLog('[AutoProduction] Coastal city with no threat — building a Harbor');
         return harbor;
       }
     }
@@ -549,7 +613,7 @@ export class AutoProduction {
     const foodBalance = this.cityFoodBalance(city, civ);
     const starving = !!foodBalance && foodBalance.surplus < 0;
     if (starving) {
-      console.log('[AutoProduction] City is losing food — settlers paused until it recovers');
+      debugLog('[AutoProduction] City is losing food — settlers paused until it recovers');
     }
 
     // Prevent City from getting disolved by new Settler produced
@@ -561,12 +625,15 @@ export class AutoProduction {
     const isCapitalMove = allCivCities.length <= 1 && !hasSettlerInCiv;
     const refusesSelfDestruct = isAiCity && wouldConsumeCity && !isCapitalMove;
 
-    if (!needsHappiness && city.population >= 1 && !starving && !refusesSelfDestruct) {
-      // Civ1: Settlers consume food from the home city (not gold), so they
-      // don't drain the treasury. However, building a Settler diverts shields
-      // from other production — only allow settlers when the economy is healthy
-      // enough (gold non-negative or small deficit) to sustain the production
-      // delay.
+    // Settlers still cost 1 gold/turn upkeep even though they eat food from
+    // the city, so a civ with no headroom cannot afford one — the economy
+    // disbands it on arrival. Gate on the same affordability the disband rule
+    // uses (see canAffordAnotherUnit); a healthier civ expands normally.
+    // Deliberately NOT gated on unitCapExhausted: the army-sustainability
+    // reserve is stricter than solvency and would freeze expansion on a
+    // young civ that can still pay its next unit.
+    const canAffordSettler = this.canAffordAnotherUnit(city.civilizationId);
+    if (!needsHappiness && canAffordSettler && city.population >= 1 && !starving && !refusesSelfDestruct) {
       const gold = this.gameEngine.civilizations?.[city.civilizationId]?.resources?.gold ?? 0;
       const upkeep = this.gameEngine.economicManager?.totalUpkeep?.(city.civilizationId) ?? 0;
       const goldCrisis = gold < -upkeep;
@@ -590,7 +657,7 @@ export class AutoProduction {
       const effectiveDesired = goldCrisis ? expansion.minSettlers : desiredSettlers;
 
       if (settlerCount < effectiveDesired) {
-        console.log(`[AutoProduction] Civilization has ${settlerCount} settler(s) (unit list + queued across all cities), building another (target ${desiredSettlers}, profile ${strategy})`);
+        debugLog(`[AutoProduction] Civilization has ${settlerCount} settler(s) (unit list + queued across all cities), building another (target ${desiredSettlers}, profile ${strategy})`);
         return {
           type: 'unit',
           itemType: 'settler',
@@ -609,7 +676,7 @@ export class AutoProduction {
     if (foodPlan) {
       const planProps = BUILDING_PROPS[foodPlan] || BUILDING_PROPERTIES[foodPlan];
       if (planProps && !plannedTypes.includes(foodPlan)) {
-        console.log(`[AutoProduction] Long-term food plan: building ${foodPlan}`);
+        debugLog(`[AutoProduction] Long-term food plan: building ${foodPlan}`);
         return {
           type: 'building',
           itemType: foodPlan,
@@ -642,7 +709,7 @@ export class AutoProduction {
     const aggressivePosture = this.isAggressivePosture(city.civilizationId);
     if (!unitCapExhausted && aggressivePosture &&
         (this.isCivAtWar(city.civilizationId) || this.shouldSupportOffensivePlan(city))) {
-      console.log('[AutoProduction] Aggressive posture: prioritizing attacker over buildings');
+      debugLog('[AutoProduction] Aggressive posture: prioritizing attacker over buildings');
       return this.buildOffensiveProduction(city);
     }
 
@@ -654,7 +721,7 @@ export class AutoProduction {
     if (this.shouldBuildNavy(city)) {
       const naval = this.buildNavalProduction(city);
       if (naval) {
-        console.log(`[AutoProduction] Naval pivot: building ${naval.itemType} (no land-reachable enemy)`);
+        debugLog(`[AutoProduction] Naval pivot: building ${naval.itemType} (no land-reachable enemy)`);
         return naval;
       }
     }
@@ -665,7 +732,7 @@ export class AutoProduction {
     )) {
       const bProps = BUILDING_PROPS[buildingPlan.buildingType] || BUILDING_PROPERTIES[buildingPlan.buildingType];
       if (bProps) {
-        console.log(`[AutoProduction] Building strategy chose: ${buildingPlan.buildingType} (priority: ${buildingPlan.priority}, reason: ${buildingPlan.reason})`);
+        debugLog(`[AutoProduction] Building strategy chose: ${buildingPlan.buildingType} (priority: ${buildingPlan.priority}, reason: ${buildingPlan.reason})`);
         return {
           type: 'building',
           itemType: buildingPlan.buildingType,
@@ -677,7 +744,7 @@ export class AutoProduction {
 
     // 5. Support offensive plan (never over the sustainable unit cap)
     if (!unitCapExhausted && this.shouldSupportOffensivePlan(city)) {
-      console.log('[AutoProduction] Supporting offensive plan with new attacker');
+      debugLog('[AutoProduction] Supporting offensive plan with new attacker');
       return this.buildOffensiveProduction(city);
     }
 
@@ -691,7 +758,7 @@ export class AutoProduction {
     const scoutPopThreshold = isSmallMap ? 1 : 2;
     if (this.needsScout(city.civilizationId, plannedScouts) && city.population >= scoutPopThreshold) {
       const scoutProps = UNIT_PROPS.scout;
-      console.log(`[AutoProduction] Building scout for map exploration (${this.countTotalTroops(city.civilizationId)} troops)`);
+      debugLog(`[AutoProduction] Building scout for map exploration (${this.countTotalTroops(city.civilizationId)} troops)`);
       return {
         type: 'unit',
         itemType: 'scout',
@@ -706,7 +773,7 @@ export class AutoProduction {
     //      attack can never form and the civ stays purely defensive.
     const AGGRESSIVE_ARMY_MIN = 3;
     if (!unitCapExhausted && aggressivePosture && this.countOffensiveUnits(city.civilizationId) < AGGRESSIVE_ARMY_MIN) {
-      console.log('[AutoProduction] Aggressive posture: building standing army (attacker)');
+      debugLog('[AutoProduction] Aggressive posture: building standing army (attacker)');
       return this.buildOffensiveProduction(city);
     }
 
@@ -714,7 +781,7 @@ export class AutoProduction {
     if (buildingPlan) {
       const bProps = BUILDING_PROPS[buildingPlan.buildingType] || BUILDING_PROPERTIES[buildingPlan.buildingType];
       if (bProps) {
-        console.log(`[AutoProduction] Building: ${buildingPlan.buildingType} (reason: ${buildingPlan.reason})`);
+        debugLog(`[AutoProduction] Building: ${buildingPlan.buildingType} (reason: ${buildingPlan.reason})`);
         return {
           type: 'building',
           itemType: buildingPlan.buildingType,
@@ -733,7 +800,7 @@ export class AutoProduction {
     if (civ && this.shouldBuildCaravan(civ, city, plannedTypes)) {
       const caravanProps = UNIT_PROPS.caravan;
       if (caravanProps) {
-        console.log(`[AutoProduction] Building caravan for trade route (profile ${strategy})`);
+        debugLog(`[AutoProduction] Building caravan for trade route (profile ${strategy})`);
         return {
           type: 'unit',
           itemType: 'caravan',
@@ -750,7 +817,7 @@ export class AutoProduction {
       if (wonderPlan && !plannedTypes.includes(wonderPlan.buildingType)) {
         const wProps = WONDER_PROPERTIES[wonderPlan.buildingType];
         if (wProps) {
-          console.log(`[AutoProduction] Wonder strategy chose: ${wonderPlan.buildingType} (priority: ${wonderPlan.priority})`);
+          debugLog(`[AutoProduction] Wonder strategy chose: ${wonderPlan.buildingType} (priority: ${wonderPlan.priority})`);
           return {
             type: 'building',
             itemType: wonderPlan.buildingType,
@@ -767,7 +834,7 @@ export class AutoProduction {
     if (civ && this.shouldBuildDiplomat(civ)) {
       const dProps = UNIT_PROPS.diplomat;
       if (dProps) {
-        console.log(`[AutoProduction] Building diplomat for diplomacy (profile ${strategy})`);
+        debugLog(`[AutoProduction] Building diplomat for diplomacy (profile ${strategy})`);
         return {
           type: 'unit',
           itemType: 'diplomat',
@@ -793,7 +860,7 @@ export class AutoProduction {
     if (unitCapExhausted) {
       const fallback = this.determineFallbackBuilding(city, threatAssessment, plannedTypes);
       if (fallback) {
-        console.log('[AutoProduction] Unit cap reached — building instead of another unit');
+        debugLog('[AutoProduction] Unit cap reached — building instead of another unit');
         return fallback;
       }
     }
@@ -806,7 +873,7 @@ export class AutoProduction {
       || this.shouldSupportOffensivePlan(city)
       || (defenderCapReached && !threatAssessment?.needsDefense);
 
-    console.log(`[AutoProduction] Building default military unit (offense: ${offensiveUnits}, defense: ${defenders})`);
+    debugLog(`[AutoProduction] Building default military unit (offense: ${offensiveUnits}, defense: ${defenders})`);
     return needsAttackers
       ? this.buildOffensiveProduction(city)
       : this.buildDefenderProduction(city, threatAssessment);
@@ -973,7 +1040,7 @@ export class AutoProduction {
     };
 
     if (threatAssessment) {
-      console.log('[AutoProduction] Threat level', threatAssessment.netThreat.toFixed(2), '-> producing', unitProps.name);
+      debugLog('[AutoProduction] Threat level', threatAssessment.netThreat.toFixed(2), '-> producing', unitProps.name);
     }
 
     return production;
@@ -1038,7 +1105,7 @@ export class AutoProduction {
     );
     if (offensiveQueue.length !== original.length) {
       city.buildQueue = offensiveQueue;
-      console.log(`[AutoProduction] Reconsidered aggressive queue for ${city.name}: ${original.length} → ${offensiveQueue.length} peaceful follow-ups removed`);
+      debugLog(`[AutoProduction] Reconsidered aggressive queue for ${city.name}: ${original.length} → ${offensiveQueue.length} peaceful follow-ups removed`);
     }
   }
 
@@ -1277,6 +1344,27 @@ export class AutoProduction {
     return currentUnits + queuedUnits >= sustainableUnits;
   }
 
+  /**
+   * Whether the civ can pay one more unit's upkeep this turn. GROWTH units
+   * (settlers/scouts/fisher boats) are deliberately exempt from the army
+   * sustainability cap, so without this a civ sitting at net 0 produced them
+   * anyway and the economy disbanded each one the turn it arrived — one
+   * profiled naval run built 155 settlers and disbanded all 155. Requiring
+   * at least the 1-gold upkeep as headroom before starting one ends the loop.
+   */
+  private canAffordAnotherUnit(civId: number): boolean {
+    const econ = this.gameEngine?.economicManager;
+    const civ = this.gameEngine?.civilizations?.[civId];
+    if (!econ || !civ || typeof econ.previewEconomy !== 'function') return true;
+    const preview = econ.previewEconomy(civ, {
+      tax: civ.taxRate ?? 50,
+      science: civ.scienceRate ?? 50,
+      luxury: civ.luxuryRate ?? 50,
+    });
+    if (!preview) return true;
+    return preview.net >= 1;
+  }
+
   /** Safe coastal check used to gate the Harbor building (unknown → allow). */
   private cityHasWaterAccess(city: City): boolean {
     const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
@@ -1418,7 +1506,7 @@ export class AutoProduction {
     const ground = bestFishingGround(this.gameEngine, city);
     if (!ground) return null;
     if (!ground.worthwhile) {
-      console.log(
+      debugLog(
         `[AutoProduction] Fisher Boat skipped — best ground (${ground.col},${ground.row}) is ` +
           `${ground.distance} tiles out: ${ground.foodPerTurn.toFixed(2)} food/turn ` +
           `(net ${ground.netValuePerTurn.toFixed(2)} gold/turn)`,
@@ -1428,7 +1516,7 @@ export class AutoProduction {
 
     const props = UNIT_PROPS.fisher_boat;
     if (!props) return null;
-    console.log(
+    debugLog(
       `[AutoProduction] Fisher Boat — ground (${ground.col},${ground.row}) d=${ground.distance}, ` +
         `${ground.foodPerTurn.toFixed(2)} food/turn, +${ground.netValuePerTurn.toFixed(2)} gold/turn`,
     );
@@ -1479,7 +1567,7 @@ export class AutoProduction {
     if (!wanted) return null;
     const props = UNIT_PROPS[wanted.type];
     if (!props) return null;
-    console.log(
+    debugLog(
       `[AutoProduction] Naval doctrine: ${wanted.type} (${decision.reason}; `
       + `budget ${decision.budget.toFixed(1)}, pressure ${decision.pressure.toFixed(1)})`,
     );
@@ -1728,7 +1816,7 @@ export class AutoProduction {
    */
   processAutoProductionForCivilization(civilizationId: number): void {
     try {
-      console.log('[AutoProduction] Processing auto-production for civilization', civilizationId);
+      debugLog('[AutoProduction] Processing auto-production for civilization', civilizationId);
       
       const civCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civilizationId);
       const civ = this.gameEngine.civilizations?.[civilizationId];
@@ -1763,7 +1851,7 @@ export class AutoProduction {
    */
   processAutoProductionForAI(): void {
     try {
-      console.log('[AutoProduction] Processing auto-production for all AI');
+      debugLog('[AutoProduction] Processing auto-production for all AI');
       
       const aiCivilizations = this.gameEngine.civilizations.filter(
         (civ: Civilization) => civ.isAI || civ.id !== 0
@@ -1833,7 +1921,7 @@ export class AutoProduction {
       if (rushGold > available) continue; // Can't afford it
 
       // Rush the production
-      console.log(`[AutoProduction] ${city.name}: rushing ${city.currentProduction.itemType} for ${rushGold} gold (${remaining} shields remaining, ${isUrgentDefender ? 'threat' : 'abundant gold'})`);
+      debugLog(`[AutoProduction] ${city.name}: rushing ${city.currentProduction.itemType} for ${rushGold} gold (${remaining} shields remaining, ${isUrgentDefender ? 'threat' : 'abundant gold'})`);
       this.gameEngine.rushCityProduction(city.id);
       break; // Only rush one city per turn to avoid draining the treasury
     }

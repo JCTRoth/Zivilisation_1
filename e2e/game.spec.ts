@@ -511,6 +511,35 @@ async function advanceTurns(page: Page, n: number): Promise<void> {
 }
 
 /**
+ * Guarantee the human has met at least one AI civilization.
+ *
+ * Rivals are discovered by sight now, so relying on "advance a few turns and
+ * hope a scout wanders past" is what made the diplomacy tests tolerant. This
+ * moves a human unit next to the first AI unit/city and recomputes vision —
+ * the same path the game uses — so the assertions after it can be exact.
+ *
+ * Returns the met civilization id.
+ */
+async function forceFirstContact(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const engine = window.__gameEngine;
+    if (!engine) throw new Error('forceFirstContact: __gameEngine is not available');
+    const humanUnit = engine.units.find((u) => u.civilizationId === 0);
+    const target =
+      engine.units.find((u) => u.civilizationId > 0) ??
+      engine.cities.find((c) => c.civilizationId > 0);
+    if (!humanUnit || !target) {
+      throw new Error('forceFirstContact: no human unit or foreign unit/city to arrange contact');
+    }
+    const width = engine.map?.width ?? 0;
+    humanUnit.col = target.col + 1 < width ? target.col + 1 : target.col - 1;
+    humanUnit.row = target.row;
+    engine.updateVisibility();
+    return target.civilizationId;
+  });
+}
+
+/**
  * Modal dialogs a plain "end turn" can leave open, and the button that closes
  * each without changing the game state.
  *
@@ -633,40 +662,41 @@ test.describe('AI Behavior', () => {
   });
 
   test.describe('AI Diplomacy', () => {
-    test('Foreign Advisor shows AI civilization with diplomatic status', async ({ page }) => {
+    test('Foreign Advisor hides civilizations until first contact', async ({ page }) => {
       await startGame(page);
 
-      // Need a few turns so the AI civilization is discovered
-      await advanceTurns(page, 3);
-
-      // Open the Foreign Advisor via WORLD > Diplomacy
+      // Fresh game: no rival is within sight yet, so nothing may be negotiated.
       await openTopMenu(page, 'WORLD');
       await page.getByRole('button', { name: /Diplomacy/ }).click();
 
       const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
-      // The modal should list at least one AI civilization
-      // Either it shows civ data or "No other civilizations discovered yet."
-      const noCivsMsg = modal.getByText('No other civilizations discovered yet.');
-      const civRows = modal.locator('.diplomacy-civ-row');
+      await expect(modal.getByText('No other civilizations discovered yet.')).toBeVisible();
+      await expect(modal.locator('.diplomacy-civ-row')).toHaveCount(0);
 
-      // One of these conditions should be true
-      const hasNoCivs = await noCivsMsg.isVisible().catch(() => false);
-      if (!hasNoCivs) {
-        // AI civilization row(s) should be displayed
-        await expect(civRows.first()).toBeVisible();
-        // Each row should have a name and a status indicator
-        await expect(civRows.first().locator('.diplomacy-civ-name')).not.toBeEmpty();
-        await expect(civRows.first().locator('.diplomacy-status-icon')).toBeVisible();
-      }
+      await page.keyboard.press('Escape');
+
+      // Meet a rival, then re-open: the row must now be listed.
+      const metCivId = await forceFirstContact(page);
+      expect(metCivId).toBeGreaterThan(0);
+
+      await openTopMenu(page, 'WORLD');
+      await page.getByRole('button', { name: /Diplomacy/ }).click();
+      await expect(modal).toBeVisible({ timeout: 5_000 });
+
+      await expect(modal.getByText('No other civilizations discovered yet.')).toHaveCount(0);
+      const civRows = modal.locator('.diplomacy-civ-row');
+      await expect(civRows).toHaveCount(1);
+      await expect(civRows.first().locator('.diplomacy-civ-name')).not.toBeEmpty();
+      await expect(civRows.first().locator('.diplomacy-status-icon')).toBeVisible();
 
       await page.keyboard.press('Escape');
     });
 
     test('diplomatic status shows Peace by default', async ({ page }) => {
       await startGame(page);
-      await advanceTurns(page, 3);
+      await forceFirstContact(page);
 
       await openTopMenu(page, 'WORLD');
       await page.getByRole('button', { name: /Diplomacy/ }).click();
@@ -675,11 +705,9 @@ test.describe('AI Behavior', () => {
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
       const civRows = modal.locator('.diplomacy-civ-row');
-      if (await civRows.count() > 0) {
-        // Default diplomatic status should be "Peace" (the row carries the
-        // status icon, and the selected civ shows the attitude badge).
-        await expect(civRows.first().locator('.diplomacy-status-icon')).toBeVisible();
-      }
+      await expect(civRows).toHaveCount(1);
+      // Two civs that just met are at peace (🕊️ per STATUS_ICONS).
+      await expect(civRows.first().locator('.diplomacy-status-icon')).toHaveText('🕊️');
 
       await page.keyboard.press('Escape');
     });
@@ -883,7 +911,7 @@ test.describe('AI Behavior', () => {
     test('diplomacy modal shows attitude indicator for AI civ', async ({ page }) => {
       test.setTimeout(180_000);
       await startGame(page);
-      await advanceTurns(page, 5);
+      await forceFirstContact(page);
 
       await openTopMenu(page, 'WORLD');
       await page.getByRole('button', { name: /Diplomacy/ }).click();
@@ -891,21 +919,26 @@ test.describe('AI Behavior', () => {
       const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
-      const civRows = modal.locator('.diplomacy-civ-row');
-      if (await civRows.count() > 0) {
-        // The selected civ shows an attitude label (Friendly/Neutral/Annoyed/Hostile)
-        const attitude = modal.locator('.diplomacy-attitude-badge');
-        await expect(attitude).toBeVisible();
-        const text = await attitude.textContent();
-        expect(['Friendly', 'Neutral', 'Annoyed', 'Hostile']).toContain(text?.trim());
-      }
+      // The selected civ shows an attitude label (Friendly/Neutral/Annoyed/Hostile)
+      const attitude = modal.locator('.diplomacy-attitude-badge');
+      await expect(attitude).toBeVisible();
+      const text = await attitude.textContent();
+      expect(['Friendly', 'Neutral', 'Annoyed', 'Hostile']).toContain(text?.trim());
+
+      // ...and a meter whose marker is positioned by the raw attitude score.
+      const meter = modal.locator('.diplomacy-attitude-meter');
+      await expect(meter).toBeVisible();
+      const marker = modal.locator('.diplomacy-attitude-marker');
+      await expect(marker).toBeVisible();
+      const left = await marker.evaluate((el) => (el as HTMLElement).style.left);
+      expect(left).toMatch(/^\d+(\.\d+)?%$/);
 
       await page.keyboard.press('Escape');
     });
 
     test('diplomacy modal shows leader name and portrait area', async ({ page }) => {
       await startGame(page);
-      await advanceTurns(page, 3);
+      await forceFirstContact(page);
 
       await openTopMenu(page, 'WORLD');
       await page.getByRole('button', { name: /Diplomacy/ }).click();
@@ -913,11 +946,10 @@ test.describe('AI Behavior', () => {
       const modal = page.locator('.diplomacy-modal');
       await expect(modal).toBeVisible({ timeout: 5_000 });
 
-      const civRows = modal.locator('.diplomacy-civ-row');
-      if (await civRows.count() > 0) {
-        // Portrait area should exist
-        await expect(modal.locator('.diplomacy-portrait-slot')).toBeVisible();
-      }
+      // Portrait area and a non-empty leader name must be shown for the
+      // auto-selected met civ.
+      await expect(modal.locator('.diplomacy-portrait-slot')).toBeVisible();
+      await expect(modal.locator('.diplomacy-leader-name')).not.toBeEmpty();
 
       await page.keyboard.press('Escape');
     });

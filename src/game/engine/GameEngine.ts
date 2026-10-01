@@ -43,6 +43,7 @@ import { AIResearch } from './AI/AIResearch';
 import MapGenerator from './MapGenerator/MapGenerator';
 import { MIN_CITY_CENTER_DISTANCE } from './SettlementEvaluator';
 import type { GameActions, Unit, City, CityGovernorMode, Civilization, VillageResult, Technology, ProductionItem, TradeRoute, SpecialistType } from '../../../types/game';
+import { debugLog } from '../../utils/DevLog';
 
 
 /** Civ1 "Bridge Building" tech — mapped to the existing Engineering tech. */
@@ -302,7 +303,7 @@ export default class GameEngine {
     this.civilizations.push(barbarianCiv);
     this.initializePlayerStorage(BARBARIAN_CIV_ID);
     this.storeActions?.updateCivilizations?.([...this.civilizations]);
-    console.log('[BARB] Barbarians are now a faction in the game (they hold a city).');
+
     return barbarianCiv;
   }
 
@@ -312,7 +313,7 @@ export default class GameEngine {
    */
   setPaused(paused: boolean): void {
     this.isPaused = paused;
-    console.log(`[GameEngine] ${paused ? '⏸️ Paused' : '▶ Resumed'}`);
+    debugLog(`[GameEngine] ${paused ? '⏸️ Paused' : '▶ Resumed'}`);
   }
 
   /**
@@ -330,7 +331,7 @@ export default class GameEngine {
         scoutZones: [], // Scout zone assignments
         turnData: {}
       });
-      console.log(`[PlayerStorage] Initialized storage for civilization ${civilizationId}`);
+
     }
   }
 
@@ -433,13 +434,14 @@ export default class GameEngine {
     const storage = this.playerStorage.get(civilizationId);
     if (!storage) return;
     
-    console.log(`[Visibility] Updating visibility for civilization ${civilizationId}`);
+
     
     // Dev mode: reveal everything
     if (this.devMode) {
       storage.visibility.fill(true);
       storage.explored.fill(true);
-      console.log(`[Visibility] Dev mode: All tiles visible and explored`);
+      this.recordContactsFromSight(civilizationId);
+
       return;
     }
     
@@ -496,9 +498,47 @@ export default class GameEngine {
       }
     }
     
-    const visibleCount = storage.visibility.filter(v => v).length;
-    const exploredCount = storage.explored.filter(e => e).length;
-    console.log(`[Visibility] Civilization ${civilizationId}: ${visibleCount} visible, ${exploredCount} explored`);
+    this.recordContactsFromSight(civilizationId);
+  }
+
+  /**
+   * Diplomacy contact is discovered by sight: a foreign unit or city standing on
+   * a tile this civilization can currently see means the two have met.
+   *
+   * Runs for EVERY civilization (updateVisibility loops them all), so AI-vs-AI
+   * contact is recorded too and feeds the research "known tech" penalty. Only
+   * pairs involving the human emit a notification.
+   */
+  private recordContactsFromSight(observerId: number): void {
+    for (const unit of this.units ?? []) {
+      if (unit.civilizationId === observerId || unit.civilizationId < 0) continue;
+      if (!this.isVisibleToPlayer(observerId, unit.col, unit.row)) continue;
+      this.registerFirstContact(observerId, unit.civilizationId);
+    }
+    for (const city of this.cities ?? []) {
+      if (city.civilizationId === observerId || city.civilizationId < 0) continue;
+      if (!this.isVisibleToPlayer(observerId, city.col, city.row)) continue;
+      this.registerFirstContact(observerId, city.civilizationId);
+    }
+  }
+
+  /** Mark the pair as met and, when the human is involved, announce it once. */
+  private registerFirstContact(observerId: number, otherId: number): void {
+    if (!this.diplomacyManager?.markContact?.(observerId, otherId)) return;
+    const observer = this.civilizations?.[observerId];
+    const other = this.civilizations?.[otherId];
+    // AI-vs-AI meetings are recorded silently — the player has no business
+    // seeing them.
+    if (observer?.isHuman !== true && other?.isHuman !== true) return;
+    const message =
+      observer?.isHuman === true
+        ? `You have made contact with the ${other?.name ?? 'unknown civilization'}.`
+        : `The ${observer?.name ?? 'unknown civilization'} have made contact with you.`;
+    this.onStateChange?.('DIPLOMACY_EVENT', {
+      message,
+      fromCivId: observerId,
+      toCivId: otherId,
+    });
   }
 
   /**
@@ -609,7 +649,7 @@ export default class GameEngine {
     try {
       const result = fn();
       const elapsed = Math.round(performance.now() - start);
-      console.log(`[PERF] ${label}: ${elapsed}ms`);
+      debugLog(`[PERF] ${label}: ${elapsed}ms`);
       return result;
     } catch (err) {
       console.warn(`[PERF] ${label} failed:`, err);
@@ -622,7 +662,7 @@ export default class GameEngine {
    * The GameLogger (via onStateChange 'GAME_LOG') persists it to disk.
    */
   log(category: string, message: string, detail: Record<string, unknown> = {}): void {
-    console.log(`[${category}] ${message}`);
+    debugLog(`[${category}] ${message}`);
     if (this.onStateChange) {
       this.onStateChange('GAME_LOG', { category, message, ...detail });
     }
@@ -640,7 +680,7 @@ export default class GameEngine {
     unit.areTurnsDone = noMovesLeft || isFortified || isSleeping;
     
     if (unit.areTurnsDone) {
-      console.log(`[GameEngine] Unit ${unit.id} turns done: movesRemaining=${unit.movesRemaining}, isFortified=${isFortified}, isSleeping=${isSleeping}`);
+      debugLog(`[GameEngine] Unit ${unit.id} turns done: movesRemaining=${unit.movesRemaining}, isFortified=${isFortified}, isSleeping=${isSleeping}`);
     }
   }
 
@@ -737,13 +777,13 @@ export default class GameEngine {
     const endTime = performance.now();
     
     if (this.devMode && (endTime - startTime) > 2) {
-      console.log(`[PERF] Zone calculation took ${(endTime - startTime).toFixed(2)}ms`);
+      debugLog(`[PERF] Zone calculation took ${(endTime - startTime).toFixed(2)}ms`);
     }
 
     // Phase 1.2: Enhanced logging for scout coordination
-    console.log(`[AI-COORDINATION] Assigned ${scouts.length} scouts with zones:`);
+    debugLog(`[AI-COORDINATION] Assigned ${scouts.length} scouts with zones:`);
     storage.scoutZones.forEach((zone, idx) => {
-      console.log(`  Scout ${idx + 1}: cols ${zone.minCol}-${zone.maxCol}, rows ${zone.minRow}-${zone.maxRow}`);
+      debugLog(`  Scout ${idx + 1}: cols ${zone.minCol}-${zone.maxCol}, rows ${zone.minRow}-${zone.maxRow}`);
     });
   }
 
@@ -752,7 +792,7 @@ export default class GameEngine {
    * Recalculates scout zones for remaining scouts
    */
   public onScoutDeath(scoutUnit: Unit): void {
-    console.log(`[AI-COORDINATION] Scout ${scoutUnit.id} died, reassigning zones for civilization ${scoutUnit.civilizationId}`);
+    debugLog(`[AI-COORDINATION] Scout ${scoutUnit.id} died, reassigning zones for civilization ${scoutUnit.civilizationId}`);
     
     // Recalculate zones for remaining scouts
     this.assignScoutZones(scoutUnit.civilizationId);
@@ -763,7 +803,7 @@ export default class GameEngine {
       u.type === 'scout' && 
       u.id !== scoutUnit.id
     );
-    console.log(`[AI-COORDINATION] ${remainingScouts.length} scouts remaining after reassignment`);
+    debugLog(`[AI-COORDINATION] ${remainingScouts.length} scouts remaining after reassignment`);
   }
 
   /**
@@ -771,7 +811,7 @@ export default class GameEngine {
    * Re-initializes zones to include the new scout
    */
   public onScoutCreated(scoutUnit: Unit): void {
-    console.log(`[AI-COORDINATION] Scout ${scoutUnit.id} created, reassigning zones for civilization ${scoutUnit.civilizationId}`);
+    debugLog(`[AI-COORDINATION] Scout ${scoutUnit.id} created, reassigning zones for civilization ${scoutUnit.civilizationId}`);
     
     // Re-initialize zones to include new scout
     this.assignScoutZones(scoutUnit.civilizationId);
@@ -781,7 +821,7 @@ export default class GameEngine {
       u.civilizationId === scoutUnit.civilizationId && 
       u.type === 'scout'
     );
-    console.log(`[AI-COORDINATION] ${totalScouts.length} scouts active after reassignment`);
+    debugLog(`[AI-COORDINATION] ${totalScouts.length} scouts active after reassignment`);
   }
 
   /**
@@ -3281,7 +3321,7 @@ export default class GameEngine {
     // route ran through a friendly unit was impossible. The move cost check
     // below still applies.
     if (targetUnit && targetUnit.civilizationId === unit.civilizationId) {
-      console.log(`[canUnitMoveTo] Target holds a friendly unit — stacking allowed.`);
+      debugLog(`[canUnitMoveTo] Target holds a friendly unit — stacking allowed.`);
     }
 
     // Calculate move cost (terrain, discounted by road/railroad — Civ1)
@@ -3696,7 +3736,7 @@ export default class GameEngine {
       this.updateUnitTurnsDoneFlag(unit);
 
       // Log movement
-      console.log(`[MOVEMENT] ${unit.type} (${unit.id}) moved from (${fromCol},${fromRow}) to (${targetCol},${targetRow}), moveCost: ${moveCost}, moves remaining: ${unit.movesRemaining}`);
+      debugLog(`[MOVEMENT] ${unit.type} (${unit.id}) moved from (${fromCol},${fromRow}) to (${targetCol},${targetRow}), moveCost: ${moveCost}, moves remaining: ${unit.movesRemaining}`);
 
       // Reveal area around the unit immediately after moving so automated moves explore
       try {
@@ -4854,18 +4894,18 @@ export default class GameEngine {
    */
   checkAndEndTurnIfNoMoves(reason = 'unknown') {
     const checkSeq = ++this.autoEndCheckCounter;
-    console.log(`[TURN] ▶ checkAndEndTurnIfNoMoves #${checkSeq} (trigger: ${reason}, activePlayer: ${this.activePlayer})`);
+    debugLog(`[TURN] ▶ checkAndEndTurnIfNoMoves #${checkSeq} (trigger: ${reason}, activePlayer: ${this.activePlayer})`);
     
     // Don't auto-end the turn while the game is paused — the player paused
     // because they want the action to stop, not to skip ahead.
     if (this.isPaused) {
-      console.log('[TURN] ⏸️ Skipping auto-end check - game is paused');
+      debugLog('[TURN] ⏸️ Skipping auto-end check - game is paused');
       return;
     }
     
     // Don't trigger auto-end while GoTo paths are being processed
     if (this.roundManager?.isProcessingGoTo?.()) {
-      console.log('[TURN] ⏸️ Skipping auto-end check - GoTo paths still being processed');
+      debugLog('[TURN] ⏸️ Skipping auto-end check - GoTo paths still being processed');
       return;
     }
     
@@ -4874,7 +4914,7 @@ export default class GameEngine {
     // would start the NEXT player's turn mid-AI-turn, leaving a stale AI turn
     // running on the wrong player that freezes all unit movement.
     if (this.roundManager?.isAITurnInProgress?.()) {
-      console.log('[TURN] ⏸️ Skipping auto-end check - AI turn in progress');
+      debugLog('[TURN] ⏸️ Skipping auto-end check - AI turn in progress');
       return;
     }
     
@@ -5229,6 +5269,11 @@ export default class GameEngine {
     await this.generateWorld();
     await this.createCivilizations();
     await this.createTechnologies();
+
+    // Relations must be rebuilt for the new civs. Without this the manager kept
+    // the previous game's (cleared) state and every status silently read as
+    // 'peace'.
+    this.diplomacyManager.initialize(this.civilizations.map((c: Civilization) => c.id));
     
     if (this.storeActions) {
       this.storeActions.updateMap(this.map);
@@ -6283,6 +6328,7 @@ export default class GameEngine {
       // Serialize diplomacy state
       const diplomacyRelations: Record<string, unknown>[] = [];
       const diplomacyEvents: Record<string, unknown>[] = [];
+      const diplomacyContact: string[] = [];
       if (this.diplomacyManager) {
         const rels = this.diplomacyManager.getAllRelations();
         for (const rel of rels) {
@@ -6291,9 +6337,12 @@ export default class GameEngine {
             civB: rel.civB,
             status: rel.status,
             since: rel.since,
-            reputationModifier: rel.reputationModifier,
-            treatiesBrokenByA: rel.treatiesBrokenByA,
-            treatiesBrokenByB: rel.treatiesBrokenByB,
+            peaceSignedAt: rel.peaceSignedAt,
+            // Both directed ledgers travel with the save, so a loaded game
+            // resumes with exactly the opinions it had — no "everyone is
+            // neutral again" reset.
+            opinionAtoB: { ...rel.opinionAtoB, reasons: [...rel.opinionAtoB.reasons] },
+            opinionBtoA: { ...rel.opinionBtoA, reasons: [...rel.opinionBtoA.reasons] },
             activeTreaties: [...rel.activeTreaties],
             treatySince: { ...rel.treatySince },
             tradeGoldPerTurn: rel.tradeGoldPerTurn,
@@ -6309,6 +6358,7 @@ export default class GameEngine {
             goldAmount: evt.goldAmount,
           });
         }
+        diplomacyContact.push(...this.diplomacyManager.exportContactedPairs());
       }
 
       // Serialize unit GoTo paths from roundManager
@@ -6343,7 +6393,10 @@ export default class GameEngine {
       }
 
       const saveData = {
-        version: 3, // bumped from 2 with multi-unit transport cargo
+        // v4: diplomacy moved to a directed opinion ledger (goodwill /
+        // grievance / fear / respect) that replaced the old reputationModifier
+        // + treatiesBroken counters. v3 saves are migrated on load.
+        version: 4,
         timestamp: Date.now(),
         gameSettings: this.gameSettings,
         currentTurn: this.currentTurn,
@@ -6371,6 +6424,7 @@ export default class GameEngine {
         scoutDiscoveries,
         diplomacyRelations,
         diplomacyEvents,
+        diplomacyContact,
         unitPaths,
         scoutMemoryRound: this.scoutMemory ? this.scoutMemory.getCurrentRound() : 0,
       };
@@ -6414,7 +6468,7 @@ export default class GameEngine {
       }
 
       const saveData = JSON.parse(json);
-      if (!saveData || (saveData.version !== 1 && saveData.version !== 2 && saveData.version !== 3)) {
+      if (!saveData || (saveData.version !== 1 && saveData.version !== 2 && saveData.version !== 3 && saveData.version !== 4)) {
         console.warn('[GameEngine] Invalid or incompatible save data, version:', saveData?.version);
         return false;
       }
@@ -6481,8 +6535,49 @@ export default class GameEngine {
       if (saveData.version >= 2 && saveData.diplomacyRelations) {
         this.diplomacyManager.restoreRelations(saveData.diplomacyRelations);
       }
+      // v3 and earlier had no opinion ledger. Their `reputationModifier` and
+      // broken-treaty counters are the closest equivalent of goodwill, so
+      // migrate them rather than starting every pair from zero — otherwise
+      // loading a long game would make every AI forget the war you had.
+      if (saveData.version < 4 && Array.isArray(saveData.diplomacyRelations)) {
+        for (const raw of saveData.diplomacyRelations) {
+          const rel = raw as {
+            civA: number;
+            civB: number;
+            reputationModifier?: number;
+            treatiesBrokenByA?: number;
+            treatiesBrokenByB?: number;
+            status?: string;
+          };
+          const restored = this.diplomacyManager.getRelation(rel.civA, rel.civB);
+          if (!restored) continue;
+          const legacy = rel.reputationModifier ?? 0;
+          const brokenTotal = (rel.treatiesBrokenByA ?? 0) + (rel.treatiesBrokenByB ?? 0);
+          // Broken treaties used to cost `broken × 15` of goodwill in the
+          // attitude score; reproduce that once, then let the ledger take over.
+          const migrated = Math.max(-100, Math.min(100, legacy - brokenTotal * 15));
+          restored.opinionAtoB.goodwill = migrated;
+          restored.opinionBtoA.goodwill = migrated;
+          restored.opinionAtoB.grievance = Math.min(100, brokenTotal * 15);
+          restored.opinionBtoA.grievance = Math.min(100, brokenTotal * 15);
+          if (rel.status === 'war') {
+            restored.opinionAtoB.goodwill -= 30;
+            restored.opinionBtoA.goodwill -= 30;
+          } else if (rel.status === 'alliance') {
+            restored.opinionAtoB.goodwill += 20;
+            restored.opinionBtoA.goodwill += 20;
+          }
+        }
+      }
       if (saveData.version >= 2 && saveData.diplomacyEvents) {
         this.diplomacyManager.restoreEventLog(saveData.diplomacyEvents);
+      }
+      // Who has met whom. Saves predating this field treat every known pair as
+      // met, so loading an old game does not blank the diplomacy screen.
+      if (Array.isArray(saveData.diplomacyContact)) {
+        this.diplomacyManager.restoreContactedPairs(saveData.diplomacyContact);
+      } else {
+        this.diplomacyManager.markAllContactsMet();
       }
 
       this.victoryManager.syncStoreActions(this.storeActions);

@@ -2,6 +2,7 @@ import type { Unit, City } from '../../../types/game';
 import GameEngine from './GameEngine';
 import { UNIT_PROPS } from '@/utils/Constants';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { debugLog } from '../../utils/DevLog';
 
 /**
  * Barbarian AI — "Forge of War" aggressive controller for the phantom
@@ -51,7 +52,7 @@ export class BarbarianManager {
 
     if (shouldAssault) {
       // FORGE OF WAR: all troops converge on the weakest city.
-      console.log(`[BARB] 🔥 FORGE OF WAR — ${units.length} barbarians (str ${hordeStrength.toFixed(1)}) assault ${weakest!.defName ?? 'city'} (def ${weakest!.defense.toFixed(1)})`);
+      debugLog(`[BARB] 🔥 FORGE OF WAR — ${units.length} barbarians (str ${hordeStrength.toFixed(1)}) assault ${weakest!.defName ?? 'city'} (def ${weakest!.defense.toFixed(1)})`);
       this.assaultCity(units, weakest!);
     } else {
       // Scout phase: each unit independently scouts for enemy cities/units.
@@ -168,7 +169,7 @@ export class BarbarianManager {
     for (const n of neighbors) {
       const enemy = engine.getUnitAt?.(n.col, n.row);
       if (enemy && enemy.civilizationId !== BARBARIAN_CIV_ID && !enemy.isDefeated) {
-        console.log(`[BARB] ${unit.type} attacks enemy ${enemy.type} at (${n.col},${n.row})`);
+        debugLog(`[BARB] ${unit.type} attacks enemy ${enemy.type} at (${n.col},${n.row})`);
         engine.combatUnit?.(unit, enemy);
         return; // spent the move either way
       }
@@ -178,7 +179,7 @@ export class BarbarianManager {
     for (const n of neighbors) {
       const city = engine.getCityAt?.(n.col, n.row);
       if (city && city.civilizationId !== BARBARIAN_CIV_ID) {
-        console.log(`[BARB] ${unit.type} assaults city ${city.name} at (${n.col},${n.row})`);
+        debugLog(`[BARB] ${unit.type} assaults city ${city.name} at (${n.col},${n.row})`);
         engine.moveUnit?.(unit.id, n.col, n.row);
         return;
       }
@@ -226,7 +227,7 @@ export class BarbarianManager {
     for (const city of cities) {
       // Sell everything — raiders, not improvements.
       if (Array.isArray(city.buildings) && city.buildings.length > 0) {
-        console.log(`[BARB] Selling ${city.buildings.length} building(s) in ${city.name}`);
+        debugLog(`[BARB] Selling ${city.buildings.length} building(s) in ${city.name}`);
         city.buildings = [];
       }
 
@@ -243,7 +244,7 @@ export class BarbarianManager {
         const item = city.currentProduction;
         city.productionStored = 0;
         city.productionProgress = 0;
-        console.log(`[BARB] ${city.name} produced ${item.itemType}`);
+        debugLog(`[BARB] ${city.name} produced ${item.itemType}`);
         engine.spawnBarbarianUnit?.(item.itemType, city.col, city.row);
         city.currentProduction = null; // re-picked next round by auto-production
       }

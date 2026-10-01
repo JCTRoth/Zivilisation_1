@@ -14,6 +14,7 @@ import { awaitCameraGlide, isCameraGliding } from '../rendering/CameraGlideGate'
 import { findNewlySightedEnemies, getVisibleEnemyUnitIds } from './EnemySighting';
 import { notify } from '../../utils/NotificationUtils';
 import { HUMAN_PLAYER_ID } from '../../utils/PlayerConstants';
+import { debugLog } from '../../utils/DevLog';
 
 /**
  * GoToManager - Manages unit "Go To" movement commands
@@ -28,7 +29,7 @@ export class GoToManager {
     this.gameEngine = gameEngine;
     this.roundManager = roundManager;
     this.unitPaths = new Map();
-    console.log('[GoToManager] Initialized');
+    debugLog('[GoToManager] Initialized');
   }
 
   /**
@@ -48,7 +49,7 @@ export class GoToManager {
     isAttack: boolean;
     attackStepIndex: number;
   } {
-    console.log(`[GoToManager] Calculating path for unit ${unit.id} from (${unit.col},${unit.row}) to (${targetCol},${targetRow})`);
+    debugLog(`[GoToManager] Calculating path for unit ${unit.id} from (${unit.col},${unit.row}) to (${targetCol},${targetRow})`);
 
     try {
       // ONE shared computation for the GoTo order and the hover preview, so the
@@ -68,11 +69,11 @@ export class GoToManager {
       );
 
       if (!preview || preview.steps.length === 0) {
-        console.log(`[GoToManager] No valid path found for unit ${unit.id}`);
+        debugLog(`[GoToManager] No valid path found for unit ${unit.id}`);
         return { success: false, path: [], turnMarkers: [], isAttack: false, attackStepIndex: -1 };
       }
 
-      console.log(`[GoToManager] Path calculated for unit ${unit.id}, ${preview.steps.length} steps`);
+      debugLog(`[GoToManager] Path calculated for unit ${unit.id}, ${preview.steps.length} steps`);
       return {
         success: true,
         path: preview.steps,
@@ -90,7 +91,7 @@ export class GoToManager {
    * Set a Go To path for a unit
    */
   setUnitPath(unitId: string, path: Array<{ col: number; row: number }>): void {
-    console.log(`[GoToManager] Setting path for unit ${unitId}, ${path.length} steps`);
+    debugLog(`[GoToManager] Setting path for unit ${unitId}, ${path.length} steps`);
     this.unitPaths.set(unitId, path);
     
     // Also sync with RoundManager if available
@@ -110,7 +111,7 @@ export class GoToManager {
    * Clear the path for a unit
    */
   clearUnitPath(unitId: string): void {
-    console.log(`[GoToManager] Clearing path for unit ${unitId}`);
+    debugLog(`[GoToManager] Clearing path for unit ${unitId}`);
     this.unitPaths.delete(unitId);
     
     // Also clear from RoundManager
@@ -140,7 +141,7 @@ export class GoToManager {
     }
 
     const nextPos = path[0];
-    console.log(`[GoToManager] Executing first step for unit ${unitId} to (${nextPos.col}, ${nextPos.row})`);
+    debugLog(`[GoToManager] Executing first step for unit ${unitId} to (${nextPos.col}, ${nextPos.row})`);
 
     // An enemy city on the path is an attack, not a wall: `moveUnit` resolves
     // combat when a unit lands on an enemy city, so let it through instead of
@@ -157,7 +158,7 @@ export class GoToManager {
         const wasCombat = moveResult.combat === true;
         if (wasCombat) {
           this.clearUnitPath(unitId);
-          console.log(`[GoToManager] Unit ${unitId} fought at (${nextPos.col}, ${nextPos.row}) — order complete`);
+          debugLog(`[GoToManager] Unit ${unitId} fought at (${nextPos.col}, ${nextPos.row}) — order complete`);
           return { success: true, reason: 'combat', remainingPath: [] };
         }
 
@@ -165,7 +166,7 @@ export class GoToManager {
         const remainingPath = path.slice(1);
         this.setUnitPath(unitId, remainingPath);
         
-        console.log(`[GoToManager] Unit ${unitId} moved successfully, ${remainingPath.length} steps remaining`);
+        debugLog(`[GoToManager] Unit ${unitId} moved successfully, ${remainingPath.length} steps remaining`);
         
         // Clear path if complete
         if (remainingPath.length === 0) {
@@ -174,7 +175,7 @@ export class GoToManager {
         
         return { success: true, remainingPath };
       } else {
-        console.log(`[GoToManager] Move failed for unit ${unitId}, reason:`, moveResult?.reason);
+        debugLog(`[GoToManager] Move failed for unit ${unitId}, reason:`, moveResult?.reason);
         // Clear the path on failure so it doesn't persist to the next turn
         // (e.g. attack blocked by enemy, friendly unit in the way).
         this.clearUnitPath(unitId);
@@ -195,7 +196,7 @@ export class GoToManager {
     delayMs: number = 300,
     onStepComplete?: (remainingSteps: number) => void
   ): Promise<{ success: boolean; stepsCompleted: number }> {
-    console.log(`[GoToManager] Starting animated path execution for unit ${unitId}`);
+    debugLog(`[GoToManager] Starting animated path execution for unit ${unitId}`);
 
     // Before doing the first move, log how many steps the current path has and an
     // estimated number of turns this path will take based on the unit's moves per turn.
@@ -218,9 +219,9 @@ export class GoToManager {
           estimatedTurns = 1 + Math.ceil(stepsAfterThisTurn / movesPerTurn);
         }
 
-        console.log(`[GoToManager] Pre-move estimate for unit ${unitId}: ${steps} steps, estimated turns: ${isFinite(estimatedTurns) ? estimatedTurns : 'unknown (no movement)'} (moves/turn: ${movesPerTurn}, remaining this turn: ${remainingMovesThisTurn})`);
+        debugLog(`[GoToManager] Pre-move estimate for unit ${unitId}: ${steps} steps, estimated turns: ${isFinite(estimatedTurns) ? estimatedTurns : 'unknown (no movement)'} (moves/turn: ${movesPerTurn}, remaining this turn: ${remainingMovesThisTurn})`);
       } else {
-        console.log(`[GoToManager] Pre-move estimate: unit ${unitId} not found, steps: ${path.length}`);
+        debugLog(`[GoToManager] Pre-move estimate: unit ${unitId} not found, steps: ${path.length}`);
       }
     } catch (e) {
       console.warn('[GoToManager] Failed to compute pre-move estimate', e);
@@ -239,13 +240,13 @@ export class GoToManager {
     while (continueMoving) {
       const unit = this.gameEngine.units.find((u: Unit) => u.id === unitId);
       if (!unit || (unit.movesRemaining || 0) <= 0) {
-        console.log(`[GoToManager] Unit ${unitId} has no more moves`);
+        debugLog(`[GoToManager] Unit ${unitId} has no more moves`);
         break;
       }
 
       const path = this.unitPaths.get(unitId);
       if (!path || path.length === 0) {
-        console.log(`[GoToManager] Path complete or not found for unit ${unitId}`);
+        debugLog(`[GoToManager] Path complete or not found for unit ${unitId}`);
         break;
       }
 
@@ -290,7 +291,7 @@ export class GoToManager {
           const newlySighted = findNewlySightedEnemies(visibleEnemies);
           if (newlySighted.length > 0) {
             const first = newlySighted[0];
-            console.log(`[GoToManager] Enemy unit sighted at (${first.col},${first.row}) — aborting path for ${unitId}`);
+            debugLog(`[GoToManager] Enemy unit sighted at (${first.col},${first.row}) — aborting path for ${unitId}`);
             this.clearUnitPath(unitId);
             notify('warning', 'Enemy unit sighted!');
             // Also drop the caller's local path overlay.
@@ -314,12 +315,12 @@ export class GoToManager {
           continueMoving = false;
         }
       } else {
-        console.log(`[GoToManager] Movement stopped for unit ${unitId}, reason:`, result.reason);
+        debugLog(`[GoToManager] Movement stopped for unit ${unitId}, reason:`, result.reason);
         continueMoving = false;
       }
     }
 
-    console.log(`[GoToManager] Path execution complete for unit ${unitId}, completed ${stepsCompleted} steps`);
+    debugLog(`[GoToManager] Path execution complete for unit ${unitId}, completed ${stepsCompleted} steps`);
     return { success: stepsCompleted > 0, stepsCompleted };
   }
 
@@ -346,7 +347,7 @@ export class GoToManager {
     
     for (const unitId of pathUnitIds) {
       if (!existingUnitIds.includes(unitId)) {
-        console.log(`[GoToManager] Cleaning up path for destroyed unit ${unitId}`);
+        debugLog(`[GoToManager] Cleaning up path for destroyed unit ${unitId}`);
         this.clearUnitPath(unitId);
       }
     }

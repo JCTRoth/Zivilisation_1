@@ -1,3 +1,5 @@
+import { debugLog } from '../../utils/DevLog';
+
 export interface SearchResult {
   col: number;
   row: number;
@@ -140,7 +142,7 @@ export class EnemySearcher {
     maxRadius?: number
   ): SearchResult | null {
     if (this.VERBOSE_LOGGING) {
-      console.log(`[EnemySearcher] Starting search from (${startCol}, ${startRow}) for civ ${civilizationId}`);
+      debugLog(`[EnemySearcher] Starting search from (${startCol}, ${startRow}) for civ ${civilizationId}`);
     }
 
     const effectiveMaxRadius = maxRadius || Math.max(mapWidth, mapHeight);
@@ -238,12 +240,12 @@ export class EnemySearcher {
     const result = nearestCity || nearestUnit;
     
     if (result) {
-      console.log(`[EnemySearcher] ✅ Found ${result.targetType} at (${result.col}, ${result.row}), distance: ${result.distance}`);
+      debugLog(`[EnemySearcher] ✅ Found ${result.targetType} at (${result.col}, ${result.row}), distance: ${result.distance}`);
       if (this.VERBOSE_LOGGING) {
-        console.log(`[EnemySearcher] Checked ${checkedCount} tiles, ${visibleCount} visible`);
+        debugLog(`[EnemySearcher] Checked ${checkedCount} tiles, ${visibleCount} visible`);
       }
     } else if (this.VERBOSE_LOGGING) {
-      console.log(`[EnemySearcher] ❌ No enemy found (checked ${visibleCount}/${checkedCount} tiles)`);
+      debugLog(`[EnemySearcher] ❌ No enemy found (checked ${visibleCount}/${checkedCount} tiles)`);
     }
 
     return result;

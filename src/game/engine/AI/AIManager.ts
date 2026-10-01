@@ -45,6 +45,7 @@ import type { Unit, City, Civilization } from '../../../../types/game';
 import GameEngine, { type PlayerTurnStorage, type MapTile } from '../GameEngine';
 import { getShuffledAdjacentTiles } from '../MovementHelper';
 import { awaitPendingAnimations } from '../../rendering/GlideAnimation';
+import { debugLog } from '../../../utils/DevLog';
 
 // How much better (in settlement-score points) the best location must be for a
 // settler to keep walking instead of founding at its current tile. Prevents
@@ -156,7 +157,7 @@ export class AIManager {
       for (const enemy of enemyUnits) {
         const dist = Math.abs(sleeping.col - enemy.col) + Math.abs(sleeping.row - enemy.row);
         if (dist <= sightRange) {
-          console.log(`[AI] Sleeping unit ${sleeping.id} (${sleeping.type}) woke — enemy ${enemy.id} (${enemy.type}) at (${enemy.col},${enemy.row})`);
+          debugLog(`[AI] Sleeping unit ${sleeping.id} (${sleeping.type}) woke — enemy ${enemy.id} (${enemy.type}) at (${enemy.col},${enemy.row})`);
           this.gameEngine.log('ai', `Sleeping unit woke — enemy spotted`, {
             unitId: sleeping.id, unitType: sleeping.type,
             enemyId: enemy.id, enemyType: enemy.type,
@@ -197,7 +198,7 @@ export class AIManager {
       return;
     }
     if (civ.isHuman) {
-      console.log(`[AI] processAITurn: Skipping civilization ${civilizationId} - is human player`);
+      debugLog(`[AI] processAITurn: Skipping civilization ${civilizationId} - is human player`);
       return;
     }
     // Don't run AI while the game is paused
@@ -220,7 +221,7 @@ export class AIManager {
   private async runAITurn(civilizationId: number) {
     const civ = this.gameEngine.civilizations[civilizationId];
     if (!civ || civ.isHuman) {
-      console.log(`[AI] runAITurn: Skipping civilization ${civilizationId} - not AI or is human`);
+      debugLog(`[AI] runAITurn: Skipping civilization ${civilizationId} - not AI or is human`);
       return;
     }
     // CRITICAL: Verify this is still the active player before proceeding
@@ -233,7 +234,7 @@ export class AIManager {
       console.warn(`[AI] runAITurn: Skipping civilization ${civilizationId} - game is paused`);
       return;
     }
-    console.log(`[AI] 🤖 Starting AI turn for civilization ${civilizationId} (${civ.name})`);
+    debugLog(`[AI] 🤖 Starting AI turn for civilization ${civilizationId} (${civ.name})`);
     this.gameEngine.log('ai', `🤖 AI turn start — ${civ.name} (civ ${civilizationId})`, { civilizationId, action: 'turn_start', strategy: civ.productionProfile ?? 'balanced_growth' });
 
     // Small delay before AI starts so a player can observe. A self-playing
@@ -277,7 +278,7 @@ export class AIManager {
     const gameState = this.buildGameState(civilizationId);
     const newStrategy = AIStrategySelector.evaluateStrategy(civ, gameState, aiState);
     if (newStrategy !== aiState.strategyProfile) {
-      console.log(`[AI] Strategy changed: ${aiState.strategyProfile} -> ${newStrategy} for civ ${civilizationId}`);
+      debugLog(`[AI] Strategy changed: ${aiState.strategyProfile} -> ${newStrategy} for civ ${civilizationId}`);
       this.gameEngine.log('ai', `Strategy change — ${civ.name}: ${aiState.strategyProfile} → ${newStrategy}`, { civilizationId, action: 'strategy', from: aiState.strategyProfile, to: newStrategy });
       aiState.strategyProfile = newStrategy;
       aiState.lastStrategyEvaluation = roundNumber;
@@ -289,7 +290,7 @@ export class AIManager {
       const techChoice = AIResearch.selectResearch(civ, resolveAICivStrategy(civ, aiState), gameState);
       if (techChoice) {
         this.gameEngine.log('ai', `Research — ${civ.name} selects ${techChoice} (${aiState.strategyProfile})`, { civilizationId, action: 'research', tech: techChoice, strategy: aiState.strategyProfile });
-        console.log(`[AI] Research selected: ${techChoice}`);
+        debugLog(`[AI] Research selected: ${techChoice}`);
         aiState.researchPriority = { techId: techChoice, score: 0, reason: 'strategy' };
         // Use GameEngine's setResearch to properly set the tech
         if (typeof this.gameEngine.setResearch === 'function') {
@@ -307,7 +308,7 @@ export class AIManager {
       if (!govManager.isInRevolution(civ)) {
         const bestGov = govManager.evaluateGovernmentForCiv(civ);
         if (bestGov) {
-          console.log(`[AI] ${civ.name} adopts ${bestGov} government (revolution)`);
+          debugLog(`[AI] ${civ.name} adopts ${bestGov} government (revolution)`);
           this.gameEngine.startRevolution(civilizationId, bestGov);
         }
       }
@@ -321,7 +322,7 @@ export class AIManager {
     // ─── Phase 3: Situational aggression + offensive plan ─────────────
     const aggressionState = this.getAggressionState(civilizationId, storage, roundNumber);
     if (aggressionState.posture === 'aggressive') {
-      console.log(`[AI] ${civ.name} aggressive (score ${aggressionState.score}) — ${aggressionState.reasons.join(', ')}`);
+      debugLog(`[AI] ${civ.name} aggressive (score ${aggressionState.score}) — ${aggressionState.reasons.join(', ')}`);
       this.gameEngine.log?.('ai', `Aggression — ${civ.name} (score ${aggressionState.score})`, {
         civilizationId, action: 'aggression', score: aggressionState.score, reasons: aggressionState.reasons,
       });
@@ -354,12 +355,12 @@ export class AIManager {
           row: this.civCentroid(civilizationId).row,
         } as Unit, targetCivId);
         if (!canReachTarget) {
-          console.log(`[AI] ${civ.name} skips war on civ ${targetCivId} — no reachable target`);
+          debugLog(`[AI] ${civ.name} skips war on civ ${targetCivId} — no reachable target`);
           this.gameEngine.log?.('ai', `War declaration skipped — ${civ.name} cannot reach civ ${targetCivId}`, {
             civilizationId, action: 'declare_war_skipped', target: targetCivId, reason: 'no_reachable_target',
           });
         } else if (!dm.isAtWar(civilizationId, targetCivId)) {
-          console.log(`[AI] ${civ.name} declares war (aggression ${aggressionState.score}) — rush against civ ${targetCivId}`);
+          debugLog(`[AI] ${civ.name} declares war (aggression ${aggressionState.score}) — rush against civ ${targetCivId}`);
           this.gameEngine.log?.('ai', `War declaration — ${civ.name} rushes civ ${targetCivId}`, {
             civilizationId, action: 'declare_war', target: targetCivId, score: aggressionState.score,
           });
@@ -449,7 +450,7 @@ export class AIManager {
     const aiUnits = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civilizationId && (u.movesRemaining || 0) > 0 && !u.embarkedOn,
     );
-    console.log(`[AI] Found ${aiUnits.length} units with moves remaining for civilization ${civilizationId}`);
+    debugLog(`[AI] Found ${aiUnits.length} units with moves remaining for civilization ${civilizationId}`);
 
     for (const unit of aiUnits) {
       // If the game was paused mid-AI-turn, stop processing further units.
@@ -467,7 +468,7 @@ export class AIManager {
       // Check if any sleeping/fortified human units spotted enemies.
       // If so, pause the AI turn to alert the player.
       if (this.checkSleepingUnitsForEnemies()) {
-        console.log(`[AI] Pausing AI turn — sleeping unit spotted enemy`);
+        debugLog(`[AI] Pausing AI turn — sleeping unit spotted enemy`);
         // Give a player time to see the danger — but in a self-playing
         // scenario there is nobody to see it and the pause is pure dead time.
         if (!isAutoScenario(this.gameEngine.gameSettings?.mapType)) {
@@ -483,7 +484,7 @@ export class AIManager {
         continue;
       }
 
-      console.log(`[AI] Processing unit ${unit.id} (${unit.type}) at (${unit.col},${unit.row}) with ${unit.movesRemaining} moves remaining`);
+      debugLog(`[AI] Processing unit ${unit.id} (${unit.type}) at (${unit.col},${unit.row}) with ${unit.movesRemaining} moves remaining`);
 
       // ── Oscillation detection: punish back-and-forth movement ──
       if (!unit.positionHistory) {
@@ -572,7 +573,7 @@ export class AIManager {
         // moving units on the next player's turn (teleporting, moves reset, and
         // the stuck detector fires every turn).
         if (this.gameEngine.activePlayer !== civilizationId || this.gameEngine.isPaused) {
-          console.log(`[AI] Turn ${civilizationId} ended mid-processing — stopping unit ${unit.id}`);
+          debugLog(`[AI] Turn ${civilizationId} ended mid-processing — stopping unit ${unit.id}`);
           break;
         }
 
@@ -660,7 +661,7 @@ export class AIManager {
             if (improvement) {
               const started = this.gameEngine.buildImprovement(unit.id, improvement);
               if (started) {
-                console.log(`[AI-SETTLER] ${civ.name} settler ${unit.id} builds ${improvement} at (${unit.col},${unit.row})`);
+                debugLog(`[AI-SETTLER] ${civ.name} settler ${unit.id} builds ${improvement} at (${unit.col},${unit.row})`);
                 this.gameEngine.log('ai', `Settler improves — ${civ.name} builds ${improvement} at (${unit.col},${unit.row})`);
                 break; // the settler worked its turn
               }
@@ -674,7 +675,7 @@ export class AIManager {
         const stackedEnemy = this.gameEngine.units.find(u => u.col === unit.col && u.row === unit.row
           && u.id !== unit.id && u.civilizationId !== unit.civilizationId && !u.isDefeated);
         if (stackedEnemy) {
-          console.log(`[AI] Unit ${unit.id} attacks stacked enemy ${stackedEnemy.type} on the same tile`);
+          debugLog(`[AI] Unit ${unit.id} attacks stacked enemy ${stackedEnemy.type} on the same tile`);
           this.gameEngine.log('ai', `Attack — ${civ.name} ${unit.type}(${unit.id}) attacks enemy ${stackedEnemy.type} at (${unit.col},${unit.row})`, { civilizationId, action: 'attack', unitId: unit.id, unitType: unit.type, targetType: stackedEnemy.type, targetCol: unit.col, targetRow: unit.row });
           this.gameEngine.combatUnit(unit, stackedEnemy);
           if (!this.gameEngine.units.includes(unit)) break; // attacker fell
@@ -698,13 +699,18 @@ export class AIManager {
         // an active route the engine's state machine owns its movement.
         if (unit.type === 'fisher_boat') {
           if (unit.fishingRoute) {
-            this.gameEngine.skipUnit(unit.id);
+            // The boat is a stationary generator from here on: its route is
+            // advanced by advanceFishing() at turn start and GoTo execution
+            // ignores the sleep flag. Sleeping it once keeps it out of the
+            // active queue — `skipUnit` here re-queued it every single turn
+            // (537 consecutive skips for one boat in a profiled session).
+            this.gameEngine.unitSleep(unit.id);
             break;
           }
           if (this.gameEngine.canDeployFishingNet?.(unit.id)) {
             const deployed = this.gameEngine.deployFishingNet(unit.id);
             if (deployed) {
-              console.log(`[AI-FISHER] ${civ.name} fisher ${unit.id} deploys net at (${unit.col},${unit.row})`);
+              debugLog(`[AI-FISHER] ${civ.name} fisher ${unit.id} deploys net at (${unit.col},${unit.row})`);
               this.gameEngine.log('ai', `Fishing net — ${civ.name} deploys at (${unit.col},${unit.row})`, { civilizationId, action: 'fishing_net', unitId: unit.id, unitType: unit.type, targetCol: unit.col, targetRow: unit.row });
               break;
             }
@@ -717,12 +723,12 @@ export class AIManager {
           // defending it — entrench (fortify) for the +50% defense bonus
           // (Civ1: garrisons fortify instead of standing idle).
           if (this.shouldFortifyForDefense(unit as Unit)) {
-            console.log(`[AI] No target — ${unit.type} fortifies to defend the city`);
+            debugLog(`[AI] No target — ${unit.type} fortifies to defend the city`);
             this.gameEngine.log('ai', `Fortify — ${civ.name} ${unit.type}(${unit.id}) defends city`, { civilizationId, action: 'fortify', unitId: unit.id, unitType: unit.type });
             this.gameEngine.unitFortify(unit.id);
             break;
           }
-          console.log(`[AI] No target found for unit ${unit.id}, skipping`);
+          debugLog(`[AI] No target found for unit ${unit.id}, skipping`);
           this.gameEngine.log('ai', `No target — ${civ.name} ${unit.type}(${unit.id}) skipped at (${unit.col},${unit.row})`, { civilizationId, action: 'no_target', unitId: unit.id, unitType: unit.type, reason: 'no_target' });
           this.gameEngine.skipUnit(unit.id);
           break;
@@ -735,15 +741,23 @@ export class AIManager {
         // MUST run before the generic "already at target" skip below — that
         // block (identical condition) used to shadow this one, turning a
         // settler that reached its spot into a skipped, never-founding unit.
-        if (unit.type === 'settler' && unit.col === target.col && unit.row === target.row) {
-          console.log(`[AI-SETTLER] Settler ${unit.id} has reached settlement location (${target.col}, ${target.row}), founding city`);
+        //
+        // A settler waiting for a colony ferry is NOT at a settlement site:
+        // chooseAITarget returns its rendezvous (its own tile when already on
+        // the coast), and treating that as "settle here" made it attempt to
+        // found on the capital every turn, fail, skip, and retry — 86 times
+        // for one unit in a profiled naval session, with 93 attempts and 2
+        // founded cities across 200 rounds. The colony settler only founds
+        // after the ferry has landed it and the mission has been cleared.
+        if (unit.type === 'settler' && !reservedForColony && unit.col === target.col && unit.row === target.row) {
+          debugLog(`[AI-SETTLER] Settler ${unit.id} has reached settlement location (${target.col}, ${target.row}), founding city`);
           this.gameEngine.log('ai', `Settler settles — ${civ.name} founds city at (${target.col},${target.row})`, { civilizationId, action: 'settle', unitId: unit.id, unitType: unit.type, targetCol: target.col, targetRow: target.row });
           const result = this.gameEngine.foundCityWithSettler(unit.id);
           if (result) {
-            console.log(`[AI-SETTLER] City founded successfully`);
+            debugLog(`[AI-SETTLER] City founded successfully`);
             break; // Settler consumed, end this unit's processing
           } else {
-            console.log(`[AI-SETTLER] Failed to found city, skipping settler`);
+            debugLog(`[AI-SETTLER] Failed to found city, skipping settler`);
             this.gameEngine.skipUnit(unit.id);
             break;
           }
@@ -773,25 +787,25 @@ export class AIManager {
             const tt = this.gameEngine.getTileAt(fullEnemy.col, fullEnemy.row);
             const attackCost = Math.max(1, TERRAIN_PROPS[tt?.type ?? '']?.movement ?? 1);
             if (this.gameEngine.canUnitAffordMove(unit, attackCost)) {
-              console.log(`[AI] Unit ${unit.id} attacks adjacent enemy ${fullEnemy.type} at (${fullEnemy.col},${fullEnemy.row})`);
+              debugLog(`[AI] Unit ${unit.id} attacks adjacent enemy ${fullEnemy.type} at (${fullEnemy.col},${fullEnemy.row})`);
               this.gameEngine.log('ai', `Attack — ${civ.name} ${unit.type}(${unit.id}) attacks adjacent ${fullEnemy.type} at (${fullEnemy.col},${fullEnemy.row})`, { civilizationId, action: 'attack', unitId: unit.id, unitType: unit.type, targetType: fullEnemy.type, targetCol: fullEnemy.col, targetRow: fullEnemy.row });
               this.gameEngine.combatUnit(unit, fullEnemy);
               if (!this.gameEngine.units.includes(unit)) break; // unit defeated
               break; // combatUnit zeroes moves
             } else {
-              console.log(`[AI] Unit ${unit.id} adjacent enemy but not enough moves, skipping`);
+              debugLog(`[AI] Unit ${unit.id} adjacent enemy but not enough moves, skipping`);
               this.gameEngine.skipUnit(unit.id);
               break;
             }
           }
 
           if (this.shouldFortifyForDefense(unit as Unit)) {
-            console.log(`[AI] Unit ${unit.id} fortifies to defend the city`);
+            debugLog(`[AI] Unit ${unit.id} fortifies to defend the city`);
             this.gameEngine.log('ai', `Fortify — ${civ.name} ${unit.type}(${unit.id}) defends city`, { civilizationId, action: 'fortify', unitId: unit.id, unitType: unit.type });
             this.gameEngine.unitFortify(unit.id);
             break;
           }
-          console.log(`[AI] Unit ${unit.id} already at target (${target.col},${target.row}), skipping`);
+          debugLog(`[AI] Unit ${unit.id} already at target (${target.col},${target.row}), skipping`);
           this.gameEngine.log('ai', `Already at target — ${civ.name} ${unit.type}(${unit.id}) holds (${target.col},${target.row})`, { civilizationId, action: 'hold', unitId: unit.id, unitType: unit.type, reason: 'already_at_target', targetCol: target.col, targetRow: target.row });
           this.gameEngine.skipUnit(unit.id);
           break;
@@ -799,12 +813,12 @@ export class AIManager {
 
         // If target is adjacent, try to move or attack
         const dist = this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, target.col, target.row);
-        console.log(`[AI] Target distance: ${dist} for unit ${unit.id} to (${target.col},${target.row})`);
+        debugLog(`[AI] Target distance: ${dist} for unit ${unit.id} to (${target.col},${target.row})`);
         if (dist === 1) {
           const targetUnit = this.gameEngine.getUnitAt(target.col, target.row);
           if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
             // Attack
-            console.log(`[AI] Unit ${unit.id} attacking unit at (${target.col},${target.row})`);
+            debugLog(`[AI] Unit ${unit.id} attacking unit at (${target.col},${target.row})`);
             this.gameEngine.log('ai', `Attack — ${civ.name} ${unit.type}(${unit.id}) attacks enemy ${targetUnit.type} at (${target.col},${target.row})`, { civilizationId, action: 'attack', unitId: unit.id, unitType: unit.type, targetType: targetUnit.type, targetCol: target.col, targetRow: target.row });
             // Check move cost before attempting attack
             const tt = this.gameEngine.getTileAt(target.col, target.row);
@@ -814,7 +828,7 @@ export class AIManager {
             if (this.gameEngine.canUnitAffordMove(unit, attackCost)) {
               this.gameEngine.combatUnit(unit, targetUnit);
             } else {
-             console.log(`[AI] Not enough moves for attack (${unit.movesRemaining} < ${attackCost}), skipping`);
+             debugLog(`[AI] Not enough moves for attack (${unit.movesRemaining} < ${attackCost}), skipping`);
               this.gameEngine.log('ai', `Attack blocked — ${civ.name} ${unit.type}(${unit.id})`, { civilizationId, action: 'skip', unitId: unit.id, unitType: unit.type, reason: 'insufficient_moves' });
              this.gameEngine.skipUnit(unit.id);
               break;
@@ -829,7 +843,7 @@ export class AIManager {
                 // A scout that cannot enter this tile should stop re-targeting
                 // it forever (stuck-target guard).
                 this.blacklistScoutTarget(unit, target.col, target.row);
-                console.log(`[AI] Move failed, skipping unit`);
+                debugLog(`[AI] Move failed, skipping unit`);
                 this.gameEngine.log('ai', `Move failed — ${civ.name} ${unit.type}(${unit.id}) to (${target.col},${target.row})`, { civilizationId, action: 'move_failed', unitId: unit.id, unitType: unit.type, reason: 'move_failed', targetCol: target.col, targetRow: target.row });
                 // Settler fallback: block unreachable target and re-evaluate.
                 if (unit.type === 'settler') {
@@ -840,7 +854,7 @@ export class AIManager {
               }
               this.gameEngine.log('ai', `Move — ${civ.name} ${unit.type}(${unit.id}) → (${target.col},${target.row})`, { civilizationId, action: 'move', unitId: unit.id, unitType: unit.type, targetCol: target.col, targetRow: target.row });
             } else {
-             console.log(`[AI] Not enough moves for move (${unit.movesRemaining} < ${moveCost}), skipping`);
+             debugLog(`[AI] Not enough moves for move (${unit.movesRemaining} < ${moveCost}), skipping`);
               this.gameEngine.log('ai', `Move blocked — ${civ.name} ${unit.type}(${unit.id})`, { civilizationId, action: 'skip', unitId: unit.id, unitType: unit.type, reason: 'insufficient_moves' });
               // Blacklist adjacent tile so scout doesn't retry it next turn
               this.blacklistScoutTarget(unit, target.col, target.row);
@@ -850,7 +864,7 @@ export class AIManager {
           }
         } else {
           // Pathfind towards target and take next step
-          console.log(`[AI] Pathfinding to non-adjacent target (${target.col},${target.row})`);
+          debugLog(`[AI] Pathfinding to non-adjacent target (${target.col},${target.row})`);
           const obstacles = unit.type === 'settler'
             ? this.getSettlerPathObstacles(unit.id, target)
             // Route around tiles that were previously blocked (an enemy/allied
@@ -862,7 +876,7 @@ export class AIManager {
           const path = this.pathForUnit(unit, target, obstacles);
           if (path.length > 1) {
             let next = path[1];
-            console.log(`[AI] Path found, next step to (${next.col},${next.row}), path length: ${path.length}`);
+            debugLog(`[AI] Path found, next step to (${next.col},${next.row}), path length: ${path.length}`);
             const tt = this.gameEngine.getTileAt(next.col, next.row);
             const moveCost = Math.max(1, TERRAIN_PROPS[tt?.type ?? '']?.movement ?? 1);
             if (!this.gameEngine.canUnitAffordMove(unit, moveCost)) {
@@ -872,7 +886,7 @@ export class AIManager {
               // getting permanently stuck on the first step.
               const affordable = this.findAffordableStep(unit, target);
               if (!affordable) {
-               console.log(`[AI] No affordable step for unit ${unit.id}, skipping`);
+               debugLog(`[AI] No affordable step for unit ${unit.id}, skipping`);
                 this.gameEngine.log('ai', `No affordable step — ${civ.name} ${unit.type}(${unit.id})`, { civilizationId, action: 'skip', unitId: unit.id, unitType: unit.type, reason: 'no_affordable_step' });
                 // Blacklist the target so the scout picks a different
                 // destination next turn instead of retrying the same
@@ -906,13 +920,13 @@ export class AIManager {
               if (fallbackStep) {
                 const fb = this.gameEngine.moveUnit(unit.id, fallbackStep.col, fallbackStep.row);
                 if (fb && fb.success) {
-                  console.log(`[AI] Path step blocked — fallback move to (${fallbackStep.col},${fallbackStep.row})`);
+                  debugLog(`[AI] Path step blocked — fallback move to (${fallbackStep.col},${fallbackStep.row})`);
                   this.gameEngine.log('ai', `Fallback move — ${civ.name} ${unit.type}(${unit.id}) → (${fallbackStep.col},${fallbackStep.row})`, { civilizationId, action: 'move', unitId: unit.id, unitType: unit.type, targetCol: fallbackStep.col, targetRow: fallbackStep.row, reason: 'path_step_fallback' });
                   break; // made progress; re-evaluate fresh next turn
                 }
               }
 
-             console.log(`[AI] Path step failed, skipping unit`);
+             debugLog(`[AI] Path step failed, skipping unit`);
               this.gameEngine.log('ai', `Path step failed — ${civ.name} ${unit.type}(${unit.id})`, { civilizationId, action: 'move_failed', unitId: unit.id, unitType: unit.type, reason: 'path_move_failed' });
               // Settler fallback: block unreachable target and re-evaluate.
               if (unit.type === 'settler') {
@@ -937,12 +951,12 @@ export class AIManager {
             if (fallbackStep) {
               const fb = this.gameEngine.moveUnit(unit.id, fallbackStep.col, fallbackStep.row);
               if (fb && fb.success) {
-                console.log(`[AI] No path — fallback move to (${fallbackStep.col},${fallbackStep.row})`);
+                debugLog(`[AI] No path — fallback move to (${fallbackStep.col},${fallbackStep.row})`);
                 this.gameEngine.log('ai', `Fallback move — ${civ.name} ${unit.type}(${unit.id}) → (${fallbackStep.col},${fallbackStep.row})`, { civilizationId, action: 'move', unitId: unit.id, unitType: unit.type, targetCol: fallbackStep.col, targetRow: fallbackStep.row, reason: 'no_path_fallback' });
                 break;
               }
             }
-           console.log(`[AI] No path found to target, skipping unit`);
+           debugLog(`[AI] No path found to target, skipping unit`);
             this.gameEngine.log('ai', `No path — ${civ.name} ${unit.type}(${unit.id})`, { civilizationId, action: 'skip', unitId: unit.id, unitType: unit.type, reason: 'no_path' });
             // Settler fallback: block unreachable target and re-evaluate.
             if (unit.type === 'settler') {
@@ -961,21 +975,21 @@ export class AIManager {
           await this.gameEngine.sleep(200);
         }
       }
-      console.log(`[AI] Finished processing unit ${unit.id}, final moves remaining: ${unit.movesRemaining}`);
+      debugLog(`[AI] Finished processing unit ${unit.id}, final moves remaining: ${unit.movesRemaining}`);
     }
 
-    console.log(`[AI] Finished all units for civilization ${civilizationId}`);
+    debugLog(`[AI] Finished all units for civilization ${civilizationId}`);
     // Emit event to clear highlights (UI decides how to handle)
     if (this.gameEngine.onStateChange) {
       this.gameEngine.onStateChange('AI_CLEAR_HIGHLIGHTS', { civilizationId });
     }
 
     // Process auto-production for AI cities
-    console.log(`[AI] Processing auto-production for civilization ${civilizationId}`);
+    debugLog(`[AI] Processing auto-production for civilization ${civilizationId}`);
     this.gameEngine.autoProduction.processAutoProductionForCivilization(civilizationId);
 
     // Signal AI finished (for UI updates)
-    console.log(`[AI] AI turn completed for civilization ${civilizationId}`);
+    debugLog(`[AI] AI turn completed for civilization ${civilizationId}`);
     if (this.gameEngine.onStateChange) {
       this.gameEngine.onStateChange('AI_FINISHED', { civilizationId });
     }
@@ -1025,7 +1039,7 @@ export class AIManager {
     unit._blockedSettlementTargets = blocked;
     delete unit._lastSettlementTarget;
 
-    console.log(`[AI-SETTLER] Settler ${unit.id} blocked target (${unreachableTarget.col},${unreachableTarget.row}), re-evaluating`);
+    debugLog(`[AI-SETTLER] Settler ${unit.id} blocked target (${unreachableTarget.col},${unreachableTarget.row}), re-evaluating`);
 
     // Re-run the settlement search — it will find the next best reachable
     // spot (or found at current tile if nothing is better).
@@ -1047,7 +1061,7 @@ export class AIManager {
       const tile = this.gameEngine.getTileAt(unit.col, unit.row);
       const city = this.gameEngine.getCityAt(unit.col, unit.row);
       if (tile && tile.type !== 'ocean' && tile.type !== 'mountains' && !city) {
-        console.log(`[AI-SETTLER] Settler ${unit.id} re-evaluation found no better spot — founding at current (${unit.col},${unit.row})`);
+        debugLog(`[AI-SETTLER] Settler ${unit.id} re-evaluation found no better spot — founding at current (${unit.col},${unit.row})`);
         this.gameEngine.foundCityWithSettler(unit.id);
         return true;
       }
@@ -1324,7 +1338,7 @@ export class AIManager {
       landCol: best.landTile.col,
       landRow: best.landTile.row,
     });
-    console.log(
+    debugLog(
       `[AI] ${civ.name} plans an invasion of ${best.city.name} (${best.city.civilizationId}) `
       + `with ${force.length} unit(s) — landing at (${best.landTile.col},${best.landTile.row})`,
     );
@@ -2230,7 +2244,7 @@ export class AIManager {
         const isInGroup = aiState.armyGroups.some(g => g.unitIds.includes(unit.id));
 
         if (AICoordinator.shouldRetreat(unitStrength, localEnemyStrength, isInGroup)) {
-          console.log(`[AI] Unit ${unit.id} retreating (own: ${unitStrength.toFixed(1)}, enemy: ${localEnemyStrength.toFixed(1)})`);
+          debugLog(`[AI] Unit ${unit.id} retreating (own: ${unitStrength.toFixed(1)}, enemy: ${localEnemyStrength.toFixed(1)})`);
           const friendlyCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === unit.civilizationId);
           const distFn = (c1: number, r1: number, c2: number, r2: number) =>
             this.gameEngine.squareGrid?.squareDistance(c1, r1, c2, r2) ?? Infinity;
@@ -2242,7 +2256,7 @@ export class AIManager {
       }
 
       if (groupTarget) {
-        console.log(`[AI] Army group target for ${unit.id}: (${groupTarget.col},${groupTarget.row}) [${groupTarget.groupStatus}]`);
+        debugLog(`[AI] Army group target for ${unit.id}: (${groupTarget.col},${groupTarget.row}) [${groupTarget.groupStatus}]`);
         return { col: groupTarget.col, row: groupTarget.row };
       }
 
@@ -2286,7 +2300,7 @@ export class AIManager {
 
       if (nearbyEnemies.length > 0) {
         const closest = nearbyEnemies[0];
-        console.log(`[AI] Area scan found ${nearbyEnemies.length} enemies near ${unit.id}, closest: ${closest.type} at (${closest.col},${closest.row}) dist=${closest.distance}`);
+        debugLog(`[AI] Area scan found ${nearbyEnemies.length} enemies near ${unit.id}, closest: ${closest.type} at (${closest.col},${closest.row}) dist=${closest.distance}`);
 
         // Broadcast threat alert so other nearby units rally
         this.broadcastThreatAlert(unit.civilizationId, closest.col, closest.row, closest.strength, storage);
@@ -2316,7 +2330,7 @@ export class AIManager {
           distFn
         );
         if (intercept) {
-          console.log(`[AI] Intercepting enemy via defensive terrain at (${intercept.col},${intercept.row})`);
+          debugLog(`[AI] Intercepting enemy via defensive terrain at (${intercept.col},${intercept.row})`);
           return intercept;
         }
 
@@ -2348,14 +2362,14 @@ export class AIManager {
       // ── Respond to threat alerts from allied units ──
       const alertTarget = this.getActiveAlertTarget(unit, storage);
       if (alertTarget) {
-        console.log(`[AI] Unit ${unit.id} responding to threat alert at (${alertTarget.col},${alertTarget.row})`);
+        debugLog(`[AI] Unit ${unit.id} responding to threat alert at (${alertTarget.col},${alertTarget.row})`);
         return remember(alertTarget);
       }
 
       // ── Defend threatened cities ──
       const strategicTarget = this.selectStrategicTarget(unit as Unit);
       if (strategicTarget) {
-        console.log(`[AI] Strategic target chosen for ${unit.type} ${unit.id} -> (${strategicTarget.col}, ${strategicTarget.row})`);
+        debugLog(`[AI] Strategic target chosen for ${unit.type} ${unit.id} -> (${strategicTarget.col}, ${strategicTarget.row})`);
         return remember(strategicTarget);
       }
 
@@ -2368,7 +2382,7 @@ export class AIManager {
       // village-granted mercenary in 167 rounds.
       const villageTarget = this.findNearestVillage(unit);
       if (villageTarget) {
-        console.log(`[AI] Unit ${unit.id} (${unit.type}) heading to village at (${villageTarget.col},${villageTarget.row})`);
+        debugLog(`[AI] Unit ${unit.id} (${unit.type}) heading to village at (${villageTarget.col},${villageTarget.row})`);
         return remember(villageTarget);
       }
 
@@ -2377,7 +2391,7 @@ export class AIManager {
       // contact with the enemy, so no intel → no war → no planned play.
       const probeTarget = this.findCombatProbeTarget(unit, storage, distFn);
       if (probeTarget) {
-        console.log(`[AI] Probe target for ${unit.id}: (${probeTarget.col},${probeTarget.row})`);
+        debugLog(`[AI] Probe target for ${unit.id}: (${probeTarget.col},${probeTarget.row})`);
         return remember(probeTarget);
       }
 
@@ -2391,7 +2405,7 @@ export class AIManager {
       // the nearest unexplored tile, keeping the front line moving.
       const picketTarget = this.findForwardPicketTarget(unit, distFn);
       if (picketTarget) {
-        console.log(`[AI] Forward picket for ${unit.id}: (${picketTarget.col},${picketTarget.row})`);
+        debugLog(`[AI] Forward picket for ${unit.id}: (${picketTarget.col},${picketTarget.row})`);
         return remember(picketTarget);
       }
 
@@ -2403,7 +2417,7 @@ export class AIManager {
         distFn
       );
       if (patrolTarget) {
-        console.log(`[AI] Patrol waypoint for ${unit.id}: (${patrolTarget.col},${patrolTarget.row})`);
+        debugLog(`[AI] Patrol waypoint for ${unit.id}: (${patrolTarget.col},${patrolTarget.row})`);
         return remember(patrolTarget);
       }
     }
@@ -2415,7 +2429,7 @@ export class AIManager {
     if (unit.type === 'caravan') {
       const target = this.chooseCaravanDeliveryTarget(unit);
       if (target) {
-        console.log(`[AI-CARAVAN] Caravan ${unit.id} heading to city at (${target.col},${target.row}) for trade route`);
+        debugLog(`[AI-CARAVAN] Caravan ${unit.id} heading to city at (${target.col},${target.row}) for trade route`);
         return target;
       }
       // No suitable city — skip the Caravan (it sits and waits).
@@ -2427,7 +2441,7 @@ export class AIManager {
     if (unit.type === 'diplomat') {
       const diplomatTarget = this.chooseDiplomatTarget(unit);
       if (diplomatTarget) {
-        console.log(`[AI-DIPLOMAT] Diplomat ${unit.id} heading to foreign city (${diplomatTarget.col},${diplomatTarget.row})`);
+        debugLog(`[AI-DIPLOMAT] Diplomat ${unit.id} heading to foreign city (${diplomatTarget.col},${diplomatTarget.row})`);
         return diplomatTarget;
       }
       // No known foreign city — fall through and explore like other civilians.
@@ -2451,7 +2465,7 @@ export class AIManager {
 
       const cached = unit._aiSettlement;
       if (cached) {
-        console.log(`[AI-SETTLER] Settler ${unit.id} heading to settlement (${cached.col},${cached.row})`);
+        debugLog(`[AI-SETTLER] Settler ${unit.id} heading to settlement (${cached.col},${cached.row})`);
         return { col: cached.col, row: cached.row };
       }
       // Civ1 income strategy: no settlement worth founding — walk to the
@@ -2460,7 +2474,7 @@ export class AIManager {
       if (!unit.workTarget) {
         const tradeRoad = this.findTradeRoadTarget(unit);
         if (tradeRoad) {
-          console.log(`[AI-SETTLER] Settler ${unit.id} heading to worked tile (${tradeRoad.col},${tradeRoad.row}) to build a trade road`);
+          debugLog(`[AI-SETTLER] Settler ${unit.id} heading to worked tile (${tradeRoad.col},${tradeRoad.row}) to build a trade road`);
           return tradeRoad;
         }
       }
@@ -2468,7 +2482,7 @@ export class AIManager {
 
     // Special handling for scouts: use EnemySearcher to find enemies
     if (unit.type === 'scout') {
-      console.log(`[AI-SCOUT] Scout detected at (${unit.col}, ${unit.row}), checking for enemies`);
+      debugLog(`[AI-SCOUT] Scout detected at (${unit.col}, ${unit.row}), checking for enemies`);
 
       // Defense override: exploration is less important than garrisoning an
       // undefended friendly city while an enemy is close. When the threat
@@ -2477,7 +2491,7 @@ export class AIManager {
       try {
         const defenseTarget = this.findScoutDefenseTarget(unit);
         if (defenseTarget) {
-          console.log(`[AI-SCOUT] Defending undefended city at (${defenseTarget.col},${defenseTarget.row}) — enemy close`);
+          debugLog(`[AI-SCOUT] Defending undefended city at (${defenseTarget.col},${defenseTarget.row}) — enemy close`);
           return defenseTarget;
         }
       } catch (error) {
@@ -2491,7 +2505,7 @@ export class AIManager {
       {
         const scoutVillage = this.findNearestVillage(unit);
         if (scoutVillage) {
-          console.log(`[AI-SCOUT] Scout ${unit.id} heading to village at (${scoutVillage.col},${scoutVillage.row})`);
+          debugLog(`[AI-SCOUT] Scout ${unit.id} heading to village at (${scoutVillage.col},${scoutVillage.row})`);
           return scoutVillage;
         }
       }
@@ -2499,7 +2513,7 @@ export class AIManager {
       try {
         // Check if scout already found an enemy (stored in unit state)
         if (unit.enemyFound) {
-          console.log(`[AI-SCOUT] Scout ${unit.id} has found enemy, returning to nearest city`);
+          debugLog(`[AI-SCOUT] Scout ${unit.id} has found enemy, returning to nearest city`);
           const nearestCity = AIUtility.findNearestOwnCity(
             unit.col,
             unit.row,
@@ -2515,7 +2529,7 @@ export class AIManager {
               unit.enemyFound = false;
               unit.enemyLocation = undefined;
             } else {
-              console.log(`[AI-SCOUT] Scout returning to nearest city at (${nearestCity.col}, ${nearestCity.row})`);
+              debugLog(`[AI-SCOUT] Scout returning to nearest city at (${nearestCity.col}, ${nearestCity.row})`);
               return { col: nearestCity.col, row: nearestCity.row };
             }
           }
@@ -2527,7 +2541,7 @@ export class AIManager {
         // Find this scout's zone index
         const scouts = this.gameEngine.units.filter((u: Unit) => u.civilizationId === unit.civilizationId && u.type === 'scout');
         const scoutIndex = scouts.findIndex(s => s.id === unit.id);
-        console.log(`[AI-SCOUT] Scout ${scoutIndex + 1}/${scouts.length} searching zone ${scoutIndex}`);
+        debugLog(`[AI-SCOUT] Scout ${scoutIndex + 1}/${scouts.length} searching zone ${scoutIndex}`);
 
         // Get visibility check function - use per-player visibility storage
         const playerStorage = this.gameEngine.getPlayerStorage(unit.civilizationId);
@@ -2564,7 +2578,7 @@ export class AIManager {
         );
 
         if (enemyResult) {
-          console.log(`[AI-SCOUT] Enemy ${enemyResult.targetType} found at (${enemyResult.col}, ${enemyResult.row}), distance: ${enemyResult.distance}`);
+          debugLog(`[AI-SCOUT] Enemy ${enemyResult.targetType} found at (${enemyResult.col}, ${enemyResult.row}), distance: ${enemyResult.distance}`);
 
           // Phase 3.3: Check if this enemy was already discovered by another scout
           const storage = this.gameEngine.getPlayerStorage(unit.civilizationId);
@@ -2584,7 +2598,7 @@ export class AIManager {
               const existing = storage.enemyLocations.get(enemyCivId)!.find(e => e.id === enemyResult.targetId);
               if (existing) {
                 alreadyKnown = true;
-                console.log(`[AI-SCOUT] Enemy ${enemyResult.targetType} at (${enemyResult.col}, ${enemyResult.row}) already known, updating last seen`);
+                debugLog(`[AI-SCOUT] Enemy ${enemyResult.targetType} at (${enemyResult.col}, ${enemyResult.row}) already known, updating last seen`);
                 existing.lastSeenRound = this.gameEngine.roundManager.getRoundNumber();
               }
             }
@@ -2616,7 +2630,7 @@ export class AIManager {
                 if (cityDefenders.length === 0) {
                   // Move the scout onto the city tile — moveUnit will
                   // evaluate the 30% rush chance automatically.
-                  console.log(`[AI-SCOUT] Rush opportunity: undefended city ${targetCity.name} at (${enemyResult.col},${enemyResult.row})`);
+                  debugLog(`[AI-SCOUT] Rush opportunity: undefended city ${targetCity.name} at (${enemyResult.col},${enemyResult.row})`);
                   return { col: enemyResult.col, row: enemyResult.row };
                 }
               }
@@ -2634,7 +2648,7 @@ export class AIManager {
                 (col1, row1, col2, row2) => this.gameEngine.squareGrid!.squareDistance(col1, row1, col2, row2)
               );
               if (nearestCity) {
-                console.log(`[AI-SCOUT] Scout returning to nearest city at (${nearestCity.col}, ${nearestCity.row})`);
+                debugLog(`[AI-SCOUT] Scout returning to nearest city at (${nearestCity.col}, ${nearestCity.row})`);
                 return { col: nearestCity.col, row: nearestCity.row };
               }
             }
@@ -2642,7 +2656,7 @@ export class AIManager {
             // (fall through to the zone search below) to find their cities.
           }
         } else {
-          console.log(`[AI-SCOUT] No enemy found near (${unit.col}, ${unit.row}), continuing exploration`);
+          debugLog(`[AI-SCOUT] No enemy found near (${unit.col}, ${unit.row}), continuing exploration`);
         }
       } catch (error) {
         console.error(`[AI-SCOUT] Error using EnemySearcher:`, error);
@@ -2666,11 +2680,11 @@ export class AIManager {
       if (unit.type === 'scout') {
         const flank = this.findScoutRouteAroundEnemy(unit, enemy as { col: number; row: number });
         if (flank) {
-          console.log(`[AI-SCOUT] Routing around enemy at (${enemy.col},${enemy.row}) via (${flank.col},${flank.row})`);
+          debugLog(`[AI-SCOUT] Routing around enemy at (${enemy.col},${enemy.row}) via (${flank.col},${flank.row})`);
           return flank;
         }
       }
-      console.log(`[AI] Chose enemy unit at (${enemy.col},${enemy.row})`);
+      debugLog(`[AI] Chose enemy unit at (${enemy.col},${enemy.row})`);
       return { col: enemy.col, row: enemy.row };
     }
 
@@ -2699,7 +2713,7 @@ export class AIManager {
         : !!this.gameEngine.getTileAt(col, row)?.explored
     );
     if (unexplored) {
-      console.log(`[AI] Chose unexplored tile at (${unexplored.col},${unexplored.row})`);
+      debugLog(`[AI] Chose unexplored tile at (${unexplored.col},${unexplored.row})`);
       return { col: unexplored.col, row: unexplored.row };
     }
 
@@ -2711,7 +2725,7 @@ export class AIManager {
         unit.col, unit.row, unit.civilizationId
       );
       if (staleTarget && (staleTarget.col !== unit.col || staleTarget.row !== unit.row)) {
-        console.log(`[AI-SCOUT] ScoutMemory target at (${staleTarget.col},${staleTarget.row})`);
+        debugLog(`[AI-SCOUT] ScoutMemory target at (${staleTarget.col},${staleTarget.row})`);
         return { col: staleTarget.col, row: staleTarget.row };
       }
     }
@@ -2720,13 +2734,13 @@ export class AIManager {
     if (unit.type === 'scout') {
       const scoutExplorationTarget = this.findScoutExplorationTarget(unit);
       if (scoutExplorationTarget) {
-        console.log(`[AI-SCOUT] Chose exploration target at (${scoutExplorationTarget.col},${scoutExplorationTarget.row})`);
+        debugLog(`[AI-SCOUT] Chose exploration target at (${scoutExplorationTarget.col},${scoutExplorationTarget.row})`);
         return { col: scoutExplorationTarget.col, row: scoutExplorationTarget.row };
       }
     }
 
     // 3) Choose best neighbor based on terrain cost
-    console.log(`[AI] No unexplored or enemy targets found, choosing best neighbor`);
+    debugLog(`[AI] No unexplored or enemy targets found, choosing best neighbor`);
 
     const neighbors = this.gameEngine.squareGrid.getNeighbors(unit.col, unit.row);
     const terrainAnalysis = AIUtility.analyzeSurroundingTerrain(
@@ -2738,17 +2752,17 @@ export class AIManager {
       (col, row) => this.gameEngine.squareGrid!.isValidSquare(col, row)
     );
     if (terrainAnalysis.passableMoves.length > 0) {
-      console.log(`[AI] Terrain analysis: ${terrainAnalysis.passableMoves.length} passable tiles, min cost: ${terrainAnalysis.minCost}, avg cost: ${terrainAnalysis.averageCost.toFixed(1)}`);
+      debugLog(`[AI] Terrain analysis: ${terrainAnalysis.passableMoves.length} passable tiles, min cost: ${terrainAnalysis.minCost}, avg cost: ${terrainAnalysis.averageCost.toFixed(1)}`);
 
       const bestMove = AIUtility.chooseBestMove(terrainAnalysis);
       if (bestMove) {
         const terrainName = AIUtility.getTerrainName(bestMove.terrainType);
-        console.log(`[AI] Chose best neighbor at (${bestMove.col},${bestMove.row}) - ${terrainName} (cost: ${bestMove.moveCost})`);
+        debugLog(`[AI] Chose best neighbor at (${bestMove.col},${bestMove.row}) - ${terrainName} (cost: ${bestMove.moveCost})`);
         return { col: bestMove.col, row: bestMove.row };
       }
     }
 
-    console.log(`[AI] No valid target found for unit ${unit.id}`);
+    debugLog(`[AI] No valid target found for unit ${unit.id}`);
     return null;
   }
 
@@ -2931,7 +2945,7 @@ export class AIManager {
     const civName = civ?.name ?? `Civ ${civId}`;
     const action = this.chooseDiplomatAction(unit, targetCivId, info.actions);
 
-    console.log(`[AI-DIPLOMAT] ${civName} diplomat at (${unit.col},${unit.row}) contacting ${targetCiv?.name ?? targetCivId} → ${action}`);
+    debugLog(`[AI-DIPLOMAT] ${civName} diplomat at (${unit.col},${unit.row}) contacting ${targetCiv?.name ?? targetCivId} → ${action}`);
 
     if (targetCiv?.isHuman === true) {
       // The human decides — surface an interactive offer, consume the move.
@@ -3123,7 +3137,7 @@ export class AIManager {
     strategy: StrategyProfile = 'balanced_growth',
     replanDepth = 0,
   ): { col: number; row: number; score: number } | null {
-    console.log(`[AI-SETTLER] Evaluating settlement locations for settler at (${unit.col}, ${unit.row})`);
+    debugLog(`[AI-SETTLER] Evaluating settlement locations for settler at (${unit.col}, ${unit.row})`);
 
     // Track position history to detect oscillation
     if (!unit._positionHistory) {
@@ -3177,7 +3191,7 @@ export class AIManager {
         const city = this.gameEngine.getCityAt(unit.col, unit.row);
         const valid = tile && tile.type !== 'ocean' && tile.type !== 'mountains' && !city;
         if (valid) {
-          console.log(`[AI-SETTLER] 🔄 Replan exhausted, founding at current tile (${unit.col},${unit.row})`);
+          debugLog(`[AI-SETTLER] 🔄 Replan exhausted, founding at current tile (${unit.col},${unit.row})`);
           this.gameEngine.foundCityWithSettler(unit.id);
         }
         return null;
@@ -3186,11 +3200,11 @@ export class AIManager {
 
     if (lockedTarget && this.isSettlementTargetValid(unit, lockedTarget)) {
       if (lockedTarget.col === unit.col && lockedTarget.row === unit.row) {
-        console.log(`[AI-SETTLER] Reached locked settlement target (${lockedTarget.col},${lockedTarget.row}), founding city`);
+        debugLog(`[AI-SETTLER] Reached locked settlement target (${lockedTarget.col},${lockedTarget.row}), founding city`);
         this.gameEngine.foundCityWithSettler(unit.id);
         return null;
       }
-      console.log(`[AI-SETTLER] Continuing to locked settlement target (${lockedTarget.col},${lockedTarget.row})`);
+      debugLog(`[AI-SETTLER] Continuing to locked settlement target (${lockedTarget.col},${lockedTarget.row})`);
       return { ...lockedTarget, score: 0 };
     }
     if (lockedTarget) {
@@ -3209,8 +3223,8 @@ export class AIManager {
         !currentCity;
 
     if (currentPosValid && isOscillating) {
-      console.log(`[AI-SETTLER] 🔄 Oscillation detected! Position history: ${history.join(' -> ')}`);
-      console.log(`[AI-SETTLER] Founding city at current location to break oscillation`);
+      debugLog(`[AI-SETTLER] 🔄 Oscillation detected! Position history: ${history.join(' -> ')}`);
+      debugLog(`[AI-SETTLER] Founding city at current location to break oscillation`);
       // Directly found city here instead of returning target
       this.gameEngine.foundCityWithSettler(unit.id);
       return null;
@@ -3218,7 +3232,7 @@ export class AIManager {
 
     // Choose appropriate weights based on strategy
     const weights = this.getSettlementWeightsForStrategy(strategy);
-    console.log(`[AI-SETTLER] Using strategy: ${strategy} with weights:`, weights);
+    debugLog(`[AI-SETTLER] Using strategy: ${strategy} with weights:`, weights);
 
     // If the civ has no coastal city yet, strongly prefer founding on connected
     // water: naval units can only ever be built from a coastal city, so a
@@ -3231,7 +3245,7 @@ export class AIManager {
     const wantsCoast = !hasWaterCity;
     const extraCoastalBonus = wantsCoast ? 8 : 0;
     if (wantsCoast) {
-      console.log('[AI-SETTLER] Civ has no coastal city — favouring a coastal settlement site');
+      debugLog('[AI-SETTLER] Civ has no coastal city — favouring a coastal settlement site');
     }
 
     // Use SettlementEvaluator to find best location
@@ -3272,9 +3286,9 @@ export class AIManager {
     );
 
     if (bestLocation) {
-      console.log(`[AI-SETTLER] Best settlement location found: (${bestLocation.col}, ${bestLocation.row})`);
-      console.log(`[AI-SETTLER] Score: ${bestLocation.score}, Yields:`, bestLocation.yields);
-      console.log(`[AI-SETTLER] Water access: ${bestLocation.hasWaterAccess}`);
+      debugLog(`[AI-SETTLER] Best settlement location found: (${bestLocation.col}, ${bestLocation.row})`);
+      debugLog(`[AI-SETTLER] Score: ${bestLocation.score}, Yields:`, bestLocation.yields);
+      debugLog(`[AI-SETTLER] Water access: ${bestLocation.hasWaterAccess}`);
 
       // ── "Good enough" settling ────────────────────────────────────────────
       // The 10x10 search re-centers on the settler every turn, so the best
@@ -3305,11 +3319,11 @@ export class AIManager {
         const bestIsFar = bestDist > MAX_SETTLE_WALK_DISTANCE;
 
         if (currentScore !== null && (!bestClearlyBetter || bestIsFar)) {
-          console.log(`[AI-SETTLER] 🏙 Current tile good enough (current=${currentScore.toFixed(1)}, best=${bestLocation.score.toFixed(1)}, bestDist=${bestDist}) — founding city here`);
+          debugLog(`[AI-SETTLER] 🏙 Current tile good enough (current=${currentScore.toFixed(1)}, best=${bestLocation.score.toFixed(1)}, bestDist=${bestDist}) — founding city here`);
           this.gameEngine.foundCityWithSettler(unit.id);
           return null;
         }
-        console.log(`[AI-SETTLER] Best location clearly better (current=${currentScore?.toFixed(1)}, best=${bestLocation.score.toFixed(1)}, bestDist=${bestDist}) — walking there`);
+        debugLog(`[AI-SETTLER] Best location clearly better (current=${currentScore?.toFixed(1)}, best=${bestLocation.score.toFixed(1)}, bestDist=${bestDist}) — walking there`);
       }
 
       // If we have a pathfinding grid available, precompute and store a path.
@@ -3329,10 +3343,10 @@ export class AIManager {
             this.getSettlerPathObstacles(unit.id, bestLocation),
           );
           if (result.path.length > 0) {
-            console.log(`[AI-SETTLER] Precomputed path for settler ${unit.id} with ${result.path.length} steps`);
+            debugLog(`[AI-SETTLER] Precomputed path for settler ${unit.id} with ${result.path.length} steps`);
             this.gameEngine.roundManager.setUnitPath(unit.id, result.path);
           } else {
-            console.log(`[AI-SETTLER] No path found to best location for settler ${unit.id}`);
+            debugLog(`[AI-SETTLER] No path found to best location for settler ${unit.id}`);
           }
         }
       } catch (e) {
@@ -3341,7 +3355,7 @@ export class AIManager {
 
       // Check if settler is already at the best location
       if (bestLocation.col === unit.col && bestLocation.row === unit.row) {
-        console.log(`[AI-SETTLER] Settler is already at best location, will found city`);
+        debugLog(`[AI-SETTLER] Settler is already at best location, will found city`);
         // Found city immediately
         this.gameEngine.foundCityWithSettler(unit.id);
         return null; // No need to move
@@ -3358,12 +3372,12 @@ export class AIManager {
     // e.g. findPath to the settler's own tile returning empty), just found the
     // city here instead of wandering forever.
     if (currentPosValid) {
-      console.log(`[AI-SETTLER] No better location found, founding city at current tile (${unit.col}, ${unit.row})`);
+      debugLog(`[AI-SETTLER] No better location found, founding city at current tile (${unit.col}, ${unit.row})`);
       this.gameEngine.foundCityWithSettler(unit.id);
       return null;
     }
 
-    console.log(`[AI-SETTLER] No suitable settlement location found`);
+    debugLog(`[AI-SETTLER] No suitable settlement location found`);
     return null;
   }
 
@@ -3917,7 +3931,7 @@ export class AIManager {
         const pick = AIUtility.pickRandomExplorationTarget(unit, candidates, bearing);
         if (pick) {
           unit._exploreTarget = { col: pick.col, row: pick.row };
-          console.log(`[AI-SCOUT] Found unexplored tile at (${pick.col},${pick.row}) in zone (of ${candidates.length})`);
+          debugLog(`[AI-SCOUT] Found unexplored tile at (${pick.col},${pick.row}) in zone (of ${candidates.length})`);
           return pick;
         }
       }
@@ -3929,7 +3943,7 @@ export class AIManager {
     if (unit._blockedScoutTargets instanceof Set && unit._blockedScoutTargets.size >= 12) {
       const wasBlocked = unit._blockedScoutTargets.size;
       unit._blockedScoutTargets = new Set<string>();
-      console.log(`[AI-SCOUT] Scout ${unit.id} reset ${wasBlocked} blocked targets to unstick`);
+      debugLog(`[AI-SCOUT] Scout ${unit.id} reset ${wasBlocked} blocked targets to unstick`);
     }
 
     // If no unexplored tiles found in zone, move toward zone center to explore systematically
@@ -3967,7 +3981,7 @@ export class AIManager {
       }
 
       if (bestNeighbor) {
-        console.log(`[AI-SCOUT] Moving toward zone center at (${zoneCenterCol},${zoneCenterRow}) via (${bestNeighbor.col},${bestNeighbor.row})`);
+        debugLog(`[AI-SCOUT] Moving toward zone center at (${zoneCenterCol},${zoneCenterRow}) via (${bestNeighbor.col},${bestNeighbor.row})`);
         return bestNeighbor;
       }
 
@@ -3975,12 +3989,12 @@ export class AIManager {
       // terrain) — step to the closest passable tile anyway so the scout
       // navigates around the obstacle instead of freezing.
       if (anyPassableNeighbor) {
-        console.log(`[AI-SCOUT] Boxed in, stepping to (${anyPassableNeighbor.col},${anyPassableNeighbor.row}) around terrain`);
+        debugLog(`[AI-SCOUT] Boxed in, stepping to (${anyPassableNeighbor.col},${anyPassableNeighbor.row}) around terrain`);
         return { col: anyPassableNeighbor.col, row: anyPassableNeighbor.row };
       }
     }
 
-    console.log(`[AI-SCOUT] No exploration targets found in zone ${scoutIndex}`);
+    debugLog(`[AI-SCOUT] No exploration targets found in zone ${scoutIndex}`);
     return null;
   }
 
@@ -4188,7 +4202,7 @@ export class AIManager {
     const criticalThreats = threatenedCities.filter((t) => (t.assessment?.netThreat ?? 0) >= 2.5);
     if (criticalThreats.length > 0) {
       if (storage.turnData.offensivePlan) {
-        console.log(`[AI] Bulk attack withdrawn — civ ${civilizationId} has ${criticalThreats.length} critical threat(s)`);
+        debugLog(`[AI] Bulk attack withdrawn — civ ${civilizationId} has ${criticalThreats.length} critical threat(s)`);
       }
       storage.turnData.offensivePlan = null;
       return;
@@ -4244,7 +4258,7 @@ export class AIManager {
 
     if (!bulkPlan) {
       if (storage.turnData.offensivePlan) {
-        console.log(`[AI] Bulk attack withdrawn — civ ${civilizationId} (${aggression.posture}, score ${aggression.score})`);
+        debugLog(`[AI] Bulk attack withdrawn — civ ${civilizationId} (${aggression.posture}, score ${aggression.score})`);
         this.gameEngine.log?.('ai', `Bulk attack withdrawn — civ ${civilizationId}`, {
           civilizationId, action: 'withdraw', score: aggression.score, posture: aggression.posture,
         });
@@ -4978,7 +4992,7 @@ export class AIManager {
 
     // Keep only recent alerts (last 3 rounds)
     storage.turnData.threatAlerts = alerts.filter((a: ThreatAlert) => roundNumber - a.round <= 3);
-    console.log(`[AI] Threat alert broadcast at (${col},${row}), strength=${enemyStrength.toFixed(1)}`);
+    debugLog(`[AI] Threat alert broadcast at (${col},${row}), strength=${enemyStrength.toFixed(1)}`);
   }
 
   /** Find the closest active threat alert this unit should respond to */

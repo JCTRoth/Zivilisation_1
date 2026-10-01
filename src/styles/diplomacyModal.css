@@ -508,6 +508,91 @@
   color: var(--color-accent, #f0c33c);
 }
 
+/* Proposal outcome feed pinned under the header — compact variant of the log */
+.diplomacy-feed {
+  max-height: 96px;
+  margin-bottom: 10px;
+}
+
+/* ─── Attitude meter ────────────────────────────── */
+
+/* Hostile ←→ Friendly. The marker sits at the engine's raw attitude score so
+   the player can see the relationship moving before the tier word changes. */
+.diplomacy-attitude-meter {
+  position: relative;
+  height: 6px;
+  margin: 6px 0 2px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #c62828 0%, #78909c 50%, #4caf50 100%);
+  opacity: 0.85;
+}
+
+.diplomacy-attitude-marker {
+  position: absolute;
+  top: -3px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--color-bg-panel, #121a22);
+  box-sizing: border-box;
+}
+
+.diplomacy-attitude-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--color-text-muted, #b7c3cf);
+}
+
+/* ─── Advanced negotiation inputs ───────────────── */
+
+/* Tribute gold and treaty/tech pickers sit inline with their buttons. */
+.diplomacy-tribute-group,
+.diplomacy-treaty-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diplomacy-tribute-input {
+  width: 72px;
+  padding: 6px 8px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  text-align: right;
+  color: var(--color-text, #e8eef3);
+  background: var(--color-bg-input, #0f161d);
+  border: 1px solid var(--color-border-strong, #3d5163);
+  border-radius: var(--radius-sm, 6px);
+}
+
+.diplomacy-select,
+.diplomacy-tech-input {
+  padding: 6px 8px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--color-text, #e8eef3);
+  background: var(--color-bg-input, #0f161d);
+  border: 1px solid var(--color-border-strong, #3d5163);
+  border-radius: var(--radius-sm, 6px);
+}
+
+.diplomacy-select {
+  max-width: 160px;
+}
+
+.diplomacy-tech-input {
+  width: 150px;
+}
+
+.diplomacy-tribute-input:focus,
+.diplomacy-select:focus,
+.diplomacy-tech-input:focus {
+  outline: none;
+  border-color: var(--color-accent, #f0c33c);
+}
+
 /* ─── Placeholder ───────────────────────────────── */
 
 .diplomacy-placeholder {
@@ -688,22 +773,79 @@
   gap: 8px;
 }
 
-/* ─── Report actions (open negotiation screen) ──── */
-
-.diplomacy-report-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 10px;
-}
-
 /* ─── Warning badge ─────────────────────────────── */
 
 /* ═══════════════════════════════════════════════════
-   Diplomacy Report — read-only Foreign Advisor view
+   Diplomacy ledger — goodwill meter, reason list, verdict
    ═══════════════════════════════════════════════════ */
 
-.diplomacy-report-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+/* "What they remember" — one row per recorded impact, with its point value. */
+.diplomacy-reasons {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-md, 6px);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
+
+.diplomacy-reasons-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-text-muted, #b7c3cf);
+  opacity: 0.75;
+  margin-bottom: 6px;
+}
+
+.diplomacy-reason-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text, #e6edf3);
+}
+
+.diplomacy-reason-delta {
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: bold;
+}
+
+.diplomacy-reason-delta.good { color: #4caf50; }
+.diplomacy-reason-delta.bad { color: #f44336; }
+
+.diplomacy-reason-text em {
+  font-style: normal;
+  opacity: 0.6;
+}
+
+/* The engine's own forecast for the terms in the input box. */
+.diplomacy-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 7px 10px;
+  border-radius: var(--radius-md, 6px);
+  font-size: 12px;
+  border: 1px solid;
+}
+
+.diplomacy-verdict.likely {
+  background: rgba(76, 175, 80, 0.12);
+  border-color: rgba(76, 175, 80, 0.4);
+}
+
+.diplomacy-verdict.unlikely {
+  background: rgba(244, 67, 54, 0.12);
+  border-color: rgba(244, 67, 54, 0.4);
+}
+
+.diplomacy-verdict-headline { font-weight: bold; }
+.diplomacy-verdict.likely .diplomacy-verdict-headline { color: #4caf50; }
+.diplomacy-verdict.unlikely .diplomacy-verdict-headline { color: #f44336; }
+.diplomacy-verdict-score { opacity: 0.75; font-variant-numeric: tabular-nums; }
+.diplomacy-verdict-why { opacity: 0.8; }

@@ -82,6 +82,18 @@ export const CITY_RADIUS = 2;
 const CITY_CENTER_MIN = { food: 2, production: 1, trade: 1 };
 
 /**
+ * Food surplus the shared tile assigner must secure before it spends the
+ * remaining slots on raw yield.
+ *
+ * Without it a pop-2 city happily works two 1-food/4-trade tiles (total 5 beats
+ * a 2-food tile's 3) and sits at surplus 0 forever: population never grows, so
+ * commerce never grows, so the AI can never afford its upkeep or its research.
+ * A real headless AI-vs-AI batch caught exactly that — cities stuck at pop 2
+ * for 150 rounds with ten free 2-food tiles in their radius.
+ */
+const MIN_CITY_FOOD_SURPLUS = 1;
+
+/**
  * Floor the treasury is reset to after the AI is forced to disband.
  * Keeps the civ solvent for the next turn (see spec item 6).
  */
@@ -276,7 +288,8 @@ export class EconomicManager {
     const specialistGold = this.maxSpecialistGold(civ);
     // Buildings are paid for before units are, so they come off first.
     const totalIncome = Math.max(0, taxIncome + specialistGold - this.buildingUpkeep(civId));
-    // Each unit costs 1 gold/turn upkeep; one free unit per city
+    // Each unit costs 1 gold/turn upkeep (there is no free support: see
+    // `unitUpkeep`), so this is a hard budget ceiling, not a soft one.
     const upkeepSlots = Math.max(0, totalIncome - cityCount);
     return upkeepSlots;
   }
@@ -549,6 +562,28 @@ export class EconomicManager {
       if (!userAssigned.has(key) || chosenKeys.has(key)) continue;
       chosenKeys.add(key);
       worked.push(cand);
+    }
+
+    // Food floor FIRST: buy enough food to out-eat the citizens (plus any
+    // settlers this city supports) before spending slots on raw yield. This
+    // runs before the total-yield fill so a growing city never trades its last
+    // food away for trade/production it cannot afford to keep.
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    const balance = this.cityFoodBalance(city, civ);
+    const foodTarget = balance.citizenConsumption + balance.settlerSupport + MIN_CITY_FOOD_SURPLUS;
+    let foodSum = worked.reduce((n, w) => n + w.yields.food, 0);
+    if (foodSum < foodTarget) {
+      const byFood = [...candidates].sort(
+        (a, b) => b.yields.food - a.yields.food || total(b.yields) - total(a.yields),
+      );
+      for (const cand of byFood) {
+        if (worked.length >= targetTiles || foodSum >= foodTarget) break;
+        const key = `${cand.col},${cand.row}`;
+        if (chosenKeys.has(key)) continue;
+        chosenKeys.add(key);
+        worked.push(cand);
+        foodSum += cand.yields.food;
+      }
     }
 
     for (const cand of candidates) {
@@ -1036,18 +1071,54 @@ export class EconomicManager {
   // ------------------------------------------------------------------
 
   /**
+   * Ids of units an AI mission depends on: the colony settler and its ferry,
+   * and the invasion troops and their ferry. Read structurally from the civ's
+   * player storage so the economy does not need to import the AI mission
+   * types (they live in AIManager).
+   */
+  private collectMissionUnitIds(civId: number): Set<string> {
+    const ids = new Set<string>();
+    const storage = this.gameEngine?.getPlayerStorage?.(civId);
+    const turnData = storage?.turnData as unknown as
+      | {
+          colonyMission?: { settlerId?: string; ferryId?: string | null };
+          invasionMission?: { troopIds?: string[]; landedIds?: string[]; ferryId?: string | null };
+        }
+      | undefined;
+    if (!turnData) return ids;
+    if (turnData.colonyMission?.settlerId) ids.add(String(turnData.colonyMission.settlerId));
+    if (turnData.colonyMission?.ferryId) ids.add(String(turnData.colonyMission.ferryId));
+    if (turnData.invasionMission?.ferryId) ids.add(String(turnData.invasionMission.ferryId));
+    for (const id of turnData.invasionMission?.troopIds ?? []) ids.add(String(id));
+    for (const id of turnData.invasionMission?.landedIds ?? []) ids.add(String(id));
+    return ids;
+  }
+
+  /**
    * Disband units until the deficit is covered.
    *
    * Disband order: non-defenders first, then non-scouts, then higher
    * maintenance, then higher unit cost. The last defender of any city is
    * preserved during the first pass; a second pass removes them only if the
-   * deficit cannot otherwise be covered (spec item 6).
+   * deficit cannot otherwise be covered (spec item 6). Units committed to an
+   * AI mission are never candidates — see {@link collectMissionUnitIds}.
    */
   private disbandUnitsToCoverDeficit(
     civId: number,
     deficit: number,
     cities: City[],
   ): number {
+    // Units committed to an AI colony/invasion mission — or already loaded
+    // aboard a ferry — are protected. Disbanding the hull aborts the crossing
+    // and strands the settler or army on the home island; a profiled naval
+    // session disbanded 22 ferries, which reset every mission to stage
+    // 'gather' so no colony was ever founded after the first.
+    const missionUnitIds = this.collectMissionUnitIds(civId);
+    const isMissionUnit = (u: Unit): boolean =>
+      u.id != null && missionUnitIds.has(String(u.id));
+    const isLoadedFerry = (u: Unit): boolean =>
+      u.type === 'ferry' && (this.gameEngine?.getFerryCargo?.(u)?.length ?? 0) > 0;
+
     const allUnits = (this.gameEngine?.units ?? []).filter(
       (u: Unit) =>
         u.civilizationId === civId &&
@@ -1058,7 +1129,9 @@ export class EconomicManager {
         // beats its 1-gold upkeep. Disbanding it to save that upkeep destroys
         // value (and the whole catch in its hold), so a working boat is never
         // a disband candidate — an idle one still is.
-        !(u.type === 'fisher_boat' && u.fishingRoute),
+        !(u.type === 'fisher_boat' && u.fishingRoute) &&
+        !isMissionUnit(u) &&
+        !isLoadedFerry(u),
     );
     if (allUnits.length === 0) return 0;
 

@@ -7,6 +7,7 @@ import { humanOrFirst, notify } from './NotificationUtils';
 import type GameEngine from '../game/engine/GameEngine';
 import type { Technology, Unit, City, Civilization, VillageOutcome } from '../../types/game';
 import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
+import { debugLog } from './DevLog';
 
 export class EngineEventRouter {
   private gameEngine: GameEngine;
@@ -156,6 +157,15 @@ export class EngineEventRouter {
       case 'ALLIANCE_BROKEN':
         this.onAllianceBroken(eventData);
         break;
+      case 'CEASEFIRE_SIGNED':
+        this.onCeasefireSigned(eventData);
+        break;
+      case 'ALLIANCE_FORMED':
+        this.onAllianceFormed(eventData);
+        break;
+      case 'UNIT_BRIBED':
+        this.onUnitBribed(eventData);
+        break;
       case 'AI_DIPLOMACY_OFFER':
         this.onAIDiplomacyOffer(eventData);
         break;
@@ -172,10 +182,10 @@ export class EngineEventRouter {
         this.onTradeRouteEstablished(eventData);
         break;
       case 'GAME_LOG':
-        console.log('[EngineEventRouter] GAME_LOG:', eventData);
+        debugLog('[EngineEventRouter] GAME_LOG:', eventData);
         break;
         default:
-        console.log('Unhandled game engine event:', eventType, eventData);
+        debugLog('Unhandled game engine event:', eventType, eventData);
     }
   }
 
@@ -232,7 +242,7 @@ export class EngineEventRouter {
   private onTurnStart(_eventData: Record<string, unknown>) {
     const active = this.gameEngine.activePlayer;
     const civ = this.gameEngine.civilizations?.[active];
-    console.log('[EngineEventRouter] TURN_START for player', active, civ?.name);
+    debugLog('[EngineEventRouter] TURN_START for player', active, civ?.name);
 
     // Trigger top-bar flash animation on every turn start
     this.actions.incrementTurnFlash();
@@ -242,7 +252,7 @@ export class EngineEventRouter {
     
     if (civ?.isHuman) {
       if (tmWithRegister && typeof tmWithRegister.registerPlayer === 'function') {
-        console.log('[EngineEventRouter] Registering human player', active);
+        debugLog('[EngineEventRouter] Registering human player', active);
         tmWithRegister.registerPlayer(active);
       } else {
         console.warn('[EngineEventRouter] TurnManager not found or registerPlayer not available');
@@ -274,18 +284,18 @@ export class EngineEventRouter {
     // if the unit died during the AI turns, clear the (user-held) selection.
     const selectedId = useGameStore.getState().gameState.selectedUnit;
     if (selectedId && !this.gameEngine.units.some((u) => u.id === selectedId && u.isDefeated !== true)) {
-      console.log(`[SELECTION] Clearing preserved selection ${selectedId} — unit no longer exists`);
+      debugLog(`[SELECTION] Clearing preserved selection ${selectedId} — unit no longer exists`);
       this.actions.selectUnit(null, 'user');
     }
   }
 
   private onPhaseChange(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] PHASE_CHANGE:', eventData);
+    debugLog('[EngineEventRouter] PHASE_CHANGE:', eventData);
     this.actions.updateGameState({ currentTurn: useGameStore.getState().gameState.currentTurn });
   }
 
   private onNewGame(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] NEW_GAME: Updating map and initial visibility');
+    debugLog('[EngineEventRouter] NEW_GAME: Updating map and initial visibility');
     this.lastQueueLengths.clear();
     this.endTurnPromptShown.clear();
     (eventData.civilizations as Civilization[]).forEach((civ: Civilization, index: number) => {
@@ -381,7 +391,7 @@ export class EngineEventRouter {
         || unit.areTurnsDone === true
       ));
     if (spent) {
-      console.log(`[SELECTION] Releasing spent user selection ${selectedId} (${unit?.type ?? 'gone'}) — auto turn manager resumes`);
+      debugLog(`[SELECTION] Releasing spent user selection ${selectedId} (${unit?.type ?? 'gone'}) — auto turn manager resumes`);
       this.actions.updateGameState({ selectionOrigin: null });
     }
   }
@@ -890,7 +900,7 @@ export class EngineEventRouter {
 
   private onImprovementBuilt(eventData: Record<string, unknown>) {
     try {
-      console.log('[EngineEventRouter] IMPROVEMENT_BUILT', eventData);
+      debugLog('[EngineEventRouter] IMPROVEMENT_BUILT', eventData);
       this.actions.updateUnits(this.gameEngine.getAllUnits());
       this.actions.updateMap(this.gameEngine.map);
       this.actions.updateVisibility();
@@ -905,7 +915,7 @@ export class EngineEventRouter {
   }
 
   private onAutoEndTurn(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] AUTO_END_TURN for civ', eventData?.civilizationId);
+    debugLog('[EngineEventRouter] AUTO_END_TURN for civ', eventData?.civilizationId);
     // Pure UI updates only - no game logic. The selection is NOT cleared here:
     // `nextTurn` preserves a hand-made unit selection across the turn boundary.
     this.actions.nextTurn();
@@ -932,10 +942,10 @@ export class EngineEventRouter {
     const state = useGameStore.getState();
     const settings = state.settings;
     const activePlayer = this.gameEngine?.activePlayer ?? '?';
-    console.log(`[AUTO-END] CHECK_AUTO_END_TURN received (activePlayer: ${activePlayer}, autoEndTurn: ${settings.autoEndTurn}, skipConfirm: ${settings.skipEndTurnConfirmation})`);
+    debugLog(`[AUTO-END] CHECK_AUTO_END_TURN received (activePlayer: ${activePlayer}, autoEndTurn: ${settings.autoEndTurn}, skipConfirm: ${settings.skipEndTurnConfirmation})`);
 
     if (!settings.autoEndTurn) {
-      console.log('[AUTO-END] Auto end turn disabled, waiting for manual turn end');
+      debugLog('[AUTO-END] Auto end turn disabled, waiting for manual turn end');
       return;
     }
 
@@ -960,7 +970,7 @@ export class EngineEventRouter {
     if (needsResearch) {
       if (!this.researchPromptedForGap) {
         this.researchPromptedForGap = true;
-        console.log('[AUTO-END] Auto end turn deferred — no research selected');
+        debugLog('[AUTO-END] Auto end turn deferred — no research selected');
         notify('warning', 'Choose a technology to research first.');
         // Inform (do not decide for the player): "No Research Selected" modal.
         this.actions.showDialog('research-required');
@@ -982,11 +992,11 @@ export class EngineEventRouter {
     const decisionScreenOpen = this.isDecisionScreenOpen(state.uiState?.activeDialog ?? null);
     const combatActive = (state.combatAnimations ?? []).length > 0;
     if (decisionScreenOpen || combatActive) {
-      console.log(`[AUTO-END] Auto end turn DEFERRED (dialog: ${state.uiState?.activeDialog ?? 'none'}, combat: ${combatActive}) — will re-check when it closes`);
+      debugLog(`[AUTO-END] Auto end turn DEFERRED (dialog: ${state.uiState?.activeDialog ?? 'none'}, combat: ${combatActive}) — will re-check when it closes`);
       return;
     }
 
-    console.log('[AUTO-END] Auto-end reached — asking player to confirm via End Turn dialog');
+    debugLog('[AUTO-END] Auto-end reached — asking player to confirm via End Turn dialog');
     // Ask the player to confirm instead of ending instantly, so they get a
     // chance to cancel (wake a unit, adjust a city, …). The App shows the
     // "All Your Units Have Moved!" modal; with skipEndTurnConfirmation enabled
@@ -1014,7 +1024,7 @@ export class EngineEventRouter {
   }
 
   private onTurnEnd(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] TURN_END: Clearing UI state, civ:', eventData?.civilizationId);
+    debugLog('[EngineEventRouter] TURN_END: Clearing UI state, civ:', eventData?.civilizationId);
     // Pure UI cleanup only — but keep the unit the human is watching selected
     // across the turn boundary (the auto turn manager must not deselect it).
     this.keepHumanUnitSelection();
@@ -1030,7 +1040,7 @@ export class EngineEventRouter {
   }
 
   private onAIClearHighlights(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] AI_CLEAR_HIGHLIGHTS for civ', eventData?.civilizationId);
+    debugLog('[EngineEventRouter] AI_CLEAR_HIGHLIGHTS for civ', eventData?.civilizationId);
     // Clear UI highlights when an AI finishes its turn — but keep a unit the
     // human is watching selected.
     this.keepHumanUnitSelection();
@@ -1061,13 +1071,13 @@ export class EngineEventRouter {
   }
 
   private onCityProductionPhase(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] CITY_PRODUCTION_PHASE for civ', eventData?.civilizationId);
+    debugLog('[EngineEventRouter] CITY_PRODUCTION_PHASE for civ', eventData?.civilizationId);
     // Update UI to show city production phase
     this.actions.updateGameState({ currentTurn: useGameStore.getState().gameState.currentTurn });
   }
 
   private onResearchPhase(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] RESEARCH_PHASE for civ', eventData?.civilizationId);
+    debugLog('[EngineEventRouter] RESEARCH_PHASE for civ', eventData?.civilizationId);
     // Update UI to show research phase
     this.actions.updateGameState({ currentTurn: useGameStore.getState().gameState.currentTurn });
   }
@@ -1113,14 +1123,14 @@ export class EngineEventRouter {
   }
 
   private onPlayerRegistered(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] PLAYER_REGISTERED for civ', eventData?.civilizationId);
+    debugLog('[EngineEventRouter] PLAYER_REGISTERED for civ', eventData?.civilizationId);
     // Player registration is handled - update UI state
     this.actions.updateGameState({ currentTurn: useGameStore.getState().gameState.currentTurn });
   }
 
   private onUnitSkipped(eventData: Record<string, unknown>) {
     const unit = eventData?.unit as { id?: string; type?: string } | undefined;
-    console.log('[EngineEventRouter] UNIT_SKIPPED:', unit?.id, unit?.type);
+    debugLog('[EngineEventRouter] UNIT_SKIPPED:', unit?.id, unit?.type);
     // Unit was skipped - update unit state in UI
     if (this.actions?.updateUnits) {
       this.actions.updateUnits(this.gameEngine.getAllUnits());
@@ -1130,14 +1140,14 @@ export class EngineEventRouter {
   }
 
   private onAITargetHighlight(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] AI_TARGET_HIGHLIGHT:', eventData);
+    debugLog('[EngineEventRouter] AI_TARGET_HIGHLIGHT:', eventData);
     // Optionally, highlight the target tile in the UI (red overlay, etc.)
     // For now, just log and update visibility
     this.actions.updateVisibility();
   }
 
   private onUnitQueueInit(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] UNIT_QUEUE_INIT:', eventData);
+    debugLog('[EngineEventRouter] UNIT_QUEUE_INIT:', eventData);
     const unitId = (eventData?.unitId as string) || null;
     this.actions.setCurrentQueueUnitId(unitId);
     
@@ -1155,7 +1165,7 @@ export class EngineEventRouter {
   }
 
   private onUnitQueueAdvance(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] UNIT_QUEUE_ADVANCE:', eventData);
+    debugLog('[EngineEventRouter] UNIT_QUEUE_ADVANCE:', eventData);
     const unitId = (eventData?.unitId as string) || null;
     this.actions.setCurrentQueueUnitId(unitId);
     
@@ -1173,7 +1183,7 @@ export class EngineEventRouter {
   }
 
   private onUnitQueueChange(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] UNIT_QUEUE_CHANGE:', eventData);
+    debugLog('[EngineEventRouter] UNIT_QUEUE_CHANGE:', eventData);
     const unitId = (eventData?.currentUnitId as string) || null;
     const civilizationId = eventData?.civilizationId as number;
     
@@ -1246,7 +1256,7 @@ export class EngineEventRouter {
   }
 
   private onSelectQueueUnit(eventData: Record<string, unknown>) {
-    console.log('[EngineEventRouter] SELECT_QUEUE_UNIT:', eventData);
+    debugLog('[EngineEventRouter] SELECT_QUEUE_UNIT:', eventData);
     const unit = eventData?.unit as Unit | undefined;
     if (unit) {
       this.actions.setCurrentQueueUnitId(unit.id);
@@ -1275,7 +1285,7 @@ export class EngineEventRouter {
     const aggressor = civs.find((c: Civilization) => c.id === (eventData?.aggressorId as number));
     const target = civs.find((c: Civilization) => c.id === (eventData?.targetId as number));
     const msg = `${aggressor?.name ?? 'Unknown'} declared war on ${target?.name ?? 'Unknown'}!`;
-    console.log('[EngineEventRouter] WAR_DECLARED:', msg);
+    debugLog('[EngineEventRouter] WAR_DECLARED:', msg);
     notify('warning', msg, humanOrFirst(aggressor?.id, target?.id));
     this.syncState();
   }
@@ -1285,15 +1295,26 @@ export class EngineEventRouter {
     const civA = civs.find((c: Civilization) => c.id === (eventData?.civA as number));
     const civB = civs.find((c: Civilization) => c.id === (eventData?.civB as number));
     const msg = `Peace between ${civA?.name ?? 'Unknown'} and ${civB?.name ?? 'Unknown'}!`;
-    console.log('[EngineEventRouter] PEACE_MADE:', msg);
+    debugLog('[EngineEventRouter] PEACE_MADE:', msg);
     notify('success', msg, humanOrFirst(civA?.id, civB?.id));
     this.syncState();
   }
 
   private onDiplomacyEvent(eventData: Record<string, unknown>) {
-    if (eventData?.message) {
-      notify('info', eventData.message as string);
-    }
+    if (!eventData?.message) return;
+    const fromId = eventData.fromCivId as number | undefined;
+    const toId = eventData.toCivId as number | undefined;
+    // Events that name the two parties (e.g. first contact) are routed so
+    // AI-vs-AI chatter is filtered out by NotificationCenter. Older emissions
+    // without ids keep their always-show behaviour.
+    const routeId =
+      typeof fromId === 'number' || typeof toId === 'number'
+        ? humanOrFirst(fromId, toId)
+        : undefined;
+    notify('info', eventData.message as string, routeId);
+    // First contact and similar events change what the diplomacy screen may
+    // show (the met-civ list is read live from the engine), so refresh.
+    this.syncState();
   }
 
   private onAllianceBroken(eventData: Record<string, unknown>) {
@@ -1301,8 +1322,44 @@ export class EngineEventRouter {
     const civA = civs.find((c: Civilization) => c.id === (eventData?.civA as number));
     const civB = civs.find((c: Civilization) => c.id === (eventData?.civB as number));
     const msg = `💔 Alliance broken: ${civA?.name ?? 'Unknown'} declared war on ${civB?.name ?? 'Unknown'}!`;
-    console.log('[EngineEventRouter] ALLIANCE_BROKEN:', msg);
+    debugLog('[EngineEventRouter] ALLIANCE_BROKEN:', msg);
     notify('warning', msg, humanOrFirst(civA?.id, civB?.id));
+    this.syncState();
+  }
+
+  private onCeasefireSigned(eventData: Record<string, unknown>) {
+    const civs = this.gameEngine.civilizations || [];
+    const civA = civs.find((c: Civilization) => c.id === (eventData?.civA as number));
+    const civB = civs.find((c: Civilization) => c.id === (eventData?.civB as number));
+    const msg = `🏳️ Ceasefire agreed: ${civA?.name ?? 'Unknown'} and ${civB?.name ?? 'Unknown'}`;
+    debugLog('[EngineEventRouter] CEASEFIRE_SIGNED:', msg);
+    notify('success', msg, humanOrFirst(civA?.id, civB?.id));
+    this.syncState();
+  }
+
+  private onAllianceFormed(eventData: Record<string, unknown>) {
+    const civs = this.gameEngine.civilizations || [];
+    const civA = civs.find((c: Civilization) => c.id === (eventData?.civA as number));
+    const civB = civs.find((c: Civilization) => c.id === (eventData?.civB as number));
+    const msg = `🤝 Alliance formed: ${civA?.name ?? 'Unknown'} and ${civB?.name ?? 'Unknown'}`;
+    debugLog('[EngineEventRouter] ALLIANCE_FORMED:', msg);
+    notify('success', msg, humanOrFirst(civA?.id, civB?.id));
+    this.syncState();
+  }
+
+  /**
+   * A unit changed hands via bribery. Routed here rather than at the diplomat
+   * call site so the toast fires exactly once and also reaches the player when
+   * an AI buys one of THEIR units.
+   */
+  private onUnitBribed(eventData: Record<string, unknown>) {
+    const civs = this.gameEngine.civilizations || [];
+    const briber = civs.find((c: Civilization) => c.id === (eventData?.diplomatCivId as number));
+    const owner = civs.find((c: Civilization) => c.id === (eventData?.originalCivId as number));
+    const cost = eventData?.cost as number | undefined;
+    const msg = `🎭 ${briber?.name ?? 'Unknown'} bribed a unit from ${owner?.name ?? 'Unknown'}${cost ? ` (${cost} gold)` : ''}`;
+    debugLog('[EngineEventRouter] UNIT_BRIBED:', msg);
+    notify('warning', msg, humanOrFirst(briber?.id, owner?.id));
     this.syncState();
   }
 
@@ -1318,7 +1375,7 @@ export class EngineEventRouter {
 
     const civs = this.gameEngine.civilizations || [];
     const from = civs.find((c: Civilization) => c.id === (eventData.fromCivId as number));
-    console.log('[EngineEventRouter] AI_DIPLOMACY_OFFER from', from?.name ?? eventData.fromCivId, '→', eventData.action);
+    debugLog('[EngineEventRouter] AI_DIPLOMACY_OFFER from', from?.name ?? eventData.fromCivId, '→', eventData.action);
 
     if (eventData?.message) {
       notify('info', eventData.message as string);

@@ -91,6 +91,9 @@ describe('AI scouts blocking each other', () => {
     rounds: number,
   ): Promise<{ positions: Array<Record<string, string>>; logs: string[]; movesPerRound: number[] }> {
     const logs: string[] = [];
+    // The pipeline's per-turn logs are gated behind this flag (src/utils/DevLog.ts);
+    // this scenario asserts on movement lines, so switch the verbose logs on.
+    globalThis.__civDebugLogs = true;
     const realLog = console.log;
     const realWarn = console.warn;
     const realError = console.error;
@@ -155,6 +158,7 @@ describe('AI scouts blocking each other', () => {
       console.log = realLog;
       console.warn = realWarn;
       console.error = realError;
+      delete globalThis.__civDebugLogs;
     }
     return { positions, logs, movesPerRound };
   }

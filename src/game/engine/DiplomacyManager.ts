@@ -19,30 +19,71 @@ import type {
   DiplomacyEvent,
   IntelligenceReport,
   DiplomatAction,
+  ImpactEvent,
   TreatyType,
+  ProposalEvaluation,
 } from './DiplomacyTypes';
+import { attitudeFromScore } from './DiplomacyTypes';
+import {
+  applyImpact,
+  createOpinion,
+  normalizeOpinion,
+  readOpinion,
+  readOpinionHeldByOther,
+  recordRefusal,
+  noteOffer,
+} from './diplomacy/DiplomaticOpinion';
+import { diplomaticWeights, type DiplomaticWeights } from './diplomacy/DiplomaticWeights';
+import { computeImpact, impactText, warEventFor, type ImpactTerms } from './diplomacy/DiplomaticImpacts';
+import {
+  evaluateProposal,
+  proposalNoise,
+  rejectionReason,
+  seededNoise,
+  type ProposalContext,
+} from './diplomacy/ProposalScoring';
+import {
+  chooseAction,
+  exhaustionDelta,
+  EXHAUSTION_MAX,
+  maxConcurrentWars,
+  scoreCandidates,
+  shouldHonourMutualDefence,
+  type PolicyContext,
+} from './diplomacy/AIDiplomacyPolicy';
 import type { Unit, City } from '../../../types/game';
 import GameEngine from './GameEngine';
+import { debugLog } from '../../utils/DevLog';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Minimum turns a ceasefire must last before war can be declared again */
-const CEASEFIRE_COOLDOWN = 5;
-/** Reputation penalty for breaking a peace treaty */
-const PEACE_BREAK_PENALTY = -30;
-/** Reputation penalty for breaking an alliance */
-const ALLIANCE_BREAK_PENALTY = -50;
-/** Reputation penalty for surprise attack (declaring war from peace) */
-const SURPRISE_ATTACK_PENALTY = -20;
-/** Reputation recovered per turn toward 0 */
-const REPUTATION_RECOVERY_PER_TURN = 1;
 /** Base gold cost to bribe a unit (multiplied by unit attack+defense) */
 const BRIBE_UNIT_BASE_COST = 25;
-/** Base gold cost to bribe a city (multiplied by city population) */
 /** How many turns before AI re-evaluates diplomatic stance */
 const AI_DIPLOMACY_INTERVAL = 5;
+/**
+ * Base chance a spying attempt is noticed, before paranoia scales it. Spying
+ * was previously free and consequence-free; a civ that catches you now writes
+ * a real negative impact, scaled up to 3× by how suspicious it is.
+ */
+const SPY_DETECTION_BASE = 15;
+/**
+ * Rounds of peace a civ remembers you for, which is what makes a broken peace
+ * treaty expensive long after the fact.
+ */
+const GRIEVANCE_DECAY_PER_TURN = 0.5;
+
+/** How an AI proposal is phrased to the human, per action. */
+const AI_OFFER_MESSAGES: Partial<Record<DiplomatAction, (civName: string) => string>> = {
+  propose_peace: (n) => `${n} sues for peace.`,
+  propose_ceasefire: (n) => `${n} proposes a ceasefire.`,
+  propose_alliance: (n) => `${n} proposes an alliance.`,
+  offer_open_borders: (n) => `${n} proposes open borders.`,
+  propose_trade_agreement: (n) => `${n} proposes a trade agreement.`,
+  propose_non_aggression: (n) => `${n} proposes a non-aggression pact.`,
+};
 
 // ---------------------------------------------------------------------------
 // DiplomacyManager
@@ -54,6 +95,20 @@ export class DiplomacyManager {
   private relations: Map<string, DiplomaticRelation> = new Map();
   /** Log of diplomatic events (most recent first, capped at 50) */
   private eventLog: DiplomacyEvent[] = [];
+  /**
+   * Civilization pairs that have physically met, keyed exactly like
+   * `relations`. Contact is a PAIR fact: when one side sees the other, both
+   * learn of each other. Barbarians are never recorded.
+   */
+  private contactedPairs: Set<string> = new Set();
+  /**
+   * Per-civ war wear, 0…EXHAUSTION_MAX. Fighting costs, peace heals. This is
+   * what turns a grinding stalemate into a negotiated one instead of a war that
+   * runs to the end of the game.
+   */
+  private warExhaustion: Map<number, number> = new Map();
+  /** Monotonic counter so repeated identical proposals are not identical draws. */
+  private proposalSequence = 0;
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
@@ -65,6 +120,9 @@ export class DiplomacyManager {
   initialize(civIds: number[]): void {
     this.relations.clear();
     this.eventLog = [];
+    this.contactedPairs.clear();
+    this.warExhaustion.clear();
+    this.proposalSequence = 0;
     for (let i = 0; i < civIds.length; i++) {
       for (let j = i + 1; j < civIds.length; j++) {
         const key = this.key(civIds[i], civIds[j]);
@@ -73,9 +131,8 @@ export class DiplomacyManager {
           civB: civIds[j],
           status: 'peace',
           since: 0,
-          reputationModifier: 0,
-          treatiesBrokenByA: 0,
-          treatiesBrokenByB: 0,
+          opinionAtoB: createOpinion(),
+          opinionBtoA: createOpinion(),
           activeTreaties: [],
           treatySince: {},
           tradeGoldPerTurn: 0,
@@ -88,6 +145,64 @@ export class DiplomacyManager {
   reset(): void {
     this.relations.clear();
     this.eventLog = [];
+    this.contactedPairs.clear();
+    this.warExhaustion.clear();
+    this.proposalSequence = 0;
+  }
+
+  // ─── Contact / first meeting ───────────────────────────────────────
+
+  /**
+   * Record that two civilizations have met. Returns true only when this was a
+   * NEW contact, so the caller can announce it exactly once. Ignored for
+   * barbarians and for pairs that have no relation record.
+   */
+  markContact(civA: number, civB: number): boolean {
+    if (civA === civB) return false;
+    if (civA < 0 || civB < 0) return false;
+    const rel = this.relations.get(this.key(civA, civB));
+    if (!rel) return false;
+    if (this.contactedPairs.has(this.key(civA, civB))) return false;
+    this.contactedPairs.add(this.key(civA, civB));
+    // Meeting is itself a (small) event: a xenophobic civ is not delighted by
+    // it, a diplomatic one mildly is. Both sides form an opinion.
+    this.recordImpactOn(rel, civA, 'first_contact');
+    this.recordImpactOn(rel, civB, 'first_contact');
+    return true;
+  }
+
+  /** Whether these two civilizations have met. */
+  hasContacted(civA: number, civB: number): boolean {
+    if (civA === civB) return true;
+    return this.contactedPairs.has(this.key(civA, civB));
+  }
+
+  /** Every counterpart this civilization has already met. */
+  getMetCivs(civId: number): number[] {
+    const met: number[] = [];
+    for (const rel of this.relations.values()) {
+      const other = rel.civA === civId ? rel.civB : rel.civB === civId ? rel.civA : null;
+      if (other === null) continue;
+      if (this.contactedPairs.has(this.key(civId, other))) met.push(other);
+    }
+    return met;
+  }
+
+  /** Serialize met pairs (for save/load). */
+  exportContactedPairs(): string[] {
+    return Array.from(this.contactedPairs);
+  }
+
+  restoreContactedPairs(pairs: string[]): void {
+    this.contactedPairs = new Set(pairs);
+  }
+
+  /**
+   * Treat every known pair as met. Used when loading a save that predates
+   * contact tracking, so the diplomacy screen does not suddenly empty out.
+   */
+  markAllContactsMet(): void {
+    for (const key of this.relations.keys()) this.contactedPairs.add(key);
   }
 
   // ─── Key helpers ───────────────────────────────────────────────────
@@ -154,10 +269,29 @@ export class DiplomacyManager {
   /** Restore relations from saved data (for load game) */
   restoreRelations(relations: DiplomaticRelation[]): void {
     this.relations.clear();
+    this.warExhaustion.clear();
     for (const rel of relations) {
       const key = this.key(rel.civA, rel.civB);
-      this.relations.set(key, { ...rel });
+      // Saves written before the opinion ledger (v3 and earlier) have no
+      // opinions at all; normalizeOpinion fills a neutral one so the maths can
+      // never read undefined. See backfillOpinion in GameEngine for the
+      // migration that turns those old numbers into goodwill.
+      this.relations.set(key, {
+        ...rel,
+        opinionAtoB: normalizeOpinion(rel.opinionAtoB),
+        opinionBtoA: normalizeOpinion(rel.opinionBtoA),
+        activeTreaties: rel.activeTreaties ?? [],
+        treatySince: rel.treatySince ?? {},
+      });
     }
+  }
+
+  /**
+   * War wear for a civ, 0…EXHAUSTION_MAX. Public because the diplomacy screen
+   * shows it and the AI tests assert on it.
+   */
+  getWarExhaustion(civId: number): number {
+    return this.warExhaustion.get(civId) ?? 0;
   }
 
   /** Restore event log from saved data (for load game) */
@@ -170,64 +304,75 @@ export class DiplomacyManager {
     return [...this.eventLog];
   }
 
-  // ─── Attitude calculation ──────────────────────────────────────────
+  // ─── Opinion & attitude ────────────────────────────────────────────
 
-  /** Calculate AI attitude toward another civilization */
+  /** Calculate the attitude `fromCivId` holds toward `towardCivId`. */
   getAttitude(fromCivId: number, towardCivId: number): Attitude {
+    return attitudeFromScore(this.getAttitudeScore(fromCivId, towardCivId));
+  }
+
+  /**
+   * Raw goodwill `fromCivId` holds toward `towardCivId` — the single number
+   * the meter draws and the bands bucket.
+   *
+   * This used to be recomputed from scratch on every read, mixing personality
+   * offsets, a reputation term and a broken-treaty term that were ALSO
+   * counted in `calculateWillingness`. It is now a stored ledger that only
+   * moves when something actually happens, which is both cheaper and the only
+   * way "every act has a lasting effect" can be true.
+   */
+  getAttitudeScore(fromCivId: number, towardCivId: number): number {
     const rel = this.getRelation(fromCivId, towardCivId);
-    if (!rel) return 'neutral';
+    if (!rel) return 0;
+    return readOpinion(rel, fromCivId).goodwill;
+  }
 
-    const fromCiv = this.gameEngine.civilizations?.[fromCivId];
-    const personality = fromCiv?.personality;
+  /** The full directed ledger one civ holds about another (for the UI). */
+  getOpinion(aboutCivId: number, towardCivId: number) {
+    const rel = this.getRelation(aboutCivId, towardCivId);
+    if (!rel) return readOpinion({ civA: aboutCivId, civB: towardCivId } as DiplomaticRelation, aboutCivId);
+    return readOpinion(rel, aboutCivId);
+  }
 
-    let score = 0;
+  /** How THEY feel about us — the direction the diplomacy screen shows. */
+  getTheirOpinion(usCivId: number, themCivId: number) {
+    const rel = this.getRelation(usCivId, themCivId);
+    if (!rel) return createOpinion();
+    return readOpinionHeldByOther(rel, usCivId);
+  }
 
-    // Base disposition from personality
-    if (personality) {
-      score += (personality.diplomacy - 5) * 3; // diplomatic civs start friendlier
-      score -= (personality.aggression - 5) * 2; // aggressive civs are meaner
-    }
+  /** The diplomatic weight vector for a civ (personality as multipliers). */
+  weightsFor(civId: number): DiplomaticWeights {
+    return diplomaticWeights(this.gameEngine.civilizations?.[civId]);
+  }
 
-    // Reputation impact
-    const broken = fromCivId < towardCivId ? rel.treatiesBrokenByB : rel.treatiesBrokenByA;
-    score -= broken * 15;
-    score += rel.reputationModifier;
+  /**
+   * The single point where an act becomes goodwill. Every diplomatic action
+   * funnels through here, so the ledger and its reason list can never drift
+   * apart, and rebalancing the whole model means editing one table.
+   */
+  private recordImpactOn(
+    rel: DiplomaticRelation,
+    holderCivId: number,
+    event: ImpactEvent,
+    terms?: ImpactTerms,
+    detail?: string,
+  ): number {
+    const weights = this.weightsFor(holderCivId);
+    const round = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const { delta } = computeImpact(event, weights, rel.status, terms);
+    const reason = applyImpact(rel, holderCivId, event, delta, round, detail);
+    return reason.delta;
+  }
 
-    // Current status impact
-    if (rel.status === 'alliance') score += 20;
-    else if (rel.status === 'war') score -= 30;
-    else if (rel.status === 'ceasefire') score -= 10;
+  /** Public reason list, newest first — the "why do they hate me" feed. */
+  getImpactReasons(aboutCivId: number, towardCivId: number) {
+    return this.getOpinion(aboutCivId, towardCivId).reasons;
+  }
 
-    // Active treaty bonuses
-    if (rel.activeTreaties?.includes('trade_agreement')) score += 5;
-    if (rel.activeTreaties?.includes('open_borders')) score += 3;
-    if (rel.activeTreaties?.includes('mutual_defense')) score += 8;
-    if (rel.activeTreaties?.includes('non_aggression')) score += 4;
-
-    // Military strength comparison
-    const ownStrength = this.estimateMilitaryStrength(fromCivId);
-    const theirStrength = this.estimateMilitaryStrength(towardCivId);
-    if (theirStrength > ownStrength * 1.5) score -= 10; // fear
-    if (ownStrength > theirStrength * 2) score += 5; // contempt → more aggressive but not hostile
-
-    // Border friction: nearby cities create tension
-    const ownCities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === fromCivId) ?? [];
-    const theirCities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === towardCivId) ?? [];
-    let minCityDist = Infinity;
-    for (const oc of ownCities) {
-      for (const tc of theirCities) {
-        const d = this.gameEngine.squareGrid?.squareDistance?.(oc.col, oc.row, tc.col, tc.row) ?? Infinity;
-        if (d < minCityDist) minCityDist = d;
-      }
-    }
-    if (minCityDist <= 4) score -= 8;        // very close borders → friction
-    else if (minCityDist <= 7) score -= 3;   // moderate proximity
-    // distant civs get no penalty
-
-    if (score >= 15) return 'friendly';
-    if (score >= -5) return 'neutral';
-    if (score >= -20) return 'annoyed';
-    return 'hostile';
+  /** Human-readable label for an impact event, for the UI. */
+  impactLabel(event: ImpactEvent): string {
+    return impactText(event);
   }
 
   // ─── State changes ─────────────────────────────────────────────────
@@ -236,23 +381,40 @@ export class DiplomacyManager {
   declareWar(aggressorId: number, targetId: number): void {
     const rel = this.getRelation(aggressorId, targetId);
     if (!rel || rel.status === 'war') return;
+    // You cannot declare war on someone you have never met.
+    this.markContact(aggressorId, targetId);
 
     const previousStatus = rel.status;
     const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const turnsIntoStatus = roundNumber - rel.since;
 
-    // Apply reputation penalties for treaty-breaking
-    if (previousStatus === 'peace') {
-      this.applyReputationPenalty(aggressorId, targetId, SURPRISE_ATTACK_PENALTY);
-      this.incrementBroken(aggressorId, targetId);
-    } else if (previousStatus === 'alliance') {
-      this.applyReputationPenalty(aggressorId, targetId, ALLIANCE_BREAK_PENALTY);
-      this.incrementBroken(aggressorId, targetId);
-    } else if (previousStatus === 'ceasefire') {
-      const turnsSince = roundNumber - rel.since;
-      if (turnsSince < CEASEFIRE_COOLDOWN) {
-        this.applyReputationPenalty(aggressorId, targetId, PEACE_BREAK_PENALTY);
-        this.incrementBroken(aggressorId, targetId);
-      }
+    // The victim forms the strong opinion: how much this hurts depends on what
+    // was broken and on how the victim's personality weighs betrayal. There is
+    // no flat penalty any more — that was the SURPRISE_ATTACK_PENALTY pair.
+    const event = warEventFor(previousStatus, turnsIntoStatus);
+    this.recordImpactOn(rel, targetId, event, undefined,
+      `war from ${previousStatus} after ${turnsIntoStatus} turn(s)`);
+
+    // The aggressor's own opinion sours too, but far less: a loyal civ is
+    // genuinely uneasy about attacking a former partner, a ruthless one is not.
+    if (previousStatus === 'alliance' || previousStatus === 'ceasefire') {
+      this.recordImpactOn(rel, aggressorId, event, undefined, 'our own aggression');
+    }
+
+    // Everyone else finds out: an attack on a civ they know hardens them
+    // against the aggressor. This is how one war cascades into reputational
+    // damage across the whole map, and it only touches civs that have met.
+    for (const third of this.gameEngine.civilizations ?? []) {
+      if (third.id === aggressorId || third.id === targetId) continue;
+      if (third.isAlive === false || !this.hasContacted(third.id, aggressorId)) continue;
+      if (!this.hasContacted(third.id, targetId)) continue;
+      const heard = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+      const fear = this.estimateMilitaryStrength(aggressorId)
+        / Math.max(1, this.estimateMilitaryStrength(third.id));
+      const thirdRel = this.getRelation(third.id, aggressorId);
+      if (!thirdRel) continue;
+      applyImpact(thirdRel, third.id, 'surprise_attack',
+        -Math.round(6 * (fear > 1.5 ? 1.5 : 0.5)), heard, `heard about the war on ${targetId}`);
     }
 
     rel.status = 'war';
@@ -265,7 +427,7 @@ export class DiplomacyManager {
       details: `War declared (was: ${previousStatus})`,
     });
 
-    console.log(`[DIPLOMACY] Civ ${aggressorId} declared war on Civ ${targetId}`);
+    debugLog(`[DIPLOMACY] Civ ${aggressorId} declared war on Civ ${targetId}`);
     this.emitEvent('WAR_DECLARED', { aggressorId, targetId });
   }
 
@@ -273,10 +435,19 @@ export class DiplomacyManager {
   makePeace(civA: number, civB: number): void {
     const rel = this.getRelation(civA, civB);
     if (!rel || rel.status === 'peace') return;
+    this.markContact(civA, civB);
 
     const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
     rel.status = 'peace';
     rel.since = roundNumber;
+    // Marks the pair as having signed a peace, which arms the cooldown that
+    // stops the "declare war the instant peace is signed" loop.
+    rel.peaceSignedAt = roundNumber;
+
+    // A signed peace is worth goodwill, scaled by how open the civ is — and
+    // reaching it after a long war is worth more than a walkout.
+    this.recordImpactOn(rel, civA, 'peace_made');
+    this.recordImpactOn(rel, civB, 'peace_made');
 
     this.logEvent({
       type: 'peace_made',
@@ -284,7 +455,7 @@ export class DiplomacyManager {
       toCivId: civB,
     });
 
-    console.log(`[DIPLOMACY] Peace between Civ ${civA} and Civ ${civB}`);
+    debugLog(`[DIPLOMACY] Peace between Civ ${civA} and Civ ${civB}`);
     this.emitEvent('PEACE_MADE', { civA, civB });
   }
 
@@ -292,10 +463,14 @@ export class DiplomacyManager {
   signCeasefire(civA: number, civB: number): void {
     const rel = this.getRelation(civA, civB);
     if (!rel || rel.status !== 'war') return;
+    this.markContact(civA, civB);
 
     const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
     rel.status = 'ceasefire';
     rel.since = roundNumber;
+
+    this.recordImpactOn(rel, civA, 'ceasefire_signed');
+    this.recordImpactOn(rel, civB, 'ceasefire_signed');
 
     this.logEvent({
       type: 'ceasefire_signed',
@@ -303,7 +478,7 @@ export class DiplomacyManager {
       toCivId: civB,
     });
 
-    console.log(`[DIPLOMACY] Ceasefire between Civ ${civA} and Civ ${civB}`);
+    debugLog(`[DIPLOMACY] Ceasefire between Civ ${civA} and Civ ${civB}`);
     this.emitEvent('CEASEFIRE_SIGNED', { civA, civB });
   }
 
@@ -311,10 +486,14 @@ export class DiplomacyManager {
   formAlliance(civA: number, civB: number): void {
     const rel = this.getRelation(civA, civB);
     if (!rel || rel.status === 'war') return;
+    this.markContact(civA, civB);
 
     const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
     rel.status = 'alliance';
     rel.since = roundNumber;
+
+    this.recordImpactOn(rel, civA, 'alliance_formed');
+    this.recordImpactOn(rel, civB, 'alliance_formed');
 
     this.logEvent({
       type: 'alliance_formed',
@@ -322,7 +501,7 @@ export class DiplomacyManager {
       toCivId: civB,
     });
 
-    console.log(`[DIPLOMACY] Alliance between Civ ${civA} and Civ ${civB}`);
+    debugLog(`[DIPLOMACY] Alliance between Civ ${civA} and Civ ${civB}`);
     this.emitEvent('ALLIANCE_FORMED', { civA, civB });
   }
 
@@ -343,6 +522,7 @@ export class DiplomacyManager {
   signTreaty(civA: number, civB: number, treaty: TreatyType, extra?: { goldPerTurn?: number; targetCivId?: number; [key: string]: unknown }): void {
     const rel = this.getRelation(civA, civB);
     if (!rel) return;
+    this.markContact(civA, civB);
 
     // Can't sign treaties while at war (except non-aggression after ceasefire)
     if (rel.status === 'war' && treaty !== 'non_aggression') return;
@@ -370,14 +550,32 @@ export class DiplomacyManager {
       embargo_target: 'embargo_declared',
     }[treaty] as DiplomacyEvent['type'];
 
+    // Signing is a positive act, and which treaty it is decides how much it is
+    // worth: a mercantile civ loves trade, a paranoid one is glad of a pact.
+    const impactEvent: ImpactEvent = {
+      open_borders: 'open_borders_signed',
+      trade_agreement: 'trade_signed',
+      mutual_defense: 'mutual_defense_signed',
+      non_aggression: 'non_aggression_signed',
+      embargo_target: 'embargo_signed',
+    }[treaty] as ImpactEvent;
+    const detail = treaty === 'embargo_target' ? `Embargo on Civ ${extra?.targetCivId}` : undefined;
+    // The trade rate is part of the magnitude, so 2 gold/turn and 20 gold/turn
+    // are not the same deal.
+    const terms: ImpactTerms | undefined = treaty === 'trade_agreement'
+      ? { gold: rel.tradeGoldPerTurn }
+      : undefined;
+    this.recordImpactOn(rel, civB, impactEvent, terms, detail);
+    this.recordImpactOn(rel, civA, impactEvent, terms, detail);
+
     this.logEvent({
       type: eventType,
       fromCivId: civA,
       toCivId: civB,
-      details: treaty === 'embargo_target' ? `Embargo on Civ ${extra?.targetCivId}` : undefined,
+      details: detail,
     });
 
-    console.log(`[DIPLOMACY] Treaty signed: ${treaty} between Civ ${civA} and Civ ${civB}`);
+    debugLog(`[DIPLOMACY] Treaty signed: ${treaty} between Civ ${civA} and Civ ${civB}`);
   }
 
   /** Cancel a treaty between two civs */
@@ -394,8 +592,10 @@ export class DiplomacyManager {
     if (treaty === 'trade_agreement') rel.tradeGoldPerTurn = 0;
     if (treaty === 'embargo_target') rel.embargoTargetCivId = undefined;
 
-    // Small reputation hit for cancelling treaties
-    this.applyReputationPenalty(civId, otherId, -5);
+    // Walking out of a signed agreement costs goodwill, and it costs a loyal
+    // civ considerably more than a cynical one.
+    this.recordImpactOn(rel, otherId, 'treaty_cancelled', undefined, treaty);
+    this.recordImpactOn(rel, civId, 'treaty_cancelled', undefined, treaty);
 
     this.logEvent({
       type: 'treaty_cancelled',
@@ -412,41 +612,115 @@ export class DiplomacyManager {
 
   // ─── Proposals (human or AI initiated) ─────────────────────────────
 
-  /** Process a diplomatic proposal. Returns whether accepted. */
+  /**
+   * Gather everything a proposal's decision depends on. Shared by
+   * `previewProposal` (so the UI can show the arithmetic before the player
+   * commits) and `processProposal` (so the engine and the preview can never
+   * disagree) — one model, two callers.
+   */
+  private proposalContext(proposal: DiplomacyProposal): ProposalContext {
+    const { fromCivId, toCivId, action } = proposal;
+    const rel = this.getRelation(toCivId, fromCivId);
+    const ownStrength = this.estimateMilitaryStrength(toCivId);
+    const theirStrength = this.estimateMilitaryStrength(fromCivId);
+    // "Share an enemy" is what gives an alliance its strategic value, and it is
+    // the term the old flat −10 alliance penalty had no room for.
+    const ownEnemies = new Set(this.getEnemies(toCivId));
+    const sharedEnemy = this.getEnemies(fromCivId).some((e) => ownEnemies.has(e));
+    return {
+      responder: toCivId,
+      proposer: fromCivId,
+      action,
+      // The RESPONDER's opinion of the proposer. (Not `getTheirOpinion`:
+      // that is the reverse direction, and reading it here made every proposal
+      // be judged on what the proposer thought of the responder.)
+      opinion: rel ? readOpinion(rel, toCivId) : createOpinion(),
+      weights: this.weightsFor(toCivId),
+      status: rel?.status ?? 'peace',
+      treaties: rel?.activeTreaties ?? [],
+      ownStrength,
+      theirStrength,
+      ownGold: this.gameEngine.civilizations?.[toCivId]?.resources?.gold ?? 0,
+      goldAmount: proposal.goldAmount,
+      sharedEnemy,
+      round: this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
+      sequence: this.proposalSequence++,
+    };
+  }
+
+  /**
+   * The same arithmetic the engine uses, with the noise term left out, so the
+   * negotiation screen can show a player exactly why a deal will or will not
+   * land — including which term is doing the most damage.
+   */
+  previewProposal(proposal: DiplomacyProposal): ProposalEvaluation {
+    return evaluateProposal(this.proposalContext(proposal), proposal, 0);
+  }
+
+  /**
+   * Resolve a proposal. The decision is a readable score against a
+   * personality-scaled bar plus ±5 points of seeded noise — not a fresh 0-100
+   * roll — so the same terms at the same state are reliably answerable, a
+   * 500-gold demand is treated differently from a 5-gold one, and refusing
+   * costs the proposer something.
+   */
   processProposal(proposal: DiplomacyProposal): DiplomacyResponse {
     const { fromCivId, toCivId, action } = proposal;
-    const attitude = this.getAttitude(toCivId, fromCivId);
-    const willingness = this.calculateWillingness(toCivId, fromCivId, action, attitude);
-    const roll = Math.random() * 100;
-    const accepted = roll < willingness;
+    // Negotiating with someone is how you meet them, if sight did not.
+    this.markContact(fromCivId, toCivId);
+    const ctx = this.proposalContext(proposal);
+    const evaluation = evaluateProposal(ctx, proposal, proposalNoise(ctx, fromCivId));
+    const rel = this.getRelation(toCivId, fromCivId);
 
-    console.log(`[DIPLOMACY] Proposal: ${action} from Civ ${fromCivId} to Civ ${toCivId}, willingness=${willingness.toFixed(0)}%, roll=${roll.toFixed(0)}, accepted=${accepted}`);
+    debugLog(
+      `[DIPLOMACY] Proposal: ${action} from Civ ${fromCivId} to Civ ${toCivId}, `
+      + `score=${evaluation.score} vs threshold=${evaluation.threshold} `
+      + `noise=${evaluation.noise} → ${evaluation.accepted ? 'accepted' : 'refused'} `
+      + `(${evaluation.decisiveFactor})`,
+    );
 
-    if (!accepted) {
-      // AI may make a counter-proposal
-      const counter = this.generateCounterProposal(fromCivId, toCivId, action, attitude);
+    if (rel) noteOffer(rel, toCivId, ctx.round);
+
+    if (!evaluation.accepted) {
+      // Refusing is remembered, so proposal spam is self-defeating: each
+      // refusal makes the next one less likely to land.
+      if (rel) recordRefusal(rel, toCivId, ctx.round);
+      // An AI ignores a peace offer it does not want, and takes it personally.
+      if ((action === 'propose_peace' || action === 'propose_ceasefire') && rel) {
+        this.recordImpactOn(rel, fromCivId, 'refused_peace', undefined,
+          `our ${action.replace(/_/g, ' ')} was turned down`);
+      }
+      const counter = this.generateCounterProposal(fromCivId, toCivId, action, this.getAttitude(toCivId, fromCivId));
       this.logEvent({
         type: 'treaty_rejected',
         fromCivId,
         toCivId,
-        details: `${action} rejected${counter ? ' (counter-proposal offered)' : ''}`,
+        details: `${action} rejected (${evaluation.decisiveFactor})${counter ? ' (counter-proposal offered)' : ''}`,
       });
-      return { accepted: false, reason: this.getRejectReason(attitude), counterProposal: counter ?? undefined };
+      return {
+        accepted: false,
+        reason: rejectionReason(evaluation, ctx.opinion),
+        counterProposal: counter ?? undefined,
+      };
     }
 
-    // Execute the accepted action
+    // An accepted offer clears the refusal memory — the proposer has paid
+    // attention at last.
+    if (rel) {
+      readOpinion(rel, toCivId).offersRefused = 0;
+    }
+
     return this.executeAcceptedAction(proposal);
   }
 
   /**
    * Execute an AI-initiated proposal that the human player explicitly accepted
-   * in the negotiation screen. Unlike `processProposal` there is no willingness
-   * roll — the player's accept/reject decision IS the answer, so the action is
-   * executed directly.
+   * in the negotiation screen. Unlike `processProposal` there is no scoring
+   * pass at all — the player's accept/reject decision IS the answer.
    */
   acceptOffer(proposal: DiplomacyProposal): DiplomacyResponse {
     const { fromCivId, action } = proposal;
-    console.log(`[DIPLOMACY] Player accepted ${action} from Civ ${fromCivId}`);
+    debugLog(`[DIPLOMACY] Player accepted ${action} from Civ ${fromCivId}`);
     return this.executeAcceptedAction(proposal);
   }
 
@@ -479,6 +753,18 @@ export class DiplomacyManager {
 
         if (targetCiv?.resources) targetCiv.resources.gold -= paid;
         if (fromCiv?.resources) fromCiv.resources.gold += paid;
+
+        // Being milked is remembered: the payer likes the extractor less, and
+        // the size of the payment scales the insult. A 20-gold exaction is an
+        // annoyance; a 400-gold one shapes the next twenty turns of diplomacy.
+        const tributeRel = this.getRelation(toCivId, fromCivId);
+        if (tributeRel) {
+          this.recordImpactOn(tributeRel, toCivId, 'tribute_extorted',
+            { gold: paid }, `${paid} gold`);
+          // The extractor gets no credit for it — this is not a gift.
+          this.recordImpactOn(tributeRel, fromCivId, 'tribute_extorted',
+            { gold: paid }, `we took ${paid} gold`);
+        }
 
         this.logEvent({
           type: 'tribute_paid',
@@ -531,6 +817,14 @@ export class DiplomacyManager {
         // Exchange: add techs to both sides
         if (fromTechs && !fromTechs.includes(techRequested)) fromTechs.push(techRequested);
         if (toTechs && !toTechs.includes(techOffered)) toTechs.push(techOffered);
+        // A fair swap is one of the few unambiguously good acts in the game.
+        const exchangeRel = this.getRelation(toCivId, fromCivId);
+        if (exchangeRel) {
+          this.recordImpactOn(exchangeRel, toCivId, 'tech_exchanged',
+            { tech: true }, `${techOffered} ↔ ${techRequested}`);
+          this.recordImpactOn(exchangeRel, fromCivId, 'tech_exchanged',
+            { tech: true }, `${techOffered} ↔ ${techRequested}`);
+        }
         this.logEvent({
           type: 'tech_exchanged',
           fromCivId,
@@ -552,6 +846,25 @@ export class DiplomacyManager {
     const military = this.gameEngine.units?.filter(
       (u: Unit) => u.civilizationId === targetCivId && (u.attack || 0) > 0
     ) ?? [];
+
+    // Spying used to be free and consequence-free. It still works, but a
+    // suspicious civ may notice, and being caught writes a real negative
+    // impact — up to 3× for the most paranoid. Deterministic per (spy, target,
+    // round) so a replay matches.
+    const round = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const paranoia = this.weightsFor(targetCivId).paranoia;
+    const detectionChance = SPY_DETECTION_BASE + (paranoia - 5) * 8;
+    const noticed = seededNoise([spyCivId, targetCivId, 'spy', round]) * 50 + 50 < detectionChance;
+    const spyRel = this.getRelation(targetCivId, spyCivId);
+    if (noticed && spyRel) {
+      this.recordImpactOn(spyRel, targetCivId, 'spy_detected', undefined, 'our diplomat');
+      this.logEvent({
+        type: 'intelligence_gathered',
+        fromCivId: spyCivId,
+        toCivId: targetCivId,
+        details: 'Caught in the act',
+      });
+    }
 
     this.logEvent({
       type: 'intelligence_gathered',
@@ -585,15 +898,17 @@ export class DiplomacyManager {
       return { accepted: false, reason: `Requires ${cost} gold (have ${gold})` };
     }
 
-    // Bribe success chance: 60% base, modified by attitude.
-    // Hostile civs are easier to bribe (units are demoralised),
-    // friendly civs are harder (units are loyal).
-    const attitude = this.getAttitude(unit.civilizationId, diplomatCivId);
+    // Bribe success: 60% base, tilted by how the unit's owner feels about us
+    // (morale in a hostile civ, loyalty in a friendly one) and made harsher by
+    // the target's suspicion. Seeded, so the same bribe attempt at the same
+    // moment always resolves the same way.
+    const ownerOpinion = this.getTheirOpinion(diplomatCivId, unit.civilizationId);
     let chance = 60;
-    if (attitude === 'hostile') chance += 20;
-    else if (attitude === 'friendly') chance -= 20;
-
-    if (Math.random() * 100 >= chance) {
+    chance += (ownerOpinion.goodwill < -20 ? 20 : ownerOpinion.goodwill > 20 ? -20 : 0);
+    chance += (this.weightsFor(unit.civilizationId).paranoia - 5) * 2;
+    const round = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const roll = seededNoise([diplomatCivId, unit.civilizationId, targetUnitId, 'bribe', round]) * 50 + 50;
+    if (roll >= chance) {
       return { accepted: false, reason: 'Bribe failed — the unit refused' };
     }
 
@@ -609,6 +924,14 @@ export class DiplomacyManager {
       this.declareWar(diplomatCivId, originalCivId);
     }
 
+    // Losing a unit to bribery is a humiliation, and it stings hardest for a
+    // civ that takes loyalty seriously.
+    const bribeRel = this.getRelation(originalCivId, diplomatCivId);
+    if (bribeRel) {
+      this.recordImpactOn(bribeRel, originalCivId, 'unit_bribed',
+        { gold: cost }, unit.type);
+    }
+
     this.logEvent({
       type: 'unit_bribed',
       fromCivId: diplomatCivId,
@@ -617,21 +940,47 @@ export class DiplomacyManager {
       details: `Bribed ${unit.type}`,
     });
 
-    console.log(`[DIPLOMACY] Civ ${diplomatCivId} bribed unit ${targetUnitId} for ${cost} gold`);
-    this.emitEvent('UNIT_BRIBED', { diplomatCivId, unitId: targetUnitId, cost });
+    debugLog(`[DIPLOMACY] Civ ${diplomatCivId} bribed unit ${targetUnitId} for ${cost} gold`);
+    // `originalCivId` is included so the UI can route the notification to the
+    // human when it was THEIR unit that was bought out.
+    this.emitEvent('UNIT_BRIBED', { diplomatCivId, unitId: targetUnitId, originalCivId, cost });
     return { accepted: true, goldTransferred: -cost };
   }
 
   // ─── Turn processing ───────────────────────────────────────────────
 
-  /** Called once per round to recover reputation and handle AI decisions */
-  processTurn(_roundNumber: number): void {
-    // Recover reputation toward 0
+  /**
+   * Called once per round: ledgers settle, fear tracks the balance of power,
+   * and treaties do their work.
+   *
+   * The old version "recovered reputation toward 0" by 1/turn, which meant a
+   * -50 alliance betrayal had fully evaporated in 50 turns and left no trace.
+   * Grievance now decays slowly and independently of goodwill, so a betrayal
+   * is never fully forgiven by arithmetic — only by a later good act.
+   */
+  processTurn(roundNumber: number): void {
+    const round = roundNumber || this.gameEngine.roundManager?.getRoundNumber?.() || 0;
     for (const rel of this.relations.values()) {
-      if (rel.reputationModifier < 0) {
-        rel.reputationModifier = Math.min(0, rel.reputationModifier + REPUTATION_RECOVERY_PER_TURN);
-      } else if (rel.reputationModifier > 0) {
-        rel.reputationModifier = Math.max(0, rel.reputationModifier - REPUTATION_RECOVERY_PER_TURN);
+      for (const holder of [rel.civA, rel.civB]) {
+        const opinion = readOpinion(rel, holder);
+        // Slow, partial healing: a civ never forgets entirely, it just stops
+        // being the first thing on its mind.
+        opinion.grievance = Math.max(0, opinion.grievance - GRIEVANCE_DECAY_PER_TURN);
+        // Fear follows the balance of power and fades when the threat recedes.
+        // This is what lets a shrinking rival be courted again, and what makes
+        // an expanding one dangerous even without a single battle.
+        const theirId = holder === rel.civA ? rel.civB : rel.civA;
+        const ratio = this.estimateMilitaryStrength(theirId)
+          / Math.max(1, this.estimateMilitaryStrength(holder));
+        const target = Math.max(0, Math.min(100, (ratio - 1.1) * 70));
+        opinion.fear += (target - opinion.fear) * 0.25;
+      }
+
+      // Cities pressed against the border sour relations slowly and
+      // permanently — this used to be recomputed inside every attitude read,
+      // which was both expensive and invisible.
+      if (this.hasContacted(rel.civA, rel.civB) && this.minCityDistance(rel.civA, rel.civB) <= 4) {
+        this.recordImpactOn(rel, rel.civB, 'border_pressure', undefined, 'cities on the border');
       }
 
       // Process trade agreement gold transfers
@@ -642,19 +991,23 @@ export class DiplomacyManager {
         if (civB?.resources) civB.resources.gold += rel.tradeGoldPerTurn;
       }
 
-      // Mutual defense: if ally is at war, join the war
+      // Mutual defence, with consent. This used to read "if my ally is at war,
+      // join it" unconditionally, which turned any single war into a
+      // continent-wide one. An ally now weighs it: a beaten ally whose enemy
+      // outclasses them both is not worth a second front.
       if (rel.activeTreaties.includes('mutual_defense') && rel.status !== 'war') {
-        const aEnemies = this.getEnemies(rel.civA);
-        const bEnemies = this.getEnemies(rel.civB);
-        // If A is at war with someone, B should join
-        for (const enemy of aEnemies) {
-          if (!this.isAtWar(rel.civB, enemy) && enemy !== rel.civB) {
-            this.declareWar(rel.civB, enemy);
-          }
-        }
-        for (const enemy of bEnemies) {
-          if (!this.isAtWar(rel.civA, enemy) && enemy !== rel.civA) {
-            this.declareWar(rel.civA, enemy);
+        for (const [ally, partner] of [[rel.civA, rel.civB], [rel.civB, rel.civA]] as const) {
+          for (const enemy of this.getEnemies(partner)) {
+            if (enemy === ally || this.isAtWar(ally, enemy)) continue;
+            const decision = shouldHonourMutualDefence(this.policyContext(ally, enemy, rel, round));
+            if (decision.honour) {
+              debugLog(`[DIPLO] Civ ${ally} honours its pact with ${partner} vs ${enemy} (${decision.why})`);
+              this.declareWar(ally, enemy);
+            } else {
+              // Being left to fight alone is remembered by the abandoned ally.
+              debugLog(`[DIPLO] Civ ${ally} declines to aid ${partner} vs ${enemy} (${decision.why})`);
+              this.recordImpactOn(rel, partner, 'ally_abandoned', undefined, `war with ${enemy}`);
+            }
           }
         }
       }
@@ -670,9 +1023,86 @@ export class DiplomacyManager {
         rel.tradeGoldPerTurn = 0;
       }
     }
+
+    // War wear. Fighting a war costs, being at peace heals, and the total
+    // drives both the AI's appetite for another war and its desire for terms.
+    for (const c of this.gameEngine.civilizations ?? []) {
+      if (c.isHuman || c.isAlive === false || c.id < 0) continue;
+      const fightingSomething = this.getEnemies(c.id).length > 0;
+      const next = this.getWarExhaustion(c.id)
+        + exhaustionDelta(fightingSomething ? 'war' : 'peace', false);
+      this.warExhaustion.set(c.id, Math.max(0, Math.min(EXHAUSTION_MAX, next)));
+    }
   }
 
-  /** AI diplomacy: decide whether to propose peace, declare war, etc. */
+  /** Closest pair of cities between two civs, or Infinity when either is empty. */
+  private minCityDistance(civA: number, civB: number): number {
+    const aCities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === civA) ?? [];
+    const bCities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === civB) ?? [];
+    if (aCities.length === 0 || bCities.length === 0) return Infinity;
+    let min = Infinity;
+    for (const a of aCities) {
+      for (const b of bCities) {
+        const d = this.gameEngine.squareGrid?.squareDistance?.(a.col, a.row, b.col, b.row) ?? Infinity;
+        if (d < min) min = d;
+      }
+    }
+    return min;
+  }
+
+  /**
+   * Build the policy context for one pairing. Shared by the AI's own
+   * deliberation and by the mutual-defence check, so both apply the same
+   * capacity, exhaustion and cooldown rules.
+   */
+  private policyContext(
+    civId: number,
+    otherId: number,
+    rel: DiplomaticRelation,
+    round: number,
+  ): PolicyContext {
+    const weights = this.weightsFor(civId);
+    const ownEnemies = new Set(this.getEnemies(civId));
+    const sharedEnemy = this.getEnemies(otherId).some((e) => ownEnemies.has(e));
+    // A SIGNED peace has to have had time to become a habit before it can be
+    // thrown away — this is the gate that stops declare-war-the-instant-peace-
+    // is-signed, which the old code only penalised after the fact. Pairs that
+    // have never signed one are unrestricted, so turn-one conquest still works.
+    const statusSince = rel.since;
+    const roundsSincePeace = rel.status === 'war'
+      ? Infinity
+      : (rel.peaceSignedAt === undefined ? Infinity : round - rel.peaceSignedAt);
+    return {
+      civId,
+      otherId,
+      weights,
+      opinion: readOpinion(rel, civId),
+      status: rel.status,
+      treaties: rel.activeTreaties ?? [],
+      ownStrength: this.estimateMilitaryStrength(civId),
+      theirStrength: this.estimateMilitaryStrength(otherId),
+      ownGold: this.gameEngine.civilizations?.[civId]?.resources?.gold ?? 0,
+      activeWars: this.getEnemies(civId).length,
+      maxWars: maxConcurrentWars(weights),
+      exhaustion: this.getWarExhaustion(civId),
+      turnsSince: round - statusSince,
+      roundsSincePeace,
+      sharedEnemy,
+      round,
+      sequence: this.proposalSequence++,
+    };
+  }
+
+  /**
+   * AI deliberation: score every action worth taking toward this counterpart
+   * and act on the best one.
+   *
+   * The previous version was an if/else ladder whose only real decision was
+   * `aggression >= 4 && strengthRatio >= 1.6` — which is why diplomacy felt
+   * uniformly aggressive and random. Actions are now scored from the same
+   * ledger the human is judged by, gated on war capacity and exhaustion, and
+   * the reasoning is logged so behaviour can be asserted in tests.
+   */
   processAIDiplomacy(civId: number): void {
     const civ = this.gameEngine.civilizations?.[civId];
     if (!civ || civ.isHuman) return;
@@ -680,96 +1110,42 @@ export class DiplomacyManager {
     const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
     if (roundNumber % AI_DIPLOMACY_INTERVAL !== 0 && roundNumber > 1) return;
 
-    const personality = civ.personality || { aggression: 5, diplomacy: 5, military: 5 };
-    const ownStrength = this.estimateMilitaryStrength(civId);
     const civName = civ.name ?? `Civilization ${civId}`;
 
     for (const rel of this.getRelationsForCiv(civId)) {
       const otherId = rel.otherCivId;
       const otherCiv = this.gameEngine.civilizations?.[otherId];
-      if (!otherCiv || !otherCiv.isAlive) continue;
+      if (!otherCiv || otherCiv.isAlive === false) continue;
+      // No negotiating with someone you have never met.
+      if (!this.hasContacted(civId, otherId)) continue;
 
-      const attitude = this.getAttitude(civId, otherId);
-      const theirStrength = this.estimateMilitaryStrength(otherId);
-      const turnsSince = roundNumber - rel.since;
+      const source = this.getRelation(civId, otherId);
+      if (!source) continue;
+      const ctx = this.policyContext(civId, otherId, source, roundNumber);
       const isPlayerTarget = otherCiv.isHuman === true;
+      const chosen = chooseAction(scoreCandidates(ctx), ctx);
+      if (!chosen) continue;
 
-      if (rel.status === 'war') {
-        // Consider peace if losing or war has gone on long enough
-        if (theirStrength > ownStrength * 1.3 && turnsSince > 5) {
-          console.log(`[AI-DIPLO] Civ ${civId} proposing ceasefire to Civ ${otherId} (outmatched)`);
-          if (isPlayerTarget) {
-            this.emitOffer(civId, otherId, 'propose_ceasefire', undefined, `${civName} proposes a ceasefire.`);
-          } else {
-            this.processProposal({ fromCivId: civId, toCivId: otherId, action: 'propose_ceasefire' });
-          }
-        } else if (turnsSince > 15 && attitude !== 'hostile') {
-          console.log(`[AI-DIPLO] Civ ${civId} proposing peace to Civ ${otherId} (long war)`);
-          if (isPlayerTarget) {
-            this.emitOffer(civId, otherId, 'propose_peace', undefined, `${civName} sues for peace.`);
-          } else {
-            this.processProposal({ fromCivId: civId, toCivId: otherId, action: 'propose_peace' });
-          }
-        }
-      } else if (rel.status === 'peace' || rel.status === 'ceasefire') {
-        // War for conquest: military-leaning civs with a clear strength
-        // advantage attack a weaker neighbour — this is what lets the AI
-        // actually capture enemy cities instead of only reacting. Civs that
-        // prefer to expand/research/wonder stay peaceful until provoked.
-        const strengthRatio = ownStrength / Math.max(theirStrength, 1);
-        const profile = civ.productionProfile ?? 'balanced_growth';
-        const conquestThreshold = profile === 'military_expansion' ? 1.6
-          : profile === 'balanced_growth' ? 2.0
-          : Infinity;
-        const wantsConquest = personality.aggression >= 4 && strengthRatio >= conquestThreshold;
-        // Classic behaviour: very aggressive + hostile civs attack with only
-        // a 1.5x edge.
-        const classicDoW = personality.aggression >= 7 && strengthRatio >= 1.5 && attitude === 'hostile';
-        if (wantsConquest || classicDoW) {
-          console.log(`[AI-DIPLO] Civ ${civId} declaring war on Civ ${otherId} (conquest ratio ${strengthRatio.toFixed(2)})`);
+      debugLog(
+        `[AI-DIPLO] Civ ${civId} → ${otherId}: ${chosen.action} `
+        + `(${chosen.score}, because ${chosen.because})`,
+      );
+
+      switch (chosen.action) {
+        case 'declare_war':
           this.declareWar(civId, otherId);
           if (isPlayerTarget) {
-            this.emitEvent('DIPLOMACY_EVENT', {
-              message: `${civName} has declared WAR on you!`,
-            });
+            this.emitEvent('DIPLOMACY_EVENT', { message: `${civName} has declared WAR on you!` });
           }
-        }
-        // Consider demanding tribute if much stronger
-        else if (personality.aggression >= 6 && ownStrength > theirStrength * 2 && turnsSince > 10) {
-          const demand = Math.max(25, Math.floor((ownStrength / Math.max(theirStrength, 1)) * 20));
-          console.log(`[AI-DIPLO] Civ ${civId} demanding ${demand} gold tribute from Civ ${otherId}`);
-          if (isPlayerTarget) {
-            this.emitOffer(civId, otherId, 'demand_tribute', demand, `${civName} demands ${demand} gold as tribute.`);
-          } else {
-            this.processProposal({ fromCivId: civId, toCivId: otherId, action: 'demand_tribute', goldAmount: demand });
-          }
-        }
-        // Consider alliance if friendly and similar strength
-        else if (rel.status === 'peace' && attitude === 'friendly' && personality.diplomacy >= 6) {
-          const strengthRatio = Math.min(ownStrength, theirStrength) / Math.max(ownStrength, theirStrength, 1);
-          if (strengthRatio > 0.5) {
-            console.log(`[AI-DIPLO] Civ ${civId} proposing alliance to Civ ${otherId}`);
-            if (isPlayerTarget) {
-              this.emitOffer(civId, otherId, 'propose_alliance', undefined, `${civName} proposes an alliance.`);
-            } else {
-              this.processProposal({ fromCivId: civId, toCivId: otherId, action: 'propose_alliance' });
-            }
-          }
-        }
-      } else if (rel.status === 'alliance') {
-        // Alliances can collapse: a hostile attitude may push the AI to betray
-        // outright, and very aggressive leaders occasionally backstab after a
-        // long-standing pact. The reputation penalty is applied by declareWar.
-        const hostileBetrayal = attitude === 'hostile' && Math.random() * 100 < 40;
-        const longAllianceBetrayal = turnsSince > 20 && personality.aggression >= 7 && Math.random() * 100 < 8;
-        if (hostileBetrayal || longAllianceBetrayal) {
-          console.log(`[AI-DIPLO] Civ ${civId} breaking alliance with Civ ${otherId}`);
+          break;
+
+        case 'break_alliance': {
           this.declareWar(civId, otherId);
           this.logEvent({
             type: 'alliance_broken',
             fromCivId: civId,
             toCivId: otherId,
-            details: 'Alliance collapsed',
+            details: chosen.because,
           });
           this.emitEvent('ALLIANCE_BROKEN', { civA: civId, civB: otherId });
           if (isPlayerTarget) {
@@ -777,7 +1153,40 @@ export class DiplomacyManager {
               message: `${civName} has BROKEN the alliance and declared war on you!`,
             });
           }
+          break;
         }
+
+        case 'demand_tribute': {
+          // Ask for a share of their income, capped by what they plausibly have.
+          const demand = Math.max(25, Math.min(400,
+            Math.floor((ctx.theirStrength === 0 ? 0 : ctx.ownStrength / Math.max(1, ctx.theirStrength)) * 20)));
+          if (isPlayerTarget) {
+            this.emitOffer(civId, otherId, 'demand_tribute', demand, `${civName} demands ${demand} gold as tribute.`);
+          } else {
+            this.processProposal({ fromCivId: civId, toCivId: otherId, action: 'demand_tribute', goldAmount: demand });
+          }
+          break;
+        }
+
+        case 'offer_open_borders':
+        case 'propose_trade_agreement':
+        case 'propose_non_aggression':
+        case 'propose_alliance':
+        case 'propose_ceasefire':
+        case 'propose_peace': {
+          const action = chosen.action as DiplomatAction;
+          const message = AI_OFFER_MESSAGES[action]?.(civName)
+            ?? `${civName} proposes ${action.replace(/_/g, ' ')}.`;
+          if (isPlayerTarget) {
+            this.emitOffer(civId, otherId, action, undefined, message);
+          } else {
+            this.processProposal({ fromCivId: civId, toCivId: otherId, action });
+          }
+          break;
+        }
+
+        default:
+          break;
       }
     }
   }
@@ -794,7 +1203,7 @@ export class DiplomacyManager {
     goldAmount: number | undefined,
     message: string,
   ): void {
-    console.log(`[AI-DIPLO] Offering ${action} to human Civ ${toCivId}`);
+    debugLog(`[AI-DIPLO] Offering ${action} to human Civ ${toCivId}`);
     this.emitEvent('AI_DIPLOMACY_OFFER', {
       fromCivId,
       toCivId,
@@ -816,6 +1225,9 @@ export class DiplomacyManager {
     goldAmount: number | undefined,
     message: string,
   ): void {
+    // A civ cannot negotiate with someone it has never met. Visibility normally
+    // records this; asserting it here keeps the invariant airtight.
+    this.markContact(fromCivId, toCivId);
     this.emitOffer(fromCivId, toCivId, action, goldAmount, message);
   }
 
@@ -866,99 +1278,11 @@ export class DiplomacyManager {
     }
   }
 
-  private calculateWillingness(
-    decidingCivId: number,
-    proposerCivId: number,
-    action: DiplomatAction,
-    attitude: Attitude
-  ): number {
-    const attitudeBase: Record<Attitude, number> = {
-      friendly: 75,
-      neutral: 50,
-      annoyed: 30,
-      hostile: 10,
-    };
-
-    let willingness = attitudeBase[attitude];
-
-    // Action-specific modifiers
-    switch (action) {
-      case 'propose_peace':
-        // AI usually wants peace when attitude is not hostile
-        willingness += 15;
-        break;
-      case 'propose_ceasefire':
-        willingness += 20; // Ceasefires are easier to accept
-        break;
-      case 'propose_alliance':
-        willingness -= 10; // Alliances require more trust
-        break;
-      case 'demand_tribute': {
-        willingness -= 20; // Nobody likes demands
-        // Weaker civs more likely to comply
-        const ownStr = this.estimateMilitaryStrength(decidingCivId);
-        const proposerStr = this.estimateMilitaryStrength(proposerCivId);
-        if (proposerStr > ownStr * 1.5) willingness += 25;
-        break;
-      }
-      case 'offer_open_borders':
-        willingness += 5; // Generally harmless
-        break;
-      case 'propose_trade_agreement':
-        willingness += 10; // Mutually beneficial
-        break;
-      case 'propose_mutual_defense':
-        willingness -= 15; // Big commitment
-        break;
-      case 'propose_non_aggression':
-        willingness += 15; // Easy to accept
-        break;
-      case 'propose_embargo':
-        willingness -= 10; // Depends on relationship with target
-        break;
-      case 'offer_tech_exchange':
-        willingness += 5; // Fair trade
-        break;
-    }
-
-    // Reputation modifier
-    const rel = this.getRelation(decidingCivId, proposerCivId);
-    if (rel) {
-      const broken = decidingCivId < proposerCivId ? rel.treatiesBrokenByB : rel.treatiesBrokenByA;
-      willingness -= broken * 15;
-    }
-
-    return Math.max(0, Math.min(100, willingness));
-  }
-
   estimateMilitaryStrength(civId: number): number {
     const units = this.gameEngine.units?.filter(
       (u: Unit) => u.civilizationId === civId && (u.attack || 0) > 0
     ) ?? [];
     return units.reduce((sum: number, u: Unit) => sum + (u.attack || 0) + (u.defense || 0) * 0.5, 0);
-  }
-
-  private applyReputationPenalty(aggressorId: number, targetId: number, penalty: number): void {
-    const rel = this.getRelation(aggressorId, targetId);
-    if (rel) {
-      rel.reputationModifier += penalty;
-    }
-  }
-
-  private incrementBroken(aggressorId: number, targetId: number): void {
-    const rel = this.getRelation(aggressorId, targetId);
-    if (!rel) return;
-    if (aggressorId === rel.civA) rel.treatiesBrokenByA++;
-    else rel.treatiesBrokenByB++;
-  }
-
-  private getRejectReason(attitude: Attitude): string {
-    switch (attitude) {
-      case 'hostile': return 'We have no interest in dealing with you!';
-      case 'annoyed': return 'We are not inclined to accept your offer.';
-      case 'neutral': return 'We must decline at this time.';
-      case 'friendly': return 'Perhaps another time.';
-    }
   }
 
   private logEvent(event: DiplomacyEvent): void {
