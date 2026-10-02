@@ -17,6 +17,7 @@ import {
 import { canBuildUnit, type StrategyProfile, type AIState, resolveAICivStrategy, type BuildingPlan } from './AI/AITypes';
 import { bestFishingGround } from './FisherEconomics';
 import { AIBuildingStrategy } from './AI/AIBuildingStrategy';
+import { buildingOnRebuyCooldown } from './AI/BuildingAnalyzer';
 import {
   navalDoctrine,
   type AvailableShip,
@@ -377,6 +378,13 @@ export class AutoProduction {
     // military units (only defense/settlers/scouts are exempt) — otherwise the
     // army grows until the treasury starves and units are disbanded.
     const unitCapExhausted = this.isUnitCapExhausted(city.civilizationId);
+    // Troop production stops when the treasury cannot pay another unit — a
+    // defender produced into a deficit is disbanded the turn it arrives (a
+    // profiled run produced 2,301 riflemen and disbanded 2,302). A war chest
+    // (>= 50 gold) still buys emergency defenders.
+    const canAffordMoreTroops = !unitCapExhausted
+      || this.canAffordAnotherUnit(city.civilizationId)
+      || (civ?.resources?.gold ?? 0) >= 50;
 
     // Check for city defenders: any friendly unit with a defensive role
     // within 2 tiles of the city counts as garrison. Counting ONLY units ON
@@ -407,7 +415,7 @@ export class AutoProduction {
 
     // 1. A city under direct threat must build a defender FIRST (survival
     //    beats comfort). Minor border pressure alone does not preempt it.
-    if (threatAssessment?.needsDefense) {
+    if (threatAssessment?.needsDefense && canAffordMoreTroops) {
       debugLog('[AutoProduction] City needs defender (threat-triggered)');
       return this.buildDefenderProduction(city, threatAssessment);
     }
@@ -431,6 +439,24 @@ export class AutoProduction {
         if (happyBuilding) {
           debugLog(`[AutoProduction] Disorder emergency: building ${happyBuilding.itemType} (trade ${cityTrade}, disorder ${happyState.disorder})`);
           return happyBuilding;
+        }
+
+        // No happiness building is available (the tech is missing). A settler
+        // completion consumes one citizen, so producing one is the standard
+        // Civ1 pressure valve for a crowded, dissatisfied city: the citizen
+        // that leaves takes its unhappiness with it, and the settler then
+        // improves the empire's tiles. Only useful while there are several
+        // malcontents and the city can spare a citizen (pop >= 2).
+        const unhappy = happyState.unhappiness ?? 0;
+        const population = city.population ?? 1;
+        if (unhappy >= 2 && population >= 2 && this.canAffordAnotherUnit(civ.id)) {
+          debugLog(`[AutoProduction] Pacification: building a settler to shed an unhappy citizen (unhappy ${unhappy}, pop ${population})`);
+          return {
+            type: 'unit',
+            itemType: 'settler',
+            name: UNIT_PROPS.settler?.name || 'Settler',
+            cost: UNIT_PROPS.settler?.cost || 40,
+          };
         }
       }
     }
@@ -519,12 +545,12 @@ export class AutoProduction {
     }
 
     // 2. Build a defender if none exists
-    if (!hasDefender) {
+    if (!hasDefender && canAffordMoreTroops) {
       debugLog('[AutoProduction] City needs defender');
       return this.buildDefenderProduction(city, threatAssessment);
     }
 
-    if (threatAssessment && threatAssessment.netThreat > 0) {
+    if (threatAssessment && threatAssessment.netThreat > 0 && canAffordMoreTroops) {
       debugLog('[AutoProduction] Elevated threat detected, reinforcing garrison');
       return this.buildDefenderProduction(city, threatAssessment);
     }
@@ -549,6 +575,9 @@ export class AutoProduction {
       const CORE_BUILDINGS = ['granary', 'temple', 'marketplace'];
       const missingCore = CORE_BUILDINGS.find((b) => {
         if (existingBuildings.has(b) || plannedTypes.includes(b)) return false;
+        // A building the auditor just sold must not be rebuilt instantly —
+        // that ping-pong (build → sell → build) is what the audit exists for.
+        if (buildingOnRebuyCooldown(this.gameEngine, city.civilizationId, b)) return false;
         const props = BUILDING_PROPS[b] || BUILDING_PROPERTIES[b];
         if (!props) return false;
         if (props.requiredTechnology && !civTechs.has(props.requiredTechnology)) return false;
@@ -606,6 +635,20 @@ export class AutoProduction {
           Math.max(expansion.minSettlers, Math.ceil(civCities.length / expansion.settlersPerCities)) +
             (civCities.length < 3 && expansion.earlyBonus ? 1 : 0),
         );
+    // Late-game public works: while the civ still has improvements left on its
+    // worked tiles (AIManager's era budget), keep a small works corps on top of
+    // the expansion quota. Those settlers walk to worked tiles and build roads,
+    // irrigation and railroads — the empire's lasting income/growth investment
+    // once the settlement spots run out. Without this the settler branch
+    // stopped the moment the expansion count was met, so a mature empire never
+    // paved or irrigated anything.
+    // Standard behaviour whenever the city is not under imminent threat: a
+    // threat-free city keeps the corps even mid-war (the threat branch above
+    // already preempts production when a defender is actually needed).
+    const wantsWorks = typeof this.gameEngine.aiManager?.wantsPublicWorks === 'function'
+      && this.gameEngine.aiManager.wantsPublicWorks(city.civilizationId)
+      && !threatAssessment?.needsDefense;
+    const settlerTarget = desiredSettlers + (wantsWorks ? 2 : 0);
     // A city that cannot feed itself must not train settlers (they eat food
     // and consume a citizen). The AI city governor re-assigns workers to food
     // tiles in the same turn; this guard is the production-side half of the
@@ -653,11 +696,11 @@ export class AutoProduction {
       ).length + queuedSettlers;
 
       // In a gold crisis, allow at most the minimum settler count (1);
-      // otherwise the full desired count.
-      const effectiveDesired = goldCrisis ? expansion.minSettlers : desiredSettlers;
+      // otherwise the full desired count (expansion + works corps).
+      const effectiveDesired = goldCrisis ? expansion.minSettlers : settlerTarget;
 
       if (settlerCount < effectiveDesired) {
-        debugLog(`[AutoProduction] Civilization has ${settlerCount} settler(s) (unit list + queued across all cities), building another (target ${desiredSettlers}, profile ${strategy})`);
+        debugLog(`[AutoProduction] Civilization has ${settlerCount} settler(s) (unit list + queued across all cities), building another (target ${settlerTarget}, profile ${strategy}, works ${wantsWorks})`);
         return {
           type: 'unit',
           itemType: 'settler',
@@ -695,7 +738,9 @@ export class AutoProduction {
       : [];
     // Never queue the same building twice.
     const availableBuildingPlans = buildingPlans.filter(
-      (p: BuildingPlan) => !plannedTypes.includes(p.buildingType)
+      (p: BuildingPlan) =>
+        !plannedTypes.includes(p.buildingType) &&
+        !buildingOnRebuyCooldown(this.gameEngine, city.civilizationId, p.buildingType)
     );
 
     // (The happiness emergency now runs before the defender check above — a
@@ -707,6 +752,23 @@ export class AutoProduction {
     ).length;
 
     const aggressivePosture = this.isAggressivePosture(city.civilizationId);
+
+    // 4-pre. A war we cannot walk to is a war we have to sail to, so the hulls
+    //        come before the soldiers. The aggressive branch below would
+    //        otherwise keep pumping attackers forever while the invasion
+    //        mission waited for a ferry that was never ordered — the "declared
+    //        the war across the ocean and did nothing about it" failure.
+    //        `buildNavalProduction` returns null once the doctrine is
+    //        satisfied, so a civ that already has its fleet falls through to
+    //        normal wartime production as before.
+    if (this.needsNavyForWar(city.civilizationId) && this.shouldBuildNavy(city)) {
+      const navalForWar = this.buildNavalProduction(city);
+      if (navalForWar) {
+        debugLog('[AutoProduction] War across water — building a navy before more soldiers');
+        return navalForWar;
+      }
+    }
+
     if (!unitCapExhausted && aggressivePosture &&
         (this.isCivAtWar(city.civilizationId) || this.shouldSupportOffensivePlan(city))) {
       debugLog('[AutoProduction] Aggressive posture: prioritizing attacker over buildings');
@@ -777,6 +839,24 @@ export class AutoProduction {
       return this.buildOffensiveProduction(city);
     }
 
+    // 5c. Caravan for trade routes (Civ I): a city with fewer than 3 trade
+    //     routes is missing permanent commerce, so fill the route capacity
+    //     before generic buildings. The AI unit movement delivers the caravan
+    //     to the best-value destination (foreign at peace = double payout).
+    //     Defense/settlers/happiness emergencies above still take precedence.
+    if (civ && this.shouldBuildCaravan(civ, city, plannedTypes)) {
+      const caravanProps = UNIT_PROPS.caravan;
+      if (caravanProps) {
+        debugLog(`[AutoProduction] Building caravan for trade route (profile ${strategy})`);
+        return {
+          type: 'unit',
+          itemType: 'caravan',
+          name: caravanProps.name,
+          cost: caravanProps.cost
+        };
+      }
+    }
+
     // 5b. Build the building even if not "high-priority"
     if (buildingPlan) {
       const bProps = BUILDING_PROPS[buildingPlan.buildingType] || BUILDING_PROPERTIES[buildingPlan.buildingType];
@@ -787,25 +867,6 @@ export class AutoProduction {
           itemType: buildingPlan.buildingType,
           name: bProps.name,
           cost: bProps.cost
-        };
-      }
-    }
-
-    // 5c. Caravan for trade routes (Civ I): once the civ has Trade tech and
-    //     at least one existing city with fewer than 3 trade routes, build a
-    //     Caravan. The AI unit movement logic will then deliver it to a
-    //     suitable destination city to establish a permanent trade route.
-    //     Caravans are a peacetime economy boost — they never displace
-    //     defenders, settlers, or buildings that are still needed.
-    if (civ && this.shouldBuildCaravan(civ, city, plannedTypes)) {
-      const caravanProps = UNIT_PROPS.caravan;
-      if (caravanProps) {
-        debugLog(`[AutoProduction] Building caravan for trade route (profile ${strategy})`);
-        return {
-          type: 'unit',
-          itemType: 'caravan',
-          name: caravanProps.name,
-          cost: caravanProps.cost
         };
       }
     }
@@ -899,7 +960,9 @@ export class AutoProduction {
 
     const buildingPlans = AIBuildingStrategy.evaluateBuildings(city, civ, strategy, gameState);
     const available = buildingPlans.filter(
-      (p: BuildingPlan) => !plannedTypes.includes(p.buildingType)
+      (p: BuildingPlan) =>
+        !plannedTypes.includes(p.buildingType) &&
+        !buildingOnRebuyCooldown(this.gameEngine, city.civilizationId, p.buildingType)
     );
     if (available.length > 0) {
       const plan = available[0];
@@ -1209,15 +1272,10 @@ export class AutoProduction {
    */
   private shouldBuildCaravan(civ: Civilization, city: City, plannedTypes: string[]): boolean {
     if (!canBuildUnit(civ, 'caravan')) return false;
-
-    // Only at peace — Caravans are fragile, no point building them mid-war.
-    const dm = this.gameEngine.diplomacyManager;
-    if (dm) {
-      for (const other of this.gameEngine.civilizations ?? []) {
-        if (other.id === civ.id || other.isAlive === false) continue;
-        if (dm.isAtWar(civ.id, other.id)) return false;
-      }
-    }
+    // Same solvency gate as every other unit: a caravan produced into a
+    // deficit is disbanded before it can deliver (a profiled run built 651
+    // and disbanded 639 within ~5 rounds).
+    if (!this.canAffordAnotherUnit(civ.id)) return false;
 
     // At least one city has room for more trade routes (max 3 per city).
     const civCities = this.gameEngine.cities.filter(
@@ -1228,11 +1286,15 @@ export class AutoProduction {
     );
     if (!hasRoom) return false;
 
-    // Don't over-build Caravans — cap at ceil(cities / 2).
+    // Keep a steady stream of in-flight Caravans, enough to fill the route
+    // capacity (3 per city). The old `ceil(cities / 2)` cap throttled trade to
+    // a trickle: a profiled 1,000-round game delivered ZERO routes. War does
+    // not block the building — the deliverer prefers domestic cities in war
+    // and switches to foreign (double-value) routes at peace.
     const caravanCount = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civ.id && u.type === 'caravan',
     ).length + plannedTypes.filter((t: string) => t === 'caravan').length;
-    const maxCaravans = Math.ceil(civCities.length / 2);
+    const maxCaravans = Math.max(2, civCities.length);
     if (caravanCount >= maxCaravans) return false;
 
     // Pop ≥ 2 so the city is stable enough to divert shields to trade.
@@ -1259,6 +1321,34 @@ export class AutoProduction {
       name: unitProps.name,
       cost: unitProps.cost
     };
+  }
+
+  /**
+   * True when the civ is at war with somebody whose cities it cannot walk to.
+   *
+   * This is the one case where a navy is a WAR requirement rather than an
+   * optional projection of power, and it must therefore outrank "keep pumping
+   * attackers". Deliberately reads the real map rather than remembered enemy
+   * sightings: the declaration was already made against a concrete target, and
+   * waiting for a scout to rediscover it would stall the war for dozens of
+   * rounds.
+   */
+  private needsNavyForWar(civilizationId: number): boolean {
+    const dm = this.gameEngine.diplomacyManager;
+    const raw = dm?.getEnemies?.(civilizationId);
+    if (!raw || raw.length === 0) return false;
+    const enemies = new Set(raw.map(Number));
+    const land = this.gameEngine.areLandConnected;
+    if (typeof land !== 'function') return false;
+
+    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civilizationId);
+    if (ownCities.length === 0) return false;
+    const enemyCities = this.gameEngine.cities.filter((c: City) => enemies.has(c.civilizationId));
+    if (enemyCities.length === 0) return false;
+
+    return enemyCities.some(
+      (ec) => !ownCities.some((oc) => land.call(this.gameEngine, oc.col, oc.row, ec.col, ec.row)),
+    );
   }
 
   /**
@@ -1678,6 +1768,19 @@ export class AutoProduction {
     const threatCount = this.gameEngine.aiManager?.countThreatenedCities?.(civId) ?? 0;
     const threatenedCoastal = Math.min(threatCount, ownCoastal.length);
 
+    // Enemy cities on a landmass we cannot walk to. AIManager is the only
+    // place that knows which landmasses have a beach the invasion mission can
+    // actually use; the engine-level probe is kept first so lightweight test
+    // doubles can still answer it themselves.
+    const ai = this.gameEngine.aiManager as
+      | { hasSeaInvasionTarget?: (id: number) => boolean }
+      | undefined;
+    const seaInvasionTargets = (typeof engine.hasSeaInvasionTarget === 'function'
+      ? engine.hasSeaInvasionTarget(civId)
+      : typeof ai?.hasSeaInvasionTarget === 'function' && ai.hasSeaInvasionTarget(civId))
+      ? 1
+      : 0;
+
     const input: NavalDoctrineInput = {
       // No economic data at all means no treasury reading either; the
       // permissive budget above is what carries the decision in that case.
@@ -1697,8 +1800,7 @@ export class AutoProduction {
         ? engine.getColonizableIslands(civId)?.length ?? 0
         : (this.gameEngine.units.some((u: Unit) => u.civilizationId === civId
           && !u.isDefeated && !u.embarkedOn && (u.attack ?? 0) > 0.5) ? 1 : 0),
-      seaInvasionTargets: typeof engine.hasSeaInvasionTarget === 'function'
-        && engine.hasSeaInvasionTarget(civId) ? 1 : 0,
+      seaInvasionTargets: seaInvasionTargets ? 1 : 0,
       troopsAvailable: this.gameEngine.units.some(
         (u: Unit) => u.civilizationId === civId && !u.isDefeated
           && !u.embarkedOn && (u.attack ?? 0) > 0.5 && !UNIT_PROPS[u.type]?.naval,
@@ -1771,8 +1873,17 @@ export class AutoProduction {
     isUnderThreat: boolean;
     builtWonders: string[];
     cityCoastal: boolean;
+    economyPressure: boolean;
   } {
     const cities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === civilizationId) || [];
+    const civ = this.gameEngine.civilizations?.[civilizationId];
+    // Upkeep pressure: the treasury is under the reserve the AI's own policy
+    // wants. Handed to AIBuildingStrategy so income buildings get built when
+    // the money actually runs out, not only when the calendar says so.
+    const economyPressure =
+      !!civ
+      && typeof this.gameEngine.aiEconomicManager?.isUnderEconomicPressure === 'function'
+      && this.gameEngine.aiEconomicManager.isUnderEconomicPressure(civ);
     const storage = typeof this.gameEngine.getPlayerStorage === 'function'
       ? this.gameEngine.getPlayerStorage(civilizationId)
       : undefined;
@@ -1808,6 +1919,7 @@ export class AutoProduction {
       isUnderThreat: false,
       builtWonders,
       cityCoastal: false, // overridden per-city before evaluateBuildings
+      economyPressure,
     };
   }
 

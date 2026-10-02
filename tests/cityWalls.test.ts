@@ -64,15 +64,6 @@ describe('City Walls', () => {
       .toBe(happyBefore + (BUILDING_PROPERTIES.city_walls.effects.happiness ?? 0));
   });
 
-  it('is scrapped from every city when Metallurgy is researched (Civ1)', async () => {
-    const e = await setup();
-    const city = firstCity(e);
-    city.buildings = [...(city.buildings ?? []), 'city_walls'];
-
-    e.scrapObsoleteCityWalls(0);
-
-    expect(city.buildings).not.toContain('city_walls');
-  });
 
   it('is offered by the production menu once Masonry is known', async () => {
     const e = await setup();

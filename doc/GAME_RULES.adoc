@@ -1189,12 +1189,28 @@ currently only used by the AI's own reasoning.
 
 [source]
 ----
-consumption = population × 2  +  settlers × (1, or 2 under Republic/Democracy)
+-- Each citizen eats 2 food a turn to begin with, and 0.2 MORE for every
+-- city size above 5. A size-6 citizen eats 2.2, a size-12 citizen 3.4.
+perCitizen  = 2 + 0.2 × max(0, population − 5)
+
+consumption = population × perCitizen
+           + settlers × (1, or 2 under Republic/Democracy)
 surplus     = produced − consumption
 
 foodStored += surplus
 threshold  = (population + 1) × 10
 ----
+
+The growing appetite is the point: a large city is genuinely harder to keep fed
+than a small one, so a civ is pushed to keep expanding while it can and is
+punished for letting one city grow fat and isolated. It is also what turns a
+starvation into a *siege* — see <<Blockading a city>> below, where a city that
+loses access to its fields dies at this rate rather than a flat one.
+
+`perCitizen` is exported as `citizenFoodDemand` from `EconomicManager` and is
+the single source of truth: the growth pipeline, the AI's food planning and the
+shared tile assigner all charge the same rate, so a famine can never be priced
+at a different appetite than the citizen is assumed to eat at.
 
 [cols="2,4", options="header"]
 |===
@@ -1216,6 +1232,37 @@ city — unless the difficulty is Chieftain.
 
 There is **no** housing cap. An Aqueduct does not gate city size; the AI only
 treats it as a growth prerequisite in its own planning.
+
+[[Blockading a city]]
+=== Blockading a city
+
+A city works the tiles around it. **A tile occupied by a unit of another
+civilization is not worked**, for as long as that unit stands there.
+
+[source]
+----
+tile is usable  ⇔  no live foreign unit stands on it
+-----
+
+The tile is handed back the moment the unit leaves, so the effect is a *race*:
+every turn a defender is parked on a field is a turn of food the city does not
+get. Applied at all four points where a tile can be worked or offered:
+
+* the automatic worker assignment never picks a blocked tile;
+* a blocked tile is not offered in the *Available Tiles* list;
+* a manual assignment onto it is refused;
+* a tile the player had already assigned **stops paying immediately** rather
+  than waiting for the next automatic re-pick.
+
+A unit of the city's **own** civilization never blocks anything — garrisons,
+settlers and builders standing on the fields they feed is the ordinary case.
+
+Because the city's appetite rises with size (§ <<Food and growth>>), the same
+blockade kills a big city considerably faster than a small one. This is the
+mechanic the AI uses offensively: `findBlockadeAssignment` sends a unit to
+squat on the richest field an enemy city works, which costs one unit and never
+risks losing it in an assault the AI cannot win.
+
 
 === Happiness and disorder
 

@@ -126,6 +126,22 @@ export class AIEconomicManager {
     return Math.max(0, affordableUnits);
   }
 
+  /**
+   * True when the treasury is below the reserve this civ's own policy wants to
+   * hold (or already negative).
+   *
+   * This is the "upkeep pressure has started" signal: while it holds, a gold
+   * coin spent on income (marketplace, bank) is worth more than another unit
+   * or another wonder. TODO.txt records the failure it exists to prevent — the
+   * AI reaching 0–8 gold with a big army and then doing nothing about it.
+   */
+  public isUnderEconomicPressure(civ: Civilization): boolean {
+    if (!civ || civ.id == null) return false;
+    const gold = civ.resources?.gold ?? 0;
+    if (gold < 0) return true;
+    return gold < this.calculateReserveTarget(civ, this.econ.totalUpkeep(civ.id));
+  }
+
   private calculateReserveTarget(
     civ: Civilization,
     totalExpenses: number,

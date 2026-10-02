@@ -6,6 +6,11 @@ import { SquareGrid } from '../game/SquareGrid';
 import { UNIT_TYPES } from '../data/GameData';
 import { UNIT_PROPERTIES } from '../data/UnitConstants';
 import { HUMAN_PLAYER_ID } from '../utils/PlayerConstants';
+import {
+  clampGameSpeedStep,
+  fasterGameSpeedStep,
+  slowerGameSpeedStep,
+} from '../data/GameConstants';
 import { beginCameraGlide } from '../game/rendering/CameraGlideGate';
 import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City } from '../../types/game';
 
@@ -71,6 +76,13 @@ const createInitialUIState = (): UIState => ({
   showTechTree: false,
   showGameMenu: false,
   activeDialog: null,
+  /**
+   * Whether the game is actually paused. This is the authoritative pause flag
+   * and is deliberately independent of `activeDialog`: the pause screen is one
+   * way to show that a game is paused, but a spectator slowing an AI-vs-AI run
+   * wants the map itself to stay visible, so that pause shows no dialog.
+   */
+  isGamePaused: false,
   // The info panel is a slide-in drawer on phones (starts closed so the map
   // is immediately visible) and a static sidebar on desktop (starts open).
   sidebarCollapsed: typeof window !== 'undefined' ? window.innerWidth < 992 : true,
@@ -213,7 +225,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     enableAnimations: true, // Master switch for movement/combat/camera animations
     animationSpeed: 1,  // Animation speed multiplier (0 = instant, 1 = normal)
     enemyAnimationSpeed: 1, // Enemy (AI) movement animation speed multiplier (0 = instant)
-    cameraGlideSpeed: 1 // Camera glide speed multiplier (0 = instant, 1 = normal)
+    cameraGlideSpeed: 1, // Camera glide speed multiplier (0 = instant, 1 = normal)
+    gameSpeedStep: 0 // Spectator speed: 0 = full speed, higher = one step slower each time
   },
 
   // Technology State
@@ -568,6 +581,32 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     showDialog: (dialog) => set(state => ({
       uiState: { ...state.uiState, activeDialog: dialog }
+    })),
+
+    setGamePaused: (paused) => set(state => ({
+      uiState: { ...state.uiState, isGamePaused: paused }
+    })),
+
+    toggleGamePaused: () => set(state => ({
+      uiState: { ...state.uiState, isGamePaused: !state.uiState.isGamePaused }
+    })),
+
+    setGameSpeedStep: (step) => set(state => ({
+      settings: { ...state.settings, gameSpeedStep: clampGameSpeedStep(step) }
+    })),
+
+    slowerGameSpeed: () => set(state => ({
+      settings: {
+        ...state.settings,
+        gameSpeedStep: slowerGameSpeedStep(state.settings.gameSpeedStep ?? 0),
+      }
+    })),
+
+    fasterGameSpeed: () => set(state => ({
+      settings: {
+        ...state.settings,
+        gameSpeedStep: fasterGameSpeedStep(state.settings.gameSpeedStep ?? 0),
+      }
     })),
 
     hideDialog: () => set(state => ({

@@ -120,6 +120,25 @@ export function shouldTriggerAggression(
 }
 
 /**
+ * How much extra aggression the calendar itself adds.
+ *
+ * The early-rush window opens the game; this opens the end of it. Without it
+ * `currentYear` stops mattering the moment 1500 BC passes, so a civ that
+ * coasted through the ancient era under a cautious personality never commits
+ * even when the map is nearly settled and every turn of peace lets a rival
+ * outgrow it. The bonus is deliberately below the trigger threshold on its
+ * own — it tips a borderline civ over, it does not turn a turtle into a
+ * warmonger (the −45 for a city under critical threat still dominates).
+ */
+export function lateGameAggression(currentYear: number): number {
+  if (currentYear >= 1750) return 20;
+  if (currentYear >= 1500) return 16;
+  if (currentYear >= 1000) return 12;
+  if (currentYear >= 0) return 6;
+  return 0;
+}
+
+/**
  * Situational aggression score: how much this civ SHOULD push right now.
  *  - Personality baseline.
  *  - Cities secured → aggression up; critical threats → aggression crushed.
@@ -196,6 +215,15 @@ export function computeAggression(
   ) {
     score += 12;
     reasons.push('early rush window');
+  }
+
+  // Late game: the calendar is running out, the map is nearly divided, and
+  // every turn spent at peace lets a rival outgrow us. Pushes a civ that
+  // coasted through the ancient era into committing its army at the end.
+  const latePush = lateGameAggression(input.currentYear);
+  if (latePush > 0) {
+    score += latePush;
+    reasons.push(input.currentYear >= 1500 ? 'endgame push' : 'late-game push');
   }
 
   // Already committed: finish the war instead of stalling.

@@ -86,7 +86,7 @@ export class AIBuildingStrategy {
     city: City,
     civ: Civilization,
     strategy: StrategyProfile,
-    gameState: { currentYear: number; roundNumber: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number; cityCoastal?: boolean }
+    gameState: { currentYear: number; roundNumber: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number; cityCoastal?: boolean; economyPressure?: boolean }
   ): BuildingPlan[] {
     const plans: BuildingPlan[] = [];
     const cityBuildings: string[] = city.buildings || [];
@@ -137,7 +137,7 @@ export class AIBuildingStrategy {
     city: City,
     personality: Personality,
     strategy: StrategyProfile,
-    gameState: { currentYear: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number; cityCoastal?: boolean }
+    gameState: { currentYear: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number; cityCoastal?: boolean; economyPressure?: boolean }
   ): BuildingPlan {
     let priority = 5; // Base priority
     const reasons: string[] = [];
@@ -192,6 +192,11 @@ export class AIBuildingStrategy {
         // early military/expansion buildings.
         if (gameState.currentYear >= 1) { priority += 15; reasons.push('late-economy'); }
         else if (gameState.currentYear >= -2000) { priority += 8; reasons.push('mid-economy'); }
+        // Upkeep pressure beats the calendar: when the treasury is already
+        // under the reserve, income has to come before anything that does not
+        // pay. Without this the AI sits at 0-8 gold with a big army waiting
+        // for a year gate that arrives a hundred rounds too late.
+        if (gameState.economyPressure) { priority += 14; reasons.push('upkeep-pressure'); }
         reasons.push('economy');
         break;
 
@@ -238,6 +243,7 @@ export class AIBuildingStrategy {
         // low priority early and become a strong priority late.
         if (gameState.currentYear >= 1500) { priority += 20; reasons.push('very-late-economy'); }
         else if (gameState.currentYear >= 500) { priority += 12; reasons.push('late-economy'); }
+        if (gameState.economyPressure) { priority += 12; reasons.push('upkeep-pressure'); }
         if (city.population >= 8) { priority += 5; reasons.push('large-city'); }
         reasons.push('economy-boost');
         break;

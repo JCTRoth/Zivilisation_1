@@ -19,6 +19,15 @@ For every coutcome a modal should open telling the player what happend and what 
 Use epic language for the modals, and make it fun to read.
 
 
+* When no enemy is left on the Map anymore the AI declears active war on other civilizations and starts to attack them, if the AI is not able to do so it should start to build a navy and send it to the other civs to attack them.
+
+* If AI detects that it is on a water rich map the AI should use for systemic scouting of the map Frigates/Galleons/Ironclads or fisherboats to find other civs and to find good city locations.
+* A scout boat should if possible only use pathfinding to get to the target (same as GoTo) and should avoid tiles that are already explored by the AI.
+* If the AI spots in a 10 by 10 tile area more than 3 enemy fishing boats and only minor war ships it should build or send a frigate/galleon/ironclad/destroyer/carrier to destroy the enemy fishing boats and return regulary to distroy more enemy fishing boats.
+* If avilable to the AI it should use nuklar weapons and target key enemy cities and key enemy military units and than send units on land or water to take over the enemy cities and destroy the remaining enemy military units if more nuklar weapons are avilable to the AI it should use them regulary to destroy the enemy cities and military units.
+
+Selling of buildings should be able to be forced by AICoordinator in order to free money for infrastructure build up (irrigations/ streets/ RailRoads) there for analyze if infrastructure is needed if a city is bigger than 6 it starts to be needed at level 12 all tiles around it that are bulidible on should be builded on (if not constant attacks by the enemy are hindering this since settlers are a valuble target) - The selling of buildings also can be done in order to build up a army that needs regular income or to bribe units of the enemy, therefor run a cost usage equation. Really check for every building if the effect of the building needed for the city at the moment? SDI for example only needed if the enemy is also able to produce atomic wapons. The Stock Exchange is only usefull if the math. calulation return higher return of it for the city than its cost and so on
+
 * Fisherboats can not fish on tiles used by a city to get food from.
 * Fisherboats can not fish on tiles other fisherboats are fishing on.
 
@@ -157,6 +166,9 @@ The game engine is designed to support networked multiplayer but it is not yet i
 -----
 BUGS:
 -----
+
+
+
 
 
 - 

@@ -36,8 +36,6 @@ path (`GameEngine.moveUnit` → `resolveCityCombat`).
 - **Instant capture after clearing the garrison** — in `combatUnit`, when the
   last defender on an enemy city tile falls, the city is captured immediately
   (a garrisoned city can no longer be left permanently untouchable).
-- **Wall obsolescence** — discovering **Metallurgy** scraps `city_walls` in every
-  city of that civilization (`GameEngine.scrapObsoleteCityWalls`).
 - Civilian unit types (`settler`, `worker`, `caravan`, `diplomat`, `scout`) are
   blocked from attacking cities (`civilian_cannot_attack_city`).
 - Attacking a city auto-declares war if the two civs are not already at war.

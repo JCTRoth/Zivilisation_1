@@ -129,4 +129,6 @@ TODO.txt
 
 # Scratch analysis harnesses (ad-hoc perf/CPU profilers, one-off probes).
 # Anything named tmp-*.mjs is a throwaway; the durable ones live in scripts/.
-/tmp-*.mjs
+# Unanchored on purpose: a leading slash would only match the repo root, which
+# is not where these end up (scripts/tmp-*.mjs).
+tmp-*.mjs

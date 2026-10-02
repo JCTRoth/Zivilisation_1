@@ -10,6 +10,8 @@ You are running on a Ubuntu/Fedora system all command are availablell, install w
 ...Modal.tsx Classes should never conatine any extended logic. If needed create a class in the /src/game/engine
 folder.
 
+On linux chrome is installed here: /usr/bin/chromium-browser
+
 ## Playwright E2E Test Guidelines
 
 ### Fail-fast setup (MANDATORY — never bypass)

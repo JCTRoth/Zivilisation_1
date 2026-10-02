@@ -26,11 +26,11 @@ import { fishingRelevanceForCiv } from './FisherEconomics';
 import { serializeCities } from '../../utils/CitySnapshots';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { BUILDING_TYPES } from '@/data/BuildingConstants';
-import type { ProcessTurnResult } from './EconomicManager';
+import { citizenFoodDemand, type ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 import { awaitPendingAnimations } from '../rendering/GlideAnimation';
-import { aiTurnTimeoutMs } from '@/data/GameConstants';
+import { aiTurnTimeoutMs, gameSpeedTimeoutFactor } from '@/data/GameConstants';
 import { debugLog } from '../../utils/DevLog';
 
 export class TurnManager {
@@ -45,10 +45,26 @@ export class TurnManager {
    */
   private get aiTurnTimeoutMs(): number {
     const map = this.gameEngine.map;
-    return aiTurnTimeoutMs(map ? map.width * map.height : 0);
+    const tiles = map ? map.width * map.height : 0;
+    // A deliberately slowed game waits between units on purpose. Without this
+    // the watchdog would read that patience as a hung AI and force-end the turn
+    // halfway through, which skips every unit it had not reached yet.
+    return Math.round(aiTurnTimeoutMs(tiles) * gameSpeedTimeoutFactor(this.gameEngine.getGameSpeedStep()));
   }
   private isProcessingGoToPaths = false; // Prevents auto-end while GoTo is executing
   private aiTurnInProgress = false; // Prevents auto-end / re-entrant phase advances while the AI turn is running
+
+  /**
+   * A turn start that was dropped because the game was paused, and the turn
+   * advance that was dropped for the same reason.
+   *
+   * Both entry points used to bail out and simply forget the request, so a
+   * pause landing between two phases stopped the cycle for good: the game
+   * resumed to a frozen board and nothing ever drove it again. Remembering what
+   * was skipped is what lets `onGameResumed` put the cycle back in motion.
+   */
+  private deferredStartCivId: number | null = null;
+  private deferredAdvance = false;
 
   private currentPlayer: number | null = null;
   private currentPhase: TurnPhase | null = null;
@@ -181,13 +197,53 @@ export class TurnManager {
   }
 
   // --- Turn lifecycle ---
-  startTurn(civilizationId: number): void {
-    // Don't start a new turn while the game is paused — otherwise the AI would
-    // keep playing through paused turns (e.g. AI-vs-AI auto mode).
-    if (this.gameEngine.isPaused) {
-      console.warn(`[TurnManager] startTurn: Game paused — deferring turn start for civ ${civilizationId}`);
+
+  /**
+   * Re-drive the turn cycle after a pause released it.
+   *
+   * A pause that lands between two phases leaves the chain mid-flight: the
+   * pending `startTurn`/`advanceTurn` was skipped, and nothing else ever calls
+   * them, so the board stays frozen forever. Replaying exactly the step that
+   * was dropped puts the cycle back in motion — and replaying it as the *same*
+   * call means the game continues exactly where it stopped, rather than
+   * restarting a turn and replaying work that already happened.
+   *
+   * Called by `GameEngine.setPaused(false)`; a no-op when the pause did not
+   * interrupt anything.
+   */
+  onGameResumed(): void {
+    const startCivId = this.deferredStartCivId;
+    const advanceDeferred = this.deferredAdvance;
+    if (startCivId == null && !advanceDeferred) return;
+
+    // Clear first: both calls can cascade into more of the chain, and a pause
+    // landing again mid-cascade must be recorded by the fresh call, not by a
+    // stale flag left over from this one.
+    this.deferredStartCivId = null;
+    this.deferredAdvance = false;
+
+    // A turn that never started takes priority: the advance was queued behind
+    // it, and running the advance first would skip the civilization entirely.
+    if (startCivId != null) {
+      debugLog(`[TurnManager] onGameResumed: replaying deferred startTurn for civ ${startCivId}`);
+      this.startTurn(startCivId);
       return;
     }
+    debugLog('[TurnManager] onGameResumed: replaying deferred advanceTurn');
+    this.advanceTurn();
+  }
+
+  startTurn(civilizationId: number): void {
+    // Don't start a new turn while the game is paused — otherwise the AI would
+    // keep playing through paused turns (e.g. AI-vs-AI auto mode). The request
+    // is remembered so `onGameResumed` can replay it instead of dropping the
+    // turn on the floor.
+    if (this.gameEngine.isPaused) {
+      console.warn(`[TurnManager] startTurn: Game paused — deferring turn start for civ ${civilizationId}`);
+      this.deferredStartCivId = civilizationId;
+      return;
+    }
+    this.deferredStartCivId = null;
     this.currentPlayer = civilizationId;
     this.currentPhase = TurnPhase.START;
     this.playerRegistered = false;
@@ -538,10 +594,13 @@ export class TurnManager {
     
     // Do not advance to the next player while paused — this freezes the whole
     // turn cycle (human AND AI) so nothing continues behind the pause screen.
+    // Remembered so `onGameResumed` can pick the cycle back up.
     if (this.gameEngine.isPaused) {
       console.warn('[TurnManager] advanceTurn: Game paused — deferring turn advance');
+      this.deferredAdvance = true;
       return;
     }
+    this.deferredAdvance = false;
     
     const previousPlayer = this.currentPlayer;
     
@@ -995,11 +1054,15 @@ export class TurnManager {
   private processCityGrowth(city: City, inDisorder: boolean = false): void {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
 
-    // Centralized food math: citizens consume two food each turn and owned
+    // Centralized food math: citizens consume `citizenFoodDemand(population)`
+    // each turn (2 to start with, +0.2 per head per size above 5) and owned
     // settlers consume one (two under Republic/Democracy). AI city management
-    // uses the same helper so it can never mis-plan famine prevention.
+    // uses the same helper so it can never mis-plan famine prevention, and the
+    // fallback below charges the same rate rather than a hard-coded 2.
     const balance = this.gameEngine.economicManager?.cityFoodBalance(city, civ);
-    const netFood = balance?.surplus ?? ((city.yields?.food ?? 0) - (city.population ?? 1) * 2);
+    const netFood = balance?.surplus
+      ?? ((city.yields?.food ?? 0)
+        - (city.population ?? 1) * citizenFoodDemand(city.population ?? 1));
     city.foodStored = (city.foodStored ?? 0) + netFood;
 
     // Growth threshold: (population + 1) × 10 — Civ1: size-1 needs 20 food,
@@ -1164,12 +1227,6 @@ export class TurnManager {
       }
       civ.researchProgress = 0;
       civ.currentResearch = null;
-
-      // City walls become obsolete once Metallurgy is discovered (Civ1) — they
-      // are automatically scrapped in every city of this civilization.
-      if (completedId === 'metallurgy') {
-        this.gameEngine.scrapObsoleteCityWalls?.(civ.id);
-      }
 
       if (this.gameEngine.updateTechnologyAvailability) {
         this.gameEngine.updateTechnologyAvailability();

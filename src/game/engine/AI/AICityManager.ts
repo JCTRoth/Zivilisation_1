@@ -150,6 +150,15 @@ const AI_GOVERNOR_PROFILE: GovernorProfile = {
   specialist: 'strategy',
 };
 
+/** AI cities at/above this size default to the Commerce governor. */
+export const AI_COMMERCE_GOVERNOR_MIN_POP = 8;
+/**
+ * Food-box fraction below which a mature city abandons Commerce and falls
+ * back to the food-first profile. A quarter box recovers in a few turns at a
+ * normal surplus, so the switch can never starve a city.
+ */
+export const AI_COMMERCE_GOVERNOR_MIN_FOOD_FRACTION = 0.25;
+
 export class AICityManager {
   private gameEngine: GameEngine;
   private econ: EconomicManager;
@@ -168,6 +177,27 @@ export class AICityManager {
    * civs follow their strategy profile, human civs their chosen mode.
    * Tiles the player assigned by hand are never moved.
    */
+  /**
+   * The governor profile for an AI city. A mature city (pop >= 8) switches to
+   * Commerce by default: its tile base is built out, so trade and the
+   * tax/science specialists buy more than a marginal extra shield. The moment
+   * the food box runs low (or the city is starving) it falls back to the
+   * food-first balanced profile until the reserve recovers — mature cities
+   * never starve to chase commerce.
+   */
+  aiGovernorForCity(city: City): GovernorProfile {
+    const population = city.population ?? 0;
+    if (population >= AI_COMMERCE_GOVERNOR_MIN_POP) {
+      const stored = city.foodStored ?? 0;
+      const needed = city.foodNeeded ?? (population + 1) * 10;
+      const fraction = needed > 0 ? stored / needed : 0;
+      if (fraction >= AI_COMMERCE_GOVERNOR_MIN_FOOD_FRACTION) {
+        return GOVERNOR_PROFILES.commerce;
+      }
+    }
+    return AI_GOVERNOR_PROFILE;
+  }
+
   manageCity(city: City, civ: Civilization, strategy?: StrategyProfile): void {
     if (!city || !civ) return;
     // Barbarian cities are auto-managed for military production only; the
@@ -176,7 +206,7 @@ export class AICityManager {
     const resolved = strategy ?? resolveAICivStrategy(civ);
     const profile = civ.isHuman === true
       ? GOVERNOR_PROFILES[city.governor ?? 'balanced']
-      : AI_GOVERNOR_PROFILE;
+      : this.aiGovernorForCity(city);
 
     // When the player locks specialists, the governor only manages tiles —
     // it will not promote or demote any specialist.

@@ -74,7 +74,13 @@ export interface CivEconomyPreview {
 
 export const UNIT_MAINTENANCE = 1;
 const CITY_CENTER_COMMERCE = 2;
-const TRADE_GOLD_MULTIPLIER = 2;
+/**
+ * Gold per point of after-corruption commerce at 100% tax. Exported because the
+ * building cost/usage equation has to convert a building's declared `trade`
+ * bonus into actual gold, and a number silently re-derived in two places is
+ * exactly how the two drift apart.
+ */
+export const TRADE_GOLD_MULTIPLIER = 2;
 /** Contentment every citizen contributes before any modifiers. */
 const BASE_CONTENTMENT = 2;
 const CAPTURED_CITY_UNHAPPY = 3;
@@ -93,6 +99,39 @@ const CITY_CENTER_MIN = { food: 2, production: 1, trade: 1 };
  */
 const MIN_CITY_FOOD_SURPLUS = 1;
 
+/** Food every citizen eats per turn before the size penalty below. */
+export const BASE_CITIZEN_FOOD_DEMAND = 2;
+
+/**
+ * The city size at which the growing appetite starts. From this size on each
+ * citizen eats `CITY_SIZE_FOOD_DEMAND_STEP` more per turn than the one below
+ * it, so a city gets progressively harder to feed as it grows.
+ *
+ * This is the second half of the siege mechanic: a blockade cuts the tiles a
+ * city can work, and the size penalty means a big city starves faster than a
+ * small one when it is blockaded. A civ is therefore pushed to expand while it
+ * can, and punished for letting one city grow fat and isolated.
+ */
+export const CITY_SIZE_FOOD_DEMAND_THRESHOLD = 6;
+
+/** Extra food each citizen eats per turn, per city size above the threshold. */
+export const CITY_SIZE_FOOD_DEMAND_STEP = 0.2;
+
+/**
+ * Total food one citizen of a city this size eats per turn.
+ *
+ * Exported so `TurnManager.processCityGrowth`, the AI's food planning and the
+ * shared tile assigner cannot each re-derive it and drift: a famine must be
+ * charged at exactly the rate the citizen is assumed to eat at.
+ */
+export function citizenFoodDemand(population: number): number {
+  const sizesAboveThreshold = Math.max(
+    0,
+    (population ?? 1) - (CITY_SIZE_FOOD_DEMAND_THRESHOLD - 1),
+  );
+  return BASE_CITIZEN_FOOD_DEMAND + CITY_SIZE_FOOD_DEMAND_STEP * sizesAboveThreshold;
+}
+
 /**
  * Floor the treasury is reset to after the AI is forced to disband.
  * Keeps the civ solvent for the next turn (see spec item 6).
@@ -104,7 +143,14 @@ const clamp = (v: number, min: number, max: number): number =>
 
 export class EconomicManager {
   private gameEngine: GameEngine;
-  AI_MIN_GOLD_RESERVE: number;
+  /**
+   * Treasury floor the AI will not spend below. Kept in step with
+   * `ABSOLUTE_MIN_GOLD` (the level a bankrupt civ is reset to), so "money I
+   * refuse to touch" and "money I would lose anyway to bankruptcy" are the
+   * same number rather than a declared-but-unassigned field that every caller
+   * had to `?? 8` around.
+   */
+  AI_MIN_GOLD_RESERVE: number = ABSOLUTE_MIN_GOLD;
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
@@ -433,6 +479,25 @@ export class EconomicManager {
     return territory;
   }
 
+  /**
+   * Whether a FOREIGN unit is standing on this tile.
+   *
+   * A city works the ground around it, and a foreign army camped on one of its
+   * fields takes that field out of production for as long as it stays there.
+   * The tile becomes unusable the moment the unit lands and is handed back the
+   * moment it leaves — which is what makes the siege a race: every turn spent
+   * blockaded is a turn of food the city does not get, and the city starves at
+   * `citizenFoodDemand(population)`, which rises with size.
+   *
+   * A unit of the city's OWN civilization never blocks anything: garrisons,
+   * settlers and builders standing on the tiles they feed are the normal case.
+   */
+  isTileOccupiedByForeignUnit(col: number, row: number, civilizationId: number): boolean {
+    const unit = this.gameEngine.getUnitAt?.(col, row);
+    if (!unit || unit.isDefeated) return false;
+    return unit.civilizationId !== civilizationId;
+  }
+
   private territoryOwner(col: number, row: number): City | null {
     const cities = (this.gameEngine.cities ?? []) as City[];
     return (
@@ -468,6 +533,8 @@ export class EconomicManager {
       if (worked.has(key)) continue;
       const owner = this.territoryOwner(sq.col, sq.row);
       if (owner && owner.id !== city.id) continue;
+      // Never offer a tile a foreign unit is standing on.
+      if (this.isTileOccupiedByForeignUnit(sq.col, sq.row, city.civilizationId)) continue;
       out.push({ col: sq.col, row: sq.row, key });
     }
     return out;
@@ -483,6 +550,7 @@ export class EconomicManager {
     if ((city.workingTiles ?? new Set<string>()).has(key)) return false;
     const owner = this.territoryOwner(col, row);
     if (owner && owner.id !== city.id) return false;
+    if (this.isTileOccupiedByForeignUnit(col, row, city.civilizationId)) return false;
     return this.cityTerritory(city).some((sq) => sq.col === col && sq.row === row);
   }
 
@@ -521,6 +589,8 @@ export class EconomicManager {
     for (const sq of this.cityTerritory(city)) {
       const owner = this.territoryOwner(sq.col, sq.row);
       if (owner && owner.id !== city.id) continue;
+      // A foreign unit on the tile takes it out of production entirely.
+      if (this.isTileOccupiedByForeignUnit(sq.col, sq.row, city.civilizationId)) continue;
       const tile = this.getTile(sq.col, sq.row);
       if (!tile) continue;
       candidates.push({
@@ -743,12 +813,22 @@ export class EconomicManager {
     let production = 0;
     let trade = 0;
     const hasFishingNet = this.fishingGroundLookup();
-    for (const key of city.workingTiles ?? []) {
+    // Drop tiles a foreign unit has taken, so a blockaded field stops paying
+    // the moment it is occupied — not just after the next automatic re-pick.
+    // Without this a manually assigned tile would keep feeding a besieged city
+    // for as long as nobody happened to reassign the citizen.
+    const worked = city.workingTiles ?? new Set<string>();
+    for (const key of Array.from(worked)) {
       const sep = key.indexOf(',');
       if (sep === -1) continue;
       const col = Number(key.slice(0, sep));
       const row = Number(key.slice(sep + 1));
       if (Number.isNaN(col) || Number.isNaN(row)) continue;
+      if (this.isTileOccupiedByForeignUnit(col, row, city.civilizationId)) {
+        worked.delete(key);
+        city.userAssignedTiles?.delete(key);
+        continue;
+      }
       const y = this.cityTileYieldsWith(this.getTile(col, row), hasFishingNet);
       food += y.food;
       production += y.production;
@@ -764,9 +844,10 @@ export class EconomicManager {
 
   /**
    * The city's real food balance for this turn — the SAME math the growth
-   * pipeline uses (`TurnManager.processCityGrowth`): every citizen eats 2
-   * food, and settlers owned by the city eat 1 each (2 under Republic and
-   * Democracy). AI city management and production decisions consult this
+   * pipeline uses (`TurnManager.processCityGrowth`): every citizen eats
+   * `citizenFoodDemand(population)` food (2 to start with, +0.2 per head per
+   * size above 5), and settlers owned by the city eat 1 each (2 under Republic
+   * and Democracy). AI city management and production decisions consult this
    * instead of re-deriving it, so famine prevention and settler support use
    * exactly the numbers the engine charges.
    */
@@ -795,7 +876,10 @@ export class EconomicManager {
     ).length * settlerFoodPerTurn;
 
     const produced = city?.yields?.food ?? city?.food ?? 0;
-    const citizenConsumption = population * 2;
+    // Citizens eat 2 food each to start with, and 0.2 more per head for every
+    // size above 5 — so a large city is genuinely harder to keep fed than a
+    // small one, which is what turns a blockade into a siege.
+    const citizenConsumption = population * citizenFoodDemand(population);
     const surplus = produced - citizenConsumption - settlerSupport;
     const storage = city?.foodStored ?? 0;
     const growthThreshold = (population + 1) * 10;
@@ -1130,6 +1214,10 @@ export class EconomicManager {
         // value (and the whole catch in its hold), so a working boat is never
         // a disband candidate — an idle one still is.
         !(u.type === 'fisher_boat' && u.fishingRoute) &&
+        // A Caravan is one-shot income in transit: disbanding it destroys the
+        // shields and the route it was carrying. New production is blocked by
+        // the affordability gate instead of liquidating the ones under way.
+        u.type !== 'caravan' &&
         !isMissionUnit(u) &&
         !isLoadedFerry(u),
     );

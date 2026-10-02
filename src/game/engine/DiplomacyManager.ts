@@ -61,6 +61,15 @@ import { debugLog } from '../../utils/DevLog';
 
 /** Base gold cost to bribe a unit (multiplied by unit attack+defense) */
 const BRIBE_UNIT_BASE_COST = 25;
+
+/**
+ * What bribing this unit would actually cost. Exported so the AI can decide
+ * whether a bribe is worth attempting BEFORE offering one — a price
+ * re-derived on the AI side is a price that quietly drifts from the charge.
+ */
+export function bribeUnitCost(unit: { attack?: number; defense?: number }): number {
+  return BRIBE_UNIT_BASE_COST * ((unit.attack || 1) + (unit.defense || 1));
+}
 /** How many turns before AI re-evaluates diplomatic stance */
 const AI_DIPLOMACY_INTERVAL = 5;
 /**
@@ -890,7 +899,7 @@ export class DiplomacyManager {
     if (!unit) return { accepted: false, reason: 'Unit not found' };
     if (unit.civilizationId === diplomatCivId) return { accepted: false, reason: 'Cannot bribe own unit' };
 
-    const cost = BRIBE_UNIT_BASE_COST * ((unit.attack || 1) + (unit.defense || 1));
+    const cost = bribeUnitCost(unit);
     const fromCiv = this.gameEngine.civilizations?.[diplomatCivId];
     const gold = fromCiv?.resources?.gold ?? 0;
 
@@ -1083,13 +1092,14 @@ export class DiplomacyManager {
       theirStrength: this.estimateMilitaryStrength(otherId),
       ownGold: this.gameEngine.civilizations?.[civId]?.resources?.gold ?? 0,
       activeWars: this.getEnemies(civId).length,
-      maxWars: maxConcurrentWars(weights),
+      maxWars: maxConcurrentWars(weights, this.gameEngine.currentYear),
       exhaustion: this.getWarExhaustion(civId),
       turnsSince: round - statusSince,
       roundsSincePeace,
       sharedEnemy,
       round,
       sequence: this.proposalSequence++,
+      currentYear: this.gameEngine.currentYear ?? -4000,
     };
   }
 

@@ -193,7 +193,8 @@ describe('Fishing grounds need an active boat', () => {
       [O, G, O, O],
       [O, O, O, O],
     ]);
-    setFish(e, 0, 0);
+    setFish(e, 0, 0); // worked by the city — off-limits to boats
+    setFish(e, 3, 0); // free ground
     const city = addCity(e, 'port', 0, 1, 1, ['harbor']);
     city.population = 1;
     city.workingTiles = new Set(['0,0']); // one ocean fish tile
@@ -209,19 +210,83 @@ describe('Fishing grounds need an active boat', () => {
       (e.economicManager as unknown as Record<string, unknown>).tileYieldsForCity,
     ).toBeUndefined();
 
-    // Deploying a net restores the full fish value for the working city.
+    // A ground the city already draws food from may not be netted.
     const boat = addUnit(e, 'f1', 'fisher_boat', 0, 0, { homeCityId: 'port' });
-    expect(e.deployFishingNet('f1')).toBe(true);
-    expect(city.yields?.food).toBe(3);
+    expect(e.canDeployFishingNet('f1')).toBe(false);
+    expect(e.deployFishingNet('f1')).toBe(false);
 
-    // A recall keeps the boat assigned to the ground → still full value.
+    // The free ground is legal; the worked one keeps the boat-less value.
+    boat.col = 3;
+    boat.row = 0;
+    expect(e.deployFishingNet('f1')).toBe(true);
+    expect(city.yields?.food).toBe(2);
+
+    // A recall keeps the boat assigned to the ground → value unchanged.
     e.recallFishingBoat('f1');
-    expect(city.yields?.food).toBe(3);
+    expect(city.yields?.food).toBe(2);
 
     // Clearing the route abandons the ground → boat-less value again.
     e.clearFishingRoute('f1');
     expect(city.yields?.food).toBe(2);
     expect(boat.fishingRoute).toBeNull();
+
+    // The restriction is on deployment: a city that later starts working the
+    // netted tile draws its full value. (The re-deploy needs fresh moves —
+    // deploying consumes them.)
+    boat.movesRemaining = 2;
+    expect(e.deployFishingNet('f1')).toBe(true);
+    city.workingTiles.add('3,0');
+    e.economicManager.refreshYieldsFromWorkingTiles(city as never);
+    expect(city.yields?.food).toBe(5); // 2 from (0,0) + 3 from the netted (3,0)
+  });
+});
+
+describe('Fishing ground restrictions', () => {
+  function twoGroundEngine() {
+    const e = makeEngine([
+      [G, O, O, O, O, O],
+      [O, O, O, O, O, O],
+      [O, O, O, O, O, O],
+    ]);
+    addCity(e, 'port', 0, 0, 0, ['harbor']);
+    setFish(e, 3, 0);
+    setFish(e, 4, 0);
+    return e;
+  }
+
+  it('refuses a ground the city already draws food from', () => {
+    const e = twoGroundEngine();
+    e.cities[0].workingTiles.add('3,0');
+    const boat = addUnit(e, 'f1', 'fisher_boat', 3, 0, { homeCityId: 'port' });
+
+    expect(e.canDeployFishingNet('f1')).toBe(false);
+    expect(e.deployFishingNet('f1')).toBe(false);
+
+    // The same boat may still use a free fish tile.
+    boat.col = 4;
+    boat.row = 0;
+    expect(e.canDeployFishingNet('f1')).toBe(true);
+    expect(e.deployFishingNet('f1')).toBe(true);
+  });
+
+  it('refuses a ground another boat is already using, at any route stage', () => {
+    const e = twoGroundEngine();
+    const first = addUnit(e, 'f1', 'fisher_boat', 3, 0, { homeCityId: 'port' });
+    expect(e.deployFishingNet('f1')).toBe(true);
+
+    addUnit(e, 'f2', 'fisher_boat', 3, 0, { homeCityId: 'port' });
+    expect(e.canDeployFishingNet('f2')).toBe(false);
+    expect(e.deployFishingNet('f2')).toBe(false);
+
+    // A boat sailing home still owns its net tile.
+    e.recallFishingBoat('f1');
+    expect(first.fishingRoute?.stage).toBe('inbound');
+    expect(e.canDeployFishingNet('f2')).toBe(false);
+
+    // Only abandoning the route frees the ground.
+    e.clearFishingRoute('f1');
+    expect(e.canDeployFishingNet('f2')).toBe(true);
+    expect(e.deployFishingNet('f2')).toBe(true);
   });
 });
 

@@ -57,6 +57,29 @@ export const AI_VILLAGE_TAKE_MIN = 0.1;
 export const AI_VILLAGE_TAKE_MAX = 0.95;
 
 /**
+ * Early-game reluctance: for the first `AI_VILLAGE_EARLY_GAME_ROUNDS` rounds
+ * the AI is much less eager to pop huts (a barbarian ambush next to a young,
+ * thinly defended empire is far more costly than a free tech is valuable).
+ * The multiplier ramps linearly from `AI_VILLAGE_EARLY_GAME_FACTOR` at round 0
+ * to 1 at the end of the window.
+ */
+export const AI_VILLAGE_EARLY_GAME_ROUNDS = 120;
+export const AI_VILLAGE_EARLY_GAME_FACTOR = 0.15;
+
+/**
+ * A hut this close to an enemy city is always taken, even in the early game:
+ * popping it denies the rival a free city/units and keeps the front yard clear.
+ * Chebyshev distance 2 is the enemy city's own work radius.
+ */
+export const AI_VILLAGE_ENEMY_CITY_OVERRIDE_RADIUS = 2;
+
+/** Eagerness multiplier for the AI's village decision in [factor..1]. */
+export function villageEarlyGameFactor(roundNumber: number): number {
+  const ramp = Math.min(1, Math.max(0, roundNumber) / AI_VILLAGE_EARLY_GAME_ROUNDS);
+  return AI_VILLAGE_EARLY_GAME_FACTOR + (1 - AI_VILLAGE_EARLY_GAME_FACTOR) * ramp;
+}
+
+/**
  * Probability (0..1) that the AI actively collects a village at
  * `distanceFromNearestCity` tiles when it owns `cityCount` cities.
  * Monotonically increasing in both inputs.

@@ -132,6 +132,10 @@ export interface FisherGroundEngine {
   } | null;
   getTileAt?(col: number, row: number): { resource?: string | null } | null | undefined;
   isExploredByPlayer?(civilizationId: number, col: number, row: number): boolean;
+  /** Tiles worked by any city — a boat may not net those (see canDeployFishingNet). */
+  getWorkedTileKeys?(): Set<string>;
+  /** Fish grounds already assigned to an active Fisher Boat. */
+  getFishingGroundKeys?(): Set<string>;
 }
 
 export interface FishingGround extends FisherEconomics {
@@ -153,12 +157,20 @@ export function evaluateFishingGrounds(
   const width = grid.width ?? 0;
   const height = grid.height ?? 0;
 
+  // A ground a city draws food from, or one another boat already owns, is not
+  // a deployable target — skip it here so the best pick is always a legal one
+  // (the engine gate in canDeployFishingNet enforces the same rules).
+  const workedTiles = engine.getWorkedTileKeys?.();
+  const takenGrounds = engine.getFishingGroundKeys?.();
+
   const grounds: FishingGround[] = [];
   for (let col = 0; col < width; col++) {
     for (let row = 0; row < height; row++) {
       const tile = engine.getTileAt(col, row);
       const resource = String((tile as { resource?: string } | null)?.resource ?? '').toLowerCase();
       if (resource !== 'fish') continue;
+      const key = `${col},${row}`;
+      if (workedTiles?.has(key) || takenGrounds?.has(key)) continue;
       if (typeof engine.isExploredByPlayer === 'function'
           && !engine.isExploredByPlayer(city.civilizationId, col, row)) {
         continue;

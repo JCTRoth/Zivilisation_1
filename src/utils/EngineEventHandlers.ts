@@ -1097,7 +1097,13 @@ export class EngineEventRouter {
     this.actions.updateTechnologies([...(this.gameEngine.technologies || [])]);
     this.actions.updateCivilizations([...(this.gameEngine.civilizations || [])]);
 
-    // The research-complete notification is for the human player.
+    // The research-complete notification is for the human player. In a
+    // self-playing AI-vs-AI run nobody is there to read it, and civilization 0
+    // still carries the human player id even though it is AI-controlled — so
+    // the id test alone let the modal pop up over the running duel and block
+    // the very game that is supposed to play itself. Checking the run's
+    // structure as well is what actually stops it.
+    if (this.isAIVsAI) return;
     if (civilizationId !== HUMAN_PLAYER_ID) return;
     this.actions.notifyTechResearched({ ...tech } as Technology);
 

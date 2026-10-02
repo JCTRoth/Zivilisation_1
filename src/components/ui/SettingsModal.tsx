@@ -1,8 +1,9 @@
 import { Modal, Button, Form } from "react-bootstrap";
 import { useGameStore } from "@/stores/GameStore";
+import GameSpeedControls from "./GameSpeedControls";
 import "../../styles/settingsModal.css";
 
-function SettingsModal({ show, onHide }) {
+function SettingsModal({ show, onHide, isPaused = false, onTogglePause }) {
   const settings = useGameStore((state) => state.settings);
   const actions = useGameStore((state) => state.actions);
 
@@ -25,6 +26,7 @@ function SettingsModal({ show, onHide }) {
       animationSpeed: 1,
       enemyAnimationSpeed: 1,
       cameraGlideSpeed: 1,
+      gameSpeedStep: 0,
     });
   };
 
@@ -71,6 +73,13 @@ function SettingsModal({ show, onHide }) {
       </Modal.Header>
       <Modal.Body className="settings-modal__body">
         <Form>
+          {/* Game speed leads the screen: it is the one control that changes how
+              the game itself runs rather than how smoothly it is drawn. */}
+          <GameSpeedControls
+            isPaused={isPaused}
+            onTogglePause={onTogglePause}
+          />
+
           {renderSlider(
             "Overall UI Scale",
             settings.uiScale,

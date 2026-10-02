@@ -8,6 +8,7 @@
 
 import type { Unit, City } from '../../../../types/game';
 import type { ArmyGroup } from './AITypes';
+import type { BuildingEconomics } from './BuildingEconomics';
 import { debugLog } from '../../../utils/DevLog';
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,75 @@ const RALLY_TIMEOUT_ROUNDS = 6;
 
 /** How far from the centroid we search for a passable rally tile. */
 const RALLY_SEARCH_RADIUS = 6;
+
+/**
+ * Radius around a city within which the army is "at" that city: units this
+ * close stage from it, screen it and fall back on it.
+ */
+export const MILITARY_SITUATION_RADIUS = 4;
+
+/**
+ * A city counts as `incoming_assault` once the enemy strength bearing on it is
+ * at least a small warband's worth (weighted by distance, so adjacent raiders
+ * count for far more than ones on the rim of the radius).
+ */
+const INCOMING_ASSAULT_STRENGTH = 2.5;
+
+const round1 = (value: number): number => Math.round(value * 10) / 10;
+
+/**
+ * What a city means to the civ's coordinated force RIGHT NOW. This is the
+ * bridge between army coordination and city building: a barracks only earns
+ * its upkeep in a city that actually feeds the army, walls only in one the
+ * army has to protect. The building auditor reads this.
+ */
+export type CityMilitaryRole =
+  /** Enemy force is converging — the city is about to be attacked. */
+  | 'incoming_assault'
+  /** Our own army stages/marches from here: it is a forward base. */
+  | 'assault_staging'
+  /** Only defenders are parked here; no offensive force operates from it. */
+  | 'garrison_only'
+  /** Nothing military is happening around this city. */
+  | 'quiet';
+
+export interface CityMilitarySituation {
+  cityId: string;
+  role: CityMilitaryRole;
+  /** Our own army groups this civ fields at all. */
+  activeGroupCount: number;
+  /** Our groups whose rally point sits within the situation radius. */
+  stagingGroupCount: number;
+  /** Our groups that are committed (marching/attacking) from this city. */
+  assaultingGroupCount: number;
+  /** Our combat units within the radius. */
+  nearbyOwnUnits: number;
+  /** Combat strength of those units. */
+  nearbyOwnStrength: number;
+  /** Enemy units within the radius (raw, unweighted). */
+  nearbyEnemyUnits: number;
+  /**
+   * Enemy strength bearing down on the city, weighted by distance the same
+   * way `assessCityThreat` weights pressure (near = much heavier).
+   */
+  incomingEnemyStrength: number;
+  /** Enemy army groups targeting this city (only when the caller tracks them). */
+  incomingGroupCount: number;
+}
+
+export interface CityMilitarySituationInput {
+  city: { id: string; col: number; row: number };
+  /** Army groups the civ fields (own formations). */
+  groups: ArmyGroup[];
+  /** Enemy army groups, when the caller knows of them. Optional. */
+  enemyGroups?: ArmyGroup[];
+  /** Every unit on the map, own and enemy. */
+  units: Unit[];
+  civilizationId: number;
+  distanceFn: (col1: number, row1: number, col2: number, row2: number) => number;
+  /** Radius that counts as "this city". Defaults to MILITARY_SITUATION_RADIUS. */
+  radius?: number;
+}
 
 /** Options injected by the engine-aware caller (AIManager). */
 export interface ArmyGroupOptions {
@@ -346,11 +416,230 @@ export class AICoordinator {
   }
 
   /**
+   * Read a city's military ROLE out of the army formations around it.
+   *
+   * `formArmyGroups`/`getGroupTarget` decide where units go; this answers the
+   * question the building auditor needs: *is this city part of the war effort
+   * at all?* Without it a barracks in a quiet backwater of a peaceful empire
+   * looks exactly like a barracks in a city an army group is mustering from,
+   * so the AI keeps paying upkeep for an advantage it never uses.
+   *
+   * Pure — no engine access, like the rest of this class — so the callers
+   * (BuildingAnalyzer) stay testable.
+   */
+  static summarizeCityMilitarySituation({
+    city,
+    groups,
+    enemyGroups = [],
+    units,
+    civilizationId,
+    distanceFn,
+    radius = MILITARY_SITUATION_RADIUS,
+  }: CityMilitarySituationInput): CityMilitarySituation {
+    let nearbyOwnUnits = 0;
+    let nearbyOwnStrength = 0;
+    let nearbyEnemyUnits = 0;
+    let incomingEnemyStrength = 0;
+
+    for (const unit of units) {
+      if (unit.isDefeated) continue;
+      const distance = distanceFn(unit.col, unit.row, city.col, city.row);
+      if (distance > radius) continue;
+      const strength = AICoordinator.unitStrength(unit);
+      if (unit.civilizationId === civilizationId) {
+        nearbyOwnUnits += 1;
+        nearbyOwnStrength += strength;
+      } else {
+        nearbyEnemyUnits += 1;
+        // Distance weighting mirrors `assessCityThreat`: an adjacent attacker
+        // is worth far more than one on the rim of the radius.
+        incomingEnemyStrength += strength / (distance + 1);
+      }
+    }
+
+    let stagingGroupCount = 0;
+    let assaultingGroupCount = 0;
+    for (const group of groups) {
+      const stagingDistance = distanceFn(
+        group.rallyPoint.col, group.rallyPoint.row, city.col, city.row,
+      );
+      if (stagingDistance > radius) continue;
+      stagingGroupCount += 1;
+      if (group.status === 'marching' || group.status === 'attacking') {
+        assaultingGroupCount += 1;
+      }
+    }
+
+    let incomingGroupCount = 0;
+    for (const group of enemyGroups) {
+      const targetDistance = distanceFn(
+        group.targetLocation.col, group.targetLocation.row, city.col, city.row,
+      );
+      if (targetDistance <= radius) incomingGroupCount += 1;
+    }
+
+    let role: CityMilitaryRole;
+    if (incomingGroupCount > 0 || incomingEnemyStrength >= INCOMING_ASSAULT_STRENGTH) {
+      role = 'incoming_assault';
+    } else if (assaultingGroupCount > 0) {
+      role = 'assault_staging';
+    } else if (stagingGroupCount > 0 || nearbyOwnUnits > 0) {
+      role = 'garrison_only';
+    } else {
+      role = 'quiet';
+    }
+
+    return {
+      cityId: city.id,
+      role,
+      activeGroupCount: groups.length,
+      stagingGroupCount,
+      assaultingGroupCount,
+      nearbyOwnUnits,
+      nearbyOwnStrength: round1(nearbyOwnStrength),
+      nearbyEnemyUnits,
+      incomingEnemyStrength: round1(incomingEnemyStrength),
+      incomingGroupCount,
+    };
+  }
+
+  /**
    * Calculate total combat strength of a group of units.
    */
   private static calculateGroupStrength(units: Unit[]): number {
-    return units.reduce((total, unit) => {
-      return total + Math.max(1, unit.attack || 0) + (unit.defense || 0) * 0.5;
-    }, 0);
+    return units.reduce((total, unit) => total + AICoordinator.unitStrength(unit), 0);
   }
+
+  /** Shared combat-strength model — identical to `calculateGroupStrength`. */
+  private static unitStrength(unit: Unit): number {
+    return Math.max(1, unit.attack || 0) + (unit.defense || 0) * 0.5;
+  }
+
+  // -------------------------------------------------------------------------
+  // Forced liquidation: selling buildings to fund a plan
+  // -------------------------------------------------------------------------
+
+  /**
+   * Turn a set of spending intents into a concrete list of buildings to sell.
+   *
+   * The passive audit only sells a building that has stopped earning its
+   * upkeep. This is the opposite pressure: the civ has decided it NEEDS to spend
+   * — settlers for public works, units for an army, a bribe for a war that has
+   * gone badly — and is short of money. Something has to go.
+   *
+   * The rule that keeps this from becoming vandalism is that only a building
+   * which is not paying its own way may be sold. Liquidating a profitable
+   * building to raise money would mean paying more in lost income than it saves
+   * in upkeep, losing on both sides of the trade, so those are never eligible
+   * however badly the treasury is doing. What can be sold is exactly the set the
+   * cost/usage equation already calls a drain or inert.
+   *
+   * Pure — the caller executes the sales.
+   */
+  static planBuildingFunding(input: BuildingFundingInput): BuildingFundingPlan {
+    const { demands, budget, candidates } = input;
+
+    const ranked = [...demands].sort((a, b) => b.urgency - a.urgency || b.goldNeeded - a.goldNeeded);
+    const totalNeeded = ranked.reduce((sum, d) => sum + Math.max(0, d.goldNeeded), 0);
+    const shortfall = Math.max(0, totalNeeded - budget);
+
+    const reasons: string[] = [];
+    if (totalNeeded === 0) reasons.push('no spending demand');
+    if (shortfall === 0 && totalNeeded > 0) reasons.push('the treasury already covers the plan');
+    if (budget <= 0 && totalNeeded > 0) reasons.push('nothing in the treasury');
+
+    if (shortfall <= 0) {
+      return { demands: ranked, totalNeeded, available: budget, shortfall, sales: [], reasons };
+    }
+
+    // Only buildings that cost more than they earn are eligible, and the
+    // smallest loss first — a 1 gold/turn drain goes before a 4 gold/turn one,
+    // because it closes the same gap while giving up less income. Hence the
+    // descending sort on `netPerTurn`: the value closest to zero is cheapest.
+    const eligible = candidates
+      .filter(c => c.economics.netPerTurn < 0)
+      .sort((a, b) => b.economics.netPerTurn - a.economics.netPerTurn);
+
+    if (eligible.length === 0) {
+      reasons.push('nothing left to sell that would not cost more than it saves');
+      return { demands: ranked, totalNeeded, available: budget, shortfall, sales: [], reasons };
+    }
+
+    // Refunds are part of the money raised, so the plan can finish without
+    // waiting for the freed upkeep to arrive next turn.
+    let raised = 0;
+    let savedPerTurn = 0;
+    const sales: BuildingFundingSale[] = [];
+    for (const candidate of eligible) {
+      raised += candidate.refund;
+      savedPerTurn += -candidate.economics.netPerTurn;
+      sales.push({
+        cityId: candidate.cityId,
+        cityName: candidate.cityName,
+        buildingType: candidate.buildingType,
+        refund: candidate.refund,
+        netPerTurn: candidate.economics.netPerTurn,
+        verdict: candidate.economics.verdict,
+        reason: candidate.economics.reasons[candidate.economics.reasons.length - 1] ?? '',
+      });
+      // One turn's income is enough to close the gap; liquidation beyond that
+      // is just vandalism with extra steps.
+      if (raised + savedPerTurn >= shortfall) break;
+    }
+
+    reasons.push(
+      `selling ${sales.length} building(s) raises ${Math.round(raised)} gold and saves `
+      + `${round1(savedPerTurn)} gold/turn to cover a ${Math.round(shortfall)} gold shortfall`,
+    );
+
+    return { demands: ranked, totalNeeded, available: budget, shortfall, sales, reasons };
+  }
+}
+
+export type FundingKind = 'infrastructure' | 'army' | 'bribe';
+
+/** One thing the civ wants to spend money on. */
+export interface FundingDemand {
+  kind: FundingKind;
+  label: string;
+  goldNeeded: number;
+  /** 0..1 — how badly this want trumps the others. */
+  urgency: number;
+}
+
+/** A building the funding plan may liquidate. */
+export interface BuildingFundingCandidate {
+  cityId: string;
+  cityName: string;
+  buildingType: string;
+  /** Gold recovered from the 50% refund. */
+  refund: number;
+  economics: BuildingEconomics;
+}
+
+export interface BuildingFundingSale {
+  cityId: string;
+  cityName: string;
+  buildingType: string;
+  refund: number;
+  netPerTurn: number;
+  verdict: BuildingEconomics['verdict'];
+  reason: string;
+}
+
+export interface BuildingFundingInput {
+  demands: FundingDemand[];
+  /** Gold the civ can already spend. */
+  budget: number;
+  candidates: BuildingFundingCandidate[];
+}
+
+export interface BuildingFundingPlan {
+  demands: FundingDemand[];
+  totalNeeded: number;
+  available: number;
+  shortfall: number;
+  /** Ordered cheapest-loss first; the caller executes. */
+  sales: BuildingFundingSale[];
+  reasons: string[];
 }

@@ -23,7 +23,7 @@
  *   - A victorious attacker never advances into the defender's tile.
  */
 
-import { TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
+import { TERRAIN_PROPS } from '@/utils/Constants';
 import { MathUtils } from '@/utils/MathUtils';
 import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
 
@@ -106,13 +106,6 @@ export type CombatEventKind = 'victory' | 'hit' | 'defeat';
 /** The terrain key for a tile (accepts `type` or `terrain`). */
 function terrainKeyOf(tile?: CombatTerrainLike | null): string {
   return String(tile?.type ?? tile?.terrain ?? '').trim().toLowerCase();
-}
-
-/** Whether a unit type ignores city walls (air units and siege artillery). */
-export function unitIgnoresCityWalls(type: string): boolean {
-  const key = String(type ?? '').trim().toLowerCase();
-  if (UNIT_PROPS[key]?.type === 'air') return true;
-  return key === 'cannon' || key === 'artillery';
 }
 
 export class CombatSystem {

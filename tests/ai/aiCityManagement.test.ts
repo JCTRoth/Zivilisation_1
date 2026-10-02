@@ -19,6 +19,7 @@ import {
   AI_VILLAGE_TAKE_MIN,
   AI_VILLAGE_SAFE_DISTANCE,
   AI_VILLAGE_CITY_SCALE,
+  AI_VILLAGE_EARLY_GAME_ROUNDS,
 } from '@/data/VillageConstants';
 
 type Rows = string[][];
@@ -453,6 +454,9 @@ describe('AI village risk model', () => {
       [G, G, G, G, G],
       [G, G, G, G, G],
     ]);
+    // Set round number past the early-game window so the reluctance factor
+    // doesn't interfere with the risk-model assertions below.
+    (engine.roundManager as unknown as { roundNumber: number }).roundNumber = AI_VILLAGE_EARLY_GAME_ROUNDS * 2;
     const manager = engine.aiManager as unknown as {
       shouldTakeVillage(
         civId: number,

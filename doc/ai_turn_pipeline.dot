@@ -1,0 +1,153 @@
+/**
+ * How the AI works — one AI civ's turn, and the modules it drives.
+ *
+ * Render with:  dot -Tsvg doc/ai_turn_pipeline.dot -o ai_turn_pipeline.svg
+ *               dot -Tpng doc/ai_turn_pipeline.dot -o ai_turn_pipeline.png
+ *
+ * The pipeline down the left is what actually happens in order. Everything on
+ * the right is a module the AI consults while it runs, grouped by what it
+ * decides. Dashed edges are "consulted for advice"; solid edges are "hands
+ * work to", i.e. a pipeline step calling into a module.
+ */
+
+digraph AI_Turn_Pipeline {
+  rankdir=TB;
+  compound=true;
+  newrank=true;
+  // ortho cannot render edge labels, which this diagram leans on heavily.
+  splines=polyline;
+  nodesep=0.35;
+  ranksep=0.42;
+  fontname="Helvetica";
+
+  node [shape=box, style="rounded,filled", fillcolor="#16202a", color="#3d566e",
+        fontcolor="#e8f0f6", fontsize=10, margin="0.14,0.08", penwidth=1.1];
+  edge [color="#7f95a8", fontcolor="#9fb3c8", fontsize=9, arrowsize=0.7, penwidth=1.0];
+
+  // ── Turn lifecycle ────────────────────────────────────────────────────
+  subgraph cluster_turn {
+    label="TurnManager phase chain (async, one civ at a time)";
+    fontcolor="#f1c40f"; style="rounded"; color="#4a5a2a"; fillcolor="#1b1f14";
+    fontsize=11;
+
+    START     [label="START\nregisterPlayer", fillcolor="#1f2c38"];
+    MOVEMENT  [label="UNIT_MOVEMENT\nchooseAITarget → move", fillcolor="#1f2c38"];
+    PRODUCTION[label="CITY_PRODUCTION\nAutoProduction", fillcolor="#1f2c38"];
+    RESEARCH  [label="RESEARCH", fillcolor="#1f2c38"];
+    END       [label="END\nadvanceTurn → next civ", fillcolor="#1f2c38"];
+
+    START -> MOVEMENT -> PRODUCTION -> RESEARCH -> END [color="#f1c40f"];
+    END -> START [label="next civ\nround++", color="#f1c40f", style=dashed, constraint=false];
+  }
+
+  // ── AIManager phases ──────────────────────────────────────────────────
+  subgraph cluster_phases {
+    label="AIManager.runAITurn — pre-movement phases";
+    fontcolor="#3498db"; style="rounded"; color="#2a3f52"; fillcolor="#141c24";
+    fontsize=11;
+
+    P0 [label="P0  load AIState\nfrom turnData.aiState", fillcolor="#1c2b38"];
+    P1 [label="P1  strategy eval\n(evaluated, then discarded)", fillcolor="#1c2b38"];
+    P2 [label="P2  pick research\nif nothing selected", fillcolor="#1c2b38"];
+    P2b[label="P2b government\nrevolution check", fillcolor="#1c2b38"];
+    P2c[label="P2c diplomacy\n(tribute / peace / intel)", fillcolor="#1c2b38"];
+    P3 [label="P3  aggression + offensive plan", fillcolor="#1c2b38"];
+    P3g[label="P3  form army groups\n(rally, march, attack)", fillcolor="#1c2b38"];
+    P3b[label="P3b BUILDING ANALYSIS\nscore → sell → fund", fillcolor="#243447",
+        color="#e67e22", penwidth=1.8];
+
+    P0 -> P1 -> P2 -> P2b -> P2c -> P3 -> P3g -> P3b [color="#3498db"];
+  }
+
+  P3b -> MOVEMENT [label="units then act", color="#3498db", lhead=cluster_turn];
+
+  // ── Decision modules ──────────────────────────────────────────────────
+  subgraph cluster_decide {
+    label="Decides";
+    fontcolor="#2ecc71"; style="rounded"; color="#2a5a3a"; fillcolor="#132019";
+    fontsize=11;
+
+    STRAT  [label="AIStrategySelector\nstrategy profile", fillcolor="#16261d"];
+    RES    [label="AIResearch\ntechnology choice", fillcolor="#16261d"];
+    AGGR   [label="AIAggression\nwar trigger / bulk attack", fillcolor="#16261d"];
+    COORD  [label="AICoordinator\narmy groups, retreat", fillcolor="#16261d"];
+    NAVAL  [label="NavalDoctrine\nships & transports", fillcolor="#16261d"];
+    STRAT2 [label="AIStrategy\nenemy targets, city threat", fillcolor="#16261d"];
+    PROD   [label="AutoProduction\nunit vs building vs works", fillcolor="#16261d"];
+    BSTRAT [label="AIBuildingStrategy\nwhich building next", fillcolor="#16261d"];
+    GOV    [label="AICityManager\ntiles & specialists", fillcolor="#16261d"];
+    ECON   [label="AIEconomicManager\ntax rates, army cap", fillcolor="#16261d"];
+
+    STRAT -> STRAT2 [style=dotted, color="#3f6b4d"];
+    PROD  -> BSTRAT [style=dotted, color="#3f6b4d"];
+    GOV   -> ECON   [style=dotted, color="#3f6b4d"];
+  }
+
+  subgraph cluster_econ_decide {
+    label="Building economy";
+    fontcolor="#e67e22"; style="rounded"; color="#7a5a2a"; fillcolor="#221a12";
+    fontsize=11;
+
+    BANA [label="BuildingAnalyzer\nstructural + economic audit", fillcolor="#2b2016", color="#e67e22"];
+    BECO [label="BuildingEconomics\ncost/usage equation", fillcolor="#2b2016", color="#e67e22"];
+    INFRA[label="InfrastructurePlanner\ntiles → settler demand", fillcolor="#2b2016", color="#e67e22"];
+    FUND [label="planBuildingFunding\nforced sales for a budget", fillcolor="#2b2016", color="#e67e22"];
+
+    BECO -> BANA [style=dotted];
+    INFRA -> FUND [style=dotted];
+    BANA -> FUND [label="candidates", style=dotted];
+  }
+
+  subgraph cluster_mech {
+    label="Engine mechanics the AI must agree with";
+    fontcolor="#95a5a6"; style="rounded"; color="#4a5a2a"; fillcolor="#1a1f1a";
+    fontsize=11;
+
+    FOOD  [label="cityFoodBalance\ncitizenFoodDemand(size)", fillcolor="#20261c"];
+    TILES [label="cityWorkedTiles\nblocked by foreign units", fillcolor="#20261c"];
+    COMBAT[label="CombatSystem\ncity def = pop ×3 walls", fillcolor="#20261c"];
+  }
+
+  // ── Wiring ────────────────────────────────────────────────────────────
+  P1  -> STRAT  [color="#3498db"];
+  P2  -> RES    [color="#3498db"];
+  P3  -> AGGR   [color="#3498db"];
+  P3  -> COORD  [color="#3498db"];
+  P3g -> COORD  [color="#3498db"];
+  P2c -> AGGR   [label="attitude", style=dotted, color="#3498db"];
+  PRODUCTION -> PROD [color="#3498db"];
+  PROD -> GOV   [label="manageCity", color="#3498db"];
+  PROD -> NAVAL [style=dotted, color="#3498db"];
+  MOVEMENT -> STRAT2 [style=dotted, color="#3498db"];
+  MOVEMENT -> COORD  [label="getGroupTarget", style=dotted, color="#3498db"];
+
+  P3b -> BANA [color="#e67e22"];
+  P3b -> FUND [color="#e67e22"];
+
+  BANA  -> TILES [style=dotted, color="#95a5a6"];
+  FUND  -> ECON  [label="sustainableUnits", style=dotted, color="#95a5a6"];
+  FOOD  -> GOV   [style=dotted, color="#95a5a6"];
+  FOOD  -> BECO  [style=dotted, color="#95a5a6"];
+  TILES -> INFRA [style=dotted, color="#95a5a6"];
+  COMBAT-> AGGR  [style=dotted, color="#95a5a6"];
+  COMBAT-> STRAT2[style=dotted, color="#95a5a6"];
+
+  // ── Siege loop: the one mechanic where units, tiles and food meet ──────
+  subgraph cluster_siege {
+    label="Starving a city (blockade)";
+    fontcolor="#c0392b"; style="rounded,dashed"; color="#7a3a32"; fillcolor="#221413";
+    fontsize=11;
+
+    BLOCK[label="findBlockadeAssignment\nunit → richest worked field", fillcolor="#2b1a18", color="#c0392b"];
+    SQUAT[label="unit occupies the tile", shape=ellipse, fillcolor="#2b1a18", color="#c0392b"];
+    CUT  [label="that field leaves\nthe city's working set", shape=ellipse, fillcolor="#2b1a18", color="#c0392b"];
+    EAT  [label="surplus falls vs\ncitizenFoodDemand(size)", shape=ellipse, fillcolor="#2b1a18", color="#c0392b"];
+    STARVE[label="starvation:\npopulation −1", shape=ellipse, fillcolor="#2b1a18", color="#c0392b"];
+
+    BLOCK -> SQUAT -> CUT -> EAT -> STARVE [color="#c0392b"];
+  }
+
+  MOVEMENT -> BLOCK [label="before offensive scout", style=dashed, color="#c0392b"];
+  SQUAT -> TILES  [style=dashed, color="#c0392b"];
+  EAT   -> FOOD   [style=dashed, color="#c0392b"];
+}

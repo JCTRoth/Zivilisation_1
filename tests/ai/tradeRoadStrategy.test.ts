@@ -123,18 +123,45 @@ describe('AI trade-road strategy (roads on worked tiles boost income)', () => {
     expect(findTradeRoadTarget(settler('s1', 1, 4, 4))).toEqual({ col: 6, row: 5 });
   });
 
-  it('skips worked tiles that already have an improvement or a non-trade terrain', () => {
+  it('skips worked tiles that already have an improvement or cannot take one', () => {
     const city = {
       id: 'c1', civilizationId: 1, col: 5, row: 5,
       workingTiles: new Set(['6,5', '7,5', '8,5']),
     };
     const tiles: MockTile[] = [
-      { col: 6, row: 5, type: 'forest', improvement: null },       // non-trade terrain → skip
+      { col: 6, row: 5, type: 'tundra', improvement: null },       // no road/irrigation/mine → skip
       { col: 7, row: 5, type: 'grassland', improvement: 'mines' }, // improved → skip
       { col: 8, row: 5, type: 'plains', improvement: null },       // candidate
     ];
     const { findTradeRoadTarget } = buildManager([city], tiles, (type) => type !== 'irrigation');
     expect(findTradeRoadTarget(settler('s1', 1, 0, 0))).toEqual({ col: 8, row: 5 });
+  });
+
+  it('targets worked forest/jungle/hills too — the late-game works programme is not roads-only', () => {
+    const city = {
+      id: 'c1', civilizationId: 1, col: 5, row: 5,
+      workingTiles: new Set(['6,5', '7,5']),
+    };
+    const tiles: MockTile[] = [
+      { col: 6, row: 5, type: 'forest', improvement: null }, // irrigation candidate
+      { col: 7, row: 5, type: 'hills', improvement: null },  // mine candidate
+    ];
+    const { findTradeRoadTarget } = buildManager([city], tiles, (type) => type !== 'irrigation');
+    expect(findTradeRoadTarget(settler('s1', 1, 0, 0))).toEqual({ col: 6, row: 5 });
+  });
+
+  it('prefers an irrigation-eligible worked tile for a growing civ', () => {
+    const city = {
+      id: 'c1', civilizationId: 1, col: 5, row: 5,
+      workingTiles: new Set(['6,5', '8,5']),
+    };
+    const tiles: MockTile[] = [
+      { col: 6, row: 5, type: 'grassland', improvement: null }, // closer, no fresh water
+      { col: 8, row: 5, type: 'plains', improvement: null },    // farther, next to the river below
+      { col: 9, row: 5, type: 'river', improvement: null },     // fresh water (not worked)
+    ];
+    const { findTradeRoadTarget } = buildManager([city], tiles, () => true);
+    expect(findTradeRoadTarget(settler('s1', 1, 1, 0))).toEqual({ col: 8, row: 5 });
   });
 
   it('returns null when no worked trade tile needs a road', () => {

@@ -569,6 +569,12 @@ export interface UIState {
   turnButtonDisabled: boolean;
   currentQueueUnitId: string | null; // Current unit in the turn queue (only this unit pulses)
   turnFlashTrigger: number; // Incremented on each turn start to trigger top-bar flash animation
+  /**
+   * Whether the game is actually paused. Independent of `activeDialog`: the
+   * pause screen is only one way to show it, because a spectator pausing an
+   * AI-vs-AI run wants the map to stay visible.
+   */
+  isGamePaused: boolean;
 }
 
 export interface Notification {
@@ -606,6 +612,12 @@ interface Settings {
   enemyAnimationSpeed: number;
   /** Camera glide speed multiplier (0..3). 0 = instant, 1 = normal, higher = slower. */
   cameraGlideSpeed: number;
+  /**
+   * Rung on the spectator speed ladder: 0 is full speed and every further step
+   * is one uniform increment slower. Lets an AI-vs-AI observer walk the game
+   * down and back up the same ladder, one click at a time.
+   */
+  gameSpeedStep: number;
 }
 
 export interface Technology {
@@ -795,6 +807,15 @@ export interface GameActions {
   setCurrentQueueUnitId: (unitId: string | null) => void;
   showDialog: (dialog: UIState['activeDialog']) => void;
   hideDialog: () => void;
+  /** Pause/resume the game itself (independent of whether the pause screen shows). */
+  setGamePaused: (paused: boolean) => void;
+  toggleGamePaused: () => void;
+  /** Jump to an explicit rung of the spectator speed ladder. */
+  setGameSpeedStep: (step: number) => void;
+  /** One uniform step slower on the spectator speed ladder. */
+  slowerGameSpeed: () => void;
+  /** One uniform step faster on the spectator speed ladder. */
+  fasterGameSpeed: () => void;
   /** Show the village (goody hut) result modal. */
   showVillageResult: (result: VillageResult) => void;
   /** Dismiss the village result modal. */

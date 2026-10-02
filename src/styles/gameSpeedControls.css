@@ -1,0 +1,80 @@
+/* ============================================================================
+   Game speed controls.
+
+   Two layouts share one markup: the full one lives in the settings screen
+   (labelled buttons plus an explanation), and the compact one is the floating
+   spectator bar that has to stay reachable while a self-playing game runs.
+   ========================================================================== */
+
+.game-speed__buttons {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.game-speed__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  /* The global .btn rule sets a 44px touch target, which is right for the
+     overlay bar but crowds the settings row. */
+  min-height: 38px;
+}
+
+.game-speed__button:disabled {
+  opacity: 0.4;
+}
+
+.game-speed__button--play {
+  min-width: 88px;
+  justify-content: center;
+}
+
+.game-speed__readout {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #c9d6e2;
+  white-space: nowrap;
+}
+
+/* Floating spectator bar — bottom centre, clear of the mobile bottom bar and
+   the desktop bottom panel. Hidden entirely when the pause screen is up, which
+   already offers its own resume button. */
+.game-speed--compact {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 1040;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  background: rgba(22, 32, 42, 0.92);
+  border: 1px solid var(--color-border, #2c3b49);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.game-speed--compact .game-speed__button {
+  min-height: 40px;
+  min-width: 48px;
+  justify-content: center;
+  border-radius: 999px;
+}
+
+@media (min-width: 768px) {
+  .game-speed--compact {
+    bottom: 24px;
+  }
+}
+
+/* Phones have a bottom navigation bar; sit above it. */
+@media (max-width: 767.98px) {
+  .game-speed--compact {
+    bottom: 72px;
+  }
+}

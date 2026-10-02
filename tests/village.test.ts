@@ -4,7 +4,14 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import {
+  BARBARIAN_CIV_ID,
+  AI_VILLAGE_EARLY_GAME_FACTOR,
+  AI_VILLAGE_EARLY_GAME_ROUNDS,
+  calculateVillageTakeChance,
+  villageDecisionRoll,
+  villageEarlyGameFactor,
+} from '@/data/VillageConstants';
 import { TERRAIN_TYPES } from '@/data/TerrainConstants';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -387,5 +394,82 @@ describe('Civ1 village trigger & outcomes', () => {
     expect(city).toBeDefined();
     // The roll consumed the hut — it is gone from the map immediately.
     expect(tile.village).toBe(false);
+  });
+});
+
+describe('AI village eagerness', () => {
+  it('is heavily suppressed early and ramps to full over the window', () => {
+    expect(villageEarlyGameFactor(0)).toBeCloseTo(AI_VILLAGE_EARLY_GAME_FACTOR, 5);
+    expect(villageEarlyGameFactor(AI_VILLAGE_EARLY_GAME_ROUNDS / 2))
+      .toBeGreaterThan(AI_VILLAGE_EARLY_GAME_FACTOR);
+    expect(villageEarlyGameFactor(AI_VILLAGE_EARLY_GAME_ROUNDS / 2)).toBeLessThan(1);
+    expect(villageEarlyGameFactor(AI_VILLAGE_EARLY_GAME_ROUNDS)).toBeCloseTo(1, 5);
+    expect(villageEarlyGameFactor(AI_VILLAGE_EARLY_GAME_ROUNDS * 3)).toBe(1);
+    // Crucially, the early factor is a real suppression, not a token nudge.
+    expect(AI_VILLAGE_EARLY_GAME_FACTOR).toBeLessThanOrEqual(0.25);
+  });
+
+  it('pops a hut next to an enemy city even in the early game', async () => {
+    const e = new GameEngine(null);
+    (e as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
+    await e.initialize({ numberOfCivilizations: 2, mapType: 'CLOSEUP_1V1', devMode: false, startingGold: 100 });
+
+    // Round 0: the early-game factor is at its floor.
+    (e.roundManager as unknown as { getRoundNumber: () => number }).getRoundNumber = () => 0;
+
+    const ownCities = [{ col: 2, row: 2, civilizationId: 0 }];
+    // An enemy city far from ours; the huts next to it are the exception.
+    e.cities.push({ col: 10, row: 10, civilizationId: 1 } as never);
+
+    const decide = (civId: number, c: number, r: number): boolean =>
+      (e.aiManager as unknown as {
+        shouldTakeVillage: (id: number, col: number, row: number, own: unknown[]) => boolean;
+      }).shouldTakeVillage(civId, c, r, ownCities);
+
+    // Adjacent to the enemy city (Chebyshev 1): taken regardless of the round.
+    expect(decide(0, 11, 10)).toBe(true);
+    expect(decide(0, 10, 11)).toBe(true);
+    expect(decide(0, 11, 11)).toBe(true);
+  });
+
+  it('ignores a roll that only clears the full-eagerness chance early on', async () => {
+    const e = new GameEngine(null);
+    (e as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
+    await e.initialize({ numberOfCivilizations: 2, mapType: 'CLOSEUP_1V1', devMode: false, startingGold: 100 });
+
+    const civId = 0;
+    const ownCities = [{ col: 10, row: 10, civilizationId: 0 }];
+    const city = ownCities[0];
+    const cityCount = ownCities.length;
+
+    const decide = (c: number, r: number): boolean =>
+      (e.aiManager as unknown as {
+        shouldTakeVillage: (id: number, col: number, row: number, own: unknown[]) => boolean;
+      }).shouldTakeVillage(civId, c, r, ownCities);
+
+    const width = e.map!.width;
+    const height = e.map!.height;
+
+    // Deterministic rolls make this findable: a tile the AI takes at full
+    // eagerness but ignores at round 0 proves the suppression is real.
+    let found = false;
+    for (let col = 0; col < width && !found; col++) {
+      for (let row = 0; row < height && !found; row++) {
+        const distance = Math.max(Math.abs(city.col - col), Math.abs(city.row - row));
+        const fullChance = calculateVillageTakeChance(distance, cityCount);
+        const roll = villageDecisionRoll(civId, col, row);
+        const lateDecides = roll <= fullChance;
+        const earlyDecides = roll <= fullChance * villageEarlyGameFactor(0);
+        if (!lateDecides || earlyDecides) continue;
+
+        (e.roundManager as unknown as { getRoundNumber: () => number }).getRoundNumber = () => 0;
+        expect(decide(col, row)).toBe(false);
+        (e.roundManager as unknown as { getRoundNumber: () => number }).getRoundNumber =
+          () => AI_VILLAGE_EARLY_GAME_ROUNDS * 2;
+        expect(decide(col, row)).toBe(true);
+        found = true;
+      }
+    }
+    expect(found).toBe(true);
   });
 });

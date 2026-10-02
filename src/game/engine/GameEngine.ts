@@ -1,7 +1,8 @@
 import { SquareGrid } from '../SquareGrid';
 import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
-import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
+import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND, isAutoScenario, clampGameSpeedStep, SPEED_STEP_MOVE_DELAY_MS, SPEED_STEP_TURN_DELAY_MS } from '@/data/GameConstants';
+import { useGameStore } from '../../stores/GameStore';
 import { staticMapForMapType } from '@/data/maps';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
@@ -18,7 +19,7 @@ import {
   VILLAGE_BARBARIAN_MIN,
   VILLAGE_BARBARIAN_MAX,
 } from '@/data/VillageConstants';
-import { CombatSystem, unitIgnoresCityWalls } from './CombatSystem';
+import { CombatSystem } from './CombatSystem';
 import { isWideRiverTile } from './RiverRules';
 import { ProductionManager } from './ProductionManager';
 import { AutoProduction } from './AutoProduction';
@@ -177,6 +178,7 @@ export default class GameEngine {
   aiEconomicManager: AIEconomicManager | null;
   /** AI city governor: food security, specialists, growth (Food/Production/Money). */
   aiCityManager: AICityManager | null;
+  /** AI building auditor: scores every building against its upkeep and the civ strategy, sells the dead weight. */
   barbarianManager: BarbarianManager; // Dedicated aggressive AI for the phantom barbarian civ
   unitTurnQueue: UnitTurnQueue; // Unit turn queue for managing unit order
   /** Monotonic per-(civ,type) unit-id suffix counters. Kept so a unit id is
@@ -310,10 +312,26 @@ export default class GameEngine {
   /**
    * Pause the game: halts turn processing, auto-end and AI actions until
    * resume() is called. The UI shows the pause screen while paused.
+   *
+   * Resuming also re-drives whatever the pause interrupted: a pause that lands
+   * between two turn phases skips the pending `startTurn`/`advanceTurn`, and
+   * without this the cycle would never be picked up again.
    */
   setPaused(paused: boolean): void {
     this.isPaused = paused;
     debugLog(`[GameEngine] ${paused ? '⏸️ Paused' : '▶ Resumed'}`);
+    if (!paused) {
+      this.roundManager?.onGameResumed?.();
+    }
+  }
+
+  /**
+   * Current rung of the spectator speed ladder (0 = full speed). Lives on the
+   * engine as well as in the store because the pacing that honours it runs
+   * inside the AI turn, far away from any React component.
+   */
+  getGameSpeedStep(): number {
+    return clampGameSpeedStep(useGameStore.getState().settings.gameSpeedStep ?? 0);
   }
 
   /**
@@ -623,21 +641,30 @@ export default class GameEngine {
    * in normal games a short pause keeps the action readable without making
    * turns crawl when the AI fields many units.
    */
+  /**
+   * Delay between AI unit moves (visual pacing only).
+   *
+   * A watched game always pays a readable pause so the action can be followed.
+   * A self-playing scenario pays nothing at full speed, and only starts paying
+   * when an observer steps the speed down — one uniform increment per rung, so
+   * the pacing a player chose is exactly the pacing they get back.
+   */
   getAIMoveDelay(): number {
-    if (this.gameSettings?.mapType === 'AI_VS_AI' || this.gameSettings?.mapType === 'AI_VS_AI_SMALL') {
-      return 5;
+    if (isAutoScenario(this.gameSettings?.mapType)) {
+      return this.getGameSpeedStep() * SPEED_STEP_MOVE_DELAY_MS;
     }
-    return 60;
+    return 200;
   }
 
   /**
-   * Delay before an AI turn starts (visual pacing only).
+   * Delay before an AI turn starts (visual pacing only). Same ladder as
+   * `getAIMoveDelay`; this is the coarse knob and does the visible work.
    */
   getAITurnStartDelay(): number {
-    if (this.gameSettings?.mapType === 'AI_VS_AI' || this.gameSettings?.mapType === 'AI_VS_AI_SMALL') {
-      return 10;
+    if (isAutoScenario(this.gameSettings?.mapType)) {
+      return this.getGameSpeedStep() * SPEED_STEP_TURN_DELAY_MS;
     }
-    return 120;
+    return 250;
   }
 
   /**
@@ -2401,7 +2428,42 @@ export default class GameEngine {
     }
   }
 
-  /** Whether the boat may deploy its net here (on a fish tile, with moves). */
+  /**
+   * Every tile currently worked by a city, keyed `col,row`. A Fisher Boat may
+   * not net one: the ground already feeds the city, and the net is meant for
+   * grounds no city draws from.
+   */
+  getWorkedTileKeys(): Set<string> {
+    const keys = new Set<string>();
+    for (const city of this.cities ?? []) {
+      for (const key of city.workingTiles ?? []) keys.add(key);
+    }
+    return keys;
+  }
+
+  /**
+   * Every fish ground assigned to an active Fisher Boat (any route stage),
+   * keyed `col,row`. Two boats may not fish the same tile.
+   */
+  getFishingGroundKeys(): Set<string> {
+    const keys = new Set<string>();
+    for (const u of this.units ?? []) {
+      const route = u?.fishingRoute;
+      if (!route || u.isDefeated) continue;
+      keys.add(`${route.fishingTile.col},${route.fishingTile.row}`);
+    }
+    return keys;
+  }
+
+  /**
+   * Whether the boat may deploy its net here (on a fish tile, with moves).
+   *
+   * Two grounds are off-limits:
+   *  - a tile a city works — it already feeds the city, the net belongs on a
+   *    free ground;
+   *  - a tile another Fisher Boat is already using (the boat is assigned for
+   *    the whole route, so an inbound boat still owns its net tile).
+   */
   canDeployFishingNet(unitId: string): boolean {
     const unit = this.units.find((u) => u.id === unitId);
     if (!unit || unit.isDefeated) return false;
@@ -2409,7 +2471,10 @@ export default class GameEngine {
     if (unit.fishingRoute) return false;
     if ((unit.movesRemaining ?? 0) <= 0) return false;
     if (!this.isFishTile(this.getTileAt(unit.col, unit.row))) return false;
-    return this.getFishingHomeCity(unit) !== null;
+    if (this.getFishingHomeCity(unit) === null) return false;
+    if (this.getWorkedTileKeys().has(`${unit.col},${unit.row}`)) return false;
+    if (this.getFishingGroundKeys().has(`${unit.col},${unit.row}`)) return false;
+    return true;
   }
 
   /**
@@ -2980,7 +3045,7 @@ export default class GameEngine {
    * caravan's `homeCityId` (set when the city produced it); a "NONE"-home
    * caravan (e.g. a hut mercenary) falls back to its nearest friendly city.
    */
-  private getCaravanHomeCity(caravan: Unit): City | null {
+  getCaravanHomeCity(caravan: Unit): City | null {
     if (caravan.homeCityId) {
       const byId = this.cities.find((c: City) => c.id === caravan.homeCityId);
       if (byId) return byId;
@@ -4465,9 +4530,7 @@ export default class GameEngine {
 
     // City defense: base = population. City walls TRIPLE the total defense
     // (Civ1) — but air units and siege artillery ignore the walls entirely.
-    const round = CombatSystem.resolveCityRound(attacker, city, {
-      ignoresWalls: unitIgnoresCityWalls(attacker.type),
-    });
+    const round = CombatSystem.resolveCityRound(attacker, city, );
 
     // Spend the attacker's remaining movement either way.
     attacker.movesRemaining = 0;
@@ -4687,25 +4750,6 @@ export default class GameEngine {
     }
     if (killed.length > 0) {
       this.units = this.units.filter((u: Unit) => !killed.includes(u));
-    }
-  }
-
-  /**
-   * Civ1: city walls become obsolete once Metallurgy is discovered — they are
-   * automatically scrapped in every city of this civilization.
-   */
-  scrapObsoleteCityWalls(civId: number): void {
-    let scrapped = 0;
-    for (const city of this.cities) {
-      if (city.civilizationId !== civId) continue;
-      if (!Array.isArray(city.buildings)) continue;
-      const w = city.buildings.indexOf('city_walls');
-      if (w !== -1) { city.buildings.splice(w, 1); scrapped += 1; continue; }
-      const a = city.buildings.indexOf('walls');
-      if (a !== -1) { city.buildings.splice(a, 1); scrapped += 1; }
-    }
-    if (scrapped > 0) {
-      console.log(`[GameEngine] Metallurgy discovered — ${scrapped} city wall(s) scrapped for civ ${civId}`);
     }
   }
 
@@ -6190,9 +6234,10 @@ export default class GameEngine {
    * turn. Wonders and the palace cannot be sold. Refund is 50% of the
    * building cost.
    */
-  sellBuilding(cityId: string, buildingType: string): { success: boolean; refund?: number; reason?: string } {
+  sellBuilding(cityId: string, buildingType: string, options?: { force?: boolean }): { success: boolean; refund?: number; reason?: string } {
     const civ = this.civilizations[this.activePlayer];
-    if (!civ?.isHuman) return { success: false, reason: 'Not a human player' };
+    if (!civ) return { success: false, reason: 'No active player' };
+    if (!civ.isHuman && !options?.force) return { success: false, reason: 'Not a human player' };
 
     const city = this.cities.find(c => c.id === cityId);
     if (!city || city.civilizationId !== this.activePlayer) {

@@ -228,3 +228,114 @@ describe('AICoordinator.evaluateArmyReadiness', () => {
     expect(AICoordinator.evaluateArmyReadiness(group)).toBe('forming');
   });
 });
+
+describe('AICoordinator.summarizeCityMilitarySituation', () => {
+  const city = { id: 'capital', col: 10, row: 10 };
+
+  const makeGroup = (overrides: Partial<ArmyGroup> = {}): ArmyGroup => ({
+    id: 'group',
+    unitIds: ['a', 'b', 'c'],
+    targetLocation: { col: 20, row: 20 },
+    rallyPoint: { col: 11, row: 10 },
+    status: 'forming',
+    requiredStrength: 10,
+    currentStrength: 10,
+    ...overrides,
+  });
+
+  const summarize = (over: Partial<Parameters<typeof AICoordinator.summarizeCityMilitarySituation>[0]> = {}) =>
+    AICoordinator.summarizeCityMilitarySituation({
+      city,
+      groups: [],
+      units: [],
+      civilizationId: 1,
+      distanceFn,
+      ...over,
+    });
+
+  it('reports a quiet city when nothing military is happening', () => {
+    const situation = summarize();
+    expect(situation.role).toBe('quiet');
+    expect(situation.nearbyOwnUnits).toBe(0);
+    expect(situation.incomingEnemyStrength).toBe(0);
+  });
+
+  it('reports assault_staging for a city a committed group marches from', () => {
+    const situation = summarize({
+      groups: [makeGroup({ status: 'marching' })],
+      units: [
+        makeUnit({ civilizationId: 1, col: 10, row: 10 }),
+        makeUnit({ civilizationId: 1, col: 11, row: 10 }),
+      ],
+    });
+    expect(situation.role).toBe('assault_staging');
+    expect(situation.assaultingGroupCount).toBe(1);
+    expect(situation.stagingGroupCount).toBe(1);
+    expect(situation.nearbyOwnUnits).toBe(2);
+  });
+
+  it('reports garrison_only when defenders sit there but no group operates from it', () => {
+    const situation = summarize({
+      units: [
+        makeUnit({ civilizationId: 1, col: 10, row: 10 }),
+        makeUnit({ civilizationId: 1, col: 11, row: 11 }),
+      ],
+    });
+    expect(situation.role).toBe('garrison_only');
+    expect(situation.assaultingGroupCount).toBe(0);
+  });
+
+  it('a forming group staging nearby is not yet an assault base', () => {
+    const situation = summarize({ groups: [makeGroup({ status: 'forming' })] });
+    expect(situation.role).toBe('garrison_only');
+    expect(situation.stagingGroupCount).toBe(1);
+  });
+
+  it('reports incoming_assault when enemy strength bears down on the city', () => {
+    const situation = summarize({
+      units: [
+        makeUnit({ civilizationId: 2, col: 10, row: 11, attack: 6 }),
+        makeUnit({ civilizationId: 2, col: 11, row: 11, attack: 6 }),
+      ],
+    });
+    expect(situation.role).toBe('incoming_assault');
+    expect(situation.nearbyEnemyUnits).toBe(2);
+    expect(situation.incomingEnemyStrength).toBeGreaterThan(2.5);
+  });
+
+  it('reports incoming_assault for an enemy group targeting the city', () => {
+    const situation = summarize({
+      enemyGroups: [makeGroup({ targetLocation: { col: 10, row: 12 } })],
+    });
+    expect(situation.role).toBe('incoming_assault');
+    expect(situation.incomingGroupCount).toBe(1);
+  });
+
+  it('weights incoming enemy strength by distance (adjacent raiders count more)', () => {
+    const adjacent = summarize({ units: [makeUnit({ civilizationId: 2, col: 11, row: 10, attack: 4 })] });
+    const distant = summarize({ units: [makeUnit({ civilizationId: 2, col: 14, row: 10, attack: 4 })] });
+    expect(adjacent.incomingEnemyStrength).toBeGreaterThan(distant.incomingEnemyStrength);
+  });
+
+  it('ignores units outside the situation radius', () => {
+    const situation = summarize({
+      units: [makeUnit({ civilizationId: 1, col: 10, row: 18 })],
+    });
+    expect(situation.nearbyOwnUnits).toBe(0);
+    expect(situation.role).toBe('quiet');
+  });
+
+  it('ignores defeated units', () => {
+    const situation = summarize({
+      units: [makeUnit({ civilizationId: 2, col: 10, row: 10, isDefeated: true })],
+    });
+    expect(situation.incomingEnemyStrength).toBe(0);
+    expect(situation.role).toBe('quiet');
+  });
+
+  it('respects a custom radius', () => {
+    const units = [makeUnit({ civilizationId: 1, col: 13, row: 10 })];
+    expect(summarize({ units, radius: 2 }).nearbyOwnUnits).toBe(0);
+    expect(summarize({ units, radius: 4 }).nearbyOwnUnits).toBe(1);
+  });
+});

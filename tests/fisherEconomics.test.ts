@@ -165,6 +165,35 @@ describe('Fishing ground selection', () => {
     expect(best?.worthwhile).toBe(true);
   });
 
+  it('skips grounds a city works and grounds another boat owns', () => {
+    const engine = makeEngine(
+      [
+        [G, G, G, G, G, G, G, G, G],
+        [G, O, O, O, O, O, O, O, O],
+        [G, O, O, O, O, O, O, O, O],
+      ],
+      [[3, 2], [8, 2]],
+    ) as FisherGroundEngine & {
+      getWorkedTileKeys: () => Set<string>;
+      getFishingGroundKeys: () => Set<string>;
+    };
+    const city = { col: 0, row: 0, civilizationId: 0 };
+
+    // The rich far ground is off-limits while a city works it.
+    engine.getWorkedTileKeys = () => new Set(['8,2']);
+    engine.getFishingGroundKeys = () => new Set();
+    expect(bestFishingGround(engine, city)?.col).toBe(3);
+
+    // A ground already assigned to another boat is off-limits too.
+    engine.getWorkedTileKeys = () => new Set();
+    engine.getFishingGroundKeys = () => new Set(['3,2']);
+    expect(bestFishingGround(engine, city)?.col).toBe(8);
+
+    // Every ground taken → no legal target at all.
+    engine.getFishingGroundKeys = () => new Set(['3,2', '8,2']);
+    expect(bestFishingGround(engine, city)).toBeNull();
+  });
+
   it('returns null with no known fish and ignores unexplored grounds', () => {
     const none = makeEngine([[G, O]], []);
     expect(bestFishingGround(none, { col: 0, row: 0, civilizationId: 0 })).toBeNull();

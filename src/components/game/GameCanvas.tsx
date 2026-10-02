@@ -904,7 +904,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       // Ignore unit-action keys while the game is paused.
-      if (useGameStore.getState().uiState.activeDialog === "pause") {
+      if (useGameStore.getState().uiState.isGamePaused) {
         return;
       }
       const handled = keyboardHandler.handleKeyDown(event);

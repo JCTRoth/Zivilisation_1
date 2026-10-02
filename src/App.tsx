@@ -12,6 +12,7 @@ import GameModals from "./components/ui/GameModals";
 import GameResultOverlay from "./components/ui/GameResultOverlay";
 import VictoryFireworks from "./components/ui/VictoryFireworks";
 import PauseScreen from "./components/ui/PauseScreen";
+import GameSpeedControls from "./components/ui/GameSpeedControls";
 import TopBar from "./components/ui/TopBar";
 import MobileBottomBar from "./components/ui/MobileBottomBar";
 import NotificationCenter from "./components/ui/NotificationCenter";
@@ -792,35 +793,56 @@ function App() {
     setShowGameSetup(true);
   };
 
-  // Pause / resume the game. While paused, the PauseScreen overlay is shown,
-  // map interactions + end-turn are blocked, and the game engine halts turn
-  // processing / AI actions so nothing continues behind the overlay.
-  const isPaused = uiState.activeDialog === "pause";
+  // Pause / resume the game. While paused, turn processing / AI actions are
+  // halted and end-turn is blocked, so nothing continues behind the overlay.
+  //
+  // `isGamePaused` is the real pause state; the pause SCREEN is a separate,
+  // optional presentation of it. A player pausing their own game wants the
+  // overlay, but an observer pausing a self-running AI duel wants to keep
+  // looking at the board they paused to study, so that pause raises no dialog
+  // and the floating speed bar stays on screen to resume from.
+  const isPaused = uiState.isGamePaused;
+  const pauseScreenVisible = uiState.activeDialog === "pause";
+
+  const setGamePaused = useCallback(
+    (paused: boolean, options?: { showPauseScreen?: boolean }) => {
+      const withScreen = options?.showPauseScreen ?? true;
+      console.log(`[App] ${paused ? "Pausing" : "Resuming"} game${withScreen ? "" : " (no overlay)"}`);
+      if (paused) setActiveMenu(null);
+      actions.setGamePaused(paused);
+      if (withScreen) {
+        if (paused) {
+          actions.showDialog("pause");
+        } else {
+          actions.hideDialog();
+        }
+      }
+      // Halt / restart the engine. Resuming also replays whatever the pause
+      // interrupted, so the game picks up exactly where it stopped.
+      if (gameEngine && typeof gameEngine.setPaused === "function") {
+        gameEngine.setPaused(paused);
+      }
+    },
+    [gameEngine, actions],
+  );
 
   const handlePause = useCallback(() => {
-    console.log("[App] Pausing game");
-    setActiveMenu(null);
-    // Halt the game engine first so no AI/turn processing happens mid-transition.
-    if (gameEngine && typeof gameEngine.setPaused === "function") {
-      gameEngine.setPaused(true);
-    }
-    actions.showDialog("pause");
-  }, [gameEngine, actions]);
+    setGamePaused(true);
+  }, [setGamePaused]);
 
   const handleResume = useCallback(() => {
-    console.log("[App] Resuming game");
-    if (isPaused) {
-      actions.hideDialog();
-      if (gameEngine && typeof gameEngine.setPaused === "function") {
-        gameEngine.setPaused(false);
-      }
-    }
-  }, [isPaused, actions, gameEngine]);
+    if (isPaused) setGamePaused(false);
+  }, [isPaused, setGamePaused]);
+
+  /** The spectator Play/Pause button: pauses a running game, resumes a paused one. */
+  const handleTogglePause = useCallback(() => {
+    setGamePaused(!isPaused, { showPauseScreen: false });
+  }, [isPaused, setGamePaused]);
 
   // Handle end turn request - show modal (manual button click)
   const handleEndTurnRequest = useCallback(() => {
     // Ignore end-turn while the game is paused.
-    if (useGameStore.getState().uiState.activeDialog === "pause") {
+    if (useGameStore.getState().uiState.isGamePaused) {
       console.log("[App] End turn ignored — game is paused");
       return;
     }
@@ -1183,11 +1205,9 @@ function App() {
             if (gameResult) {
               break; // game over — ignore
             }
-            if (isPaused) {
-              handleResume();
-            } else {
-              handlePause();
-            }
+            // Matches the on-screen button: a self-playing scenario pauses
+            // without raising the overlay, so the board stays visible.
+            handleTogglePause();
             break;
         }
       }
@@ -1213,6 +1233,7 @@ function App() {
     isPaused,
     handlePause,
     handleResume,
+    handleTogglePause,
     actions,
     gameResult,
     gameState.selectedCity,
@@ -1383,6 +1404,8 @@ function App() {
       <SettingsModal
         show={showSettings}
         onHide={() => setShowSettings(false)}
+        isPaused={isPaused}
+        onTogglePause={handleTogglePause}
       />
 
       {/* End Turn Confirmation Modal */}
@@ -1404,9 +1427,10 @@ function App() {
         onDismiss={actions.removeNotification}
       />
 
-      {/* Pause overlay */}
+      {/* Pause overlay. Only the pause SCREEN shows here — a spectator pause
+          deliberately leaves it off so the board stays visible. */}
       <PauseScreen
-        show={isPaused || !!gameResult}
+        show={pauseScreenVisible || !!gameResult}
         onResume={handleResume}
         currentTurn={gameState.currentTurn}
         currentYear={
@@ -1416,6 +1440,22 @@ function App() {
         }
         gameOver={!!gameResult}
       />
+
+      {/* Self-playing scenarios get a speed bar that stays on screen while the
+          game runs: full speed by default, one uniform step per click, and a
+          play/pause that stops and restarts the duel without hiding the board.
+          Hidden while the pause screen or the result overlay is up, since both
+          offer their own resume/restart. */}
+      {isAutoScenario(gameEngine?.gameSettings?.mapType) &&
+        gameState.isGameStarted &&
+        !gameResult &&
+        !pauseScreenVisible && (
+          <GameSpeedControls
+            compact
+            isPaused={isPaused}
+            onTogglePause={handleTogglePause}
+          />
+        )}
 
       <GameResultOverlay
         result={gameResult}

@@ -55,6 +55,69 @@ export function isAutoScenario(mapType: string | null | undefined): boolean {
 }
 
 /**
+ * Spectator speed ladder for self-playing scenarios.
+ *
+ * Step 0 is full speed — the game runs exactly as fast as the event loop
+ * allows, which is what an unattended demo wants. Every step further down
+ * adds exactly one increment of the delays below, so the ladder is uniform:
+ * a "Faster" click undoes a "Slower" click one step at a time and always walks
+ * the game back up the same rungs it came down. Nothing is exponential and
+ * nothing is asymmetric, so the speed a player returns to is the speed they
+ * left.
+ */
+export const GAME_SPEED_STEP_COUNT = 4;
+/** Extra pause before each AI turn starts, per speed step. */
+export const SPEED_STEP_TURN_DELAY_MS = 300;
+/** Extra pause per AI unit move, per speed step. */
+export const SPEED_STEP_MOVE_DELAY_MS = 20;
+
+/** Keep a speed step inside the supported ladder. */
+export function clampGameSpeedStep(step: number): number {
+    if (!Number.isFinite(step)) return 0;
+    return Math.min(GAME_SPEED_STEP_COUNT, Math.max(0, Math.round(step)));
+}
+
+/** True when the game is running slower than full speed. */
+export function isSlowerThanFullSpeed(step: number): boolean {
+    return clampGameSpeedStep(step) > 0;
+}
+
+/** True when "Faster" has anywhere left to go. */
+export function canGoFaster(step: number): boolean {
+    return clampGameSpeedStep(step) > 0;
+}
+
+/** True when "Slower" has anywhere left to go. */
+export function canGoSlower(step: number): boolean {
+    return clampGameSpeedStep(step) < GAME_SPEED_STEP_COUNT;
+}
+
+/** One step slower on the ladder. */
+export function slowerGameSpeedStep(step: number): number {
+    return clampGameSpeedStep(step) + (canGoSlower(step) ? 1 : 0);
+}
+
+/** One step faster on the ladder. */
+export function fasterGameSpeedStep(step: number): number {
+    return clampGameSpeedStep(step) - (canGoFaster(step) ? 1 : 0);
+}
+
+/**
+ * Multiplier applied to the AI turn budget. A slowed turn deliberately waits
+ * between units, and the TurnManager watchdog must not mistake that patience
+ * for a hung AI and force-end the turn halfway through.
+ */
+export function gameSpeedTimeoutFactor(step: number): number {
+    return 1 + clampGameSpeedStep(step) * 2;
+}
+
+/** Label for the current rung of the ladder. */
+export function gameSpeedLabel(step: number): string {
+    const s = clampGameSpeedStep(step);
+    return s === 0 ? 'Full Speed' : `Slower ×${s}`;
+}
+
+/**
  * Milliseconds the AI movement phase may take before a civ's turn is force-
  * ended.
  *

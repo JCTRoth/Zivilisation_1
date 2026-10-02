@@ -139,12 +139,16 @@ Trade is split: **50% → Gold, 50% → Science** (before further building modif
 ## 8. How Yields Drive City Economy
 
 ### Food → Growth
-- Food consumption = `population × 2`
+- Food consumption = `population × citizenFoodDemand(population)`, where
+  `citizenFoodDemand(p) = 2 + 0.2 × max(0, p − 5)` — the appetite rises with
+  city size, so a large city is harder to keep fed than a small one
 - Food surplus → stored in `foodStorage`
 - Growth threshold = `(population + 1) × 10`
 - When `foodStorage ≥ threshold` → city grows (+1 population)
 - Granary: retains 50% of stored food on growth; without it, food resets to 0
 - Starvation: if `foodStorage < 0` → population decreases, weakest tile unworked
+- A tile occupied by a **foreign** unit is not worked at all, so parking a
+  defender on a city's field cuts its food for as long as it stays there
 
 ### Production → Buildings & Units
 - `productionProgress += production` each turn

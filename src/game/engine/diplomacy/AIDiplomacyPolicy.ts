@@ -56,6 +56,11 @@ export interface PolicyContext {
   /** Round number, for the seeded tiebreak. */
   round: number;
   sequence: number;
+  /**
+   * Calendar year, for the late-game push. Optional so a caller with no
+   * calendar (and every existing test) keeps the early-game behaviour.
+   */
+  currentYear?: number;
 }
 
 const POWER_FLOOR = 1;
@@ -83,9 +88,46 @@ export function peaceAppetite(exhaustion: number): number {
  * Concurrent wars a civ will tolerate. Driven by `warmongering`, so a
  * military_expansion civ (≈8.6) will hold three fronts while a defensive_turtle
  * (≈3.2) holds one.
+ *
+ * `currentYear` is optional: as the calendar runs out a civ can afford one
+ * more front, because a rival left standing at the end of the game wins by
+ * default. The base (no year) behaviour is unchanged.
  */
-export function maxConcurrentWars(weights: DiplomaticWeights): number {
-  return 1 + Math.floor((weights.warmongering - 1) / 3);
+export function maxConcurrentWars(weights: DiplomaticWeights, currentYear?: number): number {
+  const base = 1 + Math.floor((weights.warmongering - 1) / 3);
+  if (currentYear === undefined) return base;
+  if (currentYear >= 1750) return base + 2;
+  if (currentYear >= 1000) return base + 1;
+  return base;
+}
+
+/**
+ * How much weaker than us a target has to be before conquering it is worth a
+ * war. Early on only a clearly weaker neighbour qualifies (1.6×); as the
+ * calendar runs out the margin closes, because holding peace while a rival
+ * outgrows you is itself a loss — at 1500 AD a near-parity target is fair
+ * game.
+ */
+export function warTargetMargin(currentYear?: number): number {
+  if (currentYear === undefined) return 1.6;
+  if (currentYear >= 1500) return 1.1;
+  if (currentYear >= 1000) return 1.25;
+  if (currentYear >= 0) return 1.4;
+  return 1.6;
+}
+
+/**
+ * Flat late-game push added to a war's score — the diplomacy-side twin of
+ * `AIAggression.lateGameAggression`, so the declaration model and the
+ * aggression model lean the same way as the game ages.
+ */
+export function lateGameWarPush(currentYear?: number): number {
+  if (currentYear === undefined) return 0;
+  if (currentYear >= 1750) return 10;
+  if (currentYear >= 1500) return 7;
+  if (currentYear >= 1000) return 4;
+  if (currentYear >= 0) return 2;
+  return 0;
 }
 
 /**
@@ -220,17 +262,20 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
       // war of conquest at all (as in the old profile-gated model), while a
       // military civ is not much discouraged.
       const appetite = warAppetite(ctx.exhaustion) * temperament(ctx.weights);
-      const targetWorth = Math.max(0, ratio - 1.6) * 25;
+      const targetWorth = Math.max(0, ratio - warTargetMargin(ctx.currentYear)) * 25;
       // Every war already being fought makes the next one less appealing.
       const warFatigue = ctx.activeWars * 12;
+      const endgamePush = lateGameWarPush(ctx.currentYear);
       const worth = targetWorth * appetite
         - warFatigue
         - grievance / 8
-        - fear / 20;
+        - fear / 20
+        + endgamePush;
       if (ctx.sharedEnemy) {
         push(out, 'declare_war', worth + 12, 'removing a rival from a shared front');
       } else {
-        push(out, 'declare_war', worth, `strength margin ${ratio.toFixed(2)}`);
+        push(out, 'declare_war', worth,
+          `strength margin ${ratio.toFixed(2)}${endgamePush > 0 ? `, endgame push +${endgamePush}` : ''}`);
       }
     }
   }

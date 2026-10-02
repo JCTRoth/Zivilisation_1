@@ -406,16 +406,6 @@ describe('City capture & destruction', () => {
     expect(third.id).not.toBe(second.id);
   });
 
-  it('metallurgy discovery scraps city walls', () => {
-    const city = makeEnemyCity(2, { buildings: ['city_walls', 'temple'] });
-
-    (engine as any).scrapObsoleteCityWalls(1);
-
-    const after = engine.cities.find((c: any) => c.id === city.id);
-    expect(after.buildings).not.toContain('city_walls');
-    expect(after.buildings).toContain('temple');
-  });
-
   it('captured cities suffer unrest in the happiness model', () => {
     const econ = (engine as any).economicManager;
     const civ0 = engine.civilizations[0];
