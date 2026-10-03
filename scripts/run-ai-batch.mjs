@@ -31,7 +31,8 @@ const MAP_TYPE = process.env.AI_BATCH_MAP_TYPE ?? 'AI_VS_AI';
 const SEEDS = [7, 19, 33, 51, 64, 88, 101, 129, 142, 177, 190, 210, 233, 246, 259, 271, 288, 301, 314, 327];
 
 const spec = `
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { useSeededRandom } from '../helpers/world';
 import GameEngine from '@/game/engine/GameEngine';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 
@@ -64,6 +65,10 @@ describe('ai batch', () => {
     const results: unknown[] = [];
 
     for (const seed of SEEDS) {
+      // Deterministic runs: the engine rolls Math.random for combat, villages
+      // and the aggression coin-flip, so without a seed two batches over the
+      // same map are different games and no A/B comparison means anything.
+      useSeededRandom(seed);
       const logCounts: Record<string, number> = {};
       console.log = (...a: unknown[]) => {
         const s = String(a[0] ?? '');
@@ -85,16 +90,6 @@ describe('ai batch', () => {
 
       const e = new GameEngine(null);
       (e as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
-      // Count tile improvements — the long-term lever behind city growth.
-      const counters = { improvementsBuilt: 0, improvementTurns: 0 };
-      const prevOSC = e.onStateChange;
-      e.onStateChange = (type: string, data: unknown, ...rest: unknown[]) => {
-        if (type === 'IMPROVEMENT_BUILT') counters.improvementsBuilt++;
-        if (type === 'IMPROVEMENT_WORK_STARTED') counters.improvementTurns++;
-        return typeof prevOSC === 'function'
-          ? (prevOSC as (...a: unknown[]) => unknown)(type, data, ...rest)
-          : undefined;
-      };
       await e.initialize({
         numberOfCivilizations: CIVS,
         mapType: MAP_TYPE,
@@ -103,6 +98,31 @@ describe('ai batch', () => {
         mapSeed: seed,
       });
       const active = e.civilizations.filter((c) => c.isAlive !== false && c.id !== BARBARIAN_CIV_ID);
+
+      // Telemetry, installed AFTER initialize so any handler the engine
+      // installed for itself is chained rather than overwritten.
+      const counters = {
+        improvementsBuilt: 0,
+        improvementTurns: 0,
+        produced: {} as Record<string, number>,
+        logActions: {} as Record<string, number>,
+      };
+      const prevOSC = e.onStateChange;
+      e.onStateChange = (type: string, data: any, ...rest: unknown[]) => {
+        if (type === 'IMPROVEMENT_BUILT') counters.improvementsBuilt++;
+        else if (type === 'IMPROVEMENT_WORK_STARTED') counters.improvementTurns++;
+        else if (type === 'UNIT_PRODUCED') {
+          const k = data?.unit?.type ?? data?.itemType ?? '?';
+          counters.produced[k] = (counters.produced[k] ?? 0) + 1;
+        } else if (type === 'GAME_LOG') {
+          const a = data?.action ?? 'msg';
+          const key = data?.unitType === 'settler' ? a + ':settler' : a;
+          counters.logActions[key] = (counters.logActions[key] ?? 0) + 1;
+        } else if (type === 'CITY_FOUNDED') {
+          counters.logActions['CITY_FOUNDED'] = (counters.logActions['CITY_FOUNDED'] ?? 0) + 1;
+        }
+        return typeof prevOSC === 'function' ? prevOSC(type, data, ...rest) : undefined;
+      };
 
       const timeline: Array<{ round: number; civs: CivSnapshot[]; totalGold: number; bankrupt: number }> = [];
       let economy = {
@@ -119,7 +139,10 @@ describe('ai batch', () => {
         maxCitySpecialists: 0,
         specialistSnapshots: 0,
         improvementsBuilt: 0,
+        improvementTurns: 0,
         improvedTilesNearCities: 0,
+        produced: {} as Record<string, number>,
+        logActions: {} as Record<string, number>,
         minGold: Infinity,
       };
       const lastRates = new Map<number, string>();
@@ -180,6 +203,7 @@ describe('ai batch', () => {
               science: c.scienceRate ?? 0,
               luxury: c.luxuryRate ?? 0,
               profile: String(c.productionProfile ?? ''),
+              settlers: units.filter((u) => u.type === 'settler').length,
               ferries: units.filter((u) => u.type === 'ferry').length,
               ships: units.filter((u) => (u as { type?: string }).type !== undefined && ['sail', 'galley', 'trireme', 'caravel', 'frigate', 'ironclad', 'destroyer', 'cruiser', 'battleship'].includes(u.type as string)).length,
             };
@@ -197,6 +221,9 @@ describe('ai batch', () => {
       console.log = orig;
       if (economy.minGold === Infinity) economy.minGold = 0;
       economy.improvementsBuilt = counters.improvementsBuilt;
+      economy.improvementTurns = counters.improvementTurns;
+      economy.produced = counters.produced;
+      economy.logActions = counters.logActions;
       // Improvements inside 4 tiles of one of this civ's cities — the ones
       // that actually feed and pay for the city.
       const improveNear = (civId: number) => {
@@ -225,6 +252,7 @@ describe('ai batch', () => {
           techs: (c.technologies ?? []).length,
           gold: c.resources?.gold ?? 0,
           profile: String(c.productionProfile ?? ''),
+          settlers: units.filter((u) => u.type === 'settler').length,
           ferries: units.filter((u) => u.type === 'ferry').length,
           ships: units.filter((u) => ['sail', 'galley', 'trireme', 'caravel', 'frigate', 'ironclad', 'destroyer', 'cruiser', 'battleship'].includes(u.type as string)).length,
         };
@@ -241,6 +269,7 @@ describe('ai batch', () => {
       });
     }
 
+    vi.restoreAllMocks();
     require('node:fs').writeFileSync(${JSON.stringify(OUT)}, JSON.stringify(results));
     orig('BATCH_DONE ' + results.length);
     expect(true).toBe(true);
@@ -320,6 +349,17 @@ console.log(`largest specialist staff in a city  : ${Math.max(0, ...games.map((g
 console.log(`avg specialists per city snapshot   : ${citySnapshots ? (sum((g) => g.economy.specialistSnapshots) / citySnapshots).toFixed(2) : 0}`);
 console.log(`tile improvements built per game    : ${avg((g) => g.economy.improvementsBuilt).toFixed(0)}`);
 console.log(`improved tiles near own cities/game : ${avg((g) => g.economy.improvedTilesNearCities).toFixed(0)}`);
+console.log(`improvement jobs started per game   : ${avg((g) => g.economy.improvementTurns).toFixed(0)}`);
+{
+  const produced = {};
+  const actions = {};
+  for (const g of games) {
+    for (const [k, v] of Object.entries(g.economy.produced ?? {})) produced[k] = (produced[k] ?? 0) + v;
+    for (const [k, v] of Object.entries(g.economy.logActions ?? {})) actions[k] = (actions[k] ?? 0) + v;
+  }
+  console.log('units produced per game            : ' + (Object.entries(produced).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${(v / games.length).toFixed(1)}`).join('  ') || 'none'));
+  console.log('AI actions per game                : ' + (Object.entries(actions).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => `${k} ${(v / games.length).toFixed(1)}`).join('  ') || 'none'));
+}
 const buildings = {};
 for (const g of games) for (const [k, v] of Object.entries(g.economy.buildings)) buildings[k] = (buildings[k] ?? 0) + v;
 console.log(`buildings per game                  : ${Object.entries(buildings).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${(v / games.length).toFixed(1)}`).join('  ')}`);

@@ -133,10 +133,11 @@ const CITY_AREA_BUILT_UP_TARGET = 0.75;
 const MATURE_CITY_POPULATION = INFRASTRUCTURE_POP_THRESHOLD;
 
 /**
- * An enemy unit this close counts as a DIRECT threat to the city: while one is
- * standing there, settlers are targets and the fields are not worked.
+ * An enemy unit THIS close counts as a direct threat to the city: two tiles is
+ * the city's own workable radius, so anything further out is not standing in
+ * the fields and must not stop the works programme.
  */
-const DIRECT_THREAT_RADIUS = 3;
+const DIRECT_THREAT_RADIUS = 2;
 
 /**
  * Rounds after the last assault during which the city counts as "under
@@ -261,6 +262,19 @@ const NAVAL_RETARGET_MIN_DISTANCE = 12;
 
 /** How close a city must be to count as an army's base (rally or garrison). */
 const ARMY_BASE_RADIUS = 3;
+
+/**
+ * Turns a settler keeps its blocked settlement targets before they are forgiven.
+ *
+ * Blocking is a response to one unreachable site, not a verdict on the map.
+ */
+const BLOCKED_TARGET_PATIENCE = 10;
+
+/**
+ * Turns a settler keeps chasing one settlement target before the lock is
+ * dropped and the search is allowed to choose somewhere else.
+ */
+const LOCKED_TARGET_PATIENCE = 8;
 
 /** Our own units a single enemy city tolerates before the blockade is a waste. */
 const BLOCKADE_UNITS_PER_CITY = 2;
@@ -430,7 +444,10 @@ export class AIManager {
     }
 
     // ─── Phase 2: Technology research ──────────────────────────────────
-    if (!civ.currentResearch) {
+    const researchUnlocked = typeof this.gameEngine.isResearchUnlocked === 'function'
+      ? this.gameEngine.isResearchUnlocked()
+      : true;
+    if (!civ.currentResearch && researchUnlocked) {
       // selectResearch returns the chosen techId (string) or null.
       const techChoice = AIResearch.selectResearch(civ, resolveAICivStrategy(civ, aiState), gameState);
       if (techChoice) {
@@ -839,6 +856,25 @@ export class AIManager {
         const reservedForColony = !!colonyMission
           && colonyMission.settlerId === unit.id
           && !unit.embarkedOn;
+
+        // ── Forgive stale blocked targets ─────────────────────────────────
+        // A settler writes a site off when it cannot path to it once. Nothing
+        // ever took it back off, so one unlucky blockage — a unit in the way, a
+        // road, a city founded on the spot — cost it that piece of ground
+        // permanently. Measured on a pinned 4-civ game this was 93 idle settler
+        // turns on its own.
+        if (unit.type === 'settler' && unit._blockedSettlementTargets?.size) {
+          const patience = (unit._blockedSettlementPatience ?? 0) + 1;
+          if (patience >= BLOCKED_TARGET_PATIENCE) {
+            debugLog(`[AI-SETTLER] Clearing ${unit._blockedSettlementTargets.size} stale blocked target(s) after ${patience} turns`);
+            unit._blockedSettlementTargets = new Set<string>();
+            unit._blockedSettlementPatience = 0;
+            delete unit._lastSettlementTarget;
+            if (unit._positionHistory) unit._positionHistory.length = 0;
+          } else {
+            unit._blockedSettlementPatience = patience;
+          }
+        }
         if (unit.type === 'settler' && !unit.workTarget && !reservedForColony) {
           const civStrategy = resolveAICivStrategy(civ, aiState);
           let worksTarget: { col: number; row: number } | null = null;
@@ -852,10 +888,16 @@ export class AIManager {
           } else if (this.prefersInfrastructureOverExpansion(civ.id, civStrategy)
             // Size 6 and up: the city's own fields come first, whatever the
             // civ's strategy or city count says. This is the irrigation
-            // mandate, and it is the ONLY reason a settler is pulled off
-            // founding duty early — see findInfrastructureWorksTarget for the
-            // two threat conditions that override it.
-            || this.hasMatureCity(civ.id)) {
+            // mandate — see findInfrastructureWorksTarget for the two threat
+            // conditions that override it.
+            || this.hasMatureCity(civ.id)
+            // …and ANY city whose workable area is still less than half
+            // improved: raw tiles cannot pay for the citizens standing on
+            // them, so build-out beats founding. Without this branch a settler
+            // founded a city roughly every time one was produced (10 cities
+            // founded vs 4 improvements in a 200-round test game), and the
+            // empire grew wider than it ever grew up.
+            || this.citiesNeedBuildOut(civ.id)) {
             // Late-game infrastructure mode (see LATE_INFRA_PROFILES): a civ that
             // already sprawled past LATE_INFRA_CITY_THRESHOLD cities stops
             // treating "found another city" as the default answer. Its settler
@@ -870,12 +912,21 @@ export class AIManager {
           if (worksTarget) {
             // Standing on the tile it was sent to: build here rather than walk.
             if (worksTarget.col === unit.col && worksTarget.row === unit.row) {
-              const improvement = this.chooseImprovementForSettler(unit);
+              const improvement = this.chooseImprovementForSettler(unit, true);
               if (improvement && this.gameEngine.buildImprovement(unit.id, improvement)) {
                 debugLog(`[AI-INFRA] ${civ.name} settler ${unit.id} builds ${improvement} at (${unit.col},${unit.row})`);
-                this.gameEngine.log('ai', `Settler improves — ${civ.name} builds ${improvement} at (${unit.col},${unit.row})`);
+                this.gameEngine.log('ai', `Settler improves — ${civ.name} builds ${improvement} at (${unit.col},${unit.row})`, {
+                  civilizationId, action: 'improve', unitId: unit.id, unitType: 'settler', improvement,
+                });
                 break; // the settler worked its turn
               }
+              // Standing on the tile it was sent to and unable to start work:
+              // without this line the settler just sat there and the reason was
+              // invisible in every log we have.
+              this.gameEngine.log('ai', `Settler cannot work tile — ${civ.name} settler ${unit.id} at (${unit.col},${unit.row})`, {
+                civilizationId, action: 'works_fail', unitId: unit.id, unitType: 'settler',
+                reason: improvement ? 'build_failed' : 'no_improvement',
+              });
             }
             unit._aiWorksTarget = worksTarget;
             // A settlement target from an earlier turn must not outrank the
@@ -910,7 +961,9 @@ export class AIManager {
                 const started = this.gameEngine.buildImprovement(unit.id, improvement);
                 if (started) {
                   debugLog(`[AI-SETTLER] ${civ.name} settler ${unit.id} builds ${improvement} at (${unit.col},${unit.row})`);
-                  this.gameEngine.log('ai', `Settler improves — ${civ.name} builds ${improvement} at (${unit.col},${unit.row})`);
+                  this.gameEngine.log('ai', `Settler improves — ${civ.name} builds ${improvement} at (${unit.col},${unit.row})`, {
+                  civilizationId, action: 'improve', unitId: unit.id, unitType: 'settler', improvement,
+                });
                   break; // the settler worked its turn
                 }
               }
@@ -927,6 +980,28 @@ export class AIManager {
               // Otherwise fall through to chooseAITarget, which walks the settler
               // to the works target it just found.
               unit._aiWorksTarget = worksTarget;
+
+              if (!worksTarget) {
+                // ── The bottom of the ladder ──────────────────────────────
+                // Nothing to found, nothing to build, nowhere to join. Before
+                // this the settler simply skipped the turn — and the next, and
+                // the next. Measured on a pinned 4-civ game, 94 % of settler
+                // turns ended in exactly that state and no settler alive at
+                // turn 120 had founded anything.
+                //
+                // A settler with no future is worth nothing, so each step below
+                // is strictly worse than the one above it, down to marching at
+                // the map for no reason at all — which is still movement, still
+                // a settler off the capital, and still a chance that the map
+                // changes underneath it.
+                const lastResort = this.settlerLastResort(unit, civ);
+                if (lastResort === 'acted') break;
+                if (lastResort) {
+                  // Shaped like a settlement candidate so the existing
+                  // "walk to it, found on arrival" path picks it up unchanged.
+                  unit._aiSettlement = { ...lastResort, score: 0 };
+                }
+              }
             }
           }
         }
@@ -1035,12 +1110,18 @@ export class AIManager {
           }
         }
         if (worksArrival) {
-          const improvement = this.chooseImprovementForSettler(unit);
+          const improvement = this.chooseImprovementForSettler(unit, true);
           if (improvement && this.gameEngine.buildImprovement(unit.id, improvement)) {
             debugLog(`[AI-INFRA] ${civ.name} settler ${unit.id} builds ${improvement} at (${unit.col},${unit.row})`);
-            this.gameEngine.log('ai', `Settler improves — ${civ.name} builds ${improvement} at (${unit.col},${unit.row})`);
+            this.gameEngine.log('ai', `Settler improves — ${civ.name} builds ${improvement} at (${unit.col},${unit.row})`, {
+              civilizationId, action: 'improve', unitId: unit.id, unitType: 'settler', improvement,
+            });
             break; // the settler worked its turn
           }
+          this.gameEngine.log('ai', `Settler cannot work tile — ${civ.name} settler ${unit.id} at (${unit.col},${unit.row})`, {
+            civilizationId, action: 'works_fail', unitId: unit.id, unitType: 'settler',
+            reason: improvement ? 'build_failed' : 'no_improvement',
+          });
           unit._aiWorksTarget = null;
           this.gameEngine.skipUnit(unit.id);
           break;
@@ -1690,6 +1771,142 @@ export class AIManager {
    * cheapest affordable neighbor that reduces (or best limits) the distance to
    * the target. Returns null when the unit is genuinely boxed in.
    */
+  /**
+   * The bottom of the settler's ladder: what to do when there is nothing worth
+   * founding on, nothing worth building, and nowhere to join.
+   *
+   * Each step is worse than the one above, and the point is that the chain never
+   * runs out — a settler turn must never end in a bare `skipUnit`. In order:
+   *
+   *  1. **found anyway, on a lower bar.** A mediocre site still beats a settler
+   *     that stands still for the rest of the game, so the score threshold is
+   *     relaxed before giving up on founding entirely.
+   *  2. **join the nearest own city.** Deliberately ignoring `canJoinCity`: that
+   *     check is about the join being *legal*, and a settler that cannot legally
+   *     join should not therefore do nothing. If it arrives and still cannot
+   *     join, the next rung catches it, so this cannot loop.
+   *  3. **pave the tile it is standing on.** Cheap, always legal on land, and it
+   *     turns a wasted settler into trade.
+   *  4. **march at the frontier.** Movement towards unexplored ground: still a
+   *     settler in hand, and new land tends to show up there.
+   *
+   * Returns `'acted'` when it already did the thing this turn (the caller then
+   * ends the unit's turn), a tile to walk to, or null if even the frontier is
+   * unreachable.
+   */
+  private settlerLastResort(
+    unit: Unit,
+    civ: Civilization,
+  ): 'acted' | { col: number; row: number } | null {
+    const strategy = resolveAICivStrategy(civ);
+
+    // 1. Found on a lower bar rather than not at all.
+    for (const threshold of [SETTLE_SCORE_THRESHOLD * 0.6, 1]) {
+      let site: { col: number; row: number; score: number } | null = null;
+      try {
+        site = this.findBestSettlementForSettler(unit, strategy, 0, threshold);
+      } catch (error) {
+        console.error('[AI-SETTLER] Relaxed settlement search failed:', error);
+      }
+      if (site) {
+        delete unit._lastSettlementTarget;
+        unit._lastSettlementTarget = site;
+        debugLog(`[AI-SETTLER] Last resort: accepting a site worth ${site.score} at (${site.col},${site.row})`);
+        return { col: site.col, row: site.row };
+      }
+    }
+
+    // 2. Walk to the nearest own city and join it, legal or not.
+    const home = this.nearestOwnCityTile(unit);
+    if (home) {
+      const grid = this.gameEngine.squareGrid;
+      const onTopOfIt = grid
+        ? grid.squareDistance(unit.col, unit.row, home.col, home.row) <= 1
+        : unit.col === home.col && unit.row === home.row;
+      if (onTopOfIt) {
+        // Standing on it and still not legally joinable: stop trying, or this
+        // becomes a two-tile loop that never resolves.
+        if (this.gameEngine.canJoinCity?.(unit.id)) {
+          const joined = this.gameEngine.foundCityWithSettler(unit.id);
+          if (joined) {
+            this.gameEngine.log('ai', `Settler joins city — ${civ.name} at (${unit.col},${unit.row})`, {
+              civilizationId: civ.id, action: 'join_city', unitId: unit.id, unitType: unit.type,
+              reason: 'last_resort',
+            });
+            return 'acted';
+          }
+        }
+      } else {
+        debugLog(`[AI-SETTLER] Last resort: walking to own city at (${home.col},${home.row}) to join`);
+        return { col: home.col, row: home.row };
+      }
+    }
+
+    // 3. Pave where it stands.
+    if (this.gameEngine.canBuildImprovement?.(unit.id, 'road')) {
+      const started = this.gameEngine.buildImprovement(unit.id, 'road');
+      if (started) {
+        this.gameEngine.log('ai', `Settler improves — ${civ.name} paves (${unit.col},${unit.row})`, {
+          civilizationId: civ.id, action: 'settler_improve', unitId: unit.id, improvement: 'road', reason: 'last_resort',
+        });
+        return 'acted';
+      }
+    }
+
+    // 4. March at the frontier.
+    return this.findFrontierTile(unit);
+  }
+
+  /** The own city tile closest to this unit, or null when it owns none. */
+  private nearestOwnCityTile(unit: Unit): { col: number; row: number } | null {
+    const grid = this.gameEngine.squareGrid;
+    let best: { col: number; row: number } | null = null;
+    let bestDist = Infinity;
+    for (const city of this.gameEngine.cities ?? []) {
+      if (city.civilizationId !== unit.civilizationId) continue;
+      const d = grid
+        ? grid.squareDistance(unit.col, unit.row, city.col, city.row)
+        : Math.abs(unit.col - city.col) + Math.abs(unit.row - city.row);
+      if (d < bestDist) {
+        bestDist = d;
+        best = { col: city.col, row: city.row };
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The nearest piece of unexplored ground this unit can be pointed at.
+   *
+   * Scans outward from the settler for a land tile its civ has never seen. Used
+   * as the very last rung: walking a settler towards the unknown is worth more
+   * than leaving it parked, and unexplored ground is where a settler that was
+   * boxed in by its own empire can still find somewhere to go.
+   */
+  private findFrontierTile(unit: Unit): { col: number; row: number } | null {
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return null;
+    const explored = this.gameEngine.getPlayerStorage?.(unit.civilizationId)?.explored;
+    const width = this.gameEngine.map?.width;
+
+    for (let radius = 3; radius <= 30; radius++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        for (let dr = -radius; dr <= radius; dr++) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+          const col = unit.col + dc;
+          const row = unit.row + dr;
+          if (!grid.isValidSquare(col, row)) continue;
+          const tile = this.gameEngine.getTileAt(col, row);
+          const terrain = String(tile?.type ?? tile?.terrain ?? '');
+          if (terrain === 'ocean' || terrain === 'sea') continue;
+          if (width && explored && explored[row * width + col] === true) continue; // already known
+          return { col, row };
+        }
+      }
+    }
+    return null;
+  }
+
   /**
    * Settler fallback: when a settler cannot reach its settlement target, block
    * that target and re-evaluate the best reachable location.  If the search
@@ -3980,6 +4197,21 @@ export class AIManager {
     return this.countOwnImprovements(civId) < this.improvementBudget(civId);
   }
 
+  /**
+   * Whether some own city's workable area is still less than half improved.
+   *
+   * Raw tiles cannot pay for the citizens standing on them: no roads means no
+   * trade, no trade means no luxury, and no luxury means civil unrest at a
+   * size the empire cannot afford. Build-out is therefore NOT subject to the
+   * civ-wide improvement budget — a young empire with eight improvements to
+   * its name stops building roads at exactly the moment it needs them most.
+   */
+  citiesNeedBuildOut(civId: number): boolean {
+    return this.ownCities(civId).some(
+      (c: City) => this.improvedFractionOfCityArea(c) < CITY_AREA_IMPROVED_TARGET,
+    );
+  }
+
   /** How many tile improvements the civ already owns near its cities. */
   countOwnImprovements(civId: number): number {
     return (this.gameEngine.map?.tiles ?? []).filter((t: MapTile) =>
@@ -4040,11 +4272,7 @@ export class AIManager {
    *  - **direct threat** — an enemy unit within {@link DIRECT_THREAT_RADIUS},
    *    or the civ's own threat assessment saying this city needs defence.
    */
-  private cityIsUnderDirectThreat(
-    city: City,
-    storage: PlayerTurnStorage | undefined,
-    roundNumber: number,
-  ): boolean {
+  private cityIsUnderDirectThreat(city: City, roundNumber: number): boolean {
     const attackedAt = city.lastAttackedRound;
     if (typeof attackedAt === 'number' && roundNumber - attackedAt <= ONGOING_ATTACK_WINDOW) {
       return true;
@@ -4060,10 +4288,13 @@ export class AIManager {
       );
       if (enemyNear) return true;
     }
-
-    if (!storage) return false;
-    const threatened = this.identifyThreatenedCities(city.civilizationId, storage, roundNumber);
-    return threatened.some((t) => t.city.id === city.id);
+    // Deliberately NOT the 8-tile `identifyThreatenedCities` assessment: that
+    // is a defence signal ("does this city need an army?") and on a map with
+    // barbarians it is true most of the time, which silenced the works
+    // programme completely — a city a raider had walked past eight tiles ago
+    // never got its roads. The design asks for exactly two blockers: a direct
+    // threat (an enemy standing IN the fields) and attacks still going on.
+    return false;
   }
 
   /**
@@ -4257,15 +4488,13 @@ export class AIManager {
    */
   private findInfrastructureWorksTarget(unit: Unit): { col: number; row: number } | null {
     const civId = unit.civilizationId;
-    const storage = this.gameEngine.getPlayerStorage?.(civId);
     const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
 
-    // The size-6 mandate does not wait for the civ-wide improvement budget:
-    // a city that has reached the size where its fields matter gets them
-    // watered whatever the counter says. The budget still decides whether
-    // SMALLER cities may be worked when nothing mature needs anything.
-    const budgetAllows = this.wantsPublicWorks(civId);
-    if (!budgetAllows && !this.hasMatureCity(civId)) return null;
+    // Two independent reasons to work instead of found: a city whose area is
+    // still raw (build-out, NOT subject to the civ-wide budget — see
+    // `citiesNeedBuildOut`), and the size-6 mandate. When neither holds there
+    // is nothing worth doing here and the settler goes back to settlement.
+    if (!this.citiesNeedBuildOut(civId) && !this.hasMatureCity(civId)) return null;
 
     const civRef = this.gameEngine.civilizations?.[civId];
     const grid = this.gameEngine.squareGrid;
@@ -4278,8 +4507,7 @@ export class AIManager {
       }))
       // The ONLY thing that removes a city from the works programme is a direct
       // threat or an attack still going on there.
-      .filter((entry) => !this.cityIsUnderDirectThreat(entry.city, storage, roundNumber))
-      .filter((entry) => budgetAllows || entry.mature)
+      .filter((entry) => !this.cityIsUnderDirectThreat(entry.city, roundNumber))
       .filter((entry) => (entry.mature
         // A mature city keeps its settler until its fields are actually built
         // out — roads AND irrigation — not merely until half the area carries
@@ -4374,7 +4602,7 @@ export class AIManager {
    *  - `canBuildImprovement` is the single source of truth for fresh water, so
    *    lakes and already-irrigated neighbours count too.
    */
-  private chooseImprovementForSettler(unit: Unit): string | null {
+  private chooseImprovementForSettler(unit: Unit, targetIsGated = false): string | null {
     const civId = unit.civilizationId;
     const tile = this.gameEngine.getTileAt(unit.col, unit.row);
     if (!tile) return null;
@@ -4395,9 +4623,11 @@ export class AIManager {
     if (!nearCity) return null;
 
     // The improvement budget exists so settlers don't pave the wilderness for
-    // ever. It does NOT apply while the size-6 mandate is live: a mature
-    // city's fields get watered whatever the civ-wide counter says.
-    if (!this.hasMatureCity(civId) && this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
+    // ever. It does NOT apply while a city still has to be built out or the
+    // size-6 mandate is live — those are the improvements the city's own
+    // happiness depends on, and the counter was never meant to starve them.
+    if (!this.citiesNeedBuildOut(civId) && !this.hasMatureCity(civId)
+      && this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
 
     const civ = this.gameEngine.civilizations?.[civId];
     const strategy = resolveAICivStrategy(
@@ -4414,15 +4644,18 @@ export class AIManager {
         this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, a.col, a.row) -
         this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, b.col, b.row),
       )[0];
-    // The city this settler serves has to be safe to work. Direct threat, or
-    // an attack still going on there, is the ONLY thing that stops the works —
-    // without this the fallback path would happily irrigate a city while it
-    // was being stormed.
+    // The city this settler serves has to be safe to work — but only when it
+    // chose the tile ITSELF. A tile handed over by the works programme already
+    // passed the threat test for the city it belongs to; re-testing it here
+    // against the NEAREST city (which may be a different, embattled one, or
+    // merely one that was hit within the last six rounds) vetoed 117 work
+    // attempts per game and left settlers standing on their field doing
+    // nothing turn after turn.
     if (
+      !targetIsGated &&
       nearestCity &&
       this.cityIsUnderDirectThreat(
         nearestCity,
-        this.gameEngine.getPlayerStorage?.(civId),
         this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
       )
     ) {
@@ -4524,7 +4757,7 @@ export class AIManager {
       .sort((a, b) => a.dist - b.dist);
 
     for (const { city } of sortedCities) {
-      if (this.cityIsUnderDirectThreat(city, storage, roundNumber)) continue;
+      if (this.cityIsUnderDirectThreat(city, roundNumber)) continue;
 
       const underAttack = (storage as { turnData?: { lastCityAssaultRound?: number } })?.turnData?.lastCityAssaultRound;
       if (typeof underAttack === 'number' && roundNumber - underAttack <= ONGOING_ATTACK_WINDOW) continue;
@@ -4578,10 +4811,11 @@ export class AIManager {
     if (!roadDef?.tradeBonusTerrains) return null;
 
     // Same improvement budget as chooseImprovementForSettler (and the same
-    // size-6 exemption).
+    // build-out / size-6 exemption).
     const friendlyCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civId);
     if (friendlyCities.length === 0) return null;
-    if (!this.hasMatureCity(civId) && this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
+    if (!this.citiesNeedBuildOut(civId) && !this.hasMatureCity(civId)
+      && this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
 
     // Terrains where SOME improvement is useful: roads/irrigation on the
     // worked plain/grass/desert belt, mines on hills and mountains. The
@@ -4677,14 +4911,20 @@ export class AIManager {
     unit: Unit,
     strategy: StrategyProfile = 'balanced_growth',
     replanDepth = 0,
+    /**
+     * Overrides the score a site must beat. The last rung of the settler's
+     * ladder passes a low bar rather than none: a mediocre site is still worth
+     * more than a settler that spends the rest of the game standing still.
+     */
+    thresholdOverride?: number,
   ): { col: number; row: number; score: number } | null {
     debugLog(`[AI-SETTLER] Evaluating settlement locations for settler at (${unit.col}, ${unit.row})`);
     // A settler that has just finished working its own cities' fields faces a
     // higher bar than one that has just been produced: it may found where it
     // stands unless the best site is clearly, clearly better.
-    const settleThreshold = this.prefersInfrastructureOverExpansion(unit.civilizationId, strategy)
+    const settleThreshold = thresholdOverride ?? (this.prefersInfrastructureOverExpansion(unit.civilizationId, strategy)
       ? LATE_SETTLE_SCORE_THRESHOLD
-      : SETTLE_SCORE_THRESHOLD;
+      : SETTLE_SCORE_THRESHOLD);
 
     // Track position history to detect oscillation
     if (!unit._positionHistory) {
@@ -4708,6 +4948,11 @@ export class AIManager {
     }, {});
 
     const isOscillating = Object.values(positionCounts).some((count: number) => count >= 3);
+    // Moving at all counts as progress, so a settler merely walking around a
+    // blockage does not have its target list wiped mid-journey.
+    if (unit._blockedSettlementTargets?.size && !isOscillating) {
+      unit._blockedSettlementPatience = 0;
+    }
 
     // Keep a settlement destination stable across turns. The search window is
     // centred on the moving settler, so recomputing the maximum every turn can
@@ -4731,7 +4976,7 @@ export class AIManager {
         history.length = 0;
         console.warn(`[AI-SETTLER] Abandoning oscillating settlement target (${lockedTarget.col},${lockedTarget.row})`);
         if (replanDepth === 0) {
-          return this.findBestSettlementForSettler(unit, strategy, 1);
+          return this.findBestSettlementForSettler(unit, strategy, 1, thresholdOverride);
         }
         // Already retried once — force settle at current tile to break loop.
         if (this.canFoundCityHere(unit)) {
@@ -4739,6 +4984,23 @@ export class AIManager {
           this.gameEngine.foundCityWithSettler(unit.id);
         }
         return null;
+      }
+    }
+
+    // ── A locked target that is not getting any closer ────────────────────
+    // 194 of 353 measured idle settler turns had a locked target: the settler
+    // had somewhere to be and never arrived. `isSettlementTargetValid` only
+    // checks that the site is still *legal* — a legal site on the far side of
+    // an ocean passes every turn, so the lock is re-issued for ever and the
+    // settler walks in place. Unlocking after a fixed number of turns lets the
+    // search pick a different site, which is what "blocked" was supposed to do
+    // but only ever did once the settler had already given up on it.
+    if (lockedTarget && unit._lockedTargetAge !== undefined) {
+      unit._lockedTargetAge++;
+      if (unit._lockedTargetAge >= LOCKED_TARGET_PATIENCE) {
+        debugLog(`[AI-SETTLER] Unlocking settlement target (${lockedTarget.col},${lockedTarget.row}) after ${unit._lockedTargetAge} turns`);
+        unit._lockedTargetAge = 0;
+        delete unit._lastSettlementTarget;
       }
     }
 

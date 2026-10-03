@@ -337,6 +337,16 @@ export interface Unit {
   /** Tile this settler was sent to work on one of its civ's city areas. */
   _aiWorksTarget?: { col: number; row: number } | null;
   _blockedSettlementTargets?: Set<string>;
+  /**
+   * Consecutive turns this settler has spent with blocked settlement targets
+   * and no progress. At {@link BLOCKED_TARGET_PATIENCE} the list is cleared: a
+   * blockage is usually transient (a road in the way, a unit in the path, a
+   * city founded on the site) and treating it as permanent wrote the settler off
+   * good land for the rest of the game.
+   */
+  _blockedSettlementPatience?: number;
+  /** Turns spent walking towards the currently locked settlement target. */
+  _lockedTargetAge?: number;
   _lastSettlementTarget?: { col: number; row: number };
   /** Where this hull last tried to sail, and whether it got any closer. */
   _navalIntent?: { col: number; row: number; dist: number; stalled: number };

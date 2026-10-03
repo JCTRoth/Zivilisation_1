@@ -704,7 +704,12 @@ export class AutoProduction {
       && aiMgr.wantsPublicWorks(city.civilizationId);
     const worksMandate = typeof aiMgr?.hasSettlerWorksMandate === 'function'
       && aiMgr.hasSettlerWorksMandate(city.civilizationId);
-    const wantsWorks = (worksBudget || worksMandate)
+    // Build-out is a third, budget-free reason to keep a works corps: a city
+    // whose area is still raw needs roads and irrigation more than the empire
+    // needs a ninth city.
+    const buildOut = typeof aiMgr?.citiesNeedBuildOut === 'function'
+      && aiMgr.citiesNeedBuildOut(city.civilizationId);
+    const wantsWorks = (worksBudget || worksMandate || buildOut)
       && !threatAssessment?.needsDefense;
     const settlerTarget = desiredSettlers + (wantsWorks ? 2 : 0);
     // Economics before the army: a civ that has climbed back to the minimum
@@ -1084,6 +1089,38 @@ export class AutoProduction {
       );
     }
     return scored.map(entry => entry.plan);
+  }
+
+  /**
+   * The UNIT to queue when the follow-up queue is already building-heavy —
+   * the counterpart of `determineFallbackBuilding`.
+   *
+   * This method was called from two places in `ensureProductionQueue` but
+   * never existed, so every call threw (`TypeError: this.determineFallbackUnit
+   * is not a function`, swallowed by the surrounding try/catch) and the AI
+   * never queued a single follow-up item: a city finished whatever it was
+   * building and then sat with an empty queue until the next auto-production
+   * pass. That silently starved the whole production ladder.
+   */
+  private determineFallbackUnit(
+    city: City,
+    threatAssessment?: CityThreatAssessment | null,
+    plannedTypes: string[] = [],
+  ): ProductionItem | null {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return null;
+    if (this.isUnitCapExhausted(city.civilizationId)) return null;
+    if (!this.canAffordAnotherUnit(city.civilizationId)) return null;
+
+    const item = threatAssessment?.needsDefense
+      ? this.buildDefenderProduction(city, threatAssessment)
+      : this.buildOffensiveProduction(city);
+    const itemType = item?.itemType || item?.type;
+    if (!itemType) return null;
+    // Never queue the same unit twice in a row — that is how a city ends up
+    // with six archers and nothing else in its build queue.
+    if (plannedTypes.includes(itemType)) return null;
+    return item;
   }
 
   private determineFallbackBuilding(

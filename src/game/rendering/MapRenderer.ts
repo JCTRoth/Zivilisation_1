@@ -2806,6 +2806,26 @@ export class MapRenderer {
       }
     }
 
+    if (unitTypeId === 'settler') {
+      let workEmoji = '';
+      if (unit.workTarget) {
+        const wt = String(unit.workTarget).toLowerCase();
+        if (wt.includes('irrigat')) workEmoji = '💧';
+        else if (wt.includes('road')) workEmoji = '🛤️';
+        else if (wt.includes('rail')) workEmoji = '🚂';
+        else workEmoji = '🔨';
+      } else if ((unit as unknown as { _aiWorksTarget?: unknown })._aiWorksTarget) {
+        workEmoji = '🔨';
+      }
+      if (workEmoji) {
+        const workFontSize = Math.max(8, Math.round(innerRadius * 0.7));
+        ctx.font = `${workFontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(workEmoji, centerX, centerY);
+      }
+    }
+
     if ((unit as Unit).isSleeping) {
       const sleepIcon = '💤';
       const sleepFontSize = Math.max(8, Math.round(innerRadius * 0.7));
