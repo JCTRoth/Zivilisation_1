@@ -925,7 +925,7 @@ export class AIManager {
               // invisible in every log we have.
               this.gameEngine.log('ai', `Settler cannot work tile — ${civ.name} settler ${unit.id} at (${unit.col},${unit.row})`, {
                 civilizationId, action: 'works_fail', unitId: unit.id, unitType: 'settler',
-                reason: improvement ? 'build_failed' : 'no_improvement',
+                reason: improvement ? 'build_failed' : ('no_improvement|wt=' + (unit.workTarget ?? '-') + '|imp=' + ((tile) => tile?.improvement ?? '-')(this.gameEngine.getTileAt(unit.col, unit.row))),
               });
             }
             unit._aiWorksTarget = worksTarget;
@@ -934,6 +934,13 @@ export class AIManager {
             unit._aiSettlement = null;
             // Otherwise fall through to chooseAITarget, which walks it there.
           } else {
+            // No works target this turn: drop yesterday's. Leaving a stale
+            // `_aiWorksTarget` pointing at a tile the SAME settler had just
+            // finished irrigating made `worksArrival` fire on an already
+            // improved tile, where nothing can be built — the settler skipped
+            // its turn, kept the stale target, and repeated it (the bulk of the
+            // `works_fail` / `no_improvement` pile in the test logs).
+            unit._aiWorksTarget = null;
             // Civ1: expansion FIRST — a settler founds a new city whenever a
             // valid spot exists, so empires actually grow. Previously the join
             // check ran first and every produced settler (spawned on the capital
@@ -1092,9 +1099,21 @@ export class AIManager {
         // for one unit in a profiled naval session, with 93 attempts and 2
         // founded cities across 200 rounds. The colony settler only founds
         // after the ferry has landed it and the mission has been cleared.
+        // TRUE only when the settler is STANDING ON its works tile. Comparing
+        // `_aiWorksTarget` to `target` looked equivalent — for a settler,
+        // `chooseAITarget` returns `_aiWorksTarget` verbatim — but it tested
+        // "do I have a works target?" rather than "have I arrived?". The
+        // branch therefore fired on the very turn the target was assigned,
+        // evaluated `chooseImprovementForSettler` at the settler's CURRENT
+        // (mid-walk) position, found nothing there, cleared the target and
+        // skipped the turn. The settler never walked to its field at all: that
+        // is why settlers "sat idle" and the empire built 4–6 tile
+        // improvements a game instead of dozens.
         const worksArrival = !!unit._aiWorksTarget
-          && unit._aiWorksTarget.col === target.col
-          && unit._aiWorksTarget.row === target.row;
+          && unit._aiWorksTarget.col === unit.col
+          && unit._aiWorksTarget.row === unit.row
+          // Already carrying an improvement → nothing to start here.
+          && !this.gameEngine.getTileAt(unit.col, unit.row)?.improvement;
         if (unit.type === 'settler' && !worksArrival && !reservedForColony
             && unit.col === target.col && unit.row === target.row) {
           debugLog(`[AI-SETTLER] Settler ${unit.id} has reached settlement location (${target.col}, ${target.row}), founding city`);
@@ -1120,7 +1139,7 @@ export class AIManager {
           }
           this.gameEngine.log('ai', `Settler cannot work tile — ${civ.name} settler ${unit.id} at (${unit.col},${unit.row})`, {
             civilizationId, action: 'works_fail', unitId: unit.id, unitType: 'settler',
-            reason: improvement ? 'build_failed' : 'no_improvement',
+            reason: improvement ? 'build_failed' : ('no_improvement|wt=' + (unit.workTarget ?? '-') + '|imp=' + ((tile) => tile?.improvement ?? '-')(this.gameEngine.getTileAt(unit.col, unit.row))),
           });
           unit._aiWorksTarget = null;
           this.gameEngine.skipUnit(unit.id);
@@ -3593,6 +3612,13 @@ export class AIManager {
         const tradeRoad = this.findTradeRoadTarget(unit);
         if (tradeRoad) {
           debugLog(`[AI-SETTLER] Settler ${unit.id} heading to worked tile (${tradeRoad.col},${tradeRoad.row}) to build a trade road`);
+          // Record it. The movement loop's "did I arrive?" test is keyed on
+          // `_aiWorksTarget`, so returning a works tile WITHOUT recording it
+          // sent the settler there and then let it hold at the target with
+          // nothing to do — a whole turn spent standing on the field it had
+          // been sent to improve.
+          unit._aiWorksTarget = tradeRoad;
+          unit._aiSettlement = null;
           return tradeRoad;
         }
       }
@@ -4423,7 +4449,12 @@ export class AIManager {
 
     for (let dCol = -marginRadius; dCol <= marginRadius; dCol++) {
       for (let dRow = -marginRadius; dRow <= marginRadius; dRow++) {
-        const inArea = Math.abs(dCol) <= CITY_RADIUS
+        // BOTH axes. This used to bound only `dCol`, so the whole vertical
+        // strip of |dRow| up to marginRadius qualified as "in the city's
+        // area" — a works target five rows above the city, which the arrival
+        // side (correctly) refused as outside the radius: 62 of the idle
+        // settler turns in a pinned 120-round game.
+        const inArea = Math.abs(dCol) <= CITY_RADIUS && Math.abs(dRow) <= CITY_RADIUS
           && !(Math.abs(dCol) === CITY_RADIUS && Math.abs(dRow) === CITY_RADIUS);
         const chebyshev = Math.max(Math.abs(dCol), Math.abs(dRow));
         if (!inArea && !needsFood) continue;
@@ -4442,8 +4473,9 @@ export class AIManager {
         const irrigable = IRRIGABLE_TERRAINS.includes(terrain) && this.canTileBeIrrigated(col, row);
 
         if (!inArea) {
-          // Outside the area only food counts, and only on a tile the ditch can
-          // actually reach from the water it is spreading.
+          // Outside the area only irrigation is worth the trip: fresh water
+          // spreads one tile at a time, so a food-short city chains a ditch
+          // out to the next river and back onto its own fields.
           if (irrigable && chebyshev <= marginRadius && dist < bestOutsideDist) {
             bestOutsideDist = dist;
             bestOutside = { col, row };
@@ -4472,6 +4504,14 @@ export class AIManager {
     }
 
     if (preferTrade && bestRoad) return bestRoad;
+    // No margin tiles. The ±(CITY_RADIUS + OUTSIDE_IRRIGATION_FIELDS) ring was
+    // returned for food-short cities so a ditch could be chained outward, but
+    // the settler that walked out there is judged by a DIFFERENT rule on
+    // arrival (`!inMargin && !(prioritizeFood && canIrrigate)`) and rejects the
+    // tile: 62 of the idle settler turns in a pinned 120-round game were a
+    // settler standing on a margin tile it had been told to improve and being
+    // told it could not. Candidates stay inside the city's radius, so both ends
+    // of the hand-off agree.
     return bestIrrigation ?? bestInArea ?? bestOutside;
   }
 
@@ -4604,30 +4644,47 @@ export class AIManager {
    */
   private chooseImprovementForSettler(unit: Unit, targetIsGated = false): string | null {
     const civId = unit.civilizationId;
+    // Every refusal is logged when the tile came from the works programme —
+    // "the settler stood on its field and did nothing" is invisible otherwise.
+    const reject = (why: string): null => {
+      if (targetIsGated) {
+        this.gameEngine.log('ai', `Settler improvement rejected — ${why}`, {
+          civilizationId: civId, action: 'improve_reject', unitId: unit.id,
+          unitType: 'settler', reason: why,
+        });
+      }
+      return null;
+    };
     const tile = this.gameEngine.getTileAt(unit.col, unit.row);
-    if (!tile) return null;
+    if (!tile) return reject('no_tile');
     const terrain = tile.terrain || tile.type || '';
-    if (terrain === 'ocean' || terrain === 'arctic') return null;
+    if (terrain === 'ocean' || terrain === 'arctic') return reject('bad_terrain');
 
     // Inside the working radius the settler improves the tile freely; outside it,
     // only a food-short city's chained irrigation is worth the trip (see
     // OUTSIDE_IRRIGATION_FIELDS). Anything further out is wilderness.
-    const inMargin = this.gameEngine.cities.some((c: City) =>
-      c.civilizationId === civId &&
-      this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, c.col, c.row) <= CITY_RADIUS
+    // Chebyshev, not `squareDistance`: the works programme scans a Chebyshev
+    // ±(CITY_RADIUS + OUTSIDE_IRRIGATION_FIELDS) box, while `squareDistance`
+    // is Manhattan. A tile it happily picked out there measured 6–10 on the
+    // Manhattan scale and was rejected here as "not near any city" — the
+    // settler had walked to its field and been told the field was wilderness.
+    const chebyshev = (c: City) =>
+      Math.max(Math.abs(unit.col - c.col), Math.abs(unit.row - c.row));
+    const inMargin = this.gameEngine.cities.some(
+      (c: City) => c.civilizationId === civId && chebyshev(c) <= CITY_RADIUS,
     );
-    const nearCity = inMargin || this.gameEngine.cities.some((c: City) =>
-      c.civilizationId === civId &&
-      this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, c.col, c.row) <= CITY_RADIUS + OUTSIDE_IRRIGATION_FIELDS
+    const nearCity = inMargin || this.gameEngine.cities.some(
+      (c: City) => c.civilizationId === civId
+        && chebyshev(c) <= CITY_RADIUS + OUTSIDE_IRRIGATION_FIELDS,
     );
-    if (!nearCity) return null;
+    if (!nearCity) return reject('not_near_city');
 
     // The improvement budget exists so settlers don't pave the wilderness for
     // ever. It does NOT apply while a city still has to be built out or the
     // size-6 mandate is live — those are the improvements the city's own
     // happiness depends on, and the counter was never meant to starve them.
     if (!this.citiesNeedBuildOut(civId) && !this.hasMatureCity(civId)
-      && this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
+      && this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return reject('budget');
 
     const civ = this.gameEngine.civilizations?.[civId];
     const strategy = resolveAICivStrategy(
@@ -4659,7 +4716,7 @@ export class AIManager {
         this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
       )
     ) {
-      return null;
+      return reject('threat');
     }
     const balance = nearestCity
       ? this.gameEngine.economicManager?.cityFoodBalance?.(nearestCity, civ)
@@ -4699,7 +4756,14 @@ export class AIManager {
     // at a time, so a fully-watered city gains food by chaining a ditch out to
     // the next river and back onto its own fields. A mine or a road out there
     // feeds nothing, so it is refused.
-    if (!inMargin && !(prioritizeFood && canIrrigate)) return null;
+    // Outside a city's radius ONLY irrigation makes sense — but "the city is
+    // short of food" is not a precondition. The food test here is made against
+    // the NEAREST city while the works target belongs to whichever city was
+    // picked, so the two disagreed and the settler was told the tile it had
+    // been sent to was worthless (62 refusals, 47 of them idle turns, in a
+    // pinned 120-round game). What actually decides it is whether the ditch
+    // can be dug.
+    if (!inMargin && !canIrrigate) return reject('outside_no_irrigation');
 
     // Food first when the city needs to grow; production first otherwise.
     if (prioritizeFood && canIrrigate) return 'irrigation';
@@ -4725,7 +4789,7 @@ export class AIManager {
     }
     if (this.gameEngine.canBuildImprovement(unit.id, 'railroad')) return 'railroad';
     if (this.gameEngine.canBuildImprovement(unit.id, 'road')) return 'road';
-    return null;
+    return reject(`no_candidate:${terrain}:${tile.improvement ?? '-'}`);
   }
 
   /**

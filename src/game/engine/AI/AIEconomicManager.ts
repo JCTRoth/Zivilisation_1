@@ -108,9 +108,6 @@ export class AIEconomicManager {
     const civId = civ?.id;
     if (civId == null) return 0;
 
-    const totalExpenses = this.econ.totalUpkeep(civId);
-    const reserveTarget = this.calculateReserveTarget(civ, totalExpenses);
-
     const maxTaxIncome = this.econ.maxTaxIncome(civ);
     const maxSpecGold = this.econ.maxSpecialistGold(civ);
 
@@ -120,11 +117,16 @@ export class AIEconomicManager {
     const projectedIncome =
       Math.floor(maxTaxIncome * planningTax) + maxSpecGold;
 
-    // Reserve contribution is the amount of income diverted to rebuilding
-    // the reserve (never more than 50% of income).
-    const gold = civ.resources?.gold ?? 0;
-    const shortfall = Math.max(0, reserveTarget - gold);
-    const reserveContribution = Math.min(shortfall, projectedIncome * 0.1);
+    // ALWAYS divert 10% of projected income to the reserve, not only while the
+    // reserve is short. With the old `min(shortfall, …)` a civ that happened to
+    // hold its reserve planned its army against 100% of its income — net
+    // exactly zero — so the next completed building's upkeep, the next rate
+    // change or the next warship tipped the treasury negative and the upkeep
+    // disbander started eating the army (≈12 abandoned units per 300-round
+    // test game). Ten per cent is the headroom that makes "never negative"
+    // structural instead of lucky. (It is also never MORE than the old value
+    // was when the shortfall was smaller, so the cap only ever tightens.)
+    const reserveContribution = projectedIncome * 0.1;
 
     const buildingUpkeep = this.econ.buildingUpkeep(civId);
     const availableForUnits =

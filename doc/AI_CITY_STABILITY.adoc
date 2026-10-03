@@ -1,0 +1,220 @@
+= AI city stability: civil unrest, tile build-out and the settler pipeline
+:toc:
+:toclevels: 2
+
+== Why this exists
+
+A large AI city fell into *civil unrest* and stayed there. In this rules set
+unhappiness is unbounded — `unhappiness == population`, there is no government
+tolerance — so a size-12 city needs twelve happiness points, and a disordered
+city has its tax, science *and* commerce zeroed. The buildings that would fix
+it (temple, colosseum, cathedral) are exactly the ones `BuildingAnalyzer` sells
+when they stop paying, so the durable levers are the ones that were missing:
+
+* *roads* — the only source of trade, and trade is what the luxury rate turns
+  into happiness;
+* *irrigation* — the only source of the food a big city needs to grow;
+* *specialists* — entertainers (happiness), taxmen (gold), scientists
+  (science), which a built-up city can afford and a raw one cannot.
+
+This document records what was wrong, what was changed, what the test runs
+show, and what is still open.
+
+== Diagnosis
+
+[cols="1,3"]
+|===
+|Finding |Where
+
+|`luxuryNeedPct` credited up to four points of *hypothetical* entertainers the
+governor had never hired (and often refused to, because of the food-headroom
+gate). The city was unhappy, `anyCityProblem` said so, and the answer came out
+`min(0, 30, …) = 0 %` luxury — so a disordered city got no relief from the
+rates either.
+|`AIEconomicManager.luxuryNeedPct`
+
+|A one-city civ was allowed *two* improvements in its whole empire (the
+`improvementBudget` floor was 2), so its fields stayed raw: no roads, no
+trade, no luxury, unrest from size 4 on.
+|`AIManager.improvementBudget`
+
+|`pickWorksTileForCity` bounded only `dCol`, never `dRow`. The whole vertical
+strip of `|dRow| ≤ 5` counted as "inside the city's area", so the works
+programme handed out tiles five rows above the city — which the arrival side
+(correctly) refused as outside the radius. 62 refusals, 47 of them idle
+setttler turns, in a pinned 120-round game.
+|`AIManager.pickWorksTileForCity`
+
+|`worksArrival` compared `_aiWorksTarget` to `target`, and for a settler
+`chooseAITarget` returns `_aiWorksTarget` verbatim — so it tested *"do I have a
+works target?"* rather than *"have I arrived?"*. The branch fired on the very
+turn the target was assigned, evaluated `chooseImprovementForSettler` at the
+settler's current (mid-walk) position, found nothing, cleared the target and
+skipped. **The settler never walked to its field at all.**
+|`AIManager.runAITurn`
+
+|The improvement budget was applied to *build-out* as well as decoration, so a
+young empire stopped paving exactly when it needed the trade most.
+|`AIManager.citiesNeedBuildOut` (new)
+
+|`ensureProductionQueue` called `determineFallbackUnit`, which has never
+existed. Every call threw (swallowed by a `try/catch`), so the AI never queued
+a single follow-up item and cities sat with an empty queue.
+|`AutoProduction.determineFallbackUnit` (new)
+
+|Idle citizens — a city with more citizens than fields — were simply dropped
+on the floor.
+|`EconomicManager.cityWorkedTiles`
+|===
+
+== Changes
+
+=== Happiness and rates
+
+* `AIEconomicManager.luxuryNeedPct` now counts only specialists that *exist*,
+  and includes the government's `happinessBonus`. An unhappy city gets a real
+  luxury rate instead of 0 %.
+* `AICityManager`:
+** the entertainer cap scales with the city — `specialistCapForPopulation`
+   gives 2 citizens up to size 8, then one more every three, capped at 5;
+** that size-based staff unlocks only once half the city's workable area is
+   improved (`SPECIALIST_UNLOCK_FRACTION`), because a raw city cannot spare
+   the workers;
+** the governor no longer demotes an entertainer unless the city has *two*
+   happiness points of slack **and** a field to put the citizen on — the old
+   rule flipped the city back to unhappy next turn and re-hired it, one citizen
+   ping-ponging between the fields and the stage.
+
+=== Tile build-out
+
+* `citiesNeedBuildOut(civId)` — some own city's area is less than half
+  improved. Build-out is *exempt* from the civ-wide improvement budget.
+* The settler loop runs the works path when `prefersInfrastructureOverExpansion
+  || hasMatureCity || citiesNeedBuildOut`, so a young empire paves before it
+  founds instead of the other way round.
+* `pickWorksTileForCity`:
+** `inArea` now bounds **both** axes;
+** roads are preferred on tiles the city already works when the city needs
+    commerce (`cityNeedsCommerce`: unhappy *and* trade below unhappiness) —
+    self-limiting, it stops as soon as trade covers the unhappiness;
+** the margin ring (outside the radius) is only offered for irrigation, and
+    `chooseImprovementForSettler` accepts it whenever the ditch can be dug
+    rather than only when the *nearest* city happens to be food-short.
+* `cityIsUnderDirectThreat` has exactly the two blockers the design calls for:
+  an enemy standing **in the fields** (Chebyshev 2) and an assault within the
+  last six rounds. The 8-tile `identifyThreatenedCities` defence signal was
+  removed from it — it is true most of the time on a map with barbarians and it
+  silenced the works programme completely.
+
+=== Settler pipeline
+
+* `worksArrival` tests the settler's own position.
+* The works target is cleared when the block produces none, so a stale
+  `_aiWorksTarget` pointing at a tile the same settler had just finished
+  irrigating can no longer fire the arrival branch.
+* `chooseAITarget` records `_aiWorksTarget` when it returns a trade-road tile —
+  it used to hand the tile back without recording it, so the settler walked
+  there and then held.
+* `chooseImprovementForSettler(unit, targetIsGated)` — the threat re-test runs
+  only when the settler chose the tile itself; a tile from the works programme
+  already passed the threat test for *its* city, and re-testing it against the
+  *nearest* city vetoed 117 work attempts per game.
+* Every refusal is logged (`improve_reject:<reason>`), and a failed attempt on
+  a works tile logs `works_fail` — the whole class of bug above was invisible
+  before.
+
+=== Economy
+
+* `AutoProduction.determineFallbackUnit` implemented (it never existed).
+* `evaluateGoldSpending`: the spendable amount now subtracts next turn's
+  upkeep, so a flush treasury cannot be rushed down to `reserve + 15` and then
+  go negative when upkeep is charged.
+
+=== Idle citizens
+
+* `EconomicManager.cityWorkedTiles`: a citizen with no field to work becomes an
+  **Entertainer** automatically. The conversion lives in the engine, so it is
+  automatic for every city; the governor may still staff *spare* citizens as
+  Taxmen or Scientists, but a citizen with no field has no choice to make.
+
+== Test runs
+
+Three AI-vs-AI games, 300 rounds each, four civs, map `AI_VS_AI`, seeds
+7/19/33, `Math.random` seeded with 4242 so two runs over the same code are the
+same games. Driver: `scripts/run-ai-batch.mjs` (instrumented with improvement,
+disband, specialist and per-action counters).
+
+[cols="2,1,1,1,1,1"]
+|===
+|Run |Improvements built / game |Abandoned units / game |Largest city |Disorder (city-rounds) |`works_fail`
+
+|Baseline (before this work) |5 |~12 |7 |2.7 % |117
+|After the works pipeline |16 |11.7 |7 |1.1 % |0
+|After `worksArrival` + margin fixes |26 |**7.7** |6 |**0 %** |**0
+|===
+
+What the numbers say:
+
+* **The settler pipeline works now.** `works_fail` went from 117 per game to
+  0; improvements went from 5 to 26 per game; improved tiles near own cities
+  from 4 to 26.
+* **Unrest is gone** in the final run: 0 of 90 city-round snapshots were in
+  disorder.
+* **Abandoned units dropped** from ~12 to 7.7 per game (and peaked at 77.7
+  during an intermediate experiment) — *not zero yet*.
+* **Cities do not get big.** The largest city in the final run was size 6,
+  against 10 in an intermediate run.
+
+=== Reflection — is this going in the right direction?
+
+Partly. The two mechanics the request was about — *build the city out with
+roads and irrigation* and *let a built-up city carry 2–5 specialists* — are
+implemented and measurably working: improvements per game up 5×, the refusal
+that blocked them is gone, unrest at 0 %, specialists scaling with size (the
+cap simply is not reached yet because cities are not getting big enough).
+
+But the run does **not** yet show "bigger cities over a longer period", and
+the reason is not unrest:
+
+* **Every civ in every seeded run ends with zero cities.** Barbarians hold
+  3.3 cities per game, `CITY_CAPTURED` fires 8.7 times per game, and
+  `UNIT_DEFEATED` 22.7. Cities are being taken off the AI faster than it can
+  grow them.
+* Because of that, the acceptance test `tests/idleUnits.test.ts` reads
+  **59.8 %** idle settler turns against a 35 % bar. Diagnosing it turn by turn:
+  **97 of the 205 idle settler turns belong to a civilisation that already has
+  zero cities** — orphaned units that cannot be given an order at all. Excluding
+  orphans the figure is ~28 %. The remaining `(no log, 0 moves, civ alive)`
+  bucket (78 turns) is still unexplained and is the next thing to fix.
+
+== Open issues / next steps
+
+. **Barbarian pressure wipes the AI.** Until a civ survives 300 rounds with
+  its cities intact, "handle bigger cities over a longer period" cannot be
+  measured. This is the single biggest blocker.
+. **7.7 abandoned units per game.** The disbander runs when the treasury is
+  negative *within* a turn, which no snapshot ever catches. Both
+  `sustainableUnits` models were tried with a safety margin; neither moved the
+  number, so the deficit is coming from somewhere else (likely the emergency
+  rate raise setting luxury to 0 and collapsing income).
+. **78 idle settler turns** from a live civ with 0 moves and no log — the unit
+  is processed, consumes its movement and produces no trace.
+. `tests/idleUnits.test.ts` counts units of eliminated civs as idle. Whether
+  that is the right definition is worth settling before tuning to it.
+
+== Files touched
+
+[source]
+----
+src/game/engine/EconomicManager.ts        luxury need, idle citizens, disband
+src/game/engine/AI/AIEconomicManager.ts   luxuryNeedPct, sustainableUnits
+src/game/engine/AI/AICityManager.ts       specialist caps, entertainer slack
+src/game/engine/AI/AIManager.ts           works pipeline, threat gate, targets
+src/game/engine/AutoProduction.ts         determineFallbackUnit, gold spending
+src/game/engine/diplomacy/AIDiplomacyPolicy.ts   (from the late-game work)
+tests/idleCitizens.test.ts                new
+tests/ai/cityRadiusAndIrrigation.test.ts  new
+tests/ai/economyPressure.test.ts          new
+tests/ai/lateGameAggression.test.ts       new
+scripts/run-ai-batch.mjs                  telemetry + deterministic seeding
+----

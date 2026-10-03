@@ -2273,7 +2273,17 @@ export class AutoProduction {
     // Recomputed every iteration: each successful rush actually debits the
     // treasury, and a stale `available` would happily spend the same gold
     // three times over.
-    const spendable = () => (civ.resources?.gold ?? 0) - minimumReserve - 15;
+    //
+    // Next turn's upkeep is part of the reserve. Without it a flush treasury
+    // could be rushed down to `reserve + 15`, which is comfortably above zero
+    // today and negative the moment upkeep is charged — and a negative treasury
+    // means the upkeep disbander starts eating the army (≈12 abandoned units
+    // per 300-round test game before this line existed).
+    const upkeep = typeof this.gameEngine.economicManager?.totalUpkeep === 'function'
+      ? this.gameEngine.economicManager.totalUpkeep(civId)
+      : 0;
+    const spendable = () =>
+      (civ.resources?.gold ?? 0) - minimumReserve - 15 - upkeep;
     if (spendable() <= 5) return; // Too little gold above reserve to spend
 
     // A treasury far above its reserve is money doing nothing. The old rule

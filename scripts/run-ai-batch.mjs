@@ -116,10 +116,13 @@ describe('ai batch', () => {
           counters.produced[k] = (counters.produced[k] ?? 0) + 1;
         } else if (type === 'GAME_LOG') {
           const a = data?.action ?? 'msg';
-          const key = data?.unitType === 'settler' ? a + ':settler' : a;
+          let key = data?.unitType === 'settler' ? a + ':settler' : a;
+          if (data?.reason) key = key + ':' + data.reason;
           counters.logActions[key] = (counters.logActions[key] ?? 0) + 1;
-        } else if (type === 'CITY_FOUNDED') {
-          counters.logActions['CITY_FOUNDED'] = (counters.logActions['CITY_FOUNDED'] ?? 0) + 1;
+        } else if (type === 'CITY_FOUNDED' || type === 'CITY_CAPTURED'
+          || type === 'CITY_DESTROYED' || type === 'UNIT_DEFEATED'
+          || type === 'UNIT_DISBANDED' || type === 'CITY_STARVED') {
+          counters.logActions[type] = (counters.logActions[type] ?? 0) + 1;
         }
         return typeof prevOSC === 'function' ? prevOSC(type, data, ...rest) : undefined;
       };
@@ -221,6 +224,7 @@ describe('ai batch', () => {
       console.log = orig;
       if (economy.minGold === Infinity) economy.minGold = 0;
       economy.improvementsBuilt = counters.improvementsBuilt;
+      (economy as any).barbCities = e.cities.filter((c: { civilizationId: number }) => c.civilizationId === BARBARIAN_CIV_ID).length;
       economy.improvementTurns = counters.improvementTurns;
       economy.produced = counters.produced;
       economy.logActions = counters.logActions;
@@ -343,13 +347,15 @@ console.log(`rate changes per civ per game       : ${avg((g) => g.economy.rateFl
 const disorderRounds = sum((g) => g.economy.disorderRounds);
 const citySnapshots = sum((g) => g.economy.citySnapshots);
 console.log(`disorder snapshots                  : ${disorderRounds} / ${citySnapshots} (${citySnapshots ? ((100 * disorderRounds) / citySnapshots).toFixed(1) : 0}% of city-rounds)`);
-console.log(`abandoned units (upkeep disbands)   : ${sum((g) => g.economy.totalDisbands)}`);
+const disbanded = games.reduce((n, g) => n + (g.economy.logActions?.UNIT_DISBANDED ?? 0), 0);
+console.log(`abandoned units (upkeep disbands)   : ${disbanded} (${(disbanded / games.length).toFixed(1)} per game)`);
 console.log(`largest single city (size)          : ${Math.max(0, ...games.map((g) => g.economy.maxCityPop))}`);
 console.log(`largest specialist staff in a city  : ${Math.max(0, ...games.map((g) => g.economy.maxCitySpecialists))}`);
 console.log(`avg specialists per city snapshot   : ${citySnapshots ? (sum((g) => g.economy.specialistSnapshots) / citySnapshots).toFixed(2) : 0}`);
 console.log(`tile improvements built per game    : ${avg((g) => g.economy.improvementsBuilt).toFixed(0)}`);
 console.log(`improved tiles near own cities/game : ${avg((g) => g.economy.improvedTilesNearCities).toFixed(0)}`);
 console.log(`improvement jobs started per game   : ${avg((g) => g.economy.improvementTurns).toFixed(0)}`);
+console.log(`barbarian cities at the end/game    : ${avg((g) => g.economy.barbCities ?? 0).toFixed(1)}`);
 {
   const produced = {};
   const actions = {};
