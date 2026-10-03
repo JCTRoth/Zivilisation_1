@@ -178,7 +178,15 @@ describe('AI city management: famine prevention', () => {
       [G, G, G, D, O],
       [O, O, D, O, O],
       [O, O, O, O, O],
-    ], { population: 3, workingTiles: new Set(['2,2', '3,2', '2,3']) });
+    ], {
+      population: 3,
+      // Content city (two temples): with tolerance gone a size-3 city is always
+      // a little unhappy, and a city in DISORDER always hires an entertainer —
+      // right behaviour, but it would pull a worker off the fields and hide
+      // whether the governor can actually feed the city.
+      buildings: ['temple', 'temple'],
+      workingTiles: new Set(['2,2', '3,2', '2,3']),
+    });
     addResource(engine, 1, 1, 'Fish');
     addResource(engine, 2, 1, 'Fish');
     addResource(engine, 3, 1, 'Fish');
@@ -208,7 +216,15 @@ describe('AI city management: famine prevention', () => {
       [O, TERRAIN_TYPES.PLAINS, G, O, O],
       [O, O, O, O, O],
       [O, O, O, O, O],
-    ], { population: 2, workingTiles: new Set(['2,2', '1,1', '3,1', '2,1']) });
+    ], {
+      population: 2,
+      workingTiles: new Set(['2,2', '1,1', '3,1', '2,1']),
+      // With no government tolerance a size-2 city is short of happiness on its
+      // own, and the governor would staff an Entertainer — a worker off the
+      // fields — instead of trading food for production. A temple makes the city
+      // content so this test isolates the food→production conversion.
+      buildings: ['temple'],
+    });
     addResource(engine, 1, 1, 'Fish');
     addResource(engine, 3, 1, 'Fish');
     addResource(engine, 2, 1, 'Fish');
@@ -242,7 +258,11 @@ describe('AI city management: specialist policy', () => {
       [O, O, O, O, O],
     ], {
       population: 3,
-      buildings: ['temple'],
+      // Two temples, not one: with no tolerance the size-3 city needs happiness
+      // strictly above 3 to count as content, and one temple lands it exactly on
+      // the line — so the governor spends the specialist slot on an Entertainer
+      // instead of the Scientist this test is about.
+      buildings: ['temple', 'temple'],
       workingTiles: new Set(['2,2', '1,1', '3,1', '2,1']),
     });
     addResource(engine, 1, 1, 'Fish');

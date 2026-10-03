@@ -225,6 +225,25 @@ export const WARSHIP_TARGET_VALUE: Readonly<Record<NavalTargetClass, number>> = 
   scout: 25,
 };
 
+/**
+ * Whether a naval hull counts as a warship.
+ *
+ * A warship is a hull that can sink things. Transports are excluded because
+ * their job is carrying troops, and fishermen because a Fisher Boat is naval,
+ * attacks nothing and carries nothing — counting it as an escort let a civ's
+ * entire fishing fleet satisfy the warship quota, so it stopped buying escorts
+ * exactly when it started moving troops by sea, and read an enemy fishing
+ * fleet as a war fleet it had to answer with hulls of its own.
+ */
+export function isWarshipHull(props: {
+  attack?: number;
+  transportCapacity?: number;
+} | undefined): boolean {
+  if (!props) return false;
+  if ((props.transportCapacity ?? 0) > 0) return false;
+  return (props.attack ?? 0) > 0;
+}
+
 export type NavalTargetClass =
   | 'transport'
   | 'warship'

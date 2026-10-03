@@ -23,6 +23,19 @@ import {
 } from '../EconomicManager';
 
 const AI_SCIENCE_FLOOR = 20;
+
+/**
+ * The science floor a civ keeps even while it is in deficit.
+ *
+ * It used to be zero, on the reasoning that a civ which cannot pay its bills
+ * should stop paying for research. But research is cumulative and the AI has
+ * tech-gated governments: a civ that drops to zero science while its treasury
+ * dips below zero tends to sit there, because every turn of no research makes
+ * the next one unaffordable too. An AI stuck at 100% tax and 0% science never
+ * reaches Communism — it cannot research the tech — so the "saving" was
+ * permanent. Ten percent is enough to finish a tech and climb out.
+ */
+const AI_SCIENCE_DEEP_FLOOR = 10;
 const AI_MIN_TAX = 35;
 export const AI_RESERVE_TURNS: Record<StrategyProfile, number> = {
   military_expansion: 3,
@@ -178,7 +191,7 @@ export class AIEconomicManager {
 
     // 2. Determine Tax Need (Expenses + Reserve Rebuild)
     const inDeficit = gold < 0;
-    const scienceAllowance = inDeficit ? 0 : AI_SCIENCE_FLOOR;
+    const scienceAllowance = inDeficit ? AI_SCIENCE_DEEP_FLOOR : AI_SCIENCE_FLOOR;
 
     const baseNeed = Math.ceil(
       (Math.max(0, totalExpenses - Math.max(0, gold)) / maxTaxIncome) * 100,
@@ -217,7 +230,7 @@ export class AIEconomicManager {
     // 100% tax therefore kept science at 0% indefinitely (an AI-vs-AI export
     // caught exactly that) — so trim luxury first, then hand the remainder back
     // from tax.
-    const scienceFloor = inDeficit ? 0 : AI_SCIENCE_FLOOR;
+    const scienceFloor = inDeficit ? AI_SCIENCE_DEEP_FLOOR : AI_SCIENCE_FLOOR;
     let newLuxury = Math.min(luxury, 100 - newTax);
     let newScience = 100 - newTax - newLuxury;
     if (newScience < scienceFloor) {
@@ -236,43 +249,31 @@ export class AIEconomicManager {
   private luxuryNeedPct(civ: Civilization, cities: City[]): number {
     const gov = getGovernment(civ?.government);
     if (!gov) return 0;
-    const govName = (gov.name ?? '').toLowerCase();
-    const martialLawMax =
-      govName === 'despotism' || govName === 'anarchy'
-        ? 4
-        : govName === 'monarchy' || govName === 'communism'
-          ? 3
-          : 0;
-
     let maxNeed = 0;
     let minAfterCommerce = Infinity;
 
     for (const city of cities) {
       const population = city?.population ?? 1;
-      const unhappiness = Math.max(0, population - gov.tolerance);
+      // No government tolerance: every citizen counts as unhappy.
+      const unhappiness = population;
       const specLuxury = this.econ.specialistYields(city).luxury;
 
-      const garrisonUnits = (this.gameEngine?.units ?? []).filter(
-        (u) =>
-          u.civilizationId === civ.id &&
-          u.col === city.col &&
-          u.row === city.row &&
-          !u.isDefeated &&
-          (u.attack ?? 0) > 0,
-      ).length;
-      const martialLawBonus = Math.min(garrisonUnits, martialLawMax);
+      // Same helper the happiness total uses, so the AI's luxury arithmetic can
+      // never drift from the rule it is reasoning about.
+      const martialLawBonus = this.econ.martialLaw?.(civ, city).bonus ?? 0;
 
-      const currentEntertainers = (city.specialists ?? []).filter(
-        (s: string) => s === 'entertainer',
-      ).length;
-      const canAddEntertainers = Math.max(
-        0,
-        Math.min(2, population - 1 - currentEntertainers),
-      );
-      const entertainerPotential = canAddEntertainers * 2;
-
+      // NOTE: this used to credit up to four points of *hypothetical*
+      // entertainers the governor had not hired (and often refused to, because
+      // of the food-headroom gate). The city was unhappy, `anyCityProblem`
+      // said so, and the answer came out `min(0, 30, …) = 0 %` luxury — so a
+      // disordered city got no relief from the rates either. Only specialists
+      // that actually exist count here.
       const nonLuxHappiness =
-        specLuxury + martialLawBonus + entertainerPotential + 2; // +Base contentment
+        specLuxury
+        + martialLawBonus
+        + (gov.happinessBonus ?? 0)
+        + 2 // base contentment
+        + (this.econ.wonderHappiness?.(civ) ?? 0); // a wonder's content is already ours
       maxNeed = Math.max(
         maxNeed,
         Math.max(0, unhappiness - nonLuxHappiness),

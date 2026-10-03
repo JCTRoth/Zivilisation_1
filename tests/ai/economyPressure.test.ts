@@ -192,3 +192,61 @@ describe('AI gold can actually be spent on rushing production', () => {
     expect(civ.resources.gold).toBe(10);
   });
 });
+
+describe('AI gold is actually spent, not hoarded', () => {
+  /** eslint-disable @typescript-eslint/no-explicit-any */
+  const goldSpending = (engine: GameEngine) =>
+    (engine.autoProduction as unknown as { evaluateGoldSpending: (id: number) => void })
+      .evaluateGoldSpending.bind(engine.autoProduction);
+
+  async function withCity(gold: number) {
+    const engine = new GameEngine(null);
+    engine.sleep = () => Promise.resolve();
+    await engine.initialize({
+      numberOfCivilizations: 2,
+      mapType: 'CLOSEUP_1V1',
+      devMode: false,
+      startingGold: gold,
+    });
+    const civ = engine.civilizations.find((c) => !c.isHuman) ?? engine.civilizations[1];
+    const city = cityFor(engine, civ.id, 8, 8, 'Vault') as RushableCity & { autoProduction: boolean };
+    city.autoProduction = true;
+    city.currentProduction = {
+      type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 40,
+    };
+    city.productionStored = 0;
+    civ.resources.gold = gold;
+    return { engine, civ, city };
+  }
+
+  it('buys the build outright once the treasury is far above its reserve', async () => {
+    // The failure this exists for: an AI-vs-AI run reached year 5397 with one
+    // civ holding 10,827 gold while its cities ticked through builds it could
+    // have bought — a rush was only allowed within 5 shields of finishing.
+    const { engine, civ, city } = await withCity(10_000);
+
+    goldSpending(engine)(civ.id);
+
+    expect(city.productionStored).toBe(40);
+    expect(civ.resources.gold).toBe(10_000 - 80); // 40 shields left × 2
+  });
+
+  it('leaves a modest treasury alone when the build is nowhere near done', async () => {
+    const { engine, civ, city } = await withCity(30);
+
+    goldSpending(engine)(civ.id);
+
+    expect(city.productionStored).toBe(0);
+    expect(civ.resources.gold).toBe(30);
+  });
+
+  it('never spends past the reserve buffer', async () => {
+    // 25 gold: spendable = 25 − 8 − 15 = 2 ≤ 5, so nothing is bought at all.
+    const { engine, civ, city } = await withCity(25);
+
+    goldSpending(engine)(civ.id);
+
+    expect(city.productionStored).toBe(0);
+    expect(civ.resources.gold).toBe(25);
+  });
+});

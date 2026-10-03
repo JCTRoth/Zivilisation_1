@@ -39,6 +39,26 @@ import type { EconomicManager } from '../EconomicManager';
 
 /** Stable growth needs at least this much food surplus per turn. */
 export const AI_MIN_FOOD_SURPLUS = 1;
+
+/**
+ * Food a city must have *in hand*, over and above the minimum surplus, before
+ * the governor may promote an Entertainer.
+ *
+ * An Entertainer is a worker removed from the fields. With no government
+ * tolerance every city is permanently short of happiness, so this is the
+ * difference between a city that hires one entertainer and an empire that
+ * slowly demotes its farmers to keep everyone smiling while it starves.
+ */
+export const ENTERTAINER_FOOD_HEADROOM = 2;
+
+/**
+ * Whether an unhappy-but-not-disordered city may buy an entertainer.
+ *
+ * Disorder is handled separately and unconditionally — a disordered city earns
+ * nothing at all, so it always gets one. This is the milder case, where the
+ * entertainer is only worth the worker it costs once the city can spare one.
+ */
+
 /** Surplus above this is converted into production/trade (growth stays safe). */
 const AI_FOOD_SURPLUS_CAP = 4;
 /** Turns of stored food left before starvation counts as an emergency. */
@@ -51,8 +71,40 @@ const AI_MAX_SPECIALISTS_PER_CITY = 2;
 const AI_SPECIALIST_GOLD_COMFORT = 50;
 /** Granary-for-growth is only worth it while the empire is still expanding. */
 const AI_GRANARY_MIN_POP = 2;
-/** How many Entertainers the contentment pass keeps on staff. */
+/** How many Entertainers the contentment pass keeps on staff AT MINIMUM. */
 export const MAX_ENTERTAINERS_PER_CITY = 2;
+/**
+ * Largest specialist staff of ANY kind (Entertainers + Taxmen + Scientists) a
+ * city may keep once its fields are built up.
+ *
+ * With no government tolerance `unhappiness == population`, so a size-15 city
+ * needs 15 happiness points. Two Entertainers (4 points) plus base contentment
+ * and a temple can never cover that — the city stays in disorder and pays no
+ * tax and no science at all. A city whose roads and irrigation are finished
+ * CAN afford the staff: its worked tiles still cover food and production after
+ * the specialists are taken off them, which is exactly the trade the size-based
+ * cap encodes.
+ */
+export const MAX_SPECIALISTS_PER_CITY = 5;
+/**
+ * Fraction of a city's workable area that must be improved before the
+ * size-based specialist staff unlocks. Below this the city is still feeding
+ * itself out of raw tiles and every specialist is a farmer it cannot spare.
+ */
+export const SPECIALIST_UNLOCK_FRACTION = 0.5;
+
+/**
+ * Size-based specialist staff for a city whose area is built up:
+ * 2 citizens up to size 8, then one more every three citizens, capped at
+ * {@link MAX_SPECIALISTS_PER_CITY} — i.e. a size-9 city can staff 3, a
+ * size-12 city 4, a size-15 city 5.
+ */
+export function specialistCapForPopulation(population: number): number {
+  return Math.max(
+    MAX_ENTERTAINERS_PER_CITY,
+    Math.min(MAX_SPECIALISTS_PER_CITY, Math.floor(population / 3)),
+  );
+}
 const AI_GRANARY_CITY_TARGET = 10;
 /** Strategies that keep building settlers (and therefore value granaries). */
 const AI_EXPANSIONIST_STRATEGIES: StrategyProfile[] = [
@@ -212,9 +264,17 @@ export class AICityManager {
     // it will not promote or demote any specialist.
     const specialistsLocked = city.lockSpecialists === true;
 
+    // Publish how this city ranks tiles. The governor's own swap below is a
+    // one-shot improvement; without this, the next population change re-picked
+    // the layout by raw total yield and undid it. With it, the engine's pick and
+    // the governor agree, so the mode actually sticks.
+    city.governorWeights = { ...profile.weights };
+
     if (!specialistsLocked) {
-      this.secureContentment(city, civ);
+      // Food first, then contentment: `secureContentment` can staff an
+      // entertainer, and an entertainer is a worker the fields do not have.
       this.secureFood(city, civ, profile);
+      this.secureContentment(city, civ, profile);
     }
     this.steerSurplus(city, civ, profile);
     if (!specialistsLocked) {
@@ -228,23 +288,112 @@ export class AICityManager {
    * governor staffs an Entertainer while the city is unhappy (and never
    * beyond what it actually needs).
    */
-  private secureContentment(city: City, civ: Civilization): void {
+  private secureContentment(city: City, civ: Civilization, profile: GovernorProfile): void {
     const specialists = city.specialists ?? (city.specialists = []);
     const happy = this.econ.cityHappiness(city, civ);
     const unhappy = happy.disorder || happy.unhappiness >= happy.happiness;
     const entertainers = specialists.filter((sp) => sp === 'entertainer').length;
+    const cap = this.specialistCapFor(city, profile);
 
-    if (unhappy && entertainers < MAX_ENTERTAINERS_PER_CITY && (city.population ?? 1) > 1) {
+    // An Entertainer is a worker off the fields. With no government tolerance
+    // every city is permanently a little unhappy, so this used to fire
+    // unconditionally and the tax came due elsewhere: one entertainer per city,
+    // permanently, costing a worker of food production and pushing the city into
+    // the deficit that `secureFood` then had to fix — while the entertainer it
+    // was supposed to be protecting the city from stayed. Feed first, then
+    // calm: a city that cannot feed itself cannot be entertained into feeding
+    // itself.
+    // Whether the entertainer is worth a worker off the fields depends on what
+    // is being bought with it. Disorder is a TOTAL loss — the city pays no tax,
+    // no science and does not grow — so a disordered city always gets one, even
+    // at the cost of food. Merely being short of happiness is different: there
+    // the entertainer only has to beat the food it costs, so it waits for
+    // headroom. (Gating on food alone was the mistake: every city is a little
+    // unhappy now that tolerance is gone, so the gate blocked the specialist
+    // that was the only thing keeping the city's output alive.)
+    // NOTE: a soldier on the city tile would be the cheaper way out — martial law
+    // is free where an Entertainer costs a worker off the fields — but the AI
+    // does not yet move units onto city tiles to do it, and suppressing the
+    // Entertainer without delivering the soldier just starves the city. See
+    // `findMartialLawGarrisonTarget` in AIManager for why that hook was removed.
+    const balance = this.foodBalance(city, civ);
+    const canAffordEntertainer = happy.disorder
+      || balance.surplus >= AI_MIN_FOOD_SURPLUS + ENTERTAINER_FOOD_HEADROOM;
+
+    if (unhappy && canAffordEntertainer
+      && entertainers < cap && (city.population ?? 1) > 1) {
       this.gameEngine.promoteCitizenToSpecialist?.(city.id, 'entertainer');
       return;
     }
-    // Unneeded Entertainers go back to the fields.
-    while (entertainers > 0 && !unhappy) {
+    // Unneeded Entertainers go back to the fields — but only when the city has
+    // at least two happiness points of slack AND a field to put them on. An
+    // Entertainer buys exactly 2 happiness, so demoting on a margin of 1 flips
+    // the city straight back to unhappy next turn and the governor hires it
+    // again: one citizen ping-pongs between the fields and the stage every
+    // single turn. Demoting a citizen that has no field at all would do the
+    // same thing with the ENGINE, which converts idle citizens into
+    // Entertainers in `cityWorkedTiles` — so the slot has to exist first.
+    const slack = happy.happiness - happy.unhappiness;
+    if (entertainers > 0 && !unhappy && slack >= 2) {
       const index = specialists.lastIndexOf('entertainer');
-      if (index < 0) break;
-      if (!this.gameEngine.demoteSpecialistToWorker?.(city.id, index)) break;
-      break;
+      const hasSpareField =
+        this.fieldSlotCount(city) > (city.population ?? 1) - (specialists.length - 1);
+      if (index >= 0 && hasSpareField) {
+        this.gameEngine.demoteSpecialistToWorker?.(city.id, index);
+      }
     }
+  }
+
+  /**
+   * How many non-centre field slots this city can still staff: the free tiles
+   * it is not working yet, plus the ones it is already working.
+   */
+  private fieldSlotCount(city: City): number {
+    const free = this.econ.getWorkableTiles(city)?.length ?? 0;
+    const worked = Math.max(0, (city.workingTiles?.size ?? 1) - 1);
+    return free + worked;
+  }
+
+  /**
+   * Fraction of a city's workable area (centre and the four far corners
+   * dropped, exactly like `cityTerritory`) that carries an improvement.
+   */
+  private builtUpFraction(city: City): number {
+    const isValid = (col: number, row: number): boolean =>
+      typeof this.gameEngine.squareGrid?.isValidSquare === 'function'
+        ? this.gameEngine.squareGrid.isValidSquare(col, row)
+        : true;
+    let total = 0;
+    let improved = 0;
+    for (let dCol = -2; dCol <= 2; dCol++) {
+      for (let dRow = -2; dRow <= 2; dRow++) {
+        if (dCol === 0 && dRow === 0) continue;
+        if (Math.abs(dCol) === 2 && Math.abs(dRow) === 2) continue;
+        const col = city.col + dCol;
+        const row = city.row + dRow;
+        if (!isValid(col, row)) continue;
+        total++;
+        if (this.gameEngine.getTileAt(col, row)?.improvement) improved++;
+      }
+    }
+    return total === 0 ? 0 : improved / total;
+  }
+
+  /**
+   * How many specialists of any kind this city may keep.
+   *
+   * Below {@link SPECIALIST_UNLOCK_FRACTION} of its area improved the city is
+   * still feeding itself out of raw tiles, so the profile's own (conservative)
+   * cap stands. Once the roads and irrigation are in, the cap grows with the
+   * city: a built-up size-12 can staff 4 citizens as Entertainers, Taxmen or
+   * Scientists and still cover food and production from the remaining fields.
+   */
+  private specialistCapFor(city: City, profile: GovernorProfile): number {
+    const bySize = specialistCapForPopulation(city.population ?? 1);
+    if (this.builtUpFraction(city) < SPECIALIST_UNLOCK_FRACTION) {
+      return profile.maxSpecialists;
+    }
+    return Math.max(profile.maxSpecialists, bySize);
   }
 
   /** The centralized food balance for a city (never throws). */
@@ -486,17 +635,17 @@ export class AICityManager {
     // Never convert a farmer while the city is short on food; instead keep
     // the fields staffed.
     if (balance.surplus < AI_MIN_FOOD_SURPLUS) return;
-    // Modes that keep everyone on the tiles (growth / production) do not add
-    // money or science specialists.
-    if (profile.maxSpecialists <= 0) return;
 
     const happy = this.econ.cityHappiness(city, civ);
     if (happy.disorder || happy.unhappiness >= happy.happiness) return;
 
     const pop = city.population ?? 1;
-    const nonEntertainers = specialists.filter((sp) => sp !== 'entertainer').length;
     if (pop < profile.specialistMinPop) return;
-    if (nonEntertainers >= profile.maxSpecialists) return;
+    // The staff cap is size-based once the fields are built up — a built-up
+    // size-12 keeps 4 citizens as Taxmen/Scientists/Entertainers, a raw one
+    // keeps only what its profile allows.
+    const cap = this.specialistCapFor(city, profile);
+    if (specialists.length >= cap) return;
     if (balance.surplus < AI_MIN_FOOD_SURPLUS + profile.specialistHeadroom) return;
 
     const type =

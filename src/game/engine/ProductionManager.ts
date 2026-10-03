@@ -180,7 +180,7 @@ export class ProductionManager {
     if (ownsHarbor) return true;
 
     const deltas = [
-      { col: 0, row: 0 }, // the city tile itself
+      { col: 0, row: 0 },
       { col: -1, row: -1 }, { col: 0, row: -1 }, { col: 1, row: -1 },
       { col: -1, row: 0 }, { col: 1, row: 0 },
       { col: -1, row: 1 }, { col: 0, row: 1 }, { col: 1, row: 1 },
@@ -191,7 +191,7 @@ export class ProductionManager {
         | null
         | undefined;
       const terrain = tile?.terrain ?? tile?.type ?? '';
-      return terrain === 'ocean' || terrain === 'river';
+      return terrain === 'ocean' || terrain === 'sea';
     });
   }
 

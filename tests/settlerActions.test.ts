@@ -113,18 +113,22 @@ describe('settler action availability (context menu gating)', () => {
       // The generated map may place a river/lake (or an irrigated tile) next
       // to the chosen tile; strip all neighbours so the scenario is really
       // "no fresh water anywhere near" (map-randomness flake).
-      const around = [
-        [0, -1], [1, 0], [0, 1], [-1, 0],
-        [1, 1], [-1, -1], [1, -1], [-1, 1],
-      ] as const;
-      for (const [dc, dr] of around) {
-        const neighbor = e.getTileAt(grassland.col + dc, grassland.row + dr) as unknown as
-          | { type: string; terrain?: string; improvement: string | null }
-          | null;
-        if (!neighbor) continue;
-        neighbor.type = TERRAIN_TYPES.PLAINS;
-        neighbor.terrain = TERRAIN_TYPES.PLAINS;
-        neighbor.improvement = null;
+      // Irrigation reaches fresh water five fields out, so the scenario has to
+      // strip that whole reach rather than the eight neighbours around it.
+      for (let dc = -6; dc <= 6; dc++) {
+        for (let dr = -6; dr <= 6; dr++) {
+          const neighbor = e.getTileAt(grassland.col + dc, grassland.row + dr) as unknown as
+            | { type: string; terrain?: string; improvement: string | null }
+            | null;
+          if (!neighbor) continue;
+          if (neighbor.type === TERRAIN_TYPES.RIVER || neighbor.type === TERRAIN_TYPES.LAKE) {
+            neighbor.type = TERRAIN_TYPES.PLAINS;
+          }
+          if (neighbor.terrain === TERRAIN_TYPES.RIVER || neighbor.terrain === TERRAIN_TYPES.LAKE) {
+            neighbor.terrain = TERRAIN_TYPES.PLAINS;
+          }
+          neighbor.improvement = null;
+        }
       }
       const s = spawnSettler(e, grassland.col, grassland.row);
       expect(e.canBuildImprovement(s.id, 'irrigation')).toBe(false);

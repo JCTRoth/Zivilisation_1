@@ -130,14 +130,45 @@ describe('GovernmentManager.bestGovernmentForCiv (AI)', () => {
     expect(mgr.bestGovernmentForCiv(civ)).toBeNull();
   });
 
-  it('prefers the highest-ranked unlocked government', () => {
-    const civ = makeCiv(0, { technologies: ['monarchy', 'republic'] });
+  it('skips republic and climbs to communism', () => {
+    // Republic is unlocked here and is deliberately NOT chosen: the AI skips it
+    // rather than ruling under it for a revolution on the way to Communism.
+    const civ = makeCiv(0, { technologies: ['monarchy', 'republic', 'communism'] });
     const mgr = new GovernmentManager(makeEngine({ civilizations: [civ] }));
-    expect(mgr.bestGovernmentForCiv(civ)).toBe('republic');
+    expect(mgr.bestGovernmentForCiv(civ)).toBe('communism');
   });
 
-  it('returns null when already in the best government', () => {
-    const civ = makeCiv(0, { technologies: ['monarchy', 'republic', 'democracy'], government: 'democracy' });
+  it('never adopts republic, at any point on the ladder', () => {
+    const ladder: Array<string | null> = [];
+    const civ = makeCiv(0, {
+      technologies: ['monarchy', 'republic', 'communism', 'democracy'],
+    });
+    const mgr = new GovernmentManager(makeEngine({ civilizations: [civ] }));
+    for (let step = 0; step < 5; step++) {
+      const next = mgr.bestGovernmentForCiv(civ);
+      ladder.push(next);
+      if (!next) break;
+      civ.government = next;
+    }
+    expect(ladder).not.toContain('republic');
+    expect(ladder).not.toContain('democracy');
+    expect(civ.government).toBe('communism');
+  });
+
+  it('walks a Democracy civ back down towards communism', () => {
+    // Democracy is off the ladder entirely — it is no longer a destination, so
+    // a civ that got there another way has something better to move to.
+    const civ = makeCiv(0, {
+      technologies: ['monarchy', 'communism', 'democracy'], government: 'democracy',
+    });
+    const mgr = new GovernmentManager(makeEngine({ civilizations: [civ] }));
+    expect(mgr.bestGovernmentForCiv(civ)).toBe('communism');
+  });
+
+  it('returns null when already at communism', () => {
+    const civ = makeCiv(0, {
+      technologies: ['monarchy', 'republic', 'communism', 'democracy'], government: 'communism',
+    });
     const mgr = new GovernmentManager(makeEngine({ civilizations: [civ] }));
     expect(mgr.bestGovernmentForCiv(civ)).toBeNull();
   });
@@ -162,18 +193,34 @@ describe('GovernmentManager.evaluateGovernmentForCiv (situational AI pick)', () 
     expect(mgr.evaluateGovernmentForCiv(civ)).toBeNull();
   });
 
-  it('upgrades to republic for a growing, science-minded empire', () => {
+  it('skips republic entirely, even unlocked and tempting', () => {
     const civ = empireCiv(0, ['monarchy', 'republic'], { science: 5 });
     const mgr = new GovernmentManager(makeEngine({ civilizations: [civ], cities: threeCities() }));
-    expect(mgr.evaluateGovernmentForCiv(civ)).toBe('republic');
+    // Republic is unlocked and scores well on happiness; the ladder says no.
+    expect(mgr.evaluateGovernmentForCiv(civ)).not.toBe('republic');
+    expect(mgr.evaluateGovernmentForCiv(civ)).toBe('monarchy');
   });
 
-  it('does NOT pick democracy when the civ is tax-constrained (military)', () => {
-    const civ = empireCiv(0, ['monarchy', 'republic', 'democracy'], { military: 10 });
+  it('goes straight to communism as soon as the tech is there', () => {
+    // Every rung unlocked, a tax-constrained military civ: the score would
+    // rather keep Monarchy, but communism is the destination.
+    const civ = empireCiv(0, ['monarchy', 'republic', 'communism', 'democracy'], { military: 10 });
+    const mgr = new GovernmentManager(makeEngine({ civilizations: [civ], cities: threeCities() }));
+    expect(mgr.evaluateGovernmentForCiv(civ)).toBe('communism');
+  });
+
+  it('never picks democracy, even for a science-minded empire', () => {
+    const civ = empireCiv(0, ['monarchy', 'republic', 'communism', 'democracy'], { science: 10 });
     const mgr = new GovernmentManager(makeEngine({ civilizations: [civ], cities: threeCities() }));
     const best = mgr.evaluateGovernmentForCiv(civ);
     expect(best).not.toBe('democracy');
-    expect(['monarchy', 'republic']).toContain(best);
+  });
+
+  it('stops revolting once it is in communism', () => {
+    const civ = empireCiv(0, ['monarchy', 'republic', 'communism', 'democracy'], { science: 8 });
+    civ.government = 'communism';
+    const mgr = new GovernmentManager(makeEngine({ civilizations: [civ], cities: threeCities() }));
+    expect(mgr.evaluateGovernmentForCiv(civ)).toBeNull();
   });
 
   it('keeps the current government when it is already the best', () => {

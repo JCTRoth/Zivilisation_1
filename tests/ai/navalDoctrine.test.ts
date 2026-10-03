@@ -16,6 +16,7 @@ import {
   classifyNavalTarget,
   scoreLandingSite,
   WARSHIP_TARGET_VALUE,
+  isWarshipHull,
   type AvailableShip,
   type NavalDoctrineInput,
 } from '@/game/engine/AI/NavalDoctrine';
@@ -314,5 +315,28 @@ describe('landing-site scoring', () => {
     const open = scoreLandingSite({ ferryDistance: 3, landingForce: 60, beachDefence: 0 });
     const held = scoreLandingSite({ ferryDistance: 3, landingForce: 60, beachDefence: 10 });
     expect(open.score).toBeGreaterThan(held.score);
+  });
+});
+
+describe('isWarshipHull: what counts as an escort', () => {
+  it('counts a hull that can sink things', () => {
+    expect(isWarshipHull(BATTLESHIP)).toBe(true);
+    expect(isWarshipHull(TRIREME)).toBe(true);
+  });
+
+  it('does not count a ferry, which carries troops but fights nothing', () => {
+    expect(isWarshipHull({ attack: 4, transportCapacity: 2 })).toBe(false);
+  });
+
+  it('does not count a fisher boat, which is naval and harmless', () => {
+    // A Fisher Boat is `naval: true` with attack 0 and no capacity, so counting
+    // hulls by "naval and not a transport" made a civ's whole fishing fleet
+    // satisfy its warship quota and stopped it buying escorts.
+    expect(isWarshipHull({ attack: 0, transportCapacity: 0 })).toBe(false);
+  });
+
+  it('counts an unarmed hull with no stats as nothing', () => {
+    expect(isWarshipHull(undefined)).toBe(false);
+    expect(isWarshipHull({})).toBe(false);
   });
 });

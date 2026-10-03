@@ -79,7 +79,10 @@ export class UnitTurnQueue {
   getCurrentUnit(civilizationId: number): Unit | null {
     const unitId = this.currentUnitId.get(civilizationId);
     if (!unitId) return null;
-    return this.gameEngine.units.find((u: Unit) => u.id === unitId) || null;
+    const unit = this.gameEngine.units.find((u: Unit) => u.id === unitId);
+    // A corpse must never be the unit a player is asked to move.
+    if (!unit || unit.isDefeated) return null;
+    return unit;
   }
 
   /**
@@ -93,7 +96,37 @@ export class UnitTurnQueue {
    * Get the queue for a player
    */
   getQueue(civilizationId: number): string[] {
+    this.pruneDefeatedUnits(civilizationId);
     return this.playerQueues.get(civilizationId) || [];
+  }
+
+  /**
+   * Drop every defeated unit out of this civ's queue.
+   *
+   * A unit can die mid-turn — a raider kills a defender while the AI is still
+   * moving its army, an attacker falls to a counter-strike — and its corpse
+   * removal is deliberately delayed so the death animation can play. The queue,
+   * by contrast, has to be true immediately: a dead unit holding a slot is
+   * offered a turn it cannot take, and the queue never drains. Repairing it on
+   * read means every consumer sees the truth, whoever killed the unit.
+   *
+   * Does not advance to the next unit: the queue's own stepping decides when the
+   * turn moves on, and this only removes entries that must not be there.
+   */
+  private pruneDefeatedUnits(civilizationId: number): void {
+    const queue = this.playerQueues.get(civilizationId);
+    if (!queue || queue.length === 0) return;
+    const before = queue.length;
+    for (let i = queue.length - 1; i >= 0; i--) {
+      const unit = this.gameEngine.units.find((u) => u.id === queue[i]);
+      if (!unit || unit.isDefeated) queue.splice(i, 1);
+    }
+    if (queue.length === before) return;
+    const currentId = this.currentUnitId.get(civilizationId);
+    if (currentId && !queue.includes(currentId)) {
+      this.currentUnitId.set(civilizationId, null);
+    }
+    debugLog(`[UnitTurnQueue] Pruned ${before - queue.length} defeated unit(s) from queue for civ ${civilizationId}`);
   }
 
   /**
@@ -115,6 +148,7 @@ export class UnitTurnQueue {
    * Called when the current unit is done (moved, skipped, destroyed).
    */
   nextUnit(civilizationId: number): Unit | null {
+    this.pruneDefeatedUnits(civilizationId);
     const queue = this.playerQueues.get(civilizationId);
     if (!queue || queue.length === 0) {
       this.currentUnitId.set(civilizationId, null);

@@ -26,7 +26,7 @@ import { fishingRelevanceForCiv } from './FisherEconomics';
 import { serializeCities } from '../../utils/CitySnapshots';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { BUILDING_TYPES } from '@/data/BuildingConstants';
-import { citizenFoodDemand, type ProcessTurnResult } from './EconomicManager';
+import { CITIZEN_FOOD_DEMAND_PER_CITIZEN, type ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 import { awaitPendingAnimations } from '../rendering/GlideAnimation';
@@ -1054,15 +1054,16 @@ export class TurnManager {
   private processCityGrowth(city: City, inDisorder: boolean = false): void {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
 
-    // Centralized food math: citizens consume `citizenFoodDemand(population)`
-    // each turn (2 to start with, +0.2 per head per size above 5) and owned
-    // settlers consume one (two under Republic/Democracy). AI city management
-    // uses the same helper so it can never mis-plan famine prevention, and the
-    // fallback below charges the same rate rather than a hard-coded 2.
+    // Centralized food math: every citizen consumes a flat
+    // CITIZEN_FOOD_DEMAND_PER_CITIZEN food (Civ 1's 2, at any city size) and
+    // owned settlers consume one (two under Republic/Democracy). AI city
+    // management uses the same helper so it can never mis-plan famine
+    // prevention, and the fallback below charges the same shared rate rather
+    // than re-deriving one.
     const balance = this.gameEngine.economicManager?.cityFoodBalance(city, civ);
     const netFood = balance?.surplus
       ?? ((city.yields?.food ?? 0)
-        - (city.population ?? 1) * citizenFoodDemand(city.population ?? 1));
+        - (city.population ?? 1) * CITIZEN_FOOD_DEMAND_PER_CITIZEN);
     city.foodStored = (city.foodStored ?? 0) + netFood;
 
     // Growth threshold: (population + 1) × 10 — Civ1: size-1 needs 20 food,

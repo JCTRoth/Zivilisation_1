@@ -8,7 +8,7 @@ import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { TERRAIN_RESOURCES, TERRAIN_TYPES } from '@/data/TerrainConstants';
-import { FISHER_BOAT_STORAGE, fisherFoodPerFish } from '@/data/UnitConstants';
+import { FISHER_BOAT_STORAGE, fisherFoodPerFish, UNIT_TYPES } from '@/data/UnitConstants';
 import {
   BARBARIAN_CIV_ID,
   VILLAGE_OUTCOME,
@@ -52,6 +52,14 @@ const BRIDGE_BUILDING_TECH = 'engineering';
 
 /** Max permanent trade routes a city can hold (Civ1). */
 export const MAX_TRADE_ROUTES = 3;
+
+/**
+ * Blast radius of a nuclear weapon, in Chebyshev tiles from the epicentre.
+ * Two covers a city plus the field stack defending it — a nuke is a strategic
+ * weapon (a city halved, its garrison gone), not a very strong artillery
+ * shell, and not a front-wide wipe either.
+ */
+export const NUCLEAR_BLAST_RADIUS = 2;
 
 
 /**
@@ -146,6 +154,9 @@ export default class GameEngine {
   // Static references for TurnManager to access
   static UNIT_PROPS = UNIT_PROPS;
   static TECHNOLOGIES = TECHNOLOGIES;
+
+  /** How far, in orthogonal steps, fresh water may be reached to irrigate a tile. */
+  private static readonly IRRIGATION_WATER_REACH = 5;
   
   storeActions: GameActions | null;
   squareGrid: SquareGrid | null;
@@ -1961,6 +1972,24 @@ export default class GameEngine {
    * carries a landing tile (to unload a settler onto) and an adjacent ocean
    * tile (for the ferry to wait on), sorted nearest-first to the civ's cities.
    */
+  /**
+   * Landmasses another civ has a live colony mission pointed at.
+   *
+   * A colony mission is a claim: a settler is walking to the coast and a hull
+   * is being sent for it. Two civs may not both hold that claim, or their
+   * settlers land on the same beach and their ferries crowd one anchorage.
+   */
+  private landmassesClaimedByRivals(civId: number): Set<number> {
+    const claimed = new Set<number>();
+    for (const civ of this.civilizations ?? []) {
+      if (civ.id === civId) continue;
+      const mission = this.getPlayerStorage(civ.id)?.turnData?.colonyMission as
+        { targetLandmassId?: number } | undefined;
+      if (typeof mission?.targetLandmassId === 'number') claimed.add(mission.targetLandmassId);
+    }
+    return claimed;
+  }
+
   getColonizableIslands(
     civId: number,
     maxTiles: number = SMALL_ISLAND_MAX_TILES,
@@ -1975,9 +2004,17 @@ export default class GameEngine {
     const ids = this.computeLandmassIds();
     const { width, height } = this.map;
     const ownCities = this.cities.filter((c: City) => c.civilizationId === civId);
-    const occupiedLandmasses = new Set(
-      this.cities.map((c: City) => this.getLandmassId(c.col, c.row)).filter((id) => id >= 0),
+const occupiedLandmasses = new Set(
+      this.cities.map((c) => this.getLandmassId(c.col, c.row)).filter((id) => id >= 0),
     );
+    // An island another civ is already ferrying a settler to is not available.
+    // Without this every civ took the same first island — the list is sorted by
+    // distance to the civ's OWN city, so on a crowded archipelago three civs
+    // claim one rock and all their ferries converge on the same few water tiles
+    // around it, block each other there, and go nowhere.
+    for (const claimedId of this.landmassesClaimedByRivals(civId)) {
+      occupiedLandmasses.add(claimedId);
+    }
 
     const best = new Map<number, {
       landmassId: number;
@@ -3313,15 +3350,20 @@ export default class GameEngine {
     const targetTerrain = this.getTerrainKey(targetTile);
     const isTargetWater = this.isWaterTerrain(targetTile);
     const isUnitNaval = !!(UNIT_PROPS[unit.type]?.naval || unit.isNaval || (unit as { naval?: boolean }).naval);
+    // Air units fly over everything: water, lakes, wide rivers and impassable
+    // ground are GROUND problems. Without this a Nuclear could never cross an
+    // ocean to its target and a Bomber could never reach another continent,
+    // even though the rules text has always said they may.
+    const isUnitAir = UNIT_PROPS[unit.type]?.type === 'air';
 
     if (unit.type === 'settler' && isTargetWater) {
       return false;
     }
-    if (isTargetWater && !isUnitNaval) {
+    if (isTargetWater && !isUnitNaval && !isUnitAir) {
       console.log(`[canUnitMoveTo] Target tile at (${targetCol}, ${targetRow}) is water and not passable for land unit ${unit.type}.`);
       return false;
     }
-    if (this.isLakeTerrain(targetTile)) {
+    if (!isUnitAir && this.isLakeTerrain(targetTile)) {
       console.log(`[canUnitMoveTo] Target tile at (${targetCol}, ${targetRow}) is a lake — never passable.`);
       return false;
     }
@@ -3331,14 +3373,14 @@ export default class GameEngine {
     }
     // Ocean is "passable: false" because it is a barrier for LAND units;
     // ships may always enter it (land-on-water was rejected above).
-    if (TERRAIN_PROPS[targetTerrain]?.passable === false && !isUnitNaval) {
+    if (TERRAIN_PROPS[targetTerrain]?.passable === false && !isUnitNaval && !isUnitAir) {
       console.log(`[canUnitMoveTo] Target tile at (${targetCol}, ${targetRow}) is not passable.`);
       return false;
     }
 
     // River rule (RiverRules): land units may only enter 1-tile-wide river
     // sections. A 2+ wide river tile is a barrier from every direction.
-    if (!isUnitNaval && this.isWideRiver(targetCol, targetRow)) {
+    if (!isUnitNaval && !isUnitAir && this.isWideRiver(targetCol, targetRow)) {
       console.log(`[canUnitMoveTo] Wide river at (${targetCol}, ${targetRow}) — crossing blocked.`);
       return false;
     }
@@ -3522,6 +3564,21 @@ export default class GameEngine {
       targetUnit = null;
     }
     if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
+      // A nuclear weapon is FIRED, not marched: moving one onto hostile ground
+      // detonates it over everything there instead of resolving a 1v1 round
+      // that its 0 defense would lose.
+      if (unit.type === UNIT_TYPES.NUCLEAR) {
+        const struck = this.detonateNuclear(unitId, targetCol, targetRow);
+        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(unitId);
+        if (this.activePlayer === unit.civilizationId) {
+          this.checkAndEndTurnIfNoMoves('nuclear-strike');
+        }
+        return {
+          success: struck,
+          reason: struck ? 'nuclear_strike' : 'nuclear_no_target',
+          combat: true,
+        };
+      }
       // Combat. combatUnit auto-declares war at its start, so we must NOT gate
       // on 'not_at_war' here — that pre-check made UI attacks impossible while
       // the civilizations were still at peace.
@@ -3551,6 +3608,20 @@ export default class GameEngine {
     // consumed); they never attack or capture.
     const targetCity = this.getCityAt(targetCol, targetRow);
     if (targetCity && targetCity.civilizationId !== unit.civilizationId && unit.type !== 'caravan') {
+      // A nuclear weapon fired at a city detonates over it instead of
+      // assaulting it like a unit that has to walk in through the gates.
+      if (unit.type === UNIT_TYPES.NUCLEAR) {
+        const struck = this.detonateNuclear(unitId, targetCol, targetRow);
+        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(unitId);
+        if (this.activePlayer === unit.civilizationId) {
+          this.checkAndEndTurnIfNoMoves('nuclear-strike');
+        }
+        return {
+          success: struck,
+          reason: struck ? 'nuclear_strike' : 'nuclear_no_target',
+          combat: true,
+        };
+      }
       // Civilian units (settlers, workers, diplomats, caravans) cannot
       // attack or capture cities. Block the move — otherwise a wandering
       // settler rolls a 50/50 capture against a size-1 city (resolveCityCombat
@@ -3921,8 +3992,11 @@ export default class GameEngine {
           // non-settler unit finding a village never founds a city, so re-roll
           // it into one of the other outcomes.
           if (String(unit.type) !== 'settler') continue;
-          // Re-roll when on or adjacent to an existing city.
+          // Re-roll when on or adjacent to an existing city, or when the tile
+          // would break the founding rule — a hut must not become the way an
+          // AI sneaks a city into its own city's radius.
           if (this.isTileAdjacentToCity(unit.col, unit.row)) continue;
+          if (!this.canPlaceCityAt(unit.col, unit.row, unit.civilizationId)) continue;
           const city = this.foundTribeCity(unit);
           this.emitVillageResult(unit, { outcome, cityName: city?.name });
           return;
@@ -4268,6 +4342,130 @@ export default class GameEngine {
   }
 
   /**
+   * Detonate a nuclear weapon over (targetCol, targetRow).
+   *
+   * A nuke is NOT a combat round: it is a one-shot area weapon. Everything
+   * FOREIGN inside the blast dies, every foreign city in it is halved and
+   * stripped of its walls, and the warhead is consumed. Own units are spared,
+   * so the weapon can be dropped on a city a besieging army stands next to
+   * without friendly fire making it a liability.
+   *
+   * Returns true only when a warhead was actually spent, so callers (the AI's
+   * per-unit loop, `moveUnit`) can tell a strike from a rejected order.
+   */
+  detonateNuclear(unitId: string, targetCol: number, targetRow: number): boolean {
+    const unit = this.units.find((u) => u.id === unitId);
+    if (!unit || unit.isDefeated === true) return false;
+    if (unit.type !== UNIT_TYPES.NUCLEAR) return false;
+    if ((unit.movesRemaining ?? 0) <= 0) return false;
+    const grid = this.squareGrid;
+    if (!grid?.isValidSquare(targetCol, targetRow)) return false;
+
+    const inBlast = (col: number, row: number) =>
+      grid.chebyshevDistance(col, row, targetCol, targetRow) <= NUCLEAR_BLAST_RADIUS;
+
+    // Something foreign has to be under the blast: an enemy unit or an enemy
+    // city. Nuking empty ground would spend the only warhead the civ owns.
+    const targetCity = this.cities.find(
+      (c) => c.civilizationId !== unit.civilizationId && inBlast(c.col, c.row),
+    );
+    const targetUnit = this.units.find(
+      (u) => !u.isDefeated && u.civilizationId !== unit.civilizationId && inBlast(u.col, u.row),
+    );
+    if (!targetCity && !targetUnit) return false;
+    const targetCivId = (targetCity ?? targetUnit)!.civilizationId;
+
+    // Firing is an act of war, exactly like walking into the enemy — so the
+    // declaration (and its log/toast) happens even on a surprise first strike.
+    if (this.diplomacyManager && unit.civilizationId >= 0 && targetCivId >= 0) {
+      const status = this.diplomacyManager.getStatus(unit.civilizationId, targetCivId);
+      if (status !== 'war') {
+        this.diplomacyManager.declareWar(unit.civilizationId, targetCivId);
+        this.onStateChange?.('WAR_DECLARED', {
+          aggressorId: unit.civilizationId,
+          targetId: targetCivId,
+        });
+      }
+    }
+
+    // 1. Everything foreign inside the blast dies. Embarked troops share their
+    //    hull's tile, so a loaded ferry and its cargo go down together.
+    const killed = this.units.filter(
+      (u) =>
+        u.id !== unit.id &&
+        !u.isDefeated &&
+        u.civilizationId !== unit.civilizationId &&
+        inBlast(u.col, u.row),
+    );
+
+    // 2. Cities in the blast lose half their population and their walls. A
+    //    city driven to zero is razed outright.
+    const razed: City[] = [];
+    const damaged: Array<{ city: City; before: number; after: number }> = [];
+    for (const city of this.cities) {
+      if (city.civilizationId === unit.civilizationId) continue;
+      if (!inBlast(city.col, city.row)) continue;
+      const before = Math.max(1, city.population ?? 1);
+      city.buildings = (city.buildings ?? []).filter((b) => b !== 'city_walls' && b !== 'walls');
+      const after = Math.floor(before / 2);
+      if (after <= 0) {
+        razed.push(city);
+        continue;
+      }
+      city.population = after;
+      this.economicManager?.fitCityToPopulation(city);
+      damaged.push({ city, before, after });
+    }
+
+    // 3. Apply: announce, then kill, then raze.
+    this.onStateChange?.('NUCLEAR_STRIKE', {
+      fromCivId: unit.civilizationId,
+      col: targetCol,
+      row: targetRow,
+      radius: NUCLEAR_BLAST_RADIUS,
+      destroyedUnitIds: killed.map((u) => u.id),
+      razedCityIds: razed.map((c) => c.id),
+      damagedCities: damaged.map((d) => ({ cityId: d.city.id, before: d.before, after: d.after })),
+    });
+
+    for (const dead of killed) {
+      this.unitTurnQueue?.removeUnit?.(dead.id);
+      if (dead.cargoUnitIds?.length) this.destroyCargoOf(dead);
+      this.onStateChange?.('UNIT_DEFEATED', { unit: dead });
+    }
+    if (killed.length > 0) {
+      this.units = this.units.filter((u) => !killed.includes(u));
+    }
+
+    for (const city of razed) {
+      const oldCiv = city.civilizationId;
+      const wasCapital = city.isCapital === true;
+      this.destroyGarrisonOnCapture(city, oldCiv);
+      this.cities = this.cities.filter((c) => c.id !== city.id);
+      this.markCityLost(oldCiv, unit.civilizationId);
+      if (wasCapital) this.governmentManager?.ensureCapital(oldCiv);
+      this.onStateChange?.('CITY_DESTROYED', { city, attacker: unit });
+    }
+
+    this.log('nuclear', `☢ Nuclear strike on ${targetCol},${targetRow} by ${this.civilizations?.[unit.civilizationId]?.name ?? unit.civilizationId}`, {
+      civilizationId: unit.civilizationId,
+      action: 'nuclear_strike',
+      col: targetCol,
+      row: targetRow,
+      unitsKilled: killed.length,
+      citiesRazed: razed.length,
+      citiesDamaged: damaged.length,
+    });
+
+    // 4. The warhead is spent.
+    this.units = this.units.filter((u) => u.id !== unit.id);
+    this.unitTurnQueue?.removeUnit(unit.id);
+    this.onStateChange?.('UNIT_REMOVED', { unit });
+    this.checkAndEndTurnIfNoMoves('nuclear-strike');
+    return true;
+  }
+
+  /**
    * Combat between units
    */
   combatUnit(attacker: Unit, defender: Unit) {
@@ -4517,6 +4715,11 @@ export default class GameEngine {
     city: City,
     options: { counterDamage?: boolean } = {},
   ): CityAssaultOutcome {
+    // Remember the assault: the AI uses this as its "ongoing attacks on the
+    // city" signal and keeps its settlers off this city's fields while the
+    // fight is still running.
+    city.lastAttackedRound = this.roundManager?.getRoundNumber?.() ?? 0;
+
     // Find the garrison: living military units standing on the city tile.
     // Units inside a city die one by one — the garrison is fought
     // unit-by-unit, not all at once. The city only falls when the garrison
@@ -4754,6 +4957,33 @@ export default class GameEngine {
   }
 
   /**
+   * Whether a NEW city may be founded at (col, row) by `civilizationId`.
+   *
+   * ABSOLUTE RULE: an AI civ never founds a city inside the radius of one of
+   * its OWN cities. A city works a 5×5 area, so `MIN_CITY_CENTER_DISTANCE`
+   * (Chebyshev 5) is exactly the spacing that stops two of our own cities
+   * competing for the same tiles — anything closer wastes the settler. The
+   * check runs against every city (own and foreign), so the own-city half is
+   * implied, and it does NOT read the `isAI` flag: a civ that is not the
+   * human player obeys it whatever else it is marked as, so the rule cannot
+   * be lost by a missing flag.
+   *
+   * The human player is exempt, exactly as before — founding next door to
+   * your own city is the player's choice to make.
+   */
+  canPlaceCityAt(col: number, row: number, civilizationId: number): boolean {
+    const civ = this.civilizations?.[civilizationId];
+    const civIsAI = civ ? civ.isHuman !== true : true;
+    if (!civIsAI) return true;
+    for (const city of this.cities) {
+      if (Math.max(Math.abs(col - city.col), Math.abs(row - city.row)) < MIN_CITY_CENTER_DISTANCE) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Found a city with settler
    */
   foundCityWithSettler(settlerId: string) {
@@ -4797,16 +5027,10 @@ export default class GameEngine {
       return true;
     }
 
-    // Civ1 minimum city spacing (MIN_CITY_CENTER_DISTANCE) is enforced for AI
-    // civilizations so they spread sensibly; the human player may found a
-    // city directly adjacent to another one.
-    const civIsAI = !!this.civilizations?.[settler.civilizationId]?.isAI;
-    if (civIsAI) {
-      for (const city of this.cities) {
-        if (Math.max(Math.abs(settler.col - city.col), Math.abs(settler.row - city.row)) < MIN_CITY_CENTER_DISTANCE) {
-          return false;
-        }
-      }
+    // Civ1 minimum city spacing (MIN_CITY_CENTER_DISTANCE) — see
+    // `canPlaceCityAt`, which owns the rule.
+    if (!this.canPlaceCityAt(settler.col, settler.row, settler.civilizationId)) {
+      return false;
     }
 
     // Generate city name — sequential from the civ's city-name list (Civ1),
@@ -4893,16 +5117,9 @@ export default class GameEngine {
     const tile = this.getTileAt(settler.col, settler.row);
     if (!tile || tile.type === Constants.TERRAIN.OCEAN) return false;
 
-    // Minimum city spacing applies to AI civilizations only; the human player
-    // may found a city directly adjacent to another one.
-    const civIsAI = !!this.civilizations?.[settler.civilizationId]?.isAI;
-    if (civIsAI) {
-      for (const city of this.cities) {
-        if (Math.max(Math.abs(settler.col - city.col), Math.abs(settler.row - city.row)) < MIN_CITY_CENTER_DISTANCE) {
-          return false;
-        }
-      }
-    }
+    // Minimum city spacing — the same absolute rule `foundCityWithSettler`
+    // enforces, exposed so the context menu can grey out an illegal founding.
+    if (!this.canPlaceCityAt(settler.col, settler.row, settler.civilizationId)) return false;
 
     return true;
   }
@@ -5909,28 +6126,72 @@ export default class GameEngine {
   }
 
   /**
-   * Civ1 irrigation rule: a tile can only be irrigated when it is horizontally
-   * or vertically adjacent to fresh water (a river or lake) or to another tile
-   * that has already been irrigated.
+   * Irrigation supply rule.
+   *
+   * Civ 1 only irrigated a tile touching fresh water, which left whole cities
+   * short of farmland whenever the river ran past a corner of the map. A tile
+   * may now be irrigated when fresh water (a river or lake) is within
+   * {@link IRRIGATION_WATER_REACH} orthogonal steps, i.e. a canal can be dug
+   * out to it. An already-irrigated tile counts as a supply point too, so a
+   * canal may be extended from an existing one.
+   *
+   * Ocean is neither a supply nor a step: salt water does not irrigate and a
+   * worker cannot dig through it.
    */
   private hasFreshWaterAdjacency(col: number, row: number): boolean {
+    const grid = this.squareGrid;
+    if (!grid) return false;
+
     const directions = [
       { col: 0, row: -1 },
       { col: 1, row: 0 },
       { col: 0, row: 1 },
       { col: -1, row: 0 },
     ];
-    for (const dir of directions) {
-      const nc = col + dir.col;
-      const nr = row + dir.row;
-      if (!this.squareGrid?.isValidSquare(nc, nr)) continue;
-      const tile = this.getTileAt(nc, nr);
-      if (!tile) continue;
-      const terrain = tile.terrain || tile.type || '';
-      if (terrain === TERRAIN_TYPES.RIVER || terrain === TERRAIN_TYPES.LAKE) return true;
-      if (tile.improvement === IMPROVEMENT_TYPES.IRRIGATION) return true;
+
+    const seen = new Set<string>([`${col},${row}`]);
+    let frontier = [{ col, row }];
+
+    for (let depth = 0; depth <= GameEngine.IRRIGATION_WATER_REACH; depth++) {
+      const next: Array<{ col: number; row: number }> = [];
+      for (const node of frontier) {
+        // The tile being irrigated is never its own supply point.
+        if (depth > 0) {
+          const tile = this.getTileAt(node.col, node.row);
+          if (tile) {
+            const terrain = tile.terrain || tile.type || '';
+            if (terrain === TERRAIN_TYPES.RIVER || terrain === TERRAIN_TYPES.LAKE) return true;
+            if (tile.improvement === IMPROVEMENT_TYPES.IRRIGATION) return true;
+          }
+        }
+        if (depth === GameEngine.IRRIGATION_WATER_REACH) continue;
+        for (const dir of directions) {
+          const nc = node.col + dir.col;
+          const nr = node.row + dir.row;
+          if (!grid.isValidSquare(nc, nr)) continue;
+          const key = `${nc},${nr}`;
+          if (seen.has(key)) continue;
+          const ahead = this.getTileAt(nc, nr);
+          if (!ahead) continue;
+          const aheadTerrain = ahead.terrain || ahead.type || '';
+          if (aheadTerrain === TERRAIN_TYPES.OCEAN || aheadTerrain === 'sea') continue;
+          seen.add(key);
+          next.push({ col: nc, row: nr });
+        }
+      }
+      frontier = next;
+      if (frontier.length === 0) break;
     }
     return false;
+  }
+
+  /**
+   * Whether irrigation could be built on this tile at all — fresh water within
+   * {@link IRRIGATION_WATER_REACH}. Exposed so the AI can ask the build rule
+   * itself instead of guessing and then being refused by `canBuildImprovement`.
+   */
+  canSupplyIrrigation(col: number, row: number): boolean {
+    return this.hasFreshWaterAdjacency(col, row);
   }
 
   /**
@@ -6180,12 +6441,19 @@ export default class GameEngine {
    * Rush production in a city by spending gold
    */
   rushCityProduction(cityId: string): boolean {
-    const civ = this.civilizations[this.activePlayer];
-    if (!civ?.isHuman) return false;
-
     const city = this.cities.find(c => c.id === cityId);
-    if (!city || city.civilizationId !== this.activePlayer) {
+    if (!city) {
       console.warn('[GameEngine] rushCityProduction: City not found or not owned');
+      return false;
+    }
+
+    // The city pays for its own rush. Reading the civ from `activePlayer` made
+    // this unreachable for anyone but the human: the AI's own production pass
+    // calls it to spend its treasury, and every call returned false, so AI gold
+    // could never buy the shields it was saving for.
+    const civ = this.civilizations[city.civilizationId];
+    if (!civ) {
+      console.warn('[GameEngine] rushCityProduction: No civ owns that city');
       return false;
     }
 
@@ -6235,13 +6503,31 @@ export default class GameEngine {
    * building cost.
    */
   sellBuilding(cityId: string, buildingType: string, options?: { force?: boolean }): { success: boolean; refund?: number; reason?: string } {
-    const civ = this.civilizations[this.activePlayer];
-    if (!civ) return { success: false, reason: 'No active player' };
-    if (!civ.isHuman && !options?.force) return { success: false, reason: 'Not a human player' };
-
+    // Whose sale is this? The city's OWNER — not `activePlayer`.
+    //
+    // This used to resolve the civ from `activePlayer` and then refuse any city
+    // that did not belong to it, so an AI civ could only ever liquidate a
+    // building while it happened to be the active player: never in a human game,
+    // and one civ at a time in an AI game. The refund was credited to
+    // `activePlayer` too, so even a sale that got past the checks would have paid
+    // the wrong civilisation. The visible symptom was an AI empire sitting on
+    // zero gold with a dozen buildings per city — its entire maintenance bill
+    // unpaid and no way to raise a penny — because every attempted sale came
+    // back "City not found or not owned" and the audit silently did nothing.
     const city = this.cities.find(c => c.id === cityId);
-    if (!city || city.civilizationId !== this.activePlayer) {
-      return { success: false, reason: 'City not found or not owned' };
+    if (!city) return { success: false, reason: 'City not found' };
+
+    const civ = this.civilizations[city.civilizationId];
+    if (!civ) return { success: false, reason: 'No civ owns that city' };
+
+    // `force` is the AI's own path: it may liquidate its own city's buildings
+    // without being the active player. Without it, a sale is a player action and
+    // stays restricted to the human's own active city.
+    if (!options?.force) {
+      if (!civ.isHuman) return { success: false, reason: 'Not a human player' };
+      if (city.civilizationId !== this.activePlayer) {
+        return { success: false, reason: 'City not found or not owned' };
+      }
     }
 
     if (city.soldBuildingThisTurn) {

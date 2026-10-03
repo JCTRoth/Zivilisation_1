@@ -53,13 +53,44 @@ export class GovernmentManager {
     return !!civ && civ.government === 'anarchy' && (civ.revolutionTurns ?? 0) > 0;
   }
 
+  /**
+   * Governments the AI will rule under, in the order it climbs to them.
+   *
+   * **Republic is deliberately absent.** The AI skips it and goes
+   * Despotism → Monarchy → Communism, stopping there: Communism is the target,
+   * not a waypoint. Two reasons it does not want the middle rung at all:
+   *
+   *  - Revolution costs ANARCHY_TURNS turns of zeroed tax, science and luxury
+   *    rates, and Republic sits on the ladder between the start and the target,
+   *    so adopting it means paying for a second revolution to get past it.
+   *  - With tolerance gone from the game, a government's happiness bonus is the
+   *    only thing keeping a crowded city content. Republic grants 2 and
+   *    Communism 1, so Republic is the better place to stop — and stopping is
+   *    exactly what the AI must not do, because it would never reach Communism
+   *    at all.
+   *
+   * Anarchy is not on the ladder either: it is the punishment for switching,
+   * never a destination.
+   */
+  static readonly AI_GOVERNMENT_LADDER: readonly string[] = [
+    'despotism',
+    'monarchy',
+    'communism',
+  ];
+
+  /** Where the ladder ends: the government the AI is always heading for. */
+  static readonly AI_GOVERNMENT_GOAL = 'communism';
+
   /** The government a civ should adopt next, or null if it has the best one. */
   bestGovernmentForCiv(civ: Civilization): string | null {
     const available = this.getAvailableGovernments(civ);
     if (available.length <= 1) return null;
     const current = civ?.government ?? 'despotism';
-    const preference = ['despotism', 'monarchy', 'republic', 'communism', 'democracy'];
+    const preference = GovernmentManager.AI_GOVERNMENT_LADDER;
     const currentRank = preference.indexOf(current);
+    // A civ sitting on a government the AI no longer wants (Democracy, or a
+    // Republic it inherited from a captured empire) has rank -1: any rung above
+    // it is an improvement, so the AI walks back down towards Communism.
     let best = current;
     let bestRank = currentRank;
     for (const gov of available) {
@@ -111,12 +142,11 @@ export class GovernmentManager {
     // A commerce penalty hurts in proportion to the economy's size.
     score -= candidate.commercePenalty * (10 + totalPop * 0.6 + economy * 1.2);
 
-    // Happiness bonus keeps a large city network content.
-    score += (candidate.happinessBonus - current.happinessBonus) * (5 + numCities * 2);
-    // Tolerance lets large populations stay content under the crowding rule.
-    score +=
-      (candidate.tolerance - current.tolerance) *
-      (3 + Math.max(0, avgPop - 2) * 2 + totalPop * 0.04);
+    // Happiness bonus keeps a large city network content. With no tolerance left
+    // in the game this is the ONLY thing a government does for a crowded city,
+    // so it carries the weight tolerance used to share.
+    score += (candidate.happinessBonus - current.happinessBonus) *
+      (5 + numCities * 2 + Math.max(0, avgPop - 2) * 3 + totalPop * 0.06);
 
     // A civ that must raise taxes (upkeep / at war / militarist-economist)
     // dislikes a low tax cap (Democracy) or a commerce penalty that cuts gold.
@@ -145,13 +175,47 @@ export class GovernmentManager {
    * happiness pressure, tax need and personality — and only switches when the
    * best candidate is meaningfully better (anarchy costs ~3 dead turns).
    */
+  /**
+   * The government this civ should rule under, judged against its situation.
+   *
+   * The candidates are restricted to {@link AI_GOVERNMENT_LADDER} — this is the
+   * path the AI actually uses, so without the restriction the situational score
+   * is free to pick Republic or Democracy and the ladder means nothing. With
+   * tolerance gone from the game, Republic scores *well* here (it grants 2
+   * happiness and no commerce penalty, against Communism's 1 and −25%), which is
+   * exactly why it has to be excluded by policy rather than left to the maths:
+   * a civ that stops at Republic never reaches Communism at all.
+   *
+   * Within the ladder the score still decides *when* to move. Communism's −25%
+   * commerce penalty is real, so a small civ can reasonably stay in Monarchy; it
+   * grows an empire, and then the corruption saving (0.3 → 0.1) plus the
+   * happiness bonus outweigh the penalty and the AI revolts into Communism.
+   */
   evaluateGovernmentForCiv(civ: Civilization): string | null {
     if (!civ) return null;
-    const available = this.getAvailableGovernments(civ);
+    const available = this.getAvailableGovernments(civ)
+      .filter(gov => GovernmentManager.AI_GOVERNMENT_LADDER.includes(gov));
     if (available.length <= 1) return null;
     const current = civ.government ?? 'despotism';
 
-    const currentScore = this.scoreGovernmentForCiv(civ, current);
+    // Communism is the target, not a comparison. Once the tech is researched the
+    // AI moves, whatever the arithmetic says about the −25% commerce penalty:
+    // leaving it to the score meant a small or poor civ sat in Monarchy for the
+    // rest of the game, and the point of naming a destination is that the civ
+    // heads for it. It is also terminal — the ladder ends there — so this cannot
+    // oscillate.
+    if (current !== GovernmentManager.AI_GOVERNMENT_GOAL
+      && available.includes(GovernmentManager.AI_GOVERNMENT_GOAL)) {
+      return GovernmentManager.AI_GOVERNMENT_GOAL;
+    }
+
+    // A civ ruling under something off the ladder (Democracy, or a Republic
+    // inherited with a captured empire) is scored against the ladder, so the
+    // best available rung beats it.
+    const currentOnLadder = GovernmentManager.AI_GOVERNMENT_LADDER.includes(current);
+    const currentScore = currentOnLadder
+      ? this.scoreGovernmentForCiv(civ, current)
+      : Number.POSITIVE_INFINITY; // always better than an off-ladder government
     let bestGov: string | null = null;
     let bestScore = currentScore;
     for (const gov of available) {

@@ -168,23 +168,32 @@ describe('previewEconomy — projected per-turn numbers', () => {
       expect(preview.net).toBe(0);
     });
 
-    it('pop 3, 0% luxury, no garrison → not in disorder (1 < 2)', () => {
-      const city = makeCity(10, 3);
+    it('pop 2, 0% luxury, no garrison → content on base contentment alone', () => {
+      const city = makeCity(10, 2);
       setCapital(city);
-      // unhappiness = max(0, 3-2) = 1
-      // happiness = 0 + 0 + 0 + 0 + 0 + 2 = 2
-      // 1 > 2 → false → NOT in disorder
+      // No tolerance: unhappiness = population = 2.
+      // happiness = 2 (base contentment). 2 > 2 is false → NOT in disorder.
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
       expect(preview.tax).toBe(20); // 10 × 2 = 20
+    });
+
+    it('pop 3, 0% luxury → disorder, because base contentment is only 2', () => {
+      // The crowd no longer gets a government discount, so a size-3 city with
+      // nothing but base contentment tips into disorder.
+      const city = makeCity(10, 3);
+      setCapital(city);
+      const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
+      expect(preview.tax).toBe(0);
+      expect(preview.science).toBe(0);
     });
 
     it('pop 5, 50% luxury → luxury prevents disorder', () => {
       const city = makeCity(10, 5);
       setCapital(city);
-      // unhappiness = max(0, 5-2) = 3
+      // unhappiness = 5 (one per citizen)
       // cityLuxury = floor(10 × 0.5) = 5
       // happiness = 5 + 0 + 0 + 0 + 0 + 2 = 7
-      // 3 > 7 → false → NOT in disorder
+      // 5 > 7 → false → NOT in disorder
       const preview = econ().previewEconomy(civ(), { tax: 50, science: 0, luxury: 50 });
       expect(preview.tax).toBe(10); // floor(10 × 0.5) × 2 = 10
       expect(preview.luxury).toBe(5);
@@ -207,10 +216,10 @@ describe('previewEconomy — projected per-turn numbers', () => {
           health: 100,
         });
       }
-      // unhappiness = 3
+      // unhappiness = 5 (one per citizen)
       // martialLawBonus = min(3, 4) = 3
       // happiness = 0 + 0 + 3 + 0 + 0 + 2 = 5
-      // 3 > 5 → false → NOT in disorder
+      // 5 > 5 → false → NOT in disorder
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
       expect(preview.tax).toBe(20);
     });

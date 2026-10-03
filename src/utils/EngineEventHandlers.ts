@@ -178,6 +178,9 @@ export class EngineEventRouter {
       case 'UNIT_DISBANDED':
         this.onUnitDisbanded(eventData);
         break;
+      case 'NUCLEAR_STRIKE':
+        this.onNuclearStrike(eventData);
+        break;
       case 'TRADE_ROUTE_ESTABLISHED':
         this.onTradeRouteEstablished(eventData);
         break;
@@ -658,6 +661,31 @@ export class EngineEventRouter {
       unitType: unit.type,
       unitName: unit.name || unit.type,
     });
+  }
+
+  /**
+   * A warhead went off. Units, cities and (when a city was razed) the whole
+   * civ list all moved, so the store is refreshed; the human gets one line
+   * telling them what was hit. Deliberately does NOT move the camera — an AI
+   * strike during its own turn must not yank the player off wherever they are
+   * looking.
+   */
+  private onNuclearStrike(eventData: Record<string, unknown>) {
+    this.actions.updateUnits(this.gameEngine.getAllUnits());
+    this.actions.updateCities(this.gameEngine.getAllCities());
+    this.actions.updateCivilizations(this.gameEngine.civilizations);
+
+    const fromCivId = eventData?.fromCivId as number;
+    const fromCiv = this.gameEngine.civilizations?.[fromCivId];
+    const col = eventData?.col as number;
+    const row = eventData?.row as number;
+    const killed = (eventData?.destroyedUnitIds as string[] | undefined)?.length ?? 0;
+    const razed = (eventData?.razedCityIds as string[] | undefined)?.length ?? 0;
+    notify(
+      'warning',
+      `☢ Nuclear strike on ${col},${row}${fromCiv ? ` by ${fromCiv.name}` : ''} — `
+        + `${killed} unit(s) destroyed${razed > 0 ? `, ${razed} city razed` : ''}`,
+    );
   }
 
   private onTradeRouteEstablished(eventData: Record<string, unknown>) {

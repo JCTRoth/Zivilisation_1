@@ -19,12 +19,20 @@ import { bestFishingGround } from './FisherEconomics';
 import { AIBuildingStrategy } from './AI/AIBuildingStrategy';
 import { buildingOnRebuyCooldown } from './AI/BuildingAnalyzer';
 import {
+  coordinationWeight,
+  countBuildingCopies,
+  evaluateBuildingForCity,
+  DEFENCE_BUILDINGS,
+} from './AI/BuildingCoordinator';
+import {
   navalDoctrine,
   type AvailableShip,
   type NavalDoctrineInput,
   type NavalDoctrineResult,
+  isWarshipHull,
 } from './AI/NavalDoctrine';
 import { AI_RESERVE_TURNS } from './AI/AIEconomicManager';
+import { ABSOLUTE_MIN_GOLD } from './EconomicManager';
 
 /**
  * Hulls the AI will consider, cheapest first. The order only decides *which*
@@ -259,11 +267,53 @@ export class AutoProduction {
 
       let added = 0;
       let guard = 0;
+      const maxBuildingsInQueue = Math.max(1, Math.floor(AUTO_QUEUE_TARGET * 0.25));
       while (added < slots && guard++ < 10) {
         const item = this.determineProductionItem(city, threatAssessment, plannedTypes);
         if (!item) break;
         const itemType = item.itemType || item.type;
         if (!itemType) break;
+
+        const buildingCount = plannedTypes.filter((t: string) =>
+          BUILDING_PROPERTIES[t] || WONDER_PROPERTIES[t],
+        ).length;
+        if (item.type === 'building' && buildingCount >= maxBuildingsInQueue) {
+          const unitItem = this.determineFallbackUnit(city, threatAssessment, plannedTypes);
+          if (unitItem) {
+            const unitResult = this.gameEngine.productionManager.setCityProduction(cityId, unitItem, true);
+            if (!unitResult || unitResult.success === false) break;
+            plannedTypes.push(unitItem.itemType || unitItem.type);
+            added++;
+            continue;
+          }
+          break;
+        }
+
+        if (item.type === 'building') {
+          const alreadyOwned = (city.buildings ?? []).includes(itemType);
+          const alreadyQueued = plannedTypes.includes(itemType);
+          const isDuplicate = alreadyOwned || alreadyQueued;
+          const isWonder = !!WONDER_PROPERTIES[itemType];
+          const wonderAlreadyBuilt = isWonder && this.gameEngine.cities.some(
+            (c: City) => c.civilizationId === city.civilizationId && (c.buildings ?? []).includes(itemType),
+          );
+          if (isDuplicate || wonderAlreadyBuilt) {
+            plannedTypes.push(itemType);
+            continue;
+          }
+          const hasPendingBuilding = plannedTypes.some((t: string) => BUILDING_PROPERTIES[t]);
+          if (hasPendingBuilding && buildingCount >= maxBuildingsInQueue) {
+            const unitItem = this.determineFallbackUnit(city, threatAssessment, plannedTypes);
+            if (unitItem) {
+              const unitResult = this.gameEngine.productionManager.setCityProduction(cityId, unitItem, true);
+              if (!unitResult || unitResult.success === false) break;
+              plannedTypes.push(unitItem.itemType || unitItem.type);
+              added++;
+              continue;
+            }
+            break;
+          }
+        }
 
         // Skip unit items when the civ can't afford to maintain more units.
         // (Fall back to a building so the city still has something to do.)
@@ -645,10 +695,23 @@ export class AutoProduction {
     // Standard behaviour whenever the city is not under imminent threat: a
     // threat-free city keeps the corps even mid-war (the threat branch above
     // already preempts production when a defender is actually needed).
-    const wantsWorks = typeof this.gameEngine.aiManager?.wantsPublicWorks === 'function'
-      && this.gameEngine.aiManager.wantsPublicWorks(city.civilizationId)
+    // A public-works corps is paid for either because the civ-wide improvement
+    // budget still has room, or — the size-6 mandate — because a city has
+    // reached the size where its fields must be irrigated and paved. A city
+    // under direct threat drops the corps: settlers are targets there.
+    const aiMgr = this.gameEngine.aiManager;
+    const worksBudget = typeof aiMgr?.wantsPublicWorks === 'function'
+      && aiMgr.wantsPublicWorks(city.civilizationId);
+    const worksMandate = typeof aiMgr?.hasSettlerWorksMandate === 'function'
+      && aiMgr.hasSettlerWorksMandate(city.civilizationId);
+    const wantsWorks = (worksBudget || worksMandate)
       && !threatAssessment?.needsDefense;
     const settlerTarget = desiredSettlers + (wantsWorks ? 2 : 0);
+    // Economics before the army: a civ that has climbed back to the minimum
+    // reserve but still cannot net a positive gold gets a settler even though
+    // `canAffordAnotherUnit` says no, and gives up the army for now. See
+    // `economyBeforeArmy`.
+    const economyFirst = this.economyBeforeArmy(city, wantsWorks);
     // A city that cannot feed itself must not train settlers (they eat food
     // and consume a citizen). The AI city governor re-assigns workers to food
     // tiles in the same turn; this guard is the production-side half of the
@@ -675,7 +738,7 @@ export class AutoProduction {
     // Deliberately NOT gated on unitCapExhausted: the army-sustainability
     // reserve is stricter than solvency and would freeze expansion on a
     // young civ that can still pay its next unit.
-    const canAffordSettler = this.canAffordAnotherUnit(city.civilizationId);
+    const canAffordSettler = this.canAffordAnotherUnit(city.civilizationId) || economyFirst;
     if (!needsHappiness && canAffordSettler && city.population >= 1 && !starving && !refusesSelfDestruct) {
       const gold = this.gameEngine.civilizations?.[city.civilizationId]?.resources?.gold ?? 0;
       const upkeep = this.gameEngine.economicManager?.totalUpkeep?.(city.civilizationId) ?? 0;
@@ -737,7 +800,10 @@ export class AutoProduction {
       ? AIBuildingStrategy.evaluateBuildings(city, civ, strategy, gameState)
       : [];
     // Never queue the same building twice.
-    const availableBuildingPlans = buildingPlans.filter(
+    const availableBuildingPlans = (civ
+      ? this.coordinatedBuildingPlans(city, civ, buildingPlans)
+      : buildingPlans
+    ).filter(
       (p: BuildingPlan) =>
         !plannedTypes.includes(p.buildingType) &&
         !buildingOnRebuyCooldown(this.gameEngine, city.civilizationId, p.buildingType)
@@ -752,6 +818,21 @@ export class AutoProduction {
     ).length;
 
     const aggressivePosture = this.isAggressivePosture(city.civilizationId);
+
+    // 4-pre-0. Strategic arsenal: once the civ CAN build a warhead and has a
+    //          reason to fire one, a single turn in N is spent on it instead
+    //          of another soldier. Deliberately NOT gated on the army cap:
+    //          the cap exists so the treasury can feed a standing force, and
+    //          one warhead (5 gold/turn) is a strategic asset rather than
+    //          another pair of boots. Only a treasury already in deficit
+    //          holds back — see `shouldBuildNuclear`.
+    if (this.shouldBuildNuclear(city)) {
+      const warhead = this.buildNuclearProduction(city);
+      if (warhead) {
+        debugLog('[AutoProduction] Strategic arsenal — building a nuclear weapon');
+        return warhead;
+      }
+    }
 
     // 4-pre. A war we cannot walk to is a war we have to sail to, so the hulls
     //        come before the soldiers. The aggressive branch below would
@@ -834,7 +915,7 @@ export class AutoProduction {
     //      offensive plan depends on). Without a standing force the bulk
     //      attack can never form and the civ stays purely defensive.
     const AGGRESSIVE_ARMY_MIN = 3;
-    if (!unitCapExhausted && aggressivePosture && this.countOffensiveUnits(city.civilizationId) < AGGRESSIVE_ARMY_MIN) {
+    if (!unitCapExhausted && !economyFirst && aggressivePosture && this.countOffensiveUnits(city.civilizationId) < AGGRESSIVE_ARMY_MIN) {
       debugLog('[AutoProduction] Aggressive posture: building standing army (attacker)');
       return this.buildOffensiveProduction(city);
     }
@@ -916,14 +997,20 @@ export class AutoProduction {
     const defenders = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === city.civilizationId && this.isDefensiveUnitType(u.type)
     ).length + plannedDefensive;
-    // Over the sustainable unit cap: keep the city productive with a building
-    // instead of growing an army the treasury cannot pay for.
-    if (unitCapExhausted) {
+    // Over the sustainable unit cap, or busy fixing the economy first: keep the
+    // city productive with a building instead of growing an army the treasury
+    // cannot pay for. In the second case the city produces nothing at all if no
+    // building is available — that is the point. A settler is already queued for
+    // the works, and a rifleman produced here would be disbanded next turn.
+    if (unitCapExhausted || economyFirst) {
       const fallback = this.determineFallbackBuilding(city, threatAssessment, plannedTypes);
       if (fallback) {
-        debugLog('[AutoProduction] Unit cap reached — building instead of another unit');
+        debugLog(unitCapExhausted
+          ? '[AutoProduction] Unit cap reached — building instead of another unit'
+          : '[AutoProduction] Economy first — building instead of another military unit');
         return fallback;
       }
+      if (economyFirst) return null;
     }
 
     // Composition balance: never let the garrison grow past ~2 per city while
@@ -946,6 +1033,59 @@ export class AutoProduction {
    * so the city keeps producing something useful instead of an unaffordable
    * army. Returns null when no sensible building is available.
    */
+  /**
+   * Apply the civ-level building policy to a city's candidate list.
+   *
+   * `AIBuildingStrategy` answers "would this city like this building?" and has
+   * no notion of how many the empire already owns — which is how one city ends
+   * up holding six Marketplaces and a Temple per citizen, each a fresh exciting
+   * purchase and each worth nothing. This is the coordination layer on top:
+   *
+   *  - a type the city (or the empire) has no room for is dropped outright;
+   *  - a type another own city has fewer of is demoted, so empires level their
+   *    cities up rather than stacking one;
+   *  - a building that measurably pays nothing *here* is demoted hard rather
+   *    than deleted, so it can still be built when a city genuinely has nothing
+   *    better to do. Most of the building table's declared effects — production,
+   *    culture, health, growthBonus, corruptionReduction, unitProduction — are
+   *    not read by the engine at all, and this is what stops the AI paying 200
+   *    shields and 3 gold a turn for a Factory that does nothing.
+   */
+  private coordinatedBuildingPlans(
+    city: City,
+    civ: Civilization,
+    plans: BuildingPlan[],
+  ): BuildingPlan[] {
+    const scored: Array<{ plan: BuildingPlan; priority: number; why: string }> = [];
+    for (const plan of plans) {
+      const spread = coordinationWeight(this.gameEngine, civ, city, plan.buildingType);
+      if (spread.weight <= 0) {
+        debugLog(`[AutoProduction] ${city.name}: skipping ${plan.buildingType} — ${spread.reason}`);
+        continue;
+      }
+      const { civCopies, cityCopies } = countBuildingCopies(
+        this.gameEngine, civ, city, plan.buildingType,
+      );
+      const value = evaluateBuildingForCity(
+        this.gameEngine, civ, city, plan.buildingType, civCopies, cityCopies,
+      );
+      // A wall's value is not in the city's output, so the measurement must not
+      // be allowed to vote on it — see DEFENCE_BUILDINGS.
+      const demote = !DEFENCE_BUILDINGS.has(plan.buildingType) && !value.worthBuilding;
+      const factor = demote ? 0.2 * spread.weight : spread.weight;
+      const why = spread.reason ? `${value.reason}; ${spread.reason}` : value.reason;
+      scored.push({ plan, priority: plan.priority * factor, why });
+    }
+    scored.sort((a, b) => b.priority - a.priority);
+    for (const entry of scored) {
+      debugLog(
+        `[AutoProduction] ${city.name}: ${entry.plan.buildingType} priority `
+        + `${entry.plan.priority.toFixed(1)} → ${entry.priority.toFixed(1)} (${entry.why})`,
+      );
+    }
+    return scored.map(entry => entry.plan);
+  }
+
   private determineFallbackBuilding(
     city: City,
     threatAssessment?: CityThreatAssessment | null,
@@ -959,7 +1099,7 @@ export class AutoProduction {
     const strategy: StrategyProfile = this.getStrategyForCiv(city.civilizationId);
 
     const buildingPlans = AIBuildingStrategy.evaluateBuildings(city, civ, strategy, gameState);
-    const available = buildingPlans.filter(
+    const available = this.coordinatedBuildingPlans(city, civ, buildingPlans).filter(
       (p: BuildingPlan) =>
         !plannedTypes.includes(p.buildingType) &&
         !buildingOnRebuyCooldown(this.gameEngine, city.civilizationId, p.buildingType)
@@ -1352,6 +1492,63 @@ export class AutoProduction {
   }
 
   /**
+   * Whether this city should start a nuclear warhead.
+   *
+   * The AI only gets to "use nukes if available" if it first builds one, so
+   * this is the production half of that requirement. The gates are deliberately
+   * few: the tech, a reason to fire (at war, or an aggressive posture that is
+   * about to find one), stock still below what the era wants, and a treasury
+   * that is not already under its reserve.
+   */
+  private shouldBuildNuclear(city: City): boolean {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return false;
+    if (!canBuildUnit(civ, 'nuclear')) return false;
+    if (!this.isCivAtWar(city.civilizationId) && !this.isAggressivePosture(city.civilizationId)) {
+      return false;
+    }
+    // Only a civ actually in deficit holds back. `isUnderEconomicPressure`
+    // (below the reserve target) is the WRONG gate here: with a real army the
+    // reserve is `upkeep × 2–3`, which a wartime civ is under almost every
+    // turn — a 634-round naval test game reached 2085 AD with 31 techs and
+    // still never built a single warhead. A warhead costs shields to build and
+    // 5 gold/turn to keep; only a negative treasury makes that unaffordable.
+    if ((civ.resources?.gold ?? 0) < 0) return false;
+    return this.nuclearStock(civ.id) < this.desiredNuclearStock();
+  }
+
+  /** Warheads owned plus warheads already sitting in some city's queue. */
+  private nuclearStock(civId: number): number {
+    const owned = this.gameEngine.units.filter(
+      (u) => u.civilizationId === civId && u.type === 'nuclear' && !u.isDefeated,
+    ).length;
+    let queued = 0;
+    for (const c of this.gameEngine.cities) {
+      if (c.civilizationId !== civId) continue;
+      if (c.currentProduction?.type === 'unit' && c.currentProduction.itemType === 'nuclear') {
+        queued++;
+      }
+      for (const item of c.buildQueue ?? []) {
+        if (item.type === 'unit' && item.itemType === 'nuclear') queued++;
+      }
+    }
+    return owned + queued;
+  }
+
+  /** One warhead is enough while the game is young; the endgame wants two. */
+  private desiredNuclearStock(): number {
+    return (this.gameEngine.currentYear ?? -4000) >= 1500 ? 2 : 1;
+  }
+
+  private buildNuclearProduction(city: City): ProductionItem | null {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ || !canBuildUnit(civ, 'nuclear')) return null;
+    const props = UNIT_PROPS['nuclear'];
+    if (!props) return null;
+    return { type: 'unit', itemType: 'nuclear', name: props.name, cost: props.cost };
+  }
+
+  /**
    * Naval pivot condition: the civ knows enemies, none of them is reachable
    * over land, it can actually build ships (coastal city + naval tech) and its
    * navy is still below the desired size. The engine tracks which enemy
@@ -1442,6 +1639,35 @@ export class AutoProduction {
    * profiled naval run built 155 settlers and disbanded all 155. Requiring
    * at least the 1-gold upkeep as headroom before starting one ends the loop.
    */
+  /**
+   * Whether this civ must put its economy right before it adds to its army.
+   *
+   * `ABSOLUTE_MIN_GOLD` is the level a treasury is reset to when a civ is
+   * forced to disband, so a civ sitting on it has money but no income. Its
+   * problem is not that it needs more soldiers — it is that every soldier costs
+   * upkeep it cannot earn, and the economy produces a surplus of exactly zero
+   * units per turn, which is why a profiled run once built 2,301 riflemen and
+   * disbanded 2,302 of them.
+   *
+   * The settler is the one production that breaks that spiral: it is paid in
+   * shields rather than gold, and the road it lays is permanent +trade. So once
+   * the civ has climbed back to the reserve, still has roads/irrigation waiting,
+   * and still cannot net a positive gold, economics outranks the army. As soon
+   * as those roads pay, {@link canAffordAnotherUnit} turns true and the army
+   * resumes — economics first, then soldiers.
+   *
+   * Deliberately narrow. A civ that can already pay for a unit is never held
+   * back, and a civ below the reserve has no money to fund the settler with.
+   */
+  private economyBeforeArmy(city: City, wantsWorks: boolean): boolean {
+    if (!wantsWorks) return false;
+    const civId = city.civilizationId;
+    const gold = this.gameEngine.civilizations?.[civId]?.resources?.gold ?? 0;
+    const reserve = this.gameEngine.economicManager?.AI_MIN_GOLD_RESERVE ?? ABSOLUTE_MIN_GOLD;
+    if (gold < reserve) return false;
+    return !this.canAffordAnotherUnit(civId);
+  }
+
   private canAffordAnotherUnit(civId: number): boolean {
     const econ = this.gameEngine?.economicManager;
     const civ = this.gameEngine?.civilizations?.[civId];
@@ -1688,11 +1914,17 @@ export class AutoProduction {
     // cache key, so a repeated query inside one turn's production pass skips
     // the expensive probes below (island scan, per-city threat, economy).
     const isTransport = (u: Unit): boolean => (UNIT_PROPS[u.type]?.transportCapacity ?? 0) > 0;
+    // A hull is only a warship if it can actually fight. Fisher boats are naval
+    // and carry nothing, so counting them as escorts let a civ's whole fishing
+    // fleet satisfy the warship quota — it stopped buying escorts precisely when
+    // it started moving troops by sea, and read enemy fishermen as a war fleet
+    // it had to answer with hulls.
+    const isWarship = (u: Unit): boolean => isWarshipHull(UNIT_PROPS[u.type]);
     const ownNaval = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civId && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true,
     );
     const ownTransports = ownNaval.filter(isTransport).length;
-    const ownWarships = ownNaval.length - ownTransports;
+    const ownWarships = ownNaval.filter(isWarship).length;
     const enemyNaval = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId !== civId && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true,
     );
@@ -1808,7 +2040,7 @@ export class AutoProduction {
       atWar: enemies.size > 0
         || (typeof engine.isCivAtWar === 'function' && engine.isCivAtWar(civId)),
       enemyTransports: enemyNaval.filter(isTransport).length,
-      enemyWarships: enemyNaval.length - enemyNaval.filter(isTransport).length,
+      enemyWarships: enemyNaval.filter(isWarship).length,
       enemyCoastalCities: this.gameEngine.cities.filter(
         (c: City) => c.civilizationId !== civId
           && enemies.has(c.civilizationId)
@@ -2001,14 +2233,28 @@ export class AutoProduction {
     if (!civ || civ.isHuman) return;
 
     const gold = civ.resources?.gold ?? 0;
-    const available = gold - minimumReserve - 15; // Keep a buffer of 15gold for emergencies
-    if (available <= 5) return; // Too little gold above reserve to spend
+    // Recomputed every iteration: each successful rush actually debits the
+    // treasury, and a stale `available` would happily spend the same gold
+    // three times over.
+    const spendable = () => (civ.resources?.gold ?? 0) - minimumReserve - 15;
+    if (spendable() <= 5) return; // Too little gold above reserve to spend
+
+    // A treasury far above its reserve is money doing nothing. The old rule
+    // only ever bought a build that was within 5 shields of finishing, so an
+    // AI-vs-AI run reached year 5397 with one civ holding 10,827 gold while
+    // its cities ticked through builds it could have bought outright. Past
+    // ~25× the reserve, buy the builds (up to three a turn); while the war
+    // chest is merely comfortable the conservative "nearly done" rule stands.
+    const flush = gold >= minimumReserve * 25;
+    const maxRushes = flush ? 3 : 1;
 
     const cities = this.gameEngine.cities.filter(
       (c: City) => c.civilizationId === civId && c.autoProduction,
     );
 
+    let rushed = 0;
     for (const city of cities) {
+      if (rushed >= maxRushes) break;
       if (!city.currentProduction) continue;
       if (city.currentProduction.type !== 'unit' && city.currentProduction.type !== 'building') continue;
 
@@ -2022,20 +2268,19 @@ export class AutoProduction {
 
       const rushGold = remaining * this.RUSH_COST_MULTIPLIER;
 
-      // Only rush if:
-      //  (a) under immediate threat and building a defender, OR
-      //  (b) gold is abundant (≥ 3× reserve) and the build is nearly done.
+      // Rush when: (a) under immediate threat and building a defender, or
+      // (b) gold is abundant and the build is nearly done, or
+      // (c) the treasury is so far above its reserve that sitting on it is
+      //     the more expensive choice.
       const goldIsAbundant = gold >= minimumReserve * 3;
       const nearlyDone = remaining <= 5;
-      const shouldRush = isUrgentDefender || (goldIsAbundant && nearlyDone);
+      const shouldRush = isUrgentDefender || (goldIsAbundant && nearlyDone) || flush;
 
       if (!shouldRush) continue;
-      if (rushGold > available) continue; // Can't afford it
+      if (rushGold > spendable()) continue; // Can't afford it
 
-      // Rush the production
-      debugLog(`[AutoProduction] ${city.name}: rushing ${city.currentProduction.itemType} for ${rushGold} gold (${remaining} shields remaining, ${isUrgentDefender ? 'threat' : 'abundant gold'})`);
-      this.gameEngine.rushCityProduction(city.id);
-      break; // Only rush one city per turn to avoid draining the treasury
+      debugLog(`[AutoProduction] ${city.name}: rushing ${city.currentProduction.itemType} for ${rushGold} gold (${remaining} shields remaining, ${isUrgentDefender ? 'threat' : flush ? 'flush treasury' : 'abundant gold'})`);
+      if (this.gameEngine.rushCityProduction(city.id)) rushed++;
     }
   }
 

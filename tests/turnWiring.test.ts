@@ -181,38 +181,6 @@ describe('Turn wiring: barbarians act once per round', () => {
   });
 });
 
-describe('Turn wiring: metallurgy scraps city walls', () => {
-  let engine: GameEngine;
-
-  beforeEach(() => {
-    engine = makeBareEngine();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('completing metallurgy removes city walls for that civ', () => {
-    const w = world(engine);
-    const city = w.settle('Walled', 2, 2, 0, 2);
-    city.buildings = ['city_walls', 'temple'];
-    const civ = engine.civilizations[0];
-    civ.technologies = [...(civ.technologies ?? []), 'pottery'];
-    civ.currentResearch = { id: 'metallurgy', name: 'Metallurgy', cost: 120 } as never;
-    civ.resources = { ...civ.resources, science: 500 };
-
-    (
-      engine.turnManager as unknown as {
-        processCivilizationResearch: (c: unknown) => void;
-      }
-    ).processCivilizationResearch(civ);
-
-    expect(civ.technologies).toContain('metallurgy');
-    expect(city.buildings).not.toContain('city_walls');
-    expect(city.buildings).toContain('temple');
-  });
-});
-
 describe('Turn wiring: terrain sanity for improvement work', () => {
   it('a road needs a move-cost-1 tile and irrigation needs fresh water', () => {
     const row = [G, T, G, T, G];

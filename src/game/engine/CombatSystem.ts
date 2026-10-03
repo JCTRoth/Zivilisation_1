@@ -197,8 +197,8 @@ export class CombatSystem {
   }
 
   /**
-   * City assault odds: attacker strength vs `max(1, population)`, tripled by
-   * city walls (wall bonus only applies when the attacker does not ignore it).
+    * City assault odds: attacker strength vs `max(1, population)`, multiplied by 1.5 by
+    * city walls (wall bonus only applies when the attacker does not ignore it).
    */
   static resolveCityRound(
     attacker: CombatUnitLike,
@@ -212,7 +212,7 @@ export class CombatSystem {
     const hasWalls = buildings.includes('city_walls') || buildings.includes('walls');
     const wallsApplied = hasWalls && !context.ignoresWalls;
     let cityDefense = Math.max(1, city.population || 1);
-    if (wallsApplied) cityDefense *= 3;
+    if (wallsApplied) cityDefense *= 1.5;
 
     const attackerWinChance = this.winChance(attackerStrength, cityDefense);
     const attackerWins = random() * (attackerStrength + cityDefense) < attackerStrength;

@@ -48,6 +48,35 @@ The AI always aims to keep **at least 8 gold** in the treasury:
 - Only when gold is **at or above** the reserve is the AI considered "healthy"
   and allowed to invest surplus back into science.
 
+### Economics before the army
+
+Reaching the floor is not the same as being healthy: 8 gold with no income is
+exactly where `EconomicManager.processTurn` parks a civ it has forced to
+disband. Two rules exist for that state, and they are the same rule seen from
+two sides — production (`AutoProduction.economyBeforeArmy`) and settler
+routing (`AIManager.prefersInfrastructureOverExpansion`).
+
+A civ is *broke but solvent* when it holds at least `AI_MIN_GOLD_RESERVE` **and**
+its projected per-turn surplus is below +1 (`canAffordAnotherUnit`), **and**
+there are roads/irrigation still waiting (`wantsPublicWorks`). Then:
+
+- **A settler is produced** even though `canAffordAnotherUnit` says no. Settlers
+  are paid in shields, and the road one lays is permanent +trade.
+- **The army is vetoed.** The aggressive standing-army branch and the default
+  military step both stand down, preferring a fallback building, and producing
+  nothing at all if there is none. A soldier built here would be disbanded next
+  turn — one profiled run produced 2,301 riflemen and disbanded 2,302.
+- **That settler paves instead of founding.** Settler routing checks the same
+  broke-but-solvent test, so the new settler goes to the roads rather than to a
+  new city, which would only add upkeep the civ cannot pay.
+
+The brake is temporary by construction: as soon as the roads turn the surplus
+positive, `canAffordAnotherUnit` passes again and the army resumes. Two things
+deliberately do **not** trigger it — a civ that can already pay for a unit, and
+a civ below the reserve (it has no money to fund the settler with). A threatened
+city is exempt too: `wantsWorks` is already false when `needsDefense` is set,
+and the defender branch preempts the whole chain.
+
 ## 3. Upkeep model — `unitUpkeep` / `cityUpkeep` / `totalUpkeep`
 
 - **Free unit support**: each city supports one unit for free.
@@ -110,6 +139,41 @@ The real fix is to never over-produce in the first place:
 - `determineProductionItem()` also checks a **gold crisis**
   (`gold < −upkeep`): in a crisis it only allows the minimum settler count (1),
   so the civ doesn't add more upkeep it can't afford.
+- **`economyBeforeArmy`** is the milder version of the same idea and lives in
+  §2: a civ that has climbed back to the 8-gold reserve but still cannot net a
+  positive surplus builds a settler for the roads *instead of* a soldier.
+
+## 5b. Selling buildings to stay solvent
+
+`AIManager.runBuildingAnalysis` audits every own city each turn and may liquidate
+a building through `GameEngine.sellBuilding(..., { force: true })` — one sale per
+city per turn (`city.soldBuildingThisTurn`). Two drivers:
+
+- **Passive audit** — one building per city, the worst-scoring one that is not
+  paying its upkeep and not situationally protected (a threatened city keeps its
+  walls, an unhappy city its temples). Palace and wonders are never sold.
+- **Forced liquidation** — `planFundingForCiv` prices the civ's spending demands
+  (settlers for public works, units up to its sustainable army) against its
+  spendable gold (`gold − ABSOLUTE_MIN_GOLD`) and sells to close the shortfall.
+  `AICoordinator.filterArmySafeCandidates` strips anything the army cannot lose.
+
+`BudgetAggression` chooses how deep to cut. `aggressive` admits the **break-even**
+tier (`netPerTurn <= 0`) — a building that earns exactly its upkeep costs nothing
+to sell and still refunds half its cost — and adds `reserveTurns` turns of upkeep
+on top of the shortfall. It is forced when the civ is at war, broke, under
+economic pressure, or:
+
+- **Starved treasury** (`LIQUIDATION_BUDGET_GOLD` 50, `LIQUIDATION_CITY_THRESHOLD`
+  4): under 50 spendable gold with more than 4 cities. `isUnderEconomicPressure`
+  scales its reserve with upkeep, so a civ whose buildings are cheap to run never
+  trips it however little it holds; and 40 gold is not "broke" yet cannot fund a
+  settler before next month's tax. Past a few cities the upkeep bill recurs, so
+  the treasury is judged against that bill rather than against zero. This case
+  also raises `LIQUIDATION_RESERVE_TURNS` to 3 (instead of 1) and injects a
+  `reserve` funding demand, because with nothing to buy the other demands are
+  empty and a broke empire would otherwise liquidate nothing at all.
+
+A **profitable** building is never sold, however aggressive.
 
 ## 6. Late-game wealth: markets, banks & tile improvements
 

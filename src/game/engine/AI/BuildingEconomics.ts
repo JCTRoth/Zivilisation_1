@@ -67,11 +67,16 @@ export const INERT_EFFECTS: ReadonlySet<string> = new Set([
   'isPalace',
   'wonder',
   'globalDefense',
-  'globalHappiness',
   'navalMovement',
   'exploration',
   'diplomacy',
 ]);
+
+/**
+ * `globalHappiness` is deliberately NOT in this list: it is a real, wired
+ * effect — a wonder that grants content in every city of its civ — so the audit
+ * must price it rather than call the building inert.
+ */
 
 /** Technology that unlocks the `nuclear` unit — the only atomic weapon. */
 export const NUCLEAR_WEAPON_TECH = 'nuclear_power';

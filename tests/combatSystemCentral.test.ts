@@ -102,14 +102,14 @@ describe('CombatSystem: unit rounds', () => {
 });
 
 describe('CombatSystem: city rounds', () => {
-  it('triples defence with walls unless the attacker ignores them', () => {
+  it('boosts defence with walls unless the attacker ignores them', () => {
     const attacker = unit({ attack: 12, defense: 1 });
     const city = { population: 2, buildings: ['city_walls'] };
 
     const normal = CombatSystem.resolveCityRound(attacker, city, { random: () => 0.5 });
     expect(normal.cityHasWalls).toBe(true);
     expect(normal.wallsApplied).toBe(true);
-    expect(normal.cityDefense).toBe(6); // 2 * 3
+    expect(normal.cityDefense).toBe(3); // 2 * 1.5
 
     const bomber = CombatSystem.resolveCityRound(attacker, city, { random: () => 0.5, ignoresWalls: true });
     expect(bomber.cityHasWalls).toBe(true);

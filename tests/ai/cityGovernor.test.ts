@@ -138,6 +138,11 @@ describe('city governor: food first in every mode', () => {
       const { engine, city, civ } = makeEngine(rows, {
         population: 3,
         governor: mode,
+        // Two temples so the city is CONTENT: with tolerance gone a size-3 city
+        // is otherwise permanently unhappy, and the governor responds to
+        // disorder by hiring an entertainer — a worker off the fields — which is
+        // correct behaviour but would mask the food policy this test is about.
+        buildings: ['temple', 'temple'],
         workingTiles: new Set(['2,2', '2,3', '3,2']),
       });
       addResource(engine, 2, 1, 'game');

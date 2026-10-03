@@ -420,12 +420,14 @@ describe('City capture & destruction', () => {
     );
 
     const calm = econ.cityHappiness(city, civ0);
-    expect(calm.unhappiness).toBe(0);
+    // No tolerance: the citizen is unhappy on their own account. Base
+    // contentment (2) covers a size-1 city, so it is calm.
+    expect(calm.unhappiness).toBe(1);
     expect(calm.disorder).toBe(false);
 
     city.capturedTurns = 3;
     const restless = econ.cityHappiness(city, civ0);
-    // Resentful captured citizens push the city into disorder.
+    // Resentful captured citizens are extra unhappiness on top of the crowd.
     expect(restless.unhappiness).toBeGreaterThan(calm.unhappiness);
     expect(restless.disorder).toBe(true);
   });

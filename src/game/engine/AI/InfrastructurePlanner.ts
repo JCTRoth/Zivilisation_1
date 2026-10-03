@@ -86,6 +86,12 @@ export interface InfrastructureContext {
   raidersNearby: number;
   /** An enemy army group is marching onto the city. */
   underAssault: boolean;
+  /**
+   * Whether fresh water is in reach of this tile, i.e. whether irrigation could
+   * actually be built on it. Omitted when the caller cannot answer, in which
+   * case irrigation is assumed possible — the engine has the last word anyway.
+   */
+  hasIrrigationSupply?: (col: number, row: number) => boolean;
 }
 
 export interface InfrastructureDemand {
@@ -145,13 +151,20 @@ function bestImprovementForTile(
 ): { improvement: string; workerTurns: number } | null {
   const candidates: string[] = [];
 
-  if (ctx.isFoodConstrained && improvementAllowed(IMPROVEMENT_TYPES.IRRIGATION, tile.terrain)) {
+  // Irrigation is the only candidate the engine can refuse for a reason that
+  // has nothing to do with terrain or tech: no water. Asking first saves the
+  // settler a wasted trip across the map.
+  const canIrrigate = ctx.hasIrrigationSupply
+    ? ctx.hasIrrigationSupply(tile.col, tile.row)
+    : true;
+
+  if (ctx.isFoodConstrained && canIrrigate && improvementAllowed(IMPROVEMENT_TYPES.IRRIGATION, tile.terrain)) {
     candidates.push(IMPROVEMENT_TYPES.IRRIGATION);
   }
   if (ctx.isAtWar && improvementAllowed(IMPROVEMENT_TYPES.MINES, tile.terrain)) {
     candidates.push(IMPROVEMENT_TYPES.MINES);
   }
-  if (improvementAllowed(IMPROVEMENT_TYPES.IRRIGATION, tile.terrain)) {
+  if (canIrrigate && improvementAllowed(IMPROVEMENT_TYPES.IRRIGATION, tile.terrain)) {
     candidates.push(IMPROVEMENT_TYPES.IRRIGATION);
   }
   if (improvementAllowed(IMPROVEMENT_TYPES.MINES, tile.terrain)) {

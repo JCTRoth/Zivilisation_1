@@ -334,8 +334,12 @@ export interface Unit {
   sightRange?: number;
   // AI-specific runtime state (set dynamically by AIManager)
   _aiSettlement?: { col: number; row: number; score: number } | null;
+  /** Tile this settler was sent to work on one of its civ's city areas. */
+  _aiWorksTarget?: { col: number; row: number } | null;
   _blockedSettlementTargets?: Set<string>;
   _lastSettlementTarget?: { col: number; row: number };
+  /** Where this hull last tried to sail, and whether it got any closer. */
+  _navalIntent?: { col: number; row: number; dist: number; stalled: number };
   _positionHistory?: string[];
   _probeTarget?: { col: number; row: number };
   _exploreTarget?: { col: number; row: number };
@@ -372,6 +376,12 @@ export interface City {
   unhappiness?: number; // unhappiness points (population-based)
   disorder?: boolean;   // true when unhappiness > happiness (halts production/growth)
   capturedTurns?: number; // remaining turns of post-capture unrest (resentful citizens)
+  /**
+   * Round when this city was last assaulted. The AI reads it as "ongoing
+   * attacks on the city": while the wound is fresh, settlers stay away from
+   * this city's fields and the civ defends instead of improving tiles.
+   */
+  lastAttackedRound?: number;
   // Current production progress (0..1 or absolute depending on implementation)
   productionProgress?: number;
   // Queue of production items (units/buildings)
@@ -423,10 +433,15 @@ export interface City {
   userAssignedTiles?: Set<string>;
   /** How this city is governed (defaults to 'balanced'). */
   governor?: CityGovernorMode;
-  /** Set when the governor mode changed and the layout still has to be
-   *  re-evaluated. The city screen applies it once the modal is closed so the
-   *  map never reshuffles while the player is looking at it. */
-  governorDirty?: boolean;
+/** Set when the governor mode changed and the layout still has to be
+    *  re-evaluated. The city screen applies it once the modal is closed so the
+    *  map never reshuffles while the player is looking at it. */
+   governorDirty?: boolean;
+   /** How the governor ranks tiles, as weights on food/production/trade.
+    *  `cityWorkedTiles` ranks the tiles it hands out by these, so a governor's
+    *  choice survives the population change that re-picks the layout instead of
+    *  being reverted to raw total yield. Absent = rank by total yield. */
+   governorWeights?: { food: number; production: number; trade: number };
   /** When true, the AI governor will NOT change specialist assignments.
    *  The player has manual control. Default: false (governor manages). */
   lockSpecialists?: boolean;

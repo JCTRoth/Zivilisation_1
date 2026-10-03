@@ -6,6 +6,7 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
 import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import { IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
 
 describe('AI settler tile improvements (Civ1)', () => {
   let engine: GameEngine | null = null;
@@ -50,6 +51,20 @@ describe('AI settler tile improvements (Civ1)', () => {
       }
     }
     throw new Error('no land triple found');
+  }
+
+  /** Strip every fresh-water source within the irrigation reach of a tile. */
+  function clearWaterInReach(e: GameEngine, col: number, row: number, reach = 6): void {
+    for (let dc = -reach; dc <= reach; dc++) {
+      for (let dr = -reach; dr <= reach; dr++) {
+        const t = e.getTileAt(col + dc, row + dr) as unknown as
+          { type: string; terrain?: string; improvement: string | null } | undefined;
+        if (!t) continue;
+        if (t.type === TERRAIN_TYPES.RIVER || t.type === TERRAIN_TYPES.LAKE) t.type = TERRAIN_TYPES.PLAINS;
+        if (t.terrain === TERRAIN_TYPES.RIVER || t.terrain === TERRAIN_TYPES.LAKE) t.terrain = TERRAIN_TYPES.PLAINS;
+        if (t.improvement === IMPROVEMENT_TYPES.IRRIGATION) t.improvement = null;
+      }
+    }
   }
 
   function setTile(e: GameEngine, col: number, row: number, type: string, improvement: string | null = null): void {
@@ -122,7 +137,10 @@ describe('AI settler tile improvements (Civ1)', () => {
     setTile(e, col, row, TERRAIN_TYPES.GRASSLAND);
     setTile(e, ncol, nrow, TERRAIN_TYPES.GRASSLAND);
     addCity(e, 1, col, row);
-    // No water adjacent → no irrigation; not hills → no mine → road.
+    // No water in the whole irrigation reach → no irrigation; not hills → no
+    // mine → road. Clearing only the four neighbours is not enough any more,
+    // since a canal can reach water five fields away.
+    clearWaterInReach(e, ncol, nrow);
     const s = addSettler(e, 1, ncol, nrow);
     expect(choose(e, s)).toBe('road');
   });

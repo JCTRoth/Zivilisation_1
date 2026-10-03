@@ -520,6 +520,74 @@ export class AICoordinator {
   // -------------------------------------------------------------------------
 
   /**
+   * Buildings the army is built on, which a funding crisis must not liquidate.
+   * `city_walls` and `palace` are never sold by anyone at any price.
+   */
+  static readonly ARMY_NEVER_SELL: ReadonlySet<string> = new Set(['palace', 'city_walls']);
+
+  /** Buildings that carry the defence of a city the army depends on. */
+  static readonly ARMY_SUPPORT_BUILDINGS: ReadonlySet<string> = new Set([
+    'barracks',
+    'city_walls',
+    'sdi_defense',
+  ]);
+
+  /**
+   * Which cities a civ's army is relying on, and so must not be stripped to pay
+   * a bill. A liquidation that takes the walls off a besieged city, or the
+   * barracks out from under a staging base, is how a treasury shortage turns
+   * into a lost war: the refund is trivial, the captured city is not.
+   */
+  static armyDependentCities(input: {
+    cityIds: readonly string[];
+    /** Cities the army is staging from (a group's rally point). */
+    stagingCityIds?: Iterable<string>;
+    /** Cities with our own troops in or beside them. */
+    garrisonCityIds?: Iterable<string>;
+    underThreatCityIds?: Iterable<string>;
+  }): Set<string> {
+    const protectedIds = new Set<string>(input.cityIds);
+    for (const ids of [input.stagingCityIds, input.garrisonCityIds, input.underThreatCityIds]) {
+      if (!ids) continue;
+      for (const id of ids) protectedIds.add(id);
+    }
+    return protectedIds;
+  }
+
+  /**
+   * Drop the sales that would disarm the army.
+   *
+   * Three independent reasons, because they fail in different ways:
+   *  - the palace and the walls are the strategic core of a city and are never
+   *    liquidated by anyone, least of all to fund an army;
+   *  - a Barracks is the one building the army is *physically* about, and a
+   *    force already at war may not strip its own forward base at any price;
+   *  - in a city the army depends on, only a building that is provably doing
+   *    nothing goes — no "but this one is cheaper" exceptions.
+   *
+   * Pure — the caller has already gathered the reports.
+   */
+  static filterArmySafeCandidates(input: {
+    candidates: readonly BuildingFundingCandidate[];
+    /** Cities the army is relying on; see {@link armyDependentCities}. */
+    protectedCityIds: ReadonlySet<string>;
+    /** Whether this civ is at war, which forbids stripping a forward base. */
+    atWar: boolean;
+  }): BuildingFundingCandidate[] {
+    const { candidates, protectedCityIds, atWar } = input;
+    return candidates.filter(candidate => {
+      if (AICoordinator.ARMY_NEVER_SELL.has(candidate.buildingType)) return false;
+      const armyBase = protectedCityIds.has(candidate.cityId);
+      if (atWar && armyBase && AICoordinator.ARMY_SUPPORT_BUILDINGS.has(candidate.buildingType)) {
+        return false;
+      }
+      // A city the army depends on gives up only what earns nothing.
+      if (armyBase && candidate.economics?.verdict !== 'inert') return false;
+      return true;
+    });
+  }
+
+  /**
    * Turn a set of spending intents into a concrete list of buildings to sell.
    *
    * The passive audit only sells a building that has stopped earning its
@@ -556,8 +624,13 @@ export class AICoordinator {
     // smallest loss first — a 1 gold/turn drain goes before a 4 gold/turn one,
     // because it closes the same gap while giving up less income. Hence the
     // descending sort on `netPerTurn`: the value closest to zero is cheapest.
+    const aggression = input.aggression ?? 'normal';
+    // Zero-loss sales first: they cost the civ nothing per turn and still pay a
+    // refund. Then the drains, cheapest loss first — a 1 gold/turn drain goes
+    // before a 4 gold/turn one, because it closes the same gap while giving up
+    // less income. Hence the descending sort on `netPerTurn`.
     const eligible = candidates
-      .filter(c => c.economics.netPerTurn < 0)
+      .filter(c => (aggression === 'aggressive' ? c.economics.netPerTurn <= 0 : c.economics.netPerTurn < 0))
       .sort((a, b) => b.economics.netPerTurn - a.economics.netPerTurn);
 
     if (eligible.length === 0) {
@@ -567,6 +640,14 @@ export class AICoordinator {
 
     // Refunds are part of the money raised, so the plan can finish without
     // waiting for the freed upkeep to arrive next turn.
+    // How much to raise. Normally the shortfall is the whole job; under
+    // aggression, `reserveTurns` turns of upkeep on top, so the civ is not one
+    // bad tax collection away from selling again next turn.
+    const reserveTurns = Math.max(0, input.reserveTurns ?? 1);
+    const target = aggression === 'aggressive'
+      ? shortfall + reserveTurns * Math.max(0, input.upkeepPerTurn ?? 0)
+      : shortfall;
+
     let raised = 0;
     let savedPerTurn = 0;
     const sales: BuildingFundingSale[] = [];
@@ -582,9 +663,7 @@ export class AICoordinator {
         verdict: candidate.economics.verdict,
         reason: candidate.economics.reasons[candidate.economics.reasons.length - 1] ?? '',
       });
-      // One turn's income is enough to close the gap; liquidation beyond that
-      // is just vandalism with extra steps.
-      if (raised + savedPerTurn >= shortfall) break;
+      if (raised + savedPerTurn >= target) break;
     }
 
     reasons.push(
@@ -596,7 +675,13 @@ export class AICoordinator {
   }
 }
 
-export type FundingKind = 'infrastructure' | 'army' | 'bribe';
+/**
+ * What a funding demand is for. `reserve` is the odd one out: it is not a
+ * purchase but the absence of one — an empire whose upkeep bill it cannot cover
+ * from income liquidates buildings to get a treasury back, so that the *next*
+ * turn does not start in the same hole.
+ */
+export type FundingKind = 'infrastructure' | 'army' | 'bribe' | 'reserve';
 
 /** One thing the civ wants to spend money on. */
 export interface FundingDemand {
@@ -627,11 +712,38 @@ export interface BuildingFundingSale {
   reason: string;
 }
 
+/**
+ * How hard the civ is willing to liquidate.
+ *
+ * `normal` sells only what costs the civ money every turn. `aggressive` also
+ * sells the buildings that merely *break even* — which is not vandalism but the
+ * opposite: a break-even building earns exactly its upkeep, so selling it loses
+ * no income at all and still refunds half its cost. It is the cheapest money in
+ * the game, and it is the first thing a treasury in trouble should reach for
+ * before tearing down something that is actually paying.
+ */
+export type BudgetAggression = 'normal' | 'aggressive';
+
 export interface BuildingFundingInput {
   demands: FundingDemand[];
   /** Gold the civ can already spend. */
   budget: number;
   candidates: BuildingFundingCandidate[];
+  /** Defaults to `normal`. */
+  aggression?: BudgetAggression;
+  /**
+   * What this civ pays in building upkeep per turn. Under `aggressive` the plan
+   * raises enough to cover the shortfall *and* `reserveTurns` turns of upkeep,
+   * so the treasury ends the month with a buffer instead of a one-turn bridge.
+   */
+  upkeepPerTurn?: number;
+  /**
+   * How many turns of upkeep to raise on top of the shortfall. Defaults to 1,
+   * which is the pre-existing at-war behaviour. A larger value sells a deeper
+   * slice of the portfolio: it is the difference between bridging this month's
+   * bill and rebuilding a reserve the empire can actually live on.
+   */
+  reserveTurns?: number;
 }
 
 export interface BuildingFundingPlan {

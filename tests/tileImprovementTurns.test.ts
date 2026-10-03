@@ -86,15 +86,33 @@ describe('Civ1 tile improvement construction', () => {
     }
   }
 
-  function clearFreshWaterAdjacent(e: GameEngine, col: number, row: number): void {
-    const directions = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const;
-    for (const [dc, dr] of directions) {
-      const tile = e.getTileAt(col + dc, row + dr) as unknown as { type: string; terrain?: string; improvement?: string | null } | undefined;
-      if (!tile) continue;
-      if (tile.terrain === TERRAIN_TYPES.RIVER) tile.terrain = TERRAIN_TYPES.GRASSLAND;
-      if (tile.type === TERRAIN_TYPES.RIVER) tile.type = TERRAIN_TYPES.GRASSLAND;
-      if (tile.improvement === IMPROVEMENT_TYPES.IRRIGATION) tile.improvement = null;
+  /**
+   * Strip every water source within `reach` of the tile, so "no supply" is a
+   * statement about the whole irrigation reach and not just its four corners.
+   */
+  function clearFreshWaterWithin(e: GameEngine, col: number, row: number, reach = 6): void {
+    for (let dc = -reach; dc <= reach; dc++) {
+      for (let dr = -reach; dr <= reach; dr++) {
+        const tile = e.getTileAt(col + dc, row + dr) as unknown as
+          { type: string; terrain?: string; improvement?: string | null } | undefined;
+        if (!tile) continue;
+        if (tile.terrain === TERRAIN_TYPES.RIVER || tile.terrain === TERRAIN_TYPES.LAKE) {
+          tile.terrain = TERRAIN_TYPES.GRASSLAND;
+        }
+        if (tile.type === TERRAIN_TYPES.RIVER || tile.type === TERRAIN_TYPES.LAKE) {
+          tile.type = TERRAIN_TYPES.GRASSLAND;
+        }
+        if (tile.improvement === IMPROVEMENT_TYPES.IRRIGATION) tile.improvement = null;
+      }
     }
+  }
+
+  function setTerrain(e: GameEngine, col: number, row: number, terrain: string): boolean {
+    const tile = e.getTileAt(col, row) as unknown as { type: string; terrain?: string } | undefined;
+    if (!tile) return false;
+    tile.type = terrain;
+    tile.terrain = terrain;
+    return true;
   }
 
   function grantTech(e: GameEngine, civId: number, techId: string) {
@@ -218,38 +236,49 @@ describe('Civ1 tile improvement construction', () => {
 
   // ─── Irrigation water adjacency ────────────────────────────────────
 
-  it('irrigation is blocked without fresh-water adjacency', async () => {
+  it('irrigation is blocked when no water is in reach', async () => {
     const e = await setupEngine();
     const { col, row, settler } = placeSettler(e, TERRAIN_TYPES.GRASSLAND);
-    clearFreshWaterAdjacent(e, col, row);
+    clearFreshWaterWithin(e, col, row);
     expect(e.canBuildImprovement(settler.id, 'irrigation')).toBe(false);
     expect(e.buildImprovement(settler.id, 'irrigation')).toBe(false);
   });
 
-  it('irrigation is possible next to a river (orthogonal only)', async () => {
+  it('irrigation reaches the water, up to five fields out', async () => {
     const e = await setupEngine();
     const { col, row, settler } = placeSettler(e, TERRAIN_TYPES.GRASSLAND);
-    clearFreshWaterAdjacent(e, col, row);
+    clearFreshWaterWithin(e, col, row);
     expect(e.canBuildImprovement(settler.id, 'irrigation')).toBe(false);
 
     ensureRiverAdjacent(e, col, row);
     expect(e.canBuildImprovement(settler.id, 'irrigation')).toBe(true);
+  });
 
-    // A DIAGONAL river must NOT count (only orthogonal adjacency).
-    const e2 = await setupEngine();
-    const { col: c2, row: r2, settler: s2 } = placeSettler(e2, TERRAIN_TYPES.GRASSLAND);
-    clearFreshWaterAdjacent(e2, c2, r2);
-    const diag = e2.getTileAt(c2 + 1, r2 + 1) as unknown as { type: string; terrain?: string } | undefined;
-    if (diag) {
-      diag.type = TERRAIN_TYPES.RIVER;
-      diag.terrain = TERRAIN_TYPES.RIVER;
-    }
-    expect(e2.canBuildImprovement(s2.id, 'irrigation')).toBe(false);
+  it('irrigates across the diagonal, because a canal may bend', async () => {
+    const e = await setupEngine();
+    const { col, row, settler } = placeSettler(e, TERRAIN_TYPES.GRASSLAND);
+    clearFreshWaterWithin(e, col, row);
+    // Two orthogonal steps away: reachable, though not touching.
+    expect(setTerrain(e, col + 1, row + 1, TERRAIN_TYPES.RIVER)).toBe(true);
+    expect(e.canBuildImprovement(settler.id, 'irrigation')).toBe(true);
+  });
+
+  it('stops irrigating six fields out, so the reach stays a real limit', async () => {
+    const e = await setupEngine();
+    const { col, row, settler } = placeSettler(e, TERRAIN_TYPES.GRASSLAND);
+    clearFreshWaterWithin(e, col, row, 7);
+    expect(setTerrain(e, col + 5, row, TERRAIN_TYPES.RIVER)).toBe(true);
+    expect(e.canBuildImprovement(settler.id, 'irrigation')).toBe(true);
+
+    clearFreshWaterWithin(e, col, row, 7);
+    expect(setTerrain(e, col + 6, row, TERRAIN_TYPES.RIVER)).toBe(true);
+    expect(e.canBuildImprovement(settler.id, 'irrigation')).toBe(false);
   });
 
   it('irrigation is possible next to an already-irrigated tile', async () => {
     const e = await setupEngine();
     const { col, row, settler } = placeSettler(e, TERRAIN_TYPES.GRASSLAND);
+    clearFreshWaterWithin(e, col, row);
     // Put an irrigated tile orthogonally adjacent.
     const north = e.getTileAt(col, row - 1) as unknown as { type: string; improvement: string | null } | undefined;
     if (!north) return;

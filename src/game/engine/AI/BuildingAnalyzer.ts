@@ -20,6 +20,7 @@
  */
 
 import type { City, Civilization, Unit, MapState } from '../../../../types/game';
+import { HAPPINESS_BUILDINGS as COORDINATOR_HAPPINESS_BUILDINGS } from './BuildingCoordinator';
 import { BUILDING_PROPERTIES, BUILDING_TYPES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { TERRAIN_TYPES } from '@/data/TerrainConstants';
 import type { ArmyGroup } from './AITypes';
@@ -59,12 +60,15 @@ const REQUIRES_BUILDING: Record<string, string[]> = {
   [BUILDING_TYPES.AQUEDUCT]: [BUILDING_TYPES.TEMPLE],
 };
 
-/** Buildings that provide happiness. */
-const HAPPINESS_BUILDINGS = new Set<string>([
-  BUILDING_TYPES.TEMPLE,
-  BUILDING_TYPES.COLOSSEUM,
-  BUILDING_TYPES.CATHEDRAL,
-]);
+/**
+ * Buildings that provide happiness.
+ *
+ * Shared with the coordinator rather than restated: this set is also what the
+ * "first four in a city count" cap is enforced against, and two lists of the
+ * same four building types drifting apart is how a city ends up holding five
+ * happiness buildings and paying upkeep on the one that does nothing.
+ */
+const HAPPINESS_BUILDINGS = COORDINATOR_HAPPINESS_BUILDINGS;
 
 /** Buildings that provide defense. */
 const DEFENSE_BUILDINGS = new Set<string>([

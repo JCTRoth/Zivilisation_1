@@ -7,7 +7,11 @@
  * army sizing) is delegated to AIEconomicManager.
  */
 
-import { BUILDING_PROPERTIES, BUILDING_TYPES } from '../../data/BuildingConstants';
+import {
+  BUILDING_PROPERTIES,
+  BUILDING_TYPES,
+  WONDER_PROPERTIES,
+} from '../../data/BuildingConstants';
 import { getGovernment } from '../../data/GovernmentData';
 import { CityUtils } from '../../utils/CityUtils';
 import { UNIT_PROPS } from '../../utils/Constants';
@@ -99,38 +103,18 @@ const CITY_CENTER_MIN = { food: 2, production: 1, trade: 1 };
  */
 const MIN_CITY_FOOD_SURPLUS = 1;
 
-/** Food every citizen eats per turn before the size penalty below. */
-export const BASE_CITIZEN_FOOD_DEMAND = 2;
-
 /**
- * The city size at which the growing appetite starts. From this size on each
- * citizen eats `CITY_SIZE_FOOD_DEMAND_STEP` more per turn than the one below
- * it, so a city gets progressively harder to feed as it grows.
+ * Food every citizen eats per turn.
  *
- * This is the second half of the siege mechanic: a blockade cuts the tiles a
- * city can work, and the size penalty means a big city starves faster than a
- * small one when it is blockaded. A civ is therefore pushed to expand while it
- * can, and punished for letting one city grow fat and isolated.
- */
-export const CITY_SIZE_FOOD_DEMAND_THRESHOLD = 6;
-
-/** Extra food each citizen eats per turn, per city size above the threshold. */
-export const CITY_SIZE_FOOD_DEMAND_STEP = 0.2;
-
-/**
- * Total food one citizen of a city this size eats per turn.
+ * Civ 1's rule is flat: a citizen eats 2, at every city size, forever. There is
+ * no appetite ramp — a size-12 city eats 24 a turn because it has twelve
+ * citizens, not because each of them eats more.
  *
- * Exported so `TurnManager.processCityGrowth`, the AI's food planning and the
- * shared tile assigner cannot each re-derive it and drift: a famine must be
- * charged at exactly the rate the citizen is assumed to eat at.
+ * Exported as one constant because three places charge this: the growth
+ * pipeline, the AI's food planning and the shared tile assigner. A famine must
+ * never be priced at a different rate than the citizen is assumed to eat at.
  */
-export function citizenFoodDemand(population: number): number {
-  const sizesAboveThreshold = Math.max(
-    0,
-    (population ?? 1) - (CITY_SIZE_FOOD_DEMAND_THRESHOLD - 1),
-  );
-  return BASE_CITIZEN_FOOD_DEMAND + CITY_SIZE_FOOD_DEMAND_STEP * sizesAboveThreshold;
-}
+export const CITIZEN_FOOD_DEMAND_PER_CITIZEN = 2;
 
 /**
  * Floor the treasury is reset to after the AI is forced to disband.
@@ -487,7 +471,7 @@ export class EconomicManager {
    * The tile becomes unusable the moment the unit lands and is handed back the
    * moment it leaves — which is what makes the siege a race: every turn spent
    * blockaded is a turn of food the city does not get, and the city starves at
-   * `citizenFoodDemand(population)`, which rises with size.
+   * `CITIZEN_FOOD_DEMAND_PER_CITIZEN` per citizen.
    *
    * A unit of the city's OWN civilization never blocks anything: garrisons,
    * settlers and builders standing on the tiles they feed are the normal case.
@@ -599,12 +583,46 @@ export class EconomicManager {
         yields: this.cityTileYieldsWith(tile, hasFishingNet),
       });
     }
+
+    // A citizen with no field to work is not a worker — it is an idle mouth
+    // the city still feeds while producing nothing for it. Civ1's answer is
+    // the Entertainer: convert the overflow citizens so the tile list and the
+    // specialist list always add up, and the city at least gets happiness out
+    // of a citizen it could not employ anyway. (`cityTerritory` already drops
+    // the centre, so `candidates` IS the pool of field slots.)
+    //
+    // Converting here — rather than waiting for the governor — makes it
+    // automatic for every city, AI or human. The governor may still staff
+    // SPARE citizens as Taxmen or Scientists; these have no spare tile, so
+    // Entertainer is their default.
+    const fieldSlots = candidates.length;
+    const population = city.population ?? 1;
+    const idleCitizens = population - (city.specialists ?? []).length - fieldSlots;
+    if (idleCitizens > 0) {
+      if (!city.specialists) city.specialists = [];
+      for (let i = 0; i < idleCitizens && city.specialists.length < population; i++) {
+        city.specialists.push('entertainer');
+      }
+    }
+
     const total = (y: {
       food: number;
       production: number;
       trade: number;
     }): number => y.food + y.production + y.trade;
-    candidates.sort((a, b) => total(b.yields) - total(a.yields));
+
+    // How this city RANKs the tiles it works. Without a governor the engine
+    // ranks by raw total yield. With one, the governor's own weights apply, so
+    // the slots it hands out after the food floor are the slots it would have
+    // chosen itself — otherwise every growth step silently reverted a Commerce
+    // city back to whatever added up to the most, which is how a city ended up
+    // starving its trade to keep a tile worth 5.
+    const weights = city.governorWeights;
+    const score = weights
+      ? (y: { food: number; production: number; trade: number }): number =>
+          y.food * weights.food + y.production * weights.production + y.trade * weights.trade
+      : total;
+    candidates.sort((a, b) => score(b.yields) - score(a.yields));
 
     // The city CENTRE is always worked for free; every citizen then
     // works ONE additional tile in the radius. Counting the centre as a
@@ -644,7 +662,7 @@ export class EconomicManager {
     let foodSum = worked.reduce((n, w) => n + w.yields.food, 0);
     if (foodSum < foodTarget) {
       const byFood = [...candidates].sort(
-        (a, b) => b.yields.food - a.yields.food || total(b.yields) - total(a.yields),
+        (a, b) => b.yields.food - a.yields.food || score(b.yields) - score(a.yields),
       );
       for (const cand of byFood) {
         if (worked.length >= targetTiles || foodSum >= foodTarget) break;
@@ -845,9 +863,9 @@ export class EconomicManager {
   /**
    * The city's real food balance for this turn — the SAME math the growth
    * pipeline uses (`TurnManager.processCityGrowth`): every citizen eats
-   * `citizenFoodDemand(population)` food (2 to start with, +0.2 per head per
-   * size above 5), and settlers owned by the city eat 1 each (2 under Republic
-   * and Democracy). AI city management and production decisions consult this
+   * `CITIZEN_FOOD_DEMAND_PER_CITIZEN` food (a flat 2, Civ 1 style, at any city
+   * size), and settlers owned by the city eat 1 each (2 under Republic and
+   * Democracy). AI city management and production decisions consult this
    * instead of re-deriving it, so famine prevention and settler support use
    * exactly the numbers the engine charges.
    */
@@ -876,10 +894,8 @@ export class EconomicManager {
     ).length * settlerFoodPerTurn;
 
     const produced = city?.yields?.food ?? city?.food ?? 0;
-    // Citizens eat 2 food each to start with, and 0.2 more per head for every
-    // size above 5 — so a large city is genuinely harder to keep fed than a
-    // small one, which is what turns a blockade into a siege.
-    const citizenConsumption = population * citizenFoodDemand(population);
+    // Civ 1: every citizen eats a flat 2 food, at every city size.
+    const citizenConsumption = population * CITIZEN_FOOD_DEMAND_PER_CITIZEN;
     const surplus = produced - citizenConsumption - settlerSupport;
     const storage = city?.foodStored ?? 0;
     const growthThreshold = (population + 1) * 10;
@@ -902,6 +918,88 @@ export class EconomicManager {
     };
   }
 
+  /**
+   * Martial law: how many happiness points this city's garrison is actually
+   * worth, and how many it could be worth at all.
+   *
+   * This is the whole of the "authoritarian rule" mechanic, exported because
+   * three places need the same answer: the happiness total, the AI's luxury
+   * calculation, and the AI deciding whether to walk a unit onto a city tile.
+   * When they disagreed, the AI garrisoned for *defence* within two tiles —
+   * which earns nothing here — and then hired Entertainers to do a job its
+   * military units could have done for free.
+   *
+   * A garrison point needs the unit standing **on the city tile**: an exact
+   * coordinate match, not a radius.
+   */
+  martialLaw(
+    civ: Civilization,
+    city: City,
+    garrisonUnits?: number,
+  ): { bonus: number; max: number; current: number } {
+    const gov = getGovernment(civ?.government);
+    const govName = (gov.name ?? '').toLowerCase();
+    const max =
+      govName === 'despotism' || govName === 'anarchy'
+        ? 4
+        : govName === 'monarchy' || govName === 'communism'
+          ? 3
+          : 0;
+    const current = garrisonUnits ?? this.garrisonOnCityTile(civ, city);
+    return { bonus: Math.min(current, max), max, current };
+  }
+
+  /** Own living combat units standing on the city tile. */
+  garrisonOnCityTile(civ: Civilization, city: City): number {
+    return (this.gameEngine?.units ?? []).filter(
+      (u: Unit) =>
+        u.civilizationId === civ?.id &&
+        u.col === city?.col && u.row === city?.row &&
+        !u.isDefeated &&
+        (u.attack ?? 0) > 0,
+    ).length;
+  }
+
+  /**
+   * Happiness a wonder grants to *every* city of the civ.
+   *
+   * `globalHappiness` was declared on Hanging Gardens and read by nothing, so
+   * the effect existed only on paper. A wonder is held by exactly one city but
+   * applies empire-wide, so the civ's cities are scanned once and each global
+   * wonder counted a single time — not once per city that happens to hold one.
+   */
+  wonderHappiness(civ: Civilization): number {
+    let total = 0;
+    for (const city of this.gameEngine?.cities ?? []) {
+      if (city.civilizationId !== civ?.id) continue;
+      for (const b of city.buildings ?? []) {
+        const id =
+          typeof b === 'string'
+            ? b
+            : (b as { id?: string; type?: string })?.id ??
+              (b as { type?: string })?.type ?? '';
+        total += this.buildingEffect(id, 'globalHappiness');
+      }
+    }
+    return total;
+  }
+
+  /**
+   * One declared effect of one building, as a number.
+   *
+   * Wonders live in `WONDER_PROPERTIES`, not `BUILDING_PROPERTIES`, and that is
+   * easy to miss: looking a wonder up in the wrong table returns `undefined`
+   * rather than an error, so a wonder's `globalHappiness` simply never arrived.
+   * Both tables are consulted here, and the effects bag carries an index
+   * signature, so declared-but-untyped keys come back as `unknown` and are
+   * coerced rather than trusted.
+   */
+  private buildingEffect(buildingId: string, effect: string): number {
+    const props = BUILDING_PROPERTIES[buildingId] ?? WONDER_PROPERTIES[buildingId];
+    const value = Number((props?.effects as Record<string, unknown> | undefined)?.[effect] ?? 0);
+    return Number.isFinite(value) ? value : 0;
+  }
+
   /** Happiness for one city (base + luxury + buildings + government bonus). */
   cityHappiness(city: City, civ: Civilization): CityHappinessResult {
     const out = this.cityOutputs(city, civ);
@@ -909,8 +1007,10 @@ export class EconomicManager {
     const population = city?.population ?? 1;
     const capturedUnrest =
       city?.capturedTurns && city.capturedTurns > 0 ? CAPTURED_CITY_UNHAPPY : 0;
-    const unhappiness =
-      Math.max(0, population - gov.tolerance) + capturedUnrest;
+    // Every citizen is unhappy, full stop. Governments no longer absorb any of
+    // them: there is no tolerance, so a city's content has to be bought with
+    // buildings, luxury, specialists and martial law, or the crowd riots.
+    const unhappiness = population + capturedUnrest;
     const specLuxury = this.specialistYields(city).luxury;
 
     const garrisonUnits = (this.gameEngine?.units ?? []).filter(
@@ -922,20 +1022,14 @@ export class EconomicManager {
         (u.attack ?? 0) > 0,
     ).length;
 
-    const govName = (gov.name ?? '').toLowerCase();
-    const martialLawMax =
-      govName === 'despotism' || govName === 'anarchy'
-        ? 4
-        : govName === 'monarchy' || govName === 'communism'
-          ? 3
-          : 0;
-    const martialLawBonus = Math.min(garrisonUnits, martialLawMax);
+    const martialLawBonus = this.martialLaw(civ, city, garrisonUnits).bonus;
 
     const happiness =
       out.luxury +
       specLuxury +
       martialLawBonus +
       this.buildingHappiness(city) +
+      this.wonderHappiness(civ) +
       gov.happinessBonus +
       BASE_CONTENTMENT;
     return { happiness, unhappiness, disorder: unhappiness > happiness };
@@ -968,7 +1062,7 @@ export class EconomicManager {
           : (b as { id?: string; type?: string })?.id ??
             (b as { type?: string })?.type ??
             '';
-      return total + (BUILDING_PROPERTIES[id]?.effects?.happiness ?? 0);
+      return total + this.buildingEffect(id, 'happiness');
     }, 0);
   }
 
@@ -1017,8 +1111,7 @@ export class EconomicManager {
       const population = city?.population ?? 1;
       const capturedUnrest =
         city?.capturedTurns && city.capturedTurns > 0 ? CAPTURED_CITY_UNHAPPY : 0;
-      const unhappiness =
-        Math.max(0, population - gov.tolerance) + capturedUnrest;
+      const unhappiness = population + capturedUnrest;
 
       const specLuxury = this.specialistYields(city).luxury;
 
@@ -1030,14 +1123,7 @@ export class EconomicManager {
           !u.isDefeated &&
           (u.attack ?? 0) > 0,
       ).length;
-      const govName = (gov.name ?? '').toLowerCase();
-      const martialLawMax =
-        govName === 'despotism' || govName === 'anarchy'
-          ? 4
-          : govName === 'monarchy' || govName === 'communism'
-            ? 3
-            : 0;
-      const martialLawBonus = Math.min(garrisonUnits, martialLawMax);
+      const martialLawBonus = this.martialLaw(civ, city, garrisonUnits).bonus;
 
       // Luxury from the *proposed* rate (not the current rate).
       const cityLuxury = Math.floor(afterCorruption * (proposedRates.luxury / 100));
@@ -1047,6 +1133,7 @@ export class EconomicManager {
         specLuxury +
         martialLawBonus +
         this.buildingHappiness(city) +
+        this.wonderHappiness(civ) +
         gov.happinessBonus +
         BASE_CONTENTMENT;
       const disorder = unhappiness > happiness;

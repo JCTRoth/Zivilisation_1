@@ -1584,7 +1584,7 @@ export class MapRenderer {
             ? (isVisible ? liveCity : map.knownCities?.[liveCity.id])
             : undefined;
           if (city) {
-            this.drawCity(ctx, x, y, city, cameraZoom, civilizations, combatAnimations);
+            this.drawCity(ctx, x, y, city, cameraZoom, civilizations, combatAnimations, params.units);
           }
         }
 
@@ -1644,7 +1644,7 @@ export class MapRenderer {
           // Stack badge (×N) when more than one unit shares the tile.
           if (drawnOnTile > 1) {
             const { x, y } = squareToScreen(col, row);
-            const badgeX = x + scaledTileSize * 0.34;
+            const badgeX = x - scaledTileSize * 0.34;
             const badgeY = y - scaledTileSize * 0.34;
             const badgeRadius = Math.max(8, cameraZoom * 8);
             ctx.save();
@@ -2249,6 +2249,58 @@ export class MapRenderer {
    * @param cameraZoom - Current camera zoom level
    * @param civilizations - Array of all civilizations for color lookup
    */
+  /**
+   * The city size badge: the population, in the upper right corner of the city
+   * square.
+   *
+   * Anchored to that corner rather than centred on it, so the chip grows inward
+   * as the number gains digits and never hangs off the tile. Sized in the same
+   * `overlayScale` band as the rest of the city overlay, and skipped entirely
+   * once the text would be too small to read — a 6px number on a busy map is
+   * worse than no number, because it looks like deliberate information.
+   *
+   * Drawn with the civ colour as a rim so it stays legible over both grass and
+   * ocean, and with a dark plate so it stays legible over a light civ colour.
+   */
+  private drawCitySizeBadge(
+    ctx: CanvasRenderingContext2D,
+    cornerX: number,
+    cornerY: number,
+    population: number,
+    overlayScale: number,
+    civColor: string,
+  ): void {
+    const size = Math.max(1, Math.round(population));
+    const fontSize = Math.min(14, Math.max(8, 8 * overlayScale));
+    if (fontSize < 7) return;
+
+    ctx.save();
+    ctx.font = `bold ${fontSize}px monospace`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+
+    const text = String(size);
+    const textWidth = ctx.measureText(text).width;
+    const padX = Math.max(2, 3 * overlayScale);
+    const padY = Math.max(1, 1.5 * overlayScale);
+    const chipW = textWidth + padX * 2;
+    const chipH = fontSize + padY * 2;
+
+    // Grow inward from the corner so the chip stays on the tile.
+    const left = cornerX - chipW;
+    const top = cornerY;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(left, top, chipW, chipH);
+    ctx.strokeStyle = civColor;
+    ctx.lineWidth = Math.max(1, overlayScale);
+    ctx.strokeRect(left, top, chipW, chipH);
+
+    ctx.fillStyle = '#FFF';
+    ctx.fillText(text, cornerX - padX, top + padY);
+    ctx.restore();
+  }
+
   private drawCity(
     ctx: CanvasRenderingContext2D,
     centerX: number,
@@ -2256,7 +2308,14 @@ export class MapRenderer {
     city: City,
     cameraZoom: number,
     civilizations: Civilization[],
-    combatAnimations?: CombatAnimation[]
+    combatAnimations?: CombatAnimation[],
+    /**
+     * Every unit in the game, for the stack count in the city's upper left
+     * corner. Passed in rather than read off the renderer: `MapRenderer` holds
+     * no engine reference, so reaching for one silently yielded `undefined` and
+     * the badge never drew.
+     */
+    units: readonly Unit[] = [],
   ): void {
     const civ = civilizations.find(c => c.id === city.civilizationId);
     const civColor = civ?.color || (city.civilizationId === 0 ? '#FFD700' : '#FF6347');
@@ -2401,32 +2460,50 @@ export class MapRenderer {
       ctx.restore();
     }
 
-    // Show fire icon below the city when in disorder (civil unrest)
+    // Show fire icon in the center of the city when in disorder (civil unrest)
     if (city.disorder) {
-      const fireFontSize = Math.min(24, Math.max(12, 12 * overlayScale));
+      const fireFontSize = Math.min(28, Math.max(16, 16 * overlayScale));
       ctx.font = `${fireFontSize}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      const fireY = centerY + size / 2 + nameOffset + fireFontSize * 0.5 +
-        (getCitySpecialistButtons(centerX, centerY, city, cameraZoom).length > 0 ? fireFontSize * 1.6 : 0);
-      ctx.fillText('🔥', centerX, fireY);
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🔥', centerX, centerY);
     }
 
-    // Show city population size as a number badge on the city tile
-    const pop = city.population || 1;
-    const popRadius = Math.min(16, Math.max(8, 8 * overlayScale));
-    const popX = centerX + size / 2 - 2;
-    const popY = centerY - size / 2 + 2;
-    ctx.beginPath();
-    ctx.fillStyle = '#000';
-    ctx.arc(popX, popY, popRadius, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.fillStyle = '#FFF';
-    ctx.font = `bold ${Math.min(18, Math.max(9, 9 * overlayScale))}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(pop), popX, popY + 0.5);
-    
+    // Show stacked unit count indicator in the upper left corner of the city
+    const unitsOnTile = units.filter(
+      (u: Unit) => u.col === city.col && u.row === city.row && !u.isDefeated,
+    ).length;
+    if (unitsOnTile > 1) {
+      const unitFontSize = Math.min(14, Math.max(8, 8 * overlayScale));
+      const unitX = centerX - size / 2 + 2;
+      const unitY = centerY - size / 2 + 2;
+      const unitRadius = Math.min(12, Math.max(6, 6 * overlayScale));
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.arc(unitX, unitY, unitRadius, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.fillStyle = '#FFF';
+      ctx.font = `bold ${unitFontSize}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(unitsOnTile), unitX, unitY + 0.5);
+    }
+
+    // ── City size indicator (population), upper right corner ────────────────
+    // The mirror of the stack count above: that one answers "how many units are
+    // here", this one answers "how big is this city", which was otherwise only
+    // visible by opening the city screen. Drawn as a chip rather than a circle
+    // because a city reaches double digits and a circle sized for one digit
+    // clips "12".
+    this.drawCitySizeBadge(
+      ctx,
+      centerX + size / 2,
+      centerY - size / 2,
+      city.population ?? 1,
+      overlayScale,
+      civColor,
+    );
+
     // Red hit-flash overlay on a city that took damage.
     const cityHealthState = this.getCityCombatHealthState(city, combatAnimations);
     if (cityHealthState.hitFlash > 0) {

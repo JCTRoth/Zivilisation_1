@@ -131,7 +131,6 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
                       {g.corruptionRate > 0 && <span>Corruption {Math.round(g.corruptionRate * 100)}%</span>}
                       {g.commercePenalty > 0 && <span>−{Math.round(g.commercePenalty * 100)}% commerce</span>}
                       {g.happinessBonus > 0 && <span>+{g.happinessBonus} happiness</span>}
-                      {g.tolerance > 2 && <span>Tolerance {g.tolerance}</span>}
                     </div>
                     <div className="government-card__desc">{g.description}</div>
                   </button>

@@ -7,7 +7,7 @@
 
 import { AIUtility, scanAreaForEnemies, findInterceptPosition, findPatrolWaypoint, type ThreatAlert } from './AIUtility';
 import { EnemySearcher } from '../EnemySearcher';
-import { ABSOLUTE_MIN_GOLD, UNIT_MAINTENANCE } from '../EconomicManager';
+import { ABSOLUTE_MIN_GOLD, CITY_RADIUS, UNIT_MAINTENANCE } from '../EconomicManager';
 import { bribeUnitCost } from '../DiplomacyManager';
 import { UNIT_PROPS, TERRAIN_PROPS, IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, BUILDING_PROPERTIES } from '@/utils/Constants';
 import {
@@ -36,10 +36,12 @@ import { analyzeCityBuildings, rememberBuildingSale } from './BuildingAnalyzer';
 import { isSellableForBudget } from './BuildingEconomics';
 import {
   planCityInfrastructure,
+  INFRASTRUCTURE_POP_THRESHOLD,
   type InfrastructureDemand,
   type InfrastructureTile,
 } from './InfrastructurePlanner';
 import type {
+  BudgetAggression,
   BuildingFundingCandidate,
   BuildingFundingPlan,
   FundingDemand,
@@ -70,7 +72,7 @@ import {
 } from './AIStrategy';
 import type { DiplomatAction } from '../DiplomacyTypes';
 import type { Unit, City, Civilization } from '../../../../types/game';
-import GameEngine, { type PlayerTurnStorage, type MapTile } from '../GameEngine';
+import GameEngine, { NUCLEAR_BLAST_RADIUS, type PlayerTurnStorage, type MapTile } from '../GameEngine';
 import { getShuffledAdjacentTiles } from '../MovementHelper';
 import { awaitPendingAnimations } from '../../rendering/GlideAnimation';
 import { debugLog } from '../../../utils/DevLog';
@@ -83,6 +85,104 @@ const SETTLE_SCORE_THRESHOLD = 12;
 // If the best settlement location is farther than this Chebyshev distance,
 // found at the current tile instead of walking across the map.
 const MAX_SETTLE_WALK_DISTANCE = 4;
+
+/**
+ * Late-game infrastructure mode.
+ *
+ * Above this city count the expansionist profiles stop treating "found another
+ * city" as the default answer. A settler first works the fields of its own
+ * cities — roads and irrigation are permanent, and a 7th city costs food
+ * upkeep and shields before it pays anything back — and only goes looking for
+ * a new site once the land it already owns is in good shape.
+ */
+const LATE_INFRA_CITY_THRESHOLD = 6;
+
+/**
+ * Profiles that switch to {@link LATE_INFRA_CITY_THRESHOLD} infrastructure
+ * mode. The turtle and the wonder/science civs already under-expand and must
+ * not be slowed down further; this is aimed at the two profiles that found
+ * their way to a lot of cities and then kept sprawling.
+ */
+const LATE_INFRA_PROFILES: ReadonlySet<StrategyProfile> = new Set<StrategyProfile>([
+  'early_expansion',
+  'military_expansion',
+]);
+
+/**
+ * A settler stops working a city once this fraction of that city's workable
+ * area carries an improvement, and moves on. Full coverage is unreachable
+ * (mountains, tundra and ocean tiles never take an improvement), so "every
+ * tile improved" would park the settler forever.
+ */
+const CITY_AREA_IMPROVED_TARGET = 0.5;
+/**
+ * A MATURE city's area counts as built out at 3/4 improved (and every
+ * irrigable and roadable tile gone). Lower than that and the city is still
+ * paying for its citizens out of raw tiles: no roads means no trade, no trade
+ * means no luxury, and no luxury means civil unrest at a size the empire
+ * cannot afford.
+ */
+const CITY_AREA_BUILT_UP_TARGET = 0.75;
+
+/**
+ * A city is "mature" from size 6 on (the same threshold the infrastructure
+ * planner uses for "fields are worth improving"). From that size the AI sends
+ * its settlers to irrigate and pave the tiles around the city instead of
+ * looking for somewhere else to found.
+ */
+const MATURE_CITY_POPULATION = INFRASTRUCTURE_POP_THRESHOLD;
+
+/**
+ * An enemy unit this close counts as a DIRECT threat to the city: while one is
+ * standing there, settlers are targets and the fields are not worked.
+ */
+const DIRECT_THREAT_RADIUS = 3;
+
+/**
+ * Rounds after the last assault during which the city counts as "under
+ * ongoing attack" — the settler stays away for the whole siege, not just the
+ * turn the catapult hit.
+ */
+const ONGOING_ATTACK_WINDOW = 6;
+
+/**
+ * How far outside a city's workable area irrigation may START when the city is
+ * short of food. Fresh water only spreads one tile at a time, so a city whose
+ * whole area is already irrigated can still gain food — but only by chaining a
+ * ditch outward and then back onto its own fields. Three fields out is enough
+ * to reach the next river; much more and the settler is decorating wilderness.
+ */
+const OUTSIDE_IRRIGATION_FIELDS = 3;
+
+/**
+ * How much better a site must score before a settler that has just finished
+ * working its cities will walk to found it, instead of founding where it
+ * stands. Stricter than {@link SETTLE_SCORE_THRESHOLD}: after a city's fields
+ * are paved and watered, the bar for a NEW city is correspondingly higher.
+ */
+const LATE_SETTLE_SCORE_THRESHOLD = 20;
+
+/** Terrains that accept an improvement at all (road / irrigation / mine). */
+const IRRIGABLE_TERRAINS = ['grassland', 'plains', 'desert', 'forest', 'jungle', 'swamp'];
+const MINABLE_TERRAINS = ['hills', 'mountains'];
+/** Orthogonal offsets — irrigation spreads sideways and along a river, not diagonally. */
+const ORTHOGONAL: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+
+/**
+ * How a thin treasury over a real-sized empire is handled.
+ *
+ * A civ is "starved" when it holds less than {@link LIQUIDATION_BUDGET_GOLD}
+ * spendable gold AND owns more than {@link LIQUIDATION_CITY_THRESHOLD} cities.
+ * Both halves matter: a young civ with 5 gold is a civ that simply has not grown
+ * yet, and stripping it achieves nothing, while a 6-city empire holding 40 gold
+ * cannot pay its own building upkeep for the month. Those liquidate hard —
+ * {@link LIQUIDATION_RESERVE_TURNS} turns of upkeep as a buffer rather than the
+ * one turn an at-war civ raises, because the problem is structural (an upkeep
+ * bill that recurs) rather than a single bill to settle.
+ */
+const LIQUIDATION_BUDGET_GOLD = 50;
+const LIQUIDATION_CITY_THRESHOLD = 4;
+const LIQUIDATION_RESERVE_TURNS = 3;
 
 const OSCILLATION_WINDOW = 6;
 const OSCILLATION_THRESHOLD = 3;
@@ -152,6 +252,15 @@ interface SeaInvasionContext {
   /** Landmass the civ would sail from. */
   homeLandmass: number;
 }
+
+/** Turns a hull may fail to close on its destination before it re-targets. */
+const NAVAL_STALL_TURNS = 2;
+
+/** How far a re-targeted hull must put itself from the objective it gave up. */
+const NAVAL_RETARGET_MIN_DISTANCE = 12;
+
+/** How close a city must be to count as an army's base (rally or garrison). */
+const ARMY_BASE_RADIUS = 3;
 
 /** Our own units a single enemy city tolerates before the blockade is a waste. */
 const BLOCKADE_UNITS_PER_CITY = 2;
@@ -400,7 +509,16 @@ export class AIManager {
           this.gameEngine.log?.('ai', `War declaration skipped — ${civ.name} cannot reach civ ${targetCivId}`, {
             civilizationId, action: 'declare_war_skipped', target: targetCivId, reason: 'no_reachable_target',
           });
-        } else if (!dm.isAtWar(civilizationId, targetCivId)) {
+        } else if (
+          !dm.isAtWar(civilizationId, targetCivId) &&
+          // A signed peace has to have had time to become a habit. The
+          // diplomacy policy already imposes this 8-round cooldown
+          // (`mayDeclareWar` → "peace is too young to abandon"); without it
+          // here the military side re-declared the moment the enemy sued for
+          // peace, and a 56-round test game logged 7 war/peace flips between
+          // two civs that never took a city off each other.
+          !this.peaceTooYoungToBreak(dm, civilizationId, targetCivId, roundNumber)
+        ) {
           debugLog(`[AI] ${civ.name} declares war (aggression ${aggressionState.score}) — rush against civ ${targetCivId}`);
           this.gameEngine.log?.('ai', `War declaration — ${civ.name} rushes civ ${targetCivId}`, {
             civilizationId, action: 'declare_war', target: targetCivId, score: aggressionState.score,
@@ -656,6 +774,50 @@ export class AIManager {
           }
         }
 
+        // Nuclear weapons are LAUNCHED, not marched. This branch runs before
+        // any targeting so a warhead is never swept into `isCombatUnit` land
+        // targeting and walked into a melee it has 0 defense for: the AI picks
+        // the best key target it can see, detonates, and the unit is gone.
+        // With no worthwhile target the warhead is held for next turn.
+        if (unit.type === 'nuclear') {
+          const strike = this.chooseNuclearStrike(unit);
+          if (!strike || !this.gameEngine.detonateNuclear(unit.id, strike.col, strike.row)) {
+            this.gameEngine.skipUnit(unit.id);
+          }
+          break;
+        }
+
+        // Settlers are never used for garrison duty. A settler standing in a
+        // city may only remain there when the city or the settler itself is
+        // directly threatened by an enemy; otherwise it must leave and resume
+        // settlement or improvement work.
+        if (unit.type === 'settler') {
+          const cityHere = this.gameEngine.getCityAt?.(unit.col, unit.row);
+          if (cityHere && cityHere.civilizationId === unit.civilizationId) {
+            const threatened = this.isSettlerDirectlyThreatened(unit);
+            if (!threatened) {
+              debugLog(`[AI-SETTLER] Settler ${unit.id} leaves city ${cityHere.name} — not threatened`);
+              this.gameEngine.log('ai', `Settler leaves city — ${civ.name} settler ${unit.id} departs ${cityHere.name}`, {
+                civilizationId, action: 'settler_leaves_city', unitId: unit.id, cityId: cityHere.id,
+              });
+              unit._aiSettlement = null;
+              unit._aiWorksTarget = null;
+              unit._aiCommittedTarget = null;
+              const stepOut = this.findAffordableStep(unit, {
+                col: cityHere.col + (unit.col <= cityHere.col ? 1 : -1),
+                row: cityHere.row,
+              });
+              if (stepOut) {
+                const r = this.gameEngine.moveUnit(unit.id, stepOut.col, stepOut.row);
+                if (r?.success) {
+                  debugLog(`[AI-SETTLER] Settler ${unit.id} moved out of city to (${stepOut.col},${stepOut.row})`);
+                  break;
+                }
+              }
+            }
+          }
+        }
+
         // Civ1: an AI settler founds a city, improves its tile, or explores.
         // The settlement search runs here (cached for chooseAITarget below) so
         // founding takes priority; without a settlement spot the settler builds
@@ -678,49 +840,94 @@ export class AIManager {
           && colonyMission.settlerId === unit.id
           && !unit.embarkedOn;
         if (unit.type === 'settler' && !unit.workTarget && !reservedForColony) {
-          // Civ1: expansion FIRST — a settler founds a new city whenever a
-          // valid spot exists, so empires actually grow. Previously the join
-          // check ran first and every produced settler (spawned on the capital
-          // tile) merged back into the capital, leaving civs at 1 city forever.
-          let settlement: { col: number; row: number; score: number } | null = null;
-          try {
-            settlement = this.findBestSettlementForSettler(unit, resolveAICivStrategy(civ, aiState));
-          } catch (error) {
-            console.error('[AI-SETTLER] Error in settlement search:', error);
-          }
-          if (!this.gameEngine.units.includes(unit)) break; // consumed by founding
-          unit._aiSettlement = settlement;
+          const civStrategy = resolveAICivStrategy(civ, aiState);
+          let worksTarget: { col: number; row: number } | null = null;
 
-          if (!settlement) {
-            // No founding spot worth walking to. Late game that means public
-            // works, not fusion: while the civ still has improvements to build
-            // on its worked tiles (roads/irrigation/railroads), keep the
-            // settler working and only join a city as a last resort. Joining
-            // first used to consume every late-game settler for +1 population
-            // the moment it spawned on a city tile, so empires never paved or
-            // irrigated their land.
-            const wantsWorks = this.wantsPublicWorks(civ.id);
-            const improvement = this.chooseImprovementForSettler(unit);
-            if (improvement) {
-              const started = this.gameEngine.buildImprovement(unit.id, improvement);
-              if (started) {
-                debugLog(`[AI-SETTLER] ${civ.name} settler ${unit.id} builds ${improvement} at (${unit.col},${unit.row})`);
+          // From city size 6+, irrigation of surrounding tiles is the top
+          // priority for settlers — unless the city is under direct threat
+          // or being attacked. This runs BEFORE any other work.
+          const irrigationTarget = this.findIrrigationTargetForMatureCity(unit);
+          if (irrigationTarget) {
+            worksTarget = irrigationTarget;
+          } else if (this.prefersInfrastructureOverExpansion(civ.id, civStrategy)
+            // Size 6 and up: the city's own fields come first, whatever the
+            // civ's strategy or city count says. This is the irrigation
+            // mandate, and it is the ONLY reason a settler is pulled off
+            // founding duty early — see findInfrastructureWorksTarget for the
+            // two threat conditions that override it.
+            || this.hasMatureCity(civ.id)) {
+            // Late-game infrastructure mode (see LATE_INFRA_PROFILES): a civ that
+            // already sprawled past LATE_INFRA_CITY_THRESHOLD cities stops
+            // treating "found another city" as the default answer. Its settler
+            // first works the fields of the cities it already owns — roads and
+            // irrigation are permanent income and growth, while a 7th city only
+            // adds upkeep — and is released to settle again once every own
+            // city's area is half improved. This runs BEFORE the settlement
+            // search, so founding genuinely takes second place.
+            worksTarget = this.findInfrastructureWorksTarget(unit);
+          }
+
+          if (worksTarget) {
+            // Standing on the tile it was sent to: build here rather than walk.
+            if (worksTarget.col === unit.col && worksTarget.row === unit.row) {
+              const improvement = this.chooseImprovementForSettler(unit);
+              if (improvement && this.gameEngine.buildImprovement(unit.id, improvement)) {
+                debugLog(`[AI-INFRA] ${civ.name} settler ${unit.id} builds ${improvement} at (${unit.col},${unit.row})`);
                 this.gameEngine.log('ai', `Settler improves — ${civ.name} builds ${improvement} at (${unit.col},${unit.row})`);
                 break; // the settler worked its turn
               }
             }
-            const worksTarget = wantsWorks ? this.findTradeRoadTarget(unit) : null;
-            if (!worksTarget && this.gameEngine.canJoinCity?.(unit.id)) {
-              const joined = this.gameEngine.foundCityWithSettler(unit.id);
-              if (joined) {
-                this.gameEngine.log('ai', `Settler joins city — ${civ.name} at (${unit.col},${unit.row})`, {
-                  civilizationId, action: 'join_city', unitId: unit.id, unitType: unit.type,
-                });
-                break;
-              }
+            unit._aiWorksTarget = worksTarget;
+            // A settlement target from an earlier turn must not outrank the
+            // works tile this turn — chooseAITarget reads it first.
+            unit._aiSettlement = null;
+            // Otherwise fall through to chooseAITarget, which walks it there.
+          } else {
+            // Civ1: expansion FIRST — a settler founds a new city whenever a
+            // valid spot exists, so empires actually grow. Previously the join
+            // check ran first and every produced settler (spawned on the capital
+            // tile) merged back into the capital, leaving civs at 1 city forever.
+            let settlement: { col: number; row: number; score: number } | null = null;
+            try {
+              settlement = this.findBestSettlementForSettler(unit, civStrategy);
+            } catch (error) {
+              console.error('[AI-SETTLER] Error in settlement search:', error);
             }
-            // Otherwise fall through to chooseAITarget, which walks the settler
-            // to the works target it just found.
+            if (!this.gameEngine.units.includes(unit)) break; // consumed by founding
+            unit._aiSettlement = settlement;
+
+            if (!settlement) {
+              // No founding spot worth walking to. Late game that means public
+              // works, not fusion: while the civ still has improvements to build
+              // on its worked tiles (roads/irrigation/railroads), keep the
+              // settler working and only join a city as a last resort. Joining
+              // first used to consume every late-game settler for +1 population
+              // the moment it spawned on a city tile, so empires never paved or
+              // irrigated their land.
+              const wantsWorks = this.wantsPublicWorks(civ.id);
+              const improvement = this.chooseImprovementForSettler(unit);
+              if (improvement) {
+                const started = this.gameEngine.buildImprovement(unit.id, improvement);
+                if (started) {
+                  debugLog(`[AI-SETTLER] ${civ.name} settler ${unit.id} builds ${improvement} at (${unit.col},${unit.row})`);
+                  this.gameEngine.log('ai', `Settler improves — ${civ.name} builds ${improvement} at (${unit.col},${unit.row})`);
+                  break; // the settler worked its turn
+                }
+              }
+              worksTarget = wantsWorks ? this.findTradeRoadTarget(unit) : null;
+              if (!worksTarget && this.gameEngine.canJoinCity?.(unit.id)) {
+                const joined = this.gameEngine.foundCityWithSettler(unit.id);
+                if (joined) {
+                  this.gameEngine.log('ai', `Settler joins city — ${civ.name} at (${unit.col},${unit.row})`, {
+                    civilizationId, action: 'join_city', unitId: unit.id, unitType: unit.type,
+                  });
+                  break;
+                }
+              }
+              // Otherwise fall through to chooseAITarget, which walks the settler
+              // to the works target it just found.
+              unit._aiWorksTarget = worksTarget;
+            }
           }
         }
 
@@ -797,6 +1004,12 @@ export class AIManager {
         // block (identical condition) used to shadow this one, turning a
         // settler that reached its spot into a skipped, never-founding unit.
         //
+        // A settler that walked here to IMPROVE a tile must not found on it.
+        // That target is a field one of its own cities already works (or, for
+        // margin irrigation, one it feeds), so founding there drops a city on
+        // top of the empire's farmland — the exact overlap the settlement rule
+        // forbids. It starts the improvement instead.
+        //
         // A settler waiting for a colony ferry is NOT at a settlement site:
         // chooseAITarget returns its rendezvous (its own tile when already on
         // the coast), and treating that as "settle here" made it attempt to
@@ -804,7 +1017,11 @@ export class AIManager {
         // for one unit in a profiled naval session, with 93 attempts and 2
         // founded cities across 200 rounds. The colony settler only founds
         // after the ferry has landed it and the mission has been cleared.
-        if (unit.type === 'settler' && !reservedForColony && unit.col === target.col && unit.row === target.row) {
+        const worksArrival = !!unit._aiWorksTarget
+          && unit._aiWorksTarget.col === target.col
+          && unit._aiWorksTarget.row === target.row;
+        if (unit.type === 'settler' && !worksArrival && !reservedForColony
+            && unit.col === target.col && unit.row === target.row) {
           debugLog(`[AI-SETTLER] Settler ${unit.id} has reached settlement location (${target.col}, ${target.row}), founding city`);
           this.gameEngine.log('ai', `Settler settles — ${civ.name} founds city at (${target.col},${target.row})`, { civilizationId, action: 'settle', unitId: unit.id, unitType: unit.type, targetCol: target.col, targetRow: target.row });
           const result = this.gameEngine.foundCityWithSettler(unit.id);
@@ -816,6 +1033,17 @@ export class AIManager {
             this.gameEngine.skipUnit(unit.id);
             break;
           }
+        }
+        if (worksArrival) {
+          const improvement = this.chooseImprovementForSettler(unit);
+          if (improvement && this.gameEngine.buildImprovement(unit.id, improvement)) {
+            debugLog(`[AI-INFRA] ${civ.name} settler ${unit.id} builds ${improvement} at (${unit.col},${unit.row})`);
+            this.gameEngine.log('ai', `Settler improves — ${civ.name} builds ${improvement} at (${unit.col},${unit.row})`);
+            break; // the settler worked its turn
+          }
+          unit._aiWorksTarget = null;
+          this.gameEngine.skipUnit(unit.id);
+          break;
         }
 
         // Target is the unit's own tile — it's already where it wants to be
@@ -1138,21 +1366,40 @@ export class AIManager {
     };
 
     // ── 1. Passive audit: buildings that are simply not earning their upkeep ──
+    // When maintenance costs are draining the treasury, sell ALL unprofitable
+    // buildings, not just the worst one per city.
+    const totalUpkeep = ownCities.reduce((sum, c) => {
+      let upkeep = 0;
+      for (const b of c.buildings ?? []) {
+        const id = typeof b === 'string'
+          ? b
+          : (b as { id?: string; type?: string })?.id ?? (b as { type?: string })?.type ?? '';
+        upkeep += BUILDING_PROPERTIES[id]?.maintenance ?? 0;
+      }
+      return sum + upkeep;
+    }, 0);
+    const maintenanceCrisis = totalUpkeep > 0
+      && (civ.resources?.gold ?? 0) < totalUpkeep * 3;
+
     for (const city of ownCities) {
       const report = reports.get(city.id);
-      const worst = report?.sellCandidates[0];
-      if (!worst) continue;
-      const economics = report?.economics.find(e => e.buildingType === worst.buildingType);
-      executeSale(city.id, worst.buildingType, worst.reasons.join(' ') || 'unprofitable', {
-        score: worst.score,
-        verdict: economics?.verdict,
-        netPerTurn: economics?.netPerTurn,
-        mode: 'passive',
-      });
+      const sellCandidates = maintenanceCrisis
+        ? (report?.sellCandidates ?? [])
+        : (report?.sellCandidates ? [report.sellCandidates[0]] : []);
+      for (const worst of sellCandidates) {
+        if (!worst) continue;
+        const economics = report?.economics.find(e => e.buildingType === worst.buildingType);
+        executeSale(city.id, worst.buildingType, worst.reasons.join(' ') || 'unprofitable', {
+          score: worst.score,
+          verdict: economics?.verdict,
+          netPerTurn: economics?.netPerTurn,
+          mode: maintenanceCrisis ? 'maintenance_crisis' : 'passive',
+        });
+      }
     }
 
     // ── 2. Forced liquidation to fund a plan ────────────────────────────────
-    const funding = this.planFundingForCiv(civ, ownCities, reports, soldThisTurn);
+    const funding = this.planFundingForCiv(civ, ownCities, reports, armyGroups, soldThisTurn);
     if (funding) {
       debugLog(
         `[AI] Funding plan for civ ${civ.id}: need ${Math.round(funding.totalNeeded)} gold, `
@@ -1170,6 +1417,61 @@ export class AIManager {
   }
 
   /**
+   * Cities this civ's army is currently relying on, and so must not be
+   * stripped to pay a bill: any city actually under threat, and any city an
+   * army group is staging from.
+   */
+  private citiesHoldingTheArmy(
+    civilizationId: number,
+    armyGroups: ArmyGroup[],
+    atWar: boolean,
+  ): Set<string> {
+    const staging: string[] = [];
+    const garrisons: string[] = [];
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return new Set<string>();
+
+    // A group's rally point IS its staging base: the city it marches from is
+    // the one holding the army.
+    for (const group of armyGroups) {
+      const rally = group.rallyPoint;
+      for (const city of this.gameEngine.cities ?? []) {
+        if (city.civilizationId !== civilizationId) continue;
+        if (grid.squareDistance(city.col, city.row, rally.col, rally.row) <= ARMY_BASE_RADIUS) {
+          staging.push(city.id);
+        }
+      }
+    }
+
+    // Troops in or beside a city mean that city is being held, so its defences
+    // are the army's defences.
+    if (atWar) {
+      for (const unit of this.gameEngine.units ?? []) {
+        if (unit.civilizationId !== civilizationId || unit.isDefeated) continue;
+        for (const city of this.gameEngine.cities ?? []) {
+          if (city.civilizationId !== civilizationId) continue;
+          if (grid.squareDistance(unit.col, unit.row, city.col, city.row) <= ARMY_BASE_RADIUS) {
+            garrisons.push(city.id);
+          }
+        }
+      }
+    }
+
+    const storage = this.gameEngine.getPlayerStorage?.(civilizationId);
+    const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const underThreat = storage
+      ? this.identifyThreatenedCities(civilizationId, storage, roundNumber).map(c => c.city.id)
+      : [];
+
+    return AICoordinator.armyDependentCities({
+      cityIds: [],
+      stagingCityIds: staging,
+      garrisonCityIds: garrisons,
+      underThreatCityIds: underThreat,
+    });
+  }
+
+  /**
    * Work out what this civ wants to spend money on and, when it cannot afford
    * it, what it should sell. Returns null when there is nothing to fund, so the
    * caller can stay quiet in the common case.
@@ -1182,6 +1484,7 @@ export class AIManager {
     civ: Civilization,
     ownCities: City[],
     reports: Map<string, ReturnType<typeof analyzeCityBuildings>>,
+    armyGroups: ArmyGroup[],
     alreadySold: Set<string>,
   ): BuildingFundingPlan | null {
     const demands: FundingDemand[] = [];
@@ -1222,16 +1525,66 @@ export class AIManager {
       });
     }
 
+    // What the empire spends on buildings every turn, and what it actually has
+    // to spend after keeping the disband reserve out of reach. Both are needed
+    // before the demand list can be closed, because they decide whether the civ
+    // is living hand to mouth.
+    const spendableGold = Math.max(0, (civ.resources?.gold ?? 0) - ABSOLUTE_MIN_GOLD);
+    const upkeepPerTurn = ownCities.reduce((sum, c) => {
+      let upkeep = 0;
+      for (const b of c.buildings ?? []) {
+        const id = typeof b === 'string'
+          ? b
+          : (b as { id?: string; type?: string })?.id ?? (b as { type?: string })?.type ?? '';
+        upkeep += BUILDING_PROPERTIES[id]?.maintenance ?? 0;
+      }
+      return sum + upkeep;
+    }, 0);
+    const starvedTreasury = spendableGold < LIQUIDATION_BUDGET_GOLD
+      && ownCities.length > LIQUIDATION_CITY_THRESHOLD;
+    const maintenanceHeavy = upkeepPerTurn > 0 && spendableGold < upkeepPerTurn * 4;
+
+    // ── Reserve: rebuild a treasury the upkeep bill can be paid from ────────
+    // Without a purchase to fund, the demands above are empty and this civ
+    // liquidates nothing however close to empty it is — yet a handful of cities
+    // with a few dozen gold is an empire that cannot pay its own building upkeep
+    // for the month. The shortfall here is the size of the bill it is trying to
+    // get ahead of, which is exactly what the sales below are sized against.
+    if (starvedTreasury && upkeepPerTurn > 0) {
+      demands.push({
+        kind: 'reserve',
+        label: `a reserve to cover ${upkeepPerTurn} gold/turn of building upkeep`,
+        goldNeeded: LIQUIDATION_RESERVE_TURNS * upkeepPerTurn,
+        urgency: 0.5,
+      });
+    }
+
+    // ── Maintenance crisis: upkeep is draining the treasury ────────────────
+    // When building maintenance exceeds what the treasury can sustain, the AI
+    // must shed buildings aggressively — not just the unprofitable ones, but
+    // any building whose upkeep is bleeding the civ dry. This fires when the
+    // upkeep bill alone would consume the entire spendable treasury within a
+    // few turns, regardless of city count.
+    if (maintenanceHeavy) {
+      demands.push({
+        kind: 'maintenance_crisis',
+        label: `maintenance costs ${upkeepPerTurn} gold/turn exceed sustainable budget`,
+        goldNeeded: upkeepPerTurn * LIQUIDATION_RESERVE_TURNS,
+        urgency: 0.85,
+      });
+    }
+
     if (demands.length === 0) return null;
 
     // ── Candidates: buildings that are not paying for themselves ────────────
-    const candidates: BuildingFundingCandidate[] = [];
+    const economicCandidates: BuildingFundingCandidate[] = [];
     for (const city of ownCities) {
       if (alreadySold.has(city.id)) continue;
-      const economics = reports.get(city.id)?.economics ?? [];
+      const report = reports.get(city.id);
+      const economics = report?.economics ?? [];
       for (const e of economics) {
         if (!isSellableForBudget(e)) continue;
-        candidates.push({
+        economicCandidates.push({
           cityId: city.id,
           cityName: city.name,
           buildingType: e.buildingType,
@@ -1240,13 +1593,44 @@ export class AIManager {
         });
       }
     }
+    // …minus the ones the army cannot afford to lose. A liquidation that strips
+    // a besieged city of its walls, or a staging base of its barracks, is how a
+    // treasury shortage turns into a lost war: the refund is trivial, the
+    // captured city is not.
+    const candidates = AICoordinator.filterArmySafeCandidates({
+      candidates: economicCandidates,
+      protectedCityIds: this.citiesHoldingTheArmy(civ.id, armyGroups, atWar),
+      atWar,
+    });
+
+    // How hard to liquidate. A civ at war, in deficit, or already broke is
+    // raising money to settle a specific bill, and there is a whole tier of
+    // buildings it has been ignoring: the ones that merely break even. Selling
+    // one of those costs no income at all and still refunds half its cost, so it
+    // is the cheapest gold in the game — strictly better than tearing down
+    // something that is actually earning.
+    //
+    // `starvedTreasury` (computed above) joins them: a thin treasury over a
+    // real-sized empire is the same signal even when the civ is not at war and
+    // not formally in the red. `isUnderEconomicPressure` scales its reserve with
+    // upkeep, so a civ whose buildings are cheap to run never trips it no matter
+    // how little it holds; and a civ sitting on 40 gold is not "broke", yet
+    // cannot fund a settler, a unit or a single purchase before next month's tax.
+    const broke = (civ.resources?.gold ?? 0) <= 0;
+    const underPressure = this.gameEngine.aiEconomicManager?.isUnderEconomicPressure?.(civ) === true;
+    const aggression: BudgetAggression = (atWar || underPressure || broke || starvedTreasury || maintenanceHeavy)
+      ? 'aggressive'
+      : 'normal';
 
     return AICoordinator.planBuildingFunding({
       demands,
       // Keep the absolute reserve out of reach: a civ that funds its plans down
       // to zero is a civ that gets its units disbanded next turn.
-      budget: Math.max(0, (civ.resources?.gold ?? 0) - ABSOLUTE_MIN_GOLD),
+      budget: spendableGold,
       candidates,
+      aggression,
+      upkeepPerTurn,
+      reserveTurns: starvedTreasury ? LIQUIDATION_RESERVE_TURNS : 1,
     });
   }
 
@@ -1276,7 +1660,10 @@ export class AIManager {
       if (unit.civilizationId === civ.id || unit.isDefeated) continue;
       if (grid.squareDistance(unit.col, unit.row, city.col, city.row) <= 3) raidersNearby++;
     }
-    const underAssault = (storage?.turnData?.armyGroups as ArmyGroup[] | undefined)?.some(group => {
+    // The groups are written to `turnData.aiState.armyGroups`, not to
+    // `turnData.armyGroups`; reading the latter found nothing and left every
+    // city looking unassailed while it was being attacked.
+    const underAssault = (aiState?.armyGroups as ArmyGroup[] | undefined)?.some(group => {
       const target = group.targetLocation;
       return grid.squareDistance(target.col, target.row, city.col, city.row) <= 1;
     }) ?? false;
@@ -1290,6 +1677,9 @@ export class AIManager {
       isAtWar: atWar,
       raidersNearby,
       underAssault,
+      hasIrrigationSupply: typeof engine.canSupplyIrrigation === 'function'
+        ? (col, row) => engine.canSupplyIrrigation(col, row)
+        : undefined,
     });
   }
 
@@ -1341,14 +1731,10 @@ export class AIManager {
 
     // If findBestSettlementForSettler already founded at the current tile, the
     // settler is gone — signal the caller to break.
-    if (!settlement) {
-      const tile = this.gameEngine.getTileAt(unit.col, unit.row);
-      const city = this.gameEngine.getCityAt(unit.col, unit.row);
-      if (tile && tile.type !== 'ocean' && tile.type !== 'mountains' && !city) {
-        debugLog(`[AI-SETTLER] Settler ${unit.id} re-evaluation found no better spot — founding at current (${unit.col},${unit.row})`);
-        this.gameEngine.foundCityWithSettler(unit.id);
-        return true;
-      }
+    if (!settlement && this.canFoundCityHere(unit)) {
+      debugLog(`[AI-SETTLER] Settler ${unit.id} re-evaluation found no better spot — founding at current (${unit.col},${unit.row})`);
+      this.gameEngine.foundCityWithSettler(unit.id);
+      return true;
     }
 
     // If a new settlement target was picked, the main loop will move the
@@ -2208,7 +2594,116 @@ export class AIManager {
    * round naval game: 62 ship-on-ship attacks, 58 ships lost of 86 built, 10
    * of 129 wars started by a transport ramming a transport at peace).
    */
+  /**
+   * Where a hull should sail this turn.
+   *
+   * The objective comes from `chooseNavalDestination`; this wrapper watches
+   * whether the hull is actually getting there. A hull that stops closing on
+   * its destination is not going to arrive — the beach is walled off, the
+   * anchorage is full of other hulls, the settler will never reach a boardable
+   * tile — and re-issuing the same unreachable tile every turn is what made
+   * transports sit in a circle off one island forever. When that happens the
+   * hull gives the objective up and sails somewhere else.
+   */
   private chooseNavalTarget(unit: Unit): { col: number; row: number } | null {
+    const target = this.chooseNavalDestination(unit);
+    if (!target) return null;
+    return this.hullIsClosing(unit, target)
+      ? target
+      : this.retargetStalledHull(unit, target);
+  }
+
+  /**
+   * Whether this hull reduced its distance to its destination since last turn,
+   * tolerating a single blocked turn (a hull routinely cannot move on the turn
+   * it finishes loading or unloading).
+   */
+  private hullIsClosing(unit: Unit, target: { col: number; row: number }): boolean {
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return true;
+    const dist = grid.squareDistance(unit.col, unit.row, target.col, target.row);
+    const previous = unit._navalIntent;
+    let stalled = 0;
+    if (previous && previous.col === target.col && previous.row === target.row) {
+      stalled = dist < previous.dist ? 0 : previous.stalled + 1;
+    }
+    unit._navalIntent = { col: target.col, row: target.row, dist, stalled };
+    return stalled < NAVAL_STALL_TURNS;
+  }
+
+  /**
+   * A hull that cannot reach its objective: release the claim that was pinning
+   * it there, and send it to water a real distance away.
+   *
+   * Releasing the claim matters as much as moving. A colony mission reserves a
+   * settler AND an island; keeping either after the hull has proved it cannot
+   * deliver means the settler stands on a coast forever while the island stays
+   * off-limits to every other civ — one unreachable rock quietly sterilising a
+   * whole archipelago.
+   */
+  private retargetStalledHull(
+    unit: Unit,
+    stuck: { col: number; row: number },
+  ): { col: number; row: number } | null {
+    const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
+    const colony = this.getColonyMission(storage);
+    if (colony?.ferryId === unit.id) {
+      this.clearColonyMission(storage);
+      this.gameEngine.log?.('ai', `Colony abandoned — ${unit.type} cannot reach the island`, {
+        civilizationId: unit.civilizationId, action: 'colony_abandon',
+        unitId: unit.id, targetCol: stuck.col, targetRow: stuck.row,
+      });
+    }
+    const invasion = this.getInvasionMission(storage);
+    if (invasion?.ferryId === unit.id) this.clearInvasionMission(storage);
+    unit._navalIntent = undefined;
+
+    const elsewhere = this.findDistantNavalWater(unit, stuck, NAVAL_RETARGET_MIN_DISTANCE);
+    if (elsewhere) {
+      debugLog(`[AI] Hull ${unit.id} stalled on (${stuck.col},${stuck.row}) — sailing elsewhere to (${elsewhere.col},${elsewhere.row})`);
+      return elsewhere;
+    }
+    return this.findNavalPatrolTarget(unit);
+  }
+
+  /** Navigable water at least `minDistance` from `avoid`, unknown water first. */
+  private findDistantNavalWater(
+    unit: Unit,
+    avoid: { col: number; row: number },
+    minDistance: number,
+  ): { col: number; row: number } | null {
+    const grid = this.gameEngine.squareGrid;
+    const map = this.gameEngine.map;
+    if (!grid || !map) return null;
+    const explored = this.gameEngine.getPlayerStorage?.(unit.civilizationId)?.explored;
+
+    const unknown: Array<{ col: number; row: number }> = [];
+    const known: Array<{ col: number; row: number }> = [];
+    for (let radius = minDistance; radius <= minDistance + 16; radius++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        for (let dr = -radius; dr <= radius; dr++) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+          const col = unit.col + dc;
+          const row = unit.row + dr;
+          if (!grid.isValidSquare(col, row)) continue;
+          if (grid.squareDistance(col, row, avoid.col, avoid.row) < minDistance) continue;
+          const key = String(this.gameEngine.getTileAt(col, row)?.type ?? '').trim().toLowerCase();
+          if (key !== 'ocean' && key !== 'river') continue;
+          if (this.gameEngine.getUnitAt(col, row)) continue;
+          if (this.isAdjacentToHostileCity(unit, { col, row })) continue;
+          if (!explored || explored[row * map.width + col] !== true) unknown.push({ col, row });
+          else known.push({ col, row });
+        }
+      }
+      if (unknown.length >= 4 || known.length >= 4) break;
+    }
+
+    const pool = unknown.length > 0 ? unknown : known;
+    if (pool.length === 0) return null;
+    return pool[this.hullChoiceIndex(unit.id, pool.length)];
+  }
+
+  private chooseNavalDestination(unit: Unit): { col: number; row: number } | null {
     if (!this.gameEngine.squareGrid) return null;
 
     const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
@@ -2368,7 +2863,15 @@ export class AIManager {
     if (!map || !grid) return null;
     const explored = this.gameEngine.getPlayerStorage?.(unit.civilizationId)?.explored;
 
-    let fallback: { col: number; row: number } | null = null;
+    // Gather candidates ring by ring, then CHOOSE among them. Returning the
+    // first one found was the bug: the scan starts at the top-left diagonal, so
+    // "the nearest water" meant "two tiles up and to the left" for every hull in
+    // the game. Idle ships therefore all migrated into the same map corner, and
+    // on arriving there (with nothing up-left left to pick) they milled about
+    // each other. The pick below is offset by the hull's own identity, so two
+    // ships standing on the same tile still steer apart.
+    const unknown: Array<{ col: number; row: number }> = [];
+    const known: Array<{ col: number; row: number }> = [];
     for (let radius = 2; radius <= 20; radius++) {
       for (let dc = -radius; dc <= radius; dc++) {
         for (let dr = -radius; dr <= radius; dr++) {
@@ -2381,18 +2884,39 @@ export class AIManager {
           // Rivers are navigable too, so a river navy can patrol them.
           if (key !== 'ocean' && key !== 'river') continue;
           if (this.gameEngine.getUnitAt(col, row)) continue;
+          if (this.isAdjacentToHostileCity(unit, { col, row })) continue;
           if (!explored || explored[row * map.width + col] !== true) {
-            return { col, row }; // prefer the unknown
+            unknown.push({ col, row });
+            // One ring of unexplored water is plenty to choose from.
+            if (unknown.length >= 8) break;
+          } else {
+            known.push({ col, row });
           }
-          if (!fallback) fallback = { col, row };
         }
       }
+      if (unknown.length >= 8) break;
     }
-    // Everything nearby is mapped: patrol known water rather than idling. Skip
-    // tiles next to a hostile city so a patrol never parks in an enemy harbour.
-    return fallback && !this.isAdjacentToHostileCity(unit, fallback)
-      ? fallback
-      : this.findAnyNavalWater(unit);
+
+    const pool = unknown.length > 0 ? unknown : known;
+    if (pool.length === 0) return this.findAnyNavalWater(unit);
+    return pool[this.hullChoiceIndex(unit.id, pool.length)];
+  }
+
+  /**
+   * A stable per-hull index into a list of candidate destinations.
+   *
+   * Two hulls that share a tile must not also share a destination, or they
+   * arrive together and then fight over the same water. Deriving the index from
+   * the unit id keeps it deterministic (a replayed turn picks the same tile) and
+   * spreads it across hulls for free.
+   */
+  private hullChoiceIndex(unitId: string, length: number): number {
+    if (length <= 1) return 0;
+    let hash = 0;
+    for (let i = 0; i < unitId.length; i++) {
+      hash = (hash * 31 + unitId.charCodeAt(i)) >>> 0;
+    }
+    return hash % length;
   }
 
   /** The first water tile we can reach, used when patrol water is exhausted. */
@@ -2477,6 +3001,82 @@ export class AIManager {
     if (path.length > 2) {
       roundManager.setUnitPath(unit.id, path.slice(2));
     }
+  }
+
+  /**
+   * The best tile a warhead this civ owns should be detonated over, or null
+   * when nothing justifies spending 160 shields and a 5-gold-per-turn upkeep.
+   *
+   * "Target key enemy cities and key enemy military units" — so a city scores
+   * on population (capitals first), a unit stack scores on summed combat
+   * strength, and a lone weak unit is never worth a warhead. The blast is two
+   * tiles, so anything we have standing next to the target would die with it:
+   * a strike that would touch our own troops is never chosen.
+   *
+   * Only civs we are actually at war with (plus the barbarian faction) are
+   * targets, so a peacetime AI holds its arsenal until the war it is fighting
+   * says otherwise.
+   */
+  private chooseNuclearStrike(
+    unit: Unit,
+  ): { col: number; row: number; score: number; reason: string } | null {
+    const grid = this.gameEngine.squareGrid;
+    const dm = this.gameEngine.diplomacyManager;
+    if (!grid || !dm) return null;
+
+    const civId = unit.civilizationId;
+    const enemies = new Set((dm.getEnemies?.(civId) ?? []).map(Number));
+    enemies.add(BARBARIAN_CIV_ID);
+    if (enemies.size === 0) return null;
+
+    const hostile = (other: { civilizationId: number }) =>
+      enemies.has(Number(other.civilizationId));
+    const inBlast = (col: number, row: number, at: { col: number; row: number }) =>
+      grid.chebyshevDistance(at.col, at.row, col, row) <= NUCLEAR_BLAST_RADIUS;
+    // Friendly fire is a hard veto: our own troops in the blast make the
+    // target unusable, however juicy it is.
+    const ownInBlast = (at: { col: number; row: number }) =>
+      this.gameEngine.units.some(
+        (u) =>
+          !u.isDefeated &&
+          u.civilizationId === civId &&
+          inBlast(u.col, u.row, at),
+      );
+
+    let best: { col: number; row: number; score: number; reason: string } | null = null;
+    const consider = (at: { col: number; row: number }, score: number, reason: string) => {
+      if (ownInBlast(at)) return;
+      if (!best || score > best.score) best = { col: at.col, row: at.row, score, reason };
+    };
+
+    // 1. Key enemy cities. Population is what makes a city worth a nuke, and
+    //    a capital is worth extra because it carries the government.
+    for (const city of this.gameEngine.cities) {
+      if (city.civilizationId === civId || !hostile(city)) continue;
+      const garrison = this.gameEngine.units.filter(
+        (u) => !u.isDefeated && hostile(u) && inBlast(u.col, u.row, city),
+      ).length;
+      const score = (city.population ?? 1) * 10 + garrison * 6 + (city.isCapital === true ? 25 : 0);
+      consider(city, score, `enemy city ${city.name}`);
+    }
+
+    // 2. Key enemy military units: a stack we can wipe in one blast. A single
+    //    weak unit is never worth the warhead.
+    for (const enemy of this.gameEngine.units) {
+      if (enemy.isDefeated || enemy.civilizationId === civId || !hostile(enemy)) continue;
+      if ((enemy.attack ?? 0) <= 0) continue;
+      const stack = this.gameEngine.units.filter(
+        (u) => !u.isDefeated && hostile(u) && inBlast(u.col, u.row, enemy),
+      );
+      const strength = stack.reduce(
+        (sum, u) => sum + Math.max(1, u.attack ?? 0) + (u.defense ?? 0) * 0.5,
+        0,
+      );
+      if (stack.length < 2 && strength < 12) continue;
+      consider(enemy, strength, `enemy stack of ${stack.length}`);
+    }
+
+    return best;
   }
 
   /**
@@ -2762,6 +3362,13 @@ export class AIManager {
         debugLog(`[AI-SETTLER] Settler ${unit.id} heading to settlement (${cached.col},${cached.row})`);
         return { col: cached.col, row: cached.row };
       }
+      // Late-game infrastructure mode: the settler was assigned a field of one
+      // of its own cities to work and walks there instead of founding.
+      const worksTile = unit._aiWorksTarget;
+      if (worksTile) {
+        debugLog(`[AI-INFRA] Settler ${unit.id} heading to works tile (${worksTile.col},${worksTile.row})`);
+        return { col: worksTile.col, row: worksTile.row };
+      }
       // Civ1 income strategy: no settlement worth founding — walk to the
       // nearest friendly worked tile (grassland/plains/desert) lacking a road
       // and build a road there to boost the city's commerce → tax + science.
@@ -2772,6 +3379,7 @@ export class AIManager {
           return tradeRoad;
         }
       }
+      unit._aiWorksTarget = null;
     }
 
     // Special handling for scouts: use EnemySearcher to find enemies
@@ -3354,7 +3962,13 @@ export class AIManager {
     // every worked tile is a bigger permanent income/growth lever than another
     // corps of units, so the ceiling scales with the era, not just early techs.
     const eraBoost = techs.length >= 30 ? 6 : techs.length >= 20 ? 5 : techs.length >= 14 ? 3 : techs.length >= 6 ? 2 : 1;
-    return Math.max(2, friendlyCities * 2) * eraBoost;
+    // Floor of 8 on the FINAL number, not on the multiplier: a one-city civ
+    // used to be allowed TWO improvements in its whole empire (the budget
+    // counts improvements within 4 tiles of a city), so its fields stayed raw
+    // — no roads, no commerce, no luxury, and the city hit civil unrest at
+    // size 4 and stayed there. The floor only lifts the early/small case; from
+    // six techs on the era term dominates and the ceiling scales as before.
+    return Math.max(friendlyCities * 2 * eraBoost, 8);
   }
 
   /**
@@ -3375,6 +3989,374 @@ export class AIManager {
         this.gameEngine.squareGrid.squareDistance(t.col, t.row, c.col, c.row) <= 4
       )
     ).length;
+  }
+
+  /**
+   * Whether this civ's settlers should work its fields rather than found a new
+   * city. Two independent reasons:
+   *
+   *  - **Late and sprawling**: past {@link LATE_INFRA_CITY_THRESHOLD} cities
+   *    running one of {@link LATE_INFRA_PROFILES}.
+   *  - **Broke**: at or above the {@link ABSOLUTE_MIN_GOLD} reserve but unable
+   *    to net a positive gold. Such a civ has money and no income, so a 7th city
+   *    would only add upkeep it cannot pay. The road a settler lays is bought
+   *    with shields instead of gold and pays +trade back every turn after. This
+   *    is the settler half of the same spiral
+   *    {@link AutoProduction.economyBeforeArmy} decides production for, so the
+   *    two agree on which civs are in it.
+   */
+  prefersInfrastructureOverExpansion(civId: number, strategy: StrategyProfile): boolean {
+    if (this.brokeButSolvent(civId) && this.wantsPublicWorks(civId)) return true;
+    if (!LATE_INFRA_PROFILES.has(strategy)) return false;
+    return this.ownCities(civId).length > LATE_INFRA_CITY_THRESHOLD;
+  }
+
+  /**
+   * Whether this civ owns a city from size 6 on — the size at which the AI is
+   * required to start irrigating and paving the tiles around it.
+   */
+  hasMatureCity(civId: number): boolean {
+    return this.ownCities(civId).some(
+      (c: City) => (c.population ?? 1) >= MATURE_CITY_POPULATION,
+    );
+  }
+
+  /**
+   * Public: `AutoProduction` uses this to keep a public-works corps of
+   * settlers on the payroll while a size-6+ city still has fields to improve.
+   */
+  hasSettlerWorksMandate(civId: number): boolean {
+    return this.hasMatureCity(civId);
+  }
+
+  /**
+   * Whether a settler may safely work this city's fields right now.
+   *
+   * The ONLY two reasons the works mission is refused are the two the design
+   * calls for: a direct threat to the city, and attacks still going on there.
+   *  - **ongoing attack** — the city was assaulted within the last
+   *    {@link ONGOING_ATTACK_WINDOW} rounds (`lastAttackedRound` is written by
+   *    `GameEngine.resolveCityCombat`);
+   *  - **direct threat** — an enemy unit within {@link DIRECT_THREAT_RADIUS},
+   *    or the civ's own threat assessment saying this city needs defence.
+   */
+  private cityIsUnderDirectThreat(
+    city: City,
+    storage: PlayerTurnStorage | undefined,
+    roundNumber: number,
+  ): boolean {
+    const attackedAt = city.lastAttackedRound;
+    if (typeof attackedAt === 'number' && roundNumber - attackedAt <= ONGOING_ATTACK_WINDOW) {
+      return true;
+    }
+
+    const grid = this.gameEngine.squareGrid;
+    if (grid) {
+      const enemyNear = this.gameEngine.units.some(
+        (u: Unit) =>
+          !u.isDefeated &&
+          u.civilizationId !== city.civilizationId &&
+          grid.chebyshevDistance(u.col, u.row, city.col, city.row) <= DIRECT_THREAT_RADIUS,
+      );
+      if (enemyNear) return true;
+    }
+
+    if (!storage) return false;
+    const threatened = this.identifyThreatenedCities(city.civilizationId, storage, roundNumber);
+    return threatened.some((t) => t.city.id === city.id);
+  }
+
+  /**
+   * A civ that has climbed back to the minimum reserve and still cannot fund
+   * another unit: money in hand, no income. Mirrors
+   * `AutoProduction.canAffordAnotherUnit`'s test (a projected per-turn surplus of
+   * at least 1) rather than reusing it, so neither subsystem has to reach into
+   * the other's private state.
+   */
+  private brokeButSolvent(civId: number): boolean {
+    const civ = this.gameEngine.civilizations?.[civId];
+    if (!civ) return false;
+    if ((civ.resources?.gold ?? 0) < ABSOLUTE_MIN_GOLD) return false;
+    const preview = this.gameEngine.economicManager?.previewEconomy?.(civ, {
+      tax: civ.taxRate ?? 50,
+      science: civ.scienceRate ?? 50,
+      luxury: civ.luxuryRate ?? 50,
+    });
+    return !!preview && preview.net < 1;
+  }
+
+  private ownCities(civId: number): City[] {
+    return (this.gameEngine.cities ?? []).filter((c: City) => c.civilizationId === civId);
+  }
+
+  /**
+   * The tiles a city actually works: the `CITY_RADIUS` box with the four far
+   * corners dropped, exactly as `EconomicManager.cityTerritory` builds it. Kept
+   * in step with that shape on purpose — "how much of my city is improved" is
+   * meaningless if it is measured over a different set of tiles than the city
+   * gets its food from.
+   */
+  private cityAreaTiles(city: City): Array<{ col: number; row: number }> {
+    const out: Array<{ col: number; row: number }> = [];
+    const isValid = (col: number, row: number): boolean =>
+      typeof this.gameEngine.squareGrid?.isValidSquare === 'function'
+        ? this.gameEngine.squareGrid.isValidSquare(col, row)
+        : true;
+    for (let dCol = -CITY_RADIUS; dCol <= CITY_RADIUS; dCol++) {
+      for (let dRow = -CITY_RADIUS; dRow <= CITY_RADIUS; dRow++) {
+        if (dCol === 0 && dRow === 0) continue;
+        if (Math.abs(dCol) === CITY_RADIUS && Math.abs(dRow) === CITY_RADIUS) continue;
+        const col = city.col + dCol;
+        const row = city.row + dRow;
+        if (isValid(col, row)) out.push({ col, row });
+      }
+    }
+    return out;
+  }
+
+  /** How much of a city's workable area carries an improvement, 0..1. */
+  private improvedFractionOfCityArea(city: City): number {
+    const tiles = this.cityAreaTiles(city);
+    if (tiles.length === 0) return 1;
+    let improved = 0;
+    for (const { col, row } of tiles) {
+      const tile = this.gameEngine.getTileAt(col, row);
+      if (tile?.improvement) improved++;
+    }
+    return improved / tiles.length;
+  }
+
+  /**
+   * Whether a city needs food: a negative surplus, or one about to run out.
+   * Uses the engine's own `cityFoodBalance`, which already charges this
+   * settler's own upkeep, so a settler standing in the city counts itself.
+   */
+  private cityNeedsFood(city: City, civRef: Civilization | undefined): boolean {
+    const balance = this.gameEngine.economicManager?.cityFoodBalance?.(city, civRef);
+    if (!balance) return false;
+    return balance.surplus < 1
+      || (balance.turnsUntilStarvation >= 0 && balance.turnsUntilStarvation <= 3);
+  }
+
+  /** Whether a tile could carry irrigation at all — the engine's own rule, which
+   * looks up to IRRIGATION_WATER_REACH orthogonal steps for fresh water rather
+   * than only immediate neighbours. Delegating keeps the AI from walking to
+   * tiles the engine would then refuse. */
+  private canTileBeIrrigated(col: number, row: number): boolean {
+    return typeof this.gameEngine.canSupplyIrrigation === 'function'
+      ? this.gameEngine.canSupplyIrrigation(col, row)
+      : ORTHOGONAL.some(([dCol, dRow]) => {
+        const neighbour = this.gameEngine.getTileAt(col + dCol, row + dRow);
+        if (!neighbour) return false;
+        const terrain = neighbour.terrain || neighbour.type || '';
+        return terrain === 'river' || terrain === 'lake' || neighbour.improvement === IMPROVEMENT_TYPES.IRRIGATION;
+      });
+  }
+
+  /**
+   * The tile this settler should work on the way to serving `city`, or null.
+   *
+   * Preference order: when the city needs COMMERCE (unhappy and its trade
+   * cannot cover its unhappiness) a road on a trade terrain wins, because only
+   * trade converts into happiness. Otherwise a field inside the city's own
+   * area that can be irrigated — whether the city is short of food OR the
+   * settler is there on the size-6 irrigation mandate — then any unimproved
+   * field inside the area, then — food-short cities only — an irrigable tile
+   * in the margin up to {@link OUTSIDE_IRRIGATION_FIELDS} outside, which
+   * chains a ditch back onto the fields it feeds.
+   */
+  private pickWorksTileForCity(
+    unit: Unit,
+    city: City,
+    needsFood: boolean,
+    preferIrrigation = false,
+    preferTrade = false,
+  ): { col: number; row: number } | null {
+    const roadDef = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
+    const roadTerrains = roadDef?.tradeBonusTerrains ?? [];
+    const marginRadius = CITY_RADIUS + OUTSIDE_IRRIGATION_FIELDS;
+
+    const workable = (terrain: string): boolean =>
+      roadTerrains.includes(terrain)
+      || IRRIGABLE_TERRAINS.includes(terrain)
+      || MINABLE_TERRAINS.includes(terrain);
+
+    let bestInArea: { col: number; row: number } | null = null;
+    let bestInAreaDist = Infinity;
+    let bestIrrigation: { col: number; row: number } | null = null;
+    let bestIrrigationDist = Infinity;
+    let bestOutside: { col: number; row: number } | null = null;
+    let bestOutsideDist = Infinity;
+    let bestRoad: { col: number; row: number } | null = null;
+    let bestRoadScore = -Infinity;
+
+    for (let dCol = -marginRadius; dCol <= marginRadius; dCol++) {
+      for (let dRow = -marginRadius; dRow <= marginRadius; dRow++) {
+        const inArea = Math.abs(dCol) <= CITY_RADIUS
+          && !(Math.abs(dCol) === CITY_RADIUS && Math.abs(dRow) === CITY_RADIUS);
+        const chebyshev = Math.max(Math.abs(dCol), Math.abs(dRow));
+        if (!inArea && !needsFood) continue;
+
+        const col = city.col + dCol;
+        const row = city.row + dRow;
+        if (this.gameEngine.squareGrid?.isValidSquare?.(col, row) === false) continue;
+        const tile = this.gameEngine.getTileAt(col, row);
+        if (!tile) continue;
+        // Skip anything already improved, and skip the centre tile itself.
+        if (tile.improvement) continue;
+        const terrain = tile.terrain || tile.type || '';
+        if (terrain === 'ocean' || terrain === 'arctic' || !workable(terrain)) continue;
+
+        const dist = this.gameEngine.squareGrid?.squareDistance(unit.col, unit.row, col, row) ?? Infinity;
+        const irrigable = IRRIGABLE_TERRAINS.includes(terrain) && this.canTileBeIrrigated(col, row);
+
+        if (!inArea) {
+          // Outside the area only food counts, and only on a tile the ditch can
+          // actually reach from the water it is spreading.
+          if (irrigable && chebyshev <= marginRadius && dist < bestOutsideDist) {
+            bestOutsideDist = dist;
+            bestOutside = { col, row };
+          }
+          continue;
+        }
+        if ((needsFood || preferIrrigation) && irrigable && dist < bestIrrigationDist) {
+          bestIrrigationDist = dist;
+          bestIrrigation = { col, row };
+        }
+        if (roadTerrains.includes(terrain)) {
+          // A tile the city already works is worth twice one it does not: the
+          // road's trade turns into happiness (or tax) on the very next turn.
+          const worked = city.workingTiles?.has(`${col},${row}`) ?? false;
+          const score = (worked ? 100 : 0) - dist;
+          if (score > bestRoadScore) {
+            bestRoadScore = score;
+            bestRoad = { col, row };
+          }
+        }
+        if (dist < bestInAreaDist) {
+          bestInAreaDist = dist;
+          bestInArea = { col, row };
+        }
+      }
+    }
+
+    if (preferTrade && bestRoad) return bestRoad;
+    return bestIrrigation ?? bestInArea ?? bestOutside;
+  }
+
+  /**
+   * Late-game infrastructure mode: the tile this settler should work before it
+   * is allowed to found another city, or null when every own city's area has
+   * reached {@link CITY_AREA_IMPROVED_TARGET} and settlement may resume.
+   *
+   * Cities are visited nearest-first, so a settler finishes the city it is
+   * standing next to before travelling across the map for a better one, and a
+   * city with almost nothing improved is preferred over one that is nearly
+   * finished. Cities whose food is short get their irrigation first, including
+   * the margin tiles outside the area.
+   */
+  private findInfrastructureWorksTarget(unit: Unit): { col: number; row: number } | null {
+    const civId = unit.civilizationId;
+    const storage = this.gameEngine.getPlayerStorage?.(civId);
+    const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+
+    // The size-6 mandate does not wait for the civ-wide improvement budget:
+    // a city that has reached the size where its fields matter gets them
+    // watered whatever the counter says. The budget still decides whether
+    // SMALLER cities may be worked when nothing mature needs anything.
+    const budgetAllows = this.wantsPublicWorks(civId);
+    if (!budgetAllows && !this.hasMatureCity(civId)) return null;
+
+    const civRef = this.gameEngine.civilizations?.[civId];
+    const grid = this.gameEngine.squareGrid;
+    const candidates = this.ownCities(civId)
+      .map((city: City) => ({
+        city,
+        mature: (city.population ?? 1) >= MATURE_CITY_POPULATION,
+        improved: this.improvedFractionOfCityArea(city),
+        dist: grid?.squareDistance(unit.col, unit.row, city.col, city.row) ?? Infinity,
+      }))
+      // The ONLY thing that removes a city from the works programme is a direct
+      // threat or an attack still going on there.
+      .filter((entry) => !this.cityIsUnderDirectThreat(entry.city, storage, roundNumber))
+      .filter((entry) => budgetAllows || entry.mature)
+      .filter((entry) => (entry.mature
+        // A mature city keeps its settler until its fields are actually built
+        // out — roads AND irrigation — not merely until half the area carries
+        // something. Raw tiles cannot pay for the citizens standing on them,
+        // which is exactly how a big city ends up in civil unrest.
+        ? entry.improved < CITY_AREA_BUILT_UP_TARGET
+          || this.hasUnimprovedIrrigableTile(entry.city)
+          || this.hasUnimprovedRoadTile(entry.city)
+        : entry.improved < CITY_AREA_IMPROVED_TARGET))
+      .sort((a, b) => a.dist - b.dist || a.improved - b.improved);
+
+    for (const { city, improved, mature } of candidates) {
+      const target = this.pickWorksTileForCity(
+        unit,
+        city,
+        this.cityNeedsFood(city, civRef),
+        mature,
+        this.cityNeedsCommerce(city, civRef),
+      );
+      if (target) {
+        debugLog(
+          `[AI-INFRA] ${civId} settler ${unit.id} works tile (${target.col},${target.row}) for city (${city.col},${city.row}) at ${(improved * 100).toFixed(0)}% improved`,
+        );
+        return target;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Whether a city's workable area still holds a tile that could carry
+   * irrigation and does not have an improvement yet. This is the stopping
+   * condition for the size-6 mandate: once every irrigable field around the
+   * city is watered, the settler is free to found again.
+   */
+  private hasUnimprovedIrrigableTile(city: City): boolean {
+    for (const { col, row } of this.cityAreaTiles(city)) {
+      const tile = this.gameEngine.getTileAt(col, row);
+      if (!tile || tile.improvement) continue;
+      const terrain = tile.terrain || tile.type || '';
+      if (IRRIGABLE_TERRAINS.includes(terrain) && this.canTileBeIrrigated(col, row)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether a city's workable area still holds an unimproved tile that a road
+   * would turn into commerce. Roads are the ONLY thing that raises trade, and
+   * trade is what the luxury rate converts into happiness — so a city without
+   * roads around it cannot pay for its own citizens, however much food it has.
+   */
+  private hasUnimprovedRoadTile(city: City): boolean {
+    const roadDef = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
+    const roadTerrains = roadDef?.tradeBonusTerrains ?? [];
+    for (const { col, row } of this.cityAreaTiles(city)) {
+      const tile = this.gameEngine.getTileAt(col, row);
+      if (!tile || tile.improvement) continue;
+      const terrain = tile.terrain || tile.type || '';
+      if (roadTerrains.includes(terrain)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether a city needs COMMERCE more than it needs food: it is unhappy and
+   * its trade cannot cover its unhappiness even at a 100 % luxury rate. While
+   * that is true a road is worth more than irrigation, because only trade
+   * converts into happiness — and the moment trade catches up the city goes
+   * back to farming. Self-limiting: road until trade ≥ unhappiness, irrigate
+   * after.
+   */
+  private cityNeedsCommerce(city: City, civ: Civilization | undefined): boolean {
+    if (!civ) return false;
+    const happy = this.gameEngine.economicManager?.cityHappiness?.(city, civ);
+    if (!happy) return false;
+    if (!happy.disorder && happy.unhappiness < happy.happiness) return false;
+    return (city.yields?.trade ?? 0) < happy.unhappiness;
   }
 
   /**
@@ -3399,15 +4381,23 @@ export class AIManager {
     const terrain = tile.terrain || tile.type || '';
     if (terrain === 'ocean' || terrain === 'arctic') return null;
 
-    // Only improve tiles within a few tiles of a friendly city (working radius
-    // plus a small margin) — roads/farms/mines there actually feed the civ.
-    const nearCity = this.gameEngine.cities.some((c: City) =>
+    // Inside the working radius the settler improves the tile freely; outside it,
+    // only a food-short city's chained irrigation is worth the trip (see
+    // OUTSIDE_IRRIGATION_FIELDS). Anything further out is wilderness.
+    const inMargin = this.gameEngine.cities.some((c: City) =>
       c.civilizationId === civId &&
-      this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, c.col, c.row) <= 4
+      this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, c.col, c.row) <= CITY_RADIUS
+    );
+    const nearCity = inMargin || this.gameEngine.cities.some((c: City) =>
+      c.civilizationId === civId &&
+      this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, c.col, c.row) <= CITY_RADIUS + OUTSIDE_IRRIGATION_FIELDS
     );
     if (!nearCity) return null;
 
-    if (this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
+    // The improvement budget exists so settlers don't pave the wilderness for
+    // ever. It does NOT apply while the size-6 mandate is live: a mature
+    // city's fields get watered whatever the civ-wide counter says.
+    if (!this.hasMatureCity(civId) && this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
 
     const civ = this.gameEngine.civilizations?.[civId];
     const strategy = resolveAICivStrategy(
@@ -3424,6 +4414,20 @@ export class AIManager {
         this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, a.col, a.row) -
         this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, b.col, b.row),
       )[0];
+    // The city this settler serves has to be safe to work. Direct threat, or
+    // an attack still going on there, is the ONLY thing that stops the works —
+    // without this the fallback path would happily irrigate a city while it
+    // was being stormed.
+    if (
+      nearestCity &&
+      this.cityIsUnderDirectThreat(
+        nearestCity,
+        this.gameEngine.getPlayerStorage?.(civId),
+        this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
+      )
+    ) {
+      return null;
+    }
     const balance = nearestCity
       ? this.gameEngine.economicManager?.cityFoodBalance?.(nearestCity, civ)
       : null;
@@ -3434,11 +4438,35 @@ export class AIManager {
     const growthStrategy = strategy === 'early_expansion' || strategy === 'balanced_growth';
     const prioritizeFood = foodConstrained || growthStrategy;
 
-    const terrainIrrigable = ['grassland', 'plains', 'desert', 'forest', 'jungle', 'swamp'].includes(terrain);
+    const terrainIrrigable = IRRIGABLE_TERRAINS.includes(terrain);
     // The engine enforces fresh water (river/lake/irrigated neighbour).
     const canIrrigate = terrainIrrigable && this.gameEngine.canBuildImprovement(unit.id, 'irrigation');
-    const canMine = (terrain === 'hills' || terrain === 'mountains') &&
+    const canMine = MINABLE_TERRAINS.includes(terrain) &&
       this.gameEngine.canBuildImprovement(unit.id, 'mine');
+
+    // COMMERCE before food when the city cannot pay for its own citizens: an
+    // unhappy city whose trade is below its unhappiness gains nothing from
+    // another +1 food, because food does not convert into happiness. A road on
+    // a trade terrain does — and the moment trade catches up with unhappiness
+    // `cityNeedsCommerce` turns itself off and farming resumes.
+    const roadProps = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
+    const roadable =
+      (roadProps?.tradeBonusTerrains ?? []).includes(terrain) && !tile.improvement;
+    if (
+      nearestCity &&
+      this.cityNeedsCommerce(nearestCity, civ) &&
+      roadable &&
+      this.gameEngine.canBuildImprovement(unit.id, 'road')
+    ) {
+      return 'road';
+    }
+
+    // Outside every own city's workable area, the ONLY worthwhile improvement is
+    // irrigation for a city that is short of food: fresh water spreads one tile
+    // at a time, so a fully-watered city gains food by chaining a ditch out to
+    // the next river and back onto its own fields. A mine or a road out there
+    // feeds nothing, so it is refused.
+    if (!inMargin && !(prioritizeFood && canIrrigate)) return null;
 
     // Food first when the city needs to grow; production first otherwise.
     if (prioritizeFood && canIrrigate) return 'irrigation';
@@ -3468,6 +4496,75 @@ export class AIManager {
   }
 
   /**
+   * From city size 6+, the AI should prioritize irrigating the surrounding
+   * tiles of that city with settlers. This is the most impactful use of a
+   * settler in the mid-to-late game: irrigation permanently boosts food, which
+   * drives population growth and ultimately more production and gold.
+   *
+   * Returns the best irrigation target tile, or null if:
+   * - No city of size 6+ exists
+   * - The city is under direct threat or being attacked
+   * - No irrigable tile is available near the city
+   */
+  private findIrrigationTargetForMatureCity(unit: Unit): { col: number; row: number } | null {
+    const civId = unit.civilizationId;
+    const friendlyCities = this.gameEngine.cities.filter(
+      (c: City) => c.civilizationId === civId && (c.population ?? 0) >= 6,
+    );
+    if (friendlyCities.length === 0) return null;
+
+    const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const storage = this.gameEngine.getPlayerStorage?.(civId);
+
+    const sortedCities = friendlyCities
+      .map((city: City) => ({
+        city,
+        dist: this.gameEngine.squareGrid?.squareDistance(unit.col, unit.row, city.col, city.row) ?? Infinity,
+      }))
+      .sort((a, b) => a.dist - b.dist);
+
+    for (const { city } of sortedCities) {
+      if (this.cityIsUnderDirectThreat(city, storage, roundNumber)) continue;
+
+      const underAttack = (storage as { turnData?: { lastCityAssaultRound?: number } })?.turnData?.lastCityAssaultRound;
+      if (typeof underAttack === 'number' && roundNumber - underAttack <= ONGOING_ATTACK_WINDOW) continue;
+
+      if (!city.workingTiles || city.workingTiles.size === 0) continue;
+
+      let bestTile: { col: number; row: number; score: number } | null = null;
+
+      for (const key of city.workingTiles) {
+        const parts = key.split(',');
+        const col = Number(parts[0]);
+        const row = Number(parts[1]);
+        if (!Number.isFinite(col) || !Number.isFinite(row)) continue;
+
+        const tile = this.gameEngine.getTileAt(col, row);
+        if (!tile) continue;
+        if (tile.improvement) continue;
+
+        const terrain = tile.terrain || tile.type || '';
+        if (!IRRIGABLE_TERRAINS.includes(terrain)) continue;
+        if (!this.canTileBeIrrigated(col, row)) continue;
+        if (!this.gameEngine.canBuildImprovement(unit.id, 'irrigation')) continue;
+
+        const dist = this.gameEngine.squareGrid?.squareDistance(unit.col, unit.row, col, row) ?? Infinity;
+        const score = -dist;
+        if (!bestTile || score > bestTile.score) {
+          bestTile = { col, row, score };
+        }
+      }
+
+      if (bestTile) {
+        debugLog(`[AI-IRRIGATE] Settler ${unit.id} irrigating tile (${bestTile.col}, ${bestTile.row}) for city ${city.name}`);
+        return { col: bestTile.col, row: bestTile.row };
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Civ1 income strategy: find the nearest tile a friendly city WORKS that has
    * no improvement yet and where a road grants +1 trade (grassland/plains/
    * desert — see IMPROVEMENT_PROPERTIES.road.tradeBonusTerrains). Roads on
@@ -3480,21 +4577,20 @@ export class AIManager {
     const roadDef = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
     if (!roadDef?.tradeBonusTerrains) return null;
 
-    // Same improvement budget as chooseImprovementForSettler.
+    // Same improvement budget as chooseImprovementForSettler (and the same
+    // size-6 exemption).
     const friendlyCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civId);
     if (friendlyCities.length === 0) return null;
-    if (this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
+    if (!this.hasMatureCity(civId) && this.countOwnImprovements(civId) >= this.improvementBudget(civId)) return null;
 
     // Terrains where SOME improvement is useful: roads/irrigation on the
     // worked plain/grass/desert belt, mines on hills and mountains. The
     // on-arrival chooser (`chooseImprovementForSettler`) decides which one
     // and validates fresh water, so the walk target only has to be workable.
-    const irrigable = ['grassland', 'plains', 'desert', 'forest', 'jungle', 'swamp'];
-    const minable = ['hills', 'mountains'];
     const isWorkable = (terrain: string): boolean =>
       roadDef.tradeBonusTerrains.includes(terrain) ||
-      irrigable.includes(terrain) ||
-      minable.includes(terrain);
+      IRRIGABLE_TERRAINS.includes(terrain) ||
+      MINABLE_TERRAINS.includes(terrain);
 
     // Food/growth civs should walk to tiles that can actually be irrigated
     // (orthogonal fresh water or an already-irrigated neighbour) instead of
@@ -3510,17 +4606,8 @@ export class AIManager {
       const balance = this.gameEngine.economicManager?.cityFoodBalance?.(c, civRef);
       return !!balance && balance.surplus < 1;
     });
-    const ORTHO: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1], [-1, 0]];
-    const isIrrigationEligible = (col: number, row: number, terrain: string): boolean => {
-      if (!irrigable.includes(terrain)) return false;
-      for (const [dc, dr] of ORTHO) {
-        const neighbor = this.gameEngine.getTileAt(col + dc, row + dr);
-        if (!neighbor) continue;
-        const nt = neighbor.terrain || neighbor.type || '';
-        if (nt === 'river' || nt === 'lake' || neighbor.improvement === 'irrigation') return true;
-      }
-      return false;
-    };
+    const isIrrigationEligible = (col: number, row: number, terrain: string): boolean =>
+      IRRIGABLE_TERRAINS.includes(terrain) && this.canTileBeIrrigated(col, row);
 
     let best: { col: number; row: number } | null = null;
     let bestDist = Infinity;
@@ -3557,6 +4644,33 @@ export class AIManager {
   }
 
   /**
+   * Whether the settler may found a city on the tile it is standing on.
+   *
+   * Buildable terrain with no city on it is not enough: a city also may not
+   * overlap the workable area of one of its OWN cities. The settlement search
+   * rejects such sites, but every "just found it here instead of wandering"
+   * fallback has to ask too, or the AI quietly drops a city on top of its own
+   * farmland and both starve.
+   */
+  private canFoundCityHere(unit: Unit): boolean {
+    const tile = this.gameEngine.getTileAt(unit.col, unit.row);
+    if (!tile) return false;
+    if (tile.type === 'ocean' || tile.type === 'lake' || tile.type === 'mountains') return false;
+    if (this.gameEngine.getCityAt(unit.col, unit.row)) return false;
+    if (this.overlapsOwnCityArea(unit.col, unit.row, unit.civilizationId)) return false;
+    return true;
+  }
+
+  /** The general no-overlap rule, delegated to the evaluator that owns it. */
+  private overlapsOwnCityArea(col: number, row: number, civilizationId: number): boolean {
+    return SettlementEvaluator.overlapsOwnCityArea(
+      col, row,
+      (c, r) => this.gameEngine.getCityAt(c, r),
+      civilizationId,
+    );
+  }
+
+  /**
    * Find best settlement location for a settler
    */
   private findBestSettlementForSettler(
@@ -3565,6 +4679,12 @@ export class AIManager {
     replanDepth = 0,
   ): { col: number; row: number; score: number } | null {
     debugLog(`[AI-SETTLER] Evaluating settlement locations for settler at (${unit.col}, ${unit.row})`);
+    // A settler that has just finished working its own cities' fields faces a
+    // higher bar than one that has just been produced: it may found where it
+    // stands unless the best site is clearly, clearly better.
+    const settleThreshold = this.prefersInfrastructureOverExpansion(unit.civilizationId, strategy)
+      ? LATE_SETTLE_SCORE_THRESHOLD
+      : SETTLE_SCORE_THRESHOLD;
 
     // Track position history to detect oscillation
     if (!unit._positionHistory) {
@@ -3614,10 +4734,7 @@ export class AIManager {
           return this.findBestSettlementForSettler(unit, strategy, 1);
         }
         // Already retried once — force settle at current tile to break loop.
-        const tile = this.gameEngine.getTileAt(unit.col, unit.row);
-        const city = this.gameEngine.getCityAt(unit.col, unit.row);
-        const valid = tile && tile.type !== 'ocean' && tile.type !== 'mountains' && !city;
-        if (valid) {
+        if (this.canFoundCityHere(unit)) {
           debugLog(`[AI-SETTLER] 🔄 Replan exhausted, founding at current tile (${unit.col},${unit.row})`);
           this.gameEngine.foundCityWithSettler(unit.id);
         }
@@ -3640,14 +4757,7 @@ export class AIManager {
     }
 
     // First, check if current location is a good settlement spot
-    const currentTile = this.gameEngine.getTileAt(unit.col, unit.row);
-    const currentCity = this.gameEngine.getCityAt(unit.col, unit.row);
-
-    // Check if current position is valid for settling
-    const currentPosValid = currentTile &&
-        currentTile.type !== 'ocean' &&
-        currentTile.type !== 'mountains' &&
-        !currentCity;
+    const currentPosValid = this.canFoundCityHere(unit);
 
     if (currentPosValid && isOscillating) {
       debugLog(`[AI-SETTLER] 🔄 Oscillation detected! Position history: ${history.join(' -> ')}`);
@@ -3742,7 +4852,7 @@ export class AIManager {
           Math.abs(bestLocation.row - unit.row)
         );
         const bestClearlyBetter = currentScore !== null &&
-          bestLocation.score - currentScore > SETTLE_SCORE_THRESHOLD;
+          bestLocation.score - currentScore > settleThreshold;
         const bestIsFar = bestDist > MAX_SETTLE_WALK_DISTANCE;
 
         if (currentScore !== null && (!bestClearlyBetter || bestIsFar)) {
@@ -3823,12 +4933,9 @@ export class AIManager {
     // unit could still produce an impossible route.
     if (occupant) return false;
 
-    // Keep the whole 20-tile workable area separate from friendly cities.
-    const tooClose = this.gameEngine.cities?.some((city: City) =>
-      city.civilizationId === unit.civilizationId &&
-      Math.max(Math.abs(target.col - city.col), Math.abs(target.row - city.row)) < MIN_CITY_CENTER_DISTANCE
-    );
-    if (tooClose) return false;
+    // Keep the whole 20-tile workable area separate from friendly cities —
+    // the general no-overlap rule, from the evaluator that owns it.
+    if (this.overlapsOwnCityArea(target.col, target.row, unit.civilizationId)) return false;
 
     // SettlementEvaluator uses the tile's visible/explored state. Keep the
     // cached-target check consistent with it; some headless/test engines do
@@ -4447,11 +5554,38 @@ export class AIManager {
   }
 
   private isCombatUnit(unit: Unit): boolean {
-    const nonCombatTypes = new Set(['settler', 'caravan', 'diplomat', 'worker']);
+    const nonCombatTypes = new Set(['settler', 'caravan', 'diplomat', 'worker', 'nuclear']);
     if (nonCombatTypes.has(unit.type)) {
       return false;
     }
     return (unit.attack || 0) > 0.5;
+  }
+
+  private isSettlerDirectlyThreatened(unit: Unit): boolean {
+    if (!this.gameEngine.squareGrid) return false;
+    const dm = this.gameEngine.diplomacyManager;
+    const enemies = dm ? new Set((dm.getEnemies?.(unit.civilizationId) ?? []).map(Number)) : new Set<number>();
+    if (enemies.size === 0) return false;
+
+    for (const other of this.gameEngine.units) {
+      if (other.civilizationId === unit.civilizationId || other.isDefeated) continue;
+      const isHostile = other.civilizationId === BARBARIAN_CIV_ID
+        || (dm?.isAtWar?.(unit.civilizationId, other.civilizationId) ?? false);
+      if (!isHostile) continue;
+      const dist = this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, other.col, other.row);
+      if (dist <= 2) return true;
+    }
+
+    for (const city of this.gameEngine.cities) {
+      if (city.civilizationId === unit.civilizationId) continue;
+      const isHostile = city.civilizationId === BARBARIAN_CIV_ID
+        || (dm?.isAtWar?.(unit.civilizationId, city.civilizationId) ?? false);
+      if (!isHostile) continue;
+      const dist = this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, city.col, city.row);
+      if (dist <= 2) return true;
+    }
+
+    return false;
   }
 
   /** Whether the unit is standing on or immediately adjacent to one of its own cities. */
@@ -4666,6 +5800,10 @@ export class AIManager {
       if (!dm.hasContacted?.(civ.id, other.id)) continue;
       if ((dm.getAllies?.(civ.id) ?? []).includes(other.id)) continue;
       if (!this.isCivStillInGame(other.id)) continue;
+      // Same 8-round cooldown the diplomacy policy applies to its own
+      // declarations — otherwise this hook re-declares the war the AI just
+      // agreed to end, on the very next turn.
+      if (this.peaceTooYoungToBreak(dm, civ.id, other.id, roundNumber)) continue;
       const reachableBy = this.classifyFinalWarReach(civ.id, other.id, ownLandmasses, () => {
         beachLandmasses ??= this.computeBeachLandmasses();
         return beachLandmasses;
@@ -4723,6 +5861,32 @@ export class AIManager {
       storage?.civilizationId ?? -1,
       record.targetCivId,
     ) ?? false;
+  }
+
+  /**
+   * Whether a signed peace with `otherId` is still too fresh to throw away.
+   *
+   * The diplomacy policy already applies an 8-round cooldown
+   * (`mayDeclareWar` → "peace is too young to abandon"). The two MILITARY-side
+   * declaration paths — the aggression rush and the final war — had none, so
+   * an AI that had just agreed to end a war re-declared it on its very next
+   * turn. A 56-round test game logged seven war/peace flips between two civs
+   * that never took a city off each other.
+   */
+  private peaceTooYoungToBreak(
+    dm: {
+      getRelationsForCiv?: (
+        civId: number,
+      ) => Array<{ otherCivId: number; peaceSignedAt?: number }>;
+    },
+    civId: number,
+    otherId: number,
+    roundNumber: number,
+    cooldown = 8,
+  ): boolean {
+    const rel = dm.getRelationsForCiv?.(civId)?.find((r) => r.otherCivId === otherId);
+    if (!rel || rel.peaceSignedAt === undefined) return false;
+    return roundNumber - rel.peaceSignedAt < cooldown;
   }
 
   /**
@@ -5197,10 +6361,18 @@ export class AIManager {
     // one-unit-per-city garrison is only affordable when the army is larger
     // than cities + 3; otherwise reserving every unit left the AI with no
     // offensive units at all, so army groups never formed ("groups never
-    // attack").
+    // attack"). Once the army reaches 4 units, every city gets at least 1
+    // defender regardless. Past the very early game (year >= -2000), every
+    // city always gets at least 1 defender regardless of army size.
+    const currentYear = this.gameEngine.currentYear ?? -4000;
+    const isEarlyGame = currentYear < -2000;
     const maxReserves = units.length >= cities.length + 3
       ? cities.length
-      : Math.max(0, units.length - 3);
+      : units.length >= 4
+        ? cities.length
+        : !isEarlyGame
+          ? cities.length
+          : Math.max(0, units.length - 3);
 
     for (const city of cities) {
       if (reserves.size >= maxReserves) break;

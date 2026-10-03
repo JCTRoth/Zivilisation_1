@@ -147,16 +147,15 @@ describe('Specialist luxury helps prevent disorder', () => {
     const civ = makeCiv(0, { government: 'despotism', luxuryRate: 0, taxRate: 100, scienceRate: 0 });
     engine.civilizations = [civ];
 
-    // Pop 5 under despotism (tolerance 2): unhappiness = max(0,5-2) = 3.
-    // With 0% luxury and no buildings: happiness = 0 + 0 + 0 + 0 + 2 (base) = 2.
-    // 2 < 3 → disorder.
-    const city = makeCity(0, { population: 5, specialists: [] });
+    // No tolerance: unhappiness = population. A pop-4 city with 0% luxury and no
+    // buildings has happiness = 2 (base contentment), so 2 < 4 → disorder.
+    const city = makeCity(0, { population: 4, specialists: [] });
     const result1 = econ.cityHappiness(city, civ);
+    expect(result1.unhappiness).toBe(4);
     expect(result1.disorder).toBe(true);
 
-    // Add an entertainer → +2 luxury → happiness = 0 + 2 + 0 + 0 + 2 = 4.
-    // 4 > 3 → no disorder.
-    const cityWithSpec = makeCity(0, { population: 5, specialists: ['entertainer'] as SpecialistType[] });
+    // Add an entertainer → +2 luxury → happiness = 4. 4 > 4 is false → content.
+    const cityWithSpec = makeCity(0, { population: 4, specialists: ['entertainer'] as SpecialistType[] });
     const result2 = econ.cityHappiness(cityWithSpec, civ);
     expect(result2.disorder).toBe(false);
   });

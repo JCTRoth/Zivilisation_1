@@ -130,12 +130,12 @@ function addUnit(
 const managerOf = (engine: GameEngine) => engine.aiManager as any;
 
 /** Run the final-war decision for a civ the way the AI turn does. */
-function runFinalWar(engine: GameEngine, civId: number) {
+function runFinalWar(engine: GameEngine, civId: number, round?: number) {
   const storage = engine.getPlayerStorage(civId)!;
   managerOf(engine).maybeDeclareFinalWar(
     engine.civilizations[civId],
     storage,
-    engine.roundManager?.getRoundNumber?.() ?? 1,
+    round ?? engine.roundManager?.getRoundNumber?.() ?? 1,
   );
   return storage;
 }
@@ -287,7 +287,8 @@ describe('final war across water builds the navy half', () => {
     dm.declareWar(0, 1);
     dm.makePeace(0, 1);
 
-    runFinalWar(engine, 0);
+    // Round 8: the peace cooldown has run out, so the declaration is legal.
+    runFinalWar(engine, 0, 8);
 
     expect(dm.isAtWar(0, 1)).toBe(true);
     const record = storage.turnData.finalWar as { targetCivId: number; reachableBy: string };

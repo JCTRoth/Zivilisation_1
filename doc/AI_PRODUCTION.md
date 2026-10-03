@@ -43,6 +43,40 @@ they expand.
 - The existing economy unit-cap still stops settler/army spam when the civ
   can't afford upkeep.
 
+## Where a settler is spent: founding vs. public works
+
+Production only decides **how many** settlers a civ has. What each one *does*
+is decided in `AIManager.runAITurn`, in this order:
+
+1. **No city may overlap an own city** (a hard rule, all profiles). A city works
+   a fixed 5x5 area, so two own cities closer than `MIN_CITY_CENTER_DISTANCE`
+   starve each other. `SettlementEvaluator.overlapsOwnCityArea` is the single
+   place that answers this; `AIManager.canFoundCityHere` asks it on every
+   "just found it here instead of wandering" fallback, which the settlement
+   search's own rejection does not cover.
+2. **Late infrastructure mode** — for `early_expansion` and `military_expansion`
+   only (`LATE_INFRA_PROFILES`), and only past `LATE_INFRA_CITY_THRESHOLD`
+   (6) cities. The settler first works the fields of the cities the civ already
+   owns and is released to settle only once every own city's area is
+   `CITY_AREA_IMPROVED_TARGET` (50 %) improved. Afterwards it may found again,
+   but the site has to clear the stricter `LATE_SETTLE_SCORE_THRESHOLD`.
+3. Otherwise a settler founds a city whenever a valid site exists.
+4. Only with no site at all does it fall back to works, then to joining a city,
+   then to exploring.
+
+Tunnable constants live in `AIManager.ts` (see
+[`AI_OVERVIEW.md` §5](AI_OVERVIEW.md)).
+
+### Irrigation outside the city area
+
+A city whose own area is fully watered can still gain food, because fresh water
+spreads one tile at a time: `pickWorksTileForCity` lets a food-short city's
+irrigation start up to `OUTSIDE_IRRIGATION_FIELDS` (3) outside its workable
+area, on tiles that satisfy the engine's own canal rule
+(`GameEngine.canSupplyIrrigation`). Nothing else — no road, no mine — is built
+out there, and only when the serving city is actually short of food
+(`EconomicManager.cityFoodBalance`).
+
 ## Event-reactive production
 
 `AutoProduction.onGameEvent(eventType, data)` is wired into the engine event

@@ -506,3 +506,27 @@ Also fixed after the analysis:
 - CLEANUP: DONE — the ~54 unused exports knip reported are removed (un-exported
   where the module uses them, deleted where nothing did). knip is now clean, so
   its CI step can be made a hard failure.
+
+1.
+THE AI SHOULD MORE AGRESIVELY START TO SELL BUILDINGS WHEN THE BUDGET IS GETTING LOW AND BUILDINGS MAINTAINANCE COSTS ARE THE RESON FOR IT!
+2.
+-  The AI is not allowed to found new cities with in the city radius of a city of its own civilization!
+Thats an absolute rule.
+Also the AI should from city size 6 on start to irrigate the surrounding tiles of the city with settlers if possible.
+Only reason it would be not possible is direct thread to the city or on going attacks on the city.
+Adjust therefor the complete AI with all parts where it is needed!
+3.
+The AI is failing with bigger cities at the moment that get into civil unrest,
+the reson is that the cities do not have roads and irrigation around them,
+so than buildings that make the citie happier get sold (dont change this!),
+adjust the AI so that it builds out the city with roads and irrigation around it so that the city can grow and not get into civil unrest.
+civil unrest is ulitmative breaking military expansion and the AI!
+Analyze all of the AI stragegy than make a plan how to adjust the AI so that it can handle cities over a longer period of time and not get into civil unrest or econmic issues the target also is to have zero abondend units!
+After implementation do test runs with maximum of 300 turns.
+Analze and refelect if the test runs are going in the right direction and if the AI is able to handle bigger cities over a longer period of time.
+Adjust if needed and do test runs again until the AI is able to handle bigger cities over a longer period of time without getting into civil unrest or economic issues.
+If all not helps make bigger changes to the AI and adjust the AI so that it can handle bigger cities over a longer period of time without getting into civil unrest or economic issues.
+than do test runs again until the AI is able to handle bigger cities over a longer period of time without getting into civil unrest or economic issues.
+at the end generate a .adoc report with all the changes and test runs and results and add it to the project documentation.
+If a city has a builded up irrigation and road system it can affort to have 2-3-4-5 citizens that are Entertainers or Taxmans or Scientists and still have a good surplus of food and production and gold.
+Make sure the AI is using this mechanic to the maximum and adjust the AI so that it is able to handle bigger cities over a longer period of time without getting into civil unrest or economic issues.

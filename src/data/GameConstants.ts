@@ -18,7 +18,7 @@ export const VERY_SMALL_ISLAND_MAX_TILES = 10;
  * Compared against the engine's 0-based round counter (rounds 0-4 are the
  * opening rounds; research unlocks when round 5 begins).
  */
-export const RESEARCH_UNLOCK_ROUND = 5;
+export const RESEARCH_UNLOCK_ROUND = 4;
 
 /**
  * Turn at which the game offers the "Auto. turn ending" option once: by then

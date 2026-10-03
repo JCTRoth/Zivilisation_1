@@ -233,22 +233,35 @@ describe('EconomicManager upkeep & treasury', () => {
 });
 
 describe('EconomicManager happiness & disorder', () => {
-  it('city is in disorder when crowding (beyond gov tolerance) exceeds happiness', () => {
+  it('city is in disorder when the crowd outweighs its happiness', () => {
     const civ = makeCiv(0, { taxRate: 100, scienceRate: 0, luxuryRate: 0 });
-    // population 5, despotism tolerance 2 → 3 unhappy; 0% luxury → happiness
-    // is only the base contentment (2) → 3 > 2 → disorder.
+    // No tolerance in the game: every citizen is unhappy, so a size-5 city is 5
+    // unhappy against 2 points of base contentment → disorder.
     const city = makeCity(0, 0, 5);
     const engine = makeEngine({ civilizations: [civ], cities: [city] });
     const econ = new EconomicManager(engine);
 
     const happiness = econ.cityHappiness(city, civ);
-    expect(happiness.unhappiness).toBe(3);
+    expect(happiness.unhappiness).toBe(5);
     expect(happiness.disorder).toBe(true);
   });
 
-  it('small cities within the government tolerance are never in disorder', () => {
+  it('counts every citizen as unhappy regardless of government', () => {
+    // Governments no longer absorb any of the crowd. A size-4 city is 4 unhappy
+    // under Despotism, Monarchy and Communism alike — only the government's
+    // happiness BONUS differs, and that is a separate term.
+    const under = ['despotism', 'monarchy', 'communism', 'republic', 'democracy'].map(government => {
+      const civ = makeCiv(0, { taxRate: 100, scienceRate: 0, luxuryRate: 0, government });
+      const city = makeCity(0, 0, 4);
+      const engine = makeEngine({ civilizations: [civ], cities: [city] });
+      return new EconomicManager(engine).cityHappiness(city, civ).unhappiness;
+    });
+    expect(new Set(under)).toEqual(new Set([4]));
+  });
+
+  it('a size-2 city is content on base contentment alone', () => {
     const civ = makeCiv(0, { taxRate: 0, scienceRate: 0, luxuryRate: 100 });
-    const city = makeCity(0, 0, 2); // pop 2 ≤ despotism tolerance 2
+    const city = makeCity(0, 0, 2);
     const engine = makeEngine({ civilizations: [civ], cities: [city] });
     const econ = new EconomicManager(engine);
 
@@ -258,19 +271,19 @@ describe('EconomicManager happiness & disorder', () => {
 
   it('high luxury prevents disorder in a large city', () => {
     const civ = makeCiv(0, { taxRate: 0, scienceRate: 0, luxuryRate: 100 });
-    const city = makeCity(0, 10, 3); // luxury 10 >> unhappiness 1
+    const city = makeCity(0, 10, 3); // luxury 10 >> unhappiness 3
     const engine = makeEngine({ civilizations: [civ], cities: [city] });
     const econ = new EconomicManager(engine);
 
     const happiness = econ.cityHappiness(city, civ);
     expect(happiness.disorder).toBe(false);
     expect(happiness.happiness).toBe(12); // 10 luxury + 2 base contentment
-    expect(happiness.unhappiness).toBe(1);
+    expect(happiness.unhappiness).toBe(3); // one per citizen, no tolerance
   });
 
   it('applyCityOutputs writes outputs onto a content city', () => {
     const civ = makeCiv(0, { taxRate: 30, scienceRate: 50, luxuryRate: 20 });
-    const city = makeCity(0, 10, 2); // pop 2 ≤ tolerance → content
+    const city = makeCity(0, 10, 2); // 2 unhappy vs 2 base contentment → content
     const engine = makeEngine({ civilizations: [civ], cities: [city] });
     const econ = new EconomicManager(engine);
 
@@ -283,7 +296,7 @@ describe('EconomicManager happiness & disorder', () => {
 
   it('applyCityOutputs zeroes treasury/research but keeps luxury for a disordered city', () => {
     const civ = makeCiv(0, { taxRate: 30, scienceRate: 50, luxuryRate: 20 });
-    // population 7 > tolerance 2 → 5 unhappy; luxury 2 + base 2 = 4 < 5 → disorder.
+    // 7 unhappy (one per citizen); luxury 2 + base 2 = 4 < 7 → disorder.
     const city = makeCity(0, 10, 7);
     const engine = makeEngine({ civilizations: [civ], cities: [city] });
     const econ = new EconomicManager(engine);

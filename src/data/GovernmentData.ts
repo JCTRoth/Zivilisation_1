@@ -10,8 +10,8 @@
 export interface GovernmentProperties {
   name: string;
   /** Maximum allowed taxRate (percent). Democracy caps at 10. */
-  maxTaxRate: number;  /** Citizens beyond this population are unhappy (Civ1 crowding rule). */
-  tolerance: number;  /** Base corruption rate applied to distance-from-capital trade loss. */
+  maxTaxRate: number;
+  /** Base corruption rate applied to distance-from-capital trade loss. */
   corruptionRate: number;
   /** Multiplier on total city commerce (e.g. communism: -25%). */
   commercePenalty: number;
@@ -26,7 +26,6 @@ export const GOVERNMENTS: Record<string, GovernmentProperties> = {
   despotism: {
     name: 'Despotism',
     maxTaxRate: 100,
-    tolerance: 2,
     corruptionRate: 0.3,
     commercePenalty: 0,
     happinessBonus: 0,
@@ -36,7 +35,6 @@ export const GOVERNMENTS: Record<string, GovernmentProperties> = {
   monarchy: {
     name: 'Monarchy',
     maxTaxRate: 100,
-    tolerance: 3,
     corruptionRate: 0.25,
     commercePenalty: 0,
     happinessBonus: 1,
@@ -46,7 +44,6 @@ export const GOVERNMENTS: Record<string, GovernmentProperties> = {
   republic: {
     name: 'Republic',
     maxTaxRate: 100,
-    tolerance: 4,
     corruptionRate: 0.15,
     commercePenalty: 0,
     happinessBonus: 2,
@@ -56,7 +53,6 @@ export const GOVERNMENTS: Record<string, GovernmentProperties> = {
   democracy: {
     name: 'Democracy',
     maxTaxRate: 10,
-    tolerance: 5,
     corruptionRate: 0.05,
     commercePenalty: 0,
     happinessBonus: 4,
@@ -66,7 +62,6 @@ export const GOVERNMENTS: Record<string, GovernmentProperties> = {
   communism: {
     name: 'Communism',
     maxTaxRate: 100,
-    tolerance: 3,
     corruptionRate: 0.1,
     commercePenalty: 0.25,
     happinessBonus: 1,
@@ -76,7 +71,6 @@ export const GOVERNMENTS: Record<string, GovernmentProperties> = {
   anarchy: {
     name: 'Anarchy',
     maxTaxRate: 0,
-    tolerance: 1,
     corruptionRate: 0.3,
     commercePenalty: 0,
     happinessBonus: 0,

@@ -381,6 +381,11 @@ export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
         maintenance: 0,
         requiredTechnology: 'masonry',
         effects: {
+            // +1 content in EVERY city of the owning civ, as in Civ 1. This is a
+            // `globalHappiness` effect: the wonder lives in one city but the
+            // content is empire-wide, which is what makes a wonder a real answer
+            // to a crowded empire rather than a local one.
+            globalHappiness: 1,
             culture: 3,
             wonder: true
         },

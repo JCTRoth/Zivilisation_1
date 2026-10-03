@@ -37,6 +37,31 @@ export const MIN_CITY_CENTER_DISTANCE = 5;
  * Settlement Evaluator - Determines optimal city placement locations
  */
 export class SettlementEvaluator {
+  /**
+   * Whether a city founded at (col,row) would share workable tiles with an
+   * existing city of the SAME civilization.
+   *
+   * This is a hard rule, not a preference: a city works a fixed 5x5 area, so
+   * two own cities closer than {@link MIN_CITY_CENTER_DISTANCE} compete for the
+   * same fields and the newer one starves the older of food, trade and
+   * production. The 10x10 search in {@link findBestSettlementLocation} rejects
+   * overlapping candidates on its own, but the AI also founds at its CURRENT
+   * tile on several fallback paths — and those paths never asked. This helper is
+   * the single place that answers the question so every founding path asks it.
+   */
+  public static overlapsOwnCityArea(
+    col: number,
+    row: number,
+    getCityAt: (col: number, row: number) => CityLike | null,
+    civilizationId: number,
+  ): boolean {
+    for (let dy = -(MIN_CITY_CENTER_DISTANCE - 1); dy <= MIN_CITY_CENTER_DISTANCE - 1; dy++) {
+      for (let dx = -(MIN_CITY_CENTER_DISTANCE - 1); dx <= MIN_CITY_CENTER_DISTANCE - 1; dx++) {
+        if (getCityAt(col + dx, row + dy)?.civilizationId === civilizationId) return true;
+      }
+    }
+    return false;
+  }
   // Control verbosity of logging (set to false to reduce console spam during AI turns)
   private static VERBOSE_LOGGING = false;
   
@@ -551,7 +576,8 @@ export class SettlementEvaluator {
     getTileAt: (col: number, row: number) => TileLike | null,
     getCityAt: (col: number, row: number) => CityLike | null,
     getUnitAt: (col: number, row: number) => UnitLike | null,
-    minDistanceFromOtherCities: number = 3
+    minDistanceFromOtherCities: number = 3,
+    civilizationId?: number,
   ): SettlementScore | null {
     debugLog(`[SettlementEvaluator] findBestDeepWaterLocation: Starting coastal search from (${centerCol}, ${centerRow})`);
 
@@ -581,6 +607,13 @@ export class SettlementEvaluator {
           continue;
         }
         coastalLocations++;
+
+        // Check distance from other cities — absolute rule: never found within
+        // the workable area of an own city, regardless of civilization.
+        if (civilizationId !== undefined && this.overlapsOwnCityArea(col, row, getCityAt, civilizationId)) {
+          debugLog(`[SettlementEvaluator] findBestDeepWaterLocation: (${col}, ${row}) overlaps own city area, skipping`);
+          continue;
+        }
 
         // Check distance from other cities
         let tooCloseToCity = false;

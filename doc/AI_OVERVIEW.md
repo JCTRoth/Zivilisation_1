@@ -124,7 +124,11 @@ A hard timeout force-ends the turn:
 | Constant | Value | Meaning |
 |---|---|---|
 | `SETTLE_SCORE_THRESHOLD` | 12 | Minimum site score before founding |
+| `LATE_SETTLE_SCORE_THRESHOLD` | 20 | …and for a settler that just finished working its own cities |
 | `MAX_SETTLE_WALK_DISTANCE` | 4 | How far a settler will walk for a site |
+| `LATE_INFRA_CITY_THRESHOLD` | 6 | Above this many cities the expansionist profiles build works first |
+| `CITY_AREA_IMPROVED_TARGET` | 0.5 | A settler leaves a city once half its area is improved |
+| `OUTSIDE_IRRIGATION_FIELDS` | 3 | How far out a food-short city's irrigation may start |
 | `OSCILLATION_WINDOW` / `_THRESHOLD` | 6 / 3 | Detects a unit bouncing between two tiles |
 | `OFFENSIVE_PLAN_MAX_AGE_ROUNDS` | 20 | Stale offensive plans are dropped |
 | `RETALIATION_WINDOW_ROUNDS` | 15 | How long the AI remembers being attacked |
