@@ -24,7 +24,10 @@
  *   TRACE=0            skip the (very large) timeline trace; CPU profile only
  *   LABELS=a,b,c       extra labels to click before starting, e.g. to pick a slot
  */
-import { chromium } from 'playwright';
+// `@playwright/test` re-exports the browser types and is the package this repo
+// actually depends on — importing bare `playwright` only worked because it
+// happens to be installed as its dependency, which knip rightly flags.
+import { chromium } from '@playwright/test';
 
 const MAP_TYPE = process.argv[2] ?? 'AI_VS_AI_NAVAL_TROPICAL';
 const RUNS = Number(process.argv[3] ?? 1);

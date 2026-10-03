@@ -101,7 +101,7 @@ const HAPPINESS_SHADOW_RANGE = 6;
 export const MIN_DISORDER_CITY_WORTH = 3;
 
 /** What a building is worth, per turn, in this city. */
-export type BuildingVerdict =
+type BuildingVerdict =
   /** Earns more than it costs. */
   | 'profitable'
   /** Roughly covers its own upkeep. */

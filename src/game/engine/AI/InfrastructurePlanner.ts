@@ -56,7 +56,7 @@ export const INFRASTRUCTURE_POP_THRESHOLD = 6;
 export const INFRASTRUCTURE_FULL_COVERAGE_POP = 12;
 
 /** How far from a city its tiles count as "around it" (Chebyshev). */
-export const INFRASTRUCTURE_RADIUS = 2;
+const INFRASTRUCTURE_RADIUS = 2;
 
 /** How much of the plan is attempted at partial coverage. */
 const PARTIAL_COVERAGE = 0.5;
@@ -64,7 +64,7 @@ const PARTIAL_COVERAGE = 0.5;
 /** Settlers the plan may ask for, however big the deficit. */
 const MAX_SETTLERS = 3;
 
-export type InfrastructureThreat = 'none' | 'raiders' | 'besieged';
+type InfrastructureThreat = 'none' | 'raiders' | 'besieged';
 
 export interface InfrastructureTile {
   col: number;

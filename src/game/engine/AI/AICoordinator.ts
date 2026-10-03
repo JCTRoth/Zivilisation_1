@@ -42,7 +42,7 @@ const RALLY_SEARCH_RADIUS = 6;
  * Radius around a city within which the army is "at" that city: units this
  * close stage from it, screen it and fall back on it.
  */
-export const MILITARY_SITUATION_RADIUS = 4;
+const MILITARY_SITUATION_RADIUS = 4;
 
 /**
  * A city counts as `incoming_assault` once the enemy strength bearing on it is
@@ -59,7 +59,7 @@ const round1 = (value: number): number => Math.round(value * 10) / 10;
  * its upkeep in a city that actually feeds the army, walls only in one the
  * army has to protect. The building auditor reads this.
  */
-export type CityMilitaryRole =
+type CityMilitaryRole =
   /** Enemy force is converging — the city is about to be attacked. */
   | 'incoming_assault'
   /** Our own army stages/marches from here: it is a forward base. */
@@ -690,7 +690,7 @@ export class AICoordinator {
  * money, but only one of them means "something is wrong right now", and the
  * liquidation logic reads the difference.
  */
-export type FundingKind =
+type FundingKind =
   | 'infrastructure'
   | 'army'
   | 'bribe'
@@ -716,7 +716,7 @@ export interface BuildingFundingCandidate {
   economics: BuildingEconomics;
 }
 
-export interface BuildingFundingSale {
+interface BuildingFundingSale {
   cityId: string;
   cityName: string;
   buildingType: string;

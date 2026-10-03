@@ -49,7 +49,7 @@ export const AI_MIN_FOOD_SURPLUS = 1;
  * difference between a city that hires one entertainer and an empire that
  * slowly demotes its farmers to keep everyone smiling while it starves.
  */
-export const ENTERTAINER_FOOD_HEADROOM = 2;
+const ENTERTAINER_FOOD_HEADROOM = 2;
 
 /**
  * Whether an unhappy-but-not-disordered city may buy an entertainer.
@@ -85,13 +85,13 @@ export const MAX_ENTERTAINERS_PER_CITY = 2;
  * the specialists are taken off them, which is exactly the trade the size-based
  * cap encodes.
  */
-export const MAX_SPECIALISTS_PER_CITY = 5;
+const MAX_SPECIALISTS_PER_CITY = 5;
 /**
  * Fraction of a city's workable area that must be improved before the
  * size-based specialist staff unlocks. Below this the city is still feeding
  * itself out of raw tiles and every specialist is a farmer it cannot spare.
  */
-export const SPECIALIST_UNLOCK_FRACTION = 0.5;
+const SPECIALIST_UNLOCK_FRACTION = 0.5;
 
 /**
  * Size-based specialist staff for a city whose area is built up:
@@ -99,7 +99,7 @@ export const SPECIALIST_UNLOCK_FRACTION = 0.5;
  * {@link MAX_SPECIALISTS_PER_CITY} — i.e. a size-9 city can staff 3, a
  * size-12 city 4, a size-15 city 5.
  */
-export function specialistCapForPopulation(population: number): number {
+function specialistCapForPopulation(population: number): number {
   return Math.max(
     MAX_ENTERTAINERS_PER_CITY,
     Math.min(MAX_SPECIALISTS_PER_CITY, Math.floor(population / 3)),
@@ -209,7 +209,7 @@ export const AI_COMMERCE_GOVERNOR_MIN_POP = 8;
  * back to the food-first profile. A quarter box recovers in a few turns at a
  * normal surplus, so the switch can never starve a city.
  */
-export const AI_COMMERCE_GOVERNOR_MIN_FOOD_FRACTION = 0.25;
+const AI_COMMERCE_GOVERNOR_MIN_FOOD_FRACTION = 0.25;
 
 export class AICityManager {
   private gameEngine: GameEngine;

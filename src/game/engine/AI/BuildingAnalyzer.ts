@@ -126,7 +126,7 @@ export function rememberBuildingSale(
   storage.turnData.soldBuildings = soldAt;
 }
 
-export interface SellRecommendation {
+interface SellRecommendation {
   buildingType: string;
   score: number;
   reasons: string[];

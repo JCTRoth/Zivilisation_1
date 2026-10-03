@@ -41,7 +41,7 @@
  */
 
 import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
-import type { City, Civilization, Unit } from '../../../../types/game';
+import type { City, Civilization } from '../../../../types/game';
 import { BEAKER_GOLD_EQUIVALENT, MIN_DISORDER_CITY_WORTH } from './BuildingEconomics';
 
 /**
@@ -56,7 +56,7 @@ import { BEAKER_GOLD_EQUIVALENT, MIN_DISORDER_CITY_WORTH } from './BuildingEcono
  * genuinely needs the points; trade buildings are allowed two because a city
  * can usefully exceed its own tiles' trade.
  */
-export const USEFUL_COPIES_PER_CITY: Readonly<Record<string, number>> = {
+const USEFUL_COPIES_PER_CITY: Readonly<Record<string, number>> = {
   // Allowed to a small depth: these scale with the city, up to a point.
   temple: 3,
   marketplace: 2,
@@ -68,7 +68,7 @@ export const USEFUL_COPIES_PER_CITY: Readonly<Record<string, number>> = {
  * Buildings that are an empire-wide effect, and so are wanted at most once no
  * matter how many cities the civ has.
  */
-export const USEFUL_COPIES_PER_CIV: Readonly<Record<string, number>> = {
+const USEFUL_COPIES_PER_CIV: Readonly<Record<string, number>> = {
   palace: 1,
   sdi_defense: 1,
   great_wall: 1,
@@ -104,10 +104,10 @@ export function usefulCivCopies(buildingType: string): number {
 }
 
 /** What one food of surplus is worth, in gold, when judging a purchase. */
-export const FOOD_GOLD_EQUIVALENT = 1;
+const FOOD_GOLD_EQUIVALENT = 1;
 
 /** What one shield of city production is worth when judging a purchase. */
-export const PRODUCTION_GOLD_EQUIVALENT = 1;
+const PRODUCTION_GOLD_EQUIVALENT = 1;
 
 interface CitySnapshot {
   gold: number;
@@ -405,39 +405,7 @@ export function countBuildingCopies(
   return { civCopies, cityCopies: countCopiesIn(city, buildingType) };
 }
 
-export interface PortfolioRow extends MarginalBuildingValue {
-  /** True when another own city has fewer copies — build there first. */
-  spreadElsewhere: boolean;
-}
-
 /**
- * The empire's whole building portfolio, one row per type: what a copy is worth
- * in this city, and whether another city is worse off and should go first.
- *
- * This is the "analyse all building types" view, and it is also the input the
- * chooser uses: a building that scores `worthBuilding: false` here should not
- * be in anybody's queue.
- */
-export function analyzeBuildingPortfolio(
-  engine: EconomicEngine & { cities?: City[]; units?: Unit[] },
-  civ: Civilization,
-  city: City,
-): PortfolioRow[] {
-  const rows: PortfolioRow[] = [];
-  for (const buildingType of Object.keys(BUILDING_PROPERTIES)) {
-    if (buildingType === 'palace') continue; // the capital is a human choice
-    const { civCopies } = countBuildingCopies(engine, civ, city, buildingType);
-    if (countCopiesIn(city, buildingType) > 0) continue; // this city already has one
-    const value = evaluateBuildingForCity(engine, civ, city, buildingType, civCopies, 0);
-    const elsewhere = (engine.cities ?? []).some(other =>
-      other.id !== city.id
-      && other.civilizationId === civ.id
-      && countCopiesIn(other, buildingType) < value.cityCopies);
-    rows.push({ ...value, spreadElsewhere: elsewhere });
-  }
-  return rows;
-}
-
 /**
  * A priority multiplier for a candidate building.
  *
