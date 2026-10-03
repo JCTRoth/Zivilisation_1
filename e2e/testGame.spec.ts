@@ -31,14 +31,36 @@ interface GameSnapshot {
 
 async function readGame(page: Page): Promise<GameSnapshot> {
   return page.evaluate(() => {
-    const engine = (window as unknown as { __gameEngine?: any }).__gameEngine;
+    // Only the fields this test asserts on, so the shape of the test cannot
+    // silently drift into depending on something that is not here.
+    interface CityLike {
+      name: string;
+      civilizationId: number;
+      buildings?: Array<string | { id?: string; type?: string }>;
+      disorder?: boolean;
+      tax?: number;
+      science?: number;
+    }
+    interface CivLike {
+      id: number;
+      isHuman?: boolean;
+      resources?: { gold?: number };
+    }
+    interface EngineLike {
+      currentTurn?: number;
+      currentYear?: number;
+      cities?: CityLike[];
+      civilizations?: CivLike[];
+    }
+
+    const engine = (window as unknown as { __gameEngine?: EngineLike }).__gameEngine;
     if (!engine) throw new Error('window.__gameEngine is not exposed');
-    const id = (b: unknown): string =>
-      typeof b === 'string' ? b : (b as any)?.id ?? (b as any)?.type ?? '';
+    const id = (b: string | { id?: string; type?: string }): string =>
+      typeof b === 'string' ? b : b.id ?? b.type ?? '';
     return {
       round: engine.currentTurn ?? 0,
       year: engine.currentYear ?? 0,
-      cities: (engine.cities ?? []).map((c: any) => ({
+      cities: (engine.cities ?? []).map(c => ({
         name: c.name,
         civ: c.civilizationId,
         buildings: (c.buildings ?? []).map(id),
@@ -46,7 +68,7 @@ async function readGame(page: Page): Promise<GameSnapshot> {
         tax: Math.round(c.tax ?? 0),
         science: Math.round(c.science ?? 0),
       })),
-      civs: (engine.civilizations ?? []).map((c: any) => ({
+      civs: (engine.civilizations ?? []).map(c => ({
         id: c.id,
         gold: Math.round(c.resources?.gold ?? 0),
         isHuman: c.isHuman === true,

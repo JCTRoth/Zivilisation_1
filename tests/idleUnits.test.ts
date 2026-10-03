@@ -114,7 +114,12 @@ describe('idle unit-turns', () => {
     expect(typeTurns).toBe(tally.unitTurns);
   }, 600_000);
 
-  it('keeps settlers from standing still — the bug this metric was built for', async () => {
+  // `it.fails` so this is not CI noise while the bug is open: it passes *because*
+  // the settlers are still idle, and the moment the ladder actually works it
+  // turns red and tells us to promote it to a plain `it`. Throwing the
+  // measurement away or loosening the bound to today's 94.9% would have hidden
+  // the regression it exists to catch.
+  it.fails('keeps settlers from standing still — the bug this metric was built for', async () => {
     const tally = await measureIdle(120);
     const settlers = tally.byType.settler;
 

@@ -681,7 +681,21 @@ export class AICoordinator {
  * from income liquidates buildings to get a treasury back, so that the *next*
  * turn does not start in the same hole.
  */
-export type FundingKind = 'infrastructure' | 'army' | 'bribe' | 'reserve';
+/**
+ * What a funding demand is for.
+ *
+ * `maintenance_crisis` is distinct from `reserve` on purpose: a reserve is a
+ * cushion the AI is *choosing* to build up, while a maintenance crisis is the
+ * upkeep bill actively draining a treasury that cannot cover it. Both raise
+ * money, but only one of them means "something is wrong right now", and the
+ * liquidation logic reads the difference.
+ */
+export type FundingKind =
+  | 'infrastructure'
+  | 'army'
+  | 'bribe'
+  | 'reserve'
+  | 'maintenance_crisis';
 
 /** One thing the civ wants to spend money on. */
 export interface FundingDemand {
