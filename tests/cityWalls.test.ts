@@ -108,6 +108,9 @@ describe('City Walls', () => {
       rotate: () => ops.push('rotate'),
       fillText: (text: string) => ops.push(`text:${text}`),
       strokeText: (text: string) => ops.push(`stroke:${text}`),
+      // The renderer centres the ring text by measuring it first, so the stub
+      // has to answer with a plausible width or the call throws.
+      measureText: (text: string) => ({ width: text.length * 6 }),
     };
 
     const base = {

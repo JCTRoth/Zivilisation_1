@@ -179,20 +179,13 @@ export class ProductionManager {
     });
     if (ownsHarbor) return true;
 
-    const deltas = [
-      { col: 0, row: 0 },
-      { col: -1, row: -1 }, { col: 0, row: -1 }, { col: 1, row: -1 },
-      { col: -1, row: 0 }, { col: 1, row: 0 },
-      { col: -1, row: 1 }, { col: 0, row: 1 }, { col: 1, row: 1 },
-    ];
-    return deltas.some((d) => {
-      const tile = this.gameEngine.getTileAt?.(city.col + d.col, city.row + d.row) as
-        | { terrain?: string; type?: string }
-        | null
-        | undefined;
-      const terrain = tile?.terrain ?? tile?.type ?? '';
-      return terrain === 'ocean' || terrain === 'sea';
-    });
+    // Deliberately the engine's own naval-access test rather than a second
+    // terrain list. This method used to spell out `ocean`/`sea` itself, which
+    // quietly disagreed with `GameEngine.tileHasNavalAccess` about rivers: a
+    // city on a wide river passed the AI's "I need a navy" check and was then
+    // refused the boat it was being told to build. One definition, so the AI and
+    // the production gate can never drift apart again.
+    return this.gameEngine.tileHasNavalAccess(city.col, city.row) === true;
   }
 
   /**
