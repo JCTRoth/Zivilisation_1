@@ -114,12 +114,14 @@ describe('idle unit-turns', () => {
     expect(typeTurns).toBe(tally.unitTurns);
   }, 600_000);
 
-  // `it.fails` so this is not CI noise while the bug is open: it passes *because*
-  // the settlers are still idle, and the moment the ladder actually works it
-  // turns red and tells us to promote it to a plain `it`. Throwing the
-  // measurement away or loosening the bound to today's 94.9% would have hidden
-  // the regression it exists to catch.
-  it.fails('keeps settlers from standing still — the bug this metric was built for', async () => {
+  // Was `it.fails` while the bug was open (it passed *because* the settlers
+  // were still idle, and turned red to say "promote me"). The cause was
+  // `resetUnitsForPlayer` living only in `advanceTurn`, so a harness that
+  // drives `startTurn(civ)` per civ reset one player per round and everyone
+  // else's settlers kept 0 moves and never reached the site their own search
+  // had already picked. With the reset moved into `startTurn` the share is
+  // 25.8 %, so this is a plain `it` again.
+  it('keeps settlers from standing still — the bug this metric was built for', async () => {
     const tally = await measureIdle(120);
     const settlers = tally.byType.settler;
 

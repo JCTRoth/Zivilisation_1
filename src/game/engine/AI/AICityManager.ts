@@ -293,7 +293,12 @@ export class AICityManager {
     const happy = this.econ.cityHappiness(city, civ);
     const unhappy = happy.disorder || happy.unhappiness >= happy.happiness;
     const entertainers = specialists.filter((sp) => sp === 'entertainer').length;
-    const cap = this.specialistCapFor(city, profile);
+    // Entertainers keep a floor of two whatever the profile says. `growth` and
+    // `production` govern with `maxSpecialists: 0` — that is a decision about
+    // Taxmen and Scientists, not about contentment — and routing the floor
+    // through `specialistCapFor` meant those cities could hire NOBODY while
+    // unhappy, so half the cities in a 150-round run sat in disorder.
+    const cap = Math.max(MAX_ENTERTAINERS_PER_CITY, this.specialistCapFor(city, profile));
 
     // An Entertainer is a worker off the fields. With no government tolerance
     // every city is permanently a little unhappy, so this used to fire

@@ -65,6 +65,23 @@ a single follow-up item and cities sat with an empty queue.
 |Idle citizens — a city with more citizens than fields — were simply dropped
 on the floor.
 |`EconomicManager.cityWorkedTiles`
+
+|`resetUnitsForPlayer` was called from **only one place** — `advanceTurn()`.
+A harness that drives `startTurn(civ)` for every civ (as
+`tests/helpers/world.ts` and `scripts/run-ai-batch.mjs` do) therefore reset
+exactly ONE player per round; every other civ's units kept
+`movesRemaining = 0` and `isSkipped = true` from the last time they acted, the
+AI loop filtered them out (`moves > 0`) and they logged nothing at all. **97 of
+the 205 "idle settler" turns were this** — and those settlers had a perfectly
+good settlement site waiting (`findBestSettlementForSettler` returned one every
+single turn); they just never got the movement points to walk to it.
+|`TurnManager.startTurn` (moved from `advanceTurn`)
+
+|The size-6 irrigation shortcut ran *before* the works target and won
+unconditionally, so a mature city irrigated every field it owned, sat at
+`trade = 2`, could not afford a single point of luxury and stayed in
+disorder — 2 of 4 cities in a pinned 150-round run.
+|`AIManager.findIrrigationTargetForMatureCity`
 |===
 
 == Changes
@@ -137,6 +154,45 @@ on the floor.
   automatic for every city; the governor may still staff *spare* citizens as
   Taxmen or Scientists, but a citizen with no field has no choice to make.
 
+== Why didn't an idle settler just found a new city?
+
+It was trying to. Measured directly on the pinned scenario (seed 4242, map
+777, 120 rounds), every one of those 97 turns looked like this:
+
+[source]
+----
+alive=true | moves=0 | skipped=1 | areTurnsDone=1
+found=site | settle=set | blocked=1 | canPlace=false | nearestCity=1
+----
+
+* `found=site` / `settle=set` — `findBestSettlementForSettler` returned a
+  legal, reachable site **that turn**. The AI had somewhere to go.
+* `moves=0` / `skipped=1` — it never went. `aiUnits` only picks units with
+  `movesRemaining > 0`, and `isSkipped` is only cleared by
+  `resetUnitsForPlayer`, which only `advanceTurn()` ever called. The harness
+  calls `startTurn(civ)` per civ and `advanceTurn()` once per round, so one
+  civ per round got fresh movement and the rest produced no log, no move and
+  no founding — forever.
+* `canPlace=false` / `nearestCity=1` — and even had it moved, its own tile was
+  illegal: it stood one tile from *another* civ's city, and the engine refuses
+  to found within Chebyshev 5 of **any** city.
+
+That last point is a real, independent gap worth knowing about:
+`SettlementEvaluator.findBestSettlementLocation` only rejects tiles within 5 of
+**own** cities (and this civ owned none), while `GameEngine.canPlaceCityAt`
+rejects tiles within 5 of **any** city. The AI can therefore propose sites the
+engine will refuse. It did not cause this particular stall, but it wastes turns
+on any map where the civ is surrounded.
+
+Fix: the reset now lives in `startTurn(civilizationId)`, with the duplicate in
+`advanceTurn()` removed, so *every* civ gets a fresh turn however it is driven.
+
+[source]
+----
+settler idle share:  94.9 % → 25.8 %   (bar: 35 %)
+tests/idleUnits.test.ts: it.fails → plain it
+----
+
 == Test runs
 
 Three AI-vs-AI games, 300 rounds each, four civs, map `AI_VS_AI`, seeds
@@ -197,16 +253,29 @@ the reason is not unrest:
   `sustainableUnits` models were tried with a safety margin; neither moved the
   number, so the deficit is coming from somewhere else (likely the emergency
   rate raise setting luxury to 0 and collapsing income).
-. **78 idle settler turns** from a live civ with 0 moves and no log — the unit
-  is processed, consumes its movement and produces no trace.
-. `tests/idleUnits.test.ts` counts units of eliminated civs as idle. Whether
-  that is the right definition is worth settling before tuning to it.
+. **The founding rule disagrees with itself.** `SettlementEvaluator` only
+  rejects tiles near *own* cities; `GameEngine.canPlaceCityAt` rejects tiles
+  near *any* city. On a map where a civ is surrounded, the AI proposes sites
+  the engine will refuse, and burns a turn per refusal. The two need to share
+  one predicate.
+. **Barbarian cities** are not covered by either rule's intent and are the
+  main thing taking cities off the AI (3.3 per game).
+
+=== Final state
+
+[source]
+----
+tests/144 files, 1433 tests ......... all passing
+tests/idleUnits.test.ts ............. settler idle share 25.8 % (bar 35 %)
+tests/lateGameEconomics.test.ts ..... disorder < 0.5 after 150 turns
+----
 
 == Files touched
 
 [source]
 ----
 src/game/engine/EconomicManager.ts        luxury need, idle citizens, disband
+src/game/engine/TurnManager.ts            reset unit moves in startTurn
 src/game/engine/AI/AIEconomicManager.ts   luxuryNeedPct, sustainableUnits
 src/game/engine/AI/AICityManager.ts       specialist caps, entertainer slack
 src/game/engine/AI/AIManager.ts           works pipeline, threat gate, targets
@@ -216,5 +285,6 @@ tests/idleCitizens.test.ts                new
 tests/ai/cityRadiusAndIrrigation.test.ts  new
 tests/ai/economyPressure.test.ts          new
 tests/ai/lateGameAggression.test.ts       new
+tests/idleUnits.test.ts                  promoted from it.fails
 scripts/run-ai-batch.mjs                  telemetry + deterministic seeding
 ----

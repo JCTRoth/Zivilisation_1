@@ -247,6 +247,18 @@ export class TurnManager {
     this.currentPlayer = civilizationId;
     this.currentPhase = TurnPhase.START;
     this.playerRegistered = false;
+    // "At the start of the owner's turn every unit is fresh." The reset used
+    // to live only in `advanceTurn`, which is the ONE path that calls it —
+    // so a harness that drives `startTurn(civ)` for every civ (as
+    // `tests/helpers/world.ts` and `scripts/run-ai-batch.mjs` do) reset only
+    // whichever single player `advanceTurn` happened to select. Every other
+    // civ's units kept `movesRemaining = 0` and `isSkipped = true` from the
+    // last time they acted, the AI loop filtered them out (`moves > 0`), and
+    // they produced no log at all: 97 of the 205 "idle settler" turns in the
+    // pinned measurement were exactly this, and those settlers never got the
+    // chance to walk to the site `findBestSettlementForSettler` had already
+    // picked for them.
+    this.resetUnitsForPlayer(civilizationId);
     
     // Format year for display
     const currentYear = this.gameEngine.currentYear || -4000;
@@ -683,10 +695,8 @@ export class TurnManager {
     // Update active player in game engine
     this.gameEngine.activePlayer = nextPlayer;
     
-    // Reset unit moves for the new active player
-    this.resetUnitsForPlayer(nextPlayer);
-    
-    // Process turn-based game events (production, purchases, research)
+    // Process turn-based game events (production, purchases, research).
+    // Unit moves are reset inside `startTurn` — see there.
     this.processTurnEvents(nextPlayer);
     
     // Start the new turn

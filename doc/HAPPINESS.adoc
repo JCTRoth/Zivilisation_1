@@ -123,19 +123,18 @@ therefore self-limiting in the AI (see <<AI: keeping cities calm>>).
 
 [source,typescript]
 ----
-const garrisonUnits = (this.gameEngine?.units ?? []).filter(
-  (u) => u.civilizationId === civ.id
-      && u.col === city.col && u.row === city.row
-      && !u.isDefeated
-      && (u.attack ?? 0) > 0,
-).length;
-
+const garrisonUnits = this.garrisonOnCityTile(civ, city);   // EconomicManager
 const martialLawBonus = Math.min(garrisonUnits, martialLawMax);
 ----
 
-* Any *own* unit with attack above 0 standing **on the city tile** counts.
-  Units on adjacent tiles do *not* — the test is an exact coordinate match, so a
-  defender standing one square outside the city contributes no martial law.
+* Any *own* living unit with attack above 0 counts if it stands **on the city
+  tile**, or if it is **fortified on or beside the tile**.
+* A *fortified* defender one square out therefore does count. It was the normal
+  way to garrison — entrench next to the walls for the +50% defense bonus — and
+  it contributed nothing, because the test was an exact coordinate match. The
+  unit was visibly defending the city and the city got no benefit from it.
+* An *unfortified* unit merely standing nearby does still *not* count: one
+  passing through, or marching past, is not a garrison.
 * The bonus is capped by government, and the cap is checked by government
   *name*:
 
@@ -145,15 +144,25 @@ const martialLawBonus = Math.min(garrisonUnits, martialLawMax);
 
 | Despotism, Anarchy | *4*
 | Monarchy, Communism | *3*
-| Republic, Democracy | *0* — no martial law at all
+| Republic, Democracy | *1*
 |===
 
+* Republic and Democracy used to be *0* — no martial law at all. They keep the
+  law off their civilian cities, but they are not exempt from *defending* them,
+  and a flat zero made garrisoning worthless for exactly the governments most
+  likely to be fighting a war. One is deliberately the smallest possible bonus:
+  a republic cannot buy its way out of unhappiness by posting soldiers, but a
+  single defender is worth one content citizen, which is often exactly the
+  citizen a taxman needs.
 * Martial law is the cheapest happiness in the game: no gold, no worker, just a
-  soldier who is not doing anything else.
+  soldier who is not doing anything else. This is what makes garrison duty worth
+  reserving — see <<AI: garrison duty>>.
 * The rule lives in one place, `EconomicManager.martialLaw(civ, city)`, which
-  returns `{ bonus, max, current }`. Three callers need the same answer — the
-  happiness total, the disorder check inside `processTurn`, and the AI's luxury
-  arithmetic — and when they were written out separately they drifted.
+  returns `{ bonus, max, current }`, and the counting itself is one place,
+  `garrisonOnCityTile(civ, city)`. Four callers need the same answer — the
+  happiness total, the disorder check inside `processTurn`, the AI's luxury
+  arithmetic, and the AI's garrison deficit — and when they were written out
+  separately they drifted.
 
 [IMPORTANT]
 ====
@@ -391,6 +400,43 @@ for the next growth event.
   is a happiness lever.
 * The city screen shows the stored `city.happiness` / `city.unhappiness` and a
   disorder flag.
+
+[[AI: garrison duty]]
+== AI: garrison duty
+
+Every city keeps a minimum garrison, because a garrison is simultaneously the
+cheapest content citizen and the thing that makes the city defensible.
+
+`AIManager.findGarrisonPost(unit, armyGroups)` is consulted for a combat unit
+*before* it is offered to an army group, so idle capacity goes to the walls
+before it goes to the campaign.
+
+[cols="1,1"]
+|===
+| Situation | Minimum garrison per city
+
+| Peacetime, or no offensive under way | *1*
+| An army group is `marching` or `attacking` | *2*
+|===
+
+* The minimum counts *fortified* units beside the city as well as units on the
+  tile, because that is the same count the happiness rule uses. Filling a deficit
+  the city cannot feel would be pointless.
+* Only units **not** already committed to a march are pulled in. A soldier in a
+  `marching` group is one the campaign has; taking it back would undo the army
+  planner. Raising the floor to 2 during an offensive is what stops a civ
+  stripping its cities bare the moment it wins a war.
+* The emptiest walls are served first.
+* A unit already holding a city that is still below its floor is left where it
+  is, rather than sent to a different city — otherwise two garrisons shuffle
+  between neighbouring cities every turn.
+* Barbarians are excluded. They run on `BarbarianManager`, have no government and
+  no tax rate, so martial law buys them nothing; a city in barbarian hands is
+  looted, not garrisoned.
+
+Before this existed, garrisons were an accident: a unit with nothing else to do
+would fortify beside a city, and an empire that spent every soldier on armies
+could end the game with undefended cities and no martial law anywhere.
 
 [[AI: keeping cities calm]]
 == AI: keeping cities calm

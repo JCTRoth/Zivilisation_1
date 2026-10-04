@@ -82,15 +82,20 @@ describe('martial law', () => {
     expect(engine.economicManager.martialLaw(civ, city).max).toBe(3);
   });
 
-  it('is worth nothing under Republic or Democracy', () => {
+  it('is worth exactly one under Republic or Democracy', () => {
     const { engine, city, civ } = world1();
     for (let i = 0; i < 4; i++) addWarrior(engine, 2, 2, `w${i}`);
 
     for (const government of ['republic', 'democracy']) {
       civ.government = government;
       const law = engine.economicManager.martialLaw(civ, city);
-      expect(law.max, government).toBe(0);
-      expect(law.bonus, government).toBe(0);
+      // Republic and Democracy keep the law off their civilian cities, but a
+      // single defender is still worth one content citizen. It used to be a
+      // flat 0, which made garrisoning pointless for exactly the governments
+      // most likely to be at war.
+      expect(law.max, government).toBe(1);
+      // Four units in the city, and a republic still only gets the one.
+      expect(law.bonus, government).toBe(1);
     }
   });
 

@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
-import { filterLogEntries, computeCivDelta, hydrateCiv, gameProgression, PROGRESSION_SNAPSHOT_INTERVAL } from '../src/utils/GameProgression';
+import { filterLogEntries, computeCivDelta, hydrateCiv, gameProgression, currentResearchId, PROGRESSION_SNAPSHOT_INTERVAL } from '../src/utils/GameProgression';
 import { gameLogger } from '../src/utils/GameLogger';
 import { serializeCityCompact } from '../src/utils/CitySnapshots';
 import type { ProgressionCivSnapshot, ProgressionCivDelta, ProgressionLogEntry } from '../types/progression';
@@ -387,5 +387,60 @@ describe('buildCompactCsv (strongly reduced export)', () => {
     expect(csv.length).toBeLessThan(fullJson.length);
     // The compact CSV must be dramatically smaller (≥ 5×) than the full export.
     expect(csv.length).toBeLessThan(Math.ceil(fullJson.length / 5));
+  });
+});
+
+describe('every-50-round overview blocks', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let engine: any;
+
+  // The finance block joins `civ.currentResearch` straight into the CSV. It is
+  // a Technology OBJECT on engine civs, so the column printed "[object Object]"
+  // — and the existing `not.toContain` assertion never saw it because that
+  // block only appears on rounds divisible by 50.
+  beforeEach(async () => {
+    engine = new GameEngine(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (engine as any).sleep = () => Promise.resolve();
+    await engine.initialize({
+      numberOfCivilizations: 2,
+      mapType: 'CLOSEUP_1V1',
+      devMode: false,
+    });
+    gameProgression.reset();
+  });
+
+  afterEach(() => {
+    gameProgression.reset();
+  });
+
+  it('reduces currentResearch to its tech id, whatever shape it has', () => {
+    expect(currentResearchId({ id: 'pottery', name: 'Pottery' })).toBe('pottery');
+    expect(currentResearchId({ name: 'Pottery' })).toBe('Pottery');
+    expect(currentResearchId('writing')).toBe('writing');
+    expect(currentResearchId(null)).toBeNull();
+    expect(currentResearchId(undefined)).toBeNull();
+  });
+
+  it('finances block prints the tech id, not [object Object]', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (engine as any).setResearch?.(0, 'pottery');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (engine as any).currentTurn = 50; // blocks fire on rounds divisible by 50
+    gameProgression.recordIfNewRound(engine);
+
+    const csv = await gameProgression.buildCompactCsv(engine);
+    expect(csv).not.toContain('[object Object]');
+
+    const lines = csv.split('\n');
+    const headerIdx = lines.findIndex((l) => l.startsWith('civ,gold,goldPerTurn'));
+    expect(headerIdx, 'finance block header').toBeGreaterThan(-1);
+    const row = (lines[headerIdx + 1] ?? '').split(',');
+    expect(row).toHaveLength(9);
+    expect(row[8]).toBe('pottery'); // research column, last
+
+    // The building block sits before it and is a real table.
+    const buildingHeader = lines.findIndex((l) => l.startsWith('civ,city,population,buildings'));
+    expect(buildingHeader, 'city buildings block header').toBeGreaterThan(-1);
   });
 });

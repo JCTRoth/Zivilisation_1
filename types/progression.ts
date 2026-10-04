@@ -155,10 +155,38 @@ export interface GameProgressionSummary {
   eventCounts: Record<string, number>;
 }
 
+/** One round's city-building snapshot (every 50 rounds). */
+export interface CityBuildingOverview {
+  round: number;
+  year: number;
+  cities: Array<{ civ: string; city: string; population: number; buildings: string[] }>;
+}
+
+/** One round's treasury snapshot (every 50 rounds). */
+export interface FinanceOverview {
+  round: number;
+  year: number;
+  civilizations: Array<{
+    civ: string;
+    gold: number;
+    goldPerTurn: number;
+    science: number;
+    trade: number;
+    production: number;
+    food: number;
+    techs: string[];
+    /** Research TECH ID — never the Technology object (it prints "[object Object]"). */
+    research: string | null;
+  }>;
+}
+
 export interface GameProgressionPayload {
   meta: GameProgressionMeta;
   summary: GameProgressionSummary;
   progression: ProgressionRound[];
+  /** Present on exports written from a live game; absent on older files. */
+  cityBuildingOverviews?: CityBuildingOverview[];
+  financeOverviews?: FinanceOverview[];
   log: ProgressionLogEntry[];
 }
 

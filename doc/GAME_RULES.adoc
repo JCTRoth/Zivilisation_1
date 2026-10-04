@@ -1279,7 +1279,9 @@ disorder    = unhappiness > happiness
 ----
 
 * Martial law can suppress up to 4 in Despotism and Anarchy, 3 in Monarchy and
-  Communism, and **0** in Republic and Democracy.
+  Communism, and **1** in Republic and Democracy.
+* A unit garrisons a city by standing on its tile or by being fortified on or
+  beside it; an unfortified unit that is merely nearby does not count.
 * A disordered city produces **no** tax, science, luxury or commerce.
 * `CAPTURED_CITY_UNHAPPY = 3`.
 

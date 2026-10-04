@@ -28,6 +28,8 @@ import { serializeCityCompact } from './CitySnapshots';
 import type {
   GameProgressionMeta,
   GameProgressionPayload,
+  CityBuildingOverview,
+  FinanceOverview,
   GameProgressionSummary,
   ProgressionCivDelta,
   ProgressionCivSnapshot,
@@ -265,6 +267,21 @@ function serializeUnitCompact(unit: Unit): CompactUnit {
   };
 }
 
+/**
+ * `civ.currentResearch` is a Technology OBJECT on engine civs. Every export
+ * that prints it must reduce it to the tech id first, or the column renders as
+ * "[object Object]" — which is exactly what the round-by-round finance block
+ * used to do.
+ */
+export function currentResearchId(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw === 'object') {
+    const tech = raw as { id?: string; name?: string };
+    return tech.id ?? tech.name ?? null;
+  }
+  return String(raw);
+}
+
 class GameProgression {
   private snapshots: ProgressionRound[] = [];
   private lastRecordedRound = -1;
@@ -341,6 +358,43 @@ class GameProgression {
       encoding: 'delta',
       eventCounts,
     };
+    const cityBuildingOverviews: CityBuildingOverview[] = [];
+    const financeOverviews: FinanceOverview[] = [];
+    if (engine) {
+      for (const round of this.snapshots) {
+        if (round.round % 50 !== 0) continue;
+        const allCities = engine.getAllCities?.() ?? [];
+        cityBuildingOverviews.push({
+          round: round.round,
+          year: round.year,
+          cities: allCities.map((city) => ({
+            civ: engine.civilizations?.[city.civilizationId]?.name ?? String(city.civilizationId),
+            city: city.name,
+            population: city.population ?? 0,
+            buildings: Array.isArray(city.buildings) ? city.buildings : Array.from(city.buildings ?? []),
+          })),
+        });
+        financeOverviews.push({
+          round: round.round,
+          year: round.year,
+          civilizations: (engine.civilizations ?? []).map((civ) => {
+            const own = allCities.filter((c) => c.civilizationId === civ.id);
+            const sum = (pick: (c: City) => number) => own.reduce((n, c) => n + (pick(c) || 0), 0);
+            return {
+              civ: civ.name,
+              gold: civ.resources?.gold ?? 0,
+              goldPerTurn: sum((c) => c.tax ?? 0),
+              science: sum((c) => c.science ?? 0),
+              trade: sum((c) => c.yields?.trade ?? 0),
+              production: sum((c) => c.yields?.production ?? 0),
+              food: sum((c) => c.yields?.food ?? 0),
+              techs: civ.technologies ?? [],
+              research: currentResearchId(civ.currentResearch),
+            };
+          }),
+        });
+      }
+    }
     return {
       meta: {
         ...(this.meta ?? this.defaultMeta()),
@@ -348,6 +402,8 @@ class GameProgression {
       },
       summary,
       progression: this.snapshots,
+      cityBuildingOverviews,
+      financeOverviews,
       log,
     };
   }
@@ -395,6 +451,45 @@ class GameProgression {
     const liveCities = engine?.getAllCities?.() ?? [];
     const liveUnits = engine?.getAllUnits?.() ?? [];
     for (const round of this.snapshots) {
+      if (round.round % 50 === 0 && engine) {
+        lines.push('');
+        lines.push(`# ── Round ${round.round} (${round.year}) ── City Buildings Overview ──`);
+        lines.push('civ,city,population,buildings');
+        const allCities = engine.getAllCities?.() ?? [];
+        for (const city of allCities) {
+          const civ = engine.civilizations?.[city.civilizationId];
+          const buildings = (city.buildings ?? []).join('|');
+          lines.push(
+            [civ?.name ?? city.civilizationId, city.name, city.population ?? 0, buildings]
+              .map(csvCell)
+              .join(','),
+          );
+        }
+        lines.push('');
+        lines.push(`# ── Round ${round.round} (${round.year}) ── Civilization Finances ──`);
+        lines.push('civ,gold,goldPerTurn,science,trade,production,food,techs,research');
+        for (const civ of engine.civilizations ?? []) {
+          const techs = (civ.technologies ?? []).join('|');
+          const own = allCities.filter((c) => c.civilizationId === civ.id);
+          const sum = (pick: (c: City) => number) => own.reduce((n, c) => n + (pick(c) || 0), 0);
+          lines.push(
+            [
+              civ.name,
+              civ.resources?.gold ?? 0,
+              sum((c) => c.tax ?? 0),
+              sum((c) => c.science ?? 0),
+              sum((c) => c.yields?.trade ?? 0),
+              sum((c) => c.yields?.production ?? 0),
+              sum((c) => c.yields?.food ?? 0),
+              techs,
+              currentResearchId(civ.currentResearch) ?? '',
+            ]
+              .map(csvCell)
+              .join(','),
+          );
+        }
+        lines.push('');
+      }
       for (const [civId, delta] of Object.entries(round.civs)) {
         let full: ProgressionCivSnapshot;
         if (carried[civId] === undefined) {
@@ -515,12 +610,7 @@ class GameProgression {
       // `currentResearch` is the tech OBJECT on engine civs — reduce it to its
       // id (fall back to name) so exports carry a plain string, not
       // "[object Object]".
-      const researchRaw = civ?.currentResearch;
-      const currentResearch = researchRaw == null
-        ? null
-        : typeof researchRaw === 'object'
-          ? String((researchRaw as { id?: string; name?: string }).id ?? (researchRaw as { id?: string; name?: string }).name ?? '')
-          : String(researchRaw);
+      const currentResearch = currentResearchId(civ?.currentResearch);
 
       // Real per-turn outputs / treasury live under `civ.resources` on the
       // engine's plain-object civs (there is no top-level `civ.gold`).

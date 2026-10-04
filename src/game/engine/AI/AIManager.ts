@@ -260,6 +260,28 @@ const NAVAL_STALL_TURNS = 2;
 /** How far a re-targeted hull must put itself from the objective it gave up. */
 const NAVAL_RETARGET_MIN_DISTANCE = 12;
 
+/**
+ * Units every city keeps, whatever else the civ wants to do.
+ *
+ * One is the floor that makes a city defensible at all, and it is also the
+ * cheapest unit of happiness in the game: a garrisoned unit is content the city
+ * does not have to buy with a temple. Cities used to hold units only by accident
+ * — a soldier with nothing else to do would fortify next to one — so an empire
+ * could end the game with undefended cities purely because every unit had been
+ * drafted into an army.
+ */
+const MIN_GARRISON_PER_CITY = 1;
+
+/**
+ * The floor while an offensive is under way.
+ *
+ * Attacking means cities are unguarded for the duration of the march, and the
+ * whole point of the minimum is that it survives the campaign. Two is still a
+ * rounding error against an army, and it is what stops a civ from stripping its
+ * cities bare the moment it wins a war.
+ */
+const MIN_GARRISON_WHILE_ATTACKING = 2;
+
 /** How close a city must be to count as an army's base (rally or garrison). */
 const ARMY_BASE_RADIUS = 3;
 
@@ -3552,6 +3574,36 @@ export class AIManager {
       }
     }
 
+      // ── Garrison duty: after every task, before idle wandering ─────────
+      // The ordering is the whole design. Above the army group it turned the AI
+      // into a garrison that never attacked; above the defence task a soldier
+      // walked onto the city tile instead of standing beside it. It sits last,
+      // after the march, the fight, the sticky target, the threat alert, the
+      // defence order and the frontier work, and and after patrol/probing — so a garrison is what a unit
+      // does with a turn it had nothing else to spend on, never a way to avoid a
+      // task it was given. Units already committed to a group are left alone;
+      // taking them back would undo the planner.
+      // Recomputed here rather than reusing the combat branch's local: this
+      // block sits below it, after patrol and probing.
+      const post2 = AICoordinator.getGroupTarget(unit.id, aiState.armyGroups);
+      const committedNow = post2?.groupStatus === 'marching' || post2?.groupStatus === 'attacking';
+
+      if (!committedNow) {
+        const post = this.findGarrisonPost(unit, aiState.armyGroups);
+        if (post) {
+          debugLog(`[AI] Unit ${unit.id} takes garrison duty at (${post.col},${post.row})`);
+          return post;
+        }
+      } else {
+        // Second pass, and only this one: a committed soldier is normally
+        // untouchable, but not while a city it could be defending stands empty.
+        const lastResort = this.findGarrisonPost(unit, aiState.armyGroups, true);
+        if (lastResort) {
+          debugLog(`[AI] Unit ${unit.id} breaks from its group to cover an empty city at (${lastResort.col},${lastResort.row})`);
+          return lastResort;
+        }
+      }
+
     // ── Caravan delivery: send to a friendly city to establish a trade route ──
     // Civ1: Caravans are consumed when they deliver to a city, establishing a
     // permanent trade route. The AI sends them to the nearest friendly city
@@ -4820,8 +4872,16 @@ export class AIManager {
       }))
       .sort((a, b) => a.dist - b.dist);
 
+    const civRef = this.gameEngine.civilizations?.[civId];
     for (const { city } of sortedCities) {
       if (this.cityIsUnderDirectThreat(city, roundNumber)) continue;
+      // A city whose trade cannot cover its unhappiness needs ROADS, not
+      // another +1 food: food never converts into happiness, trade does (via
+      // the luxury rate). This shortcut ran first and won unconditionally, so
+      // a size-6+ city irrigated every field it owned, sat at trade 2 with
+      // luxury 0 % and stayed in disorder — 2 of 4 cities in a pinned
+      // 150-round run.
+      if (this.cityNeedsCommerce(city, civRef)) continue;
 
       const underAttack = (storage as { turnData?: { lastCityAssaultRound?: number } })?.turnData?.lastCityAssaultRound;
       if (typeof underAttack === 'number' && roundNumber - underAttack <= ONGOING_ATTACK_WINDOW) continue;
@@ -5931,6 +5991,63 @@ export class AIManager {
    * holding on/next to one of its own cities and not already fortified. Used
    * when the unit has no other order (no target / already at its garrison spot).
    */
+  /**
+   * Where this unit should stand to keep a city garrisoned, if anywhere.
+   *
+   * Counts garrisons the same way the happiness rule does — on the tile, or
+   * fortified beside it — so the deficit this fills is the deficit the city
+   * actually feels. A unit already holding a city that is still below its floor
+   * is left where it is instead of being sent to a different city, which is what
+   * stops two garrisons shuffling between neighbours every turn.
+   */
+  private findGarrisonPost(
+    unit: Unit,
+    armyGroups: ArmyGroup[],
+    allowCommitted = false,
+  ): { col: number; row: number } | null {
+    if (!this.isCombatUnit(unit) || unit.isFortified) return null;
+
+    const cities = (this.gameEngine.cities ?? []).filter(
+      (c: City) => c.civilizationId === unit.civilizationId,
+    );
+    if (cities.length === 0) return null;
+
+    const attacking = armyGroups.some(
+      (g) => g.status === 'marching' || g.status === 'attacking',
+    );
+    // The raised floor during an offensive is a preference, not a licence to
+    // leave a city empty: with a small army the whole force can be marching and
+    // the walls would end up with nobody. `allowCommitted` is the second pass,
+    // taken only when the first found nothing, and it drops back to the absolute
+    // floor of one so a campaign can never strip a city bare.
+    const floor = allowCommitted
+      ? MIN_GARRISON_PER_CITY
+      : attacking ? MIN_GARRISON_WHILE_ATTACKING : MIN_GARRISON_PER_CITY;
+
+    const econ = this.gameEngine.economicManager;
+    const held = (c: City): number => {
+      if (typeof econ?.garrisonOnCityTile !== 'function') return 0;
+      return econ.garrisonOnCityTile(this.gameEngine.civilizations?.find(
+        (civ: Civilization) => civ.id === unit.civilizationId,
+      ), c);
+    };
+
+    // Worst-served city first: the emptiest walls are the ones worth a soldier.
+    const needy = cities
+      .map((c: City) => ({ city: c, count: held(c) }))
+      .filter((n) => n.count < floor)
+      .sort((a, b) => a.count - b.count);
+
+    for (const { city } of needy) {
+      // Already this city's garrison? Stay put rather than drift.
+      if (unit.col === city.col && unit.row === city.row) {
+        return null;
+      }
+      return { col: city.col, row: city.row };
+    }
+    return null;
+  }
+
   private shouldFortifyForDefense(unit: Unit): boolean {
     return this.isCombatUnit(unit) && !unit.isFortified && this.isAtOrAdjacentToFriendlyCity(unit);
   }

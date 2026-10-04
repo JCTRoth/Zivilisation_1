@@ -102,7 +102,8 @@ on the scoreboard and in the exported CSV, but it does not end the game. See
 - Too many unhappy citizens cause disorder — a disordered city produces **no** tax, science, luxury or commerce
 - Your government's *tolerance* is how many can be unhappy before rioting
 - Temples, Colosseums, Cathedrals, Mass Transit and some wonders improve happiness
-- Martial law (military units in city) can suppress unhappiness: 4 in Despotism, 3 in Monarchy and Communism, **0** in Republic and Democracy
+- Martial law (military units in city, or fortified beside it) can suppress unhappiness: 4 in Despotism, 3 in Monarchy and Communism, **1** in Republic and Democracy
+- Every city keeps at least **1** garrisoned unit, and **2** while an offensive is under way
 - Entertainer specialists give +2 luxury each
 
 ### Technology Tree
@@ -243,8 +244,8 @@ Tolerance is how many citizens can be unhappy before the city disorders.
 |---|---|---|---|---|---|
 | Despotism (start) | 100 | 2 | 0.30 | 0 | Martial law 4 |
 | Monarchy | 100 | 3 | 0.25 | +1 | Martial law 3 |
-| Republic | 100 | 4 | 0.15 | +2 | Settlers cost 1 shield, martial law 0 |
-| Democracy | **10** | 5 | 0.05 | +4 | Settlers cost 1 shield, martial law 0 |
+| Republic | 100 | 4 | 0.15 | +2 | Settlers cost 1 shield, martial law 1 |
+| Democracy | **10** | 5 | 0.05 | +4 | Settlers cost 1 shield, martial law 1 |
 | Communism | 100 | 3 | 0.10 | +1 | −25% commerce, martial law 3 |
 
 - Changing government triggers a **revolution**: 3 turns of **Anarchy**, during

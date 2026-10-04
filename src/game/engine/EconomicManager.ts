@@ -939,25 +939,54 @@ export class EconomicManager {
   ): { bonus: number; max: number; current: number } {
     const gov = getGovernment(civ?.government);
     const govName = (gov.name ?? '').toLowerCase();
+    // Republic and Democracy keep the law off their civilian cities, but they
+    // are not exempt from defending them: one garrisoned unit still counts. It
+    // is the smallest possible bonus, so a republic cannot buy its way out of
+    // unhappiness by posting soldiers, but a single defender is worth something
+    // and the AI should be allowed to see that.
     const max =
       govName === 'despotism' || govName === 'anarchy'
         ? 4
         : govName === 'monarchy' || govName === 'communism'
           ? 3
-          : 0;
+          : govName === 'republic' || govName === 'democracy'
+            ? 1
+            : 0;
     const current = garrisonUnits ?? this.garrisonOnCityTile(civ, city);
     return { bonus: Math.min(current, max), max, current };
   }
 
-  /** Own living combat units standing on the city tile. */
+  /**
+   * Own living combat units holding the city.
+   *
+   * A unit counts if it stands on the city tile, or if it is **fortified** on
+   * or beside it. The fortified case is the point: a garrison that has dug in
+   * next to the walls is defending that city just as much as one standing in the
+   * middle of it, and it is already paying the +50% defense bonus for it. It was
+   * not counted, so the AI could park a soldier beside a city, have it report
+   * "no target — fortifying to defend", and still get nothing for it — the one
+   * place a garrison is *supposed* to pay is the happiness it buys.
+   *
+   * Deliberately not "any unit nearby": an unfortified unit passing through, or
+   * one that happens to be adjacent because it is marching past, is not a
+   * garrison and must not mint content citizens.
+   */
   garrisonOnCityTile(civ: Civilization, city: City): number {
     return (this.gameEngine?.units ?? []).filter(
       (u: Unit) =>
         u.civilizationId === civ?.id &&
-        u.col === city?.col && u.row === city?.row &&
         !u.isDefeated &&
-        (u.attack ?? 0) > 0,
+        (u.attack ?? 0) > 0 &&
+        this.holdsCity(u, city),
     ).length;
+  }
+
+  /** Is this unit garrisoning `city`? On the tile, or fortified beside it. */
+  private holdsCity(unit: Unit, city: City): boolean {
+    if (unit.col === city?.col && unit.row === city?.row) return true;
+    if (!unit.isFortified) return false;
+    const d = Math.max(Math.abs(unit.col - (city?.col ?? -99)), Math.abs(unit.row - (city?.row ?? -99)));
+    return d === 1;
   }
 
   /**
@@ -1013,14 +1042,7 @@ export class EconomicManager {
     const unhappiness = population + capturedUnrest;
     const specLuxury = this.specialistYields(city).luxury;
 
-    const garrisonUnits = (this.gameEngine?.units ?? []).filter(
-      (u: Unit) =>
-        u.civilizationId === civ.id &&
-        u.col === city.col &&
-        u.row === city.row &&
-        !u.isDefeated &&
-        (u.attack ?? 0) > 0,
-    ).length;
+    const garrisonUnits = this.garrisonOnCityTile(civ, city);
 
     const martialLawBonus = this.martialLaw(civ, city, garrisonUnits).bonus;
 
@@ -1115,14 +1137,7 @@ export class EconomicManager {
 
       const specLuxury = this.specialistYields(city).luxury;
 
-      const garrisonUnits = (this.gameEngine?.units ?? []).filter(
-        (u: Unit) =>
-          u.civilizationId === civId &&
-          u.col === city.col &&
-          u.row === city.row &&
-          !u.isDefeated &&
-          (u.attack ?? 0) > 0,
-      ).length;
+      const garrisonUnits = this.garrisonOnCityTile(civ, city);
       const martialLawBonus = this.martialLaw(civ, city, garrisonUnits).bonus;
 
       // Luxury from the *proposed* rate (not the current rate).
