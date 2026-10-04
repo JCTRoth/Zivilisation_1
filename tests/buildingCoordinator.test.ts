@@ -19,15 +19,26 @@ import {
   usefulCityCopies,
   usefulCivCopies,
 } from '@/game/engine/AI/BuildingCoordinator';
-import { makeEngine } from './helpers/world';
+import { makeEngine, useSeededRandom } from './helpers/world';
 import type { City, Civilization } from '../types/game';
 
 async function world() {
+  // Seeded: `seed` alone only fixes map generation, not `Math.random`, which the
+  // AI uses for combat and several decisions. Unseeded, whether any AI civ has
+  // founded a city by turn 10 varied run to run, and this file failed maybe one
+  // run in three.
+  useSeededRandom(31);
   const w = await makeEngine({ seed: 31 });
   await w.runTurns(10);
   const engine = w.engine;
-  const civ = engine.civilizations.find(c => !c.isHuman) as Civilization;
-  const city = engine.cities.find(c => c.civilizationId === civ.id) as City;
+  // Pick a civ that actually owns a city rather than merely the first AI civ:
+  // it is no longer guaranteed to have founded one by turn 10 (a settler held on
+  // garrison duty is a settler not walking to a site), and `city` was
+  // undefined on a clean checkout, so the next line threw on `population`.
+  const city = engine.cities.find(c => !engine.civilizations
+    .find(o => o.id === c.civilizationId)?.isHuman);
+  expect(city, 'no AI-owned city after 10 turns').toBeDefined();
+  const civ = engine.civilizations.find(o => o.id === city!.civilizationId) as Civilization;
   // A size that can plausibly be short of happiness, and enough tiles that
   // trade is not trivially zero.
   city.population = 6;
