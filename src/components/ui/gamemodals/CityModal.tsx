@@ -4,6 +4,7 @@ import { CityModalLogic } from './CityModalLogic';
 import { ModalUtils } from './ModalUtils';
 import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
+import { isWonderObsolete, getWonder } from '@/data/WonderData';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import { CITY_GOVERNOR_OPTIONS, governorOption, terrainLabel } from '@/utils/CityGovernorUtils';
 import ProductionSelectionModal from './ProductionSelectionModal';
@@ -12,6 +13,7 @@ import { unitStatus } from '@/utils/UnitStatus';
 import GameEngine from '@/game/engine/GameEngine';
 import type { City, Civilization, GameActions, ProductionItem } from '../../../../types/game';
 import '../../../styles/cityModal.css';
+import '../../../styles/wonders.css';
 
 interface CityModalProps {
   show: boolean;
@@ -73,6 +75,11 @@ const CityModal: React.FC<CityModalProps> = ({
     const buildingDef = BUILDING_PROPS[itemType];
     if (buildingDef) {
       return { type: 'building', itemType, name: buildingDef.name, cost: buildingDef.cost };
+    }
+    // Wonders are produced exactly like buildings (their own data table).
+    const wonderDef = getWonder(itemType);
+    if (wonderDef) {
+      return { type: 'building', itemType, name: wonderDef.name, cost: wonderDef.cost };
     }
     console.warn('Unknown production type:', itemType);
     return null;
@@ -548,11 +555,21 @@ const CityModal: React.FC<CityModalProps> = ({
                     };
 
                     const renderBuildingCard = (key: string) => {
-                      const b = BUILDING_PROPERTIES[key];
+                      // Wonders live in WONDER_PROPERTIES (derived from WonderData),
+                      // regular buildings in BUILDING_PROPERTIES — a wonder card
+                      // used to vanish because only the latter was consulted.
+                      const isWonder = !!WONDER_PROPERTIES[key];
+                      const b = BUILDING_PROPERTIES[key] ?? WONDER_PROPERTIES[key];
                       if (!b) return null;
                       const effects = b.effects ?? {};
-                      const effectEntries = Object.entries(effects).filter(([, v]) => v && v !== false && v !== 0);
-                      const isWonder = !!WONDER_PROPERTIES[key];
+                      const effectEntries = isWonder
+                        ? []
+                        : Object.entries(effects).filter(([, v]) => v && v !== false && v !== 0);
+                      // Obsolete wonders keep standing (and scoring) but their
+                      // effect is dead — say so right on the city card.
+                      const wonderObsolete = isWonder
+                        && isWonderObsolete(key, (gameEngine?.civilizations ?? []) as Array<{ technologies?: string[] | Set<string> }>);
+
                       const canSell = !isWonder && !(selectedCity.soldBuildingThisTurn);
                       const sellRefund = Math.floor((b.cost ?? 0) / 2);
                       const sellDisabled = !canSell;
@@ -594,6 +611,11 @@ const CityModal: React.FC<CityModalProps> = ({
                                 <span className="building-meta__item">
                                   <i className="bi bi-bricks"></i> {b.cost}
                                 </span>
+                                {wonderObsolete && (
+                                  <span className="wonder-obsolete-tag" title="Obsolescence technology discovered — effect inactive">
+                                    ⚠ Obsolete
+                                  </span>
+                                )}
                                 {b.maintenance > 0 && (
                                   <span className="building-meta__item">
                                     <i className="bi bi-coin"></i> {b.maintenance}/turn

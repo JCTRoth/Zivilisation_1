@@ -1,0 +1,317 @@
+/* ==========================================================================
+   World Wonders — completion screen, conflict modal, overview + Civilopedia
+   ========================================================================== */
+
+/* ── Status colours (spec: green / blue / yellow / red / grey) ─────────── */
+.wonder-status {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.wonder-status--owned     { background: #198754; color: #fff; }          /* green */
+.wonder-status--building  { background: #0d6efd; color: #fff; }          /* blue  */
+.wonder-status--contested { background: #ffc107; color: #212529; }       /* yellow*/
+.wonder-status--rival     { background: #dc3545; color: #fff; }          /* red   */
+.wonder-status--locked    { background: #6c757d; color: #fff; }          /* grey  */
+.wonder-status--available { background: transparent; color: #adb5bd; border: 1px dashed #6c757d; }
+
+/* ── Shared image placeholder (real artwork can be dropped in later) ───── */
+.wonder-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(255, 214, 90, 0.16), transparent 65%),
+    linear-gradient(160deg, #1d2433 0%, #121722 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  color: #ffd75e;
+}
+.wonder-image__icon {
+  font-size: clamp(3rem, 8vw, 6rem);
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.6));
+}
+.wonder-image__caption {
+  position: absolute;
+  bottom: 0.4rem;
+  right: 0.6rem;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+}
+
+/* ── A. Wonder completion screen ───────────────────────────────────────── */
+.wonder-completed-modal .modal-content {
+  background: linear-gradient(165deg, #241f14 0%, #171310 55%, #101418 100%);
+  border: 1px solid rgba(255, 215, 94, 0.45);
+  box-shadow: 0 0 60px rgba(255, 200, 60, 0.25);
+  color: #f5f0e2;
+}
+.wonder-completed-body {
+  text-align: center;
+  padding: 1.5rem 2rem 1rem;
+}
+.wonder-completed-eyebrow {
+  color: #ffd75e;
+  text-transform: uppercase;
+  letter-spacing: 0.35em;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.wonder-completed-title {
+  font-size: clamp(1.6rem, 4vw, 2.6rem);
+  font-weight: 800;
+  margin: 0.35rem 0 0.1rem;
+  color: #ffe9a8;
+  text-shadow: 0 2px 14px rgba(255, 200, 60, 0.35);
+}
+.wonder-completed-sub {
+  color: #cfc6ad;
+  font-size: 0.95rem;
+  margin-bottom: 1rem;
+}
+.wonder-completed-modal .wonder-image {
+  aspect-ratio: 16 / 7;
+  width: 100%;
+  margin-bottom: 1.1rem;
+}
+.wonder-effect-box {
+  background: rgba(255, 215, 94, 0.1);
+  border: 1px solid rgba(255, 215, 94, 0.4);
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  text-align: left;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+.wonder-effect-box strong { color: #ffd75e; }
+.wonder-flavor {
+  color: #bfb8a4;
+  font-style: italic;
+  text-align: left;
+  margin: 0.9rem 0 1.2rem;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.wonder-completed-modal .btn-wonder-continue {
+  background: linear-gradient(180deg, #ffd75e, #e0a913);
+  border: none;
+  color: #2a2110;
+  font-weight: 700;
+  min-width: 200px;
+  padding: 0.6rem 1.6rem;
+  border-radius: 999px;
+}
+.wonder-completed-modal .btn-wonder-continue:hover {
+  background: linear-gradient(180deg, #ffe689, #f0b91d);
+  color: #2a2110;
+}
+
+/* ── D. Production conflict modal ──────────────────────────────────────── */
+.wonder-conflict-modal .modal-content {
+  background: #24272e;
+  border: 1px solid #dc3545;
+  color: #f0f0f0;
+}
+.wonder-conflict-title { color: #ffb3b8; }
+.wonder-conflict-body { padding: 1.25rem 1.5rem; }
+.wonder-conflict-message {
+  background: rgba(220, 53, 69, 0.12);
+  border: 1px solid rgba(220, 53, 69, 0.5);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.98rem;
+}
+.wonder-conflict-detail {
+  color: #adb5bd;
+  font-size: 0.88rem;
+  margin-top: 0.75rem;
+}
+.wonder-conflict-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.1rem;
+}
+
+/* ── B. Wonders overview screen ────────────────────────────────────────── */
+.wonders-overview { color: #e9ecef; }
+.wonders-overview__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+  margin-bottom: 0.9rem;
+  font-size: 0.75rem;
+  color: #adb5bd;
+}
+.wonders-overview__era {
+  margin-top: 1.1rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #ffd75e;
+  border-bottom: 1px solid rgba(255, 215, 94, 0.25);
+  padding-bottom: 0.25rem;
+}
+.wonders-overview__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+.wonder-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  text-align: left;
+  background: #1b1f27;
+  border: 1px solid #30353f;
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  color: #e9ecef;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.wonder-row:hover {
+  border-color: #ffd75e;
+  background: #222734;
+}
+.wonder-row--locked { opacity: 0.6; }
+.wonder-row__thumb {
+  flex: 0 0 56px;
+  height: 44px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  background: linear-gradient(160deg, #262c3a, #171b25);
+  border: 1px solid #343b49;
+}
+.wonder-row__main { flex: 1 1 auto; min-width: 0; }
+.wonder-row__name { font-weight: 700; font-size: 0.95rem; }
+.wonder-row__effect {
+  color: #9da5b4;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wonder-row__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: #adb5bd;
+  white-space: nowrap;
+}
+.wonder-row__cost { color: #7ec8ff; font-weight: 700; }
+
+/* ── Civilopedia entry ─────────────────────────────────────────────────── */
+.wonder-entry-modal .modal-content {
+  background: #1a1e26;
+  color: #e9ecef;
+  border: 1px solid #3a4150;
+}
+.wonder-entry-modal .wonder-image {
+  aspect-ratio: 16 / 6;
+  width: 100%;
+  margin-bottom: 1rem;
+}
+.wonder-entry-title { font-weight: 800; font-size: 1.5rem; color: #ffe9a8; }
+.wonder-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.5rem 0 0.9rem;
+}
+.wonder-entry-meta__chip {
+  background: #262c38;
+  border: 1px solid #3a4150;
+  border-radius: 999px;
+  padding: 0.18rem 0.7rem;
+  font-size: 0.75rem;
+  color: #cfd6e4;
+}
+.wonder-entry-section {
+  background: #20252f;
+  border: 1px solid #333a47;
+  border-radius: 10px;
+  padding: 0.75rem 0.95rem;
+  margin-bottom: 0.75rem;
+}
+.wonder-entry-section h6 {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #ffd75e;
+}
+.wonder-entry-section p { margin: 0; font-size: 0.92rem; line-height: 1.5; }
+.wonder-entry-facts { margin: 0; padding-left: 1.1rem; font-size: 0.88rem; line-height: 1.55; }
+.wonder-entry-facts li { margin-bottom: 0.3rem; }
+.wonder-entry-owner { font-size: 0.85rem; color: #9da5b4; margin-bottom: 0.8rem; }
+
+/* ── Production selection: wonders tab ─────────────────────────────────── */
+.production-wonders-layout {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+.production-wonders-layout__list { flex: 1 1 58%; min-width: 0; }
+.production-wonders-layout__detail {
+  flex: 1 1 42%;
+  position: sticky;
+  top: 0;
+  background: #20252f;
+  border: 1px solid #333a47;
+  border-radius: 10px;
+  padding: 0.8rem 0.9rem;
+  color: #e9ecef;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.production-wonders-layout__detail h6 {
+  color: #ffe9a8;
+  margin-bottom: 0.35rem;
+  font-weight: 800;
+}
+.production-wonders-layout__detail .wonder-image {
+  aspect-ratio: 16 / 7;
+  width: 100%;
+  margin-bottom: 0.6rem;
+}
+.wonder-detail-effect {
+  background: rgba(255, 215, 94, 0.08);
+  border: 1px solid rgba(255, 215, 94, 0.3);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.85rem;
+}
+.wonder-detail-meta { font-size: 0.78rem; color: #adb5bd; margin-top: 0.5rem; }
+.wonder-detail-flavor { font-size: 0.8rem; color: #9da5b4; font-style: italic; margin-top: 0.5rem; }
+tr.wonder-row-selectable { cursor: pointer; }
+tr.wonder-row-selectable.selected { outline: 1px solid #ffd75e; }
+.wonder-obsolete-tag {
+  color: #ff8b92;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+@media (max-width: 767.98px) {
+  .production-wonders-layout { flex-direction: column; }
+  .production-wonders-layout__detail { position: static; width: 100%; max-height: none; }
+  .wonder-completed-body { padding: 1rem; }
+}

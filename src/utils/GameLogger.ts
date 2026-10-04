@@ -169,6 +169,12 @@ class GameLogger {
         return `🏭 Produced unit: ${data.unit?.type} at ${data.cityId}`;
       case 'BUILDING_COMPLETED':
         return `🏗 Building completed at ${data.cityId}`;
+      case 'WONDER_COMPLETED':
+        return `🏆 Wonder completed: ${data.wonderId} in ${data.cityName ?? data.cityId} (${data.civName ?? data.civilizationId})`;
+      case 'WONDER_PRODUCTION_CONFLICT':
+        return `⚠ Wonder already finished elsewhere: ${data.wonderId} — ${data.cityId} loses its progress`;
+      case 'UNIT_UPGRADED':
+        return `🔧 Upgraded: ${data.from} → ${data.to} (${data.unit?.id ?? ''})`;
       case 'CITY_PRODUCTION_CHANGED':
         return `Production @ ${data.cityId}: ${data.item?.itemType ?? data.item?.name ?? data.item ?? ''}`;
       case 'RESEARCH_PHASE':

@@ -2,6 +2,8 @@ import { Technology } from '../../types/game';
 
 export const TECHNOLOGIES_DATA: Technology[] = [
   { id: "pottery", name: "Pottery", researched: false, researching: false, available: true, cost: 20, description: "Allows construction of granaries, boosting food storage.", prerequisites: [] },
+  { id: "mysticism", name: "Mysticism", researched: false, researching: false, cost: 40, description: "Revealed rites and temple mysteries. Unlocks the Oracle.", prerequisites: ["ceremonial_burial"] },
+  { id: "religion", name: "Religion", researched: false, researching: false, cost: 90, description: "Organized faith and the great cathedrals of the age.", prerequisites: ["philosophy", "mysticism"] },
   { id: "bronze_working", name: "Bronze Working", researched: false, researching: false, available: true, cost: 30, description: "Enables Phalanx units and leads to Iron Working.", prerequisites: [] },
   { id: "iron_working", name: "Iron Working", researched: false, researching: false, cost: 50, description: "Enables Legion units; prerequisite for Metallurgy.", prerequisites: ["bronze_working"] },
   { id: "alphabet", name: "Alphabet", researched: false, researching: false, available: true, cost: 20, description: "Foundation for writing and literacy.", prerequisites: [] },
@@ -31,6 +33,10 @@ export const TECHNOLOGIES_DATA: Technology[] = [
   { id: "gunpowder", name: "Gunpowder", researched: false, researching: false, cost: 100, description: "Enables Musketeer units.", prerequisites: ["metallurgy"] },
   { id: "navigation", name: "Navigation", researched: false, researching: false, cost: 80, description: "Allows exploration of oceans.", prerequisites: ["map_making", "astronomy"] },
   { id: "astronomy", name: "Astronomy", researched: false, researching: false, cost: 70, description: "Allows Copernicus' Observatory and leads to Navigation.", prerequisites: ["philosophy", "mathematics"] },
+  { id: "theory_of_gravity", name: "Theory of Gravity", researched: false, researching: false, cost: 100, description: "Universal gravitation explains the motion of planets and the tides.", prerequisites: ["astronomy"] },
+  { id: "magnetism", name: "Magnetism", researched: false, researching: false, cost: 100, description: "The compass needle and the Earth's magnetic field.", prerequisites: ["navigation"] },
+  { id: "medicine", name: "Medicine", researched: false, researching: false, cost: 110, description: "Anatomy, disease and the healing arts.", prerequisites: ["university"] },
+  { id: "invention", name: "Invention", researched: false, researching: false, cost: 120, description: "Mechanical ingenuity — machines that build machines.", prerequisites: ["engineering"] },
   { id: "university", name: "University", researched: false, researching: false, cost: 90, description: "Allows Universities and boosts science output.", prerequisites: ["philosophy"] },
   { id: "banking", name: "Banking", researched: false, researching: false, cost: 100, description: "Allows Banks and increases trade income.", prerequisites: ["trade"] },
   { id: "industrialization", name: "Industrialization", researched: false, researching: false, cost: 120, description: "Allows Factories and boosts production.", prerequisites: ["banking", "engineering"] },
@@ -44,6 +50,9 @@ export const TECHNOLOGIES_DATA: Technology[] = [
   { id: "computers", name: "Computers", researched: false, researching: false, cost: 220, description: "Allows Research Labs and advanced computing.", prerequisites: ["electronics"] },
   { id: "electronics", name: "Electronics", researched: false, researching: false, cost: 180, description: "Allows Hydro Plants.", prerequisites: ["electricity"] },
   { id: "nuclear_power", name: "Nuclear Power", researched: false, researching: false, cost: 200, description: "Allows Nuclear Plants.", prerequisites: ["electronics"] },
+  { id: "nuclear_fission", name: "Nuclear Fission", researched: false, researching: false, cost: 240, description: "Splitting the atom. The key to nuclear weapons programs.", prerequisites: ["nuclear_power"] },
+  { id: "automobile", name: "Automobile", researched: false, researching: false, cost: 200, description: "The internal combustion engine puts the world on wheels.", prerequisites: ["combustion"] },
+  { id: "genetic_engineering", name: "Genetic Engineering", researched: false, researching: false, cost: 230, description: "Reading and rewriting the code of life.", prerequisites: ["science_theory", "computers"] },
   { id: "mass_production", name: "Mass Production", researched: false, researching: false, cost: 170, description: "Allows faster production of units.", prerequisites: ["industrialization"] },
   { id: "moonshot", name: "Moonshot", researched: false, researching: false, available: false, cost: 300, description: "Launch a moon mission that ushers in a new golden age.", prerequisites: ["space_flight"] },
 ];

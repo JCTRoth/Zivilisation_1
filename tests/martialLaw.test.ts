@@ -4,13 +4,13 @@
  * A military unit standing *on* a city tile is worth one happiness each under
  * Despotism, Monarchy and Communism, and nothing at all under Republic or
  * Democracy. It is the cheapest happiness in the game: no gold, no worker, just
- * a soldier who was going to be built anyway. Wonders with `globalHappiness`
- * (Pyramids, Hanging Gardens) do the same job for the whole empire at once.
+ * a soldier who was going to be built anyway. Continent/civilization wonders
+ * (Hanging Gardens, Cure for Cancer) do a similar job for many cities at once —
+ * see the 'wonder content' block below and tests/wonderEffects.test.ts.
  *
- * Both were declared or intended and not delivered:
- *  - `globalHappiness` was read by nothing, so both wonders were dead weight;
- *  - the AI garrisoned within two tiles for *defence*, which earns no martial
- *    law, and then hired Entertainers to do a job its soldiers could do free.
+ * The garrison half of this file exists because the AI used to garrison within
+ * two tiles for *defence*, which earns no martial law, and then hired
+ * Entertainers to do a job its soldiers could do free.
  */
 import { describe, expect, it } from 'vitest';
 import { makeEngine, makeGridEngine } from './helpers/world';
@@ -128,37 +128,45 @@ describe('martial law', () => {
 });
 
 describe('wonder content', () => {
-  it('grants every city of the civ happiness, not just the holder', () => {
+  it('Hanging Gardens grants every same-continent city happiness, not just the holder', () => {
     const { engine, city, civ } = world1(4);
     const other = {
       ...city, id: 'c2', name: 'Other', col: 0, row: 0,
       workingTiles: new Set<string>(['0,0']),
     } as unknown as City;
     engine.cities = [city, other];
-    city.buildings = ['pyramids'];
+    city.buildings = ['hanging_gardens'];
 
     // The city that does NOT hold the wonder is the proof: it gets the point too.
-    expect(engine.economicManager.wonderHappiness(civ)).toBe(1);
+    expect(engine.economicManager.wonderHappinessForCity(other)).toBe(1);
     const far = engine.economicManager.cityHappiness(other, civ).happiness;
     city.buildings = [];
     const without = engine.economicManager.cityHappiness(other, civ).happiness;
     expect(far - without).toBe(1);
   });
 
-  it('counts a global wonder once, however many cities hold one', () => {
+  it('counts each wonder once per city, however many wonders exist', () => {
     const { engine, city, civ } = world1(4);
-    const other = { ...city, id: 'c2', col: 0, row: 0 } as unknown as City;
+    const other = { ...city, id: 'c2', col: 0, row: 0, workingTiles: new Set(['0,0']) } as unknown as City;
     engine.cities = [city, other];
-    city.buildings = ['pyramids'];
-    other.buildings = ['hanging_gardens'];
-    expect(engine.economicManager.wonderHappiness(civ)).toBe(2);
+    city.buildings = ['hanging_gardens'];
+    other.buildings = ['cure_for_cancer'];
+    // Both wonders reach both cities (continent + civilization scope) = 2.
+    expect(engine.economicManager.wonderHappinessForCity(city)).toBe(2);
+    expect(engine.economicManager.wonderHappinessForCity(other)).toBe(2);
+    expect(engine.economicManager.cityHappiness(city, civ).happiness).toBeGreaterThan(0);
   });
 
   it('does not leak to another civ', () => {
     const { engine, city } = world1(4);
-    city.buildings = ['pyramids'];
-    const rival = engine.civilizations[1] as Civilization;
-    expect(engine.economicManager.wonderHappiness(rival)).toBe(0);
+    city.buildings = ['cure_for_cancer'];
+    const rivalCity = {
+      ...city, id: 'r1', name: 'Rival', civilizationId: 1, col: 0, row: 0,
+      buildings: [], workingTiles: new Set(['0,0']),
+    } as unknown as City;
+    engine.cities = [city, rivalCity];
+    expect(engine.economicManager.wonderHappinessForCity(city)).toBe(1);
+    expect(engine.economicManager.wonderHappinessForCity(rivalCity)).toBe(0);
   });
 });
 

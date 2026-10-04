@@ -44,7 +44,8 @@ describe('production tech-gating', () => {
     expect(BUILDING_PROPERTIES.stock_exchange?.requiredTechnology).toBe('banking');
     expect(BUILDING_PROPERTIES.sdi_defense?.requiredTechnology).toBe('space_flight');
     expect(WONDER_PROPERTIES.pyramids?.requiredTechnology).toBe('masonry');
-    expect(WONDER_PROPERTIES.newton?.requiredTechnology).toBe('university');
+    expect(WONDER_PROPERTIES.isaac_newtons_college?.requiredTechnology).toBe('theory_of_gravity');
+    expect(WONDER_PROPERTIES.international_space_station?.requiredTechnology).toBe('space_flight');
   });
 
   it('ProductionManager rejects unresearched items and allows researched/no-tech ones', async () => {

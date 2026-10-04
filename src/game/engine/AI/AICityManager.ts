@@ -274,7 +274,7 @@ export class AICityManager {
       // Food first, then contentment: `secureContentment` can staff an
       // entertainer, and an entertainer is a worker the fields do not have.
       this.secureFood(city, civ, profile);
-      this.secureContentment(city, civ, profile);
+      this.secureContentment(city, civ);
     }
     this.steerSurplus(city, civ, profile);
     if (!specialistsLocked) {
@@ -288,7 +288,7 @@ export class AICityManager {
    * governor staffs an Entertainer while the city is unhappy (and never
    * beyond what it actually needs).
    */
-  private secureContentment(city: City, civ: Civilization, profile: GovernorProfile): void {
+  private secureContentment(city: City, civ: Civilization): void {
     const specialists = city.specialists ?? (city.specialists = []);
     const happy = this.econ.cityHappiness(city, civ);
     const unhappy = happy.disorder || happy.unhappiness >= happy.happiness;
@@ -298,7 +298,21 @@ export class AICityManager {
     // Taxmen and Scientists, not about contentment — and routing the floor
     // through `specialistCapFor` meant those cities could hire NOBODY while
     // unhappy, so half the cities in a 150-round run sat in disorder.
-    const cap = Math.max(MAX_ENTERTAINERS_PER_CITY, this.specialistCapFor(city, profile));
+    //
+    // And hire until the city is CONTENT, not up to a fixed staff of two: with
+    // no government tolerance a size-10 city is 10 points short, two
+    // Entertainers buy only 4 of them, and the luxury rate cannot help either
+    // — at commerce 2 (an unroaded city) `floor(2 × 0.30)` is 0 happiness at
+    // ANY rate. Bodies on the stage are the only lever left, so the staff is
+    // sized to the actual deficit. Two citizens always stay on the fields: the
+    // centre is free, so two workers feed a small city and below that it
+    // starves.
+    const deficit = Math.max(0, happy.unhappiness - happy.happiness);
+    const sizeCap = Math.min(
+      Math.max(0, (city.population ?? 1) - 2),
+      Math.max(specialistCapForPopulation(city.population ?? 1), MAX_ENTERTAINERS_PER_CITY),
+    );
+    const cap = Math.min(entertainers + Math.ceil(deficit / 2), sizeCap);
 
     // An Entertainer is a worker off the fields. With no government tolerance
     // every city is permanently a little unhappy, so this used to fire

@@ -26,6 +26,8 @@ import { fishingRelevanceForCiv } from './FisherEconomics';
 import { serializeCities } from '../../utils/CitySnapshots';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { BUILDING_TYPES } from '@/data/BuildingConstants';
+import { isWonderId } from '@/data/WonderData';
+import { UNIT_UPGRADE_PATHS } from '@/data/UnitConstants';
 import { CITIZEN_FOOD_DEMAND_PER_CITIZEN, type ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
@@ -745,7 +747,18 @@ export class TurnManager {
       // A SLEEPING unit keeps its movement (waking it must leave it ready to
       // act) but is likewise not called up — the queue skips it, so it only
       // acts when something wakes it or the player picks it.
-      unit.movesRemaining = unitProps?.movement || 1;
+      //
+      // Lighthouse / Magellan's Expedition: the owner's sea units get +N
+      // movement — applied to BOTH maxMoves and the fresh reset so GoTo,
+      // pathfinding and the movement preview all see the bonus.
+      const baseMoves = unitProps?.movement || 1;
+      if (unitProps?.naval) {
+        const navalBonus = this.gameEngine.wonderEffects?.navalMoveBonus(playerId) ?? 0;
+        unit.maxMoves = baseMoves + navalBonus;
+        unit.movesRemaining = baseMoves + navalBonus;
+      } else {
+        unit.movesRemaining = baseMoves;
+      }
       // Civ1: at the start of the owner's turn every unit is "fresh" — full
       // movement restored and no action taken yet, so the Minimum-1-Move
       // exception applies to its first move.
@@ -783,7 +796,15 @@ export class TurnManager {
           if (item.type === 'unit') {
             this.createPurchasedUnit(city, item);
           } else if (item.type === 'building') {
-            this.addBuildingToCity(city, item.itemType, true);
+            const result = this.addBuildingToCity(city, item.itemType, true);
+            if (result === 'conflict') {
+              // Another city/civ finished this wonder first — the purchase is
+              // void, so hand the gold back instead of silently eating it.
+              const owner = this.gameEngine.civilizations?.[city.civilizationId];
+              if (owner?.resources && typeof item.cost === 'number') {
+                owner.resources.gold = (owner.resources.gold ?? 0) + item.cost;
+              }
+            }
           }
         });
         city.purchasedThisTurn = [];
@@ -845,6 +866,9 @@ export class TurnManager {
       // applies BEFORE the economy is computed for this turn.
       this.gameEngine.governmentManager?.processTurn(civ);
       const econResult = this.processCivilizationResources(civ);
+      // Leonardo's Workshop: obsolete units upgrade automatically once their
+      // modern replacement's technology is known.
+      this.processLeonardoUpgrades(civ);
       if (econResult && (econResult.upkeep > 0 || econResult.disbanded > 0)) {
         this.gameEngine.log('economy',
           `Upkeep −${econResult.upkeep} gold (deficit ${econResult.deficit}, ${econResult.disbanded} unit(s) disbanded)`,
@@ -930,7 +954,17 @@ export class TurnManager {
       const cityDestroyed = this.createProducedUnit(city, city.currentProduction.itemType);
       if (cityDestroyed) return;
     } else if (city.currentProduction.type === 'building') {
-      this.addBuildingToCity(city, city.currentProduction.itemType, false);
+      const result = this.addBuildingToCity(city, city.currentProduction.itemType, false);
+      if (result === 'conflict') {
+        // Spec rule: only the FIRST city to finish a wonder gets it. Everyone
+        // else loses the invested shields and the city goes idle — the queue
+        // is kept, but nothing starts automatically this turn.
+        city.currentProduction = null;
+        city.productionStored = 0;
+        city.productionProgress = 0;
+        debugLog(`[TurnManager] Wonder conflict cancelled production in ${city.name}`);
+        return;
+      }
     }
 
     // Advance queue if present
@@ -975,6 +1009,12 @@ export class TurnManager {
     // (attack/defense/maxMoves). Previously these were missing, which made
     // `attacker.attack` undefined → NaN strength → produced units ALWAYS
     // lost combat.
+    // Lighthouse / Magellan: the owner's sea units roll off the ways faster.
+    const navalMoveBonus =
+      (this.gameEngine.constructor as typeof GameEngine).UNIT_PROPS?.[unitType]?.naval
+        ? this.gameEngine.wonderEffects?.navalMoveBonus(city.civilizationId) ?? 0
+        : 0;
+    const producedMaxMoves = (unitProps.movement || 1) + navalMoveBonus;
     const unit = {
       id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
       type: unitType,
@@ -984,9 +1024,9 @@ export class TurnManager {
       health: 100,
       hitPoints: unitProps.hitPoints ?? 2,
       maxHitPoints: unitProps.hitPoints ?? 2,
-      movement: unitProps.movement,
-      movesRemaining: unitProps.movement,
-      maxMoves: unitProps.movement,
+      movement: producedMaxMoves,
+      movesRemaining: producedMaxMoves,
+      maxMoves: producedMaxMoves,
       hasMovedThisTurn: false,
       isVeteran: false,
       attack: unitProps.attack || 0,
@@ -1038,14 +1078,76 @@ export class TurnManager {
     debugLog(`[TurnManager] Settler completion destroyed size-1 city ${city.name}; settler is now NONE`);
   }
 
-  private addBuildingToCity(city: City, buildingType: string, isPurchased: boolean): void {
+  /**
+   * Add a completed building (or wonder) to a city.
+   *
+   * Returns `'conflict'` when a WORLD-WONDER was already completed elsewhere —
+   * the first completion wins, this city's progress is void (Civ1 rule) and
+   * the caller must leave the city idle.
+   */
+  private addBuildingToCity(
+    city: City,
+    buildingType: string,
+    isPurchased: boolean,
+  ): 'added' | 'conflict' | 'duplicate' {
     if (!city.buildings) city.buildings = [];
     // Buildings are one-per-city in Civ1 — never add a duplicate (the AI
     // purchase + production paths could otherwise double-add the same item).
     if (city.buildings.includes(buildingType)) {
       debugLog(`[TurnManager] Skipping duplicate building ${buildingType} in city ${city.name}`);
-      return;
+      return 'duplicate';
     }
+
+    // ── World Wonder: world-unique, first completion wins ────────────────
+    if (isWonderId(buildingType)) {
+      const ownerCity = this.gameEngine.wonderManager?.findWonderCity(buildingType);
+      if (ownerCity) {
+        // Lost the race. The wonder already exists somewhere in the world —
+        // this city gets nothing and its shields are wasted.
+        debugLog(
+          `[TurnManager] Wonder conflict: ${buildingType} already completed by civ ${ownerCity.civilizationId} in ${ownerCity.name}`,
+        );
+        this.emit('WONDER_PRODUCTION_CONFLICT', {
+          cityId: city.id,
+          civilizationId: city.civilizationId,
+          cityName: city.name,
+          wonderId: buildingType,
+          ownerCityId: ownerCity.id,
+          ownerCityName: ownerCity.name,
+          ownerCivId: ownerCity.civilizationId,
+          ownerCivName: this.gameEngine.civilizations?.[ownerCity.civilizationId]?.name ?? '',
+          isPurchased,
+        });
+        return 'conflict';
+      }
+
+      // Claim it: wonders live in city.buildings (save/capture for free) and
+      // in city.wonders for quick per-city lists.
+      city.buildings.push(buildingType);
+      if (!Array.isArray(city.wonders)) city.wonders = [];
+      city.wonders.push(buildingType);
+
+      const civName = this.gameEngine.civilizations?.[city.civilizationId]?.name ?? '';
+      debugLog(`[TurnManager] Wonder ${buildingType} completed in ${city.name} by ${civName}`);
+
+      // Keep the AI/auto-production queue fed exactly like a normal building.
+      this.emit(isPurchased ? 'BUILDING_PURCHASED' : 'BUILDING_COMPLETED', {
+        cityId: city.id,
+        buildingType,
+      });
+      this.emit('WONDER_COMPLETED', {
+        cityId: city.id,
+        cityName: city.name,
+        civilizationId: city.civilizationId,
+        civName,
+        wonderId: buildingType,
+        isPurchased,
+      });
+      // The Moonshot gate depends on the ISS — re-evaluate tech availability.
+      this.gameEngine.updateTechnologyAvailability?.();
+      return 'added';
+    }
+
     city.buildings.push(buildingType);
 
     // Building a Palace moves the seat of government to this city.
@@ -1059,6 +1161,60 @@ export class TurnManager {
       cityId: city.id, 
       buildingType 
     });
+    return 'added';
+  }
+
+  /**
+   * Leonardo's Workshop: convert the civ's obsolete units to their modern
+   * replacement the moment the replacement's technology is available. Runs
+   * once per civ per turn; a unit that already moved this turn keeps its
+   * (capped) movement so an upgrade can never grant a second action.
+   */
+  private processLeonardoUpgrades(civ: Civilization): void {
+    if (!this.gameEngine.wonderEffects?.autoUpgradeUnits(civ.id)) return;
+    const techs = new Set<string>();
+    const raw = civ.technologies as string[] | Set<string> | undefined;
+    if (Array.isArray(raw)) {
+      for (const t of raw) techs.add(String(t));
+    } else if (raw instanceof Set) {
+      for (const t of raw) techs.add(String(t));
+    }
+
+    const UNIT_PROPS = (this.gameEngine.constructor as typeof GameEngine).UNIT_PROPS;
+    let upgraded = 0;
+    for (const unit of this.gameEngine.units ?? []) {
+      if (unit.civilizationId !== civ.id || unit.isDefeated) continue;
+      const targetType = UNIT_UPGRADE_PATHS[String(unit.type)];
+      if (!targetType) continue;
+      const targetProps = UNIT_PROPS?.[targetType];
+      if (!targetProps) continue;
+      const req = (targetProps as { requires?: string | null }).requires;
+      if (req && !techs.has(req)) continue;
+
+      const from = String(unit.type);
+      unit.type = targetType;
+      unit.name = targetProps.name || targetType;
+      unit.attack = targetProps.attack || 0;
+      unit.defense = targetProps.defense || 1;
+      unit.icon = targetProps.icon || unit.icon;
+      unit.maintenance = targetProps.maintenance ?? unit.maintenance;
+      unit.maxHitPoints = targetProps.hitPoints ?? unit.maxHitPoints;
+      unit.hitPoints = Math.min(unit.hitPoints ?? unit.maxHitPoints, unit.maxHitPoints);
+      const navalBonus =
+        targetProps.naval ? this.gameEngine.wonderEffects?.navalMoveBonus(civ.id) ?? 0 : 0;
+      unit.maxMoves = (targetProps.movement || 1) + navalBonus;
+      unit.movesRemaining = unit.hasMovedThisTurn
+        ? Math.min(unit.movesRemaining || 0, unit.maxMoves)
+        : unit.maxMoves;
+      upgraded++;
+      this.gameEngine.log?.('units',
+        `🔧 Leonardo's Workshop: ${civ.name} ${from} → ${targetType} (${unit.id})`,
+        { civilizationId: civ.id, unitId: unit.id, from, to: targetType });
+      this.emit('UNIT_UPGRADED', { unit, from, to: targetType, civilizationId: civ.id });
+    }
+    if (upgraded > 0) {
+      debugLog(`[TurnManager] Leonardo's Workshop upgraded ${upgraded} unit(s) for ${civ.name}`);
+    }
   }
 
   private processCityGrowth(city: City, inDisorder: boolean = false): void {

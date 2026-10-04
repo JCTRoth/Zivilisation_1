@@ -1368,6 +1368,10 @@ function App() {
           actions.showDialog("statistics");
           setActiveMenu(null);
         }}
+        onWonders={() => {
+          actions.showDialog("wonders");
+          setActiveMenu(null);
+        }}
       />
 
       {/* Mobile primary action bar (thumb zone) */}

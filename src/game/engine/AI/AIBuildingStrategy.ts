@@ -7,6 +7,7 @@
  */
 
 import { BUILDING_PROPERTIES, BUILDING_PREREQUISITES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
+import { getWonder } from '@/data/WonderData';
 import type { BuildingProperties } from '../../../data/GameConstants';
 import {
   type StrategyProfile,
@@ -86,7 +87,11 @@ export class AIBuildingStrategy {
     city: City,
     civ: Civilization,
     strategy: StrategyProfile,
-    gameState: { currentYear: number; roundNumber: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number; cityCoastal?: boolean; economyPressure?: boolean }
+    gameState: { currentYear: number; roundNumber: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number; cityCoastal?: boolean; economyPressure?: boolean;
+    /** Current building upkeep, gold/turn (absent in unit tests). */
+    buildingUpkeep?: number;
+    /** Upkeep this civ can afford at its current income (absent in unit tests). */
+    buildingUpkeepBudget?: number; }
   ): BuildingPlan[] {
     const plans: BuildingPlan[] = [];
     const cityBuildings: string[] = city.buildings || [];
@@ -119,6 +124,23 @@ export class AIBuildingStrategy {
       );
 
       if (plan.priority > 0) {
+        // The empire cannot afford every building it is shown. A city that
+        // already pays 12 gold/turn of upkeep against an income of 4 is not
+        // allowed to queue a 13th, however good the score looks.
+        //
+        // Maintenance-free buildings (every wonder, the palace) are exempt:
+        // they cost nothing to keep, so they are never the reason a treasury
+        // runs dry. Upkeep-only gatekeepers get a floor (see
+        // `BUILDING_UPKEEP_BUDGET_FLOOR`) so a brand-new civ can still raise a
+        // granary, a temple or a pair of walls before it has any income.
+        const upkeep = props.maintenance ?? 0;
+        if (
+          upkeep > 0 &&
+          gameState.buildingUpkeepBudget !== undefined &&
+          (gameState.buildingUpkeep ?? 0) + upkeep > gameState.buildingUpkeepBudget
+        ) {
+          continue;
+        }
         plans.push(plan);
       }
     }
@@ -137,7 +159,11 @@ export class AIBuildingStrategy {
     city: City,
     personality: Personality,
     strategy: StrategyProfile,
-    gameState: { currentYear: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number; cityCoastal?: boolean; economyPressure?: boolean }
+    gameState: { currentYear: number; isBorderCity: boolean; isUnderThreat: boolean; numCities: number; cityCoastal?: boolean; economyPressure?: boolean;
+    /** Current building upkeep, gold/turn (absent in unit tests). */
+    buildingUpkeep?: number;
+    /** Upkeep this civ can afford at its current income (absent in unit tests). */
+    buildingUpkeepBudget?: number; }
   ): BuildingPlan {
     let priority = 5; // Base priority
     const reasons: string[] = [];
@@ -327,12 +353,27 @@ export class AIBuildingStrategy {
     city: City,
     _civ: Civilization,
     strategy: StrategyProfile,
-    gameState: { currentYear: number; isUnderThreat: boolean; builtWonders: string[] }
+    gameState: {
+      currentYear: number;
+      isUnderThreat: boolean;
+      builtWonders: string[];
+      /** Wonders whose obsolescence tech any civ already discovered. */
+      obsoleteWonders?: string[];
+      /**
+       * Garrison duty is satisfied (every city guarded, army ≥ city count).
+       * Wonders are only planned while this holds — see AutoProduction.
+       * Defaults to true when the field is absent (unit tests).
+       */
+      garrisonOk?: boolean;
+    }
   ): BuildingPlan[] {
     const plans: BuildingPlan[] = [];
 
     // Don't build wonders when under threat
     if (gameState.isUnderThreat) return plans;
+    // …and never while one of our cities is missing its garrison: the shields
+    // belong to defenders until every city is held (spec-adjacent safety rule).
+    if (gameState.garrisonOk === false) return plans;
 
     for (const [wonderType, props] of Object.entries(WONDER_PROPERTIES)) {
       // Skip already built (globally or in this city)
@@ -347,50 +388,81 @@ export class AIBuildingStrategy {
         continue;
       }
 
+      // Never start an obsolete wonder — its effect is already dead world-wide.
+      if ((gameState.obsoleteWonders ?? []).includes(wonderType)) continue;
+
       let priority = 5;
       const reasons: string[] = [];
 
-      // Wonder-specific scoring
-      switch (wonderType) {
-        case 'pyramids':
-          priority += 15;
-          if (strategy === 'early_expansion' || strategy === 'balanced_growth') priority += 10;
-          reasons.push('granary-everywhere');
-          break;
-
-        case 'hanging_gardens':
-          priority += 12;
-          reasons.push('global-happiness');
-          break;
-
-        case 'oracle':
-          priority += 10;
-          if (strategy === 'science_focus') priority += 8;
-          reasons.push('science+culture');
-          break;
-
-        case 'great_wall':
-          priority += 8;
-          if (strategy === 'defensive_turtle') priority += 10;
-          reasons.push('global-defense');
-          break;
-
-        case 'lighthouse':
-          priority += 6;
-          reasons.push('naval');
-          break;
-
-        case 'newton':
-          priority += 14;
-          if (strategy === 'science_focus') priority += 10;
-          reasons.push('science-boost');
-          break;
-
-        default:
-          priority += 5;
-          reasons.push('wonder');
-          break;
+      // Data-driven scoring from the wonder's own typed effects (WonderData):
+      // science wonders suit science civs, happiness wonders everybody, and
+      // gates (nuclear/space) are worth racing for.
+      const wonderDef = getWonder(wonderType);
+      if (!wonderDef) continue;
+      for (const effect of wonderDef.effects) {
+        switch (effect.kind) {
+          case 'sciencePercent':
+            priority += Math.max(2, Math.round(effect.percent / 5));
+            if (strategy === 'science_focus') priority += 6;
+            reasons.push(`science+${effect.percent}%`);
+            break;
+          case 'buildingScienceMultiplier':
+            priority += 12;
+            if (strategy === 'science_focus') priority += 6;
+            reasons.push('library-university-boost');
+            break;
+          case 'happiness':
+            priority += 4 * effect.amount;
+            reasons.push('happiness');
+            break;
+          case 'unhappyToContent':
+            priority += 3 * effect.amount;
+            reasons.push('content');
+            break;
+          case 'buildingHappinessMultiplier':
+            priority += 8;
+            reasons.push('temple-boost');
+            break;
+          case 'tradePerTradeSquare':
+            priority += 8;
+            reasons.push('trade');
+            break;
+          case 'navalMovement':
+            priority += 6;
+            reasons.push('naval');
+            break;
+          case 'visionRange':
+            priority += 6;
+            reasons.push('vision');
+            break;
+          case 'governmentAnarchyTurns':
+            priority += 12;
+            if (strategy === 'early_expansion' || strategy === 'balanced_growth') priority += 6;
+            reasons.push('fast-government');
+            break;
+          case 'productionPercent':
+          case 'productionFlat':
+            priority += 8;
+            reasons.push('production');
+            break;
+          case 'autoUpgradeUnits':
+            priority += 10;
+            reasons.push('unit-upgrades');
+            break;
+          case 'enableSpaceship':
+          case 'enableNuclear':
+            priority += 12;
+            reasons.push('world-gate');
+            break;
+          case 'revealAllCities':
+            priority += 8;
+            reasons.push('recon');
+            break;
+          default:
+            break;
+        }
       }
+      if (reasons.length === 0) reasons.push('wonder');
 
       // Wonder rush strategy gets blanket bonus
       if (strategy === 'wonder_rush') {

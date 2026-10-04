@@ -7,6 +7,7 @@ import { humanOrFirst, notify } from './NotificationUtils';
 import type GameEngine from '../game/engine/GameEngine';
 import type { Technology, Unit, City, Civilization, VillageOutcome } from '../../types/game';
 import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
+import { getWonder } from '@/data/WonderData';
 import { debugLog } from './DevLog';
 
 export class EngineEventRouter {
@@ -183,6 +184,12 @@ export class EngineEventRouter {
         break;
       case 'TRADE_ROUTE_ESTABLISHED':
         this.onTradeRouteEstablished(eventData);
+        break;
+      case 'WONDER_COMPLETED':
+        this.onWonderCompleted(eventData);
+        break;
+      case 'WONDER_PRODUCTION_CONFLICT':
+        this.onWonderProductionConflict(eventData);
         break;
       case 'GAME_LOG':
         debugLog('[EngineEventRouter] GAME_LOG:', eventData);
@@ -843,6 +850,68 @@ export class EngineEventRouter {
    * at it: warn, select + focus the city, and open its details screen the first
    * time so production is never silently skipped.
    */
+  /**
+   * A world wonder was completed somewhere in the world.
+   *
+   * Always refreshes the store (the wonder landed in a city's buildings — the
+   * wonders overview, city screen and production lists must all see it), then
+   * queues the celebratory completion screen. AI completions get the screen
+   * too (Civ1 shows them all), except in AI-vs-AI runs where nobody would
+   * ever press Continue.
+   */
+  private onWonderCompleted(eventData: Record<string, unknown>) {
+    this.actions.updateCities?.(this.gameEngine.getAllCities());
+    if (this.isAIVsAI) return;
+
+    const wonderId = String(eventData?.wonderId ?? '');
+    const wonder = getWonder(wonderId);
+    const civId = Number(eventData?.civilizationId);
+    const civ = this.gameEngine.civilizations?.[civId];
+    if (!wonder || !Number.isFinite(civId)) return;
+
+    this.actions.queueWonderDialog?.({
+      kind: 'completed',
+      wonderId,
+      wonderName: wonder.name,
+      cityId: String(eventData?.cityId ?? ''),
+      cityName: String(eventData?.cityName ?? ''),
+      civId,
+      civName: String(eventData?.civName ?? civ?.name ?? ''),
+      isHuman: civ?.isHuman === true,
+    });
+  }
+
+  /**
+   * A human city finished a wonder somebody else already completed: the Civ1
+   * rule wastes the shields and leaves the city idle. The modal offers "Go to
+   * City" (inspect the idle city) and "Close". Conflicts in AI cities are
+   * engine-only — no dialog.
+   */
+  private onWonderProductionConflict(eventData: Record<string, unknown>) {
+    this.actions.updateCities?.(this.gameEngine.getAllCities());
+
+    const civId = Number(eventData?.civilizationId);
+    const civ = this.gameEngine.civilizations?.[civId];
+    if (!civ?.isHuman) return;
+    if (this.isAIVsAI) return;
+
+    const wonderId = String(eventData?.wonderId ?? '');
+    const wonder = getWonder(wonderId);
+    if (!wonder) return;
+
+    this.actions.queueWonderDialog?.({
+      kind: 'conflict',
+      wonderId,
+      wonderName: wonder.name,
+      cityId: String(eventData?.cityId ?? ''),
+      cityName: String(eventData?.cityName ?? ''),
+      ownerCityId: String(eventData?.ownerCityId ?? ''),
+      ownerCityName: String(eventData?.ownerCityName ?? ''),
+      ownerCivId: Number(eventData?.ownerCivId ?? -1),
+      ownerCivName: String(eventData?.ownerCivName ?? ''),
+    });
+  }
+
   private onCityProductionIdle(eventData: Record<string, unknown>) {
     if (this.isAIVsAI) return;
     const cityIds = Array.isArray(eventData?.cityIds) ? (eventData.cityIds as string[]) : [];

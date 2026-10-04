@@ -413,39 +413,32 @@ export class SettlementEvaluator {
           continue;
         }
 
-        // Check distance from friendly cities (own civilization).  Do not
-        // merely keep city centres apart: the whole workable/resource area
-        // must be disjoint as well.
-        let tooCloseToFriendlyCity = false;
-        if (currentCivilizationId !== undefined) {
-          for (let checkDy = -MIN_CITY_CENTER_DISTANCE + 1; checkDy < MIN_CITY_CENTER_DISTANCE; checkDy++) {
-            for (let checkDx = -MIN_CITY_CENTER_DISTANCE + 1; checkDx < MIN_CITY_CENTER_DISTANCE; checkDx++) {
-              if (Math.max(Math.abs(checkDx), Math.abs(checkDy)) >= MIN_CITY_CENTER_DISTANCE) continue;
-              const nearbyCity = getCityAt(col + checkDx, row + checkDy);
-              if (nearbyCity?.civilizationId === currentCivilizationId) {
-                tooCloseToFriendlyCity = true;
-                debugLog(`[SettlementEvaluator] findBestSettlementLocation: Workable area overlaps friendly city at (${col + checkDx}, ${row + checkDy})`);
-                break;
-              }
-            }
-            if (tooCloseToFriendlyCity) break;
-          }
-        } else {
-          // Fallback: use old minDistance check if no civilization ID provided
-          for (let checkDy = -minDistanceFromOtherCities; checkDy <= minDistanceFromOtherCities; checkDy++) {
-            for (let checkDx = -minDistanceFromOtherCities; checkDx <= minDistanceFromOtherCities; checkDx++) {
-              if (checkDx === 0 && checkDy === 0) continue;
-              if (getCityAt(col + checkDx, row + checkDy)) {
-                tooCloseToFriendlyCity = true;
-                debugLog(`[SettlementEvaluator] findBestSettlementLocation: Too close to city (fallback check)`);
-                break;
-              }
-            }
-            if (tooCloseToFriendlyCity) break;
+        // Spacing rule. Do not merely keep city centres apart: the whole
+        // workable/resource area must stay disjoint.
+        //
+        // This must be the SAME rule `GameEngine.canPlaceCityAt` enforces when
+        // it actually founds the city, and that rule is absolute — no city of
+        // anybody's, own or foreign. Scoring only against friendly cities let
+        // the search propose a site two tiles from a barbarian city; the engine
+        // then refused to found there, `foundCityWithSettler` returned false
+        // without a word, and the settler had nowhere to go: 310 of 323 idle
+        // settler turns in the pinned idleUnits game came from that loop.
+        let tooCloseToCity = false;
+        for (let checkDy = -MIN_CITY_CENTER_DISTANCE + 1; checkDy < MIN_CITY_CENTER_DISTANCE && !tooCloseToCity; checkDy++) {
+          for (let checkDx = -MIN_CITY_CENTER_DISTANCE + 1; checkDx < MIN_CITY_CENTER_DISTANCE; checkDx++) {
+            if (Math.max(Math.abs(checkDx), Math.abs(checkDy)) >= MIN_CITY_CENTER_DISTANCE) continue;
+            const nearbyCity = getCityAt(col + checkDx, row + checkDy);
+            if (!nearbyCity) continue;
+            tooCloseToCity = true;
+            const owner = nearbyCity.civilizationId === currentCivilizationId
+              ? 'friendly city'
+              : `city of civ ${nearbyCity.civilizationId}`;
+            debugLog(`[SettlementEvaluator] findBestSettlementLocation: Workable area overlaps ${owner} at (${col + checkDx}, ${row + checkDy})`);
+            break;
           }
         }
 
-        if (tooCloseToFriendlyCity) continue;
+        if (tooCloseToCity) continue;
 
         // Evaluate this location with city proximity penalties
         const score = this.evaluateAreaWithCityPenalties(

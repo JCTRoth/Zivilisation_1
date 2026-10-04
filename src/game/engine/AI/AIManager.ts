@@ -3654,8 +3654,28 @@ export class AIManager {
       // of its own cities to work and walks there instead of founding.
       const worksTile = unit._aiWorksTarget;
       if (worksTile) {
-        debugLog(`[AI-INFRA] Settler ${unit.id} heading to works tile (${worksTile.col},${worksTile.row})`);
-        return { col: worksTile.col, row: worksTile.row };
+        // Standing on the assigned tile with work already running: the tile is
+        // being built, nothing to do here.
+        if (unit.workTarget) {
+          debugLog(`[AI-INFRA] Settler ${unit.id} is building on (${worksTile.col},${worksTile.row})`);
+          unit._aiWorksTarget = null;
+        } else if (worksTile.col === unit.col && worksTile.row === unit.row) {
+          // Standing on it and NOT building. Returning it as a target sends the
+          // settler to the square it already occupies, which the movement code
+          // answers with `hold:already_at_target` — a turn spent doing nothing,
+          // repeated for the rest of the game. This was the single largest
+          // idle-settler source in the pinned game: 103 of 113 idle turns were
+          // one settler holding on the same tile. Drop the assignment so the
+          // settler picks another tile (or founds) next turn.
+          debugLog(`[AI-INFRA] Settler ${unit.id} stands on unusable works tile (${worksTile.col},${worksTile.row}) — releasing it`);
+          this.gameEngine.log('ai', `Settler releases works tile — ${unit.civilizationId} settler ${unit.id} at (${unit.col},${unit.row})`, {
+            civilizationId: unit.civilizationId, action: 'works_release', unitId: unit.id, unitType: 'settler',
+          });
+          unit._aiWorksTarget = null;
+        } else {
+          debugLog(`[AI-INFRA] Settler ${unit.id} heading to works tile (${worksTile.col},${worksTile.row})`);
+          return { col: worksTile.col, row: worksTile.row };
+        }
       }
       // Civ1 income strategy: no settlement worth founding — walk to the
       // nearest friendly worked tile (grassland/plains/desert) lacking a road
@@ -4010,15 +4030,10 @@ export class AIManager {
     const homePop = home?.population ?? 1;
     const dm = this.gameEngine.diplomacyManager;
 
-    // Route value, not proximity: payout/route-trade scale with population and
-    // distance (foreign ×2), so a farther high-population city is worth walking
-    // to. Land caravans cannot cross water, so only land-connected cities are
-    // candidates.
     let best: { col: number; row: number; value: number } | null = null;
     const consider = (city: City, foreign: boolean): void => {
       if (city.civilizationId === civId && city.col === unit.col && city.row === unit.row) return;
       if ((city.tradeRoutes?.length ?? 0) >= MAX_CARAVAN_TRADE_ROUTES) return;
-      if (!this.areLandConnected(unit.col, unit.row, city.col, city.row)) return;
       const dist = Math.max(1, squareDistance(unit.col, unit.row, city.col, city.row));
       const value = (homePop + (city.population ?? 1)) * (1 + dist / 4) * (foreign ? 2 : 1);
       if (!best || value > best.value) {
@@ -4031,20 +4046,21 @@ export class AIManager {
       if (city.civilizationId === civId) consider(city, false);
     }
 
-    // Known foreign cities we are at peace with are worth double.
+    // All explored foreign cities at peace are worth double.
     const storage = this.gameEngine.getPlayerStorage?.(civId);
-    if (storage?.enemyLocations instanceof Map) {
-      for (const [enemyCivId, locations] of storage.enemyLocations.entries()) {
-        if (enemyCivId === civId) continue;
-        if (dm?.isAtWar?.(civId, enemyCivId)) continue;
-        for (const loc of locations) {
-          if (loc.type !== 'city') continue;
-          const city = this.gameEngine.cities.find(
-            (c: City) => c.col === loc.col && c.row === loc.row && c.civilizationId === enemyCivId,
-          );
-          if (city) consider(city, true);
-        }
+    const isVisible = (col: number, row: number): boolean => {
+      if (storage) {
+        const idx = row * this.gameEngine.map!.width + col;
+        return storage.visibility[idx] || storage.explored[idx] || false;
       }
+      const tile = this.gameEngine.getTileAt(col, row);
+      return tile && (tile.visible || tile.explored);
+    };
+    for (const city of this.gameEngine.cities) {
+      if (city.civilizationId === civId) continue;
+      if (dm?.isAtWar?.(civId, city.civilizationId)) continue;
+      if (!isVisible(city.col, city.row)) continue;
+      consider(city, true);
     }
 
     return best ? { col: best.col, row: best.row } : null;
@@ -5004,17 +5020,23 @@ export class AIManager {
   /**
    * Whether the settler may found a city on the tile it is standing on.
    *
-   * Buildable terrain with no city on it is not enough: a city also may not
-   * overlap the workable area of one of its OWN cities. The settlement search
-   * rejects such sites, but every "just found it here instead of wandering"
-   * fallback has to ask too, or the AI quietly drops a city on top of its own
-   * farmland and both starve.
+   * Buildable terrain with no city on it is not enough. Two things are checked:
+   * the engine's own spacing rule (`canPlaceCityAt`, absolute — no city of
+   * anybody's within MIN_CITY_CENTER_DISTANCE) and the workable-area overlap.
+   * The engine rule is the important one: it is what `foundCityWithSettler`
+   * enforces, and a settler that only checked its own cities used to be told
+   * "go ahead and found here", be refused silently by the engine, and spend the
+   * rest of the game standing on the same tile.
    */
   private canFoundCityHere(unit: Unit): boolean {
     const tile = this.gameEngine.getTileAt(unit.col, unit.row);
     if (!tile) return false;
     if (tile.type === 'ocean' || tile.type === 'lake' || tile.type === 'mountains') return false;
     if (this.gameEngine.getCityAt(unit.col, unit.row)) return false;
+    if (typeof this.gameEngine.canPlaceCityAt === 'function'
+      && !this.gameEngine.canPlaceCityAt(unit.col, unit.row, unit.civilizationId)) {
+      return false;
+    }
     if (this.overlapsOwnCityArea(unit.col, unit.row, unit.civilizationId)) return false;
     return true;
   }
@@ -5322,6 +5344,16 @@ export class AIManager {
     // Keep the whole 20-tile workable area separate from friendly cities —
     // the general no-overlap rule, from the evaluator that owns it.
     if (this.overlapsOwnCityArea(target.col, target.row, unit.civilizationId)) return false;
+
+    // The engine's founding rule is absolute (no city of anybody's within
+    // MIN_CITY_CENTER_DISTANCE), so a cached target inside a foreign or
+    // barbarian city area is not merely unattractive — it can never be
+    // founded. Checking only own cities kept the lock alive for ever while the
+    // settler paced around it.
+    if (typeof this.gameEngine.canPlaceCityAt === 'function'
+      && !this.gameEngine.canPlaceCityAt(target.col, target.row, unit.civilizationId)) {
+      return false;
+    }
 
     // SettlementEvaluator uses the tile's visible/explored state. Keep the
     // cached-target check consistent with it; some headless/test engines do

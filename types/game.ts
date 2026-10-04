@@ -230,6 +230,37 @@ interface IncomingDiplomacyOffer {
   message?: string;
 }
 
+/**
+ * One entry of the world-wonder dialog queue:
+ *  - `completed` → the celebratory full-screen "Wonder completed" modal
+ *    (human or AI completion — Civ1 shows them all, except in AI-vs-AI runs);
+ *  - `conflict`  → the "already completed elsewhere" modal with Go to City.
+ * A queue so wonders finished in the same turn are shown one after another.
+ */
+export type WonderDialogEntry =
+  | {
+      kind: 'completed';
+      wonderId: string;
+      wonderName: string;
+      cityId: string;
+      cityName: string;
+      civId: number;
+      civName: string;
+      /** True when the wonder belongs to a human civilization. */
+      isHuman: boolean;
+    }
+  | {
+      kind: 'conflict';
+      wonderId: string;
+      wonderName: string;
+      cityId: string;
+      cityName: string;
+      ownerCityId: string;
+      ownerCityName: string;
+      ownerCivId: number;
+      ownerCivName: string;
+    };
+
 export interface CameraState {
   x: number;
   y: number;
@@ -586,7 +617,7 @@ export interface UIState {
   showCityPanel: boolean;
   showTechTree: boolean;
   showGameMenu: boolean;
-  activeDialog: 'city' | 'tech' | 'diplomacy' | 'game-menu' | 'help' | 'pause' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | 'rates' | 'government' | 'statistics' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'research-required' | 'auto-end-offer' | null;
+  activeDialog: 'city' | 'tech' | 'diplomacy' | 'game-menu' | 'help' | 'pause' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | 'rates' | 'government' | 'statistics' | 'wonders' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'research-required' | 'auto-end-offer' | 'wonder-completed' | 'wonder-conflict' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
   /** Active citizen pick-up origin ({cityId, col, row}) while reassigning. Null when idle. */
@@ -713,6 +744,8 @@ export interface GameStoreState {
   disorderNotice: DisorderNotice | null;
   /** Info for the "trade route established" modal. */
   tradeRouteResult: TradeRouteResult | null;
+  /** FIFO queue of world-wonder dialogs (completion / production conflict). */
+  wonderDialogQueue: WonderDialogEntry[];
   /** Civ auto-selected when the diplomacy screen opens (diplomat contact / AI offer). */
   diplomacyFocusCivId: number | null;
   /** Pending AI→player proposal awaiting a response in the diplomacy screen. */
@@ -861,6 +894,16 @@ export interface GameActions {
   showTradeRouteResult: (result: TradeRouteResult) => void;
   /** Dismiss the trade-route-result modal. */
   clearTradeRouteResult: () => void;
+  /**
+   * Push a world-wonder dialog (completion screen or production conflict) on
+   * the queue. Opens it immediately unless one is already showing — the next
+   * entry takes over when the player dismisses the current one.
+   */
+  queueWonderDialog: (entry: WonderDialogEntry) => void;
+  /** Show the next queued wonder dialog, or close when the queue runs dry. */
+  dequeueWonderDialog: () => void;
+  /** Drop every pending wonder dialog (used when the last one is dismissed). */
+  clearWonderDialogs: () => void;
   /** Open the Civ I–style negotiation screen, optionally focused on a civ. */
   openDiplomacy: (focusCivId?: number | null) => void;
   /** Consume the diplomacy focus hint without changing the open dialog. */

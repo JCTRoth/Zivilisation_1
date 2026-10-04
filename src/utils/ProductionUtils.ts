@@ -22,6 +22,8 @@ const PRODUCTION_FAILURE_TEXTS: Record<string, string> = {
   fisher_boat_limit: 'this city already has a Fisher Boat',
   civ_not_found: 'this civilization no longer exists',
   exception: 'the production manager reported an error',
+  wonder_already_completed: 'another civilization already completed this wonder',
+  wonder_obsolete: 'this wonder is obsolete and can no longer be started',
 };
 
 /**
@@ -37,6 +39,10 @@ export function productionFailureText(reason?: string | null): string {
   if (reason.startsWith('requires_building_')) {
     const building = reason.slice('requires_building_'.length).replace(/_/g, ' ');
     return `it requires a ${building} in this city`;
+  }
+  if (reason.startsWith('requires_wonder_')) {
+    const wonder = reason.slice('requires_wonder_'.length).replace(/_/g, ' ');
+    return `the ${wonder} must be completed first`;
   }
   return PRODUCTION_FAILURE_TEXTS[reason] ?? reason.replace(/_/g, ' ');
 }

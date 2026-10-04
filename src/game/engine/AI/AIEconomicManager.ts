@@ -275,7 +275,7 @@ export class AIEconomicManager {
         + martialLawBonus
         + (gov.happinessBonus ?? 0)
         + 2 // base contentment
-        + (this.econ.wonderHappiness?.(civ) ?? 0); // a wonder's content is already ours
+        + (this.econ.wonderHappinessForCity?.(city) ?? 0); // a wonder's content is already ours
       maxNeed = Math.max(
         maxNeed,
         Math.max(0, unhappiness - nonLuxHappiness),

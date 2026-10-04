@@ -21,6 +21,8 @@ interface GameMenuSheetProps {
   onDiplomacy: () => void;
   onTechTree: () => void;
   onStatistics: () => void;
+  /** Open the dedicated Wonders overview screen (spec B). */
+  onWonders: () => void;
 }
 
 interface MenuItemProps {
@@ -65,6 +67,7 @@ const GameMenuSheet: React.FC<GameMenuSheetProps> = ({
   onDiplomacy,
   onTechTree,
   onStatistics,
+  onWonders,
 }) => {
   if (!activeMenu) {
     return null;
@@ -110,6 +113,7 @@ const GameMenuSheet: React.FC<GameMenuSheetProps> = ({
             <MenuItem icon="🏛️" label="Government" onClick={onOpenGovernment} />
             <MenuItem icon="🧪" label="Tech Tree" onClick={onTechTree} />
             <MenuItem icon="📈" label="Statistics" onClick={onStatistics} />
+            <MenuItem icon="🏆" label="Wonders" onClick={onWonders} />
           </>
         )}
 

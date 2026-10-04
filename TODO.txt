@@ -6,6 +6,8 @@ FUNCTIONAL TOODO'S:
 * Integrate the new sprash damage also into the AI
 * 
 
+* Units should heal in cities rate abouut 2% every turn
+
 * Add new units for land transportation of units.
 
 * Bring units should have the following outcomes:
@@ -817,10 +819,3 @@ When a player tries to complete (or is about to complete) a Wonder that has alre
 - All listed UI screens and modals
 - Clean architecture and tests
 - Documentation of the data format used for Wonders
-
----
-
-Would you like me to further extend this with:
-- Exact data structure / JSON schema for the Wonders,
-- Pseudocode for the effect engine,
-- or detailed mockup descriptions for each screen?

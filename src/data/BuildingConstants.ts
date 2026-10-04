@@ -1,6 +1,7 @@
 // Building Constants - Building types and properties
 
 import { BuildingProperties } from './GameConstants';
+import { WONDERS } from './WonderData';
 
 export const BUILDING_TYPES = {
     // Ancient Era
@@ -33,17 +34,11 @@ export const BUILDING_TYPES = {
     SDI_DEFENSE: 'sdi_defense',
     STOCK_EXCHANGE: 'stock_exchange',
 
-    // Wonders
-    GREAT_WALL: 'great_wall',
+    // Wonders — ids mirror `WONDER_IDS` in WonderData.ts (single source of truth)
     HANGING_GARDENS: 'hanging_gardens',
     LIGHTHOUSE: 'lighthouse',
     ORACLE: 'oracle',
-    PYRAMIDS: 'pyramids',
-    MAGELLANS_VOYAGE: 'magellans_voyage',
-    MICHELANGELO: 'michelangelo',
-    NEWTON: 'newton',
-    UNITED_NATIONS: 'united_nations',
-    WOMENS_SUFFRAGE: 'womens_suffrage'
+    PYRAMIDS: 'pyramids'
 } as const;
 
 export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
@@ -326,130 +321,29 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
     }
 };
 
-export const WONDER_PROPERTIES: Record<string, BuildingProperties> = {
-    [BUILDING_TYPES.GREAT_WALL]: {
-        name: 'Great Wall',
-        cost: 300,
-        maintenance: 0,
-        requiredTechnology: 'masonry',
-        effects: {
-            globalDefense: 1,
-            culture: 2,
-            wonder: true
-        },
-        icon: '🏯'
-    },
-    [BUILDING_TYPES.HANGING_GARDENS]: {
-        name: 'Hanging Gardens',
-        cost: 300,
-        maintenance: 0,
-        requiredTechnology: 'ceremonial_burial',
-        effects: {
-            globalHappiness: 1,
-            culture: 2,
-            wonder: true
-        },
-        icon: '🌿'
-    },
-    [BUILDING_TYPES.LIGHTHOUSE]: {
-        name: 'Lighthouse',
-        cost: 200,
-        maintenance: 0,
-        requiredTechnology: 'map_making',
-        effects: {
-            navalMovement: 1,
-            trade: 1,
-            wonder: true
-        },
-        icon: '🏮'
-    },
-    [BUILDING_TYPES.ORACLE]: {
-        name: 'Oracle',
-        cost: 300,
-        maintenance: 0,
-        requiredTechnology: 'philosophy',
-        effects: {
-            science: 2,
-            culture: 2,
-            wonder: true
-        },
-        icon: '🔮'
-    },
-    [BUILDING_TYPES.PYRAMIDS]: {
-        name: 'Pyramids',
-        cost: 300,
-        maintenance: 0,
-        requiredTechnology: 'masonry',
-        effects: {
-            // +1 content in EVERY city of the owning civ, as in Civ 1. This is a
-            // `globalHappiness` effect: the wonder lives in one city but the
-            // content is empire-wide, which is what makes a wonder a real answer
-            // to a crowded empire rather than a local one.
-            globalHappiness: 1,
-            culture: 3,
-            wonder: true
-        },
-        icon: '🏗️'
-    },
-    [BUILDING_TYPES.MAGELLANS_VOYAGE]: {
-        name: 'Magellan\'s Voyage',
-        cost: 400,
-        maintenance: 0,
-        requiredTechnology: 'navigation',
-        effects: {
-            navalMovement: 2,
-            exploration: true,
-            wonder: true
-        },
-        icon: '🗺️'
-    },
-    [BUILDING_TYPES.MICHELANGELO]: {
-        name: 'Michelangelo\'s Chapel',
-        cost: 400,
-        maintenance: 0,
-        requiredTechnology: 'monotheism',
-        effects: {
-            culture: 3,
-            wonder: true
-        },
-        icon: '🎨'
-    },
-    [BUILDING_TYPES.NEWTON]: {
-        name: 'Newton\'s University',
-        cost: 400,
-        maintenance: 0,
-        requiredTechnology: 'university',
-        effects: {
-            science: 3,
-            wonder: true
-        },
-        icon: '🧮'
-    },
-    [BUILDING_TYPES.UNITED_NATIONS]: {
-        name: 'United Nations',
-        cost: 600,
-        maintenance: 0,
-        requiredTechnology: 'democracy',
-        effects: {
-            diplomacy: true,
-            culture: 2,
-            wonder: true
-        },
-        icon: '🌍'
-    },
-    [BUILDING_TYPES.WOMENS_SUFFRAGE]: {
-        name: 'Women\'s Suffrage',
-        cost: 600,
-        maintenance: 0,
-        requiredTechnology: 'democracy',
-        effects: {
-            happiness: 2,
-            culture: 2,
-            wonder: true
-        },
-        icon: '🗳️'
-    }
-};
+/**
+ * WONDER_PROPERTIES — compatibility bridge to the wonders data.
+ *
+ * The 22 wonders are defined once in `WonderData.ts` (their full rules: typed
+ * effects, obsolescence, flavour). This map adapts them to the
+ * `BuildingProperties` shape the rest of the codebase (AI valuation, victory
+ * scoring, sell protection, UI lists) already understands. Do NOT add wonders
+ * here — add them to `WONDERS` in WonderData.ts.
+ */
+export const WONDER_PROPERTIES: Record<string, BuildingProperties> = Object.fromEntries(
+  WONDERS.map((w) => [
+    w.id,
+    {
+      name: w.name,
+      cost: w.cost,
+      maintenance: 0,
+      requiredTechnology: w.requiredTechnology,
+      description: w.shortEffect,
+      icon: w.icon,
+      effects: { wonder: true }
+    } as BuildingProperties
+  ])
+);
 
 export const BUILDING_PREREQUISITES = {
     [BUILDING_TYPES.AQUEDUCT]: [BUILDING_TYPES.TEMPLE],

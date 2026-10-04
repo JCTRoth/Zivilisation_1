@@ -234,19 +234,29 @@ export class EconomicManager {
     const gov = getGovernment(civ?.government);
     const effective = commerce * (1 - gov.commercePenalty);
     const corruption = CityUtils.calculateCorruption(city, civ, effective);
-    const afterCorruption = Math.max(0, Math.floor(effective - corruption));
+    // One floor, at the end — not two. The old `floor(effective - corruption)`
+    // discarded up to a whole commerce point BEFORE the rate split, and the
+    // split floored again, so a city with 2 commerce (the CITY_CENTER_COMMERCE
+    // floor on a roadless city) produced `floor(1 × 0.8) × 2 = 0` gold at an
+    // 80% tax rate. The reported `commerce` stays integer; only the rate
+    // arithmetic sees the fraction.
+    const afterCorruption = Math.max(0, effective - corruption);
     const rates = this.getRates(civ?.id);
     const buildingScience = this.buildingBonuses(city).science;
     const scienceBonus = buildingScience > 0 || (city.buildings?.length ?? 0) > 0
       ? buildingScience
       : (city.scienceBonus ?? 0);
     const specialistScience = this.specialistYields(city).science;
+    // Wonder science (Great Library +10%, SETI +30%, Copernicus ×2, …) scales
+    // the city's whole science line — flat bonuses and percentages together.
+    const wonderScienceMult = this.gameEngine?.wonderEffects?.scienceMultiplierForCity(city) ?? 1;
+    const baseScience =
+      Math.round(afterCorruption * (rates.science / 100)) + scienceBonus + specialistScience;
     return {
-      commerce: afterCorruption,
+      commerce: Math.floor(afterCorruption),
       corruption,
       tax: Math.floor(afterCorruption * (rates.tax / 100)) * TRADE_GOLD_MULTIPLIER,
-      science:
-        Math.round(afterCorruption * (rates.science / 100)) + scienceBonus + specialistScience,
+      science: Math.round(baseScience * wonderScienceMult),
       luxury: Math.floor(afterCorruption * (rates.luxury / 100)),
     };
   }
@@ -271,6 +281,20 @@ export class EconomicManager {
         Math.max(0, Math.floor(effective - corruption)) * TRADE_GOLD_MULTIPLIER
       );
     }, 0);
+  }
+
+  /**
+   * Gold this civ can expect this turn at its CURRENT rates: tax income plus
+   * specialist gold.
+   *
+   * Deliberately the real rate rather than the 100%-tax fantasy
+   * (`maxTaxIncome`) - anything the AI commits to, including building upkeep,
+   * has to be paid out of what actually arrives.
+   */
+  projectedIncome(civ: Civilization): number {
+    if (!civ) return 0;
+    const share = Math.min(100, Math.max(0, civ.taxRate ?? 50)) / 100;
+    return Math.floor(this.maxTaxIncome(civ) * share) + this.maxSpecialistGold(civ);
   }
 
   /**
@@ -312,8 +336,8 @@ export class EconomicManager {
       const gov = getGovernment(civ.government);
       const effective = commerce * (1 - gov.commercePenalty);
       const corruption = CityUtils.calculateCorruption(city, civ, effective);
-      const taxable = Math.max(0, Math.floor(effective - corruption));
-      return total + Math.floor(taxable * taxShare) * TRADE_GOLD_MULTIPLIER;
+      const taxable = Math.max(0, effective - corruption);
+      return total + Math.floor(taxable * taxShare * TRADE_GOLD_MULTIPLIER);
     }, 0);
     const specialistGold = this.maxSpecialistGold(civ);
     // Buildings are paid for before units are, so they come off first.
@@ -688,6 +712,7 @@ export class EconomicManager {
 
   private buildingBonuses(city: City): { trade: number; science: number } {
     const buildings = city?.buildings ?? [];
+    const wonderEffects = this.gameEngine?.wonderEffects;
     let trade = 0;
     let science = 0;
     for (const b of buildings) {
@@ -700,7 +725,10 @@ export class EconomicManager {
       const effects = BUILDING_PROPERTIES[id]?.effects;
       if (effects) {
         trade += effects.trade ?? 0;
-        science += effects.science ?? 0;
+        // Isaac Newton's College: Libraries/Universities grant double science
+        // in every city of the wonder's owner (1 when no wonder applies).
+        const scienceMult = wonderEffects?.buildingScienceMultiplier(city, id) ?? 1;
+        science += (effects.science ?? 0) * scienceMult;
       }
     }
     return { trade, science };
@@ -804,12 +832,26 @@ export class EconomicManager {
     let food = 0,
       production = 0,
       trade = 0;
+    let tradeSquares = 0;
     for (const t of worked) {
       food += t.yields.food;
       production += t.yields.production;
       trade += t.yields.trade;
+      if (t.yields.trade > 0) tradeSquares++;
     }
     trade += this.buildingBonuses(city).trade;
+    // Colossus / Statue of Liberty: +N on every worked tile that already
+    // produces trade (tile granularity — the building bonus above is flat).
+    const wonderEffects = this.gameEngine?.wonderEffects;
+    const tradePerSquare = wonderEffects?.tradePerTradeSquareForCity(city) ?? 0;
+    if (tradePerSquare > 0) trade += tradeSquares * tradePerSquare;
+    // Hoover Dam (+1 flat) / AI Supercluster (+10%): wonder production.
+    if (wonderEffects) {
+      const prodBonus = wonderEffects.productionBonusForCity(city);
+      if (prodBonus.flat !== 0 || prodBonus.percent !== 0) {
+        production = Math.round((production + prodBonus.flat) * (1 + prodBonus.percent / 100));
+      }
+    }
     city.yields = {
       food,
       production,
@@ -836,6 +878,7 @@ export class EconomicManager {
     // Without this a manually assigned tile would keep feeding a besieged city
     // for as long as nobody happened to reassign the citizen.
     const worked = city.workingTiles ?? new Set<string>();
+    let tradeSquares = 0;
     for (const key of Array.from(worked)) {
       const sep = key.indexOf(',');
       if (sep === -1) continue;
@@ -851,6 +894,19 @@ export class EconomicManager {
       food += y.food;
       production += y.production;
       trade += y.trade;
+      if (y.trade > 0) tradeSquares++;
+    }
+    // Wonder modifiers are tile-derived, so they apply on this manual refresh
+    // path too (flat building trade stays exclusive to recomputeCityYields —
+    // see that function).
+    const wonderEffects = this.gameEngine?.wonderEffects;
+    const tradePerSquare = wonderEffects?.tradePerTradeSquareForCity(city) ?? 0;
+    if (tradePerSquare > 0) trade += tradeSquares * tradePerSquare;
+    if (wonderEffects) {
+      const prodBonus = wonderEffects.productionBonusForCity(city);
+      if (prodBonus.flat !== 0 || prodBonus.percent !== 0) {
+        production = Math.round((production + prodBonus.flat) * (1 + prodBonus.percent / 100));
+      }
     }
     city.yields = {
       food,
@@ -990,27 +1046,22 @@ export class EconomicManager {
   }
 
   /**
-   * Happiness a wonder grants to *every* city of the civ.
-   *
-   * `globalHappiness` was declared on Hanging Gardens and read by nothing, so
-   * the effect existed only on paper. A wonder is held by exactly one city but
-   * applies empire-wide, so the civ's cities are scanned once and each global
-   * wonder counted a single time — not once per city that happens to hold one.
+   * Flat happiness a wonder grants to THIS city (Cure for Cancer, Hanging
+   * Gardens, Atomium). Scope (city / civilization / continent), ownership and
+   * obsolescence are resolved by the WonderEffects engine — a wonder is held
+   * by exactly one city but may apply much wider.
    */
-  wonderHappiness(civ: Civilization): number {
-    let total = 0;
-    for (const city of this.gameEngine?.cities ?? []) {
-      if (city.civilizationId !== civ?.id) continue;
-      for (const b of city.buildings ?? []) {
-        const id =
-          typeof b === 'string'
-            ? b
-            : (b as { id?: string; type?: string })?.id ??
-              (b as { type?: string })?.type ?? '';
-        total += this.buildingEffect(id, 'globalHappiness');
-      }
-    }
-    return total;
+  wonderHappinessForCity(city: City): number {
+    return this.gameEngine?.wonderEffects?.happinessForCity(city) ?? 0;
+  }
+
+  /**
+   * Unhappy citizens this wonder converts to content in THIS city
+   * (J.S. Bach's Cathedral on the continent, Shakespeare's Theatre locally).
+   * Returned separately so the caller subtracts it from unhappiness.
+   */
+  wonderUnhappyToContentForCity(city: City): number {
+    return this.gameEngine?.wonderEffects?.unhappyToContentForCity(city) ?? 0;
   }
 
   /**
@@ -1039,7 +1090,11 @@ export class EconomicManager {
     // Every citizen is unhappy, full stop. Governments no longer absorb any of
     // them: there is no tolerance, so a city's content has to be bought with
     // buildings, luxury, specialists and martial law, or the crowd riots.
-    const unhappiness = population + capturedUnrest;
+    //
+    // Wonders can convert unhappy citizens to content directly (Bach,
+    // Shakespeare) — that reduces the DEMAND side instead of buying happiness.
+    const wonderContent = this.wonderUnhappyToContentForCity(city);
+    const unhappiness = Math.max(0, population + capturedUnrest - wonderContent);
     const specLuxury = this.specialistYields(city).luxury;
 
     const garrisonUnits = this.garrisonOnCityTile(civ, city);
@@ -1051,7 +1106,7 @@ export class EconomicManager {
       specLuxury +
       martialLawBonus +
       this.buildingHappiness(city) +
-      this.wonderHappiness(civ) +
+      this.wonderHappinessForCity(city) +
       gov.happinessBonus +
       BASE_CONTENTMENT;
     return { happiness, unhappiness, disorder: unhappiness > happiness };
@@ -1077,6 +1132,7 @@ export class EconomicManager {
 
   private buildingHappiness(city: City): number {
     const buildings = city?.buildings ?? [];
+    const wonderEffects = this.gameEngine?.wonderEffects;
     return buildings.reduce((total: number, b: unknown) => {
       const id =
         typeof b === 'string'
@@ -1084,7 +1140,13 @@ export class EconomicManager {
           : (b as { id?: string; type?: string })?.id ??
             (b as { type?: string })?.type ??
             '';
-      return total + this.buildingEffect(id, 'happiness');
+      let happiness = this.buildingEffect(id, 'happiness');
+      // The Oracle doubles Temples, Michelangelo's Chapel boosts Cathedrals —
+      // per-building-type multipliers owned by the wonder effect engine.
+      if (happiness !== 0 && wonderEffects) {
+        happiness *= wonderEffects.buildingHappinessMultiplier(city, id);
+      }
+      return total + happiness;
     }, 0);
   }
 
@@ -1126,14 +1188,15 @@ export class EconomicManager {
       const rawCommerce = this.cityCommerce(city);
       const effective = rawCommerce * (1 - gov.commercePenalty);
       const corruption = CityUtils.calculateCorruption(city, civ, effective);
-      const afterCorruption = Math.max(0, Math.floor(effective - corruption));
-      commerce += afterCorruption;
+      const afterCorruption = Math.max(0, effective - corruption);
+      commerce += Math.floor(afterCorruption);
 
       // --- Disorder check (mirrors cityHappiness) ---
       const population = city?.population ?? 1;
       const capturedUnrest =
         city?.capturedTurns && city.capturedTurns > 0 ? CAPTURED_CITY_UNHAPPY : 0;
-      const unhappiness = population + capturedUnrest;
+      const wonderContent = this.wonderUnhappyToContentForCity(city);
+      const unhappiness = Math.max(0, population + capturedUnrest - wonderContent);
 
       const specLuxury = this.specialistYields(city).luxury;
 
@@ -1148,7 +1211,7 @@ export class EconomicManager {
         specLuxury +
         martialLawBonus +
         this.buildingHappiness(city) +
-        this.wonderHappiness(civ) +
+        this.wonderHappinessForCity(city) +
         gov.happinessBonus +
         BASE_CONTENTMENT;
       const disorder = unhappiness > happiness;
@@ -1163,9 +1226,12 @@ export class EconomicManager {
       const scienceBonus = buildingScience > 0 || (city.buildings?.length ?? 0) > 0
         ? buildingScience
         : (city.scienceBonus ?? 0);
-      science += Math.round((afterCorruption * proposedRates.science) / 100)
-        + scienceBonus
-        + this.specialistYields(city).science;
+      const wonderScienceMult = this.gameEngine?.wonderEffects?.scienceMultiplierForCity(city) ?? 1;
+      science += Math.round(
+        (Math.round((afterCorruption * proposedRates.science) / 100)
+          + scienceBonus
+          + this.specialistYields(city).science) * wonderScienceMult,
+      );
       luxury += cityLuxury;
     }
 

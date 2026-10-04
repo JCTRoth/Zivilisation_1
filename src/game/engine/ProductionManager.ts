@@ -3,7 +3,8 @@
  */
 
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
+import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
+import { getWonder, isWonderId } from '@/data/WonderData';
 import type { City, Civilization, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 import { debugLog } from '../../utils/DevLog';
@@ -86,6 +87,15 @@ export class ProductionManager {
         if (unitProps.naval && !this.cityHasHarborOrCoast(city)) {
           return { ok: false, reason: 'no_water_access' };
         }
+        // Nuclear weapons are a GLOBAL gate: the Manhattan Project must have
+        // been completed by somebody (anybody) before anyone can build one.
+        // The civ's own tech requirement still applies via `requires`.
+        if (itemType === 'nuclear') {
+          const manhattanBuilt = this.gameEngine.wonderManager?.isBuilt('manhattan_project') === true;
+          if (!manhattanBuilt) {
+            return { ok: false, reason: 'requires_wonder_manhattan_project' };
+          }
+        }
         // Fisher Boat: at most ONE per city. The boat is bound to its home
         // city (alive at sea or under construction both count), so a city
         // cannot field a fishing fleet.
@@ -99,6 +109,34 @@ export class ProductionManager {
             return { ok: false, reason: 'fisher_boat_limit' };
           }
         }
+      }
+
+      // World Wonders: their own table, their own rules — tech gate, and
+      // world-uniqueness against COMPLETED wonders only (several cities may
+      // race on the same wonder; the first to finish claims it).
+      const wonder = getWonder(itemType);
+      if (wonder) {
+        if (wonder.requiredTechnology && !techs.has(wonder.requiredTechnology)) {
+          return { ok: false, reason: `requires_tech_${wonder.requiredTechnology}` };
+        }
+        // City-owns check first: "already built here" is the more specific
+        // (and friendlier) rejection than the world-uniqueness one.
+        const cityOwnsWonder = (city.buildings ?? []).some((b: unknown) =>
+          String(typeof b === 'string' ? b : ((b as { id?: string })?.id ?? '')) === itemType,
+        );
+        if (cityOwnsWonder) {
+          return { ok: false, reason: 'already_built' };
+        }
+        if (this.gameEngine.wonderManager?.isBuilt(itemType)) {
+          return { ok: false, reason: 'wonder_already_completed' };
+        }
+        // Obsolete wonders can never pay off — refuse to start one. (One that
+        // was already under construction when it obsoleted still finishes and
+        // keeps existing for score, just without its effect.)
+        if (this.gameEngine.wonderManager?.isObsolete(itemType)) {
+          return { ok: false, reason: 'wonder_obsolete' };
+        }
+        return { ok: true };
       }
 
       // Buildings: required tech lives on the building definition.
@@ -151,11 +189,14 @@ export class ProductionManager {
   }
 
   /**
-   * Building types this city could start building right now (tech requirements
-   * plus the one-building-per-city rule enforced by `canBuildItem`).
+   * Building AND wonder types this city could start building right now (tech
+   * requirements, the one-per-city rule, and — for wonders — world-uniqueness
+   * against already-completed wonders).
    */
   getBuildableBuildingTypes(cityId: string): string[] {
-    return Object.keys(BUILDING_PROPERTIES).filter((key) => this.canBuildItem(cityId, key).ok);
+    const regular = Object.keys(BUILDING_PROPERTIES).filter((key) => this.canBuildItem(cityId, key).ok);
+    const wonders = Object.keys(WONDER_PROPERTIES).filter((key) => this.canBuildItem(cityId, key).ok);
+    return [...regular, ...wonders];
   }
 
   /** Whether the city could start building anything at all right now. */
@@ -201,7 +242,7 @@ export class ProductionManager {
   private queueDuplicateReason(city: City, item: ProductionItem): string | null {
     const itemType = String(item?.itemType ?? item?.type ?? '');
     if (!itemType) return null;
-    const isBuilding = item?.type === 'building' || !!BUILDING_PROPERTIES[itemType];
+    const isBuilding = item?.type === 'building' || !!BUILDING_PROPERTIES[itemType] || isWonderId(itemType);
     if (!isBuilding) return null; // units may repeat
 
     const sameItem = (q: ProductionItem | null | undefined): boolean => {

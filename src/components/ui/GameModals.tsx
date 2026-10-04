@@ -7,6 +7,9 @@ import CityModal from './gamemodals/CityModal';
 import RatesModal from './gamemodals/RatesModal';
 import GovernmentModal from './gamemodals/GovernmentModal';
 import StatisticsModal from './gamemodals/StatisticsModal';
+import WonderCompletedModal from './gamemodals/WonderCompletedModal';
+import WonderConflictModal from './gamemodals/WonderConflictModal';
+import WondersOverviewModal from './gamemodals/WondersOverview';
 import VillageModal from './gamemodals/VillageModal';
 import ResearchRequiredModal from './ResearchRequiredModal';
 import { useGameStore } from '@/stores/GameStore';
@@ -49,6 +52,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const starvationNotice = useGameStore(state => state.starvationNotice);
   const disorderNotice = useGameStore(state => state.disorderNotice);
   const tradeRouteResult = useGameStore(state => state.tradeRouteResult);
+  const wonderDialogQueue = useGameStore(state => state.wonderDialogQueue);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
 
@@ -168,6 +172,38 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     // re-checks auto-end (deferred while the message was open).
     handleCloseDialog();
     actions.clearVillageResult();
+  };
+
+  // ── World wonder dialogs ────────────────────────────────────────────────
+  const wonderNotice = wonderDialogQueue[0] ?? null;
+  const completedWonderNotice = wonderNotice?.kind === 'completed' ? wonderNotice : null;
+  const conflictWonderNotice = wonderNotice?.kind === 'conflict' ? wonderNotice : null;
+
+  /**
+   * Dismiss the current wonder dialog. With more wonders finished in the same
+   * turn the NEXT entry opens immediately; on the last one the dialog closes
+   * like any other blocking screen (auto-end is re-checked).
+   */
+  const handleWonderContinue = () => {
+    const queue = useGameStore.getState().wonderDialogQueue;
+    if (queue.length > 1) {
+      actions.dequeueWonderDialog();
+      return;
+    }
+    handleCloseDialog();
+    actions.clearWonderDialogs();
+  };
+
+  /** Conflict modal — "Go to City": close, then center + open the idle city. */
+  const handleWonderGoToCity = (cityId: string) => {
+    handleCloseDialog();
+    actions.clearWonderDialogs();
+    const city = cities.find(c => c.id === cityId);
+    if (city) {
+      actions.selectCity(cityId, 'user');
+      actions.focusCameraOnTile(city.col, city.row);
+      actions.showDialog('city-details');
+    }
   };
 
   const handleNewGame = () => {
@@ -2140,6 +2176,18 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       <RatesModal show={uiState.activeDialog === 'rates'} onHide={handleCloseDialog} gameEngine={gameEngine} />
       <GovernmentModal show={uiState.activeDialog === 'government'} onHide={handleCloseDialog} gameEngine={gameEngine} />
       <StatisticsModal show={uiState.activeDialog === 'statistics'} onHide={handleCloseDialog} />
+      <WondersOverviewModal show={uiState.activeDialog === 'wonders'} onHide={handleCloseDialog} />
+      <WonderCompletedModal
+        show={uiState.activeDialog === 'wonder-completed'}
+        notice={completedWonderNotice}
+        onContinue={handleWonderContinue}
+      />
+      <WonderConflictModal
+        show={uiState.activeDialog === 'wonder-conflict'}
+        notice={conflictWonderNotice}
+        onGoToCity={handleWonderGoToCity}
+        onClose={handleWonderContinue}
+      />
       <VillageModal show={uiState.activeDialog === 'village'} onHide={handleVillageClose} />
       {renderUpkeepDisbanded()}
       {renderCityStarved()}

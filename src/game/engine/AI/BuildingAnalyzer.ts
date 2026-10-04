@@ -42,7 +42,13 @@ const MAX_RECOMMENDATIONS = 3;
 /** Buildings that are never sold, no matter how redundant. */
 const NEVER_SELL = new Set<string>([
   BUILDING_TYPES.PALACE,
-  BUILDING_TYPES.CITY_WALLS, // walls are cheap but strategically vital
+  // `city_walls` used to live here ("cheap but strategically vital"). At
+  // 2 gold/turn it is the second most expensive upkeep in the game after SDI
+  // Defense, and with it in this set the AI queued 688 walls across a
+  // 187-round run and could never sell one — a permanent 2 gold/turn per city
+  // against a per-city income of 0-4. Walls are still SCORED highly (base
+  // cost/10, doubled when the city is threatened), so they are built first
+  // when affordable and sold last — just not infinitely.
 ]);
 
 /** Buildings that become obsolete when the enemy has gunpowder units. */

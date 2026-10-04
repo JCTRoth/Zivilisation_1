@@ -560,6 +560,39 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
     }
 };
 
+/**
+ * Leonardo's Workshop upgrade paths: an obsolete unit type automatically
+ * becomes `target` once the owner knows the target's required technology.
+ *
+ * Only combat units with a clear modern successor are listed — civilian
+ * units (settlers, diplomats, boats bound to a home city) never upgrade.
+ * Chains work over time: catapult → cannon (Metallurgy) → artillery (Steel).
+ */
+export const UNIT_UPGRADE_PATHS: Record<string, string> = {
+  // Ancient infantry → gunpowder infantry
+  warrior: 'musketeer',
+  archer: 'musketeer',
+  legion: 'musketeer',
+  phalanx: 'riflemen',
+  // Chariots/horses → cavalry
+  chariot: 'cavalry',
+  knights: 'cavalry',
+  // Siege engines → gunpowder artillery
+  catapult: 'cannon',
+  cannon: 'artillery',
+  // Gunpowder infantry → modern infantry
+  musketeer: 'mech_inf',
+  riflemen: 'mech_inf',
+  // Horse → mechanised
+  cavalry: 'tank',
+  // Wooden sail → steel → combustion
+  sail: 'caravel',
+  trireme: 'frigate',
+  caravel: 'ironclad',
+  frigate: 'ironclad',
+  ironclad: 'destroyer',
+};
+
 /** Fisher Boat hold capacity: fish collected per full catch. */
 export const FISHER_BOAT_STORAGE = 6;
 

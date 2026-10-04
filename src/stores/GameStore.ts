@@ -204,6 +204,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   // Info for the "trade route established" modal (Caravan delivery)
   tradeRouteResult: null,
 
+  // FIFO queue of world-wonder dialogs (completion screen / production conflict)
+  wonderDialogQueue: [],
+
   // Civ auto-selected when the diplomacy negotiation screen opens (set by
   // diplomat contact or an AI-initiated offer).
   diplomacyFocusCivId: null,
@@ -667,6 +670,51 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       uiState: { ...state.uiState, activeDialog: null }
     })),
 
+    queueWonderDialog: (entry) => set(state => {
+      const queue = [...state.wonderDialogQueue, entry];
+      const active = state.uiState.activeDialog;
+      const wonderShowing = active === 'wonder-completed' || active === 'wonder-conflict';
+      // Open the first entry immediately; if a wonder dialog is already up the
+      // new entry simply waits its turn behind it.
+      const dialog = wonderShowing
+        ? active
+        : entry.kind === 'completed' ? 'wonder-completed' : 'wonder-conflict';
+      return {
+        wonderDialogQueue: queue,
+        uiState: { ...state.uiState, activeDialog: dialog }
+      };
+    }),
+
+    dequeueWonderDialog: () => set(state => {
+      const queue = state.wonderDialogQueue.slice(1);
+      if (queue.length > 0) {
+        const next = queue[0];
+        return {
+          wonderDialogQueue: queue,
+          uiState: {
+            ...state.uiState,
+            activeDialog: next.kind === 'completed' ? 'wonder-completed' : 'wonder-conflict'
+          }
+        };
+      }
+      return {
+        wonderDialogQueue: [],
+        uiState: { ...state.uiState, activeDialog: null },
+        gameState: { ...state.gameState, selectionOrigin: null }
+      };
+    }),
+
+    clearWonderDialogs: () => set(state => ({
+      wonderDialogQueue: [],
+      uiState: {
+        ...state.uiState,
+        activeDialog:
+          state.uiState.activeDialog === 'wonder-completed' || state.uiState.activeDialog === 'wonder-conflict'
+            ? null
+            : state.uiState.activeDialog
+      }
+    })),
+
     openDiplomacy: (focusCivId = null) => set(state => ({
       uiState: { ...state.uiState, activeDialog: 'diplomacy' },
       diplomacyFocusCivId: focusCivId
@@ -1027,6 +1075,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       starvationNotice: null,
       disorderNotice: null,
       tradeRouteResult: null,
+      wonderDialogQueue: [],
       settings: {
         ...state.settings,
         autoEndTurn: false,

@@ -40,6 +40,8 @@ import { CIV_PRODUCTION_PROFILES, canBuildUnit, getCivProductionProfile, getCivP
 import { EconomicManager } from './EconomicManager';
 import { GovernmentManager } from './GovernmentManager';
 import { ResearchManager } from './ResearchManager';
+import { WonderManager } from './WonderManager';
+import { WonderEffects } from './WonderEffects';
 import { AIResearch } from './AI/AIResearch';
 import MapGenerator from './MapGenerator/MapGenerator';
 import { MIN_CITY_CENTER_DISTANCE } from './SettlementEvaluator';
@@ -176,6 +178,10 @@ export default class GameEngine {
   economicManager: EconomicManager;
   governmentManager: GovernmentManager;
   researchManager: ResearchManager;
+  /** World Wonder ownership, uniqueness and obsolescence. */
+  wonderManager: WonderManager;
+  /** World Wonder effect computation (science, happiness, movement, …). */
+  wonderEffects: WonderEffects;
   playerStorage: Map<number, PlayerTurnStorage>; // Per-player persistent storage
   devMode: boolean; // Developer mode flag
   roundManager: TurnManager; // kept property name for compatibility
@@ -255,6 +261,8 @@ export default class GameEngine {
     this.economicManager = new EconomicManager(this);
     this.governmentManager = new GovernmentManager(this);
     this.researchManager = new ResearchManager(this);
+    this.wonderManager = new WonderManager(this);
+    this.wonderEffects = new WonderEffects(this);
     this.roundManager = new TurnManager(this);
     this.goToManager = new GoToManager(this, this.roundManager);
     this.playerStorage = new Map();
@@ -446,7 +454,9 @@ export default class GameEngine {
   getVisibleCities(civilizationId: number): City[] {
     // Dev mode: see all cities
     if (this.devMode) return this.cities;
-    
+    // International Space Station: the owner sees every city on the map.
+    if (this.wonderEffects?.seesAllCities(civilizationId)) return this.cities;
+
     return this.cities.filter(city => {
       // Always see own cities
       if (city.civilizationId === civilizationId) return true;
@@ -479,12 +489,15 @@ export default class GameEngine {
     
     // Calculate visibility from all player units
     const playerUnits = this.units.filter(u => u.civilizationId === civilizationId);
-    
+
+    // Anaximander's Map: +1 vision range for all units and cities of the owner.
+    const visionBonus = this.wonderEffects?.visionBonus(civilizationId) ?? 0;
+
     for (const unit of playerUnits) {
       // Get unit sight range (minimum radius 2 so the map isn't a tiny peephole)
       let sightRange = 2; // Default
       if (UNIT_PROPS && UNIT_PROPS[unit.type]) {
-        sightRange = Math.max(2, UNIT_PROPS[unit.type].sightRange || 2);
+        sightRange = Math.max(2, UNIT_PROPS[unit.type].sightRange || 2) + visionBonus;
       }
       
       // Reveal tiles around unit
@@ -507,7 +520,7 @@ export default class GameEngine {
     
     // Calculate visibility from all player cities
     const playerCities = this.cities.filter(c => c.civilizationId === civilizationId);
-    const citySightRange = 2; // Cities can see 2 tiles
+    const citySightRange = 2 + visionBonus; // Cities can see 2 tiles (+wonder bonus)
     
     for (const city of playerCities) {
       for (let dr = -citySightRange; dr <= citySightRange; dr++) {
@@ -1367,7 +1380,12 @@ export default class GameEngine {
   private createUnit(civId: number, type: string, col: number, row: number) {
     const unitProps: { movement: number; attack: number; defense: number; icon?: string; hitPoints?: number; name?: string; type?: string; maintenance?: number } = UNIT_PROPS[type] || { movement: 1, attack: 1, defense: 1, icon: '⚔️' };
     const unitId = this.nextUnitId(civId, type);
-    
+    // Lighthouse / Magellan: the owner's sea units start with +N movement.
+    const navalMoveBonus = UNIT_PROPS[type]?.naval
+      ? this.wonderEffects?.navalMoveBonus(civId) ?? 0
+      : 0;
+    const maxMoves = (unitProps.movement || 1) + navalMoveBonus;
+
     const unit = {
       id: unitId,
       civilizationId: civId,
@@ -1378,8 +1396,8 @@ export default class GameEngine {
       health: 100,
       hitPoints: unitProps.hitPoints ?? 2,
       maxHitPoints: unitProps.hitPoints ?? 2,
-      movesRemaining: unitProps.movement || 1,
-      maxMoves: unitProps.movement || 1,
+      movesRemaining: maxMoves,
+      maxMoves: maxMoves,
       // Civ1: a newly created unit has not acted this turn, so the
       // Minimum-1-Move exception applies to its first move.
       hasMovedThisTurn: false,
@@ -3882,6 +3900,8 @@ const occupiedLandmasses = new Set(
         else if (UNIT_PROPS && UNIT_PROPS[String(unit.type).toLowerCase()] && typeof UNIT_PROPS[String(unit.type).toLowerCase()].sightRange === 'number') {
           sightRange = UNIT_PROPS[String(unit.type).toLowerCase()].sightRange;
         }
+        // Anaximander's Map: the owner's units see one tile further.
+        sightRange += this.wonderEffects?.visionBonus(unit.civilizationId) ?? 0;
 
         // Ensure sight range is valid (non-negative)
         if (sightRange < 0) sightRange = 0;
@@ -4880,7 +4900,10 @@ const occupiedLandmasses = new Set(
    */
   private destroyBuildingsOnCapture(city: City): void {
     const buildings = Array.isArray(city.buildings) ? city.buildings : [];
-    const wonders = new Set(Array.isArray(city.wonders) ? city.wonders : []);
+    // Wonders (and the palace) survive a capture — check the canonical wonder
+    // table rather than the legacy `city.wonders` array, which was never
+    // populated and let a wonder be randomly destroyed on capture.
+    const wonders = new Set(Object.keys(WONDER_PROPERTIES).filter((b) => buildings.includes(b)));
     const removals: string[] = [];
 
     if (buildings.includes('city_walls') || buildings.includes('walls')) {
@@ -5406,6 +5429,12 @@ const occupiedLandmasses = new Set(
           tech.available = true;
         }
       }
+      // Space race gate: the Moonshot only becomes researchable once the
+      // International Space Station exists (its "enables spaceship" effect —
+      // this game has no spaceship parts, so the Moonshot is the space race).
+      if (tech.id === 'moonshot' && !this.wonderEffects?.spaceshipEnabled()) {
+        tech.available = false;
+      }
     });
   }
 
@@ -5803,7 +5832,9 @@ const occupiedLandmasses = new Set(
     // (otherwise it kept the sleeping "turns done" mark and was never queued).
     if (!unit.isDefeated && !unit.embarkedOn && (unit.movesRemaining || 0) <= 0) {
       const unitProps = GameEngine.UNIT_PROPS?.[unit.type];
-      unit.movesRemaining = unitProps?.movement || 1;
+      const wakeNavalBonus = unitProps?.naval ? this.wonderEffects?.navalMoveBonus(unit.civilizationId) ?? 0 : 0;
+      unit.movesRemaining = (unitProps?.movement || 1) + wakeNavalBonus;
+      if (unitProps?.naval) unit.maxMoves = (unitProps?.movement || 1) + wakeNavalBonus;
       unit.hasMovedThisTurn = false;
     }
     this.updateUnitTurnsDoneFlag(unit);
@@ -5831,7 +5862,9 @@ const occupiedLandmasses = new Set(
     // would otherwise be unable to move even after being woken.
     if (!unit.isDefeated && !unit.embarkedOn && (unit.movesRemaining || 0) <= 0) {
       const unitProps = GameEngine.UNIT_PROPS?.[unit.type];
-      unit.movesRemaining = unitProps?.movement || 1;
+      const wakeNavalBonus = unitProps?.naval ? this.wonderEffects?.navalMoveBonus(unit.civilizationId) ?? 0 : 0;
+      unit.movesRemaining = (unitProps?.movement || 1) + wakeNavalBonus;
+      if (unitProps?.naval) unit.maxMoves = (unitProps?.movement || 1) + wakeNavalBonus;
       unit.hasMovedThisTurn = false;
     }
     this.updateUnitTurnsDoneFlag(unit);

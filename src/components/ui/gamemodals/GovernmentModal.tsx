@@ -16,8 +16,9 @@ interface GovernmentModalProps {
 /**
  * Government switching modal (Civ1 style).
  * Shows the current government and capital, lists governments unlocked by the
- * civ's researched technologies, and starts a revolution — ANARCHY_TURNS turns
- * of anarchy (all rates forced to 0) before the new government takes effect.
+ * civ's researched technologies, and starts a revolution — normally
+ * ANARCHY_TURNS turns of anarchy (all rates forced to 0) before the new
+ * government takes effect, or just 1 turn with the Pyramids wonder.
  */
 function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
   const actions = useGameStore((state) => state.actions);
@@ -39,6 +40,12 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
     ? gameEngine.getAvailableGovernments(currentPlayer)
     : ['despotism'];
 
+  // Actual anarchy length for this civ (the Pyramids wonder cuts it to 1).
+  const anarchyTurns =
+    gameEngine && currentPlayer && typeof gameEngine.governmentManager?.anarchyTurnsFor === 'function'
+      ? gameEngine.governmentManager.anarchyTurnsFor(currentPlayer.id)
+      : ANARCHY_TURNS;
+
   // Capital city display.
   const capitalCity = gameEngine && currentPlayer
     ? (gameEngine.cities ?? []).find(
@@ -59,7 +66,7 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
       gameLogger.record('GOVERNMENT_REVOLUTION', {
         civilizationId: currentPlayer.id,
         government: selected,
-        anarchyTurns: ANARCHY_TURNS,
+        anarchyTurns,
       });
       onHide();
     }
@@ -107,7 +114,7 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
         ) : (
           <>
             <div className="government-list-title">
-              Choose a government (switching starts a {ANARCHY_TURNS}-turn revolution)
+              Choose a government (switching starts a {anarchyTurns}-turn revolution)
             </div>
             <div className="government-list">
               {available.map((govId) => {

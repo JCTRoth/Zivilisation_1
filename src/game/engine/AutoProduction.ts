@@ -6,6 +6,7 @@
 
 import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVAN_TRADE_ROUTES } from '@/utils/Constants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
+import { WONDERS } from '@/data/WonderData';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import {
   assessCityThreat,
@@ -33,6 +34,7 @@ import {
 } from './AI/NavalDoctrine';
 import { AI_RESERVE_TURNS } from './AI/AIEconomicManager';
 import { ABSOLUTE_MIN_GOLD } from './EconomicManager';
+import { SettlerGovernor } from './AI/SettlerGovernor';
 
 /**
  * Hulls the AI will consider, cheapest first. The order only decides *which*
@@ -80,6 +82,26 @@ interface QueueItem {
 }
 
 /** How many follow-up items auto-production keeps lined up in a city's queue. */
+/**
+ * Share of a civ's projected income that building upkeep may consume.
+ *
+ * Measured on a 187-round AI-vs-AI export: the AI queued `city_walls` 688
+ * times (more than settlers, pyramids or barracks) - one per city, 2 gold/turn
+ * each, and `NEVER_SELL` meant it could never get the money back - against a
+ * per-city income of 0-4 gold. Every civ ran a negative net for the whole run
+ * and the upkeep disbander collected the difference. 40% leaves room for a
+ * young empire's granary/temple/walls (see the floor below) and stops a
+ * 15-building late-game city from buying a 16th.
+ */
+const BUILDING_UPKEEP_INCOME_RATIO = 0.4;
+/**
+ * Building-upkeep budget floor, in gold/turn. A brand-new civ earns almost
+ * nothing, but granary/temple/barracks are 1 gold each and a city without them
+ * never grows - so some upkeep is always affordable, and the ratio above only
+ * starts to bite once there is real income to protect.
+ */
+const BUILDING_UPKEEP_BUDGET_FLOOR = 6;
+
 const AUTO_QUEUE_TARGET = 3;
 
 /** Absolute ceiling on the AI's scout corps (the desired count caps at 3 too). */
@@ -117,6 +139,7 @@ const EXPANSION_PARAMS: Record<StrategyProfile, { settlersPerCities: number; min
 
 export class AutoProduction {
   private gameEngine: GameEngine;
+  private settlerGovernor: SettlerGovernor;
 
   /**
    * Per-civ naval doctrine verdict for the current state of the world. The
@@ -129,6 +152,7 @@ export class AutoProduction {
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
+    this.settlerGovernor = new SettlerGovernor();
   }
 
   /** Reset any per-game state when starting a new game. */
@@ -711,7 +735,14 @@ export class AutoProduction {
       && aiMgr.citiesNeedBuildOut(city.civilizationId);
     const wantsWorks = (worksBudget || worksMandate || buildOut)
       && !threatAssessment?.needsDefense;
-    const settlerTarget = desiredSettlers + (wantsWorks ? 2 : 0);
+    const isAiControlled = this.gameEngine.civilizations?.[city.civilizationId]?.isAI === true;
+    const governorRecommended = isAiControlled
+      ? this.settlerGovernor.getRecommendedSettlerCount(allCivCities, this.gameEngine.units)
+      : desiredSettlers + (wantsWorks ? 2 : 0);
+    const settlerTarget = Math.min(
+      desiredSettlers + (wantsWorks ? 2 : 0),
+      Math.max(0, governorRecommended),
+    );
     // Economics before the army: a civ that has climbed back to the minimum
     // reserve but still cannot net a positive gold gets a settler even though
     // `canAffordAnotherUnit` says no, and gives up the army for now. See
@@ -2141,11 +2172,26 @@ export class AutoProduction {
     isBorderCity: boolean;
     isUnderThreat: boolean;
     builtWonders: string[];
+    /** Wonders nobody may start any more (obsolescence tech discovered). */
+    obsoleteWonders: string[];
+    /**
+     * True when the civ's garrison duty is fully satisfied right now: every
+     * city has a guard on its tile AND the standing army is at least as big
+     * as the city count. Wonders are planned only then — diverting shields
+     * into a 300-shield project while a city stands open is how an empire
+     * loses cities it already has.
+     */
+    garrisonOk: boolean;
     cityCoastal: boolean;
     economyPressure: boolean;
+    /** Gold/turn this civ already pays to keep its buildings. */
+    buildingUpkeep: number;
+    /** How much building upkeep it can afford at its current income. */
+    buildingUpkeepBudget: number;
   } {
     const cities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === civilizationId) || [];
     const civ = this.gameEngine.civilizations?.[civilizationId];
+    const econ = this.gameEngine.economicManager;
     // Upkeep pressure: the treasury is under the reserve the AI's own policy
     // wants. Handed to AIBuildingStrategy so income buildings get built when
     // the money actually runs out, not only when the calendar says so.
@@ -2174,6 +2220,24 @@ export class AutoProduction {
       }
     }
 
+    // Obsolete wonders: some civ discovered the tech that kills their effect —
+    // nobody (AI included) should sink shields into them any more.
+    const obsoleteWonders = WONDERS
+      .filter((w) => this.gameEngine.wonderManager?.isObsolete(w.id))
+      .map((w) => w.id);
+
+    // Garrison duty first, wonders second: only plan a wonder in PEACE and
+    // only while every city already has its guard, with at least one spare
+    // soldier above the city count — shields go to defenders until then.
+    const armySize = this.gameEngine.units?.filter(
+      (u: Unit) => u.civilizationId === civilizationId && (UNIT_PROPS[u.type]?.attack || 0) > 0 && !u.isDefeated,
+    ).length ?? 0;
+    const garrisonOk = !!civ
+      && cities.length > 0
+      && !this.isCivAtWar(civilizationId)
+      && armySize >= cities.length + 1
+      && cities.every((c) => (econ?.garrisonOnCityTile?.(civ, c) ?? 0) >= 1);
+
     return {
       currentYear: this.gameEngine.currentYear ?? -4000,
       roundNumber: this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
@@ -2187,8 +2251,19 @@ export class AutoProduction {
       isBorderCity: false, // default, overridden per-city in determineProductionItem
       isUnderThreat: false,
       builtWonders,
+      obsoleteWonders,
+      garrisonOk,
       cityCoastal: false, // overridden per-city before evaluateBuildings
       economyPressure,
+      buildingUpkeep: typeof econ?.buildingUpkeep === 'function'
+        ? econ.buildingUpkeep(civilizationId)
+        : 0,
+      buildingUpkeepBudget: Math.max(
+        BUILDING_UPKEEP_BUDGET_FLOOR,
+        Math.round((typeof econ?.projectedIncome === 'function' && civ
+          ? econ.projectedIncome(civ)
+          : 0) * BUILDING_UPKEEP_INCOME_RATIO),
+      ),
     };
   }
 

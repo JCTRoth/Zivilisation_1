@@ -240,9 +240,19 @@ export class GovernmentManager {
   // ------------------------------------------------------------------
 
   /**
+   * How long a revolution lasts for this civ: normally ANARCHY_TURNS, but the
+   * Pyramids wonder cuts it to 1 turn (its whole effect). Read this instead of
+   * the ANARCHY_TURNS constant whenever the ACTUAL length is shown or used.
+   */
+  anarchyTurnsFor(civId: number): number {
+    return this.gameEngine.wonderEffects?.anarchyTurns(civId, ANARCHY_TURNS) ?? ANARCHY_TURNS;
+  }
+
+  /**
    * Begin a revolution toward `government`: the civ enters anarchy (all rates
-   * forced to 0) for ANARCHY_TURNS turns, after which the new government takes
-   * effect. Returns false if already revolting or the government isn't unlocked.
+   * forced to 0) for `anarchyTurnsFor(civId)` turns, after which the new
+   * government takes effect. Returns false if already revolting or the
+   * government isn't unlocked.
    */
   startRevolution(civId: number, government: string): boolean {
     const civ = this.gameEngine.civilizations?.[civId];
@@ -250,14 +260,15 @@ export class GovernmentManager {
     if (this.isInRevolution(civ)) return false;
     if (!this.getAvailableGovernments(civ).includes(government)) return false;
 
+    const turns = this.anarchyTurnsFor(civId);
     civ.government = 'anarchy';
-    civ.revolutionTurns = ANARCHY_TURNS;
+    civ.revolutionTurns = turns;
     civ.pendingGovernment = government;
     // Anarchy forces all rates to 0 via the government's forcesZeroRates rule.
     this.gameEngine.economicManager?.setGovernment(civId, 'anarchy');
     this.gameEngine.log?.('government',
-      `${civ.name} begins a revolution — anarchy for ${ANARCHY_TURNS} turns, adopting ${government}`,
-      { civId, government, turns: ANARCHY_TURNS });
+      `${civ.name} begins a revolution — anarchy for ${turns} turn${turns === 1 ? '' : 's'}, adopting ${government}`,
+      { civId, government, turns });
     return true;
   }
 

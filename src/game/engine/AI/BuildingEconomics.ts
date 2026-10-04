@@ -67,7 +67,10 @@ export const INERT_EFFECTS: ReadonlySet<string> = new Set([
   'isPalace',
   'wonder',
   'globalDefense',
-  'navalMovement',
+  // NOTE: `navalMovement` used to be here — the Lighthouse and Magellan's
+  // Expedition now grant their +1 ship movement for real (WonderEffects), so
+  // the engine acts on it. `production` remains inert for BUILDINGS; wonder
+  // production (Hoover Dam, AI Supercluster) flows through WonderEffects.
   'exploration',
   'diplomacy',
 ]);
