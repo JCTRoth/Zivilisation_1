@@ -8,7 +8,6 @@ import {
   numberValue,
   type DemographicRow,
 } from '@/game/engine/DemographicsManager';
-import { WondersOverview, WonderEntryModal } from './WondersOverview';
 
 interface StatisticsModalProps {
   show: boolean;
@@ -20,8 +19,6 @@ const formatVal = (r: DemographicRow): string =>
 
 const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
   const [activeTab, setActiveTab] = useState('demographics');
-  // Wonder opened from the Wonders tab (Civilopedia-style full entry).
-  const [openWonderId, setOpenWonderId] = useState<string | null>(null);
   const civilizations = useGameStore(s => s.civilizations);
   const cities = useGameStore(s => s.cities);
   const map = useGameStore(s => s.map);
@@ -143,15 +140,9 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
             )}
           </Tab>
 
-          {/* ── Wonders overview (spec: World → Statistics → Wonders) ──── */}
-          <Tab eventKey="wonders" title="Wonders">
-            <WondersOverview onOpenEntry={(id) => setOpenWonderId(id)} />
-            <WonderEntryModal
-              show={openWonderId !== null}
-              wonderId={openWonderId}
-              onHide={() => setOpenWonderId(null)}
-            />
-          </Tab>
+          {/* NOTE: the Wonders tab used to live here. It now has its own screen
+              in the World menu (World → Wonders), so Statistics is only about
+              demographics again. */}
 
           {/* ── World (devMode only) ──────────────────────────────────── */}
           {devMode && (

@@ -11,8 +11,8 @@ single table, and no engine or UI code needs to change to add another wonder.
 | **Compatibility bridge** | `src/data/BuildingConstants.ts` (`WONDER_PROPERTIES`) | Adapts the wonder data to the `BuildingProperties` shape older code (AI valuation, victory scoring, sell protection) still reads |
 | **Ownership / rules** | `src/game/engine/WonderManager.ts` | Who owns what, world-uniqueness, obsolescence, continent queries, construction gates |
 | **Effect engine** | `src/game/engine/WonderEffects.ts` | Computes the actual modifiers (science %, happiness, trade squares, movement, vision, gates…) |
-| **UI** | `src/components/ui/gamemodals/WonderCompletedModal.tsx`, `WonderConflictModal.tsx`, `WondersOverview.tsx` | Completion screen, production-conflict popup, overview + Civilopedia entry |
-| **Styles** | `src/styles/wonders.css` | Status colours, image placeholders, layout |
+| **UI** | `src/components/ui/gamemodals/WonderCompletedModal.tsx`, `WonderConflictModal.tsx`, `WondersOverview.tsx`, `WonderArtwork.tsx` | Completion screen, production-conflict popup, overview + Civilopedia entry, shared credited artwork |
+| **Styles** | `src/styles/wonders.css` | Status colours, artwork + credit lines, overview ledger layout |
 | **Docs** | this file | Data format reference |
 
 ## The wonder record
@@ -116,10 +116,22 @@ finished in the same turn appear one after another.
 
 ### Artwork
 
-Every screen reserves image space using `wonder.image`
-(`assets/wonders/<id>.png`). Until the file exists, a styled placeholder with
-the wonder icon is rendered — dropping the PNGs into `public/assets/wonders/`
-lights them up with no code change.
+Every screen renders real artwork through the shared `WonderArtwork` component,
+which reads `wonder.image` (`assets/wonders/<file>`) from `public/assets/wonders/`
+and falls back to a styled placeholder with the wonder's emoji if a file is ever
+missing. Each Wikimedia image carries a visible credit line (author + licence +
+link to the file page) because most of them are CC BY / CC BY-SA; images supplied
+by the project owner show only the "Read more on Wikipedia" link.
+
+Seventeen of the 22 images come from Wikimedia Commons and are public domain or
+freely licensed; the other five (Colossus, Great Library, Hanging Gardens,
+Lighthouse, Oracle) are the project owner's own scans of antique engravings and
+have no external source. Provenance for each file is listed in
+`public/assets/wonders/CREDITS.txt` and mirrored in the `WONDER_ARTWORK_CREDITS`
+table in `src/data/WonderData.ts`. When adding or replacing an image, update all
+three places (`WONDERS[].image`, the credits table, `CREDITS.txt`); for own
+artwork, drop the `sourceUrl` / `author` / `license` fields instead of inventing
+them.
 
 ## Obsolete-by design decisions
 

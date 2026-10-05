@@ -26,7 +26,7 @@ import { GameUtils } from "@/utils/GameUtils";
 import { DomUtils } from "@/utils/DomUtils";
 import { enrichMapForExport } from "@/utils/MapExportUtils";
 import { preloadAllUnitIcons } from "@/utils/UnitIconLoader";
-import { centerCameraOnTile, getGameViewport } from "@/utils/CameraUtils";
+import { centerCameraOnTile, getGameViewport, clampZoom } from "@/utils/CameraUtils";
 import { gameLogger } from "@/utils/GameLogger";
 import { gameProgression } from "@/utils/GameProgression";
 import type { TerrainTileRenderInfo } from "@/game/rendering/MapRenderer";
@@ -964,11 +964,11 @@ function App() {
           case "+":
           case "=":
             // Zoom in
-            setCamera({ zoom: Math.min(camera.zoom * 1.2, 3.0) });
+            setCamera({ zoom: clampZoom(camera.zoom * 1.2) });
             break;
           case "-":
             // Zoom out
-            setCamera({ zoom: Math.max(camera.zoom / 1.2, 0.5) });
+            setCamera({ zoom: clampZoom(camera.zoom / 1.2) });
             break;
         }
       }

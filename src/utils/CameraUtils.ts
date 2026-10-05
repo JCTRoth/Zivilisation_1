@@ -1,5 +1,26 @@
 import { TILE_SIZE } from '@/data/TerrainData';
 
+/**
+ * Zoom limits for the whole game.
+ *
+ * These used to be hardcoded in four places and disagreed with each other:
+ * the keyboard handler allowed 0.5–3.0, the wheel/pinch/double-tap handlers
+ * allowed 0.3–2.5, and `camera.minZoom` / `camera.maxZoom` (declared but never
+ * read) said 0.5–3.0. The range below is the union of all of them, so no input
+ * method loses a zoom level it could previously reach — they just agree now.
+ *
+ * The upper bound is safe for the renderer: above `DIRECT_TERRAIN_ZOOM` (2)
+ * tiles are drawn straight from the 256 px source textures, which the renderer
+ * documents as staying sharp to ~8×, i.e. well past MAX_ZOOM.
+ */
+export const MIN_ZOOM = 0.3;
+export const MAX_ZOOM = 3.0;
+
+/** Clamp a zoom factor to the playable range. */
+export function clampZoom(zoom: number): number {
+  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+}
+
 export interface CameraCenterParams {
   col: number;
   row: number;

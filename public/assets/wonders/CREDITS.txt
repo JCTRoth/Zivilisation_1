@@ -1,0 +1,223 @@
+Wonder Artwork — full source list
+==============================================================================
+
+Provenance for every picture in `public/assets/wonders/`.
+
+Five pictures (Colossus, Great Library, Hanging Gardens, Lighthouse, Oracle) are
+supplied by the project owner from their own collection of antique engravings.
+They have no external source, so the game shows no image-source link for them —
+only the "Read more on Wikipedia" link. The remaining seventeen come from
+Wikimedia Commons as described below.
+
+HOW EACH PICTURE WAS OBTAINED
+  All images were downloaded from Wikimedia Commons through its public API
+  (`action=query&prop=imageinfo&iiurlwidth=1024`), which returns the
+  thumbnail URL, the author and the licence in one response. Only freely
+  licensed files were accepted:
+      public domain  ·  CC0  ·  CC BY  ·  CC BY-SA
+  Each download is the Commons-generated 1024px-wide thumbnail, i.e. an
+  unmodified copy apart from that downscaling. The game only frames the files
+  with CSS `object-fit`, which crops at display time and does not alter them.
+
+WHERE THE CREDIT IS SHOWN IN-GAME
+  `src/components/ui/gamemodals/WonderArtwork.tsx` renders a credit line
+  under every image, containing:
+    - a "Read more on Wikipedia" link to the article about that wonder
+    - the author, linking to the Wikimedia Commons file page
+    - the licence name, linking to the licence deed (when not public domain)
+  Own artwork (the five above) shows the article link only.
+  Licence compliance is therefore satisfied in the build itself, not only here.
+
+MACHINE-READABLE COPY
+  The same data lives in `WONDER_ARTWORK_CREDITS` in
+  `src/data/WonderData.ts`, so the UI never hard-codes a URL. When adding or
+  replacing an image, update all three: `WONDERS[].image`, the credits table,
+  and this file.
+
+NOTES
+  * No image was taken from Britannica. Britannica's encyclopedia photographs
+    and illustrations are copyrighted and not released under a free licence, so
+    they cannot be redistributed inside a game without permission from the
+    rights holder. Freely licensed equivalents exist on Commons for all 22
+    wonders (for space imagery, NASA material is in the public domain).
+  * The Colossus of Rhodes, Hanging Gardens and Lighthouse are ancient and lost,
+    so they use period reconstructions: Athanasius Kircher (1679) and
+    Philip Galle (1572). These are the canonical historical depictions.
+  * Images are fetched lazily — a wonder's picture is only downloaded once the
+    screen showing it is opened and the frame scrolls into view.
+
+==============================================================================
+
+Colossus
+--------
+  file            public/assets/wonders/colossus.jpg
+  artwork         supplied by the project owner (own collection)
+  image source    — (own artwork, no external source)
+  article         https://en.wikipedia.org/wiki/Colossus_of_Rhodes
+
+Great Library
+-------------
+  file            public/assets/wonders/great_library.jpg
+  artwork         supplied by the project owner (own collection)
+  image source    — (own artwork, no external source)
+  article         https://en.wikipedia.org/wiki/Library_of_Alexandria
+
+Hanging Gardens
+---------------
+  file            public/assets/wonders/hanging_gardens.jpg
+  artwork         supplied by the project owner (own collection)
+  image source    — (own artwork, no external source)
+  article         https://en.wikipedia.org/wiki/Hanging_Gardens_of_Babylon
+
+Lighthouse
+----------
+  file            public/assets/wonders/lighthouse.jpg
+  artwork         supplied by the project owner (own collection)
+  image source    — (own artwork, no external source)
+  article         https://en.wikipedia.org/wiki/Lighthouse_of_Alexandria
+
+Oracle
+------
+  file            public/assets/wonders/oracle.jpg
+  artwork         supplied by the project owner (own collection)
+  image source    — (own artwork, no external source)
+  article         https://en.wikipedia.org/wiki/Delphi
+
+Pyramids
+--------
+  file            public/assets/wonders/pyramids.jpg
+  author          kallerna
+  licence         CC BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0
+  image source    https://commons.wikimedia.org/wiki/File:Great_Pyramid_of_Giza.jpg
+  article         https://en.wikipedia.org/wiki/Great_Pyramid_of_Giza
+
+Anaximander's Map
+-----------------
+  file            public/assets/wonders/anaximanders_map.png
+  author          Iker Hernandez Guiu
+  licence         CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0
+  image source    https://commons.wikimedia.org/wiki/File:Anaximandroren_mundu_mapa.png
+  article         https://en.wikipedia.org/wiki/Anaximander
+
+Copernicus' Observatory
+-----------------------
+  file            public/assets/wonders/copernicus_observatory.jpg
+  author          Scotch Mist
+  licence         CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0
+  image source    https://commons.wikimedia.org/wiki/File:Frombork_2023_28_Copernicus_Tower.jpg
+  article         https://en.wikipedia.org/wiki/Nicolaus_Copernicus
+
+Isaac Newton's College
+----------------------
+  file            public/assets/wonders/isaac_newtons_college.jpg
+  author          Cmglee
+  licence         CC BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0
+  image source    https://commons.wikimedia.org/wiki/File:Cmglee_Cambridge_Trinity_College_Great_Court.jpg
+  article         https://en.wikipedia.org/wiki/Trinity_College%2C_Cambridge
+
+J.S. Bach's Cathedral
+---------------------
+  file            public/assets/wonders/js_bachs_cathedral.jpg
+  author          Zarafa at en.wikipedia
+  licence         Public domain
+  image source    https://commons.wikimedia.org/wiki/File:Exterior_of_St._Thomas_Church,_Leipzig,_with_Bach_statue.jpg
+  article         https://en.wikipedia.org/wiki/St._Thomas_Church%2C_Leipzig
+
+Magellan's Expedition
+---------------------
+  file            public/assets/wonders/magellans_expedition.jpg
+  author          Johannes Stradanus (Jan van der Straet)
+  licence         Public domain
+  image source    https://commons.wikimedia.org/wiki/File:Magellan_expedition_by_Stradanus.jpg
+  article         https://en.wikipedia.org/wiki/Magellan_expedition
+
+Michelangelo's Chapel
+---------------------
+  file            public/assets/wonders/michelangelos_chapel.jpg
+  author          Jörg Bittner Unna
+  licence         CC BY 3.0 — https://creativecommons.org/licenses/by/3.0
+  image source    https://commons.wikimedia.org/wiki/File:%27Sistine_Chapel_ceiling%27_by_Michelangelo_JBU21.JPG
+  article         https://en.wikipedia.org/wiki/Sistine_Chapel_ceiling
+
+Shakespeare's Theatre
+---------------------
+  file            public/assets/wonders/shakespeare_theatre.jpg
+  author          Txllxt TxllxT
+  licence         CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0
+  image source    https://commons.wikimedia.org/wiki/File:London_-_Shakespeare%27s_Globe_Theatre_Replica_1997.jpg
+  article         https://en.wikipedia.org/wiki/Globe_Theatre
+
+Leonardo's Workshop
+-------------------
+  file            public/assets/wonders/leonardos_workshop.jpg
+  author          Leonardo da Vinci
+  licence         Public domain
+  image source    https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_Ambrosiana-Codice-Atlantico-Codex-Atlanticus-f-4-recto.jpg
+  article         https://en.wikipedia.org/wiki/Codex_Atlanticus
+
+International Space Station
+---------------------------
+  file            public/assets/wonders/international_space_station.jpg
+  author          National Aeronautics and Space Administration (Q23548)
+  licence         Public domain
+  image source    https://commons.wikimedia.org/wiki/File:ISS_March_2009.jpg
+  article         https://en.wikipedia.org/wiki/International_Space_Station
+
+Cure for Cancer
+---------------
+  file            public/assets/wonders/cure_for_cancer.jpg
+  author          Unknown photographer
+  licence         Public domain
+  image source    https://commons.wikimedia.org/wiki/File:Tissue_culture_department_at_the_central_cancer_research_laboratories.jpg
+  article         https://en.wikipedia.org/wiki/Cancer
+
+Hoover Dam
+----------
+  file            public/assets/wonders/hoover_dam.jpg
+  author          Dietmar Rabich
+  licence         CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0
+  image source    https://commons.wikimedia.org/wiki/File:Hoover_Dam,_Nevada_(Arizona-Nevada,_USA)_--_2012_--_6099.jpg
+  article         https://en.wikipedia.org/wiki/Hoover_Dam
+
+Manhattan Project
+-----------------
+  file            public/assets/wonders/manhattan_project.jpg
+  author          Berlyn Brixner / Los Alamos National Laboratory
+  licence         Public domain
+  image source    https://commons.wikimedia.org/wiki/File:Trinity_Test_Fireball_16ms.jpg
+  article         https://en.wikipedia.org/wiki/Manhattan_Project
+
+SETI Program
+------------
+  file            public/assets/wonders/seti_program.jpg
+  author          brewbooks from near Seattle, USA
+  licence         CC BY-SA 2.0 — https://creativecommons.org/licenses/by-sa/2.0
+  image source    https://commons.wikimedia.org/wiki/File:Allen_Telescope_Array_-_Flickr_-_brewbooks.jpg
+  article         https://en.wikipedia.org/wiki/Search_for_extraterrestrial_intelligence
+
+Atomium
+-------
+  file            public/assets/wonders/atomium.jpg
+  author          Pierre Blaché
+  licence         CC0 — http://creativecommons.org/publicdomain/zero/1.0/deed.en
+  image source    https://commons.wikimedia.org/wiki/File:The_Atomium,_Brussels_-_54578545913.jpg
+  article         https://en.wikipedia.org/wiki/Atomium
+
+Statue of Liberty
+-----------------
+  file            public/assets/wonders/statue_of_liberty.jpg
+  author          Don Ramey Logan
+  licence         CC BY 4.0 — https://creativecommons.org/licenses/by/4.0
+  image source    https://commons.wikimedia.org/wiki/File:Liberty_Island_photo_Don_Ramey_Logan.jpg
+  article         https://en.wikipedia.org/wiki/Statue_of_Liberty
+
+Colossus (AI Supercluster)
+--------------------------
+  file            public/assets/wonders/ai_supercluster.jpg
+  author          division, CSIRO
+  licence         CC BY 3.0 — https://creativecommons.org/licenses/by/3.0
+  image source    https://commons.wikimedia.org/wiki/File:CSIRO_ScienceImage_11313_The_CSIRO_GPU_cluster_at_the_data_centre.jpg
+  article         https://en.wikipedia.org/wiki/GPU_cluster
+
+==============================================================================
+17 pictures from Wikimedia Commons + 5 supplied by the project owner.

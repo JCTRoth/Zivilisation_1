@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Modal, Button } from 'react-bootstrap';
 import { getWonder } from '@/data/WonderData';
+import { WonderArtwork } from './WonderArtwork';
 import '@/styles/wonders.css';
 
 /** The 'completed' variant of the wonder dialog queue entry. */
@@ -27,8 +28,9 @@ interface WonderCompletedModalProps {
  * wonder's full mechanical effect is spelled out in plain language right
  * here (players forget what a wonder does 200 turns later).
  *
- * The artwork area is a fixed-ratio placeholder: drop the real image into
- * `public/assets/wonders/<id>.png` and it renders here without code changes.
+ * The artwork is rendered by the shared `WonderArtwork` component, which shows
+ * the credited image from `public/assets/wonders/` and falls back to the
+ * wonder's emoji badge if the file is missing.
  */
 const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notice, onContinue }) => {
   const wonder = notice ? getWonder(notice.wonderId) : undefined;
@@ -96,11 +98,8 @@ const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notic
         </h1>
         <div className="wonder-completed-sub">{subtitle}</div>
 
-        {/* Reserved artwork area — filled automatically once the image exists. */}
-        <div className="wonder-image" role="img" aria-label={`${wonder.name} artwork placeholder`}>
-          <span className="wonder-image__icon">{wonder.icon}</span>
-          <span className="wonder-image__caption">artwork: {wonder.image}</span>
-        </div>
+        {/* Artwork (credited; falls back to the emoji badge if the file is missing). */}
+        <WonderArtwork wonder={wonder} active={show} />
 
         <div className="wonder-effect-box">
           <strong>Effect:</strong> {wonder.effectText}

@@ -527,7 +527,7 @@ class GameProgression {
             full.units,
             full.military,
             full.technologies,
-            full.currentResearch ?? '',
+            currentResearchId(full.currentResearch) ?? '',
             full.researchProgress,
             full.government,
             full.taxRate,

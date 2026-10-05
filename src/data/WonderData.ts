@@ -77,11 +77,12 @@ export interface WonderDefinition {
   obsoleteBy: string | null;
   /** Documentation-only age for the overview screen / Civilopedia. */
   era: WonderEra;
-  /** Emoji placeholder icon (real art can be added later). */
+  /** Emoji badge — also the fallback when the artwork file is missing. */
   icon: string;
   /**
-   * Relative path of the artwork. The file may not exist yet — every screen
-   * reserves image space and falls back to a styled placeholder.
+   * Path to the artwork under `public/`, e.g. `assets/wonders/colossus.jpg`.
+   * Attribution for the file lives in `WONDER_ARTWORK_CREDITS` below; if the file
+   * is ever missing, `WonderArtwork` falls back to a styled emoji placeholder.
    */
   image: string;
   /** One-line effect reminder (city screen, production list, overview card). */
@@ -126,7 +127,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: 'electricity',
     era: 'antiquity',
     icon: '🗿',
-    image: 'assets/wonders/colossus.png',
+    image: 'assets/wonders/colossus.jpg',
     shortEffect: '+1 trade per trade square (this city)',
     effectText: 'Every trade square worked by the city that builds the Colossus yields +1 extra trade.',
     flavor:
@@ -147,7 +148,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: 'university',
     era: 'antiquity',
     icon: '📖',
-    image: 'assets/wonders/great_library.png',
+    image: 'assets/wonders/great_library.jpg',
     shortEffect: '+10% science in all cities',
     effectText: 'All cities of the civilization that builds the Great Library produce +10% science.',
     flavor:
@@ -168,7 +169,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: 'invention',
     era: 'antiquity',
     icon: '🌿',
-    image: 'assets/wonders/hanging_gardens.png',
+    image: 'assets/wonders/hanging_gardens.jpg',
     shortEffect: '+1 happy here and in same-continent cities',
     effectText:
       'The city that builds the Hanging Gardens and every other city of the owner on the same continent gains +1 happiness.',
@@ -190,7 +191,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: 'magnetism',
     era: 'antiquity',
     icon: '🕯️',
-    image: 'assets/wonders/lighthouse.png',
+    image: 'assets/wonders/lighthouse.jpg',
     shortEffect: '+1 ship movement',
     effectText: 'All sea units of the civilization that builds the Lighthouse move +1 tile per turn.',
     flavor:
@@ -211,7 +212,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: 'religion',
     era: 'antiquity',
     icon: '🔮',
-    image: 'assets/wonders/oracle.png',
+    image: 'assets/wonders/oracle.jpg',
     shortEffect: 'Doubles Temple effect in all cities',
     effectText: 'Temples of the civilization that builds the Oracle give twice their usual happiness in every city.',
     flavor:
@@ -232,7 +233,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: 'communism',
     era: 'antiquity',
     icon: '🏛️',
-    image: 'assets/wonders/pyramids.png',
+    image: 'assets/wonders/pyramids.jpg',
     shortEffect: 'Government change needs only 1 turn of anarchy',
     effectText:
       'The civilization that builds the Pyramids changes government with only 1 turn of anarchy instead of the usual 3.',
@@ -278,7 +279,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: 'automobile',
     era: 'middle',
     icon: '🌌',
-    image: 'assets/wonders/copernicus_observatory.png',
+    image: 'assets/wonders/copernicus_observatory.jpg',
     shortEffect: 'Doubles science in this city',
     effectText: 'The city that builds Copernicus\' Observatory produces double science.',
     flavor:
@@ -299,7 +300,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: 'nuclear_fission',
     era: 'middle',
     icon: '🍎',
-    image: 'assets/wonders/isaac_newtons_college.png',
+    image: 'assets/wonders/isaac_newtons_college.jpg',
     shortEffect: 'Doubles Library/University science in all cities',
     effectText:
       'In every city of the civilization that builds it, the science bonus from Libraries and Universities is doubled.',
@@ -328,7 +329,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'middle',
     icon: '🎻',
-    image: 'assets/wonders/js_bachs_cathedral.png',
+    image: 'assets/wonders/js_bachs_cathedral.jpg',
     shortEffect: '1 unhappy → content per continent city',
     effectText:
       'In every city of the owner on the same continent as the cathedral, 1 unhappy citizen is made content.',
@@ -350,7 +351,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'middle',
     icon: '⛵',
-    image: 'assets/wonders/magellans_expedition.png',
+    image: 'assets/wonders/magellans_expedition.jpg',
     shortEffect: '+1 ship movement',
     effectText: 'All sea units of the civilization that completes Magellan\'s Expedition move +1 tile per turn.',
     flavor:
@@ -371,7 +372,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: 'communism',
     era: 'middle',
     icon: '🎨',
-    image: 'assets/wonders/michelangelos_chapel.png',
+    image: 'assets/wonders/michelangelos_chapel.jpg',
     shortEffect: '+50% Cathedral effect in all cities',
     effectText: 'Cathedrals of the civilization that builds the chapel give +50% happiness in every city.',
     flavor:
@@ -392,7 +393,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: 'electronics',
     era: 'middle',
     icon: '🎭',
-    image: 'assets/wonders/shakespeare_theatre.png',
+    image: 'assets/wonders/shakespeare_theatre.jpg',
     shortEffect: '4 unhappy → content (this city)',
     effectText: 'In the city that builds the theatre, up to 4 unhappy citizens are made content.',
     flavor:
@@ -413,7 +414,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'middle',
     icon: '🖋️',
-    image: 'assets/wonders/leonardos_workshop.png',
+    image: 'assets/wonders/leonardos_workshop.jpg',
     shortEffect: 'Automatically upgrades obsolete units',
     effectText:
       'Whenever the civilization that builds the workshop has units that are obsolete — because a better replacement is already available — those units are automatically upgraded to the modern type.',
@@ -437,7 +438,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'industrial',
     icon: '🛰️',
-    image: 'assets/wonders/international_space_station.png',
+    image: 'assets/wonders/international_space_station.jpg',
     shortEffect: 'Space race enabled · +20% science · all cities revealed',
     effectText:
       'The International Space Station enables the space race (Moonshot) for every civilization with the technology, grants +20% science in all cities of its owner, and reveals every city on the map to its owner.',
@@ -463,7 +464,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'industrial',
     icon: '🎗️',
-    image: 'assets/wonders/cure_for_cancer.png',
+    image: 'assets/wonders/cure_for_cancer.jpg',
     shortEffect: '+1 happy in every city',
     effectText: 'Every city of the civilization that completes the Cure for Cancer gains +1 happiness.',
     flavor:
@@ -484,7 +485,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'industrial',
     icon: '🌊',
-    image: 'assets/wonders/hoover_dam.png',
+    image: 'assets/wonders/hoover_dam.jpg',
     shortEffect: 'Free Hydro Plant effect (continent, no power plant)',
     effectText:
       'Every city of the owner on the same continent that has no power plant of its own acts as if it had a Hydro Plant, gaining +1 production.',
@@ -506,7 +507,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'industrial',
     icon: '☢️',
-    image: 'assets/wonders/manhattan_project.png',
+    image: 'assets/wonders/manhattan_project.jpg',
     shortEffect: 'Nuclear weapons become possible for all civs with the tech',
     effectText:
       'The Manhattan Project allows nuclear weapons: any civilization that has the required technology can build them once the project is complete.',
@@ -528,7 +529,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'industrial',
     icon: '🔭',
-    image: 'assets/wonders/seti_program.png',
+    image: 'assets/wonders/seti_program.jpg',
     shortEffect: '+30% science in all cities',
     effectText: 'All cities of the civilization that runs the SETI Program produce +30% science.',
     flavor:
@@ -549,7 +550,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'industrial',
     icon: '🔬',
-    image: 'assets/wonders/atomium.png',
+    image: 'assets/wonders/atomium.jpg',
     shortEffect: '+1 happy everywhere · +10% science in this city',
     effectText:
       'Every city of the owner gains +1 happiness, and the city that builds the Atomium produces +10% extra science.',
@@ -574,7 +575,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'industrial',
     icon: '🗽',
-    image: 'assets/wonders/statue_of_liberty.png',
+    image: 'assets/wonders/statue_of_liberty.jpg',
     shortEffect: '+1 trade per trade square in all cities',
     effectText:
       'Every trade square worked by any city of the civilization that completes the Statue of Liberty yields +1 extra trade.',
@@ -596,7 +597,7 @@ export const WONDERS: readonly WonderDefinition[] = [
     obsoleteBy: null,
     era: 'industrial',
     icon: '🤖',
-    image: 'assets/wonders/ai_supercluster.png',
+    image: 'assets/wonders/ai_supercluster.jpg',
     shortEffect: '+10% science & +10% production (continent)',
     effectText:
       'Every city of the owner on the same continent as the supercluster produces +10% science and +10% production.',
@@ -751,3 +752,178 @@ export function isWonderObsolete(
   if (!wonder?.obsoleteBy) return false;
   return civilizations.some((civ) => civHasTech(civ as WonderStatusCivLike, wonder.obsoleteBy!));
 }
+/**
+ * WonderArtworkCredits — attribution for every wonder image.
+ *
+ * All artwork lives in `public/assets/wonders/` and is sourced from Wikimedia
+ * Commons (or, where noted, Britannica). Every entry records the author and
+ * the source page, as the licences require: CC BY / CC BY-SA demand visible
+ * attribution, and we credit public-domain files too so the provenance of
+ * each image is never in doubt.
+ *
+ * Keep this table in sync with `WONDERS[].image` and the files on disk.
+ */
+
+export interface WonderArtworkCredit {
+  /** English Wikipedia article about the wonder — linked under the image. */
+  articleUrl: string;
+  /**
+   * Wikimedia Commons file page the image came from. Absent for artwork the
+   * project owner supplied, which has no external source to point at.
+   */
+  sourceUrl?: string;
+  /** Author / photographer as stated by the Commons file page. */
+  author?: string;
+  /** Short licence name, e.g. "CC BY-SA 4.0" or "Public domain". */
+  license?: string;
+  /** Licence deed URL, empty/absent for public-domain works. */
+  licenseUrl?: string;
+}
+
+export const WONDER_ARTWORK_CREDITS: Readonly<Record<string, WonderArtworkCredit>> = {
+  colossus: {
+    // Artwork supplied by the project owner (own collection) — no external
+    // source, author or licence to attribute.
+    articleUrl: 'https://en.wikipedia.org/wiki/Colossus_of_Rhodes',
+  },
+  great_library: {
+    // Artwork supplied by the project owner (own collection) — no external
+    // source, author or licence to attribute.
+    articleUrl: 'https://en.wikipedia.org/wiki/Library_of_Alexandria',
+  },
+  hanging_gardens: {
+    // Artwork supplied by the project owner (own collection) — no external
+    // source, author or licence to attribute.
+    articleUrl: 'https://en.wikipedia.org/wiki/Hanging_Gardens_of_Babylon',
+  },
+  lighthouse: {
+    // Artwork supplied by the project owner (own collection) — no external
+    // source, author or licence to attribute.
+    articleUrl: 'https://en.wikipedia.org/wiki/Lighthouse_of_Alexandria',
+  },
+  oracle: {
+    // Artwork supplied by the project owner (own collection) — no external
+    // source, author or licence to attribute.
+    articleUrl: 'https://en.wikipedia.org/wiki/Delphi',
+  },
+  pyramids: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Great_Pyramid_of_Giza',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Great_Pyramid_of_Giza.jpg',
+    author: 'kallerna',
+    license: 'CC BY-SA 3.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0',
+  },
+  anaximanders_map: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Anaximander',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Anaximandroren_mundu_mapa.png',
+    author: 'Iker Hernandez Guiu',
+    license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0',
+  },
+  copernicus_observatory: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Nicolaus_Copernicus',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Frombork_2023_28_Copernicus_Tower.jpg',
+    author: 'Scotch Mist',
+    license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0',
+  },
+  isaac_newtons_college: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Trinity_College%2C_Cambridge',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Cmglee_Cambridge_Trinity_College_Great_Court.jpg',
+    author: 'Cmglee',
+    license: 'CC BY-SA 3.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0',
+  },
+  js_bachs_cathedral: {
+    articleUrl: 'https://en.wikipedia.org/wiki/St._Thomas_Church%2C_Leipzig',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Exterior_of_St._Thomas_Church,_Leipzig,_with_Bach_statue.jpg',
+    author: 'Zarafa at en.wikipedia',
+    license: 'Public domain',
+    licenseUrl: '',
+  },
+  magellans_expedition: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Magellan_expedition',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Magellan_expedition_by_Stradanus.jpg',
+    author: 'Johannes Stradanus (Jan van der Straet)',
+    license: 'Public domain',
+    licenseUrl: '',
+  },
+  michelangelos_chapel: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Sistine_Chapel_ceiling',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:%27Sistine_Chapel_ceiling%27_by_Michelangelo_JBU21.JPG',
+    author: 'Jörg Bittner Unna',
+    license: 'CC BY 3.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/3.0',
+  },
+  shakespeare_theatre: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Globe_Theatre',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:London_-_Shakespeare%27s_Globe_Theatre_Replica_1997.jpg',
+    author: 'Txllxt TxllxT',
+    license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0',
+  },
+  leonardos_workshop: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Codex_Atlanticus',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_Ambrosiana-Codice-Atlantico-Codex-Atlanticus-f-4-recto.jpg',
+    author: 'Leonardo da Vinci',
+    license: 'Public domain',
+    licenseUrl: '',
+  },
+  international_space_station: {
+    articleUrl: 'https://en.wikipedia.org/wiki/International_Space_Station',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:ISS_March_2009.jpg',
+    author: 'National Aeronautics and Space Administration (Q23548)',
+    license: 'Public domain',
+    licenseUrl: '',
+  },
+  cure_for_cancer: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Cancer',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Tissue_culture_department_at_the_central_cancer_research_laboratories.jpg',
+    author: 'Unknown photographer',
+    license: 'Public domain',
+    licenseUrl: '',
+  },
+  hoover_dam: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Hoover_Dam',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Hoover_Dam,_Nevada_(Arizona-Nevada,_USA)_--_2012_--_6099.jpg',
+    author: 'Dietmar Rabich',
+    license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0',
+  },
+  manhattan_project: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Manhattan_Project',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Trinity_Test_Fireball_16ms.jpg',
+    author: 'Berlyn Brixner / Los Alamos National Laboratory',
+    license: 'Public domain',
+    licenseUrl: '',
+  },
+  seti_program: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Search_for_extraterrestrial_intelligence',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Allen_Telescope_Array_-_Flickr_-_brewbooks.jpg',
+    author: 'brewbooks from near Seattle, USA',
+    license: 'CC BY-SA 2.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/2.0',
+  },
+  atomium: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Atomium',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:The_Atomium,_Brussels_-_54578545913.jpg',
+    author: 'Pierre Blaché',
+    license: 'CC0',
+    licenseUrl: 'http://creativecommons.org/publicdomain/zero/1.0/deed.en',
+  },
+  statue_of_liberty: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Statue_of_Liberty',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Liberty_Island_photo_Don_Ramey_Logan.jpg',
+    author: 'Don Ramey Logan',
+    license: 'CC BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0',
+  },
+  ai_supercluster: {
+    articleUrl: 'https://en.wikipedia.org/wiki/GPU_cluster',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:CSIRO_ScienceImage_11313_The_CSIRO_GPU_cluster_at_the_data_centre.jpg',
+    author: 'division, CSIRO',
+    license: 'CC BY 3.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/3.0',
+  },
+};
+

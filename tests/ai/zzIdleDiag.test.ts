@@ -105,8 +105,8 @@ describe('tmp idle diag', () => {
       if (!civHasCities.get(0) && !civHasCities.get(1)) noCityTurnsSeen++;
     }
 
-    console.log('DIAG buckets', JSON.stringify(bucket));
     console.log = origLog; console.warn = origWarn; console.error = origErr;
+    console.log('DIAG buckets', JSON.stringify(bucket));
     console.log('DIAG warns', JSON.stringify(warns, null, 1));
     console.log('DIAG colony/invasion missions');
     for (const civ of engine.civilizations ?? []) {

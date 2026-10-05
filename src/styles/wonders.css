@@ -47,6 +47,70 @@
   font-style: italic;
 }
 
+/* ── Shared artwork (real image + credit, emoji fallback) ──────────────── */
+.wonder-artwork {
+  position: relative;
+  margin: 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(255, 214, 90, 0.16), transparent 65%),
+    linear-gradient(160deg, #1d2433 0%, #121722 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.wonder-artwork__img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  object-fit: cover;
+  /* Slight dim so the gold accents of the UI stay readable on top. */
+  filter: saturate(0.94) contrast(1.02);
+}
+/* Reserved space while the image is still being fetched — prevents the modal
+   from jumping when it arrives. */
+.wonder-artwork__placeholder {
+  aspect-ratio: 16 / 7;
+  width: 100%;
+}
+.wonder-artwork__fallback {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 7;
+  width: 100%;
+}
+.wonder-artwork__credit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.2rem 0.9rem;
+  padding: 0.35rem 0.6rem;
+  background: rgba(8, 11, 16, 0.82);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.66rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.55);
+}
+.wonder-artwork__readmore {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--color-accent, #f0c33c);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(240, 195, 60, 0.4);
+}
+.wonder-artwork__readmore:hover {
+  color: var(--color-accent-strong, #ffd75e);
+  border-bottom-color: currentColor;
+}
+.wonder-artwork__credit-text a {
+  color: rgba(255, 255, 255, 0.72);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.wonder-artwork__credit-text a:hover { color: #ffd75e; }
+
 /* ── A. Wonder completion screen ───────────────────────────────────────── */
 .wonder-completed-modal .modal-content {
   background: linear-gradient(165deg, #241f14 0%, #171310 55%, #101418 100%);
@@ -77,10 +141,15 @@
   font-size: 0.95rem;
   margin-bottom: 1rem;
 }
-.wonder-completed-modal .wonder-image {
+.wonder-completed-modal .wonder-image,
+.wonder-completed-modal .wonder-artwork {
   aspect-ratio: 16 / 7;
   width: 100%;
   margin-bottom: 1.1rem;
+}
+.wonder-completed-modal .wonder-artwork {
+  aspect-ratio: auto;
+  display: block;
 }
 .wonder-effect-box {
   background: rgba(255, 215, 94, 0.1);
@@ -142,82 +211,310 @@
 }
 
 /* ── B. Wonders overview screen ────────────────────────────────────────── */
-.wonders-overview { color: #e9ecef; }
-.wonders-overview__legend {
+
+/* Dialog surface: a calm, slightly warm dark panel matching the game's panels. */
+.wonders-modal .modal-content {
+  background: linear-gradient(180deg, #1b2430 0%, #141b25 100%);
+  border: 1px solid rgba(240, 195, 60, 0.24);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.wonders-modal .modal-title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #f2f7fb;
+}
+
+@media (min-width: 992px) {
+  /* Wider than Bootstrap's xl so the effect text never has to be truncated. */
+  .modal-dialog.wonders-modal {
+    max-width: min(1040px, 94vw);
+  }
+  /* Fixed height keeps the dialog stable while the ledger scrolls internally. */
+  .modal-dialog.wonders-modal .modal-content {
+    display: flex;
+    flex-direction: column;
+    height: min(86vh, 900px);
+    max-height: calc(100dvh - 3.5rem);
+  }
+  .modal-dialog.wonders-modal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+.wonders-overview {
+  color: var(--color-text);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+}
+
+/* ── Summary strip ─────────────────────────────────────────────────────── */
+.wonders-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(9, 13, 18, 0.55);
+  border: 1px solid var(--color-border, #2c3b49);
+  border-radius: var(--radius-md, 10px);
+}
+.wonders-summary__headline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+.wonders-summary__count {
+  font-family: var(--font-mono, monospace);
+  font-size: 1.05rem;
+  color: var(--color-accent-strong, #ffd75e);
+}
+.wonders-summary__count strong {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+.wonders-summary__label {
+  font-size: 0.78rem;
+  color: var(--bs-secondary-color, #b7c3cf);
+}
+.wonders-summary__bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.wonders-summary__bar > span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: linear-gradient(90deg, #f0c33c, #ffd75e);
+  border-radius: 999px;
+  transition: width var(--dur-med, 220ms) var(--ease-out, ease-out);
+}
+.wonders-summary__stats {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 0.9rem;
-  margin-bottom: 0.9rem;
-  font-size: 0.75rem;
-  color: #adb5bd;
+  gap: 0.4rem 1.1rem;
+  margin: 0.35rem 0 0;
+  padding: 0.6rem 0 0;
+  list-style: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
-.wonders-overview__era {
-  margin-top: 1.1rem;
-  margin-bottom: 0.45rem;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: #ffd75e;
-  border-bottom: 1px solid rgba(255, 215, 94, 0.25);
-  padding-bottom: 0.25rem;
+.wonders-summary__stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+  color: var(--bs-secondary-color, #b7c3cf);
 }
-.wonders-overview__list {
+.wonders-summary__stat-value {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+.wonders-summary__stat-label { color: var(--bs-secondary-color, #b7c3cf); }
+.wonders-summary__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transform: translateY(1px);
+}
+.wonders-summary__stat--building  .wonders-summary__dot { background: var(--color-primary, #3d9bff); }
+.wonders-summary__stat--contested .wonders-summary__dot { background: var(--color-warning, #f2a33c); }
+.wonders-summary__stat--rival     .wonders-summary__dot { background: var(--color-danger, #ef5a6e); }
+.wonders-summary__stat--locked    .wonders-summary__dot { background: #6c757d; }
+
+/* ── Era groups ────────────────────────────────────────────────────────── */
+.wonders-ledger {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  max-height: 60vh;
-  overflow-y: auto;
-  padding-right: 0.25rem;
+  gap: var(--space-4, 1rem);
 }
-.wonder-row {
+.wonders-era { margin: 0; }
+.wonders-era__title {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
-  width: 100%;
-  text-align: left;
-  background: #1b1f27;
-  border: 1px solid #30353f;
-  border-radius: 10px;
-  padding: 0.5rem 0.75rem;
-  color: #e9ecef;
-  cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
-}
-.wonder-row:hover {
-  border-color: #ffd75e;
-  background: #222734;
-}
-.wonder-row--locked { opacity: 0.6; }
-.wonder-row__thumb {
-  flex: 0 0 56px;
-  height: 44px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  background: linear-gradient(160deg, #262c3a, #171b25);
-  border: 1px solid #343b49;
-}
-.wonder-row__main { flex: 1 1 auto; min-width: 0; }
-.wonder-row__name { font-weight: 700; font-size: 0.95rem; }
-.wonder-row__effect {
-  color: #9da5b4;
-  font-size: 0.8rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.wonder-row__meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.2rem;
+  gap: 0.55rem;
+  margin: 0 0 0.5rem;
+  padding: 0 0.15rem;
   font-size: 0.72rem;
-  color: #adb5bd;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-accent, #f0c33c);
+}
+.wonders-era__title::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(240, 195, 60, 0.35), transparent);
+}
+.wonders-era__count {
+  order: 3;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  color: var(--bs-secondary-color, #b7c3cf);
+}
+.wonders-era__list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ── Wonder card (one ledger row) ──────────────────────────────────────── */
+.wonder-card {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--color-bg-overlay, #1d2935);
+  border: 1px solid var(--color-border, #2c3b49);
+  border-left: 3px solid var(--color-border-strong, #3d5163);
+  border-radius: var(--radius-md, 10px);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast, 120ms) var(--ease-out, ease-out),
+    border-color var(--dur-fast, 120ms) var(--ease-out, ease-out),
+    transform var(--dur-fast, 120ms) var(--ease-out, ease-out);
+}
+.wonder-card:hover {
+  background: #24313f;
+  border-color: var(--color-border-strong, #3d5163);
+  transform: translateX(2px);
+}
+.wonder-card:active { transform: translateX(2px) scale(0.995); }
+
+/* Status tint on the leading edge — the spec's colour coding. */
+.wonder-card--owned     { border-left-color: var(--color-success, #35c46c); }
+.wonder-card--building  { border-left-color: var(--color-primary, #3d9bff); }
+.wonder-card--contested { border-left-color: var(--color-warning, #f2a33c); }
+.wonder-card--rival     { border-left-color: var(--color-danger, #ef5a6e); }
+.wonder-card--locked    { border-left-color: #55606d; }
+.wonder-card--available { border-left-color: var(--color-accent, #f0c33c); }
+.wonder-card--locked    { background: rgba(13, 18, 24, 0.6); }
+.wonder-card--locked .wonder-card__name,
+.wonder-card--locked .wonder-card__effect { color: #93a0ae; }
+
+.wonder-card__lead {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.wonder-card__icon {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: linear-gradient(160deg, #2a323f, #171d26);
+  border: 1px solid #3a4352;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.wonder-card__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+.wonder-card__obsolete {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 90, 110, 0.45);
+  background: rgba(239, 90, 110, 0.12);
+  color: #ff9aa6;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
-.wonder-row__cost { color: #7ec8ff; font-weight: 700; }
+
+.wonder-card__effect {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #c6cfdb;
+  overflow-wrap: break-word;
+}
+
+/* ── Fact row (cost / requires / obsolete by / holder) ─────────────────── */
+.wonder-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.15rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.wonder-card__fact {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+  font-size: 0.74rem;
+}
+.wonder-card__fact-label {
+  color: var(--bs-secondary-color, #b7c3cf);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-size: 0.64rem;
+  white-space: nowrap;
+}
+.wonder-card__fact-value {
+  color: var(--color-text);
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+.wonder-card__holders {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+.wonder-card__muted {
+  color: var(--bs-secondary-color, #b7c3cf);
+  font-weight: 500;
+}
+.wonders-civ {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+.wonders-civ__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+.wonders-civ__you {
+  margin-left: 0.15rem;
+  padding: 0 0.3rem;
+  border-radius: 4px;
+  background: rgba(240, 195, 60, 0.18);
+  color: var(--color-accent-strong, #ffd75e);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 
 /* ── Civilopedia entry ─────────────────────────────────────────────────── */
 .wonder-entry-modal .modal-content {
@@ -225,12 +522,64 @@
   color: #e9ecef;
   border: 1px solid #3a4150;
 }
-.wonder-entry-modal .wonder-image {
-  aspect-ratio: 16 / 6;
-  width: 100%;
-  margin-bottom: 1rem;
+/*
+ * FIX: the entry's content (artwork + chips + effect + history + facts) is
+ * taller than the dialog's max-height, and `.modal-content` clips nothing by
+ * default — so the footer used to be pushed OUT of the panel and the Close
+ * button floated on the backdrop. Making the content a flex column and letting
+ * the BODY scroll keeps header and footer pinned inside the dialog.
+ */
+.modal-dialog.wonder-entry-modal {
+  max-height: calc(100dvh - 2rem);
 }
-.wonder-entry-title { font-weight: 800; font-size: 1.5rem; color: #ffe9a8; }
+.modal-dialog.wonder-entry-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 2rem);
+  overflow: hidden;
+}
+.modal-dialog.wonder-entry-modal .modal-header,
+.modal-dialog.wonder-entry-modal .modal-footer {
+  flex: 0 0 auto;
+}
+.modal-dialog.wonder-entry-modal .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.wonder-entry-modal .wonder-artwork {
+  margin-bottom: 0.85rem;
+}
+.wonder-entry-modal .wonder-artwork__img {
+  aspect-ratio: 16 / 6;
+}
+.wonder-entry-modal .modal-footer .btn {
+  min-width: 120px;
+}
+.wonder-entry-title {
+  font-weight: 800;
+  font-size: 1.5rem;
+  color: #ffe9a8;
+  /* Long names ("Michelangelo's Chapel", "International Space Station") must
+     never push the status pill or the close button off the header. */
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.wonder-entry-modal .modal-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.wonder-entry-modal .modal-header .modal-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.wonder-entry-modal .modal-header .wonder-status {
+  flex: 0 0 auto;
+}
 .wonder-entry-meta {
   display: flex;
   flex-wrap: wrap;
@@ -288,10 +637,15 @@
   margin-bottom: 0.35rem;
   font-weight: 800;
 }
-.production-wonders-layout__detail .wonder-image {
+.production-wonders-layout__detail .wonder-image,
+.production-wonders-layout__detail .wonder-artwork {
   aspect-ratio: 16 / 7;
   width: 100%;
   margin-bottom: 0.6rem;
+}
+.production-wonders-layout__detail .wonder-artwork {
+  aspect-ratio: auto;
+  display: block;
 }
 .wonder-detail-effect {
   background: rgba(255, 215, 94, 0.08);
@@ -314,4 +668,52 @@ tr.wonder-row-selectable.selected { outline: 1px solid #ffd75e; }
   .production-wonders-layout { flex-direction: column; }
   .production-wonders-layout__detail { position: static; width: 100%; max-height: none; }
   .wonder-completed-body { padding: 1rem; }
+}
+
+/* ── Wonders overview: responsive ──────────────────────────────────────── */
+@media (max-width: 991.98px) {
+  /* Full-screen sheet with an internally scrolling ledger, like the city modal. */
+  .modal-dialog.wonders-modal {
+    max-height: 100dvh;
+    display: flex;
+    align-items: center;
+    margin: 0;
+    width: 100%;
+    max-width: 100vw;
+    height: 100%;
+  }
+  .wonders-modal .modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: 100dvh;
+    height: 100%;
+    min-height: 100%;
+    border-radius: 0;
+  }
+  .modal-dialog.wonders-modal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(1rem + var(--safe-bottom, 0px));
+  }
+}
+
+@media (max-width: 575.98px) {
+  .wonders-overview { gap: 0.75rem; }
+  .wonders-summary { grid-template-columns: 1fr; padding: 0.7rem 0.8rem; }
+  .wonders-summary__stats { gap: 0.35rem 0.9rem; }
+  .wonder-card { padding: 0.55rem 0.65rem; }
+  .wonder-card__meta { gap: 0.3rem 0.9rem; }
+  .wonder-card__icon { width: 30px; height: 30px; font-size: 0.95rem; }
+  .wonder-entry-title { font-size: 1.2rem; }
+  .wonder-entry-modal .modal-body { padding: 0.75rem 0.85rem; }
+}
+
+/* Very long wonder names must never blow out the row. */
+@media (max-width: 380px) {
+  .wonder-card__lead { flex-wrap: wrap; row-gap: 0.3rem; }
+  .wonder-card__name { flex-basis: 100%; order: 3; }
 }

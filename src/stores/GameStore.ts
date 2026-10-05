@@ -12,6 +12,7 @@ import {
   slowerGameSpeedStep,
 } from '../data/GameConstants';
 import { beginCameraGlide } from '../game/rendering/CameraGlideGate';
+import { MIN_ZOOM, MAX_ZOOM, clampZoom } from '../utils/CameraUtils';
 import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City } from '../../types/game';
 
 // Internal store property types for cached/computed state
@@ -64,9 +65,11 @@ const createInitialMapState = (): MapState => ({
 const createInitialCameraState = (): CameraState => ({
   x: 0,
   y: 0,
-  zoom: 2.0,
-  minZoom: 0.5,
-  maxZoom: 3.0
+  // Games open fully zoomed in — the maximum the camera can reach — so the
+  // player starts close to their units instead of looking at a distant map.
+  zoom: MAX_ZOOM,
+  minZoom: MIN_ZOOM,
+  maxZoom: MAX_ZOOM
 });
 
 const createInitialUIState = (): UIState => ({
@@ -513,8 +516,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return state;
     }),
 
+    // Zoom is clamped here as a safety net so no caller can leave the camera
+    // outside the playable range (previously this merged blindly).
     updateCamera: (cameraUpdate: Partial<CameraState>) => set(state => ({
-      camera: { ...state.camera, ...cameraUpdate }
+      camera: {
+        ...state.camera,
+        ...cameraUpdate,
+        ...(cameraUpdate.zoom !== undefined
+          ? { zoom: clampZoom(cameraUpdate.zoom) }
+          : null),
+      }
     })),
 
     toggleUI: (key) => set(state => ({

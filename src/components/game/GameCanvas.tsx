@@ -17,7 +17,7 @@ import {
 } from "@/game/rendering/MapRenderer";
 import MoveAnimator from "@/game/rendering/MoveAnimator";
 import { MathUtils } from "@/utils/MathUtils";
-import { centerCameraOnTile } from "@/utils/CameraUtils";
+import { centerCameraOnTile, clampZoom } from "@/utils/CameraUtils";
 import { HUMAN_PLAYER_ID } from "@/utils/PlayerConstants";
 import { finishCameraGlide } from "@/game/rendering/CameraGlideGate";
 import { MiniMapRenderer } from "@/game/rendering/MiniMapRenderer";
@@ -2253,7 +2253,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (!rect) return;
     const x = clientX - rect.left;
     const y = clientY - rect.top;
-    const newZoom = Math.min(camera.zoom * 1.5, 2.5);
+    const newZoom = clampZoom(camera.zoom * 1.5);
     const worldXBefore = x / camera.zoom + camera.x;
     const worldYBefore = y / camera.zoom + camera.y;
     const worldXAfter = x / newZoom + camera.x;
@@ -2337,10 +2337,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       const dy = touches[0].clientY - touches[1].clientY;
       const distance = Math.hypot(dx, dy);
       const scale = distance / pinchStartRef.current.distance;
-      const newZoom = Math.max(
-        0.3,
-        Math.min(2.5, pinchStartRef.current.zoom * scale),
-      );
+      const newZoom = clampZoom(pinchStartRef.current.zoom * scale);
       actions.updateCamera({ zoom: newZoom });
     }
   };
@@ -2835,7 +2832,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Smoother zoom with smaller increments
     const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05;
-    const newZoom = Math.max(0.3, Math.min(2.5, camera.zoom * zoomFactor));
+    const newZoom = clampZoom(camera.zoom * zoomFactor);
 
     // Get mouse position for zoom centering
     const rect = canvasRef.current.getBoundingClientRect();

@@ -61,7 +61,9 @@ Far further development of the game engine is planned, including:
 
 -Open-
 
-* TODO IMPORTANT FIND A GOOD WAY TO MANAGE THE SPECIALISTS!
+* Multi Language support, including the ability to change the language of the game, and the ability to add new languages to the game.
+
+
 * Add new ship type, "Trade Ship" 
 A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
 and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.

@@ -12,6 +12,7 @@ import {
   isWonderObsolete,
   type WonderStatus,
 } from '@/data/WonderData';
+import { WonderArtwork } from './WonderArtwork';
 import '@/styles/wonders.css';
 
 /** Badge class + label for a wonder status (same colours as the overview). */
@@ -132,6 +133,9 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
     [storeCities, storeCivilizations, activePlayer],
   );
   const [selectedWonderId, setSelectedWonderId] = useState<string | null>(null);
+  // Controlled so the wonders detail artwork is only fetched while its tab is
+  // actually the visible one (Bootstrap keeps inactive tab panes mounted).
+  const [activeTab, setActiveTab] = useState('units');
 
   interface WonderRow {
     id: string;
@@ -259,7 +263,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
             </label>
           </div>
         </div>
-        <Tabs defaultActiveKey="units" id="production-selection-tabs">
+        <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k ?? 'units')} id="production-selection-tabs">
           <Tab eventKey="units" title="Units">
             <div className="table-responsive">
               <table className="table table-dark table-striped">
@@ -536,14 +540,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                   </div>
                 ) : (
                   <>
-                    <div
-                      className="wonder-image"
-                      role="img"
-                      aria-label={`${selectedWonder.name} artwork placeholder`}
-                    >
-                      <span className="wonder-image__icon">{selectedWonder.icon}</span>
-                      <span className="wonder-image__caption">artwork: {selectedWonder.image}</span>
-                    </div>
+                    <WonderArtwork wonder={selectedWonder} active={show && activeTab === 'wonders'} />
                     <h6>{selectedWonder.name}</h6>
                     {selectedWonderRow && (
                       <span className={`wonder-status wonder-status--${selectedWonderRow.status}`}>

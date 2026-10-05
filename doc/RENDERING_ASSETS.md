@@ -175,7 +175,12 @@ the texture source resolution and which terrain path is active:
 | Camera zoom | Terrain source | Why |
 | --- | --- | --- |
 | `< 2` (`MapRenderer.DIRECT_TERRAIN_ZOOM`) | offscreen base at 2× native (64 px/tile) | at most 1:1 on screen, one cheap blit |
-| `>= 2` (game max is 2.5) | direct per-tile draw from the source textures | avoids upscaling the 2× base; only a few tiles are visible, so per-tile transitions/features are affordable |
+| `>= 2` (game max is `MAX_ZOOM` = 3) | direct per-tile draw from the source textures | avoids upscaling the 2× base; only a few tiles are visible, so per-tile transitions/features are affordable |
+
+The playable zoom range is `MIN_ZOOM` (0.3) … `MAX_ZOOM` (3), defined once in
+`src/utils/CameraUtils.ts` and enforced by `clampZoom()` in the store's
+`updateCamera`. Games open at `MAX_ZOOM`, so the first frame already uses this
+direct, sharp path.
 
 To stay sharp at maximum zoom, source assets should be **at least 256×256**
 (base/features; composed tiles are 512×512 by default via `TILE_PX`). The

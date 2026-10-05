@@ -1,5 +1,7 @@
-import type { City } from '../../City';
-import type { Unit } from '../../Unit';
+// Canonical data shapes live in `types/game`, like every other AI module here.
+// (`../../City` exports the engine class, whose fields are `civilization` etc.,
+// and `../../Unit` does not export its class at all.)
+import type { City, Unit } from '../../../../types/game';
 
 export interface SettlerWorkAssignment {
   unitId: string;
