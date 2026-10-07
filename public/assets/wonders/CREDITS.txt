@@ -215,7 +215,7 @@ Colossus (AI Supercluster)
   author          division, CSIRO
   licence         CC BY 3.0 — https://creativecommons.org/licenses/by/3.0
   image source    https://commons.wikimedia.org/wiki/File:CSIRO_ScienceImage_11313_The_CSIRO_GPU_cluster_at_the_data_centre.jpg
-  article         https://en.wikipedia.org/wiki/GPU_cluster
+  article         https://en.wikipedia.org/wiki/Colossus_(data_center)
 
 ==============================================================================
 14 pictures from Wikimedia Commons + 8 supplied by the project owner.

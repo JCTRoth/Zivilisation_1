@@ -914,7 +914,7 @@ export const WONDER_ARTWORK_CREDITS: Readonly<Record<string, WonderArtworkCredit
     licenseUrl: 'https://creativecommons.org/licenses/by/4.0',
   },
   ai_supercluster: {
-    articleUrl: 'https://en.wikipedia.org/wiki/GPU_cluster',
+    articleUrl: 'https://en.wikipedia.org/wiki/Colossus_(data_center)',
     sourceUrl: 'https://commons.wikimedia.org/wiki/File:CSIRO_ScienceImage_11313_The_CSIRO_GPU_cluster_at_the_data_centre.jpg',
     author: 'division, CSIRO',
     license: 'CC BY 3.0',
