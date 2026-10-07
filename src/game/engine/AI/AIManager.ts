@@ -643,7 +643,7 @@ export class AIManager {
       if (unit.civilizationId !== civilizationId) continue;
       if (!unit.isFortified || unit.isDefeated || unit.embarkedOn) continue;
       const isGarrison =
-        this.isCombatUnit(unit) &&
+        this.isGarrisonEligible(unit) &&
         this.isAtOrAdjacentToFriendlyCity(unit) &&
         this.shouldKeepGarrisonFortified(unit, storage);
       if (isGarrison) continue;
@@ -4046,8 +4046,20 @@ export class AIManager {
       if (city.civilizationId === civId) consider(city, false);
     }
 
-    // All explored foreign cities at peace are worth double.
+    // All KNOWN foreign cities at peace are worth double. "Known" means the
+    // tile is currently explored/visible OR our scouts recorded the city in
+    // `enemyLocations` — a recorded sighting stays knowledge even when the
+    // fog has rolled back over the tile, which is exactly how scouts report.
     const storage = this.gameEngine.getPlayerStorage?.(civId);
+    const scoutedCities = new Set<string>();
+    if (storage?.enemyLocations instanceof Map) {
+      for (const [enemyCivId, locations] of storage.enemyLocations.entries()) {
+        if (enemyCivId === civId) continue;
+        for (const loc of locations) {
+          if (loc.type === 'city') scoutedCities.add(`${loc.col},${loc.row}`);
+        }
+      }
+    }
     const isVisible = (col: number, row: number): boolean => {
       if (storage) {
         const idx = row * this.gameEngine.map!.width + col;
@@ -4059,7 +4071,7 @@ export class AIManager {
     for (const city of this.gameEngine.cities) {
       if (city.civilizationId === civId) continue;
       if (dm?.isAtWar?.(civId, city.civilizationId)) continue;
-      if (!isVisible(city.col, city.row)) continue;
+      if (!isVisible(city.col, city.row) && !scoutedCities.has(`${city.col},${city.row}`)) continue;
       consider(city, true);
     }
 
@@ -5979,6 +5991,20 @@ export class AIManager {
     return (unit.attack || 0) > 0.5;
   }
 
+  /**
+   * Garrison-eligible = exactly what the GARRISON METRIC counts: any
+   * non-civilian with attack > 0 standing on a city tile (scouts included —
+   * `garrisonOnCityTile` credits them for martial law). Keeping duty,
+   * entrenching and release on this definition instead of the stricter
+   * combat-only one stops the metric and the AI from disagreeing: a
+   * scout-holding civ could never satisfy "every city has a guard" when
+   * duty refused to post — or let dig in — the one unit the metric counted.
+   */
+  private isGarrisonEligible(unit: Unit): boolean {
+    const civilianTypes = new Set(['settler', 'caravan', 'diplomat', 'worker', 'nuclear']);
+    return !civilianTypes.has(unit.type) && (unit.attack || 0) > 0;
+  }
+
   private isSettlerDirectlyThreatened(unit: Unit): boolean {
     if (!this.gameEngine.squareGrid) return false;
     const dm = this.gameEngine.diplomacyManager;
@@ -6037,7 +6063,7 @@ export class AIManager {
     armyGroups: ArmyGroup[],
     allowCommitted = false,
   ): { col: number; row: number } | null {
-    if (!this.isCombatUnit(unit) || unit.isFortified) return null;
+    if (!this.isGarrisonEligible(unit) || unit.isFortified) return null;
 
     const cities = (this.gameEngine.cities ?? []).filter(
       (c: City) => c.civilizationId === unit.civilizationId,
@@ -6077,11 +6103,20 @@ export class AIManager {
       }
       return { col: city.col, row: city.row };
     }
+
+    // Nothing needs filling AND the unit is standing on friendly walls: HOLD
+    // here (the caller's "already at target" branch then fortifies it). Without
+    // this the unit fell through to picket/patrol, walked away from the very
+    // walls it was garrisoning, and no AI unit ever stayed fortified long
+    // enough to be counted — a garrison on a quiet turn is exactly this.
+    if (this.isAtOrAdjacentToFriendlyCity(unit)) {
+      return { col: unit.col, row: unit.row };
+    }
     return null;
   }
 
   private shouldFortifyForDefense(unit: Unit): boolean {
-    return this.isCombatUnit(unit) && !unit.isFortified && this.isAtOrAdjacentToFriendlyCity(unit);
+    return this.isGarrisonEligible(unit) && !unit.isFortified && this.isAtOrAdjacentToFriendlyCity(unit);
   }
 
   /**

@@ -3,11 +3,12 @@ Wonder Artwork — full source list
 
 Provenance for every picture in `public/assets/wonders/`.
 
-Five pictures (Colossus, Great Library, Hanging Gardens, Lighthouse, Oracle) are
-supplied by the project owner from their own collection of antique engravings.
-They have no external source, so the game shows no image-source link for them —
-only the "Read more on Wikipedia" link. The remaining seventeen come from
-Wikimedia Commons as described below.
+Eight pictures (Colossus, Great Library, Hanging Gardens, Lighthouse, Oracle,
+Magellan's Expedition, Shakespeare's Theatre, Leonardo's Workshop) are supplied
+by the project owner from their own collection. They have no external source,
+so the game shows no image-source link for them — only the "Read more on
+Wikipedia" link. The remaining fourteen come from Wikimedia Commons as
+described below.
 
 HOW EACH PICTURE WAS OBTAINED
   All images were downloaded from Wikimedia Commons through its public API
@@ -25,7 +26,7 @@ WHERE THE CREDIT IS SHOWN IN-GAME
     - a "Read more on Wikipedia" link to the article about that wonder
     - the author, linking to the Wikimedia Commons file page
     - the licence name, linking to the licence deed (when not public domain)
-  Own artwork (the five above) shows the article link only.
+  Own artwork (the eight above) shows the article link only.
   Licence compliance is therefore satisfied in the build itself, not only here.
 
 MACHINE-READABLE COPY
@@ -91,13 +92,13 @@ Pyramids
   image source    https://commons.wikimedia.org/wiki/File:Great_Pyramid_of_Giza.jpg
   article         https://en.wikipedia.org/wiki/Great_Pyramid_of_Giza
 
-Anaximander's Map
------------------
-  file            public/assets/wonders/anaximanders_map.png
-  author          Iker Hernandez Guiu
-  licence         CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0
-  image source    https://commons.wikimedia.org/wiki/File:Anaximandroren_mundu_mapa.png
-  article         https://en.wikipedia.org/wiki/Anaximander
+Silk Road
+---------
+  file            public/assets/wonders/silk_road.jpg
+  author          Abraham Cresques (Catalan Atlas, 1375)
+  licence         Public domain
+  image source    https://commons.wikimedia.org/wiki/File:Catalan_Atlas_caravan_drawing.jpg
+  article         https://en.wikipedia.org/wiki/Silk_Road
 
 Copernicus' Observatory
 -----------------------
@@ -126,9 +127,8 @@ J.S. Bach's Cathedral
 Magellan's Expedition
 ---------------------
   file            public/assets/wonders/magellans_expedition.jpg
-  author          Johannes Stradanus (Jan van der Straet)
-  licence         Public domain
-  image source    https://commons.wikimedia.org/wiki/File:Magellan_expedition_by_Stradanus.jpg
+  artwork         supplied by the project owner
+  image source    — (own artwork, no external source)
   article         https://en.wikipedia.org/wiki/Magellan_expedition
 
 Michelangelo's Chapel
@@ -142,17 +142,15 @@ Michelangelo's Chapel
 Shakespeare's Theatre
 ---------------------
   file            public/assets/wonders/shakespeare_theatre.jpg
-  author          Txllxt TxllxT
-  licence         CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0
-  image source    https://commons.wikimedia.org/wiki/File:London_-_Shakespeare%27s_Globe_Theatre_Replica_1997.jpg
+  artwork         supplied by the project owner
+  image source    — (own artwork, no external source)
   article         https://en.wikipedia.org/wiki/Globe_Theatre
 
 Leonardo's Workshop
 -------------------
   file            public/assets/wonders/leonardos_workshop.jpg
-  author          Leonardo da Vinci
-  licence         Public domain
-  image source    https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_Ambrosiana-Codice-Atlantico-Codex-Atlanticus-f-4-recto.jpg
+  artwork         supplied by the project owner
+  image source    — (own artwork, no external source)
   article         https://en.wikipedia.org/wiki/Codex_Atlanticus
 
 International Space Station
@@ -163,20 +161,20 @@ International Space Station
   image source    https://commons.wikimedia.org/wiki/File:ISS_March_2009.jpg
   article         https://en.wikipedia.org/wiki/International_Space_Station
 
-Cure for Cancer
----------------
-  file            public/assets/wonders/cure_for_cancer.jpg
-  author          Unknown photographer
+Human Genome Project
+--------------------
+  file            public/assets/wonders/human_genome_project.jpg
+  author          National Human Genome Research Institute
   licence         Public domain
-  image source    https://commons.wikimedia.org/wiki/File:Tissue_culture_department_at_the_central_cancer_research_laboratories.jpg
-  article         https://en.wikipedia.org/wiki/Cancer
+  image source    https://commons.wikimedia.org/wiki/File:DNA_Double_Helix_by_NHGRI.jpg
+  article         https://en.wikipedia.org/wiki/Human_Genome_Project
 
 Hoover Dam
 ----------
   file            public/assets/wonders/hoover_dam.jpg
-  author          Dietmar Rabich
-  licence         CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0
-  image source    https://commons.wikimedia.org/wiki/File:Hoover_Dam,_Nevada_(Arizona-Nevada,_USA)_--_2012_--_6099.jpg
+  author          Hannah Beker (2003)
+  licence         CC BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0
+  image source    https://commons.wikimedia.org/wiki/File:Hoover_dam.jpg
   article         https://en.wikipedia.org/wiki/Hoover_Dam
 
 Manhattan Project
@@ -220,4 +218,4 @@ Colossus (AI Supercluster)
   article         https://en.wikipedia.org/wiki/GPU_cluster
 
 ==============================================================================
-17 pictures from Wikimedia Commons + 5 supplied by the project owner.
+14 pictures from Wikimedia Commons + 8 supplied by the project owner.

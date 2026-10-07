@@ -114,7 +114,7 @@ interface WondersOverviewProps {
  * cost / technology / obsolescence details and the civilization that holds (or
  * is building) each one. Grouped by documentation-only era for readability.
  */
-export const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
+const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
   const rows = useWonderRows();
   const civilizations = useGameStore((s) => s.civilizations);
   const activePlayer = useGameStore((s) => s.gameState.activePlayer);
@@ -274,7 +274,7 @@ interface WonderEntryModalProps {
  * AND the "Did you know?" facts — only facts we actually know are written
  * (per the info-screen rule: never invent).
  */
-export const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onHide }) => {
+const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onHide }) => {
   const rows = useWonderRows();
   const civilizations = useGameStore((s) => s.civilizations);
   const row = rows.find((r) => r.wonder.id === wonderId) ?? null;

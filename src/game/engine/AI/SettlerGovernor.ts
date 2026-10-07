@@ -155,7 +155,15 @@ export class SettlerGovernor {
     const hasValidSettlementSpot = this.hasValidSettlementSpot(cities);
 
     if (!hasMatureCity || !hasValidSettlementSpot) {
-      return Math.max(0, 1 - aliveSettlers);
+      // Only settlers that are ACTUALLY heading to a site count against the
+      // "one at a time" allowance. A settler with no settlement target —
+      // blocked by spacing everywhere, reassigned to field works, or stuck —
+      // cannot consume it, or the civ stops expanding the moment one settler
+      // gets unlucky: the allowance stays full forever while nobody founds,
+      // the empire stays at one city, and (in the pinned AI-vs-AI run) it was
+      // overrun before it could garrison anything.
+      const expanding = settlers.filter((u) => !!u._aiSettlement).length;
+      return Math.max(0, 1 - expanding);
     }
 
     const assignedSettlers = this.getAssignedCount();

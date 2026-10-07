@@ -490,7 +490,7 @@ export default class GameEngine {
     // Calculate visibility from all player units
     const playerUnits = this.units.filter(u => u.civilizationId === civilizationId);
 
-    // Anaximander's Map: +1 vision range for all units and cities of the owner.
+    // Silk Road: +1 vision range for all units and cities of the owner.
     const visionBonus = this.wonderEffects?.visionBonus(civilizationId) ?? 0;
 
     for (const unit of playerUnits) {
@@ -3900,7 +3900,7 @@ const occupiedLandmasses = new Set(
         else if (UNIT_PROPS && UNIT_PROPS[String(unit.type).toLowerCase()] && typeof UNIT_PROPS[String(unit.type).toLowerCase()].sightRange === 'number') {
           sightRange = UNIT_PROPS[String(unit.type).toLowerCase()].sightRange;
         }
-        // Anaximander's Map: the owner's units see one tile further.
+        // Silk Road: the owner's units see one tile further.
         sightRange += this.wonderEffects?.visionBonus(unit.civilizationId) ?? 0;
 
         // Ensure sight range is valid (non-negative)

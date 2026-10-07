@@ -192,7 +192,7 @@ describe('status context gathering (pure, store-compatible)', () => {
     expect(statuses.pyramids).toBe('owned');
     expect(statuses.lighthouse).toBe('contested'); // player + rival both building
     expect(statuses.great_library).toBe('locked'); // literacy unknown
-    expect(statuses.anaximanders_map).toBe('available'); // map_making known, nobody started it
+    expect(statuses.silk_road).toBe('available'); // map_making known, nobody started it
   });
 
   it('obsolescence is live the moment any civ has the tech', () => {

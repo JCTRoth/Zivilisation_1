@@ -55,12 +55,12 @@ compiler rejects unknown shapes:
 | `sciencePercent` | `city`, `civilization`, `continent` | +X% science for cities in scope (Great Library, SETI, Copernicus, ISS, AI Supercluster) |
 | `productionPercent` | `continent` | +X% production (AI Supercluster) |
 | `productionFlat` | `continent` (+ optional `requiresNoPowerPlant`) | +N production (Hoover Dam) |
-| `happiness` | `city`, `civilization`, `continent` | +N happiness per city in scope (Cure for Cancer, Hanging Gardens, Atomium) |
+| `happiness` | `city`, `civilization`, `continent` | +N happiness per city in scope (Human Genome Project, Hanging Gardens, Atomium) |
 | `unhappyToContent` | `city`, `continent` | Converts up to N unhappy citizens to content (Shakespeare, J.S. Bach) |
 | `buildingHappinessMultiplier` | `civilization` | Multiplies one building's happiness (Oracle ×2 Temple, Michelangelo ×1.5 Cathedral) |
 | `buildingScienceMultiplier` | `civilization` | Multiplies listed buildings' science (Isaac Newton: Library/University ×2) |
 | `navalMovement` | `civilization` | +N movement for the owner's sea units (Lighthouse, Magellan) |
-| `visionRange` | `civilization` | +N sight radius for owner units/cities (Anaximander's Map) |
+| `visionRange` | `civilization` | +N sight radius for owner units/cities (Silk Road) |
 | `governmentAnarchyTurns` | `civilization` | Revolution length in turns (Pyramids: 1 instead of 3) |
 | `autoUpgradeUnits` | `civilization` | Obsolete units upgrade automatically (Leonardo — paths in `UNIT_UPGRADE_PATHS`, `src/data/UnitConstants.ts`) |
 | `enableSpaceship` | `global` | Opens the Moonshot space race once the ISS exists |
@@ -123,10 +123,11 @@ missing. Each Wikimedia image carries a visible credit line (author + licence +
 link to the file page) because most of them are CC BY / CC BY-SA; images supplied
 by the project owner show only the "Read more on Wikipedia" link.
 
-Seventeen of the 22 images come from Wikimedia Commons and are public domain or
-freely licensed; the other five (Colossus, Great Library, Hanging Gardens,
-Lighthouse, Oracle) are the project owner's own scans of antique engravings and
-have no external source. Provenance for each file is listed in
+Fourteen of the 22 images come from Wikimedia Commons and are public domain or
+freely licensed; the other eight (Colossus, Great Library, Hanging Gardens,
+Lighthouse, Oracle, Magellan's Expedition, Shakespeare's Theatre, Leonardo's
+Workshop) are the project owner's own artwork and have no external source.
+Provenance for each file is listed in
 `public/assets/wonders/CREDITS.txt` and mirrored in the `WONDER_ARTWORK_CREDITS`
 table in `src/data/WonderData.ts`. When adding or replacing an image, update all
 three places (`WONDERS[].image`, the credits table, `CREDITS.txt`); for own

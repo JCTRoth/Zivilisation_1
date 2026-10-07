@@ -52,7 +52,7 @@ describe('wonders overview status colours (store data → status)', () => {
     expect(statuses.lighthouse).toBe('contested');      // yellow
     expect(statuses.oracle).toBe('rival');              // red (rival building only)
     expect(statuses.great_library).toBe('locked');      // grey (no literacy)
-    expect(statuses.anaximanders_map).toBe('available');// neutral (map_making known)
+    expect(statuses.silk_road).toBe('available');      // neutral (map_making known)
   });
 
   it('a wonder the player is building while a rival OWNS it stays red', () => {

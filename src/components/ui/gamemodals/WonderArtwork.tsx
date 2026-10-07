@@ -119,5 +119,3 @@ function WonderCredit({ info }: { info: WonderArtworkCredit }) {
     </div>
   );
 }
-
-export default WonderArtwork

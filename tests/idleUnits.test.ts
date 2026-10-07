@@ -29,6 +29,7 @@ interface UnitSnapshot {
   workTurns: number;
   fortified: boolean;
   asleep: boolean;
+  defeated: boolean;
 }
 
 interface IdleTally {
@@ -46,6 +47,7 @@ function snapshot(units: readonly any[]): Map<string, UnitSnapshot> {
     workTurns: u.workTurns ?? 0,
     fortified: u.isFortified === true,
     asleep: u.isSleeping === true,
+    defeated: u.isDefeated === true,
   }]));
 }
 
@@ -73,6 +75,13 @@ async function measureIdle(turns: number, seed = 4242): Promise<IdleTally> {
     for (const [id, prev] of before) {
       const unit = (engine.units ?? []).find((u: any) => u.id === id);
       if (!unit) continue; // consumed: founded, joined, or completed something
+      // A DEFEATED unit is not idling — it is a corpse waiting out the 1.5 s
+      // removal delay before the death animation finishes. The turn queue,
+      // targeting, movement and combat all skip it (see
+      // DEFEATED_UNIT_REMOVAL_DELAY_MS); counting it here would measure the
+      // removal timer, not lazy settlers. One dead settler lingering for a
+      // sub-1.5-second test run used to be two thirds of the whole score.
+      if (unit.isDefeated || prev.defeated) continue;
       const now = after.get(id)!;
       const bucket = tally.byType[unit.type] ??= { idle: 0, parked: 0, turns: 0 };
       bucket.turns++;

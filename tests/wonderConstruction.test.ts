@@ -199,7 +199,7 @@ describe('wonder construction & world-uniqueness', () => {
     const buildable = engine.productionManager.getBuildableBuildingTypes(city.id);
     expect(buildable).toContain('colossus');
     expect(buildable).toContain('lighthouse');
-    expect(buildable).toContain('anaximanders_map');
+    expect(buildable).toContain('silk_road');
     // Literacy unknown → Great Library not offered.
     expect(buildable).not.toContain('great_library');
     // Wonder techs gate the idle-city detector too.

@@ -735,9 +735,19 @@ export class AutoProduction {
       && aiMgr.citiesNeedBuildOut(city.civilizationId);
     const wantsWorks = (worksBudget || worksMandate || buildOut)
       && !threatAssessment?.needsDefense;
+    const allCivSettlers = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === city.civilizationId && u.type === 'settler' && !u.isDefeated,
+    ).length;
     const isAiControlled = this.gameEngine.civilizations?.[city.civilizationId]?.isAI === true;
+    // The governor reports how many settlers are STILL NEEDED (a delta), not a
+    // total: it answers "recommended − already alive". Using that number as an
+    // absolute cap made the target 0 whenever one settler was already alive —
+    // the normal state from turn 1 — so AI civs stopped expanding almost
+    // immediately (4 cities founded instead of 9) and the sim starved. Convert
+    // it to a total by adding the settlers that exist.
     const governorRecommended = isAiControlled
       ? this.settlerGovernor.getRecommendedSettlerCount(allCivCities, this.gameEngine.units)
+        + allCivSettlers
       : desiredSettlers + (wantsWorks ? 2 : 0);
     const settlerTarget = Math.min(
       desiredSettlers + (wantsWorks ? 2 : 0),

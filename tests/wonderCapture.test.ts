@@ -85,7 +85,7 @@ describe('wonder transfer on city capture', () => {
     const city = settleOnLand('WonderCity', 1, 2);
     // Civilization-scoped wonder: reaches every city of whoever holds it, so
     // the assertion cannot depend on continent geometry.
-    city.buildings = ['cure_for_cancer'];
+    city.buildings = ['human_genome_project'];
     const capturer = engine.civilizations[0];
     const previousOwner = engine.civilizations[1];
 
@@ -101,10 +101,10 @@ describe('wonder transfer on city capture', () => {
     // After: the conqueror's cities enjoy it, the loser does not.
     expect(engine.economicManager.wonderHappinessForCity(civ0City)).toBe(1);
     expect(engine.economicManager.wonderHappinessForCity(civ1City)).toBe(0);
-    expect(engine.wonderManager?.isActive('cure_for_cancer', capturer.id)).toBe(true);
-    expect(engine.wonderManager?.isActive('cure_for_cancer', previousOwner.id)).toBe(false);
-    expect(engine.wonderManager?.wondersOfCiv(0)).toContain('cure_for_cancer');
-    expect(engine.wonderManager?.wondersOfCiv(1)).not.toContain('cure_for_cancer');
+    expect(engine.wonderManager?.isActive('human_genome_project', capturer.id)).toBe(true);
+    expect(engine.wonderManager?.isActive('human_genome_project', previousOwner.id)).toBe(false);
+    expect(engine.wonderManager?.wondersOfCiv(0)).toContain('human_genome_project');
+    expect(engine.wonderManager?.wondersOfCiv(1)).not.toContain('human_genome_project');
   });
 
   it('the captured city still cannot rebuild a wonder it already holds', () => {

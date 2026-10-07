@@ -5,7 +5,7 @@
  * Despotism, Monarchy and Communism, and nothing at all under Republic or
  * Democracy. It is the cheapest happiness in the game: no gold, no worker, just
  * a soldier who was going to be built anyway. Continent/civilization wonders
- * (Hanging Gardens, Cure for Cancer) do a similar job for many cities at once —
+ * (Hanging Gardens, Human Genome Project) do a similar job for many cities at once —
  * see the 'wonder content' block below and tests/wonderEffects.test.ts.
  *
  * The garrison half of this file exists because the AI used to garrison within
@@ -150,7 +150,7 @@ describe('wonder content', () => {
     const other = { ...city, id: 'c2', col: 0, row: 0, workingTiles: new Set(['0,0']) } as unknown as City;
     engine.cities = [city, other];
     city.buildings = ['hanging_gardens'];
-    other.buildings = ['cure_for_cancer'];
+    other.buildings = ['human_genome_project'];
     // Both wonders reach both cities (continent + civilization scope) = 2.
     expect(engine.economicManager.wonderHappinessForCity(city)).toBe(2);
     expect(engine.economicManager.wonderHappinessForCity(other)).toBe(2);
@@ -159,7 +159,7 @@ describe('wonder content', () => {
 
   it('does not leak to another civ', () => {
     const { engine, city } = world1(4);
-    city.buildings = ['cure_for_cancer'];
+    city.buildings = ['human_genome_project'];
     const rivalCity = {
       ...city, id: 'r1', name: 'Rival', civilizationId: 1, col: 0, row: 0,
       buildings: [], workingTiles: new Set(['0,0']),

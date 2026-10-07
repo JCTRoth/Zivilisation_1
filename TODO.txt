@@ -1,6 +1,12 @@
 -------------------
 FUNCTIONAL TOODO'S:
 -------------------
+Image Generation Prompt
+*  "🖋️ Leonardo's Workshop" Generate a picture of should be used for a modern Lexicon or a university studie book Article should have
+the classic look of it and look like an drawing paper 8:3 - Colored - No frame around - Dont write about the Brokhaus lexicon or
+some names of books - Dont use arrows and focuce on one main picture add NO o add additional images if main picture
+-- Show how emotions and how things used. -- And dont write things on the pictures. 
+
 * Add splash damage when multipile units stand on one place
 * Splash damage does not apply for units in a city or in a fortification or in a boat or in a transporter.
 * Integrate the new sprash damage also into the AI
@@ -61,8 +67,10 @@ Far further development of the game engine is planned, including:
 
 -Open-
 
-* Multi Language support, including the ability to change the language of the game, and the ability to add new languages to the game.
+* Implement Trade Treaties between civilizations, including the ability to establish trade routes between cities, and the ability to negotiate trade agreements with other civilizations.
+They increese the ammount of money the player gets from trade routes, and they also increase the amount of money the player gets from trade routes with other civilizations that have a trade treaty with the player but with lower ammount than the player gets from trade routes with civilizations that have a trade treaty with the player and the other civilization has a trade treaty with the player.
 
+* Multi Language support, including the ability to change the language of the game, and the ability to add new languages to the game.
 
 * Add new ship type, "Trade Ship" 
 A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
@@ -103,7 +111,6 @@ Still to do (bigger):
   marketplace/bank/temple earlier when upkeep pressure starts.
 * Scout/mercenary grants from huts can exceed the corps cap (only production
   is capped); decide whether to convert/dismiss extras.
-
 
 
 ## Next Steps (Priority Order)
@@ -622,7 +629,7 @@ One of the largest known AI compute clusters in the world.
 | Lighthouse                | 200  | Map Making       | Magnetism       | +1 ship movement |
 | Oracle                    | 300  | Mysticism        | Religion        | Doubles Temple effect (all cities) |
 | Pyramids                  | 300  | Masonry          | Communism       | Change government with only 1 turn of anarchy |
-| Anaximander’s Map         | 300  | Map Making       | Never           | +1 vision range for all units and cities |
+| Silk Road                 | 300  | Map Making       | Never           | +1 vision range for all units and cities |
 
 **Middle Ages (7)**
 
@@ -641,7 +648,7 @@ One of the largest known AI compute clusters in the world.
 | Wonder                          | Cost | Requires              | Obsolete by | Effect |
 |---------------------------------|------|-----------------------|-------------|--------|
 | International Space Station     | 600  | Space Flight         | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
-| Cure for Cancer                 | 600  | Genetic Engineering   | Never       | +1 happy in every city |
+| Human Genome Project            | 600  | Genetic Engineering   | Never       | +1 happy in every city |
 | Hoover Dam                      | 600  | Electronics           | Never       | Free Hydro Plant effect (only cities without a power plant) on the same continent |
 | Manhattan Project               | 600  | Nuclear Fission       | Never       | Allows nuclear weapons |
 | SETI Program                    | 600  | Computers             | Never       | +30% science in all cities |
@@ -726,7 +733,7 @@ Wonders are listed in chronological order of their real-world inspiration purely
 | Lighthouse          | 200  | Map Making       | Magnetism     | +1 ship movement                                            |
 | Oracle              | 300  | Mysticism        | Religion      | Doubles Temple effect (all cities)                          |
 | Pyramids            | 300  | Masonry          | Communism     | Change government with only 1 turn of anarchy               |
-| Anaximander’s Map   | 300  | Map Making       | Never         | +1 vision range for all units and cities                    |
+| Silk Road           | 300  | Map Making       | Never         | +1 vision range for all units and cities                    |
 
 **Middle Ages (7)**
 
@@ -745,7 +752,7 @@ Wonders are listed in chronological order of their real-world inspiration purely
 | Wonder                          | Cost | Requires            | Obsolete by | Effect                                                                 |
 |---------------------------------|------|---------------------|-------------|------------------------------------------------------------------------|
 | International Space Station     | 600  | Space Flight        | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
-| Cure for Cancer                 | 600  | Genetic Engineering | Never       | +1 happy in every city                                                 |
+| Human Genome Project            | 600  | Genetic Engineering | Never       | +1 happy in every city                                                 |
 | Hoover Dam                      | 600  | Electronics         | Never       | Free Hydro Plant effect (only cities without a power plant) on the same continent |
 | Manhattan Project               | 600  | Nuclear Fission     | Never       | Allows nuclear weapons                                                 |
 | SETI Program                    | 600  | Computers           | Never       | +30% science in all cities                                             |

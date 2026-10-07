@@ -247,24 +247,24 @@ export const WONDERS: readonly WonderDefinition[] = [
     effects: [{ kind: 'governmentAnarchyTurns', scope: 'civilization', turns: 1 }],
   },
   {
-    id: 'anaximanders_map',
-    name: "Anaximander's Map",
+    id: 'silk_road',
+    name: 'Silk Road',
     cost: 300,
     maintenance: 0,
     requiredTechnology: 'map_making',
     obsoleteBy: null,
     era: 'antiquity',
-    icon: '🗺️',
-    image: 'assets/wonders/anaximanders_map.png',
+    icon: '🐪',
+    image: 'assets/wonders/silk_road.jpg',
     shortEffect: '+1 vision range for all units and cities',
     effectText:
-      'All units and cities of the civilization that builds Anaximander\'s Map see one tile further.',
+      'All units and cities of the civilization that builds the Silk Road see one tile further — its caravans and traders carry word of distant lands.',
     flavor:
-      'The Milesian philosopher Anaximander is traditionally credited with drawing one of the first maps of the known world — a bold attempt to place the whole inhabited earth on a single surface.',
+      'For more than a millennium, caravans threaded the routes between China and the Mediterranean, carrying silk, spices, gold, ideas and faiths across Asia. The Silk Road was never one road, but a web of them.',
     facts: [
-      'Anaximander (c. 610–546 BC) was a pupil of Thales and teacher of Socrates\' teacher.',
-      'He is also credited with introducing the gnomon — the shadow-casting part of a sundial — to Greece.',
-      'His map placed the known world as a cylinder, with Greece near the centre, surrounded by ocean.',
+      'The name "Silk Road" was coined by the German geographer Ferdinand von Richthofen in 1877.',
+      'The routes flourished from about 130 BC, when the Han dynasty opened trade with Central Asia, until sea routes took over in the 15th century.',
+      'Silk was only one of many goods: paper, gunpowder, horses, glass, spices and religions travelled the same paths.',
     ],
     effects: [{ kind: 'visionRange', scope: 'civilization', amount: 1 }],
   },
@@ -456,23 +456,23 @@ export const WONDERS: readonly WonderDefinition[] = [
     ],
   },
   {
-    id: 'cure_for_cancer',
-    name: 'Cure for Cancer',
+    id: 'human_genome_project',
+    name: 'Human Genome Project',
     cost: 600,
     maintenance: 0,
     requiredTechnology: 'genetic_engineering',
     obsoleteBy: null,
     era: 'industrial',
-    icon: '🎗️',
-    image: 'assets/wonders/cure_for_cancer.jpg',
+    icon: '🧬',
+    image: 'assets/wonders/human_genome_project.jpg',
     shortEffect: '+1 happy in every city',
-    effectText: 'Every city of the civilization that completes the Cure for Cancer gains +1 happiness.',
+    effectText: 'Every city of the civilization that completes the Human Genome Project gains +1 happiness.',
     flavor:
-      'A symbol of medical hope: the triumph of research over one of humanity\'s oldest and most stubborn enemies — and a reminder that progress is measured in decades of patient work.',
+      'An international effort begun in 1990 set out to read all three billion letters of human DNA. Completed in 2003, it gave medicine a map of the human body\'s instruction book.',
     facts: [
-      'Cancer is not one disease but hundreds of diseases that share uncontrolled cell growth.',
-      'Survival rates for many cancers have improved dramatically since the 1970s through screening, surgery, radiotherapy and targeted drugs.',
-      'There is no single universal cure — research continues cancer type by cancer type.',
+      'The Human Genome Project ran from 1990 to 2003, with sequencing centres in the United States, Britain, France, Germany, Japan and China.',
+      'It sequenced roughly 3 billion base pairs — the "letters" of human DNA.',
+      'The project cost about $2.7 billion; a human genome can now be sequenced for a tiny fraction of that.',
     ],
     effects: [{ kind: 'happiness', scope: 'civilization', amount: 1 }],
   },
@@ -755,11 +755,12 @@ export function isWonderObsolete(
 /**
  * WonderArtworkCredits — attribution for every wonder image.
  *
- * All artwork lives in `public/assets/wonders/` and is sourced from Wikimedia
- * Commons (or, where noted, Britannica). Every entry records the author and
- * the source page, as the licences require: CC BY / CC BY-SA demand visible
- * attribution, and we credit public-domain files too so the provenance of
- * each image is never in doubt.
+ * All artwork lives in `public/assets/wonders/`. Most entries come from
+ * Wikimedia Commons and record the author and the source page, as the licences
+ * require: CC BY / CC BY-SA demand visible attribution, and we credit
+ * public-domain files too so the provenance of each image is never in doubt.
+ * Artwork supplied by the project owner carries no external source, author or
+ * licence — only the Wikipedia article link.
  *
  * Keep this table in sync with `WONDERS[].image` and the files on disk.
  */
@@ -813,12 +814,12 @@ export const WONDER_ARTWORK_CREDITS: Readonly<Record<string, WonderArtworkCredit
     license: 'CC BY-SA 3.0',
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0',
   },
-  anaximanders_map: {
-    articleUrl: 'https://en.wikipedia.org/wiki/Anaximander',
-    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Anaximandroren_mundu_mapa.png',
-    author: 'Iker Hernandez Guiu',
-    license: 'CC BY-SA 4.0',
-    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0',
+  silk_road: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Silk_Road',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Catalan_Atlas_caravan_drawing.jpg',
+    author: 'Abraham Cresques (Catalan Atlas, 1375)',
+    license: 'Public domain',
+    licenseUrl: '',
   },
   copernicus_observatory: {
     articleUrl: 'https://en.wikipedia.org/wiki/Nicolaus_Copernicus',
@@ -842,11 +843,9 @@ export const WONDER_ARTWORK_CREDITS: Readonly<Record<string, WonderArtworkCredit
     licenseUrl: '',
   },
   magellans_expedition: {
+    // Artwork supplied by the project owner — no external source, author or
+    // licence to attribute.
     articleUrl: 'https://en.wikipedia.org/wiki/Magellan_expedition',
-    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Magellan_expedition_by_Stradanus.jpg',
-    author: 'Johannes Stradanus (Jan van der Straet)',
-    license: 'Public domain',
-    licenseUrl: '',
   },
   michelangelos_chapel: {
     articleUrl: 'https://en.wikipedia.org/wiki/Sistine_Chapel_ceiling',
@@ -856,18 +855,14 @@ export const WONDER_ARTWORK_CREDITS: Readonly<Record<string, WonderArtworkCredit
     licenseUrl: 'https://creativecommons.org/licenses/by/3.0',
   },
   shakespeare_theatre: {
+    // Artwork supplied by the project owner — no external source, author or
+    // licence to attribute.
     articleUrl: 'https://en.wikipedia.org/wiki/Globe_Theatre',
-    sourceUrl: 'https://commons.wikimedia.org/wiki/File:London_-_Shakespeare%27s_Globe_Theatre_Replica_1997.jpg',
-    author: 'Txllxt TxllxT',
-    license: 'CC BY-SA 4.0',
-    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0',
   },
   leonardos_workshop: {
+    // Artwork supplied by the project owner — no external source, author or
+    // licence to attribute.
     articleUrl: 'https://en.wikipedia.org/wiki/Codex_Atlanticus',
-    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_-_Ambrosiana-Codice-Atlantico-Codex-Atlanticus-f-4-recto.jpg',
-    author: 'Leonardo da Vinci',
-    license: 'Public domain',
-    licenseUrl: '',
   },
   international_space_station: {
     articleUrl: 'https://en.wikipedia.org/wiki/International_Space_Station',
@@ -876,19 +871,19 @@ export const WONDER_ARTWORK_CREDITS: Readonly<Record<string, WonderArtworkCredit
     license: 'Public domain',
     licenseUrl: '',
   },
-  cure_for_cancer: {
-    articleUrl: 'https://en.wikipedia.org/wiki/Cancer',
-    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Tissue_culture_department_at_the_central_cancer_research_laboratories.jpg',
-    author: 'Unknown photographer',
+  human_genome_project: {
+    articleUrl: 'https://en.wikipedia.org/wiki/Human_Genome_Project',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:DNA_Double_Helix_by_NHGRI.jpg',
+    author: 'National Human Genome Research Institute',
     license: 'Public domain',
     licenseUrl: '',
   },
   hoover_dam: {
     articleUrl: 'https://en.wikipedia.org/wiki/Hoover_Dam',
-    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Hoover_Dam,_Nevada_(Arizona-Nevada,_USA)_--_2012_--_6099.jpg',
-    author: 'Dietmar Rabich',
-    license: 'CC BY-SA 4.0',
-    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0',
+    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Hoover_dam.jpg',
+    author: 'Hannah Beker',
+    license: 'CC BY-SA 3.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0',
   },
   manhattan_project: {
     articleUrl: 'https://en.wikipedia.org/wiki/Manhattan_Project',

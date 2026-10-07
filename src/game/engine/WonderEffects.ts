@@ -53,7 +53,7 @@ function civWonderEffects<K extends WonderEffect['kind']>(
   return result;
 }
 
-/** +N vision range for a civ's units/cities from Anaximander's Map. */
+/** +N vision range for a civ's units/cities from the Silk Road. */
 export function computeVisionRangeBonus(
   cities: City[],
   civilizations: Civilization[],
@@ -244,7 +244,7 @@ export class WonderEffects {
 
   // ── Happiness ───────────────────────────────────────────────────────────
 
-  /** Flat happiness a wonder grants this city (Cure for Cancer, Hanging Gardens, Atomium). */
+  /** Flat happiness a wonder grants this city (Human Genome Project, Hanging Gardens, Atomium). */
   happinessForCity(city: City): number {
     if (!city) return 0;
     let amount = 0;

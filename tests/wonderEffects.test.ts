@@ -135,8 +135,8 @@ describe('wonder effects', () => {
 
   // ── Happiness ───────────────────────────────────────────────────────────
 
-  it('Cure for Cancer: +1 happy in every city of the owner, none for rivals', () => {
-    city.buildings = ['cure_for_cancer'];
+  it('Human Genome Project: +1 happy in every city of the owner, none for rivals', () => {
+    city.buildings = ['human_genome_project'];
     expect(engine.economicManager.wonderHappinessForCity(city)).toBe(1);
     expect(engine.economicManager.wonderHappinessForCity(sibling)).toBe(1);
     expect(engine.economicManager.wonderHappinessForCity(rivalCity)).toBe(0);
@@ -205,10 +205,10 @@ describe('wonder effects', () => {
     expect(ship.movesRemaining).toBe(base + 1);
   });
 
-  it("Anaximander's Map: +1 vision range for the owner's units and cities", () => {
+  it('Silk Road: +1 vision range for the owner\'s units and cities', () => {
     expect(engine.wonderEffects?.visionBonus(0)).toBe(0);
     expect(computeVisionRangeBonus(engine.cities, engine.civilizations, 0)).toBe(0);
-    city.buildings = ['anaximanders_map'];
+    city.buildings = ['silk_road'];
     expect(engine.wonderEffects?.visionBonus(0)).toBe(1);
     expect(computeVisionRangeBonus(engine.cities, engine.civilizations, 0)).toBe(1);
     expect(engine.wonderEffects?.visionBonus(1)).toBe(0);
