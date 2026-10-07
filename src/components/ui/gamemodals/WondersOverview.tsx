@@ -271,7 +271,7 @@ interface WonderEntryModalProps {
 
 /**
  * Full wonder entry: image slot, plain-language mechanics, historical flavour
- * AND the "Did you know?" facts — only facts we actually know are written
+ * AND the "Some facts" facts — only facts we actually know are written
  * (per the info-screen rule: never invent).
  */
 const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onHide }) => {
@@ -344,7 +344,7 @@ const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onH
 
         {wonder.facts.length > 0 && (
           <div className="wonder-entry-section">
-            <h6>Did you know?</h6>
+            <h6>Some facts</h6>
             <ul className="wonder-entry-facts">
               {wonder.facts.map((fact, i) => (
                 <li key={i}>{fact}</li>

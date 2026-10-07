@@ -91,7 +91,7 @@ export interface WonderDefinition {
   effectText: string;
   /** Short historical/flavour text shown on the completion screen. */
   flavor: string;
-  /** "Did you know?" facts for the Civilopedia entry — only verified facts. */
+  /** "Facts" facts for the Civilopedia entry — only verified facts. */
   facts: string[];
   /** Typed effects consumed by the WonderEffects engine. */
   effects: WonderEffect[];

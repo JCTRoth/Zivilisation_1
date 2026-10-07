@@ -32,7 +32,7 @@ export interface WonderDefinition {
   shortEffect: string;         // one-liner (city screen, production list)
   effectText: string;          // full plain-language mechanics (completion screen)
   flavor: string;              // short historical text
-  facts: string[];             // "Did you know?" facts for the Civilopedia entry
+  facts: string[];             // "Facts" facts for the Civilopedia entry
   effects: WonderEffect[];     // typed effect list consumed by WonderEffects
 }
 ```
@@ -112,7 +112,7 @@ finished in the same turn appear one after another.
 | C. City screen | Buildings tab → Wonders section (icon, name, one-line effect, obsolete tag) |
 | D. Production conflict modal | `WonderConflictModal` — required message + **Go to City** / **Close** |
 | E. Production menu + side panel | Production selection modal → **Wonders** tab: status column, availability, click-to-select detail panel (effect, cost, tech, obsolescence, flavour) |
-| Civilopedia | `WonderEntryModal`: mechanics, history, "Did you know?" facts |
+| Civilopedia | `WonderEntryModal`: mechanics, history, "Facts" facts |
 
 ### Artwork
 
