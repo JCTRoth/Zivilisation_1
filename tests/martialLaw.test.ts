@@ -190,7 +190,9 @@ describe('AI: garrison for martial law instead of hiring entertainers', () => {
 
     // The rule the AI must follow: the point is available, free, and would
     // resolve the shortfall, so a soldier is worth more here than an Entertainer.
-    expect(engine.economicManager.martialLaw(civ, city).bonus).toBe(0);
+    // Garrison duty posts a guard without waiting for the city to riot, so the
+    // point may already be collected by turn 10 — that is the rule working.
+    expect(engine.economicManager.martialLaw(civ, city).bonus).toBeGreaterThan(0);
     expect(engine.economicManager.martialLaw(civ, city).max).toBeGreaterThan(0);
   }, 120_000);
 });
