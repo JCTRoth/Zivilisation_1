@@ -4,19 +4,13 @@
 
 = Civilization I Browser Game
 
-
-A modern, faithful browser-based recreation of Sid Meier's Civilization I (1991), built with React, Vite, Zustand, and Bootstrap. Experience the classic turn-based strategy game where you build an empire from 4000 BC to 2100 AD through exploration, diplomacy, warfare, and technological advancement.
-
-[IMPORTANT]
-====
-link:doc/GAME_RULES.adoc[Game Rules Reference] is the authoritative source for
-every balance number in this game — terrain yields, unit stats, costs, the
-technology tree, and the economy, combat and research formulas. If this README
-and that document ever disagree, the rules reference is right.
-
-`GAMEPLAY.md` is a shorter, older player-facing summary. It is known to lag
-behind the code in places.
-====
+**Overall Assessment** +
+Zivilisation_1 is not a perfect clone, but it is not trying to be one. +
+It is a spiritual successor that takes the core concepts of Civilisation and reimagines them for a modern audience. +
+For players seeking a nostalgic Civilization-like experience in the browser, it delivers! +
+For purists seeking a 1:1 recreation of the 1991 original, it falls short in several areas but therefor it introduces more stratgic depth, more strategie and a non-cheating AI. +
+The implementation is technically impressive (TypeScript, React, Vite, comprehensive tests, data-driven design) and functionally complete (the game is winnable and playable). +
+The developers should be commended for creating a sophisticated strategy game that honors its inspiration while making sensible modernizations. +
 
 [.text-center]
 --
@@ -81,6 +75,18 @@ lines) is the world state and the public API; everything else is a subsystem it
 owns.
 
 == Implementation Status
+
+
+[IMPORTANT]
+====
+link:doc/GAME_RULES.adoc[Game Rules Reference] is the authoritative source for
+every balance number in this game — terrain yields, unit stats, costs, the
+technology tree, and the economy, combat and research formulas. If this README
+and that document ever disagree, the rules reference is right.
+
+`GAMEPLAY.md` is a shorter, older player-facing summary. It is known to lag
+behind the code in places.
+====
 
 === Implemented
 
