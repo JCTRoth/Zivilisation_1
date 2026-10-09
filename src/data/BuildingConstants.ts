@@ -324,7 +324,7 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
 /**
  * WONDER_PROPERTIES — compatibility bridge to the wonders data.
  *
- * The 22 wonders are defined once in `WonderData.ts` (their full rules: typed
+ * The 23 wonders are defined once in `WonderData.ts` (their full rules: typed
  * effects, obsolescence, flavour). This map adapts them to the
  * `BuildingProperties` shape the rest of the codebase (AI valuation, victory
  * scoring, sell protection, UI lists) already understands. Do NOT add wonders

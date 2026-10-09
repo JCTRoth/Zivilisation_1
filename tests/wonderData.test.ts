@@ -1,8 +1,8 @@
 /**
- * Wonder data integrity — the data-driven contract of the 22 World Wonders.
+ * Wonder data integrity — the data-driven contract of the 25 World Wonders.
  *
  * Every rule the spec states that can be checked WITHOUT a running game lives
- * here: exactly 22 wonders, unique ids, costs 200–600, zero maintenance,
+ * here: exactly 23 wonders, unique ids, costs 200–600, zero maintenance,
  * every technology (required AND obsolescence) exists in the tech tree, effect
  * kinds are ones the effect engine understands, and the compatibility bridge
  * (`WONDER_PROPERTIES`) mirrors the data exactly.
@@ -10,9 +10,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   WONDERS,
+  WONDER_GROUPS,
   WONDER_IDS,
   getWonder,
   isWonderId,
+  wonderGroupMembers,
   wondersForEra,
   computeWonderStatus,
   computeWonderStatuses,
@@ -45,16 +47,37 @@ const KNOWN_EFFECT_KINDS = new Set([
 ]);
 
 describe('wonder data format', () => {
-  it('defines exactly 22 unique wonders', () => {
-    expect(WONDERS).toHaveLength(22);
-    expect(new Set(WONDER_IDS).size).toBe(22);
-    expect(WONDER_IDS).toHaveLength(22);
+  it('defines exactly 25 unique wonders', () => {
+    expect(WONDERS).toHaveLength(25);
+    expect(new Set(WONDER_IDS).size).toBe(25);
+    expect(WONDER_IDS).toHaveLength(25);
   });
 
-  it('splits 7 / 7 / 8 across the three documentation eras', () => {
+  it('splits 7 / 7 / 11 across the three documentation eras', () => {
     expect(wondersForEra('antiquity')).toHaveLength(7);
     expect(wondersForEra('middle')).toHaveLength(7);
-    expect(wondersForEra('industrial')).toHaveLength(8);
+    expect(wondersForEra('industrial')).toHaveLength(11);
+  });
+
+  it('mutually exclusive groups share cost, tech and effects', () => {
+    for (const [groupId, group] of Object.entries(WONDER_GROUPS)) {
+      const members = WONDERS.filter((w) => w.groupId === groupId);
+      expect(members.length, `group ${groupId} has >= 2 members`).toBeGreaterThanOrEqual(2);
+      expect(group.name.length, `group ${groupId} name`).toBeGreaterThan(0);
+      const [first, ...rest] = members;
+      for (const m of rest) {
+        expect(m.cost, `${m.id} shares cost`).toBe(first.cost);
+        expect(m.requiredTechnology, `${m.id} shares tech`).toBe(first.requiredTechnology);
+        expect(m.obsoleteBy, `${m.id} shares obsolescence`).toBe(first.obsoleteBy);
+        expect(m.effects, `${m.id} shares effects`).toEqual(first.effects);
+      }
+      expect(wonderGroupMembers(first.id).sort()).toEqual(members.map((m) => m.id).sort());
+    }
+    // Every groupId on a wonder points at a declared group.
+    for (const w of WONDERS) {
+      if (w.groupId) expect(WONDER_GROUPS[w.groupId], `${w.id} group declared`).toBeDefined();
+      else expect(wonderGroupMembers(w.id)).toEqual([]);
+    }
   });
 
   it('every wonder has a valid id, fixed cost 200–600 and no maintenance', () => {
@@ -90,6 +113,36 @@ describe('wonder data format', () => {
         expect(KNOWN_EFFECT_KINDS.has(effect.kind), `${w.id} effect kind '${effect.kind}'`).toBe(true);
         expect(effect.scope, `${w.id} scope`).toBeTruthy();
       }
+    }
+  });
+
+  it('every wonder carries a location and a flag for the Civilopedia entry', () => {
+    for (const w of WONDERS) {
+      expect(w.location.length, `${w.id} location`).toBeGreaterThan(0);
+      expect(w.flag.length, `${w.id} flag`).toBeGreaterThan(0);
+    }
+  });
+
+  it('every wonder carries its full formal name for the entry subtitle', () => {
+    for (const w of WONDERS) {
+      expect(w.fullName.length, `${w.id} fullName`).toBeGreaterThan(0);
+    }
+  });
+
+  it('every wonder carries a multi-sentence trivia overview for its own section', () => {
+    for (const w of WONDERS) {
+      expect(w.about?.length ?? 0, `${w.id} about`).toBeGreaterThan(150);
+      const sentences = (w.about ?? '').split(/[.!?]+/).filter((s) => s.trim().length > 0);
+      expect(sentences.length, `${w.id} about has >= 4 sentences`).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it('carries an enriched, non-empty fact list (the panel scrolls)', () => {
+    for (const w of WONDERS) {
+      expect(w.facts.length, `${w.id} has >= 4 facts`).toBeGreaterThanOrEqual(4);
+      w.facts.forEach((fact, i) => {
+        expect(fact.length, `${w.id} fact #${i + 1} is a real sentence`).toBeGreaterThan(30);
+      });
     }
   });
 

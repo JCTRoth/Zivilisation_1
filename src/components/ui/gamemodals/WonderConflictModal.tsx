@@ -13,6 +13,9 @@ interface WonderConflictNotice {
   ownerCityName: string;
   ownerCivId: number;
   ownerCivName: string;
+  /** Completed group member that won, when this was a group loss. */
+  blockedByWonderId?: string;
+  blockedByWonderName?: string;
 }
 
 interface WonderConflictModalProps {
@@ -32,6 +35,11 @@ interface WonderConflictModalProps {
 const WonderConflictModal: React.FC<WonderConflictModalProps> = ({ show, notice, onGoToCity, onClose }) => {
   if (!notice) return null;
   const wonder = getWonder(notice.wonderId);
+  // Group loss (e.g. Tiangong while the ISS exists): name the wonder that
+  // actually won instead of claiming the attempted one was completed.
+  const won = notice.blockedByWonderId && notice.blockedByWonderId !== notice.wonderId
+    ? (getWonder(notice.blockedByWonderId) ?? wonder)
+    : wonder;
 
   return (
     <Modal
@@ -45,7 +53,7 @@ const WonderConflictModal: React.FC<WonderConflictModalProps> = ({ show, notice,
     >
       <Modal.Header>
         <Modal.Title id="wonder-conflict-title" className="wonder-conflict-title h5">
-          ⚠ {wonder?.icon ?? '🏗️'} {wonder?.name ?? 'Wonder'} — already completed
+          ⚠ {won?.icon ?? '🏗️'} {won?.name ?? 'Wonder'} — already completed
         </Modal.Title>
       </Modal.Header>
       <Modal.Body className="wonder-conflict-body">
@@ -58,7 +66,7 @@ const WonderConflictModal: React.FC<WonderConflictModalProps> = ({ show, notice,
           <strong>
             {notice.ownerCivName} — {notice.ownerCityName}
           </strong>{' '}
-          already finished {wonder?.name ?? 'the wonder'}. The shields invested in{' '}
+          already finished {won?.name ?? 'the wonder'}. The shields invested in{' '}
           <strong>{notice.cityName}</strong> are lost (original Civ 1 rule).
         </div>
         <div className="wonder-conflict-actions">

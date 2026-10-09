@@ -6,7 +6,7 @@ interface WonderArtworkProps {
   /**
    * Whether the surrounding view is actually on screen. Images are only fetched
    * once this is true — modals keep their markup mounted while hidden, so a
-   * plain `<img src>` would download all 22 pictures up front.
+   * plain `<img src>` would download all 23 pictures up front.
    */
   active?: boolean;
   className?: string;
@@ -98,6 +98,11 @@ function WonderCredit({ info }: { info: WonderArtworkCredit }) {
       <a className="wonder-artwork__readmore" href={info.articleUrl} target="_blank" rel="noreferrer noopener">
         Read more on Wikipedia
       </a>
+      {info.galleryUrl && (
+        <a className="wonder-artwork__readmore" href={info.galleryUrl} target="_blank" rel="noreferrer noopener" title="Official photo gallery">
+          {' '}🖼 Official gallery
+        </a>
+      )}
       {hasSource && (
         <span className="wonder-artwork__credit-text">
           Artwork:{' '}

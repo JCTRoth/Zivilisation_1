@@ -372,6 +372,97 @@
   list-style: none;
 }
 
+/* ── Wonder group (one expandable element for mutually exclusive wonders) ─ */
+.wonder-group {
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid rgba(255, 215, 94, 0.25);
+  border-radius: 0.6rem;
+  padding: 0.45rem;
+  background: rgba(255, 215, 94, 0.04);
+}
+.wonder-group__header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: #ffe9a8;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+.wonder-group__header:hover {
+  background: rgba(255, 215, 94, 0.08);
+}
+.wonder-group__icons {
+  display: inline-flex;
+  gap: 0.15rem;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.wonder-group__name {
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wonder-group__blurb {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: #9da5b4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wonder-group__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 0.32rem;
+  border-radius: 999px;
+  background: rgba(255, 215, 94, 0.14);
+  border: 1px solid rgba(255, 215, 94, 0.35);
+  font-size: 0.68rem;
+  color: #ffd75e;
+}
+.wonder-group__chevron {
+  font-size: 0.8rem;
+  color: #9da5b4;
+}
+/* Shared specs, shown once per group (members share them by data contract). */
+.wonder-group__specs {
+  padding: 0 0.6rem 0.15rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9da5b4;
+}
+/* Slim variant for the production table's group header row. */
+.wonder-group-row > td {
+  padding: 0.3rem 0.4rem;
+  background: rgba(255, 215, 94, 0.04);
+}
+.wonder-group__header--slim {
+  padding: 0.3rem 0.5rem;
+}
+.wonder-group__header--slim .wonder-group__name {
+  font-size: 0.85rem;
+}
+.wonder-group__members {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 /* ── Wonder card (one ledger row) ──────────────────────────────────────── */
 .wonder-card {
   display: grid;
@@ -446,6 +537,17 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+/* Little flag of the wonder's location — the place name is its title. */
+.wonder-card__flag {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  line-height: 1;
+  /*
+   * Text-presentation glyphs (e.g. Mir's red ☭) follow this colour, while
+   * emoji flags (regional indicators, 🌐) ignore it and keep their colours.
+   */
+  color: #e5484d;
 }
 
 .wonder-card__effect {
@@ -568,6 +670,14 @@
   min-width: 0;
   overflow-wrap: break-word;
 }
+/* Full formal name under the short display name in the entry header. */
+.wonder-entry-fullname {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: #9da5b4;
+  letter-spacing: 0.02em;
+}
 .wonder-entry-modal .modal-header {
   display: flex;
   align-items: center;
@@ -607,10 +717,71 @@
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: #ffd75e;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 .wonder-entry-section p { margin: 0; font-size: 0.92rem; line-height: 1.5; }
-.wonder-entry-facts { margin: 0; padding-left: 1.1rem; font-size: 0.88rem; line-height: 1.55; }
-.wonder-entry-facts li { margin-bottom: 0.3rem; }
+/* Fact pill showing how many facts the wonder carries. */
+.wonder-entry-facts__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 0.32rem;
+  border-radius: 999px;
+  background: rgba(255, 215, 94, 0.14);
+  border: 1px solid rgba(255, 215, 94, 0.35);
+  font-size: 0.68rem;
+  letter-spacing: 0;
+  color: #ffd75e;
+}
+/*
+ * Facts scroll inside their own panel: with 5–6 facts a wonder the list no
+ * longer fits the modal together with artwork + effect + history, and the
+ * entry body should not become the only scrollbar. The panel keeps a fixed
+ * height, scrolls independently and keeps its overscroll inside the modal.
+ */
+.wonder-entry-section--facts { padding-bottom: 0.6rem; }
+.wonder-entry-facts {
+  list-style: none;
+  margin: 0;
+  padding: 0 0.7rem 0 0;
+  max-height: 13.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  scrollbar-width: thin;
+  scrollbar-color: #4a5262 transparent;
+}
+.wonder-entry-facts::-webkit-scrollbar { width: 8px; }
+.wonder-entry-facts::-webkit-scrollbar-track { background: transparent; }
+.wonder-entry-facts::-webkit-scrollbar-thumb { background: #4a5262; border-radius: 999px; }
+.wonder-entry-facts li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: #dfe4ee;
+}
+/* Plain gold dot — the numbers made the list look like a recipe. */
+.wonder-entry-facts__bullet {
+  flex: 0 0 auto;
+  margin-top: 0.52rem;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffd75e;
+}
+.wonder-entry-facts__text { flex: 1 1 auto; min-width: 0; }
+/* Location chip: small flag + place name. */
+.wonder-entry-meta__chip--place { color: #ffe9a8; }
+.wonder-entry-meta__flag { margin-right: 0.15rem; color: #e5484d; }
 .wonder-entry-owner { font-size: 0.85rem; color: #9da5b4; margin-bottom: 0.8rem; }
 
 /* ── Production selection: wonders tab ─────────────────────────────────── */

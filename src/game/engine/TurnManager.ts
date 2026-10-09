@@ -26,7 +26,7 @@ import { fishingRelevanceForCiv } from './FisherEconomics';
 import { serializeCities } from '../../utils/CitySnapshots';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { BUILDING_TYPES } from '@/data/BuildingConstants';
-import { isWonderId } from '@/data/WonderData';
+import { isWonderId, wonderGroupMembers } from '@/data/WonderData';
 import { UNIT_UPGRADE_PATHS } from '@/data/UnitConstants';
 import { CITIZEN_FOOD_DEMAND_PER_CITIZEN, type ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
@@ -1099,19 +1099,31 @@ export class TurnManager {
     }
 
     // ── World Wonder: world-unique, first completion wins ────────────────
+    // (Mutually exclusive groups work the same way: a completed group member
+    // blocks its sisters with the same conflict path.)
     if (isWonderId(buildingType)) {
-      const ownerCity = this.gameEngine.wonderManager?.findWonderCity(buildingType);
+      const ownerCity =
+        this.gameEngine.wonderManager?.findWonderCity(buildingType) ??
+        this.gameEngine.wonderManager?.findGroupCity(buildingType);
       if (ownerCity) {
         // Lost the race. The wonder already exists somewhere in the world —
         // this city gets nothing and its shields are wasted.
         debugLog(
           `[TurnManager] Wonder conflict: ${buildingType} already completed by civ ${ownerCity.civilizationId} in ${ownerCity.name}`,
         );
+        // For a group loss, name the wonder that actually won so the dialog
+        // doesn't claim the attempted wonder itself was completed.
+        const groupMembers = wonderGroupMembers(buildingType);
+        const blockedByWonderId =
+          (ownerCity.buildings ?? []).find(
+            (b) => b === buildingType || groupMembers.includes(b),
+          ) ?? buildingType;
         this.emit('WONDER_PRODUCTION_CONFLICT', {
           cityId: city.id,
           civilizationId: city.civilizationId,
           cityName: city.name,
           wonderId: buildingType,
+          blockedByWonderId,
           ownerCityId: ownerCity.id,
           ownerCityName: ownerCity.name,
           ownerCivId: ownerCity.civilizationId,

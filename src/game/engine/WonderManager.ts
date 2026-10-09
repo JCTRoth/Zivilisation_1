@@ -1,5 +1,5 @@
 /**
- * WonderManager — ownership, world-uniqueness and obsolescence for the 22
+ * WonderManager — ownership, world-uniqueness and obsolescence for the 24
  * World Wonders.
  *
  * State model: a wonder "exists" wherever it sits in `city.buildings`. There
@@ -18,7 +18,10 @@ import {
   getWonder,
   isWonderId,
   isWonderObsolete,
+  wonderGroupId,
+  wonderGroupMembers,
   wondersInCity,
+  WONDERS,
   type WonderDefinition,
 } from '@/data/WonderData';
 
@@ -48,6 +51,34 @@ export class WonderManager {
   /** The civilization that owns `wonderId`, or null. */
   ownerCivId(wonderId: string): number | null {
     return this.findWonderCity(wonderId)?.civilizationId ?? null;
+  }
+
+  // ── Mutual-exclusion groups (e.g. the space stations) ───────────────────
+
+  /** True once ANY member of `groupId` has been completed anywhere. */
+  isGroupCompleted(groupId: string): boolean {
+    return WONDERS.some((w) => w.groupId === groupId && this.isBuilt(w.id));
+  }
+
+  /**
+   * True when `wonderId` belongs to a group that already has a completed
+   * member — the wonder can no longer be started (one station per world).
+   */
+  isGroupClosed(wonderId: string): boolean {
+    const gid = wonderGroupId(wonderId);
+    return !!gid && this.isGroupCompleted(gid);
+  }
+
+  /**
+   * City holding a completed member of `wonderId`'s group, or null. Used for
+   * the production-conflict path so the loser learns which wonder won.
+   */
+  findGroupCity(wonderId: string): City | null {
+    const members = wonderGroupMembers(wonderId);
+    if (members.length === 0) return null;
+    return (
+      this.cities.find((c) => (c.buildings ?? []).some((b) => members.includes(b))) ?? null
+    );
   }
 
   /** Wonder ids held by one city. */
@@ -146,6 +177,7 @@ export class WonderManager {
     if (!isWonderId(wonderId)) return null;
     if ((city.buildings ?? []).includes(wonderId)) return 'already_built';
     if (this.isBuilt(wonderId)) return 'wonder_already_completed';
+    if (this.isGroupClosed(wonderId)) return 'wonder_group_completed';
     return null;
   }
 

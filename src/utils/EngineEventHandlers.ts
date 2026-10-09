@@ -899,10 +899,17 @@ export class EngineEventRouter {
     const wonder = getWonder(wonderId);
     if (!wonder) return;
 
+    // Group loss: name the wonder that actually won, so the dialog doesn't
+    // claim the attempted wonder itself was completed.
+    const blockedByWonderId = String(eventData?.blockedByWonderId ?? wonderId);
+    const blockedByWonder = getWonder(blockedByWonderId) ?? wonder;
+
     this.actions.queueWonderDialog?.({
       kind: 'conflict',
       wonderId,
       wonderName: wonder.name,
+      blockedByWonderId: blockedByWonder.id,
+      blockedByWonderName: blockedByWonder.name,
       cityId: String(eventData?.cityId ?? ''),
       cityName: String(eventData?.cityName ?? ''),
       ownerCityId: String(eventData?.ownerCityId ?? ''),

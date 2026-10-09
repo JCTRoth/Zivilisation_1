@@ -1046,8 +1046,8 @@ export class EconomicManager {
   }
 
   /**
-   * Flat happiness a wonder grants to THIS city (Cure for Cancer, Hanging
-   * Gardens, Atomium). Scope (city / civilization / continent), ownership and
+   * Flat happiness a wonder grants to THIS city (Human Genome Project, Hanging
+   * Gardens). Scope (city / civilization / continent), ownership and
    * obsolescence are resolved by the WonderEffects engine — a wonder is held
    * by exactly one city but may apply much wider.
    */

@@ -1,6 +1,23 @@
 -------------------
 FUNCTIONAL TOODO'S:
 -------------------
+
+AI Recommendations for Improvement after comparisson with Civ1 Manuel:
+If the goal is to closer match the Civilisation 1 manual, consider implementing:
+ 1. Veteran units: Wire the isVeteran flag into combat and unit creation.
+ 2. Disasters: Add the 7 disasters with their prevention mechanics.
+ 3. Global warming: Implement the sun indicator and climate change effects.
+ 5. Diplomacy: Add embassies, tech trading, sabotage, and incite revolt.
+ 6. Advisors: Implement the 6 advisor reports and world reports.
+ 7. Wonder effects: Reconsider Great Library, Pyramids, Hoover Dam, SETI, Bach, and Shakespeare to match Civ1.
+ 8. Space race: Implement spaceship construction with parts and flight time.
+ 9. Find City: Add the city search feature.
+10. Autosave: Implement automatic saving every 50 turns.
+These additions would significantly increase the game's fidelity to the original Civilisation while maintaining its modern accessibility.
+
+
+
+
 Image Generation Prompt
 *  "🖋️ Leonardo's Workshop" Generate a picture of should be used for a modern Lexicon or a university studie book Article should have
 the classic look of it and look like an drawing paper 8:3 - Colored - No frame around - Dont write about the Brokhaus lexicon or
@@ -577,7 +594,7 @@ Architectural
 
 
 
-There are exactly 22 unique Wonders. Each can be built only once in the entire game, by only one civilization. Once a civilization completes a Wonder, no other civilization can ever build that same Wonder.
+There are exactly 23 unique Wonders. Each can be built only once in the entire game, by only one civilization. Once a civilization completes a Wonder, no other civilization can ever build that same Wonder.
 How construction works
 
 Wonders are produced in a city exactly like regular city improvements or units (using production/shields).
@@ -617,43 +634,46 @@ One of the largest known AI compute clusters in the world.
 
 ---
 
-### Full updated list of 22 Wonders
+### Full updated list of 23 Wonders
 
-**Antiquity (7)**
+**Antiquity (8)**
 
 | Wonder                    | Cost | Requires         | Obsolete by     | Effect |
 |---------------------------|------|------------------|-----------------|--------|
 | Colossus                  | 200  | Bronze Working   | Electricity     | +1 trade per trade square (city only) |
-| Great Library             | 300  | Literacy         | University      | +10% science in all cities |
+| Great Library             | 300  | Literacy         | University      | +5% science in all cities |
 | Hanging Gardens           | 300  | Pottery          | Invention       | +1 happy in the city + all cities on the same continent |
 | Lighthouse                | 200  | Map Making       | Magnetism       | +1 ship movement |
-| Oracle                    | 300  | Mysticism        | Religion        | Doubles Temple effect (all cities) |
-| Pyramids                  | 300  | Masonry          | Communism       | Change government with only 1 turn of anarchy |
+| Oracle                    | 200  | Mysticism        | Religion        | Doubles Temple effect (all cities) |
+| Pyramids                  | 400  | Masonry          | Communism       | Change government with only 1 turn of anarchy |
 | Silk Road                 | 300  | Map Making       | Never           | +1 vision range for all units and cities |
 
 **Middle Ages (7)**
 
 | Wonder                       | Cost | Requires          | Obsolete by      | Effect |
 |------------------------------|------|-------------------|------------------|--------|
-| Copernicus’ Observatory      | 300  | Astronomy         | Automobile       | Double science in the city |
+| Copernicus’ Observatory      | 400  | Astronomy         | Automobile       | Double science in the city |
 | Isaac Newton’s College       | 400  | Theory of Gravity | Nuclear Fission  | Stronger Library/University bonus |
 | J.S. Bach’s Cathedral        | 400  | Religion          | Never            | 1 unhappy → content per city on the continent |
 | Magellan’s Expedition        | 400  | Navigation        | Never            | +1 ship movement |
 | Michelangelo’s Chapel        | 300  | Religion          | Communism        | +50% Cathedral effect |
 | Shakespeare’s Theatre        | 400  | Medicine          | Electronics      | Makes 4 unhappy citizens content (city only) |
-| Leonardo’s Workshop          | 400  | Invention         | Never            | Automatically upgrades obsolete units |
+| Leonardo’s Workshop          | 600  | Invention         | Never            | Automatically upgrades obsolete units |
 
 **Industrial / Modern Age (8)**
 
 | Wonder                          | Cost | Requires              | Obsolete by | Effect |
 |---------------------------------|------|-----------------------|-------------|--------|
 | International Space Station     | 600  | Space Flight         | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
-| Human Genome Project            | 600  | Genetic Engineering   | Never       | +1 happy in every city |
+| Human Genome Project            | 400  | Genetic Engineering   | Never       | +1 happy in every city |
 | Hoover Dam                      | 600  | Electronics           | Never       | Free Hydro Plant effect (only cities without a power plant) on the same continent |
 | Manhattan Project               | 600  | Nuclear Fission       | Never       | Allows nuclear weapons |
 | SETI Program                    | 600  | Computers             | Never       | +30% science in all cities |
-| Atomium                         | 500  | Nuclear Fission       | Never       | +1 happy citizen in every city **and** +10% science in the city that builds it |
-| Statue of Liberty               | 500  | Democracy             | Never       | +1 trade on every trade square in all your cities |
+| Super-Kamiokande                | 500  | Computers             | Never       | +15% science in all cities · +1 vision (supernova alert) |
+| Transistor                      | 500  | Electronics         | Never       | +1 happy citizen in every city **and** +10% science in the city that builds it |
+| Statue of Liberty               | 600  | Democracy             | Never       | +1 trade on every trade square in all your cities |
+| Tiangong                        | 600  | Space Flight          | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
+| Mir                             | 600  | Space Flight          | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
 | Colossus (AI Supercluster)      | 600  | Computers             | Never       | +10% science in all cities on the same continent, 10% more production in all cities on the same continent |
 
 The Ages are only relevant for historical flavor; there have no influence on gameplay mechanics.
@@ -664,7 +684,7 @@ Recommended places to show screens for the rebalanced wonders
 If this were a mod or a remake, I would show the information in these locations (ranked by importance):
 PriorityWhen / WhereWhat to showWhy1Wonder completion screenBig celebratory screen + full effect description + short historical flavor textMost memorable moment. Players often forget the exact effect later.
 
-World -> Statistics -> Dedicated Wonders overview screen (new button on the main menu bar)List of all 22 Wonders with status colors (Owned / Building / Available / Taken by AI)Extremely useful, especially with 22 wonders. Later Civs and many mods do this.
+World -> Statistics -> Dedicated Wonders overview screen (new button on the main menu bar)List of all 23 Wonders with status colors (Owned / Building / Available / Taken by AI)Extremely useful, especially with 23 wonders. Later Civs and many mods do this.
 Later pictures of the wonders will follow so leaf space on the screen can be used for the wonder's image.
 
 City screen (once built)Icon + name + short effect reminderQuick reference while managing the city.
@@ -689,7 +709,7 @@ You can copy-paste this directly as a high-quality specification for a developer
 
 #### 1. Core Rules (must be enforced exactly)
 
-There are exactly **22 unique Wonders**.  
+There are exactly **23 unique Wonders**.  
 Each Wonder can be built **only once** in the entire game by only one civilization.  
 Once a civilization completes a Wonder, no other civilization can ever build that same Wonder.
 
@@ -723,41 +743,44 @@ Wonders are listed in chronological order of their real-world inspiration purely
 
 #### 2. Complete Wonder List (final version)
 
-**Antiquity (7)**
+**Antiquity (8)**
 
 | Wonder              | Cost | Requires         | Obsolete by   | Effect                                                      |
 |---------------------|------|------------------|---------------|-------------------------------------------------------------|
 | Colossus            | 200  | Bronze Working   | Electricity   | +1 trade per trade square (city only)                       |
-| Great Library       | 300  | Literacy         | University    | +10% science in all cities                                  |
+| Great Library       | 300  | Literacy         | University    | +5% science in all cities                                   |
 | Hanging Gardens     | 300  | Pottery          | Invention     | +1 happy in the city + all cities on the same continent     |
 | Lighthouse          | 200  | Map Making       | Magnetism     | +1 ship movement                                            |
-| Oracle              | 300  | Mysticism        | Religion      | Doubles Temple effect (all cities)                          |
-| Pyramids            | 300  | Masonry          | Communism     | Change government with only 1 turn of anarchy               |
+| Oracle              | 200  | Mysticism        | Religion      | Doubles Temple effect (all cities)                          |
+| Pyramids            | 400  | Masonry          | Communism     | Change government with only 1 turn of anarchy               |
 | Silk Road           | 300  | Map Making       | Never         | +1 vision range for all units and cities                    |
 
 **Middle Ages (7)**
 
 | Wonder                    | Cost | Requires          | Obsolete by     | Effect                                        |
 |---------------------------|------|-------------------|-----------------|-----------------------------------------------|
-| Copernicus’ Observatory   | 300  | Astronomy         | Automobile      | Double science in the city                    |
+| Copernicus’ Observatory   | 400  | Astronomy         | Automobile      | Double science in the city                    |
 | Isaac Newton’s College    | 400  | Theory of Gravity | Nuclear Fission | Stronger Library/University bonus             |
 | J.S. Bach’s Cathedral     | 400  | Religion          | Never           | 1 unhappy → content per city on the continent |
 | Magellan’s Expedition     | 400  | Navigation        | Never           | +1 ship movement                              |
 | Michelangelo’s Chapel     | 300  | Religion          | Communism       | +50% Cathedral effect                         |
 | Shakespeare’s Theatre     | 400  | Medicine          | Electronics     | Makes 4 unhappy citizens content (city only)  |
-| Leonardo’s Workshop       | 400  | Invention         | Never           | Automatically upgrades obsolete units         |
+| Leonardo’s Workshop       | 600  | Invention         | Never           | Automatically upgrades obsolete units         |
 
 **Industrial / Modern Age (8)**
 
 | Wonder                          | Cost | Requires            | Obsolete by | Effect                                                                 |
 |---------------------------------|------|---------------------|-------------|------------------------------------------------------------------------|
 | International Space Station     | 600  | Space Flight        | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
-| Human Genome Project            | 600  | Genetic Engineering | Never       | +1 happy in every city                                                 |
+| Human Genome Project            | 400  | Genetic Engineering | Never       | +1 happy in every city                                                 |
 | Hoover Dam                      | 600  | Electronics         | Never       | Free Hydro Plant effect (only cities without a power plant) on the same continent |
 | Manhattan Project               | 600  | Nuclear Fission     | Never       | Allows nuclear weapons                                                 |
 | SETI Program                    | 600  | Computers           | Never       | +30% science in all cities                                             |
-| Atomium                         | 500  | Nuclear Fission     | Never       | +1 happy citizen in every city **and** +10% science in the city that builds it |
-| Statue of Liberty               | 500  | Democracy           | Never       | +1 trade on every trade square in all your cities                      |
+| Super-Kamiokande                | 500  | Computers           | Never       | +15% science in all cities · +1 vision (supernova alert)               |
+| Transistor                      | 500  | Electronics       | Never       | +1 happy citizen in every city **and** +10% science in the city that builds it |
+| Statue of Liberty               | 600  | Democracy           | Never       | +1 trade on every trade square in all your cities                      |
+| Tiangong                        | 600  | Space Flight        | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
+| Mir                             | 600  | Space Flight        | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
 | Colossus (AI Supercluster)      | 600  | Computers           | Never       | +10% science **and** +10% production in all cities on the same continent |
 
 #### 3. Required User Interface Features (must implement fully)
@@ -773,7 +796,7 @@ Wonders are listed in chronological order of their real-world inspiration purely
 
 **B. Dedicated Wonders Overview Screen**
 - Accessible via: **World → Statistics → Wonders** (or a dedicated button on the main menu bar)
-- Shows all 22 Wonders in a clean, scrollable list or grid.
+- Shows all 23 Wonders in a clean, scrollable list or grid.
 - For each Wonder display:
   - Name
   - Status with color coding:

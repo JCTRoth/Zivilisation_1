@@ -7,7 +7,7 @@
  */
 
 import { BUILDING_PROPERTIES, BUILDING_PREREQUISITES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { getWonder } from '@/data/WonderData';
+import { getWonder, wonderGroupMembers } from '@/data/WonderData';
 import type { BuildingProperties } from '../../../data/GameConstants';
 import {
   type StrategyProfile,
@@ -380,6 +380,10 @@ export class AIBuildingStrategy {
       if (gameState.builtWonders.includes(wonderType)) continue;
       const cityBuildings: string[] = city.buildings || [];
       if (cityBuildings.includes(wonderType)) continue;
+      // Mutually exclusive groups (space stations): one built member anywhere
+      // closes the whole group — never plan a sister of a completed wonder.
+      const groupMembers = wonderGroupMembers(wonderType);
+      if (groupMembers.length > 0 && groupMembers.some((m) => gameState.builtWonders.includes(m))) continue;
 
       // Tech + prerequisite gating — wonders require their era's technology
       // (e.g. Pyramids need Masonry, Newton's needs University). Without this

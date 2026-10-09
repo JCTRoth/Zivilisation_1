@@ -7,7 +7,7 @@ single table, and no engine or UI code needs to change to add another wonder.
 
 | Layer | File | Responsibility |
 |---|---|---|
-| **Data** | `src/data/WonderData.ts` | The 22 wonder definitions, typed effects, status classification, obsolescence helper |
+| **Data** | `src/data/WonderData.ts` | The 23 wonder definitions, typed effects, status classification, obsolescence helper |
 | **Compatibility bridge** | `src/data/BuildingConstants.ts` (`WONDER_PROPERTIES`) | Adapts the wonder data to the `BuildingProperties` shape older code (AI valuation, victory scoring, sell protection) still reads |
 | **Ownership / rules** | `src/game/engine/WonderManager.ts` | Who owns what, world-uniqueness, obsolescence, continent queries, construction gates |
 | **Effect engine** | `src/game/engine/WonderEffects.ts` | Computes the actual modifiers (science %, happiness, trade squares, movement, vision, gates…) |
@@ -22,6 +22,9 @@ single table, and no engine or UI code needs to change to add another wonder.
 export interface WonderDefinition {
   id: string;                  // stable snake_case id — lives in city.buildings
   name: string;                // display name
+  fullName: string;            // full formal name, shown under the display name
+  location: string;            // where it stands/stood, e.g. 'Rhodes, Greece'
+  flag: string;                // flag emoji for the place (🌐 = international)
   cost: number;                // fixed shield cost, 200–600
   maintenance: number;         // ALWAYS 0 for wonders
   requiredTechnology: string;  // tech id required to START building it
@@ -32,10 +35,17 @@ export interface WonderDefinition {
   shortEffect: string;         // one-liner (city screen, production list)
   effectText: string;          // full plain-language mechanics (completion screen)
   flavor: string;              // short historical text
-  facts: string[];             // "Facts" facts for the Civilopedia entry
+  about?: string;             // 4–5 sentence trivia overview, own entry section
+  facts: string[];            // 4–6 verified one-line facts for the entry panel
   effects: WonderEffect[];     // typed effect list consumed by WonderEffects
 }
 ```
+
+`location` + `flag` appear as a chip in the Civilopedia entry and as a small
+flag badge on the overview ledger. The facts render as a **numbered panel that
+scrolls inside the modal** (`.wonder-entry-facts`, `max-height` in
+`src/styles/wonders.css`) — a wonder may carry as many facts as the research
+allows without lengthening the dialog.
 
 ### Adding a new wonder
 
@@ -52,20 +62,20 @@ compiler rejects unknown shapes:
 | `kind` | Scope options | Meaning |
 |---|---|---|
 | `tradePerTradeSquare` | `city`, `civilization` | +N trade on every worked tile that already produces trade (Colossus, Statue of Liberty) |
-| `sciencePercent` | `city`, `civilization`, `continent` | +X% science for cities in scope (Great Library, SETI, Copernicus, ISS, AI Supercluster) |
+| `sciencePercent` | `city`, `civilization`, `continent` | +X% science for cities in scope (Great Library, SETI, Super-Kamiokande, Copernicus, ISS, Tiangong, Mir, AI Supercluster) |
 | `productionPercent` | `continent` | +X% production (AI Supercluster) |
 | `productionFlat` | `continent` (+ optional `requiresNoPowerPlant`) | +N production (Hoover Dam) |
-| `happiness` | `city`, `civilization`, `continent` | +N happiness per city in scope (Human Genome Project, Hanging Gardens, Atomium) |
+| `happiness` | `city`, `civilization`, `continent` | +N happiness per city in scope (Human Genome Project, Hanging Gardens, Transistor) |
 | `unhappyToContent` | `city`, `continent` | Converts up to N unhappy citizens to content (Shakespeare, J.S. Bach) |
 | `buildingHappinessMultiplier` | `civilization` | Multiplies one building's happiness (Oracle ×2 Temple, Michelangelo ×1.5 Cathedral) |
 | `buildingScienceMultiplier` | `civilization` | Multiplies listed buildings' science (Isaac Newton: Library/University ×2) |
 | `navalMovement` | `civilization` | +N movement for the owner's sea units (Lighthouse, Magellan) |
-| `visionRange` | `civilization` | +N sight radius for owner units/cities (Silk Road) |
+| `visionRange` | `civilization` | +N sight radius for owner units/cities (Silk Road, Super-Kamiokande) |
 | `governmentAnarchyTurns` | `civilization` | Revolution length in turns (Pyramids: 1 instead of 3) |
 | `autoUpgradeUnits` | `civilization` | Obsolete units upgrade automatically (Leonardo — paths in `UNIT_UPGRADE_PATHS`, `src/data/UnitConstants.ts`) |
-| `enableSpaceship` | `global` | Opens the Moonshot space race once the ISS exists |
+| `enableSpaceship` | `global` | Opens the Moonshot space race once any space station (ISS, Tiangong, Mir) exists |
 | `enableNuclear` | `global` | Manhattan Project allows nuclear weapons for every civ with the tech |
-| `revealAllCities` | `civilization` | Owner sees every city on the map (ISS) |
+| `revealAllCities` | `civilization` | Owner sees every city on the map (ISS, Tiangong, Mir) |
 
 **Scope resolution** (`WonderEffects.covers`):
 
@@ -80,7 +90,8 @@ compiler rejects unknown shapes:
 | Rule | Implementation |
 |---|---|
 | Buildable once in the whole game | `TurnManager.addBuildingToCity` claims or rejects; `ProductionManager.canBuildItem` refuses to start completed wonders (`wonder_already_completed`) |
-| Multiple simultaneous builders allowed | Gates only check COMPLETED wonders — races are legal |
+| Mutually exclusive groups (space stations) | One completed member closes the group: `canBuildItem` → `wonder_group_completed`; a race loser hits the conflict path naming the winner (`blockedByWonderId`) |
+| Multiple simultaneous builders allowed | Gates only check COMPLETED wonders — races are legal (including cross-member group races) |
 | Loser's shields wasted, city idle | `TurnManager.completeProduction` → conflict branch: production cancelled, progress zeroed, queue kept, `WONDER_PRODUCTION_CONFLICT` emitted |
 | Gold purchase conflict | Refund of the purchase price in `processTurnEvents` |
 | No maintenance | `maintenance: 0` in every record; derived `WONDER_PROPERTIES` mirrors it |
@@ -123,7 +134,7 @@ missing. Each Wikimedia image carries a visible credit line (author + licence +
 link to the file page) because most of them are CC BY / CC BY-SA; images supplied
 by the project owner show only the "Read more on Wikipedia" link.
 
-Fourteen of the 22 images come from Wikimedia Commons and are public domain or
+Fifteen of the 23 images come from Wikimedia Commons and are public domain or
 freely licensed; the other eight (Colossus, Great Library, Hanging Gardens,
 Lighthouse, Oracle, Magellan's Expedition, Shakespeare's Theatre, Leonardo's
 Workshop) are the project owner's own artwork and have no external source.

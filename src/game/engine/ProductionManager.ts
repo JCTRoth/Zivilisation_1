@@ -130,6 +130,11 @@ export class ProductionManager {
         if (this.gameEngine.wonderManager?.isBuilt(itemType)) {
           return { ok: false, reason: 'wonder_already_completed' };
         }
+        // Mutually exclusive groups (space stations): one completed member
+        // anywhere closes the whole group — the sisters can't be started.
+        if (this.gameEngine.wonderManager?.isGroupClosed(itemType)) {
+          return { ok: false, reason: 'wonder_group_completed' };
+        }
         // Obsolete wonders can never pay off — refuse to start one. (One that
         // was already under construction when it obsoleted still finishes and
         // keeps existing for score, just without its effect.)

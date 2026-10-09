@@ -259,6 +259,13 @@ export type WonderDialogEntry =
       ownerCityName: string;
       ownerCivId: number;
       ownerCivName: string;
+      /**
+       * When the conflict came from a mutually exclusive group, the completed
+       * group member that actually won (differs from wonderId). Absent for a
+       * plain same-wonder race.
+       */
+      blockedByWonderId?: string;
+      blockedByWonderName?: string;
     };
 
 export interface CameraState {

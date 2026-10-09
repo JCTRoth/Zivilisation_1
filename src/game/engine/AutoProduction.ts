@@ -6,7 +6,7 @@
 
 import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVAN_TRADE_ROUTES } from '@/utils/Constants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { WONDERS } from '@/data/WonderData';
+import { WONDERS, wonderGroupMembers } from '@/data/WonderData';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import {
   assessCityThreat,
@@ -318,8 +318,13 @@ export class AutoProduction {
           const alreadyQueued = plannedTypes.includes(itemType);
           const isDuplicate = alreadyOwned || alreadyQueued;
           const isWonder = !!WONDER_PROPERTIES[itemType];
+          // Same-civ group members count too: our own completed space station
+          // retires its sisters for our other cities as well.
+          const groupMembers = wonderGroupMembers(itemType);
           const wonderAlreadyBuilt = isWonder && this.gameEngine.cities.some(
-            (c: City) => c.civilizationId === city.civilizationId && (c.buildings ?? []).includes(itemType),
+            (c: City) => c.civilizationId === city.civilizationId && (c.buildings ?? []).some(
+              (b) => b === itemType || groupMembers.includes(b),
+            ),
           );
           if (isDuplicate || wonderAlreadyBuilt) {
             plannedTypes.push(itemType);

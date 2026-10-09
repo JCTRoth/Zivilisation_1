@@ -3,6 +3,7 @@ import { Modal, Button } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
 import {
   WONDERS,
+  WONDER_GROUPS,
   computeWonderStatuses,
   findWonderBuilders,
   findWonderOwner,
@@ -109,8 +110,106 @@ interface WondersOverviewProps {
   onOpenEntry: (wonderId: string) => void;
 }
 
+/** One wonder card in the ledger — also reused for group members. */
+function WonderCardItem({
+  row,
+  civilizations,
+  activePlayer,
+  onOpenEntry,
+  compact = false,
+}: {
+  row: WonderRowData;
+  civilizations: CivLike[];
+  activePlayer: number;
+  onOpenEntry: (wonderId: string) => void;
+  /**
+   * Compact cards (group members) skip the meta block — cost, tech,
+   * obsolescence and holder are identical for every member (or one click
+   * away in the full entry), so repeating them clutters the group.
+   */
+  compact?: boolean;
+}) {
+  const { wonder, status, ownerCivId, builderCivIds, obsolete } = row;
+  const builders = builderCivIds.filter((id) => id !== ownerCivId);
+  return (
+    <li>
+      <button
+        type="button"
+        className={`wonder-card wonder-card--${status}`}
+        onClick={() => onOpenEntry(wonder.id)}
+        title={`Open Civilopedia entry: ${wonder.name}`}
+      >
+        <span className="wonder-card__lead">
+          <span className="wonder-card__icon" aria-hidden="true">
+            {wonder.icon}
+          </span>
+          <span className="wonder-card__name">{wonder.name}</span>
+          <span className="wonder-card__flag" title={wonder.location} aria-hidden="true">
+            {wonder.flag}
+          </span>
+          <span className={`wonder-status wonder-status--${status}`}>
+            {STATUS_LABEL[status]}
+          </span>
+          {obsolete && (
+            <span
+              className="wonder-card__obsolete"
+              title={`Obsolete — ${formatTechName(wonder.obsoleteBy)} discovered`}
+            >
+              Obsolete
+            </span>
+          )}
+        </span>
+
+        <span className="wonder-card__effect">{wonder.shortEffect}</span>
+
+        {!compact && (
+        <span className="wonder-card__meta">
+          <span className="wonder-card__fact">
+            <span className="wonder-card__fact-label">Cost</span>
+            <span className="wonder-card__fact-value">{wonder.cost} shields</span>
+          </span>
+          <span className="wonder-card__fact">
+            <span className="wonder-card__fact-label">Requires</span>
+            <span className="wonder-card__fact-value">
+              {formatTechName(wonder.requiredTechnology)}
+            </span>
+          </span>
+          <span className="wonder-card__fact">
+            <span className="wonder-card__fact-label">Obsolete by</span>
+            <span className="wonder-card__fact-value">
+              {wonder.obsoleteBy ? formatTechName(wonder.obsoleteBy) : 'Never'}
+            </span>
+          </span>
+          <span className="wonder-card__fact">
+            <span className="wonder-card__fact-label">
+              {ownerCivId !== null ? 'Owner' : builders.length > 0 ? 'Building' : 'Status'}
+            </span>
+            <span className="wonder-card__fact-value wonder-card__holders">
+              {ownerCivId !== null ? (
+                <CivTag civilizations={civilizations} id={ownerCivId} you={ownerCivId === activePlayer} />
+              ) : builders.length > 0 ? (
+                builders.map((id) => (
+                  <CivTag
+                    key={id}
+                    civilizations={civilizations}
+                    id={id}
+                    you={id === activePlayer}
+                  />
+                ))
+              ) : (
+                <span className="wonder-card__muted">{STATUS_HINT[status]}</span>
+              )}
+            </span>
+          </span>
+        </span>
+        )}
+      </button>
+    </li>
+  );
+}
+
 /**
- * Scrollable ledger of all 22 wonders with the spec's colour-coded statuses,
+ * Scrollable ledger of all 23 wonders with the spec's colour-coded statuses,
  * cost / technology / obsolescence details and the civilization that holds (or
  * is building) each one. Grouped by documentation-only era for readability.
  */
@@ -118,6 +217,91 @@ const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
   const rows = useWonderRows();
   const civilizations = useGameStore((s) => s.civilizations);
   const activePlayer = useGameStore((s) => s.gameState.activePlayer);
+  // Collapsed group ids — empty means every group is expanded.
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
+  const toggleGroup = (groupId: string) =>
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+
+  /**
+   * Era rows with mutually exclusive groups folded into one expandable block
+   * at the first member's position. Members keep their own cards (and their
+   * own full Civilopedia entries) — the block is only an optical grouping.
+   */
+  const renderEraRows = (eraRows: WonderRowData[]) => {
+    const seenGroups = new Set<string>();
+    return eraRows.map((row) => {
+      const groupId = row.wonder.groupId;
+      if (!groupId) {
+        return (
+          <WonderCardItem
+            key={row.wonder.id}
+            row={row}
+            civilizations={civilizations}
+            activePlayer={activePlayer}
+            onOpenEntry={onOpenEntry}
+          />
+        );
+      }
+      if (seenGroups.has(groupId)) return null;
+      seenGroups.add(groupId);
+      const group = WONDER_GROUPS[groupId];
+      const members = rows.filter((r) => r.wonder.groupId === groupId);
+      const collapsed = collapsedGroups.has(groupId);
+      // Shared specs, shown once: the data test guarantees group members
+      // share cost, tech and obsolescence.
+      const spec = members[0]?.wonder;
+      return (
+        <li key={`group-${groupId}`} className="wonder-group">
+          <button
+            type="button"
+            className="wonder-group__header"
+            onClick={() => toggleGroup(groupId)}
+            aria-expanded={!collapsed}
+            title={collapsed ? `Expand ${group?.name ?? groupId}` : `Collapse ${group?.name ?? groupId}`}
+          >
+            <span className="wonder-group__icons" aria-hidden="true">
+              {members.map((m) => (
+                <span key={m.wonder.id}>{m.wonder.icon}</span>
+              ))}
+            </span>
+            <span className="wonder-group__name">{group?.name ?? groupId}</span>
+            <span className="wonder-group__blurb">{group?.blurb ?? ''}</span>
+            <span className="wonder-group__count" title={`${members.length} wonders`}>
+              {members.length}
+            </span>
+            <span className="wonder-group__chevron" aria-hidden="true">
+              {collapsed ? '▶' : '▼'}
+            </span>
+          </button>
+          {spec && (
+            <div className="wonder-group__specs">
+              Cost {spec.cost} shields · Requires {formatTechName(spec.requiredTechnology)} · Obsolete by{' '}
+              {spec.obsoleteBy ? formatTechName(spec.obsoleteBy) : 'Never'}
+            </div>
+          )}
+          {!collapsed && (
+            <ul className="wonder-group__members">
+              {members.map((m) => (
+                <WonderCardItem
+                  key={m.wonder.id}
+                  row={m}
+                  civilizations={civilizations}
+                  activePlayer={activePlayer}
+                  onOpenEntry={onOpenEntry}
+                  compact
+                />
+              ))}
+            </ul>
+          )}
+        </li>
+      );
+    });
+  };
 
   const summary = useMemo(() => {
     const counts: Record<WonderStatus, number> = {
@@ -176,80 +360,7 @@ const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
               </h4>
 
               <ul className="wonders-era__list">
-                {eraRows.map((row) => {
-                  const { wonder, status, ownerCivId, builderCivIds, obsolete } = row;
-                  const builders = builderCivIds.filter((id) => id !== ownerCivId);
-                  return (
-                    <li key={wonder.id}>
-                      <button
-                        type="button"
-                        className={`wonder-card wonder-card--${status}`}
-                        onClick={() => onOpenEntry(wonder.id)}
-                        title={`Open Civilopedia entry: ${wonder.name}`}
-                      >
-                        <span className="wonder-card__lead">
-                          <span className="wonder-card__icon" aria-hidden="true">
-                            {wonder.icon}
-                          </span>
-                          <span className="wonder-card__name">{wonder.name}</span>
-                          <span className={`wonder-status wonder-status--${status}`}>
-                            {STATUS_LABEL[status]}
-                          </span>
-                          {obsolete && (
-                            <span
-                              className="wonder-card__obsolete"
-                              title={`Obsolete — ${formatTechName(wonder.obsoleteBy)} discovered`}
-                            >
-                              Obsolete
-                            </span>
-                          )}
-                        </span>
-
-                        <span className="wonder-card__effect">{wonder.shortEffect}</span>
-
-                        <span className="wonder-card__meta">
-                          <span className="wonder-card__fact">
-                            <span className="wonder-card__fact-label">Cost</span>
-                            <span className="wonder-card__fact-value">{wonder.cost} shields</span>
-                          </span>
-                          <span className="wonder-card__fact">
-                            <span className="wonder-card__fact-label">Requires</span>
-                            <span className="wonder-card__fact-value">
-                              {formatTechName(wonder.requiredTechnology)}
-                            </span>
-                          </span>
-                          <span className="wonder-card__fact">
-                            <span className="wonder-card__fact-label">Obsolete by</span>
-                            <span className="wonder-card__fact-value">
-                              {wonder.obsoleteBy ? formatTechName(wonder.obsoleteBy) : 'Never'}
-                            </span>
-                          </span>
-                          <span className="wonder-card__fact">
-                            <span className="wonder-card__fact-label">
-                              {ownerCivId !== null ? 'Owner' : builders.length > 0 ? 'Building' : 'Status'}
-                            </span>
-                            <span className="wonder-card__fact-value wonder-card__holders">
-                              {ownerCivId !== null ? (
-                                <CivTag civilizations={civilizations} id={ownerCivId} you={ownerCivId === activePlayer} />
-                              ) : builders.length > 0 ? (
-                                builders.map((id) => (
-                                  <CivTag
-                                    key={id}
-                                    civilizations={civilizations}
-                                    id={id}
-                                    you={id === activePlayer}
-                                  />
-                                ))
-                              ) : (
-                                <span className="wonder-card__muted">{STATUS_HINT[status]}</span>
-                              )}
-                            </span>
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
+                {renderEraRows(eraRows)}
               </ul>
             </section>
           );
@@ -291,6 +402,7 @@ const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onH
       <Modal.Header closeButton closeVariant="white">
         <Modal.Title className="wonder-entry-title">
           {wonder.icon} {wonder.name}
+          <span className="wonder-entry-fullname">{wonder.fullName}</span>
         </Modal.Title>
         <span className={`wonder-status wonder-status--${row?.status ?? 'available'} ms-3`}>
           {STATUS_LABEL[row?.status ?? 'available']}
@@ -308,6 +420,10 @@ const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onH
             ⏳ {wonder.obsoleteBy ? `Obsolete: ${formatTechName(wonder.obsoleteBy)}` : 'Never obsolete'}
           </span>
           <span className="wonder-entry-meta__chip">📜 {ERA_LABEL[wonder.era]}</span>
+          <span className="wonder-entry-meta__chip wonder-entry-meta__chip--place">
+            <span className="wonder-entry-meta__flag" aria-hidden="true">{wonder.flag}</span>
+            {wonder.location}
+          </span>
           <span className="wonder-entry-meta__chip">🔧 No maintenance</span>
         </div>
 
@@ -342,12 +458,24 @@ const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onH
           <p>{wonder.flavor}</p>
         </div>
 
-        {wonder.facts.length > 0 && (
+        {wonder.about && (
           <div className="wonder-entry-section">
+            <h6>Trivia</h6>
+            <p>{wonder.about}</p>
+          </div>
+        )}
+
+        {wonder.facts.length > 0 && (
+          <div className="wonder-entry-section wonder-entry-section--facts">
             <h6>Some facts</h6>
+            {/* Scrolls on its own once a wonder carries many facts, so the
+                rest of the entry stays within the modal. */}
             <ul className="wonder-entry-facts">
               {wonder.facts.map((fact, i) => (
-                <li key={i}>{fact}</li>
+                <li key={i}>
+                  <span className="wonder-entry-facts__bullet" aria-hidden="true" />
+                  <span className="wonder-entry-facts__text">{fact}</span>
+                </li>
               ))}
             </ul>
           </div>

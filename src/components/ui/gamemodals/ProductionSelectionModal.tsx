@@ -5,11 +5,13 @@ import type { ProductionItem } from '../../../../types/game';
 import { useGameStore } from '@/stores/GameStore';
 import {
   WONDERS,
+  WONDER_GROUPS,
   computeWonderStatuses,
   findWonderBuilders,
   findWonderOwner,
   getWonder,
   isWonderObsolete,
+  wonderGroupMembers,
   type WonderStatus,
 } from '@/data/WonderData';
 import { WonderArtwork } from './WonderArtwork';
@@ -133,6 +135,15 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
     [storeCities, storeCivilizations, activePlayer],
   );
   const [selectedWonderId, setSelectedWonderId] = useState<string | null>(null);
+  // Collapsed wonder-group ids in the production table (empty = all expanded).
+  const [collapsedProdGroups, setCollapsedProdGroups] = useState<ReadonlySet<string>>(new Set());
+  const toggleProdGroup = (groupId: string) =>
+    setCollapsedProdGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
   // Controlled so the wonders detail artwork is only fetched while its tab is
   // actually the visible one (Bootstrap keeps inactive tab panes mounted).
   const [activeTab, setActiveTab] = useState('units');
@@ -150,6 +161,8 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
     canStart: boolean;
     ownerCivId: number | null;
     builderCivIds: number[];
+    /** A completed group member retires the sisters (space stations). */
+    groupClosed: boolean;
   }
 
   const wonderRows: WonderRow[] = useMemo(() => {
@@ -158,10 +171,15 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
       const hasTech = hasRequiredTechs(currentPlayer, w.requiredTechnology);
       const obsolete = isWonderObsolete(w.id, storeCivilizations);
       const inThisCity = ownedBuildings.has(w.id.toLowerCase());
-      // Startable = nobody has finished it yet AND the tech is known AND it is
-      // not obsolete AND this city does not hold it. Races are fine — several
-      // cities may work on the same wonder (first to finish wins).
-      const canStart = ownerCivId === null && hasTech && !obsolete && !inThisCity;
+      // A completed group member closes the whole group for everybody.
+      const groupClosed = wonderGroupMembers(w.id).some(
+        (m) => findWonderOwner(m, storeCities) !== null,
+      );
+      // Startable = nobody has finished it yet AND its group is open AND the
+      // tech is known AND it is not obsolete AND this city does not hold it.
+      // Races are fine — several cities may work on the same wonder (first to
+      // finish wins).
+      const canStart = ownerCivId === null && !groupClosed && hasTech && !obsolete && !inThisCity;
       return {
         id: w.id,
         name: w.name,
@@ -175,6 +193,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
         canStart,
         ownerCivId,
         builderCivIds: findWonderBuilders(w.id, storeCities),
+        groupClosed,
       };
     });
     // ownedBuildings is rebuilt every render; depend on the source list instead.
@@ -231,6 +250,136 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   const getTurnsText = (cost: number): string => {
     if (cost <= 0 || productionPerTurn <= 0) return '—';
     return `~${Math.ceil(cost / productionPerTurn)} turns`;
+  };
+
+  /** One wonder table row — also reused for members of an expandable group. */
+  const renderWonderRow = (row: WonderRow) => {
+    const affordable = canAfford('wonder', row.cost);
+    const canBuy = row.canStart && affordable && !purchasedThisTurn && !!onPurchase;
+    const purchaseCost = getPurchaseCost('wonder', row.cost);
+    const blockedReason = row.completed
+      ? 'Already completed'
+      : row.inThisCity
+        ? 'Already in this city'
+        : row.groupClosed
+          ? 'Group completed'
+          : row.obsolete
+            ? 'Obsolete'
+            : !row.hasTech
+              ? 'Technology missing'
+              : '';
+    return (
+      <tr
+        key={row.id}
+        className={`wonder-row-selectable ${selectedWonderId === row.id ? 'selected' : ''} ${row.canStart ? '' : 'text-muted'}`}
+        onClick={() => setSelectedWonderId(row.id)}
+        title={`Select ${row.name} for details`}
+      >
+        <td>
+          {getWonder(row.id)?.icon} {row.name}
+          {row.obsolete && <span className="wonder-obsolete-tag ms-2">⚠ Obsolete</span>}
+        </td>
+        <td>
+          <span className={`wonder-status wonder-status--${row.status}`}>
+            {WONDER_STATUS_LABEL[row.status]}
+          </span>
+        </td>
+        <td>{formatTechName(row.requiredTechnology)}</td>
+        <td><span className="text-info">{getTurnsText(row.cost)}</span></td>
+        <td>
+          <div className="d-flex gap-1">
+            {row.canStart && onAddToQueue && (
+              <Button
+                variant="outline-success"
+                size="sm"
+                title="Add to build queue — races allowed, first to finish wins"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedWonderId(row.id);
+                  handleAddToQueue(row.id);
+                }}
+              >
+                + Add
+              </Button>
+            )}
+            {row.canStart && (
+              <Button
+                variant="outline-warning"
+                size="sm"
+                disabled={!canBuy}
+                title={
+                  purchasedThisTurn
+                    ? 'Already purchased this turn'
+                    : !affordable
+                      ? `Need ${purchaseCost} Gold (have ${playerGold})`
+                      : `Buy now for ${purchaseCost} Gold`
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBuy(row.id, 'wonder');
+                }}
+              >
+                🪙{purchaseCost}
+              </Button>
+            )}
+            {!row.canStart && blockedReason && (
+              <span className="small text-white-50">{blockedReason}</span>
+            )}
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
+  /**
+   * Wonder rows with mutually exclusive groups folded into one expandable
+   * table block at the first member's position. Members keep their own rows
+   * (status, tech, shields, action) — the block is only an optical grouping.
+   */
+  const renderWonderRows = () => {
+    const seen = new Set<string>();
+    const out: React.ReactNode[] = [];
+    for (const row of wonderRows) {
+      const groupId = getWonder(row.id)?.groupId;
+      if (!groupId) {
+        out.push(renderWonderRow(row));
+        continue;
+      }
+      if (seen.has(groupId)) continue;
+      seen.add(groupId);
+      const group = WONDER_GROUPS[groupId];
+      const members = wonderRows.filter((r) => getWonder(r.id)?.groupId === groupId);
+      const collapsed = collapsedProdGroups.has(groupId);
+      out.push(
+        <tr key={`group-${groupId}`} className="wonder-group-row">
+          <td colSpan={5}>
+            <button
+              type="button"
+              className="wonder-group__header wonder-group__header--slim"
+              onClick={() => toggleProdGroup(groupId)}
+              aria-expanded={!collapsed}
+              title={collapsed ? `Expand ${group?.name ?? groupId}` : `Collapse ${group?.name ?? groupId}`}
+            >
+              <span className="wonder-group__icons" aria-hidden="true">
+                {members.map((m) => (
+                  <span key={m.id}>{getWonder(m.id)?.icon}</span>
+                ))}
+              </span>
+              <span className="wonder-group__name">{group?.name ?? groupId}</span>
+              <span className="wonder-group__blurb">{group?.blurb ?? ''}</span>
+              <span className="wonder-group__count" title={`${members.length} wonders`}>
+                {members.length}
+              </span>
+              <span className="wonder-group__chevron" aria-hidden="true">
+                {collapsed ? '▶' : '▼'}
+              </span>
+            </button>
+          </td>
+        </tr>,
+      );
+      if (!collapsed) for (const m of members) out.push(renderWonderRow(m));
+    }
+    return out;
   };
 
   return (
@@ -453,81 +602,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {wonderRows.map((row) => {
-                      const affordable = canAfford('wonder', row.cost);
-                      const canBuy = row.canStart && affordable && !purchasedThisTurn && !!onPurchase;
-                      const purchaseCost = getPurchaseCost('wonder', row.cost);
-                      const blockedReason = row.completed
-                        ? 'Already completed'
-                        : row.inThisCity
-                          ? 'Already in this city'
-                          : row.obsolete
-                            ? 'Obsolete'
-                            : !row.hasTech
-                              ? 'Technology missing'
-                              : '';
-                      return (
-                        <tr
-                          key={row.id}
-                          className={`wonder-row-selectable ${selectedWonderId === row.id ? 'selected' : ''} ${row.canStart ? '' : 'text-muted'}`}
-                          onClick={() => setSelectedWonderId(row.id)}
-                          title={`Select ${row.name} for details`}
-                        >
-                          <td>
-                            {getWonder(row.id)?.icon} {row.name}
-                            {row.obsolete && <span className="wonder-obsolete-tag ms-2">⚠ Obsolete</span>}
-                          </td>
-                          <td>
-                            <span className={`wonder-status wonder-status--${row.status}`}>
-                              {WONDER_STATUS_LABEL[row.status]}
-                            </span>
-                          </td>
-                          <td>{formatTechName(row.requiredTechnology)}</td>
-                          <td><span className="text-info">{getTurnsText(row.cost)}</span></td>
-                          <td>
-                            <div className="d-flex gap-1">
-                              {row.canStart && onAddToQueue && (
-                                <Button
-                                  variant="outline-success"
-                                  size="sm"
-                                  title="Add to build queue — races allowed, first to finish wins"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedWonderId(row.id);
-                                    handleAddToQueue(row.id);
-                                  }}
-                                >
-                                  + Add
-                                </Button>
-                              )}
-                              {row.canStart && (
-                                <Button
-                                  variant="outline-warning"
-                                  size="sm"
-                                  disabled={!canBuy}
-                                  title={
-                                    purchasedThisTurn
-                                      ? 'Already purchased this turn'
-                                      : !affordable
-                                        ? `Need ${purchaseCost} Gold (have ${playerGold})`
-                                        : `Buy now for ${purchaseCost} Gold`
-                                  }
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleBuy(row.id, 'wonder');
-                                  }}
-                                >
-                                  🪙{purchaseCost}
-                                </Button>
-                              )}
-                              {!row.canStart && blockedReason && (
-                                <span className="small text-white-50">{blockedReason}</span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {renderWonderRows()}
                   </tbody>
                 </table>
               </div>

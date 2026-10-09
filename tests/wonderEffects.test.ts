@@ -69,6 +69,17 @@ describe('wonder effects', () => {
     expect(scienceOf(rivalCity)).toBe(base.rival);
   });
 
+  it('Super-Kamiokande: +15% science civilization-wide plus +1 vision range', () => {
+    const base = { city: scienceOf(city), sibling: scienceOf(sibling), rival: scienceOf(rivalCity) };
+    city.buildings = ['super_kamiokande'];
+
+    expect(scienceOf(city)).toBe(Math.round(base.city * 1.15));
+    expect(scienceOf(sibling)).toBe(Math.round(base.sibling * 1.15));
+    expect(scienceOf(rivalCity)).toBe(base.rival);
+    expect(engine.wonderEffects?.visionBonus(0)).toBe(1);
+    expect(engine.wonderEffects?.visionBonus(1)).toBe(0);
+  });
+
   it("Copernicus' Observatory: doubles science in the wonder city ONLY", () => {
     const base = { city: scienceOf(city), sibling: scienceOf(sibling) };
     city.buildings = ['copernicus_observatory'];
@@ -132,6 +143,7 @@ describe('wonder effects', () => {
     city.buildings = ['ai_supercluster'];
     expect(engine.wonderEffects?.productionBonusForCity(sibling).percent).toBe(10);
   });
+
 
   // ── Happiness ───────────────────────────────────────────────────────────
 
