@@ -655,10 +655,6 @@ export interface Notification {
 
 interface Settings {
   uiScale: number;
-  menuFontSize: number;
-  sidebarWidth: number;
-  minimapHeight: number;
-  civListFontSize: number;
   skipEndTurnConfirmation: boolean;
   autoEndTurn: boolean; // Automatically end turn when all units are done
   autoCamera: boolean; // Automatically move camera to focused unit / event

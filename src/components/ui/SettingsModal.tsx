@@ -1,9 +1,8 @@
 import { Modal, Button, Form } from "react-bootstrap";
 import { useGameStore } from "@/stores/GameStore";
-import GameSpeedControls from "./GameSpeedControls";
 import "../../styles/settingsModal.css";
 
-function SettingsModal({ show, onHide, isPaused = false, onTogglePause }) {
+function SettingsModal({ show, onHide }) {
   const settings = useGameStore((state) => state.settings);
   const actions = useGameStore((state) => state.actions);
 
@@ -17,16 +16,11 @@ function SettingsModal({ show, onHide, isPaused = false, onTogglePause }) {
     console.log("SettingsModal: Reset to Defaults clicked");
     actions.updateSettings({
       uiScale: 1.0,
-      menuFontSize: 12,
-      sidebarWidth: 140,
-      minimapHeight: 120,
-      civListFontSize: 10,
       enableAnimations: true,
       autoCamera: true,
       animationSpeed: 1,
       enemyAnimationSpeed: 1,
       cameraGlideSpeed: 1,
-      gameSpeedStep: 0,
     });
   };
 
@@ -72,14 +66,34 @@ function SettingsModal({ show, onHide, isPaused = false, onTogglePause }) {
         </Modal.Title>
       </Modal.Header>
       <Modal.Body className="settings-modal__body">
-        <Form>
-          {/* Game speed leads the screen: it is the one control that changes how
-              the game itself runs rather than how smoothly it is drawn. */}
-          <GameSpeedControls
-            isPaused={isPaused}
-            onTogglePause={onTogglePause}
-          />
+        <Form className="settings-form">
+          {/* Master switches sit on top: they gate whole groups of controls
+              below (animations gate the speed sliders). */}
+          <div className="settings-toggles">
+            <Form.Check
+              type="switch"
+              id="enableAnimations"
+              label="Enable animations"
+              checked={settings.enableAnimations}
+              onChange={(e) =>
+                actions.updateSettings({ enableAnimations: e.target.checked })
+              }
+              className="settings-control__toggle"
+            />
 
+            <Form.Check
+              type="switch"
+              id="autoCamera"
+              label="Auto-move camera"
+              checked={settings.autoCamera !== false}
+              onChange={(e) =>
+                actions.updateSettings({ autoCamera: e.target.checked })
+              }
+              className="settings-control__toggle"
+            />
+          </div>
+
+          <div className="settings-grid">
           {renderSlider(
             "Overall UI Scale",
             settings.uiScale,
@@ -90,72 +104,6 @@ function SettingsModal({ show, onHide, isPaused = false, onTogglePause }) {
             "Scales all UI elements proportionally (0.5x to 2.0x)",
             (v) => `${v.toFixed(2)}x`,
           )}
-
-          {renderSlider(
-            "Top Menu Font Size",
-            settings.menuFontSize,
-            8,
-            20,
-            1,
-            "menuFontSize",
-            "Font size for GAME, WORLD, INFO menu (8px to 20px)",
-            (v) => `${v}px`,
-          )}
-
-          {renderSlider(
-            "Sidebar Width",
-            settings.sidebarWidth,
-            100,
-            300,
-            10,
-            "sidebarWidth",
-            "Width of the info panel on desktop (100px to 300px)",
-            (v) => `${v}px`,
-          )}
-
-          {renderSlider(
-            "Minimap Height",
-            settings.minimapHeight,
-            80,
-            450,
-            10,
-            "minimapHeight",
-            "Height of minimap display (80px to 450px)",
-            (v) => `${v}px`,
-          )}
-
-          {renderSlider(
-            "Civilization List Font Size",
-            settings.civListFontSize,
-            8,
-            16,
-            1,
-            "civListFontSize",
-            "Font size for civilization names in the info panel (8px to 16px)",
-            (v) => `${v}px`,
-          )}
-
-          <Form.Check
-            type="switch"
-            id="enableAnimations"
-            label="Enable animations"
-            checked={settings.enableAnimations}
-            onChange={(e) =>
-              actions.updateSettings({ enableAnimations: e.target.checked })
-            }
-            className="settings-control__toggle"
-          />
-
-          <Form.Check
-            type="switch"
-            id="autoCamera"
-            label="Auto-move camera"
-            checked={settings.autoCamera !== false}
-            onChange={(e) =>
-              actions.updateSettings({ autoCamera: e.target.checked })
-            }
-            className="settings-control__toggle"
-          />
 
           {renderSlider(
             "Animation Speed",
@@ -189,6 +137,7 @@ function SettingsModal({ show, onHide, isPaused = false, onTogglePause }) {
             "How fast the camera pans to a new focus (leftmost = instant)",
             (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
           )}
+          </div>
         </Form>
       </Modal.Body>
       <Modal.Footer className="settings-modal__footer">

@@ -1408,8 +1408,6 @@ function App() {
       <SettingsModal
         show={showSettings}
         onHide={() => setShowSettings(false)}
-        isPaused={isPaused}
-        onTogglePause={handleTogglePause}
       />
 
       {/* End Turn Confirmation Modal */}

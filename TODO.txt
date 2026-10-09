@@ -33,7 +33,7 @@ some names of books - Dont use arrows and focuce on one main picture add NO o ad
 
 * Add new units for land transportation of units.
 
-* Bring units should have the following outcomes:
+* Bribing units should have the following outcomes:
   1. Defector
      The bribing is reported and it as effect on the deplomacy.
   2. The unit takes the money and does nothing than a modal opens telling the player: The commander of the unit takes your money and laugh at you, he proclaims he proclaims loyalty to **ruler**.

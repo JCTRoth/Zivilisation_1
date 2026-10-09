@@ -220,10 +220,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   // Settings
   settings: {
     uiScale: 1.0,        // Overall UI scale multiplier (0.5 to 2.0)
-    menuFontSize: 12,    // Top menu font size in pixels
-    sidebarWidth: 140,   // Left sidebar width in pixels
-    minimapHeight: 120,  // Minimap height in pixels
-    civListFontSize: 10, // Civilization list font size
     skipEndTurnConfirmation: false, // Skip showing end turn confirmation modal
     autoEndTurn: false, // Automatically end turn when all human player units are done (default disabled)
     autoCamera: true,   // Automatically move camera to focused unit / event
