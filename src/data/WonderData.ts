@@ -1175,11 +1175,9 @@ export const WONDER_ARTWORK_CREDITS: Readonly<Record<string, WonderArtworkCredit
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0',
   },
   silk_road: {
+    // Artwork supplied by the project owner — no external source, author or
+    // licence to attribute.
     articleUrl: 'https://en.wikipedia.org/wiki/Silk_Road',
-    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Catalan_Atlas_caravan_drawing.jpg',
-    author: 'Abraham Cresques (Catalan Atlas, 1375)',
-    license: 'Public domain',
-    licenseUrl: '',
   },
   copernicus_observatory: {
     articleUrl: 'https://en.wikipedia.org/wiki/Nicolaus_Copernicus',

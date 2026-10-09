@@ -3,12 +3,12 @@ Wonder Artwork — full source list
 
 Provenance for every picture in `public/assets/wonders/`.
 
-Nine pictures (Colossus, Great Library, Hanging Gardens, Lighthouse, Oracle,
+Ten pictures (Colossus, Great Library, Hanging Gardens, Lighthouse, Oracle,
 Magellan's Expedition, Shakespeare's Theatre, Leonardo's Workshop,
-Super-Kamiokande) are supplied
+Super-Kamiokande, Silk Road) are supplied
 by the project owner from their own collection. They have no external source,
 so the game shows no image-source link for them — only the "Read more on
-Wikipedia" link. The remaining sixteen come from Wikimedia Commons as
+Wikipedia" link. The remaining fourteen come from Wikimedia Commons as
 described below.
 
 HOW EACH PICTURE WAS OBTAINED
@@ -97,9 +97,8 @@ Pyramids
 Silk Road
 ---------
   file            public/assets/wonders/silk_road.jpg
-  author          Abraham Cresques (Catalan Atlas, 1375)
-  licence         Public domain
-  image source    https://commons.wikimedia.org/wiki/File:Catalan_Atlas_caravan_drawing.jpg
+  artwork         supplied by the project owner (own collection)
+  image source    — (own artwork, no external source)
   article         https://en.wikipedia.org/wiki/Silk_Road
 
 
@@ -237,4 +236,4 @@ Colossus (AI Supercluster)
   article         https://en.wikipedia.org/wiki/Colossus_(data_center)
 
 ==============================================================================
-16 pictures from Wikimedia Commons + 9 supplied by the project owner.
+14 pictures from Wikimedia Commons + 10 supplied by the project owner.
