@@ -1,0 +1,73 @@
+= Development Status
+
+== Recent Work (Committed)
+
+*Commit `93c95c7` — Performance optimizations:*
+
+[cols="1,2", options="header"]
+|===
+|File |Change
+
+|`AutoProduction.ts`
+|Naval doctrine verdict cached per civ; avoids re-running island scans, per-city threat probes, and economy calculations for every city/queue slot
+
+|`EconomicManager.ts`
+|`hasActiveFishingNet` (O(units) per tile) replaced with a lazily-built `Set<string>` of active fishing grounds — O(1) lookup after first build
+
+|`GameEngine.ts`
+|`Math.min(...cities.map(...))` replaced with a plain loop in the island-distance scan — no array allocation per land tile
+
+|`GameCanvas.tsx`
+|`hashTerrainTypes` mixes hash fields directly instead of concatenating a string per tile — no per-tile string garbage
+
+|`AIManager.ts`
+|Added `buildLandReachableLookup` wrapper (used by new tests)
+|===
+
+*Verification:* All 1062 tests pass, type-check clean, lint clean.
+
+---
+
+== Dead Code Status
+
+Knip reports *57 unused exports* — all pre-existing, none introduced by the recent changes. These are mostly tuning constants in `src/game/engine/AI/*` and `src/data/*` that are exported but never imported.
+
+---
+
+== Immediate Recommendation
+
+*Start with #1 (Naval Invasion).* It is the most impactful gap: without it, cross-water AI wars are stalemates, and the AI cannot project power across maps with straits or islands. The transport/embark mechanics already exist at the unit level (cargo capacity, coordinate alignment), so the missing piece is the mission planning layer in AIManager.
+
+== Priority Order
+
+=== 1. Naval Invasion / Transport Missions
+The navy pivot builds ships but there is *no transport/invasion mission* — only colony missions exist. Until this is implemented, an AI-vs-AI map whose strait splits civs across two continents is an unwinnable stalemate (465-round run: 17 wars, 3 attacks). This is the single biggest gameplay gap.
+
+=== 2. Multi-Group Offensives / Siege Commitment
+Two army groups can form, but there is *no coordination* between them — no pincer/second-front planning. Groups operate independently.
+
+=== 3. Army Composition by Era
+The AI still over-produces the era's default defender. Needs stronger era/threat-aware composition weights so armies evolve with technology.
+
+=== 4. Economy Buildings Earlier
+The AI reaches 0–8 gold with big armies. Marketplace/Bank/Temple should be built earlier when upkeep pressure starts.
+
+=== 5. Diplomacy Overhaul
+* Tech exchange (offer tech for tech, tech for money) — engine + UI exist,
+   but no tech-for-money (sell a tech) proposal
+* Gold transfer (send/request gold as a gift, not a demand)
+* AI-to-AI alliance calls for help
+* Embassy-based observation of AI-to-AI diplomacy
+
+=== 6. End-of-Game Statistics & High Scores
+* End-of-game statistics screen (economics, military, science)
+* Civ1-style demographics screen (greatest cities, world rankings)
+* High score system with server submission
+
+=== 7. Dead Code Cleanup
+DONE — the 57 unused exports knip reported are gone. Tuning constants and
+helpers that are genuinely used inside their own module were un-exported; the
+rest were deleted. knip now reports nothing.
+
+=== 8. Client/Server Split
+The game engine is designed to support networked multiplayer but it is not yet implemented. A lobby system, network multiplayer, and replay system are all planned.

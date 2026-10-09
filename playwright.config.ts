@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * Playwright end-to-end test configuration.
  *
- * FAIL-FAST STRATEGY (see also .github/copilot-instructions.md):
+ * FAIL-FAST STRATEGY (see also .github/copilot-instructions.adoc):
  *   1. `globalSetup` performs a lightweight HTTP connectivity pre-check.
  *      If the application is unreachable it throws, aborting the entire run
  *      before any browser is launched.

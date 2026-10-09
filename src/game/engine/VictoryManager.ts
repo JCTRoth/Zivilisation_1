@@ -104,7 +104,7 @@ export class VictoryManager {
   }
 
   /**
-   * Civ1 score (GAMEPLAY.md): population (1/citizen), land area (1/tile the
+   * Civ1 score (GAMEPLAY.adoc): population (1/citizen), land area (1/tile the
    * civ's cities work), cities (5 each), technologies (5 each) and wonders
    * (20 each). Recomputed every turn end so the scoreboard and the exported
    * progression CSV show live values.
@@ -140,7 +140,7 @@ export class VictoryManager {
     }
 
     // Pollution penalty: every pollution point from the civ's buildings
-    // subtracts from the score (GAMEPLAY.md).
+    // subtracts from the score (GAMEPLAY.adoc).
     const pollution = cities.reduce(
       (sum, c) =>
         sum +

@@ -17,7 +17,7 @@ If you are changing a happiness value, this is the file to update.
 Source of truth per section is named in the "Defined in" note.
 ====
 
-Where this document and `GAMEPLAY.md` or `GAME_RULES.adoc` disagree, *this
+Where this document and `GAMEPLAY.adoc` or `GAME_RULES.adoc` disagree, *this
 document* is right for happiness and disorder.
 
 == The one-sentence version

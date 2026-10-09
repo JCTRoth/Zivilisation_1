@@ -14,8 +14,8 @@ If you are changing a balance value, this is the file to update.
 Source of truth per section is named in the "Defined in" note.
 ====
 
-Where this document and `GAMEPLAY.md` disagree, *this document is right* and
-`GAMEPLAY.md` is out of date.
+Where this document and `GAMEPLAY.adoc` disagree, *this document is right* and
+`GAMEPLAY.adoc` is out of date.
 
 == Conventions
 
@@ -267,7 +267,7 @@ Dev Mode on, disable the 250 ms AI think delay, and start already playing.
 
 === Static maps
 
-See link:STATIC_MAPS.md[Static Maps] and link:NEW_MAP_GUIDE.adoc[Adding a new map].
+See link:STATIC_MAPS.adoc[Static Maps] and link:NEW_MAP_GUIDE.adoc[Adding a new map].
 
 [cols="2,1,1,1", options="header"]
 |===
@@ -1763,7 +1763,7 @@ An invalid roll is re-rolled up to 10 times, then falls back to gold.
 == Diplomacy
 
 Defined in: `src/game/engine/DiplomacyManager.ts`. Full detail in
-link:DIPLOMACY_SYSTEM.md[Diplomacy System].
+link:DIPLOMACY_SYSTEM.adoc[Diplomacy System].
 
 [cols="2,3", options="header"]
 |===

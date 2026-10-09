@@ -4,7 +4,7 @@ Everything needed to ship a new world: how to *make* one, how to wire it into
 the game, how to make it a selectable scenario, and how to prove it is actually
 a good map rather than a shape that merely loads.
 
-Companion documents: `STATIC_MAPS.md` (the data format in depth) and
+Companion documents: `STATIC_MAPS.adoc` (the data format in depth) and
 `../scripts/generate-naval-map.mjs` (the reference generator, with its own
 in-file notes on why the archipelago is shaped the way it is).
 
@@ -307,7 +307,7 @@ setup wizard at all:
 
 === Look at the numbers, not just the screenshot
 
-A 200-round run's CSV (`doc/GAME_PROGRESSION_EXPORT.md`) answers the questions
+A 200-round run's CSV (`doc/GAME_PROGRESSION_EXPORT.adoc`) answers the questions
 that decide whether a map is good:
 
 [cols="1,3"]

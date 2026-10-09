@@ -7,8 +7,8 @@ Scope: `src/game/engine/AI/*`, `src/game/engine/AutoProduction.ts`, `src/game/en
 
 Related: `TODO.txt:52-70` (AI-vs-AI stalemate), `TODO.txt:310-327` (city + money
 management), `TODO.txt:59-62` and `TODO.txt:285-288` (naval),
-`AI_SESSION_ANALYSIS.md`, `doc/AI_VS_AI_ANALYSIS.md`, `doc/AI_ECONOMY.md`,
-`doc/AI_PRODUCTION.md`, `doc/DIPLOMACY_SYSTEM.md`
+`AI_SESSION_ANALYSIS.adoc`, `doc/AI_VS_AI_ANALYSIS.adoc`, `doc/AI_ECONOMY.adoc`,
+`doc/AI_PRODUCTION.adoc`, `doc/DIPLOMACY_SYSTEM.adoc`
 
 == The goal, restated
 
@@ -141,7 +141,7 @@ One mechanism (hysteresis + commitment on goals) replaces all of them.
 === 2.8 There is no measurement gate
 
 `tests/ai/longRunSimulation.test.ts` has 7 assertions. The CSV/JSONL export
-(`doc/GAME_PROGRESSION_EXPORT.md`) is rich and `scripts/run-naval-session.mjs` is
+(`doc/GAME_PROGRESSION_EXPORT.adoc`) is rich and `scripts/run-naval-session.mjs` is
 a real harness — but nothing diffs AI behaviour before/after a refactor. A change
 of this size *without* a golden-run diff is flying blind.
 
@@ -496,7 +496,7 @@ investing in phases 4-8.
 . *Explainability can be over-trusted.* A goal score of 0.62 tells you nothing
   about whether the number is right. Scores are a debugging aid, not a proof.
 . *Refactor-before-measure is how this project already got into trouble.*
-  `AI_SESSION_ANALYSIS.md` is a list of symptoms found by running sessions and
+  `AI_SESSION_ANALYSIS.adoc` is a list of symptoms found by running sessions and
   reading logs. Phase 0 is not overhead; it is the thing that makes phases 1-8
   survivable.
 

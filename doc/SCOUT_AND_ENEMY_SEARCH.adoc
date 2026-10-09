@@ -1,0 +1,192 @@
+= Scout Unit and Enemy Search Implementation
+
+== Overview
+This document describes the implementation of the Scout unit and the EnemySearcher system for AI reconnaissance.
+
+== Components Added
+
+=== 1. Scout Unit (`src/data/UnitConstants.ts`)
+
+*Unit Properties*:
+* *Name:* Scout
+* *Icon:* 👁️ (eye emoji)
+* *Type:* military
+* *Movement:* 2 tiles per turn
+* *Attack:* 0.5 (half of warrior)
+* *Defense:* 1
+* *Cost:* 15 shields
+* *Maintenance:* 1 gold per turn
+* *Sight Range:* 2 tiles (enhanced vision)
+
+*Unit Constant*:
+[source,typescript]
+----
+UNIT_TYPES.SCOUT: 'scout'
+----
+
+=== 2. EnemySearcher Class (`src/game/engine/EnemySearcher.ts`)
+
+A sophisticated enemy detection system using a hybrid search algorithm.
+
+*Search Strategy*:
+. *Spiral Search* - Prioritizes nearby enemies by searching outward in expanding square rings
+. *Row-Major Fallback* - Ensures complete coverage by scanning remaining tiles systematically
+
+*Key Methods*:
+
+==== `findNearestEnemy()`
+[source,typescript]
+----
+public static findNearestEnemy(
+  startCol: number,
+  startRow: number,
+  mapWidth: number,
+  mapHeight: number,
+  getUnitAt: (col: number, row: number) => any,
+  getCityAt: (col: number, row: number) => any,
+  isVisible: (col: number, row: number) => boolean,
+  civilizationId: number,
+  maxRadius?: number
+): SearchResult | null
+----
+
+Returns the nearest enemy unit or city within visible range.
+
+==== `findAllEnemiesInRadius()`
+[source,typescript]
+----
+public static findAllEnemiesInRadius(
+  centerCol: number,
+  centerRow: number,
+  radius: number,
+  mapWidth: number,
+  mapHeight: number,
+  getUnitAt: (col: number, row: number) => any,
+  getCityAt: (col: number, row: number) => any,
+  isVisible: (col: number, row: number) => boolean,
+  civilizationId: number
+): SearchResult[]
+----
+
+Returns all enemies within a specified radius, sorted by distance.
+
+*Search Result Interface*:
+[source,typescript]
+----
+interface SearchResult {
+  col: number;           // Enemy tile column
+  row: number;           // Enemy tile row
+  distance: number;      // Square distance from search origin
+  targetType: 'unit' | 'city';  // Type of enemy found
+  targetId: string;      // ID of the enemy unit/city
+}
+----
+
+*Features*:
+* Respects fog of war - only searches visible tiles
+* Uses visited Set to avoid duplicate checks
+* Optimized for medium-size maps (70x50)
+* Detailed logging with statistics
+
+=== 3. AI Scout Behavior (`src/game/engine/GameEngine.ts`)
+
+*Scout Reconnaissance Flow*:
+
+. *Enemy Search Phase*
+   ** Scout uses `EnemySearcher.findNearestEnemy()` to scan for enemies
+   ** Searches only visible/explored tiles
+   ** When enemy found, stores location in `unit.enemyFound` and `unit.enemyLocation`
+
+. *Return to City Phase*
+   ** Scout identifies nearest own city using `findNearestOwnCity()`
+   ** Pathfinds back to the city
+   ** Upon arrival, scout fortifies and triggers warrior production
+
+. *Warrior Deployment*
+   ** City production switched to Warrior
+   ** Enemy location stored in city's `enemyTarget` property
+   ** Warrior will be sent to stored enemy location upon completion
+
+*New Helper Methods*:
+
+==== `findNearestOwnCity(unit)`
+Finds the closest city owned by the unit's civilization using square distance calculation.
+
+==== `triggerWarriorProduction(city, enemyLocation)`
+* Sets city production to Warrior
+* Stores enemy location for future warrior deployment
+* Updates build queue
+
+*AI Production Changes*:
+* Human cities: Build Warrior first (default)
+* AI cities: Build Scout first (reconnaissance priority)
+
+== Workflow
+
+=== AI Turn Processing
+. AI founds city → City builds Scout (not Warrior)
+. Scout completes production → Deploys from city
+. Scout explores map using standard exploration AI
+. Scout uses EnemySearcher during each turn
+. When enemy detected:
+   ** Scout stores enemy location
+   ** Scout pathfinds to nearest own city
+   ** Scout fortifies at city
+   ** City switches production to Warrior
+   ** Enemy location stored for warrior deployment
+
+=== Key State Management
+* `unit.enemyFound` (boolean) - Flag indicating scout found enemy
+* `unit.enemyLocation` ({col, row}) - Stored enemy coordinates
+* `city.enemyTarget` ({col, row}) - Target for next warrior to attack
+
+== Technical Details
+
+=== Search Algorithm Performance
+* *Spiral Search:* O(r²) where r is radius to enemy
+* *Row-Major Fallback:* O(w×h) worst case where w=width, h=height
+* *Early Exit:* Returns immediately upon finding nearest enemy
+* *Visited Set:* Prevents redundant tile checks
+
+=== Visibility Integration
+* Uses tile.visible and tile.explored for visibility checks
+* Scouts have enhanced sight range (2 tiles)
+* EnemySearcher respects fog of war boundaries
+* Only visible enemies can be detected
+
+=== Logging Prefixes
+* `[AI-SCOUT]` - Scout behavior and decisions
+* `[AI-CITY]` - City production changes
+* `[EnemySearcher]` - Search progress and results
+
+== Future Enhancements
+
+Possible improvements:
+. *Warrior Deployment:* Implement logic to send produced warriors to stored enemy locations
+. *Multi-Scout Coordination:* Prevent multiple scouts from targeting same enemy
+. *Threat Assessment:* Prioritize high-value targets (cities over units)
+. *Scout Retreat:* Return to city if scout health is low
+. *Patrol Routes:* Define systematic exploration patterns
+. *Intelligence Sharing:* Share discovered enemy locations between units
+
+== Files Modified
+
+* `src/data/UnitConstants.ts` - Added Scout unit definition
+* `src/game/engine/EnemySearcher.ts` - New file, enemy search system
+* `src/game/engine/GameEngine.ts` - Scout AI behavior, helper methods, production logic
+
+== Testing Recommendations
+
+. Start game as human player
+. Wait for AI to found first city
+. Observe AI building Scout instead of Warrior
+. Watch scout exploration patterns
+. Monitor console for `[AI-SCOUT]` messages
+. Verify scout returns to city when enemy found
+. Confirm city switches to Warrior production
+
+== Related Documentation
+
+* link:AI_SETTLER_INTEGRATION.adoc[AI Settler Integration] - AI settler behavior using SettlementEvaluator
+* link:GOTO_MANAGER_IMPLEMENTATION.adoc[GoToManager] - Pathfinding system used by scouts
+* link:GAMEPLAY.adoc[Gameplay] - Overall game mechanics

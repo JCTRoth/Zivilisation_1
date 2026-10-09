@@ -1,14 +1,14 @@
-# AI Overview
+= AI Overview
 
 Entry point to the computer-player layer. `AIManager.ts` alone is ~4,900 lines
 and the whole `AI/` folder is ~9,000, so this page is the map you want before
 you open any of it.
 
-For the numbers the AI plays against, see [`GAME_RULES.adoc`](GAME_RULES.adoc).
+For the numbers the AI plays against, see link:GAME_RULES.adoc[Game Rules Reference].
 
 ---
 
-## 1. The one-paragraph version
+== 1. The one-paragraph version
 
 Every AI civilization gets a **personality** (six axes, derived from a production
 profile) and a **strategy** (re-evaluated each turn from what it can actually
@@ -20,41 +20,92 @@ its own tax rates.
 
 ---
 
-## 2. Files
+== 2. Files
 
-| File | Lines | Responsibility |
-|---|---|---|
-| `AIManager.ts` | 4,931 | The turn orchestrator. Unit movement, target selection, missions, army assembly. |
-| `AIResearch.ts` | 483 | Picks the next technology. |
-| `AIUtility.ts` | 664 | Movement and tactical helpers. Best move, patrol waypoints, threat levels, defensive positions. |
-| `AIStrategy.ts` | 196 | Scores enemy targets and assesses city threat. |
-| `AIStrategySelector.ts` | 309 | Chooses the strategy profile, with hysteresis. |
-| `AIAggression.ts` | 378 | When to start a war, and bulk attack planning. |
-| `AICoordinator.ts` | 355 | Army groups: formation, rally, retreat, readiness. |
-| `AICityManager.ts` | 494 | The **city governor** — re-assigns tiles, feeds people, picks specialists. |
-| `AIEconomicManager.ts` | 276 | Tax rate policy, reserve targets, sustainable unit cap. |
-| `AIBuildingStrategy.ts` | 444 | Building and wonder choice. |
-| `NavalDoctrine.ts` | 360 | Fleet sizing, warship and landing target scoring. |
-| `AITypes.ts` | 360 | Shared types, `CIV_PRODUCTION_PROFILES`, personality table, tech categories. |
+[cols="1,1,2", options="header"]
+|===
+|File |Lines |Responsibility
+
+|`AIManager.ts`
+|4,931
+|The turn orchestrator. Unit movement, target selection, missions, army assembly.
+
+|`AIResearch.ts`
+|483
+|Picks the next technology.
+
+|`AIUtility.ts`
+|664
+|Movement and tactical helpers. Best move, patrol waypoints, threat levels, defensive positions.
+
+|`AIStrategy.ts`
+|196
+|Scores enemy targets and assesses city threat.
+
+|`AIStrategySelector.ts`
+|309
+|Chooses the strategy profile, with hysteresis.
+
+|`AIAggression.ts`
+|378
+|When to start a war, and bulk attack planning.
+
+|`AICoordinator.ts`
+|355
+|Army groups: formation, rally, retreat, readiness.
+
+|`AICityManager.ts`
+|494
+|The **city governor** — re-assigns tiles, feeds people, picks specialists.
+
+|`AIEconomicManager.ts`
+|276
+|Tax rate policy, reserve targets, sustainable unit cap.
+
+|`AIBuildingStrategy.ts`
+|444
+|Building and wonder choice.
+
+|`NavalDoctrine.ts`
+|360
+|Fleet sizing, warship and landing target scoring.
+
+|`AITypes.ts`
+|360
+|Shared types, `CIV_PRODUCTION_PROFILES`, personality table, tech categories.
+|===
 
 Shared, non-AI code the AI depends on:
 
-| File | Why the AI needs it |
-|---|---|
-| `AutoProduction.ts` (1,854) | The AI does **not** have its own production logic. It uses the same auto-production you can turn on for your own cities. |
-| `SettlementEvaluator.ts` (649) | City-site scoring, with per-strategy weight presets. |
-| `BarbarianManager.ts` (252) | A separate, simpler AI for the horde. |
-| `EnemySearcher.ts` (427) | Spiral search for enemies, scout zones. |
-| `ScoutMemory.ts` (221) | Cross-turn intel so a scout does not re-explore the same tiles. |
+[cols="1,2", options="header"]
+|===
+|File |Why the AI needs it
+
+|`AutoProduction.ts` (1,854)
+|The AI does **not** have its own production logic. It uses the same auto-production you can turn on for your own cities.
+
+|`SettlementEvaluator.ts` (649)
+|City-site scoring, with per-strategy weight presets.
+
+|`BarbarianManager.ts` (252)
+|A separate, simpler AI for the horde.
+
+|`EnemySearcher.ts` (427)
+|Spiral search for enemies, scout zones.
+
+|`ScoutMemory.ts` (221)
+|Cross-turn intel so a scout does not re-explore the same tiles.
+|===
 
 ---
 
-## 3. Identity: profile and personality
+== 3. Identity: profile and personality
 
 A civ does not pick a personality from its slot in the civ list. It gets a
 **production profile**, and personality is derived from that profile.
 
-```ts
+[source,ts]
+----
 CIV_PRODUCTION_PROFILES = [
   'early_expansion',
   'military_expansion',
@@ -65,16 +116,60 @@ CIV_PRODUCTION_PROFILES = [
 ]
 
 getCivProductionProfile(id) = PROFILES[id % 6]
-```
+----
 
-| Profile | aggression | diplomacy | military | expansion | science | economy |
-|---|---|---|---|---|---|---|
-| `military_expansion` | 8 | 3 | 9 | 8 | 3 | 4 |
-| `early_expansion` | 6 | 5 | 5 | 9 | 5 | 6 |
-| `science_focus` | 3 | 7 | 3 | 5 | 9 | 5 |
-| `defensive_turtle` | 2 | 6 | 7 | 4 | 6 | 6 |
-| `wonder_rush` | 4 | 6 | 4 | 4 | 7 | 7 |
-| `balanced_growth` (default) | 5 | 5 | 5 | 6 | 5 | 5 |
+[cols="1,1,1,1,1,1,1,1", options="header"]
+|===
+|Profile |aggression |diplomacy |military |expansion |science |economy
+
+|`military_expansion`
+|8
+|3
+|9
+|8
+|3
+|4
+
+|`early_expansion`
+|6
+|5
+|5
+|9
+|5
+|6
+
+|`science_focus`
+|3
+|7
+|3
+|5
+|9
+|5
+
+|`defensive_turtle`
+|2
+|6
+|7
+|4
+|6
+|6
+
+|`wonder_rush`
+|4
+|6
+|4
+|4
+|7
+|7
+
+|`balanced_growth` (default)
+|5
+|5
+|5
+|6
+|5
+|5
+|===
 
 `aggression` and `diplomacy` feed straight into the diplomacy attitude formula
 (see `GAME_RULES.adoc`), which is why a `military_expansion` civ gets a hostile
@@ -87,7 +182,7 @@ pinned `?seed=` makes that rotation reproducible.
 
 ---
 
-## 4. The AI turn, in order
+== 4. The AI turn, in order
 
 `AIManager.runAITurn`:
 
@@ -119,41 +214,124 @@ A hard timeout force-ends the turn:
 
 ---
 
-## 5. Notable tuning constants
+== 5. Notable tuning constants
 
-| Constant | Value | Meaning |
-|---|---|---|
-| `SETTLE_SCORE_THRESHOLD` | 12 | Minimum site score before founding |
-| `LATE_SETTLE_SCORE_THRESHOLD` | 20 | …and for a settler that just finished working its own cities |
-| `MAX_SETTLE_WALK_DISTANCE` | 4 | How far a settler will walk for a site |
-| `LATE_INFRA_CITY_THRESHOLD` | 6 | Above this many cities the expansionist profiles build works first |
-| `CITY_AREA_IMPROVED_TARGET` | 0.5 | A settler leaves a city once half its area is improved |
-| `OUTSIDE_IRRIGATION_FIELDS` | 3 | How far out a food-short city's irrigation may start |
-| `OSCILLATION_WINDOW` / `_THRESHOLD` | 6 / 3 | Detects a unit bouncing between two tiles |
-| `OFFENSIVE_PLAN_MAX_AGE_ROUNDS` | 20 | Stale offensive plans are dropped |
-| `RETALIATION_WINDOW_ROUNDS` | 15 | How long the AI remembers being attacked |
-| `AGGRESSION_TRIGGER_THRESHOLD` | 50 | Composite score to open a war |
-| `AGGRESSION_TRIGGER_BAND` | 15 | Hysteresis band on that score |
-| `BULK_ATTACK_STRENGTH_RATIO` | 1.3 | Need 1.3× the city defence to commit |
-| `MIN_GROUP_SIZE` | 3 | Smallest army group |
-| `RETREAT_THRESHOLD` | 2.0 | Enemy this much stronger → retreat |
-| `ATTACK_READINESS_MULTIPLIER` | 1.5 | Group needs 1.5× the target to attack |
-| `RALLY_TIMEOUT_ROUNDS` | 6 | Give up on a stalled rally |
-| `AI_SCIENCE_FLOOR` | 20 | Never drop science below 20 % |
-| `AI_MIN_TAX` | 35 | Never drop tax below 35 % |
-| `AI_MIN_FOOD_SURPLUS` | 1 | Governor accepts a deficit below this |
-| `AI_FOOD_SURPLUS_CAP` | 4 | Stops hoarding food once this surplus is reached |
-| `AI_FAMINE_WARNING_TURNS` | 2 | React to famine this many turns out |
-| `AI_MAX_SPECIALISTS_PER_CITY` | 2 | |
-| `MAX_ENTERTAINERS_PER_CITY` | 2 | |
-| `MAX_WARSHIPS_ABSOLUTE` | 12 | Hard fleet cap |
-| `MAX_TRANSPORTS_PER_CITY` | 0.5 | Ferry target as a fraction of city count |
-| `AUTO_QUEUE_TARGET` | 3 | Auto-production keeps 3 items queued |
-| `AI_ABSOLUTE_MAX_SCOUTS` | 3 | |
+[cols="1,1,2", options="header"]
+|===
+|Constant |Value |Meaning
+
+|`SETTLE_SCORE_THRESHOLD`
+|12
+|Minimum site score before founding
+
+|`LATE_SETTLE_SCORE_THRESHOLD`
+|20
+|…and for a settler that just finished working its own cities
+
+|`MAX_SETTLE_WALK_DISTANCE`
+|4
+|How far a settler will walk for a site
+
+|`LATE_INFRA_CITY_THRESHOLD`
+|6
+|Above this many cities the expansionist profiles build works first
+
+|`CITY_AREA_IMPROVED_TARGET`
+|0.5
+|A settler leaves a city once half its area is improved
+
+|`OUTSIDE_IRRIGATION_FIELDS`
+|3
+|How far out a food-short city's irrigation may start
+
+|`OSCILLATION_WINDOW` / `_THRESHOLD`
+|6 / 3
+|Detects a unit bouncing between two tiles
+
+|`OFFENSIVE_PLAN_MAX_AGE_ROUNDS`
+|20
+|Stale offensive plans are dropped
+
+|`RETALIATION_WINDOW_ROUNDS`
+|15
+|How long the AI remembers being attacked
+
+|`AGGRESSION_TRIGGER_THRESHOLD`
+|50
+|Composite score to open a war
+
+|`AGGRESSION_TRIGGER_BAND`
+|15
+|Hysteresis band on that score
+
+|`BULK_ATTACK_STRENGTH_RATIO`
+|1.3
+|Need 1.3× the city defence to commit
+
+|`MIN_GROUP_SIZE`
+|3
+|Smallest army group
+
+|`RETREAT_THRESHOLD`
+|2.0
+|Enemy this much stronger → retreat
+
+|`ATTACK_READINESS_MULTIPLIER`
+|1.5
+|Group needs 1.5× the target to attack
+
+|`RALLY_TIMEOUT_ROUNDS`
+|6
+|Give up on a stalled rally
+
+|`AI_SCIENCE_FLOOR`
+|20
+|Never drop science below 20 %
+
+|`AI_MIN_TAX`
+|35
+|Never drop tax below 35 %
+
+|`AI_MIN_FOOD_SURPLUS`
+|1
+|Governor accepts a deficit below this
+
+|`AI_FOOD_SURPLUS_CAP`
+|4
+|Stops hoarding food once this surplus is reached
+
+|`AI_FAMINE_WARNING_TURNS`
+|2
+|React to famine this many turns out
+
+|`AI_MAX_SPECIALISTS_PER_CITY`
+|2
+|
+
+|`MAX_ENTERTAINERS_PER_CITY`
+|2
+|
+
+|`MAX_WARSHIPS_ABSOLUTE`
+|12
+|Hard fleet cap
+
+|`MAX_TRANSPORTS_PER_CITY`
+|0.5
+|Ferry target as a fraction of city count
+
+|`AUTO_QUEUE_TARGET`
+|3
+|Auto-production keeps 3 items queued
+
+|`AI_ABSOLUTE_MAX_SCOUTS`
+|3
+|
+|===
 
 ---
 
-## 6. The city governor
+== 6. The city governor
 
 `AICityManager` runs every city every turn:
 
@@ -171,7 +349,7 @@ The human has an equivalent: `setCityGovernor` in `GameEngine`, with
 
 ---
 
-## 7. Naval AI
+== 7. Naval AI
 
 Pure policy lives in `NavalDoctrine`; the movement lives in `AIManager`.
 
@@ -190,9 +368,10 @@ Pure policy lives in `NavalDoctrine`; the movement lives in `AIManager`.
 
 ---
 
-## 8. Running the AI without a browser
+== 8. Running the AI without a browser
 
-```bash
+[source,bash]
+----
 # headless batch over many seeds, writes game-logs/
 node scripts/run-ai-batch.mjs
 
@@ -204,40 +383,62 @@ node scripts/run-ai-analysis-session.mjs
 
 # naval scenario
 node scripts/run-naval-session.mjs
-```
+----
 
 Or drive it from a browser with no clicking at all:
 
-```
+----
 http://localhost:5173/?maptype=AI_VS_AI_NAVAL&civs=7&seed=123&gold=50&noanim
-```
+----
 
 Pinning `seed` pins the map *and* the start assignment *and* the profile
 rotation, so a regression is reproducible.
 
 Every session writes a progression CSV. See
-[`GAME_PROGRESSION_EXPORT.md`](GAME_PROGRESSION_EXPORT.md) for the format.
+link:GAME_PROGRESSION_EXPORT.adoc[Game Progression Export] for the format.
 
 ---
 
-## 9. Deeper reading, in the `doc/` folder
+== 9. Deeper reading, in the `doc/` folder
 
-| Document | Covers |
-|---|---|
-| [`AI_ECONOMY.md`](AI_ECONOMY.md) | Tax/science/luxury rebalancing, the gold reserve floor, upkeep, deficit handling, the sustainable unit cap |
-| [`AI_PRODUCTION.md`](AI_PRODUCTION.md) | Production profiles and expansion-first auto-production |
-| [`AI_SETTLER_INTEGRATION.md`](AI_SETTLER_INTEGRATION.md) | How settlers call `SettlementEvaluator` |
-| [`AI_VS_AI_ANALYSIS.md`](AI_VS_AI_ANALYSIS.md) | A headless 300-round analysis and the fixes it produced |
-| [`AI_MICRO_ERRORS_REPORT.adoc`](AI_MICRO_ERRORS_REPORT.adoc) | Micro-error catalogue from a 587-round session, fixed and unfixed |
-| [`space-bunny-free_ai_gov.adoc`](space-bunny-free_ai_gov.adoc) | Design critique: why the current AI is shaped the way it is, and a proposed rebuild |
-| [`leader-doctrines.adoc`](leader-doctrines.adoc) | Proposal for per-civ doctrines |
-| [`SCOUT_AND_ENEMY_SEARCH.md`](SCOUT_AND_ENEMY_SEARCH.md) | The scout unit and spiral enemy search |
-| [`CITY_CAPTURE.md`](CITY_CAPTURE.md) | What happens when a city falls, including AI behaviour |
-| [`GAME_RULES.adoc`](GAME_RULES.adoc) § Barbarians | The horde is a separate, simpler AI |
+[cols="1,2", options="header"]
+|===
+|Document |Covers
+
+|link:AI_ECONOMY.adoc[AI Economy]
+|Tax/science/luxury rebalancing, the gold reserve floor, upkeep, deficit handling, the sustainable unit cap
+
+|link:AI_PRODUCTION.adoc[AI Production]
+|Production profiles and expansion-first auto-production
+
+|link:AI_SETTLER_INTEGRATION.adoc[AI Settler Integration]
+|How settlers call `SettlementEvaluator`
+
+|link:AI_VS_AI_ANALYSIS.adoc[AI vs AI Analysis]
+|A headless 300-round analysis and the fixes it produced
+
+|link:AI_MICRO_ERRORS_REPORT.adoc[AI Micro-Errors Report]
+|Micro-error catalogue from a 587-round session, fixed and unfixed
+
+|link:space-bunny-free_ai_gov.adoc[AI Governor Architecture]
+|Design critique: why the current AI is shaped the way it is, and a proposed rebuild
+
+|link:leader-doctrines.adoc[Leader Doctrines]
+|Proposal for per-civ doctrines
+
+|link:SCOUT_AND_ENEMY_SEARCH.adoc[Scout & Enemy Search]
+|The scout unit and spiral enemy search
+
+|link:CITY_CAPTURE.adoc[City Capture]
+|What happens when a city falls, including AI behaviour
+
+|link:GAME_RULES.adoc[Game Rules Reference] § Barbarians
+|The horde is a separate, simpler AI
+|===
 
 ---
 
-## 10. Known weaknesses
+== 10. Known weaknesses
 
 * `space-bunny-free_ai_gov.adoc` argues the strategy layer is close to dead code
   and that two 500-line if-cascades in `AICityManager` and `AIManager` are the

@@ -1,0 +1,82 @@
+= AI-vs-AI Gameplay Analysis & Fixes (2026-08-16)
+
+Analysis of a real 196-round AI-vs-AI game (`civ1-progression-compact-aivsai-2026-08-16T11-57-55-664Z.csv`
++ its 378-round `game-logs/aivsai-*.log`), focused on *missing aggression and player
+interaction*, with the root causes and fixes.
+
+== Symptoms in the data
+
+[cols="1,2", options="header"]
+|===
+|Symptom |Evidence
+
+|War but no fighting
+|War from round 103 (93+ rounds), *zero* city captures, only *4* attacks total in 350 rounds (scout/archer skirmishes only)
+
+|Research freeze
+|Germans (civ 0) stopped researching at turn 47 (techs stuck at 5) while Indians kept going (3→7)
+
+|Economy collapse
+|Both civs locked science → 0%, rates oscillated 100% luxury ↔ 100% tax, gold perpetually −20…−39
+
+|Produce→disband churn
+|*744* `UNIT_DISBANDED` events (~2/round); e.g. Germans 13 units → 6 in one turn
+
+|Stagnation
+|Both civs stuck at 5–6 cities / 41–48 pop for ~80 rounds; no expansion, no conquest
+|===
+
+== Root causes (verified in code + headless reproduction)
+
+1. *Research freeze — shared-tree `researched` flag gated per-civ research.*
+   `GameEngine.technologies` is a deep clone of `TECHNOLOGIES_DATA`.
+   `AIResearch.getAvailableTechnologies` read `TECHNOLOGIES_DATA.researched` (never
+   mutated, always `false`) while `setResearch` read the clone's union `researched`
+   flag (set `true` when the *other* civ completes the tech). So a tech the other civ
+   already discovered was offered by the selector every turn but *silently rejected*
+   by `setResearch` → permanent freeze.
+
+2. *Economic death oscillation.* `EconomicManager.raiseTaxForAI` reacted to each
+   turn's snapshot with extremes and no hysteresis: deficit → tax 100% (cities fall
+   into disorder → commerce zeroed) → bankruptcy → luxury 100% (no income) → deficit.
+   Armies could never form, and excess units were disbanded by the upkeep deficit.
+
+3. *No city sieges.* (a) Scouts returned home on *any* enemy contact, so enemy
+   *cities* were never recorded in `enemyLocations` and the offensive plan had
+   nothing city-like to target. (b) The offensive plan was cancelled whenever *any*
+   friendly city was "threatened" (a low bar), and (c) defensive assignment outranked
+   the offensive plan in unit targeting, so even a viable siege plan never got units.
+
+== Fixes
+
+1. *Per-civ research (Civ1 semantics).*
+** `AIResearch.getAvailableTechnologies`: removed the `tech.researched` skip.
+** `GameEngine.setResearch`: gates on the civ's *own* techs + prerequisites (not the
+   global `available && !researched`). The shared-tree flags remain for UI coloring.
+
+2. *Stable AI rate policy.* `EconomicManager.raiseTaxForAI` rewritten: priority
+   luxury (avoid disorder) > tax (cover upkeep) > science (floor `AI_SCIENCE_FLOOR=20`,
+   `AI_MIN_TAX=10`), moving *gradually* (≤10 pts/turn), never 100/0/0 extremes.
+   Science only sacrificed when genuinely bankrupt (`gold < 0`).
+
+3. *Aggression un-stalemated* (`AIManager`):
+** Scouts keep exploring after spotting a lone enemy *unit*; they only report home
+   (and stop) on finding an enemy *city* — so `enemyLocations` now gets cities.
+** `updateOffensivePlan` is only cancelled for a *critical* threat
+   (`netThreat >= 2.5`), not any border skirmish.
+** `estimateRequiredStrength` for a city lowered 10 → 7 (≈3 units can mount a siege).
+** `selectStrategicTarget` now lets an explicit offensive plan win over generic
+   defensive shuffling.
+
+== Verified improvement (headless 300-round AI-vs-AI)
+
+* Research freeze *gone*: both civs reach 13–14 techs and keep researching.
+* No 100/0/0 rate swings, no produce→disband churn.
+* Attacks went from ~4 (real 350-round game) to 8–110 per simulation; occasional
+  enemy city razes now occur.
+
+== Tests
+
+* `tests/ai/aiAggression.test.ts` — per-civ `setResearch`, `raiseTaxForAI` stability,
+  and a 150-round headless AI-vs-AI run asserting both civs keep researching and fight.
+* Full suite green: `npx tsc --noEmit`, `npx vitest run` (388), `npx playwright test` (62).

@@ -9,11 +9,11 @@ Scope: civ ↔ leader identity. The constraint that shapes everything below: *th
 player may pick any of the 14 civs, on any of the 12 map types*, and the layer
 that must stay identical in all 168 combinations is diplomacy.
 
-Related: `doc/DIPLOMACY_SYSTEM.md` (current mechanics),
+Related: `doc/DIPLOMACY_SYSTEM.adoc` (current mechanics),
 `doc/space-bunny-free_ai_gov.adoc` (AI architecture; already uses the word
-*doctrine* for the goal set), `doc/AI_PRODUCTION.md:6-24` (the index → profile
+*doctrine* for the goal set), `doc/AI_PRODUCTION.adoc:6-24` (the index → profile
 table this document replaces), `TODO.txt:1-16` (diplomacy to-dos),
-`doc/AI_VS_AI_ANALYSIS.md` (the stalemate that motivates a peace-with-terms
+`doc/AI_VS_AI_ANALYSIS.adoc` (the stalemate that motivates a peace-with-terms
 model).
 
 == Terminology — the term I propose
@@ -954,7 +954,7 @@ five sit in the Charter's path.
 . **There is no war weariness.** `peaceTurns` is a score field only
    (`VictoryManager.ts:155`); nothing in the engine wants peace. A war can only
    end by strength ratio or by turn 15, which is exactly the stalemate recorded
-   in `doc/AI_VS_AI_ANALYSIS.md`. `peace.terms` and `minimumWarScore` need a
+   in `doc/AI_VS_AI_ANALYSIS.adoc`. `peace.terms` and `minimumWarScore` need a
    `warScore` to compare against, and `warScore` is where "Stalin's war" vs.
    "Caesar's war" becomes a number the player can see in the diplomacy screen.
 
@@ -1039,7 +1039,7 @@ Each step is independently shippable and independently testable.
   three wars in a row sues for peace with real terms. Nice, and it is the natural
   use of `warScore` once it exists.
 * **The Huns are named `Huns` in `GameData.ts:103` and `Kazakhs` in `README.adoc:198`
-  and `GAMEPLAY.md:23`.** Before the doctrine table is written, pick one — the
+  and `GAMEPLAY.adoc:23`.** Before the doctrine table is written, pick one — the
   leader is `Dschingis Khan` either way, and the city names are Kazakh.
 * **`bribeUnit` destroys the gold it takes** (`:611-621` deducts from the
   thief and never credits anyone). If bribery is going to be the counter-play

@@ -1,0 +1,126 @@
+= GoToManager Implementation
+
+== Overview
+The `GoToManager` class has been created to centralize all "Go To" movement functionality in the Civilization game. This class handles pathfinding, path execution, and automatic unit movement along calculated routes.
+
+== File Location
+`/home/jonas/Git/Civ1Browser/src/game/engine/GoToManager.ts`
+
+== Key Features
+
+=== 1. *Path Calculation*
+* `calculatePath(unit, targetCol, targetRow, getTileAt, mapWidth, mapHeight)` - Calculates optimal path from unit's current position to destination
+* Uses the existing `Pathfinding` class for route calculation
+* Returns success status and calculated path array
+
+=== 2. *Path Management*
+* `setUnitPath(unitId, path)` - Sets a Go To path for a unit and syncs with RoundManager
+* `getUnitPath(unitId)` - Retrieves the current path for a unit
+* `clearUnitPath(unitId)` - Clears the path and syncs with RoundManager
+* `getAllUnitPaths()` - Returns all active unit paths
+* `hasPath(unitId)` - Checks if a unit has an active Go To path
+
+=== 3. *Path Execution*
+* `executeFirstStep(unitId)` - Executes the first step of a unit's path
+** Checks for valid path and unit state
+** Validates unit has moves remaining
+** Calls GameEngine's moveUnit method
+** Updates path after successful move
+** Returns success status, reason, and remaining path
+
+* `executePathWithAnimation(unitId, delayMs, onStepComplete)` - Executes entire path with animation
+** Async method that moves unit step-by-step
+** Includes configurable delay between moves for animation
+** Calls callback after each step for UI updates
+** Automatically stops when path is complete or unit runs out of moves
+** Returns total steps completed
+
+=== 4. *Cleanup*
+* `cleanupDestroyedUnits(existingUnitIds)` - Removes paths for units that no longer exist
+
+== Integration Points
+
+=== GameEngine
+* GoToManager instance created in constructor: `this.goToManager = new GoToManager(this, this.roundManager)`
+* Available as `gameEngine.goToManager`
+
+=== GameCanvas
+The following sections have been updated to use GoToManager:
+
+. *Go To Mode Click Handler* (lines ~650-740)
+** Uses `goToManager.calculatePath()` to find route
+** Uses `goToManager.setUnitPath()` to set the path
+** Uses `goToManager.executeFirstStep()` for initial move
+
+. *Unit Click Path Continuation* (lines ~780-800)
+** Uses `goToManager.hasPath()` to check for existing path
+** Uses `goToManager.executeFirstStep()` to continue movement
+
+. *Automated Path Execution* (lines ~880-1050)
+** Uses `goToManager.setUnitPath()` to set path
+** Uses `goToManager.executePathWithAnimation()` for smooth animated movement
+** Includes fallback to old method if GoToManager unavailable
+
+=== RoundManager
+* RoundManager maintains its own path storage for compatibility
+* GoToManager syncs paths with RoundManager automatically
+* RoundManager still processes automated movements at turn start
+
+== Benefits
+
+. *Centralized Logic* - All Go To functionality in one place
+. *Easier Debugging* - Single source of truth for Go To operations
+. *Reusability* - Can be used by AI, UI, and automation systems
+. *Better Testing* - Isolated class can be unit tested
+. *Maintainability* - Changes to Go To behavior only need to be made in one place
+. *Animation Support* - Built-in support for animated multi-step movement
+
+== Usage Example
+
+[source,typescript]
+----
+// In GameCanvas or other components
+const goToManager = (gameEngine as any)?.goToManager;
+
+// Calculate path
+const pathResult = goToManager.calculatePath(
+  unit,
+  targetCol,
+  targetRow,
+  getTileAt,
+  mapWidth,
+  mapHeight
+);
+
+if (pathResult.success) {
+  // Set the path
+  goToManager.setUnitPath(unit.id, pathResult.path);
+
+  // Execute with animation
+  await goToManager.executePathWithAnimation(
+    unit.id,
+    300, // delay between steps in ms
+    (remainingSteps) => {
+      // Update UI after each step
+      console.log(`${remainingSteps} steps remaining`);
+    }
+  );
+}
+----
+
+== Future Enhancements
+
+. Add support for waypoints (multiple destination points)
+. Implement path recalculation when obstacles appear
+. Add path cost estimation before movement
+. Support for formation movement (multiple units)
+. Add path caching for commonly used routes
+. Implement smart path selection based on terrain bonuses
+
+== Related Files
+
+* `/src/game/engine/GoToManager.ts` - Main implementation
+* `/src/game/engine/GameEngine.ts` - Integration point
+* `/src/components/game/GameCanvas.tsx` - Primary user interface
+* `/src/game/engine/RoundManager.ts` - Turn management integration
+* `/src/game/engine/Pathfinding.ts` - Underlying pathfinding algorithm

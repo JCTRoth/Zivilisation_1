@@ -1,23 +1,24 @@
-# Game Progression Export
+= Game Progression Export
 
-The **Info → Download Game Progression List** action exports the current game
+The *Info → Download Game Progression List* action exports the current game
 as a single compact JSON file (`civ1-progression-<sessionId>.json`) intended
 for post-game analysis and AI improvement. The file is deliberately slim so an
 LLM can analyse it to optimise the computer player:
 
-- **Minified JSON** — no whitespace, minimal token cost.
-- **Delta-encoded `progression`** — civ fields that did not change since the
+* *Minified JSON* — no whitespace, minimal token cost.
+* *Delta-encoded `progression`* — civ fields that did not change since the
   previous round are omitted (`summary.encoding: "delta"`); the reader carries
   them forward.
-- **Slim cities** — each city uses `CompactCity` (redundant / derivable fields
+* *Slim cities* — each city uses `CompactCity` (redundant / derivable fields
   dropped; production items are `itemType` strings — name/cost are game
   constants).
-- **Filtered `log`** — only analysis-relevant events; the per-turn full-city
+* *Filtered `log`* — only analysis-relevant events; the per-turn full-city
   payloads (which duplicated `progression.cityData`) are removed.
 
-## What the file contains
+== What the file contains
 
-```jsonc
+[source,jsonc]
+----
 {
   "meta": {
     "sessionId": "aivsai-2026-08-14T12-15-39-521Z",
@@ -110,43 +111,43 @@ LLM can analyse it to optimise the computer player:
     { "ts": "...", "round": 1, "player": 0, "event": "UNIT_MOVED", "message": "...", "detail": { } }
   ]
 }
-```
+----
 
-## How it works
+== How it works
 
-- **`src/utils/GameProgression.ts`** — singleton tracker. Hooks into the engine
-  event tap in `src/hooks/UseGameEngine.ts` and records **one snapshot per
-  round**. `buildRound()` captures each civ's metrics (gold, science, rates,
+* `src/utils/GameProgression.ts` — singleton tracker. Hooks into the engine
+  event tap in `src/hooks/UseGameEngine.ts` and records *one snapshot per
+  round*. `buildRound()` captures each civ's metrics (gold, science, rates,
   government, cities, units, techs, research, diplomacy, AI
   personality/priorities) and the slim per-player city list under
   `civs.<id>.cityData`; `computeCivDelta()` then omits fields unchanged since
   the previous round (see `summary.encoding: "delta"`). `startSession()` is
   called from `App.tsx` on game start and on auto-restart; `reset()` clears the
   delta baseline.
-- **`src/utils/GameLogger.ts` → `getAllEntries()`** — returns the full session
+* `src/utils/GameLogger.ts` → `getAllEntries()` — returns the full session
   log by fetching `GET /__game_log?session=<id>` and merging with any lines
   still buffered in memory. The raw log on disk keeps the full detail (city
   payloads etc.) for debugging; the slimming happens at export time.
-- **`filterLogEntries()`** (in `GameProgression.ts`) — drops engine-internal
+* `filterLogEntries()` (in `GameProgression.ts`) — drops engine-internal
   noise (`PHASE_CHANGE`, `AI_FINISHED`, `RESEARCH_PHASE`, and noisy `GAME_LOG`
   categories like `[turn]`/`[map]`) and strips `detail.city` / `detail.cities`
   (city state lives in `progression`). Kept: per-move trace, war, city
   lifecycle, combat, economy, diplomacy, rates and AI decisions.
-- **`src/utils/CitySnapshots.ts` → `serializeCityCompact()`** — the slim
+* `src/utils/CitySnapshots.ts` → `serializeCityCompact()` — the slim
   `CompactCity` shape used in `progression` (full `serializeCity()` is still
   used by the raw debug log).
-- **`vite.config.js`** — the dev-server middleware already persisted log lines
+* `vite.config.js` — the dev-server middleware already persisted log lines
   (POST `/__game_log`); it now also serves them back (GET) as a JSON array.
-- **`src/components/ui/GameMenuSheet.tsx`** — the `INFO` menu items
+* `src/components/ui/GameMenuSheet.tsx` — the `INFO` menu items
   "📜 Download Game Progression List" (full JSON) and
   "🗜️ Download Compact Progression (CSV)" (strongly reduced scoreboard) trigger
   the exports in `App.tsx`.
-- **Types** — all progression types live in `types/progression.ts`.
+* *Types* — all progression types live in `types/progression.ts`.
 
-## Compact CSV export (for cheap AI analysis)
+== Compact CSV export (for cheap AI analysis)
 
 When the full JSON would be too large to analyse (≈ 2.5 MB for 200 moves), use
-**Info → Download Compact Progression (CSV)** (`civ1-progression-compact-<id>.csv`).
+*Info → Download Compact Progression (CSV)* (`civ1-progression-compact-<id>.csv`).
 It keeps one CSV row per civ per round with the key state and compact AI telemetry.
 The event log is aggregated into action/outcome counters so the export stays
 small while exposing decisions, unit composition, city queues and failures.
@@ -155,68 +156,69 @@ JSON contains a complete world snapshot. The CSV adds `snapshotUnits` and
 `snapshotCities` JSON cells containing the complete world on snapshot turns; they are empty
 on other turns. Change `PROGRESSION_SNAPSHOT_INTERVAL` in
 `src/utils/GameProgression.ts` to change the interval.
-Measured on a 200-move sample it is **~54× smaller** (43 KB → 0.8 KB) and an LLM
+Measured on a 200-move sample it is *~54× smaller* (43 KB → 0.8 KB) and an LLM
 can read it directly:
 
-```csv
+[source,csv]
+----
 # Civ1Browser progression (compact) — session aivsai-… | map AI_VS_AI | difficulty PRINCE | civs 2 | rounds 989
 round,year,civId,civ,human,alive,score,gold,goldPerTurn,science,trade,production,food,cities,population,units,military,techs,research,researchProgress,government,tax,scirate,lux,warWith,wonders,strategy,unitComposition,cityProduction,aiActions,moves,moveFailures,attacks,combatWins,combatLosses,unitsLost,citiesFounded,citiesCaptured,skips,stalls,noTarget,misbehavingUnits,aiNotes,snapshotUnits,snapshotCities
 1,-4000,0,Germans,false,true,0,50,0,0,0,0,0,0,0,1,0.5,3,,0,despotism,50,50,0,,0
 1,-4000,1,Indians,false,true,0,50,0,0,0,0,0,0,0,1,0.5,3,,0,despotism,50,50,0,,0
 2,-3960,0,Germans,false,true,0,50,0,0,0,0,0,0,1,0,3,pottery,2,despotism,40,58,2,,0
 ...
-```
+----
 
-- Built by `gameProgression.buildCompactCsv()` / `downloadCompact()` in
+* Built by `gameProgression.buildCompactCsv()` / `downloadCompact()` in
   `GameProgression.ts`. The delta-encoded snapshots are re-hydrated
   (`hydrateCiv`) so each row shows the *full* carried-forward state.
-- **Columns**: the header is self-describing. The original scoreboard fields are
+* *Columns*: the header is self-describing. The original scoreboard fields are
   followed by `strategy`, `unitComposition` (`type:count`), `cityProduction`,
   AI action/outcome counters, and `misbehavingUnits` (`unitType:reason:count`).
-- **Sources** (fixed to read the engine's real state): `gold` is the treasury
+* *Sources* (fixed to read the engine's real state): `gold` is the treasury
   (`civ.resources.gold`), `science`/`trade` are per-turn outputs
   (`civ.resources.*`), `goldPerTurn`/`production`/`food`/`population` are
   summed from city outputs, `military` = Σ(attack + 0.5×defense) over units,
-  `research` is the tech **id** (the engine stores the tech object — it used to
+  `research` is the tech *id* (the engine stores the tech object — it used to
   serialize as `[object Object]`), `warWith` comes from the diplomacy manager,
   `alive` from `civ.isAlive`, and `leaderName` from `civ.leader`.
-- Use it when the cost of analysing the full log outweighs the move-level
+* Use it when the cost of analysing the full log outweighs the move-level
   detail; the full JSON remains the deep-dive format.
 
-## Using it for AI analysis
+== Using it for AI analysis
 
-- `summary.eventCounts` gives a quick overview (how many moves, combats, cities
-  founded/captured/destroyed, war declarations, …) of the events **present in
-  the filtered log**.
-- `summary.encoding: "delta"` — in `progression`, a civ field omitted from a
+* `summary.eventCounts` gives a quick overview (how many moves, combats, cities
+  founded/captured/destroyed, war declarations, …) of the events *present in
+  the filtered log*.
+* `summary.encoding: "delta"` — in `progression`, a civ field omitted from a
   round is unchanged from the previous round. `gold`, `science` and `cityData`
   are always present; everything else (rates, government, techs, war, AI
   personality/priorities, city/unit counts) appears only when it changed.
-- `civs.<id>.cityData` carries the slim JSON of each city per round, so you can
+* `civs.<id>.cityData` carries the slim JSON of each city per round, so you can
   track individual city growth (population, buildings, food, production
   progress toward `currentProduction`) turn by turn — not just counts.
   `currentProduction` / `buildQueue` are `itemType` strings; their names and
   costs are the game constants (`UnitConstants`, `BuildingConstants`, …).
-- `log` is the filtered event stream with timestamps for deep-dive debugging.
+* `log` is the filtered event stream with timestamps for deep-dive debugging.
   Messages are human-readable summaries; `detail.data` keeps the structured
   scalars (tech, upkeep, deficit, coordinates, …). Full city payloads are not
   repeated here — they live in `progression`.
-- Economy signals: `RATES_CHANGED` (Tax/Science/Luxury changes), `CITY_DISORDER`
+* Economy signals: `RATES_CHANGED` (Tax/Science/Luxury changes), `CITY_DISORDER`
   (city enters/leaves disorder), `UNIT_DISBANDED` (upkeep bankruptcy), and
   `economy` GAME_LOG lines (per-turn upkeep/deficit/disbanded totals). Each civ
   snapshot also carries `taxRate` / `scienceRate` / `luxuryRate` / `government`
   (when changed) so you can correlate rate choices with research and gold over
   time.
-- AI behaviour: `[ai]` GAME_LOG lines record the AI's own decisions (research
+* AI behaviour: `[ai]` GAME_LOG lines record the AI's own decisions (research
   selection, priorities, …), `warWith` / `WAR_DECLARED` / `DIPLOMACY_EVENT`
   track diplomacy, and `personality` / `priorities` expose the AI's tuning when
   they change.
 
-## Notes
+== Notes
 
-- Works for human games and AI-vs-AI sessions. AI-vs-AI sessions get a
+* Works for human games and AI-vs-AI sessions. AI-vs-AI sessions get a
   dedicated `aivsai-<timestamp>` session id (see `App.tsx`).
-- If the dev server is unreachable, `getAllEntries()` falls back to the
+* If the dev server is unreachable, `getAllEntries()` falls back to the
   in-memory buffer, so the export still works (with fewer log lines).
-- The raw debug log in `game-logs/<sessionId>.log` is unaffected by the export
+* The raw debug log in `game-logs/<sessionId>.log` is unaffected by the export
   slimming — only the downloaded progression file is compact.

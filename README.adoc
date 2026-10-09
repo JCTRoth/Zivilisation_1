@@ -84,7 +84,7 @@ every balance number in this game — terrain yields, unit stats, costs, the
 technology tree, and the economy, combat and research formulas. If this README
 and that document ever disagree, the rules reference is right.
 
-`GAMEPLAY.md` is a shorter, older player-facing summary. It is known to lag
+`GAMEPLAY.adoc` is a shorter, older player-facing summary. It is known to lag
 behind the code in places.
 ====
 
@@ -181,7 +181,7 @@ AI's own diplomatic decisions.
 Moonshot and elimination detection, plus the live Civ I score.
 
 **AI** (`engine/AI/`, ~9,000 lines)::
-See link:doc/AI_OVERVIEW.md[AI Overview] for the map, and
+See link:doc/AI_OVERVIEW.adoc[AI Overview] for the map, and
 `AIManager.ts` for the turn orchestrator.
 
 **Fog of War** (`GameEngine.playerStorage`)::
@@ -194,7 +194,7 @@ scout discoveries. Load migrates v1 and v2 saves.
 
 **Rendering** (`rendering/MapRenderer.ts` + friends)::
 A cached static terrain layer, a dynamic unit/city layer, an offscreen minimap,
-and composable tile textures. See link:doc/RENDERING_ASSETS.md[Rendering & Tile Assets].
+and composable tile textures. See link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets].
 
 === State Management
 
@@ -420,7 +420,7 @@ Maintains units, purchases improvements. Generated from trade and taxation.
 **Technology Tree**::
 45 technologies, 8 of them available from the start. See
 link:doc/GAME_RULES.adoc[Game Rules Reference] for the full tree with costs and
-prerequisites, and link:doc/TECHNOLOGY_RESEARCH.md[Technology Research] for the
+prerequisites, and link:doc/TECHNOLOGY_RESEARCH.adoc[Technology Research] for the
 beaker math.
 
 === Military System
@@ -573,7 +573,7 @@ personality, the current status, active treaties, the military strength ratio an
 border friction. Reputation penalties: peace broken −30, alliance broken −50,
 surprise attack −20, recovering 1 per turn.
 
-Full detail in link:doc/DIPLOMACY_SYSTEM.md[Diplomacy System] and
+Full detail in link:doc/DIPLOMACY_SYSTEM.adoc[Diplomacy System] and
 link:doc/save-load-system.adoc[Save & Load System] (diplomacy report and leader
 portraits).
 
@@ -869,7 +869,7 @@ production profile, and the profile rotation — so a bug reproduces exactly.
 * Emit through `onStateChange`; let `EngineEventHandlers` update the store.
 
 **Performance**:
-* Keep the static terrain layer cached — see `RENDERING_ASSETS.md`
+* Keep the static terrain layer cached — see `RENDERING_ASSETS.adoc`
 * Use React.memo for expensive components
 * Implement proper key props for list rendering
 
@@ -899,7 +899,7 @@ can enable per city, so AI and human cities follow identical rules.
 
 **Two canvas layers**::
 A cached static terrain layer and a dynamic unit/city layer. See
-link:doc/RENDERING_ASSETS.md[Rendering & Tile Assets].
+link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets].
 
 **Zustand over Redux**::
 Lighter weight, less boilerplate, better TypeScript integration for this project scope.
@@ -912,38 +912,48 @@ Provides consistent, responsive UI without custom CSS framework development.
 link:doc/GAME_RULES.adoc[Game Rules Reference] is the authoritative source for
 every balance number. Start there before changing anything.
 
-==== Core rules
+==== Player-facing
 
-* link:doc/GAME_RULES.adoc[Game Rules Reference] -- turn cycle, terrains, units, buildings, wonders, the 45-tech tree, governments, and every formula
-* link:doc/TERRAIN_AROUND_CITY.md[Terrain Around City] -- work radius, tile yields, worker assignment
-* link:doc/TECHNOLOGY_RESEARCH.md[Technology Research] -- the beaker cost model
-* link:doc/GOVERNMENT.md[Government & Revolution] -- revolutions, anarchy, capital
-* link:doc/DIPLOMACY_SYSTEM.md[Diplomacy System] -- relations, treaties, reputation, diplomat actions
-* link:doc/CITY_CAPTURE.md[City Capture & Destruction] -- what happens when a city falls
-* link:doc/auto-end-turn.adoc[Auto. turn ending] -- the opt-in auto end of turn
+* link:doc/GAMEPLAY.adoc[Gameplay] -- player-facing summary of mechanics, controls, and strategy
+* link:doc/GAME_RULES.adoc[Game Rules Reference] -- the authoritative source for every balance number: turn cycle, terrains, units, buildings, wonders, the 45-tech tree, governments, and every formula
+* link:doc/TERRAIN_AROUND_CITY.adoc[Terrain Around City] -- work radius, tile yields, worker assignment
+* link:doc/TECHNOLOGY_RESEARCH.adoc[Technology Research] -- the beaker cost model
+* link:doc/GOVERNMENT.adoc[Government & Revolution] -- revolutions, anarchy, capital
+* link:doc/DIPLOMACY_SYSTEM.adoc[Diplomacy System] -- relations, treaties, reputation, diplomat actions
+* link:doc/CITY_CAPTURE.adoc[City Capture & Destruction] -- what happens when a city falls
+* link:doc/WONDERS.adoc[Wonders] -- data format and system guide for all 23 wonders
+* link:doc/HAPPINESS.adoc[Happiness] -- happiness mechanics and management
+* link:doc/auto-end-turn.adoc[Auto turn ending] -- the opt-in auto end of turn
+* link:doc/save-load-system.adoc[Save & Load System] -- the save format, and the diplomacy report with leader portraits
 
 ==== Systems
 
-* link:doc/FOG_OF_WAR_IMPLEMENTATION.md[Fog of War] -- per-player visibility and storage
-* link:doc/GOTO_MANAGER_IMPLEMENTATION.md[GoTo Manager] -- pathfinding orders and path persistence
-* link:doc/GAME_PROGRESSION_EXPORT.md[Game Progression Export] -- the analysis CSV format
-* link:doc/save-load-system.adoc[Save & Load System] -- the save format, and the diplomacy report with leader portraits
+* link:doc/FOG_OF_WAR_IMPLEMENTATION.adoc[Fog of War] -- per-player visibility and storage
+* link:doc/GOTO_MANAGER_IMPLEMENTATION.adoc[GoTo Manager] -- pathfinding orders and path persistence
+* link:doc/GAME_PROGRESSION_EXPORT.adoc[Game Progression Export] -- the analysis CSV format
+* link:doc/ROUND_MANAGER_IMPLEMENTATION.adoc[Round Manager] -- turn execution and automated path following
 
 ==== AI
 
-* link:doc/AI_OVERVIEW.md[AI Overview] -- **start here**: the map of the AI layer
-* link:doc/AI_ECONOMY.md[AI Economy] -- tax policy, the gold reserve, bankruptcy
-* link:doc/AI_PRODUCTION.md[AI Production] -- profiles and expansion-first production
-* link:doc/AI_SETTLER_INTEGRATION.md[AI Settler Integration] -- site selection
-* link:doc/AI_VS_AI_ANALYSIS.md[AI vs AI Analysis] -- a 300-round headless analysis
+* link:doc/AI_OVERVIEW.adoc[AI Overview] -- **start here**: the map of the AI layer
+* link:doc/AI_ECONOMY.adoc[AI Economy] -- tax policy, the gold reserve, bankruptcy
+* link:doc/AI_PRODUCTION.adoc[AI Production] -- profiles and expansion-first production
+* link:doc/AI_SETTLER_INTEGRATION.adoc[AI Settler Integration] -- site selection
+* link:doc/AI_VS_AI_ANALYSIS.adoc[AI vs AI Analysis] -- a 300-round headless analysis
 * link:doc/AI_MICRO_ERRORS_REPORT.adoc[AI Micro-Errors Report] -- a 587-round micro-error catalogue
-* link:doc/SCOUT_AND_ENEMY_SEARCH.md[Scout & Enemy Search] -- the scout unit and spiral search
+* link:doc/AI_CITY_STABILITY.adoc[AI City Stability] -- city stability management
+* link:doc/SCOUT_AND_ENEMY_SEARCH.adoc[Scout & Enemy Search] -- the scout unit and spiral search
 
 ==== Maps and rendering
 
-* link:doc/STATIC_MAPS.md[Static Maps] -- the static map format and registry
+* link:doc/STATIC_MAPS.adoc[Static Maps] -- the static map format and registry
 * link:doc/NEW_MAP_GUIDE.adoc[Adding a New Map] -- step by step, with a checklist
-* link:doc/RENDERING_ASSETS.md[Rendering & Tile Assets] -- layers, feature images, the tile generator, zoom
+* link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets] -- layers, feature images, the tile generator, zoom
+
+==== Development
+
+* link:doc/DEVELOPMENT_STATUS.adoc[Development Status] -- recent work and next steps
+* link:doc/TODO.adoc[TODO] -- prioritized feature and improvement list
 
 ==== Design proposals
 

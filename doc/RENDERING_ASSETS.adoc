@@ -1,0 +1,188 @@
+= Rendering & Tile Assets
+
+How the map is drawn, where every asset comes from and what to do when you add
+or update artwork. Read this before touching anything under
+`public/assets/tiles`, `src/assets/resources` or the tile generator.
+
+== 1. The two content layers
+
+The renderer (`src/game/rendering/MapRenderer.ts`) has exactly two layers,
+matching how the game treats its objects:
+
+[cols="1,2,2,2", options="header"]
+|===
+|Layer |Content |Lifetime |Drawn by
+
+|*Static terrain*
+|terrain base textures, forest/jungle/hills/mountains/swamp feature sprites, special resources, villages, roads/improvements
+|Built once into an offscreen map-sized canvas; rebuilt only when tile state changes
+|`renderTerrainBase()` (+ `renderFogOverlay()`), cached in `GameCanvas`
+
+|*Dynamic*
+|units (SVG or emoji), cities (emoji), overlays, combat clouds
+|Every render frame
+|`drawDynamicContent()`, `renderPulsingUnits()`
+|===
+
+Rules of thumb:
+
+* If it never moves and is bound to one tile → *static layer*
+* If it can move, appear or disappear → *dynamic layer*
+* Units and cities are deliberately *not* pre-rendered
+
+== 2. Asset folders
+
+[cols="1,2", options="header"]
+|===
+|Path |What lives there
+
+|`public/assets/tiles/`
+|Game-ready tiles: base textures, feature sprites, composed resource pictures
+
+|`src/assets/resources/`
+|Source artwork for special resources (SVG or PNG, variants allowed)
+
+|`src/assets/units/`
+|Unit SVG icons (dynamic layer)
+
+|`tools/tile-generator/`
+|Generator UI/server + compose/generate scripts
+|===
+
+== 3. Adding a new feature image (resource artwork)
+
+Example: give the *Gold* resource hand-drawn artwork.
+
+. *Drop the artwork* into `src/assets/resources/`, named after the resource
+   (lowercase, matching `SPECIAL_RESOURCES[].name`):
+   `gold.svg` or `gold.png` (PNG pixel art wins over SVG),
+   extra poses: `gold_2.svg`, `gold3.png`, …
+. *Compose it onto the tiles* the resource can legally appear on:
++
+[source,bash]
+----
+node tools/tile-generator/compose_feature_tiles.mjs            # all resources
+node tools/tile-generator/compose_feature_tiles.mjs --only=gold # just this one
+----
++
+. The script writes `terrain_<terrain>_<resource>[_N].png` into
+   `tools/tile-generator/tiles/` and copies it to `public/assets/tiles/`
+. *Check the result*: open `public/assets/tiles/terrain_mountains_gold.png`
+. *Test and reload*:
++
+[source,bash]
+----
+npx vitest run tests/resourceTiles.test.ts
+npm run dev   # hard-reload the browser (Ctrl+Shift+R) to bypass the disk cache
+----
+
+== 4. Glyph-only resources (colour emoji)
+
+Resources without artwork are baked from their emoji in `RESOURCE_GLYPHS`
+(`src/data/TerrainConstants.ts`):
+
+* The generator renders the emoji *in colour* through Pango
+* Size: `GLYPH_BOX` (default `0.55`) of the tile, centred
+* Re-run the compose script after changing `RESOURCE_GLYPHS`
+
+== 5. Updating a tile image
+
+=== Base or feature texture
+
+. Replace/add the PNG in `public/assets/tiles/`:
+   base: `terrain_<terrain>.png` (or numbered variants `_1`, `_2`, …),
+   feature sprite: `terrain_<terrain>_feature[_N].png`.
+. Keep the expected geometry:
+   base textures are square and drawn to the tile rect; *256×256* is the norm;
+   feature sprites are *1.5:1* (e.g. 256×384)
+. Textures are loaded once per page load. After replacing a file, hard-reload
+   the browser (`Ctrl+Shift+R`)
+
+=== Composed resource tile
+
+Never hand-edit `terrain_<terrain>_<resource>[_N].png` — the compose script
+overwrites it. Change the source (artwork or `RESOURCE_GLYPHS` / tile base) and
+re-run the script instead.
+
+== 6. Adding a new special resource
+
+. Add an entry to `SPECIAL_RESOURCES` in `src/data/TerrainConstants.ts`
+   (`name`, `terrain`, `terrains`, yields, description).
+. Add its glyph to `RESOURCE_GLYPHS` (same file)
+. (Optional) drop artwork into `src/assets/resources/` as in section 3
+. Add it to `TERRAIN_RESOURCES` if it should spawn on generated maps
+. Run the compose script; `RESOURCE_TILE_FILES` and map spawns pick it up
+   automatically
+. Update `tests/resourceTiles.test.ts` if the legal pairings change
+
+== 7. Adding a new terrain type
+
+. `TERRAIN_TYPES` / `TERRAIN_PROPERTIES` in `src/data/TerrainConstants.ts`
+   and the render info in `src/data/TerrainData.ts`.
+. `TerrainTextureManager.ts`: `TERRAIN_TEXTURE_FILES`, optionally
+   `FEATURE_TEXTURE_FILES`, plus `TERRAIN_PRIORITY` and `TERRAIN_BLEND_COLOR`
+. Put the base PNG (and feature sprite) into `public/assets/tiles/`.
+. Add a preset/prompt to `tools/tile-generator/src/presets.ts` and
+   `generate_terrain_v4.mjs` if the AI generator should produce it.
+. Re-run the compose script so existing resources that may appear on the new
+   terrain get a picture.
+
+== 8. Units and cities (dynamic — do not pre-render)
+
+* Units: SVG icon in `src/assets/units/` + an entry in
+   `src/data/UnitIconConfig.ts`; the emoji fallback comes from
+   `UNIT_PROPERTIES[type].icon` in `src/data/UnitConstants.ts`
+* Cities: drawn by `MapRenderer.drawCity()` — a civ-coloured square with the
+   🏛️ emoji, name, specialists, walls, population and HP
+* Do *not* bake unit or city artwork onto terrain tiles.
+
+== 9. Zoom & image quality
+
+Canvas rendering works in CSS pixels (the backing store is not multiplied by
+`devicePixelRatio`; only the minimap applies DPR). Quality therefore depends on
+the texture source resolution and which terrain path is active:
+
+[cols="1,2,2", options="header"]
+|===
+|Camera zoom |Terrain source |Why
+
+|< 2 (`DIRECT_TERRAIN_ZOOM`)
+|offscreen base at 2× native (64 px/tile)
+|at most 1:1 on screen, one cheap blit
+
+|>= 2 (game max is `MAX_ZOOM` = 3)
+|direct per-tile draw from the source textures
+|avoids upscaling the 2× base; only a few tiles are visible
+|===
+
+The playable zoom range is `MIN_ZOOM` (0.3) … `MAX_ZOOM` (3), defined once in
+`src/utils/CameraUtils.ts` and enforced by `clampZoom()`.
+
+== 10. Cheat sheet
+
+[source,bash]
+----
+# Compose / refresh every resource-on-tile picture (artwork + colour emoji)
+node tools/tile-generator/compose_feature_tiles.mjs
+
+# Useful flags / env
+node tools/tile-generator/compose_feature_tiles.mjs --dry-run
+node tools/tile-generator/compose_feature_tiles.mjs --only=gold,gems
+TILE_PX=512 FEATURE_BOX=0.85 GLYPH_BOX=0.55 SKIP_COPY=1 node tools/tile-generator/compose_feature_tiles.mjs
+
+# Generate new AI base/feature textures
+BACKEND=local node tools/tile-generator/generate_terrain_v4.mjs
+
+# Verify
+npm run lint && npm run type-check && npx vitest run tests/resourceTiles.test.ts
+----
+
+Checklist for a new/updated picture:
+
+* [ ] Source artwork added under `src/assets/resources/` (or glyph updated in
+      `RESOURCE_GLYPHS`).
+* [ ] Pairings come from `SPECIAL_RESOURCES` — no hardcoded tile list edited.
+* [ ] `compose_feature_tiles.mjs` run (no `!`/skip warnings).
+* [ ] Output present in `public/assets/tiles/`, visually checked on the tile.
+* [ ] `tests/resourceTiles.test.ts` passes.
+* [ ] Game hard-reloaded and the tile checked at default and maximum zoom.

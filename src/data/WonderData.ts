@@ -4,7 +4,7 @@
  * Data-driven by design: every wonder is one entry in `WONDERS`. Adding a new
  * wonder means adding one object here — no engine or UI code has to change.
  *
- * Rules encoded here (see doc/WONDERS.md for the full data format):
+ * Rules encoded here (see doc/WONDERS.adoc for the full data format):
  *  - Exactly 24 unique wonders, each buildable once in the whole game.
  *  - `cost` is a fixed shield cost (200–600); wonders have NO maintenance.
  *  - `requiredTechnology` unlocks construction; `obsoleteBy` (or null) is the
