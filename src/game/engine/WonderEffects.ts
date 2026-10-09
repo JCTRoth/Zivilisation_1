@@ -1,5 +1,5 @@
 /**
- * WonderEffects — the effect engine for the 25 World Wonders.
+ * WonderEffects — the effect engine for the 24 World Wonders.
  *
  * Pure computation: given the current game state it answers "how much does
  * wonder X contribute to this city / civ right now?". Obsolescence is checked
@@ -244,7 +244,7 @@ export class WonderEffects {
 
   // ── Happiness ───────────────────────────────────────────────────────────
 
-  /** Flat happiness a wonder grants this city (Human Genome Project, Hanging Gardens, Transistor). */
+  /** Flat happiness a wonder grants this city (Human Genome Project, Hanging Gardens). */
   happinessForCity(city: City): number {
     if (!city) return 0;
     let amount = 0;

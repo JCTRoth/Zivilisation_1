@@ -65,7 +65,7 @@ compiler rejects unknown shapes:
 | `sciencePercent` | `city`, `civilization`, `continent` | +X% science for cities in scope (Great Library, SETI, Super-Kamiokande, Copernicus, ISS, Tiangong, Mir, AI Supercluster) |
 | `productionPercent` | `continent` | +X% production (AI Supercluster) |
 | `productionFlat` | `continent` (+ optional `requiresNoPowerPlant`) | +N production (Hoover Dam) |
-| `happiness` | `city`, `civilization`, `continent` | +N happiness per city in scope (Human Genome Project, Hanging Gardens, Transistor) |
+| `happiness` | `city`, `civilization`, `continent` | +N happiness per city in scope (Human Genome Project, Hanging Gardens) |
 | `unhappyToContent` | `city`, `continent` | Converts up to N unhappy citizens to content (Shakespeare, J.S. Bach) |
 | `buildingHappinessMultiplier` | `civilization` | Multiplies one building's happiness (Oracle ×2 Temple, Michelangelo ×1.5 Cathedral) |
 | `buildingScienceMultiplier` | `civilization` | Multiplies listed buildings' science (Isaac Newton: Library/University ×2) |

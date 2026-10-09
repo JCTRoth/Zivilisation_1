@@ -1,5 +1,5 @@
 /**
- * Wonder data integrity — the data-driven contract of the 25 World Wonders.
+ * Wonder data integrity — the data-driven contract of the 24 World Wonders.
  *
  * Every rule the spec states that can be checked WITHOUT a running game lives
  * here: exactly 23 wonders, unique ids, costs 200–600, zero maintenance,
@@ -47,16 +47,16 @@ const KNOWN_EFFECT_KINDS = new Set([
 ]);
 
 describe('wonder data format', () => {
-  it('defines exactly 25 unique wonders', () => {
-    expect(WONDERS).toHaveLength(25);
-    expect(new Set(WONDER_IDS).size).toBe(25);
-    expect(WONDER_IDS).toHaveLength(25);
+  it('defines exactly 24 unique wonders', () => {
+    expect(WONDERS).toHaveLength(24);
+    expect(new Set(WONDER_IDS).size).toBe(24);
+    expect(WONDER_IDS).toHaveLength(24);
   });
 
-  it('splits 7 / 7 / 11 across the three documentation eras', () => {
+  it('splits 7 / 7 / 10 across the three documentation eras', () => {
     expect(wondersForEra('antiquity')).toHaveLength(7);
     expect(wondersForEra('middle')).toHaveLength(7);
-    expect(wondersForEra('industrial')).toHaveLength(11);
+    expect(wondersForEra('industrial')).toHaveLength(10);
   });
 
   it('mutually exclusive groups share cost, tech and effects', () => {

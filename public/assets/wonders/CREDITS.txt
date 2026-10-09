@@ -203,13 +203,6 @@ Super-Kamiokande
   gallery         https://www-sk.icrr.u-tokyo.ac.jp/en/sk/experience/gallery/
   article         https://en.wikipedia.org/wiki/Super-Kamiokande
 
-Transistor
-----------
-  file            public/assets/wonders/transistor.jpg
-  author          Lucent Technologies
-  licence         Public domain
-  image source    https://commons.wikimedia.org/wiki/File:Replica-of-first-transistor.jpg
-  article         https://en.wikipedia.org/wiki/Transistor
 
 Statue of Liberty
 -----------------

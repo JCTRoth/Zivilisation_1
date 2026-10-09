@@ -670,7 +670,6 @@ One of the largest known AI compute clusters in the world.
 | Manhattan Project               | 600  | Nuclear Fission       | Never       | Allows nuclear weapons |
 | SETI Program                    | 600  | Computers             | Never       | +30% science in all cities |
 | Super-Kamiokande                | 500  | Computers             | Never       | +15% science in all cities · +1 vision (supernova alert) |
-| Transistor                      | 500  | Electronics         | Never       | +1 happy citizen in every city **and** +10% science in the city that builds it |
 | Statue of Liberty               | 600  | Democracy             | Never       | +1 trade on every trade square in all your cities |
 | Tiangong                        | 600  | Space Flight          | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
 | Mir                             | 600  | Space Flight          | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
@@ -777,7 +776,6 @@ Wonders are listed in chronological order of their real-world inspiration purely
 | Manhattan Project               | 600  | Nuclear Fission     | Never       | Allows nuclear weapons                                                 |
 | SETI Program                    | 600  | Computers           | Never       | +30% science in all cities                                             |
 | Super-Kamiokande                | 500  | Computers           | Never       | +15% science in all cities · +1 vision (supernova alert)               |
-| Transistor                      | 500  | Electronics       | Never       | +1 happy citizen in every city **and** +10% science in the city that builds it |
 | Statue of Liberty               | 600  | Democracy           | Never       | +1 trade on every trade square in all your cities                      |
 | Tiangong                        | 600  | Space Flight        | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
 | Mir                             | 600  | Space Flight        | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |

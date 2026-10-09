@@ -1,11 +1,11 @@
 /**
- * WonderData — the single source of truth for the 25 World Wonders.
+ * WonderData — the single source of truth for the 24 World Wonders.
  *
  * Data-driven by design: every wonder is one entry in `WONDERS`. Adding a new
  * wonder means adding one object here — no engine or UI code has to change.
  *
  * Rules encoded here (see doc/WONDERS.md for the full data format):
- *  - Exactly 25 unique wonders, each buildable once in the whole game.
+ *  - Exactly 24 unique wonders, each buildable once in the whole game.
  *  - `cost` is a fixed shield cost (200–600); wonders have NO maintenance.
  *  - `requiredTechnology` unlocks construction; `obsoleteBy` (or null) is the
  *    technology that, discovered by ANY civilization, switches the effect off.
@@ -61,7 +61,7 @@ export type WonderEffect =
   /** The owner sees every city on the map (ISS). */
   | { kind: 'revealAllCities'; scope: 'civilization' };
 
-/** One of the 25 unique wonders. */
+/** One of the 24 unique wonders. */
 export interface WonderDefinition {
   /** Stable machine id (snake_case). Used in city.buildings and the save game. */
   id: string;
@@ -780,39 +780,6 @@ export const WONDERS: readonly WonderDefinition[] = [
     ],
   },
   {
-    id: 'transistor',
-    name: 'Transistor',
-    fullName: 'Transistor',
-    location: 'Murray Hill, New Jersey, USA',
-    flag: '🇺🇸',
-    cost: 500,
-    maintenance: 0,
-    requiredTechnology: 'electronics',
-    obsoleteBy: null,
-    era: 'industrial',
-    icon: '🔌',
-    image: 'assets/wonders/transistor.jpg',
-    shortEffect: '+1 happy everywhere · +10% science in this city',
-    effectText:
-      'Every city of the owner gains +1 happiness, and the city that builds the Transistor produces +10% extra science.',
-    flavor:
-      'A sliver of germanium smaller than a paperclip, demonstrated the week before Christmas 1947 — the switch that replaced the vacuum tube and started the digital age.',
-    about:
-      'After the war, Bell Labs boss Mervin Kelly told William Shockley to find a solid-state replacement for the telephone system\u2019s fragile, power-hungry vacuum tubes. Theorist John Bardeen and experimenter Walter Brattain did the work: on 16 December 1947 their germanium device with two gold contacts amplified a signal a hundredfold. Shockley, watching, called the Christmas Eve demonstration \u2018a magnificent Christmas present\u2019 — then went home and invented the better junction version himself. Named by engineer John Pierce and announced in June 1948, the device won its three fathers the 1956 Nobel Prize; there are trillions of their descendants on Earth today.',
-    facts: [
-      'Bardeen and Brattain made it work on 16 December 1947, then demonstrated it to the lab brass days later, just before Christmas.',
-      'The name \u2018transistor\u2019 was coined by Bell engineer John Pierce.',
-      'All three fathers — Bardeen, Brattain and Shockley — shared the 1956 Nobel Prize in Physics.',
-      'It replaced the vacuum tube: smaller, cooler, tougher, and sipping power instead of gulping it.',
-      'Shockley quit Bell Labs in 1955 to found his own semiconductor company in California — the seed of Silicon Valley.',
-      'Kilby built the first integrated circuit in 1958 and Noyce improved it a year later — whole circuits on one chip, born from the transistor.',
-    ],
-    effects: [
-      { kind: 'happiness', scope: 'civilization', amount: 1 },
-      { kind: 'sciencePercent', scope: 'city', percent: 10 },
-    ],
-  },
-  {
     id: 'statue_of_liberty',
     name: 'Statue of Liberty',
     fullName: 'Liberty Enlightening the World',
@@ -997,7 +964,7 @@ export function getWonder(wonderId: string | null | undefined): WonderDefinition
   return wonderId ? WONDER_BY_ID.get(wonderId) : undefined;
 }
 
-/** True when `id` is one of the 25 wonder ids. */
+/** True when `id` is one of the 24 wonder ids. */
 export function isWonderId(id: string | null | undefined): boolean {
   return !!id && WONDER_BY_ID.has(id);
 }
@@ -1295,13 +1262,6 @@ export const WONDER_ARTWORK_CREDITS: Readonly<Record<string, WonderArtworkCredit
     // licence to attribute. The official gallery is linked under the image.
     articleUrl: 'https://en.wikipedia.org/wiki/Super-Kamiokande',
     galleryUrl: 'https://www-sk.icrr.u-tokyo.ac.jp/en/sk/experience/gallery/',
-  },
-  transistor: {
-    articleUrl: 'https://en.wikipedia.org/wiki/Transistor',
-    sourceUrl: 'https://commons.wikimedia.org/wiki/File:Replica-of-first-transistor.jpg',
-    author: 'Lucent Technologies',
-    license: 'Public domain',
-    licenseUrl: '',
   },
   statue_of_liberty: {
     articleUrl: 'https://en.wikipedia.org/wiki/Statue_of_Liberty',
