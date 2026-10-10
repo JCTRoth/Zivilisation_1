@@ -973,24 +973,23 @@ Air units ignore city walls, do not trigger villages, and may fly over anything.
 
 === Not implemented
 
-* **No veteran units.** `isVeteran` exists and the UI shows a badge, but every
-  runtime creation path sets it to `false` and the combat formula has no veteran
-  term. The Barracks `veteranUnits` effect is a display string only.
 * **`transport`** is declared in `UNIT_TYPES` but has no properties entry.
 
 == Combat
 
-Defined in: `src/game/engine/CombatSystem.ts` and `GameEngine.resolveCityCombat`
+Defined in: `src/game/engine/CombatSystem.ts`, `src/game/engine/UnitRankSystem.ts`
+and `GameEngine.resolveCityCombat`
 
 === Strength
 
 [source]
 ----
-attackerStrength = attack × (health / 100)
+attackerStrength = attack × (health / 100) × rankMult
 
 defenderStrength = defense
                 × (health / 100)
                 × max(1, terrainDefence)
+                × rankMult
                 × 1.5            if fortified, or the tile holds a friendly city
                 × fortressMult   if the tile has a Fortress (×2)
 
@@ -998,6 +997,43 @@ winChance = attackerStrength / (attackerStrength + defenderStrength)
 ----
 
 The roll is `random() × (A + D) < A`.
+
+=== Veterancy (unit ranks)
+
+Defined in: `src/game/engine/UnitRankSystem.ts`
+
+Every unit holds one of four ranks. Recruit is the default; the ranks above
+are earned with combat experience and multiply the unit's combat strength
+(attack *and* defence) — so a decorated veteran genuinely hits and soaks
+harder. The legacy `isVeteran` boolean is kept in sync (true from Veteran
+upward) for old UI code and save files.
+
+[cols="1,2,1,1,1", options="header"]
+|===
+|Rank |Name |XP threshold |Strength × |Chevrons
+
+|1 |Recruit |0 |×1.00 |0
+|2 |Regular |40 |×1.25 |1
+|3 |Veteran |120 |×1.50 |2
+|4 |Elite |280 |×2.00 |3
+|===
+
+Experience awards (the rank is always recomputed from the XP total):
+
+[cols="2,1", options="header"]
+|===
+|Achievement |XP
+
+|Won a combat round (attacker or defender) |+10
+|Destroyed an enemy unit (on top of the round win) |+30
+|Captured or razed a city |+60
+|===
+
+Units produced in a city that owns **Barracks** start as Veterans (Civ1's
+`veteranUnits` effect) with the Veteran XP threshold pre-loaded; civilian
+units ignore the bonus. Promotions emit `UNIT_PROMOTED`: the human player
+sees a toast plus a gold ring/flourish on the map, and rank chevrons are
+drawn above each promoted unit's sprite (Elite also gets a gold ring).
 
 === Damage
 
@@ -1019,7 +1055,9 @@ The roll is `random() × (A + D) < A`.
 
 === Cities
 
-`cityDefense = max(1, population)`, **× 3 with city walls**.
+`cityDefense = max(1, population)`, **× 1.5 with city walls** — and walls apply
+to every attacker, because the engine never passes `ignoresWalls` (`CombatSystem`
+supports the flag; nothing sets it, so siege and air units do not bypass walls).
 
 [cols="2,3", options="header"]
 |===
@@ -1030,7 +1068,7 @@ The roll is `random() × (A + D) < A`.
 rule. The city only falls once the garrison is empty.
 
 |Walls
-|Walls are ignored by air units, Cannons and Artillery.
+|Multiply the population defence by 1.5. They are destroyed on capture.
 
 |Fall
 |Population 1 or less → the city is *razed*. Otherwise population −1 and the
@@ -1268,15 +1306,23 @@ risks losing it in an assault the AI cannot win.
 
 [source]
 ----
-unhappiness = max(0, population − government.tolerance)
-             + 3 if the city is freshly captured
+unhappiness = max(0, population + capturedUnrest − wonderContent)
 
-happiness   = luxury + specialistLuxury + martialLaw
-            + buildingHappiness + government.happinessBonus
-            + 2 (base contentment)
+happiness   = BASE_CONTENTMENT(2)
+            + luxury (from the rate slider)
+            + specialist luxury
+            + martial law (max 4 despotism/anarchy, 3 monarchy/communism,
+                          1 republic/democracy)
+            + building happiness
+            + wonder happiness
+            + government happinessBonus
 
 disorder    = unhappiness > happiness
 ----
+
+There is no `tolerance` field: every citizen is unhappy and content has to be
+bought. A disordered city produces no tax, science or commerce; shields and
+luxury still accrue.
 
 * Martial law can suppress up to 4 in Despotism and Anarchy, 3 in Monarchy and
   Communism, and **1** in Republic and Democracy.
@@ -1359,7 +1405,9 @@ Defined in: `src/game/engine/ResearchManager.ts`
 
 === The tree
 
-45 technologies. Roots are marked ★ — they are available from turn one.
+54 technologies, 8 of them available from the start (6 flagged
+`available: true`; Masonry and Sailing start available because their
+prerequisite list is empty). Roots are marked ★.
 
 [cols="2,2,1,3", options="header"]
 |===
@@ -1594,6 +1642,10 @@ Defined in: `src/game/engine/ResearchManager.ts`
 Moonshot is flagged `available: false` in the data — it cannot be selected in
 the tech tree, and completing it wins the game on the spot.
 
+For the mapping to the original Civilization I tech list, per-tech research
+recommendations and in-game clarity notes, see
+link:TECH_COMPARISON.adoc[Technology Comparison].
+
 A few technology *descriptions* name things that do not exist as units or
 buildings in this codebase — "Horsemen" (the unit is `knights`), "Crusader
 units", "Observatory", "Research Labs". The unlock column above is what the code
@@ -1629,13 +1681,12 @@ perTurnProgress    = clamp(beakers, ceil(effectiveCost / 32), remaining)
 
 Defined in: `src/data/GovernmentData.ts` and `src/game/engine/GovernmentManager.ts`
 
-[cols="2,1,1,1,1,1,1,2", options="header"]
+[cols="2,1,1,1,1,1,2", options="header"]
 |===
-|Government |Max tax |Tolerance |Corruption |Commerce penalty |Happiness |Zeroes rates |Requires
+|Government |Max tax |Corruption |Commerce penalty |Happiness bonus |Zeroes rates |Requires
 
 |Despotism
 |100
-|2
 |0.30
 |0
 |0
@@ -1644,7 +1695,6 @@ Defined in: `src/data/GovernmentData.ts` and `src/game/engine/GovernmentManager.
 
 |Monarchy
 |100
-|3
 |0.25
 |0
 |+1
@@ -1653,7 +1703,6 @@ Defined in: `src/data/GovernmentData.ts` and `src/game/engine/GovernmentManager.
 
 |Republic
 |100
-|4
 |0.15
 |0
 |+2
@@ -1662,7 +1711,6 @@ Defined in: `src/data/GovernmentData.ts` and `src/game/engine/GovernmentManager.
 
 |Democracy
 |**10**
-|5
 |0.05
 |0
 |+4
@@ -1671,7 +1719,6 @@ Defined in: `src/data/GovernmentData.ts` and `src/game/engine/GovernmentManager.
 
 |Communism
 |100
-|3
 |0.10
 |**−25 %**
 |+1
@@ -1680,7 +1727,6 @@ Defined in: `src/data/GovernmentData.ts` and `src/game/engine/GovernmentManager.
 
 |Anarchy
 |0
-|1
 |0.30
 |0
 |0
@@ -1688,12 +1734,17 @@ Defined in: `src/data/GovernmentData.ts` and `src/game/engine/GovernmentManager.
 |revolution only
 |===
 
-* `Tolerance` is how many citizens can be unhappy before rioting.
+NOTE: There is no `tolerance` column — the field was removed from
+`GovernmentProperties`. How many unhappy citizens a government absorbs is
+decided entirely by happiness, not by tolerance (see <<Happiness and disorder>>).
+
+* There is no `tolerance` field — see <<Happiness and disorder>> for how
+  unhappiness is actually computed.
 * Anarchy lasts `ANARCHY_TURNS = 3` and forces all rates to 0.
 * A revolution only happens when the best candidate beats the current government
   by `SWITCH_MARGIN = 5`. The score weights corruption, scaled by
   `empireScale = 1 + cities × 0.6 + population × 0.05`, plus commerce penalty,
-  happiness, tolerance, tax need and science. Republic and Democracy are
+  happiness bonus, tax need and science. Republic and Democracy are
   penalised for an expansionist empire, because their 1-shield-per-settler rule
   punishes settler-heavy empires.
 * The capital is whichever city holds the Palace. `ensureCapital` reassigns one
@@ -1776,32 +1827,63 @@ link:DIPLOMACY_SYSTEM.adoc[Diplomacy System].
 |Default.
 
 |Ceasefire
-|Temporary. Breaking one costs 30 reputation.
+|Temporary. Breaking one costs 30 goodwill.
 
 |War
 |Cascades to the defender's allies.
 |===
 
-=== Reputation
+=== Opinion — a directed ledger, not a reputation score
+
+There is no single reputation number. Each civ holds a directed **Opinion**
+per pair (`src/game/engine/diplomacy/DiplomaticOpinion.ts`):
 
 [source]
 ----
-attitude = (personality.diplomacy − 5) × 3
-         − (personality.aggression − 5) × 2
-         − brokenTreaties × 15
-         + reputationModifier
-         + statusBonus        (+20 alliance, −30 war, −10 ceasefire)
-         + treatyBonus        (trade +5, open borders +3, mutual defence +8,
-                               non-aggression +4)
-         + strengthModifier   (−10 if the enemy is 1.5× stronger,
-                               +5 if you are 2× stronger)
-         + borderFriction     (−8 within 4 tiles, −3 within 7)
+Opinion = { goodwill: −100..100, grievance: 0..100, fear: 0..100, respect: 0..100 }
 ----
 
-Bands: `≥ 15` friendly, `≥ −5` neutral, `≥ −20` annoyed, else hostile.
+Every act is an `ImpactEvent` with a base delta
+(`src/game/engine/diplomacy/DiplomaticImpacts.ts`), scaled by personality
+weights, the current relationship state and the size of the act, then applied to
+the ledger of the direction it happened in. Notable base values:
 
-Penalties: ceasefire cooldown 5 turns, peace broken −30, alliance broken −50,
-surprise attack −20. Reputation recovers 1 per turn.
+[cols="1,1"]
+|===
+|Event |Goodwill
+
+|`alliance_break`
+|−60
+
+|`unit_bribed`
+|−45
+
+|`surprise_attack`
+|−35
+
+|`ceasefire_break`
+|−30
+
+|`spy_detected` / `treaty_cancelled`
+|−20 / −6
+
+|`common_enemy_defeated` / `tech_exchanged`
+|+15 / +10
+
+|`alliance_formed` / `trade_signed`
+|+10 / +7
+|===
+
+Personality is a **weight vector** (`DiplomaticWeights.ts`): the same betrayal
+costs a paranoid diplomatic civ about 2.5× what it costs a belligerent one.
+Attitude bands are derived from the ledger — `≥ 15` friendly, `≥ −5` neutral,
+`≥ −20` annoyed, else hostile.
+
+Grievance decays at **0.5 per turn**; goodwill only moves through acts. A signed
+peace arms an **8-round cooldown** before the AI will consider war again
+(`AIDiplomacyPolicy.ts`).
+
+The ledger survives save/load intact — that is the v3 → v4 migration.
 
 === Willingness
 
@@ -2005,7 +2087,7 @@ Example — an unattended, reproducible naval spectator game:
 
 [source]
 ----
-http://localhost:5173/?maptype=AI_VS_AI_NAVAL&civs=7&seed=123&gold=50&noanim
+http://localhost:3000/?maptype=AI_VS_AI_NAVAL&civs=7&seed=123&gold=50&noanim
 ----
 
 == Where the numbers live
@@ -2020,8 +2102,11 @@ http://localhost:5173/?maptype=AI_VS_AI_NAVAL&civs=7&seed=123&gold=50&noanim
 |Units
 |`src/data/UnitConstants.ts`
 
-|Buildings and wonders
+|Buildings
 |`src/data/BuildingConstants.ts`
+
+|Wonders (the authoritative table)
+|`src/data/WonderData.ts` — `WONDER_PROPERTIES` in `BuildingConstants.ts` is derived from it
 
 |Technologies
 |`src/data/TechnologyData.ts`

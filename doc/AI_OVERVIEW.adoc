@@ -1,7 +1,7 @@
 = AI Overview
 
-Entry point to the computer-player layer. `AIManager.ts` alone is ~4,900 lines
-and the whole `AI/` folder is ~9,000, so this page is the map you want before
+Entry point to the computer-player layer. `AIManager.ts` alone is ~7,500 lines
+and the whole `AI/` folder is ~14,500, so this page is the map you want before
 you open any of it.
 
 For the numbers the AI plays against, see link:GAME_RULES.adoc[Game Rules Reference].
@@ -27,7 +27,7 @@ its own tax rates.
 |File |Lines |Responsibility
 
 |`AIManager.ts`
-|4,931
+|7,519
 |The turn orchestrator. Unit movement, target selection, missions, army assembly.
 
 |`AIResearch.ts`
@@ -81,7 +81,7 @@ Shared, non-AI code the AI depends on:
 |===
 |File |Why the AI needs it
 
-|`AutoProduction.ts` (1,854)
+|`AutoProduction.ts` (2,469)
 |The AI does **not** have its own production logic. It uses the same auto-production you can turn on for your own cities.
 
 |`SettlementEvaluator.ts` (649)
@@ -388,7 +388,7 @@ node scripts/run-naval-session.mjs
 Or drive it from a browser with no clicking at all:
 
 ----
-http://localhost:5173/?maptype=AI_VS_AI_NAVAL&civs=7&seed=123&gold=50&noanim
+http://localhost:3000/?maptype=AI_VS_AI_NAVAL&civs=7&seed=123&gold=50&noanim
 ----
 
 Pinning `seed` pins the map *and* the start assignment *and* the profile

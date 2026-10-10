@@ -1,0 +1,597 @@
+= Technology Tree: This Game vs. Original Civilization I (1991)
+:toc:
+:toclevels: 2
+:icons: font
+
+This document maps every technology in this codebase
+(`src/data/TechnologyData.ts`, 54 techs) to its counterpart in the original
+Sid Meier's Civilization (1991), adds the facts a player actually needs
+(cost, prerequisites, what the code *really* unlocks), a research
+recommendation, and an honest comment on whether the tech's in-game text
+tells the player what it does.
+
+[IMPORTANT]
+====
+Unlock facts are verified against the code (`UnitConstants.ts`,
+`BuildingConstants.ts`, `WonderData.ts`, `TileImprovementConstants.ts`,
+`GovernmentManager.ts`). Where the in-game `description` disagrees with the
+code, the *Unlocks* column wins — see the Clarity column for the mismatch.
+The authoritative balance numbers remain in
+link:GAME_RULES.adoc[Game Rules Reference].
+====
+
+== How to read the table
+
+* ★ = root technology (no prerequisites; available from the start).
+* *Original Civ1* uses the names from the original tech list as provided
+  (some are non-English renderings, e.g. "Rad" = The Wheel, "Card
+  production" = Cartography/Map Making, "Ceremonial funeral" = Ceremonial
+  Burial). A dash (—) means the tech has no counterpart in that list.
+* *Recommendation*: `High` — research early / near-must; `Med` — valuable
+  for a matching strategy or as a path tech; `Low` — niche, only as a
+  stepping stone or wonder chase.
+* *Clarity*: how well the tech's name + in-game description explain its
+  actual effect to a player: `Clear`, `Vague`, or `Misleading` (the
+  description names something that does not exist or gates something else).
+
+== Full comparison
+
+[cols="2,2,1,2,3,2,2", options="header"]
+|===
+|Game technology |Original Civ1 |Cost |Prereq |Unlocks (per code) |Recommendation |Clarity
+
+|Pottery ★
+|Pottery
+|20
+|—
+|Granary; Hanging Gardens (wonder, obsoleted by Invention)
+|High — food storage fuels early growth; classic first pick
+|Clear — name and effect match
+
+|Bronze Working ★
+|Bronze Processing
+|30
+|—
+|Phalanx, Barracks, Colossus (wonder, obsoleted by Electricity)
+|High — cheapest defense + Barracks for veteran units
+|Clear
+
+|Alphabet ★
+|Alphabet
+|20
+|—
+|Prereq-only: Writing, Code of Laws
+|High — gateway to the whole science/literacy branch
+|Vague — "foundation for writing" is honest but unlocks nothing itself
+
+|The Wheel ★
+|Rad (The Wheel)
+|25
+|—
+|Chariot; prereq-only: Mathematics
+|Med — Chariot is strong early; also opens Mathematics
+|Misleading — description says it "improves roads and transport"; no such effect exists
+
+|Masonry ★
+|Walls (Masonry)
+|30
+|—
+|City Walls, Harbor, Pyramids (wonder, obsoleted by Communism)
+|High — walls for defense, Harbor for coastal cities, Pyramids are top-tier
+|Clear
+
+|Sailing ★
+|— (not in provided list)
+|35
+|—
+|Sail, Ferry; prereq-only: Map Making
+|Med — good on coastal maps, Low if landlocked
+|Clear
+
+|Ceremonial Burial ★
+|Ceremonial funeral
+|20
+|—
+|Temple; prereq-only: Mysticism, Polytheism
+|Med — Temple is early happiness; required for the religion branch
+|Clear
+
+|Horseback Riding ★
+|Horse Riding
+|20
+|—
+|Knights, Cavalry
+|High — Knights (4/2/2) are the best early offensive unit
+|Misleading — description says "Horsemen"; that unit does not exist, it means Knights/Cavalry
+
+|Iron Working
+|Iron Processing
+|50
+|Bronze Working
+|Legion
+|High — Legion is the premier ancient melee unit
+|Clear
+
+|Writing
+|Writing
+|40
+|Alphabet
+|Library, Diplomat
+|High — Library = science; Diplomat = diplomacy tool
+|Clear
+
+|Map Making
+|Card production (Cartography)
+|40
+|Sailing
+|Trireme; Lighthouse and Silk Road (wonders; Lighthouse obsoleted by Magnetism)
+|Med — needed for any serious naval game
+|Vague — "Improves sea navigation" undersells Trireme + two wonders
+
+|Code of Laws
+|Code of Laws
+|40
+|Alphabet
+|Courthouse; prereq-only: Monarchy
+|Med — Courthouse fights corruption; path to Monarchy
+|Clear
+
+|Currency
+|Currency
+|60
+|Bronze Working
+|Marketplace
+|High — Marketplace is the workhorse economy building
+|Clear
+
+|Literacy
+|Reading and Writing
+|60
+|Writing
+|Great Library (wonder, obsoleted by University); Demographics "Literacy" stat; prereq-only: Philosophy
+|High — Great Library is a science powerhouse; opens Philosophy
+|Misleading — description says "Allows libraries"; Library is actually gated by Writing
+
+|Mysticism
+|Mysticism
+|40
+|Ceremonial Burial
+|Oracle (wonder, obsoleted by Religion)
+|Med — Oracle is strong early, but the wonder race is competitive
+|Clear
+
+|Polytheism
+|— (not in provided list)
+|60
+|Ceremonial Burial, Bronze Working
+|Prereq-only: Monotheism
+|Low — pure stepping stone on the religion branch
+|Misleading — description says "Allows Horsemen"; no such unit and no direct unlock
+
+|Monarchy
+|Monarchy
+|60
+|Code of Laws
+|Monarchy government
+|High — best early-game government (low corruption, martial law 3)
+|Clear
+
+|Mathematics
+|Mathematics
+|50
+|The Wheel
+|Catapult; prereq-only: Engineering, Construction, Astronomy
+|High — Catapult plus three major downstream branches
+|Clear
+
+|Trade
+|Trade
+|70
+|Currency
+|Caravan; prereq-only: Banking
+|Med — Caravan trade routes; High if pursuing economy
+|Misleading — description says it "allows Marketplaces"; Marketplace is gated by Currency
+
+|Construction
+|Construction industry
+|70
+|Masonry, Mathematics
+|Aqueduct, Colosseum, Fortress improvement
+|High — Aqueduct unlocks city growth past size 2
+|Clear
+
+|Philosophy
+|Philosophy
+|80
+|Literacy
+|Prereq-only: University, Astronomy, Monotheism, Democracy, Communism, Scientific Theory, Religion
+|High — the single biggest hub in the tree; nearly every late branch passes through it
+|Vague — unlocks nothing directly, but it is the tree's central junction
+
+|Republic
+|Republic
+|80
+|Monarchy
+|Republic government
+|Med — strong commerce, weak martial law; a trade-off government
+|Clear
+
+|Engineering
+|Engineering Sciences
+|90
+|Mathematics
+|Hospital; prereq-only: Industrialization, Railroad, Invention, Combustion; river bridges
+|High — main highway into the industrial and modern eras
+|Clear
+
+|University
+|University T
+|90
+|Philosophy
+|University building; obsoletes Great Library; prereq-only: Medicine, Scientific Theory
+|High — University is the best science building
+|Clear
+
+|Astronomy
+|Astronomy
+|70
+|Philosophy, Mathematics
+|Copernicus' Observatory (wonder, obsoleted by Automobile); prereq-only: Navigation
+|Med — wonder chase + naval path
+|Clear
+
+|Metallurgy
+|Metallurgy
+|100
+|Iron Working
+|Cannon; prereq-only: Gunpowder, Steel
+|High — Cannon plus the gunpowder/steel military line
+|Clear
+
+|Theology
+|— (not in provided list)
+|100
+|Monotheism
+|Prereq-only: Democracy
+|Low — a single stepping stone to Democracy; no direct unlock
+|Misleading — description says "Allows Cathedrals"; Cathedral is gated by Monotheism
+
+|Monotheism
+|— (not in provided list)
+|80
+|Philosophy, Polytheism
+|Cathedral
+|Med — Cathedral is the strongest happiness building
+|Misleading — description says "Allows Crusader units"; no Crusader unit exists
+
+|Banking
+|Banking
+|100
+|Trade
+|Bank, Stock Exchange; prereq-only: Industrialization
+|High — Bank + Stock Exchange are the late economy core
+|Clear
+
+|Navigation
+|Navigation
+|80
+|Map Making, Astronomy
+|Caravel, Frigate, Magellan's Expedition (wonder)
+|Med — required for ocean crossings and the late navy
+|Clear
+
+|Gunpowder
+|Black Powder
+|100
+|Metallurgy
+|Musketeer, Riflemen
+|High — big step up in land-unit strength
+|Clear
+
+|Democracy
+|Democracy
+|120
+|Theology, Philosophy
+|Democracy government; Statue of Liberty (wonder)
+|High — best commerce government in the game
+|Clear
+
+|Industrialization
+|Industrialization
+|120
+|Banking, Engineering
+|Factory; prereq-only: Mass Production, Communism
+|High — Factory multiplies production; center of the industrial era
+|Clear
+
+|Railroad
+|Railway
+|140
+|Engineering
+|Railroad tile improvement
+|High — best tile improvement; massive gold/food boost on worked tiles
+|Clear
+
+|Scientific Theory
+|Physics (closest)
+|140
+|University, Philosophy
+|Prereq-only: Electricity; also gates Genetic Engineering via Computers
+|Med — a pure path tech toward Electricity
+|Vague — description is just "Leads to Electricity"
+
+|Steel
+|Steel
+|160
+|Metallurgy
+|Ironclad, Artillery, Battleship
+|Med-High — late-navy and artillery tech; situational if land-locked
+|Clear — though the GAME_RULES unlock list omits Artillery
+
+|Electricity
+|Electricity
+|160
+|Scientific Theory
+|Power Plant; obsoletes Colossus; prereq-only: Electronics, Combustion
+|High — Power Plant plus the modern-tech fork
+|Clear
+
+|Communism
+|Communism
+|160
+|Industrialization, Philosophy
+|Communism government; obsoletes Pyramids, Michelangelo's Chapel
+|Med — a solid government with heavy happiness tools; also ends two rival wonders
+|Clear
+
+|Mass Production
+|Mass Production
+|170
+|Industrialization
+|Mass Transit, Recycling Center
+|Med — pollution and happiness management in the late game
+|Vague — "Allows faster production of units" describes no code effect; it gates two buildings
+
+|Electronics
+|Electrical Engineering
+|180
+|Electricity
+|Hydro Plant; obsoletes Shakespeare's Theatre; prereq-only: Computers, Nuclear Power
+|High — Hydro Plant + gateway to the computer/atomic age
+|Clear
+
+|Combustion
+|Internal combustion engine
+|180
+|Engineering, Electricity
+|Mech. Inf., Tank, Destroyer, Cruiser, Submarine; prereq-only: Flight, Automobile
+|High — the modern military pivot
+|Clear
+
+|Flight
+|Aircraft Construction
+|200
+|Combustion
+|Carrier, Fighter, Bomber; prereq-only: Space Flight
+|High — air superiority + the space path
+|Clear
+
+|Nuclear Power
+|Nuclear Power
+|200
+|Electronics
+|Nuclear Plant, Nuclear unit; prereq-only: Nuclear Fission
+|Med — strong late power + the doomsday unit
+|Clear
+
+|Automobile
+|Automotive Engineering
+|200
+|Combustion
+|Obsoletes Copernicus' Observatory. No direct unlock
+|Low — almost never worth researching on purpose
+|Clear name, opaque effect — nothing new is actually built
+
+|Computers
+|Computer
+|220
+|Electronics
+|SETI Program, Super-Kamiokande, AI Supercluster (wonders); prereq-only: Space Flight, Genetic Engineering
+|High — three wonders and the space/genetics fork
+|Misleading — description says "Allows Research Labs"; no such building exists
+
+|Genetic Engineering
+|Genetic Engineering
+|230
+|Scientific Theory, Computers
+|Human Genome Project (wonder)
+|Med — wonder chase; otherwise a dead end
+|Clear
+
+|Nuclear Fission
+|Nuclear Fission
+|240
+|Nuclear Power
+|Manhattan Project (wonder); obsoletes Isaac Newton's College
+|Med-High — Manhattan Project is a game-changer; High in an arms race
+|Clear
+
+|Space Flight
+|Space Travel
+|250
+|Flight, Computers
+|SDI Defense, International Space Station, Tiangong, Mir (wonders); prereq-only: Moonshot
+|High — the entire space victory branch runs through it
+|Clear
+
+|Religion
+|Religion
+|90
+|Philosophy, Mysticism
+|J.S. Bach's Cathedral, Michelangelo's Chapel (wonders); obsoletes Oracle
+|Med — two top happiness wonders; Low if you are not racing wonders
+|Clear
+
+|Moonshot
+|— (unique to this game)
+|300
+|Space Flight
+|**Instant victory** (additionally gated behind the International Space Station being built)
+|High — the science victory; unreachable via the normal tech tree UI (`available: false`)
+|Clear — though the UI never lets you pick it directly
+
+|Theory of Gravity
+|Gravitational Theory
+|100
+|Astronomy
+|Isaac Newton's College (wonder, obsoleted by Nuclear Fission)
+|Med — wonder chase only
+|Clear
+
+|Magnetism
+|Magnetism
+|100
+|Navigation
+|Obsoletes Lighthouse. No direct unlock
+|Low — only useful to deny rivals the Lighthouse
+|Vague — flavour text about compass needles; the only effect is wonder obsolescence
+
+|Medicine
+|Medicine
+|110
+|University
+|Shakespeare's Theatre (wonder, obsoleted by Electronics)
+|Low — single wonder, no units or buildings
+|Vague — flavour text about disease and healing; no in-game health mechanic exists
+
+|Invention
+|Invention
+|120
+|Engineering
+|Leonardo's Workshop (wonder); obsoletes Hanging Gardens
+|Med — Leonardo's Workshop keeps low-tier units relevant
+|Clear
+
+|===
+
+== Original Civ1 technologies with no counterpart in this game
+
+These names appear on the original tech list but have no technology in
+`src/data/TechnologyData.ts`:
+
+[cols="2,4", options="header"]
+|===
+|Original tech |Notes
+
+|Bridge Construction
+|No bridge-building tech exists. Engineering's description mentions river
+bridges, but no tile improvement is gated by it.
+
+|Chemistry
+|Absent. The closest path is Scientific Theory → Electricity.
+
+|Steam Engine
+|Absent. Industrialization covers the same era without a steam step.
+
+|Feudalism
+|Absent. The medieval slot is filled by Monarchy / Knighthood-via-Horseback-Riding instead.
+
+|Trade Unions
+|Absent. Mass Production partially covers the late-worker-economy role.
+
+|Nuclear Fusion
+|Absent — the atomic branch ends at Nuclear Fission / Moonshot.
+
+|Large companies
+|No direct counterpart; Banking + Industrialization + Mass Production cover the economic role.
+
+|Modern Aircraft Construction
+|No separate tech; Flight is the only aviation tech.
+
+|Physics
+|No Physics tech; Scientific Theory is the closest analogue (prereq to Electricity).
+
+|Plastic
+|Absent entirely.
+
+|Refining
+|Absent; Combustion + Nuclear Power cover the energy side.
+
+|Rocket Engineering
+|Absent. Space Flight compresses rocketry + space travel into one tech.
+
+|Recycling
+|No Recycling *tech* — but the Recycling Center *building* exists, gated by Mass Production.
+
+|Knighthood
+|No Chivalry/Knighthood tech; Knights are gated directly by Horseback Riding.
+
+|Robot Construction
+|Absent.
+
+|Explosives
+|Absent; Gunpowder covers the early explosives role.
+
+|Superconductor
+|Absent.
+
+|Sentences
+|Unidentifiable in this tree (possibly Code of Laws under another
+translation); listed here so the mapping stays honest.
+
+|Compulsory military service
+|Absent (no Conscription tech).
+
+|Future Technology
+|Absent — there is no endless Future Tech branch; the tree ends at Moonshot.
+|===
+
+== Game technologies with no original counterpart
+
+[cols="2,4", options="header"]
+|===
+|Game tech |Notes
+
+|Sailing
+|A root tech in this game (Sail, Ferry). Not present in the provided original list.
+
+|Writing
+|Present here as its own tech (Library, Diplomat). The provided original list has
+"Reading and Writing" and "Writing" as separate names; this game splits
+Alphabet / Writing / Literacy instead.
+
+|Theology
+|A Monotheism → Democracy stepping stone unique to this tree.
+
+|Monotheism
+|Gates the Cathedral; the provided original list has no Monotheism.
+
+|Polytheism
+|A Ceremonial Burial → Monotheism stepping stone unique to this tree.
+
+|Moonshot
+|This game's science-victory technology — an original concept, not in Civ I
+(Civ I's spaceship is assembled from parts, not one tech).
+|===
+
+== Known text/documentation issues
+
+Kept as a checklist for whoever next touches `TechnologyData.ts` or
+`GAME_RULES.adoc`:
+
+. Six in-game `description` strings name things the code does not gate:
+  Horseback Riding → "Horsemen", Polytheism → "Horsemen", Monotheism →
+  "Crusader units", Theology → "Cathedrals" (Monotheism gates them),
+  Computers → "Research Labs", Literacy → "libraries" (Writing gates them).
+  See the Clarity column above.
+. link:GAME_RULES.adoc#_the_tree[Game Rules — The tree] omits 9 of the 54
+  techs (Mysticism, Religion, Theory of Gravity, Magnetism, Medicine,
+  Invention, Nuclear Fission, Automobile, Genetic Engineering) and still
+  lists stale unlocks ("Great Wall", "United Nations", "Women's Suffrage")
+  that exist nowhere in `src/data/`.
+. link:GAMEPLAY.adoc[Gameplay] § "The actual tree" used to claim there is no
+  *Invention* or *Nuclear Fission* in this codebase — both are in
+  `TechnologyData.ts` (the claim has been corrected in place).
+. Moonshot is unselectable in the tech-tree UI (`available: false`) and
+  additionally gated behind the ISS; the table above documents the intent,
+  not a UI path the player can click.

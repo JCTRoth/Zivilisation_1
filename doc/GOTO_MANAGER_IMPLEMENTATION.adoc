@@ -4,7 +4,7 @@
 The `GoToManager` class has been created to centralize all "Go To" movement functionality in the Civilization game. This class handles pathfinding, path execution, and automatic unit movement along calculated routes.
 
 == File Location
-`/home/jonas/Git/Civ1Browser/src/game/engine/GoToManager.ts`
+`src/game/engine/GoToManager.ts`
 
 == Key Features
 

@@ -22,9 +22,9 @@ Every turn the AI recomputes a target rate split and moves toward it gradually:
   to stop the disorder (a disordered city produces 0 commerce, so happiness is
   then the highest-value use of commerce). Luxury is capped so it never leaves
   room below the floors.
-* **Floors** — `AI_MIN_TAX = 10` (tax never drops below this while commerce
-  exists) and `AI_SCIENCE_FLOOR = 20` (science protected unless in a real
-  deficit).
+* **Floors** — `AI_MIN_TAX = 35` (tax never drops below this while commerce
+  exists, `AI/AIEconomicManager.ts:39`) and `AI_SCIENCE_FLOOR = 20` (science
+  protected unless in a real deficit).
 * **Gradual movement** — rates change at most `10` pts/turn normally, `50` in a
   mild crisis, `100` in a deep crisis. This deliberately avoids the old
   `0 ↔ 100` oscillation that caused disorder / bankruptcy cycles.
@@ -79,8 +79,11 @@ and the defender branch preempts the whole chain.
 
 == 3. Upkeep model — `unitUpkeep` / `cityUpkeep` / `totalUpkeep`
 
-* **Free unit support**: each city supports one unit for free.
-* **Extra units** cost `UNIT_MAINTENANCE` (1 gold)/turn each.
+* There is **no free unit support**: every unit with a home city pays its full
+  maintenance every turn (`EconomicManager.unitUpkeep`).
+* Maintenance is **per unit type**: `UNIT_MAINTENANCE` (1 gold) is only the
+  default for types without their own value — produced units range from 0
+  (settlers, diplomats) to 6 (late naval).
 * **NONE units** (no home city — starting/hut units, settlers from a destroyed
   size-1 city) are free of upkeep.
 * **Cities** cost `CITY_MAINTENANCE` each.

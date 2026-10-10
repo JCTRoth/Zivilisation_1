@@ -4,7 +4,7 @@ FUNCTIONAL TOODO'S:
 
 AI Recommendations for Improvement after comparisson with Civ1 Manuel:
 If the goal is to closer match the Civilisation 1 manual, consider implementing:
- 1. Veteran units: Wire the isVeteran flag into combat and unit creation.
+ 1. [DONE] Veteran units: four-rank ladder (Recruit/Regular/Veteran/Elite) in UnitRankSystem, wired into CombatSystem, unit creation (Barracks → Veteran) and the UI.
  2. Disasters: Add the 7 disasters with their prevention mechanics.
  3. Global warming: Implement the sun indicator and climate change effects.
  5. Diplomacy: Add embassies, tech trading, sabotage, and incite revolt.
@@ -574,7 +574,7 @@ Short-Term (1-4 weeks)
 9. Split AIManager.ts (7,343 lines) — separate turn orchestration from movement/combat logic
 10. Delete legacy classes (src/game/City.ts, Civilization.ts, Unit.ts, Terrain.ts — dead code)
 Medium-Term (1-3 months)
-11. Implement veteran units (badge + combat formula term)
+11. [DONE] Implement veteran units (badge + combat formula term) — see UnitRankSystem.ts (4-rank ladder)
 12. Implement housing cap (Aqueduct gates city size at 10)
 13. Add sound effects and music
 14. Implement per-civ doctrines (design doc exists)
@@ -862,6 +862,7 @@ Five blockers to fix before the split (all cheap, all in shared code)
 2. IDs — 'u_' + Date.now() + '_' + Math.random() (TurnManager.ts:1019). Replace with a deterministic counter; same for AICoordinator army-group ids.
 3. Storage — engine calls localStorage directly (GameEngine.ts:6809,6828). Extract a SaveStore interface; server implements it, browser keeps localStorage. The v4 blob + v1–v4 migrations are already portable.
 4. Timers — DEFEATED_UNIT_REMOVAL_DELAY_MS corpse timer, aiTurnTimeoutMs (TurnManager.ts:477), and the visual sleep() pacing must become simulation ticks/deadlines, not wall clock.
+
 5. Command layer — ~55 UI→engine direct calls (moveUnit, setRates, setCityProduction, foundCityWithSettler…) with no ownership/turn validation.
 Today that's safe (one client); on a server it's an exploit surface. Introduce submit(command, {civId, turn, seq}) with validation;
 components call session.send(cmd) instead. This is also the seam that fixes the Zustand question from before
@@ -893,3 +894,11 @@ web/client	src/components/**, src/game/rendering/** (MapRenderer, MoveAnimator, 
 src/game/City.ts, Civilization.ts, Unit.ts, Terrain.ts (~2,500 dead lines) get deleted in the process, not ported.
 
 
+------------
+
+Game Modals: 
+Make these a joy for the eyes, fitting into the spile, with placeholders for pictures where appropriate.
+Individual modals may deviate from the overall appearance of the games when meaningful and close.
+- The texts are designed to immerse the player in the game, lengthen, shorten, add texts, direct addressing everything possible make it great! 
+- Some have a list of all modals as a table when they will be shown to the player what will be shown at what time, etc, etc 
+- Make a list of missing modals if you think this is the case

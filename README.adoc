@@ -1,5 +1,5 @@
 :toc:
-:toclevels: 1
+:toclevels: 2
 :sectnums:
 
 = Civilization I Browser Game
@@ -12,1081 +12,520 @@ For purists seeking a 1:1 recreation of the 1991 original, it falls short in sev
 The implementation is technically impressive (TypeScript, React, Vite, comprehensive tests, data-driven design) and functionally complete (the game is winnable and playable). +
 The developers should be commended for creating a sophisticated strategy game that honors its inspiration while making sensible modernizations. +
 
+It is not a rules-accurate port. Where this codebase and the 1991 original
+disagree, the codebase wins: some mechanics the original had (
+housing caps, score victory) are absent, and the technology and wonder trees
+diverge. What it has instead is a full simulation — economy, combat, diplomacy,
+fog of war, naval logistics and a 15k-line AI layer — that runs headlessly and
+is covered by 1,500+ tests.
+
+[cols="1,1"]
+|===
+|Code |~70,000 lines TypeScript/TSX across ~150 files
+|Engine |`GameEngine.ts` (~7,200 lines) + 51 engine files, ~34,800 lines
+|AI |17 files, ~14,500 lines (`AIManager.ts` alone is ~7,500)
+|Rendering |6 files, ~4,700 lines (two-layer canvas)
+|Tests |153 Vitest suites, 1,537 cases, node environment (no DOM)
+|Browser tests |4 Playwright specs + setup
+|Balance data |13 tables in `src/data/` — every number in one place
+|===
+
 [.text-center]
 --
-image::doc/1.jpg[Screenshot 1, width=800]
-
-image::doc/world_map.png[World Map, width=800]
-
-image::doc/Bildschirmfoto_20260906_003420.png[Screenshot 1, width=800]
-image::doc/Bildschirmfoto_20260906_003442.png[Screenshot 2, width=800]
-
-image::doc/2.png[Screenshot 2, width=800]
-
-image::doc/3.png[Screenshot 3, width=800]
-
-image::doc/2_1.png[Screenshot 2, width=800]
-image::doc/4.png[Screenshot 4, width=800]
-image::doc/5.png[Screenshot 5, width=800]
-
-
-
-
-image::doc/action_menu.png[Action Menu, width=800]
-
-image::doc/end_turn.png[End Turn, width=800]
-
-image::doc/all_over.png[All Over, width=800]
-
+image::doc/1.jpg[Screenshot, width=700]
+image::doc/world_map.png[World map, width=700]
+image::doc/action_menu.png[Action menu, width=700]
+image::doc/end_turn.png[End turn, width=700]
+image::doc/all_over.png[Game over, width=700]
 --
 
-
-
-== Architecture
-
-=== Project Structure
-
-The project follows a modular architecture separating concerns:
-
-```
-src/
-├── components/          # React UI components
-│   ├── game/            # Canvas, unit stack, unit actions
-│   └── ui/              # Panels, modals, dialogs
-├── data/                # All balance data: terrains, units, buildings, techs
-│   └── maps/            # Static Freeciv-derived map JSON + registry
-├── game/
-│   ├── engine/          # GameEngine, turn/phased systems, AI/
-│   │   ├── AI/          # The computer-player layer, ~9k lines
-│   │   └── MapGenerator/# Procedural world generation
-│   └── rendering/       # Canvas map, minimap, terrain textures, animation
-├── hooks/               # Custom React hooks
-├── stores/              # Zustand state management
-├── styles/              # CSS stylesheets
-├── utils/               # Helpers, event handlers, logging, export
-doc/                     # Subsystem documentation (see the index below)
-e2e/                     # Playwright specs
-scripts/                 # Headless AI session and batch runners
-tests/                   # Vitest suites
-```
-
-The whole game is ~57,000 lines of TypeScript and TSX. `GameEngine.ts` (6,551
-lines) is the world state and the public API; everything else is a subsystem it
-owns.
-
-== Implementation Status
-
-
-[IMPORTANT]
-====
-link:doc/GAME_RULES.adoc[Game Rules Reference] is the authoritative source for
-every balance number in this game — terrain yields, unit stats, costs, the
-technology tree, and the economy, combat and research formulas. If this README
-and that document ever disagree, the rules reference is right.
-
-`GAMEPLAY.adoc` is a shorter, older player-facing summary. It is known to lag
-behind the code in places.
-====
+== Status
 
 === Implemented
 
 Gameplay::
-* 14 playable civilizations with leaders, portraits and city-name lists
-* City founding, joining, capture, destruction and razing
-* City growth, starvation, granaries, disorder and martial law
-* Tile yielding, worked-tile assignment, specialists (entertainer/taxman/scientist)
-* City governors, manual tile assignment and citizen reassignment
-* Units, unit stacking, sleep, fortify, skip, wait, GoTo orders
-* Combat with terrain, fortification, city walls and siege units
-* City assault and capture with walls loss, plunder and unrest
-* Technology tree (45 techs) with map-size and difficulty cost scaling
-* Governments, revolutions and anarchy
-* Diplomacy: war, peace, ceasefires, alliances, treaties, bribes, diplomats
-* Trade routes with caravans, intercontinental bonuses
-* Naval warfare, ferry transport with cargo, Fisher Boats and fishing nets
-* Barbarian hordes, including capturing cities
-* Villages / goody huts with all five Civ I outcomes
-* Tile improvements: irrigation, roads, railroads, mines, fortresses, pollution
-* Fog of war, per-player visibility, scout memory
+* 14 civilizations with leaders, portraits and city-name lists
+* City founding, joining, capture, destruction, razing, governors, specialists
+* Growth, starvation, granaries, disorder, martial law
+* 33 units across land, sea, air and civilian, with stacking, GoTo, sleep/fortify/skip/wait
+* 54 technologies (8 available at the start) with map-size and difficulty cost scaling
+* Six governments plus Anarchy, revolutions, capital relocation
+* Diplomacy: war, peace, ceasefires, alliances, five treaty types, bribes, tech exchange
+* Trade routes, ferries with cargo, Fisher Boats and fishing nets
+* Barbarians, goody huts, tile improvements, pollution
+* Fog of war with per-player visibility and cross-turn scout memory
 * Two victory conditions: Moonshot and elimination
+* 24 world wonders with a data-driven effect model
 
 Systems::
-* Save/load to a versioned JSON blob in `localStorage`, with migration
+* Save/load — versioned JSON (v4) with v1–v4 migration
 * Full AI: 6 production profiles, strategy selection, research, government,
   diplomacy, army groups, naval doctrine, city governor, auto-production
-* Headless AI batch/session runners and a progression CSV export
-* 14 map types including 3 static maps and 4 unattended AI-vs-AI scenarios
-* Animated movement, combat, camera glide and death
+* Headless batch runners and a progression export (JSON + compact CSV)
+* 13 map types, including 3 static maps and 4 unattended AI-vs-AI scenarios
+* Animated movement, combat, camera glides, death
 * Minimap, tech tree, statistics, demographics, settings, game menu
-* Developer URL parameters for reproducible, unattended runs
+* URL parameters for reproducible, unattended runs
 
-=== In Development
+=== Commands, not calls
 
-* 🔄 Per-civ doctrines — design proposal in `doc/leader-doctrines.adoc`
-* 🔄 AI governor rebuild — design proposal in `doc/space-bunny-free_ai_gov.adoc`
+The UI never calls the engine directly. Every player intent is a `Command`
+(`types/commands.ts`) sent through a `GameSession` (`src/utils/session.ts`) to
+`GameEngine.submit(command, context)`, which validates **whose turn it is** and
+**who owns the subject** before delegating to the rules engine. Rejections are
+typed values (`NOT_YOUR_TURN`, `NOT_YOUR_UNIT`, …), never silent.
 
-=== Known Gaps
+This is the seam that will carry the planned client/server split: a remote
+session implements the same interface over a socket, and the UI does not change.
 
-These are documented but not implemented, and the documentation used to claim
-otherwise:
+=== In development (design proposals only)
 
-* **No veteran units.** The badge and the data field exist; the combat formula
-  has no veteran term.
-* **No score-based win.** Only Moonshot and elimination end a game.
+* Per-civ doctrines — link:doc/leader-doctrines.adoc[Leader Doctrines]
+* AI governor rebuild — link:doc/space-bunny-free_ai_gov.adoc[AI Governor Architecture]
+
+Neither is implemented. Choosing a civilization currently changes only your
+colour, portrait and city-name list.
+
+=== Known gaps
+
+* **No score-based win.** The Civ I score is calculated every turn and shown,
+  but only Moonshot and elimination end a game.
 * **No housing cap.** An Aqueduct does not gate city size.
 * **No sound.** There is no audio layer at all.
+* **Siege and air units do not ignore city walls.** The `ignoresWalls` flag
+  exists in `CombatSystem` but no caller sets it, so walls always apply.
+* **A 4-turn research minimum is not enforced.** Only the 32-turn maximum is.
+* **Auto-production is on by default** for new cities (toggle per city), so it
+  is not strictly opt-in.
 
-=== Planned Features
+== Architecture
 
-* 📋 Sound effects and music
-* 📋 Multiplayer support (hot-seat)
-* 📋 Per-civ gameplay advantages (doctrines)
-* 📋 Combat animation beyond the current damage flash
-* 📋 More static maps
+=== Layout
 
-=== Core Systems
+```
+src/
+├── components/          # React UI
+│   ├── game/            # GameCanvas, unit stack / action modals
+│   └── ui/              # TopBar, SidePanel, dialogs (gamemodals/)
+├── data/                # Every balance number: terrains, units, buildings,
+│   │                    # techs (54), governments, improvements, wonders (24)
+│   └── maps/            # Static Freeciv-derived maps + registry
+├── game/
+│   ├── engine/          # GameEngine + turn/economy/combat/diplomacy/AI
+│   │   ├── AI/          # ~14,500 lines over 17 files
+│   │   ├── diplomacy/   # Opinion ledger, proposal scoring
+│   │   └── MapGenerator/# Procedural world generation
+│   └── rendering/       # Canvas layers, minimap, textures, animation
+├── hooks/               # useGameEngine: engine ↔ React wiring
+├── stores/              # GameStore.ts — one Zustand store
+├── utils/               # session (command layer), event handlers, export, log
+└── styles/              # 19 CSS files
+types/                   # game.ts, progression.ts, commands.ts — shared types
+tests/  e2e/  scripts/   # Vitest (node env), Playwright, headless runners
+doc/                     # Subsystem documentation — index below
+```
 
-**Game Engine** (`GameEngine.ts`, 6,551 lines)::
-Owns the world state — grid, map, units, cities, civilizations, technologies,
-per-player storage, ID allocators — and is the public API the UI talks to. It
-emits everything through a single `onStateChange(eventType, data)` channel.
+Four files near the root of `src/game/` (`City.ts`, `Unit.ts`, `Terrain.ts`,
+`Civilization.ts`, ~2,500 lines) are legacy classes that nothing imports. The
+runtime uses the interfaces in `types/game.ts` and the `src/data/` tables. Do
+not add rules there.
 
-**Turn Manager** (`TurnManager.ts`)::
-The phased turn engine. `START → UNIT_MOVEMENT → CITY_PRODUCTION → RESEARCH →
-END`, the round boundary, unit reset, and the whole economic pipeline.
+=== Core systems
 
-**Map System** (`SquareGrid.ts`, `engine/Pathfinding.ts`, `MapGenerator/`)::
-An **8-way square grid** — not hexagonal. A* pathfinding with per-unit
-passability, and a procedural generator (continents → temperature → climate →
-age → rivers → polar caps → resources → build sites).
-
-**Combat** (`engine/CombatSystem.ts`)::
-The single source of truth for fighting. `winChance = A / (A + D)`, 25 damage to
-the loser only, ×1.5 fortified, ×3 city walls, siege units ignore walls.
-
-**City System** (`engine/EconomicManager.ts`, `engine/ProductionManager.ts`,
-`AutoProduction.ts`)::
-Yields, corruption, tax/science/luxury split, food, growth, happiness, upkeep,
-bankruptcy, build queues and tech gating. Auto-production is shared between the
-human (opt-in per city) and the AI.
-
-**Research** (`engine/ResearchManager.ts`)::
-Beaker scaling by map size, difficulty, tech count, known civs and prereqs.
-
-**Diplomacy** (`engine/DiplomacyManager.ts`)::
-Pairwise relations, reputation, attitude, willingness, treaties, bribes, and the
-AI's own diplomatic decisions.
-
-**Victory** (`engine/VictoryManager.ts`)::
-Moonshot and elimination detection, plus the live Civ I score.
-
-**AI** (`engine/AI/`, ~9,000 lines)::
-See link:doc/AI_OVERVIEW.adoc[AI Overview] for the map, and
-`AIManager.ts` for the turn orchestrator.
-
-**Fog of War** (`GameEngine.playerStorage`)::
-Per-player visibility and explored arrays, sight propagation, and scout memory
-that survives across turns.
-
-**Persistence** (`GameEngine.getSaveJSON` / `loadGame`)::
-A versioned JSON blob including per-civ fog, AI state, diplomacy, GoTo paths and
-scout discoveries. Load migrates v1 and v2 saves.
-
-**Rendering** (`rendering/MapRenderer.ts` + friends)::
-A cached static terrain layer, a dynamic unit/city layer, an offscreen minimap,
-and composable tile textures. See link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets].
-
-=== State Management
-
-**Zustand Store** (`GameStore.ts`)::
-The single global store. It holds a *mirror* of the engine state for React to
-render, plus all UI state (selection, modals, camera, settings). The engine
-pushes into it; the engine is the source of truth for game rules.
-
-**React Integration**::
-* `useGameEngine` wires React to the engine instance
-* `EngineEventHandlers.ts` translates engine events into store updates
-* Zustand is the only state container — there is no React Context in this project
-
-=== Data Architecture
-
-**Balance data** (`src/data/`)::
-* `TerrainConstants.ts` - terrain yields, defence, movement, resources, spawn chances
-* `UnitConstants.ts` - unit stats, costs, tech requirements, cargo capacity
-* `BuildingConstants.ts` - 23 buildings and 10 wonders
-* `TechnologyData.ts` - the 45-technolog tree
-* `GovernmentData.ts` - tax caps, tolerance, corruption, happiness
-* `TileImprovementConstants.ts` - improvements and worker-turns per terrain
-* `VillageConstants.ts` - goody hut outcomes and the AI's risk model
-* `GameConstants.ts` - global constants, map types, specialist yields, colours
-
-All of it is transcribed in link:doc/GAME_RULES.adoc[Game Rules Reference].
-
-**Legacy note**:: There is a second, partly divergent set of definitions in
-`src/game/Terrain.ts`, `src/game/City.ts` and `src/game/Unit.ts`, plus a re-export
-table in `src/utils/Constants.ts` and two further technology tables. The
-runtime engine uses the `src/data/*` tables. The legacy classes are excluded
-from `knip` analysis. Do not add new rules there.
-
-**Type Definitions** (`types/game.ts`)::
-Comprehensive TypeScript interfaces for type safety across the application.
-
-== Tech Stack
-
-=== Frontend Framework
-* **React 18**: Modern React with hooks, functional components, and concurrent features
-* **TypeScript**: Full type safety and enhanced developer experience
-* **Vite**: Lightning-fast development server and optimized production builds
-
-=== State Management
-* **Zustand**: The only global state container. There is no React Context in this project.
-
-=== UI Framework
-* **Bootstrap 5**: Responsive design system and component library
-* **React Bootstrap**: React integration for Bootstrap components
-* **Bootstrap Icons**: Consistent iconography throughout the interface
-* **canvas-confetti**: Victory effect
-
-=== Rendering and Graphics
-* **HTML5 Canvas**: Hardware-accelerated 2D graphics rendering
-* **Canvas API**: Custom drawing routines for maps, units, and UI elements
-* A cached static terrain layer plus a dynamic unit/city layer, so a 180×90 map
-  does not redraw 16,000 tiles every frame
-
-=== Development Tools
-* **ESLint** + `typescript-eslint`, `react-hooks`, `react-refresh`: linting
-* **Vitest**: ~75 unit and integration test suites
-* **Playwright**: end-to-end specs, including a headless AI-vs-AI run
-* **knip**: dead-export and unused-dependency detection
-* **TypeScript Compiler**: type checking
-* **Qodana** (`qodana.yaml`): JetBrains static analysis config
-
-NOTE: There is no Prettier in this project. Formatting is not enforced by a
-formatter — match the surrounding style.
-
-=== Build and Deployment
-* **Vite**: Fast development server and optimized production builds
-* **npm**: Package management and script execution
-* **Git**: Version control and collaboration
-
-== Game Overview
-
-Civilization I is a turn-based strategy game where players guide a civilization from the ancient era to the space age. Compete against AI-controlled civilizations led by historical figures, manage cities, research technologies, and win by researching Moonshot or by eliminating every rival.
-
-=== Historical Civilizations
-
-Choose from 14 authentic civilizations, each with unique leaders and city names:
-
-* **Americans** (Abraham Lincoln) - Blue from the stars and stripes
-* **Aztecs** (Montezuma) - Jungle-inspired teal
-* **Babylonians** (Hammurabi) - Pottery brown/orange
-* **Chinese** (Mao Tse Tung) - Imperial yellow
-* **Egyptians** (Ramesses II) - Nile valley gold
-* **English** (Elizabeth I) - Royal red
-* **French** (Napoleon Bonaparte) - White for defete
-* **Germans** (Frederick the Great) - Gray from the iron cross
-* **Greeks** (Alexander the Great) - Mediterranean blue
-* **Indians** (Mahatma Gandhi) - Saffron and green
-* **Huns** (Dschingis Khan) - Steppe turquoise
-* **Romans** (Julius Caesar) - Black since all other colors were taken
-* **Russians** (Joseph Stalin) - Soviet red
-* **Zulus** (Shaka) - African tribal colors
-
-Choosing a civilization currently changes only your color, leader portrait and
-city-name list. There is no per-civ gameplay advantage yet — see
-link:doc/leader-doctrines.adoc[Leader Doctrines] for the design proposal.
-
-=== Victory Conditions
-
-There are exactly **two**, checked at the end of every turn.
-
-**Moonshot Victory**::
-Research `Moonshot` (Space Flight → Moonshot) and you win immediately, alongside
-anyone else who gets there first. It is the only space-race content in the game.
-
-**Elimination Victory**::
-Be the last civilization still *operational* — owning at least one unit or one
-city. A rival with a single surviving unit keeps the game running.
-
-You lose when your civilization is eliminated, or when an AI wins while you are
-still alive.
-
-[NOTE]
-====
-There is deliberately **no** "capture every city" shortcut and **no** score-based
-win at 2100 AD. If you see a claim to the contrary elsewhere in this repository,
-it is out of date.
-
-The Civ I *score* is still calculated every turn and shown on the scoreboard and
-in the exported CSV — it just does not end the game.
-====
-
-See link:doc/GAME_RULES.adoc[Game Rules Reference] for the exact score formula.
-
-== Core Game Concepts
-
-NOTE: The numbers in this section are a summary. The authoritative tables —
-terrain yields, unit stats, costs, technology tree, formulas — are in
-link:doc/GAME_RULES.adoc[Game Rules Reference].
-
-== Core Game Concepts
-
-=== Game Structure
-
-**Rounds and Turns**::
-* *Round*: Completed when all active civilizations finish their turns. Year advances at round end.
-* *Turn*: Each civilization's opportunity for actions. Phases: START → UNIT_MOVEMENT → CITY_PRODUCTION → RESEARCH → END.
-* *Moves*: Units have movement points per turn, cannot exceed limits.
-
-**Time Progression**::
-Game spans 4000 BC to 2100 AD with era-dependent year increments:
-
-[cols="1,1", options="header"]
+[cols="1,2"]
 |===
-|Era |Years per Round
+|File |Responsibility
 
-|Before 1000 AD
-|+20 years
+|`GameEngine.ts` (~7,200 lines)
+|World state and the public API: grid, units, cities, civilizations, techs,
+per-player storage, ID counter. Emits every change through one
+`onStateChange(eventType, data)` channel. Also hosts `submit()` — the command
+layer's entry point.
 
-|1000–1499 AD
-|+10 years
+|`TurnManager.ts` (~1,600)
+|The phased turn engine: `START → UNIT_MOVEMENT → CITY_PRODUCTION → RESEARCH →
+END`, round boundary, unit reset, the economic pipeline and AI turns.
 
-|1500–1749 AD
-|+5 years
+|`engine/AI/` (~14,500)
+|The computer player. `AIManager.ts` (~7,500) is the turn orchestrator. See
+link:doc/AI_OVERVIEW.adoc[AI Overview].
 
-|1750–1849 AD
-|+2 years
+|`CombatSystem.ts`
+|The single place a battle is resolved. See <<combat, combat>> below.
 
-|1850+ AD
-|+1 year
+|`EconomicManager.ts` (~1,600)
+|Yields, corruption, rates, food, growth, happiness, upkeep, bankruptcy.
+
+|`ProductionManager.ts` / `AutoProduction.ts`
+|Build queues, tech gating, and the auto-production governor the AI and the
+player share.
+
+|`DiplomacyManager.ts` + `engine/diplomacy/`
+|Opinion ledger, proposals, treaties, war declaration rules.
+
+|`MapGenerator/`
+|Continents → temperature → climate → age → rivers → polar caps → resources.
+
+|`rendering/` (~4,700)
+|A cached static terrain layer, a dynamic unit/city layer, an offscreen minimap,
+composable tile textures.
+
+|`stores/GameStore.ts` (~1,200)
+|One Zustand store: a *mirror* of engine state for React, plus all UI state.
 |===
 
-NOTE: Year 0 is skipped (1 BC → 1 AD).
+=== The read path and the write path
 
-=== Resource Management
+* **Write:** UI → `session.send(command)` → `GameEngine.submit()` → engine
+  methods. `submit()` is the only place that decides who may act.
+* **Read:** engine → `onStateChange` → `EngineEventHandlers.ts` → Zustand store
+  → React. The store is a projection; the engine is the source of truth.
 
-**Food**::
-Enables city growth and population increase. Surplus accumulates for expansion.
+Zustand is the only state container in the project — there is no React Context.
+There are 94 selector subscriptions and 43 imperative `getState()/setState()`
+reads from engine, renderers and utilities.
 
-**Production (Shields)**::
-Builds units, buildings, and wonders. Cities produce one item at a time.
+=== Data architecture
 
-**Trade (Commerce)**::
-Generates gold for purchasing units and buildings. Enhanced by marketplaces and banks.
+All balance numbers live in `src/data/` and nowhere else:
 
-**Science**::
-Advances technology research. Boosted by libraries and universities.
-
-**Gold**::
-Maintains units, purchases improvements. Generated from trade and taxation.
-
-=== City Management
-
-**Founding Cities**::
-* Use a Settler on suitable terrain
-* Placement determines which 20 tiles you can ever work
-* AI cities keep a 5-tile minimum gap. **You may found adjacent cities.**
-
-**City Growth**::
-* Accumulate food surplus; the threshold is `(population + 1) × 10`
-* Each citizen eats 2 food; each of your settlers eats 1 (2 under Republic/Democracy)
-* A Granary keeps half the food box on growth; without one the box empties
-* There is no housing cap — an Aqueduct does not gate city size
-
-**Production System**::
-* Cities build one unit, building or wonder at a time
-* Shields come from worked tiles, minus the settler shield tax under Republic/Democracy
-* A Settler completing in a size-1 city destroys that city
-
-**Happiness Management**::
-* Unhappy citizens above your government's tolerance cause disorder
-* A disordered city produces no tax, science, luxury or commerce
-* Temples, Colosseums, Cathedrals, Mass Transit, Hanging Gardens, Women's
-  Suffrage improve happiness
-* Martial law suppresses unrest: 4 in Despotism, 3 in Monarchy and Communism,
-  0 in Republic and Democracy
-* Entertainers generate 2 luxury each
-
-=== Technology Research
-
-**Research System**::
-* Pick one technology at a time
-* Cost scales with map size (bigger map is harder), difficulty (harder is
-  easier), how far ahead you are, how many civs you know, and how many
-  prereqs are missing
-* Locked for the first 5 rounds
-* Science produced with nothing selected banks and is spent on the next pick
-
-**Technology Tree**::
-45 technologies, 8 of them available from the start. See
-link:doc/GAME_RULES.adoc[Game Rules Reference] for the full tree with costs and
-prerequisites, and link:doc/TECHNOLOGY_RESEARCH.adoc[Technology Research] for the
-beaker math.
-
-=== Military System
-
-33 unit types: 15 land military, 11 ships, 4 civilian, 3 air. Every unit has
-2 hit points. Full stat tables in link:doc/GAME_RULES.adoc[Game Rules Reference].
-
-**Combat Mechanics**:
-* `winChance = attackerStrength / (attackerStrength + defenderStrength)`
-* Attacker strength = `attack × health/100`
-* Defender strength = `defense × health/100 × terrain × (1.5 if fortified or in a city) × (2 with a Fortress)`
-* Terrain: forest/river/lake/swamp/jungle ×1.5, hills ×2, mountains ×3
-* Only the loser takes damage — 25 HP, or death if the round was decisive
-* City walls give the city `max(1, population) × 3`
-* Catapult, Cannon, Artillery and all air units ignore city walls
-* Attacking auto-declares war, and cascades to the defender's allies
-* **There are no veteran units** — the badge exists, the bonus does not
-
-=== Terrain and Improvements
-
-13 terrains. Summary of the common ones:
-
-[cols="2,1,1,1,1,1", options="header"]
+[cols="1,2"]
 |===
-|Terrain |Move |Def |Food |Prod |Trade
+|File |Contents
 
-|Grassland
-|1
-|1
-|2
-|1
-|0
+|`TerrainConstants.ts`
+|13 terrains — yields, defence, movement, resources, spawn weights
 
-|Plains
-|1
-|1
-|1
-|1
-|0
+|`UnitConstants.ts`
+|33 unit types — attack/defense/move/cost/sight, tech requirements, cargo
 
-|Forest
-|2
-|1.5
-|1
-|2
-|0
+|`BuildingConstants.ts`
+|23 buildings (wonders are *derived*, see below)
 
-|Hills
-|2
-|2
-|1
-|0
-|0
+|`WonderData.ts`
+|**24 wonders** — the authoritative wonder table. `WONDER_PROPERTIES` in
+`BuildingConstants.ts` is generated from it for older call sites. Add wonders
+here, not there.
 
-|Mountains
-|3
-|3
-|0
-|1
-|0
+|`TechnologyData.ts`
+|54 technologies, prerequisites, costs, unlocks (6 carry an explicit
+`available: true`; masonry and sailing start available through the
+empty-prerequisite rule — 8 in total)
 
-|Ocean
-|1
-|1
-|1
-|0
-|2
+|`GovernmentData.ts`
+|6 governments + Anarchy: tax cap, corruption, commerce penalty, happiness bonus
+
+|`TileImprovementConstants.ts`
+|Irrigation/road/railroad/mine/fortress — yields, worker-turns per terrain
+
+|`VillageConstants.ts`
+|Goody-hut outcomes and the AI's risk model
+
+|`GameConstants.ts`
+|Global constants, auto-scenario map types, specialist yields, colours
 |===
 
-Plus tundra, desert, jungle, swamp, arctic, river and lake. Full table in
-link:doc/GAME_RULES.adoc[Game Rules Reference].
+link:doc/GAME_RULES.adoc[Game Rules Reference] transcribes all of it with the
+formulas. If this README and that document disagree, the rules reference wins.
 
-**Tile Improvements**:
+== The game, in brief
 
-* **Irrigation** — +1 food; converts forest, jungle and swamp. Needs adjacent fresh water. 5 worker-turns on open ground, 15 in forest/jungle/swamp.
-* **Road** — movement cost × 1/3, and +1 trade on grassland, plains and desert only.
-* **Railroad** — movement cost 0.05, +0.5 to all three yields. Needs the Railroad technology and an existing road.
-* **Mines** — +3 production on hills, +1 on mountains. Converts grassland and plains to forest.
-* **Fortress** — defence ×2. Needs Construction.
-* **Pollution** — −1 to everything. Cleared by a unit for 2 movement points.
+=== Victory
 
-Worker-turns vary by terrain; the full matrix is in the rules reference.
+Exactly two, checked at the end of every turn:
 
-=== Government Types
+* **Moonshot** — research `moonshot` (Space Flight → Moonshot) and you win
+  immediately. Detection scans human seats only, so an AI cannot end the game
+  this way; it wins by elimination.
+* **Elimination** — be the last civilization still *operational*: owning at
+  least one unit or one city. A single surviving enemy unit keeps the game alive.
 
-[cols="2,1,1,1,1,2", options="header"]
+The **score** (population, land, cities, techs ×5, wonders ×20, peace per 5
+rounds, pollution penalty) is recomputed every turn for the scoreboard and the
+export CSV. It never ends a game.
+
+[[combat]]
+=== Combat
+
+* `winChance = A / (A + D)`; `A = attack × health/100 × rank`, `D = defense × health/100 × rank`
+* Only the loser takes damage: 25 HP, or death if the round was decisive
+* Terrain defence: forest/river/lake/jungle/swamp ×1.5, hills ×2, mountains ×3
+* Fortified or in a friendly city ×1.5; a Fortress ×2 on top
+* **City walls ×1.5** on `max(1, population)` — and they apply to everyone,
+  because no caller passes `ignoresWalls`
+* Garrison units die one per round; the city falls once the garrison is empty
+* A captured city loses population, its walls and one building per citizen lost,
+  pays 20 % plunder (capped at 100) and stays restless for 5 turns
+
+*Veterancy (unit ranks).* Every unit holds one of four ranks — **Recruit**
+(default) → **Regular** → **Veteran** → **Elite** — multiplying its combat
+strength by ×1.0 / ×1.25 / ×1.5 / ×2.0. Combat earns experience (round won
++10, unit destroyed +30, city captured +60); the ladder thresholds are
+40 / 120 / 280 XP. Units produced in a city with Barracks start as Veterans
+(Civ1). The legacy `isVeteran` flag stays in sync (true from Veteran upward);
+see `src/game/engine/UnitRankSystem.ts`.
+
+=== Economy and growth
+
+* Growth threshold `(population + 1) × 10`; a Granary keeps **half** the food box
+* Citizens eat 2 food, settlers 1 (2 under Republic/Democracy)
+* Settlers also cost 1 shield per turn under Republic/Democracy — nowhere else
+* Unit upkeep is **per unit type** (0–6 gold), not a flat 1; city-less units pay
+  nothing
+* Corruption grows with distance from the capital; a Courthouse halves it
+* Trade converts to gold at `TRADE_GOLD_MULTIPLIER = 2`
+
+=== Happiness
+
+There is **no tolerance field**. Every citizen is unhappy, and content has to be
+bought: `happiness = BASE_CONTENTMENT(2) + luxury + specialist luxury + martial
+law + buildings + wonders + government bonus`. A city disorders when
+`unhappiness > happiness`, and disorder zeroes tax, science and commerce.
+
+Martial law caps at **4** (Despotism/Anarchy), **3** (Monarchy/Communism),
+**1** (Republic/Democracy).
+
+=== Governments
+
+[cols="1,1,1,1,1,1"]
 |===
-|Government |Max tax |Tolerance |Corruption |Happiness |Notes
+|Government |Tax cap |Corruption |Commerce penalty |Happiness bonus |Martial law
 
 |Despotism
 |100
-|2
 |0.30
 |0
-|Your starting government. Martial law 4.
-
-|Monarchy (Monarchy tech)
-|100
-|3
-|0.25
-|+1
-|Martial law 3.
-
-|Republic (Republic tech)
-|100
+|0
 |4
-|0.15
-|+2
-|Settlers cost 1 shield each. Martial law 0.
 
-|Democracy (Democracy tech)
-|10
-|5
-|0.05
-|+4
-|Settlers cost 1 shield each. Martial law 0.
-
-|Communism (Communism tech)
+|Monarchy
 |100
-|3
-|0.10
+|0.25
+|0
 |+1
-|−25 % commerce. Martial law 3.
+|3
+
+|Republic
+|100
+|0.15
+|0
+|+2
+|1
+
+|Democracy
+|**10**
+|0.05
+|0
+|+4
+|1
+
+|Communism
+|100
+|0.10
+|−25 %
+|+1
+|3
+
+|Anarchy
+|0
+|0.30
+|0
+|0
+|4
 |===
 
-A revolution passes through **Anarchy**, which lasts 3 turns and forces all
-your rates to 0. The AI only revolts when a candidate beats the current
-government by a clear margin.
+Switching government costs **3 turns of Anarchy** with all rates forced to 0.
+The AI only revolts when the candidate beats its current government by a clear
+margin (≥ 5).
+
+=== Research
+
+54 technologies, 8 available at the start, locked for the first 5 rounds
+(`RESEARCH_UNLOCK_ROUND`). Cost scales with map size, difficulty (harder is
+easier), how far ahead you are, how many civs you have met and how many
+prerequisites you already know. Research takes between 1 and 32 turns — the
+32-turn maximum is enforced, a 4-turn minimum is not.
 
 === Diplomacy
 
-**Diplomatic Actions**:
-* Declare War
-* Negotiate Peace
-* Sign Alliance
-* Sign, cancel and query Treaties (trade, open borders, mutual defence, non-aggression, embargo, technology exchange)
-* Demand Tribute
-* Offer and counter-offer
-* Bribe a unit out of another civilization
-* Exchange maps (via a Diplomat unit)
-
-**Diplomatic States**:
-* **Peace** - No hostilities
-* **War** - Active conflict; cascades to the defender's allies
-* **Alliance** - Military cooperation
-* **Ceasefire** - Temporary peace; breaking one costs 30 reputation
-
-Attitude runs on a score built from the AI civ's `diplomacy` and `aggression`
-personality, the current status, active treaties, the military strength ratio and
-border friction. Reputation penalties: peace broken −30, alliance broken −50,
-surprise attack −20, recovering 1 per turn.
-
-Full detail in link:doc/DIPLOMACY_SYSTEM.adoc[Diplomacy System] and
-link:doc/save-load-system.adoc[Save & Load System] (diplomacy report and leader
-portraits).
-
-=== Wonders of the World
-
-10 wonders, all cost 0 upkeep. The complete list with costs and technology
-requirements is in link:doc/GAME_RULES.adoc[Game Rules Reference].
-
-[cols="2,1,2", options="header"]
-|===
-|Wonder |Cost |Requires
-
-|Lighthouse
-|200
-|Map Making
-
-|Great Wall
-|300
-|Masonry
-
-|Hanging Gardens
-|300
-|Ceremonial Burial
-
-|Oracle
-|300
-|Philosophy
-
-|Pyramids
-|300
-|Masonry
-
-|Magallan's Voyage
-|400
-|Navigation
-
-|Michelangelo's Chapel
-|400
-|Monotheism
-
-|Newton's University
-|400
-|University
-
-|United Nations
-|600
-|Democracy
-
-|Women's Suffrage
-|600
-|Democracy
-|===
-
-[NOTE]
-====
-There is no Apollo Program, no Colossus, no Great Library, no Observatory and no
-Research Lab in this codebase, despite what older documents said. A wonder's
-*effects* are declared in the data but only some are read by the engine — treat
-the effect column in the rules reference as intent, not as guaranteed behaviour.
-====
+Five treaty types (open borders, trade agreement, mutual defence,
+non-aggression, embargo) on top of four statuses. Attitude is a directed
+**goodwill/grievance ledger**, not a single reputation number: an act costs a
+paranoid civ 2.5× what it costs a belligerent one, betraying an alliance costs
+more than breaking a peace, and grievance decays at 0.5 per turn. A signed peace
+blocks re-declaration for **8 rounds**. Breaking a ceasefire costs 30 goodwill.
 
 === Barbarians
 
-**Barbarian Mechanics**:
-* A phantom horde that acts once per round, before anyone else
-* Spawned by **Barbarian Ambush** villages, and by captured cities
-* They become a real, targetable civilization the moment they hold a city
-* Assault a city when they have at least 2 units and 1.5× its estimated defence
-* A captured barbarian city has its buildings sold and pumps out raiders
-* They are always hostile and have no diplomacy
+A phantom horde that acts once per round before everyone else, spawned only by
+Barbarian Ambush villages. It becomes a real, targetable civilization the moment
+it holds a city — and only then can it be a loss condition. It has no
+diplomacy. (Captured cities make it stronger; they do not spawn it.)
 
-They cannot be a loss condition until they hold a city. See
-link:doc/GAME_RULES.adoc[Game Rules Reference] § Barbarians.
+Full rules, tables and formulas: link:doc/GAME_RULES.adoc[Game Rules Reference].
+Player-facing summary: link:doc/GAMEPLAY.adoc[Gameplay].
 
-== Features
+== Tech stack
 
-=== Core Gameplay Features
+* **React 18** + **TypeScript 5.6** + **Vite 7** — dev server on **port 3000**
+* **Zustand 5** — the only state container
+* **Bootstrap 5** + React Bootstrap + Bootstrap Icons + canvas-confetti
+* **Vitest 3** (node environment), **Playwright**, **knip**, **ESLint 8**
+* **Qodana** (`qodana.yaml`) for JetBrains static analysis
+* No Prettier — formatting is not enforced; match the surrounding style
+* Node.js 18+, Git LFS for the art assets
 
-* **Turn-based Strategy**: Classic Civilization mechanics with modern React architecture
-* **8-way Square Grid**: 8-direction movement on a square grid, with A* pathfinding
-* **AI Civilizations**: 2–7 computer opponents with 6 production profiles, strategy re-evaluation, army groups, a city governor, naval doctrine and their own diplomacy
-* **City Management**: Founding, joining, capture, governors, specialists, manual tile assignment
-* **Unit System**: 33 units across land, sea, air and civilian, with sleep, fortify, skip, wait and GoTo
-* **Technology Research**: 45 technologies with map-size and difficulty cost scaling
-* **Resource Management**: Balance food, production, trade, science and gold across your empire
-* **Government Systems**: Six governments including Anarchy, each with its own corruption, tolerance and rate limits
-* **Diplomacy System**: War, peace, ceasefires, alliances, five treaty types, bribes, counter-offers
-* **Naval Warfare**: 11 ships, ferries with 3-unit cargo, Fisher Boats, island detection
-* **Trade Routes**: Caravans, intercontinental bonuses, up to 3 routes
-* **Fog of War**: Per-player visibility, explored memory, and cross-turn scout intelligence
-* **Wonder Construction**: 10 world wonders
-* **Barbarians**: A separate horde AI that can capture cities
+== Install
 
-=== User Interface Features
-
-* **Interactive Map**: Canvas-based rendering with zoom, pan, and terrain examination
-* **Minimap**: World overview with navigation and territory display
-* **Context Menus**: Right-click menus for unit orders and terrain improvements
-* **Modal Dialogs**: City, unit stack, technology tree, statistics, demographics, diplomacy and settings
-* **Auto End Turn**: Opt-in, and it will not steal your turn while a city still needs a build order
-* **Game Result Overlay**: Victory/defeat announcements with a final score
-* **Full Keyboard Control**: Units, cities, rates, government, camera and dialogs
-
-=== Technical Features
-
-* **Two-Layer Canvas Rendering**: a cached static terrain layer and a dynamic unit/city layer, so a 180×90 map stays responsive
-* **Composable Tile Textures**: base terrain + feature artwork, pre-rendered offline
-* **Unit Icon System**: SVG with PNG and emoji fallbacks, transparent so the terrain shows through
-* **Reproducible Games**: a pinned `?seed=` fixes the map, the start assignment and the AI profile rotation
-* **Unattended Play**: `?maptype=AI_VS_AI_NAVAL&seed=123&noanim` plays a whole naval game with no clicks
-* **Headless AI Harness**: batch runners and a progression CSV for regression analysis
-* **Save/Load**: versioned JSON with v1 and v2 migration
-* **Error Boundaries**: React error handling for robust user experience
-* **Type Safety**: Full TypeScript implementation
-
-== Installation
-
-=== Prerequisites
-
-* Node.js 18 or higher
-* npm or yarn package manager
-* Modern web browser with HTML5 Canvas support
-
-=== Setup Instructions
-
-1. **Clone the repository**:
-We are using Git LFS for large assets, +
- so ensure you have it installed.
-Ubuntu/Debian:
-```bash
+[source,bash]
+----
+# Git LFS is required for the images (Ubuntu/Debian example)
 sudo apt install git-lfs
-```
-Fedora:
-```bash
-sudo dnf install git-lfs
-```
-Windows:
-```powershell
-winget install -e --id GitHub.GitLFS
-```
-OR download and install from
-https://git-lfs.com/
 
-**Clone Repository**:
-[source,bash]
-----
-git clone https://github.com/JCTRoth/Civ1Browser.git
+git clone https://github.com/JCTRoth/Zivilisation_1.git
+cd Zivilisation_1
 git lfs pull
-cd Civ1Browser
-----
 
-2. **Install dependencies**:
-+
-[source,bash]
-----
 npm install
 npx playwright install chromium
+npm run dev        # http://localhost:3000
 ----
 
-3. **Start development server**:
-+
-[source,bash]
-----
-npm run dev
-----
+Production build: `npm run build` → deploy `dist/` to any static host. Saves
+live in `localStorage`, so they are bound to the browser profile that made them.
 
-4. **Open in browser**:
-+
-Navigate to `http://localhost:3000`
+== Controls
 
-=== Production Build
-
-[source,bash]
-----
-npm run build
-npm run preview
-----
-
-== Usage
-
-=== Game Setup
-
-1. **Select Difficulty**: Choose from Chieftain to Emperor levels
-2. **Choose Civilization**: Pick from 14 historical civilizations
-3. **Configure Opponents**: Select number and types of AI civilizations
-4. **Set World Size**: Choose map dimensions and terrain settings
-5. **Start Game**: Begin your civilization's journey
-
-=== Controls
-
-==== Keyboard Shortcuts — unit and city
-
-* **Arrow keys**: move the selected unit (or, with no selection, pan the map)
-* **Shift + arrows**: pan the camera
-* **Space**: cycle through the units stacked on the selected tile
-* **Enter**: end turn
-* **S**: skip the selected unit
-* **W**: wait (the unit stays put but keeps its moves)
-* **F**: fortify
-* **G**: GoTo — click a destination and the unit walks there over several turns
-* **B**: build a road
-* **I**: build irrigation
-* **M**: build mines
-* **P**: clean pollution
-* **R**: rush production in the selected city
-* **C**: centre the camera on the selected unit
-* **T**: tax / science / luxury rate sliders
-* **G** (with a city selected): government and revolution dialog
-* **D** or **F4**: diplomatic relations
-* **Esc**: cancel the pending action, close a dialog, or clear the selection
-
-==== Keyboard Shortcuts — view and system
-
-* **+** / **-**: zoom in and out
-* **Ctrl + 1 … 9**: select the 1st to 9th city
-* **Ctrl + S**: save
-* **Ctrl + L**: load
-* **Ctrl + P**: pause / resume
-* **F1**: help
-* **F2**: technology tree
-* **F3**: settings
-* **F11**: fullscreen
-
-==== Mouse Controls
-
-* **Left Click**: Select units, cities, or terrain
-* **Right Click**: Open context menu for actions
-* **Scroll Wheel**: Zoom in/out
-* **Click + Drag**: Pan map view
-
-=== Unattended and reproducible games
-
-Every one of these is a URL parameter. See
-link:doc/GAME_RULES.adoc[Game Rules Reference] § Developer URL parameters for the
-full list.
-
-[source]
-----
-# a whole naval spectator game, no clicking, fully deterministic
-http://localhost:5173/?maptype=AI_VS_AI_NAVAL&civs=7&seed=123&gold=50&noanim
-
-# straight into a normal 2-civ skirmish
-http://localhost:5173/?quickstart
-
-# a small battlefield with units already posed for combat
-http://localhost:5173/?combatlab
-----
-
-Pinning `seed` fixes the map, the starting positions, which AI gets which
-production profile, and the profile rotation — so a bug reproduces exactly.
-
-=== Basic Gameplay
-
-1. **Explore**: Move units to reveal the map and find resources
-2. **Settle**: Use Settlers to found cities on good terrain
-3. **Research**: Choose technologies to unlock new capabilities
-4. **Build**: Construct buildings and units in your cities
-5. **Expand**: Grow your territory and influence
-6. **Conquer**: Engage in warfare when necessary
-7. **Diplomacy**: Negotiate with other civilizations
-8. **Victory**: Achieve one of the victory conditions
+* **Arrows** — move the selected unit; **Shift + arrows** — pan the camera
+* **Space** cycle stacked units · **Enter** end turn · **Esc** cancel/close
+* **W** wait · **S** skip · **F** fortify
+* **G** — opens the government dialog; GoTo itself is a canvas click, not a key
+* **B** road · **I** irrigation · **M** mines · **P** clean pollution
+* **R** rush production · **C** centre on unit · **T** rates · **D**/**F4** diplomacy
+* **+**/**−** zoom · **Ctrl+1…9** select city · **Ctrl+S**/**Ctrl+L** save/load
+* **Ctrl+P** pause · **F1** help · **F2** tech tree · **F3** settings · **F11** fullscreen
 
 == Development
 
-=== Available Scripts
+[source,bash]
+----
+npm run dev          # Vite dev server, port 3000
+npm run build        # production build
+npm run lint         # ESLint, max-warnings 0
+npm run type-check   # tsc --noEmit
+npm run test         # Vitest — 153 suites, node environment, no DOM
+npm run test:e2e     # Playwright (needs the dev server)
+npm run knip         # unused exports / dependencies
+----
 
-* `npm run dev` - Start development server
-* `npm run build` - Create production build
-* `npm run preview` - Preview production build
-* `npm run lint` - Run ESLint
-* `npm run type-check` - Run TypeScript compiler check
-* `npm run test` - Run the Vitest suite
-* `npm run test:e2e` - Run the Playwright suite
-* `npm run knip` - Find unused exports and dependencies
+CI runs `type-check`, `lint`, `vitest` and `knip` on every push and PR
+(`.github/workflows/tests.yml`) and the Playwright suite separately
+(`playwright.yml`).
 
-=== Development Guidelines
-
-**Code Style**:
-* Use TypeScript for all new code
-* Follow React functional component patterns
-* Use custom hooks for complex logic
-* Maintain separation between UI and game logic
-* No Prettier — match the surrounding style by hand
-
-**Where to put a rule**:
-* Balance data goes in `src/data/*`. Never in the engine.
-* Engine mechanics go in the matching `src/game/engine/*` file. `GameEngine.ts`
-  is already 6,551 lines — do not grow it; find or make a subsystem.
-* Anything the AI also needs belongs in shared engine code, not in `AI/`.
-
-**State Management**:
-* The engine owns game state. Zustand is a *mirror* for React to render.
-* Emit through `onStateChange`; let `EngineEventHandlers` update the store.
-
-**Performance**:
-* Keep the static terrain layer cached — see `RENDERING_ASSETS.adoc`
-* Use React.memo for expensive components
-* Implement proper key props for list rendering
-
-**Balance changes**:
-* Change the number in `src/data/*`
-* Update link:doc/GAME_RULES.adoc[Game Rules Reference] in the same commit
-* Say in the commit message which rule the number encodes
-
-=== Architecture Decisions
-
-**8-way Square Grid**::
-The grid is a square grid with 8-direction movement, not hexagonal.
-`SquareGrid.ts` and `Pathfinding.ts`. The original hex plan was not implemented.
-
-**Engine owns state, Zustand mirrors it**::
-`GameEngine` is the source of truth. The Zustand store holds a copy for React and
-all UI state. The engine talks to the UI through one `onStateChange` callback.
-This keeps game rules testable in Vitest without a DOM.
-
-**One combat implementation**::
-`CombatSystem.ts` is the only place a battle is resolved. `GameEngine` calls into
-it rather than re-deriving a formula. Keep it that way.
-
-**Shared auto-production**::
-The AI has no production code of its own. It uses the same `AutoProduction` you
-can enable per city, so AI and human cities follow identical rules.
-
-**Two canvas layers**::
-A cached static terrain layer and a dynamic unit/city layer. See
-link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets].
-
-**Zustand over Redux**::
-Lighter weight, less boilerplate, better TypeScript integration for this project scope.
-
-**Bootstrap Integration**::
-Provides consistent, responsive UI without custom CSS framework development.
-
-=== Documentation
-
-link:doc/GAME_RULES.adoc[Game Rules Reference] is the authoritative source for
-every balance number. Start there before changing anything.
-
-==== Player-facing
-
-* link:doc/GAMEPLAY.adoc[Gameplay] -- player-facing summary of mechanics, controls, and strategy
-* link:doc/GAME_RULES.adoc[Game Rules Reference] -- the authoritative source for every balance number: turn cycle, terrains, units, buildings, wonders, the 45-tech tree, governments, and every formula
-* link:doc/TERRAIN_AROUND_CITY.adoc[Terrain Around City] -- work radius, tile yields, worker assignment
-* link:doc/TECHNOLOGY_RESEARCH.adoc[Technology Research] -- the beaker cost model
-* link:doc/GOVERNMENT.adoc[Government & Revolution] -- revolutions, anarchy, capital
-* link:doc/DIPLOMACY_SYSTEM.adoc[Diplomacy System] -- relations, treaties, reputation, diplomat actions
-* link:doc/CITY_CAPTURE.adoc[City Capture & Destruction] -- what happens when a city falls
-* link:doc/WONDERS.adoc[Wonders] -- data format and system guide for all 23 wonders
-* link:doc/HAPPINESS.adoc[Happiness] -- happiness mechanics and management
-* link:doc/auto-end-turn.adoc[Auto turn ending] -- the opt-in auto end of turn
-* link:doc/save-load-system.adoc[Save & Load System] -- the save format, and the diplomacy report with leader portraits
-
-==== Systems
-
-* link:doc/FOG_OF_WAR_IMPLEMENTATION.adoc[Fog of War] -- per-player visibility and storage
-* link:doc/GOTO_MANAGER_IMPLEMENTATION.adoc[GoTo Manager] -- pathfinding orders and path persistence
-* link:doc/GAME_PROGRESSION_EXPORT.adoc[Game Progression Export] -- the analysis CSV format
-* link:doc/ROUND_MANAGER_IMPLEMENTATION.adoc[Round Manager] -- turn execution and automated path following
-
-==== AI
-
-* link:doc/AI_OVERVIEW.adoc[AI Overview] -- **start here**: the map of the AI layer
-* link:doc/AI_ECONOMY.adoc[AI Economy] -- tax policy, the gold reserve, bankruptcy
-* link:doc/AI_PRODUCTION.adoc[AI Production] -- profiles and expansion-first production
-* link:doc/AI_SETTLER_INTEGRATION.adoc[AI Settler Integration] -- site selection
-* link:doc/AI_VS_AI_ANALYSIS.adoc[AI vs AI Analysis] -- a 300-round headless analysis
-* link:doc/AI_MICRO_ERRORS_REPORT.adoc[AI Micro-Errors Report] -- a 587-round micro-error catalogue
-* link:doc/AI_CITY_STABILITY.adoc[AI City Stability] -- city stability management
-* link:doc/SCOUT_AND_ENEMY_SEARCH.adoc[Scout & Enemy Search] -- the scout unit and spiral search
-
-==== Maps and rendering
-
-* link:doc/STATIC_MAPS.adoc[Static Maps] -- the static map format and registry
-* link:doc/NEW_MAP_GUIDE.adoc[Adding a New Map] -- step by step, with a checklist
-* link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets] -- layers, feature images, the tile generator, zoom
-
-==== Development
-
-* link:doc/DEVELOPMENT_STATUS.adoc[Development Status] -- recent work and next steps
-* link:doc/TODO.adoc[TODO] -- prioritized feature and improvement list
-
-==== Design proposals
-
-Not implemented. Read these before proposing more AI work.
-
-* link:doc/space-bunny-free_ai_gov.adoc[AI Governor Architecture] -- critique of the current AI shape and a proposed rebuild
-* link:doc/leader-doctrines.adoc[Leader Doctrines] -- per-civ identities hung on diplomacy
-
-=== Testing Strategy
-
-* **Unit and integration tests** (`tests/`, ~75 Vitest suites): cover the engine
-  directly, with no DOM. This is where game rules are tested — combat, economy,
-  turn order, research, diplomacy, AI, save/load, map generation.
-* **End-to-end tests** (`e2e/`, Playwright): `game.spec.ts` for a full turn,
-  `combat.spec.ts` for the combat lab, `ai-vs-ai.spec.ts` for a headless
-  unattended run.
-* **Headless AI regression**: `scripts/run-ai-batch.mjs` runs many seeds and
-  exports a progression CSV, which is how AI changes are judged.
-
-Before you push:
+=== Running the AI without a browser
 
 [source,bash]
 ----
-npm run lint
-npm run type-check
-npm run test
-npm run knip
+node scripts/run-ai-batch.mjs      # many seeds, writes game-logs/
+node scripts/run-naval-session.mjs # one naval AI-vs-AI session
 ----
 
-=== Contributing
+Or spectate in the browser with no clicking:
 
-1. Fork the repository
-2. Create a feature branch
-3. Make changes with tests
-4. Ensure `npm run lint`, `npm run type-check` and `npm run test` pass
-5. If you touched a balance number, update `doc/GAME_RULES.adoc`
-6. Submit pull request
+----
+http://localhost:3000/?maptype=AI_VS_AI_NAVAL&civs=7&seed=123&gold=50&noanim
+----
 
-Or just write me an E-Mail and we talk: info@mailbase.info
+`?seed=` pins the map, the starting positions and the AI profile rotation, so a
+regression reproduces exactly. Also supported: `?quickstart`, `?combatlab`,
+`?dev=0`, and `?noanim` (disables animations). `seed`, `civs`, `gold` and
+`difficulty` only apply together with `?maptype=`.
 
-== Scoring System
-
-Civilization score, recomputed every turn end:
-
-* **Population**: 1 point per citizen
-* **Land Area**: 1 point per unique workable tile in your cities' radii
-* **Cities**: 1 point each, plus 5 more
-* **Technologies**: 5 points per researched technology
-* **Wonders**: 20 points per constructed wonder
-* **Peace**: 1 point per 5 consecutive rounds at peace, reset by a war
-* **Pollution**: penalty, from your own buildings
-
-There is no Future Tech term. The score is a scoreboard, not a win condition --
-see <<Victory Conditions>>.
-
-== Strategy Guide
-
-=== Early Game (4000-1000 BC)
-
-1. Settle immediately. A settler costs 0 upkeep but eats food and, under
-   Republic or Democracy, 1 shield a turn.
-2. Found on a **river** if you can — the city centre gets 2/1/1 plus a river
-   trade bonus, and a 1-wide river stays fordable.
-3. Put the first few turns into irrigation or a road. Both are cheap and the
-   payoff compounds.
-4. Research Pottery for a Granary, or Bronze Working for a Phalanx.
-5. Keep gold above zero. A negative treasury disbands your army.
-
-=== Mid Game (1000 BC - 1000 AD)
-
-1. Libraries in every city — +1 science and +1 culture each.
-2. Currency → Trade → Banking is the economic line, and Trade unlocks Caravans
-   for trade routes, which pay **both** gold and science.
-3. Courthouses halve corruption, which matters as soon as your cities are far
-   from the capital.
-4. Monarchy, then Republic. Republic cuts corruption hard but starts taxing your
-   settlers a shield each — do not switch while you are still expanding.
-5. Oracle, Pyramids and Great Wall are all Masonry/Ceremonial Burial era and
-   cost 300.
-
-=== Late Game (1000-2100 AD)
-
-1. The settler shield tax makes Democracy bad for a wide empire. Prefer
-   Monarchy or Communism, and keep your cities compact.
-2. Factories (+2 production) and Power Plants, but watch pollution — a polluted
-   tile loses 1 of everything and needs a unit to clean.
-3. **To win by technology**: Combustion → Flight → Computers → Space Flight →
-   Moonshot. Moonshot is an instant win, and so is an AI reaching it first.
-4. Or eliminate everyone. Remember a single surviving enemy unit keeps the
-   game alive.
-
-=== City Placement Strategy
-
-* **Rivers**: the city centre gets +1 trade, and irrigation can reach the river
-* **Coast**: needed for any ship, or a Fisher Boat with a Harbor
-* **Fresh water beside you**: irrigation requires an adjacent river or lake
-* **Resources**: +4 trade on Gems and Gold, +4 production on Oil, +3 food on an
-  Oasis
-* **Defence**: mountains ×3, hills ×2, a Fortress ×2 on top
-* **Spacing**: you may build adjacent, but overlapping radii means you compete
-  for the same tiles
-
-=== Technology Priorities
-
-**Moonshot (the only tech win)**::
-The Wheel → Mathematics → Philosophy → Astronomy → Navigation → Banking →
-Industrialization → Science Theory → Electricity → Combustion → Flight →
-Computers → Space Flight → Moonshot
-
-**Conquest**::
-Bronze Working → Mathematics → Metallurgy → Gunpowder, then Iron Working →
-Metallurgy → Steel for Battleships and the Cannon
-
-**Expansion**::
-Pottery → Writing → Literacy → Philosophy → Monotheism → Theology → Democracy,
-with Currency → Trade → Trade Routes alongside
-
-**Naval**::
-Sailing → Map Making → Navigation, and Masonry early for the Harbor
-
-== Deployment
-
-This is a static single-page application (SPA) built with Vite. After building, deploy the `dist/` folder contents to any static web host.
-
-Note that the game stores saves in `localStorage`, so a save is bound to the
-browser profile that made it. The diplomacy report exports to a file instead.
-
-=== Building for Production
+=== Before you push
 
 [source,bash]
 ----
-npm install
-npm run build
+npm run lint && npm run type-check && npm run test && npm run knip
 ----
 
-The production build will be in the `dist/` directory.
+If you touch a balance number: change it in `src/data/`, update
+link:doc/GAME_RULES.adoc[Game Rules Reference] in the same commit, and say in
+the commit message which rule the number encodes.
+
+=== Where things go
+
+* Balance data → `src/data/*`. Never in the engine.
+* Engine mechanics → the matching `src/game/engine/*` file. `GameEngine.ts` is
+  already ~7,200 lines; do not grow it.
+* Anything the AI also needs → shared engine code, not `AI/`.
+* Player intents → a `Command` in `types/commands.ts` + a `case` in
+  `GameEngine.submit()`. UI never calls engine methods directly.
+
+[[documentation]]
+== Documentation
+
+=== Rules and mechanics
+
+* link:doc/GAME_RULES.adoc[Game Rules Reference] — the authoritative source for every balance number and formula
+* link:doc/GAMEPLAY.adoc[Gameplay] — player-facing summary
+* link:doc/TERRAIN_AROUND_CITY.adoc[Terrain Around City] — work radius, yields, worker assignment
+* link:doc/TECHNOLOGY_RESEARCH.adoc[Technology Research] — the beaker cost model
+* link:doc/TECH_COMPARISON.adoc[Technology Comparison] — all 54 techs vs. original Civ I, with recommendations and clarity notes
+* link:doc/GOVERNMENT.adoc[Government & Revolution] — revolutions, anarchy, capital
+* link:doc/DIPLOMACY_SYSTEM.adoc[Diplomacy System] — opinion ledger, treaties, proposals
+* link:doc/CITY_CAPTURE.adoc[City Capture & Destruction] — what happens when a city falls
+* link:doc/WONDERS.adoc[Wonders] — the 24-wonder data format and effect model
+* link:doc/HAPPINESS.adoc[Happiness] — content, disorder, martial law
+* link:doc/FOG_OF_WAR_IMPLEMENTATION.adoc[Fog of War] — visibility, exploration, storage
+
+=== Systems
+
+* link:doc/save-load-system.adoc[Save & Load System] — the v4 format and migrations
+* link:doc/GOTO_MANAGER_IMPLEMENTATION.adoc[GoTo Manager] — pathfinding orders
+* link:doc/ROUND_MANAGER_IMPLEMENTATION.adoc[Round Manager] — automated path following
+* link:doc/GAME_PROGRESSION_EXPORT.adoc[Game Progression Export] — the analysis JSON/CSV
+* link:doc/auto-end-turn.adoc[Auto Turn Ending] — the automatic end of turn
+* link:doc/STATIC_MAPS.adoc[Static Maps] — static map format and registry
+* link:doc/NEW_MAP_GUIDE.adoc[Adding a New Map] — step by step with a checklist
+* link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets] — layers, textures, tile generator
+
+=== AI
+
+* link:doc/AI_OVERVIEW.adoc[AI Overview] — start here: the map of the AI layer
+* link:doc/AI_ECONOMY.adoc[AI Economy] — tax policy, gold reserve, upkeep, bankruptcy
+* link:doc/AI_PRODUCTION.adoc[AI Production] — profiles and expansion-first production
+* link:doc/AI_SETTLER_INTEGRATION.adoc[AI Settler Integration] — site selection
+* link:doc/AI_CITY_STABILITY.adoc[AI City Stability] — keeping large cities stable
+* link:doc/AI_VS_AI_ANALYSIS.adoc[AI vs AI Analysis] — a 300-round headless analysis
+* link:doc/AI_MICRO_ERRORS_REPORT.adoc[AI Micro-Errors Report] — a 587-round catalogue
+* link:doc/SCOUT_AND_ENEMY_SEARCH.adoc[Scout & Enemy Search] — scout unit and spiral search
+
+=== Design proposals (not implemented)
+
+* link:doc/space-bunny-free_ai_gov.adoc[AI Governor Architecture] — critique of the current AI shape
+* link:doc/leader-doctrines.adoc[Leader Doctrines] — per-civ identities hung on diplomacy
+
+=== Working notes
+
+* link:TODO.txt[TODO] — the live task list
+
+== Roadmap
+
+Ordered by impact, see link:doc/DEVELOPMENT_STATUS.adoc[Development Status] and
+link:TODO.txt[TODO] for the detail:
+
+. **Command layer rollout** — 4 interactions converted (`moveUnit`, rates,
+   production, found city); the remaining ~51 UI→engine calls follow the same
+   pattern, then engine methods can be made internal.
+. **Determinism** — route the ~34 gameplay `Math.random` calls and the
+   `Date.now()`-based unit IDs through a seeded RNG and a counter.
+. **Client/server split** — a `GameRoom` running the engine as the authority
+   over the `GameSession` interface, with per-connection fog filtering. The
+   engine is already DOM-free and runs headlessly; the blockers are the three
+   items above plus moving `saveGame`/`loadGame` off `localStorage`.
+
+== Credits
+
+Original game: Sid Meier's Civilization (MicroProse, 1991) — design by Sid Meier
+and Bruce Shelley. This project is an educational recreation in spirit rather
+than a rules-accurate port.

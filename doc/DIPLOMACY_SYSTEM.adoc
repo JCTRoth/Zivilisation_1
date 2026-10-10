@@ -142,7 +142,7 @@ Every pair of civilizations has exactly one `DiplomaticStatus`:
 |🕊️
 
 |`'ceasefire'`
-|Temporary halt to fighting, cooldown of 5 turns before re-declaration
+|Temporary halt to fighting; a signed peace blocks re-declaration for 8 rounds
 |🏳️
 
 |`'war'`
@@ -176,29 +176,47 @@ Every pair of civilizations has exactly one `DiplomaticStatus`:
                    (5 turn cooldown)
 ----
 
-=== Reputation penalties for treaty-breaking
+=== Opinion: a directed ledger, not a reputation score
 
-[cols="1,1", options="header"]
+There is no single reputation number. Each civ keeps a directed **Opinion**
+per pair — `goodwill` (−100..100), `grievance`, `fear` and `respect` (0..100) —
+in `src/game/engine/diplomacy/DiplomaticOpinion.ts`. Every act is an
+`ImpactEvent` with a base delta from `DiplomaticImpacts.ts`, scaled by
+personality weights and the current state, and written into the direction it
+happened in. Base goodwill values:
+
+[cols="1,1"]
 |===
-|Action |Penalty
+|Action |Goodwill
 
-|Surprise attack (declaring war from peace)
-|-20
+|Betraying an alliance (`alliance_break`)
+|-60
 
-|Breaking a peace treaty
+|Losing a unit to a bribe (`unit_bribed`)
+|-45
+
+|Surprise attack (`surprise_attack`)
+|-35
+
+|Breaking a ceasefire (`ceasefire_break`)
 |-30
 
-|Breaking an alliance
-|-50
+|Caught spying / cancelling a treaty
+|-20 / -6
 
-|Breaking ceasefire before cooldown expires
-|-30
+|Common enemy defeated / technology exchanged
+|+15 / +10
 
-|Cancelling a treaty
-|-5
+|Alliance formed / trade agreement signed
+|+10 / +7
 |===
 
-Reputation recovers at *+1 per turn* toward zero.
+Personality is a **weight vector**, not an offset: the same betrayal costs a
+paranoid diplomatic civ about 2.5× what it costs a belligerent one. Grievance
+decays at 0.5 per turn; goodwill changes only through acts. A signed peace arms
+an 8-round cooldown before the AI considers war again.
+
+The ledger survives save/load — that migration is the v3 → v4 save bump.
 
 ---
 
@@ -237,12 +255,10 @@ In addition to the basic diplomatic status, civilizations can sign *treaties* th
 * *Cannot sign treaties during war* (except `non_aggression` after ceasefire)
 * *No duplicate treaties* — signing the same treaty twice is a no-op
 * *War invalidates all treaties* except embargoes
-* *Cancelling a treaty* incurs a -5 reputation penalty
-* *Each treaty improves attitude* by a fixed score bonus:
-** Trade agreement: +5
-** Open borders: +3
-** Mutual defense: +8
-** Non-aggression: +4
+* *Cancelling a treaty* costs goodwill (`treaty_cancelled` = −6 base)
+* *Each treaty writes goodwill directly* into the ledger when signed, scaled by
+  personality: `trade_signed` +7, `alliance_formed` +10, `open_borders_signed`
+  +3, `mutual_defense_signed` +8, `non_aggression_signed` +5
 
 ---
 
@@ -272,41 +288,23 @@ In addition to the basic diplomatic status, civilizations can sign *treaties* th
 |Red `#f44336`
 |===
 
-=== Score calculation
+=== How the ledger is built
 
-The attitude score is computed from multiple factors:
+There is no single attitude formula. Every act is one ledger write whose base
+delta comes from `DiplomaticImpacts.ts` and is then scaled:
 
 [source]
 ----
-score = 0
-
-# Personality (from civ's personality.diplomacy and .aggression)
-+ (diplomacy - 5) × 3          # diplomatic civs start friendlier
-- (aggression - 5) × 2         # aggressive civs are meaner
-
-# Reputation
-- (treaties broken by other civ) × 15
-+ reputationModifier
-
-# Current status
-+ 20  if alliance
-- 30  if war
-- 10  if ceasefire
-
-# Active treaties
-+ 5   if trade_agreement
-+ 3   if open_borders
-+ 8   if mutual_defense
-+ 4   if non_aggression
-
-# Military comparison
-- 10  if their strength > own × 1.5    (fear)
-+ 5   if own strength > theirs × 2.0   (contempt)
-
-# Border friction
-- 8   if closest cities ≤ 4 tiles apart
-- 3   if closest cities ≤ 7 tiles apart
+delta = base_impact(act)      # e.g. alliance_break = −60
+      × personality_weight    # loyalty, paranoia, greed, …
+      × state_modifier        # what the two civs currently are to each other
+      × magnitude             # a 500-gold demand is not a 5-gold demand
+goodwill = clamp(goodwill + delta, −100, 100)
 ----
+
+The attitude *bands* above are derived from the resulting goodwill. Fear and
+respect come from the military-strength comparison; border friction adds
+`border_pressure` impacts over time instead of a flat −8/−3 term.
 
 ---
 
@@ -657,7 +655,7 @@ The portrait visually reacts to the leader's current attitude:
 
 === Replacing SVG with actual images
 
-The system is designed so *procedural portraits can be replaced with pixel art or painted images*. See the companion document link:DIPLOMACY_IMAGES_README.adoc[DIPLOMACY_IMAGES_README.adoc] for the complete image placement guide and generation prompts.
+The system is designed so *procedural portraits can be replaced with pixel art or painted images*: drop the artwork in, point `LeaderPortraits.ts` at it, and the mood-driven theming above keeps working unchanged.
 
 ---
 
@@ -713,25 +711,25 @@ All balance constants are defined at the top of `DiplomacyManager.ts`:
 |===
 |Constant |Value |Description
 
-|`CEASEFIRE_COOLDOWN`
-|5 turns
-|Minimum ceasefire duration
+|`GOODWILL_MIN` / `GOODWILL_MAX`
+|-100 / 100
+|Goodwill bounds (the meter the UI draws)
 
-|`PEACE_BREAK_PENALTY`
-|-30
-|Reputation hit for breaking peace
+|`INTENSITY_MAX`
+|100
+|Bound for grievance / fear / respect
 
-|`ALLIANCE_BREAK_PENALTY`
-|-50
-|Reputation hit for breaking alliance
+|`GRIEVANCE_DECAY_PER_TURN`
+|0.5
+|Grievance decay per turn (goodwill does not recover on its own)
 
-|`SURPRISE_ATTACK_PENALTY`
-|-20
-|Reputation hit for surprise war
+|`REASON_HISTORY`
+|8
+|Impacts remembered per direction for the "why do they hate me?" list
 
-|`REPUTATION_RECOVERY_PER_TURN`
-|+1
-|Reputation recovery per turn
+|Peace cooldown
+|8 rounds
+|Rounds a signed peace blocks the AI from considering war (`AIDiplomacyPolicy`)
 
 |`BRIBE_UNIT_BASE_COST`
 |25 gold

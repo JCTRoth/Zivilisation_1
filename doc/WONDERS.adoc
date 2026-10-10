@@ -11,7 +11,7 @@ single table, and no engine or UI code needs to change to add another wonder.
 
 |*Data*
 |`src/data/WonderData.ts`
-|The 23 wonder definitions, typed effects, status classification, obsolescence helper
+|The 24 wonder definitions, typed effects, status classification, obsolescence helper
 
 |*Compatibility bridge*
 |`src/data/BuildingConstants.ts` (`WONDER_PROPERTIES`)
@@ -245,8 +245,36 @@ finished in the same turn appear one after another.
 |Production selection modal → *Wonders* tab: status column, availability, click-to-select detail panel
 
 |Civilopedia
-|`WonderEntryModal`: mechanics, history, "Facts" facts
+|`WonderEntryModal`: the artwork *is* the card — a full-bleed poster at the top
+(no copy laid over it, the photo credit on its bottom edge), the eyebrow /
+title / one-liner in their own band below it, then status + spec chips, the
+mechanical effect as the first card, then History, Trivia and "Some facts".
+Listed wonders open their chronicle from B.
 |===
+
+=== Reading the entry
+
+* **The picture is a button.** Click the hero (or the "⤢ View larger" hint) and
+  the entry steps aside for the artwork: the viewer fills exactly the same
+  frame, so it reads as one card changing its mind, and Close returns to the
+  text. Both modals carry an overlay z-index so the entry never lands behind
+  the catalogue.
+* **Every chip explains itself.** Hover or focus a spec chip for what the
+  number means — cost, required technology, what obsolescence actually does
+  (including that it applies to *everyone*, not just you), and why wonders have
+  no maintenance.
+* **The effect card leads**, with the wonder's icon, a one-off gold sheen, and
+  an obsolete callout when someone has already discovered the killing
+  technology.
+* **Built wonders get a wayfinder.** The action bar gains a
+  "📍 Go to <city>" button that centres the camera on the wonder's city and
+  opens it — the fastest path from "who has that?" to "there it is".
+
+NOTE: The entry renders the picture exactly once. It used to show the image in
+both the shell's hero slot and the `WonderArtwork` card below it; the entry now
+passes the artwork as the cover hero and reuses only the credit block, so the
+licence attribution stays visible (CC BY requires it) without downloading or
+laying out the file twice.
 
 === Artwork
 

@@ -7,7 +7,7 @@ A faithful recreation of Sid Meier's Civilization I (1991) built with React, Vit
 *This file is a player-facing summary, and it is known to lag behind the code.*
 The authoritative source for every number is
 link:GAME_RULES.adoc[Game Rules Reference] — terrain yields, unit stats,
-costs, the full 45-technology tree, and the economy/combat/research formulas.
+costs, the full 54-technology tree, and the economy/combat/research formulas.
 ====
 
 == Game Overview
@@ -84,8 +84,8 @@ link:GAME_RULES.adoc[Game Rules Reference] for the exact score formula.
 
 *Happiness*
 * Citizens are Happy, Content, or Unhappy
-* Too many unhappy citizens cause disorder — a disordered city produces *no* tax, science, luxury or commerce
-* Your government's *tolerance* is how many can be unhappy before rioting
+* Too many unhappy citizens cause disorder — a disordered city produces *no* tax, science or commerce (shields and luxury still accrue)
+* There is no tolerance: every citizen is unhappy, and content has to be bought with buildings, luxury, specialists, martial law and wonders
 * Temples, Colosseums, Cathedrals, Mass Transit and some wonders improve happiness
 * Martial law (military units in city, or fortified beside it) can suppress unhappiness: 4 in Despotism, 3 in Monarchy and Communism, *1* in Republic and Democracy
 * Every city keeps at least *1* garrisoned unit, and *2* while an offensive is under way
@@ -105,14 +105,17 @@ link:GAME_RULES.adoc[Game Rules Reference] for the exact score formula.
 * Science produced with nothing selected is banked and spent on your next pick
 
 *The actual tree*
-There are *45* technologies, 8 of them available from the start: Pottery,
+There are *54* technologies, 8 of them available from the start: Pottery,
 Bronze Working, Alphabet, The Wheel, Masonry, Sailing, Ceremonial Burial and
-Horseback Riding. There is no Feudalism, Chivalry, Invention, Steam Engine,
-Rocketry or Nuclear Fission in this codebase.
+Horseback Riding. There is no Feudalism, Chivalry, Steam Engine,
+Rocketry or Nuclear Fission in this codebase. (Correction: *Invention* and
+*Nuclear Fission* do exist — see the Game Rules table.)
 
 The full tree with costs, prerequisites and what each one actually unlocks is in
 link:GAME_RULES.adoc[Game Rules Reference]. The mechanics are in
-link:TECHNOLOGY_RESEARCH.adoc[Technology Research].
+link:TECHNOLOGY_RESEARCH.adoc[Technology Research]. A per-tech comparison with
+the original Civ I tree, research recommendations and player-clarity notes is in
+link:TECH_COMPARISON.adoc[Technology Comparison].
 
 === Military Units
 
@@ -156,9 +159,12 @@ shields and carries 3 units.
 * Attacking auto-declares war, and the war cascades to the defender's allies
 
 *Unit Experience*
-* *Not implemented.* The `isVeteran` field and its UI badge exist, but every
-  unit is created with it `false` and the combat formula has no veteran term.
-  Do not plan around veterans.
+* *Implemented* (`src/game/engine/UnitRankSystem.ts`). Four ranks: Recruit
+  (default) → Regular → Veteran → Elite, multiplying combat strength
+  ×1.0 / ×1.25 / ×1.5 / ×2.0. Combat awards experience (round won +10,
+  unit destroyed +30, city captured +60); promotions at 40 / 120 / 280 XP are
+  announced with a toast and a gold flourish on the map. Barracks cities
+  produce Veterans (Civ1).
 
 === Terrain & Improvements
 
@@ -198,71 +204,76 @@ link:GAME_RULES.adoc[Game Rules Reference].
 
 === Wonders of the World
 
-*10 wonders*, all with 0 upkeep. There is *no Colossus, no Great Library, no
-Copernicus' Observatory, no Isaac Newton's College and no Apollo Program* in
-this codebase.
+*24 wonders*, all with 0 upkeep, each buildable once per world. They are defined
+in `src/data/WonderData.ts`; the list below is the full set (cost in shields):
 
-* *Lighthouse* (200, Map Making) - +1 trade
-* *Great Wall* (300, Masonry) - +1 global defence, +2 culture
-* *Hanging Gardens* (300, Ceremonial Burial) - +1 global happiness, +2 culture
-* *Oracle* (300, Philosophy) - +2 science, +2 culture
-* *Pyramids* (300, Masonry) - +3 culture
-* *Magellan's Voyage* (400, Navigation) - +2 naval movement, exploration
-* *Michelangelo's Chapel* (400, Monotheism) - +3 culture
-* *Newton's University* (400, University) - +3 science
-* *United Nations* (600, Democracy) - diplomacy, +2 culture
-* *Women's Suffrage* (600, Democracy) - +2 happiness, +2 culture
+*Antiquity*: Colossus (200), Great Library (300), Hanging Gardens (300),
+Lighthouse (200), Oracle (200), Pyramids (400), Silk Road (300)
 
-[CAUTION]
+*Middle*: Copernicus' Observatory (400), Isaac Newton's College (400),
+J.S. Bach's Cathedral (400), Magellan's Expedition (400), Michelangelo's
+Chapel (300), Shakespeare's Theatre (400), Leonardo's Workshop (600)
+
+*Industrial*: International Space Station (600), Human Genome Project (400),
+Hoover Dam (600), Manhattan Project (600), SETI Program (600),
+Super-Kamiokande (500), Statue of Liberty (600), Tiangong (600), Mir (600),
+Colossus / AI Supercluster (600)
+
+[NOTE]
 ====
-A wonder's *effects* are declared in `BuildingConstants.ts` but only some are
-read by the engine. The culture, global-defence and naval-movement terms in
-particular are currently data, not behaviour. Check
-`src/data/BuildingConstants.ts` before relying on one.
+All 15 declared effect kinds are implemented in
+`src/game/engine/WonderEffects.ts` (science %, happiness, unhappy→content,
+trade squares, naval movement, vision, anarchy length, auto-upgrade, global
+gates). An effect stops for everyone once any civilization researches the
+wonder's `obsoleteBy` technology. The three ages are flavour only — they have
+no mechanical meaning.
 ====
+
+See link:WONDERS.adoc[World Wonders] for the data format and the full effect
+model.
 
 === Government Types
 
-Tolerance is how many citizens can be unhappy before the city disorders.
+There is no tolerance: every citizen is unhappy, and content has to be bought.
 
 [cols="1,1,1,1,1,1", options="header"]
 |===
-|Government |Max tax |Tolerance |Corruption |Happiness |Extra
+|Government |Max tax |Corruption |Happiness bonus |Commerce penalty |Extra
 
 |Despotism (start)
 |100
-|2
 |0.30
+|0
 |0
 |Martial law 4
 
 |Monarchy
 |100
-|3
 |0.25
 |+1
+|0
 |Martial law 3
 
 |Republic
 |100
-|4
 |0.15
 |+2
+|0
 |Settlers cost 1 shield, martial law 1
 
 |Democracy
 |*10*
-|5
 |0.05
 |+4
+|0
 |Settlers cost 1 shield, martial law 1
 
 |Communism
 |100
-|3
 |0.10
 |+1
-|−25% commerce, martial law 3
+|−25%
+|Martial law 3
 |===
 
 * Changing government triggers a *revolution*: 3 turns of *Anarchy*, during
@@ -296,8 +307,9 @@ Full detail in link:GOVERNMENT.adoc[Government & Revolution].
 
 Attitude is a score built from the other civ's `diplomacy` and `aggression`
 personality, the current status, active treaties, the military strength ratio
-and border friction. Breaking a peace is −30, breaking an alliance −50, a
-surprise attack −20. Reputation recovers 1 per turn.
+and border pressure. The old flat reputation numbers are gone: acts write
+goodwill (alliance betrayal −60, surprise attack −35, broken ceasefire −30),
+and grievance decays at 0.5 per turn.
 
 Full detail in link:DIPLOMACY_SYSTEM.adoc[Diplomacy System].
 
@@ -353,11 +365,12 @@ See link:GAME_RULES.adoc[Game Rules Reference] § Barbarians.
 
 == City Buildings
 
-23 buildings and 10 wonders. Effects are *flat*, not percentages. The full
-table is in link:GAME_RULES.adoc[Game Rules Reference].
+23 buildings and 24 wonders. The full table is in
+link:GAME_RULES.adoc[Game Rules Reference]; the wonder data format and the
+effect model is in link:WONDERS.adoc[Wonders].
 
 *Military*
-* *Barracks* (40, Bronze Working) - The `veteranUnits` effect is declared but *not implemented*
+* *Barracks* (40, Bronze Working) - Military units are produced as **Veterans** (rank 3 of 4, ×1.5 combat strength)
 
 *Production*
 * *Factory* (200, Industrialization) - +2 production, +2 pollution

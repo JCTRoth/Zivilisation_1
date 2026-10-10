@@ -30,7 +30,10 @@
 
 == Dead Code Status
 
-Knip reports *57 unused exports* — all pre-existing, none introduced by the recent changes. These are mostly tuning constants in `src/game/engine/AI/*` and `src/data/*` that are exported but never imported.
+**Resolved.** Knip once reported 57 unused exports — mostly tuning constants in
+`src/game/engine/AI/*` and `src/data/*`. They were un-exported or deleted, and
+knip is clean again (it now runs as a hard CI gate). The only current finding is
+an unused `ModalTone` type in the user's in-progress modal refactor.
 
 ---
 
