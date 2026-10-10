@@ -1,16 +1,17 @@
-Use specific types: Always define explicit types, interfaces, or generic constraints for all variables, parameters, and return types
-Avoid `any`: The `any` type is strictly forbidden. If the type is truly uncertain, use `unknown` combined with type narrowing or type guards instead.
-Put interfaces and types in the `types/` folder, and import them from there
-Always define function parameter with types and return types
-Keep TSX components purely presentational (JSX only)
-Move CSS → src/styles, static data → src/data, utility functions → src/utils, tests -> __tests__
-Assume npm server is already running at port 3000
-You are running on a Ubuntu/Fedora system all command are availablell, install what is missing if needed
-
-...Modal.tsx Classes should never conatine any extended logic. If needed create a class in the /src/game/engine
-folder.
-
-On linux chrome is installed here: /usr/bin/chromium-browser
+- Use specific types: Always define explicit types, interfaces, or generic constraints for all variables, parameters, and return types
+- Avoid `any`: The `any` type is strictly forbidden. If the type is truly uncertain, use `unknown` combined with type narrowing or type guards instead.
+- Put interfaces and types in the `types/` folder, and import them from there
+- Always define function parameter with types and return types
+- Keep TSX components purely presentational (JSX only)
+- Move CSS → src/styles, static data → src/data, utility functions → src/utils, tests -> __tests__
+- You are running on a Ubuntu/Fedora system all command are availablell, install what is missing if needed
+- ...Modal.tsx Classes should never conatine any extended logic. If needed create a class in the /src/game/engine folder.
+- On linux chrome is installed here: /usr/bin/chromium-browser
+- All state changes flow through one command layer; UI never calls engine methods directly
+- Commands are serializable data with actorId, turn, seq — one intent per command
+- Authority validates ownership, turn, and rules; rejects are typed values, never silent or partial
+- Same seed + same command sequence = same result; no wall-clock, no unseeded random, no timestamp IDs
+- Authority emits events one-way; clients project only, and every event is filtered by seat visibility
 
 ## Playwright E2E Test Guidelines
 

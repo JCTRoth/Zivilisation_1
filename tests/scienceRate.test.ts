@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
+import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
 
 /**
  * Verify that changing the civ's Science Rate actually changes per-turn
@@ -58,6 +59,8 @@ describe('Science rate affects research', () => {
 
   it('research progress per round scales with the science rate through the real turn pipeline', () => {
     const { civ } = foundCity();
+    // The engine refuses to start research during the opening rounds.
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     (engine as any).setResearch?.(0, 'pottery');
     civ.researchProgress = 0;
     const tm = engine.turnManager as any;

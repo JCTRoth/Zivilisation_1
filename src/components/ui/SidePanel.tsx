@@ -155,95 +155,128 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
 
 
   // ─── Render Helpers ──────────────────────────────────────────
-  const selectionTitle = selectedUnit 
-    ? 'Selected Unit' 
-    : panelCity 
-      ? 'Selected City' 
-      : unitAtSelectedTile 
-        ? '' 
-        : selectedTile 
-          ? 'Selected Tile' 
+  const selectionTitle = selectedUnit
+    ? 'Selected Unit'
+    : panelCity
+      ? 'Selected City'
+      : unitAtSelectedTile
+        ? 'Unit'
+        : selectedTile
+          ? 'Selected Tile'
           : 'No Selection';
+
+  // With nothing selected the empire summary lives in the selection section,
+  // so the Details section stays hidden instead of repeating the same numbers.
+  const nothingSelected = !selectedUnit && !panelCity && !unitAtSelectedTile && !selectedTile;
+  const showPlayerSummary = !panelCity && !selectedTile && !nothingSelected;
+  const showDetails = Boolean(selectedTile) || showPlayerSummary;
+
+  const sciencePerTurn = (gameEngine?.researchManager && currentPlayer?.currentResearch)
+    ? gameEngine.researchManager.perTurnProgress(currentPlayer, currentPlayer.currentResearch, playerResources?.science ?? 0)
+    : playerResources?.science ?? 0;
 
   const renderSelectionContent = () => {
     if (selectedUnit) {
       return (
-        <div>
-          <div className="side-panel-small-muted">{capitalize(selectedUnit.type)}</div>
-          <div className="side-panel-small-muted unit-stats">
+        <div className="unit-card">
+          <div className="unit-card-title">{capitalize(selectedUnit.type)}</div>
+          <div className="unit-card-line">
             HP: {selectedUnit.health ?? 100} • Moves: {selectedUnit.movesRemaining ?? 0}
           </div>
-          <div className="side-panel-small-muted unit-attack-defense">
+          <div className="unit-card-line">
             Attack: {selectedUnit?.attack ?? 0} • Defense: {selectedUnit?.defense ?? 0}
             {selectedUnit?.isFortified ? ' • 🛡️ Fortified (+50% def)' : ''}
           </div>
         </div>
       );
     }
-    
+
     if (panelCity) {
-      // The citizen block leads the panel: with a city selected you always want
-      // to see who works what, before any numbers.
+      // Identity first (name / size / place), then the numbers, then the
+      // citizen block: who works what stays directly above the tile list it
+      // belongs to.
+      const cityStats = [
+        { icon: '👥', label: 'Population', value: panelCity.population ?? 1 },
+        { icon: '🍞', label: 'Food', value: panelCity.yields?.food ?? 0 },
+        { icon: '⛏️', label: 'Production', value: panelCity.yields?.production ?? 0 },
+        { icon: '💰', label: 'Trade', value: panelCity.yields?.trade ?? 0 },
+        { icon: '🔬', label: 'Science', value: panelCity.science ?? 0 },
+        { icon: '🪙', label: 'Gold', value: panelCity.gold ?? 0 },
+      ];
       return (
-        <div>
+        <div className="city-block">
+          <div className="city-head">
+            <div className="city-head-row">
+              <span className="city-name">{panelCity.name}</span>
+              <span className="city-head-coords side-panel-small-muted">
+                <i className="bi bi-geo-alt" aria-hidden="true"></i>
+                {panelCity.col}, {panelCity.row}
+              </span>
+            </div>
+          </div>
+
           {uiState?.citizenReassign && renderCitizenMenu()}
+
+          <div className="city-stats-grid">
+            {cityStats.map((s) => (
+              <div key={s.label} className="city-stat" title={s.label}>
+                <span className="city-stat-label">
+                  <span className="city-stat-icon" aria-hidden="true">{s.icon}</span>
+                  {s.label}
+                </span>
+                <span className="city-stat-value">{s.value}</span>
+              </div>
+            ))}
+          </div>
+
           {renderCitySpecialists(panelCity)}
           {renderWorkedTiles(panelCity)}
-          <div className="side-panel-section-divider" />
-          <div className="city-name"><strong>{panelCity.name}</strong></div>
-          <div className="side-panel-small-muted">Location: {panelCity.col}, {panelCity.row}</div>
-          <div className="stats-div">
-            <div>Population: {panelCity.population ?? 1}</div>
-            <div>Food: {panelCity.yields?.food ?? 0}</div>
-            <div>Production: {panelCity.yields?.production ?? 0}</div>
-            <div>Trade: {panelCity.yields?.trade ?? 0}</div>
-            <div>Science: {panelCity.science ?? 0}</div>
-            <div>Gold: {panelCity.gold ?? 0}</div>
-          </div>
         </div>
       );
     }
-    
+
     if (unitAtSelectedTile) {
+      const own = unitAtSelectedTile.civilizationId === currentPlayer?.id;
       return (
-        <div>
-          <div className="unit-name">{capitalize(unitAtSelectedTile.name || unitAtSelectedTile.type)}</div>
-          <div className="side-panel-small-muted">{capitalize(unitAtSelectedTile.type)}</div>
-          {unitAtSelectedTile.civilizationId === currentPlayer?.id ? (
-            <div className="side-panel-small-muted unit-stats">
+        <div className="unit-card">
+          <div className="unit-card-title">
+            {capitalize(unitAtSelectedTile.name || unitAtSelectedTile.type)}
+          </div>
+          <div className="unit-card-sub">{capitalize(unitAtSelectedTile.type)}</div>
+          {own ? (
+            <div className="unit-card-line">
               HP: {unitAtSelectedTile.health ?? 100} • Moves: {unitAtSelectedTile.movesRemaining ?? 0}
             </div>
           ) : (
-            <div className="side-panel-small-muted unit-attack-defense">
+            <div className="unit-card-line">
               Attack: {unitAtSelectedTile?.attack ?? 0} • Defense: {unitAtSelectedTile?.defense ?? 0}
             </div>
           )}
         </div>
       );
     }
-    
+
     if (selectedTile) {
       return (
-        <div>
-          <div className="tile-type">{capitalize(String(selectedTile.terrainName))}</div>
-          <div className="side-panel-small-muted">Coordinates: ({selectedTile.col}, {selectedTile.row})</div>
-          <div className="side-panel-small-muted">Movement Cost: {selectedTile.movementCost}</div>
-          {selectedTile.resource && <div className="side-panel-small-muted">Resource: {selectedTile.resource}</div>}
-          {selectedTile.improvement && <div className="side-panel-small-muted">Improvement: {selectedTile.improvement}</div>}
+        <div className="tile-card">
+          <div className="tile-card-title">{capitalize(String(selectedTile.terrainName))}</div>
+          <div className="sp-kv">Coordinates: <b>({selectedTile.col}, {selectedTile.row})</b></div>
+          <div className="sp-kv">Movement Cost: <b>{selectedTile.movementCost}</b></div>
+          {selectedTile.resource && <div className="sp-kv">Resource: <b>{selectedTile.resource}</b></div>}
+          {selectedTile.improvement && <div className="sp-kv">Improvement: <b>{selectedTile.improvement}</b></div>}
         </div>
       );
     }
-    
+
     return (
-      <div className="side-panel-small-muted">
-        <div>Units: {playerUnits?.length ?? 0}</div>
-        <div>Cities: {playerCities?.length ?? 0}</div>
-        <div className="no-selection-summary">
-          Food: {playerResources?.food ?? 0} • Production: {playerResources?.production ?? 0}
-        </div>
-        <div>Trade: {playerResources?.trade ?? 0} • Science: {(gameEngine?.researchManager && currentPlayer?.currentResearch)
-          ? gameEngine.researchManager.perTurnProgress(currentPlayer, currentPlayer.currentResearch, playerResources?.science ?? 0)
-          : playerResources?.science ?? 0}</div>
+      <div className="sp-kv-grid">
+        <div className="sp-kv">Units: <b>{playerUnits?.length ?? 0}</b></div>
+        <div className="sp-kv">Cities: <b>{playerCities?.length ?? 0}</b></div>
+        <div className="sp-kv">Food: <b>{playerResources?.food ?? 0}</b></div>
+        <div className="sp-kv">Production: <b>{playerResources?.production ?? 0}</b></div>
+        <div className="sp-kv">Trade: <b>{playerResources?.trade ?? 0}</b></div>
+        <div className="sp-kv">Science: <b>{sciencePerTurn}</b></div>
+        <div className="sp-kv">Gold: <b>{playerResources?.gold ?? 0}</b></div>
       </div>
     );
   };

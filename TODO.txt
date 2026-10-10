@@ -853,6 +853,9 @@ When a player tries to complete (or is about to complete) a Wonder that has alre
 
 
 ------------------------------------------
+Planing Server Client Splitup
+------------------------------------------
+
 
 Five blockers to fix before the split (all cheap, all in shared code)
 1. Determinism — 48 Math.random in src/, 34 in engine. CombatSystem accepts context.random but GameEngine.ts:4545,4756 never passes it, so combat rolls are unseeded today. Route every gameplay roll through one engine RNG seeded from the lobby seed; tests already prove this works (useSeededRandom).
@@ -863,3 +866,30 @@ Five blockers to fix before the split (all cheap, all in shared code)
 Today that's safe (one client); on a server it's an exploit surface. Introduce submit(command, {civId, turn, seq}) with validation;
 components call session.send(cmd) instead. This is also the seam that fixes the Zustand question from before
 — the store becomes a projection of the event stream, whatever the transport.
+
+
+
+I surveyed the whole project (70k lines, 154 test files, 52 engine files). The good news: the engine is already a server-shaped program — zero document/window coupling in src/game/engine/, it runs headless in 154 node-env tests and two scripts/*.mjs runners, TurnManager already drives all civs including AI in one phased loop, map gen is seed-pinned, and combat/AI already accept injectable RNG. You are not rewriting a browser app into a server app; you're moving a headless sim out of the browser.
+Proposed layout — 3 packages
+packages/shared/     # engine + rules + data + types, imported by both
+  game/engine/**     # GameEngine, TurnManager, all managers, AI/, MapGenerator
+  data/**, types/**  # balance tables (single source of truth, no drift client/server)
+  GameActions=None   # engine constructor ALREADY takes null (tests do this)
+server/              # new
+  room.ts            # one GameRoom = one GameEngine instance + tick loop
+  commands.ts        # command union + validation (ownership, turn, legality)
+  transport.ts       # WS/HTTP: commands in, classified events out
+  saveStore.ts       # replaces engine's localStorage
+  fog.ts             # per-connection visibility filtering
+  lobby.ts           # room create/join from maptype/seed/civs (today's URL params)
+web/                 # today's src/, minus engine
+  components/, rendering/, stores/, App.tsx, KeyboardHandler.ts
+  session.ts         # client-side transport (same interface as server socket)
+Mapping of what moves vs. stays:
+Package	Contents
+shared	src/game/engine/** (20.3k lines), src/game/** except rendering/, src/data/**, types/**, SquareGrid.ts, save/load code in GameEngine.ts (with storage injected)
+server	nothing today — all new; reuses scripts/run-ai-batch.mjs cadence and tests/helpers/world.ts runTurns() as the tick loop prototype
+web/client	src/components/**, src/game/rendering/** (MapRenderer, MoveAnimator, GlideAnimation), src/stores, src/utils/EngineEventHandlers, KeyboardHandler.ts, App.tsx, UseGameEngine (rewritten to session)
+src/game/City.ts, Civilization.ts, Unit.ts, Terrain.ts (~2,500 dead lines) get deleted in the process, not ported.
+
+

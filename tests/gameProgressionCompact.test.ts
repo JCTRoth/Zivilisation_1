@@ -10,6 +10,7 @@ import GameEngine from '@/game/engine/GameEngine';
 import { filterLogEntries, computeCivDelta, hydrateCiv, gameProgression, currentResearchId, PROGRESSION_SNAPSHOT_INTERVAL } from '../src/utils/GameProgression';
 import { gameLogger } from '../src/utils/GameLogger';
 import { serializeCityCompact } from '../src/utils/CitySnapshots';
+import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
 import type { ProgressionCivSnapshot, ProgressionCivDelta, ProgressionLogEntry } from '../types/progression';
 
 function entry(event: string, message = '', detail: Record<string, unknown> = {}): ProgressionLogEntry {
@@ -335,6 +336,7 @@ describe('buildCompactCsv (strongly reduced export)', () => {
     // Give the human civ real resources + a researched tech object.
     const civ = engine.civilizations[0];
     if (civ && civ.resources) civ.resources.gold = 123;
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     (engine as any).setResearch?.(0, 'pottery');
 
     // Two rounds: the first advance-cycle returns to currentTurn 1 (the round
@@ -423,6 +425,7 @@ describe('every-50-round overview blocks', () => {
   });
 
   it('finances block prints the tech id, not [object Object]', async () => {
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (engine as any).setResearch?.(0, 'pottery');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
