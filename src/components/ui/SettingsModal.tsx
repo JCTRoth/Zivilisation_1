@@ -8,7 +8,7 @@ function SettingsModal({ show, onHide }) {
 
   const handleChange = (key, value) => {
     actions.updateSettings({
-      [key]: parseFloat(value) || value,
+      [key]: parseFloat(value),
     });
   };
 
@@ -16,8 +16,11 @@ function SettingsModal({ show, onHide }) {
     console.log("SettingsModal: Reset to Defaults clicked");
     actions.updateSettings({
       uiScale: 1.0,
-      enableAnimations: true,
+      skipEndTurnConfirmation: false,
+      autoEndTurn: false,
       autoCamera: true,
+      devMode: false,
+      enableAnimations: true,
       animationSpeed: 1,
       enemyAnimationSpeed: 1,
       cameraGlideSpeed: 1,
@@ -33,6 +36,7 @@ function SettingsModal({ show, onHide }) {
     key: string,
     hint: string,
     format: (v: number) => string,
+    disabled = false,
   ) => (
     <div className="settings-control">
       <div className="settings-control__header">
@@ -46,6 +50,7 @@ function SettingsModal({ show, onHide }) {
         value={value}
         onChange={(e) => handleChange(key, e.target.value)}
         className="settings-control__range"
+        disabled={disabled}
       />
       <Form.Text className="settings-control__hint">{hint}</Form.Text>
     </div>
@@ -91,6 +96,39 @@ function SettingsModal({ show, onHide }) {
               }
               className="settings-control__toggle"
             />
+
+            <Form.Check
+              type="switch"
+              id="autoEndTurn"
+              label="Auto-end turn"
+              checked={settings.autoEndTurn}
+              onChange={(e) =>
+                actions.updateSettings({ autoEndTurn: e.target.checked })
+              }
+              className="settings-control__toggle"
+            />
+
+            <Form.Check
+              type="switch"
+              id="skipEndTurnConfirmation"
+              label="Skip end-turn confirmation"
+              checked={settings.skipEndTurnConfirmation}
+              onChange={(e) =>
+                actions.updateSettings({ skipEndTurnConfirmation: e.target.checked })
+              }
+              className="settings-control__toggle"
+            />
+
+            <Form.Check
+              type="switch"
+              id="devMode"
+              label="Developer mode"
+              checked={settings.devMode}
+              onChange={(e) =>
+                actions.updateSettings({ devMode: e.target.checked })
+              }
+              className="settings-control__toggle"
+            />
           </div>
 
           <div className="settings-grid">
@@ -114,6 +152,7 @@ function SettingsModal({ show, onHide }) {
             "animationSpeed",
             "How fast units move and combat plays (leftmost = instant)",
             (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
+            !settings.enableAnimations,
           )}
 
           {renderSlider(
@@ -125,6 +164,7 @@ function SettingsModal({ show, onHide }) {
             "enemyAnimationSpeed",
             "How fast enemy (AI) units move, independent of your own units (leftmost = instant)",
             (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
+            !settings.enableAnimations,
           )}
 
           {renderSlider(
@@ -136,6 +176,7 @@ function SettingsModal({ show, onHide }) {
             "cameraGlideSpeed",
             "How fast the camera pans to a new focus (leftmost = instant)",
             (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
+            !settings.enableAnimations,
           )}
           </div>
         </Form>

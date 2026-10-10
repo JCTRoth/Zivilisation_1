@@ -52,6 +52,8 @@ describe('Research selection (start of game)', () => {
   });
 
   it('autoSelectResearch picks a random available tech and starts it', () => {
+    // Research is locked until the unlock round — open it first.
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     const picked = engine.autoSelectResearch(0);
     expect(picked).toBeTruthy();
     expect(engine.civilizations[0].currentResearch?.id).toBe(picked);
@@ -98,5 +100,68 @@ describe('Research selection (start of game)', () => {
   it('research stays locked for the first five rounds', () => {
     // Guard rail: the opening period is a design decision, not an accident.
     expect(RESEARCH_UNLOCK_ROUND).toBe(5);
+  });
+});
+
+describe('The research lock is enforced by the engine itself', () => {
+  let engine: GameEngine;
+
+  beforeEach(async () => {
+    engine = new GameEngine(null);
+    (engine as any).sleep = () => Promise.resolve();
+    await engine.initialize({
+      numberOfCivilizations: 2,
+      mapType: 'CLOSEUP_1V1',
+      devMode: false,
+      startingGold: 100,
+    });
+  });
+
+  afterEach(() => {
+    engine = null as unknown as GameEngine;
+  });
+
+  it('setResearch() refuses every selection during the opening rounds', () => {
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND - 1 });
+    expect(engine.isResearchUnlocked()).toBe(false);
+
+    const tech = engine.availableResearchFor(0)[0];
+    expect(tech).toBeDefined();
+    // Human AND AI civs are locked out alike — the rule has one home.
+    expect(engine.setResearch(0, tech.id)).toBe(false);
+    expect(engine.setResearch(1, tech.id)).toBe(false);
+    for (const civ of engine.civilizations) {
+      expect(civ.currentResearch).toBeFalsy();
+    }
+
+    // From the unlock round on the very same call works.
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
+    expect(engine.setResearch(0, tech.id)).toBe(true);
+    expect(engine.civilizations[0].currentResearch).toBeTruthy();
+  });
+
+  it('autoSelectResearch() refuses during the opening rounds too', () => {
+    engine.roundManager.restoreState({ roundNumber: 1 });
+    expect(engine.autoSelectResearch(0)).toBeNull();
+    expect(engine.civilizations[0].currentResearch).toBeFalsy();
+  });
+
+  it('the opening rounds play out with no research and no progress at all', () => {
+    engine.roundManager.restoreState({ roundNumber: 1 });
+    const techsBefore = engine.civilizations.map((c) => (c.technologies ?? []).length);
+    const tm = engine.turnManager as unknown as { advanceTurn: () => void };
+
+    // Every turn of every opening round, including the AI turns: whatever
+    // asks for research (AI selector, auto-select on turn end) must be
+    // refused by the engine, so nothing starts and nothing completes.
+    for (let i = 0; i < (RESEARCH_UNLOCK_ROUND - 2) * 2; i++) tm.advanceTurn();
+
+    expect(engine.isResearchUnlocked()).toBe(false);
+    expect((tm as unknown as { roundNumber: number }).roundNumber).toBe(RESEARCH_UNLOCK_ROUND - 1);
+    engine.civilizations.forEach((civ, i) => {
+      expect(civ.currentResearch).toBeFalsy();
+      expect(civ.researchProgress ?? 0).toBe(0);
+      expect((civ.technologies ?? []).length).toBe(techsBefore[i]);
+    });
   });
 });

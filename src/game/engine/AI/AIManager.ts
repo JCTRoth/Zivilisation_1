@@ -466,19 +466,19 @@ export class AIManager {
     }
 
     // ─── Phase 2: Technology research ──────────────────────────────────
-    const researchUnlocked = typeof this.gameEngine.isResearchUnlocked === 'function'
-      ? this.gameEngine.isResearchUnlocked()
-      : true;
-    if (!civ.currentResearch && researchUnlocked) {
+    // The opening-round lock lives in GameEngine.setResearch (lowest level):
+    // during the first rounds the selection below is scored but the engine
+    // refuses to start it, so nothing here has to know about the lock.
+    if (!civ.currentResearch) {
       // selectResearch returns the chosen techId (string) or null.
       const techChoice = AIResearch.selectResearch(civ, resolveAICivStrategy(civ, aiState), gameState);
       if (techChoice) {
-        this.gameEngine.log('ai', `Research — ${civ.name} selects ${techChoice} (${aiState.strategyProfile})`, { civilizationId, action: 'research', tech: techChoice, strategy: aiState.strategyProfile });
-        debugLog(`[AI] Research selected: ${techChoice}`);
         aiState.researchPriority = { techId: techChoice, score: 0, reason: 'strategy' };
         // Use GameEngine's setResearch to properly set the tech
-        if (typeof this.gameEngine.setResearch === 'function') {
-          this.gameEngine.setResearch(civilizationId, techChoice);
+        if (typeof this.gameEngine.setResearch === 'function'
+            && this.gameEngine.setResearch(civilizationId, techChoice)) {
+          this.gameEngine.log('ai', `Research — ${civ.name} selects ${techChoice} (${aiState.strategyProfile})`, { civilizationId, action: 'research', tech: techChoice, strategy: aiState.strategyProfile });
+          debugLog(`[AI] Research selected: ${techChoice}`);
         }
       }
     }

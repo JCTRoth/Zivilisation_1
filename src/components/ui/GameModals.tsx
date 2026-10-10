@@ -19,6 +19,7 @@ import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
 import { DomUtils } from '@/utils/DomUtils';
 import { enrichMapForExport } from '@/utils/MapExportUtils';
 import { productionFailureText } from '@/utils/ProductionUtils';
+import { notify } from '@/utils/NotificationUtils';
 import '../../styles/gameModals.css';
 import '../../styles/diplomacyModal.css';
 import LeaderPortrait from './LeaderPortrait';
@@ -437,7 +438,10 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     const firstResearchable = firstResearchableInPath(techs, path, civTechs);
     if (firstResearchable) {
       const saved = useGameStore.getState().techProgress[firstResearchable] ?? 0;
-      ge.setResearch(0, firstResearchable, saved);
+      // The engine owns the opening-round lock and says no while it is closed.
+      if (!ge.setResearch(0, firstResearchable, saved)) {
+        notify('info', 'Research only starts once the opening rounds are over.');
+      }
       actions.updateCivilizations([...(ge.civilizations || [])]);
     }
   };

@@ -14,6 +14,7 @@ import GameEngine from '@/game/engine/GameEngine';
 import { AutoProduction } from '@/game/engine/AutoProduction';
 import { canBuildBuilding, resolveAICivStrategy } from '@/game/engine/AI/AITypes';
 import { BUILDING_PROPERTIES, BUILDING_TYPES } from '@/data/BuildingConstants';
+import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
 
 // ─────────────────────────────────────────────────────────────────────────
 // 1. Research freeze
@@ -57,6 +58,7 @@ describe('AI research pipeline (regression: tech tree must be populated)', () =>
 
   it('setResearch() actually assigns the researched tech to the civ', async () => {
     engine = await makeEngine();
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     engine.setResearch(1, 'pottery');
     const current = engine.civilizations[1].currentResearch as { id?: string } | string | null;
     expect(current).toBeTruthy();
@@ -66,6 +68,7 @@ describe('AI research pipeline (regression: tech tree must be populated)', () =>
 
   it('keeps the researched tech set (no silent per-turn reset)', async () => {
     engine = await makeEngine();
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     engine.setResearch(1, 'pottery');
     // The engine only re-selects research when currentResearch is null; a
     // successful setResearch must persist so progress can accumulate.

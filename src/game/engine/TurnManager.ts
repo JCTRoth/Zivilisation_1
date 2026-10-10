@@ -345,15 +345,11 @@ export class TurnManager {
       return;
     }
 
-    // Research must never sit idle — but ONLY after the opening rounds: the
-    // first RESEARCH_UNLOCK_ROUND rounds intentionally run without research, so
-    // the human is neither prompted nor auto-assigned a technology there. From
-    // the unlock round on, ending the turn with no selected technology
-    // auto-researches a random available one.
-    const researchUnlocked = typeof this.gameEngine.isResearchUnlocked === 'function'
-      ? this.gameEngine.isResearchUnlocked()
-      : true;
-    if (researchUnlocked && !civ.currentResearch && typeof this.gameEngine.autoSelectResearch === 'function') {
+    // Research must never sit idle — but the opening rounds intentionally run
+    // without a target: the engine itself refuses every research selection
+    // before RESEARCH_UNLOCK_ROUND (GameEngine.setResearch), so this
+    // auto-assignment is a no-op there and the science is banked instead.
+    if (!civ.currentResearch && typeof this.gameEngine.autoSelectResearch === 'function') {
       const autoPicked = this.gameEngine.autoSelectResearch(civId);
       if (autoPicked) {
         debugLog(`[TurnManager] No research selected — auto-selected '${autoPicked}' for ${civ.name}`);

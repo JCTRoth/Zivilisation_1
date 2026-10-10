@@ -5447,12 +5447,17 @@ const occupiedLandmasses = new Set(
    * coloring — it must NOT gate what THIS civ can research. Otherwise a tech
    * the other civ discovered first would be silently rejected here while the
    * AI re-selected it every turn (research freeze).
+   *
+   * THE research lock lives HERE: while the opening rounds run
+   * (`isResearchUnlocked() === false`) nothing may start researching, no
+   * matter who calls — UI click, AI or auto-select. Callers get `false` back
+   * when the selection was refused, so they can tell the player why.
    */
-  setResearch(civId, techId, savedProgress = 0) {
+  setResearch(civId, techId, savedProgress = 0): boolean {
     const civ = this.civilizations[civId];
     const tech = this.technologies.find(t => t.id === techId);
 
-    if (civ && tech) {
+    if (civ && tech && this.isResearchUnlocked()) {
       // Gate on THIS civ's own techs + prerequisites only.
       const civTechs = Array.isArray(civ.technologies) ? civ.technologies : [];
       const hasTech = (id: string): boolean => civTechs.includes(String(id));
@@ -5465,8 +5470,10 @@ const occupiedLandmasses = new Set(
         // spent first, so the early turns are not thrown away.
         civ.researchProgress = (savedProgress || 0) + (civ.bankedScience ?? 0);
         civ.bankedScience = 0;
+        return true;
       }
     }
+    return false;
   }
 
   /**
@@ -5507,13 +5514,15 @@ const occupiedLandmasses = new Set(
    * Pick a RANDOM available technology for the civ and start researching it.
    * Used as the fallback when a human turn ends without a research selection
    * (the auto-end gate only prompts — this guarantees research never sits
-   * idle and the turn's science is not wasted).
+   * idle and the turn's science is not wasted). Refuses during the opening
+   * rounds (see `setResearch`) and once research is already running.
    * Returns the tech id, or null when nothing is left to research / the civ
    * already has a research selected.
    */
   autoSelectResearch(civId: number, savedProgress = 0): string | null {
     const civ = this.civilizations?.[civId];
     if (!civ || civ.currentResearch) return null;
+    if (!this.isResearchUnlocked()) return null;
     const candidates = this.availableResearchFor(civId);
     if (candidates.length === 0) return null;
     const pick = candidates[Math.floor(Math.random() * candidates.length)];

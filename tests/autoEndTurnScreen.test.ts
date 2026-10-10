@@ -86,7 +86,9 @@ describe('Auto End Turn defers while a screen is open', () => {
     useGameStore.getState().actions.updateSettings({ autoEndTurn: true });
     // The auto-end gate now ALSO defers while the human has no research
     // selected; pick one so these tests exercise the screen-deferral behavior
-    // they are about (the research gate has its own test below).
+    // they are about (the research gate has its own test below). The engine
+    // refuses to start research during the opening rounds, so open those first.
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     engine.setResearch(0, 'pottery');
     // Remove any combat animations.
     const anims = useGameStore.getState().combatAnimations || [];
@@ -194,6 +196,7 @@ describe('Auto End Turn defers while a screen is open', () => {
   it('does NOT defer auto-end for missing research during the opening rounds', () => {
     // Round 0: research intentionally has not started yet, so an empty
     // research slot is expected and must not block the end of the turn.
+    engine.roundManager.restoreState({ roundNumber: 0 });
     engine.civilizations[0].currentResearch = null;
     makeAllUnitsDone();
 

@@ -134,6 +134,7 @@ describe('Fix: opening-round science is banked, not discarded', () => {
     const civ = engine.civilizations[0];
     civ.currentResearch = null;
     civ.bankedScience = 40;
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
 
     const pick = engine.availableResearchFor(civ.id)[0];
     expect(pick).toBeDefined();
@@ -149,6 +150,7 @@ describe('Fix: opening-round science is banked, not discarded', () => {
     const civ = engine.civilizations[0];
     civ.currentResearch = null;
     civ.bankedScience = 17;
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
 
     const picked = engine.autoSelectResearch(civ.id);
     expect(picked).toBeTruthy();

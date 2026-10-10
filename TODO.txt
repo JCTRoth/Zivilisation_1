@@ -849,3 +849,17 @@ When a player tries to complete (or is about to complete) a Wonder that has alre
 - All listed UI screens and modals
 - Clean architecture and tests
 - Documentation of the data format used for Wonders
+
+
+
+------------------------------------------
+
+Five blockers to fix before the split (all cheap, all in shared code)
+1. Determinism — 48 Math.random in src/, 34 in engine. CombatSystem accepts context.random but GameEngine.ts:4545,4756 never passes it, so combat rolls are unseeded today. Route every gameplay roll through one engine RNG seeded from the lobby seed; tests already prove this works (useSeededRandom).
+2. IDs — 'u_' + Date.now() + '_' + Math.random() (TurnManager.ts:1019). Replace with a deterministic counter; same for AICoordinator army-group ids.
+3. Storage — engine calls localStorage directly (GameEngine.ts:6809,6828). Extract a SaveStore interface; server implements it, browser keeps localStorage. The v4 blob + v1–v4 migrations are already portable.
+4. Timers — DEFEATED_UNIT_REMOVAL_DELAY_MS corpse timer, aiTurnTimeoutMs (TurnManager.ts:477), and the visual sleep() pacing must become simulation ticks/deadlines, not wall clock.
+5. Command layer — ~55 UI→engine direct calls (moveUnit, setRates, setCityProduction, foundCityWithSettler…) with no ownership/turn validation.
+Today that's safe (one client); on a server it's an exploit surface. Introduce submit(command, {civId, turn, seq}) with validation;
+components call session.send(cmd) instead. This is also the seam that fixes the Zustand question from before
+— the store becomes a projection of the event stream, whatever the transport.

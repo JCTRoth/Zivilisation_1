@@ -14,6 +14,7 @@
 import { describe, expect, it, afterEach, vi } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
 import { makeEngine, world } from './helpers/world';
+import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
 
 const memory = new Map<string, string>();
 (globalThis as unknown as { localStorage: Storage }).localStorage = {
@@ -210,6 +211,7 @@ describe('Save/load: civilization state', () => {
     const { engine } = await makeEngine({ seed: 409, mapType: 'MANY_CITIES' });
     const civ = engine.civilizations[0];
     const pick = engine.availableResearchFor(civ.id)[0];
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     engine.setResearch(civ.id, pick!.id as never);
     civ.researchProgress = 17;
 

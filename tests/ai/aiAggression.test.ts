@@ -3,6 +3,7 @@ import GameEngine from '@/game/engine/GameEngine';
 import { AIResearch } from '@/game/engine/AI/AIResearch';
 import { AIEconomicManager } from '@/game/engine/AI/AIEconomicManager';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
 import type { City, Civilization, Unit } from '../../types/game';
 
 /**
@@ -94,6 +95,7 @@ describe('AI-vs-AI research + aggression', () => {
     const available0 = AIResearch.getAvailableTechnologies(civ0);
     expect(available0).toContain('bronze_working');
 
+    engine.roundManager.restoreState({ roundNumber: RESEARCH_UNLOCK_ROUND });
     engine.setResearch(civ0.id, 'bronze_working');
     expect(civ0.currentResearch).toBeTruthy();
     expect(civ0.currentResearch?.id ?? civ0.currentResearch).toBe('bronze_working');
