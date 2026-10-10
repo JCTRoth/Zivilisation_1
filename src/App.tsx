@@ -25,6 +25,7 @@ import SidePanel from "./components/ui/SidePanel";
 import { GameUtils } from "@/utils/GameUtils";
 import { DomUtils } from "@/utils/DomUtils";
 import { enrichMapForExport } from "@/utils/MapExportUtils";
+import { sendCommand } from "@/utils/session";
 import { preloadAllUnitIcons } from "@/utils/UnitIconLoader";
 import { centerCameraOnTile, getGameViewport, clampZoom } from "@/utils/CameraUtils";
 import { gameLogger } from "@/utils/GameLogger";
@@ -917,15 +918,20 @@ function App() {
       }
 
       // Move the selected unit one tile in the given direction (Arrow keys).
-      // `moveUnit` is a typed GameEngine method — it validates passability,
-      // movement points and combat, and no-ops (returns a result object) when
-      // the move isn't possible, so it's safe to call on every keypress.
+      // The move goes through the command layer: the session supplies the
+      // acting seat, the engine validates the move and emits its events. A
+      // rejected move is simply a no-op from the player's point of view.
       const moveSelectedUnit = (dCol: number, dRow: number) => {
         const selId = gameState.selectedUnit;
         if (!gameEngine || !selId) return;
         const unit = gameEngine.units.find((u) => u.id === selId);
         if (!unit) return;
-        gameEngine.moveUnit(selId, unit.col + dCol, unit.row + dRow);
+        void sendCommand({
+          type: 'MOVE_UNIT',
+          unitId: selId,
+          col: unit.col + dCol,
+          row: unit.row + dRow,
+        });
       };
 
       // Navigation shortcuts

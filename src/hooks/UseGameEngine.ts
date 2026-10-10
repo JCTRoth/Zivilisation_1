@@ -4,6 +4,7 @@ import GameEngine from '../game/engine/GameEngine';
 import { EngineEventRouter } from '../utils/EngineEventHandlers';
 import { gameLogger } from '../utils/GameLogger';
 import { gameProgression } from '../utils/GameProgression';
+import { createLocalSession, setActiveSession } from '../utils/session';
 
 /**
  * Custom hook to integrate GameEngine with Zustand state
@@ -13,6 +14,11 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
 
   useEffect(() => {
     if (!gameEngine) return;
+
+    // The UI talks to the engine only through the command layer. Bind a session
+    // for this engine's lifetime; the store keeps projecting the engine's
+    // events exactly as before, so nothing on the read path changes.
+    setActiveSession(createLocalSession(gameEngine));
 
     // Keep the logger's context (round/player) in sync with the live engine.
     gameLogger.setContext(() => ({
@@ -70,6 +76,7 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
       if (gameEngine) {
         gameEngine.onStateChange = null;
       }
+      setActiveSession(null);
       // Flush any buffered log lines (best-effort) before the hook unmounts.
       gameLogger.flushNow().catch(() => undefined);
     };

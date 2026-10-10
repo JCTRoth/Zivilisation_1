@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import { useGameStore } from "@/stores/GameStore";
+import { sendCommand, isCommandRejection } from "@/utils/session";
 import { useShallow } from "zustand/react/shallow";
 import { TILE_SIZE } from "@/data/TerrainData";
 import {
@@ -2552,22 +2553,28 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         break;
 
       case "found_city":
-        if (unit && gameEngine?.foundCityWithSettler) {
+        if (unit) {
           console.log(`[ContextMenu] Found city action for unit ${unit.id}`);
-          const result = gameEngine.foundCityWithSettler(unit.id);
-          if (result) {
-            if (actions?.updateCities)
-              actions.updateCities(getAllCitiesFromEngine());
-            if (actions?.updateUnits)
-              actions.updateUnits(getAllUnitsFromEngine());
-            if (actions?.updateMap) actions.updateMap(gameEngine.map);
-          } else {
-            if (actions?.addNotification)
-              actions.addNotification({
-                type: "warning",
-                message: "Cannot found city here",
-              });
-          }
+          // Founding goes through the command layer, so the engine also checks
+          // that the settler belongs to the seat whose turn it is.
+          void sendCommand({ type: 'FOUND_CITY', settlerId: unit.id }).then((result) => {
+            const founded = !isCommandRejection(result) && result.command === 'FOUND_CITY' && result.founded;
+            if (founded) {
+              if (actions?.updateCities)
+                actions.updateCities(getAllCitiesFromEngine());
+              if (actions?.updateUnits)
+                actions.updateUnits(getAllUnitsFromEngine());
+              if (actions?.updateMap) actions.updateMap(gameEngine.map);
+            } else {
+              if (actions?.addNotification)
+                actions.addNotification({
+                  type: "warning",
+                  message: isCommandRejection(result)
+                    ? "It is not this civilization's turn"
+                    : "Cannot found city here",
+                });
+            }
+          });
         }
         break;
 

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Form, Alert } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
 import { gameLogger } from '@/utils/GameLogger';
+import { sendCommand, isCommandRejection } from '@/utils/session';
 import { getGovernment } from '@/data/GovernmentData';
 import GameEngine from '@/game/engine/GameEngine';
 import '../../../styles/ratesModal.css';
@@ -22,8 +23,9 @@ const RATE_KEYS: RateKey[] = ['tax', 'science', 'luxury'];
 /**
  * Tax / Science / Luxury rate control (Civ1 style).
  * The three sliders always sum to 100%: moving one redistributes the leftover
- * proportionally over the other two. Applying writes the rates onto the civ via
- * GameEngine.setRates (which also enforces the government's caps).
+ * proportionally over the other two. Applying sends a SET_RATES command
+ * through the session — the engine re-derives the split and enforces the
+ * government's caps.
  */
 function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
   const actions = useGameStore((state) => state.actions);
@@ -95,16 +97,30 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
     return { ...base, science };
   }, [rates, currentPlayer, gameEngine]);
 
-  const handleApply = (): void => {
-    if (currentPlayer && gameEngine && typeof gameEngine.setRates === 'function') {
-      gameEngine.setRates(currentPlayer.id, rates.tax, rates.science, rates.luxury);
-      actions.updateCivilizations([...(gameEngine.civilizations ?? [])]);
-      gameLogger.record('RATES_CHANGED', {
-        civilizationId: currentPlayer.id,
-        taxRate: rates.tax,
-        scienceRate: rates.science,
-        luxuryRate: rates.luxury,
+  const handleApply = async (): Promise<void> => {
+    if (currentPlayer && gameEngine) {
+      // The command layer authorises the acting seat; the engine still applies
+      // the government's caps when it re-derives the split.
+      const result = await sendCommand({
+        type: 'SET_RATES',
+        tax: rates.tax,
+        science: rates.science,
+        luxury: rates.luxury,
       });
+      if (!isCommandRejection(result)) {
+        actions.updateCivilizations([...(gameEngine.civilizations ?? [])]);
+        gameLogger.record('RATES_CHANGED', {
+          civilizationId: currentPlayer.id,
+          taxRate: rates.tax,
+          scienceRate: rates.science,
+          luxuryRate: rates.luxury,
+        });
+      } else {
+        actions.addNotification({
+          type: 'warning',
+          message: 'Cannot change rates right now.',
+        });
+      }
     }
     onHide();
   };

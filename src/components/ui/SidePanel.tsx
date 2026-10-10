@@ -14,6 +14,38 @@ import GameEngine from '@/game/engine/GameEngine';
 const capitalize = (value: string): string =>
   value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 
+/**
+ * Count the *visible* symbols in an icon string — not code points.
+ * '🏛️' is two code points (base + variation selector) and '🇫🇷🥖' is four,
+ * so a naive length would treat single-flag civs as multi-icon ones and
+ * '🐎🏹' as four. Grapheme segmentation groups flags and VS16 correctly.
+ */
+const countSymbols = (value: string): number => {
+  if (!value) return 0;
+  // Intl.Segmenter is not in every TS lib yet — type it locally.
+  type SegmenterCtor = new (
+    locales?: string | string[],
+    options?: { granularity?: 'grapheme' | 'word' | 'sentence' }
+  ) => { segment(input: string): Iterable<{ segment: string }> };
+  const Segmenter = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
+  try {
+    if (Segmenter) {
+      return [...new Segmenter(undefined, { granularity: 'grapheme' }).segment(value)].length;
+    }
+  } catch {
+    /* older engines fall through to the heuristic below */
+  }
+  // Heuristic: drop variation selectors, then fold regional-indicator pairs.
+  const chars = Array.from(value.replace(/\uFE0F/gu, ''));
+  const isRegional = (c: string) => c >= '\u{1F1E6}' && c <= '\u{1F1FF}';
+  let count = 0;
+  for (let i = 0; i < chars.length; i++) {
+    if (isRegional(chars[i]) && i + 1 < chars.length && isRegional(chars[i + 1])) i++;
+    count++;
+  }
+  return count;
+};
+
 const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine }) => {
   // ─── Store State ─────────────────────────────────────────────
   const currentPlayer = useGameStore((s) => s.civilizations[s.gameState.activePlayer] || null);
@@ -132,7 +164,11 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
 
   const staticCiv = useMemo(() => CIVILIZATIONS.find((civ) => civ.name === displayPlayer.name), [displayPlayer]);
   const civIcon = staticCiv?.icon ?? '🏛️';
-  const isTwoIcon = civIcon ? Array.from(civIcon).length > 1 : false;
+  // 1 / 2 / 3+ symbols in the badge — each step gets a smaller glyph so the
+  // icon can never wrap or grow past the avatar (wrapped emoji was what
+  // pushed the Huns' two-icon badge outside its box).
+  const civIconCount = countSymbols(civIcon);
+  const civIconClass = `avatar-icons-${Math.min(civIconCount, 3)}`;
 
   // ─── Handlers ────────────────────────────────────────────────
   const handleAvatarClick = useCallback(() => {
@@ -219,12 +255,12 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
 
           <div className="city-stats-grid">
             {cityStats.map((s) => (
-              <div key={s.label} className="city-stat" title={s.label}>
-                <span className="city-stat-label">
+              <div key={s.label} className="city-stat">
+                <span className="city-stat-value">
                   <span className="city-stat-icon" aria-hidden="true">{s.icon}</span>
-                  {s.label}
+                  {s.value}
                 </span>
-                <span className="city-stat-value">{s.value}</span>
+                <span className="city-stat-label">{s.label}</span>
               </div>
             ))}
           </div>
@@ -292,12 +328,14 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     const locked = city.lockSpecialists ?? false;
 
     return (
-      <div className="mt-2">
-        <div className="d-flex justify-content-between align-items-center mb-1">
-          <div className="side-panel-small-muted fw-bold">
-            Specialists <span className="fw-normal">({specs.length}/{pop})</span>
-            {locked && <i className="bi bi-lock-fill ms-1 text-warning" title="Specialists locked"></i>}
-          </div>
+      <div className="sp-block">
+        <div className="sp-block-head">
+          <span className="sp-block-label">
+            Specialists <span className="sp-block-count">({specs.length}/{pop})</span>
+            {locked && (
+              <i className="bi bi-lock-fill sp-lock" title="Specialists locked" aria-label="Specialists locked"></i>
+            )}
+          </span>
           {specs.length > 0 && (
             <button
               type="button"
@@ -328,7 +366,7 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
               def.science ? `+${def.science} Science` : null,
             ].filter(Boolean).join(', ');
             return (
-              <span key={type} className="side-panel-specialist-tally-item" title={`${def.name} — ${gains}`}>
+              <div key={type} className="side-panel-specialist-tally-item" title={`${def.name} — ${gains}`}>
                 <span className="side-panel-specialist-tally-icon">{def.icon}</span>
                 <span className="side-panel-specialist-tally-name">{def.name}</span>
                 <span className="side-panel-specialist-tally-count">{count}</span>
@@ -336,21 +374,9 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
                   <button
                     type="button"
                     className="side-panel-specialist-btn"
-                    disabled={!canAdd}
-                    title={canAdd ? `Promote to ${def.name}` : 'No citizens available'}
-                    onClick={() => {
-                      if (gameEngine?.promoteCitizenToSpecialist(city.id, type)) {
-                        actions?.addNotification?.({ type: 'info', message: `${city.name}: promoted to ${def.name}.` });
-                      }
-                    }}
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
-                    className="side-panel-specialist-btn"
                     disabled={count === 0}
                     title={count > 0 ? `Demote ${def.name}` : 'None assigned'}
+                    aria-label={`Remove ${def.name}`}
                     onClick={() => {
                       const idx = specs.lastIndexOf(type);
                       if (idx >= 0 && gameEngine?.demoteSpecialistToWorker(city.id, idx)) {
@@ -360,8 +386,22 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
                   >
                     −
                   </button>
+                  <button
+                    type="button"
+                    className="side-panel-specialist-btn"
+                    disabled={!canAdd}
+                    title={canAdd ? `Promote to ${def.name}` : 'No citizens available'}
+                    aria-label={`Add ${def.name}`}
+                    onClick={() => {
+                      if (gameEngine?.promoteCitizenToSpecialist(city.id, type)) {
+                        actions?.addNotification?.({ type: 'info', message: `${city.name}: promoted to ${def.name}.` });
+                      }
+                    }}
+                  >
+                    +
+                  </button>
                 </span>
-              </span>
+              </div>
             );
           })}
         </div>
@@ -421,9 +461,11 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     ).length;
 
     return (
-      <div className="mt-2">
-        <div className="side-panel-small-muted fw-bold mb-1 d-flex justify-content-between align-items-center">
-          <span>Worked Tiles ({tiles.length})</span>
+      <div className="sp-block">
+        <div className="sp-block-head">
+          <span className="sp-block-label">
+            Worked Tiles <span className="sp-block-count">{tiles.length}</span>
+          </span>
           <span
             className="side-panel-governor-badge"
             title={`${governor.name} governor — change it in the city screen. ${governor.description}`}
@@ -431,24 +473,23 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
             {governor.icon} {governor.name}
           </span>
         </div>
-        <div className="worked-tiles-list" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+
+        <div className="wt-cols" aria-hidden="true">
+          <span className="wt-marker" />
+          <span className="wt-name" />
+          <span className="wt-num">🍞</span>
+          <span className="wt-num">⛏️</span>
+          <span className="wt-num">💰</span>
+        </div>
+
+        <div className="worked-tiles-list">
           {tiles.map((t) => {
             const isCenter = t.col === city.col && t.row === city.row;
             const isManual = !isCenter && manualTiles.has(t.key);
             return (
               <div
                 key={t.key}
-                className={`worked-tile-row d-flex justify-content-between align-items-center py-1 px-1 rounded mb-1${isManual ? ' worked-tile-row--manual' : ''}`}
-                style={{
-                  background: isCenter
-                    ? 'rgba(255,193,7,0.1)'
-                    : isManual
-                      ? 'rgba(46,82,56,0.45)'
-                      : 'rgba(255,255,255,0.03)',
-                  border: isManual ? '1px solid rgba(127,209,138,0.45)' : '1px solid transparent',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                }}
+                className={`worked-tile-row${isCenter ? ' worked-tile-row--center' : ''}${isManual ? ' worked-tile-row--manual' : ''}`}
                 title={`${t.terrain}${t.resource ? ` (${t.resource})` : ''}${isManual ? ' — manual allocation' : ''} — click to center map`}
                 onClick={() => {
                   if (gameEngine) {
@@ -458,33 +499,33 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
                   }
                 }}
               >
-                <span className="text-white-50" style={{ minWidth: '20px' }}>
-                  {isCenter ? '🏛️' : isManual ? '✋' : '•'}
-                </span>
-                <span className="flex-grow-1 text-white text-truncate mx-1">
+                <span className="wt-marker">{isCenter ? '🏛️' : isManual ? '✋' : '•'}</span>
+                <span className="wt-name">
                   {t.terrain}{t.resource ? ` (${t.resource})` : ''}
                 </span>
-                <span className="d-flex gap-2 flex-shrink-0" style={{ fontSize: '0.75rem' }}>
-                  <span title="Food">{t.food}</span>
-                  <span title="Production">{t.production}</span>
-                  <span title="Trade">{t.trade}</span>
-                </span>
+                <span className="wt-num">{t.food}</span>
+                <span className="wt-num">{t.production}</span>
+                <span className="wt-num">{t.trade}</span>
               </div>
             );
           })}
         </div>
-        <div className="d-flex justify-content-between small text-muted mt-1 px-1" style={{ fontSize: '0.7rem' }}>
-          <span>🍞 {totals.food}</span>
-          <span>⛏️ {totals.production}</span>
-          <span>💰 {totals.trade}</span>
+
+        <div className="wt-totals">
+          <span className="wt-marker" />
+          <span className="wt-name">Total</span>
+          <span className="wt-num">{totals.food}</span>
+          <span className="wt-num">{totals.production}</span>
+          <span className="wt-num">{totals.trade}</span>
         </div>
+
         {manualCount > 0 && (
-          <div className="side-panel-small-muted px-1" style={{ fontSize: '0.68rem' }}>
+          <div className="sp-note">
             ✋ {manualCount} manual allocation{manualCount === 1 ? '' : 's'} — the governor leaves{' '}
             {manualCount === 1 ? 'it' : 'them'} alone.
           </div>
         )}
-        <div className="side-panel-small-muted px-1 mt-1" style={{ fontSize: '0.68rem' }}>
+        <div className="sp-hint">
           Click a worked tile on the map to pick up its citizen, then click an idle tile in the radius to place it.
           Esc or right-click cancels.
         </div>
@@ -497,71 +538,61 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
       <>
         {/* Always show terrain information if a tile is selected */}
         {selectedTile && (
-          <>
-            <div className="terrain-info-section">
-              <div className="terrain-title">Terrain Information</div>
-              <div className="stats-div">
-                <div>Type: {capitalize(String(selectedTile.terrainName))}</div>
-                <div>Coordinates: ({selectedTile.col}, {selectedTile.row})</div>
-                <div>Movement Cost: {selectedTile.movementCost}</div>
-                <div>Defense: {Math.round((selectedTile.defenseBonus - 1) * 100)}%</div>
-                {selectedTile.improvement && <div>Improvement: {selectedTile.improvement}</div>}
-                {selectedTile.resource && (
-                  <div>
-                    Resource: <strong>{selectedTile.resource}</strong>
-                    {selectedTile.resourceBonus?.description && (
-                      <div className="small text-muted fst-italic mt-1">
-                        {selectedTile.resourceBonus.description}
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="mt-1">
-                  <span>Food: {selectedTile.food ?? 0}</span>
-                  {selectedTile.resourceBonus?.food ? (
-                    <span className="small ms-1 text-muted">
-                      (base {selectedTile.baseFood} + {selectedTile.resourceBonus.food} resource)
-                    </span>
-                  ) : null}
-                </div>
-                <div>
-                  <span>Production: {selectedTile.production ?? 0}</span>
-                  {selectedTile.resourceBonus?.production ? (
-                    <span className="small ms-1 text-muted">
-                      (base {selectedTile.baseProduction} + {selectedTile.resourceBonus.production} resource)
-                    </span>
-                  ) : null}
-                </div>
-                <div>
-                  <span>Trade: {selectedTile.trade ?? 0}</span>
-                  {selectedTile.resourceBonus?.trade ? (
-                    <span className="small ms-1 text-muted">
-                      (base {selectedTile.baseTrade} + {selectedTile.resourceBonus.trade} resource)
-                    </span>
-                  ) : null}
-                </div>
+          <div className="terrain-info-section">
+            <div className="terrain-title">Terrain Information</div>
+            <div className="sp-kv-grid">
+              <div className="sp-kv">Type: <b>{capitalize(String(selectedTile.terrainName))}</b></div>
+              <div className="sp-kv">Coordinates: <b>({selectedTile.col}, {selectedTile.row})</b></div>
+              <div className="sp-kv">Movement Cost: <b>{selectedTile.movementCost}</b></div>
+              <div className="sp-kv">Defense: <b>{Math.round((selectedTile.defenseBonus - 1) * 100)}%</b></div>
+              {selectedTile.improvement && (
+                <div className="sp-kv">Improvement: <b>{selectedTile.improvement}</b></div>
+              )}
+              {selectedTile.resource && (
+                <div className="sp-kv">Resource: <b>{selectedTile.resource}</b></div>
+              )}
+              <div className="sp-kv">
+                Food: <b>{selectedTile.food ?? 0}
+                {selectedTile.resourceBonus?.food ? (
+                  <span className="sp-kv-sub"> (base {selectedTile.baseFood} + {selectedTile.resourceBonus.food})</span>
+                ) : null}</b>
+              </div>
+              <div className="sp-kv">
+                Production: <b>{selectedTile.production ?? 0}
+                {selectedTile.resourceBonus?.production ? (
+                  <span className="sp-kv-sub"> (base {selectedTile.baseProduction} + {selectedTile.resourceBonus.production})</span>
+                ) : null}</b>
+              </div>
+              <div className="sp-kv">
+                Trade: <b>{selectedTile.trade ?? 0}
+                {selectedTile.resourceBonus?.trade ? (
+                  <span className="sp-kv-sub"> (base {selectedTile.baseTrade} + {selectedTile.resourceBonus.trade})</span>
+                ) : null}</b>
               </div>
             </div>
-            <hr className="details-separator" />
-          </>
+            {selectedTile.resourceBonus?.description && (
+              <div className="sp-note">{selectedTile.resourceBonus.description}</div>
+            )}
+          </div>
         )}
 
         {/* A selected city shows its citizen block at the TOP of the panel
-            (see renderSelectionContent), so nothing is repeated down here. */}
-        {panelCity ? null : !selectedTile ? (
-          <>
+            (see renderSelectionContent), and with nothing selected the same
+            summary sits in the selection section — so this only fills the
+            Details block while a unit is selected. */}
+        {showPlayerSummary ? (
+          <div className="player-summary">
             <div className="player-summary-title">Player Summary</div>
-            <div className="side-panel-small-muted">
-              <div>Units: {playerUnits?.length ?? 0}</div>
-              <div>Cities: {playerCities?.length ?? 0}</div>
-              <div className="summary-resources">Resources:</div>
-              <div>Gold: {playerResources?.gold ?? 0}</div>
-              <div>Food: {playerResources?.food ?? 0}</div>
-              <div>Production: {playerResources?.production ?? 0}</div>
-              <div>Trade: {playerResources?.trade ?? 0}</div>
-              <div>Science: {playerResources?.science ?? 0}</div>
+            <div className="sp-kv-grid">
+              <div className="sp-kv">Units: <b>{playerUnits?.length ?? 0}</b></div>
+              <div className="sp-kv">Cities: <b>{playerCities?.length ?? 0}</b></div>
+              <div className="sp-kv">Gold: <b>{playerResources?.gold ?? 0}</b></div>
+              <div className="sp-kv">Food: <b>{playerResources?.food ?? 0}</b></div>
+              <div className="sp-kv">Production: <b>{playerResources?.production ?? 0}</b></div>
+              <div className="sp-kv">Trade: <b>{playerResources?.trade ?? 0}</b></div>
+              <div className="sp-kv">Science: <b>{sciencePerTurn}</b></div>
             </div>
-          </>
+          </div>
         ) : null}
       </>
     );
@@ -625,7 +656,7 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
         <div className="side-panel-header">
           <div className="header-flex">
             <div
-              className={`avatar-div ${isTwoIcon ? 'avatar-two-icons' : ''}`}
+              className={`avatar-div ${civIconClass}`}
               style={{ background: displayPlayer.color || '#4b8b3b', cursor: 'pointer' }}
               onClick={handleAvatarClick}
               title="Click to center on capital city"
@@ -638,43 +669,52 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
               <div className="side-panel-small-muted player-leader">
                 {(displayPlayer as { civilizationName?: string })?.civilizationName || displayPlayer.leader || 'Unknown Civilization'}
               </div>
-              <div className="gold-div">
-                <strong className="gold-strong">{playerResources.gold} 🪙</strong>
-                <button
-                  type="button"
-                  className="rates-shortcut"
-                  onClick={() => actions.showDialog('rates')}
-                  title="Tax / Science / Luxury rates (T)"
-                  aria-label="Open rates"
-                >
-                  📊
-                </button>
-              </div>
-              <label className="settings-checkbox-label" style={{ marginTop: '8px', fontSize: '0.85rem' }}>
-                <input
-                  type="checkbox"
-                  checked={settings.autoEndTurn}
-                  onChange={(e) => actions.updateSettings({ autoEndTurn: e.target.checked })}
-                />
-                <span className="checkbox-text">Auto. turn ending</span>
-              </label>
             </div>
           </div>
+
+          <div className="header-chips">
+            <span className="gold-div">
+              <strong className="gold-strong">{playerResources.gold} 🪙</strong>
+            </span>
+            <button
+              type="button"
+              className="rates-shortcut"
+              onClick={() => actions.showDialog('rates')}
+              title="Tax / Science / Luxury rates (T)"
+              aria-label="Open rates"
+            >
+              📊
+            </button>
+          </div>
+
+          <label
+            className="settings-checkbox-label"
+            title="End the turn automatically once every unit has moved"
+          >
+            <input
+              type="checkbox"
+              checked={settings.autoEndTurn}
+              onChange={(e) => actions.updateSettings({ autoEndTurn: e.target.checked })}
+            />
+            <span className="checkbox-text">Auto. turn ending</span>
+          </label>
         </div>
 
         {/* Selection */}
         <div className="selection-section">
-          <div className="selected-title">{selectionTitle}</div>
-          {renderSelectionContent()}
+          {selectionTitle && <div className="selected-title">{selectionTitle}</div>}
+          <div className="selection-body">{renderSelectionContent()}</div>
         </div>
 
         {/* Details */}
-        <div className="details-section">
-          <div className="details-title">Details</div>
-          <div className="details-content">
-            {renderDetailsContent()}
+        {showDetails && (
+          <div className="details-section">
+            <div className="details-title">Details</div>
+            <div className="details-content">
+              {renderDetailsContent()}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </>
   );

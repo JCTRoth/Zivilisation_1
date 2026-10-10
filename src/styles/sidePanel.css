@@ -3,46 +3,182 @@
    Layout/positioning is handled by .side-panel-shell (design-system.css):
    - static sidebar on desktop, slide-in drawer on mobile.
    This file only styles the content inside the shell.
+
+   Reading order inside the panel:
+     minimap → civ header → selection block → details block
+   Every block uses the same rhythm: section title (uppercase + gold tick),
+   an optional .sp-block sub-header, then the data itself.
+   ========================================================================== */
+
+/* ---- Panel-scoped colour ramp ------------------------------------------
+   The global tokens are tuned for buttons and full-strength body copy; the
+   dense info panel wants a real hierarchy (headings > labels > metadata)
+   while staying WCAG AA on #16202a (muted ≈ 8:1, secondary ≈ 12:1). */
+.side-panel-shell {
+  --sp-line: rgba(255, 255, 255, 0.07);
+  --sp-surface: rgba(255, 255, 255, 0.045);
+  --sp-surface-strong: rgba(255, 255, 255, 0.075);
+  --sp-label: #93a6b6;
+  --color-text-secondary: #ccd8e2;
+  --color-text-muted: #9fb0bf;
+}
+
+/* ============================================================================
+   Sections
    ========================================================================== */
 
 .side-panel-header {
   padding: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--sp-line);
 }
 
-.minimap-section {
-  padding: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.minimap-container {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  min-height: 110px;
-  max-height: 220px;
-  background-color: #0a0f14;
-  border: 1px solid var(--color-border, #2c3b49);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.selection-section {
+.selection-section,
+.details-section {
   padding: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--sp-line);
 }
 
 .details-section {
-  padding: 12px;
+  border-bottom: none;
+}
+
+.selection-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.selected-title,
+.details-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--sp-label);
+}
+
+.selected-title::before,
+.details-title::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--color-accent, #f0c33c);
+}
+
+.details-content {
+  color: var(--color-text-secondary, #ccd8e2);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 /* Muted text — WCAG AA (>= 4.5:1 on panel background) */
 .side-panel-small-muted {
-  color: var(--color-text-muted, #ffffff);
-  font-size: 13px;
-  line-height: 1.5;
+  color: var(--color-text-muted, #9fb0bf);
+  font-size: 12.5px;
+  line-height: 1.45;
 }
+
+/* ============================================================================
+   Sub-blocks inside a section (specialists, worked tiles, …)
+   ========================================================================== */
+
+.sp-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sp-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.sp-block-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--sp-label);
+}
+
+.sp-block-count {
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--color-text-muted, #9fb0bf);
+}
+
+.sp-lock {
+  font-size: 11px;
+  color: var(--color-warning, #f2a33c);
+}
+
+/* Key/value row: label left, value right (the text node becomes the first
+   flex item, so "Cities: 1" keeps reading as one string for tests & AT). */
+.sp-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 12px;
+}
+
+.sp-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 3px 0;
+  font-size: 12.5px;
+  color: var(--color-text-muted, #9fb0bf);
+}
+
+.sp-kv b {
+  color: var(--color-text, #e8eef3);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sp-kv-sub {
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--color-text-muted, #9fb0bf);
+  white-space: normal;
+}
+
+/* Small explanatory note under a block (manual allocations, resource bonus) */
+.sp-note {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--color-text-secondary, #ccd8e2);
+}
+
+/* How-to hint: quiet, but visually attached to the block it explains */
+.sp-hint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--color-text-muted, #9fb0bf);
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid rgba(240, 195, 60, 0.45);
+}
+
+/* ============================================================================
+   Civ header — identity row, resource chip, auto-end toggle
+   ========================================================================== */
 
 .header-flex {
   display: flex;
@@ -53,357 +189,338 @@
 .avatar-div {
   width: 52px;
   height: 52px;
-  border-radius: 6px;
+  flex: 0 0 auto;
+  border-radius: 10px;
   background: var(--player-color, #4b8b3b);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.6) inset;
+  /* Safety net: a glyph that is ever too wide for its badge gets clipped
+     inside the frame instead of spilling over the panel header. */
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 0 3px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 4px rgba(255, 255, 255, 0.14);
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 
-/* Unit Actions */
-.unit-actions {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.avatar-div:hover {
+  box-shadow:
+    inset 0 0 0 3px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 4px rgba(255, 255, 255, 0.3);
 }
 
-.unit-action-btn {
-  min-height: var(--touch-min, 44px);
-  padding: 10px 14px;
-  border: none;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: left;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.avatar-div:active {
+  transform: scale(0.97);
 }
 
-.goto-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+/* Multi-symbol badges (🇫🇷🥖, 🐎🏹, …) get a wider frame and a smaller glyph,
+   so the symbols stay on one line and inside the frame. */
+.avatar-div.avatar-icons-2 {
+  width: 76px;
 }
 
-.goto-btn:hover {
-  background: linear-gradient(135deg, #7c8eea 0%, #8659b8 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
-}
-
-.goto-btn:active {
-  transform: translateY(0);
-}
-
-.goto-btn-active {
-  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    box-shadow: 0 4px 8px rgba(76, 175, 80, 0.3);
-  }
-  50% {
-    box-shadow: 0 4px 16px rgba(76, 175, 80, 0.6);
-  }
-}
-
-.clear-path-btn {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-}
-
-.clear-path-btn:hover {
-  background: linear-gradient(135deg, #f5a3ff 0%, #ff6b7c 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(245, 87, 108, 0.3);
-}
-
-.clear-path-btn:active {
-  transform: translateY(0);
-}
-
-.path-info {
-  color: var(--color-text-muted, #ffffff);
-  font-size: 13px;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 6px;
-  text-align: center;
-}
-.avatar-div.avatar-two-icons {
-  width: 79px;
+.avatar-div.avatar-icons-3 {
+  width: 86px;
 }
 
 .icon-span {
-  font-size: 44px;
+  display: block;
+  width: 100%;
+  line-height: 1;
+  white-space: nowrap;
+  text-align: center;
+  /* Emoji ink runs ~1.35× the font-size tall — keep it inside the 52px frame
+     with a few pixels to spare instead of kissing the border. */
+  font-size: 34px;
+}
+
+.avatar-icons-2 .icon-span {
+  font-size: 24px;
+}
+
+.avatar-icons-3 .icon-span {
+  font-size: 17px;
 }
 
 .name-div {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  min-width: 0;
+  gap: 1px;
 }
 
 .player-name {
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 1.2;
   color: var(--color-text, #e8eef3);
   overflow-wrap: anywhere;
 }
 
 .player-leader {
-  margin-top: 2px;
+  font-size: 12px;
 }
 
-.gold-div {
-  margin-top: 8px;
+/* Resource chip + rates shortcut */
+.header-chips {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
 }
 
+.gold-div {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line);
+  border-radius: var(--radius-sm, 6px);
+}
+
 .gold-strong {
-  color: #7fe0a0;
+  color: var(--color-accent, #f0c33c);
   font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .rates-shortcut {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--color-border, #2c3b49);
+  flex: 0 0 auto;
+  width: 40px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line);
   border-radius: var(--radius-sm, 6px);
   color: var(--color-text, #e8eef3);
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1;
-  padding: 3px 6px;
   cursor: pointer;
-  min-height: var(--touch-min, 26px);
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
 
 .rates-shortcut:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--sp-surface-strong);
   border-color: var(--color-accent, #f0c33c);
 }
 
-.selected-title {
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 8px;
-  color: var(--color-text, #e8eef3);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.unit-name {
-  font-weight: 700;
-}
-
-.unit-stats {
-  margin-top: 8px;
-}
-
-.unit-attack-defense {
-  margin-top: 4px;
-}
-
-.city-name {
-  font-weight: 700;
-}
-
-.city-production {
-  margin-top: 8px;
-}
-
-.no-selection-summary {
-  margin-top: 8px;
-}
-
-.details-title {
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 8px;
-  color: var(--color-text, #e8eef3);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.details-content {
-  color: var(--color-text-secondary, #b8c4cf);
-  font-size: 14px;
-  line-height: 1.55;
-}
-
-.unit-name-details {
-  margin-bottom: 6px;
-  color: var(--color-text, #e8eef3);
-}
-
-.location {
-  margin-top: 8px;
-}
-
-.stats-div {
-  margin-top: 8px;
-}
-
-.player-summary-title {
-  margin-bottom: 6px;
-}
-
-.summary-resources {
-  margin-top: 8px;
-}
-
-.terrain-info-section {
-  margin-bottom: 12px;
-}
-
-.terrain-title {
-  font-size: 13px;
-  font-weight: 700;
-  margin-bottom: 6px;
-  color: var(--color-text-secondary, #b8c4cf);
-}
-
-.details-separator {
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  margin: 12px 0;
-}
-
-/* Settings section */
-.settings-section {
-  margin-top: 8px;
-}
-
-.settings-title {
-  font-size: 13px;
-  font-weight: 700;
-  margin-bottom: 8px;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.settings-content {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 13px;
-}
-
-/* Larger checkbox (44px touch target) */
+/* Auto. turn ending — a switch, full width, easy to hit with a thumb */
 .settings-checkbox-label {
   display: flex;
   align-items: center;
   gap: 10px;
-  cursor: pointer;
-  margin-bottom: 4px;
-  user-select: none;
   min-height: var(--touch-min, 44px);
-  padding: 4px 0;
+  padding: 8px 10px;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line);
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
 
-.settings-checkbox-label input[type="checkbox"] {
+.settings-checkbox-label:hover {
+  background: var(--sp-surface-strong);
+  border-color: var(--color-border-strong, #3d5163);
+}
+
+.settings-checkbox-label input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: 0 0 auto;
   margin: 0;
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   cursor: pointer;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  accent-color: var(--color-accent, #f0c33c);
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+
+.settings-checkbox-label input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #d7e0e8;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.settings-checkbox-label input[type='checkbox']:checked {
+  background: var(--color-success, #35c46c);
+  border-color: var(--color-success, #35c46c);
+}
+
+.settings-checkbox-label input[type='checkbox']:checked::after {
+  transform: translateX(16px);
+  background: #04140a;
 }
 
 .checkbox-text {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text, #e8eef3);
+}
+
+/* ============================================================================
+   Selection block — unit / tile / city cards
+   ========================================================================== */
+
+.unit-card,
+.tile-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line);
+  border-radius: 8px;
+}
+
+.unit-card-title,
+.tile-card-title {
   font-size: 14px;
-  color: var(--color-text-secondary, #b8c4cf);
+  font-weight: 700;
+  color: var(--color-text, #e8eef3);
 }
 
-.settings-hint {
+.unit-card-sub {
   font-size: 12px;
-  color: var(--color-text-muted, #ffffff);
-  margin-top: 4px;
-  margin-left: 30px;
-  line-height: 1.3;
+  color: var(--color-text-muted, #9fb0bf);
 }
 
-/* Defense bonus row */
-.defense-bonus {
+.unit-card-line {
+  font-size: 12.5px;
+  color: var(--color-text-secondary, #ccd8e2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- City block ---- */
+
+.city-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.city-head-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.city-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text, #e8eef3);
+  overflow-wrap: anywhere;
+}
+
+.city-head-coords {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.city-head-coords i {
+  font-size: 11px;
+  color: var(--color-accent, #f0c33c);
+}
+
+.city-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.city-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 7px 8px;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line);
+  border-radius: 8px;
+}
+
+.city-stat-value {
   display: flex;
   align-items: center;
-  margin-top: 6px;
-}
-
-/* Research status section (every-turn prompt + progress) */
-.side-panel-research {
-  margin: 8px 10px;
-  padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-}
-
-.side-panel-research-title {
-  font-size: 0.78rem;
+  gap: 4px;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #ffd700;
-  margin-bottom: 4px;
+  color: var(--color-text, #e8eef3);
+  font-variant-numeric: tabular-nums;
 }
 
-.side-panel-research-line {
-  font-size: 0.78rem;
-  color: #e2e8f0;
-  line-height: 1.35;
+.city-stat-icon {
+  font-size: 12px;
 }
 
-.side-panel-research-progress {
-  float: right;
-  color: #a0aec0;
-}
-
-.side-panel-research-bar {
-  height: 6px;
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
-  margin: 6px 0;
+.city-stat-label {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--sp-label);
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.side-panel-research-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #805ad5, #ffd700);
-  border-radius: 3px;
+/* ============================================================================
+   Worked tiles — a compact table with aligned yield columns
+   ========================================================================== */
+
+.wt-cols,
+.worked-tile-row,
+.wt-totals {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 28px 28px 28px;
+  align-items: center;
+  gap: 4px;
 }
 
-.side-panel-research-eta {
-  font-size: 0.72rem;
-  color: #ffd700;
-  margin-top: 2px;
-  font-weight: 600;
+.wt-cols {
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--sp-label);
 }
 
-.side-panel-research-btn {
-  width: 100%;
-  margin-top: 6px;
-  padding: 4px 8px;
-  font-size: 0.72rem;
-  background: #2b6cb0;
-  color: #fff;
-  border: 1px solid #3182ce;
-  border-radius: 4px;
-  cursor: pointer;
+.wt-cols .wt-num {
+  color: var(--sp-label);
+  font-size: 12px;
 }
 
-.side-panel-research-btn:hover {
-  background: #3182ce;
-}
-
-/* Citizen reassignment banner (pick-up & drop) */
-
-/* Worked tiles list in city details */
 .worked-tiles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 190px;
+  overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  overscroll-behavior: contain;
 }
 
 .worked-tiles-list::-webkit-scrollbar {
@@ -419,113 +536,158 @@
   border-radius: 2px;
 }
 
+.worked-tile-row {
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--sp-surface);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+
 .worked-tile-row:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
+  background: var(--sp-surface-strong);
+}
+
+.worked-tile-row--center {
+  background: rgba(240, 195, 60, 0.1);
+  border-color: rgba(240, 195, 60, 0.25);
+}
+
+.worked-tile-row--center:hover {
+  background: rgba(240, 195, 60, 0.16);
+}
+
+.worked-tile-row--manual {
+  background: rgba(46, 82, 56, 0.45);
+  border-color: rgba(127, 209, 138, 0.45);
+}
+
+.worked-tile-row--manual:hover {
+  background: rgba(46, 82, 56, 0.65);
+}
+
+.wt-marker {
+  font-size: 11px;
+  line-height: 1;
+  text-align: center;
+  color: var(--sp-label);
+}
+
+.wt-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text, #e8eef3);
+}
+
+.wt-num {
+  text-align: right;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary, #ccd8e2);
+}
+
+.wt-totals {
+  margin-top: 2px;
+  padding: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.14);
+}
+
+.wt-totals .wt-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sp-label);
+}
+
+.wt-totals .wt-num {
+  color: var(--color-accent, #f0c33c);
+  font-weight: 700;
 }
 
 /* Active city governor, shown next to the worked-tile list */
 .side-panel-governor-badge {
-  padding: 0.05rem 0.4rem;
-  font-size: 0.68rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  border-radius: 3px;
+  white-space: nowrap;
+  border-radius: var(--radius-pill, 999px);
   color: #cfe9d4;
   background: rgba(60, 120, 70, 0.35);
   border: 1px solid rgba(127, 209, 138, 0.5);
   cursor: help;
 }
 
-/* ── Specialist toggles (assignment happens here, not in the city screen) ── */
+/* ============================================================================
+   Specialists — one row per type: icon, name, count, − / +
+   ========================================================================== */
 
-
-
-
-
-
-
-
-
-/* Divider between the citizen block and the city readout */
-.side-panel-section-divider {
-  height: 1px;
-  margin: 0.6rem 0 0.45rem;
-  background: rgba(120, 140, 160, 0.25);
-}
-
-/* ── Citizen placement note (inside the city block) ──────────────────── */
-
-.citizen-menu {
-  margin: 0 0 0.5rem;
-  padding: 0 0 0.45rem;
-  border-bottom: 1px solid rgba(120, 140, 160, 0.22);
-}
-
-.citizen-menu-title {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #d7e3ec;
-}
-
-.citizen-menu-sub {
-  font-size: 0.7rem;
-  color: #93a3b1;
-}
-
-/* Specialist tally — read-only "how many of each" (assigning is done by
-   clicking the specialist icons under the city on the map). */
 .side-panel-specialist-tally {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .side-panel-specialist-tally-item {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.15rem 0.4rem;
-  font-size: 0.72rem;
-  color: #cfdae4;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(120, 140, 160, 0.28);
-  border-radius: 4px;
+  gap: 8px;
+  min-height: 40px;
+  padding: 5px 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary, #ccd8e2);
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line);
+  border-radius: 8px;
 }
 
 .side-panel-specialist-tally-icon {
-  font-size: 0.85rem;
+  font-size: 15px;
   line-height: 1;
 }
 
 .side-panel-specialist-tally-name {
-  font-size: 0.72rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .side-panel-specialist-tally-count {
-  min-width: 1.1em;
-  padding: 0 0.25rem;
-  font-size: 0.62rem;
+  min-width: 22px;
+  padding: 1px 6px;
+  font-size: 12px;
   text-align: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill, 999px);
   color: #0d1a10;
   background: #9ecfa8;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .side-panel-specialist-btns {
   display: inline-flex;
-  gap: 2px;
-  margin-left: 2px;
+  gap: 4px;
 }
 
 .side-panel-specialist-btn {
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: #cfdae4;
-  font-size: 0.7rem;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text, #e8eef3);
+  font-size: 15px;
   font-weight: 700;
   line-height: 1;
   display: flex;
@@ -533,31 +695,114 @@
   justify-content: center;
   cursor: pointer;
   padding: 0;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
 
 .side-panel-specialist-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.side-panel-specialist-btn:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 .side-panel-specialist-btn:disabled {
-  opacity: 0.25;
+  opacity: 0.28;
   cursor: not-allowed;
 }
 
 .side-panel-specialist-demote-all-btn {
-  padding: 1px 6px;
-  font-size: 0.65rem;
-  border-radius: 3px;
-  border: 1px solid rgba(244, 67, 54, 0.3);
-  background: rgba(244, 67, 54, 0.08);
-  color: #f44336;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid rgba(239, 90, 110, 0.35);
+  background: rgba(239, 90, 110, 0.1);
+  color: #ff8f9e;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
 
 .side-panel-specialist-demote-all-btn:hover {
-  background: rgba(244, 67, 54, 0.15);
-  border-color: rgba(244, 67, 54, 0.5);
+  background: rgba(239, 90, 110, 0.2);
+  border-color: rgba(239, 90, 110, 0.6);
+}
+
+/* ============================================================================
+   Citizen placement note (inside the city block)
+   ========================================================================== */
+
+.citizen-menu {
+  padding: 8px 10px;
+  background: rgba(61, 155, 255, 0.1);
+  border: 1px solid rgba(61, 155, 255, 0.35);
+  border-radius: 8px;
+}
+
+.citizen-menu-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #d7ebff;
+}
+
+.citizen-menu-sub {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #a9c6e0;
+}
+
+/* ============================================================================
+   Details block
+   ========================================================================== */
+
+.terrain-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.terrain-title,
+.player-summary-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--sp-label);
+}
+
+.player-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.player-summary + .terrain-info-section,
+.terrain-info-section + .player-summary {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sp-line);
+}
+
+/* ============================================================================
+   Minimap
+   ========================================================================== */
+
+.minimap-section {
+  padding: 8px;
+  border-bottom: 1px solid var(--sp-line);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.minimap-container {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  min-height: 96px;
+  max-height: 170px;
+  background-color: #0a0f14;
+  border: 1px solid var(--color-border, #2c3b49);
+  border-radius: 10px;
+  overflow: hidden;
 }

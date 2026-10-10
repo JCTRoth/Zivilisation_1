@@ -422,6 +422,61 @@ div.game-top-bar {
   flex-shrink: 0;
 }
 
+/* ----------------------------------------------------------------------------
+   Narrow phones (< 576px): the three menu buttons, the turn/year readout, the
+   research chip and End Turn cannot all sit in one 1fr/centered/1fr row — the
+   side tracks overflow into the middle one and the labels collide.
+   Pack them as auto tracks instead: menus stay left, End Turn stays right and
+   the turn readout only ever shrinks (never overlaps) when it truly must.
+   -------------------------------------------------------------------------- */
+@media (max-width: 575.98px) {
+  div.game-top-bar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    justify-content: space-between;
+    gap: 0.35rem;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+  }
+
+  .topbar-menus {
+    gap: 0.15rem;
+  }
+
+  .topbar-menu-btn {
+    min-height: 36px;
+    padding: 0.35rem 0.45rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+  }
+
+  .topbar-center {
+    justify-self: stretch;
+    min-width: 0;
+    gap: 0.5rem;
+  }
+
+  .topbar-turn {
+    min-width: 0;
+    justify-content: center;
+    font-size: 0.7rem;
+    overflow: hidden;
+  }
+
+  .topbar-endturn .touch-btn,
+  .touch-btn.topbar-endturn {
+    min-height: 40px;
+    padding: 0.5rem 0.7rem;
+  }
+}
+
+/* Below ~480px there is no room left for the research chip — it stays
+   reachable through WORLD > Technology. */
+@media (max-width: 479.98px) {
+  .topbar-center .research-indicator-wrap {
+    display: none;
+  }
+}
+
 /* Compact research indicator in the top bar, shown next to the turn/year.
    Clicking it opens the Tech Tree; hovering reveals a small preview. */
 .research-indicator-wrap {

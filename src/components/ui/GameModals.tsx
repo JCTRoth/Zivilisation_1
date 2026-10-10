@@ -19,6 +19,7 @@ import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
 import { DomUtils } from '@/utils/DomUtils';
 import { enrichMapForExport } from '@/utils/MapExportUtils';
 import { productionFailureText } from '@/utils/ProductionUtils';
+import { sendCommand, isCommandRejection } from '@/utils/session';
 import { notify } from '@/utils/NotificationUtils';
 import '../../styles/gameModals.css';
 import '../../styles/diplomacyModal.css';
@@ -1550,29 +1551,42 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
    * Send the item picked in the Production dropdown to the engine.
    * `queue = true` appends ONE entry for it to the bottom of the build queue;
    * the current production is never touched (picking from the dropdown only
-   * chooses the item). Failures (missing tech, duplicate building, …) are
-   * reported instead of silently doing nothing.
+   * chooses the item). The command goes through the session, so the engine
+   * also checks that the selected city belongs to the acting seat. Failures
+   * (missing tech, duplicate building, …) are reported instead of silently
+   * doing nothing.
    */
-  const submitProduction = (itemKey?: string): void => {
+  const submitProduction = async (itemKey?: string): Promise<void> => {
     const key = itemKey ?? selectedProductionKey;
     if (!selectedCity || !key || !gameEngine) return;
     const unitDef = UNIT_PROPS[key];
     if (!unitDef) return;
     const item = { type: 'unit', itemType: key, name: unitDef.name, cost: unitDef.cost };
-    const engine = gameEngine as GameEngine & { setCityProduction?: (cityId: string, item: Record<string, unknown>, queue: boolean) => { success?: boolean; reason?: string } | null };
-    let result: { success?: boolean; reason?: string } | null = null;
-    try {
-      if (typeof engine.setCityProduction === 'function') result = engine.setCityProduction(selectedCity.id, item, true);
-    } catch (e) {
-      console.error('[GameModals] submitProduction: setCityProduction exception', e);
-    }
+    const result = await sendCommand({
+      type: 'SET_CITY_PRODUCTION',
+      cityId: selectedCity.id,
+      item,
+      queue: true,
+    });
     if (typeof gameEngine.getAllCities === 'function') actions.updateCities(gameEngine.getAllCities());
+    if (isCommandRejection(result)) {
+      actions.addNotification({
+        type: 'warning',
+        message: `Cannot queue ${item.name}: ${productionFailureText(result.reason)}`,
+      });
+      return;
+    }
     // setCityProduction answers with a result object even on failure — reading
     // its truthiness reported bogus successes.
-    if (result && result.success !== false) {
-      actions.addNotification({ type: 'info', message: `Added to queue: ${item.name}` });
-    } else {
-      actions.addNotification({ type: 'warning', message: `Cannot queue ${item.name}: ${productionFailureText(result?.reason)}` });
+    if (result.command === 'SET_CITY_PRODUCTION') {
+      if (result.production.success !== false) {
+        actions.addNotification({ type: 'info', message: `Added to queue: ${item.name}` });
+      } else {
+        actions.addNotification({
+          type: 'warning',
+          message: `Cannot queue ${item.name}: ${productionFailureText(result.production.reason)}`,
+        });
+      }
     }
   };
 

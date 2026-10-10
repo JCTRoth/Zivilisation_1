@@ -46,6 +46,7 @@ import { AIResearch } from './AI/AIResearch';
 import MapGenerator from './MapGenerator/MapGenerator';
 import { MIN_CITY_CENTER_DISTANCE } from './SettlementEvaluator';
 import type { GameActions, Unit, City, CityGovernorMode, Civilization, VillageResult, Technology, ProductionItem, TradeRoute, SpecialistType } from '../../../types/game';
+import type { Command, CommandContext, CommandResult } from '../../../types/commands';
 import { debugLog } from '../../utils/DevLog';
 
 
@@ -5357,6 +5358,60 @@ const occupiedLandmasses = new Set(
    */
   calculateCivGold(civId) {
     return this.economicManager?.civGold(civId) ?? 0;
+  }
+
+  /**
+   * COMMAND LAYER — the only entry point the UI may use to change state.
+   *
+   * Authorises the acting seat (whose turn it is, and does the seat own the
+   * subject) and then delegates to the ordinary engine methods below. Rule
+   * legality (terrain, moves, tech gates, …) stays in those methods — this
+   * layer never re-implements a game rule, it only decides WHO may act.
+   *
+   * Direct calls to `moveUnit`, `setRates`, `foundCityWithSettler`, … bypass
+   * that check and are therefore reserved for engine-internal code, the AI and
+   * the headless test harness, all of which are already trusted.
+   */
+  submit(command: Command, context: CommandContext): CommandResult {
+    // Turn gate: the seat must be the one playing, in the round it thinks it is.
+    if (context.actorId !== this.activePlayer || context.turn !== this.currentTurn) {
+      return { ok: false, reason: 'NOT_YOUR_TURN' };
+    }
+
+    switch (command.type) {
+      case 'MOVE_UNIT': {
+        const unit = this.units.find((u) => u.id === command.unitId);
+        if (!unit) return { ok: false, reason: 'UNIT_NOT_FOUND' };
+        if (unit.civilizationId !== context.actorId) return { ok: false, reason: 'NOT_YOUR_UNIT' };
+        const move = this.moveUnit(command.unitId, command.col, command.row);
+        return { ok: true, command: 'MOVE_UNIT', move };
+      }
+
+      case 'SET_RATES': {
+        if (!this.civilizations[context.actorId]) return { ok: false, reason: 'CIV_NOT_FOUND' };
+        this.setRates(context.actorId, command.tax, command.science, command.luxury);
+        return { ok: true, command: 'SET_RATES' };
+      }
+
+      case 'SET_CITY_PRODUCTION': {
+        const city = this.cities.find((c) => c.id === command.cityId);
+        if (!city) return { ok: false, reason: 'CITY_NOT_FOUND' };
+        if (city.civilizationId !== context.actorId) return { ok: false, reason: 'NOT_YOUR_CITY' };
+        const production = this.setCityProduction(command.cityId, command.item, command.queue ?? true);
+        return { ok: true, command: 'SET_CITY_PRODUCTION', production };
+      }
+
+      case 'FOUND_CITY': {
+        const settler = this.units.find((u) => u.id === command.settlerId);
+        if (!settler) return { ok: false, reason: 'UNIT_NOT_FOUND' };
+        if (settler.civilizationId !== context.actorId) return { ok: false, reason: 'NOT_YOUR_UNIT' };
+        const founded = this.foundCityWithSettler(command.settlerId);
+        return { ok: true, command: 'FOUND_CITY', founded };
+      }
+
+      default:
+        return { ok: false, reason: 'UNKNOWN_COMMAND' };
+    }
   }
 
   /**
