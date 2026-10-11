@@ -12,31 +12,23 @@ For purists seeking a 1:1 recreation of the 1991 original, it falls short in sev
 The implementation is technically impressive (TypeScript, React, Vite, comprehensive tests, data-driven design) and functionally complete (the game is winnable and playable). +
 The developers should be commended for creating a sophisticated strategy game that honors its inspiration while making sensible modernizations. +
 
-It is not a rules-accurate port. Where this codebase and the 1991 original
-disagree, the codebase wins: some mechanics the original had (
-housing caps, score victory) are absent, and the technology and wonder trees
-diverge. What it has instead is a full simulation — economy, combat, diplomacy,
-fog of war, naval logistics and a 15k-line AI layer — that runs headlessly and
-is covered by 1,500+ tests.
 
-[cols="1,1"]
-|===
-|Code |~70,000 lines TypeScript/TSX across ~150 files
-|Engine |`GameEngine.ts` (~7,200 lines) + 51 engine files, ~34,800 lines
-|AI |17 files, ~14,500 lines (`AIManager.ts` alone is ~7,500)
-|Rendering |6 files, ~4,700 lines (two-layer canvas)
-|Tests |153 Vitest suites, 1,537 cases, node environment (no DOM)
-|Browser tests |4 Playwright specs + setup
-|Balance data |13 tables in `src/data/` — every number in one place
-|===
 
 [.text-center]
 --
-image::doc/1.jpg[Screenshot, width=700]
-image::doc/world_map.png[World map, width=700]
-image::doc/action_menu.png[Action menu, width=700]
-image::doc/end_turn.png[End turn, width=700]
-image::doc/all_over.png[Game over, width=700]
+
+image::doc/images/1.png[Screenshot, width=700]
+image::doc/images/2.png[Screenshot, width=700]
+image::doc/images/10.jpg[Screenshot, width=700]
+image::doc/images/setup_1.png[Screenshot, width=700]
+image::doc/images/setup_2.png[Screenshot, width=700]
+image::doc/images/3.png[Screenshot, width=700]
+image::doc/images/4.png[Screenshot, width=700]
+image::doc/images/5.png[Screenshot, width=700]
+image::doc/images/6.png[Screenshot, width=700]
+
+image::doc/dialogs/07-diplomacy.png[Diplomacy Modal, width=700]
+image::doc/images/world_map.png[World map, width=700]
 --
 
 == Dialog gallery
@@ -147,17 +139,16 @@ session implements the same interface over a socket, and the UI does not change.
 Neither is implemented. Choosing a civilization currently changes only your
 colour, portrait and city-name list.
 
-=== Known gaps
-
-* **No score-based win.** The Civ I score is calculated every turn and shown,
-  but only Moonshot and elimination end a game.
-* **No housing cap.** An Aqueduct does not gate city size.
-* **No sound.** There is no audio layer at all.
-* **Siege and air units do not ignore city walls.** The `ignoresWalls` flag
-  exists in `CombatSystem` but no caller sets it, so walls always apply.
-* **A 4-turn research minimum is not enforced.** Only the 32-turn maximum is.
-* **Auto-production is on by default** for new cities (toggle per city), so it
-  is not strictly opt-in.
+[cols="1,1"]
+|===
+|Code |~70,000 lines TypeScript/TSX across ~150 files
+|Engine |`GameEngine.ts` (~7,200 lines) + 51 engine files, ~34,800 lines
+|AI |17 files, ~14,500 lines (`AIManager.ts` alone is ~7,500)
+|Rendering |6 files, ~4,700 lines (two-layer canvas)
+|Tests |153 Vitest suites, 1,537 cases, node environment (no DOM)
+|Browser tests |4 Playwright specs + setup
+|Balance data |13 tables in `src/data/` — every number in one place
+|===
 
 == Architecture
 
