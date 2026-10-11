@@ -342,10 +342,19 @@ export class EconomicManager {
     const specialistGold = this.maxSpecialistGold(civ);
     // Buildings are paid for before units are, so they come off first.
     const totalIncome = Math.max(0, taxIncome + specialistGold - this.buildingUpkeep(civId));
-    // Each unit costs 1 gold/turn upkeep (there is no free support: see
-    // `unitUpkeep`), so this is a hard budget ceiling, not a soft one.
+    // Each unit costs its own maintenance per turn (there is no free support:
+    // see `unitUpkeep`), so this is a hard budget ceiling, not a soft one.
+    // Priced at the most expensive military unit the civ owns — the AI builds
+    // its era's unit, so a flat 1 would under-price a tank fleet six-fold.
+    const militaryUnits = (this.gameEngine?.units ?? []).filter(
+      (u: Unit) => u.civilizationId === civId && !u.isDefeated && (u.maintenance ?? 0) > 0,
+    );
+    const unitPrice = Math.max(
+      1,
+      ...militaryUnits.map((u: Unit) => u.maintenance ?? UNIT_MAINTENANCE),
+    );
     const upkeepSlots = Math.max(0, totalIncome - cityCount);
-    return upkeepSlots;
+    return Math.floor(upkeepSlots / unitPrice);
   }
 
   // ------------------------------------------------------------------

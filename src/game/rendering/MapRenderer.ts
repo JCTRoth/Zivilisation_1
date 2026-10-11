@@ -84,6 +84,8 @@ export interface CitySpecialistButton {
   /** Hit radius (a little larger than the drawn circle). */
   r: number;
   fontSize: number;
+  /** Drawn circle radius — shrinks with the pitch at low zoom. */
+  drawR: number;
   /** Whether promotion is currently possible (false = dimmed). */
   enabled: boolean;
 }
@@ -96,21 +98,23 @@ export function getCitySpecialistButtons(
 ): CitySpecialistButton[] {
   const overlayScale = Math.min(2, Math.max(0.85, cameraZoom));
   const size = Math.min(56, Math.max(28, 28 * overlayScale));
-  const hasWalls = (city.buildings ?? []).some((b) => {
-    const id = typeof b === 'string' ? b : ((b as { id?: string })?.id ?? (b as { type?: string })?.type ?? '');
-    return id === 'city_walls' || id === 'walls';
-  });
-  const wallPad = hasWalls ? Math.max(5, Math.round(7 * overlayScale)) : 0;
-  const wallFont = hasWalls ? Math.min(14, Math.max(8, 8 * overlayScale)) : 0;
-  const nameOffset = hasWalls
-    ? wallPad + wallFont * 0.6 + Math.max(6, 8 * overlayScale)
-    : 12 * overlayScale;
 
   const fontSize = Math.min(15, Math.max(7, 7 * overlayScale));
-  const iconW = fontSize * 1.4;
-  const totalW = CITY_SPECIALIST_ORDER.length * iconW;
-  const startX = centerX - totalW / 2 + iconW / 2;
-  const specY = centerY + size / 2 + nameOffset + fontSize * 0.2;
+  // A vertical column hugging the RIGHT edge of the city tile, so the row
+  // under the city name stays free for the name itself. The buttons are
+  // centred on the tile as a group, which keeps them evenly spaced whatever
+  // the count.
+  //
+  // Three icons inside a 28px tile would otherwise overlap or spill onto the
+  // neighbouring tile, so the pitch is capped by the tile height.
+  const pitch = Math.min(fontSize * 1.9, (size - 4) / CITY_SPECIALIST_ORDER.length);
+  // At low zoom three icons cannot all fit across a 28px tile at full size, so
+  // the drawn circle shrinks with the pitch — it stays inscribed with a real
+  // gap instead of growing past its neighbour.
+  const drawR = Math.min(fontSize * 0.65, pitch * 0.32);
+  const totalH = CITY_SPECIALIST_ORDER.length * pitch;
+  const startY = centerY - totalH / 2 + pitch / 2;
+  const specX = centerX + size / 2 + drawR * 1.4;
 
   const pop = city.population ?? 1;
   const workedTiles = city.workingTiles ?? new Set<string>();
@@ -120,10 +124,15 @@ export function getCitySpecialistButtons(
 
   return CITY_SPECIALIST_ORDER.map((type, i) => ({
     type,
-    x: startX + i * iconW,
-    y: specY + fontSize * 0.4,
-    r: Math.max(8, fontSize * 0.85),
+    x: specX,
+    y: startY + i * pitch,
+    // The drawn circle is drawR; the hit radius sits just outside it, never
+    // beyond half the pitch, so a click on one icon can never land on its
+    // neighbour.
+    r: Math.min(drawR + 2, pitch / 2 - 0.5),
     fontSize,
+    /** Drawn circle radius — the draw site must use this, not `fontSize * 0.65`. */
+    drawR,
     enabled: canAdd,
   }));
 }
@@ -2463,10 +2472,10 @@ export class MapRenderer {
     ctx.fillStyle = '#000';
     ctx.fillText(city.name, centerX, centerY + size / 2 + nameOffset);
 
-    // The specialist row under the city is the specialist SELECTOR: all three
-    // types, filled with their count when assigned, hollow when free. Clicking
-    // one turns a citizen that works a tile into that specialist (see the
-    // hit-test in GameCanvas, which shares this layout).
+    // The specialist column down the LEFT of the city is the specialist
+    // SELECTOR: all three types, filled with their count when assigned, hollow
+    // when free. Clicking one turns a citizen that works a tile into that
+    // specialist (see the hit-test in GameCanvas, which shares this layout).
     const specs = city.specialists ?? [];
     const specCount = (type: SpecialistType) => specs.filter((s) => s === type).length;
     const buttons = getCitySpecialistButtons(centerX, centerY, city, cameraZoom);
@@ -2485,7 +2494,7 @@ export class MapRenderer {
           b.type === 'taxman'      ? 'rgba(220,180,40,0.85)' :
                                      'rgba(80,160,220,0.85';
         ctx.beginPath();
-        ctx.arc(b.x, b.y, b.fontSize * 0.65, 0, Math.PI * 2);
+        ctx.arc(b.x, b.y, b.drawR, 0, Math.PI * 2);
         if (count > 0) {
           ctx.fillStyle = bg;
           ctx.fill();
@@ -2504,8 +2513,8 @@ export class MapRenderer {
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(b.x - b.fontSize * 0.4, b.y - b.fontSize * 0.4);
-          ctx.lineTo(b.x + b.fontSize * 0.4, b.y + b.fontSize * 0.4);
+          ctx.moveTo(b.x - b.drawR * 0.6, b.y - b.drawR * 0.6);
+          ctx.lineTo(b.x + b.drawR * 0.6, b.y + b.drawR * 0.6);
           ctx.stroke();
         }
         if (count > 1) {
@@ -2523,8 +2532,10 @@ export class MapRenderer {
       }
       if (city.lockSpecialists) {
         const lockSize = Math.max(8, buttons[0].fontSize * 0.5);
-        const lockX = buttons[0].x - buttons[0].fontSize * 0.8;
-        const lockY = buttons[0].y - buttons[0].fontSize * 0.8;
+        // Directly above the top button, aligned to the column's centre. The
+        // gap is measured from the pitch so it stays snug at every zoom.
+        const lockX = buttons[0].x;
+        const lockY = buttons[0].y - buttons[0].drawR - lockSize * 0.8;
         ctx.font = `${lockSize}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';

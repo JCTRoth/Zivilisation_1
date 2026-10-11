@@ -18,8 +18,7 @@ If the goal is to closer match the Civilisation 1 manual, consider implementing:
  3. Global warming: Implement the sun indicator and climate change effects.
  5. Diplomacy: Add embassies, tech trading, sabotage, and incite revolt.
  6. Advisors: Implement the 6 advisor reports and world reports.
- 7. Wonder effects: Reconsider Great Library, Pyramids, Hoover Dam, SETI, Bach, and Shakespeare to match Civ1.
- 8. Space race: Implement spaceship construction with parts and flight time.
+ 8. Space race 2.0 modern version of it: Implement spaceship construction with parts and flight time.
  9. Find City: Add the city search feature.
 10. Autosave: Implement automatic saving every 50 turns.
 These additions would significantly increase the game's fidelity to the original Civilisation while maintaining its modern accessibility.
@@ -38,7 +37,7 @@ some names of books - Dont use arrows and focuce on one main picture add NO o ad
 * Integrate the new sprash damage also into the AI
 * 
 
-* Units should heal in cities rate abouut 2% every turn
+* Units should heal in cities rate abouut 2% every turn up to 20% of there battle demage.
 
 * Add new units for land transportation of units.
 
@@ -963,3 +962,51 @@ Back on the map you'll get a confirmation message. The new tech appears as known
 ----------
 
 I've the last city of a civilisation is taken and one of the units is not a settler than distory all remaining units of the civilisation.
+
+
+---
+
+Side panel menu:
+
+Remove:
+<div class="sp-block"><div class="sp-block-head"><span class="sp-block-label">Specialists <span class="sp-block-count">(0/1)</span></span></div><div class="side-panel-specialist-tally"><div class="side-panel-specialist-tally-item" title="Entertainer — +2 Luxury"><span class="side-panel-specialist-tally-icon">🕺</span><span class="side-panel-specialist-tally-name">Entertainer</span><span class="side-panel-specialist-tally-count">0</span><span class="side-panel-specialist-btns"><button type="button" class="side-panel-specialist-btn" disabled="" title="None assigned" aria-label="Remove Entertainer">−</button><button type="button" class="side-panel-specialist-btn" title="Promote to Entertainer" aria-label="Add Entertainer">+</button></span></div><div class="side-panel-specialist-tally-item" title="Taxman — +2 Gold"><span class="side-panel-specialist-tally-icon">💸</span><span class="side-panel-specialist-tally-name">Taxman</span><span class="side-panel-specialist-tally-count">0</span><span class="side-panel-specialist-btns"><button type="button" class="side-panel-specialist-btn" disabled="" title="None assigned" aria-label="Remove Taxman">−</button><button type="button" class="side-panel-specialist-btn" title="Promote to Taxman" aria-label="Add Taxman">+</button></span></div><div class="side-panel-specialist-tally-item" title="Scientist — +2 Science"><span class="side-panel-specialist-tally-icon">🥼</span><span class="side-panel-specialist-tally-name">Scientist</span><span class="side-panel-specialist-tally-count">0</span><span class="side-panel-specialist-btns"><button type="button" class="side-panel-specialist-btn" disabled="" title="None assigned" aria-label="Remove Scientist">−</button><button type="button" class="side-panel-specialist-btn" title="Promote to Scientist" aria-label="Add Scientist">+</button></span></div></div></div>
+
+Instead show the 
+side-panel-specialist-tally-icon 's
+🕺 💸 🥼
+on the 
+worked-tile-row worked-tile-row--center
+On every worked-tile-row worked-tile-row--center you show 🕺 💸 🥼
+When the user clicks of one of them than it get color and bigger
+
+Change the selection of the tiles, the user should be able to select the that he converts to a sepecialist.
+when a tile is converted to a sepcialist and the city is deselected and selected again than this tile does not show any more in the sidepanle list,
+since no one is working any more on it
+
+Make it a coherent system.
+A non assigned worker/citizen always gets by default a entertainer,
+make sure orker/citizen never get "lost".
+Make sure all is implemented from bottom up.
+
+
+---------------------------
+
+One shock — a wonder at 2× cost, one more city,
+a lost caravan — tips the treasury negative,
+the disbander eats the army (196–419 events/game),
+the garrisons go with it, and the barbarians take the undefended cities.
+That's the exact chain from my 400-round analysis.
+
+---------------------------
+
+"Auto. turn ending" should get a 3 seconds timeout, so before switching to the next player/civ. it waits 3 seconds.
+
+-------------
+
+Assets
+Check where are currently assets are stored
+Bring order into it
+Do what ever needed
+
+----------------
+

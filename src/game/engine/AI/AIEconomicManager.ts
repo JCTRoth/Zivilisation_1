@@ -97,8 +97,22 @@ export class AIEconomicManager {
   }
 
   /**
-   * The number of units a civ can sustain without a permanent upkeep deficit:
-   * upkeep = max(units, cityCount), paid from the commerce left after luxury.
+   * The number of units a civ can sustain without a permanent upkeep deficit.
+   *
+   * The cap has to answer one question: *if I build this army, will the rate
+   * controller keep me out of bankruptcy?* It used to answer a different one —
+   * "what does 50 % tax buy?" — and a hard-coded 50 % is not a rate any policy
+   * in this engine ever defends: the controller holds 35 % when the empire is
+   * healthy and rises only as far as `maxTaxRate − luxury − science floor`.
+   * Planning above that sized armies for an income the civ never actually ran,
+   * the treasury went negative, and the disbander paid the difference out of
+   * the army — including the garrisons that were holding the barbarians off.
+   *
+   * So the planning rate is now the ceiling `adjustRatesForAI` itself enforces
+   * (see `policyTaxRate`), and units are priced at the maintenance of the most
+   * expensive military unit the civ already owns — the AI buys its era's unit,
+   * and pricing a future tank at a rifleman's 1 gold is how a solvent empire
+   * goes broke three technologies later.
    *
    * Reserve target ("X") is defined as:
    *   X = max(AI_MIN_GOLD_RESERVE, TotalExpenses * ReserveTurns)
@@ -111,9 +125,15 @@ export class AIEconomicManager {
     const maxTaxIncome = this.econ.maxTaxIncome(civ);
     const maxSpecGold = this.econ.maxSpecialistGold(civ);
 
-    // Plan against a realistic tax floor (50%) so AI doesn't think it has
-    // 0 gold at 10% tax.
-    const planningTax = Math.max(civ.taxRate ?? 0, 50) / 100;
+    const cities = (this.gameEngine?.cities ?? []).filter(
+      (c: City) => c.civilizationId === civId,
+    );
+    const planningTax = this.policyTaxRate(
+      civ,
+      this.policyLuxury(civ, cities),
+      this.inDeficit(civ) ? AI_SCIENCE_DEEP_FLOOR : AI_SCIENCE_FLOOR,
+    );
+
     const projectedIncome =
       Math.floor(maxTaxIncome * planningTax) + maxSpecGold;
 
@@ -131,7 +151,9 @@ export class AIEconomicManager {
     const buildingUpkeep = this.econ.buildingUpkeep(civId);
     const availableForUnits =
       projectedIncome - buildingUpkeep - reserveContribution;
-    const affordableUnits = Math.floor(availableForUnits / UNIT_MAINTENANCE);
+    const affordableUnits = Math.floor(
+      availableForUnits / this.planningUnitMaintenance(civ),
+    );
 
     // Units are never free: `unitUpkeep` charges every unit its full
     // maintenance (the "each city supports one unit for free" note in
@@ -139,6 +161,72 @@ export class AIEconomicManager {
     // budget ceiling. A building-heavy empire can therefore legitimately
     // compute a cap of zero.
     return Math.max(0, affordableUnits);
+  }
+
+  /**
+   * The share of trade the rate controller is willing to turn into tax, as a
+   * fraction — the ceiling planning must respect, never an aspiration.
+   *
+   * `adjustRatesForAI` targets `max(AI_MIN_TAX, min(maxTaxRate, 100 − luxury −
+   * scienceAllowance, taxNeed))`: it defends the science floor, buys luxury
+   * only when a city is close to disorder, and never exceeds the government's
+   * tax cap. Subtracting the two floors from the government ceiling is
+   * therefore *the most tax this civ will ever hold* — an army that fits under
+   * it stays paid for, and one that does not is never built in the first place.
+   *
+   * A civ that already runs above the ceiling (pushed there by a crisis) keeps
+   * its real rate: that income is not hypothetical.
+   */
+  private policyTaxRate(
+    civ: Civilization,
+    luxury: number,
+    scienceAllowance: number,
+  ): number {
+    const gov = getGovernment(civ?.government);
+    const maxTax = gov?.maxTaxRate ?? 100;
+    const ceiling = Math.min(
+      Math.max(maxTax - luxury - scienceAllowance, AI_MIN_TAX),
+      maxTax,
+    );
+    const current = Math.min(civ.taxRate ?? 0, maxTax);
+    return Math.max(ceiling, current) / 100;
+  }
+
+  /** Luxury the controller would buy for this civ right now (0 when content). */
+  private policyLuxury(civ: Civilization, cities: City[]): number {
+    const anyCityProblem = cities.some((c: City) => {
+      const h = this.econ.cityHappiness(c, civ);
+      return h.disorder || h.unhappiness >= h.happiness;
+    });
+    if (!anyCityProblem) return 0;
+    return Math.min(
+      this.luxuryNeedPct(civ, cities),
+      30,
+      100 - AI_MIN_TAX - AI_SCIENCE_FLOOR,
+    );
+  }
+
+  private inDeficit(civ: Civilization): boolean {
+    return (civ.resources?.gold ?? 0) < 0;
+  }
+
+  /**
+   * The maintenance a *future* unit is priced at: the most expensive military
+   * unit the civ already owns. The AI builds its era's unit, so the priciest
+   * thing in the barracks is the best available estimate of what it will buy
+   * next — and over-pricing is the safe direction, because a cap that is too
+   * low costs a slower army while a cap that is too high costs the army.
+   */
+  private planningUnitMaintenance(civ: Civilization): number {
+    const owned = (this.gameEngine?.units ?? []).filter(
+      (u: { civilizationId: number; isDefeated?: boolean; maintenance?: number }) =>
+        u.civilizationId === civ.id && !u.isDefeated && (u.maintenance ?? 0) > 0,
+    );
+    if (owned.length === 0) return UNIT_MAINTENANCE;
+    return Math.max(
+      UNIT_MAINTENANCE,
+      ...owned.map((u: { maintenance?: number }) => u.maintenance ?? UNIT_MAINTENANCE),
+    );
   }
 
   /**

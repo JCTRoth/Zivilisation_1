@@ -2086,9 +2086,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             // cities are handled above — a civilian clicking one inspects it.)
             assignUnitPath(selectedUnit, hex.col, hex.row);
           } else if (cityAt) {
-          // The specialist row drawn UNDER the city is the specialist selector:
-          // left-click promotes, right-click demotes. Checked before the city
-          // selection so the click does not open the city screen.
+          // The specialist column down the RIGHT of the city is the specialist
+          // selector: left-click promotes, right-click demotes. Checked before
+          // the city selection so the click does not open the city screen.
           if (
             currentPlayer &&
             cityAt.civilizationId === currentPlayer.id &&

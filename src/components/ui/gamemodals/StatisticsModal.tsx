@@ -145,8 +145,7 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
                 <div className="gm-section">
                   <div className="gm-section-title">How the scribes count</div>
                   <div className="gm-note">
-                    Rankings compare all living civilizations. Population uses the old
-                    triangular count (Size × (Size+1)/2 × 10,000); GNP is taxes plus
+                    Rankings compare all living civilizations. GNP is taxes plus
                     luxuries before upkeep.
                     <br />
                     <strong>Embassy bonus:</strong> once your envoys are received, a

@@ -2999,6 +2999,43 @@ const occupiedLandmasses = new Set(
   }
 
   /**
+   * Convert the citizen working a SPECIFIC tile into a specialist of the given
+   * type. This is the side-panel path: the player picks the tile, so the tile
+   * must not be the free centre, must be worked right now, and the resulting
+   * citizen count must stay inside the city's population — a citizen is
+   * moved, never created or destroyed (`workingTiles + specialists === pop`,
+   * see `types/game.ts`).
+   *
+   * A `null` type means "no opinion" and falls back to the entertainer, which
+   * is what an unemployable citizen becomes anyway (see the idle-citizen
+   * conversion in `EconomicManager.assignWorkers`). Every caller that has no
+   * better information lands on the same default.
+   *
+   * @returns true on success.
+   */
+  convertTileCitizenToSpecialist(
+    cityId: string,
+    col: number,
+    row: number,
+    specialistType: SpecialistType | null = null,
+  ): boolean {
+    const city = this.cities.find((c: City) => c.id === cityId);
+    if (!city) return false;
+
+    const type: SpecialistType = specialistType ?? 'entertainer';
+    // One citizen moves: never promote past the population, or the invariant
+    // breaks and the citizen is effectively lost.
+    const population = city.population ?? 1;
+    if ((city.specialists?.length ?? 0) >= population) return false;
+
+    const ok = this.removeCitizenFromTile(cityId, col, row, type);
+    if (ok && this.storeActions?.updateCities) {
+      this.storeActions.updateCities([...this.cities]);
+    }
+    return ok;
+  }
+
+  /**
    * Assign a citizen to work a specific tile. The tile must be a legal work
    * target (real city radius, not a rival's land, not the centre, not already
    * worked) and there must be an unemployed citizen to put on it.

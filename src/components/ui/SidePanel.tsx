@@ -18,6 +18,8 @@ import '../../styles/unitRank.css';
 import type { City, Civilization, SpecialistType, Unit } from '../../../types/game';
 import GameEngine from '@/game/engine/GameEngine';
 
+const SPECIALIST_TYPES = Object.keys(SPECIALIST_YIELDS) as SpecialistType[];
+
 // Capitalize the first letter of a string (e.g. 'warrior' -> 'Warrior')
 const capitalize = (value: string): string =>
   value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
@@ -300,7 +302,6 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
             ))}
           </div>
 
-          {renderCitySpecialists(panelCity)}
           {renderWorkedTiles(panelCity)}
         </div>
       );
@@ -353,101 +354,21 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
     );
   };
 
-  const renderCitySpecialists = (city: City) => {
-    const specs = city.specialists ?? [];
-    const pop = city.population ?? 1;
-    if (!(currentPlayer && city.civilizationId === currentPlayer.id)) return null;
-
-    const workedTiles = city.workingTiles ?? new Set<string>();
-    const freeCitizens = Math.max(0, pop - (workedTiles.size - 1) - specs.length);
-    const canAdd = freeCitizens > 0 || workedTiles.size > 0;
-    const locked = city.lockSpecialists ?? false;
-
-    return (
-      <div className="sp-block">
-        <div className="sp-block-head">
-          <span className="sp-block-label">
-            Specialists <span className="sp-block-count">({specs.length}/{pop})</span>
-            {locked && (
-              <i className="bi bi-lock-fill sp-lock" title="Specialists locked" aria-label="Specialists locked"></i>
-            )}
-          </span>
-          {specs.length > 0 && (
-            <button
-              type="button"
-              className="side-panel-specialist-demote-all-btn"
-              onClick={() => {
-                let demoted = 0;
-                for (let i = specs.length - 1; i >= 0; i--) {
-                  if (gameEngine?.demoteSpecialistToWorker(city.id, i)) {
-                    demoted++;
-                  }
-                }
-                if (demoted > 0) {
-                  actions?.addNotification?.({ type: 'info', message: `${city.name}: ${demoted} specialist${demoted > 1 ? 's' : ''} back to tiles.` });
-                }
-              }}
-            >
-              Demote All
-            </button>
-          )}
-        </div>
-        <div className="side-panel-specialist-tally">
-          {(Object.keys(SPECIALIST_YIELDS) as SpecialistType[]).map((type) => {
-            const def = SPECIALIST_YIELDS[type];
-            const count = specs.filter((s) => s === type).length;
-            const gains = [
-              def.luxury ? `+${def.luxury} Luxury` : null,
-              def.gold ? `+${def.gold} Gold` : null,
-              def.science ? `+${def.science} Science` : null,
-            ].filter(Boolean).join(', ');
-            return (
-              <div key={type} className="side-panel-specialist-tally-item" title={`${def.name} — ${gains}`}>
-                <span className="side-panel-specialist-tally-icon">{def.icon}</span>
-                <span className="side-panel-specialist-tally-name">{def.name}</span>
-                <span className="side-panel-specialist-tally-count">{count}</span>
-                <span className="side-panel-specialist-btns">
-                  <button
-                    type="button"
-                    className="side-panel-specialist-btn"
-                    disabled={count === 0}
-                    title={count > 0 ? `Demote ${def.name}` : 'None assigned'}
-                    aria-label={`Remove ${def.name}`}
-                    onClick={() => {
-                      const idx = specs.lastIndexOf(type);
-                      if (idx >= 0 && gameEngine?.demoteSpecialistToWorker(city.id, idx)) {
-                        actions?.addNotification?.({ type: 'info', message: `${city.name}: ${def.name} back to tiles.` });
-                      }
-                    }}
-                  >
-                    −
-                  </button>
-                  <button
-                    type="button"
-                    className="side-panel-specialist-btn"
-                    disabled={!canAdd}
-                    title={canAdd ? `Promote to ${def.name}` : 'No citizens available'}
-                    aria-label={`Add ${def.name}`}
-                    onClick={() => {
-                      if (gameEngine?.promoteCitizenToSpecialist(city.id, type)) {
-                        actions?.addNotification?.({ type: 'info', message: `${city.name}: promoted to ${def.name}.` });
-                      }
-                    }}
-                  >
-                    +
-                  </button>
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
   const renderWorkedTiles = (city: City) => {
     const workedTiles = city.workingTiles;
     if (!workedTiles || workedTiles.size === 0) return null;
+
+    // The whole citizen roster lives here now: tiles on the rows, specialists
+    // counted on the centre row. One invariant keeps them honest — every
+    // citizen of the city is on exactly one of the two lists.
+    const specialists = city.specialists ?? [];
+    const pop = city.population ?? 1;
+    const ownCity = !!currentPlayer && city.civilizationId === currentPlayer.id;
+    // A tile citizen can only be handed over if the city still has a citizen
+    // to spare: `tiles + specialists === pop`, so the moment they match, every
+    // citizen is accounted for and nothing may move.
+    const canConvert = ownCity && !!gameEngine && specialists.length < pop;
+
     // Tiles the player placed by hand — drawn darker with a light-green edge so
     // a manual allocation reads differently from a governor decision.
     const manualTiles = city.userAssignedTiles instanceof Set ? city.userAssignedTiles : new Set<string>();
@@ -516,6 +437,7 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
           <span className="wt-num">🍞</span>
           <span className="wt-num">⛏️</span>
           <span className="wt-num">💰</span>
+          <span className="wt-specs-head">{ownCity ? '🕺 💸 🥼' : ''}</span>
         </div>
 
         <div className="worked-tiles-list">
@@ -526,7 +448,11 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
               <div
                 key={t.key}
                 className={`worked-tile-row${isCenter ? ' worked-tile-row--center' : ''}${isManual ? ' worked-tile-row--manual' : ''}`}
-                title={`${t.terrain}${t.resource ? ` (${t.resource})` : ''}${isManual ? ' — manual allocation' : ''} — click to center map`}
+                title={
+                  isCenter
+                    ? `${t.terrain} — the city centre is worked for free`
+                    : `${t.terrain}${t.resource ? ` (${t.resource})` : ''}${isManual ? ' — manual allocation' : ''} — click to centre the map`
+                }
                 onClick={() => {
                   if (gameEngine) {
                     const centerX = t.col * TILE_SIZE;
@@ -542,6 +468,76 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
                 <span className="wt-num">{t.food}</span>
                 <span className="wt-num">{t.production}</span>
                 <span className="wt-num">{t.trade}</span>
+                {isCenter ? (
+                  <span className="wt-specs">
+                    {SPECIALIST_TYPES.map((type) => {
+                      const def = SPECIALIST_YIELDS[type];
+                      const count = specialists.filter((s) => s === type).length;
+                      const gains = [
+                        def.luxury ? `+${def.luxury} Luxury` : null,
+                        def.gold ? `+${def.gold} Gold` : null,
+                        def.science ? `+${def.science} Science` : null,
+                      ].filter(Boolean).join(', ');
+                      return (
+                        <button
+                          key={type}
+                          type="button"
+                          className={`wt-spec${count > 0 ? ' wt-spec--on' : ''}`}
+                          title={
+                            count > 0
+                              ? `${def.name} ×${count} — ${gains}. Click to send one back to the tiles.`
+                              : `${def.name} — ${gains}. No citizens of this type yet.`
+                          }
+                          aria-label={`Remove ${def.name}`}
+                          disabled={count === 0 || !gameEngine}
+                          onClick={() => {
+                            const idx = specialists.lastIndexOf(type);
+                            if (idx >= 0 && gameEngine?.demoteSpecialistToWorker(city.id, idx)) {
+                              actions?.addNotification?.({
+                                type: 'info',
+                                message: `${city.name}: one ${def.name} is back on the tiles.`,
+                              });
+                            }
+                          }}
+                        >
+                          {def.icon}
+                          {count > 0 && <span className="wt-spec-n">{count}</span>}
+                        </button>
+                      );
+                    })}
+                  </span>
+                ) : (
+                  <span className="wt-specs">
+                    {SPECIALIST_TYPES.map((type) => {
+                      const def = SPECIALIST_YIELDS[type];
+                      return (
+                        <button
+                          key={type}
+                          type="button"
+                          className="wt-spec"
+                          disabled={!canConvert}
+                          title={
+                            canConvert
+                              ? `${t.terrain} → ${def.name} (one citizen moves off this tile)`
+                              : 'No citizen can leave this city right now'
+                          }
+                          aria-label={`Make this citizen a ${def.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (gameEngine?.convertTileCitizenToSpecialist(city.id, t.col, t.row, type)) {
+                              actions?.addNotification?.({
+                                type: 'info',
+                                message: `${city.name}: a citizen on ${t.terrain} became a ${def.name}.`,
+                              });
+                            }
+                          }}
+                        >
+                          {def.icon}
+                        </button>
+                      );
+                    })}
+                  </span>
+                )}
               </div>
             );
           })}

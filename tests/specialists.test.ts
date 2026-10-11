@@ -13,8 +13,37 @@
  */
 import { describe, it, expect } from 'vitest';
 import { SPECIALIST_YIELDS } from '../src/data/GameConstants';
-import type { SpecialistType } from '../types/game';
+import type { City, SpecialistType } from '../types/game';
 import { EconomicManager } from '../src/game/engine/EconomicManager';
+import GameEngine from '../src/game/engine/GameEngine';
+import { checkInvariants } from './helpers/world';
+
+/**
+ * Found a city on a real map and hand it back typed as the domain City, which
+ * carries the optional citizen fields (`specialists`, `workingTiles`) that
+ * `foundCity`'s inferred literal type omits.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function realCity(engine: GameEngine, col: number, row: number, pop: number): Promise<any> {
+  const city = engine.foundCity(col, row, 0, `City${col}`) as unknown as City;
+  city.population = pop;
+  city.specialists = [];
+  if (!city.workingTiles) city.workingTiles = new Set<string>();
+  return city;
+}
+
+/** A real engine on a fixed map — the conversion path touches real tiles. */
+async function realEngine(): Promise<GameEngine> {
+  const engine = new GameEngine(null);
+  (engine as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
+  await engine.initialize({
+    numberOfCivilizations: 2,
+    mapType: 'MANY_CITIES',
+    devMode: false,
+    startingGold: 100,
+  });
+  return engine;
+}
 
 // ── Shared mock helpers (from governmentManager.test.ts) ────────────────
 
@@ -196,5 +225,77 @@ describe('Specialist yields flow into processTurn totals', () => {
     const goldAfter = civ.resources.gold;
     const specGold = 3 * 2; // 3 taxmen × 2 gold each
     expect(goldAfter).toBeGreaterThanOrEqual(goldBefore + specGold - 2);
+  });
+});
+
+// ── convertTileCitizenToSpecialist ────────────────────────────────────────
+
+describe('convertTileCitizenToSpecialist', () => {
+  it('moves one citizen off a worked tile onto the specialist list', async () => {
+    const engine = await realEngine();
+    const city = await realCity(engine, 20, 20, 3);
+    // The centre is worked for free, but foundCity leaves the set empty — the
+    // governor adds it lazily. Add it so the invariant holds here too.
+    city.workingTiles.add('20,20');
+    city.workingTiles.add('20,21');
+    city.workingTiles.add('20,22');
+    expect(city.workingTiles.size).toBe(3);
+
+    const ok = engine.convertTileCitizenToSpecialist(city.id, 20, 21, 'taxman');
+
+    expect(ok).toBe(true);
+    expect(city.workingTiles.has('20,21')).toBe(false);
+    expect(city.workingTiles.has('20,22')).toBe(true);
+    expect(city.specialists).toEqual(['taxman']);
+    // The invariant: tiles + specialists === population. A citizen moved, none vanished.
+    expect(city.workingTiles.size + city.specialists.length).toBe(city.population);
+    expect(checkInvariants(engine)).toEqual([]);
+  });
+
+  it('refuses to convert the free centre tile', async () => {
+    const engine = await realEngine();
+    const city = await realCity(engine, 24, 24, 2);
+    city.workingTiles.add('24,24'); // the free centre
+    city.workingTiles.add('24,25');
+
+    const ok = engine.convertTileCitizenToSpecialist(city.id, 24, 24, 'scientist');
+
+    expect(ok).toBe(false);
+    // Nothing moved: the centre still stands and no specialist appeared.
+    expect(city.workingTiles.has('24,24')).toBe(true);
+    expect(city.specialists).toEqual([]);
+  });
+
+  it('falls back to entertainer when no type is given', async () => {
+    const engine = await realEngine();
+    const city = await realCity(engine, 28, 28, 2);
+    city.workingTiles.add('28,29');
+
+    expect(engine.convertTileCitizenToSpecialist(city.id, 28, 29)).toBe(true);
+    expect(city.specialists).toEqual(['entertainer']);
+  });
+
+  it('refuses when every citizen is already a specialist', async () => {
+    const engine = await realEngine();
+    const city = await realCity(engine, 32, 32, 1);
+    city.specialists = ['entertainer'];
+    // A pop-1 city with one specialist has no tile citizen left to hand over.
+
+    const ok = engine.convertTileCitizenToSpecialist(city.id, 32, 33, 'scientist');
+
+    expect(ok).toBe(false);
+    expect(city.specialists).toEqual(['entertainer']);
+  });
+
+  it('is refused on a tile the city is not working', async () => {
+    const engine = await realEngine();
+    const city = await realCity(engine, 36, 36, 2);
+    city.workingTiles.add('36,37');
+
+    // (36,39) is in the radius but nobody works it — no citizen to convert.
+    const ok = engine.convertTileCitizenToSpecialist(city.id, 36, 39, 'entertainer');
+
+    expect(ok).toBe(false);
+    expect(city.specialists).toEqual([]);
   });
 });
