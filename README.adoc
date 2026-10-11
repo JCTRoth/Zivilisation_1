@@ -1,5 +1,5 @@
 :toc:
-:toclevels: 2
+:toclevels: 1
 :sectnums:
 
 = Civilization I Browser Game
@@ -11,8 +11,6 @@ For players seeking a nostalgic Civilization-like experience in the browser, it 
 For purists seeking a 1:1 recreation of the 1991 original, it falls short in several areas but therefor it introduces more stratgic depth, more strategie and a non-cheating AI. +
 The implementation is technically impressive (TypeScript, React, Vite, comprehensive tests, data-driven design) and functionally complete (the game is winnable and playable). +
 The developers should be commended for creating a sophisticated strategy game that honors its inspiration while making sensible modernizations. +
-
-
 
 [.text-center]
 --
@@ -30,67 +28,6 @@ image::doc/images/6.png[Screenshot, width=700]
 image::doc/dialogs/07-diplomacy.png[Diplomacy Modal, width=700]
 image::doc/images/world_map.png[World map, width=700]
 --
-
-== Dialog gallery
-
-Every major dialog, captured from a live game. Full inventory and open
-instructions: link:doc/MODALS.adoc[Modals & Dialogs].
-
-[cols="1,1", options="header"]
-|===
-|Dialog |Screenshot
-
-|Game Setup — War Council
-|image::doc/dialogs/00-game-setup.png[Game setup, width=480]
-
-|Technology Tree (`F2`)
-|image::doc/dialogs/01-tech-tree.png[Tech tree, width=480]
-
-|Help & Controls (`F1`)
-|image::doc/dialogs/02-help.png[Help, width=480]
-
-|Tax, Science & Luxury Rates (`T`)
-|image::doc/dialogs/03-rates.png[Rates, width=480]
-
-|Government (`G`)
-|image::doc/dialogs/04-government.png[Government, width=480]
-
-|Statistics & Reports
-|image::doc/dialogs/05-statistics.png[Statistics, width=480]
-
-|Wonders of the World
-|image::doc/dialogs/06-wonders.png[Wonders, width=480]
-
-|Diplomacy (`D` / `F4`)
-|image::doc/dialogs/07-diplomacy.png[Diplomacy, width=480]
-
-|City screen
-|image::doc/dialogs/08-city-details.png[City details, width=480]
-
-|Production picker
-|image::doc/dialogs/09-production-picker.png[Production picker, width=480]
-
-|Settings (`F3`)
-|image::doc/dialogs/10-settings.png[Settings, width=480]
-
-|Pause (`Ctrl+P`)
-|image::doc/dialogs/11-pause.png[Pause, width=480]
-
-|Village encounter
-|image::doc/dialogs/12-village.png[Village, width=480]
-
-|Combat report
-|image::doc/dialogs/13-combat-report.png[Combat report, width=480]
-
-|City founded
-|image::doc/dialogs/14-city-founded.png[City founded, width=480]
-
-|Victory — cinematic
-|image::doc/dialogs/15-victory-cinematic.png[Victory cinematic, width=480]
-
-|Victory — chronicle
-|image::doc/dialogs/16-victory-chronicle.png[Victory chronicle, width=480]
-|===
 
 == Status
 
