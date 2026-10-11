@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Modal, Button, Tab, Tabs, Card, ListGroup, Form } from 'react-bootstrap';
+import { Modal, Button, Tab, Tabs, ListGroup, Form } from 'react-bootstrap';
 import TechTreeView from './TechTreeView';
 import { getTechIcon } from '@/data/TechnologyIcons';
 import { findPathToTech, firstResearchableInPath } from '@/utils/ResearchPath';
@@ -11,16 +11,18 @@ import WonderCompletedModal from './gamemodals/WonderCompletedModal';
 import WonderConflictModal from './gamemodals/WonderConflictModal';
 import WondersOverviewModal from './gamemodals/WondersOverview';
 import VillageModal from './gamemodals/VillageModal';
+import CombatReportModal from './gamemodals/CombatReportModal';
+import CityEventModal from './gamemodals/CityEventModal';
 import ResearchRequiredModal from './ResearchRequiredModal';
+import GameModal from './gamemodals/ModalShell';
 import { useGameStore } from '@/stores/GameStore';
 import { AUTO_END_TURN_OFFER_FLAG } from '@/data/GameConstants';
 import { UNIT_PROPS } from '@/utils/Constants';
 import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
-import { DomUtils } from '@/utils/DomUtils';
-import { enrichMapForExport } from '@/utils/MapExportUtils';
 import { productionFailureText } from '@/utils/ProductionUtils';
 import { sendCommand, isCommandRejection } from '@/utils/session';
 import { notify } from '@/utils/NotificationUtils';
+import { GameUtils } from '@/utils/GameUtils';
 import '../../styles/gameModals.css';
 import '../../styles/diplomacyModal.css';
 import LeaderPortrait from './LeaderPortrait';
@@ -35,7 +37,6 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const uiState = useGameStore(state => state.uiState);
   const actions = useGameStore(state => state.actions);
   const settings = useGameStore(state => state.settings);
-  const isGameStarted = useGameStore(state => state.gameState.isGameStarted);
   const selectedCityId: string | null = useGameStore(state => state.gameState.selectedCity);
   const cities = useGameStore(state => state.cities);
   const technologies = useGameStore(state => state.technologies);
@@ -44,8 +45,15 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const lastResearchedTech = useGameStore(state => state.lastResearchedTech);
   const currentPlayer = useGameStore(state => state.civilizations[state.gameState.activePlayer] || null);
 
-  const map = useGameStore(state => state.map);
-  const gameStats = useGameStore(state => state.gameStats);
+  const gameState = useGameStore(state => state.gameState);
+
+  /** Shared eyebrow stamp: "Germans · Turn 12 · 3960 BC". */
+  const stamp = (prefix: string) =>
+    `${prefix} · Turn ${gameState.currentTurn ?? 1} · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`;
+
+  /** Just the turn/year part, for modals that carry their own eyebrow prefix. */
+  const turnStamp = () =>
+    `Turn ${gameState.currentTurn ?? 1} · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`;
 
   const civilizations = useGameStore(state => state.civilizations);
   const incomingDiplomacyOffer = useGameStore(state => state.incomingDiplomacyOffer);
@@ -55,6 +63,9 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const disorderNotice = useGameStore(state => state.disorderNotice);
   const tradeRouteResult = useGameStore(state => state.tradeRouteResult);
   const wonderDialogQueue = useGameStore(state => state.wonderDialogQueue);
+  const combatReportQueue = useGameStore(state => state.combatReportQueue);
+  const cityEventQueue = useGameStore(state => state.cityEventQueue);
+  const map = useGameStore(state => state.map);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
 
@@ -125,7 +136,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   // while open (see EngineEventHandlers.isDecisionScreenOpen) and MUST re-check
   // on close — otherwise auto-end silently stops after closing a rates /
   // government / statistics / diplomacy / village modal.
-  const NON_BLOCKING_DIALOGS = ['game-menu', 'help', 'tech', 'hex-details'];
+  const NON_BLOCKING_DIALOGS = ['help', 'tech'];
 
   const handleCloseDialog = () => {
     const closing = useGameStore.getState().uiState.activeDialog;
@@ -208,204 +219,60 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     }
   };
 
-  const handleNewGame = () => {
-    console.log('[CLICK] New Game button');
-    if (gameEngine) {
-      gameEngine.newGame();
-    }
-    handleCloseDialog();
+  // ── Battle reports & city events (queued like the wonder dialogs) ──────
+  const combatReport = combatReportQueue[0] ?? null;
+  const cityEvent = cityEventQueue[0] ?? null;
+  const playerCivId = civilizations.find(c => c.isHuman)?.id ?? currentPlayer?.id ?? 0;
+
+  const civName = (civId?: number) =>
+    (civId === undefined ? null : civilizations.find(c => c.id === civId)?.name) ?? undefined;
+
+  const terrainAt = (col?: number, row?: number) => {
+    if (col === undefined || row === undefined || !map?.tiles) return undefined;
+    return map.tiles[row * map.width + col]?.type ?? undefined;
   };
 
-  const handleDownloadMap = () => {
-    console.log('[CLICK] Download Map button');
-    try {
-      if (!map || !map.tiles || map.tiles.length === 0) {
-        console.warn('[GameModals] handleDownloadMap: no map data available');
-        handleCloseDialog();
-        return;
-      }
-
-      const enriched = enrichMapForExport(map);
-      const exportObj = {
-        meta: {
-          width: map.width,
-          height: map.height,
-          turn: gameStats?.turn ?? 'unknown'
-        },
-        map: enriched
-      };
-
-      const text = JSON.stringify(exportObj, null, 2);
-      const filename = `civ1-map-turn-${gameStats?.turn ?? 'unknown'}.json`;
-      DomUtils.downloadTextFile(text, filename);
-    } catch (e) {
-      console.error('[GameModals] handleDownloadMap error', e);
-    }
-    handleCloseDialog();
-  };
-
-  const handleSaveGame = () => {
-    console.log('[CLICK] Save Game button');
-    try {
-      if (!gameEngine) {
-        console.warn('[GameModals] handleSaveGame: no gameEngine');
-        actions.addNotification({ type: 'warning', message: 'Save not available.' });
-        handleCloseDialog();
-        return;
-      }
-
-      // Build save data from engine state
-      let json: string | null = null;
-      if (typeof gameEngine.getSaveJSON === 'function') {
-        json = gameEngine.getSaveJSON();
-        console.log('[GameModals] handleSaveGame: got JSON via getSaveJSON(), length:', json?.length);
-      } else if (typeof gameEngine.saveGame === 'function') {
-        gameEngine.saveGame();
-        json = localStorage.getItem('civ1_savegame');
-        console.log('[GameModals] handleSaveGame: got JSON via saveGame(), length:', json?.length);
-      }
-
-      if (!json) {
-        console.error('[GameModals] handleSaveGame: no JSON produced');
-        actions.addNotification({ type: 'error', message: 'Failed to generate save data.' });
-        handleCloseDialog();
-        return;
-      }
-
-      // Trigger file download
-      const turn = gameStats?.turn ?? 'unknown';
-      const filename = `civ1-save-turn-${turn}.json`;
-
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-
-      console.log('[GameModals] handleSaveGame: download triggered for', filename);
-      actions.addNotification({ type: 'success', message: `Game saved to ${filename}` });
-    } catch (e) {
-      console.error('[GameModals] handleSaveGame error:', e);
-      actions.addNotification({ type: 'error', message: 'Save failed: ' + (e as Error).message });
-    }
-    handleCloseDialog();
-  };
-
-  const handleLoadGame = () => {
-    console.log('[CLICK] Load Game button');
-    if (!gameEngine || typeof gameEngine.loadGame !== 'function') {
-      console.warn('[GameModals] handleLoadGame: engine or loadGame not available');
-      actions.addNotification({ type: 'warning', message: 'Load not available.' });
-      handleCloseDialog();
+  /** Next queued battle report, or a clean close on the last one. */
+  const handleCombatReportContinue = () => {
+    const queue = useGameStore.getState().combatReportQueue;
+    if (queue.length > 1) {
+      actions.dequeueCombatReport();
       return;
     }
-    // Create hidden file input to let user pick a save file
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json,application/json';
-    input.style.display = 'none';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) {
-        console.log('[GameModals] handleLoadGame: no file selected');
-        handleCloseDialog();
-        return;
-      }
-      console.log('[GameModals] handleLoadGame: selected file', file.name);
-      try {
-        const text = await file.text();
-        console.log('[GameModals] handleLoadGame: read file, length:', text.length);
-        // Validate it's a valid save file
-        const saveData = JSON.parse(text);
-        if (!saveData || (saveData.version !== 1 && saveData.version !== 2)) {
-          console.warn('[GameModals] handleLoadGame: invalid save data, version:', saveData?.version);
-          actions.addNotification({ type: 'error', message: 'Invalid or incompatible save file.' });
-          handleCloseDialog();
-          return;
-        }
-        // Store in localStorage so engine.loadGame() can read it
-        localStorage.setItem('civ1_savegame', text);
-        // Let the engine restore state
-        const success = await gameEngine.loadGame();
-        console.log('[GameModals] handleLoadGame: engine.loadGame returned', success);
-        if (success) {
-          // Force a full store sync after loading
-          actions.updateMap(gameEngine.map);
-          actions.updateUnits(gameEngine.getAllUnits());
-          actions.updateCities(gameEngine.getAllCities());
-          actions.updateCivilizations(gameEngine.civilizations);
-          actions.updateTechnologies(gameEngine.technologies);
-          actions.updateVisibility();
-          actions.addNotification({ type: 'success', message: `Game loaded from ${file.name}` });
-        } else {
-          actions.addNotification({ type: 'error', message: 'Failed to load game state.' });
-        }
-      } catch (e) {
-        console.error('[GameModals] handleLoadGame error:', e);
-        actions.addNotification({ type: 'error', message: 'Failed to read save file: ' + (e as Error).message });
-      }
-      handleCloseDialog();
-    };
-    document.body.appendChild(input);
-    input.click();
-    // Clean up: remove the input after a short delay (after file picker opened)
-    setTimeout(() => {
-      if (document.body.contains(input)) document.body.removeChild(input);
-    }, 1000);
+    handleCloseDialog();
+    actions.clearCombatReports();
+  };
+
+  const handleCombatReportCentre = () => {
+    if (combatReport) {
+      actions.focusCameraOnTile(combatReport.col, combatReport.row, true, true);
+    }
+  };
+
+  /** Next queued city event, or a clean close on the last one. */
+  const handleCityEventContinue = () => {
+    const queue = useGameStore.getState().cityEventQueue;
+    if (queue.length > 1) {
+      actions.dequeueCityEvent();
+      return;
+    }
+    handleCloseDialog();
+    actions.clearCityEvents();
+  };
+
+  /** "Open City" — close the notice, then select + open the city screen. */
+  const handleCityEventGoToCity = () => {
+    const cityId = cityEvent?.cityId;
+    handleCityEventContinue();
+    const city = cityId ? cities.find(c => c.id === cityId) : undefined;
+    if (city) {
+      actions.selectCity(city.id, 'user');
+      actions.focusCameraOnTile(city.col, city.row, true, true);
+      actions.showDialog('city-details');
+    }
   };
 
   // handleResearchTechnology removed (unused)
-
-  // Game Menu Modal
-  const renderGameMenu = () => (
-    <Modal show={uiState.activeDialog === 'game-menu'} onHide={handleCloseDialog} centered>
-      <Modal.Header closeButton className="bg-dark text-white">
-        <Modal.Title>
-          <i className="bi bi-gear"></i> Game Menu
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="bg-dark text-white">
-        <div className="d-grid gap-2">
-          <Button variant="primary" size="lg" onClick={handleNewGame}>
-            <i className="bi bi-plus-circle"></i> New Game
-          </Button>
-          
-          <Button variant="info" size="lg" onClick={handleSaveGame}>
-            <i className="bi bi-download"></i> Save Game
-          </Button>
-          
-          {isGameStarted && (
-            <Button variant="success" size="lg" onClick={handleDownloadMap}>
-              <i className="bi bi-map"></i> Download Map
-            </Button>
-          )}
-          
-          <Button variant="warning" size="lg" onClick={handleLoadGame}>
-            <i className="bi bi-upload"></i> Load Game
-          </Button>
-          
-          <Button variant="secondary" size="lg" onClick={() => console.log('[CLICK] Settings button (not implemented)')}>
-            <i className="bi bi-gear"></i> Settings
-          </Button>
-          
-          <Button 
-            variant="outline-light" 
-            size="lg"
-            onClick={() => {
-              console.log('[CLICK] Help button');
-              actions.showDialog('help');
-            }}
-          >
-            <i className="bi bi-question-circle"></i> Help
-          </Button>
-        </div>
-      </Modal.Body>
-    </Modal>
-  );
 
   /**
    * Player picked a tech in the tree: remember the selected path, save the
@@ -461,30 +328,46 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       if (tech) currentTechCost = gameEngine.researchManager.effectiveTechCost(civ, tech);
     }
     return (
-      <Modal 
-        show={uiState.activeDialog === 'tech'} 
-        onHide={handleCloseDialog} 
+      <Modal
+        show={uiState.activeDialog === 'tech'}
+        onHide={handleCloseDialog}
         fullscreen
+        className="gm"
         dialogClassName="tech-tree-modal"
+        contentClassName="gm-modal"
       >
-        <Modal.Header closeButton className="bg-dark text-white">
-          <Modal.Title>
-            <i className="bi bi-lightbulb"></i> Technology Tree
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="bg-dark text-white tech-tree-modal-body">
-          <React.Suspense fallback={<div className="text-white p-3">Loading tree...</div>}>
-            <TechTreeView
-              technologies={technologies}
-              width={Math.max(window.innerWidth - 32, 320)}
-              researchPath={researchPath}
-              currentResearchId={currentTechId}
-              researchProgress={civ?.researchProgress ?? 0}
-              currentTechCost={currentTechCost}
-              playerResearchedIds={new Set((currentPlayer?.technologies ?? []).map(String))}
-              onSelectTech={handleSelectTech}
-            />
-          </React.Suspense>
+        <Modal.Body className="gm-body" data-tone="solemn">
+          <button type="button" className="gm-close" onClick={handleCloseDialog} aria-label="Close">
+            <i className="bi bi-x-lg" aria-hidden="true" />
+          </button>
+          <header className="gm-hero gm-hero--slim">
+            <div className="gm-art gm-art--plain">
+              <span className="gm-art-glyph" aria-hidden="true">💡</span>
+              <span className="gm-art-tag">the road ahead</span>
+            </div>
+            <div className="gm-heading">
+              <div className="gm-eyebrow">{stamp('Research')}</div>
+              <h2 className="gm-title">Technology Tree</h2>
+              <p className="gm-lede">
+                Every science your people can still reach. Follow a path and your academies will
+                walk it without further orders.
+              </p>
+            </div>
+          </header>
+          <div className="gm-content gm-content--fill">
+            <React.Suspense fallback={<div className="gm-prose">Unrolling the charts…</div>}>
+              <TechTreeView
+                technologies={technologies}
+                width={Math.max(window.innerWidth - 32, 320)}
+                researchPath={researchPath}
+                currentResearchId={currentTechId}
+                researchProgress={civ?.researchProgress ?? 0}
+                currentTechCost={currentTechCost}
+                playerResearchedIds={new Set((currentPlayer?.technologies ?? []).map(String))}
+                onSelectTech={handleSelectTech}
+              />
+            </React.Suspense>
+          </div>
         </Modal.Body>
       </Modal>
     );
@@ -504,45 +387,70 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     const nextTechId = remainingPath.length > 0 ? remainingPath[0] : null;
     const nextTech = nextTechId ? technologies.find(t => t.id === nextTechId) : null;
     return (
-      <Modal show onHide={actions.dismissTechNotification} dialogClassName="research-complete-modal">
-        <Modal.Header closeButton className="bg-dark text-white">
-          <Modal.Title>🔬 Research Complete</Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="bg-dark text-white">
-          <div className="text-center research-complete-icon">{getTechIcon(lastResearchedTech.id)}</div>
-          <h4 className="text-center mt-2">{lastResearchedTech.name}</h4>
-          <p className="text-center text-muted mb-0">
-            {lastResearchedTech.description || 'A new technology has been unlocked.'}
-          </p>
-          <div className="d-grid gap-2 mt-3">
-            {nextTech && nextTechId ? (
-              <Button
-                variant="success"
-                onClick={() => {
-                  if (gameEngine) {
-                    const saved = techProgress[nextTechId] ?? 0;
-                    gameEngine.setResearch(0, nextTechId, saved);
-                    actions.updateCivilizations([...(gameEngine.civilizations || [])]);
-                  }
-                  actions.dismissTechNotification();
-                }}
-              >
-                Continue Researching: {nextTech.name}
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                onClick={() => {
-                  actions.dismissTechNotification();
-                  actions.showDialog('tech');
-                }}
-              >
-                Choose New Research Path
-              </Button>
-            )}
-          </div>
-        </Modal.Body>
-      </Modal>
+      <GameModal
+        show
+        onClose={actions.dismissTechNotification}
+        tone="success"
+        icon={getTechIcon(lastResearchedTech.id)}
+        artLabel="the academy"
+        dialogClassName="research-complete-modal"
+        eyebrow={stamp('Research Complete')}
+        title={lastResearchedTech.name}
+        lede={
+          lastResearchedTech.description ||
+          'Another secret of the world has given up its knowledge to your people.'
+        }
+        actions={
+          nextTech && nextTechId ? (
+            <button
+              type="button"
+              className="touch-btn touch-btn--primary"
+              onClick={() => {
+                if (gameEngine) {
+                  const saved = techProgress[nextTechId] ?? 0;
+                  gameEngine.setResearch(0, nextTechId, saved);
+                  actions.updateCivilizations([...(gameEngine.civilizations || [])]);
+                }
+                actions.dismissTechNotification();
+              }}
+            >
+              Continue with {nextTech.name}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="touch-btn touch-btn--primary"
+              onClick={() => {
+                actions.dismissTechNotification();
+                actions.showDialog('tech');
+              }}
+            >
+              Choose New Research Path
+            </button>
+          )
+        }
+      >
+        <div className="gm-section">
+          <div className="gm-section-title">Where the path leads</div>
+          {nextTech ? (
+            <p className="gm-prose">
+              Your researchers are already reaching for the next rung of your path:{' '}
+              <strong>{nextTech.name}</strong>. Take it now, or open the technology tree and
+              strike out in another direction — nothing your people have learned is ever lost.
+            </p>
+          ) : (
+            <p className="gm-prose">
+              This branch of learning is exhausted — there is nothing left on your current path
+              that your scholars do not already know. Open the technology tree and set them a new
+              road, or let them wander on their own.
+            </p>
+          )}
+        </div>
+        <div className="gm-note">
+          Research only moves while something is selected. Leave it empty and the turn will end
+          with your academies idle.
+        </div>
+      </GameModal>
     );
   }
 
@@ -605,14 +513,20 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         toCivId: currentPlayer?.id ?? 0,
         action: offer.action as unknown as DiplomatAction,
         goldAmount: offer.goldAmount,
+        techOffered: offer.techOffered,
+        techRequested: offer.techRequested,
       });
       addDiploLog(result.accepted
         ? `You accepted ${fromCiv?.name ?? 'their'} proposal (${offer.action.replace(/_/g, ' ')}).`
-        : `The proposal could not be completed.`);
+        : `The proposal could not be completed${result.reason ? `: ${result.reason}` : ''}.`);
     } else {
       addDiploLog(`You declined ${fromCiv?.name ?? 'their'} proposal.`);
     }
     actions.clearIncomingDiplomacyOffer();
+    // Tech swaps change what each civ knows — refresh the store mirror.
+    if (accept && gameEngine?.civilizations) {
+      actions.updateCivilizations([...gameEngine.civilizations]);
+    }
   };
 
   const renderDiplomacy = () => {
@@ -648,6 +562,23 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       non_aggression: { icon: '🤚', label: 'Non-Aggression' },
       embargo_target: { icon: '🚫', label: 'Embargo' },
     };
+
+    // Reads an engine action ("propose_peace") as the term the court would
+    // actually speak, so a proposal never shows up as snake_case jargon.
+    const OFFER_LABELS: Record<string, string> = {
+      propose_peace: 'Peace',
+      propose_ceasefire: 'Ceasefire',
+      propose_alliance: 'Alliance',
+      demand_tribute: 'Tribute',
+      offer_open_borders: 'Open Borders',
+      propose_trade_agreement: 'Trade Agreement',
+      propose_mutual_defense: 'Mutual Defense',
+      propose_non_aggression: 'Non-Aggression Pact',
+      propose_embargo: 'Embargo',
+      offer_tech_exchange: 'Tech Exchange',
+    };
+    const offerTerm = (action: string): string =>
+      OFFER_LABELS[action] ?? action.replace(/_/g, ' ');
 
     const handleDiplomacyAction = (
       targetId: number,
@@ -801,14 +732,26 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       : { goodwill: 0, grievance: 0, fear: 0, respect: 0, offersRefused: 0, lastOfferRound: -1, reasons: [] };
     const selectedReasons = selectedTheirOpinion.reasons ?? [];
     // A preview of the terms currently in the input boxes, so the player can
-    // see the engine's own arithmetic before committing to a deal.
+    // see the engine's own arithmetic before committing to a deal. Exchange
+    // of Knowledge uses the two selected techs; everything else previews the
+    // tribute demand.
     const verdict = selectedDiploCiv !== null && dm
-      ? dm.previewProposal?.({
-        fromCivId: playerId,
-        toCivId: selectedDiploCiv,
-        action: 'demand_tribute',
-        goldAmount: Number.isFinite(tributeAmount) ? tributeAmount : 50,
-      })
+      ? dm.previewProposal?.(
+        techOffer && techRequest
+          ? {
+            fromCivId: playerId,
+            toCivId: selectedDiploCiv,
+            action: 'offer_tech_exchange',
+            techOffered: techOffer,
+            techRequested: techRequest,
+          }
+          : {
+            fromCivId: playerId,
+            toCivId: selectedDiploCiv,
+            action: 'demand_tribute',
+            goldAmount: Number.isFinite(tributeAmount) ? tributeAmount : 50,
+          },
+      )
       : null;
 
     // Leader portrait lookup
@@ -817,28 +760,75 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     const moodColors = MOOD_COLORS[selectedAttitude] || MOOD_COLORS.neutral;
     const activeTreaties: string[] = selectedDiploCiv !== null ? (dm?.getActiveTreaties?.(playerId, selectedDiploCiv) ?? []) : [];
 
+    const closeDiplomacy = (): void => {
+      handleCloseDialog();
+      setSelectedDiploCiv(null);
+      setDiplomacyLog([]);
+      setShowTreatyPanel(false);
+      setCounterProposal(null);
+      actions.clearIncomingDiplomacyOffer();
+      actions.clearDiplomacyFocus();
+    };
+
+    // The hero artwork is the face across the table: the same procedural
+    // portrait the audience panel uses, so the hall shows who you are dealing
+    // with before it shows a single number. Nobody selected → the placeholder
+    // slot, captioned for the picture that belongs there.
+    const heroArt = portraitConfig ? (
+      <span className="diplomacy-hero-art">
+        <LeaderPortrait
+          config={portraitConfig}
+          mood={selectedAttitude as 'friendly' | 'neutral' | 'annoyed' | 'hostile'}
+          size={56}
+          leaderName={leaderName}
+        />
+      </span>
+    ) : null;
+
     return (
-      <Modal 
-        show={uiState.activeDialog === 'diplomacy'} 
-        onHide={() => { handleCloseDialog(); setSelectedDiploCiv(null); setDiplomacyLog([]); setShowTreatyPanel(false); setCounterProposal(null); actions.clearIncomingDiplomacyOffer(); actions.clearDiplomacyFocus(); }} 
-        centered
+      <GameModal
+        show={uiState.activeDialog === 'diplomacy'}
+        onClose={closeDiplomacy}
+        tone="gold"
         size="xl"
-        fullscreen="lg-down"
         dialogClassName="diplomacy-modal"
+        icon={heroArt ?? '⚖️'}
+        artSize="lg"
+        artLabel={heroArt ? undefined : 'Divide et impera'}
+        artAlt={leaderName || 'Divide et impera'}
+        eyebrow={stamp('Your Court')}
+        title="Diplomatic Relations"
+        lede="Every court on earth is a door — opened with a gift, a treaty, or an army at the gate. Choose a rival, read the temper of their ruler, and speak: what you promise in this hall your people will be held to."
+        actions={
+          <>
+            <span className="gm-actions-spacer" />
+            <button type="button" className="touch-btn touch-btn--ghost" onClick={closeDiplomacy}>
+              Close
+            </button>
+          </>
+        }
       >
-        <Modal.Header closeButton className="diplomacy-header">
-          <Modal.Title>
-            ⚖️ Diplomatic Relations
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="diplomacy-body">
           {/* Pending AI→player proposal awaiting an accept/reject decision */}
           {incomingDiplomacyOffer && (
             <div className="diplomacy-incoming-offer">
-              <div className="diplomacy-incoming-title">📨 Incoming Proposal</div>
+              <div className="gm-section-title">📨 An envoy is waiting</div>
               <div className="diplomacy-incoming-text">
-                {civilizations[incomingDiplomacyOffer.fromCivId]?.name ?? 'Unknown'} proposes: <strong>{incomingDiplomacyOffer.action.replace(/_/g, ' ')}</strong>
+                {civilizations[incomingDiplomacyOffer.fromCivId]?.name ?? 'Unknown'} proposes: <strong>{offerTerm(incomingDiplomacyOffer.action)}</strong>
                 {incomingDiplomacyOffer.goldAmount ? ` (${incomingDiplomacyOffer.goldAmount} gold)` : ''}
+                {incomingDiplomacyOffer.techOffered && incomingDiplomacyOffer.techRequested && (
+                  <>
+                    {': '}
+                    <strong>
+                      {technologies.find((t) => t.id === incomingDiplomacyOffer.techOffered)?.name
+                        ?? incomingDiplomacyOffer.techOffered}
+                    </strong>
+                    {' ↔ '}
+                    <strong>
+                      {technologies.find((t) => t.id === incomingDiplomacyOffer.techRequested)?.name
+                        ?? incomingDiplomacyOffer.techRequested}
+                    </strong>
+                  </>
+                )}
               </div>
               <div className="diplomacy-incoming-buttons">
                 <button className="diplomacy-btn btn-peace" onClick={() => handleIncomingOffer(true)}>✓ Accept</button>
@@ -849,19 +839,25 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           {/* Outcome of the last few proposals — without this the buttons gave
               no feedback unless a counter-offer happened to come back. */}
           {diplomacyFeed.length > 0 && (
-            <div className="diplomacy-log diplomacy-feed">
-              {diplomacyFeed.slice(0, 4).map((line, i) => (
-                <div key={i} className="diplomacy-log-entry">{line}</div>
-              ))}
-            </div>
+            <section className="gm-section">
+              <div className="gm-section-title">What the court has heard</div>
+              <div className="diplomacy-log diplomacy-feed">
+                {diplomacyFeed.slice(0, 4).map((line, i) => (
+                  <div key={i} className="diplomacy-log-entry">{line}</div>
+                ))}
+              </div>
+            </section>
           )}
           {otherCivs.length === 0 ? (
-            <p className="text-muted text-center py-4">No other civilizations discovered yet.</p>
+            <section className="gm-section">
+              <div className="gm-section-title">No one has come to the table</div>
+              <p className="gm-prose">No other civilizations discovered yet.</p>
+            </section>
           ) : (
-            <div className="diplomacy-layout">
+            <div className="diplomacy-layout gm-section gm-section--flush">
               {/* Left: Civilization list */}
               <div className="diplomacy-civ-list">
-                <div className="diplomacy-section-label">CIVILIZATIONS</div>
+                <div className="gm-section-title diplomacy-pane-title">Known courts</div>
                 {otherCivs.map((civ: Civilization) => {
                   const status = dm?.getStatus(playerId, civ.id) ?? 'peace';
                   const treaties = dm?.getActiveTreaties?.(playerId, civ.id) ?? [];
@@ -933,40 +929,35 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         </div>
                       </div>
 
-                      {/* Status panel */}
+                      {/* Status panel: the stance as a chip, the ledger below */}
                       <div className="diplomacy-status-panel">
-                        <div className="diplomacy-status-chip">
-                          <span className={`diplomacy-status-value status-${selectedStatus}`}>
-                            {STATUS_ICONS[selectedStatus]} {selectedStatus.toUpperCase()}
-                          </span>
-                        </div>
+                        <span className={`diplomacy-status-value status-${selectedStatus} gm-chip`}>
+                          {STATUS_ICONS[selectedStatus]} {selectedStatus.toUpperCase()}
+                        </span>
                         {selectedRelation && (
-                          <>
-                            {/* Goodwill is the one number the whole model turns
-                                on, so it is shown as points and as a meter. */}
-                            <div className="diplomacy-stat">
-                              <span className="diplomacy-stat-label">Goodwill</span>
-                              <span style={{ color: selectedGoodwill < 0 ? '#f44336' : selectedGoodwill > 0 ? '#4caf50' : '#9e9e9e' }}>
+                          /* Goodwill is the one number the whole model turns on,
+                             so it leads; the rest of the ledger follows. */
+                          <div className="gm-kv-grid gm-kv-grid--stack diplomacy-facts">
+                            <div className="gm-kv">
+                              Goodwill:{' '}
+                              <b style={{ color: selectedGoodwill < 0 ? '#f44336' : selectedGoodwill > 0 ? '#4caf50' : '#9e9e9e' }}>
                                 {selectedGoodwill > 0 ? '+' : ''}{selectedGoodwill}
-                              </span>
+                              </b>
                             </div>
                             {selectedTheirOpinion.grievance >= 10 && (
-                              <div className="diplomacy-stat">
-                                <span className="diplomacy-stat-label">Grievance</span>
-                                <span style={{ color: '#ff9800' }}>{Math.round(selectedTheirOpinion.grievance)}</span>
+                              <div className="gm-kv">
+                                Grievance: <b style={{ color: '#ff9800' }}>{Math.round(selectedTheirOpinion.grievance)}</b>
                               </div>
                             )}
                             {selectedTheirOpinion.fear >= 20 && (
-                              <div className="diplomacy-stat">
-                                <span className="diplomacy-stat-label">Their fear of you</span>
-                                <span style={{ color: '#ba68c8' }}>{Math.round(selectedTheirOpinion.fear)}</span>
+                              <div className="gm-kv">
+                                Their fear of you: <b style={{ color: '#ba68c8' }}>{Math.round(selectedTheirOpinion.fear)}</b>
                               </div>
                             )}
-                            <div className="diplomacy-stat">
-                              <span className="diplomacy-stat-label">Since turn</span>
-                              <span style={{ color: '#aaa' }}>{selectedRelation.since}</span>
+                            <div className="gm-kv">
+                              Since turn: <b style={{ color: '#aaa' }}>{selectedRelation.since}</b>
                             </div>
-                          </>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -981,22 +972,24 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       const strengthLabel = ratio > 2 ? 'Supreme' : ratio > 1.3 ? 'Superior' : ratio > 0.8 ? 'Comparable' : ratio > 0.5 ? 'Weaker' : 'Inferior';
                       const strengthColor = ratio > 1.3 ? '#4caf50' : ratio > 0.8 ? '#9e9e9e' : '#f44336';
                       return (
-                        <div className="diplomacy-strength-section">
-                          <span className="diplomacy-label">Military Strength:</span>
-                          <span style={{ color: strengthColor, fontWeight: 'bold' }}>{strengthLabel}</span>
-                          <div className="diplomacy-strength-bar-visual">
-                            <div className="diplomacy-strength-fill-player" style={{ width: `${playerPct}%` }} />
-                            <div className="diplomacy-strength-fill-enemy" style={{ width: `${100 - playerPct}%` }} />
+                        <section className="gm-section">
+                          <div className="gm-section-title">Where the steel lies</div>
+                          <div className="diplomacy-strength-section">
+                            <span style={{ color: strengthColor, fontWeight: 'bold' }}>{strengthLabel}</span>
+                            <div className="diplomacy-strength-bar-visual">
+                              <div className="diplomacy-strength-fill-player" style={{ width: `${playerPct}%` }} />
+                              <div className="diplomacy-strength-fill-enemy" style={{ width: `${100 - playerPct}%` }} />
+                            </div>
+                            <span className="diplomacy-strength-nums">You: {Math.round(playerStr)} | Them: {Math.round(theirStr)}</span>
                           </div>
-                          <span className="diplomacy-strength-nums">You: {Math.round(playerStr)} | Them: {Math.round(theirStr)}</span>
-                        </div>
+                        </section>
                       );
                     })()}
 
                     {/* Active treaties display */}
                     {activeTreaties.length > 0 && (
-                      <div className="diplomacy-treaties-row">
-                        <span className="diplomacy-label">Active Treaties:</span>
+                      <section className="gm-section">
+                        <div className="gm-section-title">Treaties in force</div>
                         <div className="diplomacy-treaty-badges">
                           {activeTreaties.map((t: string) => (
                             <span key={t} className="diplomacy-treaty-badge">
@@ -1009,7 +1002,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                             </span>
                           ))}
                         </div>
-                      </div>
+                      </section>
                     )}
 
                     {/* The engine's own arithmetic for the demand currently in
@@ -1035,7 +1028,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         for every single thing that moved the number above. */}
                     {selectedReasons.length > 0 && (
                       <div className="diplomacy-reasons">
-                        <div className="diplomacy-reasons-title">What they remember</div>
+                        <div className="gm-section-title">What they remember</div>
                         {selectedReasons.map((r, i) => (
                           <div key={`${r.event}-${r.round}-${i}`} className="diplomacy-reason-row">
                             <span className={`diplomacy-reason-delta ${r.delta >= 0 ? 'good' : 'bad'}`}>
@@ -1053,9 +1046,9 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     {/* Counter-proposal banner */}
                     {counterProposal && (
                       <div className="diplomacy-counter-proposal">
-                        <div className="diplomacy-counter-title">📜 Counter-Proposal</div>
+                        <div className="gm-section-title">📜 Counter-Proposal</div>
                         <div className="diplomacy-counter-text">
-                          {civilizations[selectedDiploCiv!]?.name} suggests: <strong>{counterProposal.action.replace(/_/g, ' ')}</strong>
+                          {civilizations[selectedDiploCiv!]?.name} suggests: <strong>{offerTerm(counterProposal.action)}</strong>
                           {counterProposal.goldAmount ? ` (${counterProposal.goldAmount} gold)` : ''}
                         </div>
                         <div className="diplomacy-counter-buttons">
@@ -1070,8 +1063,9 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     )}
 
                     {/* Negotiation buttons */}
-                    <div className="diplomacy-section-label">NEGOTIATIONS</div>
-                    <div className="diplomacy-actions">
+                    <section className="gm-section">
+                      <div className="gm-section-title">Terms you may put to them</div>
+                      <div className="diplomacy-actions">
                       {selectedStatus === 'war' && (
                         <>
                           <button className="diplomacy-btn btn-ceasefire" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_ceasefire')}>
@@ -1203,45 +1197,78 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                               </span>
                             )}
 
-                            {/* Exchange technologies: offer one of yours, name
-                                the one you want. The engine validates both
-                                sides, so no foreign tech list is leaked. */}
-                            {(currentPlayer?.technologies?.length ?? 0) > 0 && (
-                              <span className="diplomacy-treaty-group">
-                                <select
-                                  className="diplomacy-select"
-                                  value={techOffer}
-                                  onChange={(e) => setTechOffer(e.target.value)}
-                                  title="Technology you offer"
-                                >
-                                  <option value="">Offer tech…</option>
-                                  {(currentPlayer?.technologies ?? []).map((id: string) => (
-                                    <option key={id} value={id}>
-                                      {technologies.find((t) => t.id === id)?.name ?? id}
-                                    </option>
-                                  ))}
-                                </select>
-                                <input
-                                  type="text"
-                                  className="diplomacy-tech-input"
-                                  placeholder="Request tech id"
-                                  value={techRequest}
-                                  onChange={(e) => setTechRequest(e.target.value)}
-                                  title="Technology you want from them"
-                                />
-                                <button
-                                  className="diplomacy-btn btn-treaty"
-                                  disabled={!techOffer || !techRequest}
-                                  onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'offer_tech_exchange', { techOffered: techOffer, techRequested: techRequest })}
-                                >
-                                  🔬 Tech Exchange
-                                </button>
-                              </span>
-                            )}
+                            {/* Exchange of Knowledge (Civ I): two lists of the
+                                real tech diffs — what they know that we lack,
+                                and what we know that they lack. */}
+                            {(() => {
+                              const trade = dm?.getTechTradeOptions?.(playerId, selectedDiploCiv!);
+                              const canTrade = dm?.canTradeTechs?.(playerId, selectedDiploCiv!);
+                              const techName = (id: string) =>
+                                technologies.find((t) => t.id === id)?.name ?? id;
+                              if (!trade || (trade.theyHaveWeLack.length === 0 && trade.weHaveTheyLack.length === 0)) {
+                                return (
+                                  <div className="diplomacy-tech-exchange diplomacy-tech-exchange--empty">
+                                    <span className="diplomacy-tech-exchange__title">Exchange of Knowledge</span>
+                                    <span className="diplomacy-tech-exchange__hint">
+                                      {canTrade && !canTrade.ok
+                                        ? canTrade.reason
+                                        : 'You already share every technology — there is nothing left to swap.'}
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="diplomacy-tech-exchange">
+                                  <span className="diplomacy-tech-exchange__title">Exchange of Knowledge</span>
+                                  <span className="diplomacy-tech-exchange__hint">
+                                    One technology each way. They refuse unfair swaps and will not trade while at war.
+                                  </span>
+                                  <div className="diplomacy-tech-exchange__cols">
+                                    <label className="diplomacy-tech-exchange__col">
+                                      <span className="diplomacy-tech-exchange__col-label">They have · you lack</span>
+                                      <select
+                                        className="diplomacy-select"
+                                        value={techRequest}
+                                        onChange={(e) => setTechRequest(e.target.value)}
+                                      >
+                                        <option value="">Request a technology…</option>
+                                        {trade.theyHaveWeLack.map((id: string) => (
+                                          <option key={id} value={id}>{techName(id)}</option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                    <label className="diplomacy-tech-exchange__col">
+                                      <span className="diplomacy-tech-exchange__col-label">You have · they lack</span>
+                                      <select
+                                        className="diplomacy-select"
+                                        value={techOffer}
+                                        onChange={(e) => setTechOffer(e.target.value)}
+                                      >
+                                        <option value="">Offer a technology…</option>
+                                        {trade.weHaveTheyLack.map((id: string) => (
+                                          <option key={id} value={id}>{techName(id)}</option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  </div>
+                                  <button
+                                    className="diplomacy-btn btn-treaty"
+                                    disabled={!techOffer || !techRequest}
+                                    onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'offer_tech_exchange', {
+                                      techOffered: techOffer,
+                                      techRequested: techRequest,
+                                    })}
+                                  >
+                                    🔬 Exchange of Knowledge
+                                  </button>
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </>
                     )}
+                    </section>
 
                     {/* Global diplomacy history from DiplomacyManager */}
                     {(() => {
@@ -1252,8 +1279,8 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       ).slice(0, 8);
                       if (relevant.length === 0) return null;
                       return (
-                        <>
-                          <div className="diplomacy-section-label">HISTORY</div>
+                        <section className="gm-section">
+                          <div className="gm-section-title">The record of your dealings</div>
                           <div className="diplomacy-log">
                             {relevant.map((e, i: number) => {
                               const from = civilizations[e.fromCivId]?.name ?? `Civ ${e.fromCivId}`;
@@ -1284,7 +1311,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                               );
                             })}
                           </div>
-                        </>
+                        </section>
                       );
                     })()}
                   </>
@@ -1299,28 +1326,35 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               </div>
             </div>
           )}
-        </Modal.Body>
-      </Modal>
+      </GameModal>
     );
   };
 
   // Help Modal
   const renderHelp = () => (
-    <Modal 
-      show={uiState.activeDialog === 'help'} 
-      onHide={handleCloseDialog} 
-      centered
+    <GameModal
+      show={uiState.activeDialog === 'help'}
+      onClose={handleCloseDialog}
       size="lg"
+      tone="info"
+      icon="📖"
+      artLabel="the steward's handbook"
+      eyebrow="At Your Service"
+      title="Help & Controls"
+      lede="Everything your steward can tell you about ruling this world: the keys under your hand, the orders you may give on the map, and the shape of the game itself."
+      actions={
+        <button type="button" className="touch-btn touch-btn--primary" onClick={handleCloseDialog}>
+          Back to the Map
+        </button>
+      }
     >
-      <Modal.Header closeButton className="bg-dark text-white">
-        <Modal.Title>
-          <i className="bi bi-question-circle"></i> Help & Controls
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="bg-dark text-white city-detail-modal-body">
-        <Tabs defaultActiveKey="controls" className="mb-3">
-          <Tab eventKey="controls" title="Controls">
-            <h6>Mouse Controls:</h6>
+      <Tabs defaultActiveKey="controls" className="mb-0 gm-help-tabs">
+        <Tab eventKey="controls" title="Controls">
+          <p className="gm-prose gm-help-intro">
+            The whole world answers to your mouse and a handful of keys. Learn these and you will
+            never have to hunt for a button again.
+          </p>
+          <h6>Mouse Controls:</h6>
             <ListGroup variant="flush" className="mb-3">
               <ListGroup.Item className="bg-dark text-white border-secondary">
                 <strong>Left Click:</strong> Select units, cities, or tiles
@@ -1370,19 +1404,22 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
             <h6>Global Shortcuts:</h6>
             <ListGroup variant="flush" className="mb-3">
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Enter:</strong> End turn
+                <strong>Enter:</strong> End the turn
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>D:</strong> Diplomatic Relations
+                <strong>D:</strong> Diplomatic relations
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>R:</strong> Rush city production (when city selected)
+                <strong>R:</strong> Rush city production (with a city selected)
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>C:</strong> Center map on selected unit
+                <strong>C:</strong> Centre the map on the selected unit
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>T:</strong> Open settings
+                <strong>T:</strong> Tax, science &amp; luxury rates
+              </ListGroup.Item>
+              <ListGroup.Item className="bg-dark text-white border-secondary">
+                <strong>G:</strong> Government
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
                 <strong>Escape:</strong> Close dialogs / deselect
@@ -1401,13 +1438,13 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 <strong>F1:</strong> Help
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>F2:</strong> Tech Tree
+                <strong>F2:</strong> Tech tree
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
                 <strong>F3:</strong> Settings
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>F4:</strong> Diplomatic Relations
+                <strong>F4:</strong> Diplomatic relations
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
                 <strong>F11:</strong> Toggle fullscreen
@@ -1423,12 +1460,19 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 <strong>Ctrl+L:</strong> Load game
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
+                <strong>Ctrl+P:</strong> Pause
+              </ListGroup.Item>
+              <ListGroup.Item className="bg-dark text-white border-secondary">
                 <strong>Ctrl+1–9:</strong> Select city by number
               </ListGroup.Item>
             </ListGroup>
           </Tab>
           
           <Tab eventKey="orders" title="Orders Menu">
+            <p className="gm-prose gm-help-intro">
+              Right-click a unit (or open the ORDERS menu) and these are the commands you may give.
+              Every one of them costs time — some a single turn, some many.
+            </p>
             <h6>Tile Improvements (via ORDERS menu):</h6>
             <ListGroup variant="flush">
               <ListGroup.Item className="bg-dark text-white border-secondary">
@@ -1459,6 +1503,10 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           </Tab>
 
           <Tab eventKey="gameplay" title="Gameplay">
+            <p className="gm-prose gm-help-intro">
+              A civilisation is not won by the sword alone. Feed your people, keep the treasury
+              honest, and let your scholars run ahead of your rivals.
+            </p>
             <h6>Getting Started:</h6>
             <ol>
               <li>Move your settler to a good location near water and resources</li>
@@ -1489,22 +1537,28 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           </Tab>
           
           <Tab eventKey="about" title="About">
-            <p className="mt-3">
-             <a href="mailto:info@mailbase.info">info@mailbase.info</a>
+            <p className="gm-prose gm-help-intro">
+              This world is a work in progress, built in the open. Words, ideas and bug reports
+              are all welcome.
             </p>
-            <p>
-              <a 
-                href="https://github.com/JCTRoth/Zivilisation_1" 
-                target="_blank" 
-                rel="noopener noreferrer"
-              >
-                GitHub - JCTRoth/Zivilisation_1
-              </a>
-            </p>
+            <div className="gm-section">
+              <div className="gm-section-title">Reach the maker</div>
+              <p className="gm-prose mb-2">
+                <a href="mailto:info@mailbase.info">info@mailbase.info</a>
+              </p>
+              <p className="gm-prose mb-0">
+                <a
+                  href="https://github.com/JCTRoth/Zivilisation_1"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  GitHub — JCTRoth/Zivilisation_1
+                </a>
+              </p>
+            </div>
           </Tab>
         </Tabs>
-      </Modal.Body>
-    </Modal>
+      </GameModal>
   );
 
   // handleStartProduction removed (unused)
@@ -1591,27 +1645,34 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   };
 
   const renderCityProduction = () => (
-    <Modal
+    <GameModal
       show={uiState.activeDialog === 'city-production'}
-      onHide={handleCloseDialog}
-      centered
+      onClose={handleCloseDialog}
       size="lg"
+      tone="info"
+      icon="⚒️"
+      artLabel="the building yards"
       dialogClassName="city-production-modal"
+      eyebrow={stamp('City Production')}
+      title={selectedCity?.name || 'City Production'}
+      lede={
+        <>
+          Give this city its next order. Everything it builds is paid for in shields — the more
+          workshops it works, the faster the shields arrive.
+        </>
+      }
+      actions={
+        <button type="button" className="touch-btn touch-btn--primary" onClick={handleCloseDialog}>
+          Done
+        </button>
+      }
     >
-      <Modal.Header closeButton className="bg-dark text-white">
-        <Modal.Title>
-          <i className="bi bi-gear"></i> {selectedCity?.name || 'City Production'}
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="bg-dark text-white">
-        <div className="row">
-          <div className="col-md-12 mb-2">
-            <p>Select a unit to produce in this city. Production cost is shown in shields.</p>
-          </div>
-        </div>
-        {renderProductionContent()}
-      </Modal.Body>
-    </Modal>
+      <div className="gm-note">
+        Pick a unit, building or wonder below. Its cost is shown in shields, and the queue takes
+        them in the order you set.
+      </div>
+      {renderProductionContent()}
+    </GameModal>
   );
 
   // Reusable production list content (used both in modal and city details tab)
@@ -1808,196 +1869,158 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     );
   };
 
-  // City Purchase Modal (Buy Now)
-  const handleBuyNow = (unitKey: string) => {
-    if (!selectedCity) return;
-    const unitDef = UNIT_PROPS[unitKey];
-    if (!unitDef) return;
-
-    const item = { type: 'unit', itemType: unitKey, name: unitDef.name, cost: unitDef.cost };
-    const engine = gameEngine as GameEngine & { purchaseCityProduction?: (cityId: string, item: Record<string, unknown>, civId?: number) => { success?: boolean; reason?: string } | null };
-    if (gameEngine && typeof engine.purchaseCityProduction === 'function') {
-      const res = engine.purchaseCityProduction(selectedCity.id, item);
-      if (res && res.success) {
-        actions.addNotification({ type: 'success', message: `Purchased ${item.name}` });
-        actions.updateCities(gameEngine.getAllCities());
-        actions.updateUnits(gameEngine.getAllUnits());
-      } else {
-        actions.addNotification({ type: 'warning', message: `Purchase failed: ${res?.reason || 'unknown'}` });
-      }
-    }
-
-    actions.hideDialog();
-  };
-
-  const renderCityPurchase = () => (
-    <Modal
-      show={uiState.activeDialog === 'city-purchase'}
-      onHide={handleCloseDialog}
-      centered
-      size="lg"
-      dialogClassName="city-purchase-modal"
-    >
-      <Modal.Header closeButton className="bg-dark text-white">
-        <Modal.Title>
-          <i className="bi bi-cart"></i> Purchase in {selectedCity?.name || 'City'}
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="bg-dark text-white">
-        <div className="mb-2">Your gold: {currentPlayer?.resources?.gold ?? 0}</div>
-        {renderPurchaseContent()}
-      </Modal.Body>
-    </Modal>
-  );
-
-  // Reusable purchase list content (used in purchase modal and city details tab)
-  const renderPurchaseContent = () => (
-    <div>
-      <div className="mb-2">Your gold: {currentPlayer?.resources?.gold ?? 0}</div>
-      <div className="row">
-        {Object.keys(UNIT_PROPS).filter(k => {
-          const u = UNIT_PROPS[k];
-          const req = (u as { requires?: string }).requires || null;
-          if (req && currentPlayer && Array.isArray(currentPlayer.technologies)) {
-            if (!currentPlayer.technologies.includes(req)) return false;
-          }
-          return true;
-        }).map(k => {
-          const u = UNIT_PROPS[k];
-          return (
-            <div key={k} className="col-12 col-sm-6 col-md-4 mb-2">
-              <Card className="bg-secondary text-white h-100">
-                <Card.Body className="d-flex justify-content-between align-items-center">
-                  <div>
-                    <div className="h6 mb-0">{u.name} <small className="text-muted">({u.type})</small></div>
-                    <small className="text-muted">Cost: {u.cost} gold</small>
-                  </div>
-                  <div>
-                    <Button size="sm" variant="success" onClick={() => handleBuyNow(k)} disabled={(currentPlayer?.resources?.gold || 0) < u.cost}>
-                      Buy Now
-                    </Button>
-                  </div>
-                </Card.Body>
-              </Card>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-
   // Upkeep-disbanded notice: a unit was scrapped because the treasury could
   // not cover its upkeep. Inform the player and point at how to balance the
   // budget.
   const renderUpkeepDisbanded = () => (
-    <Modal
+    <GameModal
       show={uiState.activeDialog === 'upkeep-disbanded'}
-      onHide={handleCloseDialog}
-      centered
+      onClose={handleCloseDialog}
       size="lg"
+      tone="danger"
+      icon="🪙"
+      artLabel="an empty treasury"
+      eyebrow={stamp('Treasury Report')}
+      title="A unit has been disbanded"
+      lede={
+        <>
+          The gold ran out, and the <strong>{disbandNotice?.unitName ?? 'unit'}</strong> could no
+          longer be paid. Your generals sent it home before the mutiny started.
+        </>
+      }
+      actions={
+        <>
+          <span className="gm-actions-spacer" />
+          <button
+            type="button"
+            className="touch-btn touch-btn--ghost"
+            onClick={() => actions.showDialog('rates')}
+          >
+            <i className="bi bi-graph-up" aria-hidden="true" /> Open Rates
+          </button>
+          <button type="button" className="touch-btn touch-btn--primary" onClick={handleCloseDialog}>
+            Understood
+          </button>
+        </>
+      }
     >
-      <Modal.Header closeButton className="bg-dark text-white">
-        <Modal.Title>
-          <i className="bi bi-exclamation-triangle-fill text-warning"></i> Unit disbanded — upkeep not covered
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="bg-dark text-white">
-        <p className="mb-2">
-          <strong>{disbandNotice ? disbandNotice.unitName : 'A unit'}</strong> was disbanded because
-          your treasury could not pay its upkeep (gold ran out).
-        </p>
-        <p className="mb-1"><strong>To balance your budget you can:</strong></p>
-        <ul className="mb-0">
-          <li>Raise the <strong>tax rate</strong> (📊 Rates) to earn more gold per turn.</li>
-          <li>Lower <strong>luxury</strong> spending — keep only what your cities need to avoid disorder.</li>
-          <li>Disband units you don't need: right-click a unit → <em>Disband</em>.</li>
-          <li>Build <strong>Marketplace</strong> / <strong>Bank</strong> in your cities for more trade &amp; gold.</li>
-          <li>Build fewer expensive units — each unit costs upkeep every turn.</li>
+      <div className="gm-section">
+        <div className="gm-section-title">Balance the books</div>
+        <ul className="gm-list">
+          <li>
+            Raise the <strong>tax rate</strong> 📊 — every point turns trade into gold each turn.
+          </li>
+          <li>
+            Trim <strong>luxury</strong> spending to what your cities truly need to stay quiet.
+          </li>
+          <li>
+            Disband units you no longer need: right-click a unit → <em>Disband</em>.
+          </li>
+          <li>
+            Raise a <strong>Marketplace</strong> or <strong>Bank</strong> — trade becomes coin.
+          </li>
+          <li>
+            Field fewer expensive units: every one of them is paid from the treasury each turn.
+          </li>
         </ul>
-      </Modal.Body>
-      <Modal.Footer className="bg-dark">
-        <Button variant="outline-warning" onClick={() => actions.showDialog('rates')}>
-          <i className="bi bi-graph-up"></i> Open Rates
-        </Button>
-        <Button variant="primary" onClick={handleCloseDialog}>OK</Button>
-      </Modal.Footer>
-    </Modal>
+      </div>
+      <div className="gm-callout">
+        <span className="gm-callout-title">Why this happened</span>
+        Your treasury held less gold than the upkeep of your army cost this turn. Units are only
+        disbanded as a last resort — a treasury in the red cannot keep a single soldier fed.
+      </div>
+    </GameModal>
   );
 
   // City starved: population decreased due to food shortage.
   const renderCityStarved = () => (
-    <Modal
+    <GameModal
       show={uiState.activeDialog === 'city-starved'}
-      onHide={handleCloseDialog}
-      centered
+      onClose={handleCloseDialog}
       size="lg"
-    >
-      <Modal.Header closeButton className="bg-dark text-white">
-        <Modal.Title>
-          <span role="img" aria-label="famine">🌾💀</span> Famine Imminent! <span role="img" aria-label="famine">💀🌾</span>
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="bg-dark text-white">
-        <p className="mb-2">
-          The granaries in <strong>{starvationNotice?.cityName ?? 'your city'}</strong> are
-          completely empty! 🏚️ Your citizens are starving, and the situation is rapidly decaying.
-        </p>
-        {starvationNotice?.blockingManualTiles && starvationNotice.blockingManualTiles.length > 0 && (
-          <div className="alert alert-warning py-2 px-3 mb-2">
-            <div className="fw-bold mb-1">Manual allocations are holding the city back</div>
-            <div className="small mb-2">
-              You placed citizens on these tiles by hand, so the governor never moves them — even to stop a
-              famine. They yield less food than tiles sitting idle in this city&apos;s radius.
-            </div>
-            <ul className="small mb-2 ps-3">
-              {starvationNotice.blockingManualTiles.map((t) => (
-                <li key={`${t.col},${t.row}`}>
-                  ({t.col},{t.row}) — {t.food} 🍞
-                </li>
-              ))}
-            </ul>
-            <div className="small">Release them and let the governor rebalance the city?</div>
-          </div>
-        )}
-        <p className="mb-0">
-          Take action immediately before people starve to death!
-        </p>
-      </Modal.Body>
-      <Modal.Footer className="bg-dark">
-        {starvationNotice?.blockingManualTiles && starvationNotice.blockingManualTiles.length > 0 && (
-          <Button
-            variant="warning"
+      tone="danger"
+      icon="🌾"
+      artLabel="barren fields"
+      eyebrow={stamp('Famine Warning')}
+      title={`${starvationNotice?.cityName ?? 'Your city'} is starving`}
+      lede={
+        <>
+          The granaries are empty and the bread queues grow longer every day. Unless food reaches
+          <strong> {starvationNotice?.cityName ?? 'your city'}</strong> before the next harvest,
+          people will die — and the city will shrink.
+        </>
+      }
+      actions={
+        <>
+          <span className="gm-actions-spacer" />
+          {starvationNotice?.blockingManualTiles && starvationNotice.blockingManualTiles.length > 0 && (
+            <button
+              type="button"
+              className="touch-btn touch-btn--primary"
+              onClick={() => {
+                if (starvationNotice.cityId) {
+                  gameEngine?.releaseManualAllocations?.(starvationNotice.cityId);
+                }
+                handleCloseDialog();
+              }}
+            >
+              🔓 Release &amp; Rebalance
+            </button>
+          )}
+          <button type="button" className="touch-btn touch-btn--ghost" onClick={handleCloseDialog}>
+            Later
+          </button>
+          <button
+            type="button"
+            className="touch-btn touch-btn--danger"
             onClick={() => {
-              if (starvationNotice.cityId) {
-                gameEngine?.releaseManualAllocations?.(starvationNotice.cityId);
+              if (starvationNotice?.cityId) {
+                actions.selectCity(starvationNotice.cityId, 'user');
+                const city = cities.find(c => c.id === starvationNotice.cityId);
+                if (city) {
+                  actions.focusCameraOnTile(city.col, city.row, true, true);
+                }
+                actions.showDialog('city-details');
               }
               handleCloseDialog();
             }}
           >
-            <span role="img" aria-label="release">🔓</span> Release &amp; Rebalance
-          </Button>
-        )}
-        <Button variant="outline-secondary" onClick={handleCloseDialog}>
-          <span role="img" aria-label="close">❌</span> Close
-        </Button>
-        <Button
-          variant="primary"
-          onClick={() => {
-            if (starvationNotice?.cityId) {
-              actions.selectCity(starvationNotice.cityId, 'user');
-              const city = cities.find(c => c.id === starvationNotice.cityId);
-              if (city) {
-                actions.focusCameraOnTile(city.col, city.row, true, true);
-              }
-              actions.showDialog('city-details');
-            }
-            handleCloseDialog();
-          }}
-        >
-          <span role="img" aria-label="go to city">📍</span> Go to City
-        </Button>
-      </Modal.Footer>
-    </Modal>
+            📍 Go to City
+          </button>
+        </>
+      }
+    >
+      <div className="gm-section">
+        <div className="gm-section-title">What is happening</div>
+        <p className="gm-prose">
+          Food is the first law of a city. When the store runs dry the weakest go first, the
+          workshops stand idle, and the governor's hands are tied until grain arrives or a
+          citizen is freed to work the fields.
+        </p>
+      </div>
+
+      {starvationNotice?.blockingManualTiles && starvationNotice.blockingManualTiles.length > 0 && (
+        <div className="gm-callout">
+          <span className="gm-callout-title">Your hand-picked tiles are blocking the fix</span>
+          You placed citizens on these tiles yourself, so the governor will not move them — not
+          even to stop a famine. Some of them yield less food than land sitting idle in this
+          city's radius:
+          <ul className="gm-list gm-list--tight">
+            {starvationNotice.blockingManualTiles.map((t) => (
+              <li key={`${t.col},${t.row}`}>
+                ({t.col},{t.row}) — {t.food} 🍞
+              </li>
+            ))}
+          </ul>
+          Release them and let the governor rebalance the city.
+        </div>
+      )}
+
+      <div className="gm-note">
+        <strong>Act this turn.</strong> A starving city loses population at the end of the turn —
+        and every citizen lost is a worker, a tax payer and a defender gone with them.
+      </div>
+    </GameModal>
   );
 
   // "Auto. turn ending" — offered once, mid-game. It informs what the feature
@@ -2014,173 +2037,231 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     };
 
     return (
-      <Modal
+      <GameModal
         show={uiState.activeDialog === 'auto-end-offer'}
-        onHide={finish}
-        centered
+        onClose={finish}
         className="auto-end-offer-modal"
-      >
-        <Modal.Body className="auto-end-offer">
-          <div className="auto-end-offer-hero" aria-hidden="true">⏩</div>
-
-          <h2 className="auto-end-offer-title">Auto. turn ending</h2>
-          <p className="auto-end-offer-lead">
-            With <strong>Auto. turn ending</strong> the turn hands over <strong>the moment your
-            units run out of moves</strong> — fortified and sleeping units included, so your
-            garrisons never hold it up. You stay in control until then, and can switch it off
-            again at any time.
-          </p>
-
-          <div className="auto-end-offer-choice">
-            <Form.Check
-              type="checkbox"
-              id="auto-end-offer-toggle"
-              className="auto-end-offer-toggle"
-              checked={settings.autoEndTurn}
-              onChange={(e) => actions.updateSettings?.({ autoEndTurn: e.target.checked })}
-              label={
-                <>
-                  <span className="auto-end-offer-choice-title">Auto. turn ending</span>
-                  <span className="auto-end-offer-choice-hint">
-                    End my turn automatically once every unit is done
-                  </span>
-                </>
-              }
-            />
-          </div>
-
-          <div className="auto-end-offer-actions">
-            <Button variant="success" className="auto-end-offer-yes" onClick={finish}>
+        tone="success"
+        icon="⏩"
+        artLabel="the turn wheel"
+        eyebrow="A Habit Worth Forming"
+        title="Auto. turn ending"
+        lede={
+          <>
+            With <strong>Auto. turn ending</strong> the turn hands over{' '}
+            <strong>the moment your units run out of moves</strong> — fortified and sleeping
+            units included, so your garrisons never hold it up. You stay in control until then,
+            and can switch it off again at any time.
+          </>
+        }
+        actions={
+          <>
+            <span className="gm-actions-spacer" />
+            <button type="button" className="touch-btn touch-btn--ghost" onClick={finish}>
+              Not now
+            </button>
+            <button type="button" className="touch-btn touch-btn--success" onClick={finish}>
               Got it
-            </Button>
-          </div>
-          <div className="auto-end-offer-fineprint">
-            Asked once. You can switch it off again in the side panel, right under your gold.
-          </div>
-        </Modal.Body>
-      </Modal>
+            </button>
+          </>
+        }
+      >
+        <div className="gm-section auto-end-offer-choice">
+          <div className="gm-section-title">Decide here, right now</div>
+          <Form.Check
+            type="checkbox"
+            id="auto-end-offer-toggle"
+            className="auto-end-offer-toggle"
+            checked={settings.autoEndTurn}
+            onChange={(e) => actions.updateSettings?.({ autoEndTurn: e.target.checked })}
+            label={
+              <>
+                <span className="auto-end-offer-choice-title">Auto. turn ending</span>
+                <span className="auto-end-offer-choice-hint">
+                  End my turn automatically once every unit is done
+                </span>
+              </>
+            }
+          />
+        </div>
+        <div className="gm-note">
+          Asked once. You can switch it off again at any time in the side panel, right under your
+          gold — or in Settings.
+        </div>
+      </GameModal>
     );
   };
 
   // City disorder — entering or leaving civil unrest
   const renderCityDisorder = () => {
     const entering = disorderNotice?.enteringDisorder ?? true;
+    const cityName = disorderNotice?.cityName ?? 'your city';
     return (
-      <Modal
+      <GameModal
         show={uiState.activeDialog === 'city-disorder'}
-        onHide={handleCloseDialog}
-        centered
+        onClose={handleCloseDialog}
         size="lg"
-      >
-        <Modal.Header closeButton className="bg-dark text-white">
-          <Modal.Title>
-            {entering
-              ? <><span role="img" aria-label="unrest">🔥🪧</span> CIVIL UNREST! <span role="img" aria-label="unrest">🔥🪧</span></>
-              : <><span role="img" aria-label="order">🛡️⚖️</span> ORDER RESTORED! <span role="img" aria-label="order">🛡️⚖️</span></>
-            }
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="bg-dark text-white">
-          {entering ? (
+        tone={entering ? 'danger' : 'success'}
+        icon={entering ? '🔥' : '🛡️'}
+        artLabel={entering ? 'torchlit streets' : 'the watch returning'}
+        eyebrow={stamp(entering ? 'City in Revolt' : 'City Report')}
+        title={entering ? `${cityName} rises in revolt` : `Order returns to ${cityName}`}
+        lede={
+          entering ? (
             <>
-              <p className="mb-2">
-                <strong>Sire! The citizens of {disorderNotice?.cityName ?? 'your city'} are rioting!</strong>{' '}
-                <span role="img" aria-label="riot">🚩🔊</span>
-              </p>
-              <p className="mb-2">
-                Anarchy has broken out in the streets! Production has ground to a halt and no taxes
-                can be collected from this city. <span role="img" aria-label="down">📉🏚️</span>
-              </p>
-              <p className="mb-0">
-                We must restore order immediately! <span role="img" aria-label="shield">🛡️⚖️</span>
-              </p>
+              Sire, the citizens of <strong>{cityName}</strong> have taken to the streets. The
+              workshops are silent, the tax collectors are turned away, and the city answers to
+              nobody.
             </>
           ) : (
             <>
-              <p className="mb-2">
-                <strong>Great news, Sire! Peace has returned to {disorderNotice?.cityName ?? 'your city'}.</strong>
-              </p>
-              <p className="mb-2">
-                The riots have ended, and the citizens have returned to work. Production and tax
-                collection have resumed as normal. <span role="img" aria-label="money">🌾💰</span>
-              </p>
-              <p className="mb-0">Business can continue!</p>
+              Sire, the crowds in <strong>{cityName}</strong> have gone home. The looms are
+              running again and your collectors are back at the gates.
             </>
-          )}
-        </Modal.Body>
-        <Modal.Footer className="bg-dark">
-          <Button variant="outline-secondary" onClick={handleCloseDialog}>
-            <span role="img" aria-label="close">❌</span> Close
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (disorderNotice?.cityId) {
-                actions.selectCity(disorderNotice.cityId, 'user');
-                const city = cities.find(c => c.id === disorderNotice.cityId);
-                if (city) {
-                  actions.focusCameraOnTile(city.col, city.row, true, true);
+          )
+        }
+        actions={
+          <>
+            <span className="gm-actions-spacer" />
+            <button type="button" className="touch-btn touch-btn--ghost" onClick={handleCloseDialog}>
+              Close
+            </button>
+            <button
+              type="button"
+              className="touch-btn touch-btn--primary"
+              onClick={() => {
+                if (disorderNotice?.cityId) {
+                  actions.selectCity(disorderNotice.cityId, 'user');
+                  const city = cities.find(c => c.id === disorderNotice.cityId);
+                  if (city) {
+                    actions.focusCameraOnTile(city.col, city.row, true, true);
+                  }
+                  actions.showDialog('city-details');
                 }
-                actions.showDialog('city-details');
-              }
-              handleCloseDialog();
-            }}
-          >
-            <span role="img" aria-label="go to city">📍</span> Go to City
-          </Button>
-        </Modal.Footer>
-      </Modal>
+                handleCloseDialog();
+              }}
+            >
+              📍 Go to City
+            </button>
+          </>
+        }
+      >
+        {entering ? (
+          <>
+            <div className="gm-section">
+              <div className="gm-section-title">What it costs you</div>
+              <ul className="gm-list">
+                <li>Production in {cityName} has ground to a halt — nothing is being built.</li>
+                <li>No taxes can be collected from the city while the streets are held.</li>
+                <li>Whatever garrison you keep there is busy holding the gates, not the borders.</li>
+              </ul>
+            </div>
+            <div className="gm-callout">
+              <span className="gm-callout-title">Calm it down</span>
+              Contented cities do not riot. Ease the tax burden, keep the granaries full and let
+              the governor work the best land — order usually returns on its own once the people
+              are fed and entertained.
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="gm-section">
+              <div className="gm-section-title">Back to work</div>
+              <ul className="gm-list">
+                <li>The riots have ended and the citizens have returned to their trades.</li>
+                <li>Production and tax collection have resumed as normal.</li>
+                <li>The city counts as peaceful again — no penalty carries over into next turn.</li>
+              </ul>
+            </div>
+            <div className="gm-note">
+              Keep an eye on what drove them to the streets: the same pressure will build again
+              if the balance of tax, food and luxury stays where it is.
+            </div>
+          </>
+        )}
+      </GameModal>
     );
   };
 
   // Trade-route result: a Caravan delivered — lump-sum gold + science now,
   // plus a permanent per-turn route between the two cities.
   const renderTradeRouteResult = () => (
-    <Modal
+    <GameModal
       show={uiState.activeDialog === 'trade-route-result'}
-      onHide={handleCloseDialog}
-      centered
+      onClose={handleCloseDialog}
       size="lg"
-    >
-      <Modal.Header closeButton className="bg-dark text-white">
-        <Modal.Title>
-          <i className="bi bi-arrow-left-right text-success"></i> Trade Route Established
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="bg-dark text-white">
-        {tradeRouteResult ? (
+      tone="gold"
+      icon="🐫"
+      artLabel="the caravan road"
+      eyebrow={stamp('Caravan Report')}
+      title="Trade Route Established"
+      lede={
+        tradeRouteResult ? (
           <>
-            <p className="mb-2">
-              Your Caravan delivered to <strong>{tradeRouteResult.destCityName}</strong> from{' '}
-              {tradeRouteResult.homeCityName} ({tradeRouteResult.distance} tiles away).
-            </p>
-            <div className="mb-2 fs-5">
-              <span className="text-warning me-4">🪙 +{tradeRouteResult.gold} Gold</span>
-              <span className="text-info">🔬 +{tradeRouteResult.science} Science</span>
-            </div>
-            {tradeRouteResult.foreign && (
-              <div className="text-success"><small>Foreign city — bonus doubled.</small></div>
-            )}
-            {tradeRouteResult.intercontinental && (
-              <div className="text-info"><small>Intercontinental (across water) — bonus doubled.</small></div>
-            )}
-            <p className="mb-0 mt-2 text-muted">
-              <small>Both cities now share a permanent trade route, adding trade every turn (up to 3 routes per city; a better route replaces a weaker one).</small>
-            </p>
+            Your caravan has delivered its cargo to <strong>{tradeRouteResult.destCityName}</strong>{' '}
+            from {tradeRouteResult.homeCityName}, {tradeRouteResult.distance} tiles from home. The
+            merchants are back on the road — and the road now pays.
           </>
         ) : (
-          <p>Your Caravan established a trade route!</p>
-        )}
-      </Modal.Body>
-      <Modal.Footer className="bg-dark">
-        <Button variant="primary" onClick={handleCloseDialog}>OK</Button>
-      </Modal.Footer>
-    </Modal>
+          <>Your caravan delivered its cargo and the merchants have opened a road of trade.</>
+        )
+      }
+      actions={
+        <button type="button" className="touch-btn touch-btn--primary" onClick={handleCloseDialog}>
+          Excellent
+        </button>
+      }
+    >
+      {tradeRouteResult ? (
+        <>
+          <div className="gm-stat-grid">
+            <div className="gm-stat gm-stat--accent">
+              <span className="gm-stat-value">
+                <span className="gm-stat-icon" aria-hidden="true">🪙</span>+{tradeRouteResult.gold}
+              </span>
+              <span className="gm-stat-label">Gold, paid now</span>
+            </div>
+            <div className="gm-stat gm-stat--accent">
+              <span className="gm-stat-value">
+                <span className="gm-stat-icon" aria-hidden="true">🔬</span>+{tradeRouteResult.science}
+              </span>
+              <span className="gm-stat-label">Science, paid now</span>
+            </div>
+            <div className="gm-stat">
+              <span className="gm-stat-value">
+                <span className="gm-stat-icon" aria-hidden="true">↔️</span>
+                {tradeRouteResult.distance}
+              </span>
+              <span className="gm-stat-label">Tiles between the two</span>
+            </div>
+          </div>
+
+          {(tradeRouteResult.foreign || tradeRouteResult.intercontinental) && (
+            <div className="gm-callout">
+              <span className="gm-callout-title">A richer delivery</span>
+              {tradeRouteResult.foreign && <>Foreign city — the bonus is doubled. </>}
+              {tradeRouteResult.intercontinental && <>Across the water — the bonus is doubled. </>}
+              Dealing with strangers pays better than dealing with your own.
+            </div>
+          )}
+
+          <div className="gm-section">
+            <div className="gm-section-title">The road stays open</div>
+            <p className="gm-prose">
+              Both cities now share a <strong>permanent trade route</strong>, adding trade every
+              single turn from now on. A city keeps up to three routes, and a better road always
+              replaces a weaker one.
+            </p>
+          </div>
+        </>
+      ) : (
+        <p className="gm-prose">Your caravan established a trade route.</p>
+      )}
+    </GameModal>
   );
 
   return (
     <>
-      {renderGameMenu()}
       {renderTechTree()}
       <ResearchRequiredModal
         show={uiState.activeDialog === 'research-required'}
@@ -2207,13 +2288,33 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         onClose={handleWonderContinue}
       />
       <VillageModal show={uiState.activeDialog === 'village'} onHide={handleVillageClose} />
+      <CombatReportModal
+        show={uiState.activeDialog === 'combat-report'}
+        notice={combatReport}
+        stampLabel={turnStamp()}
+        attackerCivName={civName(combatReport?.attackerCivId)}
+        defenderCivName={civName(combatReport?.defenderCivId)}
+        terrainName={terrainAt(combatReport?.col, combatReport?.row)}
+        humanWon={combatReport?.kind === 'victory'}
+        onContinue={handleCombatReportContinue}
+        onCentre={handleCombatReportCentre}
+      />
+      <CityEventModal
+        show={uiState.activeDialog === 'city-founded' || uiState.activeDialog === 'city-lost'}
+        notice={cityEvent}
+        stampLabel={turnStamp()}
+        byCivName={civName(cityEvent?.byCivId)}
+        terrainName={terrainAt(cityEvent?.col, cityEvent?.row)}
+        playerCivId={playerCivId}
+        onContinue={handleCityEventContinue}
+        onGoToCity={handleCityEventGoToCity}
+      />
       {renderUpkeepDisbanded()}
       {renderCityStarved()}
       {renderCityDisorder()}
       {renderAutoEndOffer()}
       {renderTradeRouteResult()}
       {renderCityProduction()}
-      {renderCityPurchase()}
     </>
   );
 };

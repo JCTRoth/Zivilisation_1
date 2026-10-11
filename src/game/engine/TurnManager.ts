@@ -28,6 +28,7 @@ import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { BUILDING_TYPES } from '@/data/BuildingConstants';
 import { isWonderId, wonderGroupMembers } from '@/data/WonderData';
 import { UNIT_UPGRADE_PATHS } from '@/data/UnitConstants';
+import { startingRankForCity } from './UnitRankSystem';
 import { CITIZEN_FOOD_DEMAND_PER_CITIZEN, type ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
@@ -981,6 +982,7 @@ export class TurnManager {
       ?? { movement: 1, attack: 0, defense: 1 }) as {
         movement: number; attack: number; defense: number;
         hitPoints?: number; maintenance?: number; icon?: string;
+        type?: 'civilian' | 'military' | 'siege' | 'naval' | 'scout' | 'air';
       };
     const isSettler = unitType === 'settler';
     const isChieftain = String(this.gameEngine.gameSettings?.difficulty ?? '').toUpperCase() === 'CHIEFTAIN';
@@ -1024,7 +1026,9 @@ export class TurnManager {
       movesRemaining: producedMaxMoves,
       maxMoves: producedMaxMoves,
       hasMovedThisTurn: false,
-      isVeteran: false,
+      // Civ1 Barracks: combat units roll off the ways as Seasoned (rank 3
+      // of 4); civilians and barracks-less cities start as green Rookies.
+      ...startingRankForCity(city, unitProps.type),
       attack: unitProps.attack || 0,
       defense: unitProps.defense || 1,
       maintenance: destroysCity ? 0 : (unitProps.maintenance ?? 0),

@@ -1,465 +1,1005 @@
-/* GameSetupModal styles */
+/* ============================================================================
+   GAME SETUP — THE WAR COUNCIL
+   ----------------------------------------------------------------------------
+   A fullscreen command screen, not a floating dialog. Behind the content is a
+   pure-CSS 3D war room: a perspective box with two receding walls, a map
+   table tilted into the page, and candle orbs hanging in the air. No image
+   assets — only transforms, gradients and light.
 
-.modal-header-custom {
-  background: linear-gradient(135deg, var(--topbar-start) 0%, var(--topbar-end) 100%);
-  color: var(--accent);
-  border-bottom: 1px solid var(--panel-border);
-  text-align: center;
-  padding: 20px clamp(16px, 4vw, 32px);
+   Layout contract:
+     .setup-screen            fixed inset 0 (true fullscreen, every device)
+     .setup-screen__world     ambient 3D stage (pointer-events: none)
+     .setup-screen__frame     flex column, 100dvh, safe-area aware
+     .setup-screen__scroll    the single scroll container
+     .setup-footer            sticky command bar (thumb zone on phones)
+
+   e2e contract (do not rename):
+     h2.modal-title ⊃ "Zivilisation 1" · "Choose Your Civilization" /
+     "Fine-tune Your Challenge" · .setup-civ-card · .setup-footer ·
+     .setup-footer__selected-value · .setup-summary · .setup-summary-title
+     ("Your Setup") · LAST select.setup-setting__control = map preset
+     · buttons "Next →" / "← Previous" / "🏛️ Start Game"
+   ========================================================================== */
+
+.setup-screen {
+  --setup-gold: #f0c33c;
+  --setup-gold-deep: #c9a227;
+  --setup-gold-ink: #141006;
+  --setup-label: #9fb2c2;
+  --setup-line: rgba(255, 255, 255, 0.09);
+  --setup-look-x: 0deg;
+  --setup-look-y: 0deg;
+
+  /* Shell contract for any borrowed .gm-* helpers */
+  --gm-accent: #f0c33c;
+  --gm-tint: rgba(240, 195, 60, 0.16);
+  --gm-label: #9fb2c2;
+
+  position: fixed;
+  inset: 0;
+  z-index: 2000; /* above in-game modals; setup is the front door */
+  display: block;
+  color: var(--color-text, #e8eef3);
+  font-family: var(--font-ui, 'Segoe UI', system-ui, sans-serif);
+  overflow: hidden;
+  animation: setup-fade-in 700ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
 }
 
-/* Boxed container for all settings above "Your Setup" */
-.setup-settings-box {
+/* ---- 3D war room (ambient stage) -----------------------------------------
+   The world is a fixed backdrop. Everything inside is transform-only so the
+   compositor keeps it on the GPU. Pointer parallax writes --setup-look-x/y
+   on .setup-screen__world from GameSetupModal. */
+
+.setup-screen__world {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  /* One shared vanishing point for walls + table */
+  perspective: 1100px;
+  perspective-origin: 50% 34%;
+}
+
+.setup-screen__sky {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(70% 55% at 50% 34%, rgba(240, 195, 60, 0.06), transparent 60%),
+    radial-gradient(120% 70% at 50% 110%, rgba(10, 24, 36, 0.5), transparent 50%),
+    linear-gradient(180deg, #04070b 0%, #080e16 34%, #05080e 100%);
+}
+
+/* The room box: walls + table share this transform (pointer look-around). */
+.setup-screen__room {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateY(var(--setup-look-x, 0deg)) rotateX(var(--setup-look-y, 0deg));
+  transition: transform 180ms linear;
+}
+
+/* Side walls: full viewport height, solid at the screen edge, feathered into
+   the room and into the floor so they never float as short stubs. */
+.setup-screen__wall {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: min(42vw, 620px);
+  opacity: 1;
+  /* Keep the outer edge solid; dissolve toward the centre and into the floor */
+  mask-image:
+    linear-gradient(90deg, black 0%, black 28%, transparent 92%),
+    linear-gradient(180deg, black 0%, black 62%, transparent 88%);
+  -webkit-mask-image:
+    linear-gradient(90deg, black 0%, black 28%, transparent 92%),
+    linear-gradient(180deg, black 0%, black 62%, transparent 88%);
+  mask-composite: intersect;
+  -webkit-mask-composite: source-in;
+}
+
+.setup-screen__wall--left {
+  left: 0;
+  transform-origin: left center;
+  transform: translateZ(-50px) rotateY(36deg);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(3, 5, 8, 0.98) 0%,
+      rgba(6, 10, 16, 0.88) 40%,
+      rgba(8, 12, 18, 0.4) 75%,
+      transparent 100%
+    ),
+    repeating-linear-gradient(
+      180deg,
+      transparent 0 64px,
+      rgba(240, 195, 60, 0.035) 64px 65px
+    );
+}
+
+.setup-screen__wall--right {
+  right: 0;
+  transform-origin: right center;
+  transform: translateZ(-50px) rotateY(-36deg);
+  background:
+    linear-gradient(
+      270deg,
+      rgba(3, 5, 8, 0.98) 0%,
+      rgba(6, 10, 16, 0.88) 40%,
+      rgba(8, 12, 18, 0.4) 75%,
+      transparent 100%
+    ),
+    repeating-linear-gradient(
+      180deg,
+      transparent 0 64px,
+      rgba(240, 195, 60, 0.035) 64px 65px
+    );
+  mask-image:
+    linear-gradient(270deg, black 0%, black 28%, transparent 92%),
+    linear-gradient(180deg, black 0%, black 62%, transparent 88%);
+  -webkit-mask-image:
+    linear-gradient(270deg, black 0%, black 28%, transparent 92%),
+    linear-gradient(180deg, black 0%, black 62%, transparent 88%);
+  mask-composite: intersect;
+  -webkit-mask-composite: source-in;
+}
+
+/* ---- Map table: a plane lying from the horizon toward the viewer --------- */
+
+.setup-screen__table {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  width: 300vmax;
+  height: 220vmax;
+  margin-left: -150vmax;
+  transform-style: preserve-3d;
+  /* Top edge of the plane is the horizon; the rest recedes toward the viewer */
+  transform: translateZ(-40px) rotateX(56deg);
+  transform-origin: 50% 0%;
+}
+
+/* Solid table body — dark, slightly warm under the reading light */
+.setup-screen__table-face {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 45% 35% at 50% 12%, rgba(240, 195, 60, 0.06), transparent 55%),
+    linear-gradient(180deg, #0c141e 0%, #091119 40%, #05080e 100%);
+  border-top: 1px solid rgba(240, 195, 60, 0.22);
+  box-shadow: 0 -1px 0 rgba(255, 220, 120, 0.08);
+}
+
+/* One uniform chart grid — identical cell size on every layer, origin at the
+   top edge so columns stay straight under rotateX perspective. */
+.setup-screen__table-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(240, 195, 60, 0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(240, 195, 60, 0.13) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: 0 0;
+  /* Fade into the horizon; keep a long run of equal cells toward the viewer */
+  mask-image: linear-gradient(180deg, transparent 0%, black 3%, black 60%, transparent 95%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 3%, black 60%, transparent 95%);
+}
+
+.setup-screen__table-grid--near {
+  background-size: 48px 48px;
+  background-position: 0 0;
+  opacity: 1;
+  transform: translateZ(1px);
+}
+
+.setup-screen__table-grid--far {
+  /* Same lattice, dimmer — no second cell size (that was the “unequal” look) */
+  background-size: 48px 48px;
+  background-position: 0 0;
+  opacity: 0.45;
+  transform: translateZ(0.5px);
+}
+
+/* Specular sheen sliding across the tabletop */
+.setup-screen__table-sheen {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: 5%;
+  height: 22%;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(240, 195, 60, 0.05) 45%,
+    transparent
+  );
+  filter: blur(6px);
+  animation: setup-sheen 14s ease-in-out infinite;
+}
+
+/* ---- Horizon: where the table vanishes ----------------------------------- */
+
+.setup-screen__horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 3%,
+    rgba(240, 195, 60, 0.22) 30%,
+    rgba(255, 230, 140, 0.55) 50%,
+    rgba(240, 195, 60, 0.22) 70%,
+    transparent 97%
+  );
+  box-shadow:
+    0 0 16px rgba(240, 195, 60, 0.3),
+    0 0 48px rgba(240, 195, 60, 0.14);
+  opacity: 0.9;
+}
+
+.setup-screen__horizon::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 100px;
+  background: linear-gradient(180deg, rgba(240, 195, 60, 0.06), transparent 75%);
+  transform: translateY(-100%);
+}
+
+.setup-screen__horizon::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: -16px;
+  height: 40px;
+  background: radial-gradient(ellipse 50% 100% at 50% 50%, rgba(240, 195, 60, 0.14), transparent 70%);
+  filter: blur(3px);
+}
+
+/* ---- Candle orbs: light without lamps ------------------------------------ */
+
+.setup-screen__candles {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+.setup-candle {
+  position: absolute;
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffe9a8, #f0c33c 45%, rgba(240, 160, 40, 0) 72%);
+  box-shadow:
+    0 0 12px 4px rgba(240, 195, 60, 0.55),
+    0 0 40px 16px rgba(240, 160, 40, 0.22),
+    0 0 90px 30px rgba(200, 120, 30, 0.1);
+  animation: setup-candle-flicker 3.6s ease-in-out infinite;
+  transform-style: preserve-3d;
+}
+
+/* Three orbs sitting on the table near the horizon */
+.setup-candle--a {
+  left: 12%;
+  top: 36%;
+  transform: translateZ(30px);
+  animation-delay: 0s;
+}
+
+.setup-candle--b {
+  right: 13%;
+  top: 35%;
+  width: 9px;
+  height: 9px;
+  transform: translateZ(50px);
+  animation-delay: -1.2s;
+  opacity: 0.9;
+}
+
+.setup-candle--c {
+  left: 50%;
+  top: 37%;
+  width: 7px;
+  height: 7px;
+  transform: translateZ(80px);
+  animation-delay: -2.4s;
+  opacity: 0.75;
+}
+
+/* ---- Reading light over the orders + vignette ---------------------------- */
+
+.setup-screen__glow {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: min(960px, 150vw);
+  height: 48vh;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse 50% 65% at 50% 0%, rgba(240, 195, 60, 0.11), transparent 70%);
+  animation: setup-glow-breathe 8s ease-in-out infinite;
+}
+
+.setup-screen__veil {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 85% 75% at 50% 42%, transparent 30%, rgba(0, 0, 0, 0.55) 100%),
+    linear-gradient(180deg, transparent 60%, rgba(0, 0, 0, 0.35) 100%);
+}
+
+/* ---- Frame --------------------------------------------------------------- */
+
+.setup-screen__frame {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-
-  /* Match the .setup-summary box look — copy the exact values
-     from your existing .setup-summary rule for a perfect match */
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  padding: 1.25rem 1.5rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-  /* On wide screens, place the settings box and summary box side by side */
-  .setup-section .setup-settings-box {
-    margin-bottom: 1.25rem;
-  }
+/* ---- Nameplate ----------------------------------------------------------- */
 
-.modal-header-custom .modal-title {
-  font-size: clamp(1.6rem, 2.25vw, 2.2rem);
-  font-weight: 600;
-  margin-bottom: 6px;
+.setup-nameplate {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px clamp(14px, 3vw, 28px);
+  border-bottom: 1px solid rgba(240, 195, 60, 0.18);
+  background: linear-gradient(180deg, rgba(8, 12, 18, 0.92), rgba(8, 12, 18, 0.55));
+  backdrop-filter: blur(6px);
 }
 
-.modal-header-custom .modal-subtitle {
-  font-size: 0.95rem;
-  color: rgba(255, 255, 255, 0.65);
-}
-
-.modal-header-content {
-  margin-top: 16px;
-}
-
-.modal-civilization-heading {
-  font-size: clamp(1.35rem, 2.5vw, 1.9rem);
-  font-weight: 600;
-  color: var(--heading);
-  margin-bottom: 8px;
-}
-
-.modal-civilization-subheading {
-  font-size: 0.95rem;
-  color: rgba(255, 255, 255, 0.65);
-  line-height: 1.5;
+.setup-screen .modal-title {
   margin: 0;
+  font-size: clamp(13px, 3.2vw, 15px);
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--setup-gold);
+  text-shadow: 0 1px 12px rgba(240, 195, 60, 0.35);
 }
 
-.modal-body-custom {
-  background: linear-gradient(180deg, var(--panel-bg) 0%, var(--panel-bg-2) 100%);
-  color: #f7f9fc;
-  padding: 0;
+.setup-nameplate__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.setup-nameplate__tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 243, 0.45);
+}
+
+.setup-nameplate__steps {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.setup-nameplate__dot {
+  display: block;
+  width: 22px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  transition:
+    background-color var(--dur-fast, 120ms) var(--ease-out, ease-out),
+    box-shadow var(--dur-fast, 120ms) var(--ease-out, ease-out);
+}
+
+.setup-nameplate__dot.is-on {
+  background: var(--setup-gold);
+  box-shadow: 0 0 10px rgba(240, 195, 60, 0.55);
+}
+
+/* ---- Scroll surface ------------------------------------------------------ */
+
+.setup-screen__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  /* Drag-to-scroll on empty areas: show a grab cursor on the page background */
   cursor: grab;
   touch-action: pan-x pan-y;
   user-select: none;
   -webkit-user-select: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 162, 39, 0.55) rgba(255, 255, 255, 0.05);
 }
 
-.modal-body-custom.is-panning {
+/* Vertically centre hero + content as a pair; still scrolls if they overflow */
+.setup-screen__scroll > .setup-hero {
+  margin-top: auto;
+  margin-bottom: 0;
+}
+
+.setup-screen__scroll > .setup-content {
+  margin-top: 0;
+  margin-bottom: auto;
+}
+
+.setup-screen__scroll.is-panning {
   cursor: grabbing;
-  scroll-behavior: auto;
 }
 
-/* Interactive elements inside the setup page keep their normal cursor and
-   remain text-selectable — the grab cursor only applies to empty space. */
-.modal-body-custom .setup-civ-card,
-.modal-body-custom button,
-.modal-body-custom .form-check,
-.modal-body-custom label {
+.setup-screen__scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.setup-screen__scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.setup-screen__scroll::-webkit-scrollbar-thumb {
+  background: rgba(201, 162, 39, 0.5);
+  border-radius: 8px;
+}
+
+/* Interactive elements keep their own cursor / selection */
+.setup-screen__scroll button,
+.setup-screen__scroll .form-check,
+.setup-screen__scroll label {
   cursor: pointer;
   user-select: auto;
   -webkit-user-select: auto;
 }
 
-.modal-body-custom select,
-.modal-body-custom input[type='text'],
-.modal-body-custom textarea {
+.setup-screen__scroll select,
+.setup-screen__scroll input[type='text'] {
   cursor: auto;
   user-select: auto;
   -webkit-user-select: auto;
 }
 
-.modal-body-custom .control-card__range,
-.modal-body-custom input[type='range'] {
+.setup-screen__scroll input[type='range'] {
   cursor: ew-resize;
   touch-action: none;
   user-select: auto;
   -webkit-user-select: auto;
 }
 
+/* ---- Hero ---------------------------------------------------------------- */
+
+.setup-hero {
+  position: relative;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: clamp(16px, 3.5vh, 32px) clamp(16px, 4vw, 32px) 4px;
+  animation: setup-rise 800ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+.setup-hero__eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(240, 195, 60, 0.75);
+}
+
+.setup-hero__title {
+  margin: 8px 0 10px;
+  font-size: clamp(1.45rem, 4.5vw, 2.15rem);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: 0.02em;
+  color: #f3f6fa;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55);
+  overflow-wrap: anywhere;
+}
+
+.setup-hero__lede {
+  margin: 0;
+  max-width: 58ch;
+  font-size: clamp(0.9rem, 2vw, 1rem);
+  line-height: 1.5;
+  color: rgba(232, 238, 243, 0.78);
+}
+
+.setup-hero__rule {
+  display: block;
+  width: min(200px, 36%);
+  height: 1px;
+  margin-top: 14px;
+  background: linear-gradient(90deg, var(--setup-gold), rgba(240, 195, 60, 0.05) 80%, transparent);
+}
+
+/* ---- Content column ------------------------------------------------------ */
+
 .setup-content {
   width: 100%;
-  max-width: 1150px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 0 clamp(16px, 4vw, 52px) 24px clamp(16px, 4vw, 52px);
+  padding: 6px clamp(14px, 3.5vw, 32px) 20px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  max-height: 80vh;
-  /* Keep visible so scrolling chains up to `.modal-body-custom` */
-  overflow: visible;
-}
-
-.setup-progress {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   gap: 12px;
-}
-
-.setup-progress-step {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.45);
-  transition: all 0.3s ease;
-}
-
-.setup-progress-step.is-active {
-  color: #1c1506;
-  background: var(--accent);
-  box-shadow: 0 8px 20px rgba(212, 175, 55, 0.25);
 }
 
 .setup-section {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
+  animation: setup-rise 700ms var(--ease-out, 120ms) both;
 }
 
-.setup-section-heading {
-  font-size: clamp(1.35rem, 2.5vw, 1.9rem);
-  font-weight: 600;
-  color: var(--heading);
+/* Section cards — quiet glass panels on the table */
+.setup-screen .gm-section {
+  padding: 14px clamp(12px, 2.5vw, 18px);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015) 55%, rgba(0, 0, 0, 0.28)),
+    rgba(12, 18, 26, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-.setup-section-subheading {
-  font-size: 0.95rem;
-  color: rgba(255, 255, 255, 0.65);
-  line-height: 1.5;
+.setup-screen .gm-section-title {
+  margin-bottom: 12px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: rgba(240, 195, 60, 0.85);
 }
+
+/* ---- Step 1: commander's dossier ----------------------------------------- */
+
+.setup-dossier {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'seal body portrait';
+  gap: 12px 16px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(240, 195, 60, 0.28);
+  background:
+    radial-gradient(120% 160% at 0% 0%, rgba(240, 195, 60, 0.1), transparent 55%),
+    linear-gradient(180deg, rgba(16, 24, 34, 0.92), rgba(8, 12, 18, 0.88));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 12px 32px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.setup-dossier__seal {
+  grid-area: seal;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(52px, 10vw, 72px);
+  height: clamp(52px, 10vw, 72px);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(240, 195, 60, 0.35);
+  box-shadow:
+    inset 0 0 16px rgba(0, 0, 0, 0.6),
+    0 0 20px rgba(240, 195, 60, 0.1);
+  font-size: clamp(24px, 5vw, 32px);
+  line-height: 1;
+}
+
+.setup-dossier__body {
+  grid-area: body;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.setup-dossier__kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 243, 0.5);
+}
+
+.setup-dossier__name {
+  font-size: clamp(1.2rem, 3.5vw, 1.65rem);
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
+}
+
+.setup-dossier__leader {
+  font-size: 0.9rem;
+  color: rgba(232, 238, 243, 0.72);
+}
+
+.setup-dossier__leader strong {
+  color: #f0f4f8;
+  font-weight: 700;
+}
+
+.setup-dossier__swatch {
+  width: 64px;
+  height: 3px;
+  margin-top: 5px;
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+/* Leader face — crop the procedural portrait to the head (top ~third) */
+.setup-dossier__portrait {
+  grid-area: portrait;
+  position: relative;
+  width: 88px;
+  height: 96px;
+  border-radius: 12px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(240, 195, 60, 0.1), transparent 55%),
+    #0a0e14;
+  border: 1px solid rgba(240, 195, 60, 0.3);
+  box-shadow:
+    inset 0 0 20px rgba(0, 0, 0, 0.55),
+    0 8px 20px rgba(0, 0, 0, 0.4);
+  flex-shrink: 0;
+}
+
+/* The SVG is size × 1.3 tall; pin it to the top so only head + shoulders
+   show — roughly the top third of the full portrait. */
+.setup-dossier__portrait .leader-portrait-svg,
+.setup-dossier__portrait .leader-portrait-image,
+.setup-dossier__portrait > div {
+  display: block;
+  margin-top: -2px;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.setup-dossier__portrait-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 2rem;
+  font-weight: 800;
+  color: rgba(240, 195, 60, 0.55);
+}
+
+.setup-dossier__oath {
+  display: none; /* kept for markup compatibility — portrait replaced it */
+}
+
+/* ---- Civ banner cards ---------------------------------------------------- */
 
 .setup-civ-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-  max-height: 60vh;
-  /* Keep visible so scrolling chains up to `.modal-body-custom` */
-  overflow: visible;
-}
-
-/* Force each civ card to align icon/name consistently using a small grid */
-.setup-civ-card__header {
-  display: grid;
-  grid-template-columns: 64px 1fr;
-  align-items: center;
-  gap: 6px;
-}
-
-.setup-civ-card__icon {
-  width: 64px;
-  height: 64px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 32px; /* uniform icon size */
-}
-
-/* If civ icon is wrapped in special classes, scale them to the same size */
-.civ-icon-egypt,
-.civ-icon-russia,
-.civ-icon-zulu {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 64px;
-  height: 64px;
-  font-size: 32px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .setup-civ-card {
   all: unset;
+  position: relative;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 18px;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 18px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  min-height: 0;
+  min-width: 0;
+  padding: 10px 6px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.01) 48%, rgba(0, 0, 0, 0.35) 100%),
+    #101820;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: var(--color-text, #e8eef3);
+  text-align: center;
   cursor: pointer;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  transition:
+    transform 0.18s var(--ease-out, ease-out),
+    border-color 0.18s var(--ease-out, ease-out),
+    box-shadow 0.18s var(--ease-out, ease-out),
+    background 0.18s var(--ease-out, ease-out);
 }
 
 .setup-civ-card:hover,
 .setup-civ-card:focus-visible {
-  border-color: var(--accent);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
-  transform: translateY(-3px);
+  border-color: rgba(240, 195, 60, 0.65);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 0 0 1px rgba(240, 195, 60, 0.25),
+    0 12px 24px rgba(0, 0, 0, 0.45);
 }
 
 .setup-civ-card:focus-visible {
-  outline-offset: 4px;
+  outline: 2px solid var(--setup-gold);
+  outline-offset: 2px;
 }
 
 .setup-civ-card.is-selected {
-  background: rgba(212, 175, 55, 0.25);
-  border-color: var(--accent);
-  box-shadow: 0 16px 32px rgba(212, 175, 55, 0.25);
+  border-color: var(--setup-gold);
+  background:
+    linear-gradient(180deg, rgba(240, 195, 60, 0.22) 0%, rgba(240, 195, 60, 0.06) 48%, rgba(0, 0, 0, 0.3) 100%),
+    #121a24;
+  box-shadow:
+    inset 0 0 0 1px rgba(240, 195, 60, 0.5),
+    0 14px 28px rgba(201, 162, 39, 0.2);
+  transform: translateY(-1px);
 }
 
-.setup-civ-card__header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.setup-civ-card__icon {
-  font-size: 1.8rem;
-  display: inline-flex;
+.setup-civ-card__seal {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 20px;
+  height: 20px;
+  display: none;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  background: var(--setup-gold);
+  color: var(--setup-gold-ink);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 
-.setup-civ-card__name {
-  font-weight: 600;
-  font-size: 1.05rem;
-}
-
-.setup-civ-card__leader {
-  font-size: 0.95rem;
-  color: rgba(255, 255, 255, 0.65);
-}
-
-.setup-civ-card__cities {
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.civ-icon-egypt,
-.civ-icon-russia,
-.civ-icon-zulu {
-  font-size: 1.8rem;
-}
-
-.civ-icon-egypt {
-  color: #ffd700;
-}
-
-.civ-icon-russia {
-  color: #dc143c;
-}
-
-.civ-icon-zulu {
-  color: #8B4513;
-}
-
-.setup-selected {
+.setup-civ-card.is-selected .setup-civ-card__seal {
   display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 18px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.setup-selected__label {
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.setup-selected__value {
-  font-weight: 600;
-  font-size: 1rem;
-}
-
-.setup-selected__leader {
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.setup-controls {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-}
-
-@media (min-width: 700px) {
-  .setup-controls {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-/* Stacked layout for civilization cards: icons on first row, name on second, leader on third */
-.setup-civ-card {
-  display: grid !important;
-  grid-template-rows: auto 1fr auto;
-  align-items: center;
-  justify-items: center;
-  gap: 6px;
 }
 
 .setup-civ-card__icons-row {
   display: flex;
-  gap: 8px;
   align-items: center;
   justify-content: center;
   width: 100%;
 }
 
-.setup-civ-card__icon,
+.setup-civ-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.55);
+}
+
+.setup-civ-card__icon span {
+  font-size: 20px !important;
+}
+
 .civ-icon-egypt,
 .civ-icon-russia,
 .civ-icon-zulu {
-  width: 64px !important;
-  height: 64px !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  font-size: 32px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.civ-icon-egypt { color: #ffd700; }
+.civ-icon-russia { color: #dc143c; }
+.civ-icon-zulu { color: #c47a3a; }
+
+.setup-civ-card__name-row,
+.setup-civ-card__leader-row {
+  display: block;
+  width: 100%;
 }
 
 .setup-civ-card__name {
-  font-weight: 700;
-  font-size: 1.05rem;
-  text-align: center;
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .setup-civ-card__leader {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.75);
-  text-align: center;
+  display: block;
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+  overflow-wrap: anywhere;
 }
 
-/* Reduce padding slightly to better fit the stacked layout */
-.setup-civ-card {
-  padding: 14px;
+.setup-civ-card__swatch {
+  width: 28px;
+  height: 3px;
+  margin-top: auto;
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
 
-@media (min-width: 1024px) {
-  .setup-controls {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+/* ---- Step 2: settings ---------------------------------------------------- */
+
+.setup-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px 24px;
+}
+
+@media (min-width: 560px) {
+  .setup-settings-grid {
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  }
+
+  .setup-settings-grid--pairs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-.control-card {
+.setup-setting {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+  gap: 6px;
+  min-width: 0;
 }
 
-.control-card__header {
+.setup-setting__label {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 12px;
+  gap: 0.5rem;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--setup-label);
 }
 
-.control-card__title {
-  font-weight: 600;
-  color: var(--heading);
-  font-size: 1rem;
+.setup-setting__value {
+  flex: 0 0 auto;
+  padding: 1px 9px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid rgba(240, 195, 60, 0.35);
+  background: rgba(240, 195, 60, 0.12);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--setup-gold);
+  font-variant-numeric: tabular-nums;
 }
 
-.control-card__value {
-  font-weight: 600;
-  font-size: 1.1rem;
-  color: var(--accent);
+.setup-setting__hint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.68);
 }
 
-.control-card__hint {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.control-card__select {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #f8f9fc;
-  padding: 12px 14px;
-  border-radius: 12px;
-  font-size: 0.95rem;
-}
-
-.control-card__select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.25);
-}
-
-.control-card__range {
+.setup-setting__control {
   width: 100%;
-  accent-color: var(--accent);
 }
 
-.control-card__checkbox {
-  margin-top: 8px;
+select.setup-setting__control {
+  min-height: 46px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border-strong, #3d5163);
+  background-color: var(--color-bg-input, #0f161d);
+  color: var(--color-text, #e8eef3);
   font-size: 0.95rem;
+  cursor: pointer;
 }
 
-.control-card__checkbox .form-check-input {
+select.setup-setting__control:focus {
+  border-color: var(--setup-gold);
+  box-shadow: 0 0 0 3px rgba(240, 195, 60, 0.28);
+}
+
+.setup-setting__control[type='range'] {
+  height: 36px;
+  accent-color: var(--setup-gold);
+}
+
+.setup-setting__control[type='range']::-webkit-slider-runnable-track {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+}
+
+.setup-setting__control[type='range']::-webkit-slider-thumb {
+  background: var(--setup-gold);
+  border: 2px solid #141006;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.setup-setting__control[type='range']::-moz-range-track {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+}
+
+.setup-setting__control[type='range']::-moz-range-thumb {
+  background: var(--setup-gold);
+  border: 2px solid #141006;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- Dev Mode ------------------------------------------------------------ */
+
+.setup-dev__check {
+  margin: 0;
+}
+
+.setup-dev__check .form-check-input {
   width: 20px;
   height: 20px;
-  margin-right: 10px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  background-color: rgba(255, 255, 255, 0.05);
-  cursor: pointer;
+  margin-top: 0.15em;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
-.control-card__checkbox .form-check-input:checked {
-  background-color: var(--accent);
-  border-color: var(--accent);
+.setup-dev__check .form-check-input:checked {
+  background-color: var(--setup-gold);
+  border-color: var(--setup-gold);
 }
 
-.control-card__checkbox .form-check-input:focus {
-  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.25);
-  border-color: var(--accent);
+.setup-dev__check .form-check-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text, #e8eef3);
 }
 
-.control-card__checkbox .form-check-label {
-  color: #f8f9fc;
-  cursor: pointer;
-  user-select: none;
+.setup-dev .gm-note {
+  margin: 9px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
 }
+
+/* ---- Sealed orders (summary) --------------------------------------------- */
 
 .setup-summary {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: rgba(0, 0, 0, 0.32);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  padding: 16px 16px 16px 20px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(240, 195, 60, 0.1) 0%, rgba(255, 255, 255, 0.03) 22%, rgba(0, 0, 0, 0.35) 100%);
+  border: 1px solid rgba(240, 195, 60, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 14px 32px rgba(0, 0, 0, 0.4);
+}
+
+.setup-summary::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 16px;
+  bottom: 16px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--setup-gold) 0%, rgba(240, 195, 60, 0.12) 100%);
 }
 
 .setup-summary-header {
@@ -469,19 +1009,23 @@
 }
 
 .setup-summary-title {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--heading);
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--setup-gold);
 }
 
 .setup-summary-subtitle {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .setup-summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 8px;
 }
 
@@ -492,364 +1036,512 @@
   padding: 8px 10px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 2px solid rgba(240, 195, 60, 0.5);
+  min-width: 0;
 }
 
 .setup-summary-item .label {
-  font-size: 0.65rem;
-  letter-spacing: 0.1em;
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .setup-summary-item .value {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 0.9rem;
   color: #f5f6fa;
+  overflow-wrap: anywhere;
 }
 
 .setup-summary-details h5 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--heading);
-  margin-bottom: 10px;
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--setup-label);
 }
 
 .setup-summary-details ul {
-  list-style: disc;
-  padding-left: 20px;
+  list-style: none;
   margin: 0;
+  padding: 0;
   display: grid;
-  gap: 6px;
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 0.95rem;
+  gap: 5px;
 }
+
+.setup-summary-details li {
+  position: relative;
+  padding-left: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.setup-summary-details li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--setup-gold);
+}
+
+.setup-summary-details strong {
+  color: var(--color-text, #e8eef3);
+  font-weight: 700;
+}
+
+.map-type-description {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--gm-tint);
+  border: 1px solid rgba(240, 195, 60, 0.38);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.hint-icon {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* ---- Command bar --------------------------------------------------------- */
 
 .setup-footer {
-  background: linear-gradient(135deg, var(--topbar-end) 0%, #131a20 100%);
-  border-top: 1px solid var(--panel-border);
-  padding: 16px clamp(16px, 4vw, 36px);
+  flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: flex-end;
-}
-
-.setup-footer.setup-footer--center {
-  justify-content: center;
-}
-
-.setup-footer__button {
-  flex: 1;
-  min-width: 0;
-  font-weight: 600;
-  border-radius: 999px;
-  padding: 12px 18px;
-  border: none;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.setup-footer__button:hover {
-  transform: translateY(-2px);
-}
-
-.setup-footer__button:focus-visible {
-  outline-offset: 3px;
-}
-
-.setup-footer__button--primary {
-  background: linear-gradient(135deg, var(--accent) 0%, #b3891c 100%);
-  color: #1f1401;
-  box-shadow: 0 12px 24px rgba(212, 175, 55, 0.25);
-}
-
-.setup-footer__button--success {
-  background: linear-gradient(135deg, #28a745 0%, #148336 100%);
-  box-shadow: 0 14px 26px rgba(40, 167, 69, 0.3);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px clamp(14px, 3vw, 28px) calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid rgba(240, 195, 60, 0.16);
+  background: linear-gradient(180deg, rgba(6, 10, 14, 0.75), rgba(4, 7, 10, 0.96));
+  backdrop-filter: blur(8px);
 }
 
 .setup-footer__selected {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  font-size: 0.95rem;
-  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.setup-footer__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 0 8px rgba(255, 255, 255, 0.15);
 }
 
 .setup-footer__selected-label {
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .setup-footer__selected-value {
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .setup-footer__selected-leader {
-  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.84rem;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.68);
 }
 
-@media (min-width: 640px) {
-  .setup-footer {
-    flex-wrap: nowrap;
-    justify-content: space-between;
-  }
-
-  .setup-footer.setup-footer--center {
-    justify-content: center;
-  }
-
-  .setup-footer__button {
-    flex: 0 0 auto;
-    min-width: 180px;
-  }
-}
-
-/* ============================================================================
-   Mobile refinements — applied on ALL screen sizes (always-mobile layout)
-   ========================================================================== */
-
-/* Let the setup content expand inside the fullscreen modal. `.modal-body-custom`
-   is the single scroll container — these wrappers must stay `overflow: visible`
-   so the mouse wheel / scroll chains up to the body instead of being swallowed
-   by a non-scrollable intermediate scroll container. */
-.setup-content {
-  max-height: none;
-  overflow: visible;
-  overscroll-behavior: contain;
-  padding-bottom: calc(24px + var(--safe-bottom, 0px));
-}
-
-.setup-civ-list {
-  max-height: none;
-  overflow: visible;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 10px;
-  padding-bottom: 8px;
-}
-
-/* Civ cards need at least 44px of touch height and a clear selected state */
-.setup-civ-card {
-  min-height: 120px;
-  padding: 12px 10px;
-  border-radius: 14px;
-}
-
-.setup-civ-card.is-selected {
-  outline: 3px solid var(--accent, #f0c33c);
-  outline-offset: 2px;
-}
-
-.setup-civ-card__icon,
-.civ-icon-egypt,
-.civ-icon-russia,
-.civ-icon-zulu {
-  width: 48px !important;
-  height: 48px !important;
-  font-size: 26px !important;
-}
-
-.setup-civ-card__name {
-  font-size: 0.95rem;
-}
-
-/* Full-width footer buttons in the thumb zone */
-.setup-footer {
-  padding: 12px 16px calc(12px + var(--safe-bottom, 0px));
-  gap: 10px;
+.setup-footer__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
 }
 
 .setup-footer__button {
   flex: 1 1 auto;
-  min-height: 48px;
-  padding: 12px 16px;
-}
-
-.setup-footer__selected {
   width: 100%;
-  justify-content: center;
-  flex-wrap: wrap;
-  text-align: center;
+  min-width: 0;
+  min-height: 50px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition:
+    transform var(--dur-fast, 120ms) var(--ease-out, ease-out),
+    box-shadow var(--dur-fast, 120ms) var(--ease-out, ease-out),
+    background-color var(--dur-fast, 120ms) var(--ease-out, ease-out);
 }
 
-/* Desktop: setup wizard becomes a centered dialog with a right-aligned footer */
-@media (min-width: 992px) {
-  .setup-footer {
-    justify-content: flex-end;
-    padding: 12px 24px;
+.setup-footer__button:hover {
+  transform: translateY(-1px);
+}
+
+.setup-footer__button:focus-visible {
+  outline: 2px solid var(--setup-gold);
+  outline-offset: 3px;
+}
+
+.setup-footer__button--primary,
+.setup-footer__button--success {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* ---- Keyframes ----------------------------------------------------------- */
+
+@keyframes setup-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes setup-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes setup-glow-breathe {
+  0%, 100% { opacity: 0.75; }
+  50% { opacity: 1; }
+}
+
+@keyframes setup-sheen {
+  0%, 100% { transform: translateZ(3px) translateX(-6%); opacity: 0.5; }
+  50% { transform: translateZ(3px) translateX(6%); opacity: 1; }
+}
+
+@keyframes setup-candle-flicker {
+  0%, 100% {
+    opacity: 0.85;
+    box-shadow:
+      0 0 12px 4px rgba(240, 195, 60, 0.5),
+      0 0 40px 16px rgba(240, 160, 40, 0.18),
+      0 0 90px 30px rgba(200, 120, 30, 0.08);
+  }
+  40% {
+    opacity: 1;
+    box-shadow:
+      0 0 14px 5px rgba(240, 195, 60, 0.65),
+      0 0 48px 20px rgba(240, 160, 40, 0.26),
+      0 0 110px 36px rgba(200, 120, 30, 0.12);
+  }
+  70% {
+    opacity: 0.78;
+    box-shadow:
+      0 0 10px 3px rgba(240, 195, 60, 0.45),
+      0 0 36px 14px rgba(240, 160, 40, 0.16),
+      0 0 80px 28px rgba(200, 120, 30, 0.07);
+  }
+}
+
+/* ---- Reduced motion ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .setup-screen,
+  .setup-hero,
+  .setup-section,
+  .setup-screen__glow,
+  .setup-screen__table-sheen,
+  .setup-candle,
+  .setup-screen__room {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
   }
 
-  .setup-footer__button {
-    flex: 0 0 auto;
-    min-width: 160px;
-    width: auto;
+  .setup-screen__room {
+    transform: none !important;
+  }
+}
+
+/* ---- Phone / small tablet (compact command layout) ------------------------ */
+
+@media (max-width: 719.98px) {
+  .setup-nameplate {
+    padding: 9px 12px;
+  }
+
+  .setup-nameplate__tag {
+    display: none;
+  }
+
+  .setup-nameplate__dot {
+    width: 16px;
+  }
+
+  /* Hero: pull the heading to the content, keep the lede short */
+  .setup-hero {
+    padding: 16px 14px 4px;
+  }
+
+  .setup-hero__title {
+    margin: 6px 0 8px;
+    font-size: clamp(1.3rem, 6vw, 1.6rem);
+  }
+
+  .setup-hero__lede {
+    font-size: 0.88rem;
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+  }
+
+  .setup-hero__rule {
+    width: min(140px, 36%);
+    margin-top: 12px;
+  }
+
+  .setup-content {
+    padding: 4px 12px 16px;
+    gap: 10px;
+  }
+
+  .setup-section {
+    gap: 10px;
+  }
+
+  .setup-screen .gm-section {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  /* Dossier: name + portrait — the civ seal is redundant next to the face */
+  .setup-dossier {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'body portrait';
+    gap: 10px 12px;
+    align-items: center;
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .setup-dossier__seal {
+    display: none;
+  }
+
+  .setup-dossier__name {
+    font-size: 1.15rem;
+  }
+
+  .setup-dossier__leader {
+    font-size: 0.82rem;
+  }
+
+  .setup-dossier__swatch {
+    width: 56px;
+    height: 3px;
+    margin-top: 4px;
+  }
+
+  .setup-dossier__portrait {
+    width: 64px;
+    height: 72px;
+  }
+
+  .setup-dossier__oath {
+    display: none;
+  }
+
+  /* Denser 3-up banner grid */
+  .setup-civ-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .setup-civ-card {
+    min-height: 0;
+    padding: 10px 4px 8px;
+    gap: 4px;
+    border-radius: 10px;
+  }
+
+  .setup-civ-card__icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    font-size: inherit;
+  }
+
+  .setup-civ-card__icon span {
+    font-size: 20px !important;
+  }
+
+  .setup-civ-card__name {
+    font-size: 0.72rem;
+    line-height: 1.15;
+  }
+
+  .setup-civ-card__leader {
+    font-size: 0.52rem;
+    letter-spacing: 0.04em;
+  }
+
+  .setup-civ-card__swatch {
+    width: 28px;
+    height: 3px;
+  }
+
+  .setup-civ-card__seal {
+    top: 4px;
+    right: 4px;
+    width: 16px;
+    height: 16px;
+    font-size: 9px;
+  }
+
+  /* Settings: tighter labels */
+  .setup-setting__label {
+    font-size: 10.5px;
+  }
+
+  .setup-setting__hint {
+    font-size: 11px;
+  }
+
+  /* One-row command bar: banner left, action right */
+  .setup-footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
   }
 
   .setup-footer__selected {
     width: auto;
+    min-width: 0;
     justify-content: flex-start;
-    text-align: left;
-  }
-}
-
-/* ============================================================================
-   Intro menu (game setup screen)
-   ========================================================================== */
-
-/* The intro / setup screen gets a solid black background */
-.game-setup-screen {
-  background: #000 !important;
-}
-
-/* Solid black backdrop behind the setup dialog (rendered via portal to body) */
-.modal-backdrop.game-setup-backdrop {
-  background-color: #000 !important;
-  opacity: 1 !important;
-}
-
-/* Make the setup dialog content read as a dark panel on the black screen */
-.modal-dialog.game-setup-dialog .modal-content {
-  background: #0a0a0a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* Desktop: expand the setup wizard to fill the viewport height and scroll the
-   body when the content is taller than the available space. */
-@media (min-width: 992px) {
-  .modal-dialog.game-setup-dialog {
-    width: min(1140px, calc(100vw - 48px));
-    margin-top: 24px;
-    margin-bottom: 24px;
+    gap: 6px;
+    font-size: 0.85rem;
   }
 
-  .modal-dialog.game-setup-dialog .modal-content {
-    max-height: calc(100dvh - 48px);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
+  .setup-footer__selected-leader {
+    display: none;
   }
 
-  .modal-dialog.game-setup-dialog .modal-header-custom,
-  .modal-dialog.game-setup-dialog .setup-footer {
-    flex-shrink: 0;
+  .setup-footer__selected-label {
+    font-size: 9px;
   }
 
-  .modal-dialog.game-setup-dialog .modal-body-custom {
-    overflow-y: scroll;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
+  .setup-footer__nav {
+    flex-direction: row;
+    width: auto;
+    margin-left: auto;
+    gap: 8px;
+  }
+
+  .setup-footer__button {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 132px;
+    min-height: 46px;
+    padding-left: 1.1rem;
+    padding-right: 1.1rem;
+  }
+
+  /* Two buttons (Previous + Start) fit side by side */
+  .setup-footer__nav:has(.setup-footer__button:nth-child(2)) .setup-footer__button {
+    min-width: 0;
     flex: 1 1 auto;
-    min-height: 0;
-  }
-
-  .modal-dialog.game-setup-dialog .setup-content {
-    max-height: none;
-    overflow: visible;
-    padding-bottom: 24px;
-  }
-
-  .modal-dialog.game-setup-dialog .setup-civ-list {
-    max-height: none;
   }
 }
 
-/* Always show the scrollbar on the intro/setup page so the user knows the
-   wizard can be scrolled. Force it visible in both WebKit/Blink and Firefox. */
-.modal-dialog.game-setup-dialog .modal-body-custom {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(212, 175, 55, 0.55) rgba(255, 255, 255, 0.06);
+/* ---- Desktop: wider grid, side-by-side footer ---------------------------- */
+
+@media (min-width: 720px) {
+  .setup-footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .setup-footer__selected {
+    justify-content: flex-start;
+  }
+
+  .setup-footer__nav {
+    flex-direction: row;
+    width: auto;
+    margin-left: auto;
+  }
+
+  .setup-footer__button {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 170px;
+  }
+
+  .setup-civ-list {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 8px;
+  }
 }
 
-.modal-dialog.game-setup-dialog .modal-body-custom::-webkit-scrollbar {
-  width: 12px;
+/* No-scroll war council: everything fits one viewport on desktop */
+@media (min-width: 900px) and (min-height: 640px) {
+  .setup-hero {
+    padding-top: clamp(10px, 2vh, 20px);
+  }
+
+  .setup-dossier__portrait {
+    width: 96px;
+    height: 104px;
+  }
+
+  .setup-civ-card {
+    padding: 12px 6px 10px;
+  }
+
+  .setup-civ-card__icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .setup-civ-card__name {
+    font-size: 0.82rem;
+  }
 }
 
-.modal-dialog.game-setup-dialog .modal-body-custom::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
+/* Ultra-wide / tall: roomier cards but still one screen */
+@media (min-width: 1280px) {
+  .setup-content,
+  .setup-hero {
+    max-width: 1180px;
+  }
+
+  .setup-civ-list {
+    gap: 10px;
+  }
 }
 
-.modal-dialog.game-setup-dialog .modal-body-custom::-webkit-scrollbar-thumb {
-  background: rgba(212, 175, 55, 0.55);
-  border-radius: 8px;
-  border: 2px solid rgba(0, 0, 0, 0.4);
-}
+/* ---- Short viewports (landscape phones) ---------------------------------- */
 
-.modal-dialog.game-setup-dialog .modal-body-custom::-webkit-scrollbar-thumb:hover {
-  background: rgba(212, 175, 55, 0.8);
-}
+@media (max-height: 520px) and (orientation: landscape) {
+  .setup-hero {
+    padding-top: 14px;
+  }
 
-/* ============================================================
-   One big settings box — same look as .setup-summary,
-   with flat settings inside (no inner mini-boxes)
-   ============================================================ */
-.setup-settings-box {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  margin-bottom: 1.25rem;
+  .setup-hero__title {
+    font-size: 1.35rem;
+  }
 
-  /* Match .setup-summary — replace with the exact values from your CSS */
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  padding: 1.25rem 1.5rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-}
-
-.setup-settings-box__header {
-  text-align: center;
-}
-
-.setup-settings-box__title {
-  margin: 0 0 0.25rem;
-  font-size: 1.25rem;
-}
-
-.setup-settings-box__subtitle {
-  font-size: 0.9rem;
-  opacity: 0.75;
-}
-
-/* Flat grid of settings — like .setup-summary-grid */
-.setup-settings-box__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1.25rem 2rem;
-}
-
-/* Each setting: flat item, NO background/border/shadow */
-.setup-setting {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  border-radius: 0;
-  padding: 0;
-  margin: 0;
-}
-
-.setup-setting__label {
-  font-weight: 600;
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-
-.setup-setting__value {
-  font-weight: 400;
-  font-size: 0.85rem;
-  opacity: 0.85;
-}
-
-.setup-setting__hint {
-  font-size: 0.78rem;
-  opacity: 0.6;
-}
-
-.setup-setting__control {
-  width: 100%;
+  .setup-hero__rule {
+    margin-top: 10px;
+  }
 }

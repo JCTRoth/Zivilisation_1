@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Form, Alert } from 'react-bootstrap';
+import { Form } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
 import { gameLogger } from '@/utils/GameLogger';
 import { sendCommand, isCommandRejection } from '@/utils/session';
 import { getGovernment } from '@/data/GovernmentData';
+import { GameUtils } from '@/utils/GameUtils';
 import GameEngine from '@/game/engine/GameEngine';
+import GameModal from './ModalShell';
 import '../../../styles/ratesModal.css';
 
 type RateKey = 'tax' | 'science' | 'luxury';
@@ -32,6 +34,8 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
   const currentPlayer = useGameStore(
     (state) => state.civilizations[state.gameState.activePlayer] || null,
   );
+  const gameState = useGameStore((state) => state.gameState);
+  const cities = useGameStore((state) => state.cities);
 
   const [rates, setRates] = useState<Record<RateKey, number>>({
     tax: 50,
@@ -74,6 +78,9 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
   const gov = getGovernment(currentPlayer?.government);
   const taxOverCap = currentPlayer ? rates.tax > gov.maxTaxRate : false;
   const sum = rates.tax + rates.science + rates.luxury;
+  const myCities = currentPlayer
+    ? cities.filter((c) => c.civilizationId === currentPlayer.id)
+    : [];
 
   // Live preview: delegate to EconomicManager.previewEconomy() — the single
   // source of truth for commerce → corruption → disorder → rate split → upkeep.
@@ -125,11 +132,16 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
     onHide();
   };
 
-  const renderSlider = (key: RateKey, label: string, icon: string, hint: string): React.ReactElement => (
+  const renderSlider = (
+    key: RateKey,
+    label: string,
+    icon: string,
+    hint: string,
+  ): React.ReactElement => (
     <div className="rates-control">
       <div className="rates-control__header">
         <Form.Label className="rates-control__label">
-          <span aria-hidden="true">{icon}</span> {label}
+          <span aria-hidden="true">{icon}</span> {label} rate
         </Form.Label>
         <strong className="rates-control__value">{rates[key]}%</strong>
       </div>
@@ -146,37 +158,78 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
     </div>
   );
 
+  const statTile = (
+    icon: string,
+    value: React.ReactNode,
+    label: string,
+    extraClass = '',
+  ): React.ReactElement => (
+    <div className={`gm-stat${extraClass ? ` ${extraClass}` : ''}`}>
+      <div className="gm-stat-value">
+        <span className="gm-stat-icon" aria-hidden="true">{icon}</span>
+        {value}
+      </div>
+      <div className="gm-stat-label">{label}</div>
+    </div>
+  );
+
   return (
-    <Modal
+    <GameModal
       show={show}
-      onHide={onHide}
-      centered
+      onClose={onHide}
+      tone="gold"
       size="lg"
-      fullscreen="lg-down"
       dialogClassName="rates-modal"
+      icon="🪙"
+      artLabel="tax ledger"
+      eyebrow={`${currentPlayer?.name ?? 'Your Empire'} · Turn ${gameState.currentTurn ?? 1} · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`}
+      title="Tax, Science & Luxury Rates"
+      lede="Every coin your people earn is split three ways. Nudge one slider and the other two share what is left — the three always add up to 100%."
+      actions={
+        <>
+          <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
+            Cancel
+          </button>
+          <button type="button" className="touch-btn touch-btn--primary" onClick={handleApply}>
+            Apply Rates
+          </button>
+        </>
+      }
     >
-      <Modal.Header closeButton className="rates-modal__header">
-        <Modal.Title className="rates-modal__title">
-          <span aria-hidden="true">📊</span> Rates — {currentPlayer?.name ?? 'Civilization'}
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="rates-modal__body">
-        <div className="rates-government">
-          Government: <strong>{gov.name}</strong>
-          {gov.maxTaxRate < 100 && ` · Tax capped at ${gov.maxTaxRate}%`}
-          {gov.forcesZeroRates && ' · All rates forced to 0% (anarchy)'}
+      <section className="gm-section">
+        <div className="gm-section-title">Your government's terms</div>
+        <div className="gm-kv-grid">
+          <div className="gm-kv">Government: <b>{gov.name}</b></div>
+          <div className="gm-kv">Tax cap: <b>{gov.maxTaxRate}%</b></div>
+          <div className="gm-kv">Cities: <b>{myCities.length}</b></div>
+          <div className="gm-kv">Treasury: <b>{currentPlayer?.resources?.gold ?? 0} 🪙</b></div>
         </div>
-
-        {renderSlider('tax', 'Tax Rate', '🪙', 'Commerce → treasury gold (unit & city upkeep)')}
-        {renderSlider('science', 'Science Rate', '🔬', 'Commerce → research points (tech progress)')}
-        {renderSlider('luxury', 'Luxury Rate', '🎭', 'Commerce → happiness (prevents disorder)')}
-
-        {taxOverCap && (
-          <Alert variant="warning" className="rates-warning">
-            Tax is above the {gov.maxTaxRate}% cap for {gov.name}. It will be reduced when applied.
-          </Alert>
+        {gov.forcesZeroRates && (
+          <div className="gm-callout">
+            <span className="gm-callout-title">Under anarchy</span>
+            All three rates are pinned at 0% until a new government takes power.
+          </div>
         )}
+      </section>
 
+      <section className="gm-section">
+        <div className="gm-section-title">Set the split</div>
+        <div className="rates-controls">
+          {renderSlider('tax', 'Tax', '🪙', 'Commerce becomes treasury gold, which pays for your units and cities.')}
+          {renderSlider('science', 'Science', '🔬', 'Commerce becomes research, carrying you toward your next advance.')}
+          {renderSlider('luxury', 'Luxury', '🎭', 'Commerce buys contentment — the surest cure for a city on the edge of disorder.')}
+        </div>
+        {taxOverCap && (
+          <div className="gm-callout">
+            <span className="gm-callout-title">Over the cap</span>
+            {gov.name} allows at most {gov.maxTaxRate}% tax. Trim the slider yourself,
+            or the engine will cut your {rates.tax}% down to the cap when you apply.
+          </div>
+        )}
+      </section>
+
+      <section className="gm-section">
+        <div className="gm-section-title">The tally</div>
         <div className="rates-summary">
           <span>Tax <strong>{rates.tax}%</strong></span>
           <span>Science <strong>{rates.science}%</strong></span>
@@ -185,40 +238,34 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
             Total <strong>{sum}%</strong>
           </span>
         </div>
+        <div className="gm-note">
+          Move one slider and the remainder is shared out between the other two,
+          so <strong>Total</strong> always settles back on 100%.
+        </div>
+      </section>
 
-        <div className="rates-preview">
-          <div className="rates-preview__title">Projected per turn</div>
-          <div className="rates-preview__row">
-            <span>Commerce: <strong>{preview.commerce}</strong></span>
-            <span>Tax: <strong>+{preview.tax}</strong></span>
-            <span>Science: <strong>+{preview.science}</strong></span>
-            <span>Luxury: <strong>+{preview.luxury}</strong></span>
-          </div>
-          <div className="rates-preview__row">
-            <span>Upkeep: <strong>−{preview.upkeep}</strong></span>
-            <span>Treasury net: <strong className={preview.net < 0 ? 'text-danger' : ''}>{preview.net >= 0 ? '+' : ''}{preview.net}</strong></span>
-            <span>Treasury: <strong>{currentPlayer?.resources?.gold ?? 0} 🪙</strong></span>
-          </div>
-          {!preview.hasCities && (
-            <div className="rates-preview__hint">
-              No cities yet — found a city with your settler to start generating commerce.
-            </div>
+      <section className="gm-section">
+        <div className="gm-section-title">Projected per turn</div>
+        <div className="gm-stat-grid">
+          {statTile('🌊', preview.commerce, 'Commerce', 'gm-stat--accent')}
+          {statTile('🪙', `+${preview.tax}`, 'Tax')}
+          {statTile('🔬', `+${preview.science}`, 'Science')}
+          {statTile('🎭', `+${preview.luxury}`, 'Luxury')}
+          {statTile('⚒️', `−${preview.upkeep}`, 'Upkeep')}
+          {statTile(
+            '📈',
+            `${preview.net >= 0 ? '+' : ''}${preview.net}`,
+            'Treasury net',
+            preview.net < 0 ? 'rates-stat--negative' : '',
           )}
         </div>
-      </Modal.Body>
-      <Modal.Footer className="rates-modal__footer">
-        <button type="button" className="rates-modal__btn" onClick={onHide}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="rates-modal__btn rates-modal__btn--apply"
-          onClick={handleApply}
-        >
-          Apply Rates
-        </button>
-      </Modal.Footer>
-    </Modal>
+        {!preview.hasCities && (
+          <div className="gm-note">
+            You hold no city yet — found one with your settler and the commerce will start flowing.
+          </div>
+        )}
+      </section>
+    </GameModal>
   );
 }
 

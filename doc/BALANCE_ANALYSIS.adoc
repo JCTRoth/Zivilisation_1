@@ -1,0 +1,329 @@
+= Balance & Behaviour Analysis — Economy, AI and Map Generation
+
+Analysis of the Civ1 clone's economic model and computer-player behaviour, based
+on the code and on eight unattended 400-round games run headlessly.
+
+== Method
+
+Six reproducible AI-vs-AI games were driven through the real engine with no
+browser (`scripts/run-ai-batch.mjs`), each to 400 rounds or until the game
+ended — which, as it turns out, it never did:
+
+[cols="1,1,1,1,1"]
+|===
+|Run |Map |Civs |Rounds reached |Civs alive at the end
+
+|seed 7 |AI_VS_AI 40×40 |4 |401 |2 of 4
+|seed 19 |AI_VS_AI 40×40 |4 |401 |3 of 4 (1 has 0 units)
+|seed 33 |AI_VS_AI 40×40 |4 |400 |**0 of 4**
+|seed 51 |AI_VS_AI 40×40 |4 |400 |**0 of 4**
+|seed 7 |AI_VS_AI 40×40 |6 |401 |1 of 6
+|seed 19 |AI_VS_AI 40×40 |6 |400 |6 of 6 (4 have 0 units)
+|===
+
+Data per game: per-civ cities/population/units/techs/gold every 5 rounds, rate
+changes, buildings, production, event counts. A naval batch (2 × 400 rounds on
+AI_VS_AI_NAVAL) was **killed after 82 CPU-minutes without finishing** — see
+<<perf>>.
+
+Raw data: `game-logs/` plus the batch JSON (not committed).
+
+== How the economy actually works
+
+Because several rules are transcribed in `doc/GAME_RULES.adoc` differently from
+the code, the summary below is what the engine really does.
+
+=== One city, one turn
+
+Tile yields (terrain + resource + improvement) → worked-tile assignment →
+`trade` is the only currency: `commerce = max(trade, 2)`. Commerce is then:
+
+* reduced by corruption — `0.3` **hard-coded base**, scaled to `2.0` by
+  Euclidean distance from the capital, halved by a Courthouse
+  (`CityUtils.calculateCorruption`)
+* reduced by a government's `commercePenalty` (only Communism, −25 %)
+* split by the tax/science/luxury rates into gold / beakers / happiness,
+  `tax × TRADE_GOLD_MULTIPLIER (2)`
+
+Growth threshold is `(population + 1) × 10`; citizens eat 2 food; settlers eat 1
+(2 under Republic/Democracy) and cost 1 shield under those governments. A
+Granary keeps half the food box. There is **no** free unit support: every unit
+pays its per-type maintenance (1–6 gold), buildings 1–4 (wonders 0).
+
+=== What the model gets right
+
+* City growth works. Cities reach pop 7–12 in the surviving games and run 2–4
+  specialists; the tile assigner's food-floor rule keeps them fed.
+* The AI's rate controller is stable: 16–34 rate changes per 400 rounds, no
+  0↔100 oscillation.
+* Research works: dead civs still finish 17–47 technologies, and games reach
+  mid/late-game techs (riflemen, tanks, space flight).
+* Economy buildings appear: palaces, granaries, temples, marketplaces,
+  libraries, colosseums are built in sensible proportions.
+
+=== What the model hides
+
+* **Disbanding is the real story and it is invisible in the telemetry.** Every
+  game logs hundreds of `UNIT_DISBANDED` events (419 in one 4-civ game, 196 in
+  a 6-civ game) while the harness's economy counters report **zero** bankrupt
+  turns and zero negative-gold rounds. The reason: the AI is forgiven back to
+  the 8-gold floor the moment it dips below zero, and gold is sampled only
+  every 5 rounds. The AI is running a permanent deficit and paying for it by
+  dissolving its army — including, presumably, the garrisons that would stop the
+  barbarians.
+* **The government's corruption number is dead data.** `GOVERNMENTS[].corruptionRate`
+  (0.05 democracy … 0.3 despotism) is never read; corruption is a flat 0.3 ×
+  distance. `corruptionReduction` on marketplace, bank, palace and stock
+  exchange is equally inert. Late-game government choice therefore changes only
+  the tax cap and happiness bonus.
+
+== What the AI actually does
+
+The turn is: strategy → research → government → diplomacy → plans → army groups
+→ buildings → units. Within that, decisions are individually reasonable:
+
+* It keeps 1 defender per city (`getCityDefenseReserveIds`), forms up to 2 army
+  groups of ≥3, needs 1.3× strength parity and ~7 units-equivalent for a city
+  siege, and only declares a war it can walk to.
+* It caps the army at what it can pay for, sells unprofitable buildings, and
+  prefers settlers over soldiers when it is "broke but solvent".
+* The naval doctrine budgets ships against real income and pressure.
+
+The failures are all in *which* threat it chooses to answer, and in what it
+counts as progress.
+
+== Findings
+
+=== F1. Barbarians snowball into the AI's collapse (severe)
+
+`chooseWeakestCity` targets the single lowest-defence city in the world; the
+horde needs only 2 units and 1.5× that defence. Every captured city is then
+forced to `autoProduction = true`, has its buildings sold, and pumps raiders
+**forever**.
+
+Measured: 5–7 barbarian cities at the end of the collapsed games, and 16 of 28
+civ-games ending with the civ owning nothing. Deaths cluster between rounds 65
+and 235. Once the last city falls the civ can never recover — it has no city to
+build a settler in — so it idles for the remaining 100–330 rounds, researching
+techs and hoarding gold (median 278, max 3,269) forever.
+
+The AI has no counter-priority for this: barbarians appear only in the generic
+5-tile enemy scan ("attack only civs at war + barbarians"), while the offensive
+plan and army groups chase *civ* targets across the map.
+
+=== F2. The settler and scout treadmill (severe)
+
+Cadence caps count **living** units. So every scout or settler that dies is
+replaced, forever:
+
+[cols="1,1"]
+|===
+|Cap |Produced across 28 civ-games
+
+|scouts — `AI_ABSOLUTE_MAX_SCOUTS = 3` |**250** (106 in one game, 76 in another)
+|settlers — target 3–5 per profile |**184**
+|===
+
+Each replacement costs food, shields and upkeep, and they die on the way: one
+game logged 196 `settler_leaves_city` events and 465 oscillation skips. The
+result is an economy that spends its production on churn instead of on the
+buildings that would make cities defensible and happy.
+
+=== F3. Settlers improve tiles that no city can use
+
+Two games spent 41 and 54 improvement worker-turns and finished with
+**zero** improved tiles within 4 tiles of any city. The works mandate is not
+scoped to a city's radius, so settlers walk off into the wilderness.
+
+=== F4. The AI's unit loop mostly fails
+
+One 4-civ game logged 2,032 `skip:insufficient_moves`, 1,198
+`move:no_path_fallback`, 914 `no_target` and 465 oscillation skips — i.e. the
+majority of unit attempts in a turn end without a useful action, while a
+100 ms start delay and per-unit loops burn the turn budget.
+
+=== F5. Army groups declare far more attacks than they land
+
+`bulk_attack` is logged 185 times in one game against 31 real `attack` events
+and 8 `declare_war`. Group formation, rallying and readiness consume the turn,
+and the "attack" is mostly intent.
+
+=== F6. A game with no humans has no ending
+
+`VictoryManager.evaluateEndOfTurn` is called from exactly one place:
+`TurnManager.advanceTurn` (TurnManager.ts:687). The headless harness never
+calls it, which is why every game above reports `over: false` — but it also
+means an AI-vs-AI game that loses *all* its civs (2 of 4 standard games)
+declares no winner at all, and in a no-human game the only possible conclusion
+is the barbarians winning.
+
+=== F7. Happiness buildings are capped for the AI only
+
+`HAPPINESS_BUILDINGS_PER_CITY = 4` is enforced in `AIBuildingStrategy`; the
+engine's `buildingHappiness` has no cap, so the human can stack temples. Same
+rules must apply to both seats.
+
+[[perf]]
+=== F8. Naval AI turns do not converge
+
+The naval batch (2 games × 400 rounds) burned **82 CPU-minutes** without
+finishing, while the equivalent standard batch (4 games) needed ~50 minutes
+wall-clock. `aiTurnTimeoutMs` is a `setTimeout` watchdog, and a `setTimeout`
+cannot interrupt a synchronously running AI turn — so the watchdog cannot fire
+while the very thing it is meant to stop is running.
+
+== Recommendations — game rules
+
+Ordered by expected effect on the measured problems.
+
+=== R1. Give barbarians a ceiling (fixes F1)
+
+* Cap barbarian-held cities at `min(2, civilizations − 1)`. Beyond the cap a
+  captured city is razed, not converted; it must not become a permanent
+  raider factory.
+* Scale the assault gate with population: require 1.5× defence **and** at least
+  one more barbarian unit than the city has garrison units, so a defended city
+  is not free food.
+* Make barbarian units decay (e.g. −1 health every 10 rounds) or stop spawning
+  once the horde holds no city for N rounds, so the snowball has friction.
+
+=== R2. Make the government's corruption number real (fixes "dead data")
+
+Use `GOVERNMENTS[].corruptionRate` as the distance base (despotism 0.30 →
+democracy 0.05) and honour `corruptionReduction` on marketplace/bank/palace/stock
+exchange. Late-game governments then mean something beyond the tax cap, and
+Republic/Democracy/Communism become playable instead of cosmetic. This also
+gives the AI a real reason to research Code of Laws and to build Courthouses.
+
+=== R3. Stop the treadmill (fixes F2)
+
+Count units **produced** in a rolling window (e.g. 25 rounds) against the
+cadence target in addition to living units, for settlers and scouts alike. A
+civ that keeps replacing the same three scouts should stop buying scouts and
+start buying walls.
+
+=== R4. Scope public works to a city's radius (fixes F3)
+
+Improvement orders must target tiles inside some own city's radius +2, and the
+settler governor must score work by the food/production it actually feeds. A
+settler that cannot improve a nearby tile should join a city or explore instead.
+
+=== R5. Parity and endings (fixes F6, F7)
+
+* Apply the happiness-building cap to human cities too, or delete it from the
+  AI.
+* Move the victory/defeat check onto the round boundary (`advanceYear`) so every
+  path that ends a round evaluates it, and explicitly handle the no-human case:
+  when no civilization is human, the last operational civ (barbarians included)
+  wins and the game ends.
+
+=== R6. Make distress visible (fixes "hidden bankruptcy")
+
+Keep the 8-gold forgiveness, but count it: emit an `ECONOMY_FORGIVEN` event and
+track `disbanded`, `floorForgiven` and `negativeGoldTurns` per civ in the
+progression export. Today the CSV cannot distinguish a healthy civ from one
+that is being liquidated.
+
+== Recommendations — map generator
+
+* **AI-vs-AI maps are too small for their civ count.** Peak cities per civ were
+  1–4 on 40×40 with 4–6 civs, and every game ended in territorial collapse.
+  Either raise the default scenario map to ~60×60 for 4 civs, or drop the
+  scenario to 3 civs. Fewer, more survivable empires will produce longer, more
+  interesting wars.
+* **Place starts ≥12 tiles apart** and verify no start sits within 4 tiles of a
+  bonus resource cluster owned by a neighbour; early border friction is what
+  drives the AI into unwinnable early wars.
+* **Grassland has no default resource**, and food only comes from grassland,
+  river/lake tiles or Game / Oasis / Seal / Fish. Early food scarcity is what makes
+  the settler food demand (2 under Republic/Democracy) lethal. Give each start
+  one guaranteed food resource (Game or Oasis) within its central 5×5.
+* **Rivers**: the 1-wide-fordable rule is good, but generated rivers frequently
+  cut a city's radius in half without a ford on the border. Guarantee one
+  fordable tile per river/city intersection.
+
+== Recommendations — AI
+
+=== A1. Barbarians become the priority target when a horde exists (fixes F1)
+
+When any barbarian city exists within ~12 tiles of an own city, or any own city
+has `netThreat > 0` from barbarians:
+
+* reserve **2** defenders per threatened city (not 1),
+* form a "hunt the horde" group from units with `attack ≥ 2`,
+* suspend offensive plans against other civs until the horde is gone.
+
+The offensive plan already cancels itself when a city has `netThreat ≥ 2.5` —
+extend that to a hard veto on *other* wars while barbarians hold cities.
+
+=== A2. Stop buying churn (fixes F2, F3)
+
+* Setters: count works tasks **inside radii** only; if the works budget is zero,
+  the settler target drops to the expansion target.
+* Scouts: hard cap on produced-per-window (R3), and re-task a scout that has
+  explored its zone to garrison duty instead of producing a replacement.
+* Ships/ferries: the naval doctrine is well-budgeted; keep it, but stop the
+  *land* army from being starved to feed it.
+
+=== A3. Fix the unit loop (fixes F4, F5)
+
+* Cache the passability/occupancy grid per turn so `move:no_path_fallback`
+  stops re-running A* for the same blocked tile.
+* Drop a group that has spent more than `RALLY_TIMEOUT_ROUNDS + 10` rounds
+  without reaching readiness instead of re-planning it every turn.
+* Log intent (bulk_attack) separately from outcomes (attack, CITY_CAPTURED) so
+  the telemetry stops reporting 185 attacks for 31 events.
+
+=== A4. Rebuild before disbanding (fixes hidden bankruptcy)
+
+`economyBeforeArmy` fires only when `gold ≥ reserve`. Extend it: when the AI is
+*about* to disband (`gold < 0` this turn), sell the least useful building
+first — the machinery `runBuildingAnalysis` already has — and only then
+disband, and never below one defender per city with a barbarian city nearby.
+
+=== A5. Freeze dead civs (fixes wasted turns)
+
+A civ with no cities and no units should be skipped entirely (no AI turn, no
+log). Two of the six games spent hundreds of rounds processing civs that could
+not act. This also makes the harness's numbers readable.
+
+=== A6. Naval performance (fixes F8)
+
+* Compute the naval doctrine verdict once per *round* per civ, not per
+  city/queue slot (it is cached per civ, but the cache key is re-derived for
+  every city).
+* Give the AI a **turn budget in work units**, not wall-clock: stop the unit
+  loop when `units processed × cost > budget`, and let the next turn continue.
+  A `setTimeout` watchdog cannot interrupt synchronous work; only an internal
+  budget can.
+
+== Suggested order
+
+. **R1 + A1** (barbarian ceiling and counter-priority) — the single highest-value
+  change; it addresses the collapse that ends 5 of 6 games.
+. **R3 + A2** (production churn caps) — cheap, and it frees the production that
+  A1 needs.
+. **R2** (real corruption) — makes the government tree and the AI's building
+  choices meaningful.
+. **R5 + A5** (endings and dead civs) — makes future measurements possible.
+. **R4 + A3** (works scoping, unit loop) — quality of life.
+. **A6 + R6** (naval budget, telemetry) — engineering.
+
+Re-run `node scripts/run-ai-batch.mjs 4 400 4` after each step and compare
+against the baseline in this document: 16/28 civ-games ending city-less, 250
+scouts and 184 settlers produced, 0/6 games reaching a conclusion.
+
+== Appendix — reproducing
+
+[source,bash]
+----
+# the exact runs behind the numbers above
+node scripts/run-ai-batch.mjs 4 400 4 /tmp/batch-4civ.json
+node scripts/run-ai-batch.mjs 2 400 6 /tmp/batch-6civ.json
+AI_BATCH_MAP_TYPE=AI_VS_AI_NAVAL node scripts/run-ai-batch.mjs 2 400 4 /tmp/batch-naval.json
+----
+
+`scripts/run-naval-session.mjs` is currently broken: it writes its generated spec
+to `tests/ai/tmpNavalSession.test.ts`, which `vitest.config.js` excludes with
+`**/tmp*.test.ts`, so the run silently does nothing. Use the batch runner with
+`AI_BATCH_MAP_TYPE` instead, or rename the generated file.

@@ -63,11 +63,42 @@ Once at war, the AI captures cities via the existing pipeline: scout-discovered
 enemy cities feed `enemyLocations` → `updateOffensivePlan` assigns combat units →
 they march onto the city tile → `resolveCityCombat`.
 
+== Last city lost — civilization eliminated
+
+Civ I rule, implemented in `GameEngine.applyLastCityRule` (called from
+`markCityLost`, which every city loss funnels through — capture, raze, scout
+rush, nuclear strike):
+
+* When a civilization loses its *last* city and it still has at least one unit
+  on the board that is *not* a settler, every one of its remaining units is
+  destroyed and `civ.isAlive` is set to `false`. A people without a city that
+  still carries spears is a raider band, not a nation.
+* The *settler exception*: a civilization left with nothing but settlers is
+  spared. They can walk to open ground and found a new city, so their story is
+  not over. `VictoryManager` then keeps them alive via its normal
+  "has units or cities" check.
+* Nothing happens if the civilization still owns a city somewhere else, or if
+  it has no units left at all.
+
+The engine emits `CIVILIZATION_ELIMINATED` with `{ civilizationId,
+attackerCivId, unitsDestroyed }`. `EngineEventRouter.onCivilizationEliminated`
+turns it into a toast (`NotificationCenter`):
+
+* the *victim* hears an `error` toast ("… is no more — your last city has
+  fallen, and your scattered units are destroyed with it."),
+* the *conqueror* hears a `success` toast,
+* anyone else hears an `info` toast naming the destroying civilization.
+
+Toast text is suppressed entirely in AI-vs-AI mode (no human is watching).
+
 == Events
 
 `CITY_ATTACKED` / `CITY_CAPTURED` / `CITY_DESTROYED` — consumed by
 `AutoProduction` (re-picks production for the affected civs), `GameLogger`,
 `GameProgression` and `CitySnapshots`.
+
+`CIVILIZATION_ELIMINATED` — see the section above; consumed by
+`EngineEventRouter` (toast) and `VictoryManager` (via `isAlive`).
 
 == Tests
 
@@ -78,6 +109,11 @@ they march onto the city tile → `resolveCityCombat`.
   failed-attack population loss vs wall protection, wall obsolescence, and the
   happiness unrest penalty — plus an end-to-end AI test where the AI declares
   war on its own and captures the city in one turn.
+* `tests/lastCityElimination.test.ts` — the last-city rule: a non-settler unit
+  in the field wipes every remaining unit (event payload, single `UNIT_REMOVED`
+  sync, `isAlive` cleared, conqueror toast); settlers-only are spared; a second
+  city suppresses the wipe; a size-1 raze triggers it too; and the victim's own
+  toast fires when the human loses their last city.
 * `tests/ai/DiplomacyManager.test.ts` — "AI war for conquest" (military_expansion
   declares war when strong; defensive_turtle does not).
 * `tests/ai/productionProfiles.test.ts` — personalities match production profiles.

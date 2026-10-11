@@ -1,92 +1,34 @@
-/* SettingsModal styles */
+/* =============================================================================
+   SETTINGS MODAL
+   -----------------------------------------------------------------------------
+   Built on the shared game-modal shell (gameModalShell.css). Only the form
+   internals live here: the switch row and the slider grid.
+   ========================================================================== */
 
-.settings-modal .modal-content {
-  background: var(--color-bg-elevated, #16202a);
-  color: var(--color-text, #e8eef3);
-  border: 1px solid var(--color-border, #2c3b49);
-}
-
-/*
- * The dialog is a flex column with an internally scrolling body so header and
- * footer always stay INSIDE the panel. Without this the tall control list
- * pushed the footer out of the modal on short screens, leaving the button bar
- * floating on the black backdrop instead of the system's surface colour.
- */
-.modal-dialog.settings-modal .modal-content {
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100dvh - 2rem);
-  overflow: hidden;
-}
-
-.modal-dialog.settings-modal .modal-header,
-.modal-dialog.settings-modal .modal-footer {
-  flex: 0 0 auto;
-}
-
-.modal-dialog.settings-modal .modal-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
-.settings-modal__header {
-  background: var(--color-bg-overlay, #1d2935);
-  color: var(--color-text, #e8eef3);
-  border-bottom: 1px solid var(--color-border, #2c3b49);
-}
-
-.settings-modal__title {
-  font-size: var(--text-lg, 1.125rem);
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.settings-modal__body {
-  background: var(--color-bg-elevated, #16202a);
-  color: var(--color-text, #e8eef3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5, 1.5rem);
-}
-
-.settings-modal__footer {
-  /* Bootstrap's .modal-footer background var loads later in the cascade in
-     some bundles — pin the surface colour explicitly so the bottom bar always
-     matches the rest of the dialog instead of showing the dark backdrop. */
-  --bs-modal-footer-bg: var(--color-bg-overlay, #1d2935);
-  background: var(--color-bg-overlay, #1d2935);
-  border-top: 1px solid var(--color-border, #2c3b49);
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-}
-
-/* The form stacks the switch row above the two-column control grid. */
+/* The form stacks the switch card above the slider cards. */
 .settings-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5, 1.5rem);
+  gap: 12px;
 }
 
-/* Master switches on top, side by side in one card-like row. */
+/* ---- Master switches ----------------------------------------------------- */
+
 .settings-toggles {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 2rem;
-  padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--color-border, #2c3b49);
-  border-radius: var(--radius-md, 10px);
+  flex-direction: column;
+  gap: 10px;
 }
 
-.settings-toggles .form-check {
+.settings-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 14px;
+  min-height: 28px;
+}
+
+.settings-toggle .form-check {
   display: flex;
   align-items: center;
   gap: 0.55rem;
@@ -94,38 +36,56 @@
   min-height: 28px;
 }
 
-.settings-toggles .form-check-input {
+.settings-toggle .form-check-input {
   margin: 0;
   cursor: pointer;
+  accent-color: var(--color-accent, #f0c33c);
 }
 
-.settings-toggles .form-check-label {
-  font-weight: 600;
+.settings-toggle .form-check-label {
+  font-weight: 700;
+  font-size: 13.5px;
   color: var(--color-text, #e8eef3);
   cursor: pointer;
 }
 
-/* Two controls per row on desktop; one column on phones / fullscreen sheets. */
+.settings-toggle__hint {
+  flex: 1 1 180px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--color-text-muted, #9fb0bd);
+}
+
+/* ---- Slider grid --------------------------------------------------------- */
+
 .settings-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: var(--space-5, 1.5rem);
+  gap: 10px;
 }
 
-@media (min-width: 992px) {
+.settings-grid--single {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
   .settings-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-grid--single {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 .settings-control {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--color-border, #2c3b49);
-  border-radius: var(--radius-md, 10px);
+  gap: 5px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
 }
 
 .settings-control__header {
@@ -136,51 +96,90 @@
 }
 
 .settings-control__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 700;
   color: var(--color-text, #e8eef3);
-  font-size: var(--text-base, 1rem);
 }
 
 .settings-control__value {
-  color: var(--color-accent, #f0c33c);
+  flex: 0 0 auto;
   font-family: var(--font-mono, monospace);
-  font-size: var(--text-sm, 0.875rem);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  color: var(--color-accent, #f0c33c);
 }
 
 .settings-control__range {
   width: 100%;
-  height: 28px; /* comfortable touch strip */
+  height: 30px; /* comfortable touch strip */
   accent-color: var(--color-accent, #f0c33c);
   cursor: pointer;
 }
 
+/* Bootstrap's .form-range ships a primary-blue thumb on a light track — restyle
+   it to the game's gold. Doubled class selector so it wins the cascade no
+   matter where bootstrap.css is imported. */
+.settings-control__range.settings-control__range::-webkit-slider-runnable-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+  border-radius: 999px;
+}
+
+.settings-control__range.settings-control__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  background: var(--color-accent, #f0c33c);
+  border: 2px solid #0d151c;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.settings-control__range.settings-control__range:focus-visible::-webkit-slider-thumb,
+.settings-control__range.settings-control__range:hover::-webkit-slider-thumb {
+  background: var(--color-accent-strong, #ffd75e);
+}
+
+.settings-control__range.settings-control__range:disabled::-webkit-slider-thumb {
+  background: var(--color-text-muted, #9fb0bd);
+}
+
+.settings-control__range.settings-control__range::-moz-range-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+  border-radius: 999px;
+}
+
+.settings-control__range.settings-control__range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--color-accent, #f0c33c);
+  border: 2px solid #0d151c;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.settings-control__range.settings-control__range:disabled::-moz-range-thumb {
+  background: var(--color-text-muted, #9fb0bd);
+}
+
+.settings-control__range:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .settings-control__hint {
-  color: var(--color-text-muted, #ffffff);
-  font-size: var(--text-sm, 0.875rem);
-  line-height: 1.4;
-}
-
-/* Footer buttons — stacked on mobile, right-aligned row on desktop */
-.settings-modal__footer {
-  flex-direction: column-reverse;
-}
-
-.settings-modal__footer .btn {
-  width: 100%;
-  min-height: var(--touch-min, 44px);
-  margin: 0;
-}
-
-@media (min-width: 992px) {
-  .settings-modal__footer {
-    flex-direction: row;
-    justify-content: flex-end;
-  }
-
-  .settings-modal__footer .btn {
-    width: auto;
-    min-width: 140px;
-  }
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--color-text-muted, #9fb0bd);
 }

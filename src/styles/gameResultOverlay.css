@@ -1,153 +1,580 @@
+/* ============================================================================
+   Game result overlay.
+   ----------------------------------------------------------------------------
+   The end of a game plays in two acts (see GameResultOverlay.tsx):
+
+     Act I  — a full-bleed cinematic takeover (.gr-cine) that stages the
+              outcome before any numbers appear. Fireworks are already
+              flying behind it (VictoryFireworks, owned by App).
+     Act II — the shared GameModal chronicle (frame, hero, ledger and action
+              bar all come from gameModalShell.css), portaled to <body>.
+
+   What lives here is what belongs to the overlay alone:
+
+     1. a boxless host element (display: contents) that carries the outcome
+        class without ever blocking what it hosts, and
+     2. the confetti stacking rules — canvas-confetti appends its canvas to
+        <body> with an inline z-index of 0, which would paint *behind* the
+        modal's backdrop (1050). Lift it, and never let it eat clicks.
+   ========================================================================== */
+
 .game-result-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  padding-top: calc(1rem + var(--safe-top, 0px));
-  padding-bottom: calc(1rem + var(--safe-bottom, 0px));
-  background: rgba(10, 10, 15, 0.45);
-  backdrop-filter: blur(6px);
-  z-index: var(--z-overlay, 5000);
-  color: #f8f9fa;
-  font-family: 'Orbitron', 'Segoe UI', sans-serif;
+  display: contents;
 }
 
-/* Victory: transparent backdrop so the game board stays visible behind the
-   result panel (confetti/fireworks render above the board). */
-.game-result-overlay.victory {
-  background: transparent;
-  backdrop-filter: none;
-}
-
-/* Confetti canvas rendered by canvas-confetti sits above the overlay
-   backdrop so the fireworks are visible on top of the darkened board. */
+/* Confetti is decoration: always on top, never interactive. The third
+   selector targets canvas-confetti's own canvas (it is appended to <body>
+   with inline `position: fixed`), scoped so no other body-level canvas is
+   touched. */
 .game-result-overlay .confetti-canvas,
-.game-result-overlay ~ canvas {
+.game-result-overlay ~ canvas,
+body > canvas[style*='position: fixed'] {
   z-index: 99999 !important;
   pointer-events: none;
 }
 
-.game-result-panel {
-  max-width: 520px;
-  width: 100%;
-  border-radius: 16px;
-  padding: 2rem 1.5rem;
-  text-align: center;
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: linear-gradient(165deg, rgba(30, 35, 60, 0.95) 0%, rgba(10, 12, 22, 0.95) 100%);
-  max-height: calc(100dvh - 2rem - var(--safe-top, 0px) - var(--safe-bottom, 0px));
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
+/* ============================================================================
+   Act I — the cinematic
+   ----------------------------------------------------------------------------
+   Sits above the Bootstrap modal backdrop (1050) but below the confetti
+   canvas (99999). Gold ramp for victory, cold solemn purple for defeat.
+   ========================================================================== */
 
-.game-result-overlay.victory .game-result-panel {
-  border-color: rgba(255, 215, 0, 0.4);
-  box-shadow: 0 24px 60px rgba(255, 215, 0, 0.25);
-}
+.gr-cine {
+  --gr-gold: #f0c33c;
+  --gr-gold-hot: #ffd75e;
+  --gr-solemn: #9b8cf0;
+  --gr-solemn-cold: #6f7fd4;
 
-.game-result-overlay.defeat .game-result-panel {
-  border-color: rgba(220, 53, 69, 0.3);
-  box-shadow: 0 24px 60px rgba(220, 53, 69, 0.2);
-}
-
-.game-result-header h1 {
-  margin-bottom: 0.5rem;
-  font-size: clamp(1.75rem, 6vw, 2.5rem);
-  letter-spacing: 0.08em;
-}
-
-.game-result-header .game-result-subtitle {
-  margin: 0;
-  font-size: clamp(0.95rem, 3vw, 1.1rem);
-  color: rgba(255, 255, 255, 0.8);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-
-.game-result-body {
-  margin: 1.5rem 0;
-  font-size: clamp(1rem, 3.5vw, 1.1rem);
-  line-height: 1.6;
-}
-
-.game-result-highlight {
-  margin-top: 1rem;
-  font-weight: 600;
-  color: #ffd700;
-}
-
-.game-result-actions {
+  position: fixed;
+  inset: 0;
+  z-index: 1060;
   display: flex;
-  gap: 0.75rem;
+  align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
+  padding: clamp(1rem, 4vw, 3rem);
+  overflow: hidden;
+  font-family: var(--font-ui, 'Segoe UI', system-ui, sans-serif);
+  color: #e8eef3;
+  animation: gr-cine-in 900ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
 }
 
-.gr-btn {
-  min-width: 120px;
-  min-height: 48px; /* touch-friendly */
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 999px;
-  font-weight: 600;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+/* ---- Sky / backdrop ------------------------------------------------------ */
+
+/* The board stays visible behind the finale. Sky and veil share one opacity
+   knob: the sky was fully opaque and the veil added up to 55% black on top, so
+   together they hid the map completely. At 0.7 the veil contributes
+   0.7 x 0.55 = ~31% black at its darkest — the requested 30% — and the map
+   reads through the cinematic. Text keeps its contrast from `.gr-cine__stage`,
+   which sits above both layers on its own backdrop. */
+.gr-cine__sky,
+.gr-cine__veil {
+  opacity: 0.7;
 }
 
-.gr-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+.gr-cine__sky {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 90% at 50% 110%, rgba(240, 195, 60, 0.14), transparent 55%),
+    radial-gradient(90% 70% at 50% -10%, rgba(61, 155, 255, 0.1), transparent 50%),
+    linear-gradient(180deg, #060a10 0%, #0b1220 48%, #0a0f18 100%);
 }
 
-.gr-btn:active {
-  transform: scale(0.97);
+.gr-cine[data-outcome='defeat'] .gr-cine__sky {
+  background:
+    radial-gradient(120% 90% at 50% 110%, rgba(155, 140, 240, 0.12), transparent 55%),
+    linear-gradient(180deg, #05060c 0%, #0c0d18 50%, #08090f 100%);
 }
 
-.gr-btn.primary {
-  background: linear-gradient(135deg, #1f8ef1, #005bea);
-  color: #fff;
+/* Slow rotating light rays — victory only. */
+.gr-cine__rays {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 180vmax;
+  height: 180vmax;
+  margin: -90vmax 0 0 -90vmax;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(240, 195, 60, 0.07) 12deg,
+    transparent 24deg,
+    transparent 48deg,
+    rgba(240, 195, 60, 0.05) 60deg,
+    transparent 72deg,
+    transparent 120deg,
+    rgba(255, 215, 94, 0.06) 132deg,
+    transparent 148deg,
+    transparent 220deg,
+    rgba(240, 195, 60, 0.05) 236deg,
+    transparent 252deg,
+    transparent 360deg
+  );
+  opacity: 0.85;
+  animation: gr-cine-spin 90s linear infinite;
+  pointer-events: none;
 }
 
-.gr-btn.secondary {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+.gr-cine[data-outcome='defeat'] .gr-cine__rays {
+  opacity: 0.25;
+  filter: hue-rotate(220deg) saturate(0.6);
+  animation-duration: 160s;
+  animation-direction: reverse;
 }
 
-.gr-btn.danger {
-  background: linear-gradient(135deg, #f56565, #c53030);
-  color: #fff;
+/* Floating embers — three layers of tiny gold (or ash) motes drifting up. */
+.gr-cine__embers {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
-.gr-btn:focus-visible {
-  outline: 3px solid rgba(66, 153, 225, 0.6);
-  outline-offset: 2px;
+.gr-cine__embers::before,
+.gr-cine__embers::after {
+  content: '';
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: -20%;
+  height: 140%;
+  background-image:
+    radial-gradient(circle 2px at 8% 90%, rgba(255, 215, 94, 0.7), transparent 60%),
+    radial-gradient(circle 1.5px at 18% 70%, rgba(240, 195, 60, 0.55), transparent 60%),
+    radial-gradient(circle 2.5px at 28% 95%, rgba(255, 215, 94, 0.5), transparent 60%),
+    radial-gradient(circle 1.5px at 40% 80%, rgba(240, 195, 60, 0.65), transparent 60%),
+    radial-gradient(circle 2px at 52% 88%, rgba(255, 215, 94, 0.45), transparent 60%),
+    radial-gradient(circle 1px at 63% 72%, rgba(240, 195, 60, 0.7), transparent 60%),
+    radial-gradient(circle 2px at 74% 92%, rgba(255, 215, 94, 0.55), transparent 60%),
+    radial-gradient(circle 1.5px at 86% 78%, rgba(240, 195, 60, 0.6), transparent 60%),
+    radial-gradient(circle 2px at 94% 86%, rgba(255, 215, 94, 0.4), transparent 60%);
+  background-size: 100% 100%;
+  animation: gr-cine-rise 14s linear infinite;
 }
 
-/* Full-width stacked buttons on mobile (one-handed use) */
-.game-result-actions {
+.gr-cine__embers::after {
+  background-image:
+    radial-gradient(circle 1.5px at 12% 85%, rgba(240, 195, 60, 0.45), transparent 60%),
+    radial-gradient(circle 2px at 33% 92%, rgba(255, 215, 94, 0.35), transparent 60%),
+    radial-gradient(circle 1px at 47% 76%, rgba(240, 195, 60, 0.5), transparent 60%),
+    radial-gradient(circle 2.5px at 58% 94%, rgba(255, 215, 94, 0.3), transparent 60%),
+    radial-gradient(circle 1.5px at 71% 82%, rgba(240, 195, 60, 0.45), transparent 60%),
+    radial-gradient(circle 2px at 90% 88%, rgba(255, 215, 94, 0.4), transparent 60%);
+  animation-duration: 22s;
+  animation-delay: -8s;
+  opacity: 0.7;
+}
+
+.gr-cine[data-outcome='defeat'] .gr-cine__embers::before,
+.gr-cine[data-outcome='defeat'] .gr-cine__embers::after {
+  filter: grayscale(0.8) brightness(0.55) hue-rotate(230deg);
+  animation-duration: 28s;
+  animation-direction: reverse;
+}
+
+/* Soft vignette so the stage reads first. */
+.gr-cine__veil {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 70% 60% at 50% 45%, transparent 30%, rgba(0, 0, 0, 0.55) 100%);
+  pointer-events: none;
+}
+
+/* ---- Stage --------------------------------------------------------------- */
+
+/* Text stage — the sky and veil above sit at 0.7 so the board reads through
+   the finale, so the stage carries its own soft scrim: copy stays legible
+   while the edges of the stage stay open and the map still reads through. */
+.gr-cine__stage {
+  position: relative;
+  z-index: 1;
+  display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.65rem;
+  width: min(44rem, 100%);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  padding: 1.5rem 1.25rem 2rem;
+  text-align: center;
+  scrollbar-width: thin;
 }
 
-.gr-btn {
-  width: 100%;
-  min-width: 0;
+.gr-cine__stage::before {
+  content: '';
+  position: absolute;
+  inset: -1.5rem -0.5rem;
+  z-index: -1;
+  background: radial-gradient(
+    ellipse 70% 62% at 50% 45%,
+    rgba(4, 7, 12, 0.8) 0%,
+    rgba(4, 7, 12, 0.55) 45%,
+    transparent 78%
+  );
+  pointer-events: none;
 }
 
-/* Desktop: side-by-side action buttons */
-@media (min-width: 992px) {
-  .game-result-actions {
-    flex-direction: row;
-    justify-content: center;
-    gap: 1rem;
+.gr-cine__kicker {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 243, 0.55);
+  animation: gr-cine-fade-up 800ms var(--ease-out) 150ms both;
+}
+
+.gr-cine__word {
+  margin: 0;
+  font-size: clamp(2.6rem, 9vw, 5.2rem);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: 0.14em;
+  text-indent: 0.14em; /* optically centre the letterspaced word */
+  text-transform: uppercase;
+  color: var(--gr-gold-hot);
+  text-shadow:
+    0 0 24px rgba(240, 195, 60, 0.55),
+    0 0 64px rgba(240, 195, 60, 0.35),
+    0 2px 0 rgba(0, 0, 0, 0.45);
+  animation: gr-cine-word 1100ms var(--ease-out) 280ms both;
+}
+
+.gr-cine__word[data-tone='solemn'] {
+  color: #c5bdf7;
+  text-shadow:
+    0 0 24px rgba(155, 140, 240, 0.45),
+    0 0 64px rgba(111, 127, 212, 0.3),
+    0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.gr-cine__civ {
+  margin: 0;
+  font-size: clamp(1.15rem, 3.2vw, 1.65rem);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #e8eef3;
+  animation: gr-cine-fade-up 800ms var(--ease-out) 520ms both;
+}
+
+.gr-cine__rule {
+  display: block;
+  width: min(16rem, 55%);
+  height: 1px;
+  margin: 0.35rem 0 0.5rem;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(240, 195, 60, 0.75) 35%,
+    rgba(240, 195, 60, 0.75) 65%,
+    transparent
+  );
+  animation: gr-cine-fade-up 800ms var(--ease-out) 640ms both;
+}
+
+.gr-cine[data-outcome='defeat'] .gr-cine__rule {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(155, 140, 240, 0.6) 35%,
+    rgba(155, 140, 240, 0.6) 65%,
+    transparent
+  );
+}
+
+.gr-cine__lede {
+  margin: 0;
+  max-width: 38rem;
+  font-size: clamp(0.95rem, 2.2vw, 1.08rem);
+  line-height: 1.55;
+  color: rgba(232, 238, 243, 0.82);
+  animation: gr-cine-fade-up 800ms var(--ease-out) 760ms both;
+}
+
+.gr-cine__verses {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0.5rem 0 0.25rem;
+  padding: 0;
+  list-style: none;
+  max-width: 36rem;
+}
+
+.gr-cine__verse {
+  font-size: clamp(0.9rem, 2vw, 1rem);
+  line-height: 1.5;
+  color: rgba(232, 238, 243, 0.72);
+  font-style: italic;
+  animation: gr-cine-fade-up 900ms var(--ease-out) both;
+}
+
+.gr-cine__verse:first-child {
+  font-style: normal;
+  color: rgba(232, 238, 243, 0.88);
+}
+
+/* ---- Call to action ------------------------------------------------------ */
+
+.gr-cine__cta-row {
+  margin-top: 1rem;
+  animation: gr-cine-fade-up 900ms var(--ease-out) both;
+}
+
+.gr-cine__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding: 0.7rem 1.9rem;
+  border: 1px solid rgba(240, 195, 60, 0.65);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(240, 195, 60, 0.16), rgba(240, 195, 60, 0.05)),
+    rgba(10, 14, 20, 0.6);
+  color: var(--gr-gold-hot);
+  font-family: inherit;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 1px rgba(240, 195, 60, 0.12),
+    0 8px 32px rgba(240, 195, 60, 0.18),
+    0 0 48px rgba(240, 195, 60, 0.12);
+  transition:
+    background-color var(--dur-fast, 120ms) var(--ease-out),
+    box-shadow var(--dur-med, 220ms) var(--ease-out),
+    transform var(--dur-fast, 120ms) var(--ease-out);
+  animation: gr-cine-breathe 3.2s ease-in-out 2.2s infinite;
+}
+
+.gr-cine[data-outcome='defeat'] .gr-cine__cta {
+  border-color: rgba(155, 140, 240, 0.55);
+  color: #c5bdf7;
+  background:
+    linear-gradient(180deg, rgba(155, 140, 240, 0.14), rgba(155, 140, 240, 0.04)),
+    rgba(10, 12, 20, 0.6);
+  box-shadow:
+    0 0 0 1px rgba(155, 140, 240, 0.1),
+    0 8px 32px rgba(111, 127, 212, 0.16);
+}
+
+.gr-cine__cta:hover,
+.gr-cine__cta:focus-visible {
+  background:
+    linear-gradient(180deg, rgba(240, 195, 60, 0.28), rgba(240, 195, 60, 0.1)),
+    rgba(10, 14, 20, 0.6);
+  box-shadow:
+    0 0 0 1px rgba(240, 195, 60, 0.3),
+    0 10px 40px rgba(240, 195, 60, 0.3),
+    0 0 64px rgba(240, 195, 60, 0.2);
+  transform: translateY(-1px);
+}
+
+/* autoFocus lands here on mount — keep the ring in the gold ramp, not the
+   browser's default blue. */
+.gr-cine__cta:focus-visible {
+  outline: 2px solid var(--gr-gold-hot);
+  outline-offset: 3px;
+}
+
+.gr-cine[data-outcome='defeat'] .gr-cine__cta:focus-visible {
+  outline-color: var(--gr-solemn);
+}
+
+.gr-cine[data-outcome='defeat'] .gr-cine__cta:hover,
+.gr-cine[data-outcome='defeat'] .gr-cine__cta:focus-visible {
+  background:
+    linear-gradient(180deg, rgba(155, 140, 240, 0.24), rgba(155, 140, 240, 0.08)),
+    rgba(10, 12, 20, 0.6);
+  box-shadow:
+    0 0 0 1px rgba(155, 140, 240, 0.22),
+    0 10px 40px rgba(111, 127, 212, 0.24),
+    0 0 64px rgba(155, 140, 240, 0.16);
+}
+
+.gr-cine__cta:active {
+  transform: scale(0.98);
+  animation: none;
+}
+
+.gr-cine__cta-arrow {
+  font-weight: 400;
+  transition: transform var(--dur-med, 220ms) var(--ease-out);
+}
+
+.gr-cine__cta:hover .gr-cine__cta-arrow,
+.gr-cine__cta:focus-visible .gr-cine__cta-arrow {
+  transform: translateX(4px);
+}
+
+/* ---- Minor actions (Restart / Quit) -------------------------------------- */
+
+.gr-cine__minor {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+  animation: gr-cine-fade-up 800ms var(--ease-out) both;
+}
+
+.gr-cine__minor-btn {
+  min-height: 2.5rem;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  color: rgba(232, 238, 243, 0.55);
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast, 120ms) var(--ease-out),
+    background-color var(--dur-fast, 120ms) var(--ease-out);
+}
+
+.gr-cine__minor-btn:hover,
+.gr-cine__minor-btn:focus-visible {
+  color: #e8eef3;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gr-cine__minor-sep {
+  color: rgba(232, 238, 243, 0.28);
+  user-select: none;
+}
+
+/* ---- Keyframes ----------------------------------------------------------- */
+
+@keyframes gr-cine-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes gr-cine-word {
+  0% {
+    opacity: 0;
+    transform: scale(0.86);
+    filter: blur(6px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes gr-cine-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gr-cine-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes gr-cine-rise {
+  from {
+    transform: translateY(12%);
+  }
+  to {
+    transform: translateY(-45%);
+  }
+}
+
+@keyframes gr-cine-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(240, 195, 60, 0.12),
+      0 8px 32px rgba(240, 195, 60, 0.18),
+      0 0 48px rgba(240, 195, 60, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(240, 195, 60, 0.22),
+      0 10px 36px rgba(240, 195, 60, 0.28),
+      0 0 72px rgba(240, 195, 60, 0.2);
+  }
+}
+
+@keyframes gr-cine-breathe-solemn {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(155, 140, 240, 0.1),
+      0 8px 32px rgba(111, 127, 212, 0.16),
+      0 0 48px rgba(111, 127, 212, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(155, 140, 240, 0.18),
+      0 10px 36px rgba(111, 127, 212, 0.24),
+      0 0 72px rgba(155, 140, 240, 0.16);
+  }
+}
+
+.gr-cine[data-outcome='defeat'] .gr-cine__cta {
+  animation-name: gr-cine-breathe-solemn;
+}
+
+/* ---- Reduced motion ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .gr-cine,
+  .gr-cine__word,
+  .gr-cine__kicker,
+  .gr-cine__civ,
+  .gr-cine__rule,
+  .gr-cine__lede,
+  .gr-cine__verse,
+  .gr-cine__cta-row,
+  .gr-cine__cta,
+  .gr-cine__minor {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
   }
 
-  .gr-btn {
-    width: auto;
-    min-width: 160px;
+  .gr-cine__rays,
+  .gr-cine__embers::before,
+  .gr-cine__embers::after {
+    animation: none !important;
+  }
+}
+
+/* ---- Small screens ------------------------------------------------------- */
+
+@media (max-width: 480px) {
+  .gr-cine__stage {
+    gap: 0.5rem;
+    padding-bottom: 1.25rem;
+  }
+
+  .gr-cine__cta {
+    width: 100%;
+    justify-content: center;
   }
 }

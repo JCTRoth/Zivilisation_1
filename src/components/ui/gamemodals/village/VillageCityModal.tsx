@@ -1,4 +1,4 @@
-import { Modal } from 'react-bootstrap';
+import GameModal from '../ModalShell';
 import type { VillageResult } from '../../../../../types/game';
 
 interface VillageCityModalProps {
@@ -13,24 +13,50 @@ interface VillageCityModalProps {
 function VillageCityModal({ result, onHide }: VillageCityModalProps) {
   const cityName = result.cityName ?? 'a new city';
   return (
-    <Modal show onHide={onHide} centered>
-      <Modal.Header closeButton className="bg-dark text-white">
-        <Modal.Title>
-          <span style={{ fontSize: '1.4em', marginRight: '0.15em' }} aria-hidden="true">🏠</span>
-          New Settlement
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="bg-dark text-white text-center">
-        <div style={{ fontSize: '3em', lineHeight: 1 }} aria-hidden="true">🏘️</div>
-        <p className="mt-3 mb-1" style={{ fontSize: '1.25em', fontWeight: 600 }}>{cityName}</p>
-        <p className="mb-0 text-secondary">
-          A friendly tribe settles here and founds the city of {cityName}!
+    <GameModal
+      show
+      onClose={onHide}
+      tone="success"
+      icon="🏘️"
+      artLabel="smoke over new roofs"
+      eyebrow="A Village Encounter"
+      title="New Settlement"
+      lede={
+        <>
+          The tribe has watched your people farm, build and trade — and now they ask to be part
+          of it. Their huts are already inside your borders: <strong>{cityName}</strong> is a
+          city of yours from this turn on.
+        </>
+      }
+      actions={
+        <button type="button" className="touch-btn touch-btn--primary" onClick={onHide}>
+          Welcome, {cityName}
+        </button>
+      }
+    >
+      <div className="gm-stat-grid">
+        <div className="gm-stat gm-stat--accent">
+          <span className="gm-stat-value">
+            <span className="gm-stat-icon" aria-hidden="true">🏘️</span>
+            {cityName}
+          </span>
+          <span className="gm-stat-label">Founded at once</span>
+        </div>
+        <div className="gm-stat">
+          <span className="gm-stat-value">
+            <span className="gm-stat-icon" aria-hidden="true">👥</span>1
+          </span>
+          <span className="gm-stat-label">Starting population</span>
+        </div>
+      </div>
+      <div className="gm-section">
+        <div className="gm-section-title">Your first duty</div>
+        <p className="gm-prose mb-0">
+          Open the city and give it something to build — a granary to grow, a warrior to guard
+          the gate. A city without orders is only a village with a flag.
         </p>
-      </Modal.Body>
-      <Modal.Footer className="bg-dark">
-        <button type="button" className="btn btn-primary" onClick={onHide}>OK</button>
-      </Modal.Footer>
-    </Modal>
+      </div>
+    </GameModal>
   );
 }
 

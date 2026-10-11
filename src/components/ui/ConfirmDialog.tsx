@@ -18,6 +18,12 @@ interface ConfirmDialogProps {
  * Accessible, mobile-friendly confirmation dialog.
  * Replaces native window.confirm() which is inconsistent and
  * untrustworthy on mobile browsers.
+ *
+ * It keeps its own `role="alertdialog"` wrapper (tests and screen readers find
+ * it by that role), but it is dressed in the shared modal shell's classes —
+ * hero with artwork slot, eyebrow/title/lede hierarchy, scrolling content and
+ * a fixed action bar — so it reads as the same family of audience-with-the-
+ * ruler dialogs as everything else.
  */
 const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   show,
@@ -49,6 +55,10 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   };
 
   const variantClass = variant === 'danger' ? 'touch-btn--danger' : variant === 'success' ? 'touch-btn--success' : 'touch-btn--primary';
+  const tone = variant === 'danger' ? 'danger' : variant === 'success' ? 'success' : 'info';
+  const eyebrow = variant === 'danger' ? 'A Word of Caution' : variant === 'success' ? 'A Fresh Chapter' : 'Awaiting Your Word';
+  const icon = variant === 'danger' ? '⚠️' : variant === 'success' ? '✅' : '⚖️';
+  const artLabel = variant === 'success' ? 'an open road' : 'Red Alter!';
 
   return (
     <Modal
@@ -57,6 +67,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       centered
       backdrop="static"
       keyboard={false}
+      className="gm"
       dialogClassName="confirm-dialog"
     >
       <div
@@ -65,18 +76,35 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         aria-labelledby="confirm-dialog-title"
         aria-describedby="confirm-dialog-message"
         onKeyDown={handleKeyDown}
-        className="confirm-dialog__inner"
+        className="gm-body confirm-dialog__inner"
+        data-tone={tone}
       >
-        <Modal.Header className="confirm-dialog__header" closeButton={false}>
-          <Modal.Title id="confirm-dialog-title" as="h2" className="confirm-dialog__title">
-            {title}
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body className="confirm-dialog__body">
-          <p id="confirm-dialog-message" className="confirm-dialog__message">{message}</p>
-          {detail && <p className="confirm-dialog__detail">{detail}</p>}
-        </Modal.Body>
-        <Modal.Footer className="confirm-dialog__footer">
+        <button type="button" className="gm-close" onClick={onCancel} aria-label="Close">
+          <i className="bi bi-x-lg" aria-hidden="true" />
+        </button>
+
+        <header className="gm-hero">
+          <div className="gm-art gm-art--plain">
+            <span className="gm-art-glyph" aria-hidden="true">{icon}</span>
+            <span className="gm-art-tag">{artLabel}</span>
+          </div>
+          <div className="gm-heading">
+            <div className="gm-eyebrow">{eyebrow}</div>
+            <h2 className="gm-title" id="confirm-dialog-title">{title}</h2>
+            <p className="gm-lede" id="confirm-dialog-message">{message}</p>
+          </div>
+        </header>
+
+        {detail && (
+          <div className="gm-content">
+            <div className="gm-callout confirm-dialog__detail">
+              <span className="gm-callout-title">Bear in mind</span>
+              {detail}
+            </div>
+          </div>
+        )}
+
+        <footer className="gm-actions">
           <button type="button" className="touch-btn touch-btn--ghost confirm-dialog__btn" onClick={onCancel}>
             {cancelLabel}
           </button>
@@ -88,7 +116,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           >
             {confirmLabel}
           </button>
-        </Modal.Footer>
+        </footer>
       </div>
     </Modal>
   );

@@ -1,4 +1,4 @@
-import { Modal } from 'react-bootstrap';
+import GameModal from '../ModalShell';
 import type { VillageResult } from '../../../../../types/game';
 
 interface VillageTechModalProps {
@@ -12,22 +12,38 @@ interface VillageTechModalProps {
 function VillageTechModal({ result, onHide }: VillageTechModalProps) {
   const techName = result.techName ?? result.techId ?? 'a new technology';
   return (
-    <Modal show onHide={onHide} centered>
-      <Modal.Header closeButton className="bg-dark text-white">
-        <Modal.Title>
-          <span style={{ fontSize: '1.4em', marginRight: '0.15em' }} aria-hidden="true">📜</span>
-          Scroll of Ancient Wisdom
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="bg-dark text-white text-center">
-        <div style={{ fontSize: '3em', lineHeight: 1 }} aria-hidden="true">🧠</div>
-        <p className="mt-3 mb-1" style={{ fontSize: '1.25em', fontWeight: 600 }}>{techName}</p>
-        <p className="mb-0 text-secondary">Your scholars decipher an ancient scroll and learn {techName}!</p>
-      </Modal.Body>
-      <Modal.Footer className="bg-dark">
-        <button type="button" className="btn btn-primary" onClick={onHide}>OK</button>
-      </Modal.Footer>
-    </Modal>
+    <GameModal
+      show
+      onClose={onHide}
+      tone="solemn"
+      icon="📜"
+      artLabel="the scroll chamber"
+      eyebrow="A Village Encounter"
+      title="Scroll of Ancient Wisdom"
+      lede="In a hut of reed and mud lies a language your own scholars cannot read. The elders hand it over without a word — knowledge asks no price here."
+      actions={
+        <button type="button" className="touch-btn touch-btn--primary" onClick={onHide}>
+          Take the Scroll
+        </button>
+      }
+    >
+      <div className="gm-stat-grid">
+        <div className="gm-stat gm-stat--accent">
+          <span className="gm-stat-value">
+            <span className="gm-stat-icon" aria-hidden="true">🔬</span>
+            {techName}
+          </span>
+          <span className="gm-stat-label">Known at once, for free</span>
+        </div>
+      </div>
+      <div className="gm-section">
+        <div className="gm-section-title">What your scholars make of it</div>
+        <p className="gm-prose mb-0">
+          Your academy had not finished writing the question, and the answer has already arrived.
+          Every year of research this saves is a year your rivals do not have.
+        </p>
+      </div>
+    </GameModal>
   );
 }
 

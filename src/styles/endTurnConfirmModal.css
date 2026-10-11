@@ -1,76 +1,57 @@
-/* EndTurnConfirmModal styles */
+/* ============================================================================
+   End Turn confirm — built on the shared GameModal shell.
+   ----------------------------------------------------------------------------
+   The frame, hero (art slot + eyebrow + title + lede), content column and
+   action bar all come from gameModalShell.css, because the component renders
+   the shell itself. What lives here is only what is specific to this dialog:
+   the "don't ask again" preference row.
+   ========================================================================== */
 
-.end-turn-modal .modal-content {
-  background: var(--color-bg-elevated, #16202a);
-  color: var(--color-text, #e8eef3);
-  border: 1px solid var(--color-border, #2c3b49);
+/* The preference rides on its own quiet card at the bottom of the column. */
+.end-turn-modal-skip-card {
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
-.end-turn-modal-header {
-  background: var(--color-bg-overlay, #1d2935);
-  color: white;
-  border-bottom: 1px solid var(--color-border, #2c3b49);
-}
-
-.end-turn-modal-title {
-  font-size: var(--text-lg, 1.125rem);
-  font-weight: 700;
-}
-
-.end-turn-modal-body {
-  background: var(--color-bg-elevated, #16202a);
-  color: white;
-}
-
-.end-turn-modal-heading {
-  font-weight: 700;
-  color: var(--color-text, #e8eef3);
-}
-
-.end-turn-modal-meta {
-  color: var(--color-text-secondary, #b8c4cf);
-}
-
-.end-turn-modal-alert {
-  border-radius: var(--radius-md, 10px);
-  line-height: 1.5;
+.end-turn-modal-skip {
+  margin: 0;
 }
 
 .end-turn-modal-skip .form-check-input {
   width: 20px;
   height: 20px;
-  margin-top: 0.2rem;
+  margin-top: 0.15rem;
   accent-color: var(--color-accent, #f0c33c);
+  cursor: pointer;
+}
+
+.end-turn-modal-skip .form-check-input:focus-visible {
+  outline: 2px solid var(--color-accent, #f0c33c);
+  outline-offset: 2px;
 }
 
 .end-turn-modal-skip .form-check-label {
-  font-size: var(--text-base, 1rem);
-  color: var(--color-text-secondary, #b8c4cf);
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text-secondary, #ccd8e2);
+  cursor: pointer;
 }
 
-.end-turn-modal-footer {
-  background: var(--color-bg-overlay, #1d2935) !important;
-  border-top: 1px solid var(--color-border, #2c3b49);
-  display: flex;
-  gap: 12px;
-  flex-direction: column-reverse;
-}
-
-.end-turn-modal-footer .btn {
-  width: 100%;
-  min-height: var(--touch-min, 44px);
-  margin: 0;
-}
-
-@media (min-width: 992px) {
-  .end-turn-modal-footer {
-    flex-direction: row;
-    justify-content: flex-end;
+/* The shell already stacks the action bar below 480px; on the small-but-not-
+   tiny range keep the two buttons on one line without cramping them. */
+@media (max-width: 575.98px) {
+  .end-turn-modal .gm-actions {
+    padding-left: 14px;
+    padding-right: 14px;
   }
+}
 
-  .end-turn-modal-footer .btn {
-    width: auto;
-    min-width: 140px;
+/* On a phone the eyebrow ("Your Counsel · Turn 12 · 3960 BC") has ~210px of
+   room beside the artwork slot — tighten its tracking so the turn stamp stays
+   on one line instead of orphaning the year. */
+@media (max-width: 479.98px) {
+  .end-turn-modal .gm-eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.09em;
   }
 }

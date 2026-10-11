@@ -1,4 +1,4 @@
-import { Modal } from 'react-bootstrap';
+import GameModal from './ModalShell';
 import { useGameStore } from '@/stores/GameStore';
 import VillageGoldModal from './village/VillageGoldModal';
 import VillageTechModal from './village/VillageTechModal';
@@ -34,20 +34,29 @@ function VillageModal({ show, onHide }: VillageModalProps) {
     default:
       // Fallback for unknown/destroyed outcomes — a plain village notice.
       return (
-        <Modal show onHide={onHide} centered>
-          <Modal.Header closeButton className="bg-dark text-white">
-            <Modal.Title>
-              <span style={{ fontSize: '1.4em', marginRight: '0.15em' }} aria-hidden="true">💨</span>
-              The Village
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body className="bg-dark text-white">
-            <p className="mb-0">The village is destroyed with nothing to be gained.</p>
-          </Modal.Body>
-          <Modal.Footer className="bg-dark">
-            <button type="button" className="btn btn-primary" onClick={onHide}>OK</button>
-          </Modal.Footer>
-        </Modal>
+        <GameModal
+          show
+          onClose={onHide}
+          tone="neutral"
+          icon="💨"
+          artLabel="ashes in the wind"
+          eyebrow="A Village Encounter"
+          title="Nothing Left Here"
+          lede="By the time your people reach the huts, whatever was worth taking is gone — scattered with the wind across empty ground."
+          actions={
+            <button type="button" className="touch-btn touch-btn--primary" onClick={onHide}>
+              Move On
+            </button>
+          }
+        >
+          <div className="gm-section">
+            <div className="gm-section-title">What your scouts report</div>
+            <p className="gm-prose mb-0">
+              The settlement is destroyed with nothing to be gained. Not every ruin keeps its
+              secrets — search the next one before the wind covers the tracks.
+            </p>
+          </div>
+        </GameModal>
       );
   }
 }

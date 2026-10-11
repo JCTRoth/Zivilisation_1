@@ -745,3 +745,241 @@
   opacity: 1;
   background: rgba(76, 175, 80, 0.05);
 }
+
+/* ============================================================================
+   CITY & PRODUCTION SCREENS ON THE SHARED MODAL SHELL
+   ----------------------------------------------------------------------------
+   CityModal and ProductionSelectionModal are built on gamemodals/ModalShell
+   (gameModalShell.css owns the hero, sections, chips and action bar). This
+   block only adds what the shell does not know about: the tab strip, the
+   section helpers used by the city tabs, and the couple of shell rules that
+   have to be re-asserted while the dialog carries .city-details-modal.
+   ========================================================================== */
+
+/* ---- Tab strip ----------------------------------------------------------- */
+
+.city-tabstrip {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.city-tabstrip .nav-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  overflow-x: auto;
+  margin: 0;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  scrollbar-width: none;
+}
+
+.city-tabstrip .nav-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.city-tabstrip .nav-tabs .nav-item {
+  flex: 0 0 auto;
+}
+
+.city-tabstrip .nav-tabs .nav-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px; /* touch target — .city-details-modal .nav-link says the same */
+  margin: 0;
+  padding: 0 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--gm-label, #93a6b6);
+  background: transparent;
+}
+
+.city-tabstrip .nav-tabs .nav-link:hover {
+  color: var(--color-text, #e8eef3);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: transparent;
+  border-bottom-color: rgba(255, 255, 255, 0.25);
+}
+
+.city-tabstrip .nav-tabs .nav-link.active,
+.city-tabstrip .nav-tabs .nav-link.show {
+  color: var(--gm-accent, #f0c33c);
+  background: var(--gm-tint, rgba(240, 195, 60, 0.16));
+  border-color: transparent;
+  border-bottom-color: var(--gm-accent, #f0c33c);
+}
+
+.city-tabstrip .tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.city-tabstrip .tab-pane.active {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ---- Sections ------------------------------------------------------------ */
+/* Inside a city/production tab every .gm-section is a column of stacked
+   blocks (title, grids, notes) — flex gap keeps them evenly spaced whatever
+   mix of stat grids, key/value rows and notes a tab happens to use. */
+
+.city-tabstrip .gm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.city-tabstrip .gm-section > .gm-section-title {
+  margin-bottom: 0;
+}
+
+/* Trailing count / chip inside a section title — kept in sentence case so it
+   reads as a caption rather than part of the heading. */
+.city-section-count {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: var(--gm-label, #93a6b6);
+}
+
+/* Right-aligned control parked in a section title (Demote All, …). */
+.city-section-action {
+  margin-left: auto;
+}
+
+.city-tabstrip .gm-section-title .gm-chip {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+/* The Auto switch rides in the Production section title. */
+.city-auto-switch {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.city-auto-switch .form-check-label {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ---- Empty states -------------------------------------------------------- */
+/* "Nothing here yet" is still a card, never a bare line of grey text. */
+
+.city-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 10px;
+  text-align: center;
+  color: var(--color-text-muted, #9fb0bf);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.city-empty i {
+  font-size: 1.7rem;
+  color: var(--gm-label, #93a6b6);
+}
+
+.city-empty strong {
+  color: var(--color-text, #e8eef3);
+}
+
+/* ---- Key/value accents --------------------------------------------------- */
+/* Growth and starvation read at a glance; .gm-kv b is white by default. */
+
+.gm-kv b.city-kv--good {
+  color: var(--gm-success, #35c46c);
+}
+
+.gm-kv b.city-kv--bad {
+  color: var(--gm-danger, #ef5a6e);
+}
+
+/* ---- Hero ---------------------------------------------------------------- */
+/* The gold readout rides in the lede under the city name. */
+
+.gm-lede .city-hero-gold {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* The art tag names the picture, so it can run to two lines under the glyph. */
+.modal.gm .modal-dialog.city-details-modal .gm-art-tag {
+  font-size: 7px;
+  line-height: 1.3;
+  letter-spacing: 0.04em;
+  padding: 3px 4px;
+}
+
+.modal.gm .modal-dialog.city-details-modal .gm-art-glyph {
+  font-size: 26px;
+  transform: translateY(-7px);
+}
+
+/* ---- Callouts with a list inside ---------------------------------------- */
+
+.city-tabstrip .gm-callout > .gm-list {
+  margin-top: 6px;
+}
+
+.city-tabstrip .gm-callout > .gm-note {
+  margin-top: 8px;
+}
+
+/* ---- Action bar ---------------------------------------------------------- */
+/* "Choose Production…" keeps its class but no longer spans the whole footer. */
+
+.gm-actions .production-select-btn {
+  width: auto;
+  min-height: var(--touch-min, 44px);
+}
+
+.gm-actions .city-avail-toggle {
+  margin: 0;
+}
+
+/* ---- Narrow screens ------------------------------------------------------ */
+/* The shell caps .modal-content at 100dvh − 2.5rem; the city and production
+   dialogs are sheets on phones and must still fill the viewport edge to edge
+   (gameModals.css asks for the same on .city-details-modal .modal-content but
+   loses the cascade to the shell — this compound selector wins it back). */
+
+@media (max-width: 991.98px) {
+  .modal.gm .modal-dialog.city-details-modal .modal-content,
+  .modal.gm .modal-dialog.production-selection-modal .modal-content {
+    max-height: 100dvh;
+    height: 100%;
+    min-height: 100%;
+    border-radius: 0;
+  }
+}
+
+/* A lone control stacked in a section (Lock Specialists, …) must not be
+   stretched across the card by the section's column flex. */
+.city-tabstrip .gm-section > button {
+  align-self: flex-start;
+}
+
+/* Action cells in the production tables: "+ Add" and the buy button are a
+   fixed pair — never let the flex row squeeze their labels out of the cell. */
+.city-tabstrip .gm-section .table td .d-flex.gap-1 > * {
+  flex: 0 0 auto;
+}

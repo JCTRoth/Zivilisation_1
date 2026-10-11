@@ -1,4 +1,4 @@
-import { Modal } from 'react-bootstrap';
+import GameModal from '../ModalShell';
 import type { VillageResult } from '../../../../../types/game';
 
 interface VillageGoldModalProps {
@@ -13,24 +13,37 @@ interface VillageGoldModalProps {
 function VillageGoldModal({ result, onHide }: VillageGoldModalProps) {
   const gold = result.goldAmount ?? 50;
   return (
-    <Modal show onHide={onHide} centered>
-      <Modal.Header closeButton className="bg-dark text-white">
-        <Modal.Title>
-          <span style={{ fontSize: '1.4em', marginRight: '0.15em' }} aria-hidden="true">🪙</span>
-          Valuable Metals
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="bg-dark text-white text-center">
-        <div style={{ fontSize: '3em', lineHeight: 1 }} aria-hidden="true">💰</div>
-        <p className="mt-3 mb-1" style={{ fontSize: '1.25em', fontWeight: 600 }}>
-          +{gold} Gold
+    <GameModal
+      show
+      onClose={onHide}
+      tone="gold"
+      icon="🪙"
+      artLabel="a buried hoard"
+      eyebrow="A Village Encounter"
+      title="Valuable Metals"
+      lede="The villagers kneel, bring out chests that have waited a hundred years in the earth, and lay them at your feet. Some of it is yours by right of passage."
+      actions={
+        <button type="button" className="touch-btn touch-btn--primary" onClick={onHide}>
+          Accept the Tribute
+        </button>
+      }
+    >
+      <div className="gm-stat-grid">
+        <div className="gm-stat gm-stat--accent">
+          <span className="gm-stat-value">
+            <span className="gm-stat-icon" aria-hidden="true">🪙</span>+{gold}
+          </span>
+          <span className="gm-stat-label">Gold for your treasury</span>
+        </div>
+      </div>
+      <div className="gm-section">
+        <div className="gm-section-title">What the elders said</div>
+        <p className="gm-prose mb-0">
+          They have no use for it where they are going — and an empire that passes in peace is
+          better than one that passes in pieces. Spend it well.
         </p>
-        <p className="mb-0 text-secondary">The villagers present you with {gold} gold in tribute.</p>
-      </Modal.Body>
-      <Modal.Footer className="bg-dark">
-        <button type="button" className="btn btn-primary" onClick={onHide}>OK</button>
-      </Modal.Footer>
-    </Modal>
+      </div>
+    </GameModal>
   );
 }
 

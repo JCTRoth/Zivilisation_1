@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Button, Tab, Tabs } from 'react-bootstrap';
+import { Button, Tab, Tabs } from 'react-bootstrap';
 import { UNIT_PROPS, BUILDING_PROPS } from '../../../utils/Constants';
 import type { ProductionItem } from '../../../../types/game';
 import { useGameStore } from '@/stores/GameStore';
+import { GameUtils } from '@/utils/GameUtils';
 import {
   WONDERS,
   WONDER_GROUPS,
@@ -15,6 +16,8 @@ import {
   type WonderStatus,
 } from '@/data/WonderData';
 import { WonderArtwork } from './WonderArtwork';
+import GameModal from './ModalShell';
+import '@/styles/cityModal.css';
 import '@/styles/wonders.css';
 
 /** Badge class + label for a wonder status (same colours as the overview). */
@@ -43,6 +46,8 @@ interface ProductionSelectionModalProps {
   cityBuildings?: string[];
   /** City's production per turn — used to estimate build time (shields/turn). */
   productionPerTurn?: number;
+  /** City the orders are for — names the hero and every hint line. */
+  cityName?: string;
 }
 
 /** True when the civ has researched every tech in the (possibly single) requirement. */
@@ -115,6 +120,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   purchasedThisTurn = false,
   cityBuildings = [],
   productionPerTurn = 0,
+  cityName,
 }) => {
   // Buildings are one-per-city in Civ1 — hide the ones the city already owns.
   const ownedBuildings = new Set((cityBuildings ?? []).map((b) => String(b).toLowerCase()));
@@ -130,6 +136,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   const storeCities = useGameStore((s) => s.cities);
   const storeCivilizations = useGameStore((s) => s.civilizations);
   const activePlayer = useGameStore((s) => s.gameState.activePlayer);
+  const gameState = useGameStore((s) => s.gameState);
   const wonderStatuses = useMemo(
     () => computeWonderStatuses(storeCities, storeCivilizations, activePlayer),
     [storeCities, storeCivilizations, activePlayer],
@@ -382,24 +389,69 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
     return out;
   };
 
+  // Rows actually offered this turn (tech-gated unless "Show unavailable").
+  const unitRows = sortItems(
+    Object.keys(UNIT_PROPS)
+      .map((key) => {
+        const unit = UNIT_PROPS[key];
+        const requires = (unit as { requires?: string | string[] }).requires;
+        return {
+          key,
+          name: unit.name,
+          cost: unit.cost,
+          canBuild: hasRequiredTechs(currentPlayer, requires),
+          requires,
+          unit,
+        };
+      })
+      .filter((item) => showUnavailable || item.canBuild),
+    unitSort,
+  );
+  const buildingRows = sortItems(
+    buildableBuildingKeys
+      .map((key) => {
+        const building = BUILDING_PROPS[key];
+        const requiredTech = (building as { requiredTechnology?: string }).requiredTechnology || null;
+        return {
+          key,
+          name: building.name,
+          cost: building.cost,
+          canBuild: hasRequiredTechs(currentPlayer, requiredTech),
+          requiredTech,
+          building,
+        };
+      })
+      .filter((item) => showUnavailable || item.canBuild),
+    buildingSort,
+  );
+
+  const subject = cityName ?? 'your city';
+  const eyebrow = `Production · Turn ${gameState.currentTurn ?? 1} · ${GameUtils.formatYear(
+    gameState.currentYear ?? -4000,
+  )}`;
+
   return (
-    <Modal show={show} onHide={onHide} centered size="lg" dialogClassName="city-details-modal production-selection-modal hex-detail-modal">
-      <Modal.Header className="hex-detail-modal-header text-white">
-        <Modal.Title>
-          Select Production
-          {onPurchase && (
-            <span className="ms-3 fs-6 fw-normal">
-              <i className="bi bi-coin text-warning"></i> {playerGold} Gold
-            </span>
-          )}
-        </Modal.Title>
-        <Button variant="outline-light" size="sm" onClick={onHide} className="hex-detail-close-button">
-          <i className="bi bi-x-lg"></i>
-        </Button>
-      </Modal.Header>
-      <Modal.Body className="hex-detail-modal-body text-white">
-        <div className="d-flex justify-content-end mb-2">
-          <div className="form-check form-switch mb-0">
+    <GameModal
+      show={show}
+      onClose={onHide}
+      tone="info"
+      size="lg"
+      dialogClassName="city-details-modal production-selection-modal hex-detail-modal"
+      icon="🏗️"
+      artLabel="the drawing board"
+      eyebrow={eyebrow}
+      title={cityName ? `What shall ${cityName} build next?` : 'What shall your city build next?'}
+      lede={
+        <>
+          Your people are ready to work — give them their next order.
+          <span className="gm-chip gm-chip--accent city-hero-gold">
+            <i className="bi bi-coin" aria-hidden="true"></i> {playerGold} Gold
+          </span>
+        </>
+      }
+      actions={
+        <>
+          <div className="form-check form-switch mb-0 city-avail-toggle">
             <input
               className="form-check-input"
               type="checkbox"
@@ -411,236 +463,250 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
               Show unavailable
             </label>
           </div>
-        </div>
-        <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k ?? 'units')} id="production-selection-tabs">
+          <span className="gm-actions-spacer" />
+          <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
+            Done
+          </button>
+        </>
+      }
+    >
+      <div className="city-tabstrip">
+        <Tabs
+          activeKey={activeTab}
+          onSelect={(k) => setActiveTab(k ?? 'units')}
+          id="production-selection-tabs"
+          className="mb-0"
+        >
           <Tab eventKey="units" title="Units">
-            <div className="table-responsive">
-              <table className="table table-dark table-striped">
-                <thead>
-                  <tr>
-                    <th style={{ cursor: 'pointer' }} onClick={() => toggleUnitSort('name')}>
-                      Unit{sortIndicator('name', unitSort)}
-                    </th>
-                    <th>Required Technology</th>
-                    <th>Stats</th>
-                    <th style={{ cursor: 'pointer' }} onClick={() => toggleUnitSort('cost')}>
-                      Shields{sortIndicator('cost', unitSort)}
-                    </th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortItems(
-                    Object.keys(UNIT_PROPS)
-                      .map((key) => {
-                        const unit = UNIT_PROPS[key];
-                        const requires = (unit as { requires?: string | string[] }).requires;
-                        return {
-                          key,
-                          name: unit.name,
-                          cost: unit.cost,
-                          canBuild: hasRequiredTechs(currentPlayer, requires),
-                          requires,
-                          unit,
-                        };
-                      })
-                      .filter((item) => showUnavailable || item.canBuild),
-                    unitSort,
-                  ).map(({ key, name, cost, canBuild, requires, unit }) => {
-                    const requiredTech = Array.isArray(requires) ? requires.join(', ') : requires || 'None';
-                    const stats = `${unit.attack}/${unit.defense} (${unit.movement} moves)`;
-                    const purchaseCost = getPurchaseCost('unit', cost);
-                    const affordable = canAfford('unit', cost);
-                    const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
-                    return (
-                      <tr key={key} className={canBuild ? '' : 'text-muted'}>
-                        <td>{name}</td>
-                        <td>{formatTechName(requiredTech)}</td>
-                        <td>{stats}</td>
-                        <td>
-                          <span className="text-info">{getTurnsText(cost)}</span>
-                        </td>
-                        <td>
-                          <div className="d-flex gap-1">
-                            {canBuild && onAddToQueue && (
-                              <Button
-                                variant="outline-success"
-                                size="sm"
-                                title="Add to build queue"
-                                onClick={() => handleAddToQueue(key)}
-                              >
-                                + Add
-                              </Button>
-                            )}
-                            {canBuild && (
-                              <Button
-                                variant="outline-warning"
-                                size="sm"
-                                disabled={!canBuy}
-                                title={
-                                  purchasedThisTurn
-                                    ? 'Already purchased this turn'
-                                    : !affordable
-                                      ? `Need ${purchaseCost} Gold (have ${playerGold})`
-                                      : `Buy now for ${purchaseCost} Gold`
-                                }
-                                onClick={() => handleBuy(key, 'unit')}
-                              >
-                                {purchaseCost}🪙
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Tab>
-          <Tab eventKey="buildings" title="Buildings">
-            <div className="table-responsive">
-              <table className="table table-dark table-striped">
-                <thead>
-                  <tr>
-                    <th style={{ cursor: 'pointer' }} onClick={() => toggleBuildingSort('name')}>
-                      Building{sortIndicator('name', buildingSort)}
-                    </th>
-                    <th>Required Technology</th>
-                    <th>Effect</th>
-                    <th style={{ cursor: 'pointer' }} onClick={() => toggleBuildingSort('cost')}>
-                      Shields{sortIndicator('cost', buildingSort)}
-                    </th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {buildableBuildingKeys.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="text-center text-muted">
-                        All available buildings are already constructed in this city.
-                      </td>
-                    </tr>
-                  )}
-                  {sortItems(
-                    buildableBuildingKeys
-                      .map((key) => {
-                        const building = BUILDING_PROPS[key];
-                        const requiredTech = (building as { requiredTechnology?: string }).requiredTechnology || null;
-                        return {
-                          key,
-                          name: building.name,
-                          cost: building.cost,
-                          canBuild: hasRequiredTechs(currentPlayer, requiredTech),
-                          requiredTech,
-                          building,
-                        };
-                      })
-                      .filter((item) => showUnavailable || item.canBuild),
-                    buildingSort,
-                  ).map(({ key, name, cost, canBuild, requiredTech, building }) => {
-                    const purchaseCost = getPurchaseCost('building', cost);
-                    const affordable = canAfford('building', cost);
-                    const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
-                    return (
-                      <tr key={key} className={canBuild ? '' : 'text-muted'}>
-                        <td>{name}</td>
-                        <td>{formatTechName(requiredTech)}</td>
-                        <td>{building.description}</td>
-                        <td>
-                          <span className="text-info">{getTurnsText(cost)}</span>
-                        </td>
-                        <td>
-                          <div className="d-flex gap-1">
-                            {canBuild && onAddToQueue && (
-                              <Button
-                                variant="outline-info"
-                                size="sm"
-                                title="Add to build queue"
-                                onClick={() => handleAddToQueue(key)}
-                              >
-                                + Add
-                              </Button>
-                            )}
-                            {canBuild && (
-                              <Button
-                                variant="outline-warning"
-                                size="sm"
-                                disabled={!canBuy}
-                                title={
-                                  purchasedThisTurn
-                                    ? 'Already purchased this turn'
-                                    : !affordable
-                                      ? `Need ${purchaseCost} Gold (have ${playerGold})`
-                                      : `Buy now for ${purchaseCost} Gold`
-                                }
-                                onClick={() => handleBuy(key, 'building')}
-                              >
-                                🪙{purchaseCost}
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Tab>
-          <Tab eventKey="wonders" title="Wonders">
-            <div className="production-wonders-layout">
-              <div className="production-wonders-layout__list table-responsive">
-                <table className="table table-dark table-striped mb-0">
+            <p className="gm-prose">
+              Your people can only field what their tools allow — greyed rows wait on a
+              technology your scribes have yet to find.
+            </p>
+            <section className="gm-section">
+              <div className="gm-section-title">Units your people can raise</div>
+              <div className="table-responsive">
+                <table className="table table-dark table-striped">
                   <thead>
                     <tr>
-                      <th>Wonder</th>
-                      <th>Status</th>
+                      <th style={{ cursor: 'pointer' }} onClick={() => toggleUnitSort('name')}>
+                        Unit{sortIndicator('name', unitSort)}
+                      </th>
                       <th>Required Technology</th>
-                      <th>Shields</th>
+                      <th>Stats</th>
+                      <th style={{ cursor: 'pointer' }} onClick={() => toggleUnitSort('cost')}>
+                        Shields{sortIndicator('cost', unitSort)}
+                      </th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {renderWonderRows()}
+                    {unitRows.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="text-center text-muted">
+                          Nothing your workshops can build yet — switch on “Show unavailable”
+                          below to see what the future holds.
+                        </td>
+                      </tr>
+                    )}
+                    {unitRows.map(({ key, name, cost, canBuild, requires, unit }) => {
+                      const requiredTech = Array.isArray(requires) ? requires.join(', ') : requires || 'None';
+                      const stats = `${unit.attack}/${unit.defense} (${unit.movement} moves)`;
+                      const purchaseCost = getPurchaseCost('unit', cost);
+                      const affordable = canAfford('unit', cost);
+                      const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
+                      return (
+                        <tr key={key} className={canBuild ? '' : 'text-muted'}>
+                          <td>{name}</td>
+                          <td>{formatTechName(requiredTech)}</td>
+                          <td>{stats}</td>
+                          <td>
+                            <span className="text-info">{getTurnsText(cost)}</span>
+                          </td>
+                          <td>
+                            <div className="d-flex gap-1">
+                              {canBuild && onAddToQueue && (
+                                <Button
+                                  variant="outline-success"
+                                  size="sm"
+                                  title="Add to build queue"
+                                  onClick={() => handleAddToQueue(key)}
+                                >
+                                  + Add
+                                </Button>
+                              )}
+                              {canBuild && (
+                                <Button
+                                  variant="outline-warning"
+                                  size="sm"
+                                  disabled={!canBuy}
+                                  title={
+                                    purchasedThisTurn
+                                      ? 'Already purchased this turn'
+                                      : !affordable
+                                        ? `Need ${purchaseCost} Gold (have ${playerGold})`
+                                        : `Buy now for ${purchaseCost} Gold`
+                                  }
+                                  onClick={() => handleBuy(key, 'unit')}
+                                >
+                                  {purchaseCost}🪙
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+            </section>
+          </Tab>
 
-              {/* Side panel (spec E): full details for the selected wonder. */}
-              <aside className="production-wonders-layout__detail">
-                {!selectedWonder ? (
-                  <div className="text-white-50 small">
-                    Select a wonder to see its full effect, obsolescence, history and status.
-                  </div>
-                ) : (
-                  <>
-                    <WonderArtwork wonder={selectedWonder} active={show && activeTab === 'wonders'} />
-                    <h6>{selectedWonder.name}</h6>
-                    {selectedWonderRow && (
-                      <span className={`wonder-status wonder-status--${selectedWonderRow.status}`}>
-                        {WONDER_STATUS_LABEL[selectedWonderRow.status]}
-                      </span>
+          <Tab eventKey="buildings" title="Buildings">
+            <p className="gm-prose">
+              One of each per city. What {subject} already owns is left off the list; the rest
+              waits on the research of your scribes.
+            </p>
+            <section className="gm-section">
+              <div className="gm-section-title">Buildings for the city</div>
+              <div className="table-responsive">
+                <table className="table table-dark table-striped">
+                  <thead>
+                    <tr>
+                      <th style={{ cursor: 'pointer' }} onClick={() => toggleBuildingSort('name')}>
+                        Building{sortIndicator('name', buildingSort)}
+                      </th>
+                      <th>Required Technology</th>
+                      <th>Effect</th>
+                      <th style={{ cursor: 'pointer' }} onClick={() => toggleBuildingSort('cost')}>
+                        Shields{sortIndicator('cost', buildingSort)}
+                      </th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {buildingRows.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="text-center text-muted">
+                          {buildableBuildingKeys.length === 0
+                            ? 'All available buildings are already constructed in this city.'
+                            : 'Nothing your knowledge allows yet — switch on “Show unavailable” below to see what is coming.'}
+                        </td>
+                      </tr>
                     )}
-                    <div className="wonder-detail-effect mt-2">{selectedWonder.effectText}</div>
-                    <div className="wonder-detail-meta">
-                      🛡 {selectedWonder.cost} shields · 🔬 {formatTechName(selectedWonder.requiredTechnology)} · ⏳{' '}
-                      {selectedWonder.obsoleteBy
-                        ? `Obsolete: ${formatTechName(selectedWonder.obsoleteBy)}`
-                        : 'Never obsolete'}
-                      {selectedWonderRow?.obsolete && (
-                        <span className="wonder-obsolete-tag ms-2">— effect currently inactive</span>
-                      )}
+                    {buildingRows.map(({ key, name, cost, canBuild, requiredTech, building }) => {
+                      const purchaseCost = getPurchaseCost('building', cost);
+                      const affordable = canAfford('building', cost);
+                      const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
+                      return (
+                        <tr key={key} className={canBuild ? '' : 'text-muted'}>
+                          <td>{name}</td>
+                          <td>{formatTechName(requiredTech)}</td>
+                          <td>{building.description}</td>
+                          <td>
+                            <span className="text-info">{getTurnsText(cost)}</span>
+                          </td>
+                          <td>
+                            <div className="d-flex gap-1">
+                              {canBuild && onAddToQueue && (
+                                <Button
+                                  variant="outline-info"
+                                  size="sm"
+                                  title="Add to build queue"
+                                  onClick={() => handleAddToQueue(key)}
+                                >
+                                  + Add
+                                </Button>
+                              )}
+                              {canBuild && (
+                                <Button
+                                  variant="outline-warning"
+                                  size="sm"
+                                  disabled={!canBuy}
+                                  title={
+                                    purchasedThisTurn
+                                      ? 'Already purchased this turn'
+                                      : !affordable
+                                        ? `Need ${purchaseCost} Gold (have ${playerGold})`
+                                        : `Buy now for ${purchaseCost} Gold`
+                                  }
+                                  onClick={() => handleBuy(key, 'building')}
+                                >
+                                  🪙{purchaseCost}
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </Tab>
+
+          <Tab eventKey="wonders" title="Wonders">
+            <p className="gm-prose">
+              Only one people may finish each wonder. Several cities can race the same one —
+              the first to lay the last stone owns it for the rest of time.
+            </p>
+            <section className="gm-section">
+              <div className="gm-section-title">Wonders of the world</div>
+              <div className="production-wonders-layout">
+                <div className="production-wonders-layout__list table-responsive">
+                  <table className="table table-dark table-striped mb-0">
+                    <thead>
+                      <tr>
+                        <th>Wonder</th>
+                        <th>Status</th>
+                        <th>Required Technology</th>
+                        <th>Shields</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {renderWonderRows()}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Side panel (spec E): full details for the selected wonder. */}
+                <aside className="production-wonders-layout__detail">
+                  {!selectedWonder ? (
+                    <div className="text-white-50 small">
+                      Choose a wonder from the list to read what it gives, when it falls
+                      obsolete, and who is racing you to it.
                     </div>
-                    <div className="wonder-detail-flavor">{selectedWonder.flavor}</div>
-                  </>
-                )}
-              </aside>
-            </div>
+                  ) : (
+                    <>
+                      <WonderArtwork wonder={selectedWonder} active={show && activeTab === 'wonders'} />
+                      <h6>{selectedWonder.name}</h6>
+                      {selectedWonderRow && (
+                        <span className={`wonder-status wonder-status--${selectedWonderRow.status}`}>
+                          {WONDER_STATUS_LABEL[selectedWonderRow.status]}
+                        </span>
+                      )}
+                      <div className="wonder-detail-effect mt-2">{selectedWonder.effectText}</div>
+                      <div className="wonder-detail-meta">
+                        🛡 {selectedWonder.cost} shields · 🔬 {formatTechName(selectedWonder.requiredTechnology)} · ⏳{' '}
+                        {selectedWonder.obsoleteBy
+                          ? `Obsolete: ${formatTechName(selectedWonder.obsoleteBy)}`
+                          : 'Never obsolete'}
+                        {selectedWonderRow?.obsolete && (
+                          <span className="wonder-obsolete-tag ms-2">— effect currently inactive</span>
+                        )}
+                      </div>
+                      <div className="wonder-detail-flavor">{selectedWonder.flavor}</div>
+                    </>
+                  )}
+                </aside>
+              </div>
+            </section>
           </Tab>
         </Tabs>
-      </Modal.Body>
-    </Modal>
+      </div>
+    </GameModal>
   );
 };
 

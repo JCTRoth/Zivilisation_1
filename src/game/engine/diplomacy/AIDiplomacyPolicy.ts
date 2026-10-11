@@ -61,6 +61,10 @@ export interface PolicyContext {
    * calendar (and every existing test) keeps the early-game behaviour.
    */
   currentYear?: number;
+  /** Techs this civ has that the other lacks (Exchange of Knowledge supply). */
+  techsWeCanOffer?: string[];
+  /** Techs the other has that this civ lacks (Exchange of Knowledge demand). */
+  techsWeWant?: string[];
 }
 
 const POWER_FLOOR = 1;
@@ -233,6 +237,20 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
     push(out, 'offer_open_borders', courtship - 4, 'wants their trust');
     push(out, 'propose_trade_agreement', courtship * 0.9, 'wants their trade');
     push(out, 'propose_non_aggression', courtship * 0.7 + fear / 20, 'wants peace of mind');
+
+    // Exchange of Knowledge (Civ I): only when both sides hold something the
+    // other lacks. Worth less than an alliance pitch, more than open borders —
+    // knowledge is power, and goodwill makes a swap easier to land.
+    const canOffer = ctx.techsWeCanOffer?.length ?? 0;
+    const canWant = ctx.techsWeWant?.length ?? 0;
+    if (canOffer > 0 && canWant > 0) {
+      push(
+        out,
+        'offer_tech_exchange',
+        11 + goodwill / 15 + Math.min(canOffer, canWant) * 0.5,
+        `we each hold ${Math.min(canOffer, canWant)} tech${Math.min(canOffer, canWant) === 1 ? '' : 's'} the other lacks`,
+      );
+    }
 
     // Alliance: the strategic case the old flat −10 never had.
     if (ctx.sharedEnemy) {

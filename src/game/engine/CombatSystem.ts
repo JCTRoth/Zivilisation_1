@@ -6,14 +6,15 @@
  * numbers the player sees. It owns:
  *
  *   - the single `COMBAT_DAMAGE` constant (HP% a lost round costs),
- *   - the strength formulas (health, terrain, fortification, city, fortress),
+ *   - the strength formulas (health, rank, terrain, fortification, city, fortress),
  *   - the round roll and the "no run-overs" overrun rule,
  *   - how much damage each side takes and whether it was destroyed,
  *   - the player-facing summary strings shown as toasts.
  *
  * Rules (Civ1-flavoured, as implemented by this clone):
- *   - Strength = stat × health%, defender additionally gets terrain defence,
- *     +50% when fortified or inside a city, and the fortress multiplier.
+ *   - Strength = stat × health% × rank multiplier, defender additionally gets
+ *     terrain defence, +50% when fortified or inside a city, and the fortress
+ *     multiplier.
  *   - The attacker wins the round with probability A / (A + D).
  *   - Only the side that LOSES the round takes damage:
  *       attacker wins → defender takes damage (lethal when the attacker is at
@@ -26,6 +27,7 @@
 import { TERRAIN_PROPS } from '@/utils/Constants';
 import { MathUtils } from '@/utils/MathUtils';
 import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
+import { getUnitRank, rankStrengthMultiplier } from './UnitRankSystem';
 
 /** HP (%) a lost combat round costs a unit. */
 const COMBAT_DAMAGE = 25;
@@ -46,6 +48,10 @@ export interface CombatUnitLike {
   defense?: number;
   health?: number;
   isFortified?: boolean;
+  /** Rank grade (1 Rookie … 4 Battle-Hardened) — feeds the strength multiplier. */
+  rank?: number;
+  /** Legacy veterancy flag, read when `rank` is absent (old saves). */
+  isVeteran?: boolean;
 }
 
 /** Minimal city shape needed for the city-assault math. */
@@ -109,14 +115,19 @@ function terrainKeyOf(tile?: CombatTerrainLike | null): string {
 }
 
 export class CombatSystem {
-  /** Attacking strength: attack stat scaled by remaining health. */
+  /** Rank multiplier for a unit (Rookie ×1 … Battle-Hardened ×1.5). */
+  static rankMultiplier(unit: CombatUnitLike): number {
+    return rankStrengthMultiplier(getUnitRank(unit));
+  }
+
+  /** Attacking strength: attack stat scaled by remaining health and rank. */
   static attackerStrength(unit: CombatUnitLike): number {
-    return (unit.attack ?? 0) * ((unit.health ?? 100) / 100);
+    return (unit.attack ?? 0) * ((unit.health ?? 100) / 100) * this.rankMultiplier(unit);
   }
 
   /**
-   * Defending strength: defence stat × health, plus the Civ1 stacking bonuses
-   * (terrain defence, +50% fortification/in-city, fortress multiplier).
+   * Defending strength: defence stat × health × rank, plus the Civ1 stacking
+   * bonuses (terrain defence, +50% fortification/in-city, fortress multiplier).
    */
   static defenderStrength(
     defender: CombatUnitLike,
@@ -125,7 +136,10 @@ export class CombatSystem {
     const tile = context.defenderTile ?? null;
     const terrainKey = context.defenderTerrainKey ?? terrainKeyOf(tile);
     const terrainDefense = terrainKey ? TERRAIN_PROPS[terrainKey]?.defense ?? 1 : 1;
-    let strength = (defender.defense ?? 0) * ((defender.health ?? 100) / 100) * Math.max(1, terrainDefense);
+    let strength = (defender.defense ?? 0)
+      * ((defender.health ?? 100) / 100)
+      * Math.max(1, terrainDefense)
+      * this.rankMultiplier(defender);
 
     // Units inside a city are automatically fortified (+50%).
     if (defender.isFortified || context.defenderInCity) {

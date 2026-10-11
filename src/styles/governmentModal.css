@@ -1,154 +1,79 @@
-/* Government switching modal — mirrors the rates modal design tokens. */
+/* =============================================================================
+   GOVERNMENT MODAL
+   -----------------------------------------------------------------------------
+   Built on the shared game-modal shell (gameModalShell.css). Only the charter
+   cards are bespoke. Shell tokens in scope: --gm-accent (solemn), --gm-tint,
+   --gm-label.
+   ========================================================================== */
 
 .government-modal {
   --gov-accent: var(--color-accent, #f0c33c);
   --gov-border: var(--color-border, #2c3b49);
   --gov-text: var(--color-text, #e8eef3);
   --gov-muted: var(--color-text-muted, #9fb0bd);
-  --gov-bg: var(--color-bg-overlay, #1d2935);
 }
 
-/* The modal surface itself must be dark — Bootstrap's default .modal-content
-   is white and shows through the transparent footer otherwise. */
-.government-modal .modal-content {
-  background: var(--color-bg-elevated, #16202a);
-  color: var(--gov-text);
-  border: 1px solid var(--gov-border);
-}
-
-.government-modal__header {
-  background: var(--color-bg-elevated, #16202a);
-  color: var(--gov-text);
-  border-bottom: 1px solid var(--gov-border);
-}
-
-.government-modal__header .btn-close {
-  filter: invert(0.85) hue-rotate(180deg);
-  color: whitesmoke;
-}
-
-.government-modal__title {
-  color: var(--gov-text);
-  font-weight: 600;
-}
-
+/* Content wrapper: the shell already supplies the gap between its children,
+   so this only has to stack its own sections. */
 .government-modal__body {
-  background: var(--gov-bg);
-  color: var(--gov-text);
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.government-modal__footer {
-  /* !important: Bootstrap's .modal-footer sets a transparent
-     --bs-modal-footer-bg that loads later in the cascade. */
-  background: var(--color-bg-overlay, #1d2935) !important;
-  border-top: 1px solid var(--gov-border);
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-/* Themed action buttons — dark surface with accent border/text, matching the
-   diplomacy modal's button style instead of Bootstrap's bright variants. */
-.government-modal__btn {
-  padding: 8px 20px;
-  border: 1px solid var(--color-border-strong, #3d5163);
-  border-radius: var(--radius-sm, 8px);
-  background: var(--color-bg-overlay, #1d2935);
-  color: var(--color-text, #e8eef3);
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-
-.government-modal__btn:hover:not(:disabled) {
-  border-color: var(--color-accent, #f0c33c);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.government-modal__btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.government-modal__btn--revolution {
-  border-color: rgba(240, 195, 60, 0.5);
-  color: var(--color-accent, #f0c33c);
-}
-
-.government-modal__btn--revolution:hover:not(:disabled) {
-  background: rgba(240, 195, 60, 0.12);
-  border-color: var(--color-accent-strong, #ffd75e);
-}
-
-.government-current {
-  padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--gov-border);
-  border-radius: var(--radius-md, 10px);
-  font-size: 0.95rem;
-}
-
-.government-current strong {
-  color: var(--gov-text);
-}
-
-.government-current__desc {
-  color: var(--gov-muted);
-  font-size: 0.85rem;
-  margin-top: 6px;
-}
-
-.government-revolution-banner {
-  margin: 0;
-  font-size: 0.95rem;
-}
-
-.government-list-title {
-  color: var(--gov-muted);
-  font-size: 0.85rem;
-  margin-top: 4px;
-}
+/* ---- Charter list -------------------------------------------------------- */
 
 .government-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
   max-height: 46vh;
   overflow-y: auto;
   padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.government-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.government-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
 }
 
 .government-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
+  width: 100%;
   text-align: left;
-  padding: 12px 14px;
-  border: 1px solid var(--gov-border);
-  border-radius: var(--radius-md, 10px);
-  background: rgba(255, 255, 255, 0.02);
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
   color: var(--gov-text);
   cursor: pointer;
-  transition: all 0.15s ease;
-  width: 100%;
+  transition:
+    background-color var(--dur-fast, 0.15s) var(--ease-out, ease),
+    border-color var(--dur-fast, 0.15s) var(--ease-out, ease),
+    box-shadow var(--dur-fast, 0.15s) var(--ease-out, ease);
 }
 
 .government-card:hover:not(:disabled) {
-  border-color: var(--gov-accent);
+  border-color: var(--gm-accent, var(--gov-accent));
   background: rgba(255, 255, 255, 0.06);
 }
 
 .government-card--selected {
-  border-color: var(--gov-accent);
-  box-shadow: 0 0 0 1px var(--gov-accent) inset;
+  border-color: var(--gm-accent, var(--gov-accent));
+  background: var(--gm-tint, rgba(155, 140, 240, 0.16));
+  box-shadow: inset 0 0 0 1px var(--gm-accent, var(--gov-accent));
 }
 
 .government-card--current {
-  opacity: 0.7;
-  cursor: default;
+  opacity: 0.72;
 }
 
 .government-card:disabled {
@@ -156,35 +81,23 @@
 }
 
 .government-card__name {
-  font-weight: 700;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-}
-
-.government-card__tag {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #111;
-  background: var(--gov-accent);
-  border-radius: 999px;
-  padding: 2px 8px;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }
 
 .government-card__stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  font-size: 0.78rem;
-  color: var(--gov-accent);
+  gap: 5px;
 }
 
 .government-card__desc {
-  font-size: 0.82rem;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--gov-muted);
-}
-
-.government-hint {
-  color: var(--gov-muted);
-  font-size: 0.78rem;
 }

@@ -83,44 +83,64 @@ export const WonderArtwork: React.FC<WonderArtworkProps> = ({ wonder, active = t
         <div className="wonder-artwork__placeholder" aria-hidden="true" />
       )}
 
-      {info && <WonderCredit info={info} />}
+      {info && <WonderCreditBlock info={info} />}
     </div>
   );
 };
 
-function WonderCredit({ info }: { info: WonderArtworkCredit }) {
+/**
+ * The credit block on its own, for surfaces that render the picture themselves
+ * (the wonder entry modal lays the artwork out as a full-bleed hero and puts
+ * this at its bottom — CC BY requires the attribution to stay visible).
+ */
+export const WonderCreditBlock: React.FC<{
+  info: WonderArtworkCredit;
+  /** `hero` renders for a dark photo background instead of a light card. */
+  variant?: 'card' | 'hero';
+}> = ({ info, variant = 'card' }) => (
+  <div className={`wonder-artwork__credit${variant === 'hero' ? ' wonder-artwork__credit--hero' : ''}`}>
+    {/* The article link is the one players are meant to follow. */}
+    <a className="wonder-artwork__readmore" href={info.articleUrl} target="_blank" rel="noreferrer noopener">
+      Read more on Wikipedia
+    </a>
+    {info.galleryUrl && (
+      <a className="wonder-artwork__readmore" href={info.galleryUrl} target="_blank" rel="noreferrer noopener" title="Official photo gallery">
+        {' '}🖼 Official gallery
+      </a>
+    )}
+    {hasSource(info) && (
+      <span className="wonder-artwork__credit-text">
+        Artwork:{' '}
+        <a href={info.sourceUrl} target="_blank" rel="noreferrer noopener" title="Wikimedia Commons file page">
+          {info.author}
+        </a>
+        {info.licenseUrl ? (
+          <>
+            {' · '}
+            <a href={info.licenseUrl} target="_blank" rel="noreferrer noopener">
+              {info.license}
+            </a>
+          </>
+        ) : (
+          <> · {info.license}</>
+        )}
+      </span>
+    )}
+  </div>
+);
+
+function hasSource(info: WonderArtworkCredit): boolean {
   // Artwork the project owner supplied has no external source, so there is
   // nothing to attribute — we still offer the background-reading link.
-  const hasSource = !!info.sourceUrl || !!info.author;
-  return (
-    <div className="wonder-artwork__credit">
-      {/* The article link is the one players are meant to follow. */}
-      <a className="wonder-artwork__readmore" href={info.articleUrl} target="_blank" rel="noreferrer noopener">
-        Read more on Wikipedia
-      </a>
-      {info.galleryUrl && (
-        <a className="wonder-artwork__readmore" href={info.galleryUrl} target="_blank" rel="noreferrer noopener" title="Official photo gallery">
-          {' '}🖼 Official gallery
-        </a>
-      )}
-      {hasSource && (
-        <span className="wonder-artwork__credit-text">
-          Artwork:{' '}
-          <a href={info.sourceUrl} target="_blank" rel="noreferrer noopener" title="Wikimedia Commons file page">
-            {info.author}
-          </a>
-          {info.licenseUrl ? (
-            <>
-              {' · '}
-              <a href={info.licenseUrl} target="_blank" rel="noreferrer noopener">
-                {info.license}
-              </a>
-            </>
-          ) : (
-            <> · {info.license}</>
-          )}
-        </span>
-      )}
-    </div>
-  );
+  return !!info.sourceUrl || !!info.author;
 }
+
+/** Credit block for one wonder, used where the picture itself is elsewhere. */
+export const WonderCreditFor: React.FC<{ wonder: WonderDefinition; variant?: 'card' | 'hero' }> = ({
+  wonder,
+  variant,
+}) => {
+  const info = WONDER_ARTWORK_CREDITS[wonder.id];
+  if (!info) return null;
+  return <WonderCreditBlock info={info} variant={variant} />;
+};

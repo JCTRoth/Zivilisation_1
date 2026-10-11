@@ -214,6 +214,51 @@ interface TradeRouteResult {
 }
 
 /**
+ * One decisive battle round (a unit was destroyed) that the human player was
+ * part of — the payload of the "combat report" modal.
+ */
+export interface CombatReportNotice {
+  /** 'victory' = the human side won the round; 'defeat' = the human side lost a unit. */
+  kind: 'victory' | 'defeat';
+  attackerName: string;
+  attackerType: string;
+  attackerCivId: number;
+  defenderName: string;
+  defenderType: string;
+  defenderCivId: number;
+  attackerHealthAfter: number;
+  defenderHealthAfter: number;
+  attackerDamage: number;
+  defenderDamage: number;
+  attackerSurvived: boolean;
+  defenderSurvived: boolean;
+  /** Tile the fight ended on (the defender's tile). */
+  col: number;
+  row: number;
+  /** Name of the city the tile belongs to, if any (city assault / defence). */
+  cityName?: string;
+}
+
+/**
+ * A city-level event the human player is part of — founded, captured, razed
+ * or joined — shown by the "city event" modal.
+ */
+export interface CityEventNotice {
+  kind: 'founded' | 'captured' | 'razed' | 'joined';
+  cityId: string;
+  cityName: string;
+  col: number;
+  row: number;
+  population: number;
+  /** Civilization that took / razed / joined the city (captor, or the player). */
+  byCivId?: number;
+  /** Former owner when the city changed hands. */
+  fromCivId?: number;
+  /** Free-form hint for the copy (e.g. 'starvation' is filtered out upstream). */
+  reason?: string;
+}
+
+/**
  * An AI-initiated diplomatic proposal (ceasefire, peace, alliance, tribute)
  * awaiting the human player's accept/reject decision in the negotiation
  * screen. Surfaced via `showIncomingDiplomacyOffer`; cleared once the player
@@ -226,6 +271,10 @@ interface IncomingDiplomacyOffer {
   action: string;
   /** Gold demanded/offered (tribute demands). */
   goldAmount?: number;
+  /** Technology id the AI offers (Exchange of Knowledge). */
+  techOffered?: string;
+  /** Technology id the AI wants in return (Exchange of Knowledge). */
+  techRequested?: string;
   /** Human-readable message describing the offer. */
   message?: string;
 }
@@ -307,6 +356,15 @@ export interface Unit {
   icon: string;
   status?: string;
   name?: string;
+  /**
+   * Rank grade (1 Rookie … 4 Battle-Hardened). Missing on saves written
+   * before the rank system — read through `getUnitRank()` which falls back
+   * to `isVeteran`.
+   */
+  rank?: number;
+  /** Total combat experience driving {@link rank} (thresholds in UnitRankSystem). */
+  experience?: number;
+  /** Legacy flag, true from Seasoned upward — kept in sync with {@link rank}. */
   isVeteran?: boolean;
   maxMoves?: number;
   movement?: number;
@@ -624,7 +682,7 @@ export interface UIState {
   showCityPanel: boolean;
   showTechTree: boolean;
   showGameMenu: boolean;
-  activeDialog: 'city' | 'tech' | 'diplomacy' | 'game-menu' | 'help' | 'pause' | 'city-production' | 'city-purchase' | 'city-citizens' | 'city-details' | 'hex-details' | 'rates' | 'government' | 'statistics' | 'wonders' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'research-required' | 'auto-end-offer' | 'wonder-completed' | 'wonder-conflict' | null;
+  activeDialog: 'tech' | 'diplomacy' | 'help' | 'pause' | 'city-production' | 'city-details' | 'rates' | 'government' | 'statistics' | 'wonders' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'research-required' | 'auto-end-offer' | 'wonder-completed' | 'wonder-conflict' | 'combat-report' | 'city-founded' | 'city-lost' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
   /** Active citizen pick-up origin ({cityId, col, row}) while reassigning. Null when idle. */
@@ -731,6 +789,8 @@ export interface GameStoreState {
   };
   /** Active combat animations (cloud + unit hide/fade effects). */
   combatAnimations: CombatAnimation[];
+  /** Active promotion flourishes (gold ring + floating rank name). */
+  promotionEffects: PromotionEffect[];
   /** Active unit-movement glides (position interpolation between tiles). */
   movementAnimations: MovementAnimation[];
   /** True while a human-initiated move/attack animation is playing (blocks input & turn end). */
@@ -747,6 +807,10 @@ export interface GameStoreState {
   disorderNotice: DisorderNotice | null;
   /** Info for the "trade route established" modal. */
   tradeRouteResult: TradeRouteResult | null;
+  /** FIFO queue of battle reports (a decisive round that destroyed a unit). */
+  combatReportQueue: CombatReportNotice[];
+  /** FIFO queue of city-event notices (founded / captured / razed / joined). */
+  cityEventQueue: CityEventNotice[];
   /** FIFO queue of world-wonder dialogs (completion / production conflict). */
   wonderDialogQueue: WonderDialogEntry[];
   /** Civ auto-selected when the diplomacy screen opens (diplomat contact / AI offer). */
@@ -854,6 +918,29 @@ export interface CombatAnimation {
   defenderColor?: string;
 }
 
+/**
+ * A short-lived promotion flourish on the map: a gold ring pulses out from
+ * the promoted unit while its new rank name floats up and fades — the canvas
+ * counterpart of the "promoted to Seasoned" toast.
+ */
+export interface PromotionEffect {
+  id: string;
+  unitId: string;
+  /** Tile the promoted unit stood on when it earned the rank. */
+  col: number;
+  row: number;
+  /** New rank id (1 Rookie … 4 Battle-Hardened). */
+  rank: number;
+  /** New rank display name ("Trained", "Seasoned", "Battle-Hardened"). */
+  rankName: string;
+  /** performance.now() timestamp when the effect started. */
+  startTime: number;
+  /** Effect lifetime in ms (rise + fade). */
+  duration: number;
+  /** Owner colour, for the ring and the floating text. */
+  color?: string;
+}
+
 export interface GameActions {
   startGame: () => void;
   selectHex: (hex: { col: number; row: number }) => void;
@@ -907,6 +994,24 @@ export interface GameActions {
   dequeueWonderDialog: () => void;
   /** Drop every pending wonder dialog (used when the last one is dismissed). */
   clearWonderDialogs: () => void;
+  /**
+   * Push a battle report (a decisive round that destroyed a unit) on the
+   * queue. Opens immediately unless another report is already showing.
+   */
+  queueCombatReport: (notice: CombatReportNotice) => void;
+  /** Show the next queued battle report, or close when the queue runs dry. */
+  dequeueCombatReport: () => void;
+  /** Drop every pending battle report. */
+  clearCombatReports: () => void;
+  /**
+   * Push a city event (founded / captured / razed / joined) on the queue.
+   * Opens immediately unless another city event is already showing.
+   */
+  queueCityEvent: (notice: CityEventNotice) => void;
+  /** Show the next queued city event, or close when the queue runs dry. */
+  dequeueCityEvent: () => void;
+  /** Drop every pending city event. */
+  clearCityEvents: () => void;
   /** Open the Civ I–style negotiation screen, optionally focused on a civ. */
   openDiplomacy: (focusCivId?: number | null) => void;
   /** Consume the diplomacy focus hint without changing the open dialog. */
@@ -943,6 +1048,8 @@ export interface GameActions {
   incrementTurnFlash: () => void;
   addCombatAnimation: (animation: CombatAnimation) => void;
   removeCombatAnimation: (id: string) => void;
+  addPromotionEffect: (effect: PromotionEffect) => void;
+  removePromotionEffect: (id: string) => void;
   addMovementAnimation: (animation: MovementAnimation) => void;
   removeMovementAnimation: (id: string) => void;
   clearMovementAnimations: () => void;

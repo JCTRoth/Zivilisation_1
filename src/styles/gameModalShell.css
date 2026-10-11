@@ -1,0 +1,853 @@
+/* ============================================================================
+   GAME MODAL SHELL
+   ----------------------------------------------------------------------------
+   The shared look for every dialog in the game. A modal is an "audience with
+   the ruler": a hero band (artwork slot + eyebrow + title + lede), a scrolling
+   content column of cards, and a fixed action bar.
+
+   Class contract (see gamemodals/ModalShell.tsx):
+     .modal.gm            root (react-bootstrap `className`)
+     .gm-body             Modal.Body — tone lives here (`data-tone`)
+     .gm-hero             art + heading band
+     .gm-art              picture slot; empty state = striped placeholder
+     .gm-eyebrow/.gm-title/.gm-lede
+     .gm-content          scrolling column (.gm-section / .gm-kv / .gm-list …)
+     .gm-actions          fixed footer bar
+
+   Selectors are deliberately two-class (`.modal.gm …`) so they beat Bootstrap's
+   single-class rules regardless of stylesheet order.
+   ========================================================================== */
+
+:root {
+  /* Tone ramps used by `.gm-hero[data-tone]` */
+  --gm-info: #3d9bff;
+  --gm-danger: #ef5a6e;
+  --gm-success: #35c46c;
+  --gm-gold: #f0c33c;
+  --gm-solemn: #9b8cf0;
+  --gm-neutral: #90a4b8;
+}
+
+/* ---- Frame -------------------------------------------------------------- */
+
+.modal.gm .modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 2.5rem);
+  overflow: hidden;
+  color: var(--color-text, #e8eef3);
+  background: linear-gradient(180deg, #1a242f 0%, #131b24 100%);
+  border: 1px solid var(--color-border-strong, #3d5163);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow:
+    0 28px 64px rgba(0, 0, 0, 0.62),
+    0 2px 0 rgba(255, 255, 255, 0.05) inset;
+}
+
+.modal.gm .gm-body {
+  --gm-accent: var(--gm-info);
+  --gm-tint: rgba(61, 155, 255, 0.16);
+  --gm-label: #93a6b6;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  overscroll-behavior: contain;
+}
+
+/* Tone ramp — carried on the body so hero, chips and lists all inherit it. */
+.modal.gm .gm-body[data-tone='danger'] { --gm-accent: var(--gm-danger); --gm-tint: rgba(239, 90, 110, 0.16); }
+.modal.gm .gm-body[data-tone='success'] { --gm-accent: var(--gm-success); --gm-tint: rgba(53, 196, 108, 0.16); }
+.modal.gm .gm-body[data-tone='gold'] { --gm-accent: var(--gm-gold); --gm-tint: rgba(240, 195, 60, 0.16); }
+.modal.gm .gm-body[data-tone='solemn'] { --gm-accent: var(--gm-solemn); --gm-tint: rgba(155, 140, 240, 0.16); }
+.modal.gm .gm-body[data-tone='neutral'] { --gm-accent: var(--gm-neutral); --gm-tint: rgba(144, 164, 184, 0.14); }
+
+.gm-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--gm-label);
+  font-size: 15px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.gm-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text, #e8eef3);
+}
+
+/* ---- Hero band ---------------------------------------------------------- */
+
+.gm-hero {
+  flex: 0 0 auto;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 46px 15px 18px; /* right padding clears the close button */
+  background:
+    radial-gradient(130% 150% at 0% 0%, var(--gm-tint), transparent 62%),
+    linear-gradient(180deg, #1d2833 0%, #182129 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gm-hero::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--gm-accent), transparent 70%);
+  opacity: 0.7;
+}
+
+/* ---- Artwork slot ------------------------------------------------------- */
+
+.gm-art {
+  position: relative;
+  flex: 0 0 auto;
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.055) 0 6px,
+      rgba(255, 255, 255, 0) 6px 13px
+    ),
+    linear-gradient(160deg, var(--gm-tint), rgba(0, 0, 0, 0.45));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.gm-art--lg {
+  width: 96px;
+  height: 96px;
+}
+
+.gm-art-glyph {
+  font-size: 34px;
+  line-height: 1;
+  text-align: center;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+}
+
+.gm-art--lg .gm-art-glyph {
+  font-size: 46px;
+}
+
+.gm-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Placeholder caption: names the picture that belongs in this slot. */
+.gm-art-tag {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2px 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.gm-art--plain {
+  border-style: dashed;
+}
+
+.gm-art--plain .gm-art-tag {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* ---- Cover hero: the picture IS the card, copy sits below it ------------- */
+
+/*
+ * Poster hero: the artwork fills the full width of the dialog at the top, with
+ * nothing laid over it. The wonder's copy moves to its own band underneath, so
+ * the picture reads as the subject of the entry rather than as a backdrop, and
+ * the credit bar rides the bottom edge of the photo (a photo credit belongs to
+ * the photo — CC BY requires it to stay visible).
+ */
+.gm-hero--cover {
+  display: block;
+  flex: 0 0 auto;
+  position: relative;
+  height: 300px;
+  padding: 0;
+  overflow: hidden;
+  isolation: isolate;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gm-hero-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 42%;
+  display: block;
+  transform: scale(1.03);
+  transition: transform 900ms var(--ease-out, ease-out), filter var(--dur-fast, 150ms) var(--ease-out, ease-out);
+  /* No magnifier cursor: the picture IS clickable, but the "View larger"
+     chip on hover is the only affordance — a system zoom cursor reads as
+     "broken zoom" when the player has not clicked yet. */
+  cursor: default;
+}
+
+/* Clicking the artwork opens it large — say so without covering it. */
+.gm-hero--cover:hover .gm-hero-img { transform: scale(1); filter: saturate(1.06); }
+
+/* No picture yet: keep the band's height and give the glyph the stage. */
+.gm-hero-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(120% 120% at 50% 0%, var(--gm-tint), transparent 60%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 8px, rgba(255, 255, 255, 0) 8px 17px),
+    linear-gradient(160deg, #22303d, #141d25);
+}
+
+.gm-hero-glyph {
+  font-size: 84px;
+  line-height: 1;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+}
+
+/* Darkens only the bottom of the picture — enough for the credit, and the
+   artwork itself stays untouched. Never eats the click that opens the poster. */
+.gm-hero-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(6, 9, 13, 0) 62%, rgba(6, 9, 13, 0.86) 100%);
+}
+
+/* Photo credit, parked on the bottom edge of the picture. */
+.gm-hero-credit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding: 9px 16px 8px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.gm-hero-credit a { text-underline-offset: 2px; }
+
+/* "View larger" hint, revealed on hover in the top-left corner (the close
+   button owns the top-right). */
+.gm-hero-poster {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: default;
+}
+
+.gm-hero-poster:disabled { cursor: default; }
+
+.gm-hero-zoom {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(6, 9, 13, 0.55);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity var(--dur-fast, 150ms) var(--ease-out, ease-out), transform var(--dur-fast, 150ms);
+  cursor: pointer;
+}
+
+.gm-hero--cover:hover .gm-hero-zoom,
+.gm-hero-zoom:focus-visible { opacity: 1; transform: translateY(0); }
+
+/* The close button now floats over the artwork — give it a chip so it stays
+   visible on a bright picture. */
+.modal.gm .gm-body:has(.gm-hero--cover) .gm-close {
+  background: rgba(6, 9, 13, 0.55);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  backdrop-filter: blur(3px);
+}
+
+/* ---- Copy band: what used to sit ON the picture -------------------------- */
+
+.gm-heading-band {
+  flex: 0 0 auto;
+  position: relative;
+  padding: 18px 22px 16px;
+  background:
+    radial-gradient(130% 150% at 0% 0%, var(--gm-tint), transparent 62%),
+    linear-gradient(180deg, #1d2833 0%, #182129 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gm-heading-band .gm-eyebrow { color: var(--gm-accent); }
+.gm-heading-band .gm-title { font-size: 22px; }
+.gm-heading-band .gm-lede { max-width: 68ch; }
+
+@media (min-width: 576px) {
+  .gm-hero--cover { height: 340px; }
+  .gm-heading-band { padding: 24px 26px 20px; }
+  .gm-heading-band .gm-title { font-size: 25px; }
+}
+
+/* ---- Heading ------------------------------------------------------------ */
+
+.gm-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.gm-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gm-accent);
+}
+
+.gm-title {
+  margin: 5px 0 6px;
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.22;
+  color: var(--color-text, #e8eef3);
+  overflow-wrap: anywhere;
+}
+
+.gm-lede {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--color-text-secondary, #ccd8e2);
+}
+
+/* ---- Content ------------------------------------------------------------ */
+
+.gm-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 18px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.gm-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+/* Children never shrink below their content — a section with
+   `overflow: hidden` (needed for a sheen animation) would otherwise be
+   squeezed to its padding box and clip its own text, which is exactly what
+   broke the wonder "Effect" block. The column scrolls instead. */
+.gm-content > * {
+  flex: 0 0 auto;
+}
+
+.gm-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+
+.gm-section {
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+}
+
+.gm-section--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.gm-section-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gm-label);
+}
+
+.gm-section-title::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--gm-accent);
+}
+
+.gm-section-title:last-child {
+  margin-bottom: 0;
+}
+
+.gm-prose {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--color-text-secondary, #ccd8e2);
+}
+
+.gm-prose + .gm-prose {
+  margin-top: 8px;
+}
+
+.gm-prose strong {
+  color: var(--color-text, #e8eef3);
+}
+
+.gm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding-left: 1.05rem;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary, #ccd8e2);
+}
+
+.gm-list li::marker {
+  color: var(--gm-accent);
+}
+
+.gm-list strong {
+  color: var(--color-text, #e8eef3);
+}
+
+/* Key/value grid — two columns, label muted, value bold. The label text node
+   stays a single string so screen readers (and tests) read "Cities: 1". */
+.gm-kv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 12px;
+}
+
+.gm-kv-grid--stack {
+  grid-template-columns: 1fr;
+}
+
+.gm-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 3px 0;
+  font-size: 12.5px;
+  color: var(--gm-label);
+}
+
+.gm-kv b {
+  color: var(--color-text, #e8eef3);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gm-kv-sub {
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--gm-label);
+}
+
+/* Stat tiles (rewards, yields, ledger rows) */
+.gm-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.gm-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+}
+
+.gm-stat-value {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text, #e8eef3);
+}
+
+.gm-stat-value .gm-stat-icon {
+  font-size: 13px;
+}
+
+.gm-stat-label {
+  font-size: 11px;
+  color: var(--gm-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gm-stat--accent .gm-stat-value {
+  color: var(--gm-accent);
+}
+
+/* Inline pills: status, costs, tags */
+.gm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-pill, 999px);
+  color: var(--color-text, #e8eef3);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.gm-chip--accent {
+  color: var(--gm-accent);
+  border-color: color-mix(in srgb, var(--gm-accent) 55%, transparent);
+  background: var(--gm-tint);
+}
+
+/* Quiet note / fine print, marked with the tone colour */
+.gm-note {
+  padding-left: 9px;
+  border-left: 2px solid color-mix(in srgb, var(--gm-accent) 55%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-muted, #9fb0bf);
+}
+
+.gm-note strong {
+  color: var(--color-text-secondary, #ccd8e2);
+}
+
+/* Callout inside a modal: tinted card with a tone border */
+.gm-callout {
+  padding: 10px 11px;
+  border-radius: 8px;
+  background: var(--gm-tint);
+  border: 1px solid color-mix(in srgb, var(--gm-accent) 40%, transparent);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-text-secondary, #ccd8e2);
+}
+
+.gm-callout-title {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gm-accent);
+}
+
+/* ---- Action bar --------------------------------------------------------- */
+
+.gm-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  background: rgba(0, 0, 0, 0.28);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gm-actions .touch-btn,
+.gm-actions .btn {
+  min-width: 128px;
+}
+
+.gm-actions-spacer {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 479.98px) {
+  .gm-hero {
+    padding: 14px 44px 13px 14px;
+    gap: 11px;
+  }
+
+  .gm-art {
+    width: 60px;
+    height: 60px;
+  }
+
+  .gm-art-glyph {
+    font-size: 28px;
+  }
+
+  .gm-art--lg {
+    width: 74px;
+    height: 74px;
+  }
+
+  .gm-title {
+    font-size: 17px;
+  }
+
+  .gm-lede {
+    font-size: 12.5px;
+  }
+
+  .gm-content {
+    padding: 12px 14px;
+  }
+
+  .gm-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding: 12px 14px calc(12px + var(--safe-bottom, 0px));
+  }
+
+  .gm-actions .touch-btn,
+  .gm-actions .btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .gm-kv-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Shared content tweaks -------------------------------------------- */
+
+/* Tight list inside a callout (no top gap needed there) */
+.gm-list--tight {
+  margin-top: 6px;
+}
+
+/* Headings written as plain <h6> inside the content column (help tabs,
+   "Current Production" block) get the section-title treatment. */
+.gm-content h6 {
+  margin: 14px 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gm-label);
+}
+
+.gm-content h6:first-child {
+  margin-top: 0;
+}
+
+.gm-content ol,
+.gm-content ul:not(.gm-list):not(.nav) {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 0 12px;
+  padding-left: 1.15rem;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary, #ccd8e2);
+}
+
+.gm-content ol::marker,
+.gm-content ul:not(.gm-list)::marker {
+  color: var(--gm-accent);
+}
+
+.gm-content a {
+  color: var(--color-primary, #3d9bff);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.gm-content a:hover {
+  color: var(--color-primary-hover, #2f86e6);
+}
+
+/* ---- Tabs inside the content column (Help, Statistics) ---------------- */
+
+.gm-content .nav-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: -4px -4px 12px;
+  padding: 4px 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.gm-content .nav-tabs .nav-link {
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--gm-label);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.gm-content .nav-tabs .nav-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text, #e8eef3);
+}
+
+.gm-content .nav-tabs .nav-link.active {
+  background: var(--gm-tint);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--gm-accent);
+}
+
+.gm-content .nav-tabs .nav-link:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ---- Definition-style lists (Help's key bindings) --------------------- */
+
+.gm-content .list-group {
+  margin-bottom: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.gm-content .list-group-item {
+  padding: 7px 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--color-text-secondary, #ccd8e2);
+  background: rgba(255, 255, 255, 0.035);
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gm-content .list-group-item:last-child {
+  border-bottom: none;
+}
+
+.gm-content .list-group-item strong {
+  display: inline-block;
+  min-width: 6.5rem;
+  color: var(--color-text, #e8eef3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Slim hero (fullscreen modals: tech tree, city screen) ------------- */
+
+.gm-hero--slim {
+  align-items: center;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  gap: 12px;
+}
+
+.gm-hero--slim .gm-art {
+  width: 44px;
+  height: 44px;
+  border-radius: 9px;
+}
+
+.gm-hero--slim .gm-art-glyph {
+  font-size: 22px;
+}
+
+.gm-hero--slim .gm-art-tag {
+  font-size: 7px;
+}
+
+.gm-hero--slim .gm-title {
+  margin: 2px 0;
+  font-size: 16px;
+}
+
+.gm-hero--slim .gm-lede {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* Fills the remaining height instead of scrolling itself (tech tree). */
+.gm-content--fill {
+  overflow: hidden;
+}
+
+.gm-content--fill > * {
+  min-height: 0;
+}
+
+.gm-content--fill .tech-tree-container {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}

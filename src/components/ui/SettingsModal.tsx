@@ -1,8 +1,14 @@
-import { Modal, Button, Form } from "react-bootstrap";
+import { Form } from "react-bootstrap";
 import { useGameStore } from "@/stores/GameStore";
+import GameModal from "./gamemodals/ModalShell";
 import "../../styles/settingsModal.css";
 
-function SettingsModal({ show, onHide }) {
+interface SettingsModalProps {
+  show: boolean;
+  onHide: () => void;
+}
+
+function SettingsModal({ show, onHide }: SettingsModalProps) {
   const settings = useGameStore((state) => state.settings);
   const actions = useGameStore((state) => state.actions);
 
@@ -37,10 +43,13 @@ function SettingsModal({ show, onHide }) {
     hint: string,
     format: (v: number) => string,
     disabled = false,
+    icon = "",
   ) => (
     <div className="settings-control">
       <div className="settings-control__header">
-        <Form.Label className="settings-control__label">{label}</Form.Label>
+        <Form.Label className="settings-control__label">
+          <span aria-hidden="true">{icon}</span> {label}
+        </Form.Label>
         <strong className="settings-control__value">{format(value)}</strong>
       </div>
       <Form.Range
@@ -56,151 +65,167 @@ function SettingsModal({ show, onHide }) {
     </div>
   );
 
+  const toggle = (id: string, label: string, key: string, checked: boolean, hint: string) => (
+    <div className="settings-toggle">
+      <Form.Check
+        type="switch"
+        id={id}
+        label={label}
+        checked={checked}
+        onChange={(e) => actions.updateSettings({ [key]: e.target.checked })}
+        className="settings-control__toggle"
+      />
+      <span className="settings-toggle__hint">{hint}</span>
+    </div>
+  );
+
   return (
-    <Modal
+    <GameModal
       show={show}
-      onHide={onHide}
-      centered
+      onClose={onHide}
+      tone="neutral"
       size="lg"
-      fullscreen="lg-down"
       dialogClassName="settings-modal"
+      icon="⚙️"
+      artLabel="options"
+      eyebrow="Game Menu · Options"
+      title="Settings"
+      lede="Set the pace and the picture to taste — every switch takes effect the moment you move it, no clerk to ask."
+      actions={
+        <>
+          <button
+            type="button"
+            className="touch-btn touch-btn--ghost settings-modal__reset"
+            onClick={resetDefaults}
+          >
+            <span aria-hidden="true">🔄</span> Reset to Defaults
+          </button>
+          <button
+            type="button"
+            className="touch-btn touch-btn--primary settings-modal__apply"
+            onClick={() => {
+              console.log("SettingsModal: Apply & Close clicked");
+              onHide();
+            }}
+          >
+            <span aria-hidden="true">✓</span> Apply &amp; Close
+          </button>
+        </>
+      }
     >
-      <Modal.Header closeButton className="settings-modal__header">
-        <Modal.Title className="settings-modal__title">
-          <span aria-hidden="true">⚙️</span> Settings
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="settings-modal__body">
-        <Form className="settings-form">
-          {/* Master switches sit on top: they gate whole groups of controls
-              below (animations gate the speed sliders). */}
+      <Form className="settings-form">
+        {/* Master switches sit on top: they gate whole groups of controls
+            below (animations gate the speed sliders). */}
+        <section className="gm-section">
+          <div className="gm-section-title">Campaign switches</div>
           <div className="settings-toggles">
-            <Form.Check
-              type="switch"
-              id="enableAnimations"
-              label="Enable animations"
-              checked={settings.enableAnimations}
-              onChange={(e) =>
-                actions.updateSettings({ enableAnimations: e.target.checked })
-              }
-              className="settings-control__toggle"
-            />
-
-            <Form.Check
-              type="switch"
-              id="autoCamera"
-              label="Auto-move camera"
-              checked={settings.autoCamera !== false}
-              onChange={(e) =>
-                actions.updateSettings({ autoCamera: e.target.checked })
-              }
-              className="settings-control__toggle"
-            />
-
-            <Form.Check
-              type="switch"
-              id="autoEndTurn"
-              label="Auto-end turn"
-              checked={settings.autoEndTurn}
-              onChange={(e) =>
-                actions.updateSettings({ autoEndTurn: e.target.checked })
-              }
-              className="settings-control__toggle"
-            />
-
-            <Form.Check
-              type="switch"
-              id="skipEndTurnConfirmation"
-              label="Skip end-turn confirmation"
-              checked={settings.skipEndTurnConfirmation}
-              onChange={(e) =>
-                actions.updateSettings({ skipEndTurnConfirmation: e.target.checked })
-              }
-              className="settings-control__toggle"
-            />
-
-            <Form.Check
-              type="switch"
-              id="devMode"
-              label="Developer mode"
-              checked={settings.devMode}
-              onChange={(e) =>
-                actions.updateSettings({ devMode: e.target.checked })
-              }
-              className="settings-control__toggle"
-            />
+            {toggle(
+              "enableAnimations",
+              "Enable animations",
+              "enableAnimations",
+              settings.enableAnimations,
+              "Master switch for movement and combat cinematics.",
+            )}
+            {toggle(
+              "autoCamera",
+              "Auto-move camera",
+              "autoCamera",
+              settings.autoCamera !== false,
+              "Sweep the view to whatever needs your eye.",
+            )}
+            {toggle(
+              "autoEndTurn",
+              "Auto-end turn",
+              "autoEndTurn",
+              settings.autoEndTurn,
+              "Advance once every unit has moved.",
+            )}
+            {toggle(
+              "skipEndTurnConfirmation",
+              "Skip end-turn confirmation",
+              "skipEndTurnConfirmation",
+              settings.skipEndTurnConfirmation,
+              "Take the turn the moment you press it.",
+            )}
+            {toggle(
+              "devMode",
+              "Developer mode",
+              "devMode",
+              settings.devMode,
+              "Inspector's tools: the full world table and debug aids.",
+            )}
           </div>
+        </section>
 
+        <section className="gm-section">
+          <div className="gm-section-title">Picture</div>
+          <div className="settings-grid settings-grid--single">
+            {renderSlider(
+              "Overall UI scale",
+              settings.uiScale,
+              0.5,
+              2.0,
+              0.1,
+              "uiScale",
+              "Grows or shrinks every panel, button and label (0.50x to 2.00x).",
+              (v) => `${v.toFixed(2)}x`,
+              false,
+              "🖥️",
+            )}
+          </div>
+        </section>
+
+        <section className="gm-section">
+          <div className="gm-section-title">Motion</div>
           <div className="settings-grid">
-          {renderSlider(
-            "Overall UI Scale",
-            settings.uiScale,
-            0.5,
-            2.0,
-            0.1,
-            "uiScale",
-            "Scales all UI elements proportionally (0.5x to 2.0x)",
-            (v) => `${v.toFixed(2)}x`,
-          )}
+            {renderSlider(
+              "Animation speed",
+              settings.animationSpeed,
+              0,
+              3,
+              0.1,
+              "animationSpeed",
+              "Your units and battles, leftmost is instant.",
+              (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
+              !settings.enableAnimations,
+              "🎬",
+            )}
 
-          {renderSlider(
-            "Animation Speed",
-            settings.animationSpeed,
-            0,
-            3,
-            0.1,
-            "animationSpeed",
-            "How fast units move and combat plays (leftmost = instant)",
-            (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
-            !settings.enableAnimations,
-          )}
+            {renderSlider(
+              "Enemy animation speed",
+              settings.enemyAnimationSpeed,
+              0,
+              3,
+              0.1,
+              "enemyAnimationSpeed",
+              "Rival movement only — independent of your own units.",
+              (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
+              !settings.enableAnimations,
+              "👣",
+            )}
 
-          {renderSlider(
-            "Enemy Animation Speed",
-            settings.enemyAnimationSpeed,
-            0,
-            3,
-            0.1,
-            "enemyAnimationSpeed",
-            "How fast enemy (AI) units move, independent of your own units (leftmost = instant)",
-            (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
-            !settings.enableAnimations,
-          )}
-
-          {renderSlider(
-            "Camera Glide Speed",
-            settings.cameraGlideSpeed,
-            0,
-            3,
-            0.1,
-            "cameraGlideSpeed",
-            "How fast the camera pans to a new focus (leftmost = instant)",
-            (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
-            !settings.enableAnimations,
-          )}
+            {renderSlider(
+              "Camera glide speed",
+              settings.cameraGlideSpeed,
+              0,
+              3,
+              0.1,
+              "cameraGlideSpeed",
+              "How fast the view sweeps to a new focus, leftmost is instant.",
+              (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
+              !settings.enableAnimations,
+              "🎥",
+            )}
           </div>
-        </Form>
-      </Modal.Body>
-      <Modal.Footer className="settings-modal__footer">
-        <Button
-          variant="warning"
-          onClick={resetDefaults}
-          className="touch-btn settings-modal__reset"
-        >
-          <span aria-hidden="true">🔄</span> Reset to Defaults
-        </Button>
-        <Button
-          variant="primary"
-          onClick={() => {
-            console.log("SettingsModal: Apply & Close clicked");
-            onHide();
-          }}
-          className="touch-btn touch-btn--primary settings-modal__apply"
-        >
-          <span aria-hidden="true">✓</span> Apply & Close
-        </Button>
-      </Modal.Footer>
-    </Modal>
+          {!settings.enableAnimations && (
+            <div className="gm-note">
+              Animations are switched off — these speeds take effect once you turn
+              them back on.
+            </div>
+          )}
+        </section>
+      </Form>
+    </GameModal>
   );
 }
 

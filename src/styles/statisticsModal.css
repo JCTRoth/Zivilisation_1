@@ -1,0 +1,135 @@
+/* =============================================================================
+   STATISTICS MODAL (world census)
+   -----------------------------------------------------------------------------
+   Built on the shared game-modal shell (gameModalShell.css). This file styles
+   the tab strip and the census tables so they read as part of the dark UI.
+   ========================================================================== */
+
+.statistics-modal {
+  --stats-border: rgba(255, 255, 255, 0.09);
+}
+
+.stats-tabs {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ---- Tab strip ----------------------------------------------------------- */
+
+.stats-tabs .nav-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  margin: 0 0 12px;
+  border: none;
+  border-bottom: 1px solid var(--stats-border);
+  scrollbar-width: none;
+}
+
+.stats-tabs .nav-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.stats-tabs .nav-tabs .nav-link {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px 8px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--gm-label, #93a6b6);
+  background: transparent;
+}
+
+.stats-tabs .nav-tabs .nav-link:hover {
+  color: var(--color-text, #e8eef3);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: transparent;
+}
+
+.stats-tabs .nav-tabs .nav-link.active,
+.stats-tabs .nav-tabs .nav-link.show {
+  color: var(--gm-accent, #3d9bff);
+  background: var(--gm-tint, rgba(61, 155, 255, 0.16));
+  border-color: transparent;
+  box-shadow: inset 0 -2px 0 var(--gm-accent, #3d9bff);
+}
+
+/* ---- Panes ---------------------------------------------------------------- */
+
+.stats-tabs .tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.stats-tabs .tab-pane.active {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ---- Section head above a table ------------------------------------------ */
+
+.stats-table-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 9px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--stats-border);
+}
+
+.stats-table-head__hint {
+  font-size: 11.5px;
+  color: var(--gm-label, #93a6b6);
+}
+
+/* ---- Census tables ------------------------------------------------------- */
+
+.stats-table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--color-text, #e8eef3);
+  --bs-table-border-color: var(--stats-border);
+  --bs-table-striped-bg: rgba(255, 255, 255, 0.03);
+  --bs-table-striped-color: var(--color-text, #e8eef3);
+  --bs-table-active-bg: rgba(255, 255, 255, 0.06);
+  --bs-table-active-color: var(--color-text, #e8eef3);
+  --bs-table-hover-bg: rgba(255, 255, 255, 0.05);
+  --bs-table-hover-color: var(--color-text, #e8eef3);
+  margin-bottom: 0;
+}
+
+.stats-table thead th {
+  padding: 8px 10px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gm-label, #93a6b6);
+  background: rgba(0, 0, 0, 0.25);
+  border-bottom-width: 1px;
+  white-space: nowrap;
+}
+
+.stats-table tbody td {
+  padding: 7px 10px;
+  font-size: 12.5px;
+  vertical-align: middle;
+}
+
+.stats-table tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+.stats-empty {
+  padding: 6px 2px 2px;
+}

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Modal, Alert } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
 import { gameLogger } from '@/utils/GameLogger';
 import { getGovernment, GOVERNMENTS } from '@/data/GovernmentData';
 import { ANARCHY_TURNS } from '@/game/engine/GovernmentManager';
+import { GameUtils } from '@/utils/GameUtils';
 import GameEngine from '@/game/engine/GameEngine';
+import GameModal from './ModalShell';
 import '../../../styles/governmentModal.css';
 
 interface GovernmentModalProps {
@@ -25,6 +26,7 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
   const currentPlayer = useGameStore(
     (state) => state.civilizations[state.gameState.activePlayer] || null,
   );
+  const gameState = useGameStore((state) => state.gameState);
   const [selected, setSelected] = useState<string>('despotism');
 
   const gov = getGovernment(currentPlayer?.government);
@@ -72,50 +74,72 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
     }
   };
 
+  const eyebrowText = `${currentPlayer?.name ?? 'Your Empire'} · Turn ${gameState.currentTurn ?? 1} · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`;
+
   return (
-    <Modal
+    <GameModal
       show={show}
-      onHide={onHide}
-      centered
+      onClose={onHide}
+      tone="solemn"
       size="lg"
-      fullscreen="lg-down"
       dialogClassName="government-modal"
+      icon="🏛️"
+      artLabel="seat of power"
+      eyebrow={eyebrowText}
+      title="Government"
+      lede="Law, tax and the legions answer to one charter. Choose the one your people will live under — changing it means blood in the streets."
+      actions={
+        <>
+          <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
+            Close
+          </button>
+          {!inRevolution && (
+            <button
+              type="button"
+              className="touch-btn touch-btn--danger"
+              onClick={handleRevolution}
+              disabled={
+                !currentPlayer
+                || !available.includes(selected)
+                || currentPlayer.government === selected
+              }
+            >
+              🔥 Start Revolution
+            </button>
+          )}
+        </>
+      }
     >
-      <Modal.Header closeButton className="government-modal__header">
-        <Modal.Title className="government-modal__title">
-          <span aria-hidden="true">⚖️</span> Government — {currentPlayer?.name ?? 'Civilization'}
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="government-modal__body">
-        <div className="government-current">
-          <div>
-            Current government: <strong>{gov.name}</strong>
+      <div className="government-modal__body">
+        <section className="gm-section">
+          <div className="gm-section-title">Your government today</div>
+          <div className="gm-kv-grid">
+            <div className="gm-kv">Current government: <b>{gov.name}</b></div>
+            <div className="gm-kv">Capital: <b>{capitalCity ? capitalCity.name : '—'}</b></div>
           </div>
-          {capitalCity && (
-            <div>
-              Capital: <strong>{capitalCity.name}</strong> 🏛️
-            </div>
-          )}
-          <div className="government-current__desc">{gov.description}</div>
+          <div className="gm-prose">{gov.description}</div>
           {!capitalCity && !inRevolution && (
-            <div className="government-current__desc">
-              No capital — found a city to establish a seat of government.
+            <div className="gm-note">
+              You hold no capital yet — found a city and it becomes the seat of your government.
             </div>
           )}
-        </div>
+        </section>
 
         {inRevolution ? (
-          <Alert variant="warning" className="government-revolution-banner">
-            🔥 <strong>Revolution in progress!</strong>{' '}
-            Anarchy for {revolutionTurns} more turn{revolutionTurns === 1 ? '' : 's'} —
-            all Tax/Science/Luxury rates are forced to 0%.
-            {pendingGov && <> Adopting <strong>{pendingGov.name}</strong> when it completes.</>}
-          </Alert>
+          <div className="gm-callout">
+            <span className="gm-callout-title">Revolution in progress</span>
+            Your people are in anarchy for {revolutionTurns} more turn
+            {revolutionTurns === 1 ? '' : 's'} — tax, science and luxury are all
+            forced to 0%.
+            {pendingGov && (
+              <>
+                {' '}When the fighting stops you will rule as <strong>{pendingGov.name}</strong>.
+              </>
+            )}
+          </div>
         ) : (
-          <>
-            <div className="government-list-title">
-              Choose a government (switching starts a {anarchyTurns}-turn revolution)
-            </div>
+          <section className="gm-section">
+            <div className="gm-section-title">Choose your charter</div>
             <div className="government-list">
               {available.map((govId) => {
                 const g = getGovernment(govId);
@@ -130,43 +154,41 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
                   >
                     <div className="government-card__name">
                       {g.name}
-                      {isCurrent && <span className="government-card__tag">Current</span>}
-                      {selected === govId && !isCurrent && <span className="government-card__tag">Selected</span>}
+                      {isCurrent && <span className="gm-chip gm-chip--accent">Current</span>}
+                      {selected === govId && !isCurrent && (
+                        <span className="gm-chip gm-chip--accent">Selected</span>
+                      )}
                     </div>
                     <div className="government-card__stats">
-                      {g.maxTaxRate < 100 && <span>Tax cap {g.maxTaxRate}%</span>}
-                      {g.corruptionRate > 0 && <span>Corruption {Math.round(g.corruptionRate * 100)}%</span>}
-                      {g.commercePenalty > 0 && <span>−{Math.round(g.commercePenalty * 100)}% commerce</span>}
-                      {g.happinessBonus > 0 && <span>+{g.happinessBonus} happiness</span>}
+                      {g.maxTaxRate < 100 && (
+                        <span className="gm-chip">Tax cap {g.maxTaxRate}%</span>
+                      )}
+                      {g.corruptionRate > 0 && (
+                        <span className="gm-chip">Corruption {Math.round(g.corruptionRate * 100)}%</span>
+                      )}
+                      {g.commercePenalty > 0 && (
+                        <span className="gm-chip">−{Math.round(g.commercePenalty * 100)}% commerce</span>
+                      )}
+                      {g.happinessBonus > 0 && (
+                        <span className="gm-chip">+{g.happinessBonus} happiness</span>
+                      )}
                     </div>
                     <div className="government-card__desc">{g.description}</div>
                   </button>
                 );
               })}
             </div>
-            <div className="government-hint">
-              Note: all governments unlocked by researched technologies appear here.
-              {Object.keys(GOVERNMENTS).length > available.length && ' Research more to unlock others.'}
+            <div className="gm-note">
+              Taking a new charter starts a {anarchyTurns}-turn revolution: rates fall to
+              0% and your cities grow restless until the new government is in place.
+              {Object.keys(GOVERNMENTS).length > available.length
+                ? ' Only governments your scholars have unlocked appear here — keep researching to see the rest.'
+                : ''}
             </div>
-          </>
+          </section>
         )}
-      </Modal.Body>
-      <Modal.Footer className="government-modal__footer">
-        <button type="button" className="government-modal__btn" onClick={onHide}>
-          Close
-        </button>
-        {!inRevolution && (
-          <button
-            type="button"
-            className="government-modal__btn government-modal__btn--revolution"
-            onClick={handleRevolution}
-            disabled={!currentPlayer || !available.includes(selected) || currentPlayer.government === selected}
-          >
-            🔥 Start Revolution
-          </button>
-        )}
-      </Modal.Footer>
-    </Modal>
+      </div>
+    </GameModal>
   );
 }
 

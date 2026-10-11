@@ -39,6 +39,67 @@ image::doc/end_turn.png[End turn, width=700]
 image::doc/all_over.png[Game over, width=700]
 --
 
+== Dialog gallery
+
+Every major dialog, captured from a live game. Full inventory and open
+instructions: link:doc/MODALS.adoc[Modals & Dialogs].
+
+[cols="1,1", options="header"]
+|===
+|Dialog |Screenshot
+
+|Game Setup — War Council
+|image::doc/dialogs/00-game-setup.png[Game setup, width=480]
+
+|Technology Tree (`F2`)
+|image::doc/dialogs/01-tech-tree.png[Tech tree, width=480]
+
+|Help & Controls (`F1`)
+|image::doc/dialogs/02-help.png[Help, width=480]
+
+|Tax, Science & Luxury Rates (`T`)
+|image::doc/dialogs/03-rates.png[Rates, width=480]
+
+|Government (`G`)
+|image::doc/dialogs/04-government.png[Government, width=480]
+
+|Statistics & Reports
+|image::doc/dialogs/05-statistics.png[Statistics, width=480]
+
+|Wonders of the World
+|image::doc/dialogs/06-wonders.png[Wonders, width=480]
+
+|Diplomacy (`D` / `F4`)
+|image::doc/dialogs/07-diplomacy.png[Diplomacy, width=480]
+
+|City screen
+|image::doc/dialogs/08-city-details.png[City details, width=480]
+
+|Production picker
+|image::doc/dialogs/09-production-picker.png[Production picker, width=480]
+
+|Settings (`F3`)
+|image::doc/dialogs/10-settings.png[Settings, width=480]
+
+|Pause (`Ctrl+P`)
+|image::doc/dialogs/11-pause.png[Pause, width=480]
+
+|Village encounter
+|image::doc/dialogs/12-village.png[Village, width=480]
+
+|Combat report
+|image::doc/dialogs/13-combat-report.png[Combat report, width=480]
+
+|City founded
+|image::doc/dialogs/14-city-founded.png[City founded, width=480]
+
+|Victory — cinematic
+|image::doc/dialogs/15-victory-cinematic.png[Victory cinematic, width=480]
+
+|Victory — chronicle
+|image::doc/dialogs/16-victory-chronicle.png[Victory chronicle, width=480]
+|===
+
 == Status
 
 === Implemented
@@ -257,12 +318,13 @@ export CSV. It never ends a game.
 * A captured city loses population, its walls and one building per citizen lost,
   pays 20 % plunder (capped at 100) and stays restless for 5 turns
 
-*Veterancy (unit ranks).* Every unit holds one of four ranks — **Recruit**
-(default) → **Regular** → **Veteran** → **Elite** — multiplying its combat
-strength by ×1.0 / ×1.25 / ×1.5 / ×2.0. Combat earns experience (round won
-+10, unit destroyed +30, city captured +60); the ladder thresholds are
-40 / 120 / 280 XP. Units produced in a city with Barracks start as Veterans
-(Civ1). The legacy `isVeteran` flag stays in sync (true from Veteran upward);
+*Veterancy (unit ranks).* Every unit holds one of four ranks — **Rookie**
+(default) → **Trained** → **Seasoned** → **Battle-Hardened** — multiplying
+its combat strength by ×1.0 / ×1.1 / ×1.25 / ×1.5 (the ladder caps at the
+classic Civ veteran bonus). Combat earns experience (round won +10, unit
+destroyed +30, city captured +60); the ladder thresholds are 40 / 120 / 280
+XP. Units produced in a city with Barracks start as Seasoned (Civ1). The
+legacy `isVeteran` flag stays in sync (true from Seasoned upward);
 see `src/game/engine/UnitRankSystem.ts`.
 
 === Economy and growth
@@ -475,6 +537,7 @@ the commit message which rule the number encodes.
 * link:doc/DIPLOMACY_SYSTEM.adoc[Diplomacy System] — opinion ledger, treaties, proposals
 * link:doc/CITY_CAPTURE.adoc[City Capture & Destruction] — what happens when a city falls
 * link:doc/WONDERS.adoc[Wonders] — the 24-wonder data format and effect model
+* link:doc/MODALS.adoc[Modals & Dialogs] — every dialog, how it opens, screenshots in `doc/dialogs/`
 * link:doc/HAPPINESS.adoc[Happiness] — content, disorder, martial law
 * link:doc/FOG_OF_WAR_IMPLEMENTATION.adoc[Fog of War] — visibility, exploration, storage
 
@@ -504,6 +567,14 @@ the commit message which rule the number encodes.
 
 * link:doc/space-bunny-free_ai_gov.adoc[AI Governor Architecture] — critique of the current AI shape
 * link:doc/leader-doctrines.adoc[Leader Doctrines] — per-civ identities hung on diplomacy
+
+=== Balance analysis
+
+* link:doc/BALANCE_ANALYSIS.adoc[Balance & Behaviour Analysis] — 400-round headless games, measured economy/AI failures and a prioritized fix list
+
+=== UI
+
+* link:doc/MODALS.adoc[Modals] — every dialog, how it opens, and what protects it
 
 === Working notes
 

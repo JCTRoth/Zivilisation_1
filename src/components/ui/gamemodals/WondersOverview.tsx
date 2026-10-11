@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Button } from 'react-bootstrap';
+import { Modal } from 'react-bootstrap';
+import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
+import { centerCameraOnTile, getGameViewport } from '@/utils/CameraUtils';
 import {
   WONDERS,
   WONDER_GROUPS,
@@ -12,8 +14,13 @@ import {
   type WonderEra,
   type WonderStatus,
 } from '@/data/WonderData';
-import { WonderArtwork } from './WonderArtwork';
+import { WonderCreditFor } from './WonderArtwork';
+import GameModal from './ModalShell';
 import '@/styles/wonders.css';
+
+/** Artwork URL for the hero image — the same path `WonderArtwork` fetches. */
+const wonderArtSrc = (wonder: WonderDefinition): string =>
+  `${import.meta.env.BASE_URL}${wonder.image}`;
 
 // ---------------------------------------------------------------------------
 // Shared data (pure over store state — the same functions the tests use)
@@ -141,15 +148,14 @@ function WonderCardItem({
       >
         <span className="wonder-card__lead">
           <span className="wonder-card__icon" aria-hidden="true">
-            {wonder.icon}
+            {/* Space stations identify by their programme flag, not a generic craft */}
+            {compact ? wonder.flag : wonder.icon}
           </span>
           <span className="wonder-card__name">{wonder.name}</span>
           <span className="wonder-card__flag" title={wonder.location} aria-hidden="true">
             {wonder.flag}
           </span>
-          <span className={`wonder-status wonder-status--${status}`}>
-            {STATUS_LABEL[status]}
-          </span>
+          <span className={`gm-chip wonder-chip wonder-chip--${status}`}>{STATUS_LABEL[status]}</span>
           {obsolete && (
             <span
               className="wonder-card__obsolete"
@@ -266,7 +272,10 @@ const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
           >
             <span className="wonder-group__icons" aria-hidden="true">
               {members.map((m) => (
-                <span key={m.wonder.id}>{m.wonder.icon}</span>
+                <span key={m.wonder.id} title={m.wonder.name}>
+                  {/* Grouped wonders (space stations) show the programme flag */}
+                  {m.wonder.groupId ? m.wonder.flag : m.wonder.icon}
+                </span>
               ))}
             </span>
             <span className="wonder-group__name">{group?.name ?? groupId}</span>
@@ -380,14 +389,61 @@ interface WonderEntryModalProps {
   onHide: () => void;
 }
 
+/** A spec chip with an explanation — the numbers mean little without them. */
+const SpecChip: React.FC<{ tip: string; children: React.ReactNode; className?: string }> = ({
+  tip,
+  children,
+  className,
+}) => (
+  <OverlayTrigger
+    placement="top"
+    delay={{ show: 120, hide: 60 }}
+    overlay={<Tooltip className={`wonder-chip-tip ${className ?? ''}`.trim()}>{tip}</Tooltip>}
+  >
+    <span className={`gm-chip${className ? ` ${className}` : ''}`} tabIndex={0}>
+      {children}
+    </span>
+  </OverlayTrigger>
+);
+
 /**
- * Full wonder entry: image slot, plain-language mechanics, historical flavour
- * AND the "Some facts" facts — only facts we actually know are written
- * (per the info-screen rule: never invent).
+ * The artwork on its own, large. Reached by clicking the hero picture.
+ */
+const WonderZoom: React.FC<{ wonder: WonderDefinition; show: boolean; onHide: () => void }> = ({
+  wonder,
+  show,
+  onHide,
+}) => (
+  <Modal show={show} onHide={onHide} centered size="lg" className="gm" dialogClassName="wonder-zoom" contentClassName="gm-modal">
+    <Modal.Body className="gm-body" data-tone="gold">
+      <button type="button" className="gm-close" onClick={onHide} aria-label="Close">
+        <i className="bi bi-x-lg" aria-hidden="true" />
+      </button>
+      <img className="wonder-zoom__img" src={wonderArtSrc(wonder)} alt={`${wonder.name} — ${wonder.fullName}`} />
+      <div className="wonder-zoom__caption">
+        <span className="wonder-zoom__name">
+          {wonder.icon} {wonder.name}
+        </span>
+        <WonderCreditFor wonder={wonder} />
+      </div>
+    </Modal.Body>
+  </Modal>
+);
+
+/**
+ * Full wonder entry: the artwork is the hero, then the mechanical payoff, the
+ * story, and the facts — only facts we actually know are written (per the
+ * info-screen rule: never invent).
  */
 const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onHide }) => {
   const rows = useWonderRows();
   const civilizations = useGameStore((s) => s.civilizations);
+  const cities = useGameStore((s) => s.cities);
+  const camera = useGameStore((s) => s.camera);
+  const map = useGameStore((s) => s.map);
+  const activePlayer = useGameStore((s) => s.gameState.activePlayer);
+  const actions = useGameStore((s) => s.actions);
+  const [zoomed, setZoomed] = useState(false);
   const row = rows.find((r) => r.wonder.id === wonderId) ?? null;
   const wonder = row?.wonder;
   const obsolete = wonder ? isWonderObsolete(wonder.id, civilizations) : false;
@@ -395,98 +451,160 @@ const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onH
   if (!wonder) return null;
 
   const ownerName = civName(civilizations, row?.ownerCivId ?? null);
+  const ownerIsYou = row?.ownerCivId === activePlayer;
   const builderNames = (row?.builderCivIds ?? []).map((id) => civName(civilizations, id));
+  const status = row?.status ?? 'available';
+
+  /** The city actually holding the wonder, if it has been built in this world. */
+  const wonderCity = cities.find(
+    (c) => c.civilizationId === row?.ownerCivId && (c.buildings ?? []).includes(wonder.id),
+  );
+
+  /** Jump the camera to the wonder's city and open it. */
+  const goToWonder = (): void => {
+    if (!wonderCity) return;
+    const viewport = getGameViewport();
+    const next = centerCameraOnTile({
+      col: wonderCity.col,
+      row: wonderCity.row,
+      zoom: camera.zoom,
+      viewportWidth: viewport.width,
+      viewportHeight: viewport.height,
+      mapWidth: map.width,
+      mapHeight: map.height,
+    });
+    actions.updateCamera(next);
+    actions.selectCity(wonderCity.id, 'user');
+    onHide();
+  };
 
   return (
-    <Modal show={show} onHide={onHide} centered size="lg" dialogClassName="wonder-entry-modal">
-      <Modal.Header closeButton closeVariant="white">
-        <Modal.Title className="wonder-entry-title">
+    <>
+    <GameModal
+      show={show}
+      onClose={onHide}
+      tone="gold"
+      size="lg"
+      className="wonder-entry-overlay"
+      dialogClassName="wonder-entry-modal"
+      eyebrow={<>Civilopedia · {ERA_LABEL[wonder.era]}</>}
+      title={
+        <>
           {wonder.icon} {wonder.name}
-          <span className="wonder-entry-fullname">{wonder.fullName}</span>
-        </Modal.Title>
-        <span className={`wonder-status wonder-status--${row?.status ?? 'available'} ms-3`}>
-          {STATUS_LABEL[row?.status ?? 'available']}
-        </span>
-      </Modal.Header>
-<Modal.Body>
-          <WonderArtwork wonder={wonder} active={show} />
-
-          <div className="wonder-entry-meta">
-          <span className="wonder-entry-meta__chip">🛡 {wonder.cost} shields</span>
-          <span className="wonder-entry-meta__chip">
-            🔬 {formatTechName(wonder.requiredTechnology)}
-          </span>
-          <span className="wonder-entry-meta__chip">
-            ⏳ {wonder.obsoleteBy ? `Obsolete: ${formatTechName(wonder.obsoleteBy)}` : 'Never obsolete'}
-          </span>
-          <span className="wonder-entry-meta__chip">📜 {ERA_LABEL[wonder.era]}</span>
-          <span className="wonder-entry-meta__chip wonder-entry-meta__chip--place">
-            <span className="wonder-entry-meta__flag" aria-hidden="true">{wonder.flag}</span>
-            {wonder.location}
-          </span>
-          <span className="wonder-entry-meta__chip">🔧 No maintenance</span>
-        </div>
-
-        <div className="wonder-entry-owner">
-          {row?.ownerCivId !== null && row?.ownerCivId !== undefined ? (
-            <>
-              ✅ Built by <strong>{ownerName}</strong>
-              {ownerName ? ' — the wonder stands in their cities and scores for them.' : ''}
-            </>
-          ) : builderNames.length > 0 ? (
-            <>🏗 Under construction by {builderNames.join(', ')} — first to finish claims it.</>
-          ) : (
-            <>⏳ Nobody has started this wonder yet.</>
+        </>
+      }
+      lede={<>{wonder.fullName} — {wonder.shortEffect}</>}
+      artLayout="cover"
+      artSrc={wonderArtSrc(wonder)}
+      artAlt={`${wonder.name} — ${wonder.fullName}`}
+      artLabel="wonder illustration"
+      artCredit={<WonderCreditFor wonder={wonder} variant="hero" />}
+      onArtClick={() => setZoomed(true)}
+      actions={
+        <>
+          {wonderCity && (
+            <button type="button" className="touch-btn touch-btn--primary" onClick={goToWonder}>
+              📍 Go to {wonderCity.name}
+            </button>
           )}
-        </div>
+          <span className="gm-actions-spacer" />
+          <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
+            Close
+          </button>
+        </>
+      }
+    >
+      <div className="wonder-entry-meta">
+        <span className={`gm-chip wonder-chip wonder-chip--${status}`}>{STATUS_LABEL[status]}</span>
+        <SpecChip
+          tip={`Shields this wonder costs. A city spends its whole shield output on one project at a time.`}
+          className="wonder-chip-spec"
+        >
+          🛡 {wonder.cost} shields
+        </SpecChip>
+        <SpecChip tip={`You must have researched ${formatTechName(wonder.requiredTechnology)} before a city can start it.`}>
+          🔬 {formatTechName(wonder.requiredTechnology)}
+        </SpecChip>
+        <SpecChip
+          tip={
+            wonder.obsoleteBy
+              ? `Once ANY civilization researches ${formatTechName(wonder.obsoleteBy)}, the effect stops working for everyone — the wonder still counts for score.`
+              : 'This wonder never becomes obsolete; its effect lasts to the end of the game.'
+          }
+        >
+          ⏳ {wonder.obsoleteBy ? `Obsolete: ${formatTechName(wonder.obsoleteBy)}` : 'Never obsolete'}
+        </SpecChip>
+        <SpecChip tip="Wonders cost nothing to maintain, and can never be sold.">
+          🔧 No maintenance
+        </SpecChip>
+        <SpecChip tip={`Where it stands in the real world: ${wonder.location}.`} className="gm-chip--accent">
+          <span aria-hidden="true">{wonder.flag}</span> {wonder.location}
+        </SpecChip>
+      </div>
 
-        <div className="wonder-entry-section">
-          <h6>Effect</h6>
-          <p>
-            {obsolete && (
-              <span className="wonder-obsolete-tag me-2">
-                ⚠ OBSOLETE — {formatTechName(wonder.obsoleteBy)} was discovered somewhere; the
-                effect is switched off (the wonder still scores).
-              </span>
+      <div className="gm-note">
+        {row?.ownerCivId !== null && row?.ownerCivId !== undefined ? (
+          <>
+            ✅ Built by <strong>{ownerIsYou ? 'you' : ownerName}</strong>
+            {ownerName
+              ? ownerIsYou
+                ? ' — the wonder stands in your cities and scores for you.'
+                : ' — the wonder stands in their cities and scores for them.'
+              : ''}
+            {wonderCity && (
+              <>
+                {' '}
+                in <strong>{wonderCity.name}</strong>.
+              </>
             )}
-            {wonder.effectText}
-          </p>
-        </div>
+          </>
+        ) : builderNames.length > 0 ? (
+          <>🏗 Under construction by {builderNames.join(', ')} — first to finish claims it.</>
+        ) : (
+          <>⏳ Nobody has started this wonder yet.</>
+        )}
+      </div>
 
-        <div className="wonder-entry-section">
-          <h6>History</h6>
-          <p>{wonder.flavor}</p>
-        </div>
-
-        {wonder.about && (
-          <div className="wonder-entry-section">
-            <h6>Trivia</h6>
-            <p>{wonder.about}</p>
+      {/* The payoff first: what the wonder actually does to your empire. */}
+      <section className="gm-section wonder-entry-effect">
+        <h3 className="gm-section-title">
+          <span aria-hidden="true">{wonder.icon}</span> Effect
+        </h3>
+        {obsolete && (
+          <div className="gm-callout">
+            <span className="gm-callout-title">Obsolete</span>
+            ⚠ {formatTechName(wonder.obsoleteBy)} was discovered somewhere; the effect is switched off (the
+            wonder still scores).
           </div>
         )}
+        <p className="gm-prose">{wonder.effectText}</p>
+      </section>
 
-        {wonder.facts.length > 0 && (
-          <div className="wonder-entry-section wonder-entry-section--facts">
-            <h6>Some facts</h6>
-            {/* Scrolls on its own once a wonder carries many facts, so the
-                rest of the entry stays within the modal. */}
-            <ul className="wonder-entry-facts">
-              {wonder.facts.map((fact, i) => (
-                <li key={i}>
-                  <span className="wonder-entry-facts__bullet" aria-hidden="true" />
-                  <span className="wonder-entry-facts__text">{fact}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </Modal.Body>
-      <Modal.Footer>
-        <Button variant="outline-light" onClick={onHide}>
-          Close
-        </Button>
-      </Modal.Footer>
-    </Modal>
+      <section className="gm-section">
+        <h3 className="gm-section-title">History</h3>
+        <p className="gm-prose">{wonder.flavor}</p>
+      </section>
+
+      {wonder.about && (
+        <section className="gm-section">
+          <h3 className="gm-section-title">Trivia</h3>
+          <p className="gm-prose">{wonder.about}</p>
+        </section>
+      )}
+
+      {wonder.facts.length > 0 && (
+        <section className="gm-section">
+          <h3 className="gm-section-title">Some facts</h3>
+          <ul className="gm-list wonder-entry-facts">
+            {wonder.facts.map((fact, i) => (
+              <li key={i}>{fact}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </GameModal>
+    <WonderZoom wonder={wonder} show={zoomed} onHide={() => setZoomed(false)} />
+    </>
   );
 };
 
@@ -508,22 +626,31 @@ const WondersOverviewModal: React.FC<WondersOverviewModalProps> = ({ show, onHid
 
   return (
     <>
-      <Modal show={show} onHide={onHide} centered size="xl" dialogClassName="wonders-modal">
-        <Modal.Header closeButton closeVariant="white">
-          <Modal.Title>🏆 Wonders of the World</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <WondersOverview onOpenEntry={(id) => setEntryId(id)} />
-        </Modal.Body>
-        <Modal.Footer>
-          <span className="me-auto text-white-50 small">
-            {WONDERS.length} unique wonders · first civilization to finish one owns it forever
-          </span>
-          <Button variant="outline-light" onClick={onHide}>
-            Close
-          </Button>
-        </Modal.Footer>
-      </Modal>
+      <GameModal
+        show={show}
+        onClose={onHide}
+        tone="gold"
+        size="xl"
+        dialogClassName="wonders-modal"
+        eyebrow="World Heritage"
+        title="Wonders of the World"
+        lede="Every wonder raised in this world — and every one still waiting to be claimed. Who holds it, who races you for it, what it costs and what it gives: choose an entry to open its chronicle."
+        icon="🏆"
+        artLabel="wonder gallery"
+        actions={
+          <>
+            <span className="wonders-modal__note">
+              {WONDERS.length} unique wonders · first civilization to finish one owns it forever
+            </span>
+            <span className="gm-actions-spacer" />
+            <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
+              Close
+            </button>
+          </>
+        }
+      >
+        <WondersOverview onOpenEntry={(id) => setEntryId(id)} />
+      </GameModal>
       <WonderEntryModal show={!!entryId} wonderId={entryId} onHide={() => setEntryId(null)} />
     </>
   );

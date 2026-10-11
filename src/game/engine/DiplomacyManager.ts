@@ -54,6 +54,7 @@ import {
 import type { Unit, City } from '../../../types/game';
 import GameEngine from './GameEngine';
 import { debugLog } from '../../utils/DevLog';
+import { TECHNOLOGIES_DATA } from '../../data/TechnologyData';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -92,6 +93,7 @@ const AI_OFFER_MESSAGES: Partial<Record<DiplomatAction, (civName: string) => str
   offer_open_borders: (n) => `${n} proposes open borders.`,
   propose_trade_agreement: (n) => `${n} proposes a trade agreement.`,
   propose_non_aggression: (n) => `${n} proposes a non-aggression pact.`,
+  offer_tech_exchange: (n) => `${n} offers an Exchange of Knowledge.`,
 };
 
 // ---------------------------------------------------------------------------
@@ -677,6 +679,16 @@ export class DiplomacyManager {
     const { fromCivId, toCivId, action } = proposal;
     // Negotiating with someone is how you meet them, if sight did not.
     this.markContact(fromCivId, toCivId);
+
+    // Civ I: no Exchange of Knowledge while the guns are still firing —
+    // refuse with a plain reason instead of burying it in the score.
+    if (action === 'offer_tech_exchange') {
+      const tradeRel = this.getRelation(fromCivId, toCivId);
+      if (tradeRel?.status === 'war') {
+        return { accepted: false, reason: 'They will not trade while the two of you are at war' };
+      }
+    }
+
     const ctx = this.proposalContext(proposal);
     const evaluation = evaluateProposal(ctx, proposal, proposalNoise(ctx, fromCivId));
     const rel = this.getRelation(toCivId, fromCivId);
@@ -813,6 +825,13 @@ export class DiplomacyManager {
       case 'offer_tech_exchange': {
         const { techOffered, techRequested } = proposal;
         if (!techOffered || !techRequested) return { accepted: false, reason: 'Must specify both technologies' };
+
+        // Civ I rule: no Exchange of Knowledge while at war.
+        const tradeRel = this.getRelation(fromCivId, toCivId);
+        if (tradeRel?.status === 'war') {
+          return { accepted: false, reason: 'They will not trade while the two of you are at war' };
+        }
+
         const fromCiv = this.gameEngine.civilizations?.[fromCivId];
         const toCiv = this.gameEngine.civilizations?.[toCivId];
         // Engine civs store technologies as a string[] (Set methods would throw).
@@ -826,6 +845,8 @@ export class DiplomacyManager {
         // Exchange: add techs to both sides
         if (fromTechs && !fromTechs.includes(techRequested)) fromTechs.push(techRequested);
         if (toTechs && !toTechs.includes(techOffered)) toTechs.push(techOffered);
+        // Refresh the shared tree UI so newly learned techs light up.
+        this.gameEngine.updateTechnologyAvailability?.();
         // A fair swap is one of the few unambiguously good acts in the game.
         const exchangeRel = this.getRelation(toCivId, fromCivId);
         if (exchangeRel) {
@@ -1060,6 +1081,57 @@ export class DiplomacyManager {
   }
 
   /**
+   * The two one-sided tech lists Civ I's Exchange of Knowledge screen shows:
+   * what they know that you do not, and what you know that they do not.
+   * Both are filtered to *met* civs by the caller — the engine never leaks
+   * an unmet civ's research.
+   */
+  getTechTradeOptions(fromCivId: number, toCivId: number): {
+    theyHaveWeLack: string[];
+    weHaveTheyLack: string[];
+  } {
+    const fromTechs = this.gameEngine.civilizations?.[fromCivId]?.technologies ?? [];
+    const toTechs = this.gameEngine.civilizations?.[toCivId]?.technologies ?? [];
+    return {
+      theyHaveWeLack: toTechs.filter((t: string) => !fromTechs.includes(t)),
+      weHaveTheyLack: fromTechs.filter((t: string) => !toTechs.includes(t)),
+    };
+  }
+
+  /**
+   * Whether an Exchange of Knowledge is even possible between two civs
+   * (contact made, not at war, both sides hold something the other lacks).
+   */
+  canTradeTechs(fromCivId: number, toCivId: number): { ok: boolean; reason?: string } {
+    if (!this.hasContacted(fromCivId, toCivId)) {
+      return { ok: false, reason: 'No contact yet' };
+    }
+    const rel = this.getRelation(fromCivId, toCivId);
+    if (rel?.status === 'war') {
+      return { ok: false, reason: 'At war' };
+    }
+    const opts = this.getTechTradeOptions(fromCivId, toCivId);
+    if (opts.theyHaveWeLack.length === 0 || opts.weHaveTheyLack.length === 0) {
+      return { ok: false, reason: 'Nothing to swap' };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Pick a fair Civ I swap: offer the *cheapest* tech they lack, ask for the
+   * *most expensive* tech we lack. Returns null when no pair exists.
+   */
+  pickTechSwap(fromCivId: number, toCivId: number): { techOffered: string; techRequested: string } | null {
+    const opts = this.getTechTradeOptions(fromCivId, toCivId);
+    if (opts.weHaveTheyLack.length === 0 || opts.theyHaveWeLack.length === 0) return null;
+    const cost = (id: string): number =>
+      TECHNOLOGIES_DATA.find((t) => t.id === id)?.cost ?? 50;
+    const techOffered = [...opts.weHaveTheyLack].sort((a, b) => cost(a) - cost(b))[0];
+    const techRequested = [...opts.theyHaveWeLack].sort((a, b) => cost(b) - cost(a))[0];
+    return { techOffered, techRequested };
+  }
+
+  /**
    * Build the policy context for one pairing. Shared by the AI's own
    * deliberation and by the mutual-defence check, so both apply the same
    * capacity, exhaustion and cooldown rules.
@@ -1081,6 +1153,7 @@ export class DiplomacyManager {
     const roundsSincePeace = rel.status === 'war'
       ? Infinity
       : (rel.peaceSignedAt === undefined ? Infinity : round - rel.peaceSignedAt);
+    const tradeOpts = this.getTechTradeOptions(civId, otherId);
     return {
       civId,
       otherId,
@@ -1100,6 +1173,8 @@ export class DiplomacyManager {
       round,
       sequence: this.proposalSequence++,
       currentYear: this.gameEngine.currentYear ?? -4000,
+      techsWeCanOffer: tradeOpts.weHaveTheyLack,
+      techsWeWant: tradeOpts.theyHaveWeLack,
     };
   }
 
@@ -1195,6 +1270,30 @@ export class DiplomacyManager {
           break;
         }
 
+        case 'offer_tech_exchange': {
+          const swap = this.pickTechSwap(civId, otherId);
+          if (!swap) break;
+          const techName = (id: string): string =>
+            TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
+          const message = `${civName} offers an Exchange of Knowledge: `
+            + `their ${techName(swap.techRequested)} for your ${techName(swap.techOffered)}.`;
+          if (isPlayerTarget) {
+            this.emitOffer(
+              civId, otherId, 'offer_tech_exchange', undefined, message,
+              swap.techOffered, swap.techRequested,
+            );
+          } else {
+            this.processProposal({
+              fromCivId: civId,
+              toCivId: otherId,
+              action: 'offer_tech_exchange',
+              techOffered: swap.techOffered,
+              techRequested: swap.techRequested,
+            });
+          }
+          break;
+        }
+
         default:
           break;
       }
@@ -1212,6 +1311,8 @@ export class DiplomacyManager {
     action: DiplomatAction,
     goldAmount: number | undefined,
     message: string,
+    techOffered?: string,
+    techRequested?: string,
   ): void {
     debugLog(`[AI-DIPLO] Offering ${action} to human Civ ${toCivId}`);
     this.emitEvent('AI_DIPLOMACY_OFFER', {
@@ -1219,6 +1320,8 @@ export class DiplomacyManager {
       toCivId,
       action,
       goldAmount,
+      techOffered,
+      techRequested,
       message,
     });
   }

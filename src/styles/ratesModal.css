@@ -1,212 +1,176 @@
-/* Tax/Science/Luxury Rates modal — mirrors the settings modal design tokens. */
+/* =============================================================================
+   RATES MODAL (Tax / Science / Luxury)
+   -----------------------------------------------------------------------------
+   Content blocks inside the shared game-modal shell (see gameModalShell.css).
+   Only the bespoke pieces live here: the three sliders, the tally strip and a
+   couple of helper utilities. Shell tokens in scope:
+     --gm-accent (gold), --gm-tint, --gm-label
+   ========================================================================== */
 
 .rates-modal {
   --rates-accent: var(--color-accent, #f0c33c);
   --rates-border: var(--color-border, #2c3b49);
   --rates-text: var(--color-text, #e8eef3);
   --rates-muted: var(--color-text-muted, #9fb0bd);
-  --rates-bg: var(--color-bg-overlay, #1d2935);
 }
 
-/* The modal surface itself must be dark — Bootstrap's default .modal-content
-   is white and shows through the transparent footer otherwise. */
-.rates-modal .modal-content {
-  background: var(--color-bg-elevated, #16202a);
-  color: var(--rates-text);
-  border: 1px solid var(--rates-border);
-}
+/* ---- Sliders ------------------------------------------------------------- */
 
-.rates-modal__header {
-  background: var(--color-bg-elevated, #16202a);
-  color: var(--rates-text);
-  border-bottom: 1px solid var(--rates-border);
-}
-
-.rates-modal__title {
-  color: var(--rates-text);
-  font-weight: 600;
-}
-
-.rates-modal__header .btn-close {
-  filter: invert(0.85) hue-rotate(180deg);
-  color: whitesmoke;
-}
-
-.rates-modal__body {
-  background: var(--rates-bg);
-  color: var(--rates-text);
+.rates-controls {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.rates-modal__footer {
-  /* !important: Bootstrap's .modal-footer sets a transparent
-     --bs-modal-footer-bg that loads later in the cascade. */
-  background: var(--color-bg-overlay, #1d2935) !important;
-  border-top: 1px solid var(--rates-border);
-  display: flex;
-  justify-content: flex-end;
   gap: 10px;
-}
-
-/* Themed action buttons — dark surface with accent border/text, matching the
-   diplomacy/government modal button style instead of Bootstrap's bright
-   variants. */
-.rates-modal__btn {
-  padding: 8px 20px;
-  border: 1px solid var(--color-border-strong, #3d5163);
-  border-radius: var(--radius-sm, 8px);
-  background: var(--color-bg-overlay, #1d2935);
-  color: var(--color-text, #e8eef3);
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-
-.rates-modal__btn:hover:not(:disabled) {
-  border-color: var(--color-accent, #f0c33c);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.rates-modal__btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.rates-modal__btn--apply {
-  border-color: rgba(240, 195, 60, 0.5);
-  color: var(--color-accent, #f0c33c);
-}
-
-.rates-modal__btn--apply:hover:not(:disabled) {
-  background: rgba(240, 195, 60, 0.12);
-  border-color: var(--color-accent-strong, #ffd75e);
-}
-
-.rates-government {
-  font-size: 0.9rem;
-  color: var(--rates-muted);
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--rates-border);
-  border-radius: var(--radius-md, 10px);
-}
-
-.rates-government strong {
-  color: var(--rates-text);
 }
 
 .rates-control {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--rates-border);
-  border-radius: var(--radius-md, 10px);
+  gap: 5px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
 }
 
 .rates-control__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .rates-control__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 700;
   color: var(--rates-text);
 }
 
 .rates-control__value {
-  color: var(--rates-accent);
+  flex: 0 0 auto;
   font-family: var(--font-mono, monospace);
+  font-size: 16px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--rates-accent);
 }
 
 .rates-control__range {
   width: 100%;
-  height: 28px;
+  height: 30px; /* comfortable touch strip */
   accent-color: var(--rates-accent);
   cursor: pointer;
 }
 
+/* Bootstrap's .form-range ships a primary-blue thumb on a light track — restyle
+   it to the modal's gold. Doubled class selector so it wins the cascade no
+   matter where bootstrap.css is imported. */
+.rates-control__range.rates-control__range::-webkit-slider-runnable-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+  border-radius: 999px;
+}
+
+.rates-control__range.rates-control__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  background: var(--rates-accent, #f0c33c);
+  border: 2px solid #0d151c;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.rates-control__range.rates-control__range:focus-visible::-webkit-slider-thumb,
+.rates-control__range.rates-control__range:hover::-webkit-slider-thumb {
+  background: var(--color-accent-strong, #ffd75e);
+}
+
+.rates-control__range.rates-control__range::-moz-range-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+  border-radius: 999px;
+}
+
+.rates-control__range.rates-control__range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--rates-accent, #f0c33c);
+  border: 2px solid #0d151c;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
 .rates-control__hint {
+  font-size: 11.5px;
+  line-height: 1.45;
   color: var(--rates-muted);
-  font-size: 0.8rem;
 }
 
-/* Themed alert — dark surface with the warning color instead of Bootstrap's
-   bright yellow .alert-warning background. */
-.rates-modal .rates-warning.alert-warning {
-  background: rgba(242, 163, 60, 0.1);
-  border: 1px solid rgba(242, 163, 60, 0.55);
-  color: var(--color-warning, #f2a33c);
-}
-
-.rates-warning {
-  margin-bottom: 0;
-  font-size: 0.85rem;
-}
+/* ---- Tally strip --------------------------------------------------------- */
 
 .rates-summary {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--rates-border);
-  border-radius: var(--radius-md, 10px);
-  font-size: 0.9rem;
 }
 
-.rates-summary strong {
-  color: var(--rates-accent);
+/* NOTE: no `text-transform: uppercase` here — the e2e suite asserts the word
+   "Total" inside this box and Playwright reads innerText, which does apply
+   text-transform. Keep the label case as authored. */
+.rates-summary > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--rates-muted);
+}
+
+.rates-summary > span strong {
   font-family: var(--font-mono, monospace);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0;
+  color: var(--rates-accent);
+}
+
+.rates-summary__ok {
+  border-color: rgba(111, 206, 124, 0.45) !important;
 }
 
 .rates-summary__ok strong {
   color: #6fce7c;
 }
 
+.rates-summary__bad {
+  border-color: rgba(224, 98, 90, 0.55) !important;
+}
+
 .rates-summary__bad strong {
   color: #e0625a;
 }
 
-.rates-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--rates-border);
-  border-radius: var(--radius-md, 10px);
-  font-size: 0.9rem;
+/* ---- Projected-per-turn tiles -------------------------------------------- */
+
+.rates-stat--negative .gm-stat-value {
+  color: var(--color-danger, #ef5a6e);
 }
 
-.rates-preview__title {
-  font-weight: 600;
-  color: var(--rates-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.78rem;
-}
-
-.rates-preview__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.rates-preview__row strong {
-  color: var(--rates-accent);
-  font-family: var(--font-mono, monospace);
-}
-
-.rates-preview__hint {
-  color: var(--rates-muted);
-  font-size: 0.8rem;
-  font-style: italic;
-  margin-top: 4px;
+@media (min-width: 576px) {
+  .rates-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }

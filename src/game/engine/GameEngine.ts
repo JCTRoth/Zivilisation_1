@@ -20,6 +20,12 @@ import {
   VILLAGE_BARBARIAN_MAX,
 } from '@/data/VillageConstants';
 import { CombatSystem } from './CombatSystem';
+import {
+  COMBAT_XP,
+  awardCombatExperience,
+  createRookieRankState,
+  normalizeUnitRankFields,
+} from './UnitRankSystem';
 import { isWideRiverTile } from './RiverRules';
 import { ProductionManager } from './ProductionManager';
 import { AutoProduction } from './AutoProduction';
@@ -1402,7 +1408,7 @@ export default class GameEngine {
       // Civ1: a newly created unit has not acted this turn, so the
       // Minimum-1-Move exception applies to its first move.
       hasMovedThisTurn: false,
-      isVeteran: false,
+      ...createRookieRankState(),
       attack: unitProps.attack || 0,
       defense: unitProps.defense || 1,
       maintenance: 0,
@@ -4346,7 +4352,7 @@ const occupiedLandmasses = new Set(
       movesRemaining: props.movement || 1,
       maxMoves: props.movement || 1,
       hasMovedThisTurn: false,
-      isVeteran: false,
+      ...createRookieRankState(),
       attack: props.attack || 0,
       defense: props.defense || 1,
       maintenance: 0,
@@ -4581,6 +4587,11 @@ const occupiedLandmasses = new Set(
           }
         }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
 
+        // Victors learn from killing: a round win plus a destruction bonus.
+        // Awarded BEFORE the COMBAT_VICTORY event so the UI sync already
+        // carries the promoted rank (and any flourish starts with the cloud).
+        this.awardUnitCombatExperience(attacker, COMBAT_XP.ROUND_WON + COMBAT_XP.UNIT_DESTROYED);
+
         if (this.onStateChange) {
           this.onStateChange('COMBAT_VICTORY', {
             attacker,
@@ -4651,6 +4662,9 @@ const occupiedLandmasses = new Set(
 
       console.log(`[COMBAT] ${attacker.type} wounded ${defender.type} (${damage} dmg, ${defender.health} hp left)`);
 
+      // A non-lethal winning round still counts as combat experience.
+      this.awardUnitCombatExperience(attacker, COMBAT_XP.ROUND_WON);
+
       if (this.onStateChange) {
         this.onStateChange('COMBAT_HIT', {
           attacker,
@@ -4698,7 +4712,11 @@ const occupiedLandmasses = new Set(
           }
         }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
       }
-      
+
+      // Holding the line teaches too: a defender that repels an attack earns
+      // the same round-win experience as a victorious attacker.
+      this.awardUnitCombatExperience(defender, COMBAT_XP.ROUND_WON);
+
       if (this.onStateChange) {
         this.onStateChange('COMBAT_DEFEAT', {
           attacker,
@@ -4722,9 +4740,29 @@ const occupiedLandmasses = new Set(
   }
 
   /**
-   * Resolve one attack round against an enemy city through the central
-   * CombatSystem. Garrison units die one by one; the city itself only falls
-   * when the garrison is empty and the attacker wins the population-vs-attack roll.
+   * Award combat experience to a unit and, on a rank-up, announce
+   * `UNIT_PROMOTED`. The single entry point for the veterancy ladder — every
+   * combat branch (unit round, garrison kill, city capture) funnels through
+   * here so promotions can never drift from the XP thresholds.
+   */
+  private awardUnitCombatExperience(unit: Unit, amount: number): void {
+    const award = awardCombatExperience(unit, amount);
+    if (!award.promoted) return;
+    console.log(`[RANK] ${unit.type} promoted to rank ${award.rankAfter} (${award.experience} xp)`);
+    if (this.onStateChange) {
+      this.onStateChange('UNIT_PROMOTED', {
+        unit,
+        previousRank: award.rankBefore,
+        rank: award.rankAfter,
+        experience: award.experience,
+      });
+    }
+  }
+
+  /**
+    * Resolve one attack round against an enemy city through the central
+    * CombatSystem. Garrison units die one by one; the city itself only falls
+    * when the garrison is empty and the attacker wins the population-vs-attack roll.
    *
    * `options.counterDamage === false` suppresses the city counter-strike. It is
    * used for the follow-up assault that happens in the SAME action in which the
@@ -4781,6 +4819,8 @@ const occupiedLandmasses = new Set(
           if (defender.type === 'scout') this.onScoutDeath(defender);
         }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
         console.log(`[COMBAT] ${attacker.type} defeated garrison ${defender.type} in ${city.name} (${garrison.length - 1} defenders remain)`);
+        // Breaking a garrison counts as a round win plus a kill.
+        this.awardUnitCombatExperience(attacker, COMBAT_XP.ROUND_WON + COMBAT_XP.UNIT_DESTROYED);
         return {
           result: 'hit',
           attackerDamage: 0,
@@ -4805,6 +4845,8 @@ const occupiedLandmasses = new Set(
           // Capital lost — the civ re-establishes a seat of government.
           this.governmentManager?.ensureCapital(oldCiv);
         }
+        // Razing a city to the ground still teaches the attacker.
+        this.awardUnitCombatExperience(attacker, COMBAT_XP.CITY_CAPTURED);
         if (this.onStateChange) {
           this.onStateChange('CITY_DESTROYED', { city, attacker });
         }
@@ -4854,6 +4896,8 @@ const occupiedLandmasses = new Set(
         this.governmentManager?.ensureCapital(oldCiv);
       }
       console.log(`[COMBAT] City ${city.name} captured by civ ${attacker.civilizationId} (pop ${city.population})`);
+      // Taking a city is the biggest single experience prize on the ladder.
+      this.awardUnitCombatExperience(attacker, COMBAT_XP.CITY_CAPTURED);
       return { result: 'captured', attackerDamage: 0, attackerDestroyed: false, defenderDamage: 0, cityHit: true };
     }
 
@@ -4936,9 +4980,71 @@ const occupiedLandmasses = new Set(
    */
   private markCityLost(oldCivId: number, attackerCivId: number): void {
     const storage = this.playerStorage.get(oldCivId);
-    if (!storage) return;
-    storage.turnData.lastCityLostRound = this.currentTurn;
-    storage.turnData.lastCityLostTo = attackerCivId;
+    if (storage) {
+      storage.turnData.lastCityLostRound = this.currentTurn;
+      storage.turnData.lastCityLostTo = attackerCivId;
+    }
+    this.applyLastCityRule(oldCivId, attackerCivId);
+  }
+
+  /**
+   * Civ I — "no city, no people". Called for EVERY city a civilization loses
+   * (captured, razed or nuked; all of them funnel through `markCityLost`).
+   *
+   * When that city was the civilization's last one and it still fields at
+   * least one unit that is NOT a settler, its remaining units are destroyed
+   * and the civilization is finished: a people without a city that still
+   * carries spears is a raider band, not a nation. A civilization left with
+   * nothing but settlers is spared — they can walk to open ground and found
+   * a new city, so their story is not over.
+   *
+   * The rule runs against the CURRENT city list, so it must be called after
+   * the losing civilization no longer owns the city (ownership switched, or
+   * the city was removed). It never touches the attacker, and never runs for
+   * a civilization that still holds ground elsewhere.
+   *
+   * Emits `CIVILIZATION_ELIMINATED` — the UI turns it into a toast.
+   */
+  private applyLastCityRule(oldCivId: number, attackerCivId: number): void {
+    // Still owns a city somewhere else → the nation survives, nothing to do.
+    if (this.cities.some((city: City) => city.civilizationId === oldCivId)) return;
+
+    const living = this.units.filter(
+      (u: Unit) => u.civilizationId === oldCivId && u.isDefeated !== true,
+    );
+    if (living.length === 0) return; // nothing left standing anyway
+
+    // A people that is ONLY settlers may re-found — they are spared.
+    const onlySettlers = living.every((u: Unit) => u.type === 'settler');
+    if (onlySettlers) {
+      console.log(`[COMBAT] Civ ${oldCivId} lost its last city but keeps ${living.length} settler(s) — still alive`);
+      return;
+    }
+
+    const removedIds = new Set<string>();
+    for (const u of living) {
+      u.isDefeated = true;
+      u.defeatTimestamp = Date.now();
+      this.destroyCargoOf(u);
+      this.unitTurnQueue?.removeUnit?.(u.id);
+      removedIds.add(u.id);
+      this.onStateChange?.('UNIT_DEFEATED', { unit: u });
+    }
+    if (removedIds.size > 0) {
+      this.units = this.units.filter((u: Unit) => !removedIds.has(u.id));
+      // One sync is enough: the handler re-reads the engine's unit list.
+      this.onStateChange?.('UNIT_REMOVED', { unit: living[0] });
+    }
+
+    const civ = this.civilizations?.[oldCivId];
+    if (civ) civ.isAlive = false;
+
+    this.onStateChange?.('CIVILIZATION_ELIMINATED', {
+      civilizationId: oldCivId,
+      attackerCivId,
+      unitsDestroyed: removedIds.size,
+    });
+    console.log(`[COMBAT] Civ ${oldCivId} ELIMINATED — last city lost with ${removedIds.size} non-settler unit(s) in the field`);
   }
 
   /**
@@ -6934,6 +7040,9 @@ const occupiedLandmasses = new Set(
           unit.cargoUnitIds = [unit.cargoUnitId];
         }
         unit.cargoUnitId = null;
+        // Saves written before the rank system have no `rank`/`experience`
+        // fields; derive them (legacy `isVeteran` units become Seasoned).
+        normalizeUnitRankFields(unit);
       }
       this.cities = saveData.cities;
       this.civilizations = saveData.civilizations;

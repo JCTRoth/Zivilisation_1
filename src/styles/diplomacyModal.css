@@ -1,61 +1,45 @@
 /* ═══════════════════════════════════════════════════
    Diplomacy Modal — aligned with the game's design system
    (dark elevated panels, gold accent, UI font, rounded corners)
+
+   The frame itself (hero, scrolling content column, action bar) comes from
+   the shared modal shell — see `gamemodals/ModalShell.tsx`. Everything below
+   styles what is *inside* that shell: the two-pane negotiation floor, the
+   audience card, and the ledger.
    ═══════════════════════════════════════════════════ */
 
-.diplomacy-modal .modal-content {
-  background: var(--color-bg-elevated, #16202a);
-  border: 1px solid var(--color-border-strong, #3d5163);
-  border-radius: var(--radius-lg, 16px);
-  font-family: var(--font-ui);
-  color: var(--color-text, #e8eef3);
+/* Width lives on the dialog element (`dialogClassName`), and is kept more
+   specific than Bootstrap's `.modal-xl .modal-dialog` so the two-pane floor
+   always gets its room regardless of stylesheet order. */
+.modal .modal-dialog.diplomacy-modal {
+  max-width: min(1040px, 95vw);
 }
 
-.diplomacy-modal .modal-dialog {
-  max-width: min(820px, 92vw);
+/* ─── Hero artwork slot ─────────────────────────── */
+
+/* The selected leader's own portrait stands in the shell's art slot, so only
+   the "no picture here yet" placeholder is allowed to look empty. */
+.diplomacy-modal .gm-art--plain:has(.diplomacy-hero-art) {
+  border-style: solid;
 }
 
-.diplomacy-header {
-  background: var(--color-bg-overlay, #1d2935);
-  border-bottom: 1px solid var(--color-border, #2c3b49);
-  color: var(--color-accent, #f0c33c);
-  padding: 12px 16px;
-  border-top-left-radius: var(--radius-lg, 16px);
-  border-top-right-radius: var(--radius-lg, 16px);
+.diplomacy-hero-art {
+  display: grid;
+  place-items: center;
+  line-height: 0;
 }
 
-.diplomacy-header .modal-title {
-  font-size: 16px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-weight: 700;
-  color: var(--color-accent, #f0c33c);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.diplomacy-header .btn-close {
-  filter: invert(1);
-  min-width: 44px;
-  min-height: 44px;
-  color: whitesmoke;
-}
-
-.diplomacy-body {
-  background: var(--color-bg-elevated, #16202a);
-  color: var(--color-text, #e8eef3);
-  padding: 0;
-  min-height: 400px;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* ─── Layout: left list + right negotiation ────── */
+/* ─── Layout: left list + right negotiation ──────
+   The shell's `.gm-content` owns the scrolling, so neither pane needs a
+   height cap of its own — a nested scrollbar inside a scrolling card is how
+   a negotiation floor becomes unusable on a phone. */
 
 .diplomacy-layout {
   display: flex;
-  min-height: 400px;
+  min-height: 0;
+  /* Never shrink: the shell's `.gm-content` is the scroller, and a shrinking
+     pane would clip the roster instead of scrolling the card. */
+  flex: 0 0 auto;
 }
 
 .diplomacy-civ-list {
@@ -64,28 +48,25 @@
   border-right: 1px solid var(--color-border, #2c3b49);
   background: var(--color-bg-overlay, #1d2935);
   padding: 0;
-  overflow-y: auto;
-  max-height: 480px;
+}
+
+/* Pane heading: `.gm-section-title` leans on the card's padding, but this
+   card is `--flush`, so the heading carries its own. */
+.diplomacy-civ-list > .gm-section-title {
+  margin: 0;
+  padding: 11px 12px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .diplomacy-negotiation {
   flex: 1;
-  padding: 16px;
-  overflow-y: auto;
-  max-height: 480px;
-}
-
-/* ─── Section labels ────────────────────────────── */
-
-.diplomacy-section-label {
-  font-size: 10px;
-  color: var(--color-accent, #f0c33c);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-weight: 700;
-  padding: 10px 12px 6px;
-  border-bottom: 1px solid var(--color-border, #2c3b49);
-  margin-bottom: 4px;
+  min-width: 0;
+  padding: 14px;
+  /* The pane stacks its own cards (audience, strength, treaties, terms…);
+     the column gap does the spacing so nothing needs margins of its own. */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 /* ─── Civilization list rows ────────────────────── */
@@ -99,6 +80,8 @@
   padding: 10px 12px;
   border: none;
   border-bottom: 1px solid var(--color-border, #2c3b49);
+  /* Reserved so the selected row's accent edge never nudges the label. */
+  border-left: 3px solid transparent;
   background: transparent;
   color: var(--color-text, #e8eef3);
   font-family: var(--font-ui);
@@ -136,83 +119,36 @@
 }
 
 /* ============================================================================
-   Mobile (< lg): stacked layout + full-height sheets
+   Mobile (< lg): the two panes stack — the roster first, the court below it
    ========================================================================== */
 
 @media (max-width: 991.98px) {
-  .diplomacy-modal .modal-content {
-    border: none;
-  }
-
-  .diplomacy-modal .modal-dialog {
+  .modal .modal-dialog.diplomacy-modal {
     max-width: 100%;
-  }
-
-  .diplomacy-body {
-    min-height: 0;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
   }
 
   .diplomacy-layout {
     flex-direction: column;
     min-height: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
   }
 
   .diplomacy-civ-list {
     width: 100%;
     min-width: 0;
-    max-height: 38%;
+    /* Cap the roster so the court you are actually talking to stays on
+       screen; only this list scrolls inside its own card. */
+    max-height: 34vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     border-right: none;
     border-bottom: 1px solid var(--color-border, #2c3b49);
-    flex-shrink: 0;
-    -webkit-overflow-scrolling: touch;
+    flex: 0 0 auto;
   }
 
   .diplomacy-negotiation {
-    max-height: none;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-height: 0;
-    overflow-y: auto;
-    padding-bottom: calc(16px + var(--safe-bottom, 0px));
-  }
-}
-
-/* Desktop (>= lg): side-by-side layout, bordered dialog */
-@media (min-width: 992px) {
-  .diplomacy-modal .modal-dialog {
-    max-width: min(820px, 92vw);
-  }
-
-  .diplomacy-modal .modal-content {
-    border: 1px solid var(--color-border-strong, #3d5163);
-  }
-
-  .diplomacy-body {
-    min-height: 400px;
-    display: block;
-  }
-
-  .diplomacy-layout {
-    flex-direction: row;
-    min-height: 400px;
-  }
-
-  .diplomacy-civ-list {
-    width: 220px;
-    min-width: 220px;
-    max-height: 480px;
-    border-right: 1px solid var(--color-border, #2c3b49);
-    border-bottom: none;
-  }
-
-  .diplomacy-negotiation {
-    max-height: 480px;
-    overflow-y: auto;
-    padding-bottom: 16px;
+    padding-bottom: calc(14px + var(--safe-bottom, 0px));
   }
 }
 
@@ -224,7 +160,7 @@
   gap: 16px;
   padding: 16px;
   border-bottom: 1px solid var(--color-border, #2c3b49);
-  margin-bottom: 12px;
+  margin-bottom: 0; /* the pane's column gap separates it from the next card */
   border-radius: var(--radius-md, 10px);
   background: rgba(255, 255, 255, 0.02);
   transition: box-shadow 0.3s;
@@ -306,7 +242,7 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
-/* Status panel (compact) */
+/* Status panel (compact): stance chip + the fact ledger under it */
 .diplomacy-status-panel {
   display: flex;
   flex-direction: column;
@@ -315,28 +251,12 @@
   align-items: flex-end;
 }
 
-.diplomacy-status-chip {
-  font-size: 13px;
-}
-
-.diplomacy-stat {
-  font-size: 11px;
-  display: flex;
-  gap: 6px;
-}
-
-.diplomacy-stat-label {
-  color: var(--color-text-muted, #b7c3cf);
-  opacity: 0.7;
+/* The ledger spans the panel even though the panel itself hugs its content. */
+.diplomacy-status-panel .gm-kv-grid {
+  width: 100%;
 }
 
 /* ─── Status values ──────────────────────────────── */
-
-.diplomacy-label {
-  color: var(--color-text-muted, #b7c3cf);
-  opacity: 0.8;
-  margin-right: 6px;
-}
 
 .diplomacy-status-value {
   font-weight: bold;
@@ -365,7 +285,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 16px;
+  padding: 0; /* the `.gm-section` card around it owns the padding */
   font-size: 13px;
   flex-wrap: wrap;
 }
@@ -414,7 +334,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 8px 0 16px;
+  padding: 0; /* inside a `.gm-section`, the card owns the padding */
 }
 
 .diplomacy-btn {
@@ -508,10 +428,10 @@
   color: var(--color-accent, #f0c33c);
 }
 
-/* Proposal outcome feed pinned under the header — compact variant of the log */
+/* Proposal outcome feed — compact variant of the log, inside its own card */
 .diplomacy-feed {
   max-height: 96px;
-  margin-bottom: 10px;
+  margin-bottom: 0;
 }
 
 /* ─── Attitude meter ────────────────────────────── */
@@ -633,15 +553,6 @@
 
 /* ─── Active treaties display ───────────────────── */
 
-.diplomacy-treaties-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
-  font-size: 12px;
-  flex-wrap: wrap;
-}
-
 .diplomacy-treaty-badges {
   display: flex;
   flex-wrap: wrap;
@@ -720,16 +631,7 @@
   border: 1px solid rgba(61, 155, 255, 0.4);
   border-radius: var(--radius-md, 10px);
   padding: 10px 14px;
-  margin: 8px 0;
-}
-
-.diplomacy-counter-title {
-  font-size: 12px;
-  color: var(--color-primary, #3d9bff);
-  font-weight: bold;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 4px;
+  margin: 0;
 }
 
 .diplomacy-counter-text {
@@ -750,16 +652,7 @@
   border: 1px solid rgba(76, 175, 80, 0.45);
   border-radius: var(--radius-md, 10px);
   padding: 10px 14px;
-  margin-bottom: 12px;
-}
-
-.diplomacy-incoming-title {
-  font-size: 12px;
-  color: #4caf50;
-  font-weight: bold;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 4px;
+  margin-bottom: 0; /* `.gm-content`'s column gap separates the cards */
 }
 
 .diplomacy-incoming-text {
@@ -781,20 +674,11 @@
 
 /* "What they remember" — one row per recorded impact, with its point value. */
 .diplomacy-reasons {
-  margin: 10px 0;
+  margin: 0;
   padding: 8px 10px;
   border-radius: var(--radius-md, 6px);
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.diplomacy-reasons-title {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--color-text-muted, #b7c3cf);
-  opacity: 0.75;
-  margin-bottom: 6px;
 }
 
 .diplomacy-reason-row {
@@ -827,7 +711,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 10px;
-  margin: 8px 0;
+  margin: 0; /* the pane's column gap separates it from its neighbours */
   padding: 7px 10px;
   border-radius: var(--radius-md, 6px);
   font-size: 12px;
@@ -849,3 +733,126 @@
 .diplomacy-verdict.unlikely .diplomacy-verdict-headline { color: #f44336; }
 .diplomacy-verdict-score { opacity: 0.75; font-variant-numeric: tabular-nums; }
 .diplomacy-verdict-why { opacity: 0.8; }
+
+/* ============================================================================
+   Narrow screens (≤ 575px): the audience card wraps so the portrait, the
+   leader and the ledger each get a line of their own instead of all three
+   fighting over 360px of width.
+   ========================================================================== */
+
+@media (max-width: 575.98px) {
+  .diplomacy-audience {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .diplomacy-portrait-slot {
+    width: 96px;
+    min-width: 96px;
+    height: 125px;
+  }
+
+  .diplomacy-leader-info {
+    flex: 1 1 140px;
+  }
+
+  /* The ledger drops under the leader and reads label → value across the
+     full width of the card. */
+  .diplomacy-status-panel {
+    flex: 1 1 100%;
+    min-width: 0;
+    align-items: flex-start;
+  }
+
+  .diplomacy-strength-nums {
+    flex-basis: 100%;
+  }
+
+  .diplomacy-tribute-input {
+    width: 64px;
+  }
+
+  .diplomacy-select {
+    max-width: 100%;
+  }
+
+  .diplomacy-tech-input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .diplomacy-treaty-group {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+}
+
+/* ---- Exchange of Knowledge (Civ I) ---------------------------------------- */
+
+.diplomacy-tech-exchange {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(76, 195, 232, 0.28);
+  background: rgba(76, 195, 232, 0.06);
+}
+
+.diplomacy-tech-exchange--empty {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.diplomacy-tech-exchange__title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #4cc3e8;
+}
+
+.diplomacy-tech-exchange__hint {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.diplomacy-tech-exchange__cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+}
+
+@media (min-width: 560px) {
+  .diplomacy-tech-exchange__cols {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.diplomacy-tech-exchange__col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.diplomacy-tech-exchange__col-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.diplomacy-tech-exchange .diplomacy-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.diplomacy-tech-exchange .diplomacy-btn {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+}

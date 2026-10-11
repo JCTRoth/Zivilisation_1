@@ -34,7 +34,8 @@ import { TERRAIN_FONT_FAMILY } from '@/utils/TerrainFont';
 import { MathUtils } from '@/utils/MathUtils';
 import { HUMAN_PLAYER_ID } from '@/utils/PlayerConstants';
 import { computeTurnMarkers, type TileLookup } from '@/utils/MovementPreview';
-import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, SpecialistType, TurnMarker } from '../../../types/game';
+import { UNIT_RANK, UNIT_RANK_INFO, getUnitRank } from '../engine/UnitRankSystem';
+import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, PromotionEffect, SpecialistType, TurnMarker } from '../../../types/game';
 import { TerrainTextureManager } from './TerrainTextureManager';
 
 /**
@@ -256,6 +257,8 @@ export interface RenderStaticFrameParams {
   combatAnimations?: CombatAnimation[];
   /** Active unit-movement glides (position interpolation between tiles) */
   movementAnimations?: MovementAnimation[];
+  /** Active promotion flourishes (gold ring + floating rank name) */
+  promotionEffects?: PromotionEffect[];
 }
 
 /**
@@ -374,6 +377,8 @@ interface DynamicContentParams {
   combatAnimations?: CombatAnimation[];
   /** Active unit-movement glides (position interpolation between tiles) */
   movementAnimations?: MovementAnimation[];
+  /** Active promotion flourishes (gold ring + floating rank name) */
+  promotionEffects?: PromotionEffect[];
 }
 
 /**
@@ -764,7 +769,8 @@ export class MapRenderer {
       previewPath,
       previewTurnMarkers,
       combatAnimations,
-      movementAnimations
+      movementAnimations,
+      promotionEffects
     } = params;
 
     const canvasSize = this.ensureCanvasSize(canvas);
@@ -838,7 +844,8 @@ export class MapRenderer {
       previewPath,
       previewTurnMarkers,
       combatAnimations,
-      movementAnimations
+      movementAnimations,
+      promotionEffects
     });
 
     this.drawUnitPaths(ctx, unitPaths, units, cities, map, gameState, squareToScreen, cameraZoom);
@@ -1247,7 +1254,8 @@ export class MapRenderer {
       previewPath,
       previewTurnMarkers,
       combatAnimations,
-      movementAnimations
+      movementAnimations,
+      promotionEffects
     } = params;
 
     const margin = this.tileSize * 2;
@@ -1708,10 +1716,13 @@ export class MapRenderer {
     }
 
     // Draw combat clouds and the floating damage numbers (on top of units so
-    // the player always sees the hit feedback).
+    // the player always sees the hit feedback), then any promotion flourish.
     if (combatAnimations && combatAnimations.length > 0) {
       this.drawCombatClouds(ctx, combatAnimations, squareToScreen, cameraZoom, canvasSize);
       this.drawDamagePopups(ctx, combatAnimations, squareToScreen, cameraZoom, canvasSize);
+    }
+    if (promotionEffects && promotionEffects.length > 0) {
+      this.drawPromotionEffects(ctx, promotionEffects, squareToScreen, cameraZoom, canvasSize);
     }
   }
 
@@ -2022,6 +2033,71 @@ export class MapRenderer {
         anim.defenderColor,
         sameTile ? -this.tileSize * cameraZoom * 0.35 : 0,
       );
+    }
+  }
+
+  /**
+   * Promotion flourish: a gold ring pulses out from the promoted unit while
+   * its new rank name floats up and fades — the canvas twin of the
+   * "promoted to Seasoned" toast. Deliberately cheap: two stroked arcs and
+   * one piece of outlined text per effect, viewport-culled like the damage
+   * popups.
+   */
+  private drawPromotionEffects(
+    ctx: CanvasRenderingContext2D,
+    promotionEffects: PromotionEffect[],
+    squareToScreen: (col: number, row: number) => { x: number; y: number },
+    cameraZoom: number,
+    canvasSize: CanvasSize
+  ): void {
+    const now = performance.now();
+    const margin = this.tileSize * 2;
+
+    for (const effect of promotionEffects) {
+      const elapsed = now - effect.startTime;
+      if (elapsed < 0 || elapsed >= effect.duration) continue;
+
+      const pos = squareToScreen(effect.col, effect.row);
+      if (this.isOutsideViewport(pos.x, pos.y, canvasSize.width, canvasSize.height, margin)) {
+        continue;
+      }
+
+      const progress = Math.max(0, Math.min(1, elapsed / effect.duration));
+      const easedOut = 1 - Math.pow(1 - progress, 3);
+      const ringColor = effect.color || UNIT_RANK_INFO[getUnitRank({ rank: effect.rank })]?.color || '#f0c33c';
+
+      // Expanding ring (two staggered arcs read as one soft pulse).
+      for (let i = 0; i < 2; i++) {
+        const ringProgress = Math.max(0, Math.min(1, (elapsed - i * 160) / (effect.duration * 0.75)));
+        if (ringProgress <= 0 || ringProgress >= 1) continue;
+        const ringEased = 1 - Math.pow(1 - ringProgress, 3);
+        const radius = this.tileSize * cameraZoom * (0.35 + ringEased * 0.95);
+        ctx.save();
+        ctx.globalAlpha = (1 - ringProgress) * 0.85;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius, 0, 2 * Math.PI);
+        ctx.strokeStyle = ringColor;
+        ctx.lineWidth = Math.max(1.5, 3 * (1 - ringProgress) * cameraZoom);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Floating "★ RANK" label — same rise + ease-out + fade as damage numbers.
+      const rise = this.tileSize * cameraZoom * 0.5 + easedOut * this.tileSize * cameraZoom * 0.9;
+      const alpha = progress < 0.55 ? 1 : Math.max(0, 1 - (progress - 0.55) / 0.45);
+      const fontSize = Math.max(11, Math.round(this.tileSize * cameraZoom * 0.5));
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.font = `bold ${fontSize}px system-ui, "Noto Color Emoji", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = Math.max(2, fontSize * 0.18);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+      ctx.fillStyle = effect.rank >= UNIT_RANK.BATTLE_HARDENED ? '#ffd75e' : '#f0c33c';
+      const label = `★ ${String(effect.rankName || '').toUpperCase()}`;
+      ctx.strokeText(label, pos.x, pos.y - rise);
+      ctx.fillText(label, pos.x, pos.y - rise);
+      ctx.restore();
     }
   }
 
@@ -2847,6 +2923,47 @@ export class MapRenderer {
       ctx.textBaseline = 'middle';
       ctx.fillStyle = this.isLightColor(civColor) ? '#111' : '#FFF';
       ctx.fillText(shieldIcon, centerX, centerY + 22);
+    }
+
+    // ── Rank insignia ────────────────────────────────────────────────────
+    // Rank chevrons sit ABOVE the disc (bottom is taken by the HP bar, the
+    // fortify shield and the sleep icon), one chevron per grade past Rookie:
+    // Trained 1, Seasoned 2, Battle-Hardened 3. Battle-Hardened units
+    // additionally get a thin gold ring around the disc so a maximum-rank
+    // unit reads at a glance. Rookies (the default) draw nothing, keeping
+    // the map clean.
+    const rankInfo = UNIT_RANK_INFO[getUnitRank(unit)];
+    if (rankInfo.chevrons > 0) {
+      const chevronWidth = Math.max(4, Math.round(innerRadius * 0.32));
+      const chevronHeight = chevronWidth * 0.7;
+      const chevronGap = chevronWidth * 1.3;
+      const totalWidth = (rankInfo.chevrons - 1) * chevronGap;
+      const chevronY = centerY - innerRadius - Math.max(3, 3 * zoomFactor);
+      ctx.save();
+      ctx.fillStyle = rankInfo.color;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < rankInfo.chevrons; i++) {
+        const cx = centerX - totalWidth / 2 + i * chevronGap;
+        ctx.beginPath();
+        ctx.moveTo(cx - chevronWidth / 2, chevronY + chevronHeight / 2);
+        ctx.lineTo(cx, chevronY - chevronHeight / 2);
+        ctx.lineTo(cx + chevronWidth / 2, chevronY + chevronHeight / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (getUnitRank(unit) === UNIT_RANK.BATTLE_HARDENED) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, innerRadius + Math.max(2, 2.5 * zoomFactor), 0, 2 * Math.PI);
+      ctx.strokeStyle = rankInfo.color;
+      ctx.globalAlpha = alpha * 0.95;
+      ctx.lineWidth = Math.max(1.5, 2 * zoomFactor);
+      ctx.stroke();
+      ctx.restore();
     }
 
     // Red hit-flash overlay on a unit that took damage or is being attacked.

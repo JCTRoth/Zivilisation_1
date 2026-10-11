@@ -3,6 +3,7 @@ import GameEngine from './GameEngine';
 import { UNIT_PROPS } from '@/utils/Constants';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { debugLog } from '../../utils/DevLog';
+import { getUnitRank, rankStrengthMultiplier } from './UnitRankSystem';
 
 /**
  * Barbarian AI — "Forge of War" aggressive controller for the phantom
@@ -130,7 +131,10 @@ export class BarbarianManager {
         if (unit.civilizationId !== city.civilizationId || unit.civilizationId === BARBARIAN_CIV_ID) continue;
         const dist = engine.squareGrid.squareDistance(unit.col, unit.row, city.col, city.row);
         if (dist <= 2) {
-          defense += Math.max(1, unit.attack || 0) + (unit.defense || 0) * 0.5;
+          // Mirror the CombatSystem rank multiplier: a Seasoned garrison is
+          // proportionally harder to crack than a green one.
+          const rankMult = rankStrengthMultiplier(getUnitRank(unit));
+          defense += (Math.max(1, unit.attack || 0) + (unit.defense || 0) * 0.5) * rankMult;
         }
       }
     }

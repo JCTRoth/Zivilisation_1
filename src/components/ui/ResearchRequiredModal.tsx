@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Button } from 'react-bootstrap';
+import GameModal from './gamemodals/ModalShell';
 
 interface ResearchRequiredModalProps {
   show: boolean;
@@ -23,30 +23,41 @@ const ResearchRequiredModal: React.FC<ResearchRequiredModalProps> = ({
   onHide,
   onChooseResearch,
 }) => (
-  <Modal show={show} onHide={onHide} centered dialogClassName="research-required-modal">
-    <Modal.Header closeButton className="bg-dark text-white">
-      <Modal.Title>🔬 No Research Selected</Modal.Title>
-    </Modal.Header>
-    <Modal.Body className="bg-dark text-white">
-      <p className="mb-2">
-        Your civilization has no technology selected for research — the science
-        your cities produce would be wasted.
+  <GameModal
+    show={show}
+    onClose={onHide}
+    tone="info"
+    icon="🔬"
+    artLabel="an idle laboratory"
+    dialogClassName="research-required-modal"
+    eyebrow="Your Academies Are Waiting"
+    title="No Research Selected"
+    lede="Your scholars are ready to work, but nobody has told them what to discover next. Without an order, the science your cities produce this turn is poured on the floor."
+    actions={
+      <>
+        <span className="gm-actions-spacer" />
+        <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
+          Decide Later
+        </button>
+        <button type="button" className="touch-btn touch-btn--primary" onClick={onChooseResearch}>
+          🔬 Choose Technology
+        </button>
+      </>
+    }
+  >
+    <div className="gm-section">
+      <div className="gm-section-title">What happens if you wait</div>
+      <p className="gm-prose mb-0">
+        Open the technology tree now and choose a research. If you end the turn without picking
+        anything, your people will fall back on whatever technology they can find lying around —
+        the science is never wasted, but the path is not yours.
       </p>
-      <p className="text-muted small mb-0">
-        Pick one now in the technology tree. If you end the turn without
-        choosing, a random available technology will be researched
-        automatically.
-      </p>
-    </Modal.Body>
-    <Modal.Footer className="bg-dark">
-      <Button variant="outline-light" onClick={onHide}>
-        Decide Later
-      </Button>
-      <Button variant="primary" onClick={onChooseResearch}>
-        🔬 Choose Technology
-      </Button>
-    </Modal.Footer>
-  </Modal>
+    </div>
+    <div className="gm-note">
+      Research only moves while something is selected. You can come back here at any time with{' '}
+      <strong>F2</strong>.
+    </div>
+  </GameModal>
 );
 
 export default ResearchRequiredModal;

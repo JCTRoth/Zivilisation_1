@@ -1,0 +1,86 @@
+/**
+ * Unit rank badges — shared by the unit stack modal, the city screen
+ * and the side panel. Rookie (rank 1, the default) draws no badge; the
+ * three earned grades step up from steel to outline gold to filled gold.
+ *
+ * All colours come from the design-system accent palette so the badges sit
+ * exactly on the game's existing gold language (selection rings, wonders,
+ * victory fireworks).
+ */
+
+.unit-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-pill, 999px);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+/* Trained — understated steel, clearly "earned" but not flashy. */
+.unit-rank-badge--trained {
+  color: var(--color-text, #e8eef3);
+  background: rgba(200, 210, 220, 0.12);
+  border-color: rgba(200, 210, 220, 0.35);
+}
+
+/* Seasoned — classic Civ gold, outline only so it never shouts. */
+.unit-rank-badge--seasoned {
+  color: var(--color-accent, #f0c33c);
+  background: rgba(240, 195, 60, 0.1);
+  border-color: rgba(240, 195, 60, 0.55);
+}
+
+/* Battle-Hardened — filled gold with a slow, cheap glow (box-shadow only,
+   no filter). */
+.unit-rank-badge--battle-hardened {
+  color: var(--color-accent-ink, #141006);
+  background: linear-gradient(180deg, var(--color-accent-strong, #ffd75e), var(--color-accent, #f0c33c));
+  border-color: rgba(255, 223, 94, 0.9);
+  animation: rank-elite-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes rank-elite-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(240, 195, 60, 0);
+  }
+  50% {
+    box-shadow: 0 0 8px 1px rgba(240, 195, 60, 0.45);
+  }
+}
+
+/* Side-panel rank line under the unit stats. */
+.unit-card-rank {
+  margin-top: 0.15rem;
+  color: var(--color-accent, #f0c33c);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Rookie — the default rank, shown muted so it never competes with the
+   earned grades. */
+.unit-card-rank--rookie {
+  color: var(--color-text-secondary, #e8eef3);
+  opacity: 0.55;
+  font-weight: 500;
+}
+
+.unit-card-rank-sub {
+  display: block;
+  color: var(--color-text-secondary, #fff);
+  font-size: 0.68rem;
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unit-rank-badge--battle-hardened {
+    animation: none;
+  }
+}

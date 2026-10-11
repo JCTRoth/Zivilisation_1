@@ -5,14 +5,48 @@ import { TILE_SIZE } from '@/data/TerrainData';
 import { getResourceYields, TERRAIN_PROPERTIES } from '@/data/TerrainConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import { governorOption } from '@/utils/CityGovernorUtils';
+import { unitRankBadge } from '@/utils/UnitStatus';
+import {
+  UNIT_RANK_INFO,
+  UNIT_RANK_MAX,
+  getUnitRank,
+  type UnitRank,
+} from '@/game/engine/UnitRankSystem';
 import MiniMap from './MiniMap';
 import '../../styles/sidePanel.css';
-import type { City, Civilization, SpecialistType } from '../../../types/game';
+import '../../styles/unitRank.css';
+import type { City, Civilization, SpecialistType, Unit } from '../../../types/game';
 import GameEngine from '@/game/engine/GameEngine';
 
 // Capitalize the first letter of a string (e.g. 'warrior' -> 'Warrior')
 const capitalize = (value: string): string =>
   value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+
+/**
+ * Rank line for a unit card: rank name, strength multiplier and the XP
+ * still needed for the next grade. Every unit shows its rank here — Rookies
+ * in a muted style — so the veterancy system is always readable in the
+ * panel, while the map keeps the default rank invisible.
+ */
+const unitRankLine = (unit: Unit): React.ReactNode => {
+  const rank = getUnitRank(unit);
+  const info = UNIT_RANK_INFO[rank];
+  const badge = unitRankBadge(unit);
+  const nextInfo = rank < UNIT_RANK_MAX ? UNIT_RANK_INFO[(rank + 1) as UnitRank] : null;
+  return (
+    <div
+      className={badge ? 'unit-card-rank' : 'unit-card-rank unit-card-rank--rookie'}
+      title={badge?.title ?? `${info.name} — ×${info.strengthMultiplier} strength`}
+    >
+      {badge ? badge.label : info.name} • ×{info.strengthMultiplier} strength
+      {nextInfo && (
+        <span className="unit-card-rank-sub">
+          {Math.round(unit.experience ?? 0)}/{nextInfo.xpThreshold} XP to {nextInfo.name}
+        </span>
+      )}
+    </div>
+  );
+};
 
 /**
  * Count the *visible* symbols in an icon string — not code points.
@@ -223,6 +257,7 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
             Attack: {selectedUnit?.attack ?? 0} • Defense: {selectedUnit?.defense ?? 0}
             {selectedUnit?.isFortified ? ' • 🛡️ Fortified (+50% def)' : ''}
           </div>
+          {unitRankLine(selectedUnit)}
         </div>
       );
     }
@@ -288,6 +323,7 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
               Attack: {unitAtSelectedTile?.attack ?? 0} • Defense: {unitAtSelectedTile?.defense ?? 0}
             </div>
           )}
+          {unitRankLine(unitAtSelectedTile)}
         </div>
       );
     }

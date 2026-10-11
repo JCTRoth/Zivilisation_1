@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
-import { Modal, Button } from 'react-bootstrap';
 import { getWonder } from '@/data/WonderData';
+import { useGameStore } from '@/stores/GameStore';
+import { GameUtils } from '@/utils/GameUtils';
 import { WonderArtwork } from './WonderArtwork';
+import GameModal from './ModalShell';
 import '@/styles/wonders.css';
 
 /** The 'completed' variant of the wonder dialog queue entry. */
@@ -22,18 +24,27 @@ interface WonderCompletedModalProps {
   onContinue: () => void;
 }
 
+/** Documentation ages, the same labels the catalogue uses. */
+const ERA_LABEL: Record<string, string> = {
+  antiquity: 'Antiquity',
+  middle: 'Middle Ages',
+  industrial: 'Industrial & Modern Age',
+};
+
 /**
- * Full-screen celebratory screen shown when a world wonder is completed —
- * the single most memorable moment of the wonder system, and the reason the
- * wonder's full mechanical effect is spelled out in plain language right
- * here (players forget what a wonder does 200 turns later).
+ * Celebration screen shown when a world wonder is completed — the single most
+ * memorable moment of the wonder system, and the reason the wonder's full
+ * mechanical effect is spelled out in plain language right here (players
+ * forget what a wonder does 200 turns later).
  *
- * The artwork is rendered by the shared `WonderArtwork` component, which shows
- * the credited image from `public/assets/wonders/` and falls back to the
- * wonder's emoji badge if the file is missing.
+ * The hero carries the wonder's artwork as a badge; the credited plate from
+ * `WonderArtwork` (Wikimedia attribution + Wikipedia link, emoji fallback when
+ * the file is missing) sits directly under it, so no image ever appears
+ * without its source.
  */
 const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notice, onContinue }) => {
   const wonder = notice ? getWonder(notice.wonderId) : undefined;
+  const currentYear = useGameStore((s) => s.gameState.currentYear);
 
   // Confetti celebration while the screen is open (same lazy-loaded library
   // as the victory fireworks, so it is only fetched when actually needed).
@@ -74,43 +85,108 @@ const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notic
   if (!notice || !wonder) return null;
 
   const humanOwns = notice.isHuman;
-  const subtitle = humanOwns
-    ? `Your civilization raised it in ${notice.cityName}.`
-    : `${notice.civName} completed it in ${notice.cityName}.`;
+  const yearLabel = GameUtils.formatYear(currentYear);
+  const artSrc = `${import.meta.env.BASE_URL}${wonder.image}`;
+  const lede = humanOwns
+    ? `Stone by stone your masons have set the last block in ${notice.cityName}. The world holds a wonder of your making now, and the chronicles will keep your people's name long after your dynasty is dust.`
+    : `${notice.civName} has set the last block in ${notice.cityName}. A rival owns a wonder of the world — read what it gives them before your scribes fall behind.`;
 
   return (
-    <Modal
+    <GameModal
       show={show}
-      onHide={onContinue}
-      centered
+      onClose={onContinue}
+      tone="gold"
       size="lg"
-      backdrop="static"
-      keyboard={false}
       dialogClassName="wonder-completed-modal"
-      aria-labelledby="wonder-completed-title"
-    >
-      <Modal.Body className="wonder-completed-body">
-        <div className="wonder-completed-eyebrow">
-          {humanOwns ? 'A Wonder of the World is complete' : 'A Wonder of the World has risen'}
-        </div>
-        <h1 className="wonder-completed-title" id="wonder-completed-title">
+      eyebrow={<>A Wonder of the World · {yearLabel}</>}
+      title={
+        <>
           {wonder.icon} {wonder.name}
-        </h1>
-        <div className="wonder-completed-sub">{subtitle}</div>
-
-        {/* Artwork (credited; falls back to the emoji badge if the file is missing). */}
+        </>
+      }
+      lede={lede}
+      artSize="lg"
+      artSrc={artSrc}
+      artAlt={wonder.name}
+      artLabel="wonder illustration"
+      actions={
+        <>
+          <span className="gm-actions-spacer" />
+          <button type="button" className="touch-btn touch-btn--primary" onClick={onContinue} autoFocus>
+            Continue
+          </button>
+        </>
+      }
+    >
+      {/* Artwork (credited; falls back to the emoji badge if the file is missing). */}
+      <section className="gm-section">
+        <h3 className="gm-section-title">Artwork</h3>
         <WonderArtwork wonder={wonder} active={show} />
+      </section>
 
-        <div className="wonder-effect-box">
-          <strong>Effect:</strong> {wonder.effectText}
+      <section className="gm-section">
+        <h3 className="gm-section-title">At a glance</h3>
+        <div className="gm-stat-grid">
+          <div className="gm-stat gm-stat--accent">
+            <span className="gm-stat-value">
+              <span className="gm-stat-icon" aria-hidden="true">
+                🛡
+              </span>
+              {wonder.cost}
+            </span>
+            <span className="gm-stat-label">Shields spent</span>
+          </div>
+          <div className="gm-stat">
+            <span className="gm-stat-value">
+              <span className="gm-stat-icon" aria-hidden="true">
+                📜
+              </span>
+              {ERA_LABEL[wonder.era] ?? wonder.era}
+            </span>
+            <span className="gm-stat-label">Era</span>
+          </div>
+          <div className="gm-stat">
+            <span className="gm-stat-value">
+              <span className="gm-stat-icon" aria-hidden="true">
+                {wonder.flag}
+              </span>
+              {wonder.location}
+            </span>
+            <span className="gm-stat-label">Site</span>
+          </div>
+          <div className="gm-stat">
+            <span className="gm-stat-value">
+              <span className="gm-stat-icon" aria-hidden="true">
+                💰
+              </span>
+              None
+            </span>
+            <span className="gm-stat-label">Upkeep</span>
+          </div>
         </div>
-        <p className="wonder-flavor">{wonder.flavor}</p>
+        <p className="gm-note">
+          {humanOwns ? (
+            <>
+              Your people raised it in <strong>{notice.cityName}</strong> in {yearLabel}.
+            </>
+          ) : (
+            <>
+              <strong>{notice.civName}</strong> raised it in <strong>{notice.cityName}</strong> in {yearLabel}.
+            </>
+          )}
+        </p>
+      </section>
 
-        <Button variant="warning" className="btn-wonder-continue" onClick={onContinue} autoFocus>
-          Continue
-        </Button>
-      </Modal.Body>
-    </Modal>
+      <div className="gm-callout">
+        <span className="gm-callout-title">Effect</span>
+        {wonder.effectText}
+      </div>
+
+      <section className="gm-section">
+        <h3 className="gm-section-title">Chronicle</h3>
+        <p className="gm-prose">{wonder.flavor}</p>
+      </section>
+    </GameModal>
   );
 };
 

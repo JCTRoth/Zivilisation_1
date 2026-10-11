@@ -998,24 +998,25 @@ winChance = attackerStrength / (attackerStrength + defenderStrength)
 
 The roll is `random() × (A + D) < A`.
 
-=== Veterancy (unit ranks)
+=== Rank (veterancy)
 
 Defined in: `src/game/engine/UnitRankSystem.ts`
 
-Every unit holds one of four ranks. Recruit is the default; the ranks above
+Every unit holds one of four ranks. Rookie is the default; the ranks above
 are earned with combat experience and multiply the unit's combat strength
-(attack *and* defence) — so a decorated veteran genuinely hits and soaks
-harder. The legacy `isVeteran` boolean is kept in sync (true from Veteran
-upward) for old UI code and save files.
+(attack *and* defence) — so a battle-hardened veteran genuinely hits and
+soaks harder. The ladder caps at ×1.5 (the classic Civ veteran bonus). The
+legacy `isVeteran` boolean is kept in sync (true from Seasoned upward) for
+old UI code and save files.
 
 [cols="1,2,1,1,1", options="header"]
 |===
 |Rank |Name |XP threshold |Strength × |Chevrons
 
-|1 |Recruit |0 |×1.00 |0
-|2 |Regular |40 |×1.25 |1
-|3 |Veteran |120 |×1.50 |2
-|4 |Elite |280 |×2.00 |3
+|1 |Rookie |0 |×1.00 |0
+|2 |Trained |40 |×1.10 |1
+|3 |Seasoned |120 |×1.25 |2
+|4 |Battle-Hardened |280 |×1.50 |3
 |===
 
 Experience awards (the rank is always recomputed from the XP total):
@@ -1029,11 +1030,12 @@ Experience awards (the rank is always recomputed from the XP total):
 |Captured or razed a city |+60
 |===
 
-Units produced in a city that owns **Barracks** start as Veterans (Civ1's
-`veteranUnits` effect) with the Veteran XP threshold pre-loaded; civilian
+Units produced in a city that owns **Barracks** start as Seasoned (Civ1's
+`veteranUnits` effect) with the Seasoned XP threshold pre-loaded; civilian
 units ignore the bonus. Promotions emit `UNIT_PROMOTED`: the human player
 sees a toast plus a gold ring/flourish on the map, and rank chevrons are
-drawn above each promoted unit's sprite (Elite also gets a gold ring).
+drawn above each promoted unit's sprite (Battle-Hardened also gets a gold
+ring).
 
 === Damage
 
@@ -1921,6 +1923,12 @@ city.
 There is deliberately **no** "capture every city" shortcut, and **no**
 score-based win at 2100 AD. A rival with one surviving unit keeps the game
 running.
+
+The one sharpening of that rule: when a civilization loses its *last* city and
+still has a unit that is not a settler, those units are destroyed and the
+civilization is eliminated immediately (`GameEngine.applyLastCityRule`). Only a
+people left with nothing but settlers survives — they can found again. See
+`doc/CITY_CAPTURE.adoc`.
 
 The human loses when their civilization is eliminated, or when an AI wins while
 the human is still alive.

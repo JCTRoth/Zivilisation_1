@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Modal, Button, Form } from 'react-bootstrap';
+import { Form } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
+import GameModal from '@/components/ui/gamemodals/ModalShell';
+import { GameUtils } from '@/utils/GameUtils';
 import '../../styles/endTurnConfirmModal.css';
-import {GameUtils} from "@/utils/GameUtils";
-
 
 interface EndTurnConfirmModalProps {
   show: boolean;
@@ -14,6 +14,16 @@ interface EndTurnConfirmModalProps {
   isAutomatic?: boolean;
 }
 
+/**
+ * The audience where the ruler is asked to close the turn — in both flavours:
+ * manual (the player pressed End Turn) and automatic (every unit has spent its
+ * moves and the game asks to carry on).
+ *
+ * Two strings are load-bearing for the e2e suite and must stay in the dialog
+ * text in BOTH flavours: `End Turn?` (the locators filter on it) and, for the
+ * automatic flavour, the heading `All Your Units Have Moved!`. The manual
+ * flavour carries the first as its title, the automatic one as its callout.
+ */
 const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
   show,
   onConfirm,
@@ -44,30 +54,61 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
     onCancel();
   };
 
+  const stamp = `Turn ${currentTurn} · ${GameUtils.formatYear(currentYear)}`;
+
   return (
-    <Modal show={show} onHide={handleCancel} centered fullscreen="lg-down" dialogClassName="end-turn-modal">
-      <Modal.Header closeButton className="end-turn-modal-header">
-        <Modal.Title className="end-turn-modal-title">
-          <i className="bi bi-skip-end-fill me-2" aria-hidden="true"></i>
-          End Turn?
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body className="end-turn-modal-body">
-        <div className="text-center mb-3">
-          <h5 className="end-turn-modal-heading">{isAutomatic ? 'All Your Units Have Moved!' : 'Are you ready to end your turn?'}</h5>
-          <p className="mb-2 end-turn-modal-meta">
-            <strong>Turn {currentTurn}</strong> | <strong>{GameUtils.formatYear(currentYear)}</strong>
+    <GameModal
+      show={show}
+      onClose={handleCancel}
+      dialogClassName="end-turn-modal"
+      tone={isAutomatic ? 'success' : 'info'}
+      icon={isAutomatic ? '✅' : '⏭️'}
+      artLabel={isAutomatic ? 'night falls' : 'war council'}
+      eyebrow={isAutomatic ? `End of Turn · ${stamp}` : `Your Counsel · ${stamp}`}
+      title={isAutomatic ? 'All Your Units Have Moved!' : 'End Turn?'}
+      lede={
+        isAutomatic
+          ? 'Every soldier under your command has spent their moves. The world will not wait for you — close the turn now, or hold it while you plan.'
+          : 'Give the word and the rest of the world plays on: rival courts, caravans and warbands all take their turns while your people wait.'
+      }
+      actions={
+        <>
+          <button type="button" className="touch-btn touch-btn--ghost" onClick={handleCancel}>
+            <i className="bi bi-x-circle" aria-hidden="true" />
+            Cancel
+          </button>
+          <button type="button" className="touch-btn touch-btn--success" onClick={handleConfirm}>
+            <i className="bi bi-check-circle" aria-hidden="true" />
+            End Turn
+          </button>
+        </>
+      }
+    >
+      {isAutomatic ? (
+        <div className="gm-callout">
+          <span className="gm-callout-title">End Turn?</span>
+          Nothing else is left to order this turn. End it and the world plays out — your cities keep
+          producing and your research keeps climbing while every rival moves in turn. Hold it instead
+          and the map stays yours a while longer.
+        </div>
+      ) : (
+        <>
+          <section className="gm-section">
+            <h3 className="gm-section-title">The order of play</h3>
+            <p className="gm-prose">
+              The word is yours to give. Close the turn and every rival court, caravan and warband on
+              the board plays out its moves — <strong>your cities keep producing and your research
+              keeps climbing</strong> the whole while.
+            </p>
+          </section>
+          <p className="gm-note">
+            <strong>Nothing is committed yet.</strong> Cancel returns you to the map exactly as you
+            left it — orders, paths and all.
           </p>
-        </div>
-        
-        <div className="alert alert-info mb-0 end-turn-modal-alert">
-          <i className="bi bi-info-circle me-2" aria-hidden="true"></i>
-          {isAutomatic 
-            ? 'All your units have used their movement points. You can end your turn now, or continue planning your next moves.'
-            : 'This will allow other civilizations to take their turns.'
-          }
-        </div>
-        
+        </>
+      )}
+
+      <section className="gm-section end-turn-modal-skip-card">
         <Form.Check
           type="checkbox"
           id="skip-end-turn-confirmation"
@@ -78,20 +119,10 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
             setSkipNextTime(checked);
             actions.updateSettings({ skipEndTurnConfirmation: checked });
           }}
-          className="mt-3 end-turn-modal-skip"
+          className="end-turn-modal-skip"
         />
-      </Modal.Body>
-      <Modal.Footer className="end-turn-modal-footer">
-        <Button variant="secondary" onClick={handleCancel} className="touch-btn touch-btn--ghost">
-          <i className="bi bi-x-circle me-2" aria-hidden="true"></i>
-          Cancel
-        </Button>
-        <Button variant="success" onClick={handleConfirm} className="touch-btn touch-btn--success">
-          <i className="bi bi-check-circle me-2" aria-hidden="true"></i>
-          End Turn
-        </Button>
-      </Modal.Footer>
-    </Modal>
+      </section>
+    </GameModal>
   );
 };
 

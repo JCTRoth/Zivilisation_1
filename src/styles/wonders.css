@@ -20,6 +20,40 @@
 .wonder-status--locked    { background: #6c757d; color: #fff; }          /* grey  */
 .wonder-status--available { background: transparent; color: #adb5bd; border: 1px dashed #6c757d; }
 
+/* ── The same status colours as shell chips (catalogue + Civilopedia entry)
+   Built on `.gm-chip` from gameModalShell.css, so the modifiers are written
+   as two-class selectors to win over the shell's single-class base. ─────── */
+.gm-chip.wonder-chip--owned {
+  color: #8cebb4;
+  background: rgba(53, 196, 108, 0.16);
+  border-color: rgba(53, 196, 108, 0.55);
+}
+.gm-chip.wonder-chip--building {
+  color: #9dcdff;
+  background: rgba(61, 155, 255, 0.16);
+  border-color: rgba(61, 155, 255, 0.55);
+}
+.gm-chip.wonder-chip--contested {
+  color: #ffc98a;
+  background: rgba(242, 163, 60, 0.16);
+  border-color: rgba(242, 163, 60, 0.55);
+}
+.gm-chip.wonder-chip--rival {
+  color: #ff9aa6;
+  background: rgba(239, 90, 110, 0.16);
+  border-color: rgba(239, 90, 110, 0.55);
+}
+.gm-chip.wonder-chip--locked {
+  color: #b7c3cf;
+  background: rgba(144, 164, 184, 0.14);
+  border-color: rgba(144, 164, 184, 0.45);
+}
+.gm-chip.wonder-chip--available {
+  color: var(--gm-label, #9fb0bf);
+  background: transparent;
+  border-style: dashed;
+}
+
 /* ── Shared image placeholder (real artwork can be dropped in later) ───── */
 .wonder-image {
   display: flex;
@@ -110,139 +144,62 @@
   text-underline-offset: 2px;
 }
 .wonder-artwork__credit-text a:hover { color: #ffd75e; }
+/* Inside the shell the content column already provides the 12px gap. */
+.gm-content .wonder-artwork { margin-bottom: 0; }
 
 /* ── A. Wonder completion screen ───────────────────────────────────────── */
-.wonder-completed-modal .modal-content {
-  background: linear-gradient(165deg, #241f14 0%, #171310 55%, #101418 100%);
-  border: 1px solid rgba(255, 215, 94, 0.45);
-  box-shadow: 0 0 60px rgba(255, 200, 60, 0.25);
-  color: #f5f0e2;
+/* Gold-edged panel with a warm halo — the one screen worth celebrating. */
+.modal.gm .modal-dialog.wonder-completed-modal .modal-content {
+  border-color: rgba(255, 215, 94, 0.45);
+  box-shadow:
+    0 0 60px rgba(255, 200, 60, 0.25),
+    0 28px 64px rgba(0, 0, 0, 0.62),
+    0 2px 0 rgba(255, 255, 255, 0.05) inset;
 }
-.wonder-completed-body {
-  text-align: center;
-  padding: 1.5rem 2rem 1rem;
-}
-.wonder-completed-eyebrow {
-  color: #ffd75e;
-  text-transform: uppercase;
-  letter-spacing: 0.35em;
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-.wonder-completed-title {
-  font-size: clamp(1.6rem, 4vw, 2.6rem);
-  font-weight: 800;
-  margin: 0.35rem 0 0.1rem;
-  color: #ffe9a8;
-  text-shadow: 0 2px 14px rgba(255, 200, 60, 0.35);
-}
-.wonder-completed-sub {
-  color: #cfc6ad;
-  font-size: 0.95rem;
-  margin-bottom: 1rem;
-}
-.wonder-completed-modal .wonder-image,
-.wonder-completed-modal .wonder-artwork {
-  aspect-ratio: 16 / 7;
-  width: 100%;
-  margin-bottom: 1.1rem;
-}
-.wonder-completed-modal .wonder-artwork {
-  aspect-ratio: auto;
-  display: block;
-}
-.wonder-effect-box {
-  background: rgba(255, 215, 94, 0.1);
-  border: 1px solid rgba(255, 215, 94, 0.4);
-  border-radius: 10px;
-  padding: 0.8rem 1rem;
-  text-align: left;
-  font-size: 1rem;
-  line-height: 1.45;
-}
-.wonder-effect-box strong { color: #ffd75e; }
-.wonder-flavor {
-  color: #bfb8a4;
+/* The "raised in …" note follows the stat grid inside the same card. */
+.wonder-completed-modal .gm-section .gm-note { margin-top: 9px; }
+/* The chronicle reads as a quotation, not as UI copy. */
+.wonder-completed-modal .gm-section .gm-prose {
   font-style: italic;
-  text-align: left;
-  margin: 0.9rem 0 1.2rem;
-  font-size: 0.92rem;
-  line-height: 1.5;
-}
-.wonder-completed-modal .btn-wonder-continue {
-  background: linear-gradient(180deg, #ffd75e, #e0a913);
-  border: none;
-  color: #2a2110;
-  font-weight: 700;
-  min-width: 200px;
-  padding: 0.6rem 1.6rem;
-  border-radius: 999px;
-}
-.wonder-completed-modal .btn-wonder-continue:hover {
-  background: linear-gradient(180deg, #ffe689, #f0b91d);
-  color: #2a2110;
+  color: #cfc6ad;
 }
 
 /* ── D. Production conflict modal ──────────────────────────────────────── */
-.wonder-conflict-modal .modal-content {
-  background: #24272e;
-  border: 1px solid #dc3545;
-  color: #f0f0f0;
-}
-.wonder-conflict-title { color: #ffb3b8; }
-.wonder-conflict-body { padding: 1.25rem 1.5rem; }
-.wonder-conflict-message {
-  background: rgba(220, 53, 69, 0.12);
-  border: 1px solid rgba(220, 53, 69, 0.5);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  font-size: 0.98rem;
-}
-.wonder-conflict-detail {
-  color: #adb5bd;
-  font-size: 0.88rem;
-  margin-top: 0.75rem;
-}
-.wonder-conflict-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end;
-  margin-top: 1.1rem;
+/* The tone already tints the hero and the callout; the frame follows suit. */
+.modal.gm .modal-dialog.wonder-conflict-modal .modal-content {
+  border-color: rgba(239, 90, 110, 0.55);
+  box-shadow:
+    0 0 44px rgba(239, 90, 110, 0.16),
+    0 28px 64px rgba(0, 0, 0, 0.62),
+    0 2px 0 rgba(255, 255, 255, 0.05) inset;
 }
 
 /* ── B. Wonders overview screen ────────────────────────────────────────── */
 
-/* Dialog surface: a calm, slightly warm dark panel matching the game's panels. */
-.wonders-modal .modal-content {
-  background: linear-gradient(180deg, #1b2430 0%, #141b25 100%);
-  border: 1px solid rgba(240, 195, 60, 0.24);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+/* Warm gold frame — the catalogue is the game's museum. */
+.modal.gm .modal-dialog.wonders-modal .modal-content {
+  border-color: rgba(240, 195, 60, 0.3);
 }
-.wonders-modal .modal-title {
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: #f2f7fb;
+
+/* Footer note that shares the action bar with Close. `flex-basis` would be
+   vertical once the bar stacks on phones, so let the line break come from
+   the spacer instead. */
+.wonders-modal__note {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--gm-label, #9fb0bf);
 }
 
 @media (min-width: 992px) {
   /* Wider than Bootstrap's xl so the effect text never has to be truncated. */
-  .modal-dialog.wonders-modal {
+  .modal.gm .modal-dialog.wonders-modal {
     max-width: min(1040px, 94vw);
   }
   /* Fixed height keeps the dialog stable while the ledger scrolls internally. */
-  .modal-dialog.wonders-modal .modal-content {
-    display: flex;
-    flex-direction: column;
+  .modal.gm .modal-dialog.wonders-modal .modal-content {
     height: min(86vh, 900px);
-    max-height: calc(100dvh - 3.5rem);
-  }
-  .modal-dialog.wonders-modal .modal-body {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
   }
 }
 
@@ -619,170 +576,163 @@
 }
 
 /* ── Civilopedia entry ─────────────────────────────────────────────────── */
-.wonder-entry-modal .modal-content {
-  background: #1a1e26;
-  color: #e9ecef;
-  border: 1px solid #3a4150;
-}
 /*
- * FIX: the entry's content (artwork + chips + effect + history + facts) is
- * taller than the dialog's max-height, and `.modal-content` clips nothing by
- * default — so the footer used to be pushed OUT of the panel and the Close
- * button floated on the backdrop. Making the content a flex column and letting
- * the BODY scroll keeps header and footer pinned inside the dialog.
+ * The entry opens ON TOP of the catalogue (both are react-bootstrap portals
+ * with the same z-index, so paint order alone is a coin toss once one of
+ * them has been remounted). Lift the entry's overlay one step above the
+ * standard modal layer so the click-through always wins.
  */
-.modal-dialog.wonder-entry-modal {
-  max-height: calc(100dvh - 2rem);
+.modal.wonder-entry-overlay { z-index: 1060; }
+/* The shell owns the frame; the entry only warms it to the wonder gold. */
+.modal.gm .modal-dialog.wonder-entry-modal .modal-content {
+  border-color: rgba(240, 195, 60, 0.3);
 }
-.modal-dialog.wonder-entry-modal .modal-content {
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100dvh - 2rem);
-  overflow: hidden;
+/* The picture fills the top of the dialog — let it breathe on wide screens. */
+.modal.gm .modal-dialog.wonder-entry-modal .gm-hero--cover { min-height: 252px; }
+@media (min-width: 992px) {
+  .modal.gm .modal-dialog.wonder-entry-modal .gm-hero--cover { min-height: 360px; }
+  .modal.gm .modal-dialog.wonder-entry-modal .gm-heading-band { padding: 26px 30px 22px; }
 }
-.modal-dialog.wonder-entry-modal .modal-header,
-.modal-dialog.wonder-entry-modal .modal-footer {
-  flex: 0 0 auto;
+/* Credit laid over the photo: no card chrome, brighter links. */
+.wonder-artwork__credit--hero {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: rgba(255, 255, 255, 0.62);
 }
-.modal-dialog.wonder-entry-modal .modal-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+.wonder-artwork__credit--hero .wonder-artwork__readmore {
+  color: var(--color-accent-strong, #ffd75e);
 }
-.wonder-entry-modal .wonder-artwork {
-  margin-bottom: 0.85rem;
-}
-.wonder-entry-modal .wonder-artwork__img {
-  aspect-ratio: 16 / 6;
-}
-.wonder-entry-modal .modal-footer .btn {
-  min-width: 120px;
-}
-.wonder-entry-title {
-  font-weight: 800;
-  font-size: 1.5rem;
-  color: #ffe9a8;
-  /* Long names ("Michelangelo's Chapel", "International Space Station") must
-     never push the status pill or the close button off the header. */
-  min-width: 0;
-  overflow-wrap: break-word;
-}
-/* Full formal name under the short display name in the entry header. */
-.wonder-entry-fullname {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 400;
-  color: #9da5b4;
-  letter-spacing: 0.02em;
-}
-.wonder-entry-modal .modal-header {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-.wonder-entry-modal .modal-header .modal-title {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.wonder-entry-modal .modal-header .wonder-status {
-  flex: 0 0 auto;
-}
+.wonder-artwork__credit--hero .wonder-artwork__credit-text a { color: rgba(255, 255, 255, 0.78); }
+
+/* Status + spec chips sit directly under the copy band. */
 .wonder-entry-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
-  margin: 0.5rem 0 0.9rem;
 }
-.wonder-entry-meta__chip {
-  background: #262c38;
-  border: 1px solid #3a4150;
-  border-radius: 999px;
-  padding: 0.18rem 0.7rem;
-  font-size: 0.75rem;
-  color: #cfd6e4;
+/* Chips are explainers: make that promise visible. */
+.wonder-entry-meta .gm-chip {
+  cursor: help;
+  transition: border-color var(--dur-fast, 150ms) var(--ease-out, ease-out),
+    background-color var(--dur-fast, 150ms) var(--ease-out, ease-out),
+    transform var(--dur-fast, 150ms) var(--ease-out, ease-out);
 }
-.wonder-entry-section {
-  background: #20252f;
-  border: 1px solid #333a47;
-  border-radius: 10px;
-  padding: 0.75rem 0.95rem;
-  margin-bottom: 0.75rem;
+.wonder-entry-meta .gm-chip:hover,
+.wonder-entry-meta .gm-chip:focus-visible {
+  border-color: rgba(240, 195, 60, 0.55);
+  background: rgba(240, 195, 60, 0.09);
+  transform: translateY(-1px);
+  outline: none;
 }
-.wonder-entry-section h6 {
-  margin: 0 0 0.4rem;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: #ffd75e;
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
+.wonder-chip-tip { --bs-tooltip-bg: #0e1620; --bs-tooltip-color: #e8eef3; }
+.wonder-chip-tip .tooltip-inner {
+  max-width: 260px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  text-align: left;
+  border: 1px solid rgba(240, 195, 60, 0.28);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
 }
-.wonder-entry-section p { margin: 0; font-size: 0.92rem; line-height: 1.5; }
-/* Fact pill showing how many facts the wonder carries. */
-.wonder-entry-facts__count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.3rem;
-  height: 1.3rem;
-  padding: 0 0.32rem;
-  border-radius: 999px;
-  background: rgba(255, 215, 94, 0.14);
-  border: 1px solid rgba(255, 215, 94, 0.35);
-  font-size: 0.68rem;
-  letter-spacing: 0;
-  color: #ffd75e;
-}
+
+/* ── Artwork viewer (click the hero picture) ───────────────────────────── */
 /*
- * Facts scroll inside their own panel: with 5–6 facts a wonder the list no
- * longer fits the modal together with artwork + effect + history, and the
- * entry body should not become the only scrollbar. The panel keeps a fixed
- * height, scrolls independently and keeps its overscroll inside the modal.
+ * Same `size="lg"` and centering as the entry, AND a full-height frame: the
+ * viewer covers the entry with one identical dark card instead of floating
+ * over it, so clicking the picture reads as "the entry steps aside for the
+ * artwork" and Close returns to the text. Anything less and the article shows
+ * through around the picture.
  */
-.wonder-entry-section--facts { padding-bottom: 0.6rem; }
-.wonder-entry-facts {
-  list-style: none;
-  margin: 0;
-  padding: 0 0.7rem 0 0;
-  max-height: 13.5rem;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+.modal.wonder-zoom { z-index: 1070; }
+.modal.gm .modal-dialog.wonder-zoom { height: calc(100dvh - 3.5rem); }
+/* The dialog is a flex column in design-system.css — stretch the content
+   through it so the viewer fills the frame (a plain `height: 100%` loses to
+   the shell's `max-height`). */
+.modal.gm .modal-dialog.wonder-zoom .modal-content {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-height: 0;
+  height: 100%;
+}
+.wonder-zoom .gm-body {
+  padding: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  scrollbar-width: thin;
-  scrollbar-color: #4a5262 transparent;
 }
-.wonder-entry-facts::-webkit-scrollbar { width: 8px; }
-.wonder-entry-facts::-webkit-scrollbar-track { background: transparent; }
-.wonder-entry-facts::-webkit-scrollbar-thumb { background: #4a5262; border-radius: 999px; }
-.wonder-entry-facts li {
+.wonder-zoom__img {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  background: #0a0f14;
+}
+.wonder-zoom__caption {
   display: flex;
-  align-items: flex-start;
-  gap: 0.55rem;
-  font-size: 0.88rem;
-  line-height: 1.55;
-  color: #dfe4ee;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.3rem 0.9rem;
+  padding: 0.55rem 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 11, 16, 0.9);
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.62);
 }
-/* Plain gold dot — the numbers made the list look like a recipe. */
-.wonder-entry-facts__bullet {
-  flex: 0 0 auto;
-  margin-top: 0.52rem;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #ffd75e;
+.wonder-zoom__name { font-weight: 700; color: var(--color-accent-strong, #ffd75e); }
+.wonder-zoom__caption .wonder-artwork__credit { padding: 0; background: none; border: 0; }
+
+/* The payoff: what the wonder does, as the first card in the column. */
+.wonder-entry-effect {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(240, 195, 60, 0.1), rgba(240, 195, 60, 0.045));
+  border: 1px solid rgba(240, 195, 60, 0.28);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem 0.85rem;
+  transition: border-color var(--dur-fast, 150ms) var(--ease-out, ease-out),
+    box-shadow var(--dur-fast, 150ms) var(--ease-out, ease-out);
 }
-.wonder-entry-facts__text { flex: 1 1 auto; min-width: 0; }
-/* Location chip: small flag + place name. */
-.wonder-entry-meta__chip--place { color: #ffe9a8; }
-.wonder-entry-meta__flag { margin-right: 0.15rem; color: #e5484d; }
-.wonder-entry-owner { font-size: 0.85rem; color: #9da5b4; margin-bottom: 0.8rem; }
+/* Gold sheen that sweeps once when the entry opens. */
+.wonder-entry-effect::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 235, 170, 0.14) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: wonder-effect-sheen 1400ms var(--ease-out, ease-out) 180ms 1;
+  pointer-events: none;
+}
+@keyframes wonder-effect-sheen { to { transform: translateX(100%); } }
+.wonder-entry-effect:hover { border-color: rgba(240, 195, 60, 0.45); }
+.wonder-entry-effect .gm-section-title { display: flex; align-items: center; gap: 0.45rem; }
+.wonder-entry-effect .gm-prose { color: #f4ecd8; font-size: 0.95rem; }
+.wonder-entry-effect .gm-prose strong { color: var(--color-accent-strong, #ffd75e); }
+
+/* Long fact lists read as a two-column catalogue on a wide dialog. `.gm-list`
+   is a flex column, so multi-column needs `display: block` to take effect. */
+@media (min-width: 768px) {
+  .wonder-entry-facts {
+    display: block;
+    columns: 2;
+    column-gap: 1.6rem;
+    column-rule: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .wonder-entry-facts li { break-inside: avoid; margin-bottom: 7px; }
+}
+.wonder-entry-facts li {
+  padding-left: 2px;
+  border-radius: 4px;
+  transition: color var(--dur-fast, 150ms) var(--ease-out, ease-out),
+    background-color var(--dur-fast, 150ms) var(--ease-out, ease-out);
+}
+.wonder-entry-facts li:hover { color: #f2e9d2; background: rgba(240, 195, 60, 0.07); }
+
+/* The obsolete callout introduces the effect text, never floats beside it. */
+.gm-callout + .gm-prose { margin-top: 8px; }
 
 /* ── Production selection: wonders tab ─────────────────────────────────── */
 .production-wonders-layout {
@@ -838,37 +788,41 @@ tr.wonder-row-selectable.selected { outline: 1px solid #ffd75e; }
 @media (max-width: 767.98px) {
   .production-wonders-layout { flex-direction: column; }
   .production-wonders-layout__detail { position: static; width: 100%; max-height: none; }
-  .wonder-completed-body { padding: 1rem; }
 }
 
 /* ── Wonders overview: responsive ──────────────────────────────────────── */
+/* The shell already caps the dialog at 100dvh − 2.5rem and scrolls the
+   content column, so the ledger only needs its own narrow-screen tuning
+   below (cards, summary strip, action bar). */
+
+@media (max-width: 479.98px) {
+  /* The action bar stacks vertically here, so a flex spacer would only
+     stretch it — the buttons already go full width without one. */
+  .modal.gm .modal-dialog.wonders-modal .gm-actions-spacer,
+  .modal.gm .modal-dialog.wonder-entry-modal .gm-actions-spacer,
+  .modal.gm .modal-dialog.wonder-completed-modal .gm-actions-spacer {
+    display: none;
+  }
+  /* The art slot shrinks to 74px here; keep its caption from clipping. */
+  .wonder-completed-modal .gm-art-tag,
+  .wonder-entry-modal .gm-art-tag {
+    font-size: 7px;
+    letter-spacing: 0.02em;
+  }
+}
+
 @media (max-width: 991.98px) {
-  /* Full-screen sheet with an internally scrolling ledger, like the city modal. */
-  .modal-dialog.wonders-modal {
-    max-height: 100dvh;
-    display: flex;
-    align-items: center;
+  /*
+   * design-system.css turns every modal into a full-screen sheet below the
+   * desktop breakpoint, but Bootstrap's own `.modal-dialog { margin: … }`
+   * outranks it and leaves an 8px strip at the top and bottom — enough to
+   * clip the fixed action bar. Pin the wonder dialogs flush to the viewport.
+   */
+  .modal.gm .modal-dialog.wonders-modal,
+  .modal.gm .modal-dialog.wonder-entry-modal,
+  .modal.gm .modal-dialog.wonder-completed-modal,
+  .modal.gm .modal-dialog.wonder-conflict-modal {
     margin: 0;
-    width: 100%;
-    max-width: 100vw;
-    height: 100%;
-  }
-  .wonders-modal .modal-content {
-    display: flex;
-    flex-direction: column;
-    max-height: 100dvh;
-    height: 100%;
-    min-height: 100%;
-    border-radius: 0;
-  }
-  .modal-dialog.wonders-modal .modal-body {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: calc(1rem + var(--safe-bottom, 0px));
   }
 }
 
@@ -879,8 +833,6 @@ tr.wonder-row-selectable.selected { outline: 1px solid #ffd75e; }
   .wonder-card { padding: 0.55rem 0.65rem; }
   .wonder-card__meta { gap: 0.3rem 0.9rem; }
   .wonder-card__icon { width: 30px; height: 30px; font-size: 0.95rem; }
-  .wonder-entry-title { font-size: 1.2rem; }
-  .wonder-entry-modal .modal-body { padding: 0.75rem 0.85rem; }
 }
 
 /* Very long wonder names must never blow out the row. */

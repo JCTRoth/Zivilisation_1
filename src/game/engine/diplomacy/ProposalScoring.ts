@@ -20,6 +20,12 @@ import type {
   TreatyType,
 } from '../DiplomacyTypes';
 import type { DiplomaticWeights } from './DiplomaticWeights';
+import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+
+/** Base beaker cost of a tech id (0 if unknown — scoring still works). */
+function techBaseCost(techId: string): number {
+  return TECHNOLOGIES_DATA.find((t) => t.id === techId)?.cost ?? 50;
+}
 
 /** How goodwill converts to willingness, per action. */
 const GOODWILL_WEIGHT: Record<string, number> = {
@@ -202,7 +208,23 @@ export function evaluateProposal(
     }
   }
   if (proposal.techOffered && proposal.techRequested) {
-    factors.push({ label: 'technology exchange', value: 8 });
+    // Civ I: no Exchange of Knowledge while the guns are still firing.
+    if (status === 'war') {
+      factors.push({ label: 'at war — no trade', value: -80 });
+    } else {
+      // Fairness by research cost: equal costs are a clean swap; giving a
+      // cheaper tech for a pricier one is what they want; the reverse is what
+      // they refuse. Base +8 is the old flat term, scaled by the cost ratio.
+      const costOffered = techBaseCost(proposal.techOffered);
+      const costRequested = techBaseCost(proposal.techRequested);
+      const ratio = costOffered / Math.max(1, costRequested);
+      // ratio 1.0 → 0; ratio 2.0 (twice as valuable for them) → +16; 0.5 → −8
+      const fairness = Math.round((ratio - 1) * 16);
+      factors.push({
+        label: fairness >= 0 ? 'technology exchange (fair or better)' : 'technology exchange (uneven)',
+        value: 8 + fairness,
+      });
+    }
   }
 
   // Memory. Refusals and grievance are what stop proposal spam working.

@@ -121,6 +121,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     (state) => state.uiState.currentQueueUnitId,
   );
   const combatAnimations = useGameStore((state) => state.combatAnimations);
+  const promotionEffects = useGameStore((state) => state.promotionEffects);
   const movementAnimations = useGameStore((state) => state.movementAnimations);
   const cameraPanRequest = useGameStore((state) => state.cameraPanRequest);
   const moveAnimator = useMemo(
@@ -1227,6 +1228,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       previewPath: previewPathRef.current,
       previewTurnMarkers: previewTurnMarkersRef.current,
       combatAnimations,
+      promotionEffects,
       movementAnimations,
     });
   }, [
@@ -1245,6 +1247,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     reachableTiles,
     selectedUnit,
     combatAnimations,
+    promotionEffects,
     movementAnimations,
     renderTerrainToOffscreen,
     syncCanvasRect,
@@ -1410,11 +1413,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (hoverUnit && hoverUnitVisible) {
       // NEVER show blue movement range for enemy units.
       const isEnemy = hoverUnit.civilizationId !== (currentPlayer?.id ?? -1);
-      if (isEnemy) {
-        // Show attack path if we have a selected unit with moves, otherwise
-        // just clear all hover state — no blue range for enemies, ever.
-        if (selUnit && selUnit.civilizationId === currentPlayer?.id && (selUnit.movesRemaining || 0) > 0) {
-          hoverReachableRef.current = null;
+      const selectedCanGo =
+        isUnitSelectionMode &&
+        !!selUnit &&
+        selUnit.civilizationId === (currentPlayer?.id ?? -1) &&
+        (selUnit.movesRemaining || 0) > 0;
+
+      // While one of our units is selected the cursor carries an ORDER, so the
+      // preview answers "where would this unit go?" — onto an enemy (an attack
+      // path) or onto a friendly tile (Civ1 stacking). Whose movement range a
+      // friendly unit has is a question for when nothing is selected, because
+      // clicking it then selects it instead of ordering a move.
+      if (isEnemy || selectedCanGo) {
+        hoverReachableRef.current = null;
+        if (selectedCanGo) {
           const preview = computeMovementPreview(
             selUnit,
             hoverUnit.col,
@@ -1428,7 +1440,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           previewPathRef.current = preview ? preview.steps : null;
           previewTurnMarkersRef.current = preview ? preview.turnMarkers : [];
         } else {
-          hoverReachableRef.current = null;
           previewPathRef.current = null;
           previewTurnMarkersRef.current = [];
         }
@@ -1894,6 +1905,25 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           currentPlayer &&
           unitAt.civilizationId === currentPlayer.id
         ) {
+          // While one of our units is selected the map is in MOVEMENT mode, so
+          // a tile holding one of our units is a destination like any other:
+          // the selected unit moves onto it and stacks (Civ1). Selecting,
+          // cycling and the stack modal stay for clicks with nothing selected
+          // — and for the selected unit's own tile, which cancels its orders.
+          if (
+            isUnitSelectionMode &&
+            selectedUnit &&
+            gameState.selectedUnitIds.length === 0 &&
+            !ownUnitsOnTile.some((u) => u.id === selectedUnit.id)
+          ) {
+            console.log(
+              `[CLICK] Moving ${selectedUnit.id} onto friendly tile (${hex.col}, ${hex.row}) — stacking`,
+            );
+            assignUnitPath(selectedUnit, hex.col, hex.row);
+            triggerRender();
+            return;
+          }
+
           // Selection cycling: repeatedly clicking the same tile steps through
           // the units stacked on it and then the (own) city, wrapping back to
           // the first unit. A lone unit keeps the old behaviour — re-clicking
@@ -2878,6 +2908,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const hasGameStateChangedRef = useRef<() => boolean>(() => false);
   const movementAnimationsRef = useRef(movementAnimations);
   const combatAnimationsRef = useRef(combatAnimations);
+  const promotionEffectsRef = useRef(promotionEffects);
   const overlayActiveRef = useRef<boolean>(false);
 
   useEffect(() => {
@@ -2895,6 +2926,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   useEffect(() => {
     combatAnimationsRef.current = combatAnimations;
   }, [combatAnimations]);
+  useEffect(() => {
+    promotionEffectsRef.current = promotionEffects;
+  }, [promotionEffects]);
 
   // The above-unit overlay only needs clearing/redrawing while something in it
   // is actually animating.
@@ -2966,6 +3000,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         combatAnimationsRef.current.some(
           (a) =>
             nowMs - a.startTime < a.duration + (a.deathFadeDuration ?? 450),
+        ) ||
+        promotionEffectsRef.current.some(
+          (a) => nowMs - a.startTime < a.duration,
         );
       if (
         needsRender.current ||
@@ -3136,6 +3173,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     ? getCityAtFromEngine(stackModal.col, stackModal.row) ?? null
     : null;
 
+  // The crosshair is the "pick a destination" cursor, not a "unit selected"
+  // badge. Once the selected unit has a route the order is set: the cursor
+  // goes back to normal so the map reads as a map again, and the red line
+  // carries the information (it clears when the path runs out or is cancelled).
+  const selectedUnitHasPath =
+    isUnitSelectionMode &&
+    selectedUnit !== null &&
+    unitPaths.has(selectedUnit.id);
+
   return (
     <div className="position-relative w-100 h-100">
       <canvas
@@ -3146,7 +3192,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             ? "pointer"
             : citizenReassign
               ? "grabbing"
-              : isUnitSelectionMode
+              : isUnitSelectionMode && !selectedUnitHasPath
                 ? "crosshair"
                 : isDragging
                   ? "grabbing"

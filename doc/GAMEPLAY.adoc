@@ -159,12 +159,12 @@ shields and carries 3 units.
 * Attacking auto-declares war, and the war cascades to the defender's allies
 
 *Unit Experience*
-* *Implemented* (`src/game/engine/UnitRankSystem.ts`). Four ranks: Recruit
-  (default) → Regular → Veteran → Elite, multiplying combat strength
-  ×1.0 / ×1.25 / ×1.5 / ×2.0. Combat awards experience (round won +10,
-  unit destroyed +30, city captured +60); promotions at 40 / 120 / 280 XP are
-  announced with a toast and a gold flourish on the map. Barracks cities
-  produce Veterans (Civ1).
+* *Implemented* (`src/game/engine/UnitRankSystem.ts`). Four ranks: Rookie
+  (default) → Trained → Seasoned → Battle-Hardened, multiplying combat
+  strength ×1.0 / ×1.1 / ×1.25 / ×1.5 (capped). Combat awards experience
+  (round won +10, unit destroyed +30, city captured +60); promotions at
+  40 / 120 / 280 XP are announced with a toast and a gold flourish on the
+  map. Barracks cities produce Seasoned units (Civ1).
 
 === Terrain & Improvements
 
@@ -370,7 +370,7 @@ link:GAME_RULES.adoc[Game Rules Reference]; the wonder data format and the
 effect model is in link:WONDERS.adoc[Wonders].
 
 *Military*
-* *Barracks* (40, Bronze Working) - Military units are produced as **Veterans** (rank 3 of 4, ×1.5 combat strength)
+* *Barracks* (40, Bronze Working) - Military units are produced as **Seasoned** (rank 3 of 4, ×1.25 combat strength)
 
 *Production*
 * *Factory* (200, Industrialization) - +2 production, +2 pollution

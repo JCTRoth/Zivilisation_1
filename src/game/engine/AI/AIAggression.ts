@@ -12,6 +12,7 @@
 import { TERRAIN_PROPERTIES } from '../../../data/TerrainConstants';
 import type { City } from '../../../../types/game';
 import type GameEngine from '../GameEngine';
+import { getUnitRank, rankStrengthMultiplier } from '../UnitRankSystem';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -273,7 +274,10 @@ export function estimateCityDefense(engine: GameEngine, city: City): number {
       if (unit.civilizationId !== city.civilizationId) continue;
       const dist = engine.squareGrid.squareDistance(unit.col, unit.row, city.col, city.row);
       if (dist <= 2) {
-        defense += Math.max(1, unit.attack || 0) + (unit.defense || 0) * 0.5;
+        // Seasoned and Battle-Hardened defenders hold harder — mirror the
+        // CombatSystem rank multiplier so the AI's odds estimate matches.
+        const rankMult = rankStrengthMultiplier(getUnitRank(unit));
+        defense += (Math.max(1, unit.attack || 0) + (unit.defense || 0) * 0.5) * rankMult;
       }
     }
   }

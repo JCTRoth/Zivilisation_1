@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Button, Badge, ProgressBar } from 'react-bootstrap';
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { unitStatus } from '@/utils/UnitStatus';
+import { formatCombatStat, unitRankBadge, unitStatus } from '@/utils/UnitStatus';
+import { useGameStore } from '@/stores/GameStore';
+import { GameUtils } from '@/utils/GameUtils';
+import GameModal from '@/components/ui/gamemodals/ModalShell';
+import '@/styles/unitRank.css';
+import '@/styles/unitStackModal.css';
 import type { City, Unit } from '../../../types/game';
 
 /**
@@ -11,6 +15,10 @@ import type { City, Unit } from '../../../types/game';
  *   - activate ONE unit (click its row / "Select"), or
  *   - tick 0..N units and confirm a group move: the next map click orders
  *     every selected unit that still has movement points to that destination.
+ *
+ * Built on the shared modal shell: the hero says *where* this stack stands,
+ * the cards below carry the facts, and group move / city details live in the
+ * action bar where the thumb already is.
  */
 interface UnitStackModalProps {
   show: boolean;
@@ -36,6 +44,8 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
   onClose,
 }) => {
   const [checked, setChecked] = useState<string[]>([]);
+  const currentTurn = useGameStore((state) => state.gameState.currentTurn);
+  const currentYear = useGameStore((state) => state.gameState.currentYear);
 
   // Fresh selection whenever the modal opens for a tile.
   useEffect(() => {
@@ -50,64 +60,119 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
   };
 
   return (
-    <Modal show={show} onHide={onClose} centered size="lg" dialogClassName="unit-stack-modal">
-      <Modal.Header closeButton className="text-white" style={{ background: '#1b2430' }}>
-        <Modal.Title className="fs-5">
-          <i className="bi bi-stack"></i> Units at ({col}, {row})
-          {city ? ` — ${city.name}` : ''}
-          <span className="ms-2 badge bg-secondary">{units.length}</span>
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body style={{ background: '#12181f', color: '#e9ecef' }}>
-        <p className="small text-muted mb-3">
+    <GameModal
+      show={show}
+      onClose={onClose}
+      tone="info"
+      size="lg"
+      dialogClassName="unit-stack-modal"
+      icon="⚔️"
+      artLabel="the muster ground"
+      eyebrow={`Your Army · Turn ${currentTurn ?? 1} · ${GameUtils.formatYear(currentYear ?? -4000)}`}
+      title={city ? `Units at (${col}, ${row}) — ${city.name}` : `Units at (${col}, ${row})`}
+      lede="More captains than one tile can answer, so choose: take the lead of a single unit, or send the whole stack to one mark on the map."
+      actions={
+        <>
+          {city && onShowCity && (
+            <button
+              type="button"
+              className="touch-btn touch-btn--ghost"
+              onClick={() => {
+                onShowCity(city.id);
+                onClose();
+              }}
+            >
+              <i className="bi bi-building" aria-hidden="true"></i> City details
+            </button>
+          )}
+          <span className="gm-actions-spacer" />
+          <button type="button" className="touch-btn touch-btn--ghost" onClick={onClose}>
+            Close
+          </button>
+          <button
+            type="button"
+            className="touch-btn touch-btn--primary"
+            disabled={checkedMovable.length === 0}
+            title={
+              checkedMovable.length === 0
+                ? 'Tick at least one unit with movement points'
+                : 'Click the map destination to move the selected units'
+            }
+            onClick={() => onConfirmGroup(checkedMovable)}
+          >
+            Move selected ({checkedMovable.length})
+          </button>
+        </>
+      }
+    >
+      <section className="gm-section">
+        <div className="gm-section-title">Who stands here</div>
+        <div className="gm-kv-grid">
+          <div className="gm-kv">Units: <b>{units.length}</b></div>
+          <div className="gm-kv">Ready to march: <b>{movable.length}</b></div>
+          <div className="gm-kv">Ground: <b>({col}, {row})</b></div>
+          <div className="gm-kv">City: <b>{city?.name ?? 'Open field'}</b></div>
+        </div>
+        <p className="gm-note">
           Click a unit to activate it, or tick several and then click the map destination to move
           them together (units without movement points stay put). Shift-click units on the map to
           add them to the group from other tiles.
         </p>
+      </section>
 
-        <div className="d-flex align-items-center gap-2 mb-3">
-          <Button
-            size="sm"
-            variant="outline-light"
+      <section className="gm-section">
+        <div className="gm-section-title">Order of battle</div>
+        <div className="usm-toolbar">
+          <button
+            type="button"
+            className="touch-btn touch-btn--ghost usm-tool"
             disabled={movable.length === 0}
             onClick={() => setChecked(movable.map((u) => u.id))}
           >
-            <i className="bi bi-check2-square"></i> All movable ({movable.length})
-          </Button>
-          <Button
-            size="sm"
-            variant="outline-light"
+            <i className="bi bi-check2-square" aria-hidden="true"></i> All movable ({movable.length})
+          </button>
+          <button
+            type="button"
+            className="touch-btn touch-btn--ghost usm-tool"
             disabled={checked.length === 0}
             onClick={() => setChecked([])}
           >
-            <i className="bi bi-x-square"></i> Clear
-          </Button>
-          <span className="small text-muted ms-auto">
-            {checkedMovable.length} selected
-          </span>
+            <i className="bi bi-x-square" aria-hidden="true"></i> Clear
+          </button>
+          <span className="gm-chip usm-count">{checkedMovable.length} selected</span>
         </div>
 
-        <div className="list-group">
+        <div className="usm-list">
           {units.map((unit) => {
             const props = UNIT_PROPERTIES[unit.type];
             const status = unitStatus(unit);
+            const rankBadge = unitRankBadge(unit);
             const health = Math.max(0, Math.min(100, unit.health ?? 100));
             const hpText = typeof unit.hitPoints === 'number' && typeof unit.maxHitPoints === 'number'
               ? `${unit.hitPoints}/${unit.maxHitPoints} HP`
               : `${Math.round(health)}% HP`;
             const isChecked = checked.includes(unit.id);
             const canMove = (unit.movesRemaining || 0) > 0 && !unit.isDefeated;
+            // Effective combat stats: base × rank multiplier, so the numbers
+            // here match what CombatSystem actually rolls with.
+            const rankMult = rankBadge?.multiplier ?? 1;
+            const effAttack = formatCombatStat((props?.attack ?? 0) * rankMult);
+            const effDefense = formatCombatStat((props?.defense ?? 0) * rankMult);
+            const maxMoves = unit.maxMoves ?? unit.movement;
+            const movesText = typeof maxMoves === 'number'
+              ? `${unit.movesRemaining ?? 0}/${maxMoves} MP`
+              : `${unit.movesRemaining ?? 0} MP`;
+            const hpBand = health > 60 ? 'high' : health > 30 ? 'mid' : 'low';
             return (
               <div
                 key={unit.id}
-                className={`list-group-item d-flex align-items-center gap-3 ${isChecked ? 'active' : ''}`}
-                style={{ background: isChecked ? '#2b3a4a' : '#1b2430', color: '#e9ecef', cursor: 'pointer' }}
+                className={`usm-row${isChecked ? ' usm-row--checked' : ''}`}
                 onClick={() => onSelectUnit(unit.id)}
                 title="Activate this unit"
               >
                 <input
                   type="checkbox"
-                  className="form-check-input m-0"
+                  className="usm-check"
                   checked={isChecked}
                   disabled={!canMove}
                   onClick={(e) => e.stopPropagation()}
@@ -115,75 +180,57 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
                   aria-label={`Select ${unit.type} for group move`}
                 />
 
-                <span style={{ fontSize: '1.5rem', width: 32, textAlign: 'center' }}>
+                <span className="usm-icon" aria-hidden="true">
                   {unit.icon || props?.icon || '⚔️'}
                 </span>
 
-                <div className="flex-grow-1 min-width-0">
-                  <div className="d-flex align-items-center gap-2">
-                    <strong>{props?.name ?? unit.type}</strong>
-                    {unit.isVeteran && <Badge bg="warning" text="dark">★ Veteran</Badge>}
-                    <Badge bg={status.variant}>{status.label}</Badge>
+                <div className="usm-main">
+                  <div className="usm-line">
+                    <strong className="usm-name">{props?.name ?? unit.type}</strong>
+                    {rankBadge && (
+                      <span className={rankBadge.className} title={rankBadge.title}>
+                        {rankBadge.label}
+                      </span>
+                    )}
+                    <span className="gm-chip usm-status" data-variant={status.variant}>
+                      {status.label}
+                    </span>
                   </div>
-                  <div className="d-flex align-items-center gap-2 mt-1">
-                    <ProgressBar
-                      now={health}
-                      variant={health > 60 ? 'success' : health > 30 ? 'warning' : 'danger'}
-                      style={{ height: 6, flex: 1, maxWidth: 220 }}
-                    />
-                    <span className="small text-muted">{hpText}</span>
+                  <div className="usm-line usm-line--meta">
+                    <span className="usm-hpbar" aria-hidden="true">
+                      <span className={`usm-hpbar-fill usm-hpbar-fill--${hpBand}`} style={{ width: `${health}%` }} />
+                    </span>
+                    <span className="usm-hp">{hpText}</span>
+                    <span className="usm-moves">{movesText}</span>
+                    <span
+                      className="usm-combat"
+                      title={
+                        rankBadge
+                          ? `Base A${props?.attack ?? 0}/D${props?.defense ?? 0}, ×${rankBadge.multiplier} rank strength`
+                          : undefined
+                      }
+                    >
+                      A{effAttack}/D{effDefense}
+                    </span>
                   </div>
                 </div>
 
-                <div className="d-flex align-items-center gap-2">
-                  <span className="small text-muted">
-                    A{props?.attack ?? 0}/D{props?.defense ?? 0}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline-light"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectUnit(unit.id);
-                    }}
-                  >
-                    Select
-                  </Button>
-                </div>
+                <button
+                  type="button"
+                  className="touch-btn touch-btn--ghost usm-select"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectUnit(unit.id);
+                  }}
+                >
+                  Select
+                </button>
               </div>
             );
           })}
         </div>
-      </Modal.Body>
-      <Modal.Footer style={{ background: '#1b2430' }}>
-        {city && onShowCity && (
-          <Button
-            variant="outline-info"
-            onClick={() => {
-              onShowCity(city.id);
-              onClose();
-            }}
-          >
-            <i className="bi bi-building"></i> City details
-          </Button>
-        )}
-        <Button variant="secondary" onClick={onClose}>
-          Close
-        </Button>
-        <Button
-          variant="primary"
-          disabled={checkedMovable.length === 0}
-          onClick={() => onConfirmGroup(checkedMovable)}
-          title={
-            checkedMovable.length === 0
-              ? 'Tick at least one unit with movement points'
-              : 'Click the map destination to move the selected units'
-          }
-        >
-          Move selected ({checkedMovable.length})
-        </Button>
-      </Modal.Footer>
-    </Modal>
+      </section>
+    </GameModal>
   );
 };
 

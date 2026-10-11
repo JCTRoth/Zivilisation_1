@@ -1,20 +1,5 @@
 /* GameModals styles */
 
-.tech-tree-modal .btn-close {
-  filter: invert(1);
-}
-
-/* Tech Tree modal is fullscreen; make the body flex so the tree canvas expands
-   to fill the available window. */
-.tech-tree-modal-body {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 1rem 1.5rem 1.5rem;
-  -webkit-overflow-scrolling: touch;
-}
-
 .tech-tree-modal .tech-tree-container {
   flex: 1 1 auto;
   min-height: 0;
@@ -30,12 +15,6 @@
      natural size so every branch is fully expanded and scrollable. */
   display: block;
   overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
-.city-detail-modal-body {
-  max-height: 70vh;
-  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -348,60 +327,7 @@
   color: #f59e0b !important;
 }
 
-/* Research-complete notification modal */
-.research-complete-modal .research-complete-icon {
-  font-size: 3.5rem;
-  line-height: 1;
-}
 /* ── "Auto. turn ending" offer (shown once, on move 15) ────────────────── */
-
-.auto-end-offer-modal .modal-content {
-  background: linear-gradient(180deg, #1b2430 0%, #141b25 100%);
-  border: 1px solid rgba(127, 209, 138, 0.28);
-  border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-}
-
-.auto-end-offer {
-  padding: 1.5rem 1.5rem 1.25rem;
-  text-align: center;
-  color: #dce6ef;
-}
-
-.auto-end-offer-hero {
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 0.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.6rem;
-  line-height: 1;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 25%, rgba(127, 209, 138, 0.35), rgba(127, 209, 138, 0.08));
-  border: 1px solid rgba(127, 209, 138, 0.45);
-  box-shadow: 0 0 0 6px rgba(127, 209, 138, 0.05);
-}
-
-.auto-end-offer-title {
-  margin: 0 0 0.4rem;
-  font-size: 1.3rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: #f2f7fb;
-}
-
-.auto-end-offer-lead {
-  margin: 0 auto 1rem;
-  max-width: 30rem;
-  font-size: 0.86rem;
-  line-height: 1.5;
-  color: #a9bac8;
-}
-
-.auto-end-offer-lead strong {
-  color: #dff5e2;
-}
 
 /* The actual on/off checkbox: the offer informs AND lets the player decide. */
 .auto-end-offer-choice {
@@ -457,29 +383,57 @@
   color: #8fa2b1;
 }
 
-.auto-end-offer-actions {
-  display: flex;
+/* ============================================================================
+   City production screen (right-click → "View production")
+   The shell wraps the old markup, so the controls need to beat Bootstrap's
+   `.form-select` / `.btn` — hence the two-class `.modal.gm` prefix.
+   ========================================================================== */
+
+.modal.gm select.production-select,
+.modal.gm .production-select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--color-bg-input, #0f161d);
+  color: var(--color-text, #e8eef3);
+  border: 1px solid var(--color-border-strong, #3d5163);
+  border-radius: 8px;
+  font-size: 13.5px;
+}
+
+.modal.gm .production-select:focus {
+  border-color: var(--color-accent, #f0c33c);
+  box-shadow: 0 0 0 0.2rem rgba(240, 195, 60, 0.25);
+}
+
+.modal.gm .production-add-btn {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
-}
-
-.auto-end-offer-yes {
-  min-width: 8.5rem;
-  font-weight: 600;
+  gap: 6px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #3f9c52, #2f7f43);
-  border-color: rgba(127, 209, 138, 0.6);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border-strong, #3d5163);
+  color: var(--color-text, #e8eef3);
+  font-size: 13.5px;
+  font-weight: 700;
 }
 
-.auto-end-offer-yes:hover,
-.auto-end-offer-yes:active {
-  background: linear-gradient(135deg, #4bb35f, #368d4c) !important;
-  border-color: rgba(127, 209, 138, 0.85) !important;
+.modal.gm .production-add-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--color-accent, #f0c33c);
 }
 
-.auto-end-offer-fineprint {
-  margin-top: 0.7rem;
-  font-size: 0.68rem;
-  color: #7d8f9d;
+.modal.gm .production-add-btn:disabled {
+  opacity: 0.45;
+}
+
+.modal.gm .queue-panel {
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
 }

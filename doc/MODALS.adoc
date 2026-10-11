@@ -11,6 +11,121 @@ Source paths and line numbers below are a snapshot of the working tree. The
 UI is under active restyle, so treat the *structure* (dialog id, trigger, data
 source) as the contract and the line numbers as approximate.
 
+== Screenshots
+
+Captured from a live quickstart game (`?quickstart&seed=42&noanim`). Images
+live in `doc/dialogs/`.
+
+[cols="2,4", options="header"]
+|===
+|Dialog |Screenshot
+
+|Game Setup — War Council (Step 1)
+|image::dialogs/00-game-setup.png[Game setup, width=420]
+
+|Technology Tree (`F2`)
+|image::dialogs/01-tech-tree.png[Tech tree, width=420]
+
+|Help & Controls (`F1`)
+|image::dialogs/02-help.png[Help, width=420]
+
+|Tax, Science & Luxury Rates (`T`)
+|image::dialogs/03-rates.png[Rates, width=420]
+
+|Government (`G`)
+|image::dialogs/04-government.png[Government, width=420]
+
+|Statistics & Reports
+|image::dialogs/05-statistics.png[Statistics, width=420]
+
+|Wonders of the World
+|image::dialogs/06-wonders.png[Wonders, width=420]
+
+|Diplomatic Relations (`D` / `F4`) — includes Exchange of Knowledge
+|image::dialogs/07-diplomacy.png[Diplomacy, width=420]
+
+|City screen (Berlin)
+|image::dialogs/08-city-details.png[City details, width=420]
+
+|Production picker
+|image::dialogs/09-production-picker.png[Production picker, width=420]
+
+|Settings (`F3`)
+|image::dialogs/10-settings.png[Settings, width=420]
+
+|Pause (`Ctrl+P`)
+|image::dialogs/11-pause.png[Pause, width=420]
+
+|Village — Valuable Metals
+|image::dialogs/12-village.png[Village, width=420]
+
+|Combat report
+|image::dialogs/13-combat-report.png[Combat report, width=420]
+
+|City founded
+|image::dialogs/14-city-founded.png[City founded, width=420]
+
+|Victory cinematic (Act I)
+|image::dialogs/15-victory-cinematic.png[Victory cinematic, width=420]
+
+|Victory chronicle (Act II)
+|image::dialogs/16-victory-chronicle.png[Victory chronicle, width=420]
+|===
+
+== Dialog list at a glance
+
+[cols="2,1,2,2", options="header"]
+|===
+|Dialog |Id / key |How to open |Screenshot
+
+|Game Setup wizard |— (App state) |page load (skipped by `?quickstart`) |`00-game-setup.png`
+
+|Tech Tree |`tech` · `F2` |WORLD ▸ Tech Tree |`01-tech-tree.png`
+
+|Help & Controls |`help` · `F1` |INFO ▸ Help |`02-help.png`
+
+|Tax / Science / Luxury |`rates` · `T` |WORLD ▸ Rates |`03-rates.png`
+
+|Government |`government` · `G` |WORLD ▸ Government |`04-government.png`
+
+|Statistics & Reports |`statistics` |WORLD ▸ Statistics |`05-statistics.png`
+
+|Wonders of the World |`wonders` |WORLD ▸ Wonders |`06-wonders.png`
+
+|Diplomatic Relations |`diplomacy` · `D`/`F4` |WORLD ▸ Diplomacy; AI offers |`07-diplomacy.png`
+
+|City screen |`city-details` |click own city; `Ctrl+1–9` |`08-city-details.png`
+
+|Production picker |nested in city |"Choose Production…" |`09-production-picker.png`
+
+|Settings |— (App state) · `F3` |GAME ▸ Settings |`10-settings.png`
+
+|Pause |`pause` · `Ctrl+P` |GAME ▸ Pause |`11-pause.png`
+
+|Village encounters |`village` |goody hut on the map |`12-village.png`
+
+|Combat report |`combat-report` |unit combat involving the player |`13-combat-report.png`
+
+|City founded / lost |`city-founded` / `city-lost` |settler / capture |`14-city-founded.png`
+
+|Victory / Defeat (Act I) |`gameResult` |end of game |`15-victory-cinematic.png`
+
+|The Chronicle (Act II) |Act I CTA |"Unfold the Chronicle" |`16-victory-chronicle.png`
+
+|Research Complete |`lastResearchedTech` |tech finishes |— (toast-style modal)
+
+|Wonder Completed / Conflict |`wonder-completed` / `wonder-conflict` |wonder finished / raced |—
+
+|Trade route / starved / disorder / disbanded |store notices |engine events |—
+
+|End Turn confirm |App state |`Enter` / End Turn |—
+
+|Confirm New Game / Quit |App state |GAME ▸ New Game / Quit |—
+
+|Unit ORDERS menu |canvas-local |right-click own unit |—
+
+|Unit stack picker |canvas-local |click stacked own units |— |===
+
 == Overview
 
 === Three systems, one shell
@@ -19,11 +134,13 @@ The app has three independent places that decide "a dialog is open". They do
 not share a scheduler — only system A is visible to the engine's auto-end gate.
 
 *A — store-driven `uiState.activeDialog`* :: The union type lives in
-`types/game.ts` (~L636): `city | tech | diplomacy | game-menu | help | pause |
-city-production | city-purchase | city-citizens | city-details | hex-details |
-rates | government | statistics | wonders | village | upkeep-disbanded |
-city-starved | city-disorder | trade-route-result | research-required |
-auto-end-offer | wonder-completed | wonder-conflict | null`.
+`types/game.ts` (~L636): `tech | diplomacy | help | pause | city-production |
+city-details | rates | government | statistics | wonders | village |
+upkeep-disbanded | city-starved | city-disorder | trade-route-result |
+research-required | auto-end-offer | wonder-completed | wonder-conflict |
+combat-report | city-founded | city-lost | null`. The five dead ids
+(`city`, `game-menu`, `city-purchase`, `city-citizens`, `hex-details`) were
+removed with their renderers.
 `actions.showDialog(name)` / `actions.hideDialog()` are plain reducers in
 `src/stores/GameStore.ts` (L603, L633). Almost every renderer lives in
 `src/components/ui/GameModals.tsx`, which subscribes to `uiState.activeDialog`
@@ -36,8 +153,8 @@ they all land on the same single `activeDialog` slot, so *only one store
 dialog can be on screen at a time*.
 +
 Two engine-side gates read the id: `EngineEventHandlers.isDecisionScreenOpen`
-(L1161) defers auto-end while anything but `game-menu` / `help` / `tech` /
-`hex-details` is open, and `GameModals.NON_BLOCKING_DIALOGS` (L128) decides
+(L1161) defers auto-end while anything but `help` / `tech` is open, and
+`GameModals.NON_BLOCKING_DIALOGS` (L128) decides
 whether closing that id re-runs the auto-end check (see
 `doc/auto-end-turn.adoc`).
 
@@ -109,14 +226,6 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 7+| *Group A — store-driven (`uiState.activeDialog`), rendered by `src/components/ui/GameModals.tsx` unless noted*
 
-| `game-menu`
-| A
-| *Unreachable.* `renderGameMenu` (`GameModals.tsx` L364) shows on `activeDialog === 'game-menu'`, but no `showDialog('game-menu')` exists anywhere in `src/`. The id survives only in `NON_BLOCKING_DIALOGS` (L128) and `isDecisionScreenOpen` (`EngineEventHandlers.ts` L1163).
-| —
-| Bootstrap dark modal "⚙️ Game Menu" with New Game / Save Game / Download Map / Load Game / Settings / Help stacked buttons.
-| Those six buttons (Settings only logs to console).
-| none
-
 | `tech`
 | A
 | `F2` (`App.tsx` L1153); WORLD ▸ Tech Tree (`App.tsx` L1370); side-panel research indicator (`ResearchIndicator.tsx` L94); research-complete ▸ "Choose New Research Path" (`GameModals.tsx` L537); research-required ▸ "Choose Technology" (`GameModals.tsx` L2188).
@@ -151,7 +260,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | `help`
 | A
-| `F1` (`App.tsx` L1149); INFO ▸ Help (`App.tsx` L1362). The Help button inside the unreachable `game-menu` (`GameModals.tsx` L400) is a third, dead trigger.
+| `F1` (`App.tsx` L1149); INFO ▸ Help (`App.tsx` L1362).
 | Any time.
 | Dark modal, title "Help & Controls", 4 tabs: Controls, Orders Menu, Gameplay, About.
 | Tab switching; ✕ / Esc.
@@ -180,14 +289,6 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 | `dialogClassName="city-production-modal"`, title = city name. "Current Production" progress (shields, %, turns left), a `.production-select` dropdown, and the `.queue-panel` list with reorder / delete.
 | Add (append to queue), move up, move down, remove, ✕.
 | button `View Production`; `.queue-panel`, `.queue-item`, `.queue-item-actions`, `.production-select`, `.production-add-btn`, heading `Current Production` (`e2e/game.spec.ts` L1041–L1095)
-
-| `city-purchase`
-| A
-| *Unreachable.* Renderer at `GameModals.tsx` L1833; no `showDialog('city-purchase')` anywhere. Rush-buying moved into the production picker (`onPurchase`) and the city screen.
-| —
-| Dark modal "🛒 Purchase in <city>", gold balance, grid of unit cards with Buy Now.
-| Buy Now per card; ✕.
-| none
 
 | `upkeep-disbanded`
 | A
@@ -331,6 +432,30 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 | Any player turn.
 | *Uses the shell*: tone `info`, `dialogClassName="statistics-modal"`, title "Statistics & Reports", tabs "World Demographics" and "World".
 | Close; tab switching.
+| none
+
+| `combat-report`
+| A
+| `COMBAT_VICTORY` / `COMBAT_DEFEAT` that destroyed a unit and involved the human → `EngineEventRouter.onCombat` → `actions.queueCombatReport` (`GameStore.ts`). FIFO queue, same rules as the wonder dialogs: never steals the screen from an open dialog, surfaces on close. Non-lethal rounds (`COMBAT_HIT`) and AI-only fights stay toasts.
+| The moment a unit is destroyed in a battle you are part of.
+| *Uses the shell*: tone `success`/`danger`, `dialogClassName="combat-report-modal"`, eyebrow "Victory / Defeat · Turn N · Year", title "Your X destroys a Y" / "A X was lost", stat tiles for both sides, "The round, by the numbers" + "Where it happened" (tile, terrain, city), a "how to avoid it" note on a loss.
+| "Centre on Battle" (pans the camera), "Press On" / "Rally the Survivors" (drains the queue).
+| none
+
+| `city-founded`
+| A
+| `CITY_FOUNDED` for the human, unless `source === 'village'` (the village encounter dialog already tells that story) → `onCityFounded` → `actions.queueCityEvent` (`GameStore.ts`). Same FIFO queue as the battle reports.
+| The turn a settler founds a city.
+| *Uses the shell*: tone `success`, `dialogClassName="city-event-modal"`, eyebrow "A New City · Turn N · Year", title "<name> is founded", stat tiles (city, population, tile + terrain), "What happens next" list.
+| "Open City" (selects the city and opens `city-details`), "Continue".
+| none
+
+| `city-lost`
+| A
+| `CITY_CAPTURED` / `CITY_DESTROYED` / `CITY_JOINED` where the human is captor, former owner or the city itself → `onCityOwnership` (`EngineEventHandlers.ts`). Starvation razing is filtered out (the famine dialog covers it); rival-vs-rival changes are silent; AI-vs-AI is suppressed. Shares the `cityEventQueue` with `city-founded` — one component (`CityEventModal`) renders all four voices.
+| The turn a city changes hands.
+| *Uses the shell*: tone `success`/`danger`, title "<name> has fallen" / "<name> is yours" / "<name> was burned to the ground" / "<name> joins your empire", stat tiles, "What this means" list, a "keep a garrison" note when you lose one.
+| "Steady the Realm" / "Continue", plus "Open City" when the city is yours.
 | none
 
 7+| *Group B — local state in `src/App.tsx`*
@@ -484,48 +609,36 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 | none
 |===
 
-== Dead and unreachable dialog names
+== Dead and unreachable dialog names (removed)
 
-Verified with `grep` over `src/`, `tests/` and `e2e/`:
+The five dead ids that used to sit in the union — `city`, `city-citizens`,
+`hex-details`, `game-menu` and `city-purchase` — were deleted together with
+their renderers (`renderGameMenu`, `renderCityPurchase`) and their references
+in `CITY_DIALOGS`, `NON_BLOCKING_DIALOGS` and `isDecisionScreenOpen`. What
+remains is only documentation debt:
 
-[cols="1,1,2,2"]
+[cols="1,3"]
 |===
-| Name | In the union (`types/game.ts` L636)? | Renderer | Trigger
-
-| `city`
-| yes
-| none
-| none — also listed in `CITY_DIALOGS` (`GameStore.ts` L101)
-
-| `city-citizens`
-| yes
-| none
-| none — also in `CITY_DIALOGS`, and named in `doc/auto-end-turn.adoc` L31
-
-| `hex-details`
-| yes
-| none
-| none — still referenced by `NON_BLOCKING_DIALOGS` (`GameModals.tsx` L128) and `isDecisionScreenOpen` (`EngineEventHandlers.ts` L1166)
-
-| `game-menu`
-| yes
-| yes — `renderGameMenu` (`GameModals.tsx` L364)
-| *none* — superseded by `GameMenuSheet`
-
-| `city-purchase`
-| yes
-| yes — `renderCityPurchase` (`GameModals.tsx` L1833)
-| *none* — rush-buy moved into the production picker / city screen
+| Name | Status
 
 | `diplomacy-report`
-| no (removed)
-| no
-| no — only mentioned in `doc/auto-end-turn.adoc` L33 and `doc/save-load-system.adoc` L116; the e2e suite notes it was removed in commit `1c372d3`
+| Never existed in code — only named in `doc/auto-end-turn.adoc` L33 and `doc/save-load-system.adoc` L116. Worth deleting from those two lines.
 |===
 
 Two *context-menu actions* are dead in the same way — a `case` exists in
 `GameCanvas.executeContextAction` but no button dispatches it:
-`examineHex` (L2823) and `centerView` (L2809).
+`examineHex` (L2823) and `centerView` (L2809). Their store state
+(`App.tsx` `showHexDetail` / `detailHex` / `terrainData`) is written and
+rendered by nobody.
+
+== Implemented since the first draft
+
+Three entries of the original "missing" list now exist and are documented in
+the table above: **Combat Report** (`combat-report`), **City Founded**
+(`city-founded`) and **City Lost / City Taken** (`city-lost`, covering
+capture, raze and joining in one component). They share the wonder-style FIFO
+queue so a multi-kill turn or a double city event surfaces every dialog in
+turn instead of overwriting the first.
 
 == Missing modals
 
@@ -534,87 +647,75 @@ why it matters. The "currently" notes come from
 `src/utils/EngineEventHandlers.ts` and `src/game`; the event names are real
 emissions, verified against the router's `switch`.
 
-=== 1. Combat Report
-* **Trigger:** `COMBAT_VICTORY` / `COMBAT_DEFEAT` / `CITY_ATTACKED` when the human owns a participant — today `onCombat` (L544) only pushes a toast through `notify()` plus a 0.8 s cloud animation.
-* **Shows:** attacker vs defender with portraits, damage dealt/taken, who survived, casualties on both sides, veterancy XP earned, and for city assaults the wall strength before/after.
-* **Why:** combat is the core feedback loop of the game and its result currently evaporates after three seconds in the toast stack. A player who looks away mid-animation never learns that a unit died.
 
-=== 2. City Lost / City Taken (`CITY_CAPTURED`, `CITY_DESTROYED`, `CITY_JOINED`)
-* **Trigger:** these three events are emitted (`GameEngine.ts` L3706, L3749, L3794, L3820, L4631, L5093) but *have no case in the router at all* — they fall through to `debugLog('Unhandled game engine event')`.
-* **Shows:** capture vs raze, who now holds it, population carried over, garrison fate, and for a human city lost — a "your city has fallen" screen with a Go to City / counter-attack action.
-* **Why:** losing a city is the single most consequential event in a Civ game and it is currently *silent*. `doc/CITY_CAPTURE.adoc` documents the mechanic; the UI documents nothing.
 
-=== 3. War Declared / Peace Made (a real diplomacy notice)
+=== 1. War Declared / Peace Made (a real diplomacy notice)
 * **Trigger:** `WAR_DECLARED`, `PEACE_MADE`, `ALLIANCE_BROKEN`, `CEASEFIRE_SIGNED`, `ALLIANCE_FORMED` — all toasts today (`onWarDeclared` L1438 and siblings).
 * **Shows:** full-screen proclamation with both leaders, the casus belli, what the treaty changes for the player (borders closed, units at risk), and a "Open Diplomacy" action.
 * **Why:** an AI declaring war on you is buried in a toast that auto-dismisses; the player may play several turns without noticing they are at war. Treaty expiry/anniversary has no event at all yet (`DiplomacyManager` has no expiry logic) and would need one first.
 
-=== 4. Save / Load Feedback
+=== 2. Save / Load Feedback
 * **Trigger:** `GAME_SAVED` (`GameEngine.ts` L6921) and `GAME_LOADED` (L7224) are emitted but unhandled. The menu path compensates with `App.showToast`; the `Ctrl+S` / `Ctrl+L` shortcuts (`App.tsx` L1195–L1206) give *no feedback at all*.
 * **Shows:** a small shell-styled confirmation: file name, turn, timestamp, byte size; on load, "restored turn N, M cities, K units" or a clear failure reason.
 * **Why:** the fastest way to lose a long game is not knowing whether the save landed.
 
-=== 5. Unit Disband Confirmation
+=== 3. Unit Disband Confirmation
 * **Trigger:** ORDERS ▸ Disband calls `gameEngine.disbandUnit(unit.id)` immediately (`GameCanvas.tsx` L2698) with only a "Unit X disbanded" toast afterwards.
 * **Shows:** the existing `ConfirmDialog` component with tone `danger` — unit name, its type/rank, and the gold it will save.
 * **Why:** it is irreversible and sits one right-click away from "Go to". The game already owns an accessible confirm dialog used for New Game and Quit; this is the same class of mistake.
 
-=== 6. Production Completed
+=== 4. Production Completed
 * **Trigger:** `UNIT_PRODUCED` / `UNIT_PURCHASED` / `BUILDING_COMPLETED` — currently `onUnitCreated` (L838) auto-selects the unit and toasts "X ready to move!".
 * **Shows:** a compact shell modal: what finished, in which city, its stats, and a "Take command" / "Next item in queue" pair. Wonders already have their own screen (§ wonder-completed) — this is the ordinary-unit equivalent.
 * **Why:** the auto-selection is a surprising camera jump when you are managing another front; a modal makes the interruption legible instead of mysterious.
 
-=== 7. City Founded
-* **Trigger:** `CITY_FOUNDED` → `onCityFounded` (L856), which toasts "X founded!" and silently selects the city.
-* **Shows:** new city on a small map inset, its starting yields, and a first-production prompt (the idle-production prompt already exists for the *next* turn — this closes the gap at turn 0 of the city's life).
-* **Why:** founding a city is the moment the empire's shape changes; it deserves more than a line in the toast stack.
 
-=== 8. Population Growth & Border Expansion
+=== 5. Population Growth & Border Expansion
 * **Trigger:** *no event exists yet* — nothing in the emitted set corresponds to growth or a culture-border expansion. Needs a new `CITY_GROWTH` / `BORDER_EXPANDED` emission from the round processing.
 * **Shows:** one-line celebratory card per city (population 4 → 5, new worked tile) — deliberately non-blocking, dismissible, or aggregated per turn.
 * **Why:** growth is invisible today; players only notice it by reading the city screen. Border expansion changes what can be reached and is even easier to miss.
 
-=== 9. Revolution Started / Government Change Completed
+=== 6. Revolution Started / Government Change Completed
 * **Trigger:** `startRevolution` (`GovernmentManager.ts` L257) sets `government = 'anarchy'` for `ANARCHY_TURNS`; no event, no screen. The Government modal only shows the anarchy banner while it happens to be open.
 * **Shows:** "Revolution!" on start (rates fall to 0, N turns) and "New Charter Adopted" on completion, with the before/after tax and science caps.
 * **Why:** anarchy silently zeroes three sliders; a player who opens the rates screen three turns later has no idea why income collapsed.
 
-=== 10. End-of-Turn Recap
+=== 7. End-of-Turn Recap
 * **Trigger:** `TURN_END` / `TURN_PROCESSED` for the human, next to the existing auto-end recap toast (`App.tsx` L416).
 * **Shows:** a dismissible per-turn digest: cities produced, growth, discoveries, gold delta, and anything the auto-resolver decided on the player's behalf.
 * **Why:** the engine already *computes* this summary for auto-end; surfacing it for manual turns costs almost nothing and answers "what just happened to my turn?".
 
-=== 11. Unit Upgraded
+=== 8. Unit Upgraded
 * **Trigger:** `UNIT_UPGRADED` (`TurnManager.ts` L1225) — emitted, unhandled.
 * **Shows:** old type → new type, gold spent, and where the unit is.
 * **Why:** silent auto-upgrades change unit stats under the player's hands.
 
-=== 12. Road / Railroad / Irrigation Completed
+=== 9. Road / Railroad / Irrigation Completed
 * **Trigger:** `IMPROVEMENT_BUILT` → toast only (`onImprovementBuilt` L1050); `IMPROVEMENT_WORK_STARTED` and `POLLUTION_CLEANED` are unhandled.
 * **Shows:** a small "work finished" card naming the tile, the yield delta gained, and the freed-up worker's next suggestion.
 * **Why:** multi-turn worker jobs end with no acknowledgement, so it is unclear whether the unit is idle or still working.
 
-=== 13. Tax Rate Consequences
+=== 10. Tax Rate Consequences
 * **Trigger:** `SET_RATES` command result — no dialog today; the Rates modal just closes.
 * **Shows:** a projected confirmation: "Tax 40 / Science 50 / Luxury 10 → +12 gold, +17 beakers; below the cap for Despotism". Optionally a warning when a change will push a city into disorder next turn.
 * **Why:** the sliders already compute the projection; showing it at the moment of commitment prevents the classic "I cut science by accident" regret.
 
-=== 14. Barbarian Sighting
+=== 11. Barbarian Sighting
 * **Trigger:** *no event exists* — village-barbarian results have a modal (`village`), but wandering barbarians spawning or entering sight do not.
 * **Shows:** a border warning with the stack size, nearest city and a "Send a garrison" action.
 * **Why:** barbarians are the early-game threat; a spawn on the edge of vision is easy to miss on a large map.
 
-=== 15. Trade Route Lost / Route Ledger
+=== 12. Trade Route Lost / Route Ledger
 * **Trigger:** no loss event exists; `TRADE_ROUTE_ESTABLISHED` has a modal but nothing removes routes today.
 * **Shows:** which route died, why, and the gold per turn now missing; plus a "Routes" tab already half-built inside the city screen's Trade Routes tab.
 * **Why:** the promised "+N gold every turn" silently stops when a city falls.
 
-=== 16. Era Breakthrough
+=== 13. Era Breakthrough
 * **Trigger:** `TECH_RESEARCHED` already opens the research-complete modal; era change is derivable from the tech but not surfaced.
 * **Shows:** "You enter the Industrial Era" with the new unit/building/wonder classes unlocked.
 * **Why:** era is the game's largest structural beat and currently only changes colour in the tech tree.
 
-=== 17. Pollution / Disease Notice
+=== 14. Pollution / Disease Notice
 * **Trigger:** `POLLUTION_CLEANED` is emitted (`GameEngine.ts` L6477) but unhandled; pollution *appearing* has no event.
 * **Shows:** a warning naming the polluted tile and its effect, with a "send a worker" action.
 * **Why:** the rules already model pollution; the player cannot see it accumulate.
@@ -623,21 +724,16 @@ emissions, verified against the router's `switch`.
 
 === Still hand-rolled instead of the shell (follow-up work)
 
-Confirmed by checking every file that renders `<Modal>` against
-`import GameModal`:
+Everything in the table now sits on the shared shell except:
 
-* `src/components/ui/GameModals.tsx` — *twelve* inline modals: `game-menu`,
-  `tech`, research-complete, `diplomacy`, `help`, `city-production`,
-  `city-purchase`, `upkeep-disbanded`, `city-starved`, `city-disorder`,
-  `auto-end-offer`, `trade-route-result`. All use
-  `Modal.Header className="bg-dark text-white"` rather than the hero.
-* `src/components/ui/ResearchRequiredModal.tsx`.
-* `src/components/ui/gamemodals/VillageModal.tsx` (fallback branch) and all
-  five `gamemodals/village/*.tsx` outcome modals.
-* `src/components/game/UnitStackModal.tsx`.
-* `src/components/ui/GameSetupModal.tsx` — deliberately uses the shell's
-  *building blocks* (it imports `gameModalShell.css` explicitly) but still a
-  raw `<Modal>`.
+* `src/components/ui/GameModals.tsx` — the *tech tree* and *diplomacy* screens
+  build their own `.gm-hero` markup inside a raw `<Modal>` (fullscreen /
+  heavily customised layout), and `renderCityProduction` wraps the legacy
+  production markup in the shell but leaves its inner `h6` + list structure
+  untouched.
+* `src/components/ui/GameSetupModal.tsx` — uses the shell's *building blocks*
+  (it imports `gameModalShell.css` explicitly) but is still a raw `<Modal>`,
+  because the wizard is a full-screen flow rather than a dialog.
 * `src/components/ui/ConfirmDialog.tsx` — hand-builds the `.gm-hero` /
   `.gm-heading` / `.gm-actions` markup so it can keep `role="alertdialog"`;
   documented as intentional in its own header comment.
@@ -645,21 +741,13 @@ Confirmed by checking every file that renders `<Modal>` against
   the same vocabulary (`pause-screen__hero` etc.) because it is not a
   bootstrap dialog.
 
-Already on the shell: `CityModal`, `ProductionSelectionModal`, `RatesModal`,
-`GovernmentModal`, `StatisticsModal`, `WondersOverview` + `WonderEntryModal`,
-`WonderCompletedModal`, `WonderConflictModal`, `EndTurnConfirmModal`,
-`SettingsModal`, `GameResultOverlay` (Act II).
-
 === No dedicated CSS
 
 Dialog classes with *no* rule in `src/styles/`:
 
 * `research-required-modal`
-* `unit-stack-modal` (uses inline `style={{…}}` on header/body/footer)
-* `city-purchase-modal`
-* every `bg-dark text-white` inline modal in `GameModals.tsx` has no
-  dialog-level class at all — help, upkeep-disbanded, city-starved,
-  city-disorder, trade-route-result are styled purely by Bootstrap utilities.
+* `combat-report-modal`, `city-event-modal` (both inherit everything from the
+  shell; no dialog-level overrides are needed yet)
 
 Covered: `tech-tree-modal`, `research-complete-modal`, `city-production-modal`,
 `city-details-modal`, `auto-end-offer-modal` (all in `gameModals.css`),
@@ -667,10 +755,30 @@ Covered: `tech-tree-modal`, `research-complete-modal`, `city-production-modal`,
 `wonder-completed-modal` / `wonder-conflict-modal` / `wonder-entry-modal`
 (`wonders.css`), `rates-modal`, `government-modal`, `statistics-modal`,
 `end-turn-modal`, `confirm-dialog`, `pause-screen`, `settings-modal`,
-`game-result-overlay`, `game-setup-dialog`, `unit-context-menu`
-(`unitActionsModal.css`).
+`game-result-overlay`, `game-setup-dialog`, `unit-context-menu`,
+`unit-stack-modal` (`unitStackModal.css`).
 
 === Dead code worth deleting
+
+Already done in this pass: dialog ids `city`, `city-citizens`, `hex-details`,
+`game-menu`, `city-purchase`, plus `renderGameMenu` / `renderCityPurchase`
+and their `CITY_DIALOGS` / `NON_BLOCKING_DIALOGS` / `isDecisionScreenOpen`
+references.
+
+Still open:
+
+* `App.tsx` `showHexDetail` / `detailHex` / `terrainData` (L58–L71) and
+  `handleExamineHex` (L754) — written, read by the keyboard handler (L1116,
+  L1237), rendered by nobody.
+* `GameCanvas.executeContextAction` cases `examineHex` (L2823) and
+  `centerView` (L2809) — no button dispatches either.
+* The `diplomacy-report` id still named in `doc/auto-end-turn.adoc` L33 and
+  `doc/save-load-system.adoc` L116.
+* Orphaned CSS left behind by the restyle: `.auto-end-offer-hero/-title/-lead/
+  -actions/-fineprint` and `.research-complete-icon` in `gameModals.css`,
+  `.tech-tree-modal-body` (the class was replaced by `.gm-body`).
+
+== Related tests
 
 * Dialog ids `city`, `city-citizens`, `hex-details` — in the union and in
   `CITY_DIALOGS`, with no renderer and no trigger. Drop them from

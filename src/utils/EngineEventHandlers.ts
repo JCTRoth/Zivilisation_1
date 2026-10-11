@@ -1,5 +1,6 @@
 import { useGameStore } from '../stores/GameStore';
 import { CombatSystem, type CombatEventKind } from '../game/engine/CombatSystem';
+import { UNIT_RANK_INFO, getUnitRank } from '../game/engine/UnitRankSystem';
 import { firstUnresearchedInPath } from './ResearchPath';
 import { awaitCameraGlide, isCameraGliding } from '../game/rendering/CameraGlideGate';
 import { HUMAN_PLAYER_ID } from './PlayerConstants';
@@ -54,6 +55,9 @@ export class EngineEventRouter {
       case 'COMBAT_HIT':
         this.onCombat(eventType, eventData);
         break;
+      case 'UNIT_PROMOTED':
+        this.onUnitPromoted(eventData);
+        break;
       case 'CITY_ATTACKED':
         this.onCityAttacked(eventData);
         break;
@@ -63,6 +67,14 @@ export class EngineEventRouter {
         break;
       case 'CITY_FOUNDED':
         this.onCityFounded(eventData);
+        break;
+      case 'CITY_CAPTURED':
+      case 'CITY_DESTROYED':
+      case 'CITY_JOINED':
+        this.onCityOwnership(eventType, eventData);
+        break;
+      case 'CIVILIZATION_ELIMINATED':
+        this.onCivilizationEliminated(eventData);
         break;
       case 'CITY_PRODUCTION_CHANGED':
         this.onCityProductionChanged(eventData);
@@ -581,6 +593,35 @@ export class EngineEventRouter {
       combatCivId,
     );
 
+    // A decisive round (a unit was destroyed) that the human player was part
+    // of also gets a full battle report. Non-lethal rounds and AI-only fights
+    // stay toasts — the modal would be noise there.
+    const defenderDestroyed = eventType === 'COMBAT_VICTORY';
+    const attackerDestroyed = eventType !== 'COMBAT_VICTORY' && (attacker?.health ?? 1) <= 0;
+    const humanAttacker = attacker?.civilizationId === HUMAN_PLAYER_ID;
+    const humanInvolved = humanAttacker || defender?.civilizationId === HUMAN_PLAYER_ID;
+    if (!this.isAIVsAI && humanInvolved && (defenderDestroyed || attackerDestroyed)) {
+      const fightCity = defender ? this.gameEngine.getCityAt(defender.col, defender.row) : undefined;
+      this.actions.queueCombatReport({
+        kind: humanAttacker ? (defenderDestroyed ? 'victory' : 'defeat') : (attackerDestroyed ? 'victory' : 'defeat'),
+        attackerName,
+        attackerType: attacker?.type ?? 'unit',
+        attackerCivId: attacker?.civilizationId ?? -1,
+        defenderName,
+        defenderType: defender?.type ?? 'unit',
+        defenderCivId: defender?.civilizationId ?? -1,
+        attackerHealthAfter,
+        defenderHealthAfter,
+        attackerDamage,
+        defenderDamage,
+        attackerSurvived: !!eventData.attackerSurvived,
+        defenderSurvived: !!eventData.defenderSurvived,
+        col: defender?.col ?? attacker?.col ?? 0,
+        row: defender?.row ?? attacker?.row ?? 0,
+        cityName: fightCity?.name,
+      });
+    }
+
     // Record a combat animation: a cloud appears at the defender's tile, the
     // HP bars tween, the damage numbers float up, and the survivor fades back
     // in (2 seconds total).
@@ -642,6 +683,48 @@ export class EngineEventRouter {
       };
       trackAIAnimation(startCombatVisuals());
     }
+  }
+
+  /**
+   * A unit crossed a rank threshold (Rookie → Trained → Seasoned →
+   * Battle-Hardened). Syncs the store, toasts the promotion for the human
+   * player's perspective and — for the player's own units — plays a short
+   * gold flourish on the map (expanding ring + floating rank name, drawn by
+   * the MapRenderer).
+   */
+  private onUnitPromoted(eventData: Record<string, unknown>) {
+    const unit = eventData?.unit as Unit | undefined;
+    if (!unit) return;
+
+    this.actions.updateUnits(this.gameEngine.getAllUnits());
+
+    const rankName = UNIT_RANK_INFO[getUnitRank(unit)]?.name ?? 'Seasoned';
+    const unitName = unit.name || unit.type || 'Unit';
+    notify(
+      'success',
+      `★ ${unitName} promoted to ${rankName}!`,
+      humanOrFirst(unit.civilizationId),
+    );
+
+    // The flourish is a player-facing reward — only the human's own units get
+    // one, so AI-vs-AI promotions never light up the whole map.
+    if (unit.civilizationId !== HUMAN_PLAYER_ID) return;
+
+    const effectId = `promo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.actions.addPromotionEffect({
+      id: effectId,
+      unitId: unit.id,
+      col: unit.col,
+      row: unit.row,
+      rank: getUnitRank(unit),
+      rankName,
+      startTime: performance.now(),
+      duration: 1400,
+      color: this.civColor(unit.civilizationId),
+    });
+    setTimeout(() => {
+      this.actions.removePromotionEffect(effectId);
+    }, 1400 + 120);
   }
 
   private onUnitRemoved() {
@@ -823,6 +906,88 @@ export class EngineEventRouter {
     // Don't auto-open the city panel in AI-vs-AI mode (nobody is managing it).
     if (!this.isAIVsAI && city.civilizationId === 0) this.actions.selectCity(city.id);
     notify('info', `${city.name} founded!`, city.civilizationId);
+
+    // A city the HUMAN founds gets the "founded" notice — unless it grew out
+    // of a village, which already has its own encounter dialog.
+    const fromVillage = eventData.source === 'village';
+    if (!this.isAIVsAI && !fromVillage && city.civilizationId === HUMAN_PLAYER_ID) {
+      this.actions.queueCityEvent({
+        kind: 'founded',
+        cityId: city.id,
+        cityName: city.name,
+        col: city.col,
+        row: city.row,
+        population: city.population ?? 1,
+        byCivId: HUMAN_PLAYER_ID,
+      });
+    }
+  }
+
+  /**
+   * A city changed hands: captured in war, razed to the ground, or joined a
+   * civilisation of its own accord. Only battles the human player is part of
+   * produce a dialog — rival-on-rival wars stay silent (and AI-vs-AI is
+   * spectated without dialogs at all). Starvation razing is filtered out: the
+   * famine dialog already tells that story.
+   */
+  private onCityOwnership(eventType: string, eventData: Record<string, unknown>) {
+    const city = eventData?.city as City | undefined;
+    if (!city || this.isAIVsAI) return;
+    if (eventType === 'CITY_DESTROYED' && eventData.reason === 'starvation') return;
+
+    const byCivId = (eventData.capturedBy as number | undefined)
+      ?? (eventData.attacker as Unit | undefined)?.civilizationId
+      ?? (eventData.settler as Unit | undefined)?.civilizationId
+      ?? (eventType === 'CITY_DESTROYED' ? city.civilizationId : undefined);
+    const fromCivId = (eventData.originalCiv as number | undefined) ?? city.civilizationId;
+    const playerInvolved =
+      byCivId === HUMAN_PLAYER_ID || fromCivId === HUMAN_PLAYER_ID || city.civilizationId === HUMAN_PLAYER_ID;
+    if (!playerInvolved) return;
+
+    this.actions.queueCityEvent({
+      kind: eventType === 'CITY_JOINED' ? 'joined' : eventType === 'CITY_DESTROYED' ? 'razed' : 'captured',
+      cityId: city.id,
+      cityName: city.name,
+      col: city.col,
+      row: city.row,
+      population: city.population ?? 1,
+      byCivId,
+      fromCivId,
+    });
+  }
+
+  /**
+   * A civilization lost its last city while it still had a non-settler unit on
+   * the board — the engine wiped it out (see `applyLastCityRule`). Say so in a
+   * toast: as the conqueror, as the victim, or as a witness to a rival's end.
+   *
+   * Toasts only — the city itself already produced its own `city-lost` /
+   * `city-founded` dialog, and this is the footnote to it.
+   */
+  private onCivilizationEliminated(eventData: Record<string, unknown>) {
+    const civId = eventData?.civilizationId as number | undefined;
+    if (civId === undefined || this.isAIVsAI) return;
+
+    const attackerCivId = eventData?.attackerCivId as number | undefined;
+    const unitsDestroyed = (eventData?.unitsDestroyed as number | undefined) ?? 0;
+    const civName = this.gameEngine?.civilizations?.[civId]?.name ?? 'A civilization';
+    const attackerName = attackerCivId !== undefined
+      ? this.gameEngine?.civilizations?.[attackerCivId]?.name
+      : undefined;
+
+    if (civId === HUMAN_PLAYER_ID) {
+      notify('error', `${civName} is no more — your last city has fallen, and your scattered units are destroyed with it.`, HUMAN_PLAYER_ID);
+      return;
+    }
+    if (attackerCivId === HUMAN_PLAYER_ID) {
+      notify('success', `${civName} has been destroyed — its last city is yours, and its remaining units (${unitsDestroyed}) are no more.`, HUMAN_PLAYER_ID);
+      return;
+    }
+    notify(
+      'info',
+      `${civName} has been destroyed${attackerName ? ` by ${attackerName}` : ''} — its last city fell, and its remaining units were destroyed.`,
+      humanOrFirst(attackerCivId, civId),
+    );
   }
 
   private onCityProductionChanged(eventData: Record<string, unknown>) {
@@ -1111,14 +1276,12 @@ export class EngineEventRouter {
   /**
    * Whether a decision screen is open that should defer the auto-end prompt:
    * city management, diplomacy, a village result message, … (everything
-   * except the non-blocking WORLD menu, tech tree, help and hex details).
+   * except the non-blocking tech tree and help).
    */
   private isDecisionScreenOpen(activeDialog: string | null): boolean {
     return activeDialog !== null &&
-      activeDialog !== 'game-menu' &&
       activeDialog !== 'help' &&
-      activeDialog !== 'tech' &&
-      activeDialog !== 'hex-details';
+      activeDialog !== 'tech';
   }
 
   private onTurnEndConfirmationNeeded() {
@@ -1494,6 +1657,8 @@ export class EngineEventRouter {
       fromCivId: eventData.fromCivId as number,
       action: (eventData.action as string) ?? 'propose_peace',
       goldAmount: eventData.goldAmount as number,
+      techOffered: typeof eventData.techOffered === 'string' ? eventData.techOffered : undefined,
+      techRequested: typeof eventData.techRequested === 'string' ? eventData.techRequested : undefined,
       message: eventData.message as string,
     });
     this.syncState();

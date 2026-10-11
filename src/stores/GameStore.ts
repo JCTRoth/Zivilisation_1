@@ -99,11 +99,8 @@ const createInitialUIState = (): UIState => ({
 
 /** City dialogs that a user-initiated unit selection closes (one selection at a time). */
 const CITY_DIALOGS: ReadonlySet<string> = new Set<string>([
-  'city',
   'city-details',
   'city-production',
-  'city-purchase',
-  'city-citizens',
 ]);
 
 // Helper function for visibility calculations
@@ -183,6 +180,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   // Combat animations (cloud + hide/fade effects)
   combatAnimations: [],
 
+  // Promotion flourishes (gold ring + floating rank name)
+  promotionEffects: [],
+
   // Movement glides (position interpolation between tiles)
   movementAnimations: [],
 
@@ -206,6 +206,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   // Info for the "trade route established" modal (Caravan delivery)
   tradeRouteResult: null,
+
+  // FIFO queues for the decisive-battle and city-event modals
+  combatReportQueue: [],
+  cityEventQueue: [],
 
   // FIFO queue of world-wonder dialogs (completion screen / production conflict)
   wonderDialogQueue: [],
@@ -548,6 +552,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       combatAnimations: state.combatAnimations.filter(a => a.id !== id)
     })),
 
+    addPromotionEffect: (effect) => set(state => ({
+      promotionEffects: [...state.promotionEffects, effect]
+    })),
+
+    removePromotionEffect: (id) => set(state => ({
+      promotionEffects: state.promotionEffects.filter(e => e.id !== id)
+    })),
+
     addMovementAnimation: (animation) => set(state => ({
       movementAnimations: [...state.movementAnimations, animation]
     })),
@@ -717,6 +729,91 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ...state.uiState,
         activeDialog:
           state.uiState.activeDialog === 'wonder-completed' || state.uiState.activeDialog === 'wonder-conflict'
+            ? null
+            : state.uiState.activeDialog
+      }
+    })),
+
+    /**
+     * A decisive battle round (a unit was destroyed) that the human player was
+     * part of. Same queueing rules as the wonder dialogs: open at once unless
+     * another report is already on screen, so a multi-kill turn surfaces every
+     * battle instead of overwriting the first.
+     */
+    queueCombatReport: (notice) => set(state => {
+      const queue = [...state.combatReportQueue, notice];
+      // Never steal the screen from a dialog that is already open — the report
+      // waits and surfaces as soon as that dialog closes.
+      const busy = state.uiState.activeDialog !== null;
+      return {
+        combatReportQueue: queue,
+        uiState: busy ? state.uiState : { ...state.uiState, activeDialog: 'combat-report' }
+      };
+    }),
+
+    dequeueCombatReport: () => set(state => {
+      const queue = state.combatReportQueue.slice(1);
+      if (queue.length > 0) {
+        return {
+          combatReportQueue: queue,
+          uiState: { ...state.uiState, activeDialog: 'combat-report' }
+        };
+      }
+      return {
+        combatReportQueue: [],
+        uiState: { ...state.uiState, activeDialog: null },
+        gameState: { ...state.gameState, selectionOrigin: null }
+      };
+    }),
+
+    clearCombatReports: () => set(state => ({
+      combatReportQueue: [],
+      uiState: {
+        ...state.uiState,
+        activeDialog: state.uiState.activeDialog === 'combat-report' ? null : state.uiState.activeDialog
+      }
+    })),
+
+    /**
+     * A city event the human player is part of (founded / captured / razed /
+     * joined). Queued like the battle reports for the same reason.
+     */
+    queueCityEvent: (notice) => set(state => {
+      const queue = [...state.cityEventQueue, notice];
+      const dialog = notice.kind === 'founded' || notice.kind === 'joined' ? 'city-founded' : 'city-lost';
+      const showing = state.uiState.activeDialog === 'city-founded' || state.uiState.activeDialog === 'city-lost';
+      const busy = state.uiState.activeDialog !== null && !showing;
+      return {
+        cityEventQueue: queue,
+        uiState: busy ? state.uiState : { ...state.uiState, activeDialog: dialog }
+      };
+    }),
+
+    dequeueCityEvent: () => set(state => {
+      const queue = state.cityEventQueue.slice(1);
+      if (queue.length > 0) {
+        const next = queue[0];
+        return {
+          cityEventQueue: queue,
+          uiState: {
+            ...state.uiState,
+            activeDialog: next.kind === 'founded' || next.kind === 'joined' ? 'city-founded' : 'city-lost'
+          }
+        };
+      }
+      return {
+        cityEventQueue: [],
+        uiState: { ...state.uiState, activeDialog: null },
+        gameState: { ...state.gameState, selectionOrigin: null }
+      };
+    }),
+
+    clearCityEvents: () => set(state => ({
+      cityEventQueue: [],
+      uiState: {
+        ...state.uiState,
+        activeDialog:
+          state.uiState.activeDialog === 'city-founded' || state.uiState.activeDialog === 'city-lost'
             ? null
             : state.uiState.activeDialog
       }
@@ -1078,10 +1175,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       lastResearchedTech: null,
       uiState: createInitialUIState(),
       combatAnimations: [],
+      promotionEffects: [],
       disbandNotice: null,
       starvationNotice: null,
       disorderNotice: null,
       tradeRouteResult: null,
+      combatReportQueue: [],
+      cityEventQueue: [],
       wonderDialogQueue: [],
       settings: {
         ...state.settings,

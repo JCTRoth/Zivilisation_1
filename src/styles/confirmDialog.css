@@ -1,52 +1,27 @@
-/* ConfirmDialog styles */
+/* ============================================================================
+   ConfirmDialog — the game's accessible confirmation (`role="alertdialog"`).
+   ----------------------------------------------------------------------------
+   The dialog renders the shared shell's classes itself (hero + content +
+   action bar), so the frame, tone ramp, artwork slot and button bar come from
+   gameModalShell.css.
 
-.confirm-dialog .modal-content {
-  background: var(--color-bg-elevated, #16202a, --transparent 0.4);
-  color: var(--color-text, #e8eef3);
-  border: 1px solid var(--color-border-strong, #3d5163);
-  border-radius: var(--radius-lg, 16px);
-}
+   It deliberately keeps `dialogClassName="confirm-dialog"`: design-system.css
+   already reserves that name for compact, centred confirmation cards (see
+   "Small confirmation dialogs stay centered"), so nothing here re-declares the
+   frame — this file only adds what neither the shell nor the design system
+   provides for the dialog's own children.
+   ========================================================================== */
 
-.confirm-dialog__header {
-  background: var(--color-bg-overlay, #1d2935);
-  border-bottom: 1px solid var(--color-border, #2c3b49);
-}
-
-.confirm-dialog__title {
-  font-size: var(--text-xl, 1.375rem);
-  font-weight: 700;
-  color: var(--color-text, #e8eef3);
-}
-
-.confirm-dialog__body {
-  background: var(--color-bg-elevated, #16202a);
-  color: var(--color-text, #e8eef3);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.confirm-dialog__message {
-  font-size: var(--text-base, 1rem);
-  line-height: var(--line-normal, 1.5);
-  margin: 0;
-}
-
-.confirm-dialog__detail {
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-secondary, #b8c4cf);
-  margin: 0;
-}
-
-.confirm-dialog__footer {
-  background: var(--color-bg-overlay, #1d2935);
-  border-top: 1px solid var(--color-border, #2c3b49);
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-  flex-direction: column-reverse;
-}
-
-.confirm-dialog__btn {
+/* The alertdialog wrapper IS the modal body: a full-width flex column so the
+   hero, content and action bar stack exactly like every other shell dialog. */
+.confirm-dialog__inner {
   width: 100%;
+  min-width: 0;
+}
+
+/* The caller's detail line sits in the content column as a quiet callout —
+   secondary to the message, which the shell shows as the hero's lede. */
+.confirm-dialog__detail {
+  margin: 0;
+  font-size: 13px;
 }
