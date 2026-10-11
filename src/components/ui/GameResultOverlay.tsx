@@ -49,6 +49,16 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
 
   const currentTurn = useGameStore((state) => state.gameState.currentTurn);
   const currentYear = useGameStore((state) => state.gameState.currentYear);
+  const actions = useGameStore((state) => state.actions);
+  const skipResultScreen = useGameStore((state) => state.settings.skipGameResultScreen);
+  // The checkbox starts from the persisted setting, so ticking it here and
+  // ticking the Settings switch are the same fact, not two of them.
+  const [dontShowAgain, setDontShowAgain] = useState(skipResultScreen);
+
+  // A fresh outcome resets the box to whatever is saved.
+  useEffect(() => {
+    setDontShowAgain(skipResultScreen);
+  }, [resultStamp, skipResultScreen]);
   // Select the raw arrays (stable store references) — filtering inside the
   // selector would return a new array every snapshot and loop forever.
   const allCities = useGameStore((state) => state.cities);
@@ -360,6 +370,26 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
               Quit
             </button>
           </div>
+
+          {/* "Don't show this again" — the same fact as the Settings switch,
+              written from the screen it applies to so the player never has to
+              remember where the option lives. */}
+          <label
+            className="gr-cine__skip"
+            style={{ animationDelay: `${0.9 + verses.length * 0.45 + 0.75}s` }}
+          >
+            <input
+              type="checkbox"
+              className="gr-cine__skip-box"
+              checked={dontShowAgain}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setDontShowAgain(next);
+                actions.updateSettings({ skipGameResultScreen: next });
+              }}
+            />
+            <span>Don't show this screen again — next time, straight to a new game</span>
+          </label>
         </div>
       </div>
     </div>

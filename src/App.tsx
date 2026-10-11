@@ -1440,6 +1440,8 @@ function App() {
       <PauseScreen
         show={pauseScreenVisible || !!gameResult}
         onResume={handleResume}
+        onRestart={handleResultRestart}
+        onQuit={handleResultQuit}
         currentTurn={gameState.currentTurn}
         currentYear={
           gameState.currentYear != null
@@ -1465,8 +1467,11 @@ function App() {
           />
         )}
 
+      {/* The end-of-game screen can be switched off (its own checkbox, or
+          Settings). With it off, the Game Over pause panel above carries the
+          actions instead. */}
       <GameResultOverlay
-        result={gameResult}
+        result={settings.skipGameResultScreen ? null : gameResult}
         onClose={handleResultClose}
         onRestart={handleResultRestart}
         onQuit={handleResultQuit}

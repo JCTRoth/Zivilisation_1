@@ -7,6 +7,12 @@ interface PauseScreenProps {
   currentTurn?: number;
   currentYear?: string;
   gameOver?: boolean;
+  /**
+   * Shown while `gameOver`: when the end-of-game screen is skipped, this panel
+   * IS the game-over screen, and a dead end with no way out is not an option.
+   */
+  onRestart?: () => void;
+  onQuit?: () => void;
 }
 
 /**
@@ -25,6 +31,8 @@ const PauseScreen: React.FC<PauseScreenProps> = ({
   currentTurn,
   currentYear,
   gameOver = false,
+  onRestart,
+  onQuit,
 }) => {
   if (!show) {
     return null;
@@ -82,9 +90,30 @@ const PauseScreen: React.FC<PauseScreenProps> = ({
               onClick={onResume}
               autoFocus
             >
-              <span aria-hidden="true">▶</span>
-              Resume
+              <span aria-hidden="true">▶</span> Resume
             </button>
+          </div>
+        )}
+
+        {/* Game over with the result screen skipped: this panel is the whole
+            ending, so it has to offer the two exits the chronicle would have. */}
+        {gameOver && (onRestart || onQuit) && (
+          <div className="pause-screen__actions">
+            {onQuit && (
+              <button type="button" className="touch-btn touch-btn--ghost" onClick={onQuit}>
+                Quit to Menu
+              </button>
+            )}
+            {onRestart && (
+              <button
+                type="button"
+                className="touch-btn touch-btn--primary pause-screen__resume"
+                onClick={onRestart}
+                autoFocus
+              >
+                <span aria-hidden="true">▶</span> New Game
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -225,6 +225,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   settings: {
     uiScale: 1.0,        // Overall UI scale multiplier (0.5 to 2.0)
     skipEndTurnConfirmation: false, // Skip showing end turn confirmation modal
+    skipGameResultScreen: false, // Skip the end-of-game screen (cinematic + chronicle)
     autoEndTurn: false, // Automatically end turn when all human player units are done (default disabled)
     autoCamera: true,   // Automatically move camera to focused unit / event
     devMode: false,     // Developer mode: see all players on minimap and switch between them
@@ -1187,6 +1188,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ...state.settings,
         autoEndTurn: false,
         skipEndTurnConfirmation: false,
+        skipGameResultScreen: false,
       },
     })),
 

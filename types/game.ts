@@ -714,6 +714,13 @@ export interface Notification {
 interface Settings {
   uiScale: number;
   skipEndTurnConfirmation: boolean;
+  /**
+   * Skip the end-of-game screen (the cinematic takeover and the final
+   * chronicle). Default false = show it. Settable from the defeat/victory
+   * screen itself ("don't show this again") and from Settings, so a player
+   * who only ever wants to play again never has to click past the ledger.
+   */
+  skipGameResultScreen: boolean;
   autoEndTurn: boolean; // Automatically end turn when all units are done
   autoCamera: boolean; // Automatically move camera to focused unit / event
   devMode: boolean; // Developer mode: see all players on minimap and switch between them

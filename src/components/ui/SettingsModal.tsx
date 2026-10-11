@@ -23,6 +23,7 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
     actions.updateSettings({
       uiScale: 1.0,
       skipEndTurnConfirmation: false,
+      skipGameResultScreen: false,
       autoEndTurn: false,
       autoCamera: true,
       devMode: false,
@@ -146,6 +147,13 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
               "skipEndTurnConfirmation",
               settings.skipEndTurnConfirmation,
               "Take the turn the moment you press it.",
+            )}
+            {toggle(
+              "skipGameResultScreen",
+              "Skip end-of-game screen",
+              "skipGameResultScreen",
+              settings.skipGameResultScreen,
+              "No victory cinematic, no final ledger — the Game Over panel offers restart and quit instead. The same switch sits on that screen.",
             )}
             {toggle(
               "devMode",
