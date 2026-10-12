@@ -17,8 +17,11 @@ import {
   villageDecisionRoll,
   villageEarlyGameFactor,
 } from '@/data/VillageConstants';
-import { isAutoScenario, MAX_CARAVAN_TRADE_ROUTES } from '@/data/GameConstants';
+import { isAutoScenario } from '@/data/GameConstants';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+import { caravanRelevanceForCiv } from './CaravanEconomics';
+import { planCaravansForCiv, type CaravanCoordinatorWorld } from './CaravanCoordinator';
+import { CaravanGovernor } from './CaravanGovernor';
 import { SettlementEvaluator, MIN_CITY_CENTER_DISTANCE } from '../SettlementEvaluator';
 import { Pathfinding } from '../Pathfinding';
 import { AIStrategySelector } from './AIStrategySelector';
@@ -71,6 +74,7 @@ import {
   scoreEnemyTarget,
   type CityThreatAssessment
 } from './AIStrategy';
+import { AI_COMMERCE_MIN_TRADE_TILE_SHARE } from './AICityManager';
 import type { DiplomatAction } from '../DiplomacyTypes';
 import type { Unit, City, Civilization } from '../../../../types/game';
 import GameEngine, { NUCLEAR_BLAST_RADIUS, type PlayerTurnStorage, type MapTile } from '../GameEngine';
@@ -307,9 +311,70 @@ const BLOCKADE_MIN_FOOD = 2;
 
 export class AIManager {
   private gameEngine: GameEngine;
+  /**
+   * Owns every Caravan's career: sticky delivery missions, risk-aware
+   * routing (take risks, but look for a safer alternate route when the
+   * direct one runs past many enemies), retargeting only when a target is
+   * truly lost, ONE scout caravan per civ, per-city caravan caps and the
+   * last-resort disband. See `CaravanGovernor` for the full ladder.
+   */
+  private caravanGovernor = new CaravanGovernor();
+
+  /**
+   * The civ-level layer above the governor: how many caravans this civ needs,
+   * which cities build them, and where each one delivers (de-duplicated across
+   * the civ's caravans). Recomputed once per civ per round; the per-unit branch
+   * reads `caravanAssignments` / `caravanSurplus`.
+   */
+  private caravanAssignments = new Map<string, { targetCol: number; targetRow: number }>();
+  private caravanSurplus = new Set<string>();
+  private caravanCoordinatorRound = new Map<number, number>();
+  /** Which cities wanted a caravan last round (for production). */
+  private caravanProducerCities = new Map<number, string[]>();
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
+  }
+
+  /**
+   * Run the per-civ caravan plan once per round.
+   *
+   * Pure bookkeeping: the coordinator reads the world and writes only into this
+   * manager's own maps. The unit loop then asks for its assignment and hands it
+   * to the governor as a mission, so the sticky/risk-aware routing still owns
+   * the walking.
+   */
+  private coordinateCaravans(civId: number, round: number): void {
+    if (this.caravanCoordinatorRound.get(civId) === round) return;
+    this.caravanCoordinatorRound.set(civId, round);
+
+    const world = this.gameEngine as unknown as CaravanCoordinatorWorld;
+    // Commit the targets the live governor missions already hold, so a mission
+    // in progress is not re-planned and re-targeted under its own caravan. The
+    // governor stores coordinates; the coordinator speaks city ids.
+    const cityAt = (col: number, row: number): City | undefined =>
+      this.gameEngine.cities.find((c) => c.col === col && c.row === row);
+    const committed = new Set<string>();
+    for (const unit of this.gameEngine.units) {
+      if (unit.type !== 'caravan' || unit.isDefeated || unit.civilizationId !== civId) continue;
+      const mission = this.caravanGovernor.getMission(unit.id);
+      if (mission?.kind !== 'deliver') continue;
+      const city = cityAt(mission.targetCol, mission.targetRow);
+      if (city) committed.add(city.id);
+    }
+
+    const plan = planCaravansForCiv(world, civId, committed);
+    this.caravanAssignments.clear();
+    for (const a of plan.assignments) {
+      this.caravanAssignments.set(a.unitId, { targetCol: a.targetCol, targetRow: a.targetRow });
+    }
+    this.caravanSurplus = new Set(plan.surplus);
+    this.caravanProducerCities.set(civId, plan.producers.map((p) => p.cityId));
+  }
+
+  /** Cities that should build a caravan this round (coordinator's answer). */
+  citiesWantingCaravans(civId: number): string[] {
+    return this.caravanProducerCities.get(civId) ?? [];
   }
 
   /**
@@ -650,6 +715,10 @@ export class AIManager {
       if (isGarrison) continue;
       this.gameEngine.unfortifyUnit(unit.id);
     }
+
+    // Drop governor memory of caravans that died, delivered or were disbanded
+    // since the last turn (missions and the per-civ scout role).
+    this.caravanGovernor.pruneMissing(this.gameEngine.units);
 
     const aiUnits = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civilizationId && (u.movesRemaining || 0) > 0 && !u.embarkedOn,
@@ -1082,6 +1151,73 @@ export class AIManager {
               break;
             }
           }
+        }
+
+        // ── Caravan Governor: sticky delivery missions, risk-aware routing,
+        //    one scout caravan per civ, per-city caps, last-resort disband ──
+        // Caravans get their STEP from the governor instead of the generic
+        // target chooser. The old chooser re-scored every city every turn
+        // (longer routes score higher), so walking toward a city changed the
+        // ranking mid-walk and the caravan paced back and forth forever —
+        // worst near enemies, whose tiles forced constant route re-finds.
+        //
+        // ── CaravanCoordinator: the civ-level layer above the governor ──────
+        // Once per round per civ it decides how many caravans the civ needs
+        // (one per free route slot), which cities should build them, and — the
+        // part the per-unit governor cannot see — WHERE each caravan delivers,
+        // de-duplicated so two caravans never race for the same route slot. Its
+        // assignment is handed to the governor as a mission, so the sticky
+        // routing still applies; the coordinator only ever changes the target.
+        if (unit.type === 'caravan') {
+          const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+          this.coordinateCaravans(civ.id, roundNumber);
+          const assignment = this.caravanAssignments.get(unit.id);
+          if (assignment && this.caravanSurplus.has(unit.id)) {
+            this.gameEngine.log('ai', `Caravan disband — ${civ.name} caravan(${unit.id}) at (${unit.col},${unit.row}): surplus_over_cap`, {
+              civilizationId: civ.id, action: 'disband', unitId: unit.id, unitType: 'caravan', reason: 'surplus_over_cap',
+            });
+            this.caravanGovernor.forget(unit.id);
+            this.caravanAssignments.delete(unit.id);
+            this.caravanSurplus.delete(unit.id);
+            this.gameEngine.disbandUnit(unit.id);
+            break;
+          }
+          if (assignment) {
+            this.caravanGovernor.assignTarget(unit.id, assignment.targetCol, assignment.targetRow, roundNumber);
+          }
+          const plan = this.caravanGovernor.planUnit(unit, this.gameEngine, roundNumber);
+          if (plan.kind === 'move') {
+            const r = this.gameEngine.moveUnit(unit.id, plan.step.col, plan.step.row);
+            if (r && r.success) {
+              this.caravanGovernor.reportProgress(unit.id);
+              this.gameEngine.log('ai', `Caravan move — ${civ.name} caravan(${unit.id}) → (${plan.step.col},${plan.step.row}) towards (${plan.target.col},${plan.target.row})${plan.risky ? ' [risky route]' : ''}`, {
+                civilizationId, action: 'move', unitId: unit.id, unitType: 'caravan',
+                targetCol: plan.step.col, targetRow: plan.step.row, risky: plan.risky,
+              });
+            } else {
+              // The step failed (something moved into it): let the governor's
+              // patience retire the route instead of retrying it forever.
+              this.caravanGovernor.reportMoveFailure(unit.id);
+              this.gameEngine.roundManager?.clearUnitPath(unit.id);
+              this.gameEngine.skipUnit(unit.id);
+            }
+            break;
+          }
+          if (plan.kind === 'wait') {
+            this.gameEngine.skipUnit(unit.id);
+            break;
+          }
+          if (plan.kind === 'disband') {
+            this.gameEngine.log('ai', `Caravan disband — ${civ.name} caravan(${unit.id}) at (${unit.col},${unit.row}): ${plan.reason}`, {
+              civilizationId, action: 'disband', unitId: unit.id, unitType: 'caravan', reason: plan.reason,
+            });
+            this.caravanGovernor.forget(unit.id);
+            this.gameEngine.disbandUnit(unit.id);
+            break;
+          }
+          // plan.kind === 'scout' — fall through: the generic civilian
+          // exploration below gives the scout-caravan its destination (the
+          // governor holds the single scout role for this civ).
         }
 
         const target = this.chooseAITarget(unit);
@@ -1645,12 +1781,11 @@ export class AIManager {
       .filter(u => u.civilizationId === civ.id && this.isCombatUnit(u)).length;
     const shortfallUnits = Math.max(0, sustainable - ownMilitary);
     if (shortfallUnits > 0) {
-      const unitUpkeepEach = Math.max(
-        UNIT_MAINTENANCE,
-        ...(this.gameEngine.units ?? [])
-          .filter(u => u.civilizationId === civ.id && !u.isDefeated && (u.maintenance ?? 0) > 0)
-          .map(u => u.maintenance ?? UNIT_MAINTENANCE),
-      );
+      // Priced the way the engine will bill it: the maintenance of the unit this
+      // civ fields (the cheapest credible answer, since we do not know which
+      // unit the queue will pick).
+      const unitUpkeepEach = this.gameEngine.economicManager?.unitMaintenanceOf?.(civ)
+        ?? Math.max(UNIT_MAINTENANCE, 1);
       demands.push({
         kind: 'army',
         label: `${shortfallUnits} more combat unit(s) up to its sustainable army`,
@@ -3624,20 +3759,11 @@ export class AIManager {
         }
       }
 
-    // ── Caravan delivery: send to a friendly city to establish a trade route ──
-    // Civ1: Caravans are consumed when they deliver to a city, establishing a
-    // permanent trade route. The AI sends them to the nearest friendly city
-    // with fewer than 3 trade routes. This is a peacetime economy boost.
-    if (unit.type === 'caravan') {
-      const target = this.chooseCaravanDeliveryTarget(unit);
-      if (target) {
-        debugLog(`[AI-CARAVAN] Caravan ${unit.id} heading to city at (${target.col},${target.row}) for trade route`);
-        return target;
-      }
-      // No suitable city — skip the Caravan (it sits and waits).
-      this.gameEngine.skipUnit(unit.id);
-      return null;
-    }
+    // ── Caravan delivery is governed by the CaravanGovernor (see the
+    //    interception block in the unit loop): sticky missions, risk-aware
+    //    routing, one scout at a time, last-resort disband. A caravan that
+    //    reaches this point is on SCOUT duty and falls through to the generic
+    //    exploration at the bottom of this function.
 
     // Diplomats head to a known foreign city to open negotiations (Civ I).
     if (unit.type === 'diplomat') {
@@ -3908,7 +4034,10 @@ export class AIManager {
       (col, row) => this.gameEngine.squareGrid!.getNeighbors(col, row),
       (col, row) => this.gameEngine.getUnitAt(col, row)
     );
-    if (enemy) {
+    // 1) Nearby hostile unit. Scouts flank it and a SCOUTING CARAVAN routes
+    //    around it (it is cargo, not a fighter — charging the enemy would
+    //    throw the delivery away); other units take it on.
+    if (enemy && unit.type !== 'caravan') {
       // Scouts are intelligence units, not disposable melee units.  When a
       // hostile unit blocks the direct route, choose a passable waypoint on
       // either side of it.  This creates a real flanking/scouting flow: the
@@ -4034,69 +4163,6 @@ export class AIManager {
 
   // ─── AI diplomat units (Civ I: diplomats move to an enemy city/unit to
   //      initiate diplomacy) ───────────────────────────────────────────
-
-  /**
-   * Pick a destination for an AI Caravan: the nearest friendly city with fewer
-   * than 3 trade routes. When the Caravan arrives and moves onto that city's
-   * tile, GameEngine.moveUnit automatically calls establishTradeRoute (the
-   * existing Civ1 delivery mechanic), consuming the Caravan and creating a
-   * permanent trade route.
-   */
-  private chooseCaravanDeliveryTarget(unit: Unit): { col: number; row: number } | null {
-    const civId = unit.civilizationId;
-    const squareDistance = (c1: number, r1: number, c2: number, r2: number) =>
-      this.gameEngine.squareGrid?.squareDistance(c1, r1, c2, r2) ?? Infinity;
-    const home = this.gameEngine.getCaravanHomeCity?.(unit) ?? null;
-    const homePop = home?.population ?? 1;
-    const dm = this.gameEngine.diplomacyManager;
-
-    let best: { col: number; row: number; value: number } | null = null;
-    const consider = (city: City, foreign: boolean): void => {
-      if (city.civilizationId === civId && city.col === unit.col && city.row === unit.row) return;
-      if ((city.tradeRoutes?.length ?? 0) >= MAX_CARAVAN_TRADE_ROUTES) return;
-      const dist = Math.max(1, squareDistance(unit.col, unit.row, city.col, city.row));
-      const value = (homePop + (city.population ?? 1)) * (1 + dist / 4) * (foreign ? 2 : 1);
-      if (!best || value > best.value) {
-        best = { col: city.col, row: city.row, value };
-      }
-    };
-
-    // Domestic routes first — always legal, even at war.
-    for (const city of this.gameEngine.cities) {
-      if (city.civilizationId === civId) consider(city, false);
-    }
-
-    // All KNOWN foreign cities at peace are worth double. "Known" means the
-    // tile is currently explored/visible OR our scouts recorded the city in
-    // `enemyLocations` — a recorded sighting stays knowledge even when the
-    // fog has rolled back over the tile, which is exactly how scouts report.
-    const storage = this.gameEngine.getPlayerStorage?.(civId);
-    const scoutedCities = new Set<string>();
-    if (storage?.enemyLocations instanceof Map) {
-      for (const [enemyCivId, locations] of storage.enemyLocations.entries()) {
-        if (enemyCivId === civId) continue;
-        for (const loc of locations) {
-          if (loc.type === 'city') scoutedCities.add(`${loc.col},${loc.row}`);
-        }
-      }
-    }
-    const isVisible = (col: number, row: number): boolean => {
-      if (storage) {
-        const idx = row * this.gameEngine.map!.width + col;
-        return storage.visibility[idx] || storage.explored[idx] || false;
-      }
-      const tile = this.gameEngine.getTileAt(col, row);
-      return tile && (tile.visible || tile.explored);
-    };
-    for (const city of this.gameEngine.cities) {
-      if (city.civilizationId === civId) continue;
-      if (dm?.isAtWar?.(civId, city.civilizationId)) continue;
-      if (!isVisible(city.col, city.row) && !scoutedCities.has(`${city.col},${city.row}`)) continue;
-      consider(city, true);
-    }
-
-    return best ? { col: best.col, row: best.row } : null;
-  }
 
   /**
    * Pick a destination for an AI diplomat: the nearest foreign city the civ
@@ -4333,8 +4399,10 @@ export class AIManager {
    * its name stops building roads at exactly the moment it needs them most.
    */
   citiesNeedBuildOut(civId: number): boolean {
+    // Measured on what the cities WORK, not on their whole area — see
+    // `improvedFractionOfWorkedArea` for why the area version under-fired.
     return this.ownCities(civId).some(
-      (c: City) => this.improvedFractionOfCityArea(c) < CITY_AREA_IMPROVED_TARGET,
+      (c: City) => this.improvedFractionOfWorkedArea(c) < CITY_AREA_IMPROVED_TARGET,
     );
   }
 
@@ -4484,6 +4552,52 @@ export class AIManager {
   }
 
   /**
+   * The tiles this city actually WORKS, as coordinates.
+   *
+   * `workingTiles` is the engine's own set of "col,row" keys. Cities whose tiles
+   * have never been recomputed — and every lightweight test double — have none,
+   * and fall back to the whole workable area, which is the honest default for
+   * "the tiles this city could be working".
+   */
+  private workedTilesOf(city: City): Array<{ col: number; row: number }> {
+    const working = city.workingTiles;
+    if (working instanceof Set && working.size > 0) {
+      const out: Array<{ col: number; row: number }> = [];
+      for (const key of working) {
+        const sep = key.indexOf(',');
+        if (sep === -1) continue;
+        const col = Number(key.slice(0, sep));
+        const row = Number(key.slice(sep + 1));
+        if (Number.isFinite(col) && Number.isFinite(row)) out.push({ col, row });
+      }
+      if (out.length > 0) return out;
+    }
+    return this.cityAreaTiles(city);
+  }
+
+  /**
+   * How much of what this city WORKS carries an improvement, 0..1.
+   *
+   * This is the number the build-out mandate is measured on, and it used to be
+   * measured on the whole AREA instead — which is why the programme under-fired:
+   * a city whose ring was half covered in MINES on hills nobody worked counted
+   * as fully built out, so no settler was ever sent to pave the fields the
+   * citizens actually stand on, and the city's commerce stayed at the 2-trade
+   * city-centre floor forever. Raw tiles a city works cannot pay for the citizen
+   * standing on them; raw tiles nobody works are decoration.
+   */
+  private improvedFractionOfWorkedArea(city: City): number {
+    const tiles = this.workedTilesOf(city);
+    if (tiles.length === 0) return 1;
+    let improved = 0;
+    for (const { col, row } of tiles) {
+      const tile = this.gameEngine.getTileAt(col, row);
+      if (tile?.improvement) improved++;
+    }
+    return improved / tiles.length;
+  }
+
+  /**
    * Whether a city needs food: a negative surplus, or one about to run out.
    * Uses the engine's own `cityFoodBalance`, which already charges this
    * settler's own upkeep, so a settler standing in the city counts itself.
@@ -4544,8 +4658,14 @@ export class AIManager {
     let bestIrrigationDist = Infinity;
     let bestOutside: { col: number; row: number } | null = null;
     let bestOutsideDist = Infinity;
-    let bestRoad: { col: number; row: number } | null = null;
-    let bestRoadScore = -Infinity;
+    // Roads are tracked in two tiers: on a tile the city WORKS, and anywhere in
+    // the area. The first is the best investment in the game; the second is a
+    // decent one. Keeping them apart is what lets "roads on worked tiles first"
+    // be a rule rather than a tie-break.
+    let bestWorkedRoad: { col: number; row: number } | null = null;
+    let bestWorkedRoadScore = -Infinity;
+    let bestAnyRoad: { col: number; row: number } | null = null;
+    let bestAnyRoadScore = -Infinity;
 
     for (let dCol = -marginRadius; dCol <= marginRadius; dCol++) {
       for (let dRow = -marginRadius; dRow <= marginRadius; dRow++) {
@@ -4587,13 +4707,19 @@ export class AIManager {
           bestIrrigation = { col, row };
         }
         if (roadTerrains.includes(terrain)) {
-          // A tile the city already works is worth twice one it does not: the
-          // road's trade turns into happiness (or tax) on the very next turn.
+          // A tile the city already works is worth far more than one it does
+          // not: the road's trade turns into happiness (or tax) on the very
+          // next turn, and a road on every worked tile is the only thing that
+          // scales a city's commerce with its population.
           const worked = city.workingTiles?.has(`${col},${row}`) ?? false;
-          const score = (worked ? 100 : 0) - dist;
-          if (score > bestRoadScore) {
-            bestRoadScore = score;
-            bestRoad = { col, row };
+          const score = -dist;
+          if (score > bestAnyRoadScore) {
+            bestAnyRoadScore = score;
+            bestAnyRoad = { col, row };
+          }
+          if (worked && score > bestWorkedRoadScore) {
+            bestWorkedRoadScore = score;
+            bestWorkedRoad = { col, row };
           }
         }
         if (dist < bestInAreaDist) {
@@ -4603,7 +4729,17 @@ export class AIManager {
       }
     }
 
-    if (preferTrade && bestRoad) return bestRoad;
+    // ROAD FIRST on a tile the city works — 2 worker-turns for +1 commerce a
+    // turn forever, against a Marketplace's 80 shields and 1 gold for the same
+    // +1 trade. It is the best investment in the game, the only thing that
+    // scales a city's commerce with its population, and it is what makes the
+    // Commerce governor profile legal at all (`aiGovernorForCity` refuses to
+    // switch a city whose tiles produce no trade).
+    //
+    // Food still wins: a city that is about to starve irrigates, because food
+    // is what keeps the city alive and trade is only what keeps it content.
+    if (!needsFood && bestWorkedRoad) return bestWorkedRoad;
+    if (preferTrade && bestAnyRoad) return bestAnyRoad;
     // No margin tiles. The ±(CITY_RADIUS + OUTSIDE_IRRIGATION_FIELDS) ring was
     // returned for food-short cities so a ditch could be chained outward, but
     // the settler that walked out there is judged by a DIFFERENT rule on
@@ -4612,7 +4748,7 @@ export class AIManager {
     // settler standing on a margin tile it had been told to improve and being
     // told it could not. Candidates stay inside the city's radius, so both ends
     // of the hand-off agree.
-    return bestIrrigation ?? bestInArea ?? bestOutside;
+    return bestIrrigation ?? bestWorkedRoad ?? bestAnyRoad ?? bestInArea ?? bestOutside;
   }
 
   /**
@@ -4694,15 +4830,17 @@ export class AIManager {
   }
 
   /**
-   * Whether a city's workable area still holds an unimproved tile that a road
+   * Whether a city's worked fields still hold an unimproved tile that a road
    * would turn into commerce. Roads are the ONLY thing that raises trade, and
    * trade is what the luxury rate converts into happiness — so a city without
-   * roads around it cannot pay for its own citizens, however much food it has.
+   * roads on its worked tiles cannot pay for its own citizens, however much food
+   * it has. Scans the WORKED tiles, not the area: a mine on an unworked hill is
+   * not this city's build-out.
    */
   private hasUnimprovedRoadTile(city: City): boolean {
     const roadDef = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
     const roadTerrains = roadDef?.tradeBonusTerrains ?? [];
-    for (const { col, row } of this.cityAreaTiles(city)) {
+    for (const { col, row } of this.workedTilesOf(city)) {
       const tile = this.gameEngine.getTileAt(col, row);
       if (!tile || tile.improvement) continue;
       const terrain = tile.terrain || tile.type || '';
@@ -4718,13 +4856,46 @@ export class AIManager {
    * converts into happiness — and the moment trade catches up the city goes
    * back to farming. Self-limiting: road until trade ≥ unhappiness, irrigate
    * after.
+   *
+   * A city whose worked tiles produce **no trade at all** needs roads for a
+   * reason that has nothing to do with happiness: a road on a worked tile is the
+   * only thing that scales a city's commerce with its population, and without one
+   * the city's income is the 2-trade city-centre floor forever. Gating the road
+   * on unhappiness alone meant that as soon as the fractional tax income and the
+   * new happiness buildings kept every city content, the road programme stopped
+   * — and the Commerce governor profile (which requires a trade grid) could never
+   * become legal.
    */
   private cityNeedsCommerce(city: City, civ: Civilization | undefined): boolean {
     if (!civ) return false;
+    if (!this.cityHasTradeGrid(city)) return true;
     const happy = this.gameEngine.economicManager?.cityHappiness?.(city, civ);
     if (!happy) return false;
     if (!happy.disorder && happy.unhappiness < happy.happiness) return false;
     return (city.yields?.trade ?? 0) < happy.unhappiness;
+  }
+
+  /**
+   * Whether enough of this city's WORKED tiles produce trade for the Commerce
+   * governor profile to be worth applying — the same test
+   * `AICityManager.aiGovernorForCity` makes, so a road programme and the governor
+   * it is preparing the city for can never disagree about what "built out" means.
+   */
+  private cityHasTradeGrid(city: City): boolean {
+    const worked = city.workingTiles;
+    if (!(worked instanceof Set) || worked.size <= 1) return false;
+    let tradeTiles = 0;
+    let total = 0;
+    for (const key of worked) {
+      const sep = key.indexOf(',');
+      if (sep === -1) continue;
+      const tile = this.gameEngine.getTileAt(Number(key.slice(0, sep)), Number(key.slice(sep + 1)));
+      if (!tile) continue;
+      total++;
+      if ((this.gameEngine.economicManager?.cityTileYields?.(tile)?.trade ?? 0) > 0) tradeTiles++;
+    }
+    if (total === 0) return false;
+    return tradeTiles / total >= AI_COMMERCE_MIN_TRADE_TILE_SHARE;
   }
 
   /**
@@ -4839,15 +5010,30 @@ export class AIManager {
     // another +1 food, because food does not convert into happiness. A road on
     // a trade terrain does — and the moment trade catches up with unhappiness
     // `cityNeedsCommerce` turns itself off and farming resumes.
+    //
+    // The second trigger is a city whose worked tiles produce no trade at all:
+    // its commerce is the 2-trade city-centre floor forever, which is what the
+    // Commerce governor profile needs before it will apply and what scales a
+    // city's income with its population. It is deliberately narrower — the city
+    // must still be UNHAPPY (a content city has nothing to buy) and must not be
+    // short of food (starvation kills a city; commerce only decorates it).
     const roadProps = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
     const roadable =
       (roadProps?.tradeBonusTerrains ?? []).includes(terrain) && !tile.improvement;
-    if (
-      nearestCity &&
-      this.cityNeedsCommerce(nearestCity, civ) &&
-      roadable &&
-      this.gameEngine.canBuildImprovement(unit.id, 'road')
-    ) {
+    const workedByCity = this.gameEngine.cities.some((c: City) =>
+      c.civilizationId === civId && c.workingTiles?.has(`${unit.col},${unit.row}`)
+    );
+    const happy = nearestCity
+      ? this.gameEngine.economicManager?.cityHappiness?.(nearestCity, civ)
+      : null;
+    const cityIsUnhappy = !!happy && (happy.disorder || happy.unhappiness >= happy.happiness);
+    const wantsRoad =
+      roadable
+      && this.gameEngine.canBuildImprovement(unit.id, 'road')
+      && cityIsUnhappy
+      && (this.cityNeedsCommerce(nearestCity, civ)
+        || (!prioritizeFood && !this.cityHasTradeGrid(nearestCity)));
+    if (nearestCity && wantsRoad) {
       return 'road';
     }
 
@@ -4873,11 +5059,9 @@ export class AIManager {
     // Civ1 income strategy: a road on a tile a city WORKS grants +1 trade on
     // grassland/plains/desert (IMPROVEMENT_PROPERTIES.road.tradeBonusTerrains).
     // More trade → more tax + science, so building roads on worked tiles is a
-    // direct income boost.
+    // direct income boost. (`workedByCity` is computed above, with the early
+    // commerce-first road branch.)
     const roadDef = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
-    const workedByCity = this.gameEngine.cities.some((c: City) =>
-      c.civilizationId === civId && c.workingTiles?.has(`${unit.col},${unit.row}`)
-    );
     // Skip tiles that already carry a road (canonical `tile.improvement` or
     // legacy `tile.road`/`tile.hasRoad` flags from older saves).
     const hasRoad = tile.improvement === IMPROVEMENT_TYPES.ROAD
@@ -7285,6 +7469,8 @@ export class AIManager {
     fishingRelevance?: number;
     /** Real turns to finish a tech, from the engine's research model. */
     turnsToResearch?: (techId: string) => number;
+    /** How worthwhile the Caravan line is to this civ right now. */
+    caravanRelevance?: number;
   } {
     const cities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === civilizationId) || [];
     const civ = this.gameEngine.civilizations?.[civilizationId];
@@ -7356,6 +7542,16 @@ export class AIManager {
     // civ actually unlocks the boat instead of never researching it.
     const fishingRelevance = fishingRelevanceForCiv(this.gameEngine, civilizationId);
 
+    // How worthwhile is the Caravan line right now? A city with free route slots
+    // and a population worth trading from is all it takes — a single-city civ's
+    // routes are foreign ones, which are the valuable kind and exactly the reason
+    // to research the tech. This is the same hook fishing uses for Masonry.
+    const caravanRelevance = caravanRelevanceForCiv(
+      this.gameEngine.cities ?? [],
+      civilizationId,
+      this.gameEngine.isCivAtWar?.(civilizationId) !== true,
+    );
+
     // Real turns per technology, straight from the research model: the effective
     // cost (map size × difficulty × how far ahead this civ is) and the beakers
     // that survive the known-civ / prerequisite modifiers. `estimatedTurns`
@@ -7397,6 +7593,7 @@ export class AIManager {
       fishingRelevance,
       startsOnIsland,
       turnsToResearch,
+      caravanRelevance,
     };
   }
 

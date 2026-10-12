@@ -13,6 +13,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
+import { CaravanGovernor } from '@/game/engine/AI/CaravanGovernor';
 import { SquareGrid } from '@/game/SquareGrid';
 import { TERRAIN_TYPES } from '@/data/TerrainConstants';
 import type { City, Unit } from '../../types/game';
@@ -133,11 +134,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('AI caravan delivery target', () => {
-  const target = (e: GameEngine, unit: Unit): { col: number; row: number } | null =>
-    (e.aiManager as unknown as {
-      chooseCaravanDeliveryTarget: (u: Unit) => { col: number; row: number } | null;
-    }).chooseCaravanDeliveryTarget(unit);
+describe('AI caravan delivery target (Caravan Governor)', () => {
+  // The governor owns target selection now (`pickDeliveryTarget`): a fresh
+  // governor per call reproduces the old chooser's one-shot semantics —
+  // best reachable value wins, Civ1 eligibility rules apply.
+  const target = (e: GameEngine, unit: Unit): { col: number; row: number } | null => {
+    const plan = new CaravanGovernor().planUnit(unit, e, 1);
+    return plan.kind === 'move' ? { col: plan.target.col, row: plan.target.row } : null;
+  };
 
   it('prefers a valuable foreign city at peace over a closer domestic one', () => {
     const e = makeEngine();

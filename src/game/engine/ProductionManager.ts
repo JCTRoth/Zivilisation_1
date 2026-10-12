@@ -3,6 +3,7 @@
  */
 
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
+import { PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { getWonder, isWonderId } from '@/data/WonderData';
 import type { City, Civilization, Unit } from '../../../types/game';
@@ -397,7 +398,9 @@ export class ProductionManager {
       if (!civ || !civ.resources) return { success: false, reason: 'civ_not_found' };
 
       const baseCost: number = item.cost || (item.shields || 0);
-      const cost: number = item.type === 'unit' ? baseCost * 2 : baseCost;
+      // One exchange rate, shared with `rushCityProduction` and the UI. Buying a
+      // building used to cost half what rushing it did (1 gold per shield vs 2).
+      const cost: number = baseCost * PURCHASE_GOLD_PER_SHIELD;
       if ((civ.resources.gold || 0) < cost) return { success: false, reason: 'insufficient_gold' };
 
       // Deduct gold

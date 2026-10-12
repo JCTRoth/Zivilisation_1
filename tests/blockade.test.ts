@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
-import { CITIZEN_FOOD_DEMAND_PER_CITIZEN } from '@/game/engine/EconomicManager';
+import { citizenFoodDemand } from '@/game/engine/EconomicManager';
 import type { City, Unit } from '../types/game';
 import { makeGridEngine, world } from './helpers/world';
 
@@ -50,9 +50,10 @@ function occupy(engine: GameEngine, col: number, row: number, civilizationId = 1
 }
 
 describe('the Civ 1 growth rule', () => {
-  it('charges every citizen a flat 2 food, at every city size', () => {
-    expect(CITIZEN_FOOD_DEMAND_PER_CITIZEN).toBe(2);
-    for (const population of [1, 4, 5, 6, 12, 30]) {
+  it('charges a flat 2 food per citizen up to size 5', () => {
+    // Civ 1's rule: below the ramp the demand is flat, so a young city's food
+    // bill is exactly what it always was.
+    for (const population of [1, 4, 5]) {
       const civ = { ...engine0().civilizations[0] };
       const balance = engine0().economicManager!.cityFoodBalance(
         cityOf(population),
@@ -62,13 +63,20 @@ describe('the Civ 1 growth rule', () => {
     }
   });
 
-  it('has no appetite ramp above size 5', () => {
-    // A size-6 citizen eats exactly what a size-5 one does. This is the
-    // explicit guard against reintroducing a per-size surcharge.
+  it('adds an appetite ramp above size 5', () => {
+    // The documented Civ1 rule, which the engine had flattened away: a size-6
+    // citizen eats 2.2, a size-12 one 3.4. With a flat demand one tile per
+    // citizen yields a constant surplus forever, so growth is free once a city
+    // is fed at all and a city at size 30 costs nothing extra to keep.
+    expect(citizenFoodDemand(1)).toBe(2);
+    expect(citizenFoodDemand(5)).toBe(2);
+    expect(citizenFoodDemand(6)).toBeCloseTo(2.2, 5);
+    expect(citizenFoodDemand(12)).toBeCloseTo(3.4, 5);
+
     const city = cityOf(6);
     const civ = engine0().civilizations[0] as never;
     expect(engine0().economicManager!.cityFoodBalance(city, civ).citizenConsumption)
-      .toBe(12);
+      .toBeCloseTo(13.2, 5);
   });
 
   it('grows at (population + 1) x 10, which is Civ 1', () => {
@@ -267,6 +275,6 @@ describe('the blockade is what makes a city starve', () => {
     const civ = engine.civilizations[0];
     const balance = econ.cityFoodBalance(city, civ);
     expect(balance.citizenConsumption)
-      .toBe(city.population * CITIZEN_FOOD_DEMAND_PER_CITIZEN);
+      .toBeCloseTo(city.population * citizenFoodDemand(city.population), 5);
   });
 });

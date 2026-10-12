@@ -4,6 +4,7 @@ import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
 import { useTranslation } from '@/i18n/useTranslation';
 import { tTechName, tWonderName } from '@/i18n/dataNames';
+import { localizedWonder } from '@/i18n/wonderLore';
 import { centerCameraOnTile, getGameViewport } from '@/utils/CameraUtils';
 import {
   WONDERS,
@@ -191,7 +192,7 @@ function WonderCardItem({
           )}
         </span>
 
-        <span className="wonder-card__effect">{wonder.shortEffect}</span>
+        <span className="wonder-card__effect">{localizedWonder(wonder).shortEffect}</span>
 
         {!compact && (
         <span className="wonder-card__meta">
@@ -526,7 +527,7 @@ const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onH
           {wonder.icon} {tWonderName(wonder.id, wonder.name)}
         </>
       }
-      lede={<>{wonder.fullName} — {wonder.shortEffect}</>}
+      lede={<>{wonder.fullName} — {localizedWonder(wonder).shortEffect}</>}
       artLayout="cover"
       artSrc={wonderArtSrc(wonder)}
       artAlt={`${tWonderName(wonder.id, wonder.name)} — ${wonder.fullName}`}
@@ -609,26 +610,26 @@ const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onH
             ⚠ {formatTechName(wonder.obsoleteBy)} {t('wonders.obsoleteCallout')}
           </div>
         )}
-        <p className="gm-prose">{wonder.effectText}</p>
+        <p className="gm-prose">{localizedWonder(wonder).effectText}</p>
       </section>
 
       <section className="gm-section">
         <h3 className="gm-section-title">{t('wonders.history')}</h3>
-        <p className="gm-prose">{wonder.flavor}</p>
+        <p className="gm-prose">{localizedWonder(wonder).flavor}</p>
       </section>
 
-      {wonder.about && (
+      {localizedWonder(wonder).about && (
         <section className="gm-section">
           <h3 className="gm-section-title">{t('wonders.trivia')}</h3>
-          <p className="gm-prose">{wonder.about}</p>
+          <p className="gm-prose">{localizedWonder(wonder).about}</p>
         </section>
       )}
 
-      {wonder.facts.length > 0 && (
+      {localizedWonder(wonder).facts.length > 0 && (
         <section className="gm-section">
           <h3 className="gm-section-title">{t('wonders.someFacts')}</h3>
           <ul className="gm-list wonder-entry-facts">
-            {wonder.facts.map((fact, i) => (
+            {localizedWonder(wonder).facts.map((fact, i) => (
               <li key={i}>{fact}</li>
             ))}
           </ul>

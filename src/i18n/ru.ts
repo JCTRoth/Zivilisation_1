@@ -125,6 +125,11 @@ export const ru: PartialTranslationDict = {
   'confirm.eyebrowInfo': 'Ожидаем вашего слова',
   'confirm.artOpenRoad': 'открытая дорога',
   'confirm.artRedAlert': 'Красная тревога!',
+  'confirm.newGame.title': 'Начать новую игру?',
+  'confirm.newGame.message': 'Вы уверены, что хотите завершить текущую игру и начать заново?',
+  'confirm.newGame.detail': 'Весь прогресс будет потерян.',
+  'confirm.quit.title': 'Выйти в главное меню?',
+  'confirm.quit.message': 'Вы уверены, что хотите завершить текущую игру?',
 
   // ── Индикатор исследований ─────────────────────────────────────────────
   'research.complete': 'Исследование завершено',
@@ -1752,4 +1757,8 @@ export const ru: PartialTranslationDict = {
   'village.fallback.scoutsTitle': 'Донесение разведчиков',
   'village.fallback.scoutsBody':
     'Поселение разрушено, взять нечего. Не каждая руина хранит свои тайны — обыщите следующую, прежде чем ветер заметет следы.',
+
+  // ── Ограничение караванов ──────────────────────────────────────────────
+  'prod.caravanCap': 'Макс. 3 каравана',
+  'prod.caravanCapHint': 'В городе одновременно может находиться не более 3 его караванов в пути.',
 };

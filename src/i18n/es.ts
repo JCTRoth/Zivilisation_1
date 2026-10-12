@@ -125,6 +125,11 @@ export const es: PartialTranslationDict = {
   'confirm.eyebrowInfo': 'A la espera de su palabra',
   'confirm.artOpenRoad': 'un camino abierto',
   'confirm.artRedAlert': '¡Alerta roja!',
+  'confirm.newGame.title': '¿Empezar una nueva partida?',
+  'confirm.newGame.message': '¿Estás seguro de que quieres terminar la partida actual y empezar de nuevo?',
+  'confirm.newGame.detail': 'Todo el progreso se perderá.',
+  'confirm.quit.title': '¿Salir al menú principal?',
+  'confirm.quit.message': '¿Estás seguro de que quieres terminar la partida actual?',
 
   // ── Indicador de investigación ─────────────────────────────────────────
   'research.complete': 'Investigación completada',
@@ -1754,4 +1759,8 @@ export const es: PartialTranslationDict = {
   'village.fallback.scoutsTitle': 'Lo que informan sus exploradores',
   'village.fallback.scoutsBody':
     'El asentamiento está destruido y no hay nada que obtener. No toda ruina guarda sus secretos — registre la siguiente antes de que el viento tape las huellas.',
+
+  // ── Límite de caravanas ────────────────────────────────────────────────
+  'prod.caravanCap': 'Máx. 3 caravanas',
+  'prod.caravanCapHint': 'Una ciudad puede tener como máximo 3 de sus caravanas en tránsito al mismo tiempo.',
 };

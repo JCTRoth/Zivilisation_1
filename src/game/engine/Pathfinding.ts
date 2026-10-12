@@ -189,7 +189,14 @@ export class Pathfinding {
     getUnitAt?: (col: number, row: number) => { civilizationId: number } | null,
     friendlyCivId?: number,
     getCityAt?: (col: number, row: number) => { civilizationId: number } | null,
-    blockedTiles?: Set<string>
+    blockedTiles?: Set<string>,
+    /**
+     * Optional extra cost per entered tile (added to the movement cost). Used
+     * by callers that prefer SOME routes over equally legal ones — e.g. the
+     * Caravan Governor's "safer alternate route" search adds a penalty to
+     * enemy-adjacent tiles. Purely advisory: it never makes a tile impassable.
+     */
+    extraCost?: (col: number, row: number) => number
   ): PathResult {
     const openSet: PathNode[] = [];
     const closedSet = new Set<string>();
@@ -307,6 +314,13 @@ export class Pathfinding {
           if (city && city.civilizationId !== friendlyCivId) {
             continue; // Enemy city — civilians path around it
           }
+        }
+
+        // Advisory route preference (see `extraCost`): raises the price of a
+        // legal tile so equally legal alternatives win ties, e.g. tiles next
+        // to enemy units during the Caravan Governor's safer-route search.
+        if (extraCost) {
+          cost += extraCost(col, row);
         }
 
         const g = current.g + cost;

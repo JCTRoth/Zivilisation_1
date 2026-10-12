@@ -29,7 +29,7 @@ import { BUILDING_TYPES } from '@/data/BuildingConstants';
 import { isWonderId, wonderGroupMembers } from '@/data/WonderData';
 import { UNIT_UPGRADE_PATHS } from '@/data/UnitConstants';
 import { startingRankForCity } from './UnitRankSystem';
-import { CITIZEN_FOOD_DEMAND_PER_CITIZEN, type ProcessTurnResult } from './EconomicManager';
+import { citizenFoodDemand, AQUEDUCT_HOUSING_CAP, type ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 import { awaitPendingAnimations } from '../rendering/GlideAnimation';
@@ -1232,16 +1232,15 @@ export class TurnManager {
   private processCityGrowth(city: City, inDisorder: boolean = false): void {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
 
-    // Centralized food math: every citizen consumes a flat
-    // CITIZEN_FOOD_DEMAND_PER_CITIZEN food (Civ 1's 2, at any city size) and
-    // owned settlers consume one (two under Republic/Democracy). AI city
-    // management uses the same helper so it can never mis-plan famine
-    // prevention, and the fallback below charges the same shared rate rather
-    // than re-deriving one.
+    // Centralized food math: each citizen consumes `citizenFoodDemand(size)`
+    // (flat 2 up to size 5, then +0.2 per citizen per size) and owned settlers
+    // consume one (two under Republic/Democracy). AI city management uses the
+    // same helper so it can never mis-plan famine prevention, and the fallback
+    // below charges the same shared rate rather than re-deriving one.
     const balance = this.gameEngine.economicManager?.cityFoodBalance(city, civ);
     const netFood = balance?.surplus
       ?? ((city.yields?.food ?? 0)
-        - (city.population ?? 1) * CITIZEN_FOOD_DEMAND_PER_CITIZEN);
+        - (city.population ?? 1) * citizenFoodDemand(city.population ?? 1));
     city.foodStored = (city.foodStored ?? 0) + netFood;
 
     // Growth threshold: (population + 1) × 10 — Civ1: size-1 needs 20 food,
@@ -1275,16 +1274,38 @@ export class TurnManager {
         });
       }
     } else if (!inDisorder && city.foodStored >= city.foodNeeded) {
-      // Growth only happens when the city is NOT in disorder.
-      const storedBeforeGrowth = city.foodStored;
-      city.population++;
-      const hasGranary = city.buildings?.includes(BUILDING_TYPES.GRANARY) ?? false;
-      // Civ1 granary: the food box is only HALF emptied on growth; without a
-      // granary the whole box empties (excess food beyond the threshold is
-      // lost).
-      city.foodStored = hasGranary ? Math.floor(storedBeforeGrowth / 2) : 0;
-      city.foodNeeded = (city.population + 1) * 10;
-      debugLog(`[TurnManager] City ${city.name} grew to population ${city.population}`);
+      // Growth only happens when the city is NOT in disorder — and only up to
+      // the housing the city's buildings allow. An Aqueduct raises the cap to
+      // AQUEDUCT_HOUSING_CAP; without one the city stops there. The food keeps
+      // banking so the growth lands the turn the Aqueduct completes, and the
+      // player is told why (the side panel shows the cap).
+      const hasAqueduct = city.buildings?.includes(BUILDING_TYPES.AQUEDUCT) ?? false;
+      // The Aqueduct gates city size at 10: without one the city stops there,
+      // with one there is no ceiling. Before this the Aqueduct's declared
+      // `health: 2` and `growthBonus: 1` were both inert — a 120-shield, 1-gold
+      // building that did literally nothing the engine could see.
+      const housingCap: number = hasAqueduct ? Number.POSITIVE_INFINITY : AQUEDUCT_HOUSING_CAP;
+      const atHousingCap = (city.population ?? 1) >= housingCap;
+      if (atHousingCap) {
+        // Keep the box full but stop growing; do not starve either.
+        city.foodStored = city.foodNeeded;
+        this.gameEngine.onStateChange?.('CITY_GROWTH_BLOCKED', {
+          city,
+          population: city.population ?? 1,
+          housingCap,
+          needsAqueduct: !hasAqueduct,
+        });
+      } else {
+        const storedBeforeGrowth = city.foodStored;
+        city.population++;
+        const hasGranary = city.buildings?.includes(BUILDING_TYPES.GRANARY) ?? false;
+        // Civ1 granary: the food box is only HALF emptied on growth; without a
+        // granary the whole box empties (excess food beyond the threshold is
+        // lost).
+        city.foodStored = hasGranary ? Math.floor(storedBeforeGrowth / 2) : 0;
+        city.foodNeeded = (city.population + 1) * 10;
+        debugLog(`[TurnManager] City ${city.name} grew to population ${city.population}`);
+      }
     }
 
     // Fisher Boat overflow: a delivered catch that did not fully fit into the

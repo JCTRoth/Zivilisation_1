@@ -184,7 +184,7 @@ interface DisorderNotice {
 /**
  * A permanent Civ1 trade route connecting this city to another city.
  * Established when a Caravan delivers; adds per-turn trade to the city. A city
- * holds at most MAX_TRADE_ROUTES (3); a better new route replaces the weakest.
+ * holds at most MAX_TRADE_ROUTES (5); a better new route replaces the weakest.
  */
 export interface TradeRoute {
   /** Id of the OTHER city this route connects to. */
@@ -625,6 +625,24 @@ export interface Civilization {
    * early turns are not wasted.
    */
   bankedScience?: number;
+  /**
+   * Treasury owed back from forgiven bankruptcies.
+   *
+   * Booked by `EconomicManager.forgiveDeficit` and repaid out of income. Before
+   * it existed the deficit was reset to zero for free, which is how a civ with
+   * no cities and no tax income finished a 400-round game holding thousands of
+   * gold. Not part of `resources.gold` — it is a liability, not money.
+   */
+  debt?: number;
+  /**
+   * Unbanked fraction of this turn's tax income (see
+   * `EconomicManager.taxGoldWithCarry`). Whole gold is banked; the remainder is
+   * carried so a 0.4-gold/turn income is worth 1 gold every second turn rather
+   * than nothing at all.
+   */
+  goldFractionCarry?: number;
+  /** Round the last bankruptcy forgiveness happened (progression export). */
+  lastForgivenRound?: number;
   technologies?: string[];
   score?: number;
   /** Consecutive rounds without war (score's peace bonus, reset on war). */

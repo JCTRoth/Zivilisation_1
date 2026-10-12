@@ -5,6 +5,27 @@ import { translateDynamic } from '../i18n';
 export const MAX_CARAVAN_TRADE_ROUTES = 3;
 
 /**
+ * ── Caravan governor (see `src/game/engine/AI/CaravanGovernor.ts`) ────────
+ * Caps and patience values for the module that governs Caravan behaviour.
+ */
+/** A city may have at most this many in-transit caravans of its own at once. */
+export const MAX_CARAVANS_PER_CITY = 3;
+/** How many caravans per civ may be on scout duty at the same time. */
+export const CARAVAN_MAX_SCOUTS = 1;
+/** Consecutive no-route turns before a delivery target is given up. */
+export const CARAVAN_BLOCK_PATIENCE = 3;
+/** Consecutive do-nothing turns before a useless caravan is disbanded (last resort). */
+export const CARAVAN_DISBAND_PATIENCE = 10;
+/**
+ * Enemy units adjacent to the route at which a delivery is called "risky".
+ * Caravans are defenceless — they TAKE the risk by default; the threshold only
+ * decides whether a *safer* alternate route is looked for.
+ */
+export const CARAVAN_RISK_THRESHOLD = 3;
+/** A* penalty per enemy-adjacent tile when hunting for a safer alternate route. */
+export const CARAVAN_SAFE_ROUTE_PENALTY = 8;
+
+/**
  * Island-size thresholds (in passable land tiles) for the AI's naval strategy:
  *  - a SMALL island makes the AI value a Harbor (and consider colonizing
  *    elsewhere),
@@ -294,3 +315,51 @@ export const SPECIALIST_YIELDS: Record<SpecialistType, SpecialistProperties> = {
   taxman:      { luxury: 0, gold: 2, science: 0, name: 'Taxman',      icon: '💸' },
   scientist:   { luxury: 0, gold: 0, science: 2, name: 'Scientist',   icon: '🥼' },
 };
+
+// ── City upkeep ─────────────────────────────────────────────────────────
+/**
+ * Cities each cost this much gold per turn beyond the first
+ * `FREE_CITY_SUPPORT`, paid through `EconomicManager.totalUpkeep`.
+ *
+ * Without it a city costs the empire nothing but the food and shields it takes
+ * to build, so gold has no relationship to empire size at all: measured tax
+ * income was 0.43 gold per civ per turn while a single warrior cost 1 — there is
+ * no way to pay for an empire, so the only gold sinks were rushes and the
+ * accidental liquidations. It also makes conquest *pay*, which is the other
+ * half of the problem: a rich civ was never worth attacking (plunder is capped
+ * at 100).
+ *
+ * Three free cities keeps the opening untouched; the bill starts with the
+ * fourth, which is where an empire normally stops being a single town.
+ */
+export const CITY_UPKEEP_PER_CITY = 1;
+
+/** Cities the empire supports for free before `CITY_UPKEEP_PER_CITY` starts. */
+export const FREE_CITY_SUPPORT = 3;
+
+/**
+ * How much a trade route to a civ we hold a trade agreement with is worth.
+ *
+ * The treaty's whole value lives here rather than in a flat stipend: the
+ * stipend used to add 2 gold a turn to BOTH sides for as long as the treaty
+ * stood, minted from nothing, so a civ with several treaties had a permanent
+ * income it did nothing to earn. Doubling the route's trade instead makes the
+ * treaty pay only where a caravan has actually been delivered.
+ */
+export const TREATY_ROUTE_TRADE_MULTIPLIER = 2;
+
+// ── Gold ↔ shields ───────────────────────────────────────────────────────
+
+/**
+ * Gold per production shield when a civ buys or rushes production outright.
+ *
+ * ONE rate for everything — units, buildings and wonders, whether bought from
+ * the production menu (`ProductionManager.purchaseCityProduction`) or rushed
+ * mid-build (`GameEngine.rushCityProduction`). It used to be two: 2 gold per
+ * shield for units and in-progress rushes, but 1 gold per shield for a
+ * building bought from the menu, so the same 120-shield Aqueduct cost 240 gold
+ * to rush and 120 to buy. Buying half-price is the kind of arbitrage that makes
+ * a player stop trusting the economy, and the AI (which only ever rushes) never
+ * even saw it.
+ */
+export const PURCHASE_GOLD_PER_SHIELD = 2;

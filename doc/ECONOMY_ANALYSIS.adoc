@@ -226,10 +226,17 @@ it changes what the AI believes is true.
 Ordered by impact ÷ effort. Items 1–3 are pure bug fixes with no balance change;
 4–9 are balance and need a `GAME_RULES.adoc` update in the same commit.
 
-Status when this document was written: **none of the nine below is implemented
-yet** — they change what the game *is*, so they are a design decision, not a bug
-fix, and each wants its own commit with a re-run of the batch baseline. The seven
-AI-arithmetic fixes in the previous section *are* implemented and tested.
+**Status: implemented** (2026-10-12) — every item is in the tree, in its own
+commit with the `GAME_RULES.adoc` update the repo's balance rule requires, and
+each pinned by `tests/economyRules.test.ts`. The AI-arithmetic fixes in the
+previous section are implemented and tested too.
+
+Two are **partial**, and the probe says so: **5** (roads on worked tiles) landed
+in the works chooser but city commerce is still the 2-trade floor because the
+works programme's entry condition under-reports, and **9** (trade routes) has
+the new payout, the 5-route cap and the research hook, but delivery is still
+zero because a caravan walks at movement 1 through occupied ground. See
+<<Measured effect>>.
 
 [cols="1,3,2,2", options="header"]
 |===
@@ -268,17 +275,50 @@ the food-floor rule in the tile assigner, the disband ordering (sole-defender
 first, then expensive), and the AI's rate controller (16–34 rate changes per 400
 rounds, no 0↔100 oscillation). Those measurably work.
 
+== Measured effect
+
+The probe (seed 7, `AI_VS_AI`, 4 civs) run before and after the nine changes.
+Baseline is the 111-round gold ledger from this analysis's method section; the
+"after" is the same harness at 150 rounds with everything implemented.
+
+[cols="2,1,1", options="header"]
+|===
+|Metric |Before |After
+
+|Tax income per civ per turn |0.43 (one civ: 0) |2.3
+|Tax income per city per turn |1.30 |2.3
+|City commerce |2.25 |2.0 (floor-constrained — see below)
+|Civs still holding cities |2 of 4 |3 of 4
+|Average city population |2.95 |3.63
+|City-rounds in disorder |4.8 % |0.0 %
+|Trade routes established |0 |0 — see below
+|Building sales (gold) |20–90 per civ |still the main liquidity source
+|Dead-civ end treasury |271 gold |0 gold, 60 gold of debt
+|Upkeep disbands |419 per 400-round game |18 per 150 rounds
+|===
+
+Two things the probe says still need work, stated plainly:
+
+* **City commerce is still the 2-trade floor.** De-quantizing the tax split
+  raised what each city *earns* from its commerce without raising the commerce
+  itself — that needs the road grid (substep 5) to actually land on worked tiles,
+  and the works programme's entry condition (`citiesNeedBuildOut`) still under-
+  reports on cities whose areas are technically "improved" by mines and ditches
+  the city never worked. The road branch now fires for a trade-grid-less unhappy
+  city, but a *content* city with no roads still farms.
+* **Trade routes are still zero.** The payout is now 96 gold for a size-3 pair 8
+  tiles apart and the research hook fires, but the delivery itself is the weak
+  link: a caravan walks at movement 1 through occupied ground and dies. The
+  ship-based auto-delivery in TODO.txt is the real fix and is not implemented.
+
 == Doc drift worth fixing in the same pass
 
-`doc/GAME_RULES.adoc` disagrees with the code in three economy-relevant places.
+`doc/GAME_RULES.adoc` disagreed with the code in three economy-relevant places.
 The README says the rules reference wins when it disagrees with the README — it
-should at least agree with the engine:
-
-* it documents the food appetite ramp `perCitizen = 2 + 0.2 × max(0, population −
-  5)`; the engine charges a flat 2;
-* it documents `CITY_MAINTENANCE` per city; no such upkeep exists;
-* it says a bankrupt human is forgiven to 0 gold; the engine forgives every civ to
-  `ABSOLUTE_MIN_GOLD = 8`.
+should at least agree with the engine. **All three are now fixed:** the appetite
+ramp is implemented and documented, the city-upkeep formula is documented where
+the phantom `CITY_MAINTENANCE` used to be, and bankruptcy is documented as a
+booked debt rather than a free reset.
 
 == Reproducing
 

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Button, Tab, Tabs } from 'react-bootstrap';
-import { UNIT_PROPS, BUILDING_PROPS } from '../../../utils/Constants';
+import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVANS_PER_CITY } from '../../../utils/Constants';
+import { PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
 import type { ProductionItem } from '../../../../types/game';
 import { useGameStore } from '@/stores/GameStore';
 import { useTranslation } from '@/i18n/useTranslation';
@@ -18,6 +19,7 @@ import {
   type WonderStatus,
 } from '@/data/WonderData';
 import { WonderArtwork } from './WonderArtwork';
+import { localizedWonder } from '@/i18n/wonderLore';
 import GameModal from './ModalShell';
 import { translateDynamic, type TranslationKey, type TranslationParams } from '@/i18n';
 import '@/styles/cityModal.css';
@@ -62,6 +64,8 @@ interface ProductionSelectionModalProps {
   productionPerTurn?: number;
   /** City the orders are for — names the hero and every hint line. */
   cityName?: string;
+  /** City id — enforces the "max 3 caravans per city" cap on this screen. */
+  cityId?: string;
 }
 
 /** True when the civ has researched every tech in the (possibly single) requirement. */
@@ -148,6 +152,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   cityBuildings = [],
   productionPerTurn = 0,
   cityName,
+  cityId,
 }) => {
   // Subscribes the modal to language changes: unit/building/wonder/tech names
   // below resolve through the dataNames helpers and repaint on a switch.
@@ -165,6 +170,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   //    classifier (the exact function the overview screen and tests use). ──
   const storeCities = useGameStore((s) => s.cities);
   const storeCivilizations = useGameStore((s) => s.civilizations);
+  const storeUnits = useGameStore((s) => s.units);
   const activePlayer = useGameStore((s) => s.gameState.activePlayer);
   const gameState = useGameStore((s) => s.gameState);
   const wonderStatuses = useMemo(
@@ -282,7 +288,9 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
     onHide();
   };
 
-  const getPurchaseCost = (type: string, cost: number): number => type === 'unit' ? cost * 2 : cost;
+  // One gold-per-shield rate for everything the menu can buy, matching
+  // `ProductionManager.purchaseCityProduction` and `GameEngine.rushCityProduction`.
+  const getPurchaseCost = (_type: string, cost: number): number => cost * PURCHASE_GOLD_PER_SHIELD;
   const canAfford = (type: string, cost: number): boolean => playerGold >= getPurchaseCost(type, cost);
   const getTurnsText = (cost: number): string => {
     if (cost <= 0 || productionPerTurn <= 0) return '—';
@@ -425,11 +433,20 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
       .map((key) => {
         const unit = UNIT_PROPS[key];
         const requires = (unit as { requires?: string | string[] }).requires;
+        // Max 3 in-transit caravans per home city (same cap the Caravan
+        // Governor enforces for the AI): at the cap the row is shown but
+        // greyed out with the cap as its reason.
+        const caravanCapped =
+          key === 'caravan' &&
+          !!cityId &&
+          storeUnits.filter((u) => u.type === 'caravan' && !(u as { isDefeated?: boolean }).isDefeated && (u as { homeCityId?: string }).homeCityId === cityId).length >=
+            MAX_CARAVANS_PER_CITY;
         return {
           key,
           name: unit.name,
           cost: unit.cost,
-          canBuild: hasRequiredTechs(currentPlayer, requires),
+          canBuild: hasRequiredTechs(currentPlayer, requires) && !caravanCapped,
+          caravanCapped,
           requires,
           unit,
         };
@@ -537,7 +554,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                         </td>
                       </tr>
                     )}
-                    {unitRows.map(({ key, name, cost, canBuild, requires, unit }) => {
+                    {unitRows.map(({ key, name, cost, canBuild, caravanCapped, requires, unit }) => {
                       const requiredTech = Array.isArray(requires) ? requires.join(', ') : requires || '';
                       const stats = t('prod.stats', {
                         attack: unit.attack,
@@ -550,7 +567,15 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                       return (
                         <tr key={key} className={canBuild ? '' : 'text-muted'}>
                           <td>{tUnitName(key, name)}</td>
-                          <td>{formatTechName(requiredTech)}</td>
+                          <td>
+                            {caravanCapped ? (
+                              <span className="text-warning" title={t('prod.caravanCapHint')}>
+                                {t('prod.caravanCap')}
+                              </span>
+                            ) : (
+                              formatTechName(requiredTech)
+                            )}
+                          </td>
                           <td>{stats}</td>
                           <td>
                             <span className="text-info">{getTurnsText(cost)}</span>
@@ -717,7 +742,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                           {t(WONDER_STATUS_LABEL[selectedWonderRow.status])}
                         </span>
                       )}
-                      <div className="wonder-detail-effect mt-2">{selectedWonder.effectText}</div>
+                      <div className="wonder-detail-effect mt-2">{localizedWonder(selectedWonder).effectText}</div>
                       <div className="wonder-detail-meta">
                         🛡 {t('prod.shields', { count: selectedWonder.cost })} · 🔬 {formatTechName(selectedWonder.requiredTechnology)} · ⏳{' '}
                         {selectedWonder.obsoleteBy
@@ -727,7 +752,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                           <span className="wonder-obsolete-tag ms-2">{t('prod.effectInactive')}</span>
                         )}
                       </div>
-                      <div className="wonder-detail-flavor">{selectedWonder.flavor}</div>
+                      <div className="wonder-detail-flavor">{localizedWonder(selectedWonder).flavor}</div>
                     </>
                   )}
                 </aside>

@@ -6,8 +6,12 @@ import { EconomicManager } from '@/game/engine/EconomicManager';
 /**
  * Civ1 Trade Routes: a Caravan (Trade tech) delivers to a city — lump-sum
  * Gold + Science scaled by population & distance (foreign ×2, intercontinental
- * ×2), and a permanent per-turn trade route between both cities (max 3,
+ * ×2), and a permanent per-turn trade route between both cities (max 5,
  * weakest replaced).
+ *
+ * Distance MULTIPLIES the payout (it used to add a fifth): two size-3 cities 8
+ * tiles apart pay 96 gold rather than 14, which is what repays a 50-shield
+ * caravan and a twenty-turn walk.
  */
 describe('Civ1 trade routes', () => {
   let engine: GameEngine | null = null;
@@ -155,6 +159,29 @@ describe('Civ1 trade routes', () => {
       e.establishTradeRoute(car.id);
     }
     expect(home.tradeRoutes.length).toBe(MAX_TRADE_ROUTES);
+  });
+
+  it('evicts the OLDEST route, not the weakest, when a new one arrives', async () => {
+    const e = await setup();
+    const home = addCity(e, 'c0', 0, 'Home', 5, 5);
+    // Fill the slots with routes of deliberately different value: the FIRST is
+    // the weakest (tiny cities) and later ones are stronger.
+    for (let i = 1; i <= MAX_TRADE_ROUTES; i++) {
+      addCity(e, `d${i}`, 1, `Dest${i}`, 10 + i, 5, i === 1 ? 1 : 9);
+      const car = addCaravan(e, `car${i}`, 0, 10 + i, 5, 'c0');
+      e.establishTradeRoute(car.id);
+    }
+    expect(home.tradeRoutes![0].cityId).toBe('d1'); // first established, weakest
+
+    // A fresh delivery: the OLDEST route (d1) goes, even though it is the
+    // weakest — value is not what evicts a route, age is.
+    addCity(e, 'fresh', 1, 'Fresh', 30, 5, 6);
+    const car = addCaravan(e, 'carFresh', 0, 30, 5, 'c0');
+    expect(e.establishTradeRoute(car.id).success).toBe(true);
+
+    expect(home.tradeRoutes!.length).toBe(MAX_TRADE_ROUTES);
+    expect(home.tradeRoutes!.some((r) => r.cityId === 'd1')).toBe(false);
+    expect(home.tradeRoutes!.some((r) => r.cityId === 'fresh')).toBe(true);
   });
 
   it('routeTrade adds per-turn trade to the city commerce', async () => {

@@ -28,6 +28,7 @@ import { enrichMapForExport } from "@/utils/MapExportUtils";
 import { sendCommand } from "@/utils/session";
 import { preloadAllUnitIcons } from "@/utils/UnitIconLoader";
 import { centerCameraOnTile, getGameViewport, clampZoom } from "@/utils/CameraUtils";
+import { useTranslation } from "@/i18n/useTranslation";
 import { gameLogger } from "@/utils/GameLogger";
 import { gameProgression } from "@/utils/GameProgression";
 import type { TerrainTileRenderInfo } from "@/game/rendering/MapRenderer";
@@ -44,6 +45,7 @@ declare global {
 }
 
 function App() {
+  const { t } = useTranslation();
   const gameState = useGameStore((state) => state.gameState);
   const actions = useGameStore((state) => state.actions);
   const settings = useGameStore((state) => state.settings);
@@ -1392,19 +1394,21 @@ function App() {
       {/* Confirmation dialogs (replace native window.confirm for consistent mobile UX) */}
       <ConfirmDialog
         show={confirmNewGame}
-        title="Start a New Game?"
-        message="Are you sure you want to end the current game and start over?"
-        detail="All progress will be lost."
-        confirmLabel="New Game"
+        title={t('confirm.newGame.title')}
+        message={t('confirm.newGame.message')}
+        detail={t('confirm.newGame.detail')}
+        confirmLabel={t('menu.newGame')}
+        cancelLabel={t('common.cancel')}
         variant="danger"
         onConfirm={handleNewGameConfirmed}
         onCancel={() => setConfirmNewGame(false)}
       />
       <ConfirmDialog
         show={confirmQuit}
-        title="Quit to Main Menu?"
-        message="Are you sure you want to quit the current game?"
-        confirmLabel="Quit"
+        title={t('confirm.quit.title')}
+        message={t('confirm.quit.message')}
+        confirmLabel={t('menu.quit')}
+        cancelLabel={t('common.cancel')}
         variant="danger"
         onConfirm={handleQuitConfirmed}
         onCancel={() => setConfirmQuit(false)}

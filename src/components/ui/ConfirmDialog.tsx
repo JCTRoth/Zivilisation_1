@@ -61,6 +61,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   const eyebrow = variant === 'danger' ? t('confirm.eyebrowDanger') : variant === 'success' ? t('confirm.eyebrowSuccess') : t('confirm.eyebrowInfo');
   const icon = variant === 'danger' ? '⚠️' : variant === 'success' ? '✅' : '⚖️';
   const artLabel = variant === 'success' ? t('confirm.artOpenRoad') : t('confirm.artRedAlert');
+  const cancelText = cancelLabel ?? t('common.cancel');
 
   return (
     <Modal
@@ -108,7 +109,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
         <footer className="gm-actions">
           <button type="button" className="touch-btn touch-btn--ghost confirm-dialog__btn" onClick={onCancel}>
-            {cancelLabel ?? t('common.cancel')}
+            {cancelText}
           </button>
           <button
             type="button"

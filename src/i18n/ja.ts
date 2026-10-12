@@ -125,6 +125,11 @@ export const ja: PartialTranslationDict = {
   'confirm.eyebrowInfo': 'お言葉をお待ちしています',
   'confirm.artOpenRoad': '開かれた道',
   'confirm.artRedAlert': 'レッドアラート！',
+  'confirm.newGame.title': '新しいゲームを始めますか？',
+  'confirm.newGame.message': '現在のゲームを終了して新しく始めてもよろしいですか？',
+  'confirm.newGame.detail': '進行状況はすべて失われます。',
+  'confirm.quit.title': 'メインメニューに戻りますか？',
+  'confirm.quit.message': '現在のゲームを終了してもよろしいですか？',
 
   // ── 研究インジケーター ─────────────────────────────────────────────────
   'research.complete': '研究完了',
@@ -1752,4 +1757,8 @@ export const ja: PartialTranslationDict = {
   'village.fallback.scoutsTitle': '斥候の報告',
   'village.fallback.scoutsBody':
     '集落は破壊され、得るものは何もありません。すべての廃墟が秘密を守るわけではありません — 次の廃墟を、風が足跡を隠す前に捜索しましょう。',
+
+  // ── キャラバン数の上限 ──────────────────────────────────────────────────
+  'prod.caravanCap': '最大キャラバン3',
+  'prod.caravanCapHint': '都市ごとのキャラバンは、同時に旅立ちできるのが最大3隻までです。',
 };

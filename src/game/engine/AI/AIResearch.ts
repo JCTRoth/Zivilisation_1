@@ -66,6 +66,12 @@ interface GameStateSnapshot {
    * took 38, and its "slow research" penalty never fired for it.
    */
   turnsToResearch?: (techId: string) => number;
+  /**
+   * How worthwhile the Caravan line is to this civ right now (0 when every city
+   * already has routes, up to 3 for a route-less empire at peace). Without it the
+   * AI never researched `trade` and delivered zero trade routes in 1,000 rounds.
+   */
+  caravanRelevance?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +363,20 @@ export class AIResearch {
     if (fishing > 0 && techId === 'masonry') {
       score += 40 + 20 * fishing;
       reasons.push('fishing-harbor');
+    }
+
+    // Caravans: the `trade` tech gates the whole trade-route economy, and without
+    // a push the AI never researched it — a profiled 1,000-round game delivered
+    // ZERO trade routes while every city sat three routes short of capacity. Same
+    // shape as the Masonry push: the prerequisite of a feature the civ can use.
+    const caravan = gameState.caravanRelevance ?? 0;
+    if (caravan > 0 && (techId === 'trade' || techId === 'currency')) {
+      score += 30 + 15 * caravan;
+      reasons.push('caravan-relevance');
+    }
+    if (caravan > 0 && techId === 'bronze_working') {
+      score += 6;
+      reasons.push('caravan-relevance');
     }
 
     // 7. Era progression — slight bonus for advancing to new eras

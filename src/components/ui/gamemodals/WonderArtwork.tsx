@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@/i18n/useTranslation';
+import { wonderWikiUrl } from '@/i18n/wonderLore';
 import { WONDER_ARTWORK_CREDITS, type WonderArtworkCredit, type WonderDefinition } from '@/data/WonderData';
 
 interface WonderArtworkProps {
@@ -84,7 +85,7 @@ export const WonderArtwork: React.FC<WonderArtworkProps> = ({ wonder, active = t
         <div className="wonder-artwork__placeholder" aria-hidden="true" />
       )}
 
-      {info && <WonderCreditBlock info={info} />}
+      {info && <WonderCreditBlock info={info} wonderId={wonder.id} />}
     </div>
   );
 };
@@ -96,14 +97,22 @@ export const WonderArtwork: React.FC<WonderArtworkProps> = ({ wonder, active = t
  */
 export const WonderCreditBlock: React.FC<{
   info: WonderArtworkCredit;
+  /** Wonder id — selects the localized Wikipedia article for the link. */
+  wonderId?: string;
   /** `hero` renders for a dark photo background instead of a light card. */
   variant?: 'card' | 'hero';
-}> = ({ info, variant = 'card' }) => {
+}> = ({ info, wonderId, variant = 'card' }) => {
   const { t } = useTranslation();
   return (
     <div className={`wonder-artwork__credit${variant === 'hero' ? ' wonder-artwork__credit--hero' : ''}`}>
-      {/* The article link is the one players are meant to follow. */}
-      <a className="wonder-artwork__readmore" href={info.articleUrl} target="_blank" rel="noreferrer noopener">
+      {/* The article link is the one players are meant to follow — it points
+          at the Wikipedia article in the player's language. */}
+      <a
+        className="wonder-artwork__readmore"
+        href={wonderId ? wonderWikiUrl(info.articleUrl, wonderId) : info.articleUrl}
+        target="_blank"
+        rel="noreferrer noopener"
+      >
         {t('art.readMore')}
       </a>
       {info.galleryUrl && (
@@ -146,5 +155,5 @@ export const WonderCreditFor: React.FC<{ wonder: WonderDefinition; variant?: 'ca
 }) => {
   const info = WONDER_ARTWORK_CREDITS[wonder.id];
   if (!info) return null;
-  return <WonderCreditBlock info={info} variant={variant} />;
+  return <WonderCreditBlock info={info} wonderId={wonder.id} variant={variant} />;
 };

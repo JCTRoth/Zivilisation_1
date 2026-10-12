@@ -126,6 +126,11 @@ export const de: PartialTranslationDict = {
   'confirm.eyebrowInfo': 'Auf Ihr Wort',
   'confirm.artOpenRoad': 'ein offener Weg',
   'confirm.artRedAlert': 'Rote Alarm!',
+  'confirm.newGame.title': 'Neues Spiel starten?',
+  'confirm.newGame.message': 'Sind Sie sicher, dass Sie das aktuelle Spiel beenden und neu beginnen möchten?',
+  'confirm.newGame.detail': 'Der gesamte Fortschritt geht verloren.',
+  'confirm.quit.title': 'Zum Hauptmenü beenden?',
+  'confirm.quit.message': 'Sind Sie sicher, dass Sie das aktuelle Spiel beenden möchten?',
 
   // ── Forschungsanzeige ──────────────────────────────────────────────────
   'research.complete': 'Forschung abgeschlossen',
@@ -1755,4 +1760,8 @@ export const de: PartialTranslationDict = {
   'village.fallback.scoutsTitle': 'Was Ihre Späher berichten',
   'village.fallback.scoutsBody':
     'Die Siedlung ist zerstört, es gibt nichts zu gewinnen. Nicht jede Ruine bewahrt ihre Geheimnisse — durchsuchen Sie die nächste, bevor der Wind die Spuren verdeckt.',
+
+  // ── Grenze für Karawanen pro Stadt ─────────────────────────────────────
+  'prod.caravanCap': 'Max. 3 Karawanen',
+  'prod.caravanCapHint': 'Eine Stadt kann höchstens 3 ihrer Karawanen gleichzeitig auf der Reise haben.',
 };

@@ -6,6 +6,7 @@ import type { TranslationKey } from '@/i18n';
 import { GameUtils } from '@/utils/GameUtils';
 import { WonderArtwork } from './WonderArtwork';
 import GameModal from './ModalShell';
+import { localizedWonder } from '@/i18n/wonderLore';
 import '@/styles/wonders.css';
 
 /** The 'completed' variant of the wonder dialog queue entry. */
@@ -189,12 +190,12 @@ const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notic
 
       <div className="gm-callout">
         <span className="gm-callout-title">{t('wonderDone.effect' as TranslationKey)}</span>
-        {wonder.effectText}
+        {localizedWonder(wonder).effectText}
       </div>
 
       <section className="gm-section">
         <h3 className="gm-section-title">{t('wonderDone.chronicle' as TranslationKey)}</h3>
-        <p className="gm-prose">{wonder.flavor}</p>
+        <p className="gm-prose">{localizedWonder(wonder).flavor}</p>
       </section>
     </GameModal>
   );

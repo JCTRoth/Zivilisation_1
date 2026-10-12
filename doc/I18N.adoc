@@ -44,6 +44,14 @@ changes via `useSyncExternalStore` — no provider, no context
 (`'settler'`, `'barracks'`, `'pottery'`, …) to the `data.<kind>.<id>` key and
 fall back to the English display name
 
+|`src/i18n/wonderLore.ts` + `src/i18n/wonderLore/<lang>.ts`
+|The long-form wonder prose (effect, history, trivia paragraph and the fact
+bullets) per language, keyed by wonder id — English stays in
+`src/data/WonderData.ts`, other languages override field-by-field via
+`localizedWonder(wonder)`. The same module localizes the *Wikipedia links* of
+the artwork credits (`wonderWikiUrl`, with curated per-language article titles
+in `WONDER_WIKI_TITLES`)
+
 |`src/components/ui/LanguageSwitcher.tsx`
 |The language picker (grid of cards: flag, native name, English name) as an
 accessible `radiogroup` with roving tabindex and arrow-key navigation
@@ -146,7 +154,11 @@ switcher automatically.
 ----
 const DICTIONARIES: Record<LanguageId, PartialTranslationDict> = { en, de, fr, ru, es, ja, it };
 ----
-. Run `npm test` — `tests/i18n.test.ts` fails on any missing or empty key.
+. Create `src/i18n/wonderLore/<id>.ts` with the wonder prose (copy an
+existing file, translate the values, keep every wonder id and the exact
+number of `facts`) and register it in `LORES` in `src/i18n/wonderLore.ts`.
+. Run `npm test` — `tests/i18n.test.ts` and `tests/wonderLore.test.ts` fail on
+any missing or empty key or wonder text.
 
 No component changes are needed: the switcher, the persistence and the
 re-render subscriptions are language-agnostic.
@@ -232,14 +244,16 @@ Settings dialog, city screen, side panel, production picker, tech tree,
 wonders ledger, government/rates/statistics screens, pause & game-over
 screens, end-turn confirmation, combat/city-event/village reports, wonder
 notices, unit actions, mobile bar, notification center, canvas hints, the
-wonder-artwork credits and the crash screen — plus the *names* of units,
-buildings, technologies, wonders, governments, specialists and difficulty
-levels everywhere they are displayed.
+wonder-artwork credits (with Wikipedia links in the player's language) and
+the crash screen — plus the *names* of units, buildings, technologies,
+wonders, governments, specialists and difficulty levels everywhere they are
+displayed, and the full *wonder prose* (effect, history, trivia and facts) of
+all 24 wonders.
 
 Deliberately still English: strings emitted by the *game engine* itself
 (runtime notifications such as AI diplomacy messages and turn events, which
 are assembled deep inside `src/game/engine/*`), data prose fields
-(building/technology/wonder descriptions, government descriptions) and
+(building/technology descriptions, government descriptions) and
 proper nouns (civilization and leader names, "Civilopedia"). Translating
 engine notifications means adding keys at the engine call sites — a
 follow-up with its own key namespace (e.g. `toast.*`).

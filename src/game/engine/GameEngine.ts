@@ -1,7 +1,7 @@
 import { SquareGrid } from '../SquareGrid';
 import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
-import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND, isAutoScenario, clampGameSpeedStep, SPEED_STEP_MOVE_DELAY_MS, SPEED_STEP_TURN_DELAY_MS } from '@/data/GameConstants';
+import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND, isAutoScenario, clampGameSpeedStep, SPEED_STEP_MOVE_DELAY_MS, SPEED_STEP_TURN_DELAY_MS, PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
 import { useGameStore } from '../../stores/GameStore';
 import { staticMapForMapType } from '@/data/maps';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
@@ -60,7 +60,30 @@ import { debugLog } from '../../utils/DevLog';
 const BRIDGE_BUILDING_TECH = 'engineering';
 
 /** Max permanent trade routes a city can hold (Civ1). */
+/**
+ * How many permanent trade routes one city can hold — the Civ1 number.
+ *
+ * Three, and when a fourth arrives the **oldest** is dropped (see
+ * `addTradeRoute`). The coordinator (`AI/CaravanCoordinator.ts`) decides which
+ * three cities are worth the slots, so a caravan is never sent to a city whose
+ * routes are already the best it will get.
+ */
 export const MAX_TRADE_ROUTES = 3;
+
+/**
+ * Trade-route pricing: how much the long haul is worth.
+ *
+ * `payout = round((homePop + destPop) × DISTANCE_WEIGHT × distance × multipliers)`
+ * — distance *multiplies*, where it used to add a fifth. A route between two
+ * size-3 cities 8 tiles apart now pays 96 gold instead of 14, which is what
+ * repays a 50-shield caravan and a twenty-turn walk. Without it the trade-route
+ * system was strictly worse than building a warrior, so no civ — human or AI —
+ * ever used it: a profiled 1,000-round AI game delivered ZERO routes.
+ */
+export const TRADE_ROUTE_DISTANCE_WEIGHT = 4;
+
+/** Population the permanent per-turn route trade is divided by. */
+export const TRADE_ROUTE_POP_DIVISOR = 2;
 
 /**
  * Blast radius of a nuclear weapon, in Chebyshev tiles from the epicentre.
@@ -3189,8 +3212,14 @@ const occupiedLandmasses = new Set(
     let multiplier = 1;
     if (foreign) multiplier *= 2;
     if (intercontinental) multiplier *= 2;
-    const payout = Math.max(1, Math.round(base * (1 + distance / 4) * multiplier));
-    const routeTrade = Math.max(1, Math.round(base / 4));
+    // The payout has to repay the 50-shield caravan AND its walk, or the whole
+    // system is strictly worse than building a warrior: at the old numbers two
+    // size-3 cities 8 tiles apart paid 14 gold for a unit that costs 50 shields
+    // and 20 turns of walking, so the AI (correctly) never built one. Distance
+    // now dominates the calculation, which is what a trade route IS: a longer
+    // haul is worth more.
+    const payout = Math.max(1, Math.round(base * TRADE_ROUTE_DISTANCE_WEIGHT * distance * multiplier));
+    const routeTrade = Math.max(1, Math.round(base / TRADE_ROUTE_POP_DIVISOR));
 
     // Lump-sum Gold + Science to the delivering civ.
     const civ = this.civilizations?.[unit.civilizationId];
@@ -3205,6 +3234,7 @@ const occupiedLandmasses = new Set(
       civilizationId: dest.civilizationId,
       trade: routeTrade,
       distance,
+      round: this.roundManager?.getRoundNumber?.() ?? 0,
     });
     this.addTradeRoute(dest, {
       cityId: home.id,
@@ -3212,6 +3242,7 @@ const occupiedLandmasses = new Set(
       civilizationId: home.civilizationId,
       trade: routeTrade,
       distance,
+      round: this.roundManager?.getRoundNumber?.() ?? 0,
     });
 
     // The caravan is consumed by the delivery.
@@ -3236,8 +3267,13 @@ const occupiedLandmasses = new Set(
   }
 
   /**
-   * Add a trade route to a city, capping at MAX_TRADE_ROUTES and replacing the
-   * weakest existing route when the new one is stronger.
+   * Add a trade route to a city, capping at MAX_TRADE_ROUTES.
+   *
+   * When the city is full, the **oldest** route is replaced — Civ1's rule, and
+   * the one the CaravanCoordinator plans against: a new route to a better
+   * partner is worth the walk precisely because it evicts the stalest one. The
+   * age is the route's `round` (falls back to array order, so a save from
+   * before routes carried a round still behaves: index 0 is the oldest).
    */
   private addTradeRoute(city: City, route: TradeRoute): void {
     if (!Array.isArray(city.tradeRoutes)) city.tradeRoutes = [];
@@ -3246,13 +3282,20 @@ const occupiedLandmasses = new Set(
       existing.push(route);
       return;
     }
-    let weakestIdx = 0;
+    // Oldest first: lowest round, and only then the earliest pushed.
+    let oldestIdx = 0;
     for (let i = 1; i < existing.length; i++) {
-      if ((existing[i].trade ?? 0) < (existing[weakestIdx].trade ?? 0)) weakestIdx = i;
+      const roundA = existing[oldestIdx].round ?? 0;
+      const roundB = existing[i].round ?? 0;
+      if (roundB < roundA) oldestIdx = i;
     }
-    if (route.trade > (existing[weakestIdx].trade ?? 0)) {
-      existing[weakestIdx] = route;
+    // A same-city duplicate is always an upgrade of itself, never a new slot.
+    if (existing.some((r) => r.cityId === route.cityId)) {
+      const idx = existing.findIndex((r) => r.cityId === route.cityId);
+      if (route.trade > (existing[idx].trade ?? 0)) existing[idx] = route;
+      return;
     }
+    existing[oldestIdx] = route;
   }
 
   /**
@@ -6705,8 +6748,8 @@ const occupiedLandmasses = new Set(
     const totalCost = city.currentProduction.cost || 0;
     const stored = city.productionStored || city.productionProgress || 0;
     const remaining = Math.max(0, totalCost - stored);
-    // Gold cost = 2x the remaining production shields
-    const goldCost = remaining * 2;
+    // The one shield→gold rate, shared with `purchaseCityProduction` and the UI.
+    const goldCost = remaining * PURCHASE_GOLD_PER_SHIELD;
 
     if (goldCost <= 0) {
       console.log('[GameEngine] rushCityProduction: Production already complete');

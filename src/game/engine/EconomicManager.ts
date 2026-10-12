@@ -21,7 +21,7 @@ import {
   getResourceYields,
 } from '../../data/TerrainConstants';
 import { IMPROVEMENT_PROPERTIES } from '../../data/TileImprovementConstants';
-import { SPECIALIST_YIELDS } from '../../data/GameConstants';
+import { SPECIALIST_YIELDS, CITY_UPKEEP_PER_CITY, FREE_CITY_SUPPORT, TREATY_ROUTE_TRADE_MULTIPLIER } from '../../data/GameConstants';
 import type { City, Civilization, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 
@@ -104,23 +104,65 @@ const CITY_CENTER_MIN = { food: 2, production: 1, trade: 1 };
 const MIN_CITY_FOOD_SURPLUS = 1;
 
 /**
- * Food every citizen eats per turn.
+ * Food every citizen eats per turn, up to `APPETITE_RAMP_ABOVE_POP`.
  *
- * Civ 1's rule is flat: a citizen eats 2, at every city size, forever. There is
- * no appetite ramp — a size-12 city eats 24 a turn because it has twelve
- * citizens, not because each of them eats more.
+ * Below that size the demand is flat (Civ1's 2 a citizen); above it each
+ * citizen eats `APPETITE_RAMP_PER_CITIZEN` more, so a size-12 city's citizens
+ * eat 3.4 each rather than 2. This is the documented Civ1 rule that the engine
+ * had flattened away: with a flat demand, one worked tile per citizen gives a
+ * constant surplus forever and a city's food bill never catches up with its
+ * size, so growth is free once a city is fed at all. The ramp is what makes a
+ * big city harder to keep than a small one and pushes the empire to keep
+ * expanding instead of parking one city at size 30.
  *
- * Exported as one constant because three places charge this: the growth
- * pipeline, the AI's food planning and the shared tile assigner. A famine must
- * never be priced at a different rate than the citizen is assumed to eat at.
+ * One function, three callers (the growth pipeline, the AI's food planning and
+ * the shared tile assigner) so a famine is never priced at a different appetite
+ * than the citizen is assumed to eat at.
  */
 export const CITIZEN_FOOD_DEMAND_PER_CITIZEN = 2;
+
+/** City size above which each citizen's appetite starts to rise. */
+export const APPETITE_RAMP_ABOVE_POP = 5;
+
+/** Extra food per citizen per size above `APPETITE_RAMP_ABOVE_POP`. */
+export const APPETITE_RAMP_PER_CITIZEN = 0.2;
+
+/** What one citizen of a city this size eats per turn. */
+export function citizenFoodDemand(population: number): number {
+  const size = Math.max(0, Math.floor(population));
+  return CITIZEN_FOOD_DEMAND_PER_CITIZEN
+    + APPETITE_RAMP_PER_CITIZEN * Math.max(0, size - APPETITE_RAMP_ABOVE_POP);
+}
+
+/**
+ * City size an Aqueduct is required for.
+ *
+ * Without one a city stops growing here, which is what makes the Aqueduct (120
+ * shields, 1 gold, "helps cities grow larger") worth building instead of the
+ * inert 2 `health` it used to hand out. `growthBonus` and `health` are declared
+ * but unread by the engine; the housing cap is the one that changes play.
+ */
+export const AQUEDUCT_HOUSING_CAP = 10;
 
 /**
  * Floor the treasury is reset to after the AI is forced to disband.
  * Keeps the civ solvent for the next turn (see spec item 6).
  */
 export const ABSOLUTE_MIN_GOLD = 8;
+
+/**
+ * Debt service: how fast a forgiven deficit is repaid.
+ *
+ * One gold per turn per 50 of debt, so a 40-gold loan costs 1 gold/turn and a
+ * 400-gold one costs 8 — a civ that goes bankrupt repeatedly sees a rising
+ * bill, while a single bad turn is a rounding error it climbs out of. It is
+ * charged only from income that actually arrived, so it can never push a
+ * treasury below zero on its own.
+ */
+export const DEBT_REPAYMENT_PER_TURN = 1;
+
+/** Debt each unit of `DEBT_REPAYMENT_PER_TURN` service covers. */
+export const DEBT_REPAYMENT_PER = 50;
 
 const clamp = (v: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, v));
@@ -214,12 +256,36 @@ export class EconomicManager {
   // Per-city commerce split
   // ------------------------------------------------------------------
 
+  /**
+   * Trade this city earns from its permanent trade routes.
+   *
+   * A route to a civ we hold a **trade agreement** with is worth
+   * `TREATY_ROUTE_TRADE_MULTIPLIER` — which is what a trade agreement is now
+   * worth. It used to pay a flat 2 gold a turn to BOTH sides out of nothing
+   * (`DiplomacyManager.processTurn`), an unbounded faucet that minted money
+   * every round a treaty stood: that is how a civ with no cities and 6 gold of
+   * lifetime tax income finished a game holding 271 gold. Basing it on routes
+   * means the treaty pays only where caravans have actually been delivered, and
+   * it can never be collected by a civ that trades with nobody.
+   */
   routeTrade(city: City): number {
     if (!Array.isArray(city.tradeRoutes)) return 0;
-    return city.tradeRoutes.reduce(
-      (total: number, r) => total + (r.trade ?? 0),
-      0,
-    );
+    const civId = city.civilizationId;
+    return city.tradeRoutes.reduce((total: number, r) => {
+      const base = r.trade ?? 0;
+      if (base <= 0) return total;
+      const treaty = this.hasTradeAgreementWith(civId, r.civilizationId);
+      return total + base * (treaty ? TREATY_ROUTE_TRADE_MULTIPLIER : 1);
+    }, 0);
+  }
+
+  /** Whether a trade agreement stands between these two civs right now. */
+  private hasTradeAgreementWith(a: number | undefined, b: number | undefined): boolean {
+    if (a == null || b == null || a === b) return false;
+    const dm = this.gameEngine?.diplomacyManager as
+      | { hasTreaty?: (x: number, y: number, t: string) => boolean }
+      | undefined;
+    return dm?.hasTreaty?.(a, b, 'trade_agreement') === true;
   }
 
   cityCommerce(city: City): number {
@@ -241,6 +307,13 @@ export class EconomicManager {
     // 80% tax rate. The reported `commerce` stays integer; only the rate
     // arithmetic sees the fraction.
     const afterCorruption = Math.max(0, effective - corruption);
+    // A roadless city earns 0.4 gold at a 20 % tax rate. That is a real number,
+    // not zero, so `tax` is FRACTIONAL here and the treasury carries the
+    // remainder (`taxGoldWithCarry`): flooring per city is what made every
+    // low-tax rate pay literally nothing — Democracy's 10 % cap collected 0
+    // gold from a 2-commerce city, and a city taxed below 50 % paid 0 at any
+    // rate. Luxury stays integer: it is compared against integer unhappiness,
+    // and half a content citizen has no meaning.
     const rates = this.getRates(civ?.id);
     const buildingScience = this.buildingBonuses(city).science;
     const scienceBonus = buildingScience > 0 || (city.buildings?.length ?? 0) > 0
@@ -255,15 +328,36 @@ export class EconomicManager {
     return {
       commerce: Math.floor(afterCorruption),
       corruption,
-      tax: Math.floor(afterCorruption * (rates.tax / 100)) * TRADE_GOLD_MULTIPLIER,
+      tax: (afterCorruption * (rates.tax / 100)) * TRADE_GOLD_MULTIPLIER,
       science: Math.round(baseScience * wonderScienceMult),
       luxury: Math.floor(afterCorruption * (rates.luxury / 100)),
     };
   }
 
   /**
-   * Maximum gold-per-turn at 100% tax, after corruption and government
-   * commerce penalty, summed across all cities.
+   * Gold this civ actually banks this turn from its cities' fractional tax.
+   *
+   * The carry is what makes a fraction worth having: 0.4 gold/turn is 1 gold
+   * every second turn, where a per-city floor paid nothing at all. The
+   * remainder lives on the civ (`civ.goldFractionCarry`) so no gold is created
+   * or destroyed across turns, and the AI's preview sees the same fractional
+   * number the treasury will bank.
+   */
+  private taxGoldWithCarry(civ: Civilization, grossTax: number): { banked: number; gross: number } {
+    if (!civ) return { banked: Math.floor(grossTax), gross: grossTax };
+    const carry = civ.goldFractionCarry ?? 0;
+    const total = carry + Math.max(0, grossTax);
+    const banked = Math.floor(total);
+    civ.goldFractionCarry = total - banked;
+    return { banked: banked, gross: grossTax };
+  }
+
+  /**
+   * Gross gold-per-turn the civ's cities would yield at 100 % tax, after
+   * corruption and the government commerce penalty.
+   *
+   * Fractional, because the treasury carries the remainder (`taxGoldWithCarry`):
+   * a 2.5-commerce city taxed at 40 % earns 2 gold a turn, not 0.
    */
   maxTaxIncome(civ: Civilization): number {
     const civId = civ?.id;
@@ -278,7 +372,7 @@ export class EconomicManager {
       const corruption = CityUtils.calculateCorruption(city, civ, effective);
       return (
         total +
-        Math.max(0, Math.floor(effective - corruption)) * TRADE_GOLD_MULTIPLIER
+        Math.max(0, effective - corruption) * TRADE_GOLD_MULTIPLIER
       );
     }, 0);
   }
@@ -314,47 +408,58 @@ export class EconomicManager {
   }
 
   /**
-   * Maximum number of units a civ can sustain without going negative on gold.
-   * Equals full-tax income (tax + specialist gold) divided by 1 gold/unit upkeep,
-   * floored. A civ always gets free support for one unit per city, so those
-   * don't count toward the cap.
+   * How many units the civ can keep alive on its income.
+   *
+   * Self-consistent by construction: the fleet already fielded is charged
+   * against income first (`unitUpkeep`), buildings second, and only what is
+   * left buys the *new* units — priced at what the civ is about to build (or,
+   * failing that, the most expensive type it already fields, because the AI
+   * buys its era's unit and pricing a future tank at a rifleman's 1 gold is how
+   * a solvent empire goes broke three technologies later). The answer is a
+   * TOTAL army size, which is what `AutoProduction` compares against
+   * `currentUnits + queuedUnits`.
+   *
+   * There is **no free unit support**: every unit with a home city pays its
+   * full maintenance. The used-to-be `− cityCount` ("one free unit per city")
+   * over-counted the cap by the size of the empire and was contradicted by the
+   * comment three lines down.
    */
-  sustainableUnits(civ: Civilization): number {
+  sustainableUnits(civ: Civilization, plannedUnitType?: string): number {
     const civId = civ?.id;
     if (civId == null) return 0;
-    const cities = (this.gameEngine?.cities ?? []).filter(
-      (c: City) => c.civilizationId === civId,
+    const income = this.projectedIncome(civ);
+    const committed = this.buildingUpkeep(civId) + this.unitUpkeep(civId);
+    const headroom = income - committed;
+    if (headroom <= 0) return this.unitCountFor(civId);
+    const unitPrice = this.unitMaintenanceOf(civ, plannedUnitType);
+    if (unitPrice <= 0) return this.unitCountFor(civId);
+    return this.unitCountFor(civId) + Math.floor(headroom / unitPrice);
+  }
+
+  /** Living units the civ has in the field (the army the cap is a ceiling for). */
+  private unitCountFor(civId: number): number {
+    return (this.gameEngine?.units ?? []).filter(
+      (u: Unit) => u.civilizationId === civId && !u.isDefeated,
+    ).length;
+  }
+
+  /**
+   * Gold per turn one more unit will cost: the planned type's maintenance, or
+   * the most expensive type the civ already fields.
+   */
+  unitMaintenanceOf(civ: Civilization, plannedUnitType?: string): number {
+    if (plannedUnitType) {
+      const planned = UNIT_PROPS[plannedUnitType]?.maintenance;
+      if (typeof planned === 'number') return Math.max(1, planned);
+    }
+    const owned = (this.gameEngine?.units ?? []).filter(
+      (u: Unit) => u.civilizationId === civ?.id && !u.isDefeated && (u.maintenance ?? 0) > 0,
     );
-    const cityCount = cities.length;
-    // Taxable income at the civ's ACTUAL tax rate, not at 100%. Planning at
-    // 100% made the unit cap systematically too high, so the AI kept building
-    // past what it could pay for and then disbanded the surplus for upkeep —
-    // an AI-vs-AI run produced 84 units and disbanded 84.
-    const taxShare = Math.min(100, Math.max(0, civ.taxRate ?? 50)) / 100;
-    const taxIncome = cities.reduce((total: number, city: City) => {
-      const commerce = this.cityCommerce(city);
-      const gov = getGovernment(civ.government);
-      const effective = commerce * (1 - gov.commercePenalty);
-      const corruption = CityUtils.calculateCorruption(city, civ, effective);
-      const taxable = Math.max(0, effective - corruption);
-      return total + Math.floor(taxable * taxShare * TRADE_GOLD_MULTIPLIER);
-    }, 0);
-    const specialistGold = this.maxSpecialistGold(civ);
-    // Buildings are paid for before units are, so they come off first.
-    const totalIncome = Math.max(0, taxIncome + specialistGold - this.buildingUpkeep(civId));
-    // Each unit costs its own maintenance per turn (there is no free support:
-    // see `unitUpkeep`), so this is a hard budget ceiling, not a soft one.
-    // Priced at the most expensive military unit the civ owns — the AI builds
-    // its era's unit, so a flat 1 would under-price a tank fleet six-fold.
-    const militaryUnits = (this.gameEngine?.units ?? []).filter(
-      (u: Unit) => u.civilizationId === civId && !u.isDefeated && (u.maintenance ?? 0) > 0,
+    if (owned.length === 0) return UNIT_MAINTENANCE;
+    return Math.max(
+      UNIT_MAINTENANCE,
+      ...owned.map((u: Unit) => u.maintenance ?? UNIT_MAINTENANCE),
     );
-    const unitPrice = Math.max(
-      1,
-      ...militaryUnits.map((u: Unit) => u.maintenance ?? UNIT_MAINTENANCE),
-    );
-    const upkeepSlots = Math.max(0, totalIncome - cityCount);
-    return Math.floor(upkeepSlots / unitPrice);
   }
 
   // ------------------------------------------------------------------
@@ -959,8 +1064,11 @@ export class EconomicManager {
     ).length * settlerFoodPerTurn;
 
     const produced = city?.yields?.food ?? city?.food ?? 0;
-    // Civ 1: every citizen eats a flat 2 food, at every city size.
-    const citizenConsumption = population * CITIZEN_FOOD_DEMAND_PER_CITIZEN;
+    // The appetite ramp: flat 2 a citizen up to size 5, then +0.2 per citizen
+    // per further size. `citizenFoodDemand` is the single definition, so the
+    // growth pipeline, the AI's planning and the tile assigner all charge the
+    // same rate.
+    const citizenConsumption = population * citizenFoodDemand(population);
     const surplus = produced - citizenConsumption - settlerSupport;
     const storage = city?.foodStored ?? 0;
     const growthThreshold = (population + 1) * 10;
@@ -1336,8 +1444,24 @@ export class EconomicManager {
     return total;
   }
 
+  /**
+   * Total gold-per-turn upkeep: units, buildings, and the empire's cities.
+   *
+   * City upkeep is the sink the economy was missing — a city used to cost the
+   * treasury nothing at all, so gold bore no relation to empire size and the
+   * only outflow was rushes. `CITY_UPKEEP_PER_CITY` per city beyond
+   * `FREE_CITY_SUPPORT`, so the opening is untouched and the bill starts with
+   * the fourth town.
+   */
   totalUpkeep(civId: number): number {
-    return this.unitUpkeep(civId) + this.buildingUpkeep(civId);
+    const cities = (this.gameEngine?.cities ?? []).filter(
+      (c: City) => c.civilizationId === civId,
+    );
+    const cityUpkeep = Math.max(
+      0,
+      cities.length - FREE_CITY_SUPPORT,
+    ) * CITY_UPKEEP_PER_CITY;
+    return this.unitUpkeep(civId) + this.buildingUpkeep(civId) + cityUpkeep;
   }
 
   // ------------------------------------------------------------------
@@ -1506,6 +1630,63 @@ export class EconomicManager {
   }
 
   // ------------------------------------------------------------------
+  // Bankruptcy
+  // ------------------------------------------------------------------
+
+  /**
+   * Restore a bankrupt civ to the solvency floor — as a LOAN, not a gift.
+   *
+   * The treasury used to be reset with `Math.max(gold, ABSOLUTE_MIN_GOLD)`,
+   * which *created* the missing gold: a civ that finished the turn at −50 was
+   * handed 8, so every bankruptcy was free money. Measured over a 400-round
+   * batch that is how dead civs ended holding thousands of gold (median 278,
+   * max 3 269) with no cities and no tax income to show for it, and why the
+   * harness reported zero bankrupt turns while 419 units were being disbanded
+   * for upkeep.
+   *
+   * Now the forgiven amount is booked as debt on the civ and repaid at
+   * `DEBT_REPAYMENT_PER_TURN` gold a turn out of income. A civ with no income
+   * keeps its debt — which is the honest outcome, and it is visible in the
+   * progression export instead of hidden by the reset.
+   */
+  private forgiveDeficit(civ: Civilization, deficit: number): void {
+    const gold = civ.resources?.gold ?? 0;
+    const restored = ABSOLUTE_MIN_GOLD - gold;
+    if (restored <= 0 && deficit <= 0) return;
+    if (restored > 0) {
+      civ.resources.gold = ABSOLUTE_MIN_GOLD;
+      civ.debt = (civ.debt ?? 0) + restored + deficit;
+    } else {
+      // No gold was created; only the unpaid bills are booked.
+      civ.debt = (civ.debt ?? 0) + deficit;
+    }
+    (civ as { lastForgivenDeficit?: number }).lastForgivenDeficit = restored + deficit;
+    this.gameEngine?.onStateChange?.('ECONOMY_FORGIVEN', {
+      civilizationId: civ.id,
+      goldRestored: Math.max(0, restored),
+      debtBooked: (civ as { lastForgivenDeficit?: number }).lastForgivenDeficit ?? 0,
+      debt: civ.debt ?? 0,
+      deficit,
+    });
+  }
+
+  /**
+   * Repay this civ's debt out of this turn's income, before it is banked.
+   *
+   * Debt is paid only from gold that actually arrived (income minus upkeep), so
+   * a civ cannot be pushed below zero by its own loan, and a civ with no income
+   * simply waits.
+   */
+  private repayDebt(civ: Civilization, available: number): number {
+    const debt = civ.debt ?? 0;
+    if (debt <= 0 || available <= 0) return 0;
+    const service = DEBT_REPAYMENT_PER_TURN * Math.ceil(debt / DEBT_REPAYMENT_PER);
+    const paid = Math.min(debt, available, service);
+    civ.debt = debt - paid;
+    return paid;
+  }
+
+  // ------------------------------------------------------------------
   // Turn Orchestration
   // ------------------------------------------------------------------
 
@@ -1553,6 +1734,11 @@ export class EconomicManager {
       this.recomputeCityYields(city);
     }
     accumulateOutputs();
+    // The treasury banks whole gold and carries the fraction (see
+    // `taxGoldWithCarry`). `taxTotal` stays the gross figure so the emergency
+    // tax raise below can price its own delta, and only the banked amount moves
+    // the treasury.
+    const banked = this.taxGoldWithCarry(civ, taxTotal);
 
     civ.resources.trade = commerceTotal;
     // Research is locked for the first RESEARCH_UNLOCK_ROUND rounds, and the
@@ -1569,8 +1755,10 @@ export class EconomicManager {
     civ.resources.food = 0;
 
     const upkeep = this.totalUpkeep(civId);
+    // Debt service comes out of this turn's income before anything is banked.
+    const debtService = this.repayDebt(civ, Math.max(0, banked.banked + specGoldTotal - upkeep));
     civ.resources.gold =
-      (civ.resources.gold ?? 0) + taxTotal + specGoldTotal - upkeep;
+      (civ.resources.gold ?? 0) + banked.banked + specGoldTotal - upkeep - debtService;
 
     // ---- Emergency tax raise before disbanding -----------------------
     // Prefer maxing tax and killing science/luxury over losing units. The
@@ -1587,6 +1775,8 @@ export class EconomicManager {
         this.setRates(civId, gov.maxTaxRate, 0, 0);
         accumulateOutputs();
         const newGoldIncome = taxTotal + specGoldTotal;
+        // The extra tax arrives gross minus what this turn already banked, so
+        // the carry is not counted twice.
         civ.resources.gold += newGoldIncome - oldGoldIncome;
         civ.resources.trade = commerceTotal;
         civ.resources.science = scienceTotal;
@@ -1616,8 +1806,11 @@ export class EconomicManager {
           this.totalUpkeep(civId) - incomeAfterTax,
         );
       }
-      // Forgive the accumulated deficit and restore the AI-safe floor.
-      civ.resources.gold = Math.max(civ.resources.gold, ABSOLUTE_MIN_GOLD);
+      // Forgive the accumulated deficit into a tracked loan and restore the
+      // solvency floor. See `forgiveDeficit` — the gold used to be created out
+      // of nothing here, which is why city-less civs finished 400-round games
+      // holding thousands of gold they never earned.
+      this.forgiveDeficit(civ, deficit);
     }
 
     return {

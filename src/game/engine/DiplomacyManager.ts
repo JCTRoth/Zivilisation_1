@@ -1013,13 +1013,14 @@ export class DiplomacyManager {
         this.recordImpactOn(rel, rel.civB, 'border_pressure', undefined, 'cities on the border');
       }
 
-      // Process trade agreement gold transfers
-      if (rel.activeTreaties.includes('trade_agreement') && rel.tradeGoldPerTurn > 0) {
-        const civA = this.gameEngine.civilizations?.[rel.civA];
-        const civB = this.gameEngine.civilizations?.[rel.civB];
-        if (civA?.resources) civA.resources.gold += rel.tradeGoldPerTurn;
-        if (civB?.resources) civB.resources.gold += rel.tradeGoldPerTurn;
-      }
+      // A trade agreement is worth something (it doubles the trade of the
+      // routes between the two civs — `EconomicManager.routeTrade`), but it
+      // used to also pay a flat stipend to BOTH sides every round, minted from
+      // nothing. That was an unbounded faucet: a civ with no cities and 6 gold
+      // of lifetime tax income finished a 400-round game holding 271 gold. The
+      // stipend is gone; the route multiplier is the benefit. `tradeGoldPerTurn`
+      // is kept on the relation for save compatibility and is no longer paid.
+      if (rel.tradeGoldPerTurn > 0) rel.tradeGoldPerTurn = 0;
 
       // Mutual defence, with consent. This used to read "if my ally is at war,
       // join it" unconditionally, which turned any single war into a

@@ -1176,17 +1176,39 @@ A caravan walks to a friendly or foreign city and opens a route.
 
 [source]
 ----
-payout       = max(1, round((homePop + destPop) × (1 + distance / 4) × multiplier))
+payout       = max(1, round((homePop + destPop) × TRADE_ROUTE_DISTANCE_WEIGHT
+                             × distance × multiplier))
 multiplier   = 1 × (foreign ? 2 : 1) × (intercontinental ? 2 : 1)
-routeTrade   = max(1, round((homePop + destPop) / 4))
+routeTrade   = max(1, round((homePop + destPop) / TRADE_ROUTE_POP_DIVISOR))
 ----
+
+`TRADE_ROUTE_DISTANCE_WEIGHT` is 4 and `TRADE_ROUTE_POP_DIVISOR` is 2. Distance
+**multiplies** the payout, where it used to add a fifth: two size-3 cities 8
+tiles apart now pay 96 gold rather than 14, which is what repays a 50-shield
+caravan and a twenty-turn walk. At the old numbers the system was strictly worse
+than building a warrior, so nobody used it — a profiled 1,000-round AI game
+delivered ZERO routes.
 
 * Payout arrives as **both gold and science**.
 * *Intercontinental* means a Bresenham line between the two cities crosses
   ocean or sea. A lake does not count.
-* Maximum **3** trade routes per civilization. A new route replaces the weakest.
+* Maximum **3** trade routes per city (`MAX_TRADE_ROUTES`). A new route replaces
+  the **oldest** one — Civ1's rule, and the one `AI/CaravanCoordinator.ts` plans
+  against, because it is what makes a new route to a better partner worth the
+  walk.
 * The caravan is consumed on delivery.
-* `MAX_CARAVAN_TRADE_ROUTES = 3`.
+* A **trade agreement** doubles the trade of every route between the two civs
+  (`TREATY_ROUTE_TRADE_MULTIPLIER = 2`). It no longer pays a flat stipend to both
+  sides every round — that minted gold out of nothing and was an unbounded
+  faucet.
+* A city holds **3** routes, and when a fourth arrives the **oldest** is evicted
+  (`addTradeRoute`), not the weakest — Civ1's rule, and the one
+  `AI/CaravanCoordinator.ts` plans against.
+* The AI's caravans are coordinated per civilization, not per unit: how many the
+  civ needs (one per free slot), which cities build them, and where each delivers
+  — de-duplicated so two caravans never race for the same slot. The per-unit
+  governor (`AI/CaravanGovernor.ts`) still owns the sticky missions and the
+  risk-aware stepping; the coordinator only ever changes the target.
 
 == The economy
 
@@ -1201,29 +1223,42 @@ afterGovPenalty      = commerce × (1 − government.commercePenalty)
 corruption           = floor(afterGovPenalty × corruptionRate)
 afterCorruption      = max(0, floor(afterGovPenalty − corruption))
 
-tax                  = floor(afterCorruption × taxRate / 100)  × 2
+tax                  = afterCorruption × taxRate / 100  × 2   (fractional)
 science              = round(afterCorruption × scienceRate / 100)
                        + buildingScience + specialistScience
-luxury               = floor(afterCorruption × luxuryRate / 100)
+luxury               = floor(afterCorruption × luxuryRate / 100)   (integer)
 ----
 
 Tax rate, science rate and luxury rate must sum to 100.
+
+`tax` is **fractional**: the city's share is computed without flooring and the
+civ banks whole gold once a turn, carrying the remainder on
+`civ.goldFractionCarry`. A 2-commerce city at a 20 % tax rate therefore earns
+0.4 gold a turn — 1 gold every second turn — instead of the 0 it paid when each
+city floored its own share. Luxury stays integer: it is compared against integer
+unhappiness.
 
 === Corruption
 
 [source]
 ----
 distance     = euclidean distance from the capital
-distanceMult = min(distance / 10, 2)
-rate         = 0.30 × distanceMult          <- hard-coded base, not government-based
-if courthouse: rate = rate / 2
+distanceMult = min(distance / 10, 1.5)
+rate         = government.corruptionRate × distanceMult
+               × Π (1 − building.corruptionReduction)   for each building held
 corruption   = floor(trade × rate)
 ----
 
-The capital itself is never corrupt. A Courthouse halves the rate. Note the base
-`0.30` is hard-coded in `CityUtils.calculateCorruption` and does **not** read
-`government.corruptionRate` — the government table's corruption column is
-currently only used by the AI's own reasoning.
+The capital itself is never corrupt. The base rate is the **government's own**
+number — Despotism 0.30, Monarchy 0.25, Communism 0.10, Republic 0.15,
+Democracy 0.05, Anarchy 0.30 — so the government tree is an economic choice and
+not just a tax-cap choice.
+
+A building's declared `corruptionReduction` is a **multiplier on the rate**:
+Marketplace, Bank and Palace 0.5 (halve it), Courthouse and Stock Exchange 0.8
+(leave a fifth). They compound, and the Courthouse therefore behaves exactly as
+it always did while the other four stop being inert. Values live in
+`src/data/CorruptionConstants.ts`.
 
 === Food and growth
 
@@ -1270,8 +1305,15 @@ prevent starvation. At population 0 the city is destroyed.
 city — unless the difficulty is Chieftain.
 |===
 
-There is **no** housing cap. An Aqueduct does not gate city size; the AI only
-treats it as a growth prerequisite in its own planning.
+=== Housing cap — the Aqueduct
+
+There **is** a housing cap: a city stops growing at size
+`AQUEDUCT_HOUSING_CAP` (10) unless it holds an **Aqueduct**, which lifts it
+entirely. A city sitting on its cap keeps banking food (so the growth lands the
+turn the Aqueduct completes) but does not starve, and the side panel reports the
+cap. Before this the Aqueduct's declared `health: 2` and `growthBonus: 1` were
+both inert — a 120-shield, 1-gold building that did nothing the engine could
+see.
 
 [[Blockading a city]]
 === Blockading a city
@@ -1363,9 +1405,20 @@ Manually assigned tiles are always honoured first.
 
 [source]
 ----
-upkeep = 1 per unit that has a home city and is not a NONE unit
+upkeep = Σ unit.maintenance            (0–6 per type, no free unit support)
        + Σ building.upkeep
+       + max(0, cities − FREE_CITY_SUPPORT) × CITY_UPKEEP_PER_CITY
 ----
+
+`FREE_CITY_SUPPORT` is 3 cities and `CITY_UPKEEP_PER_CITY` is 1 gold, so the
+opening is untouched and the bill starts with the fourth town. Without it a city
+cost the treasury nothing at all — gold bore no relation to empire size, and the
+only outflows were rushes and accidental liquidations.
+
+Buying or rushing production costs `PURCHASE_GOLD_PER_SHIELD = 2` gold per
+remaining shield, **for units, buildings and wonders alike**. It used to be two
+rates — 2 to rush, 1 to buy a building from the menu — so the same 120-shield
+Aqueduct cost 240 gold to rush and 120 to buy.
 
 [cols="2,1", options="header"]
 |===
@@ -1398,8 +1451,17 @@ If gold goes negative:
 . descending maintenance
 . descending cost
 . A second pass breaks the last-defender rule if it must.
-. Treasuries are never dropped below `ABSOLUTE_MIN_GOLD = 8`.
+. The treasury is restored to `ABSOLUTE_MIN_GOLD = 8` and the amount is booked
+  as **debt** on the civ (`civ.debt`), repaid out of income at
+  `DEBT_REPAYMENT_PER_TURN` (1) gold per turn per `DEBT_REPAYMENT_PER` (50) of
+  debt. An `ECONOMY_FORGIVEN` event carries the numbers into the progression
+  export.
 . A Fisher Boat on an *active* route is never a disband candidate.
+
+The debt is the point: the floor used to *create* the missing gold, so every
+bankruptcy was free money and a civ with no cities and 6 gold of lifetime tax
+income could finish a 400-round game holding 271 gold. Now the books balance and
+the CSV can tell a healthy civ from a liquidated one.
 
 == Research
 

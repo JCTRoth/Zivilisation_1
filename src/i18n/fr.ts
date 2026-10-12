@@ -125,6 +125,11 @@ export const fr: PartialTranslationDict = {
   'confirm.eyebrowInfo': 'À l’attente de votre mot',
   'confirm.artOpenRoad': 'une route ouverte',
   'confirm.artRedAlert': 'Alerte rouge !',
+  'confirm.newGame.title': 'Commencer une nouvelle partie ?',
+  'confirm.newGame.message': 'Êtes-vous sûr de vouloir terminer la partie en cours et recommencer ?',
+  'confirm.newGame.detail': 'Toute la progression sera perdue.',
+  'confirm.quit.title': 'Quitter vers le menu principal ?',
+  'confirm.quit.message': 'Êtes-vous sûr de vouloir quitter la partie en cours ?',
 
   // ── Indicateur de recherche ────────────────────────────────────────────
   'research.complete': 'Recherche terminée',
@@ -1754,4 +1759,8 @@ export const fr: PartialTranslationDict = {
   'village.fallback.scoutsTitle': 'Ce que rapportent vos éclaireurs',
   'village.fallback.scoutsBody':
     'Le campement est détruit, il n’y a rien à gagner. Toutes les ruines ne gardent pas leurs secrets — fouillez la prochaine avant que le vent ne couvre les traces.',
+
+  // ── Limite de caravanes ────────────────────────────────────────────────
+  'prod.caravanCap': 'Max. 3 caravanes',
+  'prod.caravanCapHint': 'Une ville ne peut avoir au plus 3 de ses caravanes en route en même temps.',
 };

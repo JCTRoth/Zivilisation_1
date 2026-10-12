@@ -136,17 +136,16 @@ export class AIEconomicManager {
    * the treasury went negative, and the disbander paid the difference out of
    * the army — including the garrisons that were holding the barbarians off.
    *
-   * So the planning rate is now the ceiling `adjustRatesForAI` itself enforces
-   * (see `policyTaxRate`), and units are priced at the maintenance of the most
-   * expensive military unit the civ already owns — the AI buys its era's unit,
-   * and pricing a future tank at a rifleman's 1 gold is how a solvent empire
-   * goes broke three technologies later.
+   * So the planning rate is the ceiling `adjustRatesForAI` itself enforces (see
+   * `policyTaxRate`), and the unit is priced at what it will actually cost to
+   * keep (`planningUnitMaintenance`). Pass `plannedUnitType` when the caller
+   * already knows which unit it is about to build.
    *
-   * Reserve target ("X") is defined as:
-   *   X = max(AI_MIN_GOLD_RESERVE, TotalExpenses * ReserveTurns)
-   * where ReserveTurns scales with the AI's strategy profile.
+   * The cap is a POLICY ceiling layered on top of the engine's own
+   * `EconomicManager.sustainableUnits`; `AutoProduction` uses the engine's, so
+   * the two can no longer disagree about what a unit costs.
    */
-  sustainableUnits(civ: Civilization): number {
+  sustainableUnits(civ: Civilization, plannedUnitType?: string): number {
     const civId = civ?.id;
     if (civId == null) return 0;
 
@@ -168,18 +167,25 @@ export class AIEconomicManager {
     const reserveContribution = projectedIncome * 0.1;
 
     const buildingUpkeep = this.econ.buildingUpkeep(civId);
+    // The fleet already fielded is charged against income too: `unitUpkeep` bills
+    // every unit every turn, so a civ with a battleship cannot spend that gold on
+    // archers. Ignoring it over-counted the cap by the cost of the entire existing
+    // army, which is how the AI built past what it could pay for and then let the
+    // disbander collect the difference.
+    const unitUpkeep = typeof this.econ.unitUpkeep === 'function' ? this.econ.unitUpkeep(civId) : 0;
     const availableForUnits =
-      projectedIncome - buildingUpkeep - reserveContribution;
+      projectedIncome - buildingUpkeep - unitUpkeep - reserveContribution;
+    const existingUnits = (this.gameEngine?.units ?? []).filter(
+      (u: { civilizationId: number; isDefeated?: boolean }) =>
+        u.civilizationId === civ.id && !u.isDefeated,
+    ).length;
+    if (availableForUnits <= 0) return existingUnits;
     const affordableUnits = Math.floor(
-      availableForUnits / this.planningUnitMaintenance(civ),
+      availableForUnits / this.planningUnitMaintenance(civ, plannedUnitType),
     );
 
-    // Units are never free: `unitUpkeep` charges every unit its full
-    // maintenance (the "each city supports one unit for free" note in
-    // doc/AI_ECONOMY.adoc does not match the implementation), so this is a hard
-    // budget ceiling. A building-heavy empire can therefore legitimately
-    // compute a cap of zero.
-    return Math.max(0, affordableUnits);
+    // A TOTAL army size, like the engine cap it is layered over.
+    return existingUnits + affordableUnits;
   }
 
   /**
@@ -230,13 +236,20 @@ export class AIEconomicManager {
   }
 
   /**
-   * The maintenance a *future* unit is priced at: the most expensive military
-   * unit the civ already owns. The AI builds its era's unit, so the priciest
-   * thing in the barracks is the best available estimate of what it will buy
-   * next — and over-pricing is the safe direction, because a cap that is too
-   * low costs a slower army while a cap that is too high costs the army.
+   * The maintenance a *future* unit is priced at: the planned type's, or the
+   * most expensive military unit the civ already owns. The AI builds its era's
+   * unit, so the priciest thing in the barracks is the best available estimate
+   * of what it will buy next — and over-pricing is the safe direction, because
+   * a cap that is too low costs a slower army while a cap that is too high
+   * costs the army.
+   *
+   * Delegates to `EconomicManager.unitMaintenanceOf` so the army cap, the
+   * funding planner and the engine all price a unit identically.
    */
-  private planningUnitMaintenance(civ: Civilization): number {
+  private planningUnitMaintenance(civ: Civilization, plannedUnitType?: string): number {
+    if (typeof this.econ.unitMaintenanceOf === 'function') {
+      return this.econ.unitMaintenanceOf(civ, plannedUnitType);
+    }
     const owned = (this.gameEngine?.units ?? []).filter(
       (u: { civilizationId: number; isDefeated?: boolean; maintenance?: number }) =>
         u.civilizationId === civ.id && !u.isDefeated && (u.maintenance ?? 0) > 0,

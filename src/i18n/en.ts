@@ -134,6 +134,11 @@ export const en = {
   'confirm.eyebrowInfo': 'Awaiting Your Word',
   'confirm.artOpenRoad': 'an open road',
   'confirm.artRedAlert': 'Red Alter!',
+  'confirm.newGame.title': 'Start a New Game?',
+  'confirm.newGame.message': 'Are you sure you want to end the current game and start over?',
+  'confirm.newGame.detail': 'All progress will be lost.',
+  'confirm.quit.title': 'Quit to Main Menu?',
+  'confirm.quit.message': 'Are you sure you want to quit the current game?',
 
   // ── Research indicator ─────────────────────────────────────────────────
   'research.complete': 'Research complete',
@@ -501,6 +506,10 @@ export const en = {
   'village.fallback.scoutsTitle': 'What your scouts report',
   'village.fallback.scoutsBody':
     'The settlement is destroyed with nothing to be gained. Not every ruin keeps its secrets — search the next one before the wind covers the tracks.',
+
+  // ── Caravan cap (Caravan Governor) ─────────────────────────────────────
+  'prod.caravanCap': 'Max 3 caravans',
+  'prod.caravanCapHint': 'A city can have at most 3 of its caravans in transit at the same time.',
 
   // ── Error boundary (crash screen) ──────────────────────────────────────
   'errorBoundary.title': '🚨 Something went wrong!',

@@ -4,7 +4,8 @@
  * intelligent building/wonder production decisions.
  */
 
-import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVAN_TRADE_ROUTES } from '@/utils/Constants';
+import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVAN_TRADE_ROUTES, MAX_CARAVANS_PER_CITY } from '@/utils/Constants';
+import { PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { WONDERS, wonderGroupMembers } from '@/data/WonderData';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
@@ -1163,6 +1164,10 @@ export class AutoProduction {
       : this.buildOffensiveProduction(city);
     const itemType = item?.itemType || item?.type;
     if (!itemType) return null;
+    // The cap is priced at what this queue slot is about to build, so a city
+    // adding a warship is charged the warship's upkeep and not the empire's
+    // priciest hull.
+    if (this.isUnitCapExhausted(city.civilizationId, itemType)) return null;
     // Never queue the same unit twice in a row — that is how a city ends up
     // with six archers and nothing else in its build queue.
     if (plannedTypes.includes(itemType)) return null;
@@ -1520,9 +1525,20 @@ export class AutoProduction {
     const maxCaravans = Math.max(2, civCities.length);
     if (caravanCount >= maxCaravans) return false;
 
+    // Per-city cap: at most MAX_CARAVANS_PER_CITY in-transit caravans may
+    // belong to the SAME home city at once (the Caravan Governor enforces the
+    // cap on existing units; this gate stops production from exceeding it).
+    const ownCaravans = this.gameEngine.units.filter(
+      (u: Unit) => u.type === 'caravan' && !u.isDefeated && u.homeCityId === city.id,
+    ).length + plannedTypes.filter((t: string) => t === 'caravan').length;
+    if (ownCaravans >= MAX_CARAVANS_PER_CITY) return false;
+
     // Pop ≥ 2 so the city is stable enough to divert shields to trade.
     if ((city.population ?? 1) < 2) return false;
-
+    // The coordinator's cities first: a city with empty route slots is where a
+    // caravan actually pays, and a city whose slots are full should not get one.
+    const wanting = this.gameEngine.aiManager?.citiesWantingCaravans?.(civ.id) ?? [];
+    if (wanting.length > 0 && !wanting.includes(city.id)) return false;
     return true;
   }
 
@@ -1665,19 +1681,33 @@ export class AutoProduction {
 
   /**
    * Economy-aware unit cap: the civ can only maintain as many units as its
-   * income supports (reserve-aware model when available, EconomicManager as
-   * the floor). When the cap is exhausted the AI must stop PRODUCING military
-   * units too — not just stop queueing follow-ups — or the army grows until
-   * the treasury starves and units are disbanded for upkeep.
+   * income supports. When the cap is exhausted the AI must stop PRODUCING
+   * military units too — not just stop queueing follow-ups — or the army grows
+   * until the treasury starves and units are disbanded for upkeep.
+   *
+   * Two models, one contract:
+   *
+   *  - `EconomicManager.sustainableUnits` is the CEILING — what the treasury can
+   *    pay at the rates the civ is running right now, priced at the unit being
+   *    queued.
+   *  - `AIEconomicManager.sustainableUnits` is the POLICY — what the rate
+   *    controller can defend for a standing army (its own planning rate, a
+   *    reserve contribution), which is the lower figure most of the time.
+   *
+   * The SMALLER applies, and both now read the same income and the same unit
+   * price (`EconomicManager.unitMaintenanceOf`), so they cannot drift apart the
+   * way they did when this took the smaller of two hand-rolled arithmetic
+   * paths. Measuring the ceiling alone makes the cap more permissive and the
+   * upkeep disbander pays the difference: a probe run went from 0 disbands to
+   * 11 in 120 rounds when the policy model was dropped.
    */
-  private isUnitCapExhausted(civilizationId: number): boolean {
+  private isUnitCapExhausted(civilizationId: number, plannedUnitType?: string): boolean {
     const civ = this.gameEngine?.civilizations?.[civilizationId];
     const econ = this.gameEngine?.economicManager;
     if (!civ || !econ) return false;
     const civCities = this.gameEngine.cities.filter(
       (c: City) => c.civilizationId === civilizationId,
     );
-    const cityCount = civCities.length;
     const currentUnits = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civilizationId && !u.isDefeated,
     ).length;
@@ -1688,29 +1718,15 @@ export class AutoProduction {
       const inProgress = c.currentProduction?.type === 'unit' ? 1 : 0;
       return n + inQueue + inProgress;
     }, 0);
-    // Take the MOST CONSERVATIVE credible cap, not the most optimistic one.
-    // `Math.max` of every source let the 100%-tax projection win over the AI's
-    // own figure (which already subtracts building upkeep and keeps a reserve),
-    // which is how the AI built a bigger army than it could maintain and then
-    // disbanded it again, round after round (92 upkeep disbands in one
-    // 587-round AI-vs-AI log).
-    const aiSustainableUnits = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ);
-    const econSustainableUnits = typeof econ.sustainableUnits === 'function'
-      ? econ.sustainableUnits(civ)
+    const econCap = typeof econ.sustainableUnits === 'function'
+      ? econ.sustainableUnits(civ, plannedUnitType)
       : null;
-    // When BOTH models answer, the SMALLER figure is the credible one — the
-    // AI's optimistic tax projection must not override the engine's own
-    // upkeep math. Fall back to whichever source exists; lightweight test
-    // doubles implement neither, so the free one-unit-per-city support then
-    // applies and the cap never blocks them.
-    let sustainableUnits = cityCount;
-    if (aiSustainableUnits != null && econSustainableUnits != null) {
-      sustainableUnits = Math.min(aiSustainableUnits, econSustainableUnits);
-    } else if (aiSustainableUnits != null) {
-      sustainableUnits = Math.max(cityCount, aiSustainableUnits);
-    } else if (econSustainableUnits != null) {
-      sustainableUnits = Math.max(cityCount, econSustainableUnits);
-    }
+    const aiCap = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ, plannedUnitType) ?? null;
+    // Whichever model exists; when both do, the conservative one. Lightweight
+    // test doubles implement neither, so the cap never blocks them.
+    const sustainableUnits = econCap != null && aiCap != null
+      ? Math.min(econCap, aiCap)
+      : Math.max(0, econCap ?? aiCap ?? 0);
     return currentUnits + queuedUnits >= sustainableUnits;
   }
 
@@ -2363,7 +2379,12 @@ export class AutoProduction {
   //     critical unit).
   //  3. Only spend when the benefit outweighs the gold cost.
 
-  private readonly RUSH_COST_MULTIPLIER = 2; // gold cost = remaining shields × 2
+  /**
+   * Gold per remaining shield when the AI rushes a build — the same rate the
+   * engine charges (`PURCHASE_GOLD_PER_SHIELD`), so the AI never prices a rush
+   * differently from the treasury that has to pay for it.
+   */
+  private readonly RUSH_COST_MULTIPLIER = PURCHASE_GOLD_PER_SHIELD;
 
   /**
    * Evaluate whether to spend gold on rushing production in cities.

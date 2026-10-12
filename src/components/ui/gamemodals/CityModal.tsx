@@ -5,7 +5,7 @@ import { ModalUtils } from './ModalUtils';
 import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { isWonderObsolete, getWonder } from '@/data/WonderData';
-import { SPECIALIST_YIELDS } from '@/data/GameConstants';
+import { SPECIALIST_YIELDS, PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
 import { CITY_GOVERNOR_OPTIONS, governorOption, terrainLabel } from '@/utils/CityGovernorUtils';
 import ProductionSelectionModal from './ProductionSelectionModal';
 import { productionFailureText } from '@/utils/ProductionUtils';
@@ -316,7 +316,7 @@ const CityModal: React.FC<CityModalProps> = ({
                             const remaining = Math.max(0, totalCost - progress);
                             const gold = currentPlayer?.resources?.gold ?? 0;
                             const purchased = (selectedCity.purchasedThisTurn?.length ?? 0) > 0;
-                            const goldCost = remaining * 2;
+                            const goldCost = remaining * PURCHASE_GOLD_PER_SHIELD;
                             const canBuy = remaining > 0 && gold >= goldCost && !purchased;
                             return (
                               <button
@@ -1365,6 +1365,7 @@ const CityModal: React.FC<CityModalProps> = ({
         cityBuildings={selectedCity?.buildings ?? []}
         productionPerTurn={logic.getProductionPerTurn()}
         cityName={cityName}
+        cityId={selectedCity.id}
         onAddToQueue={(key) => {
           handleQueueProduction(key);
         }}

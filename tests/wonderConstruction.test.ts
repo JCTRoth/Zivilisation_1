@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { world as wrapWorld, type TestWorld } from './helpers/world';
 import GameEngine from '@/game/engine/GameEngine';
+import { PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
 import type { City, Civilization } from '../types/game';
 
 interface EmittedEvent {
@@ -233,13 +234,17 @@ describe('wonder construction & world-uniqueness', () => {
     const buyer = cityWithTech('Buyer', 0, 4, 4, ['masonry']);
     const holder = cityWithTech('AlreadyDone', 1, 0, 0, ['masonry']);
 
-    // 1. The purchase is queued while the wonder is still up for grabs.
-    const goldBefore = civ(0).resources.gold ?? 0;
+    // 1. The purchase is queued while the wonder is still up for grabs. A
+    //    wonder costs the same per shield as everything else
+    //    (`PURCHASE_GOLD_PER_SHIELD`) — buying it at half price was the
+    //    half-price-building loophole.
+    const goldBefore = 1000;
+    civ(0).resources.gold = goldBefore;
     const purchase = engine.productionManager.purchaseCityProduction(buyer.id, {
       type: 'building', itemType: 'pyramids', name: 'Pyramids', cost: 300,
     });
     expect(purchase.success).toBe(true);
-    expect(civ(0).resources.gold).toBe(goldBefore - 300);
+    expect(civ(0).resources.gold).toBe(goldBefore - 300 * PURCHASE_GOLD_PER_SHIELD);
 
     // 2. …and while it sits in the purchase queue, another city finishes it.
     holder.buildings.push('pyramids');

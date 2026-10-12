@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
+import { TREATY_ROUTE_TRADE_MULTIPLIER } from '@/data/GameConstants';
+import { EconomicManager } from '@/game/engine/EconomicManager';
 
 /**
  * Creates a minimal mock GameEngine with the fields DiplomacyManager needs.
@@ -502,18 +504,34 @@ describe('DiplomacyManager', () => {
       expect(dm.getActiveTreaties(0, 1)).toContain('open_borders');
     });
 
-    it('should sign trade agreement and accumulate gold per turn', () => {
+    it('signs a trade agreement that pays through route trade, not a stipend', () => {
       dm.signTreaty(0, 1, 'trade_agreement', { goldPerTurn: 3 });
       expect(dm.hasTreaty(0, 1, 'trade_agreement')).toBe(true);
 
+      // The stipend a trade agreement used to pay BOTH sides every round, minted
+      // from nothing, is gone: a civ with several treaties had a permanent
+      // income it did nothing to earn, and a civ with no cities and 6 gold of
+      // lifetime tax income finished a 400-round game holding 271. The treaty's
+      // value is the route multiplier in `EconomicManager.routeTrade`.
       const rel = dm.getRelation(0, 1)!;
-      expect(rel.tradeGoldPerTurn).toBe(3);
-
       const goldBefore0 = ge.civilizations[0].resources.gold;
       const goldBefore1 = ge.civilizations[1].resources.gold;
       dm.processTurn(1);
-      expect(ge.civilizations[0].resources.gold).toBe(goldBefore0 + 3);
-      expect(ge.civilizations[1].resources.gold).toBe(goldBefore1 + 3);
+      expect(ge.civilizations[0].resources.gold).toBe(goldBefore0);
+      expect(ge.civilizations[1].resources.gold).toBe(goldBefore1);
+      expect(rel.tradeGoldPerTurn).toBe(0);
+    });
+
+    it('doubles the trade of a route to a civ we hold a trade agreement with', () => {
+      // The treaty's whole value now lives in route trade, so it only pays where
+      // a caravan has actually been delivered.
+      const home = { id: 'h', civilizationId: 0, tradeRoutes: [{ cityId: 'x', cityName: 'X', civilizationId: 1, trade: 3, distance: 4 }] };
+      ge.diplomacyManager = dm; // the economy reads treaties through the engine
+      const noTreaty = new EconomicManager(ge).routeTrade(home as never);
+      dm.signTreaty(0, 1, 'trade_agreement', { goldPerTurn: 2 });
+      const withTreaty = new EconomicManager(ge).routeTrade(home as never);
+      expect(noTreaty).toBe(3);
+      expect(withTreaty).toBe(3 * TREATY_ROUTE_TRADE_MULTIPLIER);
     });
 
     it('should sign mutual defense pact', () => {
