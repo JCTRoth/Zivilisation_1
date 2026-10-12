@@ -2,11 +2,17 @@
  * InfrastructurePlanner — how much public works a city still needs.
  *
  * Infrastructure in this engine is not bought with gold: a tile improvement
- * costs *worker-turns*, and only a settler can spend them (`canBuildImprovement`
- * rejects anything that is not a settler). The gold therefore shows up one step
- * later — a settler costs 40 — and that is the link this planner closes: an
- * unimproved city needs settlers, settlers cost gold, and that gold is what a
- * building sale can free.
+ * costs *worker-turns*, and only a settler can spend them
+ * (`canBuildImprovement` rejects anything that is not a settler). The settler
+ * itself is paid in **shields**, out of the city's production, and eats food
+ * from its home city — it never touches the treasury. That is why this planner
+ * reports no gold figure: it used to report `settlersNeeded × 40`, which
+ * `planFundingForCiv` then turned into a *gold* demand, and the AI liquidated
+ * income-producing buildings to "fund" a unit it was going to build with
+ * shields anyway. A demand priced in the wrong currency buys nothing.
+ *
+ * What the treasury IS for is unit upkeep — so the funding planner asks
+ * `EconomicManager.totalUpkeep`, not this module.
  *
  * ## How much a city needs
  * A small city does not need public works; its few tiles are worked as they
@@ -28,16 +34,13 @@ import {
   IMPROVEMENT_REQUIREMENTS,
   IMPROVEMENT_TYPES,
 } from '@/data/TileImprovementConstants';
-import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import { TERRAIN_TYPES } from '@/data/TerrainConstants';
 
-/** The settler is the one unit that can work a tile. */
-const SETTLER_TYPE = 'settler';
-
-/** Cost of the only unit that can build an improvement. */
-export const SETTLER_BUILD_COST = UNIT_PROPERTIES[SETTLER_TYPE]?.cost ?? 40;
-
-/** Tile types no settler can work. */
+/**
+ * Tile types no settler can work. (Public works are paid in worker-turns, and
+ * the settler that spends them is paid in shields — never in gold, which is why
+ * this module reports no gold figure: see the module docblock.)
+ */
 const WATER_TERRAINS: ReadonlySet<string> = new Set([
   TERRAIN_TYPES.OCEAN,
   TERRAIN_TYPES.LAKE,
@@ -110,8 +113,6 @@ export interface InfrastructureDemand {
   workerTurnsNeeded: number;
   /** Settlers the plan wants, to close the gap in reasonable time. */
   settlersNeeded: number;
-  /** What those settlers cost. */
-  goldNeeded: number;
   threat: InfrastructureThreat;
   /**
    * Whether the AI should spend on this now. False while the city is under
@@ -266,7 +267,6 @@ export function planCityInfrastructure(
   const settlersNeeded = deficit > 0
     ? Math.min(MAX_SETTLERS, Math.max(1, Math.ceil(deficit / 4)))
     : 0;
-  const goldNeeded = settlersNeeded * SETTLER_BUILD_COST;
 
   const threat: InfrastructureThreat =
     ctx.underAssault ? 'besieged' : ctx.raidersNearby > 0 ? 'raiders' : 'none';
@@ -303,7 +303,6 @@ export function planCityInfrastructure(
     deficit,
     workerTurnsNeeded,
     settlersNeeded,
-    goldNeeded,
     threat,
     wantsInfrastructure,
     targets,

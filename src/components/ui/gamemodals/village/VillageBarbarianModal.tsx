@@ -1,4 +1,5 @@
 import GameModal from '../ModalShell';
+import { useTranslation } from '@/i18n/useTranslation';
 import type { VillageResult } from '../../../../../types/game';
 
 interface VillageBarbarianModalProps {
@@ -11,6 +12,7 @@ interface VillageBarbarianModalProps {
  * village: 1–3 barbarians spawn in adjacent tiles and attack immediately.
  */
 function VillageBarbarianModal({ result, onHide }: VillageBarbarianModalProps) {
+  const { t } = useTranslation();
   const count = result.barbarianCount ?? 0;
   return (
     <GameModal
@@ -18,13 +20,13 @@ function VillageBarbarianModal({ result, onHide }: VillageBarbarianModalProps) {
       onClose={onHide}
       tone="danger"
       icon="🐎"
-      artLabel="dust on the ridge"
-      eyebrow="A Village Encounter"
-      title="Barbarian Ambush!"
-      lede="The hut was a baited trap. The doorways spill riders who were waiting for exactly your kind of curiosity — and they are already at your throats."
+      artLabel={t('village.barbarian.art')}
+      eyebrow={t('village.eyebrow')}
+      title={t('village.barbarian.title')}
+      lede={t('village.barbarian.lede')}
       actions={
         <button type="button" className="touch-btn touch-btn--danger" onClick={onHide}>
-          To Arms!
+          {t('village.barbarian.action')}
         </button>
       }
     >
@@ -32,16 +34,14 @@ function VillageBarbarianModal({ result, onHide }: VillageBarbarianModalProps) {
         <div className="gm-stat gm-stat--accent">
           <span className="gm-stat-value">
             <span className="gm-stat-icon" aria-hidden="true">⚔️</span>
-            {count} {count === 1 ? 'barbarian' : 'barbarians'}
+            {count} {count === 1 ? t('village.barbarian.countOne') : t('village.barbarian.countMany')}
           </span>
-          <span className="gm-stat-label">Rising from the huts</span>
+          <span className="gm-stat-label">{t('village.barbarian.stat')}</span>
         </div>
       </div>
       <div className="gm-callout">
-        <span className="gm-callout-title">They strike at once</span>
-        The attackers spawn on the tiles around the village and open the fight immediately. Pull
-        your unit back to defensible ground if you can — a river, a forest, a hill — and let them
-        come to you.
+        <span className="gm-callout-title">{t('village.barbarian.calloutTitle')}</span>
+        {t('village.barbarian.calloutBody')}
       </div>
     </GameModal>
   );

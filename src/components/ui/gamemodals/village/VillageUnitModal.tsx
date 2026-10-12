@@ -1,4 +1,5 @@
 import GameModal from '../ModalShell';
+import { useTranslation } from '@/i18n/useTranslation';
 import type { VillageResult } from '../../../../../types/game';
 
 interface VillageUnitModalProps {
@@ -11,25 +12,26 @@ interface VillageUnitModalProps {
  * When a Settler triggered the hut the Civ1 "NONE" hack awards a Settler.
  */
 function VillageUnitModal({ result, onHide }: VillageUnitModalProps) {
-  const unitName = result.unitName ?? 'warrior';
-  const isSettler = (result.unitType ?? '').toLowerCase() === 'settler' || unitName.toLowerCase() === 'settler';
+  const { t } = useTranslation();
+  const isSettler = (result.unitType ?? '').toLowerCase() === 'settler' || (result.unitName ?? '').toLowerCase() === 'settler';
+  const unitName = result.unitName ?? t('village.unit.fallbackName');
   return (
     <GameModal
       show
       onClose={onHide}
       tone="success"
       icon={isSettler ? '🚶' : '🛡️'}
-      artLabel="a banner in the dusk"
-      eyebrow="A Village Encounter"
-      title="Friendly Mercenaries"
+      artLabel={t('village.unit.art')}
+      eyebrow={t('village.eyebrow')}
+      title={t('village.unit.title')}
       lede={
         isSettler
-          ? 'A wandering tribe has watched your people from the treeline. Today they decide to walk beside you instead.'
-          : `Veterans of a dozen border wars have offered you their spears — and they know the country better than your own scouts.`
+          ? t('village.unit.ledeSettler')
+          : t('village.unit.ledeVeterans')
       }
       actions={
         <button type="button" className="touch-btn touch-btn--primary" onClick={onHide}>
-          Welcome Them
+          {t('village.unit.action')}
         </button>
       }
     >
@@ -39,14 +41,13 @@ function VillageUnitModal({ result, onHide }: VillageUnitModalProps) {
             <span className="gm-stat-icon" aria-hidden="true">⚔️</span>
             {unitName}
           </span>
-          <span className="gm-stat-label">Joins your army, free</span>
+          <span className="gm-stat-label">{t('village.unit.stat')}</span>
         </div>
       </div>
       <div className="gm-section">
-        <div className="gm-section-title">What they ask in return</div>
+        <div className="gm-section-title">{t('village.unit.section')}</div>
         <p className="gm-prose mb-0">
-          Only a place in your ranks and a share of your fortunes. Feed them, and they will hold
-          the river crossing while your settlers work the fields.
+          {t('village.unit.prose')}
         </p>
       </div>
     </GameModal>

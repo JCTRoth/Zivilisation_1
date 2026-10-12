@@ -1,4 +1,5 @@
 import React from 'react';
+import { t } from '@/i18n';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -34,17 +35,18 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
   render() {
     if (this.state.hasError) {
-      // Fallback UI
+      // Fallback UI. Class component, so it reads the module-level `t`
+      // directly (no hook available) — the crash screen is rendered once.
       return (
         <div className="alert alert-danger m-3">
-          <h2>🚨 Something went wrong!</h2>
+          <h2>{t('errorBoundary.title')}</h2>
           <details className="mt-3">
-            <summary className="btn btn-outline-danger">Show Error Details</summary>
+            <summary className="btn btn-outline-danger">{t('errorBoundary.showDetails')}</summary>
             <div className="mt-2">
-              <p><strong>Error:</strong> {this.state.error && this.state.error.toString()}</p>
-              <p><strong>Stack Trace:</strong></p>
+              <p><strong>{t('errorBoundary.errorLabel')}</strong> {this.state.error && this.state.error.toString()}</p>
+              <p><strong>{t('errorBoundary.stackLabel')}</strong></p>
               <pre className="bg-light p-2 border">
-                {this.state.errorInfo?.componentStack || 'No component stack available.'}
+                {this.state.errorInfo?.componentStack || t('errorBoundary.noStack')}
               </pre>
             </div>
           </details>

@@ -211,6 +211,22 @@ export const AI_COMMERCE_GOVERNOR_MIN_POP = 8;
  */
 const AI_COMMERCE_GOVERNOR_MIN_FOOD_FRACTION = 0.25;
 
+/**
+ * Share of a mature city's worked tiles that must produce trade before it is
+ * governed for Commerce. The commerce weights hand slots to trade tiles; on a
+ * city whose tiles carry none (no roads, no river, no resources) the switch
+ * only takes food tiles away, so a third is the bar for "there is something
+ * here to work with".
+ */
+export const AI_COMMERCE_MIN_TRADE_TILE_SHARE = 1 / 3;
+
+/**
+ * City trade yield above which a city counts as having a grid when its tiles
+ * cannot be read. An untouched city centre produces 2 trade, so 3 means at
+ * least one real trade source (a roaded tile, a river, a resource or a route).
+ */
+export const AI_COMMERCE_MIN_CITY_TRADE = 3;
+
 export class AICityManager {
   private gameEngine: GameEngine;
   private econ: EconomicManager;
@@ -243,11 +259,55 @@ export class AICityManager {
       const stored = city.foodStored ?? 0;
       const needed = city.foodNeeded ?? (population + 1) * 10;
       const fraction = needed > 0 ? stored / needed : 0;
-      if (fraction >= AI_COMMERCE_GOVERNOR_MIN_FOOD_FRACTION) {
+      // …and only once the tile grid the commerce weights assume actually
+      // exists. Commerce weights `{food: 0, production: 1, trade: 3}` hand the
+      // city's slots to trade tiles that a roaded grassland provides and an
+      // unworked plain does not: on a city with no roads the switch simply
+      // traded away food tiles for nothing, collapsed the surplus and stalled
+      // the very growth that earned the switch. Population alone is not
+      // evidence of a built-out tile base — in a played 400-round batch the AI
+      // finished 41–54 improvement worker-turns with ZERO improved tiles
+      // inside any city radius.
+      if (fraction >= AI_COMMERCE_GOVERNOR_MIN_FOOD_FRACTION
+        && this.cityHasTradeGrid(city)) {
         return GOVERNOR_PROFILES.commerce;
       }
     }
     return AI_GOVERNOR_PROFILE;
+  }
+
+  /**
+   * Whether this city has a trade grid for the commerce weights to work with.
+   *
+   * The commerce profile hands the city's slots to trade tiles (`weights {food:
+   * 0, production: 1, trade: 3}`). On a city whose tiles carry no trade — no
+   * roads, no river, no resources — the switch simply takes food tiles away for
+   * nothing, collapses the surplus and stalls the growth that earned the switch.
+   * Population alone is not evidence of a built-out tile base: in a played
+   * 400-round batch the AI finished 41–54 improvement worker-turns with ZERO
+   * improved tiles inside any city radius.
+   *
+   * Tile-level when the engine can read tiles; the city's own trade yield
+   * otherwise, where more than the untouched city centre's floor is the bar.
+   */
+  private cityHasTradeGrid(city: City): boolean {
+    const worked = city.workingTiles;
+    const canReadTiles = typeof this.gameEngine.getTileAt === 'function'
+      && typeof this.econ.cityTileYields === 'function';
+    if (canReadTiles && worked instanceof Set && worked.size > 1) {
+      let tradeTiles = 0;
+      let total = 0;
+      for (const key of worked) {
+        const sep = key.indexOf(',');
+        if (sep === -1) continue;
+        const tile = this.gameEngine.getTileAt(Number(key.slice(0, sep)), Number(key.slice(sep + 1)));
+        if (!tile) continue;
+        total++;
+        if ((this.econ.cityTileYields(tile).trade ?? 0) > 0) tradeTiles++;
+      }
+      if (total > 0) return tradeTiles / total >= AI_COMMERCE_MIN_TRADE_TILE_SHARE;
+    }
+    return (city.yields?.trade ?? 0) > AI_COMMERCE_MIN_CITY_TRADE;
   }
 
   manageCity(city: City, civ: Civilization, strategy?: StrategyProfile): void {

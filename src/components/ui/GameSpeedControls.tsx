@@ -16,6 +16,7 @@
 
 import { Button, Form } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
+import { useTranslation } from '@/i18n/useTranslation';
 import { canGoFaster, canGoSlower, gameSpeedLabel, GAME_SPEED_STEP_COUNT } from '@/data/GameConstants';
 import '../../styles/gameSpeedControls.css';
 
@@ -31,6 +32,9 @@ interface GameSpeedControlsProps {
 export default function GameSpeedControls({ isPaused, onTogglePause, compact = false }: GameSpeedControlsProps) {
   const step = useGameStore((state) => state.settings.gameSpeedStep ?? 0);
   const actions = useGameStore((state) => state.actions);
+  // Subscribes the control to language changes (buttons, labels and the
+  // gameSpeedLabel readout all follow the active language).
+  const { t } = useTranslation();
   const canFaster = canGoFaster(step);
   const canSlower = canGoSlower(step);
 
@@ -42,11 +46,11 @@ export default function GameSpeedControls({ isPaused, onTogglePause, compact = f
         className="game-speed__button"
         disabled={!canSlower}
         onClick={actions.slowerGameSpeed}
-        title="Run the game one step slower"
-        aria-label="Slower"
+        title={t('speed.slowerTitle')}
+        aria-label={t('speed.slower')}
       >
         <span aria-hidden="true">⏪</span>
-        {!compact && <span className="game-speed__button-label">Slower</span>}
+        {!compact && <span className="game-speed__button-label">{t('speed.slower')}</span>}
       </Button>
 
       <Button
@@ -54,12 +58,14 @@ export default function GameSpeedControls({ isPaused, onTogglePause, compact = f
         size="sm"
         className="game-speed__button game-speed__button--play"
         onClick={onTogglePause}
-        title={isPaused ? 'Resume the game' : 'Pause the game'}
-        aria-label={isPaused ? 'Play' : 'Pause'}
+        title={isPaused ? t('speed.playTitle') : t('speed.pauseTitle')}
+        aria-label={isPaused ? t('speed.play') : t('speed.pause')}
         aria-pressed={isPaused}
       >
         <span aria-hidden="true">{isPaused ? '▶' : '⏸'}</span>
-        {!compact && <span className="game-speed__button-label">{isPaused ? 'Play' : 'Pause'}</span>}
+        {!compact && (
+          <span className="game-speed__button-label">{isPaused ? t('speed.play') : t('speed.pause')}</span>
+        )}
       </Button>
 
       <Button
@@ -68,15 +74,11 @@ export default function GameSpeedControls({ isPaused, onTogglePause, compact = f
         className="game-speed__button"
         disabled={!canFaster}
         onClick={actions.fasterGameSpeed}
-        title={
-          canFaster
-            ? 'Run the game one step faster'
-            : 'Already at full speed'
-        }
-        aria-label="Faster"
+        title={canFaster ? t('speed.fasterTitle') : t('speed.fasterDisabledTitle')}
+        aria-label={t('speed.faster')}
       >
         <span aria-hidden="true">⏩</span>
-        {!compact && <span className="game-speed__button-label">Faster</span>}
+        {!compact && <span className="game-speed__button-label">{t('speed.faster')}</span>}
       </Button>
     </div>
   );
@@ -84,7 +86,7 @@ export default function GameSpeedControls({ isPaused, onTogglePause, compact = f
   if (compact) {
     return (
       <div className="game-speed game-speed--compact" data-speed-step={step}>
-        <span className="game-speed__readout" title={`Game speed: ${gameSpeedLabel(step)}`}>
+        <span className="game-speed__readout" title={t('speed.readoutAria', { label: gameSpeedLabel(step) })}>
           {gameSpeedLabel(step)}
         </span>
         {buttons}
@@ -95,15 +97,13 @@ export default function GameSpeedControls({ isPaused, onTogglePause, compact = f
   return (
     <div className="settings-control game-speed" data-speed-step={step}>
       <div className="settings-control__header">
-        <Form.Label className="settings-control__label">Game Speed</Form.Label>
+        <Form.Label className="settings-control__label">{t('speed.label')}</Form.Label>
         <strong className="settings-control__value">{gameSpeedLabel(step)}</strong>
       </div>
       {buttons}
       <Form.Text className="settings-control__hint">
-        How fast the game itself runs, independent of animation speed. Each step
-        is the same size, so Faster undoes Slower exactly. Full speed is the
-        fastest the game can go, so Faster is unavailable until you slow it down.
-        {GAME_SPEED_STEP_COUNT > 0 && ` There are ${GAME_SPEED_STEP_COUNT} slower steps.`}
+        {t('speed.hint')}
+        {GAME_SPEED_STEP_COUNT > 0 && ` ${t('speed.stepsAvailable', { count: GAME_SPEED_STEP_COUNT })}`}
       </Form.Text>
     </div>
   );

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useGameStore } from '@/stores/GameStore';
+import { useTranslation } from '@/i18n/useTranslation';
+import type { TranslationKey } from '@/i18n';
+import { tGovernmentName } from '@/i18n/dataNames';
 import { gameLogger } from '@/utils/GameLogger';
 import { getGovernment, GOVERNMENTS } from '@/data/GovernmentData';
 import { ANARCHY_TURNS } from '@/game/engine/GovernmentManager';
@@ -28,6 +31,8 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
   );
   const gameState = useGameStore((state) => state.gameState);
   const [selected, setSelected] = useState<string>('despotism');
+  // Subscribes the modal to language changes (government names repaint).
+  const { t } = useTranslation();
 
   const gov = getGovernment(currentPlayer?.government);
   const inRevolution = !!currentPlayer && currentPlayer.government === 'anarchy'
@@ -74,7 +79,11 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
     }
   };
 
-  const eyebrowText = `${currentPlayer?.name ?? 'Your Empire'} · Turn ${gameState.currentTurn ?? 1} · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`;
+  const eyebrowText = t('gov.eyebrow' as TranslationKey, {
+    civ: currentPlayer?.name ?? t('gov.defaultEmpire' as TranslationKey),
+    turn: gameState.currentTurn ?? 1,
+    year: GameUtils.formatYear(gameState.currentYear ?? -4000),
+  });
 
   return (
     <GameModal
@@ -84,14 +93,14 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
       size="lg"
       dialogClassName="government-modal"
       icon="🏛️"
-      artLabel="seat of power"
+      artLabel={t('gov.artLabel' as TranslationKey)}
       eyebrow={eyebrowText}
-      title="Government"
-      lede="Law, tax and the legions answer to one charter. Choose the one your people will live under — changing it means blood in the streets."
+      title={t('gov.title' as TranslationKey)}
+      lede={t('gov.lede' as TranslationKey)}
       actions={
         <>
           <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
-            Close
+            {t('gov.close' as TranslationKey)}
           </button>
           {!inRevolution && (
             <button
@@ -104,7 +113,7 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
                 || currentPlayer.government === selected
               }
             >
-              🔥 Start Revolution
+              {t('gov.startRevolution' as TranslationKey)}
             </button>
           )}
         </>
@@ -112,34 +121,36 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
     >
       <div className="government-modal__body">
         <section className="gm-section">
-          <div className="gm-section-title">Your government today</div>
+          <div className="gm-section-title">{t('gov.sectionToday' as TranslationKey)}</div>
           <div className="gm-kv-grid">
-            <div className="gm-kv">Current government: <b>{gov.name}</b></div>
-            <div className="gm-kv">Capital: <b>{capitalCity ? capitalCity.name : '—'}</b></div>
+            <div className="gm-kv">{t('gov.kvCurrent' as TranslationKey)} <b>{tGovernmentName(currentPlayer?.government ?? '', gov.name)}</b></div>
+            <div className="gm-kv">{t('gov.kvCapital' as TranslationKey)} <b>{capitalCity ? capitalCity.name : '—'}</b></div>
           </div>
           <div className="gm-prose">{gov.description}</div>
           {!capitalCity && !inRevolution && (
             <div className="gm-note">
-              You hold no capital yet — found a city and it becomes the seat of your government.
+              {t('gov.noCapital' as TranslationKey)}
             </div>
           )}
         </section>
 
         {inRevolution ? (
           <div className="gm-callout">
-            <span className="gm-callout-title">Revolution in progress</span>
-            Your people are in anarchy for {revolutionTurns} more turn
-            {revolutionTurns === 1 ? '' : 's'} — tax, science and luxury are all
-            forced to 0%.
+            <span className="gm-callout-title">{t('gov.revolutionTitle' as TranslationKey)}</span>
+            {t(
+              (revolutionTurns === 1 ? 'gov.anarchyOne' : 'gov.anarchyMany') as TranslationKey,
+              { turns: revolutionTurns },
+            )}
             {pendingGov && (
               <>
-                {' '}When the fighting stops you will rule as <strong>{pendingGov.name}</strong>.
+                {' '}{t('gov.pendingLead' as TranslationKey)}{' '}
+                <strong>{tGovernmentName(currentPlayer?.pendingGovernment ?? '', pendingGov.name)}</strong>.
               </>
             )}
           </div>
         ) : (
           <section className="gm-section">
-            <div className="gm-section-title">Choose your charter</div>
+            <div className="gm-section-title">{t('gov.chooseTitle' as TranslationKey)}</div>
             <div className="government-list">
               {available.map((govId) => {
                 const g = getGovernment(govId);
@@ -153,24 +164,24 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
                     disabled={isCurrent}
                   >
                     <div className="government-card__name">
-                      {g.name}
-                      {isCurrent && <span className="gm-chip gm-chip--accent">Current</span>}
+                      {tGovernmentName(govId, g.name)}
+                      {isCurrent && <span className="gm-chip gm-chip--accent">{t('gov.chipCurrent' as TranslationKey)}</span>}
                       {selected === govId && !isCurrent && (
-                        <span className="gm-chip gm-chip--accent">Selected</span>
+                        <span className="gm-chip gm-chip--accent">{t('gov.chipSelected' as TranslationKey)}</span>
                       )}
                     </div>
                     <div className="government-card__stats">
                       {g.maxTaxRate < 100 && (
-                        <span className="gm-chip">Tax cap {g.maxTaxRate}%</span>
+                        <span className="gm-chip">{t('gov.chipTaxCap' as TranslationKey, { value: g.maxTaxRate })}</span>
                       )}
                       {g.corruptionRate > 0 && (
-                        <span className="gm-chip">Corruption {Math.round(g.corruptionRate * 100)}%</span>
+                        <span className="gm-chip">{t('gov.chipCorruption' as TranslationKey, { value: Math.round(g.corruptionRate * 100) })}</span>
                       )}
                       {g.commercePenalty > 0 && (
-                        <span className="gm-chip">−{Math.round(g.commercePenalty * 100)}% commerce</span>
+                        <span className="gm-chip">{t('gov.chipCommerce' as TranslationKey, { value: Math.round(g.commercePenalty * 100) })}</span>
                       )}
                       {g.happinessBonus > 0 && (
-                        <span className="gm-chip">+{g.happinessBonus} happiness</span>
+                        <span className="gm-chip">{t('gov.chipHappiness' as TranslationKey, { value: g.happinessBonus })}</span>
                       )}
                     </div>
                     <div className="government-card__desc">{g.description}</div>
@@ -179,10 +190,9 @@ function GovernmentModal({ show, onHide, gameEngine }: GovernmentModalProps) {
               })}
             </div>
             <div className="gm-note">
-              Taking a new charter starts a {anarchyTurns}-turn revolution: rates fall to
-              0% and your cities grow restless until the new government is in place.
+              {t('gov.charterNote' as TranslationKey, { turns: anarchyTurns })}
               {Object.keys(GOVERNMENTS).length > available.length
-                ? ' Only governments your scholars have unlocked appear here — keep researching to see the rest.'
+                ? t('gov.charterNoteLocked' as TranslationKey)
                 : ''}
             </div>
           </section>

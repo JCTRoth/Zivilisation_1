@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Notification } from '../../../types/game';
 import { HUMAN_PLAYER_ID } from '../../utils/PlayerConstants';
+import { useTranslation } from '@/i18n/useTranslation';
 
 const ICONS: Record<Notification['type'], string> = {
   info: 'ℹ️',
@@ -25,6 +26,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
   notifications,
   onDismiss,
 }) => {
+  // Hook must run before any early return — see rules of hooks.
+  const { t } = useTranslation();
   if (!Array.isArray(notifications) || notifications.length === 0) {
     return null;
   }
@@ -42,7 +45,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
           className={`notification-item notification-item--${notification.type}`}
           role="button"
           tabIndex={0}
-          title="Dismiss"
+          title={t('notify.dismiss')}
           onClick={() => onDismiss(notification.id)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {

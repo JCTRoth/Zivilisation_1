@@ -111,7 +111,18 @@ describe('martial law by government', () => {
 describe('AI garrison duty', () => {
   it('never leaves a civ with an army without a single garrison', async () => {
     useSeededRandom(4242);
-    const world = await makeEngine({ mapType: 'AI_VS_AI', numberOfCivilizations: 4, seed: 777 });
+    // A generous treasury: the AI economic planner prices each unit at the
+    // maintenance of the most expensive military unit the civ owns, so a civ
+    // that starts poor sizes its army for an income it never runs and keeps
+    // every soldier in the field — none left to garrison. Starting gold is
+    // raised so the army the planner allows is an army that can spare a
+    // garrison.
+    const world = await makeEngine({
+      mapType: 'AI_VS_AI',
+      numberOfCivilizations: 4,
+      seed: 777,
+      startingGold: 500,
+    });
     const engine = world.engine as any;
 
     for (let t = 1; t <= 60; t++) await world.runTurns(1);

@@ -1,4 +1,6 @@
 import React from 'react';
+import { useTranslation } from '@/i18n/useTranslation';
+import type { TranslationKey } from '@/i18n';
 import type { GameMenuName } from './GameMenuSheet';
 
 interface MobileBottomBarProps {
@@ -47,43 +49,46 @@ const MobileBottomBar: React.FC<MobileBottomBarProps> = ({
   panelOpen,
   onTogglePanel,
   onEndTurn,
-}) => (
-  <nav className="mobile-bottom-bar" aria-label="Primary actions">
-    <BarButton
-      icon="bi bi-list"
-      label="Menu"
-      ariaLabel="Game menu"
-      active={activeMenu === 'GAME'}
-      onClick={() => onOpenMenu('GAME')}
-    />
-    <BarButton
-      icon="bi bi-globe-americas"
-      label="World"
-      ariaLabel="World menu"
-      active={activeMenu === 'WORLD'}
-      onClick={() => onOpenMenu('WORLD')}
-    />
-    <BarButton
-      icon="bi bi-info-circle"
-      label="Info"
-      ariaLabel="Info menu"
-      active={activeMenu === 'INFO'}
-      onClick={() => onOpenMenu('INFO')}
-    />
-    <BarButton
-      icon="bi bi-layout-sidebar-inset"
-      label="Panel"
-      ariaLabel="Toggle information panel"
-      active={panelOpen}
-      onClick={onTogglePanel}
-    />
-    <BarButton
-      icon="bi bi-skip-end-fill"
-      label="End Turn"
-      endTurn
-      onClick={onEndTurn}
-    />
-  </nav>
-);
+}) => {
+  const { t } = useTranslation();
+  return (
+    <nav className="mobile-bottom-bar" aria-label={t('mobile.primaryActions' as TranslationKey)}>
+      <BarButton
+        icon="bi bi-list"
+        label={t('mobile.menu' as TranslationKey)}
+        ariaLabel={t('mobile.gameMenu' as TranslationKey)}
+        active={activeMenu === 'GAME'}
+        onClick={() => onOpenMenu('GAME')}
+      />
+      <BarButton
+        icon="bi bi-globe-americas"
+        label={t('mobile.world' as TranslationKey)}
+        ariaLabel={t('mobile.worldMenu' as TranslationKey)}
+        active={activeMenu === 'WORLD'}
+        onClick={() => onOpenMenu('WORLD')}
+      />
+      <BarButton
+        icon="bi bi-info-circle"
+        label={t('mobile.info' as TranslationKey)}
+        ariaLabel={t('mobile.infoMenu' as TranslationKey)}
+        active={activeMenu === 'INFO'}
+        onClick={() => onOpenMenu('INFO')}
+      />
+      <BarButton
+        icon="bi bi-layout-sidebar-inset"
+        label={t('mobile.panel' as TranslationKey)}
+        ariaLabel={t('mobile.togglePanel' as TranslationKey)}
+        active={panelOpen}
+        onClick={onTogglePanel}
+      />
+      <BarButton
+        icon="bi bi-skip-end-fill"
+        label={t('mobile.endTurn' as TranslationKey)}
+        endTurn
+        onClick={onEndTurn}
+      />
+    </nav>
+  );
+};
 
 export default MobileBottomBar;

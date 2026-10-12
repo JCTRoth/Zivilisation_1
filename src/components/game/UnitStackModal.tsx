@@ -3,6 +3,7 @@ import { UNIT_PROPERTIES } from '@/data/UnitConstants';
 import { formatCombatStat, unitRankBadge, unitStatus } from '@/utils/UnitStatus';
 import { useGameStore } from '@/stores/GameStore';
 import { GameUtils } from '@/utils/GameUtils';
+import { useTranslation } from '@/i18n/useTranslation';
 import GameModal from '@/components/ui/gamemodals/ModalShell';
 import '@/styles/unitRank.css';
 import '@/styles/unitStackModal.css';
@@ -43,6 +44,7 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
   onShowCity,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const [checked, setChecked] = useState<string[]>([]);
   const currentTurn = useGameStore((state) => state.gameState.currentTurn);
   const currentYear = useGameStore((state) => state.gameState.currentYear);
@@ -67,10 +69,13 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
       size="lg"
       dialogClassName="unit-stack-modal"
       icon="⚔️"
-      artLabel="the muster ground"
-      eyebrow={`Your Army · Turn ${currentTurn ?? 1} · ${GameUtils.formatYear(currentYear ?? -4000)}`}
-      title={city ? `Units at (${col}, ${row}) — ${city.name}` : `Units at (${col}, ${row})`}
-      lede="More captains than one tile can answer, so choose: take the lead of a single unit, or send the whole stack to one mark on the map."
+      artLabel={t('stack.artLabel')}
+      eyebrow={t('stack.eyebrow', {
+        turn: currentTurn ?? 1,
+        year: GameUtils.formatYear(currentYear ?? -4000),
+      })}
+      title={city ? t('stack.titleCity', { col, row, city: city.name }) : t('stack.title', { col, row })}
+      lede={t('stack.lede')}
       actions={
         <>
           {city && onShowCity && (
@@ -82,12 +87,12 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
                 onClose();
               }}
             >
-              <i className="bi bi-building" aria-hidden="true"></i> City details
+              <i className="bi bi-building" aria-hidden="true"></i> {t('stack.cityDetails')}
             </button>
           )}
           <span className="gm-actions-spacer" />
           <button type="button" className="touch-btn touch-btn--ghost" onClick={onClose}>
-            Close
+            {t('stack.close')}
           </button>
           <button
             type="button"
@@ -95,33 +100,31 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
             disabled={checkedMovable.length === 0}
             title={
               checkedMovable.length === 0
-                ? 'Tick at least one unit with movement points'
-                : 'Click the map destination to move the selected units'
+                ? t('stack.moveHintNone')
+                : t('stack.moveHintPick')
             }
             onClick={() => onConfirmGroup(checkedMovable)}
           >
-            Move selected ({checkedMovable.length})
+            {t('stack.moveSelected', { count: checkedMovable.length })}
           </button>
         </>
       }
     >
       <section className="gm-section">
-        <div className="gm-section-title">Who stands here</div>
+        <div className="gm-section-title">{t('stack.whoStands')}</div>
         <div className="gm-kv-grid">
-          <div className="gm-kv">Units: <b>{units.length}</b></div>
-          <div className="gm-kv">Ready to march: <b>{movable.length}</b></div>
-          <div className="gm-kv">Ground: <b>({col}, {row})</b></div>
-          <div className="gm-kv">City: <b>{city?.name ?? 'Open field'}</b></div>
+          <div className="gm-kv">{t('stack.units')}<b>{units.length}</b></div>
+          <div className="gm-kv">{t('stack.ready')}<b>{movable.length}</b></div>
+          <div className="gm-kv">{t('stack.ground')}<b>({col}, {row})</b></div>
+          <div className="gm-kv">{t('stack.cityLabel')}<b>{city?.name ?? t('stack.openField')}</b></div>
         </div>
         <p className="gm-note">
-          Click a unit to activate it, or tick several and then click the map destination to move
-          them together (units without movement points stay put). Shift-click units on the map to
-          add them to the group from other tiles.
+          {t('stack.note')}
         </p>
       </section>
 
       <section className="gm-section">
-        <div className="gm-section-title">Order of battle</div>
+        <div className="gm-section-title">{t('stack.orderOfBattle')}</div>
         <div className="usm-toolbar">
           <button
             type="button"
@@ -129,7 +132,7 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
             disabled={movable.length === 0}
             onClick={() => setChecked(movable.map((u) => u.id))}
           >
-            <i className="bi bi-check2-square" aria-hidden="true"></i> All movable ({movable.length})
+            <i className="bi bi-check2-square" aria-hidden="true"></i> {t('stack.allMovable', { count: movable.length })}
           </button>
           <button
             type="button"
@@ -137,9 +140,9 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
             disabled={checked.length === 0}
             onClick={() => setChecked([])}
           >
-            <i className="bi bi-x-square" aria-hidden="true"></i> Clear
+            <i className="bi bi-x-square" aria-hidden="true"></i> {t('stack.clear')}
           </button>
-          <span className="gm-chip usm-count">{checkedMovable.length} selected</span>
+          <span className="gm-chip usm-count">{t('stack.selected', { count: checkedMovable.length })}</span>
         </div>
 
         <div className="usm-list">
@@ -149,8 +152,8 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
             const rankBadge = unitRankBadge(unit);
             const health = Math.max(0, Math.min(100, unit.health ?? 100));
             const hpText = typeof unit.hitPoints === 'number' && typeof unit.maxHitPoints === 'number'
-              ? `${unit.hitPoints}/${unit.maxHitPoints} HP`
-              : `${Math.round(health)}% HP`;
+              ? t('stack.hp', { hp: unit.hitPoints, max: unit.maxHitPoints })
+              : t('stack.hpPercent', { hp: Math.round(health) });
             const isChecked = checked.includes(unit.id);
             const canMove = (unit.movesRemaining || 0) > 0 && !unit.isDefeated;
             // Effective combat stats: base × rank multiplier, so the numbers
@@ -160,15 +163,15 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
             const effDefense = formatCombatStat((props?.defense ?? 0) * rankMult);
             const maxMoves = unit.maxMoves ?? unit.movement;
             const movesText = typeof maxMoves === 'number'
-              ? `${unit.movesRemaining ?? 0}/${maxMoves} MP`
-              : `${unit.movesRemaining ?? 0} MP`;
+              ? t('stack.moves', { moves: unit.movesRemaining ?? 0, max: maxMoves })
+              : t('stack.movesOnly', { moves: unit.movesRemaining ?? 0 });
             const hpBand = health > 60 ? 'high' : health > 30 ? 'mid' : 'low';
             return (
               <div
                 key={unit.id}
                 className={`usm-row${isChecked ? ' usm-row--checked' : ''}`}
                 onClick={() => onSelectUnit(unit.id)}
-                title="Activate this unit"
+                title={t('stack.activate')}
               >
                 <input
                   type="checkbox"
@@ -177,7 +180,7 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
                   disabled={!canMove}
                   onClick={(e) => e.stopPropagation()}
                   onChange={() => toggle(unit.id)}
-                  aria-label={`Select ${unit.type} for group move`}
+                  aria-label={t('stack.selectAria', { type: unit.type })}
                 />
 
                 <span className="usm-icon" aria-hidden="true">
@@ -206,11 +209,15 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
                       className="usm-combat"
                       title={
                         rankBadge
-                          ? `Base A${props?.attack ?? 0}/D${props?.defense ?? 0}, ×${rankBadge.multiplier} rank strength`
+                          ? t('stack.combatTitle', {
+                            attack: props?.attack ?? 0,
+                            defense: props?.defense ?? 0,
+                            multiplier: rankBadge.multiplier,
+                          })
                           : undefined
                       }
                     >
-                      A{effAttack}/D{effDefense}
+                      {t('stack.combatStat', { attack: effAttack, defense: effDefense })}
                     </span>
                   </div>
                 </div>
@@ -223,7 +230,7 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
                     onSelectUnit(unit.id);
                   }}
                 >
-                  Select
+                  {t('stack.select')}
                 </button>
               </div>
             );

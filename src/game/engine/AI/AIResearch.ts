@@ -54,6 +54,18 @@ interface GameStateSnapshot {
    * getting the boat the economics asked for.
    */
   fishingRelevance?: number;
+  /**
+   * Real turns to finish one technology, as the engine would charge them.
+   *
+   * Supplied by AIManager from `ResearchManager.estimatedTurns`, so the scorer
+   * sees the EFFECTIVE cost (map size × difficulty × tech-count gap) and the
+   * post-modifier beakers instead of the raw table cost. Scoring cost
+   * efficiency against `TECHNOLOGIES_DATA.cost / totalScience` understated every
+   * tech by the map-size factor (×2 on a 40×40 map) plus the known-civ and
+   * prerequisite penalties: a moonshot the AI scored as 20 turns away actually
+   * took 38, and its "slow research" penalty never fired for it.
+   */
+  turnsToResearch?: (techId: string) => number;
 }
 
 // ---------------------------------------------------------------------------
@@ -266,10 +278,16 @@ export class AIResearch {
     }
 
     // 5. Cost efficiency — prefer cheaper techs early, expensive techs when rich
-    const tech = TECHNOLOGIES_DATA.find(t => t.id === techId);
-    const techCost = tech?.cost ?? 40;
-    if (gameState.totalScience > 0) {
-      const turnsToResearch = techCost / Math.max(1, gameState.totalScience);
+    // The turn count comes from the engine's own research model when the caller
+    // supplies it (see `turnsToResearch`): the raw table cost is not what the
+    // civ will actually pay, and the beakers that arrive are not
+    // `totalScience` either. The fallback keeps lightweight test doubles
+    // working.
+    if (gameState.totalScience > 0 || gameState.turnsToResearch) {
+      const turnsToResearch = gameState.turnsToResearch
+        ? gameState.turnsToResearch(techId)
+        : (TECHNOLOGIES_DATA.find(t => t.id === techId)?.cost ?? 40)
+          / Math.max(1, gameState.totalScience);
       // Penalize very long research (>20 turns), bonus for quick (<5 turns)
       if (turnsToResearch > 20) {
         score -= 5;

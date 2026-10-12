@@ -1,4 +1,5 @@
 import GameModal from '../ModalShell';
+import { useTranslation } from '@/i18n/useTranslation';
 import type { VillageResult } from '../../../../../types/game';
 
 interface VillageTechModalProps {
@@ -10,20 +11,21 @@ interface VillageTechModalProps {
  * "Scroll of Ancient Wisdom" village outcome — an instant free technology.
  */
 function VillageTechModal({ result, onHide }: VillageTechModalProps) {
-  const techName = result.techName ?? result.techId ?? 'a new technology';
+  const { t } = useTranslation();
+  const techName = result.techName ?? result.techId ?? t('village.tech.fallbackName');
   return (
     <GameModal
       show
       onClose={onHide}
       tone="solemn"
       icon="📜"
-      artLabel="the scroll chamber"
-      eyebrow="A Village Encounter"
-      title="Scroll of Ancient Wisdom"
-      lede="In a hut of reed and mud lies a language your own scholars cannot read. The elders hand it over without a word — knowledge asks no price here."
+      artLabel={t('village.tech.art')}
+      eyebrow={t('village.eyebrow')}
+      title={t('village.tech.title')}
+      lede={t('village.tech.lede')}
       actions={
         <button type="button" className="touch-btn touch-btn--primary" onClick={onHide}>
-          Take the Scroll
+          {t('village.tech.action')}
         </button>
       }
     >
@@ -33,14 +35,13 @@ function VillageTechModal({ result, onHide }: VillageTechModalProps) {
             <span className="gm-stat-icon" aria-hidden="true">🔬</span>
             {techName}
           </span>
-          <span className="gm-stat-label">Known at once, for free</span>
+          <span className="gm-stat-label">{t('village.tech.stat')}</span>
         </div>
       </div>
       <div className="gm-section">
-        <div className="gm-section-title">What your scholars make of it</div>
+        <div className="gm-section-title">{t('village.tech.section')}</div>
         <p className="gm-prose mb-0">
-          Your academy had not finished writing the question, and the answer has already arrived.
-          Every year of research this saves is a year your rivals do not have.
+          {t('village.tech.prose')}
         </p>
       </div>
     </GameModal>

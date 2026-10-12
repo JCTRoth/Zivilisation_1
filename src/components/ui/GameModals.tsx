@@ -31,8 +31,12 @@ import type { City, Civilization } from '../../../types/game';
 import GameEngine from '@/game/engine/GameEngine';
 import type { DiplomatAction, TreatyType } from '@/game/engine/DiplomacyTypes';
 import { attitudeFromScore } from '@/game/engine/DiplomacyTypes';
+import { useTranslation } from '@/i18n/useTranslation';
+import { tBuildingName, tTechName, tUnitName } from '@/i18n/dataNames';
+import type { TranslationKey } from '@/i18n';
 
 const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
+  const { t } = useTranslation();
   // console.log('[GameModals] Component rendering, gameEngine present:', !!gameEngine);
   const uiState = useGameStore(state => state.uiState);
   const actions = useGameStore(state => state.actions);
@@ -49,11 +53,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
   /** Shared eyebrow stamp: "Germans · Turn 12 · 3960 BC". */
   const stamp = (prefix: string) =>
-    `${prefix} · Turn ${gameState.currentTurn ?? 1} · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`;
+    `${prefix} · ${t('common.turn', { turn: gameState.currentTurn ?? 1 })} · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`;
 
   /** Just the turn/year part, for modals that carry their own eyebrow prefix. */
   const turnStamp = () =>
-    `Turn ${gameState.currentTurn ?? 1} · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`;
+    `${t('common.turn', { turn: gameState.currentTurn ?? 1 })} · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`;
 
   const civilizations = useGameStore(state => state.civilizations);
   const incomingDiplomacyOffer = useGameStore(state => state.incomingDiplomacyOffer);
@@ -116,19 +120,23 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     return 0;
   };
 
+  /** Localized display name for a production id (unit table first, then buildings). */
+  const productionDataName = (id: string, fallback: string): string =>
+    UNIT_PROPS[id] ? tUnitName(id, fallback) : BUILDING_PROPERTIES[id] ? tBuildingName(id, fallback) : fallback;
+
   const getProductionName = (item: string | { name?: string; type?: string; itemType?: string } | null | undefined): string => {
-    if (!item) return 'Unknown';
+    if (!item) return t('gm.unknown' as TranslationKey);
     if (typeof item === 'string') {
-      return UNIT_PROPS[item]?.name || BUILDING_PROPERTIES[item]?.name || capitalizeName(item);
+      return productionDataName(item, UNIT_PROPS[item]?.name || BUILDING_PROPERTIES[item]?.name || capitalizeName(item));
     }
     if (item.name) return item.name;
     if (item.itemType) {
-      return UNIT_PROPS[item.itemType]?.name || BUILDING_PROPERTIES[item.itemType]?.name || capitalizeName(item.itemType);
+      return productionDataName(item.itemType, UNIT_PROPS[item.itemType]?.name || BUILDING_PROPERTIES[item.itemType]?.name || capitalizeName(item.itemType));
     }
     if (item.type) {
-      return BUILDING_PROPERTIES[item.type]?.name || capitalizeName(item.type);
+      return productionDataName(item.type, BUILDING_PROPERTIES[item.type]?.name || capitalizeName(item.type));
     }
-    return 'Unknown';
+    return t('gm.unknown' as TranslationKey);
   };
 
   // Dialogs that do NOT defer auto-end while open (they never block it), so
@@ -308,7 +316,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       const saved = useGameStore.getState().techProgress[firstResearchable] ?? 0;
       // The engine owns the opening-round lock and says no while it is closed.
       if (!ge.setResearch(0, firstResearchable, saved)) {
-        notify('info', 'Research only starts once the opening rounds are over.');
+        notify('info', t('gm.research.locked' as TranslationKey));
       }
       actions.updateCivilizations([...(ge.civilizations || [])]);
     }
@@ -337,25 +345,24 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         contentClassName="gm-modal"
       >
         <Modal.Body className="gm-body" data-tone="solemn">
-          <button type="button" className="gm-close" onClick={handleCloseDialog} aria-label="Close">
+          <button type="button" className="gm-close" onClick={handleCloseDialog} aria-label={t('common.close')}>
             <i className="bi bi-x-lg" aria-hidden="true" />
           </button>
           <header className="gm-hero gm-hero--slim">
             <div className="gm-art gm-art--plain">
               <span className="gm-art-glyph" aria-hidden="true">💡</span>
-              <span className="gm-art-tag">the road ahead</span>
+              <span className="gm-art-tag">{t('gm.tech.artTag' as TranslationKey)}</span>
             </div>
             <div className="gm-heading">
-              <div className="gm-eyebrow">{stamp('Research')}</div>
-              <h2 className="gm-title">Technology Tree</h2>
+              <div className="gm-eyebrow">{stamp(t('gm.research.eyebrow' as TranslationKey))}</div>
+              <h2 className="gm-title">{t('gm.tech.title' as TranslationKey)}</h2>
               <p className="gm-lede">
-                Every science your people can still reach. Follow a path and your academies will
-                walk it without further orders.
+                {t('gm.tech.lede' as TranslationKey)}
               </p>
             </div>
           </header>
           <div className="gm-content gm-content--fill">
-            <React.Suspense fallback={<div className="gm-prose">Unrolling the charts…</div>}>
+            <React.Suspense fallback={<div className="gm-prose">{t('gm.tech.suspense' as TranslationKey)}</div>}>
               <TechTreeView
                 technologies={technologies}
                 width={Math.max(window.innerWidth - 32, 320)}
@@ -392,13 +399,13 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         onClose={actions.dismissTechNotification}
         tone="success"
         icon={getTechIcon(lastResearchedTech.id)}
-        artLabel="the academy"
+        artLabel={t('gm.researchComplete.artLabel' as TranslationKey)}
         dialogClassName="research-complete-modal"
-        eyebrow={stamp('Research Complete')}
-        title={lastResearchedTech.name}
+        eyebrow={stamp(t('gm.researchComplete.eyebrow' as TranslationKey))}
+        title={tTechName(lastResearchedTech.id, lastResearchedTech.name)}
         lede={
           lastResearchedTech.description ||
-          'Another secret of the world has given up its knowledge to your people.'
+          t('gm.researchComplete.lede' as TranslationKey)
         }
         actions={
           nextTech && nextTechId ? (
@@ -414,7 +421,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 actions.dismissTechNotification();
               }}
             >
-              Continue with {nextTech.name}
+              {t('gm.researchComplete.continueWith' as TranslationKey, { name: tTechName(nextTech.id, nextTech.name) })}
             </button>
           ) : (
             <button
@@ -425,30 +432,27 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 actions.showDialog('tech');
               }}
             >
-              Choose New Research Path
+              {t('gm.researchComplete.chooseNew' as TranslationKey)}
             </button>
           )
         }
       >
         <div className="gm-section">
-          <div className="gm-section-title">Where the path leads</div>
+          <div className="gm-section-title">{t('gm.researchComplete.pathTitle' as TranslationKey)}</div>
           {nextTech ? (
             <p className="gm-prose">
-              Your researchers are already reaching for the next rung of your path:{' '}
-              <strong>{nextTech.name}</strong>. Take it now, or open the technology tree and
-              strike out in another direction — nothing your people have learned is ever lost.
+              {t('gm.researchComplete.next.pre' as TranslationKey)}{' '}
+              <strong>{tTechName(nextTech.id, nextTech.name)}</strong>
+              {t('gm.researchComplete.next.post' as TranslationKey)}
             </p>
           ) : (
             <p className="gm-prose">
-              This branch of learning is exhausted — there is nothing left on your current path
-              that your scholars do not already know. Open the technology tree and set them a new
-              road, or let them wander on their own.
+              {t('gm.researchComplete.exhausted' as TranslationKey)}
             </p>
           )}
         </div>
         <div className="gm-note">
-          Research only moves while something is selected. Leave it empty and the turn will end
-          with your academies idle.
+          {t('gm.researchComplete.note' as TranslationKey)}
         </div>
       </GameModal>
     );
@@ -517,10 +521,12 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         techRequested: offer.techRequested,
       });
       addDiploLog(result.accepted
-        ? `You accepted ${fromCiv?.name ?? 'their'} proposal (${offer.action.replace(/_/g, ' ')}).`
-        : `The proposal could not be completed${result.reason ? `: ${result.reason}` : ''}.`);
+        ? t('gm.diplo.feed.offerAccepted' as TranslationKey, { civ: fromCiv?.name ?? t('gm.diplo.feed.them' as TranslationKey), term: offer.action.replace(/_/g, ' ') })
+        : result.reason
+          ? t('gm.diplo.feed.offerFailedReason' as TranslationKey, { reason: String(result.reason) })
+          : t('gm.diplo.feed.offerFailed' as TranslationKey));
     } else {
-      addDiploLog(`You declined ${fromCiv?.name ?? 'their'} proposal.`);
+      addDiploLog(t('gm.diplo.feed.offerDeclined' as TranslationKey, { civ: fromCiv?.name ?? t('gm.diplo.feed.them' as TranslationKey) }));
     }
     actions.clearIncomingDiplomacyOffer();
     // Tech swaps change what each civ knows — refresh the store mirror.
@@ -549,34 +555,41 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     };
 
     const ATTITUDE_LABELS: Record<string, { label: string; color: string }> = {
-      friendly: { label: 'Friendly', color: '#4caf50' },
-      neutral: { label: 'Neutral', color: '#9e9e9e' },
-      annoyed: { label: 'Annoyed', color: '#ff9800' },
-      hostile: { label: 'Hostile', color: '#f44336' },
+      friendly: { label: t('gm.diplo.attitude.friendly' as TranslationKey), color: '#4caf50' },
+      neutral: { label: t('gm.diplo.attitude.neutral' as TranslationKey), color: '#9e9e9e' },
+      annoyed: { label: t('gm.diplo.attitude.annoyed' as TranslationKey), color: '#ff9800' },
+      hostile: { label: t('gm.diplo.attitude.hostile' as TranslationKey), color: '#f44336' },
     };
 
     const TREATY_LABELS: Record<string, { icon: string; label: string }> = {
-      open_borders: { icon: '🚪', label: 'Open Borders' },
-      trade_agreement: { icon: '📦', label: 'Trade Agreement' },
-      mutual_defense: { icon: '🛡️', label: 'Mutual Defense' },
-      non_aggression: { icon: '🤚', label: 'Non-Aggression' },
-      embargo_target: { icon: '🚫', label: 'Embargo' },
+      open_borders: { icon: '🚪', label: t('gm.diplo.treaty.openBorders' as TranslationKey) },
+      trade_agreement: { icon: '📦', label: t('gm.diplo.treaty.tradeAgreement' as TranslationKey) },
+      mutual_defense: { icon: '🛡️', label: t('gm.diplo.treaty.mutualDefense' as TranslationKey) },
+      non_aggression: { icon: '🤚', label: t('gm.diplo.treaty.nonAggression' as TranslationKey) },
+      embargo_target: { icon: '🚫', label: t('gm.diplo.treaty.embargo' as TranslationKey) },
     };
 
     // Reads an engine action ("propose_peace") as the term the court would
     // actually speak, so a proposal never shows up as snake_case jargon.
     const OFFER_LABELS: Record<string, string> = {
-      propose_peace: 'Peace',
-      propose_ceasefire: 'Ceasefire',
-      propose_alliance: 'Alliance',
-      demand_tribute: 'Tribute',
-      offer_open_borders: 'Open Borders',
-      propose_trade_agreement: 'Trade Agreement',
-      propose_mutual_defense: 'Mutual Defense',
-      propose_non_aggression: 'Non-Aggression Pact',
-      propose_embargo: 'Embargo',
-      offer_tech_exchange: 'Tech Exchange',
+      propose_peace: t('gm.diplo.offer.peace' as TranslationKey),
+      propose_ceasefire: t('gm.diplo.offer.ceasefire' as TranslationKey),
+      propose_alliance: t('gm.diplo.offer.alliance' as TranslationKey),
+      demand_tribute: t('gm.diplo.offer.tribute' as TranslationKey),
+      offer_open_borders: t('gm.diplo.offer.openBorders' as TranslationKey),
+      propose_trade_agreement: t('gm.diplo.offer.tradeAgreement' as TranslationKey),
+      propose_mutual_defense: t('gm.diplo.offer.mutualDefense' as TranslationKey),
+      propose_non_aggression: t('gm.diplo.offer.nonAggressionPact' as TranslationKey),
+      propose_embargo: t('gm.diplo.offer.embargo' as TranslationKey),
+      offer_tech_exchange: t('gm.diplo.offer.techExchange' as TranslationKey),
     };
+    const STATUS_LABELS: Record<string, string> = {
+      peace: t('gm.diplo.status.peace' as TranslationKey),
+      war: t('gm.diplo.status.war' as TranslationKey),
+      ceasefire: t('gm.diplo.status.ceasefire' as TranslationKey),
+      alliance: t('gm.diplo.status.alliance' as TranslationKey),
+    };
+
     const offerTerm = (action: string): string =>
       OFFER_LABELS[action] ?? action.replace(/_/g, ' ');
 
@@ -592,39 +605,39 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           // declareWar emits WAR_DECLARED itself — re-emitting here duplicated
           // the player's war toast.
           dm.declareWar(playerId, targetId);
-          addDiploLog(`You declared war on ${civilizations[targetId]?.name}!`);
+          addDiploLog(t('gm.diplo.log.declaredWar' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           break;
         case 'propose_peace':
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'propose_peace' });
           if (result.counterProposal) {
             setCounterProposal(result.counterProposal);
-            addDiploLog(`${civilizations[targetId]?.name} rejected peace but made a counter-offer.`);
+            addDiploLog(t('gm.diplo.log.peaceCounterOffered' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           } else {
             addDiploLog(result.accepted
-              ? `${civilizations[targetId]?.name} accepted your peace proposal.`
-              : `${civilizations[targetId]?.name} rejected peace: "${result.reason}"`);
+              ? t('gm.diplo.log.peaceAccepted' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
+              : t('gm.diplo.log.peaceRejected' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           }
           break;
         case 'propose_ceasefire':
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'propose_ceasefire' });
           if (result.counterProposal) {
             setCounterProposal(result.counterProposal);
-            addDiploLog(`${civilizations[targetId]?.name} counter-proposes instead.`);
+            addDiploLog(t('gm.diplo.log.ceasefireCounter' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           } else {
             addDiploLog(result.accepted
-              ? `Ceasefire agreed with ${civilizations[targetId]?.name}.`
-              : `${civilizations[targetId]?.name} rejected ceasefire: "${result.reason}"`);
+              ? t('gm.diplo.log.ceasefireAgreed' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
+              : t('gm.diplo.log.ceasefireRejected' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           }
           break;
         case 'propose_alliance':
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'propose_alliance' });
           if (result.counterProposal) {
             setCounterProposal(result.counterProposal);
-            addDiploLog(`${civilizations[targetId]?.name} declines alliance but offers an alternative.`);
+            addDiploLog(t('gm.diplo.log.allianceCounter' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           } else {
             addDiploLog(result.accepted
-              ? `Alliance formed with ${civilizations[targetId]?.name}!`
-              : `${civilizations[targetId]?.name} rejected alliance: "${result.reason}"`);
+              ? t('gm.diplo.log.allianceFormed' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
+              : t('gm.diplo.log.allianceRejected' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           }
           break;
         case 'demand_tribute': {
@@ -632,37 +645,37 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'demand_tribute', goldAmount: demand });
           if (result.counterProposal) {
             setCounterProposal(result.counterProposal);
-            addDiploLog(`${civilizations[targetId]?.name} refuses tribute but offers a deal.`);
+            addDiploLog(t('gm.diplo.log.tributeCounter' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           } else {
             addDiploLog(result.accepted
-              ? `${civilizations[targetId]?.name} paid ${result.goldTransferred ?? demand} gold in tribute.`
-              : `${civilizations[targetId]?.name} refused your demand: "${result.reason}"`);
+              ? t('gm.diplo.log.tributePaid' as TranslationKey, { civ: String(civilizations[targetId]?.name), gold: result.goldTransferred ?? demand })
+              : t('gm.diplo.log.demandRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           }
           break;
         }
         case 'offer_open_borders':
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'offer_open_borders' });
           addDiploLog(result.accepted
-            ? `Open borders established with ${civilizations[targetId]?.name}.`
-            : `${civilizations[targetId]?.name} refused open borders.`);
+            ? t('gm.diplo.log.openBordersEstablished' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
+            : t('gm.diplo.log.openBordersRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           break;
         case 'propose_trade_agreement':
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'propose_trade_agreement', goldAmount: 2 });
           addDiploLog(result.accepted
-            ? `Trade agreement signed with ${civilizations[targetId]?.name}! (+2 gold/turn)`
-            : `${civilizations[targetId]?.name} refused trade.`);
+            ? t('gm.diplo.log.tradeSigned' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
+            : t('gm.diplo.log.tradeRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           break;
         case 'propose_mutual_defense':
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'propose_mutual_defense' });
           addDiploLog(result.accepted
-            ? `Mutual defense pact with ${civilizations[targetId]?.name}!`
-            : `${civilizations[targetId]?.name} refused the defense pact.`);
+            ? t('gm.diplo.log.mutualDefensePact' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
+            : t('gm.diplo.log.defensePactRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           break;
         case 'propose_non_aggression':
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'propose_non_aggression' });
           addDiploLog(result.accepted
-            ? `Non-aggression pact signed with ${civilizations[targetId]?.name}.`
-            : `${civilizations[targetId]?.name} refused the pact.`);
+            ? t('gm.diplo.log.nonAggressionSigned' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
+            : t('gm.diplo.log.pactRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           break;
         case 'propose_embargo':
           result = dm.processProposal({
@@ -672,8 +685,8 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
             embargoTargetId: extra?.embargoTargetId,
           });
           addDiploLog(result.accepted
-            ? `Embargo agreed with ${civilizations[targetId]?.name} against ${civilizations[extra?.embargoTargetId ?? -1]?.name ?? 'the target'}.`
-            : `${civilizations[targetId]?.name} rejected the embargo: "${result.reason}"`);
+            ? t('gm.diplo.log.embargoAgreed' as TranslationKey, { civ: String(civilizations[targetId]?.name), target: civilizations[extra?.embargoTargetId ?? -1]?.name ?? t('gm.diplo.log.theTarget' as TranslationKey) })
+            : t('gm.diplo.log.embargoRejected' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           break;
         case 'offer_tech_exchange':
           result = dm.processProposal({
@@ -684,14 +697,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
             techRequested: extra?.techRequested,
           });
           addDiploLog(result.accepted
-            ? `Technology exchanged with ${civilizations[targetId]?.name}!`
-            : `${civilizations[targetId]?.name} rejected the exchange: "${result.reason}"`);
+            ? t('gm.diplo.log.techExchanged' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
+            : t('gm.diplo.log.exchangeRejected' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           break;
         case 'cancel_treaty': {
           const treaty = extra?.treaty as TreatyType | undefined;
           if (treaty) {
             dm.cancelTreaty(playerId, targetId, treaty);
-            addDiploLog(`You cancelled ${TREATY_LABELS[treaty]?.label || treaty} with ${civilizations[targetId]?.name}.`);
+            addDiploLog(t('gm.diplo.log.treatyCancelled' as TranslationKey, { treaty: TREATY_LABELS[treaty]?.label || treaty, civ: String(civilizations[targetId]?.name) }));
           }
           break;
         }
@@ -700,14 +713,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
             const cpResult = dm.processProposal({ ...counterProposal, action: counterProposal.action as DiplomatAction });
             const cpAction = counterProposal.action.replace(/_/g, ' ');
             addDiploLog(cpResult.accepted
-              ? `You accepted their counter-proposal: ${cpAction}.`
-              : `Counter-proposal could not be executed.`);
+              ? t('gm.diplo.log.counterAccepted' as TranslationKey, { term: cpAction })
+              : t('gm.diplo.log.counterFailed' as TranslationKey));
             setCounterProposal(null);
           }
           break;
         }
         case 'reject_counter':
-          addDiploLog('You rejected their counter-proposal.');
+          addDiploLog(t('gm.diplo.log.counterRejected' as TranslationKey));
           setCounterProposal(null);
           break;
       }
@@ -794,16 +807,16 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         dialogClassName="diplomacy-modal"
         icon={heroArt ?? '⚖️'}
         artSize="lg"
-        artLabel={heroArt ? undefined : 'Divide et impera'}
-        artAlt={leaderName || 'Divide et impera'}
-        eyebrow={stamp('Your Court')}
-        title="Diplomatic Relations"
-        lede="Every court on earth is a door — opened with a gift, a treaty, or an army at the gate. Choose a rival, read the temper of their ruler, and speak: what you promise in this hall your people will be held to."
+        artLabel={heroArt ? undefined : t('gm.diplo.artLabel' as TranslationKey)}
+        artAlt={leaderName || t('gm.diplo.artLabel' as TranslationKey)}
+        eyebrow={stamp(t('gm.diplo.eyebrow' as TranslationKey))}
+        title={t('gm.diplo.title' as TranslationKey)}
+        lede={t('gm.diplo.lede' as TranslationKey)}
         actions={
           <>
             <span className="gm-actions-spacer" />
             <button type="button" className="touch-btn touch-btn--ghost" onClick={closeDiplomacy}>
-              Close
+              {t('common.close')}
             </button>
           </>
         }
@@ -811,10 +824,10 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           {/* Pending AI→player proposal awaiting an accept/reject decision */}
           {incomingDiplomacyOffer && (
             <div className="diplomacy-incoming-offer">
-              <div className="gm-section-title">📨 An envoy is waiting</div>
+              <div className="gm-section-title">{t('gm.diplo.incoming.title' as TranslationKey)}</div>
               <div className="diplomacy-incoming-text">
-                {civilizations[incomingDiplomacyOffer.fromCivId]?.name ?? 'Unknown'} proposes: <strong>{offerTerm(incomingDiplomacyOffer.action)}</strong>
-                {incomingDiplomacyOffer.goldAmount ? ` (${incomingDiplomacyOffer.goldAmount} gold)` : ''}
+                {t('gm.diplo.incoming.pre' as TranslationKey, { civ: civilizations[incomingDiplomacyOffer.fromCivId]?.name ?? t('gm.unknown' as TranslationKey) })} <strong>{offerTerm(incomingDiplomacyOffer.action)}</strong>
+                {incomingDiplomacyOffer.goldAmount ? t('gm.diplo.incoming.goldSuffix' as TranslationKey, { gold: incomingDiplomacyOffer.goldAmount }) : ''}
                 {incomingDiplomacyOffer.techOffered && incomingDiplomacyOffer.techRequested && (
                   <>
                     {': '}
@@ -831,8 +844,8 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 )}
               </div>
               <div className="diplomacy-incoming-buttons">
-                <button className="diplomacy-btn btn-peace" onClick={() => handleIncomingOffer(true)}>✓ Accept</button>
-                <button className="diplomacy-btn btn-war" onClick={() => handleIncomingOffer(false)}>✗ Reject</button>
+                <button className="diplomacy-btn btn-peace" onClick={() => handleIncomingOffer(true)}>{t('gm.diplo.accept' as TranslationKey)}</button>
+                <button className="diplomacy-btn btn-war" onClick={() => handleIncomingOffer(false)}>{t('gm.diplo.reject' as TranslationKey)}</button>
               </div>
             </div>
           )}
@@ -840,7 +853,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               no feedback unless a counter-offer happened to come back. */}
           {diplomacyFeed.length > 0 && (
             <section className="gm-section">
-              <div className="gm-section-title">What the court has heard</div>
+              <div className="gm-section-title">{t('gm.diplo.feed.title' as TranslationKey)}</div>
               <div className="diplomacy-log diplomacy-feed">
                 {diplomacyFeed.slice(0, 4).map((line, i) => (
                   <div key={i} className="diplomacy-log-entry">{line}</div>
@@ -850,14 +863,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           )}
           {otherCivs.length === 0 ? (
             <section className="gm-section">
-              <div className="gm-section-title">No one has come to the table</div>
-              <p className="gm-prose">No other civilizations discovered yet.</p>
+              <div className="gm-section-title">{t('gm.diplo.empty.title' as TranslationKey)}</div>
+              <p className="gm-prose">{t('gm.diplo.empty.prose' as TranslationKey)}</p>
             </section>
           ) : (
             <div className="diplomacy-layout gm-section gm-section--flush">
               {/* Left: Civilization list */}
               <div className="diplomacy-civ-list">
-                <div className="gm-section-title diplomacy-pane-title">Known courts</div>
+                <div className="gm-section-title diplomacy-pane-title">{t('gm.diplo.knownCourts' as TranslationKey)}</div>
                 {otherCivs.map((civ: Civilization) => {
                   const status = dm?.getStatus(playerId, civ.id) ?? 'peace';
                   const treaties = dm?.getActiveTreaties?.(playerId, civ.id) ?? [];
@@ -898,21 +911,21 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
                       {/* Leader name & title */}
                       <div className="diplomacy-leader-info">
-                        <div className="diplomacy-leader-name">{leaderName || 'Unknown Leader'}</div>
+                        <div className="diplomacy-leader-name">{leaderName || t('gm.diplo.unknownLeader' as TranslationKey)}</div>
                         <div className="diplomacy-leader-title">
-                          {portraitConfig?.title || `Leader of the ${selectedCivData.name}`}
+                          {portraitConfig?.title || t('gm.diplo.leaderTitle' as TranslationKey, { civ: selectedCivData.name })}
                         </div>
                         <div className="diplomacy-attitude-badge" style={{
                           color: ATTITUDE_LABELS[selectedAttitude]?.color || '#9e9e9e',
                           borderColor: ATTITUDE_LABELS[selectedAttitude]?.color || '#9e9e9e',
                         }}>
-                          {ATTITUDE_LABELS[selectedAttitude]?.label || 'Unknown'}
+                          {ATTITUDE_LABELS[selectedAttitude]?.label || t('gm.unknown' as TranslationKey)}
                         </div>
                         {/* Attitude meter: hostile ← → friendly. The scale is
                             clamped to ±40, the range the bands actually use. */}
                         <div
                           className="diplomacy-attitude-meter"
-                          title={`Attitude score: ${selectedAttitudeScore > 0 ? '+' : ''}${Math.round(selectedAttitudeScore)}`}
+                          title={t('gm.diplo.attitudeScore' as TranslationKey, { score: `${selectedAttitudeScore > 0 ? '+' : ''}${Math.round(selectedAttitudeScore)}` })}
                         >
                           <div
                             className="diplomacy-attitude-marker"
@@ -923,39 +936,39 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                           />
                         </div>
                         <div className="diplomacy-attitude-scale">
-                          <span>Hostile</span>
+                          <span>{t('gm.diplo.attitude.hostile' as TranslationKey)}</span>
                           <span>{selectedAttitudeScore > 0 ? '+' : ''}{Math.round(selectedAttitudeScore)}</span>
-                          <span>Friendly</span>
+                          <span>{t('gm.diplo.attitude.friendly' as TranslationKey)}</span>
                         </div>
                       </div>
 
                       {/* Status panel: the stance as a chip, the ledger below */}
                       <div className="diplomacy-status-panel">
                         <span className={`diplomacy-status-value status-${selectedStatus} gm-chip`}>
-                          {STATUS_ICONS[selectedStatus]} {selectedStatus.toUpperCase()}
+                          {STATUS_ICONS[selectedStatus]} {(STATUS_LABELS[selectedStatus] ?? selectedStatus).toUpperCase()}
                         </span>
                         {selectedRelation && (
                           /* Goodwill is the one number the whole model turns on,
                              so it leads; the rest of the ledger follows. */
                           <div className="gm-kv-grid gm-kv-grid--stack diplomacy-facts">
                             <div className="gm-kv">
-                              Goodwill:{' '}
+                              {t('gm.diplo.goodwill' as TranslationKey)}{' '}
                               <b style={{ color: selectedGoodwill < 0 ? '#f44336' : selectedGoodwill > 0 ? '#4caf50' : '#9e9e9e' }}>
                                 {selectedGoodwill > 0 ? '+' : ''}{selectedGoodwill}
                               </b>
                             </div>
                             {selectedTheirOpinion.grievance >= 10 && (
                               <div className="gm-kv">
-                                Grievance: <b style={{ color: '#ff9800' }}>{Math.round(selectedTheirOpinion.grievance)}</b>
+                                {t('gm.diplo.grievance' as TranslationKey)} <b style={{ color: '#ff9800' }}>{Math.round(selectedTheirOpinion.grievance)}</b>
                               </div>
                             )}
                             {selectedTheirOpinion.fear >= 20 && (
                               <div className="gm-kv">
-                                Their fear of you: <b style={{ color: '#ba68c8' }}>{Math.round(selectedTheirOpinion.fear)}</b>
+                                {t('gm.diplo.fear' as TranslationKey)} <b style={{ color: '#ba68c8' }}>{Math.round(selectedTheirOpinion.fear)}</b>
                               </div>
                             )}
                             <div className="gm-kv">
-                              Since turn: <b style={{ color: '#aaa' }}>{selectedRelation.since}</b>
+                              {t('gm.diplo.sinceTurn' as TranslationKey)} <b style={{ color: '#aaa' }}>{selectedRelation.since}</b>
                             </div>
                           </div>
                         )}
@@ -969,18 +982,18 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       const total = Math.max(playerStr + theirStr, 1);
                       const playerPct = (playerStr / total) * 100;
                       const ratio = theirStr > 0 ? playerStr / theirStr : playerStr > 0 ? 99 : 1;
-                      const strengthLabel = ratio > 2 ? 'Supreme' : ratio > 1.3 ? 'Superior' : ratio > 0.8 ? 'Comparable' : ratio > 0.5 ? 'Weaker' : 'Inferior';
+                      const strengthLabel = ratio > 2 ? t('gm.diplo.strength.supreme' as TranslationKey) : ratio > 1.3 ? t('gm.diplo.strength.superior' as TranslationKey) : ratio > 0.8 ? t('gm.diplo.strength.comparable' as TranslationKey) : ratio > 0.5 ? t('gm.diplo.strength.weaker' as TranslationKey) : t('gm.diplo.strength.inferior' as TranslationKey);
                       const strengthColor = ratio > 1.3 ? '#4caf50' : ratio > 0.8 ? '#9e9e9e' : '#f44336';
                       return (
                         <section className="gm-section">
-                          <div className="gm-section-title">Where the steel lies</div>
+                          <div className="gm-section-title">{t('gm.diplo.strength.title' as TranslationKey)}</div>
                           <div className="diplomacy-strength-section">
                             <span style={{ color: strengthColor, fontWeight: 'bold' }}>{strengthLabel}</span>
                             <div className="diplomacy-strength-bar-visual">
                               <div className="diplomacy-strength-fill-player" style={{ width: `${playerPct}%` }} />
                               <div className="diplomacy-strength-fill-enemy" style={{ width: `${100 - playerPct}%` }} />
                             </div>
-                            <span className="diplomacy-strength-nums">You: {Math.round(playerStr)} | Them: {Math.round(theirStr)}</span>
+                            <span className="diplomacy-strength-nums">{t('gm.diplo.strength.nums' as TranslationKey, { you: Math.round(playerStr), them: Math.round(theirStr) })}</span>
                           </div>
                         </section>
                       );
@@ -989,15 +1002,15 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     {/* Active treaties display */}
                     {activeTreaties.length > 0 && (
                       <section className="gm-section">
-                        <div className="gm-section-title">Treaties in force</div>
+                        <div className="gm-section-title">{t('gm.diplo.treatiesInForce' as TranslationKey)}</div>
                         <div className="diplomacy-treaty-badges">
-                          {activeTreaties.map((t: string) => (
-                            <span key={t} className="diplomacy-treaty-badge">
-                              {TREATY_LABELS[t]?.icon || '📜'} {TREATY_LABELS[t]?.label || t}
+                          {activeTreaties.map((treaty: string) => (
+                            <span key={treaty} className="diplomacy-treaty-badge">
+                              {TREATY_LABELS[treaty]?.icon || '📜'} {TREATY_LABELS[treaty]?.label || treaty}
                               <button
                                 className="diplomacy-treaty-cancel"
-                                onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'cancel_treaty', { treaty: t })}
-                                title="Cancel treaty"
+                                onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'cancel_treaty', { treaty })}
+                                title={t('gm.diplo.cancelTreaty' as TranslationKey)}
                               >×</button>
                             </span>
                           ))}
@@ -1011,14 +1024,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     {verdict && selectedStatus !== 'war' && (
                       <div className={`diplomacy-verdict ${verdict.accepted ? 'likely' : 'unlikely'}`}>
                         <span className="diplomacy-verdict-headline">
-                          {verdict.accepted ? 'Likely to be paid' : 'Likely to be refused'}
+                          {verdict.accepted ? t('gm.diplo.verdict.paid' as TranslationKey) : t('gm.diplo.verdict.refused' as TranslationKey)}
                         </span>
                         <span className="diplomacy-verdict-score">
-                          {verdict.score} vs {verdict.threshold}
+                          {t('gm.diplo.verdict.score' as TranslationKey, { score: verdict.score, threshold: verdict.threshold })}
                         </span>
                         <span className="diplomacy-verdict-why">
-                          decisive: {verdict.decisiveFactor}
-                          {verdict.vetoed ? ' · pride forbids it' : ''}
+                          {t('gm.diplo.verdict.decisive' as TranslationKey, { factor: verdict.decisiveFactor })}
+                          {verdict.vetoed ? t('gm.diplo.verdict.vetoed' as TranslationKey) : ''}
                         </span>
                       </div>
                     )}
@@ -1028,7 +1041,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         for every single thing that moved the number above. */}
                     {selectedReasons.length > 0 && (
                       <div className="diplomacy-reasons">
-                        <div className="gm-section-title">What they remember</div>
+                        <div className="gm-section-title">{t('gm.diplo.remember.title' as TranslationKey)}</div>
                         {selectedReasons.map((r, i) => (
                           <div key={`${r.event}-${r.round}-${i}`} className="diplomacy-reason-row">
                             <span className={`diplomacy-reason-delta ${r.delta >= 0 ? 'good' : 'bad'}`}>
@@ -1046,17 +1059,17 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     {/* Counter-proposal banner */}
                     {counterProposal && (
                       <div className="diplomacy-counter-proposal">
-                        <div className="gm-section-title">📜 Counter-Proposal</div>
+                        <div className="gm-section-title">{t('gm.diplo.counter.title' as TranslationKey)}</div>
                         <div className="diplomacy-counter-text">
-                          {civilizations[selectedDiploCiv!]?.name} suggests: <strong>{offerTerm(counterProposal.action)}</strong>
-                          {counterProposal.goldAmount ? ` (${counterProposal.goldAmount} gold)` : ''}
+                          {t('gm.diplo.counter.pre' as TranslationKey, { civ: civilizations[selectedDiploCiv!]?.name ?? '' })} <strong>{offerTerm(counterProposal.action)}</strong>
+                          {counterProposal.goldAmount ? t('gm.diplo.incoming.goldSuffix' as TranslationKey, { gold: counterProposal.goldAmount }) : ''}
                         </div>
                         <div className="diplomacy-counter-buttons">
                           <button className="diplomacy-btn btn-peace" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'accept_counter')}>
-                            ✓ Accept
+                            {t('gm.diplo.accept' as TranslationKey)}
                           </button>
                           <button className="diplomacy-btn btn-war" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'reject_counter')}>
-                            ✗ Reject
+                            {t('gm.diplo.reject' as TranslationKey)}
                           </button>
                         </div>
                       </div>
@@ -1064,32 +1077,32 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
                     {/* Negotiation buttons */}
                     <section className="gm-section">
-                      <div className="gm-section-title">Terms you may put to them</div>
+                      <div className="gm-section-title">{t('gm.diplo.terms' as TranslationKey)}</div>
                       <div className="diplomacy-actions">
                       {selectedStatus === 'war' && (
                         <>
                           <button className="diplomacy-btn btn-ceasefire" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_ceasefire')}>
-                            🏳️ Propose Ceasefire
+                            {t('gm.diplo.btn.proposeCeasefire' as TranslationKey)}
                           </button>
                           <button className="diplomacy-btn btn-peace" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_peace')}>
-                            🕊️ Offer Peace
+                            {t('gm.diplo.btn.offerPeace' as TranslationKey)}
                           </button>
                         </>
                       )}
                       {selectedStatus === 'ceasefire' && (
                         <>
                           <button className="diplomacy-btn btn-peace" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_peace')}>
-                            🕊️ Offer Peace Treaty
+                            {t('gm.diplo.btn.offerPeaceTreaty' as TranslationKey)}
                           </button>
                           <button className="diplomacy-btn btn-war" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'declare_war')}>
-                            ⚔️ Declare War
+                            {t('gm.diplo.btn.declareWar' as TranslationKey)}
                           </button>
                         </>
                       )}
                       {selectedStatus === 'peace' && (
                         <>
                           <button className="diplomacy-btn btn-alliance" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_alliance')}>
-                            🤝 Propose Alliance
+                            {t('gm.diplo.btn.proposeAlliance' as TranslationKey)}
                           </button>
                           <span className="diplomacy-tribute-group">
                             <input
@@ -1099,17 +1112,17 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                               className="diplomacy-tribute-input"
                               value={tributeAmount}
                               onChange={(e) => setTributeAmount(Math.max(0, Number(e.target.value) || 0))}
-                              title="How much gold to demand"
+                              title={t('gm.diplo.tributeTitle' as TranslationKey)}
                             />
                             <button
                               className="diplomacy-btn btn-tribute"
                               onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'demand_tribute', { goldAmount: tributeAmount })}
                             >
-                              💰 Demand Tribute
+                              {t('gm.diplo.btn.demandTribute' as TranslationKey)}
                             </button>
                           </span>
                           <button className="diplomacy-btn btn-war" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'declare_war')}>
-                            ⚔️ Declare War
+                            {t('gm.diplo.btn.declareWar' as TranslationKey)}
                           </button>
                         </>
                       )}
@@ -1123,17 +1136,17 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                               className="diplomacy-tribute-input"
                               value={tributeAmount}
                               onChange={(e) => setTributeAmount(Math.max(0, Number(e.target.value) || 0))}
-                              title="How much gold to demand"
+                              title={t('gm.diplo.tributeTitle' as TranslationKey)}
                             />
                             <button
                               className="diplomacy-btn btn-tribute"
                               onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'demand_tribute', { goldAmount: tributeAmount })}
                             >
-                              💰 Demand Tribute
+                              {t('gm.diplo.btn.demandTribute' as TranslationKey)}
                             </button>
                           </span>
                           <button className="diplomacy-btn btn-war" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'declare_war')}>
-                            ⚔️ Break Alliance &amp; Declare War
+                            {t('gm.diplo.btn.breakAlliance' as TranslationKey)}
                           </button>
                         </>
                       )}
@@ -1146,28 +1159,28 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                           className="diplomacy-toggle-treaties"
                           onClick={() => setShowTreatyPanel(!showTreatyPanel)}
                         >
-                          {showTreatyPanel ? '▾' : '▸'} Advanced Treaties
+                          {showTreatyPanel ? '▾' : '▸'} {t('gm.diplo.advancedTreaties' as TranslationKey)}
                         </button>
                         {showTreatyPanel && (
                           <div className="diplomacy-actions diplomacy-treaty-actions">
                             {!activeTreaties.includes('open_borders') && (
                               <button className="diplomacy-btn btn-treaty" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'offer_open_borders')}>
-                                🚪 Open Borders
+                                {t('gm.diplo.btn.openBorders' as TranslationKey)}
                               </button>
                             )}
                             {!activeTreaties.includes('trade_agreement') && (
                               <button className="diplomacy-btn btn-treaty" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_trade_agreement')}>
-                                📦 Trade Agreement
+                                {t('gm.diplo.btn.tradeAgreement' as TranslationKey)}
                               </button>
                             )}
                             {!activeTreaties.includes('mutual_defense') && (
                               <button className="diplomacy-btn btn-treaty" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_mutual_defense')}>
-                                🛡️ Mutual Defense Pact
+                                {t('gm.diplo.btn.mutualDefensePact' as TranslationKey)}
                               </button>
                             )}
                             {!activeTreaties.includes('non_aggression') && (
                               <button className="diplomacy-btn btn-treaty" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_non_aggression')}>
-                                🤚 Non-Aggression Pact
+                                {t('gm.diplo.btn.nonAggressionPact' as TranslationKey)}
                               </button>
                             )}
 
@@ -1178,9 +1191,9 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                                   className="diplomacy-select"
                                   value={embargoTarget}
                                   onChange={(e) => setEmbargoTarget(e.target.value === '' ? '' : Number(e.target.value))}
-                                  title="Which civilization to embargo"
+                                  title={t('gm.diplo.embargoSelectTitle' as TranslationKey)}
                                 >
-                                  <option value="">Embargo target…</option>
+                                  <option value="">{t('gm.diplo.embargoTarget' as TranslationKey)}</option>
                                   {otherCivs
                                     .filter((c: Civilization) => c.id !== selectedDiploCiv)
                                     .map((c: Civilization) => (
@@ -1192,7 +1205,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                                   disabled={embargoTarget === ''}
                                   onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_embargo', { embargoTargetId: Number(embargoTarget) })}
                                 >
-                                  🚫 Embargo
+                                  {t('gm.diplo.btn.embargo' as TranslationKey)}
                                 </button>
                               </span>
                             )}
@@ -1208,43 +1221,43 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                               if (!trade || (trade.theyHaveWeLack.length === 0 && trade.weHaveTheyLack.length === 0)) {
                                 return (
                                   <div className="diplomacy-tech-exchange diplomacy-tech-exchange--empty">
-                                    <span className="diplomacy-tech-exchange__title">Exchange of Knowledge</span>
+                                    <span className="diplomacy-tech-exchange__title">{t('gm.diplo.exchange.title' as TranslationKey)}</span>
                                     <span className="diplomacy-tech-exchange__hint">
                                       {canTrade && !canTrade.ok
                                         ? canTrade.reason
-                                        : 'You already share every technology — there is nothing left to swap.'}
+                                        : t('gm.diplo.exchange.emptyHint' as TranslationKey)}
                                     </span>
                                   </div>
                                 );
                               }
                               return (
                                 <div className="diplomacy-tech-exchange">
-                                  <span className="diplomacy-tech-exchange__title">Exchange of Knowledge</span>
+                                  <span className="diplomacy-tech-exchange__title">{t('gm.diplo.exchange.title' as TranslationKey)}</span>
                                   <span className="diplomacy-tech-exchange__hint">
-                                    One technology each way. They refuse unfair swaps and will not trade while at war.
+                                    {t('gm.diplo.exchange.hint' as TranslationKey)}
                                   </span>
                                   <div className="diplomacy-tech-exchange__cols">
                                     <label className="diplomacy-tech-exchange__col">
-                                      <span className="diplomacy-tech-exchange__col-label">They have · you lack</span>
+                                      <span className="diplomacy-tech-exchange__col-label">{t('gm.diplo.exchange.theyHave' as TranslationKey)}</span>
                                       <select
                                         className="diplomacy-select"
                                         value={techRequest}
                                         onChange={(e) => setTechRequest(e.target.value)}
                                       >
-                                        <option value="">Request a technology…</option>
+                                        <option value="">{t('gm.diplo.exchange.request' as TranslationKey)}</option>
                                         {trade.theyHaveWeLack.map((id: string) => (
                                           <option key={id} value={id}>{techName(id)}</option>
                                         ))}
                                       </select>
                                     </label>
                                     <label className="diplomacy-tech-exchange__col">
-                                      <span className="diplomacy-tech-exchange__col-label">You have · they lack</span>
+                                      <span className="diplomacy-tech-exchange__col-label">{t('gm.diplo.exchange.youHave' as TranslationKey)}</span>
                                       <select
                                         className="diplomacy-select"
                                         value={techOffer}
                                         onChange={(e) => setTechOffer(e.target.value)}
                                       >
-                                        <option value="">Offer a technology…</option>
+                                        <option value="">{t('gm.diplo.exchange.offer' as TranslationKey)}</option>
                                         {trade.weHaveTheyLack.map((id: string) => (
                                           <option key={id} value={id}>{techName(id)}</option>
                                         ))}
@@ -1259,7 +1272,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                                       techRequested: techRequest,
                                     })}
                                   >
-                                    🔬 Exchange of Knowledge
+                                    {t('gm.diplo.exchange.button' as TranslationKey)}
                                   </button>
                                 </div>
                               );
@@ -1280,29 +1293,31 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       if (relevant.length === 0) return null;
                       return (
                         <section className="gm-section">
-                          <div className="gm-section-title">The record of your dealings</div>
+                          <div className="gm-section-title">{t('gm.diplo.record.title' as TranslationKey)}</div>
                           <div className="diplomacy-log">
                             {relevant.map((e, i: number) => {
-                              const from = civilizations[e.fromCivId]?.name ?? `Civ ${e.fromCivId}`;
-                              const to = civilizations[e.toCivId]?.name ?? `Civ ${e.toCivId}`;
+                              const from = civilizations[e.fromCivId]?.name ?? t('gm.diplo.civFallback' as TranslationKey, { id: e.fromCivId });
+                              const to = civilizations[e.toCivId]?.name ?? t('gm.diplo.civFallback' as TranslationKey, { id: e.toCivId });
                               const labels: Record<string, string> = {
-                                war_declared: `⚔️ ${from} declared war on ${to}`,
-                                peace_made: `🕊️ Peace between ${from} and ${to}`,
-                                ceasefire_signed: `🏳️ Ceasefire between ${from} and ${to}`,
-                                alliance_formed: `🤝 Alliance between ${from} and ${to}`,
-                                alliance_broken: `⛓️‍💥 ${from} broke the alliance with ${to}`,
-                                tribute_paid: `💰 ${from} paid tribute to ${to}${e.goldAmount ? ` (${e.goldAmount}g)` : ''}`,
-                                treaty_rejected: `❌ ${to} rejected ${from}'s proposal`,
-                                unit_bribed: `🎭 ${from} bribed a unit`,
-                                intelligence_gathered: `🔍 ${from} spied on ${to}`,
-                                open_borders_signed: `🚪 Open borders: ${from} ↔ ${to}`,
-                                trade_agreement_signed: `📦 Trade deal: ${from} ↔ ${to}`,
-                                mutual_defense_signed: `🛡️ Defense pact: ${from} ↔ ${to}`,
-                                non_aggression_signed: `🤚 Non-aggression: ${from} ↔ ${to}`,
-                                embargo_declared: `🚫 Embargo declared by ${from} & ${to}`,
-                                treaty_cancelled: `📜 Treaty cancelled by ${from}`,
-                                tech_exchanged: `🔬 Tech exchange: ${from} ↔ ${to}`,
-                                counter_proposal: `📜 Counter-proposal from ${from}`,
+                                war_declared: t('gm.diplo.record.warDeclared' as TranslationKey, { from, to }),
+                                peace_made: t('gm.diplo.record.peaceMade' as TranslationKey, { from, to }),
+                                ceasefire_signed: t('gm.diplo.record.ceasefireSigned' as TranslationKey, { from, to }),
+                                alliance_formed: t('gm.diplo.record.allianceFormed' as TranslationKey, { from, to }),
+                                alliance_broken: t('gm.diplo.record.allianceBroken' as TranslationKey, { from, to }),
+                                tribute_paid: e.goldAmount
+                                  ? t('gm.diplo.record.tributePaid' as TranslationKey, { from, to, gold: e.goldAmount })
+                                  : t('gm.diplo.record.tributePaidPlain' as TranslationKey, { from, to }),
+                                treaty_rejected: t('gm.diplo.record.treatyRejected' as TranslationKey, { from, to }),
+                                unit_bribed: t('gm.diplo.record.unitBribed' as TranslationKey, { from }),
+                                intelligence_gathered: t('gm.diplo.record.intelligence' as TranslationKey, { from, to }),
+                                open_borders_signed: t('gm.diplo.record.openBorders' as TranslationKey, { from, to }),
+                                trade_agreement_signed: t('gm.diplo.record.tradeDeal' as TranslationKey, { from, to }),
+                                mutual_defense_signed: t('gm.diplo.record.defensePact' as TranslationKey, { from, to }),
+                                non_aggression_signed: t('gm.diplo.record.nonAggression' as TranslationKey, { from, to }),
+                                embargo_declared: t('gm.diplo.record.embargo' as TranslationKey, { from, to }),
+                                treaty_cancelled: t('gm.diplo.record.treatyCancelled' as TranslationKey, { from }),
+                                tech_exchanged: t('gm.diplo.record.techExchange' as TranslationKey, { from, to }),
+                                counter_proposal: t('gm.diplo.record.counterProposal' as TranslationKey, { from }),
                               };
                               return (
                                 <div key={i} className="diplomacy-log-entry">
@@ -1319,7 +1334,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                   <div className="diplomacy-placeholder">
                     <div className="diplomacy-placeholder-scene">
                       <div className="diplomacy-placeholder-icon">⚖️</div>
-                      <div>Select a civilization to begin negotiations.</div>
+                      <div>{t('gm.diplo.placeholder' as TranslationKey)}</div>
                     </div>
                   </div>
                 )}
@@ -1338,213 +1353,209 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       size="lg"
       tone="info"
       icon="📖"
-      artLabel="the steward's handbook"
-      eyebrow="At Your Service"
-      title="Help & Controls"
-      lede="Everything your steward can tell you about ruling this world: the keys under your hand, the orders you may give on the map, and the shape of the game itself."
+      artLabel={t('gm.help.artLabel' as TranslationKey)}
+      eyebrow={t('gm.help.eyebrow' as TranslationKey)}
+      title={t('gm.help.title' as TranslationKey)}
+      lede={t('gm.help.lede' as TranslationKey)}
       actions={
         <button type="button" className="touch-btn touch-btn--primary" onClick={handleCloseDialog}>
-          Back to the Map
+          {t('gm.help.backToMap' as TranslationKey)}
         </button>
       }
     >
       <Tabs defaultActiveKey="controls" className="mb-0 gm-help-tabs">
-        <Tab eventKey="controls" title="Controls">
+        <Tab eventKey="controls" title={t('gm.help.tabs.controls' as TranslationKey)}>
           <p className="gm-prose gm-help-intro">
-            The whole world answers to your mouse and a handful of keys. Learn these and you will
-            never have to hunt for a button again.
+            {t('gm.help.controls.intro' as TranslationKey)}
           </p>
-          <h6>Mouse Controls:</h6>
+          <h6>{t('gm.help.controls.mouseHeading' as TranslationKey)}</h6>
             <ListGroup variant="flush" className="mb-3">
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Left Click:</strong> Select units, cities, or tiles
+                <strong>{t('gm.help.controls.leftClick.key' as TranslationKey)}</strong> {t('gm.help.controls.leftClick.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Right Click:</strong> Unit context menu
+                <strong>{t('gm.help.controls.rightClick.key' as TranslationKey)}</strong> {t('gm.help.controls.rightClick.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Drag:</strong> Pan the camera around the map
+                <strong>{t('gm.help.controls.drag.key' as TranslationKey)}</strong> {t('gm.help.controls.drag.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Scroll Wheel:</strong> Zoom in and out
+                <strong>{t('gm.help.controls.scrollWheel.key' as TranslationKey)}</strong> {t('gm.help.controls.scrollWheel.desc' as TranslationKey)}
               </ListGroup.Item>
             </ListGroup>
 
-            <h6>Unit Actions (when unit selected):</h6>
+            <h6>{t('gm.help.controls.unitHeading' as TranslationKey)}</h6>
             <ListGroup variant="flush" className="mb-3">
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>S:</strong> Skip unit's turn
+                <strong>{t('gm.help.controls.s.key' as TranslationKey)}</strong> {t('gm.help.controls.s.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>F:</strong> Fortify unit
+                <strong>{t('gm.help.controls.f.key' as TranslationKey)}</strong> {t('gm.help.controls.f.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>W:</strong> Wait (move unit to end of queue)
+                <strong>{t('gm.help.controls.w.key' as TranslationKey)}</strong> {t('gm.help.controls.w.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>G:</strong> Go To (click destination)
+                <strong>{t('gm.help.controls.g.key' as TranslationKey)}</strong> {t('gm.help.controls.g.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>B:</strong> Build road
+                <strong>{t('gm.help.controls.b.key' as TranslationKey)}</strong> {t('gm.help.controls.b.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>I:</strong> Irrigate
+                <strong>{t('gm.help.controls.i.key' as TranslationKey)}</strong> {t('gm.help.controls.i.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>M:</strong> Build mine
+                <strong>{t('gm.help.controls.m.key' as TranslationKey)}</strong> {t('gm.help.controls.m.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>P:</strong> Clean pollution
+                <strong>{t('gm.help.controls.p.key' as TranslationKey)}</strong> {t('gm.help.controls.p.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Space:</strong> Cycle units on same tile
+                <strong>{t('gm.help.controls.space.key' as TranslationKey)}</strong> {t('gm.help.controls.space.desc' as TranslationKey)}
               </ListGroup.Item>
             </ListGroup>
 
-            <h6>Global Shortcuts:</h6>
+            <h6>{t('gm.help.controls.globalHeading' as TranslationKey)}</h6>
             <ListGroup variant="flush" className="mb-3">
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Enter:</strong> End the turn
+                <strong>{t('gm.help.controls.enter.key' as TranslationKey)}</strong> {t('gm.help.controls.enter.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>D:</strong> Diplomatic relations
+                <strong>{t('gm.help.controls.d.key' as TranslationKey)}</strong> {t('gm.help.controls.d.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>R:</strong> Rush city production (with a city selected)
+                <strong>{t('gm.help.controls.r.key' as TranslationKey)}</strong> {t('gm.help.controls.r.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>C:</strong> Centre the map on the selected unit
+                <strong>{t('gm.help.controls.c.key' as TranslationKey)}</strong> {t('gm.help.controls.c.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>T:</strong> Tax, science &amp; luxury rates
+                <strong>{t('gm.help.controls.t.key' as TranslationKey)}</strong> {t('gm.help.controls.t.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>G:</strong> Government
+                <strong>{t('gm.help.controls.gov.key' as TranslationKey)}</strong> {t('gm.help.controls.gov.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Escape:</strong> Close dialogs / deselect
+                <strong>{t('gm.help.controls.escape.key' as TranslationKey)}</strong> {t('gm.help.controls.escape.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>+/−:</strong> Zoom in / out
+                <strong>{t('gm.help.controls.zoom.key' as TranslationKey)}</strong> {t('gm.help.controls.zoom.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Arrow Keys:</strong> Move unit / Shift+Arrow: Scroll map
+                <strong>{t('gm.help.controls.arrows.key' as TranslationKey)}</strong> {t('gm.help.controls.arrows.desc' as TranslationKey)}
               </ListGroup.Item>
             </ListGroup>
 
-            <h6>Function Keys:</h6>
+            <h6>{t('gm.help.controls.functionHeading' as TranslationKey)}</h6>
             <ListGroup variant="flush" className="mb-3">
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>F1:</strong> Help
+                <strong>{t('gm.help.controls.f1.key' as TranslationKey)}</strong> {t('menu.help')}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>F2:</strong> Tech tree
+                <strong>{t('gm.help.controls.f2.key' as TranslationKey)}</strong> {t('gm.help.controls.f2.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>F3:</strong> Settings
+                <strong>{t('gm.help.controls.f3.key' as TranslationKey)}</strong> {t('menu.settings')}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>F4:</strong> Diplomatic relations
+                <strong>{t('gm.help.controls.f4.key' as TranslationKey)}</strong> {t('gm.help.controls.f4.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>F11:</strong> Toggle fullscreen
+                <strong>{t('gm.help.controls.f11.key' as TranslationKey)}</strong> {t('gm.help.controls.f11.desc' as TranslationKey)}
               </ListGroup.Item>
             </ListGroup>
 
-            <h6>Ctrl Shortcuts:</h6>
+            <h6>{t('gm.help.controls.ctrlHeading' as TranslationKey)}</h6>
             <ListGroup variant="flush">
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Ctrl+S:</strong> Save game
+                <strong>{t('gm.help.controls.ctrlS.key' as TranslationKey)}</strong> {t('gm.help.controls.ctrlS.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Ctrl+L:</strong> Load game
+                <strong>{t('gm.help.controls.ctrlL.key' as TranslationKey)}</strong> {t('gm.help.controls.ctrlL.desc' as TranslationKey)}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Ctrl+P:</strong> Pause
+                <strong>{t('gm.help.controls.ctrlP.key' as TranslationKey)}</strong> {t('menu.pause')}
               </ListGroup.Item>
               <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Ctrl+1–9:</strong> Select city by number
-              </ListGroup.Item>
-            </ListGroup>
-          </Tab>
-          
-          <Tab eventKey="orders" title="Orders Menu">
-            <p className="gm-prose gm-help-intro">
-              Right-click a unit (or open the ORDERS menu) and these are the commands you may give.
-              Every one of them costs time — some a single turn, some many.
-            </p>
-            <h6>Tile Improvements (via ORDERS menu):</h6>
-            <ListGroup variant="flush">
-              <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Build City:</strong> Settler founds a new city
-              </ListGroup.Item>
-              <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Build Road:</strong> +1 trade on grassland/plains/desert, 1/3 movement (1 turn)
-              </ListGroup.Item>
-              <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Irrigate:</strong> +1 food on grassland/plains/desert; converts jungle/swamp to grassland (2 turns)
-              </ListGroup.Item>
-              <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Mine:</strong> +1 production on mountains, +3 on hills; converts jungle/swamp to forest, clears forest to plains (5 turns)
-              </ListGroup.Item>
-              <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Fortify:</strong> Defensive bonus for military units
-              </ListGroup.Item>
-              <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Railroad:</strong> Upgrades road — +0.5 food/prod/trade, free movement (requires Railroad tech)
-              </ListGroup.Item>
-              <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Clean Pollution:</strong> Removes pollution from tile (2 turns)
-              </ListGroup.Item>
-              <ListGroup.Item className="bg-dark text-white border-secondary">
-                <strong>Fortress:</strong> +100% defense, applied last (6 turns, requires Construction tech)
+                <strong>{t('gm.help.controls.ctrlNum.key' as TranslationKey)}</strong> {t('gm.help.controls.ctrlNum.desc' as TranslationKey)}
               </ListGroup.Item>
             </ListGroup>
           </Tab>
 
-          <Tab eventKey="gameplay" title="Gameplay">
+          <Tab eventKey="orders" title={t('gm.help.tabs.orders' as TranslationKey)}>
             <p className="gm-prose gm-help-intro">
-              A civilisation is not won by the sword alone. Feed your people, keep the treasury
-              honest, and let your scholars run ahead of your rivals.
+              {t('gm.help.orders.intro' as TranslationKey)}
             </p>
-            <h6>Getting Started:</h6>
+            <h6>{t('gm.help.orders.heading' as TranslationKey)}</h6>
+            <ListGroup variant="flush">
+              <ListGroup.Item className="bg-dark text-white border-secondary">
+                <strong>{t('gm.help.orders.buildCity.key' as TranslationKey)}</strong> {t('gm.help.orders.buildCity.desc' as TranslationKey)}
+              </ListGroup.Item>
+              <ListGroup.Item className="bg-dark text-white border-secondary">
+                <strong>{t('gm.help.orders.buildRoad.key' as TranslationKey)}</strong> {t('gm.help.orders.buildRoad.desc' as TranslationKey)}
+              </ListGroup.Item>
+              <ListGroup.Item className="bg-dark text-white border-secondary">
+                <strong>{t('gm.help.orders.irrigate.key' as TranslationKey)}</strong> {t('gm.help.orders.irrigate.desc' as TranslationKey)}
+              </ListGroup.Item>
+              <ListGroup.Item className="bg-dark text-white border-secondary">
+                <strong>{t('gm.help.orders.mine.key' as TranslationKey)}</strong> {t('gm.help.orders.mine.desc' as TranslationKey)}
+              </ListGroup.Item>
+              <ListGroup.Item className="bg-dark text-white border-secondary">
+                <strong>{t('gm.help.orders.fortify.key' as TranslationKey)}</strong> {t('gm.help.orders.fortify.desc' as TranslationKey)}
+              </ListGroup.Item>
+              <ListGroup.Item className="bg-dark text-white border-secondary">
+                <strong>{t('gm.help.orders.railroad.key' as TranslationKey)}</strong> {t('gm.help.orders.railroad.desc' as TranslationKey)}
+              </ListGroup.Item>
+              <ListGroup.Item className="bg-dark text-white border-secondary">
+                <strong>{t('gm.help.orders.cleanPollution.key' as TranslationKey)}</strong> {t('gm.help.orders.cleanPollution.desc' as TranslationKey)}
+              </ListGroup.Item>
+              <ListGroup.Item className="bg-dark text-white border-secondary">
+                <strong>{t('gm.help.orders.fortress.key' as TranslationKey)}</strong> {t('gm.help.orders.fortress.desc' as TranslationKey)}
+              </ListGroup.Item>
+            </ListGroup>
+          </Tab>
+
+          <Tab eventKey="gameplay" title={t('gm.help.tabs.gameplay' as TranslationKey)}>
+            <p className="gm-prose gm-help-intro">
+              {t('gm.help.gameplay.intro' as TranslationKey)}
+            </p>
+            <h6>{t('gm.help.gameplay.gettingStartedHeading' as TranslationKey)}</h6>
             <ol>
-              <li>Move your settler to a good location near water and resources</li>
-              <li>Found your first city by selecting the settler and clicking "Found City"</li>
-              <li>Explore with your warrior to find other civilizations and resources</li>
-              <li>Build more units and buildings in your cities</li>
-              <li>Research technologies to unlock new capabilities</li>
-              <li>Expand your civilization and compete with others!</li>
+              <li>{t('gm.help.gameplay.settler' as TranslationKey)}</li>
+              <li>{t('gm.help.gameplay.found' as TranslationKey)}</li>
+              <li>{t('gm.help.gameplay.explore' as TranslationKey)}</li>
+              <li>{t('gm.help.gameplay.build' as TranslationKey)}</li>
+              <li>{t('gm.help.gameplay.research' as TranslationKey)}</li>
+              <li>{t('gm.help.gameplay.expand' as TranslationKey)}</li>
             </ol>
 
-            <h6>Resources:</h6>
+            <h6>{t('gm.help.gameplay.resourcesHeading' as TranslationKey)}</h6>
             <ul>
-              <li><strong>Food:</strong> Grows city population</li>
-              <li><strong>Production:</strong> Builds units and structures</li>
-              <li><strong>Trade:</strong> Generates gold and science</li>
-              <li><strong>Science:</strong> Researches new technologies</li>
-              <li><strong>Gold:</strong> Maintains units and buildings</li>
+              <li><strong>{t('gm.help.gameplay.food.key' as TranslationKey)}</strong> {t('gm.help.gameplay.food.desc' as TranslationKey)}</li>
+              <li><strong>{t('gm.help.gameplay.production.key' as TranslationKey)}</strong> {t('gm.help.gameplay.production.desc' as TranslationKey)}</li>
+              <li><strong>{t('gm.help.gameplay.trade.key' as TranslationKey)}</strong> {t('gm.help.gameplay.trade.desc' as TranslationKey)}</li>
+              <li><strong>{t('gm.help.gameplay.science.key' as TranslationKey)}</strong> {t('gm.help.gameplay.science.desc' as TranslationKey)}</li>
+              <li><strong>{t('gm.help.gameplay.gold.key' as TranslationKey)}</strong> {t('gm.help.gameplay.gold.desc' as TranslationKey)}</li>
             </ul>
 
-            <h6>Diplomacy:</h6>
+            <h6>{t('gm.help.gameplay.diplomacyHeading' as TranslationKey)}</h6>
             <ul>
-              <li>Press <strong>D</strong> or <strong>F4</strong> to view diplomatic relations</li>
-              <li>Diplomatic talks are initiated through in-game events (contact with foreign units)</li>
-              <li>States: Peace, Ceasefire, Alliance, War</li>
-              <li>Treaties: Open Borders, Trade Agreement, Mutual Defense, Non-Aggression</li>
-              <li>Breaking treaties damages your reputation with all civilizations</li>
+              <li>{t('gm.help.gameplay.diploPress' as TranslationKey)} <strong>{t('gm.help.gameplay.diploD' as TranslationKey)}</strong> {t('gm.help.gameplay.diploOr' as TranslationKey)} <strong>{t('gm.help.gameplay.diploF4' as TranslationKey)}</strong> {t('gm.help.gameplay.diploView' as TranslationKey)}</li>
+              <li>{t('gm.help.gameplay.diploTalks' as TranslationKey)}</li>
+              <li>{t('gm.help.gameplay.diploStates' as TranslationKey)}</li>
+              <li>{t('gm.help.gameplay.diploTreaties' as TranslationKey)}</li>
+              <li>{t('gm.help.gameplay.diploBreaking' as TranslationKey)}</li>
             </ul>
           </Tab>
-          
-          <Tab eventKey="about" title="About">
+
+          <Tab eventKey="about" title={t('gm.help.tabs.about' as TranslationKey)}>
             <p className="gm-prose gm-help-intro">
-              This world is a work in progress, built in the open. Words, ideas and bug reports
-              are all welcome.
+              {t('gm.help.about.intro' as TranslationKey)}
             </p>
             <div className="gm-section">
-              <div className="gm-section-title">Reach the maker</div>
+              <div className="gm-section-title">{t('gm.help.about.reach' as TranslationKey)}</div>
               <p className="gm-prose mb-2">
-                <a href="mailto:info@mailbase.info">info@mailbase.info</a>
+                <a href="mailto:info@mailbase.info">{t('gm.help.about.email' as TranslationKey)}</a>
               </p>
               <p className="gm-prose mb-0">
                 <a
@@ -1552,7 +1563,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  GitHub — JCTRoth/Zivilisation_1
+                  {t('gm.help.about.github' as TranslationKey)}
                 </a>
               </p>
             </div>
@@ -1626,7 +1637,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     if (isCommandRejection(result)) {
       actions.addNotification({
         type: 'warning',
-        message: `Cannot queue ${item.name}: ${productionFailureText(result.reason)}`,
+        message: t('gm.production.cannotQueue' as TranslationKey, { item: tUnitName(key, item.name), reason: productionFailureText(result.reason) }),
       });
       return;
     }
@@ -1634,11 +1645,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     // its truthiness reported bogus successes.
     if (result.command === 'SET_CITY_PRODUCTION') {
       if (result.production.success !== false) {
-        actions.addNotification({ type: 'info', message: `Added to queue: ${item.name}` });
+        actions.addNotification({ type: 'info', message: t('gm.production.addedToQueue' as TranslationKey, { item: tUnitName(key, item.name) }) });
       } else {
         actions.addNotification({
           type: 'warning',
-          message: `Cannot queue ${item.name}: ${productionFailureText(result.production.reason)}`,
+          message: t('gm.production.cannotQueue' as TranslationKey, { item: tUnitName(key, item.name), reason: productionFailureText(result.production.reason) }),
         });
       }
     }
@@ -1651,25 +1662,23 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       size="lg"
       tone="info"
       icon="⚒️"
-      artLabel="the building yards"
+      artLabel={t('gm.cityProduction.artLabel' as TranslationKey)}
       dialogClassName="city-production-modal"
-      eyebrow={stamp('City Production')}
-      title={selectedCity?.name || 'City Production'}
+      eyebrow={stamp(t('gm.cityProduction.title' as TranslationKey))}
+      title={selectedCity?.name || t('gm.cityProduction.title' as TranslationKey)}
       lede={
         <>
-          Give this city its next order. Everything it builds is paid for in shields — the more
-          workshops it works, the faster the shields arrive.
+          {t('gm.cityProduction.lede' as TranslationKey)}
         </>
       }
       actions={
         <button type="button" className="touch-btn touch-btn--primary" onClick={handleCloseDialog}>
-          Done
+          {t('gm.cityProduction.done' as TranslationKey)}
         </button>
       }
     >
       <div className="gm-note">
-        Pick a unit, building or wonder below. Its cost is shown in shields, and the queue takes
-        them in the order you set.
+        {t('gm.cityProduction.note' as TranslationKey)}
       </div>
       {renderProductionContent()}
     </GameModal>
@@ -1679,7 +1688,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   // Render production summary: current production and queued items
   const renderProductionContent = () => {
     if (!selectedCity) {
-      return <div>No city selected</div>;
+      return <div>{t('gm.production.noCity' as TranslationKey)}</div>;
     }
 
     const productionPerTurn = getProductionPerTurn(selectedCity);
@@ -1712,31 +1721,31 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     return (
       <div>
         <div className="mb-3">
-          <h6>Current Production</h6>
+          <h6>{t('gm.production.currentHeading' as TranslationKey)}</h6>
           {currentProductionItem ? (
             <div className="text-white p-2 rounded">
               <strong>{currentProductionName}</strong>
               <div className="small text-muted">
                 {currentProductionCost > 0
-                  ? `Progress: ${Math.round(clampedProgress)} / ${currentProductionCost} (${progressPercent}%)`
-                  : `Progress: ${Math.round(clampedProgress)} shields`}
+                  ? t('gm.production.progress' as TranslationKey, { current: Math.round(clampedProgress), cost: currentProductionCost, percent: progressPercent })
+                  : t('gm.production.progressShields' as TranslationKey, { current: Math.round(clampedProgress) })}
               </div>
               <div className="small text-muted">
-                Production per turn: {productionPerTurn}
+                {t('gm.production.perTurn' as TranslationKey, { value: productionPerTurn })}
               </div>
               <div className="small text-muted">
-                Turns remaining: {formatTurns(turnsRemaining)}
+                {t('gm.production.turnsRemaining' as TranslationKey, { value: formatTurns(turnsRemaining) })}
               </div>
             </div>
           ) : (
-            <div className="text-muted">No active production</div>
+            <div className="text-muted">{t('gm.production.noActive' as TranslationKey)}</div>
           )}
         </div>
 
         <div className="production-queue-layout">
           {/* Production panel: selector + add-to-queue */}
           <div className="production-panel">
-            <h6>Production</h6>
+            <h6>{t('gm.production.heading' as TranslationKey)}</h6>
             <select
               className="form-select form-select-sm mb-2 production-select"
               value={selectedProductionKey ?? ''}
@@ -1744,14 +1753,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               // queue. The current production is never replaced from here.
               onChange={(e) => setSelectedProductionKey(e.target.value)}
               disabled={!isPlayerCity}
-              title="Choose the unit to add to the build queue"
+              title={t('gm.production.selectTitle' as TranslationKey)}
             >
-              <option value="" disabled>Select production…</option>
+              <option value="" disabled>{t('gm.production.selectPlaceholder' as TranslationKey)}</option>
               {availableProductionKeys.map(key => {
                 const unit = UNIT_PROPS[key];
                 return (
                   <option key={key} value={key}>
-                    {unit.name} ({unit.cost} shields)
+                    {t('gm.production.optionCost' as TranslationKey, { name: tUnitName(key, unit.name), cost: unit.cost })}
                   </option>
                 );
               })}
@@ -1762,16 +1771,16 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 variant="secondary"
                 disabled={!selectedProductionKey || !gameEngine || !selectedCity || !isPlayerCity}
                 onClick={() => submitProduction()}
-                title="Append one entry to the bottom of the build queue"
+                title={t('gm.production.addTitle' as TranslationKey)}
               >
-                <i className="bi bi-plus-lg me-1"></i> Add
+                <i className="bi bi-plus-lg me-1"></i> {t('gm.production.add' as TranslationKey)}
               </Button>
             </div>
           </div>
 
           {/* Queue panel: items with move up/down/remove */}
           <div className="queue-panel">
-            <h6>Queue</h6>
+            <h6>{t('gm.production.queueHeading' as TranslationKey)}</h6>
             <div className="queue-box bg-dark border border-secondary rounded p-2" ref={productionQueueBoxRef} style={{maxHeight: '240px', overflowY: 'auto'}}>
               {hasQueueItems ? (
                 selectedCity.buildQueue.map((q: { name?: string; type?: string; itemType?: string; cost?: number }, i: number) => {
@@ -1790,14 +1799,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       <div className="d-flex justify-content-between align-items-center gap-2">
                         <div className="flex-grow-1">
                           <div><strong>{queueItemName}</strong></div>
-                          <div className="small">#{i + 1} in queue · {queueItemCost > 0 ? `${queueItemCost} shields` : '—'}</div>
-                          <div className="small text-muted">Turns: {formatTurns(queueTurns)}</div>
+                          <div className="small">{queueItemCost > 0 ? t('gm.production.queuePos' as TranslationKey, { position: i + 1, cost: queueItemCost }) : t('gm.production.queuePosEmpty' as TranslationKey, { position: i + 1 })}</div>
+                          <div className="small text-muted">{t('gm.production.turns' as TranslationKey, { value: formatTurns(queueTurns) })}</div>
                         </div>
                         <div className="queue-item-actions">
                           <button
                             type="button"
                             className="btn btn-outline-light btn-sm queue-action-btn"
-                            title="Move up in queue"
+                            title={t('gm.production.moveUp' as TranslationKey)}
                             disabled={i === 0}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1817,7 +1826,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                           <button
                             type="button"
                             className="btn btn-outline-light btn-sm queue-action-btn"
-                            title="Move down in queue"
+                            title={t('gm.production.moveDown' as TranslationKey)}
                             disabled={i === selectedCity.buildQueue.length - 1}
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1837,7 +1846,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                           <button
                             type="button"
                             className="btn btn-outline-danger btn-sm queue-action-btn"
-                            title="Remove from queue"
+                            title={t('gm.production.removeTitle' as TranslationKey)}
                             onClick={(e) => {
                               e.stopPropagation();
                               if (!gameEngine) return;
@@ -1848,7 +1857,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                                 if (typeof gameEngine.getAllCities === 'function') actions.updateCities(gameEngine.getAllCities());
                                 setSelectedQueueIndex(null);
                               } else {
-                                actions.addNotification({ type: 'warning', message: `Failed to remove: ${res?.reason || 'unknown'}` });
+                                actions.addNotification({ type: 'warning', message: t('gm.production.removeFailed' as TranslationKey, { reason: res?.reason || t('gm.production.unknownReason' as TranslationKey) }) });
                               }
                             }}
                           >
@@ -1860,7 +1869,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                   );
                 })
               ) : (
-                <div className="text-white">Queue is empty</div>
+                <div className="text-white">{t('gm.production.queueEmpty' as TranslationKey)}</div>
               )}
             </div>
           </div>
@@ -1879,13 +1888,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       size="lg"
       tone="danger"
       icon="🪙"
-      artLabel="an empty treasury"
-      eyebrow={stamp('Treasury Report')}
-      title="A unit has been disbanded"
+      artLabel={t('gm.upkeep.artLabel' as TranslationKey)}
+      eyebrow={stamp(t('gm.upkeep.eyebrow' as TranslationKey))}
+      title={t('gm.upkeep.title' as TranslationKey)}
       lede={
         <>
-          The gold ran out, and the <strong>{disbandNotice?.unitName ?? 'unit'}</strong> could no
-          longer be paid. Your generals sent it home before the mutiny started.
+          {t('gm.upkeep.lede.pre' as TranslationKey)}{' '}
+          <strong>{disbandNotice?.unitName ?? t('gm.upkeep.unitFallback' as TranslationKey)}</strong>{' '}
+          {t('gm.upkeep.lede.post' as TranslationKey)}
         </>
       }
       actions={
@@ -1896,38 +1906,37 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
             className="touch-btn touch-btn--ghost"
             onClick={() => actions.showDialog('rates')}
           >
-            <i className="bi bi-graph-up" aria-hidden="true" /> Open Rates
+            <i className="bi bi-graph-up" aria-hidden="true" /> {t('gm.upkeep.openRates' as TranslationKey)}
           </button>
           <button type="button" className="touch-btn touch-btn--primary" onClick={handleCloseDialog}>
-            Understood
+            {t('gm.upkeep.understood' as TranslationKey)}
           </button>
         </>
       }
     >
       <div className="gm-section">
-        <div className="gm-section-title">Balance the books</div>
+        <div className="gm-section-title">{t('gm.upkeep.balanceTitle' as TranslationKey)}</div>
         <ul className="gm-list">
           <li>
-            Raise the <strong>tax rate</strong> 📊 — every point turns trade into gold each turn.
+            {t('gm.upkeep.bal1.pre' as TranslationKey)} <strong>{t('gm.upkeep.bal1.strong' as TranslationKey)}</strong>{' '}{t('gm.upkeep.bal1.post' as TranslationKey)}
           </li>
           <li>
-            Trim <strong>luxury</strong> spending to what your cities truly need to stay quiet.
+            {t('gm.upkeep.bal2.pre' as TranslationKey)} <strong>{t('gm.upkeep.bal2.strong' as TranslationKey)}</strong>{' '}{t('gm.upkeep.bal2.post' as TranslationKey)}
           </li>
           <li>
-            Disband units you no longer need: right-click a unit → <em>Disband</em>.
+            {t('gm.upkeep.bal3.pre' as TranslationKey)} <em>{t('gm.upkeep.bal3.em' as TranslationKey)}</em>{t('gm.upkeep.bal3.post' as TranslationKey)}
           </li>
           <li>
-            Raise a <strong>Marketplace</strong> or <strong>Bank</strong> — trade becomes coin.
+            {t('gm.upkeep.bal4.pre' as TranslationKey)} <strong>{t('gm.upkeep.bal4.strong1' as TranslationKey)}</strong> {t('gm.upkeep.bal4.mid' as TranslationKey)} <strong>{t('gm.upkeep.bal4.strong2' as TranslationKey)}</strong>{t('gm.upkeep.bal4.post' as TranslationKey)}
           </li>
           <li>
-            Field fewer expensive units: every one of them is paid from the treasury each turn.
+            {t('gm.upkeep.bal5' as TranslationKey)}
           </li>
         </ul>
       </div>
       <div className="gm-callout">
-        <span className="gm-callout-title">Why this happened</span>
-        Your treasury held less gold than the upkeep of your army cost this turn. Units are only
-        disbanded as a last resort — a treasury in the red cannot keep a single soldier fed.
+        <span className="gm-callout-title">{t('gm.upkeep.whyTitle' as TranslationKey)}</span>
+        {t('gm.upkeep.whyBody' as TranslationKey)}
       </div>
     </GameModal>
   );
@@ -1940,14 +1949,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       size="lg"
       tone="danger"
       icon="🌾"
-      artLabel="barren fields"
-      eyebrow={stamp('Famine Warning')}
-      title={`${starvationNotice?.cityName ?? 'Your city'} is starving`}
+      artLabel={t('gm.starved.artLabel' as TranslationKey)}
+      eyebrow={stamp(t('gm.starved.eyebrow' as TranslationKey))}
+      title={t('gm.starved.title' as TranslationKey, { city: starvationNotice?.cityName ?? t('gm.starved.yourCity' as TranslationKey) })}
       lede={
         <>
-          The granaries are empty and the bread queues grow longer every day. Unless food reaches
-          <strong> {starvationNotice?.cityName ?? 'your city'}</strong> before the next harvest,
-          people will die — and the city will shrink.
+          {t('gm.starved.lede.pre' as TranslationKey)}
+          <strong>{' '}{starvationNotice?.cityName ?? t('gm.yourCityLower' as TranslationKey)}</strong>{' '}
+          {t('gm.starved.lede.post' as TranslationKey)}
         </>
       }
       actions={
@@ -1964,11 +1973,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 handleCloseDialog();
               }}
             >
-              🔓 Release &amp; Rebalance
+              {t('gm.starved.release' as TranslationKey)}
             </button>
           )}
           <button type="button" className="touch-btn touch-btn--ghost" onClick={handleCloseDialog}>
-            Later
+            {t('gm.starved.later' as TranslationKey)}
           </button>
           <button
             type="button"
@@ -1985,26 +1994,22 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               handleCloseDialog();
             }}
           >
-            📍 Go to City
+            {t('gm.goToCity' as TranslationKey)}
           </button>
         </>
       }
     >
       <div className="gm-section">
-        <div className="gm-section-title">What is happening</div>
+        <div className="gm-section-title">{t('gm.starved.happeningTitle' as TranslationKey)}</div>
         <p className="gm-prose">
-          Food is the first law of a city. When the store runs dry the weakest go first, the
-          workshops stand idle, and the governor's hands are tied until grain arrives or a
-          citizen is freed to work the fields.
+          {t('gm.starved.happeningBody' as TranslationKey)}
         </p>
       </div>
 
       {starvationNotice?.blockingManualTiles && starvationNotice.blockingManualTiles.length > 0 && (
         <div className="gm-callout">
-          <span className="gm-callout-title">Your hand-picked tiles are blocking the fix</span>
-          You placed citizens on these tiles yourself, so the governor will not move them — not
-          even to stop a famine. Some of them yield less food than land sitting idle in this
-          city's radius:
+          <span className="gm-callout-title">{t('gm.starved.blockingTitle' as TranslationKey)}</span>
+          {t('gm.starved.blockingBody' as TranslationKey)}
           <ul className="gm-list gm-list--tight">
             {starvationNotice.blockingManualTiles.map((t) => (
               <li key={`${t.col},${t.row}`}>
@@ -2012,13 +2017,13 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               </li>
             ))}
           </ul>
-          Release them and let the governor rebalance the city.
+          {t('gm.starved.blockingRelease' as TranslationKey)}
         </div>
       )}
 
       <div className="gm-note">
-        <strong>Act this turn.</strong> A starving city loses population at the end of the turn —
-        and every citizen lost is a worker, a tax payer and a defender gone with them.
+        <strong>{t('gm.starved.noteStrong' as TranslationKey)}</strong>{' '}
+        {t('gm.starved.notePost' as TranslationKey)}
       </div>
     </GameModal>
   );
@@ -2043,31 +2048,30 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         className="auto-end-offer-modal"
         tone="success"
         icon="⏩"
-        artLabel="the turn wheel"
-        eyebrow="A Habit Worth Forming"
-        title="Auto. turn ending"
+        artLabel={t('gm.autoEnd.artLabel' as TranslationKey)}
+        eyebrow={t('gm.autoEnd.eyebrow' as TranslationKey)}
+        title={t('gm.autoEnd.title' as TranslationKey)}
         lede={
           <>
-            With <strong>Auto. turn ending</strong> the turn hands over{' '}
-            <strong>the moment your units run out of moves</strong> — fortified and sleeping
-            units included, so your garrisons never hold it up. You stay in control until then,
-            and can switch it off again at any time.
+            {t('gm.autoEnd.lede.pre' as TranslationKey)} <strong>{t('gm.autoEnd.title' as TranslationKey)}</strong>{' '}
+            {t('gm.autoEnd.lede.mid' as TranslationKey)} <strong>{t('gm.autoEnd.lede.strong2' as TranslationKey)}</strong>{' '}
+            {t('gm.autoEnd.lede.post' as TranslationKey)}
           </>
         }
         actions={
           <>
             <span className="gm-actions-spacer" />
             <button type="button" className="touch-btn touch-btn--ghost" onClick={finish}>
-              Not now
+              {t('gm.autoEnd.notNow' as TranslationKey)}
             </button>
             <button type="button" className="touch-btn touch-btn--success" onClick={finish}>
-              Got it
+              {t('gm.autoEnd.gotIt' as TranslationKey)}
             </button>
           </>
         }
       >
         <div className="gm-section auto-end-offer-choice">
-          <div className="gm-section-title">Decide here, right now</div>
+          <div className="gm-section-title">{t('gm.autoEnd.decideTitle' as TranslationKey)}</div>
           <Form.Check
             type="checkbox"
             id="auto-end-offer-toggle"
@@ -2076,17 +2080,16 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
             onChange={(e) => actions.updateSettings?.({ autoEndTurn: e.target.checked })}
             label={
               <>
-                <span className="auto-end-offer-choice-title">Auto. turn ending</span>
+                <span className="auto-end-offer-choice-title">{t('gm.autoEnd.title' as TranslationKey)}</span>
                 <span className="auto-end-offer-choice-hint">
-                  End my turn automatically once every unit is done
+                  {t('gm.autoEnd.hint' as TranslationKey)}
                 </span>
               </>
             }
           />
         </div>
         <div className="gm-note">
-          Asked once. You can switch it off again at any time in the side panel, right under your
-          gold — or in Settings.
+          {t('gm.autoEnd.note' as TranslationKey)}
         </div>
       </GameModal>
     );
@@ -2095,7 +2098,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   // City disorder — entering or leaving civil unrest
   const renderCityDisorder = () => {
     const entering = disorderNotice?.enteringDisorder ?? true;
-    const cityName = disorderNotice?.cityName ?? 'your city';
+    const cityName = disorderNotice?.cityName ?? t('gm.yourCityLower' as TranslationKey);
     return (
       <GameModal
         show={uiState.activeDialog === 'city-disorder'}
@@ -2103,20 +2106,19 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         size="lg"
         tone={entering ? 'danger' : 'success'}
         icon={entering ? '🔥' : '🛡️'}
-        artLabel={entering ? 'torchlit streets' : 'the watch returning'}
-        eyebrow={stamp(entering ? 'City in Revolt' : 'City Report')}
-        title={entering ? `${cityName} rises in revolt` : `Order returns to ${cityName}`}
+        artLabel={entering ? t('gm.disorder.artTorch' as TranslationKey) : t('gm.disorder.artWatch' as TranslationKey)}
+        eyebrow={stamp(entering ? t('gm.disorder.eyebrowRevolt' as TranslationKey) : t('gm.disorder.eyebrowReport' as TranslationKey))}
+        title={entering ? t('gm.disorder.titleRevolt' as TranslationKey, { city: cityName }) : t('gm.disorder.titleOrder' as TranslationKey, { city: cityName })}
         lede={
           entering ? (
             <>
-              Sire, the citizens of <strong>{cityName}</strong> have taken to the streets. The
-              workshops are silent, the tax collectors are turned away, and the city answers to
-              nobody.
+              {t('gm.disorder.revolt.pre' as TranslationKey)} <strong>{cityName}</strong>{' '}
+              {t('gm.disorder.revolt.post' as TranslationKey)}
             </>
           ) : (
             <>
-              Sire, the crowds in <strong>{cityName}</strong> have gone home. The looms are
-              running again and your collectors are back at the gates.
+              {t('gm.disorder.order.pre' as TranslationKey)} <strong>{cityName}</strong>{' '}
+              {t('gm.disorder.order.post' as TranslationKey)}
             </>
           )
         }
@@ -2124,7 +2126,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           <>
             <span className="gm-actions-spacer" />
             <button type="button" className="touch-btn touch-btn--ghost" onClick={handleCloseDialog}>
-              Close
+              {t('common.close')}
             </button>
             <button
               type="button"
@@ -2141,7 +2143,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                 handleCloseDialog();
               }}
             >
-              📍 Go to City
+              {t('gm.goToCity' as TranslationKey)}
             </button>
           </>
         }
@@ -2149,33 +2151,30 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         {entering ? (
           <>
             <div className="gm-section">
-              <div className="gm-section-title">What it costs you</div>
+              <div className="gm-section-title">{t('gm.disorder.costTitle' as TranslationKey)}</div>
               <ul className="gm-list">
-                <li>Production in {cityName} has ground to a halt — nothing is being built.</li>
-                <li>No taxes can be collected from the city while the streets are held.</li>
-                <li>Whatever garrison you keep there is busy holding the gates, not the borders.</li>
+                <li>{t('gm.disorder.cost1' as TranslationKey, { city: cityName })}</li>
+                <li>{t('gm.disorder.cost2' as TranslationKey)}</li>
+                <li>{t('gm.disorder.cost3' as TranslationKey)}</li>
               </ul>
             </div>
             <div className="gm-callout">
-              <span className="gm-callout-title">Calm it down</span>
-              Contented cities do not riot. Ease the tax burden, keep the granaries full and let
-              the governor work the best land — order usually returns on its own once the people
-              are fed and entertained.
+              <span className="gm-callout-title">{t('gm.disorder.calmTitle' as TranslationKey)}</span>
+              {t('gm.disorder.calmBody' as TranslationKey)}
             </div>
           </>
         ) : (
           <>
             <div className="gm-section">
-              <div className="gm-section-title">Back to work</div>
+              <div className="gm-section-title">{t('gm.disorder.backTitle' as TranslationKey)}</div>
               <ul className="gm-list">
-                <li>The riots have ended and the citizens have returned to their trades.</li>
-                <li>Production and tax collection have resumed as normal.</li>
-                <li>The city counts as peaceful again — no penalty carries over into next turn.</li>
+                <li>{t('gm.disorder.back1' as TranslationKey)}</li>
+                <li>{t('gm.disorder.back2' as TranslationKey)}</li>
+                <li>{t('gm.disorder.back3' as TranslationKey)}</li>
               </ul>
             </div>
             <div className="gm-note">
-              Keep an eye on what drove them to the streets: the same pressure will build again
-              if the balance of tax, food and luxury stays where it is.
+              {t('gm.disorder.backNote' as TranslationKey)}
             </div>
           </>
         )}
@@ -2192,23 +2191,22 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       size="lg"
       tone="gold"
       icon="🐫"
-      artLabel="the caravan road"
-      eyebrow={stamp('Caravan Report')}
-      title="Trade Route Established"
+      artLabel={t('gm.tradeRoute.artLabel' as TranslationKey)}
+      eyebrow={stamp(t('gm.tradeRoute.eyebrow' as TranslationKey))}
+      title={t('gm.tradeRoute.title' as TranslationKey)}
       lede={
         tradeRouteResult ? (
           <>
-            Your caravan has delivered its cargo to <strong>{tradeRouteResult.destCityName}</strong>{' '}
-            from {tradeRouteResult.homeCityName}, {tradeRouteResult.distance} tiles from home. The
-            merchants are back on the road — and the road now pays.
+            {t('gm.tradeRoute.lede.pre' as TranslationKey)} <strong>{tradeRouteResult.destCityName}</strong>{' '}
+            {t('gm.tradeRoute.lede.mid' as TranslationKey, { home: tradeRouteResult.homeCityName, distance: tradeRouteResult.distance })}
           </>
         ) : (
-          <>Your caravan delivered its cargo and the merchants have opened a road of trade.</>
+          <>{t('gm.tradeRoute.lede.fallback' as TranslationKey)}</>
         )
       }
       actions={
         <button type="button" className="touch-btn touch-btn--primary" onClick={handleCloseDialog}>
-          Excellent
+          {t('gm.tradeRoute.excellent' as TranslationKey)}
         </button>
       }
     >
@@ -2219,43 +2217,41 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               <span className="gm-stat-value">
                 <span className="gm-stat-icon" aria-hidden="true">🪙</span>+{tradeRouteResult.gold}
               </span>
-              <span className="gm-stat-label">Gold, paid now</span>
+              <span className="gm-stat-label">{t('gm.tradeRoute.goldLabel' as TranslationKey)}</span>
             </div>
             <div className="gm-stat gm-stat--accent">
               <span className="gm-stat-value">
                 <span className="gm-stat-icon" aria-hidden="true">🔬</span>+{tradeRouteResult.science}
               </span>
-              <span className="gm-stat-label">Science, paid now</span>
+              <span className="gm-stat-label">{t('gm.tradeRoute.scienceLabel' as TranslationKey)}</span>
             </div>
             <div className="gm-stat">
               <span className="gm-stat-value">
                 <span className="gm-stat-icon" aria-hidden="true">↔️</span>
                 {tradeRouteResult.distance}
               </span>
-              <span className="gm-stat-label">Tiles between the two</span>
+              <span className="gm-stat-label">{t('gm.tradeRoute.distanceLabel' as TranslationKey)}</span>
             </div>
           </div>
 
           {(tradeRouteResult.foreign || tradeRouteResult.intercontinental) && (
             <div className="gm-callout">
-              <span className="gm-callout-title">A richer delivery</span>
-              {tradeRouteResult.foreign && <>Foreign city — the bonus is doubled. </>}
-              {tradeRouteResult.intercontinental && <>Across the water — the bonus is doubled. </>}
-              Dealing with strangers pays better than dealing with your own.
+              <span className="gm-callout-title">{t('gm.tradeRoute.richerTitle' as TranslationKey)}</span>
+              {tradeRouteResult.foreign && <>{t('gm.tradeRoute.foreign' as TranslationKey)}</>}
+              {tradeRouteResult.intercontinental && <>{t('gm.tradeRoute.intercontinental' as TranslationKey)}</>}
+              {t('gm.tradeRoute.richerBody' as TranslationKey)}
             </div>
           )}
 
           <div className="gm-section">
-            <div className="gm-section-title">The road stays open</div>
+            <div className="gm-section-title">{t('gm.tradeRoute.roadTitle' as TranslationKey)}</div>
             <p className="gm-prose">
-              Both cities now share a <strong>permanent trade route</strong>, adding trade every
-              single turn from now on. A city keeps up to three routes, and a better road always
-              replaces a weaker one.
+              {t('gm.tradeRoute.road.pre' as TranslationKey)} <strong>{t('gm.tradeRoute.road.strong' as TranslationKey)}</strong>{t('gm.tradeRoute.road.post' as TranslationKey)}
             </p>
           </div>
         </>
       ) : (
-        <p className="gm-prose">Your caravan established a trade route.</p>
+        <p className="gm-prose">{t('gm.tradeRoute.roadFallback' as TranslationKey)}</p>
       )}
     </GameModal>
   );

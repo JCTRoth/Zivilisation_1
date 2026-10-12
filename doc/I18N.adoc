@@ -1,0 +1,253 @@
+= Internationalization (i18n)
+
+Multi-language support for the game: every shipped language has a translation
+file, the player switches language in the Settings dialog, and the choice is
+persisted across sessions. The runtime is dependency-free (~150 lines), so
+nothing outside `src/i18n/` is required to add another language.
+
+Shipped languages: English (`en`), German (`de`), French (`fr`), Russian
+(`ru`), Spanish (`es`), Japanese (`ja`).
+
+== Architecture
+
+[cols="1,2", options="header"]
+|===
+|File |Purpose
+
+|`src/i18n/languages.ts`
+|Language registry: `LanguageId`, `LANGUAGES` (native name, English name,
+flag, BCP-47 locale), `DEFAULT_LANGUAGE`, `isSupportedLanguage()`, the
+`civ1_language` storage key
+
+|`src/i18n/en.ts`
+|English base dictionary — the source of truth for every `TranslationKey`
+and the type every other dictionary is checked against
+
+|`src/i18n/de.ts` `fr.ts` `ru.ts` `es.ts` `ja.ts`
+|One file per language, typed as `PartialTranslationDict` (missing keys fall
+back to English at runtime; `tests/i18n.test.ts` additionally enforces that
+shipped languages are complete)
+
+|`src/i18n/index.ts`
+|The runtime: `t()` (translation + `{{placeholder}}` interpolation),
+`setLanguage()` / `getLanguage()` / `subscribeLanguage()`, localStorage
+persistence, `<html lang>` upkeep, `translateDynamic()` for runtime-built
+keys, `formatNumber()` / `formatPercent()` (Intl, active locale)
+
+|`src/i18n/useTranslation.ts`
+|React binding: `useTranslation()` subscribes the component to language
+changes via `useSyncExternalStore` — no provider, no context
+
+|`src/i18n/dataNames.ts`
+|Name helpers for game data: `tUnitName`, `tBuildingName`, `tTechName`,
+`tWonderName`, `tGovernmentName`, `tSpecialistName` — they map the stable id
+(`'settler'`, `'barracks'`, `'pottery'`, …) to the `data.<kind>.<id>` key and
+fall back to the English display name
+
+|`src/components/ui/LanguageSwitcher.tsx`
+|The language picker (grid of cards: flag, native name, English name) as an
+accessible `radiogroup` with roving tabindex and arrow-key navigation
+
+|`src/styles/languageSwitcher.css`
+|Dressing for the picker, built from the design-system tokens
+|===
+
+== Using translations in a component
+
+Two steps: render with `t()`, and subscribe to language changes.
+
+[source,tsx]
+----
+import { useTranslation } from '@/i18n/useTranslation';
+
+function MyPanel() {
+  const { t } = useTranslation(); // ← also subscribes to language changes
+  return <h2>{t('menu.wonders')}</h2>;
+}
+----
+
+For parameters use `{{placeholders}}`:
+
+[source,tsx]
+----
+t('common.turn', { turn: 12 })   // "Turn 12" (en) · "Runde 12" (de) · "ターン 12" (ja)
+----
+
+=== Displaying game data names
+
+Unit / building / tech / wonder / government / specialist names resolve
+through the `dataNames` helpers. The English display name from `src/data/*`
+is passed as fallback, so unknown ids never render a raw key:
+
+[source,tsx]
+----
+import { useTranslation } from '@/i18n/useTranslation';
+import { tUnitName } from '@/i18n/dataNames';
+
+function UnitLabel({ unit }: { unit: UnitDef }) {
+  useTranslation(); // subscription only — the helper reads the active language
+  return <span>{tUnitName(unit.id, unit.name)}</span>;
+}
+----
+
+Components whose data is translated but that don't render any `t()` text call
+`useTranslation();` on its own — that call is the re-render subscription.
+
+=== Numbers
+
+Use `formatNumber` / `formatPercent` from the hook for locale-aware output
+(`1,234.5` in English, `1.234,5` in German).
+
+== The language switch
+
+The `LanguageSwitcher` is a controlled component:
+
+[source,tsx]
+----
+<LanguageSwitcher value={settings.language} onChange={handleLanguageChange} />
+----
+
+`SettingsModal` wires it to `actions.updateSettings({ language })`.
+`GameStore.updateSettings` forwards a `language` update to `setLanguage()`,
+which
+
+. validates the id against the registry (unknown ids are ignored),
+. persists the choice to `localStorage` under `civ1_language`,
+. sets `<html lang>`,
+. notifies every subscribed component — the whole UI repaints immediately,
+  including the settings dialog the player is looking at.
+
+The language is deliberately *not* reset by "Reset to Defaults": it is a
+persistent player preference, not a tuning knob of the current session.
+
+== Adding a new language
+
+. Create `src/i18n/<id>.ts`. Copy `src/i18n/en.ts`, keep every key, and
+translate the values (the file is typed `PartialTranslationDict`, but the
+completeness test requires *all* keys for shipped languages):
++
+[source,ts]
+----
+import type { PartialTranslationDict } from './en';
+
+export const it: PartialTranslationDict = {
+  'common.cancel': 'Annulla',
+  // …
+};
+----
+. Add the id to `LanguageId` in `src/i18n/languages.ts`.
+. Add a `LanguageDefinition` entry to `LANGUAGES` (native name, English
+name, flag, BCP-47 locale, e.g. `{ id: 'it', nativeName: 'Italiano',
+englishName: 'Italian', flag: '🇮🇹', locale: 'it' }`). It appears in the
+switcher automatically.
+. Register the dictionary in `src/i18n/index.ts`:
++
+[source,ts]
+----
+const DICTIONARIES: Record<LanguageId, PartialTranslationDict> = { en, de, fr, ru, es, ja, it };
+----
+. Run `npm test` — `tests/i18n.test.ts` fails on any missing or empty key.
+
+No component changes are needed: the switcher, the persistence and the
+re-render subscriptions are language-agnostic.
+
+== Key namespaces
+
+[cols="1,2", options="header"]
+|===
+|Namespace |Content
+
+|`common.*`
+|Shared words: Cancel, Confirm, Close, Apply & Close, Reset to Defaults, "Turn {{turn}}"
+
+|`topbar.*`, `menu.*`
+|Top bar and the GAME / WORLD / INFO menu entries
+
+|`settings.*`, `language.*`
+|The Settings dialog (every label and hint) and the switcher's a11y labels
+
+|`pause.*`
+|Pause screen and skipped-result game-over panel
+
+|`endTurn.*`
+|End-turn confirmation dialog (both flavours)
+
+|`confirm.*`
+|`ConfirmDialog` internals (variant eyebrows, artwork captions)
+
+|`research.*`, `speed.*`
+|Research indicator and the game-speed ladder (`gameSpeedLabel`)
+
+|`setup.*`
+|The two-step game setup wizard (civilization picker, world terms, first-turn orders)
+
+|`gm.*`
+|`GameModals` — help & controls, research prompt, upgrade prompts, gameplay dialogs
+
+|`city.*`
+|The city screen (tabs, production queue, buildings, citizens, tiles, trade routes)
+
+|`side.*`
+|The side panel (selected unit, city list, empire summary, citizen placement)
+
+|`prod.*`, `wonders.*`
+|Production picker and wonders ledger (tables, statuses, eras, entry modals)
+
+|`stats.*`, `rates.*`, `gov.*`
+|Statistics, tax/science/luxury rates and government screens
+
+|`result.*`
+|Victory/defeat overlay and its chronicle
+
+|`combat.*`, `cityEvent.*`, `stack.*`, `village.*`
+|Combat report, city event, unit stack and goody-hut modals
+
+|`wonderDone.*`, `wonderConflict.*`, `researchReq.*`, `unitActions.*`
+|Wonder completed/conflict notices, research-required prompt, unit actions
+
+|`canvas.*`, `mobile.*`, `notify.*`
+|Canvas toasts/hints, mobile bottom bar, notification center
+
+|`techTree.*`, `art.*`, `errorBoundary.*`
+|Tech tree labels, wonder artwork credits, the crash screen
+
+|`data.unit.*`, `data.building.*`, `data.tech.*`, `data.wonder.*`,
+`data.government.*`, `data.specialist.*`, `data.difficulty.*`
+|Display names of game data, keyed by the stable id used in `src/data/*`
+|===
+
+=== Note for e2e tests
+
+Playwright filters on the exact strings `End Turn?` and `All Your Units Have
+Moved!` (see `e2e/game.spec.ts`). They live in the English dictionary
+(`endTurn.titleManual` / `endTurn.titleAuto`), so with the default language
+the dialog text is unchanged. A browser that has stored a non-English
+language would show translated text — e2e runs use a fresh context, which
+defaults to English.
+
+== Current coverage and extending it
+
+The whole UI layer is translated: game setup wizard, game menu, top bar,
+Settings dialog, city screen, side panel, production picker, tech tree,
+wonders ledger, government/rates/statistics screens, pause & game-over
+screens, end-turn confirmation, combat/city-event/village reports, wonder
+notices, unit actions, mobile bar, notification center, canvas hints, the
+wonder-artwork credits and the crash screen — plus the *names* of units,
+buildings, technologies, wonders, governments, specialists and difficulty
+levels everywhere they are displayed.
+
+Deliberately still English: strings emitted by the *game engine* itself
+(runtime notifications such as AI diplomacy messages and turn events, which
+are assembled deep inside `src/game/engine/*`), data prose fields
+(building/technology/wonder descriptions, government descriptions) and
+proper nouns (civilization and leader names, "Civilopedia"). Translating
+engine notifications means adding keys at the engine call sites — a
+follow-up with its own key namespace (e.g. `toast.*`).
+
+To translate another string:
+
+. Add a key to `src/i18n/en.ts` (this defines the type for every dictionary).
+. Replace the literal with `t('your.key')` in the component (make sure the
+component calls `useTranslation()`).
+. Translate the key in the five language files.
+. `npm test` verifies completeness.

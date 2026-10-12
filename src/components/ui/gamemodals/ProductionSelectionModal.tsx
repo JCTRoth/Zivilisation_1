@@ -3,6 +3,8 @@ import { Button, Tab, Tabs } from 'react-bootstrap';
 import { UNIT_PROPS, BUILDING_PROPS } from '../../../utils/Constants';
 import type { ProductionItem } from '../../../../types/game';
 import { useGameStore } from '@/stores/GameStore';
+import { useTranslation } from '@/i18n/useTranslation';
+import { tBuildingName, tTechName, tUnitName, tWonderName } from '@/i18n/dataNames';
 import { GameUtils } from '@/utils/GameUtils';
 import {
   WONDERS,
@@ -17,17 +19,29 @@ import {
 } from '@/data/WonderData';
 import { WonderArtwork } from './WonderArtwork';
 import GameModal from './ModalShell';
+import { translateDynamic, type TranslationKey, type TranslationParams } from '@/i18n';
 import '@/styles/cityModal.css';
 import '@/styles/wonders.css';
 
+/**
+ * Translate a `prod.*` key. The keys reach the i18n dictionaries through the
+ * `.i18n-frags/prodwonders.*.txt` merge; until they land in `en.ts` the
+ * `TranslationKey` union does not know them yet, so the parameter is widened
+ * here and resolved through the i18n runtime (identical to `t()` afterwards).
+ */
+const t = (key: string, params?: TranslationParams): string => translateDynamic(key, params);
+
+/** Same widening for `Record<…, TranslationKey>` label maps. */
+const prodKey = (key: string): TranslationKey => key as TranslationKey;
+
 /** Badge class + label for a wonder status (same colours as the overview). */
-const WONDER_STATUS_LABEL: Record<WonderStatus, string> = {
-  owned: 'Yours',
-  building: 'You are building',
-  contested: 'Race!',
-  rival: 'Rival',
-  locked: 'Locked',
-  available: 'Available',
+const WONDER_STATUS_LABEL: Record<WonderStatus, TranslationKey> = {
+  owned: prodKey('prod.wonderStatus.owned'),
+  building: prodKey('prod.wonderStatus.building'),
+  contested: prodKey('prod.wonderStatus.contested'),
+  rival: prodKey('prod.wonderStatus.rival'),
+  locked: prodKey('prod.wonderStatus.locked'),
+  available: prodKey('prod.wonderStatus.available'),
 };
 
 interface ProductionSelectionModalProps {
@@ -76,12 +90,25 @@ function hasRequiredTechs(
   return requirements.every((tech: string) => techSet.has(tech));
 }
 
-/** Convert snake_case tech ids to human-readable names: bronze_working → Bronze Working */
+/**
+ * Convert snake_case tech ids to human-readable names: bronze_working →
+ * Bronze Working. Real tech ids resolve through the i18n dictionaries (active
+ * language → English → this humanized fallback), so joined lists
+ * ('bronze_working, iron_working') get every part translated.
+ */
 function formatTechName(id: string | null | undefined): string {
-  if (!id) return 'None';
+  if (!id) return t('prod.techNone');
   return id
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+    .split(', ')
+    .map((part) =>
+      tTechName(
+        part,
+        part
+          .replace(/_/g, ' ')
+          .replace(/\b\w/g, (c) => c.toUpperCase()),
+      ),
+    )
+    .join(', ');
 }
 
 type SortDir = 'asc' | 'desc' | null;
@@ -122,6 +149,9 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   productionPerTurn = 0,
   cityName,
 }) => {
+  // Subscribes the modal to language changes: unit/building/wonder/tech names
+  // below resolve through the dataNames helpers and repaint on a switch.
+  useTranslation();
   // Buildings are one-per-city in Civ1 — hide the ones the city already owns.
   const ownedBuildings = new Set((cityBuildings ?? []).map((b) => String(b).toLowerCase()));
   const buildableBuildingKeys = Object.keys(BUILDING_PROPS)
@@ -256,7 +286,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   const canAfford = (type: string, cost: number): boolean => playerGold >= getPurchaseCost(type, cost);
   const getTurnsText = (cost: number): string => {
     if (cost <= 0 || productionPerTurn <= 0) return '—';
-    return `~${Math.ceil(cost / productionPerTurn)} turns`;
+    return t('prod.turns', { turns: Math.ceil(cost / productionPerTurn) });
   };
 
   /** One wonder table row — also reused for members of an expandable group. */
@@ -265,30 +295,30 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
     const canBuy = row.canStart && affordable && !purchasedThisTurn && !!onPurchase;
     const purchaseCost = getPurchaseCost('wonder', row.cost);
     const blockedReason = row.completed
-      ? 'Already completed'
+      ? t('prod.blocked.alreadyCompleted')
       : row.inThisCity
-        ? 'Already in this city'
+        ? t('prod.blocked.alreadyInCity')
         : row.groupClosed
-          ? 'Group completed'
+          ? t('prod.blocked.groupCompleted')
           : row.obsolete
-            ? 'Obsolete'
+            ? t('prod.blocked.obsolete')
             : !row.hasTech
-              ? 'Technology missing'
+              ? t('prod.blocked.techMissing')
               : '';
     return (
       <tr
         key={row.id}
         className={`wonder-row-selectable ${selectedWonderId === row.id ? 'selected' : ''} ${row.canStart ? '' : 'text-muted'}`}
         onClick={() => setSelectedWonderId(row.id)}
-        title={`Select ${row.name} for details`}
+        title={t('prod.selectForDetails', { name: row.name })}
       >
         <td>
-          {getWonder(row.id)?.icon} {row.name}
-          {row.obsolete && <span className="wonder-obsolete-tag ms-2">⚠ Obsolete</span>}
+          {getWonder(row.id)?.icon} {tWonderName(row.id, row.name)}
+          {row.obsolete && <span className="wonder-obsolete-tag ms-2">{t('prod.obsoleteTag')}</span>}
         </td>
         <td>
           <span className={`wonder-status wonder-status--${row.status}`}>
-            {WONDER_STATUS_LABEL[row.status]}
+            {t(WONDER_STATUS_LABEL[row.status])}
           </span>
         </td>
         <td>{formatTechName(row.requiredTechnology)}</td>
@@ -299,14 +329,14 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
               <Button
                 variant="outline-success"
                 size="sm"
-                title="Add to build queue — races allowed, first to finish wins"
+                title={t('prod.addToQueueRaced')}
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedWonderId(row.id);
                   handleAddToQueue(row.id);
                 }}
               >
-                + Add
+                {t('prod.add')}
               </Button>
             )}
             {row.canStart && (
@@ -316,10 +346,10 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                 disabled={!canBuy}
                 title={
                   purchasedThisTurn
-                    ? 'Already purchased this turn'
+                    ? t('prod.buy.alreadyPurchased')
                     : !affordable
-                      ? `Need ${purchaseCost} Gold (have ${playerGold})`
-                      : `Buy now for ${purchaseCost} Gold`
+                      ? t('prod.buy.needGold', { cost: purchaseCost, gold: playerGold })
+                      : t('prod.buy.now', { cost: purchaseCost })
                 }
                 onClick={(e) => {
                   e.stopPropagation();
@@ -365,7 +395,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
               className="wonder-group__header wonder-group__header--slim"
               onClick={() => toggleProdGroup(groupId)}
               aria-expanded={!collapsed}
-              title={collapsed ? `Expand ${group?.name ?? groupId}` : `Collapse ${group?.name ?? groupId}`}
+              title={collapsed ? t('prod.group.expand', { name: group?.name ?? groupId }) : t('prod.group.collapse', { name: group?.name ?? groupId })}
             >
               <span className="wonder-group__icons" aria-hidden="true">
                 {members.map((m) => (
@@ -374,7 +404,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
               </span>
               <span className="wonder-group__name">{group?.name ?? groupId}</span>
               <span className="wonder-group__blurb">{group?.blurb ?? ''}</span>
-              <span className="wonder-group__count" title={`${members.length} wonders`}>
+              <span className="wonder-group__count" title={t('prod.group.wondersCount', { count: members.length })}>
                 {members.length}
               </span>
               <span className="wonder-group__chevron" aria-hidden="true">
@@ -425,10 +455,11 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
     buildingSort,
   );
 
-  const subject = cityName ?? 'your city';
-  const eyebrow = `Production · Turn ${gameState.currentTurn ?? 1} · ${GameUtils.formatYear(
-    gameState.currentYear ?? -4000,
-  )}`;
+  const subject = cityName ?? t('prod.yourCity');
+  const eyebrow = t('prod.eyebrow', {
+    turn: gameState.currentTurn ?? 1,
+    year: GameUtils.formatYear(gameState.currentYear ?? -4000),
+  });
 
   return (
     <GameModal
@@ -438,14 +469,14 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
       size="lg"
       dialogClassName="city-details-modal production-selection-modal hex-detail-modal"
       icon="🏗️"
-      artLabel="the drawing board"
+      artLabel={t('prod.artLabel')}
       eyebrow={eyebrow}
-      title={cityName ? `What shall ${cityName} build next?` : 'What shall your city build next?'}
+      title={cityName ? t('prod.titleCity', { city: cityName }) : t('prod.titleDefault')}
       lede={
         <>
-          Your people are ready to work — give them their next order.
+          {t('prod.lede')}
           <span className="gm-chip gm-chip--accent city-hero-gold">
-            <i className="bi bi-coin" aria-hidden="true"></i> {playerGold} Gold
+            <i className="bi bi-coin" aria-hidden="true"></i> {t('prod.gold', { gold: playerGold })}
           </span>
         </>
       }
@@ -460,12 +491,12 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
               onChange={() => setShowUnavailable(!showUnavailable)}
             />
             <label className="form-check-label small text-muted" htmlFor="show-unavailable-toggle">
-              Show unavailable
+              {t('prod.showUnavailable')}
             </label>
           </div>
           <span className="gm-actions-spacer" />
           <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
-            Done
+            {t('prod.done')}
           </button>
         </>
       }
@@ -477,46 +508,48 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
           id="production-selection-tabs"
           className="mb-0"
         >
-          <Tab eventKey="units" title="Units">
+          <Tab eventKey="units" title={t('prod.tab.units')}>
             <p className="gm-prose">
-              Your people can only field what their tools allow — greyed rows wait on a
-              technology your scribes have yet to find.
+              {t('prod.unitsProse')}
             </p>
             <section className="gm-section">
-              <div className="gm-section-title">Units your people can raise</div>
+              <div className="gm-section-title">{t('prod.unitsSection')}</div>
               <div className="table-responsive">
                 <table className="table table-dark table-striped">
                   <thead>
                     <tr>
                       <th style={{ cursor: 'pointer' }} onClick={() => toggleUnitSort('name')}>
-                        Unit{sortIndicator('name', unitSort)}
+                        {t('prod.th.unit')}{sortIndicator('name', unitSort)}
                       </th>
-                      <th>Required Technology</th>
-                      <th>Stats</th>
+                      <th>{t('prod.th.requiredTechnology')}</th>
+                      <th>{t('prod.th.stats')}</th>
                       <th style={{ cursor: 'pointer' }} onClick={() => toggleUnitSort('cost')}>
-                        Shields{sortIndicator('cost', unitSort)}
+                        {t('prod.th.shields')}{sortIndicator('cost', unitSort)}
                       </th>
-                      <th>Action</th>
+                      <th>{t('prod.th.action')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {unitRows.length === 0 && (
                       <tr>
                         <td colSpan={5} className="text-center text-muted">
-                          Nothing your workshops can build yet — switch on “Show unavailable”
-                          below to see what the future holds.
+                          {t('prod.unitsEmpty')}
                         </td>
                       </tr>
                     )}
                     {unitRows.map(({ key, name, cost, canBuild, requires, unit }) => {
-                      const requiredTech = Array.isArray(requires) ? requires.join(', ') : requires || 'None';
-                      const stats = `${unit.attack}/${unit.defense} (${unit.movement} moves)`;
+                      const requiredTech = Array.isArray(requires) ? requires.join(', ') : requires || '';
+                      const stats = t('prod.stats', {
+                        attack: unit.attack,
+                        defense: unit.defense,
+                        moves: unit.movement,
+                      });
                       const purchaseCost = getPurchaseCost('unit', cost);
                       const affordable = canAfford('unit', cost);
                       const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
                       return (
                         <tr key={key} className={canBuild ? '' : 'text-muted'}>
-                          <td>{name}</td>
+                          <td>{tUnitName(key, name)}</td>
                           <td>{formatTechName(requiredTech)}</td>
                           <td>{stats}</td>
                           <td>
@@ -528,10 +561,10 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                                 <Button
                                   variant="outline-success"
                                   size="sm"
-                                  title="Add to build queue"
+                                  title={t('prod.addToQueue')}
                                   onClick={() => handleAddToQueue(key)}
                                 >
-                                  + Add
+                                  {t('prod.add')}
                                 </Button>
                               )}
                               {canBuild && (
@@ -541,10 +574,10 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                                   disabled={!canBuy}
                                   title={
                                     purchasedThisTurn
-                                      ? 'Already purchased this turn'
+                                      ? t('prod.buy.alreadyPurchased')
                                       : !affordable
-                                        ? `Need ${purchaseCost} Gold (have ${playerGold})`
-                                        : `Buy now for ${purchaseCost} Gold`
+                                        ? t('prod.buy.needGold', { cost: purchaseCost, gold: playerGold })
+                                        : t('prod.buy.now', { cost: purchaseCost })
                                   }
                                   onClick={() => handleBuy(key, 'unit')}
                                 >
@@ -562,26 +595,25 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
             </section>
           </Tab>
 
-          <Tab eventKey="buildings" title="Buildings">
+          <Tab eventKey="buildings" title={t('prod.tab.buildings')}>
             <p className="gm-prose">
-              One of each per city. What {subject} already owns is left off the list; the rest
-              waits on the research of your scribes.
+              {t('prod.buildingsProse', { subject })}
             </p>
             <section className="gm-section">
-              <div className="gm-section-title">Buildings for the city</div>
+              <div className="gm-section-title">{t('prod.buildingsSection')}</div>
               <div className="table-responsive">
                 <table className="table table-dark table-striped">
                   <thead>
                     <tr>
                       <th style={{ cursor: 'pointer' }} onClick={() => toggleBuildingSort('name')}>
-                        Building{sortIndicator('name', buildingSort)}
+                        {t('prod.th.building')}{sortIndicator('name', buildingSort)}
                       </th>
-                      <th>Required Technology</th>
-                      <th>Effect</th>
+                      <th>{t('prod.th.requiredTechnology')}</th>
+                      <th>{t('prod.th.effect')}</th>
                       <th style={{ cursor: 'pointer' }} onClick={() => toggleBuildingSort('cost')}>
-                        Shields{sortIndicator('cost', buildingSort)}
+                        {t('prod.th.shields')}{sortIndicator('cost', buildingSort)}
                       </th>
-                      <th>Action</th>
+                      <th>{t('prod.th.action')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -589,8 +621,8 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                       <tr>
                         <td colSpan={5} className="text-center text-muted">
                           {buildableBuildingKeys.length === 0
-                            ? 'All available buildings are already constructed in this city.'
-                            : 'Nothing your knowledge allows yet — switch on “Show unavailable” below to see what is coming.'}
+                            ? t('prod.buildingsEmptyOwned')
+                            : t('prod.buildingsEmptyTech')}
                         </td>
                       </tr>
                     )}
@@ -600,7 +632,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                       const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
                       return (
                         <tr key={key} className={canBuild ? '' : 'text-muted'}>
-                          <td>{name}</td>
+                          <td>{tBuildingName(key, name)}</td>
                           <td>{formatTechName(requiredTech)}</td>
                           <td>{building.description}</td>
                           <td>
@@ -612,10 +644,10 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                                 <Button
                                   variant="outline-info"
                                   size="sm"
-                                  title="Add to build queue"
+                                  title={t('prod.addToQueue')}
                                   onClick={() => handleAddToQueue(key)}
                                 >
-                                  + Add
+                                  {t('prod.add')}
                                 </Button>
                               )}
                               {canBuild && (
@@ -625,10 +657,10 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                                   disabled={!canBuy}
                                   title={
                                     purchasedThisTurn
-                                      ? 'Already purchased this turn'
+                                      ? t('prod.buy.alreadyPurchased')
                                       : !affordable
-                                        ? `Need ${purchaseCost} Gold (have ${playerGold})`
-                                        : `Buy now for ${purchaseCost} Gold`
+                                        ? t('prod.buy.needGold', { cost: purchaseCost, gold: playerGold })
+                                        : t('prod.buy.now', { cost: purchaseCost })
                                   }
                                   onClick={() => handleBuy(key, 'building')}
                                 >
@@ -646,23 +678,22 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
             </section>
           </Tab>
 
-          <Tab eventKey="wonders" title="Wonders">
+          <Tab eventKey="wonders" title={t('prod.tab.wonders')}>
             <p className="gm-prose">
-              Only one people may finish each wonder. Several cities can race the same one —
-              the first to lay the last stone owns it for the rest of time.
+              {t('prod.wondersProse')}
             </p>
             <section className="gm-section">
-              <div className="gm-section-title">Wonders of the world</div>
+              <div className="gm-section-title">{t('prod.wondersSection')}</div>
               <div className="production-wonders-layout">
                 <div className="production-wonders-layout__list table-responsive">
                   <table className="table table-dark table-striped mb-0">
                     <thead>
                       <tr>
-                        <th>Wonder</th>
-                        <th>Status</th>
-                        <th>Required Technology</th>
-                        <th>Shields</th>
-                        <th>Action</th>
+                        <th>{t('prod.th.wonder')}</th>
+                        <th>{t('prod.th.status')}</th>
+                        <th>{t('prod.th.requiredTechnology')}</th>
+                        <th>{t('prod.th.shields')}</th>
+                        <th>{t('prod.th.action')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -675,26 +706,25 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                 <aside className="production-wonders-layout__detail">
                   {!selectedWonder ? (
                     <div className="text-white-50 small">
-                      Choose a wonder from the list to read what it gives, when it falls
-                      obsolete, and who is racing you to it.
+                      {t('prod.wonderDetailEmpty')}
                     </div>
                   ) : (
                     <>
                       <WonderArtwork wonder={selectedWonder} active={show && activeTab === 'wonders'} />
-                      <h6>{selectedWonder.name}</h6>
+                      <h6>{tWonderName(selectedWonder.id, selectedWonder.name)}</h6>
                       {selectedWonderRow && (
                         <span className={`wonder-status wonder-status--${selectedWonderRow.status}`}>
-                          {WONDER_STATUS_LABEL[selectedWonderRow.status]}
+                          {t(WONDER_STATUS_LABEL[selectedWonderRow.status])}
                         </span>
                       )}
                       <div className="wonder-detail-effect mt-2">{selectedWonder.effectText}</div>
                       <div className="wonder-detail-meta">
-                        🛡 {selectedWonder.cost} shields · 🔬 {formatTechName(selectedWonder.requiredTechnology)} · ⏳{' '}
+                        🛡 {t('prod.shields', { count: selectedWonder.cost })} · 🔬 {formatTechName(selectedWonder.requiredTechnology)} · ⏳{' '}
                         {selectedWonder.obsoleteBy
-                          ? `Obsolete: ${formatTechName(selectedWonder.obsoleteBy)}`
-                          : 'Never obsolete'}
+                          ? t('prod.obsoleteBy', { tech: formatTechName(selectedWonder.obsoleteBy) })
+                          : t('prod.neverObsolete')}
                         {selectedWonderRow?.obsolete && (
-                          <span className="wonder-obsolete-tag ms-2">— effect currently inactive</span>
+                          <span className="wonder-obsolete-tag ms-2">{t('prod.effectInactive')}</span>
                         )}
                       </div>
                       <div className="wonder-detail-flavor">{selectedWonder.flavor}</div>

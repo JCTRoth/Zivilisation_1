@@ -652,7 +652,19 @@ export class AICoordinator {
     let savedPerTurn = 0;
     const sales: BuildingFundingSale[] = [];
     for (const candidate of eligible) {
+      // `raised` is money in hand this turn (a refund); `savedPerTurn` is a
+      // RATE. They used to be summed into the same comparison
+      // (`raised + savedPerTurn >= target`), so a 20-gold refund plus a
+      // 10 g/turn saving "covered" a 25-gold shortfall while leaving the
+      // treasury 5 gold short — and under `aggression` the extra turns of
+      // upkeep on `target` were partly paid for by money that only arrives
+      // over time. Only refunds close a one-off gap.
+      const before = raised;
       raised += candidate.refund;
+      if (raised === before) {
+        // A zero refund closes nothing; skip it rather than burn the slot.
+        continue;
+      }
       savedPerTurn += -candidate.economics.netPerTurn;
       sales.push({
         cityId: candidate.cityId,
@@ -663,7 +675,7 @@ export class AICoordinator {
         verdict: candidate.economics.verdict,
         reason: candidate.economics.reasons[candidate.economics.reasons.length - 1] ?? '',
       });
-      if (raised + savedPerTurn >= target) break;
+      if (raised >= target) break;
     }
 
     reasons.push(
@@ -696,6 +708,10 @@ type FundingKind =
   | 'bribe'
   | 'reserve'
   | 'maintenance_crisis';
+// `infrastructure` is no longer produced: public works cost worker-turns and
+// the settler that spends them costs shields, so there is no gold demand to
+// size a liquidation against. The kind stays in the union because the planner
+// is exercised with it, and `bribe` is aspirational the same way.
 
 /** One thing the civ wants to spend money on. */
 export interface FundingDemand {

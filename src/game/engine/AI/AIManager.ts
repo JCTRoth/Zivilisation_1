@@ -18,6 +18,7 @@ import {
   villageEarlyGameFactor,
 } from '@/data/VillageConstants';
 import { isAutoScenario, MAX_CARAVAN_TRADE_ROUTES } from '@/data/GameConstants';
+import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { SettlementEvaluator, MIN_CITY_CENTER_DISTANCE } from '../SettlementEvaluator';
 import { Pathfinding } from '../Pathfinding';
 import { AIStrategySelector } from './AIStrategySelector';
@@ -1612,56 +1613,75 @@ export class AIManager {
     const demands: FundingDemand[] = [];
 
     // ── Infrastructure: settlers to work a city's tiles ─────────────────────
+    // Reported for the log, never as a gold demand. Public works cost
+    // worker-turns and the settler that spends them costs shields, so there is
+    // no gold here to raise: the old `plan.goldNeeded` (settlers × 40) priced
+    // shields as gold and made the AI liquidate income-producing buildings to
+    // "fund" a unit it was about to build for free out of city production.
     const techs = new Set<string>(civ.technologies ?? []);
     const atWar = this.gameEngine.isCivAtWar?.(civ.id) === true;
-    let infrastructureGold = 0;
     for (const city of ownCities) {
       const plan = this.planInfrastructureForCity(city, civ, techs, atWar);
       if (!plan?.wantsInfrastructure) continue;
-      infrastructureGold += plan.goldNeeded;
-      debugLog(`[AI] Public works in ${city.name}: ${plan.deficit} tiles to improve, needs ${plan.settlersNeeded} settlers (${plan.reasons.join('; ')})`);
-    }
-    if (infrastructureGold > 0) {
-      demands.push({
-        kind: 'infrastructure',
-        label: 'settlers for public works',
-        goldNeeded: infrastructureGold,
-        urgency: 0.6,
-      });
+      debugLog(`[AI] Public works in ${city.name}: ${plan.deficit} tiles to improve, ${plan.workerTurnsNeeded} worker-turns, needs ${plan.settlersNeeded} settlers (${plan.reasons.join('; ')})`);
     }
 
-    // ── Army: the gold to keep one more unit alive this turn ───────────────
+    // ── Army: what it costs to keep the army it already wants ─────────────
     // AIEconomicManager owns the sustainable-army policy; ask it rather than
     // re-deriving the number here.
+    //
+    // The demand used to be `shortfallUnits × (UNIT_MAINTENANCE × 4)` — four
+    // gold per unit, a one-off number derived from a per-turn rate, and priced
+    // at the flat 1-gold default rather than at what the unit it will actually
+    // build costs to KEEP (a tank is 4, a battleship 6). A funding demand that
+    // is neither the price of buying the unit nor the price of maintaining it
+    // cannot be compared against a treasury, so the army is now priced the way
+    // the engine will charge it: the
+    // maintenance of the unit this civ fields, for the turns the reserve
+    // covers. The real brake on over-building stays `sustainableUnits` — this
+    // figure only sizes the sale.
     const sustainable = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ) ?? 0;
     const ownMilitary = (this.gameEngine.units ?? [])
       .filter(u => u.civilizationId === civ.id && this.isCombatUnit(u)).length;
     const shortfallUnits = Math.max(0, sustainable - ownMilitary);
     if (shortfallUnits > 0) {
-      const unitGold = shortfallUnits * (UNIT_MAINTENANCE * 4);
+      const unitUpkeepEach = Math.max(
+        UNIT_MAINTENANCE,
+        ...(this.gameEngine.units ?? [])
+          .filter(u => u.civilizationId === civ.id && !u.isDefeated && (u.maintenance ?? 0) > 0)
+          .map(u => u.maintenance ?? UNIT_MAINTENANCE),
+      );
       demands.push({
         kind: 'army',
         label: `${shortfallUnits} more combat unit(s) up to its sustainable army`,
-        goldNeeded: unitGold,
+        goldNeeded: shortfallUnits * unitUpkeepEach,
         urgency: atWar ? 0.9 : 0.4,
       });
     }
 
-    // What the empire spends on buildings every turn, and what it actually has
-    // to spend after keeping the disband reserve out of reach. Both are needed
-    // before the demand list can be closed, because they decide whether the civ
-    // is living hand to mouth.
+    // What the empire spends EVERY TURN — buildings AND units, from the engine
+    // that actually charges it — and what it has to spend after keeping the
+    // disband reserve out of reach. Both are needed before the demand list can
+    // be closed, because they decide whether the civ is living hand to mouth.
+    //
+    // This used to sum building upkeep only, so the "is my upkeep draining the
+    // treasury?" test below could not see the largest line in it: unit upkeep
+    // runs 1.70 g/turn against 0.45 g/turn of buildings in a played game. A civ
+    // bleeding to death through its army therefore tripped no crisis, sold
+    // nothing, and let `EconomicManager.processTurn` disband the difference.
     const spendableGold = Math.max(0, (civ.resources?.gold ?? 0) - ABSOLUTE_MIN_GOLD);
-    const upkeepPerTurn = ownCities.reduce((sum, c) => {
-      let upkeep = 0;
-      for (const b of c.buildings ?? []) {
-        const id = typeof b === 'string'
-          ? b
-          : (b as { id?: string; type?: string })?.id ?? (b as { type?: string })?.type ?? '';
-        upkeep += BUILDING_PROPERTIES[id]?.maintenance ?? 0;
-      }
-      return sum + upkeep;
-    }, 0);
+    const upkeepPerTurn = typeof this.gameEngine.economicManager?.totalUpkeep === 'function'
+      ? this.gameEngine.economicManager.totalUpkeep(civ.id)
+      : ownCities.reduce((sum, c) => {
+        let upkeep = 0;
+        for (const b of c.buildings ?? []) {
+          const id = typeof b === 'string'
+            ? b
+            : (b as { id?: string; type?: string })?.id ?? (b as { type?: string })?.type ?? '';
+          upkeep += BUILDING_PROPERTIES[id]?.maintenance ?? 0;
+        }
+        return sum + upkeep;
+      }, 0);
     const starvedTreasury = spendableGold < LIQUIDATION_BUDGET_GOLD
       && ownCities.length > LIQUIDATION_CITY_THRESHOLD;
     const maintenanceHeavy = upkeepPerTurn > 0 && spendableGold < upkeepPerTurn * 4;
@@ -7263,6 +7283,8 @@ export class AIManager {
     startsOnIsland?: boolean;
     /** >0 when a coastal city has a fishing ground the FisherEconomics equation approves. */
     fishingRelevance?: number;
+    /** Real turns to finish a tech, from the engine's research model. */
+    turnsToResearch?: (techId: string) => number;
   } {
     const cities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === civilizationId) || [];
     const civ = this.gameEngine.civilizations?.[civilizationId];
@@ -7334,6 +7356,21 @@ export class AIManager {
     // civ actually unlocks the boat instead of never researching it.
     const fishingRelevance = fishingRelevanceForCiv(this.gameEngine, civilizationId);
 
+    // Real turns per technology, straight from the research model: the effective
+    // cost (map size × difficulty × how far ahead this civ is) and the beakers
+    // that survive the known-civ / prerequisite modifiers. `estimatedTurns`
+    // clamps to the engine's 4-turn minimum, so a cheap tech never scores as
+    // "instant" and a moon programme never scores as a quick win.
+    const researchManager = this.gameEngine.researchManager;
+    const techById = new Map(TECHNOLOGIES_DATA.map((t) => [t.id, t]));
+    const turnsToResearch = researchManager && typeof researchManager.estimatedTurns === 'function'
+      ? (techId: string): number => {
+        const tech = techById.get(techId);
+        if (!tech || !civ) return Number.POSITIVE_INFINITY;
+        return researchManager.estimatedTurns(civ, tech, totalScience);
+      }
+      : undefined;
+
     return {
       currentYear: this.gameEngine.currentYear ?? -4000,
       roundNumber,
@@ -7359,6 +7396,7 @@ export class AIManager {
       navalRelevance,
       fishingRelevance,
       startsOnIsland,
+      turnsToResearch,
     };
   }
 

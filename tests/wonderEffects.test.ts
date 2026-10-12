@@ -36,6 +36,9 @@ describe('wonder effects', () => {
       mapSeed: 1234,
     });
     w = wrapWorld(engine);
+    // Leonardo's Workshop charges 1.5× the target unit's production cost for
+    // the auto-upgrade (a warrior → musketeer upgrade costs 120 gold).
+    engine.civilizations[0].resources.gold = 500;
     city = w.settle('WonderCity', 4, 4, 0, 4);
     // The sibling must sit on the SAME landmass — continent-scoped effects
     // (Hoover Dam, AI Supercluster) key off the wonder city's landmass.

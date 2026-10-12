@@ -1755,10 +1755,17 @@ export class AutoProduction {
     const econ = this.gameEngine?.economicManager;
     const civ = this.gameEngine?.civilizations?.[civId];
     if (!econ || !civ || typeof econ.previewEconomy !== 'function') return true;
+    // The civ's REAL rates. `?? 50` on each of the three used to hand the
+    // preview 50/50/50 — 150 %, a split `setRates` would never produce (it
+    // renormalises to 100) and `previewEconomy` does not renormalise either.
+    // A civ running 80/20/0 was previewed at 50/50/50, understating its tax
+    // income by 37 %, and a civ on 0/0/0 (anarchy, or rates never set) was
+    // previewed at a healthy 50 % tax. This one boolean gates
+    // `economyBeforeArmy`, the growth-unit gate and the army cap.
     const preview = econ.previewEconomy(civ, {
-      tax: civ.taxRate ?? 50,
-      science: civ.scienceRate ?? 50,
-      luxury: civ.luxuryRate ?? 50,
+      tax: civ.taxRate ?? 0,
+      science: civ.scienceRate ?? 0,
+      luxury: civ.luxuryRate ?? 0,
     });
     if (!preview) return true;
     return preview.net >= 1;
@@ -2064,7 +2071,19 @@ export class AutoProduction {
     // always has one, and then a collapsing treasury really does mean no hulls.
     const hasEconomy = typeof econ?.maxTaxIncome === 'function'
       && typeof econ?.totalUpkeep === 'function';
-    const income = hasEconomy ? econ!.maxTaxIncome!(civ) : 0;
+    // Income the rate controller will actually defend — not the 100 %-tax
+    // fantasy `maxTaxIncome` returns. The doctrine plans hulls against this
+    // surplus, so measuring it at 100 % over-budgeted every fleet (the same
+    // error `AIEconomicManager.sustainableUnits` documents fixing for the
+    // army). Lightweight test doubles have no AI economy either, so the
+    // permissive fallback below still carries them.
+    const aiEcon = this.gameEngine.aiEconomicManager as
+      | { planningIncome?: (c: unknown) => number }
+      | undefined;
+    const hasPlanningIncome = typeof aiEcon?.planningIncome === 'function';
+    const income = hasPlanningIncome
+      ? aiEcon!.planningIncome!(civ)
+      : (hasEconomy ? econ!.maxTaxIncome!(civ) : 0);
     const upkeep = hasEconomy ? econ!.totalUpkeep!(civId) : 0;
     // The AI's own reserve policy, in turns of upkeep it wants kept spare.
     const reserveTurns = AI_RESERVE_TURNS[strategy]

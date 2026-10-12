@@ -13,6 +13,8 @@ import { formatCombatStat, unitRankBadge, unitStatus } from '@/utils/UnitStatus'
 import '../../../styles/unitRank.css';
 import GameEngine from '@/game/engine/GameEngine';
 import { useGameStore } from '@/stores/GameStore';
+import { useTranslation } from '@/i18n/useTranslation';
+import { tBuildingName, tSpecialistName, tUnitName, tWonderName } from '@/i18n/dataNames';
 import { GameUtils } from '@/utils/GameUtils';
 import GameModal from './ModalShell';
 import type { City, Civilization, GameActions, ProductionItem } from '../../../../types/game';
@@ -69,6 +71,17 @@ const CityModal: React.FC<CityModalProps> = ({
   const [autoProduction, setAutoProduction] = useState<boolean>(selectedCity?.autoProduction || false);
   const [specialistsLocked, setSpecialistsLocked] = useState<boolean>(selectedCity?.lockSpecialists ?? false);
   const gameState = useGameStore((state) => state.gameState);
+  // Subscribes the modal to language changes: unit/building/wonder/specialist
+  // names below resolve through the dataNames helpers and repaint on a switch.
+  const { t } = useTranslation();
+
+  /** Localized display name of a queued production item (unit/building/wonder). */
+  const productionItemName = (item: ProductionItem): string => {
+    if (item.type === 'unit') return tUnitName(item.itemType, item.name);
+    return getWonder(item.itemType)
+      ? tWonderName(item.itemType, item.name)
+      : tBuildingName(item.itemType, item.name);
+  };
 
   // Sync local state when selectedCity changes
   useEffect(() => {
@@ -121,9 +134,9 @@ const CityModal: React.FC<CityModalProps> = ({
     if (!item) return;
     const result = logic.setProduction(item, true);
     if (result.success === false && actions?.addNotification) {
-      actions.addNotification({ type: 'warning', message: `Cannot queue ${item.name}: ${productionFailureText(result.reason)}` });
+      actions.addNotification({ type: 'warning', message: t('city.notify.cannotQueue', { item: item.name, reason: productionFailureText(result.reason) }) });
     } else if (actions?.addNotification) {
-      actions.addNotification({ type: 'info', message: `Added to queue: ${item.name}` });
+      actions.addNotification({ type: 'info', message: t('city.notify.addedToQueue', { item: item.name }) });
     }
   };
 
@@ -136,23 +149,25 @@ const CityModal: React.FC<CityModalProps> = ({
   );
   // One-line role for the hero lede — size plus what the city means to you.
   const cityRole = !isPlayerCity
-    ? `Held by ${ownerCiv?.name ?? 'a rival people'}`
+    ? t('city.hero.heldBy', { owner: ownerCiv?.name ?? t('city.hero.rivalPeople') })
     : selectedCity.isCapital
-      ? 'Your capital — the seat of your rule'
+      ? t('city.hero.capital')
       : population <= 2
-        ? 'A young settlement, barely more than huts and hope'
+        ? t('city.hero.settlement')
         : population >= 8
-          ? 'A teeming city, the pride of your people'
-          : 'A working town of your empire';
-  const eyebrow = `${isPlayerCity ? 'Your Empire' : ownerCiv?.name ?? 'Foreign city'} · Turn ${
-    gameState.currentTurn ?? 1
-  } · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`;
+          ? t('city.hero.metropolis')
+          : t('city.hero.town');
+  const eyebrow = t('city.hero.eyebrow', {
+    owner: isPlayerCity ? t('city.hero.yourEmpire') : ownerCiv?.name ?? t('city.hero.foreignCity'),
+    turn: gameState.currentTurn ?? 1,
+    year: GameUtils.formatYear(gameState.currentYear ?? -4000),
+  });
   const lede = (
     <>
-      Size {population} · {cityRole}.
+      {t('city.hero.size', { size: population })} · {cityRole}.
       {isPlayerCity && (
         <span className="gm-chip gm-chip--accent city-hero-gold">
-          <i className="bi bi-coin" aria-hidden="true"></i> {currentPlayer?.resources?.gold ?? 0} Gold
+          <i className="bi bi-coin" aria-hidden="true"></i> {t('city.hero.gold', { amount: currentPlayer?.resources?.gold ?? 0 })}
         </span>
       )}
     </>
@@ -167,7 +182,7 @@ const CityModal: React.FC<CityModalProps> = ({
         size="lg"
         dialogClassName="city-details-modal production-selection-modal hex-detail-modal"
         icon="🏛️"
-        artLabel={`${cityName} from the walls`}
+        artLabel={t('city.artLabel', { city: cityName })}
         eyebrow={eyebrow}
         title={cityName}
         lede={lede}
@@ -179,13 +194,13 @@ const CityModal: React.FC<CityModalProps> = ({
                 className="touch-btn touch-btn--primary production-select-btn"
                 onClick={() => setShowProductionModal(true)}
               >
-                <i className="bi bi-list-ul" aria-hidden="true"></i>
-                Choose Production…
+                <i className="bi bi-list-ul" aria-hidden="true"></i>{' '}
+                {t('city.chooseProduction')}
               </button>
             )}
             <span className="gm-actions-spacer" />
             <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
-              Close
+              {t('city.close')}
             </button>
           </>
         }
@@ -193,33 +208,31 @@ const CityModal: React.FC<CityModalProps> = ({
         <div className="city-tabstrip">
           <Tabs defaultActiveKey="overview" id="city-details-tabs" className="mb-0">
             {/* ── Overview ─────────────────────────────────────────────── */}
-            <Tab eventKey="overview" title="Overview">
+            <Tab eventKey="overview" title={t('city.tab.overview')}>
               <p className="gm-prose">
-                What {cityName} eats, forges and earns this turn — and the work your people
-                already have in hand.
+                {t('city.overview.lede', { city: cityName })}
               </p>
 
               <section className="gm-section">
-                <div className="gm-section-title">Yields this turn</div>
+                <div className="gm-section-title">{t('city.overview.yieldsTitle')}</div>
                 <div className="gm-stat-grid">
-                  {statTile('👥', population, 'Citizens')}
-                  {statTile('🍞', selectedCity.yields?.food ?? 0, 'Food')}
-                  {statTile('⛏️', logic.getProductionPerTurn(), 'Production', true)}
-                  {statTile('💰', selectedCity.yields?.trade ?? 0, 'Trade')}
-                  {statTile('🔬', selectedCity.science ?? 0, 'Science')}
-                  {statTile('🪙', selectedCity.gold ?? 0, 'Gold')}
-                  {logic.getRouteTrade() > 0 && statTile('🛣️', `+${logic.getRouteTrade()}`, 'Route trade')}
+                  {statTile('👥', population, t('city.stat.citizens'))}
+                  {statTile('🍞', selectedCity.yields?.food ?? 0, t('city.stat.food'))}
+                  {statTile('⛏️', logic.getProductionPerTurn(), t('city.stat.production'), true)}
+                  {statTile('💰', selectedCity.yields?.trade ?? 0, t('city.stat.trade'))}
+                  {statTile('🔬', selectedCity.science ?? 0, t('city.stat.science'))}
+                  {statTile('🪙', selectedCity.gold ?? 0, t('city.stat.gold'))}
+                  {logic.getRouteTrade() > 0 && statTile('🛣️', `+${logic.getRouteTrade()}`, t('city.stat.routeTrade'))}
                 </div>
                 <p className="gm-note">
-                  Every figure is what {cityName}'s people hand you when the turn closes — the
-                  shields go into whatever stands on the drawing board below.
+                  {t('city.overview.note', { city: cityName })}
                 </p>
               </section>
 
               {isPlayerCity && (
                 <section className="gm-section">
                   <div className="gm-section-title">
-                    Production
+                    {t('city.production.title')}
                     <div className="form-check form-switch mb-0 city-auto-switch">
                       <input
                         className="form-check-input"
@@ -235,7 +248,7 @@ const CityModal: React.FC<CityModalProps> = ({
                         }}
                       />
                       <label className="form-check-label small text-muted" htmlFor={`auto-production-${selectedCity.id}`}>
-                        Auto
+                        {t('city.production.auto')}
                       </label>
                     </div>
                   </div>
@@ -243,14 +256,17 @@ const CityModal: React.FC<CityModalProps> = ({
                   <p className="gm-note">
                     {selectedCity.currentProduction ? (
                       <>
-                        Your workshops are busy with <strong>{logic.getCurrentProductionName()}</strong>.
-                        Press <strong>Choose Production…</strong> below to lay the next order
-                        behind it.
+                        {t('city.production.busyPre')}{' '}
+                        <strong>{logic.getCurrentProductionName()}</strong>
+                        {t('city.production.busyMid')}{' '}
+                        <strong>{t('city.chooseProduction')}</strong>{' '}
+                        {t('city.production.busyEnd')}
                       </>
                     ) : (
                       <>
-                        Nothing stands on the drawing board. Press <strong>Choose Production…</strong>{' '}
-                        below and set your people to work.
+                        {t('city.production.emptyPre')}{' '}
+                        <strong>{t('city.chooseProduction')}</strong>{' '}
+                        {t('city.production.emptyEnd')}
                       </>
                     )}
                   </p>
@@ -260,7 +276,7 @@ const CityModal: React.FC<CityModalProps> = ({
                     if (purchasedThisTurn.length > 0) {
                       return (
                         <div className="alert alert-warning small mb-0 py-1 px-2">
-                          <i className="bi bi-exclamation-triangle"></i> Purchase used this turn.
+                          <i className="bi bi-exclamation-triangle"></i> {t('city.production.purchaseUsed')}
                         </div>
                       );
                     }
@@ -286,11 +302,11 @@ const CityModal: React.FC<CityModalProps> = ({
                             ></div>
                           </div>
                           <div className="queue-item-meta">
-                            {logic.getProductionProgressValue()}/{logic.getCurrentProductionCost()} shields
+                            {t('city.queue.shieldsProgress', { progress: logic.getProductionProgressValue(), total: logic.getCurrentProductionCost() })}
                             {' · '}
-                            {logic.getProductionPerTurn()}/turn
+                            {t('city.perTurn', { amount: logic.getProductionPerTurn() })}
                             {' · '}
-                            {logic.getFormattedTurns()} turns left
+                            {t('city.queue.turnsLeft', { count: logic.getFormattedTurns() })}
                           </div>
                         </div>
                         <div className="queue-item-actions">
@@ -307,24 +323,24 @@ const CityModal: React.FC<CityModalProps> = ({
                                 type="button"
                                 className="queue-action-btn queue-action-btn--rush"
                                 disabled={!canBuy}
-                                title={purchased ? 'Already purchased' : canBuy ? `Rush for ${goldCost}g` : `Need ${goldCost}g`}
+                                title={purchased ? t('city.queue.alreadyPurchased') : canBuy ? t('city.queue.rushFor', { amount: goldCost }) : t('city.queue.needGold', { amount: goldCost })}
                                 onClick={() => {
                                   if (gameEngine && typeof gameEngine.rushCityProduction === 'function') {
                                     gameEngine.rushCityProduction(selectedCity.id);
                                     if (actions?.addNotification) {
-                                      actions.addNotification({ type: 'success', message: `Rushed ${logic.getCurrentProductionName()} for ${goldCost}g!` });
+                                      actions.addNotification({ type: 'success', message: t('city.notify.rushed', { item: logic.getCurrentProductionName(), amount: goldCost }) });
                                     }
                                   }
                                 }}
                               >
-                                🪙 {goldCost}g
+                                {t('city.queue.goldAmount', { amount: goldCost })}
                               </button>
                             );
                           })()}
                           <button
                             type="button"
                             className="queue-action-btn"
-                            title="Build the next queued item first"
+                            title={t('city.queue.buildNextFirst')}
                             disabled={!logic.hasQueueItems()}
                             onClick={() => {
                               const result = logic.moveCurrentProductionDown();
@@ -332,8 +348,8 @@ const CityModal: React.FC<CityModalProps> = ({
                                 actions.addNotification({
                                   type: 'warning',
                                   message: result.reason === 'no_queued_items'
-                                    ? 'Nothing is queued behind this item.'
-                                    : 'Cannot postpone production.',
+                                    ? t('city.notify.nothingQueuedBehind')
+                                    : t('city.notify.cannotPostpone'),
                                 });
                               }
                             }}
@@ -343,7 +359,7 @@ const CityModal: React.FC<CityModalProps> = ({
                           <button
                             type="button"
                             className="queue-action-btn queue-action-btn--danger"
-                            title="Cancel production"
+                            title={t('city.queue.cancelProduction')}
                             onClick={() => {
                               if (gameEngine && typeof gameEngine.removeCurrentProduction === 'function') {
                                 gameEngine.removeCurrentProduction(selectedCity.id);
@@ -356,8 +372,7 @@ const CityModal: React.FC<CityModalProps> = ({
                       </div>
                     ) : logic.hasQueueItems() ? (
                       <div className="text-muted small p-2">
-                        Nothing chosen yet — the first item in the queue steps forward the moment
-                        you set one.
+                        {t('city.queue.nothingChosen')}
                       </div>
                     ) : null}
 
@@ -370,12 +385,12 @@ const CityModal: React.FC<CityModalProps> = ({
                         <div className="queue-item-body">
                           <div className="queue-item-title">
                             <span className="queue-item-badge">#{i + 1}</span>
-                            <span className="text-truncate">{q.name}</span>
+                            <span className="text-truncate">{productionItemName(q)}</span>
                           </div>
                           <div className="queue-item-meta">
-                            {q.cost} shields
+                            {t('city.queue.shields', { count: q.cost })}
                             {' · ~'}
-                            {ModalUtils.getTurnsRemaining(0, q.cost, logic.getProductionPerTurn())} turns
+                            {ModalUtils.getTurnsRemaining(0, q.cost, logic.getProductionPerTurn())} {t('city.time.turns')}
                           </div>
                         </div>
                         <div className="queue-item-actions">
@@ -383,9 +398,9 @@ const CityModal: React.FC<CityModalProps> = ({
                             disabled={i === 0 && !selectedCity.currentProduction}
                             title={i === 0
                               ? selectedCity.currentProduction
-                                ? 'Build this first — the current production moves one down'
-                                : 'Nothing is being produced yet'
-                              : 'Move up'}
+                                ? t('city.queue.buildThisFirst')
+                                : t('city.queue.nothingProduced')
+                              : t('city.queue.moveUp')}
                             onClick={(e) => {
                               e.stopPropagation();
                               if (i === 0) {
@@ -394,7 +409,7 @@ const CityModal: React.FC<CityModalProps> = ({
                                 if (result.success === false && actions?.addNotification) {
                                   actions.addNotification({
                                     type: 'warning',
-                                    message: 'Cannot change production right now.',
+                                    message: t('city.notify.cannotChangeProduction'),
                                   });
                                 }
                                 return;
@@ -404,12 +419,12 @@ const CityModal: React.FC<CityModalProps> = ({
                             <i className="bi bi-arrow-up"></i>
                           </button>
                           <button type="button" className="queue-action-btn" disabled={i === logic.getQueueItems().length - 1}
-                            title="Move down"
+                            title={t('city.queue.moveDown')}
                             onClick={(e) => { e.stopPropagation(); logic.moveQueueItem(i, i + 1); }}>
                             <i className="bi bi-arrow-down"></i>
                           </button>
                           <button type="button" className="queue-action-btn queue-action-btn--danger"
-                            title="Remove from queue"
+                            title={t('city.queue.removeFromQueue')}
                             onClick={(e) => { e.stopPropagation(); logic.removeQueueItem(i); }}>
                             <i className="bi bi-trash"></i>
                           </button>
@@ -421,8 +436,9 @@ const CityModal: React.FC<CityModalProps> = ({
                       <div className="city-empty">
                         <i className="bi bi-inbox" aria-hidden="true"></i>
                         <span>
-                          The yards are quiet — nothing is on the drawing board yet. Give your
-                          people their next order with <strong>Choose Production…</strong> below.
+                          {t('city.queue.emptyPre')}{' '}
+                          <strong>{t('city.chooseProduction')}</strong>{' '}
+                          {t('city.queue.emptyEnd')}
                         </span>
                       </div>
                     )}
@@ -432,43 +448,42 @@ const CityModal: React.FC<CityModalProps> = ({
             </Tab>
 
             {/* ── Resources ────────────────────────────────────────────── */}
-            <Tab eventKey="resources" title="Resources">
+            <Tab eventKey="resources" title={t('city.tab.resources')}>
               <p className="gm-prose">
-                Every crumb, coin and beaker {cityName} produces — and how it is shared out
-                among your people.
+                {t('city.resources.lede', { city: cityName })}
               </p>
               {(() => {
                 const resources = logic.getCityResources();
                 return (
                   <>
                     <section className="gm-section">
-                      <div className="gm-section-title">This turn's ledger</div>
+                      <div className="gm-section-title">{t('city.resources.ledgerTitle')}</div>
                       <div className="gm-stat-grid">
-                        {statTile('🍞', resources.food.produced, 'Food')}
-                        {statTile('⛏️', resources.production.produced, 'Production', true)}
-                        {statTile('💰', resources.trade.total, 'Trade')}
-                        {statTile('🎭', resources.luxuries.amount, 'Luxuries')}
-                        {statTile('🪙', resources.taxes.amount, 'Taxes')}
-                        {statTile('🔬', resources.science.amount, 'Science')}
+                        {statTile('🍞', resources.food.produced, t('city.stat.food'))}
+                        {statTile('⛏️', resources.production.produced, t('city.stat.production'), true)}
+                        {statTile('💰', resources.trade.total, t('city.stat.trade'))}
+                        {statTile('🎭', resources.luxuries.amount, t('city.stat.luxuries'))}
+                        {statTile('🪙', resources.taxes.amount, t('city.stat.taxes'))}
+                        {statTile('🔬', resources.science.amount, t('city.stat.science'))}
                       </div>
                       <div className="gm-kv-grid">
                         <div className="gm-kv">
-                          Food surplus:{' '}
+                          {t('city.resources.foodSurplus')}{' '}
                           <b className={resources.food.surplus >= 0 ? 'city-kv--good' : 'city-kv--bad'}>
                             {resources.food.surplus >= 0 ? `+${resources.food.surplus}` : resources.food.surplus}
                           </b>
                         </div>
                         <div className="gm-kv">
-                          Trade after corruption: <b>{resources.trade.afterCorruption}</b>
+                          {t('city.resources.tradeAfterCorruption')} <b>{resources.trade.afterCorruption}</b>
                         </div>
                         {resources.trade.routeTrade > 0 && (
                           <div className="gm-kv">
-                            Trade from routes: <b className="city-kv--good">+{resources.trade.routeTrade}</b>
+                            {t('city.resources.tradeFromRoutes')} <b className="city-kv--good">+{resources.trade.routeTrade}</b>
                           </div>
                         )}
                         {resources.trade.corruption > 0 && (
                           <div className="gm-kv">
-                            Lost to corruption: <b className="city-kv--bad">−{resources.trade.corruption}</b>
+                            {t('city.resources.lostToCorruption')} <b className="city-kv--bad">−{resources.trade.corruption}</b>
                           </div>
                         )}
                       </div>
@@ -476,80 +491,80 @@ const CityModal: React.FC<CityModalProps> = ({
 
                     <section className="gm-section">
                       <div className="gm-section-title">
-                        Food &amp; growth
-                        {resources.food.hasGranary && <span className="gm-chip">Granary</span>}
+                        {t('city.resources.foodGrowth')}
+                        {resources.food.hasGranary && <span className="gm-chip">{t('city.resources.granary')}</span>}
                       </div>
                       <div className="gm-kv-grid gm-kv-grid--stack">
                         <div className="gm-kv">
-                          Food needed each turn: <b>{resources.food.needed}</b>
+                          {t('city.resources.foodNeeded')} <b>{resources.food.needed}</b>
                         </div>
                         <div className="gm-kv">
-                          Food stored: <b>{resources.food.storage} / {resources.food.growthThreshold}</b>
+                          {t('city.resources.foodStored')} <b>{resources.food.storage} / {resources.food.growthThreshold}</b>
                           {resources.food.hasGranary && (
-                            <span className="gm-kv-sub">granary line: {resources.food.granaryLine}</span>
+                            <span className="gm-kv-sub">{t('city.resources.granaryLine', { amount: resources.food.granaryLine })}</span>
                           )}
                         </div>
                         {resources.food.surplus > 0 && resources.food.turnsUntilGrowth > 0 && (
                           <div className="gm-kv">
-                            Growth in:{' '}
+                            {t('city.resources.growthIn')}{' '}
                             <b className="city-kv--good">
                               {resources.food.turnsUntilGrowth}{' '}
-                              {resources.food.turnsUntilGrowth === 1 ? 'turn' : 'turns'}
+                              {resources.food.turnsUntilGrowth === 1 ? t('city.time.turn') : t('city.time.turns')}
                             </b>
                           </div>
                         )}
                         {resources.food.surplus > 0 && resources.food.turnsUntilGrowth <= 0 && (
                           <div className="gm-kv">
-                            Growth: <b className="city-kv--good">Growing next turn!</b>
+                            {t('city.resources.growth')} <b className="city-kv--good">{t('city.resources.growingNextTurn')}</b>
                           </div>
                         )}
                         {resources.food.surplus < 0 && (
                           <div className="gm-kv">
-                            Starvation in:{' '}
+                            {t('city.resources.starvationIn')}{' '}
                             <b className="city-kv--bad">
                               {resources.food.turnsUntilStarvation > 0
                                 ? `${resources.food.turnsUntilStarvation} ${
-                                    resources.food.turnsUntilStarvation === 1 ? 'turn' : 'turns'
+                                    resources.food.turnsUntilStarvation === 1 ? t('city.time.turn') : t('city.time.turns')
                                   }`
-                                : 'NOW!'}
+                                : t('city.resources.now')}
                             </b>
                           </div>
                         )}
                       </div>
                       <p className="gm-note">
-                        Each citizen eats 2 food a turn; the surplus fills the store and at{' '}
-                        {resources.food.growthThreshold} food {cityName} grows by one.
+                        {t('city.resources.growthNote', {
+                          threshold: resources.food.growthThreshold,
+                          city: cityName,
+                        })}
                         {resources.food.hasGranary &&
-                          ' A Granary keeps 50% of the store after every growth.'}
+                          <> {t('city.resources.granaryNote')}</>}
                       </p>
                     </section>
 
                     <section className="gm-section">
-                      <div className="gm-section-title">The split of your trade</div>
+                      <div className="gm-section-title">{t('city.resources.splitTitle')}</div>
                       <div className="gm-kv-grid">
                         <div className="gm-kv">
-                          Luxuries at {resources.luxuries.rate}%: <b>{resources.luxuries.amount} diamonds</b>
+                          {t('city.resources.luxuriesAt', { rate: resources.luxuries.rate })} <b>{t('city.resources.diamonds', { amount: resources.luxuries.amount })}</b>
                         </div>
                         <div className="gm-kv">
-                          Taxes at {resources.taxes.rate}%: <b>{resources.taxes.amount} coins</b>
+                          {t('city.resources.taxesAt', { rate: resources.taxes.rate })} <b>{t('city.resources.coins', { amount: resources.taxes.amount })}</b>
                         </div>
                         <div className="gm-kv">
-                          Science at {resources.science.rate}%: <b>{resources.science.amount} bulbs</b>
+                          {t('city.resources.scienceAt', { rate: resources.science.rate })} <b>{t('city.resources.bulbs', { amount: resources.science.amount })}</b>
                         </div>
                         {resources.production.surplus > 0 && (
                           <div className="gm-kv">
-                            Shields banked this turn: <b className="city-kv--good">+{resources.production.surplus}</b>
+                            {t('city.resources.shieldsBanked')} <b className="city-kv--good">+{resources.production.surplus}</b>
                           </div>
                         )}
                       </div>
                       <p className="gm-note">
-                        Trade reaching {cityName} is split by your rates: luxuries buy contentment,
-                        taxes fill the treasury, science carries your people toward the next advance.
+                        {t('city.resources.splitNote', { city: cityName })}
                       </p>
                       {resources.trade.corruption > 0 && (
                         <p className="gm-note">
-                          Corrupt trade never reaches the city — the farther {cityName} sits from
-                          your capital, the more is siphoned away on the road.
+                          {t('city.resources.corruptionNote', { city: cityName })}
                         </p>
                       )}
                     </section>
@@ -559,10 +574,9 @@ const CityModal: React.FC<CityModalProps> = ({
             </Tab>
 
             {/* ── Buildings ────────────────────────────────────────────── */}
-            <Tab eventKey="buildings" title="Buildings">
+            <Tab eventKey="buildings" title={t('city.tab.buildings')}>
               <p className="gm-prose">
-                What your people have raised in {cityName}. Stone lasts: every building feeds,
-                defends or enriches the city turn after turn.
+                {t('city.buildings.lede', { city: cityName })}
               </p>
               {selectedCity.buildings && selectedCity.buildings.length > 0 ? (
                 (() => {
@@ -585,12 +599,12 @@ const CityModal: React.FC<CityModalProps> = ({
                   };
 
                   const effectLabels: Record<string, string> = {
-                    happiness: 'Happiness', food: 'Food', production: 'Production',
-                    trade: 'Trade', gold: 'Gold', science: 'Science', culture: 'Culture',
-                    corruptionReduction: 'Corruption Reduction', foodStorage: 'Food Storage',
-                    growthBonus: 'Growth Bonus', unitProduction: 'Military Production',
-                    veteranUnits: 'Veteran Units', freeUnits: 'Free Units',
-                    extraPopulation: 'Extra Population', isPalace: 'Capital',
+                    happiness: t('city.effect.happiness'), food: t('city.effect.food'), production: t('city.effect.production'),
+                    trade: t('city.effect.trade'), gold: t('city.effect.gold'), science: t('city.effect.science'), culture: t('city.effect.culture'),
+                    corruptionReduction: t('city.effect.corruptionReduction'), foodStorage: t('city.effect.foodStorage'),
+                    growthBonus: t('city.effect.growthBonus'), unitProduction: t('city.effect.unitProduction'),
+                    veteranUnits: t('city.effect.veteranUnits'), freeUnits: t('city.effect.freeUnits'),
+                    extraPopulation: t('city.effect.extraPopulation'), isPalace: t('city.effect.isPalace'),
                   };
 
                   const renderBuildingCard = (key: string) => {
@@ -612,16 +626,18 @@ const CityModal: React.FC<CityModalProps> = ({
                     const canSell = !isWonder && !(selectedCity.soldBuildingThisTurn);
                     const sellRefund = Math.floor((b.cost ?? 0) / 2);
                     const sellDisabled = !canSell;
-                    const sellTitle = isWonder ? 'Wonders cannot be sold'
-                      : selectedCity.soldBuildingThisTurn ? 'Already sold a building this turn'
-                      : `Sell for ${sellRefund} gold`;
+                    const sellTitle = isWonder ? t('city.buildings.cannotSellWonder')
+                      : selectedCity.soldBuildingThisTurn ? t('city.buildings.alreadySold')
+                      : t('city.buildings.sellFor', { amount: sellRefund });
                     return (
                       <div key={key} className="building-card">
                         <div className="building-card__header">
                           <span className="building-icon">{b.icon ?? '🏗️'}</span>
                           <div className="building-card__body">
                             <div className="d-flex justify-content-between align-items-start">
-                              <h6 className="building-name mb-1">{b.name}</h6>
+                              <h6 className="building-name mb-1">
+                                {isWonder ? tWonderName(key, b.name) : tBuildingName(key, b.name)}
+                              </h6>
                               <button
                                 type="button"
                                 className={`btn btn-sm building-sell-btn ${canSell ? 'btn-outline-danger' : 'btn-outline-secondary disabled'}`}
@@ -633,7 +649,7 @@ const CityModal: React.FC<CityModalProps> = ({
                                   if (result.success && actions?.addNotification) {
                                     actions.addNotification({
                                       type: 'success',
-                                      message: `Sold ${b.name} for ${result.refund} gold`,
+                                      message: t('city.notify.soldBuilding', { name: b.name, amount: result.refund }),
                                     });
                                   } else if (result.reason && actions?.addNotification) {
                                     actions.addNotification({
@@ -643,7 +659,7 @@ const CityModal: React.FC<CityModalProps> = ({
                                   }
                                 }}
                               >
-                                <i className="bi bi-trash"></i> {isWonder ? '—' : `Sell (${sellRefund}g)`}
+                                <i className="bi bi-trash"></i> {isWonder ? '—' : t('city.buildings.sellShort', { amount: sellRefund })}
                               </button>
                             </div>
                             <div className="building-meta small">
@@ -651,13 +667,13 @@ const CityModal: React.FC<CityModalProps> = ({
                                 <i className="bi bi-bricks"></i> {b.cost}
                               </span>
                               {wonderObsolete && (
-                                <span className="wonder-obsolete-tag" title="Obsolescence technology discovered — effect inactive">
-                                  ⚠ Obsolete
+                                <span className="wonder-obsolete-tag" title={t('city.buildings.obsoleteTitle')}>
+                                  {t('city.buildings.obsolete')}
                                 </span>
                               )}
                               {b.maintenance > 0 && (
                                 <span className="building-meta__item">
-                                  <i className="bi bi-coin"></i> {b.maintenance}/turn
+                                  <i className="bi bi-coin"></i> {t('city.perTurn', { amount: b.maintenance })}
                                 </span>
                               )}
                               {b.requiredTechnology && (
@@ -691,7 +707,7 @@ const CityModal: React.FC<CityModalProps> = ({
                       {regularBuildings.length > 0 && (
                         <section className="gm-section">
                           <div className="gm-section-title">
-                            Buildings <span className="city-section-count">({regularBuildings.length})</span>
+                            {t('city.buildings.sectionTitle')} <span className="city-section-count">({regularBuildings.length})</span>
                           </div>
                           <div className="buildings-grid">
                             {regularBuildings.map(renderBuildingCard)}
@@ -701,7 +717,7 @@ const CityModal: React.FC<CityModalProps> = ({
                       {wonders.length > 0 && (
                         <section className="gm-section">
                           <div className="gm-section-title">
-                            Wonders <span className="city-section-count">({wonders.length})</span>
+                            {t('city.buildings.wondersTitle')} <span className="city-section-count">({wonders.length})</span>
                           </div>
                           <div className="buildings-grid">
                             {wonders.map(renderBuildingCard)}
@@ -711,40 +727,40 @@ const CityModal: React.FC<CityModalProps> = ({
                       {regularBuildings.includes('harbor') && isPlayerCity && (() => {
                         const fisher = logic.getFisherBoatStatus();
                         const stageLabel = fisher.stage === 'fishing'
-                          ? 'Fishing'
+                          ? t('city.fisher.fishing')
                           : fisher.stage === 'inbound'
-                            ? 'Returning to port'
+                            ? t('city.fisher.inbound')
                             : fisher.stage === 'outbound'
-                              ? 'Sailing to the fishing ground'
+                              ? t('city.fisher.outbound')
                               : null;
                         return (
                           <section className="gm-section">
-                            <div className="gm-section-title">Fisher Boat</div>
+                            <div className="gm-section-title">{t('city.fisher.title')}</div>
                             <div className="building-card">
                               <div className="building-card__header">
                                 <span className="building-icon">🎣</span>
                                 <div className="building-card__body">
                                   <h6 className="building-name mb-1">
-                                    Fisher Boat <span className="small text-muted">(max 1 per city)</span>
+                                    {t('city.fisher.title')} <span className="small text-muted">{t('city.fisher.maxOne')}</span>
                                   </h6>
                                   {fisher.exists ? (
                                     <div className="small">
                                       <div>
                                         {stageLabel}
                                         {(fisher.stage === 'fishing' || fisher.stage === 'inbound') && (
-                                          <> — hold {fisher.fishStored}/{fisher.capacity}</>
+                                          <> {t('city.fisher.hold', { stored: fisher.fishStored, capacity: fisher.capacity })}</>
                                         )}
-                                        {fisher.tile && <> at ({fisher.tile.col}, {fisher.tile.row})</>}
+                                        {fisher.tile && <> {t('city.fisher.at', { col: fisher.tile.col, row: fisher.tile.row })}</>}
                                       </div>
                                       <div className="text-muted">
-                                        Distance {fisher.distance} · {fisher.foodPerFish} food per fish · full catch {fisher.catchValue} food
+                                        {t('city.fisher.stats', { distance: fisher.distance, perFish: fisher.foodPerFish, catchValue: fisher.catchValue })}
                                       </div>
                                     </div>
                                   ) : fisher.underConstruction ? (
-                                    <div className="small text-muted">Under construction (20 shields)</div>
+                                    <div className="small text-muted">{t('city.fisher.underConstruction')}</div>
                                   ) : (
                                     <div className="small text-muted">
-                                      Not built — 20 shields, requires this Harbor. Fish tiles with a net feed the city.
+                                      {t('city.fisher.notBuilt')}
                                     </div>
                                   )}
                                 </div>
@@ -761,8 +777,9 @@ const CityModal: React.FC<CityModalProps> = ({
                   <div className="city-empty">
                     <i className="bi bi-building" aria-hidden="true"></i>
                     <span>
-                      Nothing but walls and wishes so far. Open <strong>Choose Production…</strong>{' '}
-                      below and give your builders something worthy to raise.
+                      {t('city.buildings.emptyPre')}{' '}
+                      <strong>{t('city.chooseProduction')}</strong>{' '}
+                      {t('city.buildings.emptyEnd')}
                     </span>
                   </div>
                 </section>
@@ -770,7 +787,7 @@ const CityModal: React.FC<CityModalProps> = ({
             </Tab>
 
             {/* ── Citizens ─────────────────────────────────────────────── */}
-            <Tab eventKey="citizens" title="Citizens">
+            <Tab eventKey="citizens" title={t('city.tab.citizens')}>
               {(() => {
                 const pop = selectedCity.population ?? 1;
                 const specs = selectedCity.specialists ?? [];
@@ -782,14 +799,13 @@ const CityModal: React.FC<CityModalProps> = ({
                 return (
                   <>
                     <p className="gm-prose">
-                      Your governor keeps {cityName} fed and decides which land is worked; you
-                      set the rulebook here, and place citizens by hand on the map.
+                      {t('city.citizens.lede', { city: cityName })}
                     </p>
 
                     {/* Governor switcher */}
                     {isPlayerCity && (
                       <section className="gm-section">
-                        <div className="gm-section-title">City Governor</div>
+                        <div className="gm-section-title">{t('city.governor.title')}</div>
                         <div className="city-governor-grid">
                           {CITY_GOVERNOR_OPTIONS.map((option) => {
                             const active = (selectedCity.governor ?? 'balanced') === option.mode;
@@ -805,7 +821,7 @@ const CityModal: React.FC<CityModalProps> = ({
                                   }
                                   actions?.addNotification?.({
                                     type: 'info',
-                                    message: `${selectedCity.name}: ${option.name} governor selected — tiles and specialists will be reassigned when you close this screen. Lock specialists to prevent changes.`,
+                                    message: t('city.notify.governorSelected', { city: selectedCity.name, governor: option.name }),
                                   });
                                 }}
                               >
@@ -818,14 +834,14 @@ const CityModal: React.FC<CityModalProps> = ({
                         <p className="gm-note">{governorOption(selectedCity.governor).description}</p>
                         {selectedCity.governorDirty && (
                           <div className="gm-callout">
-                            <span className="gm-callout-title">Pending rebalance</span>
-                            The governor's new order is applied the moment you close this screen.
+                            <span className="gm-callout-title">{t('city.governor.pendingTitle')}</span>
+                            {t('city.governor.pendingBody')}
                           </div>
                         )}
                         <p className="gm-note">
-                          Every governor secures food first. Tiles you place a citizen on by hand
-                          are marked <span className="city-tile-manual-badge-inline">manual</span>{' '}
-                          and are never moved automatically.
+                          {t('city.governor.manualPre')}{' '}
+                          <span className="city-tile-manual-badge-inline">{t('city.tiles.manual')}</span>{' '}
+                          {t('city.governor.manualPost')}
                         </p>
                       </section>
                     )}
@@ -833,7 +849,7 @@ const CityModal: React.FC<CityModalProps> = ({
                     {/* Lock Specialists toggle */}
                     {isPlayerCity && (
                       <section className="gm-section">
-                        <div className="gm-section-title">Specialist lock</div>
+                        <div className="gm-section-title">{t('city.specialists.lockTitle')}</div>
                         <button
                           type="button"
                           className={`city-specialist-lock-btn${specialistsLocked ? ' locked' : ''}`}
@@ -844,17 +860,16 @@ const CityModal: React.FC<CityModalProps> = ({
                             actions?.addNotification?.({
                               type: 'info',
                               message: newLock
-                                ? `${selectedCity.name}: specialists locked — the governor will not change them.`
-                                : `${selectedCity.name}: specialists unlocked — the governor may manage them.`,
+                                ? t('city.notify.specialistsLocked', { city: selectedCity.name })
+                                : t('city.notify.specialistsUnlocked', { city: selectedCity.name }),
                             });
                           }}
                         >
                           <i className={`bi ${specialistsLocked ? 'bi-lock-fill' : 'bi-unlock-fill'} me-1`}></i>
-                          {specialistsLocked ? 'Specialists Locked' : 'Lock Specialists'}
+                          {specialistsLocked ? t('city.specialists.locked') : t('city.specialists.lock')}
                         </button>
                         <p className="gm-note">
-                          While locked, the governor leaves your specialists exactly where they
-                          stand — no promotions, no demotions, no surprises.
+                          {t('city.specialists.lockNote')}
                         </p>
                       </section>
                     )}
@@ -863,9 +878,9 @@ const CityModal: React.FC<CityModalProps> = ({
                     {isPlayerCity && (
                       <section className="gm-section">
                         <div className="gm-section-title">
-                          Specialists{' '}
+                          {t('city.specialists.sectionTitle')}{' '}
                           <span className="city-section-count">
-                            ({specs.length} of {pop} citizens)
+                            {t('city.specialists.count', { count: specs.length, total: pop })}
                           </span>
                           {specs.length > 0 && (
                             <button
@@ -881,12 +896,14 @@ const CityModal: React.FC<CityModalProps> = ({
                                 if (demoted > 0) {
                                   actions?.addNotification?.({
                                     type: 'info',
-                                    message: `${selectedCity.name}: ${demoted} specialist${demoted > 1 ? 's' : ''} returned to tile work.`,
+                                    message: demoted > 1
+                                      ? t('city.notify.specialistsDemotedMany', { city: selectedCity.name, count: demoted })
+                                      : t('city.notify.specialistsDemotedOne', { city: selectedCity.name, count: demoted }),
                                   });
                                 }
                               }}
                             >
-                              Demote All
+                              {t('city.specialists.demoteAll')}
                             </button>
                           )}
                         </div>
@@ -899,28 +916,28 @@ const CityModal: React.FC<CityModalProps> = ({
                             return (
                               <div key={type} className="city-specialist-row">
                                 <span className="city-specialist-icon">{def.icon}</span>
-                                <span className="city-specialist-name">{def.name}</span>
+                                <span className="city-specialist-name">{tSpecialistName(type, def.name)}</span>
                                 <span className="city-specialist-yield text-muted">
-                                  {def.luxury ? `+${def.luxury} Lux` : ''}
-                                  {def.gold ? `+${def.gold} Gold` : ''}
-                                  {def.science ? `+${def.science} Sci` : ''}
+                                  {def.luxury ? t('city.specialists.lux', { amount: def.luxury }) : ''}
+                                  {def.gold ? t('city.specialists.gold', { amount: def.gold }) : ''}
+                                  {def.science ? t('city.specialists.sci', { amount: def.science }) : ''}
                                 </span>
                                 <span className="city-specialist-count">{count}</span>
                                 <button
                                   type="button"
                                   className="city-specialist-btn city-specialist-btn-add"
                                   disabled={!canAdd}
-                                  title={canAdd ? `Promote a citizen to ${def.name} (frees worst tile)` : 'No citizens available'}
+                                  title={canAdd ? t('city.specialists.promoteTitle', { name: def.name }) : t('city.specialists.noCitizens')}
                                   onClick={() => {
                                     if (gameEngine.promoteCitizenToSpecialist(selectedCity.id, type)) {
                                       actions?.addNotification?.({
                                         type: 'info',
-                                        message: `${selectedCity.name}: citizen promoted to ${def.name}.`,
+                                        message: t('city.notify.specialistPromoted', { city: selectedCity.name, name: def.name }),
                                       });
                                     } else {
                                       actions?.addNotification?.({
                                         type: 'warning',
-                                        message: `No citizen free to become ${def.name} in ${selectedCity.name}.`,
+                                        message: t('city.notify.noCitizenFree', { name: def.name, city: selectedCity.name }),
                                       });
                                     }
                                   }}
@@ -931,13 +948,13 @@ const CityModal: React.FC<CityModalProps> = ({
                                   type="button"
                                   className="city-specialist-btn city-specialist-btn-remove"
                                   disabled={!canRemove}
-                                  title={canRemove ? `Demote ${def.name} back to tile worker` : 'None assigned'}
+                                  title={canRemove ? t('city.specialists.demoteTitle', { name: def.name }) : t('city.specialists.noneAssigned')}
                                   onClick={() => {
                                     const idx = specs.lastIndexOf(type);
                                     if (idx >= 0 && gameEngine.demoteSpecialistToWorker(selectedCity.id, idx)) {
                                       actions?.addNotification?.({
                                         type: 'info',
-                                        message: `${selectedCity.name}: ${def.name} returned to tile work.`,
+                                        message: t('city.notify.specialistDemoted', { city: selectedCity.name, name: def.name }),
                                       });
                                     }
                                   }}
@@ -949,10 +966,9 @@ const CityModal: React.FC<CityModalProps> = ({
                           })}
                         </div>
                         <p className="gm-note">
-                          A specialist gives a fixed city yield instead of a tile's. Press{' '}
-                          <strong>+</strong> to lift a citizen off a worked tile,{' '}
-                          <strong>−</strong> to send them back to the fields. Right-click the map
-                          icons to demote them too.
+                          {t('city.specialists.notePre')}{' '}
+                          <strong>+</strong> {t('city.specialists.noteMid')}{' '}
+                          <strong>−</strong> {t('city.specialists.notePost')}
                         </p>
                       </section>
                     )}
@@ -960,9 +976,9 @@ const CityModal: React.FC<CityModalProps> = ({
                     {/* Worked tiles — interactive: - to unassign citizen */}
                     <section className="gm-section">
                       <div className="gm-section-title">
-                        Worked Tiles{' '}
+                        {t('city.tiles.workedTitle')}{' '}
                         <span className="city-section-count">
-                          ({tileWorkers} · the city centre is worked for free)
+                          {t('city.tiles.workedCount', { count: tileWorkers })}
                         </span>
                       </div>
                       {tileWorkers > 0 ? (
@@ -1002,33 +1018,33 @@ const CityModal: React.FC<CityModalProps> = ({
                                     )}
                                     {yields && (
                                       <span className="city-worked-tile-yields">
-                                        {yields.food > 0 && <span title="Food">🍞{yields.food}</span>}
-                                        {yields.production > 0 && <span title="Production">⛏️{yields.production}</span>}
-                                        {yields.trade > 0 && <span title="Trade">💰{yields.trade}</span>}
+                                        {yields.food > 0 && <span title={t('city.stat.food')}>🍞{yields.food}</span>}
+                                        {yields.production > 0 && <span title={t('city.stat.production')}>⛏️{yields.production}</span>}
+                                        {yields.trade > 0 && <span title={t('city.stat.trade')}>💰{yields.trade}</span>}
                                       </span>
                                     )}
                                     {manual ? (
-                                      <span className="city-tile-manual-badge" title="Placed by hand — the governor never moves it">
-                                        manual
+                                      <span className="city-tile-manual-badge" title={t('city.tiles.manualTitle')}>
+                                        {t('city.tiles.manual')}
                                       </span>
                                     ) : (
-                                      <span className="city-tile-auto-badge">auto</span>
+                                      <span className="city-tile-auto-badge">{t('city.tiles.auto')}</span>
                                     )}
                                     {!isCenter && (
                                       <button
                                         type="button"
                                         className="city-tile-unassign-btn"
-                                        title="Remove citizen from this tile"
+                                        title={t('city.tiles.removeCitizen')}
                                         onClick={() => {
                                           if (gameEngine.unassignCitizenFromTile(selectedCity.id, col, row)) {
                                             actions?.addNotification?.({
                                               type: 'info',
-                                              message: `${selectedCity.name}: citizen removed from (${col},${row}).`,
+                                              message: t('city.notify.citizenRemoved', { city: selectedCity.name, col, row }),
                                             });
                                           } else {
                                             actions?.addNotification?.({
                                               type: 'warning',
-                                              message: `${selectedCity.name}: could not remove the citizen from (${col},${row}).`,
+                                              message: t('city.notify.citizenRemoveFailed', { city: selectedCity.name, col, row }),
                                             });
                                           }
                                         }}
@@ -1041,15 +1057,12 @@ const CityModal: React.FC<CityModalProps> = ({
                               })}
                           </div>
                           <p className="gm-note">
-                            These are the tiles {cityName}'s workers stand on this turn — each one
-                            gives what its land gives, and the governor shuffles them unless you
-                            place them by hand.
+                            {t('city.tiles.workedNote', { city: cityName })}
                           </p>
                         </>
                       ) : (
                         <p className="gm-prose">
-                          None of your citizens work the fields yet — the city centre feeds itself
-                          for free until you put them on the land.
+                          {t('city.tiles.noWorkers')}
                         </p>
                       )}
                     </section>
@@ -1057,9 +1070,11 @@ const CityModal: React.FC<CityModalProps> = ({
                     {/* Unworked tiles — + to assign citizen */}
                     <section className="gm-section">
                       <div className="gm-section-title">
-                        Available Tiles{' '}
+                        {t('city.tiles.availableTitle')}{' '}
                         <span className="city-section-count">
-                          ({freeCitizens} citizen{freeCitizens === 1 ? '' : 's'} available)
+                          {freeCitizens === 1
+                            ? t('city.tiles.availableCountOne', { count: freeCitizens })
+                            : t('city.tiles.availableCountMany', { count: freeCitizens })}
                         </span>
                       </div>
                       {freeCitizens > 0 ? (
@@ -1092,25 +1107,25 @@ const CityModal: React.FC<CityModalProps> = ({
                                     )}
                                     {yields && (
                                       <span className="city-worked-tile-yields">
-                                        {yields.food > 0 && <span title="Food">🍞{yields.food}</span>}
-                                        {yields.production > 0 && <span title="Production">⛏️{yields.production}</span>}
-                                        {yields.trade > 0 && <span title="Trade">💰{yields.trade}</span>}
+                                        {yields.food > 0 && <span title={t('city.stat.food')}>🍞{yields.food}</span>}
+                                        {yields.production > 0 && <span title={t('city.stat.production')}>⛏️{yields.production}</span>}
+                                        {yields.trade > 0 && <span title={t('city.stat.trade')}>💰{yields.trade}</span>}
                                       </span>
                                     )}
                                     <button
                                       type="button"
                                       className="city-tile-assign-btn"
-                                      title={`Put a citizen on this tile (${total} total)`}
+                                      title={t('city.tiles.assignTitle', { total })}
                                       onClick={() => {
                                         if (gameEngine.assignCitizenToTile(selectedCity.id, col, row)) {
                                           actions?.addNotification?.({
                                             type: 'info',
-                                            message: `${selectedCity.name}: citizen assigned to (${col},${row}).`,
+                                            message: t('city.notify.citizenAssigned', { city: selectedCity.name, col, row }),
                                           });
                                         } else {
                                           actions?.addNotification?.({
                                             type: 'warning',
-                                            message: `${selectedCity.name}: (${col},${row}) cannot be worked.`,
+                                            message: t('city.notify.tileCannotBeWorked', { city: selectedCity.name, col, row }),
                                           });
                                         }
                                       }}
@@ -1122,39 +1137,39 @@ const CityModal: React.FC<CityModalProps> = ({
                             })}
                           </div>
                           <p className="gm-note">
-                            Empty ground inside {cityName}'s reach. Press <strong>+</strong> to put
-                            a citizen on the tile that feeds your people best.
+                            {t('city.tiles.availableNotePre', { city: cityName })}{' '}
+                            <strong>+</strong> {t('city.tiles.availableNotePost')}
                           </p>
                         </>
                       ) : (
                         <p className="gm-prose">
-                          Every citizen already has a plot to stand on — let {cityName} grow and
-                          new land opens up for the taking.
+                          {t('city.tiles.allBusy', { city: cityName })}
                         </p>
                       )}
                     </section>
 
                     {/* How citizens are actually set — the map is the only place */}
                     <div className="gm-callout">
-                      <span className="gm-callout-title">🗺️ Setting citizens is a map action</span>
+                      <span className="gm-callout-title">{t('city.mapAction.title')}</span>
                       <ol className="gm-list">
-                        <li>Close this screen so you can see the city.</li>
+                        <li>{t('city.mapAction.step1')}</li>
                         <li>
-                          Click a <strong>worked tile</strong> (green) to pick up its citizen.
+                          {t('city.mapAction.step2Pre')} <strong>{t('city.mapAction.workedTile')}</strong> {t('city.mapAction.step2Post')}
                         </li>
                         <li>
-                          Click an <strong>idle tile</strong> in the yellow radius — the citizen moves there and the
-                          new tile turns <span className="city-tile-manual-badge-inline">manual</span>. Tiles that
-                          already have a citizen are not valid targets.
+                          {t('city.mapAction.step3Pre')} <strong>{t('city.mapAction.idleTile')}</strong> {t('city.mapAction.step3Mid')}{' '}
+                          <span className="city-tile-manual-badge-inline">{t('city.tiles.manual')}</span>{t('city.mapAction.step3Post')}
                         </li>
                       </ol>
                       <p className="gm-note">
-                        <strong>Esc</strong> or a right-click puts the citizen back. The governor never moves a{' '}
-                        <span className="city-tile-manual-badge-inline">manual</span> tile.
+                        <strong>Esc</strong> {t('city.mapAction.escNotePre')}{' '}
+                        <span className="city-tile-manual-badge-inline">{t('city.tiles.manual')}</span> {t('city.mapAction.escNotePost')}
                         {freeCitizens > 0 && (
                           <span className="text-warning">
                             {' '}
-                            {freeCitizens} citizen{freeCitizens === 1 ? '' : 's'} still need a tile.
+                            {freeCitizens === 1
+                              ? t('city.mapAction.stillNeedTileOne', { count: freeCitizens })
+                              : t('city.mapAction.stillNeedTileMany', { count: freeCitizens })}
                           </span>
                         )}
                       </p>
@@ -1165,24 +1180,23 @@ const CityModal: React.FC<CityModalProps> = ({
             </Tab>
 
             {/* ── Units ────────────────────────────────────────────────── */}
-            <Tab eventKey="units" title={`Units (${logic.getCityUnits().length})`}>
+            <Tab eventKey="units" title={t('city.tab.units', { count: logic.getCityUnits().length })}>
               {(() => {
                 const cityUnits = logic.getCityUnits();
                 return (
                   <>
                     <p className="gm-prose">
-                      Every soldier, settler and boat standing in {cityName} this turn — select
-                      one to take command of it.
+                      {t('city.units.lede', { city: cityName })}
                     </p>
                     <section className="gm-section">
                       <div className="gm-section-title">
-                        In the city <span className="city-section-count">({cityUnits.length})</span>
+                        {t('city.units.inCity')} <span className="city-section-count">({cityUnits.length})</span>
                       </div>
                       {cityUnits.length === 0 ? (
                         <div className="city-empty">
                           <i className="bi bi-people" aria-hidden="true"></i>
                           <span>
-                            No units are inside {cityName} — the gates stand open and unguarded.
+                            {t('city.units.empty', { city: cityName })}
                           </span>
                         </div>
                       ) : (
@@ -1194,8 +1208,8 @@ const CityModal: React.FC<CityModalProps> = ({
                           const health = Math.max(0, Math.min(100, unit.health ?? 100));
                           const hpText =
                             typeof unit.hitPoints === 'number' && typeof unit.maxHitPoints === 'number'
-                              ? `${unit.hitPoints}/${unit.maxHitPoints} HP`
-                              : `${Math.round(health)}% HP`;
+                              ? t('city.units.hp', { current: unit.hitPoints, max: unit.maxHitPoints })
+                              : t('city.units.hpPercent', { value: Math.round(health) });
                           const isGarrison =
                             unit.col === selectedCity.col && unit.row === selectedCity.row;
                           // Effective stats include the rank multiplier — the
@@ -1214,7 +1228,7 @@ const CityModal: React.FC<CityModalProps> = ({
                                 <div className="flex-grow-1 min-width-0">
                                   <div className="d-flex align-items-center gap-2 flex-wrap">
                                   <strong>{props?.name ?? unit.type}</strong>
-                                  {isGarrison && <Badge bg="success">Garrison</Badge>}
+                                  {isGarrison && <Badge bg="success">{t('city.units.garrison')}</Badge>}
                                   {rankBadge && (
                                     <span className={rankBadge.className} title={rankBadge.title}>
                                       {rankBadge.label}
@@ -1222,7 +1236,7 @@ const CityModal: React.FC<CityModalProps> = ({
                                   )}
                                   <Badge bg={status.variant}>{status.label}</Badge>
                                     {unit.embarkedOn && (
-                                      <Badge bg="info" text="dark">Aboard ferry</Badge>
+                                      <Badge bg="info" text="dark">{t('city.units.aboardFerry')}</Badge>
                                     )}
                                   </div>
                                   <div className="d-flex align-items-center gap-2 mt-1 flex-wrap">
@@ -1236,11 +1250,15 @@ const CityModal: React.FC<CityModalProps> = ({
                                     className="small text-muted"
                                     title={
                                       rankBadge
-                                        ? `Base A${unit.attack ?? props?.attack ?? 0}/D${unit.defense ?? props?.defense ?? 0}, ×${rankBadge.multiplier} rank strength`
+                                        ? t('city.units.rankTitle', {
+                                            attack: unit.attack ?? props?.attack ?? 0,
+                                            defense: unit.defense ?? props?.defense ?? 0,
+                                            multiplier: rankBadge.multiplier,
+                                          })
                                         : undefined
                                     }
                                   >
-                                    A{effAttack}/D{effDefense}
+                                    {t('city.units.attackDefense', { attack: effAttack, defense: effDefense })}
                                   </span>
                                     <span className="small text-muted">({unit.col},{unit.row})</span>
                                   </div>
@@ -1249,13 +1267,13 @@ const CityModal: React.FC<CityModalProps> = ({
                                   <Button
                                     size="sm"
                                     variant="outline-light"
-                                    title="Select and centre this unit"
+                                    title={t('city.units.selectTitle')}
                                     onClick={() => {
                                       actions.selectUnit?.(unit.id, 'user');
                                       actions.focusCameraOnTile?.(unit.col, unit.row, true, true);
                                     }}
                                   >
-                                    <i className="bi bi-crosshair"></i> Select
+                                    <i className="bi bi-crosshair"></i> {t('city.units.select')}
                                   </Button>
                                 )}
                               </div>
@@ -1265,7 +1283,7 @@ const CityModal: React.FC<CityModalProps> = ({
                       )}
                       {isPlayerCity && cityUnits.length > 0 && (
                         <p className="gm-note">
-                          Tip: shift-click units on the map to gather a group and move several at once.
+                          {t('city.units.tip')}
                         </p>
                       )}
                     </section>
@@ -1275,31 +1293,28 @@ const CityModal: React.FC<CityModalProps> = ({
             </Tab>
 
             {/* ── Trade Routes ─────────────────────────────────────────── */}
-            <Tab eventKey="trade" title="Trade Routes">
+            <Tab eventKey="trade" title={t('city.tab.trade')}>
               {(() => {
                 const routes = logic.getTradeRoutes();
                 const routeTrade = logic.getRouteTrade();
                 return (
                   <>
                     <p className="gm-prose">
-                      Roads of commerce running out of {cityName} — each route pays your two
-                      cities every single turn.
+                      {t('city.trade.lede', { city: cityName })}
                     </p>
                     <section className="gm-section">
-                      <div className="gm-section-title">Routes in use</div>
+                      <div className="gm-section-title">{t('city.trade.routesInUse')}</div>
                       <div className="gm-kv-grid gm-kv-grid--stack">
                         <div className="gm-kv">
-                          Trade routes: <b>{routes.length}/3</b>
+                          {t('city.trade.routesLabel')} <b>{routes.length}/3</b>
                         </div>
                         <div className="gm-kv">
-                          Trade from routes:{' '}
-                          <b className={routeTrade > 0 ? 'city-kv--good' : ''}>+{routeTrade} trade/turn</b>
+                          {t('city.resources.tradeFromRoutes')}{' '}
+                          <b className={routeTrade > 0 ? 'city-kv--good' : ''}>{t('city.trade.perTurn', { amount: routeTrade })}</b>
                         </div>
                       </div>
                       <p className="gm-note">
-                        A Caravan establishes a permanent route when it delivers to another city
-                        (lump-sum Gold + Science). Each route adds per-turn trade to both cities.
-                        At most 3 routes; a stronger new route replaces the weakest.
+                        {t('city.trade.note')}
                       </p>
                       {routes.length > 0 ? (
                         <div className="d-flex flex-column gap-2">
@@ -1313,13 +1328,13 @@ const CityModal: React.FC<CityModalProps> = ({
                                 <div>
                                   <div>
                                     <strong>{route.cityName}</strong>
-                                    {isForeign && <span className="text-warning ms-2 small">foreign ×2</span>}
+                                    {isForeign && <span className="text-warning ms-2 small">{t('city.trade.foreign')}</span>}
                                   </div>
                                   <div className="small text-muted">
-                                    {destCiv?.name ?? `Civ ${route.civilizationId}`} · {route.distance} tiles away
+                                    {destCiv?.name ?? t('city.trade.civFallback', { id: route.civilizationId })} · {t('city.trade.tilesAway', { count: route.distance })}
                                   </div>
                                 </div>
-                                <div className="text-info fw-semibold">+{route.trade} trade/turn</div>
+                                <div className="text-info fw-semibold">{t('city.trade.perTurn', { amount: route.trade })}</div>
                               </div>
                             );
                           })}
@@ -1328,8 +1343,7 @@ const CityModal: React.FC<CityModalProps> = ({
                         <div className="city-empty">
                           <i className="bi bi-signpost-split" aria-hidden="true"></i>
                           <span>
-                            No roads of trade reach {cityName} yet. Build a Caravan (it needs the
-                            Trade advance) and deliver it to another city to open one.
+                            {t('city.trade.empty', { city: cityName })}
                           </span>
                         </div>
                       )}
@@ -1360,7 +1374,7 @@ const CityModal: React.FC<CityModalProps> = ({
             if (actions?.addNotification) {
               actions.addNotification({
                 type: 'success',
-                message: `Purchased ${item.name} for ${item.cost} Gold!`
+                message: t('city.notify.purchased', { name: item.name, amount: item.cost })
               });
             }
           }

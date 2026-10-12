@@ -13,7 +13,6 @@ import { describe, expect, it } from 'vitest';
 import {
   planCityInfrastructure,
   requiredImprovementTiles,
-  SETTLER_BUILD_COST,
   INFRASTRUCTURE_POP_THRESHOLD,
   INFRASTRUCTURE_FULL_COVERAGE_POP,
   type InfrastructureContext,
@@ -86,7 +85,10 @@ describe('planCityInfrastructure', () => {
     expect(plan.requiredTiles).toBe(tiles.length);
     expect(plan.deficit).toBe(tiles.length);
     expect(plan.settlersNeeded).toBeGreaterThan(0);
-    expect(plan.goldNeeded).toBe(plan.settlersNeeded * SETTLER_BUILD_COST);
+    // No gold figure: the settler is paid in shields, so a gold demand here
+    // would make the funding planner liquidate buildings to buy something the
+    // city production line is already paying for.
+    expect('goldNeeded' in plan).toBe(false);
     expect(plan.workerTurnsNeeded).toBeGreaterThan(0);
     expect(plan.wantsInfrastructure).toBe(true);
     expect(plan.targets.length).toBeGreaterThan(0);
@@ -96,7 +98,7 @@ describe('planCityInfrastructure', () => {
     const plan = planCityInfrastructure(city({ population: 5 }), ring(20), ctx());
     expect(plan.deficit).toBe(0);
     expect(plan.settlersNeeded).toBe(0);
-    expect(plan.goldNeeded).toBe(0);
+    expect('goldNeeded' in plan).toBe(false);
     expect(plan.wantsInfrastructure).toBe(false);
     expect(plan.reasons.join(' ')).toMatch(/no public works needed/);
   });

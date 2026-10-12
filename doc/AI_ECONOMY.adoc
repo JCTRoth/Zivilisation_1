@@ -121,21 +121,24 @@ and the defender branch preempts the whole chain.
 
 The real fix is to never over-produce in the first place:
 
-* `sustainableUnits(civ)` plans the army against a **reasonable tax income**
-  (`maxTaxIncome × max(currentTaxRate, 50%)`, after the luxury the civ must
-  keep for happiness). Planning against the civ's *current* rate would cap the
-  army at ~0, because the AI over-invests in science and drops tax to ~10% —
-  leaving it defenceless and passive. Using a 50% planning floor lets a real
-  military build and actually fight, while still NOT assuming 100% tax (which
-  over-built an unaffordable army that had to be disbanded).
+* `sustainableUnits(civ)` plans the army against a **plannable income** —
+  `AIEconomicManager.planningIncome(civ)`, the single figure the AI's budget
+  arithmetic is allowed to use. It is `maxTaxIncome × policyTaxRate + specialist
+  gold`, where `policyTaxRate` is the ceiling `adjustRatesForAI` itself defends
+  (the government's cap minus the luxury it must buy and the science floor).
+  Planning against the civ's *current* rate would cap the army at ~0, because
+  the AI over-invests in science and drops tax to ~10%; planning against
+  `maxTaxIncome` (the 100 %-tax figure) sized armies and fleets for money the
+  controller never collects. The naval doctrine used to do exactly that and
+  build hulls that were disbanded again; it now shares `planningIncome`.
 * `AutoProduction.ensureProductionQueue()` refuses to queue more **military**
   units once `currentUnits + queuedUnits >= sustainableUnits`. It falls back
   to buildings; if no building is available it queues the already-chosen unit
   (or, for a brand-new city, a settler/scout) so the queue never looks empty.
 * **Scouts and settlers are exempt** from the military cap — they're cheap and
-  grow the economy (a settler founds a city that adds free support + income),
-  so expansion never stalls. Settler count is still bounded by the per-profile
-  expansion params.
+  grow the economy (a settler founds a city that adds income), so expansion
+  never stalls. Settler count is still bounded by the per-profile expansion
+  params.
 * Urgent defenders (a city under threat) are still produced via
   `determineProductionItem` regardless of the cap — only queue *follow-ups* are
   capped, so immediate defense is never blocked.
@@ -144,7 +147,9 @@ The real fix is to never over-produce in the first place:
   so the civ doesn't add more upkeep it can't afford.
 * **`economyBeforeArmy`** is the milder version of the same idea and lives in
   §2: a civ that has climbed back to the 8-gold reserve but still cannot net a
-  positive surplus builds a settler for the roads *instead of* a soldier.
+  positive surplus builds a settler for the roads *instead of* a soldier. Its
+  affordability preview reads the civ's **real** rates — passing 50/50/50 used
+  to preview a 150 % split the engine would never produce.
 
 == 5b. Selling buildings to stay solvent
 
@@ -156,9 +161,20 @@ city per turn (`city.soldBuildingThisTurn`). Two drivers:
   paying its upkeep and not situationally protected (a threatened city keeps its
   walls, an unhappy city its temples). Palace and wonders are never sold.
 * **Forced liquidation** — `planFundingForCiv` prices the civ's spending demands
-  (settlers for public works, units up to its sustainable army) against its
-  spendable gold (`gold − ABSOLUTE_MIN_GOLD`) and sells to close the shortfall.
-  `AICoordinator.filterArmySafeCandidates` strips anything the army cannot lose.
+  against its spendable gold (`gold − ABSOLUTE_MIN_GOLD`) and sells to close the
+  shortfall. `AICoordinator.filterArmySafeCandidates` strips anything the army
+  cannot lose.
++
+The demands are gold demands, and only upkeep is a gold cost, so there are
+exactly three of them: the army (the shortfall against `sustainableUnits`,
+priced at the maintenance of the unit the civ actually fields), a `reserve`, and
+a `maintenance_crisis`. **Public works are not one of them**: a settler is paid
+in shields out of city production and eats food, so there is no gold to raise
+for it — pricing the settler's 40 shields as gold used to make the AI liquidate
+income-producing buildings to "fund" a unit it was about to build for free.
+`upkeepPerTurn` comes from `EconomicManager.totalUpkeep` (units *and*
+buildings), because unit upkeep is the larger of the two lines and a planner
+that cannot see it never notices a treasury being drained by an army.
 
 `BudgetAggression` chooses how deep to cut. `aggressive` admits the **break-even**
 tier (`netPerTurn <= 0`) — a building that earns exactly its upkeep costs nothing
@@ -175,8 +191,17 @@ economic pressure, or:
   also raises `LIQUIDATION_RESERVE_TURNS` to 3 (instead of 1) and injects a
   `reserve` funding demand, because with nothing to buy the other demands are
   empty and a broke empire would otherwise liquidate nothing at all.
+* **Maintenance crisis**: the full upkeep bill would consume the spendable
+  treasury within four turns. This is the case that used to be invisible — it
+  was measured against *building* upkeep only, so a civ bleeding through its
+  army was declared healthy and let the upkeep disbander pay the difference.
 
 A **profitable** building is never sold, however aggressive.
+
+Only refunds close a one-off shortfall. `planBuildingFunding` used to keep
+selling while `raised + savedPerTurn >= target`, which counted the *per-turn*
+saving as money in hand: a 60-gold refund plus a 2 g/turn saving "covered" a
+61-gold gap, leaving the treasury short and the log claiming otherwise.
 
 == 6. Late-game wealth: markets, banks & tile improvements
 

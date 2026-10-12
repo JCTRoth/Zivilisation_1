@@ -1,5 +1,6 @@
 import GameModal from './ModalShell';
 import { useGameStore } from '@/stores/GameStore';
+import { useTranslation } from '@/i18n/useTranslation';
 import VillageGoldModal from './village/VillageGoldModal';
 import VillageTechModal from './village/VillageTechModal';
 import VillageUnitModal from './village/VillageUnitModal';
@@ -18,6 +19,8 @@ interface VillageModalProps {
  */
 function VillageModal({ show, onHide }: VillageModalProps) {
   const result = useGameStore((state) => state.villageResult);
+  // Hook must run before any early return — see rules of hooks.
+  const { t } = useTranslation();
   if (!show || !result) return null;
 
   switch (result.outcome) {
@@ -39,21 +42,20 @@ function VillageModal({ show, onHide }: VillageModalProps) {
           onClose={onHide}
           tone="neutral"
           icon="💨"
-          artLabel="ashes in the wind"
-          eyebrow="A Village Encounter"
-          title="Nothing Left Here"
-          lede="By the time your people reach the huts, whatever was worth taking is gone — scattered with the wind across empty ground."
+          artLabel={t('village.fallback.art')}
+          eyebrow={t('village.fallback.eyebrow')}
+          title={t('village.fallback.title')}
+          lede={t('village.fallback.lede')}
           actions={
             <button type="button" className="touch-btn touch-btn--primary" onClick={onHide}>
-              Move On
+              {t('village.fallback.moveOn')}
             </button>
           }
         >
           <div className="gm-section">
-            <div className="gm-section-title">What your scouts report</div>
+            <div className="gm-section-title">{t('village.fallback.scoutsTitle')}</div>
             <p className="gm-prose mb-0">
-              The settlement is destroyed with nothing to be gained. Not every ruin keeps its
-              secrets — search the next one before the wind covers the tracks.
+              {t('village.fallback.scoutsBody')}
             </p>
           </div>
         </GameModal>

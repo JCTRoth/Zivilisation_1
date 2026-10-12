@@ -1,6 +1,8 @@
 import React, { useEffect } from 'react';
 import { getWonder } from '@/data/WonderData';
 import { useGameStore } from '@/stores/GameStore';
+import { useTranslation } from '@/i18n/useTranslation';
+import type { TranslationKey } from '@/i18n';
 import { GameUtils } from '@/utils/GameUtils';
 import { WonderArtwork } from './WonderArtwork';
 import GameModal from './ModalShell';
@@ -24,13 +26,6 @@ interface WonderCompletedModalProps {
   onContinue: () => void;
 }
 
-/** Documentation ages, the same labels the catalogue uses. */
-const ERA_LABEL: Record<string, string> = {
-  antiquity: 'Antiquity',
-  middle: 'Middle Ages',
-  industrial: 'Industrial & Modern Age',
-};
-
 /**
  * Celebration screen shown when a world wonder is completed — the single most
  * memorable moment of the wonder system, and the reason the wonder's full
@@ -45,6 +40,7 @@ const ERA_LABEL: Record<string, string> = {
 const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notice, onContinue }) => {
   const wonder = notice ? getWonder(notice.wonderId) : undefined;
   const currentYear = useGameStore((s) => s.gameState.currentYear);
+  const { t } = useTranslation();
 
   // Confetti celebration while the screen is open (same lazy-loaded library
   // as the victory fireworks, so it is only fetched when actually needed).
@@ -87,9 +83,18 @@ const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notic
   const humanOwns = notice.isHuman;
   const yearLabel = GameUtils.formatYear(currentYear);
   const artSrc = `${import.meta.env.BASE_URL}${wonder.image}`;
+  // Documentation ages, the same labels the catalogue uses.
+  const eraLabel =
+    wonder.era === 'antiquity'
+      ? t('wonderDone.eraAntiquity' as TranslationKey)
+      : wonder.era === 'middle'
+        ? t('wonderDone.eraMiddle' as TranslationKey)
+        : wonder.era === 'industrial'
+          ? t('wonderDone.eraIndustrial' as TranslationKey)
+          : wonder.era;
   const lede = humanOwns
-    ? `Stone by stone your masons have set the last block in ${notice.cityName}. The world holds a wonder of your making now, and the chronicles will keep your people's name long after your dynasty is dust.`
-    : `${notice.civName} has set the last block in ${notice.cityName}. A rival owns a wonder of the world — read what it gives them before your scribes fall behind.`;
+    ? t('wonderDone.ledeOwn' as TranslationKey, { city: notice.cityName })
+    : t('wonderDone.ledeRival' as TranslationKey, { civ: notice.civName, city: notice.cityName });
 
   return (
     <GameModal
@@ -98,7 +103,7 @@ const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notic
       tone="gold"
       size="lg"
       dialogClassName="wonder-completed-modal"
-      eyebrow={<>A Wonder of the World · {yearLabel}</>}
+      eyebrow={t('wonderDone.eyebrow' as TranslationKey, { year: yearLabel })}
       title={
         <>
           {wonder.icon} {wonder.name}
@@ -108,24 +113,24 @@ const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notic
       artSize="lg"
       artSrc={artSrc}
       artAlt={wonder.name}
-      artLabel="wonder illustration"
+      artLabel={t('wonderDone.artLabel' as TranslationKey)}
       actions={
         <>
           <span className="gm-actions-spacer" />
           <button type="button" className="touch-btn touch-btn--primary" onClick={onContinue} autoFocus>
-            Continue
+            {t('wonderDone.continue' as TranslationKey)}
           </button>
         </>
       }
     >
       {/* Artwork (credited; falls back to the emoji badge if the file is missing). */}
       <section className="gm-section">
-        <h3 className="gm-section-title">Artwork</h3>
+        <h3 className="gm-section-title">{t('wonderDone.artwork' as TranslationKey)}</h3>
         <WonderArtwork wonder={wonder} active={show} />
       </section>
 
       <section className="gm-section">
-        <h3 className="gm-section-title">At a glance</h3>
+        <h3 className="gm-section-title">{t('wonderDone.atAGlance' as TranslationKey)}</h3>
         <div className="gm-stat-grid">
           <div className="gm-stat gm-stat--accent">
             <span className="gm-stat-value">
@@ -134,16 +139,16 @@ const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notic
               </span>
               {wonder.cost}
             </span>
-            <span className="gm-stat-label">Shields spent</span>
+            <span className="gm-stat-label">{t('wonderDone.shieldsSpent' as TranslationKey)}</span>
           </div>
           <div className="gm-stat">
             <span className="gm-stat-value">
               <span className="gm-stat-icon" aria-hidden="true">
                 📜
               </span>
-              {ERA_LABEL[wonder.era] ?? wonder.era}
+              {eraLabel}
             </span>
-            <span className="gm-stat-label">Era</span>
+            <span className="gm-stat-label">{t('wonderDone.era' as TranslationKey)}</span>
           </div>
           <div className="gm-stat">
             <span className="gm-stat-value">
@@ -152,38 +157,43 @@ const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notic
               </span>
               {wonder.location}
             </span>
-            <span className="gm-stat-label">Site</span>
+            <span className="gm-stat-label">{t('wonderDone.site' as TranslationKey)}</span>
           </div>
           <div className="gm-stat">
             <span className="gm-stat-value">
               <span className="gm-stat-icon" aria-hidden="true">
                 💰
               </span>
-              None
+              {t('wonderDone.upkeepNone' as TranslationKey)}
             </span>
-            <span className="gm-stat-label">Upkeep</span>
+            <span className="gm-stat-label">{t('wonderDone.upkeep' as TranslationKey)}</span>
           </div>
         </div>
         <p className="gm-note">
           {humanOwns ? (
             <>
-              Your people raised it in <strong>{notice.cityName}</strong> in {yearLabel}.
+              {t('wonderDone.noteOwnPre' as TranslationKey)}
+              <strong>{notice.cityName}</strong>
+              {t('wonderDone.noteYear' as TranslationKey, { year: yearLabel })}
             </>
           ) : (
             <>
-              <strong>{notice.civName}</strong> raised it in <strong>{notice.cityName}</strong> in {yearLabel}.
+              <strong>{notice.civName}</strong>
+              {t('wonderDone.noteRivalMid' as TranslationKey)}
+              <strong>{notice.cityName}</strong>
+              {t('wonderDone.noteYear' as TranslationKey, { year: yearLabel })}
             </>
           )}
         </p>
       </section>
 
       <div className="gm-callout">
-        <span className="gm-callout-title">Effect</span>
+        <span className="gm-callout-title">{t('wonderDone.effect' as TranslationKey)}</span>
         {wonder.effectText}
       </div>
 
       <section className="gm-section">
-        <h3 className="gm-section-title">Chronicle</h3>
+        <h3 className="gm-section-title">{t('wonderDone.chronicle' as TranslationKey)}</h3>
         <p className="gm-prose">{wonder.flavor}</p>
       </section>
     </GameModal>

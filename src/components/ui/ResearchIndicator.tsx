@@ -1,5 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useGameStore } from '@/stores/GameStore';
+import { useTranslation } from '@/i18n/useTranslation';
+import { tTechName } from '@/i18n/dataNames';
 import { getTechIcon } from '@/data/TechnologyIcons';
 import type { Technology } from '../../../types/game';
 import GameEngine from '@/game/engine/GameEngine';
@@ -28,6 +30,9 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
   const civ = useGameStore((s) => s.civilizations[s.gameState.activePlayer] || null);
   const technologies = useGameStore((s) => s.technologies);
   const researchPath = useGameStore((s) => s.researchPath);
+  // Subscribes the indicator to language changes; tech names below resolve
+  // through tTechName and follow the active language.
+  const { t } = useTranslation();
 
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ left: number; top: number; right: number } | null>(null);
@@ -35,13 +40,13 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
   const status = useMemo<ResearchStatus>(() => {
     const civObj = civ ?? null;
     const techs = technologies && technologies.length > 0 ? technologies : [];
-    const allResearched = techs.length > 0 && techs.every((t) => t.researched);
+    const allResearched = techs.length > 0 && techs.every((tech) => tech.researched);
 
     const current = civObj?.currentResearch ?? null;
     const currentId = current
       ? (typeof current === 'object' ? (current as { id?: string }).id : current)
       : null;
-    const currentTech = currentId ? (techs.find((t) => t.id === currentId) ?? null) : null;
+    const currentTech = currentId ? (techs.find((tech) => tech.id === currentId) ?? null) : null;
     const currentProgress = civObj?.researchProgress ?? 0;
 
     let effectiveCost: number | null = null;
@@ -57,10 +62,10 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
     // path tech an AI discovered first.
     const civTechIds = new Set<string>((civObj?.technologies ?? []).map(String));
     const nextInPathId = researchPath.find((id) => {
-      const t = techs.find((x) => x.id === id);
-      return !!t && t.available !== false && !civTechIds.has(String(id));
+      const found = techs.find((candidate) => candidate.id === id);
+      return !!found && found.available !== false && !civTechIds.has(String(id));
     }) ?? null;
-    const nextInPath = nextInPathId ? (techs.find((t) => t.id === nextInPathId) ?? null) : null;
+    const nextInPath = nextInPathId ? (techs.find((tech) => tech.id === nextInPathId) ?? null) : null;
 
     // Live per-turn science at the current rates, used for the ETA estimate.
     let turns: number | null = null;
@@ -108,13 +113,13 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
   let label: React.ReactNode;
   let hasResearch = false;
   if (allResearched) {
-    label = <>🏆 Research complete</>;
+    label = <>🏆 {t('research.complete')}</>;
   } else if (currentTech) {
     hasResearch = true;
     label = (
       <>
         <i className="bi bi-flask" aria-hidden="true" />
-        <span className="research-indicator-name">{currentTech.name}</span>
+        <span className="research-indicator-name">{tTechName(currentTech.id, currentTech.name)}</span>
         <span className="research-indicator-count">
           {currentProgress}/{cost}
         </span>
@@ -124,7 +129,9 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
     label = (
       <>
         <i className="bi bi-flask" aria-hidden="true" />
-        <span className="research-indicator-name">Research: {nextInPath.name}</span>
+        <span className="research-indicator-name">
+          {t('research.researching', { tech: tTechName(nextInPath.id, nextInPath.name) })}
+        </span>
       </>
     );
   } else if (gameEngine && typeof gameEngine.isResearchUnlocked === 'function' && !gameEngine.isResearchUnlocked()) {
@@ -133,14 +140,14 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
     label = (
       <>
         <i className="bi bi-flask" aria-hidden="true" />
-        <span className="research-indicator-name">Research starts soon</span>
+        <span className="research-indicator-name">{t('research.startsSoon')}</span>
       </>
     );
   } else {
     label = (
       <>
         <i className="bi bi-flask" aria-hidden="true" />
-        <span className="research-indicator-name">No research</span>
+        <span className="research-indicator-name">{t('research.none')}</span>
       </>
     );
   }
@@ -175,12 +182,12 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
           onClick={(e) => e.stopPropagation()}
           role="tooltip"
         >
-          <div className="research-indicator-preview-title">🔬 Research</div>
+          <div className="research-indicator-preview-title">🔬 {t('research.title')}</div>
 
           {currentTech ? (
             <>
               <div className="research-indicator-preview-line">
-                {getTechIcon(currentTech.id)} {currentTech.name}
+                {getTechIcon(currentTech.id)} {tTechName(currentTech.id, currentTech.name)}
                 <span className="research-indicator-preview-count">
                   {currentProgress}/{cost}
                 </span>
@@ -190,20 +197,18 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
               </div>
               {turns != null && (
                 <div className="research-indicator-preview-eta">
-                  ~{turns} {turns === 1 ? 'turn' : 'turns'} to complete
+                  {turns === 1 ? t('research.etaOne') : t('research.etaMany', { turns })}
                 </div>
               )}
             </>
           ) : nextInPath ? (
             <div className="research-indicator-preview-line">
-              Next: {getTechIcon(nextInPath.id)} {nextInPath.name}
+              {t('research.nextLabel')} {getTechIcon(nextInPath.id)} {tTechName(nextInPath.id, nextInPath.name)}
             </div>
           ) : allResearched ? (
-            <div className="research-indicator-preview-line">All technologies researched. 🏆</div>
+            <div className="research-indicator-preview-line">{t('research.allResearched')}</div>
           ) : (
-            <div className="research-indicator-preview-line">
-              No research selected. Choose a technology to start advancing.
-            </div>
+            <div className="research-indicator-preview-line">{t('research.noneSelected')}</div>
           )}
 
         </div>

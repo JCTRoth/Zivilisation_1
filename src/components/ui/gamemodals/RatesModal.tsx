@@ -6,6 +6,8 @@ import { sendCommand, isCommandRejection } from '@/utils/session';
 import { getGovernment } from '@/data/GovernmentData';
 import { GameUtils } from '@/utils/GameUtils';
 import GameEngine from '@/game/engine/GameEngine';
+import { useTranslation } from '@/i18n/useTranslation';
+import type { TranslationKey } from '@/i18n';
 import GameModal from './ModalShell';
 import '../../../styles/ratesModal.css';
 
@@ -30,6 +32,7 @@ const RATE_KEYS: RateKey[] = ['tax', 'science', 'luxury'];
  * government's caps.
  */
 function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
+  const { t } = useTranslation();
   const actions = useGameStore((state) => state.actions);
   const currentPlayer = useGameStore(
     (state) => state.civilizations[state.gameState.activePlayer] || null,
@@ -125,7 +128,7 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
       } else {
         actions.addNotification({
           type: 'warning',
-          message: 'Cannot change rates right now.',
+          message: t('rates.cannotChange' as TranslationKey),
         });
       }
     }
@@ -141,7 +144,7 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
     <div className="rates-control">
       <div className="rates-control__header">
         <Form.Label className="rates-control__label">
-          <span aria-hidden="true">{icon}</span> {label} rate
+          <span aria-hidden="true">{icon}</span> {t('rates.rateLabel' as TranslationKey, { label })}
         </Form.Label>
         <strong className="rates-control__value">{rates[key]}%</strong>
       </div>
@@ -152,7 +155,7 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
         value={rates[key]}
         onChange={(e) => applyRate(key, Number(e.target.value))}
         className="rates-control__range"
-        aria-label={`${label} rate`}
+        aria-label={t('rates.rateLabel' as TranslationKey, { label })}
       />
       <Form.Text className="rates-control__hint">{hint}</Form.Text>
     </div>
@@ -181,87 +184,95 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
       size="lg"
       dialogClassName="rates-modal"
       icon="🪙"
-      artLabel="tax ledger"
-      eyebrow={`${currentPlayer?.name ?? 'Your Empire'} · Turn ${gameState.currentTurn ?? 1} · ${GameUtils.formatYear(gameState.currentYear ?? -4000)}`}
-      title="Tax, Science & Luxury Rates"
-      lede="Every coin your people earn is split three ways. Nudge one slider and the other two share what is left — the three always add up to 100%."
+      artLabel={t('rates.artLabel' as TranslationKey)}
+      eyebrow={t('rates.eyebrow' as TranslationKey, {
+        civ: currentPlayer?.name ?? t('rates.defaultEmpire' as TranslationKey),
+        turn: gameState.currentTurn ?? 1,
+        year: GameUtils.formatYear(gameState.currentYear ?? -4000),
+      })}
+      title={t('rates.title' as TranslationKey)}
+      lede={t('rates.lede' as TranslationKey)}
       actions={
         <>
           <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
-            Cancel
+            {t('rates.cancel' as TranslationKey)}
           </button>
           <button type="button" className="touch-btn touch-btn--primary" onClick={handleApply}>
-            Apply Rates
+            {t('rates.apply' as TranslationKey)}
           </button>
         </>
       }
     >
       <section className="gm-section">
-        <div className="gm-section-title">Your government's terms</div>
+        <div className="gm-section-title">{t('rates.govTerms' as TranslationKey)}</div>
         <div className="gm-kv-grid">
-          <div className="gm-kv">Government: <b>{gov.name}</b></div>
-          <div className="gm-kv">Tax cap: <b>{gov.maxTaxRate}%</b></div>
-          <div className="gm-kv">Cities: <b>{myCities.length}</b></div>
-          <div className="gm-kv">Treasury: <b>{currentPlayer?.resources?.gold ?? 0} 🪙</b></div>
+          <div className="gm-kv">{t('rates.kvGovernment' as TranslationKey)} <b>{gov.name}</b></div>
+          <div className="gm-kv">{t('rates.kvTaxCap' as TranslationKey)} <b>{gov.maxTaxRate}%</b></div>
+          <div className="gm-kv">{t('rates.kvCities' as TranslationKey)} <b>{myCities.length}</b></div>
+          <div className="gm-kv">{t('rates.kvTreasury' as TranslationKey)} <b>{currentPlayer?.resources?.gold ?? 0} 🪙</b></div>
         </div>
         {gov.forcesZeroRates && (
           <div className="gm-callout">
-            <span className="gm-callout-title">Under anarchy</span>
-            All three rates are pinned at 0% until a new government takes power.
+            <span className="gm-callout-title">{t('rates.anarchyTitle' as TranslationKey)}</span>
+            {t('rates.anarchyBody' as TranslationKey)}
           </div>
         )}
       </section>
 
       <section className="gm-section">
-        <div className="gm-section-title">Set the split</div>
+        <div className="gm-section-title">{t('rates.setSplit' as TranslationKey)}</div>
         <div className="rates-controls">
-          {renderSlider('tax', 'Tax', '🪙', 'Commerce becomes treasury gold, which pays for your units and cities.')}
-          {renderSlider('science', 'Science', '🔬', 'Commerce becomes research, carrying you toward your next advance.')}
-          {renderSlider('luxury', 'Luxury', '🎭', 'Commerce buys contentment — the surest cure for a city on the edge of disorder.')}
+          {renderSlider('tax', t('rates.label.tax' as TranslationKey), '🪙', t('rates.hint.tax' as TranslationKey))}
+          {renderSlider('science', t('rates.label.science' as TranslationKey), '🔬', t('rates.hint.science' as TranslationKey))}
+          {renderSlider('luxury', t('rates.label.luxury' as TranslationKey), '🎭', t('rates.hint.luxury' as TranslationKey))}
         </div>
         {taxOverCap && (
           <div className="gm-callout">
-            <span className="gm-callout-title">Over the cap</span>
-            {gov.name} allows at most {gov.maxTaxRate}% tax. Trim the slider yourself,
-            or the engine will cut your {rates.tax}% down to the cap when you apply.
+            <span className="gm-callout-title">{t('rates.overCapTitle' as TranslationKey)}</span>
+            {t('rates.overCapBody' as TranslationKey, {
+              gov: gov.name,
+              cap: gov.maxTaxRate,
+              tax: rates.tax,
+            })}
           </div>
         )}
       </section>
 
       <section className="gm-section">
-        <div className="gm-section-title">The tally</div>
+        <div className="gm-section-title">{t('rates.tally' as TranslationKey)}</div>
         <div className="rates-summary">
-          <span>Tax <strong>{rates.tax}%</strong></span>
-          <span>Science <strong>{rates.science}%</strong></span>
-          <span>Luxury <strong>{rates.luxury}%</strong></span>
+          <span>{t('rates.label.tax' as TranslationKey)} <strong>{rates.tax}%</strong></span>
+          <span>{t('rates.label.science' as TranslationKey)} <strong>{rates.science}%</strong></span>
+          <span>{t('rates.label.luxury' as TranslationKey)} <strong>{rates.luxury}%</strong></span>
           <span className={sum === 100 ? 'rates-summary__ok' : 'rates-summary__bad'}>
-            Total <strong>{sum}%</strong>
+            {t('rates.summaryTotal' as TranslationKey)} <strong>{sum}%</strong>
           </span>
         </div>
         <div className="gm-note">
-          Move one slider and the remainder is shared out between the other two,
-          so <strong>Total</strong> always settles back on 100%.
+          {t('rates.noteSplitPre' as TranslationKey)}
+          <strong>{t('rates.summaryTotal' as TranslationKey)}</strong>
+          {t('rates.noteSplitPost' as TranslationKey)}
         </div>
       </section>
 
       <section className="gm-section">
-        <div className="gm-section-title">Projected per turn</div>
+        <div className="gm-section-title">{t('rates.projected' as TranslationKey)}</div>
         <div className="gm-stat-grid">
-          {statTile('🌊', preview.commerce, 'Commerce', 'gm-stat--accent')}
-          {statTile('🪙', `+${preview.tax}`, 'Tax')}
-          {statTile('🔬', `+${preview.science}`, 'Science')}
-          {statTile('🎭', `+${preview.luxury}`, 'Luxury')}
-          {statTile('⚒️', `−${preview.upkeep}`, 'Upkeep')}
+          {statTile('🌊', preview.commerce, t('rates.stat.commerce' as TranslationKey), 'gm-stat--accent')}
+          {statTile('🪙', `+${preview.tax}`, t('rates.label.tax' as TranslationKey))}
+          {statTile('🔬', `+${preview.science}`, t('rates.label.science' as TranslationKey))}
+          {statTile('🎭', `+${preview.luxury}`, t('rates.label.luxury' as TranslationKey))}
+          {statTile('⚒️', `−${preview.upkeep}`, t('rates.stat.upkeep' as TranslationKey))}
           {statTile(
             '📈',
             `${preview.net >= 0 ? '+' : ''}${preview.net}`,
-            'Treasury net',
+            t('rates.stat.net' as TranslationKey),
             preview.net < 0 ? 'rates-stat--negative' : '',
           )}
         </div>
         {!preview.hasCities && (
           <div className="gm-note">
-            You hold no city yet — found one with your settler and the commerce will start flowing.
+            {t('rates.noCities' as TranslationKey)}
           </div>
         )}
       </section>

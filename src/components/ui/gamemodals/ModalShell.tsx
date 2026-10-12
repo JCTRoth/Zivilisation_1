@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal } from 'react-bootstrap';
+import { useTranslation } from '@/i18n/useTranslation';
 import '../../../styles/gameModalShell.css';
 
 /**
@@ -84,22 +85,26 @@ const GameModal: React.FC<GameModalProps> = ({
   dialogClassName,
   children,
   actions,
-}) => (
-  <Modal
-    show={show}
-    onHide={onClose}
-    centered
-    size={size}
-    className={`gm ${className ?? ''}`.trim()}
-    dialogClassName={dialogClassName}
-    contentClassName="gm-modal"
-  >
-    <Modal.Body className="gm-body" data-tone={tone}>
-      {!hideClose && (
-        <button type="button" className="gm-close" onClick={onClose} aria-label="Close">
-          <i className="bi bi-x-lg" aria-hidden="true" />
-        </button>
-      )}
+}) => {
+  // Every modal shares this shell, so its close button label follows the
+  // language like everything else.
+  const { t } = useTranslation();
+  return (
+    <Modal
+      show={show}
+      onHide={onClose}
+      centered
+      size={size}
+      className={`gm ${className ?? ''}`.trim()}
+      dialogClassName={dialogClassName}
+      contentClassName="gm-modal"
+    >
+      <Modal.Body className="gm-body" data-tone={tone}>
+        {!hideClose && (
+          <button type="button" className="gm-close" onClick={onClose} aria-label={t('common.close')}>
+            <i className="bi bi-x-lg" aria-hidden="true" />
+          </button>
+        )}
 
       {artLayout === 'cover' ? (
         <>
@@ -170,6 +175,7 @@ const GameModal: React.FC<GameModalProps> = ({
       {actions && <footer className="gm-actions">{actions}</footer>}
     </Modal.Body>
   </Modal>
-);
+  );
+};
 
 export default GameModal;

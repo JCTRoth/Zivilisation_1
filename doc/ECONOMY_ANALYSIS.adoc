@@ -1,0 +1,298 @@
+= Economics Analysis — Money, Growth, AI Arithmetic and What to Change
+
+Analysis of the clone's economic model, from the code and from two headless
+telemetry runs against the real engine (no browser, no dev server).
+
+The short version: **the economy is not under-tuned, it is mis-plumbed**. Gold
+income is quantized so that ordinary tax rates pay nothing; a citizen costs more
+than it returns; the government's own corruption number is never read; and gold
+has faucets but no sinks. Every measured failure the AI shows (disbanding,
+hoarding, stagnant commerce) follows from those four facts, not from a bad weight
+somewhere — and where the AI's *arithmetic* was wrong rather than its model, that
+is fixed too (see <<The AI's own arithmetic was wrong in seven places>>, all
+pinned by `tests/ai/aiArithmetic.test.ts`).
+
+== Method
+
+Two ad-hoc harnesses drove `GameEngine` directly on `AI_VS_AI` 40×40 with 4
+civilizations, `startingGold: 50`, seeded for reproducibility (`seed 7`, the same
+seed `run-ai-batch.mjs` uses first). Both were temporary and are not committed;
+the numbers below are the raw output.
+
+* **City census** — every 10 rounds, for 70 rounds: per city population, yields,
+  gross/after-corruption commerce, corruption, food surplus, disorder, buildings,
+  specialists, trade routes, distance to capital. 20 city-round samples.
+* **Gold ledger** — for 111 rounds, per civ: tax income, specialist gold,
+  building sales, trade-route payouts, upgrades, upkeep paid, rushes, closed
+  against the treasury delta.
+
+Long-game context is taken from link:BALANCE_ANALYSIS.adoc[Balance & Behaviour
+Analysis] (400-round batches): 16/28 civ-games ending city-less, 419
+`UNIT_DISBANDED` in one 4-civ game, 250 scouts and 184 settlers produced, dead
+civs hoarding gold (median 278, max 3 269), 0/6 games reaching a conclusion.
+
+== The loop as it actually runs
+
+[source]
+----
+tiles    -> commerce   = max(tileTrade, CITY_CENTER_COMMERCE = 2) + Σ tradeRoutes
+          -> effective = commerce × (1 − government.commercePenalty)
+          -> corruption= floor(effective × rate)          (CityUtils)
+          -> after     = max(0, effective − corruption)
+tax      = floor(after × taxRate / 100) × TRADE_GOLD_MULTIPLIER (2)
+science  = round(after × scienceRate / 100) + buildingScience + specialistScience
+luxury   = floor(after × luxuryRate / 100)
+disorder = unhappiness > happiness   -> tax, science, commerce = 0
+upkeep   = Σ unit.maintenance (0–6, no free support) + Σ building.upkeep (0–4)
+gold < 0 -> max tax -> disband units -> forgive to ABSOLUTE_MIN_GOLD (8)
+----
+
+Defined in: `src/game/engine/EconomicManager.ts`, `src/utils/CityUtils.ts`.
+
+Gold is spent on exactly two things: unit upkeep, and rushing shields at 2 gold
+per shield. There is no city upkeep, no inflation, no interest.
+
+=== Where gold comes from (measured, 111 rounds, 4 civs)
+
+[cols="1,1,1,1,1,1", options="header"]
+|===
+|Civ |Cities |Tax income |Building sales |Upkeep paid |Rushes |Ends with
+
+|Chinese |3 |48 (0.43/turn) |90 |96 |36 |2 g
+|Egyptians |1 |50 (0.45/turn) |20 |100 |38 |14 g
+|Germans |1 |0 in 111 rounds |20 |41 |50 |128 g
+|Americans |0 (dead) |6 total |0 |26 |32 |271 g
+|===
+
+The ledger does not close: the dead American civ earned 6 gold in tax and
+finished with 271. The only faucets large enough are trade agreements minting 2
+gold/turn to *both* sides out of nothing (`DiplomacyManager.ts:1158-1164`) and
+the 8-gold forgiveness reset (`EconomicManager.ts:1607`).
+
+== What the measurements say
+
+[cols="2,1,3", options="header"]
+|===
+|Quantity |Measured |Comment
+
+|Gross commerce per city |2.25 |17 of 20 samples were exactly the `CITY_CENTER_COMMERCE` floor
+|After-corruption commerce |2.25 |corruption was 0 — every city sat within 4 tiles of its capital
+|Tax income per city |1.3 g/turn |one warrior costs 1
+|Net gold per civ |−0.85 g/turn |income 1.30 vs upkeep 2.15
+|Cities with food surplus ≤ 1 |45 % |growth then costs (pop+1)×10 turns per citizen
+|Trade routes established |0 in 111 rounds |the caravan system produces nothing
+|Upkeep disbands |419 in one 400-round game |invisible: the harness reports zero bankrupt turns
+|===
+
+== Diagnosis
+
+=== D1 — A city's commerce never grows with its population
+
+One citizen works one tile, the centre is free (`EconomicManager.ts:664-666`).
+Unimproved grassland is 2 food / 0 trade, so food = 2+2P against 2P eaten: the
+surplus is pinned at 2 at *every* city size, and `MIN_CITY_FOOD_SURPLUS = 1`
+(`EconomicManager.ts:104`) pulls citizens back onto food tiles the moment they
+would otherwise work a trade tile.
+
+The only mechanism that scales a city's commerce with population is **a road on
+every worked tile** (+1 trade each) — 2 settler-turns per tile, and precisely
+what the AI never finishes (`BALANCE_ANALYSIS.adoc` F3: 41–54 improvement
+worker-turns, zero improved tiles inside any city radius).
+
+Design ceiling ≈ 6 gold/city on a full road grid. Measured reality: 2.25.
+
+=== D2 — The rate split is quantized to zero
+
+`tax = floor(afterCorruption × taxRate/100) × 2`. A 2-commerce city pays **0 gold
+below a 50 % tax rate and 0 luxury at any rate** — the code says so itself
+(`AICityManager.ts:305`: "at commerce 2 (an unroaded city) `floor(2 × 0.30)` is 0
+happiness at ANY rate").
+
+So Democracy's 10 % cap is not "low tax", it is *no tax*. Measured: one civ held
+a city for 111 rounds and collected exactly 0 gold from it.
+
+=== D3 — A citizen is priced above its output
+
++1 population = +2 food/turn, +1 unhappiness (there is no tolerance:
+`unhappiness = population`), and a growth cost that rises linearly with size. Its
+only return is one more tile — usually a food tile. Growth is gold-negative and
+food-negative unless the tile grid is built out first, which is D1.
+
+=== D4 — The government's corruption number is dead data
+
+`GOVERNMENTS[].corruptionRate` (0.05–0.30) is never read — `CityUtils.ts:34`
+hard-codes 0.30 — and neither is `corruptionReduction` on marketplace, bank,
+palace or stock exchange. Consequences:
+
+* `GovernmentManager.scoreGovernmentForCiv` weighs revolutions against a number
+  the engine ignores, so late-game government choice changes only the tax cap and
+  the happiness bonus;
+* the Courthouse is the only corruption lever in the game;
+* the practical cap is 60 % at 10 tiles — five cities away in a straight line.
+
+=== D5 — Gold has faucets but no sinks
+
+* a trade agreement mints 2 gold/turn for both sides (`DiplomacyManager.ts:1158`);
+* selling a building refunds 50 % of its cost — a shield→gold converter, one per
+  city per turn, repeatable forever (`GameEngine.ts:6800`);
+* bankruptcy forgives the deficit to 8 gold for **every** civ, human included
+  (`EconomicManager.ts:1607`); `AI_ECONOMY.adoc` claims 0 for a human, the code
+  does not;
+* nothing ever removes gold except unit upkeep and rushes, and plunder is capped
+  at 100, so a rich civ is never worth conquering for its money.
+
+=== D6 — Two different shield↔gold exchange rates
+
+`rushCityProduction` charges 2 gold per remaining shield for everything;
+`purchaseCityProduction` charges 2 for units but **1 gold per shield for
+buildings and wonders** (`ProductionManager.ts:400`). The TODO note "buying units
+directly should not be 50% cheaper" is this bug, pointed at the wrong half.
+
+=== D7 — The army budget is mis-measured twice
+
+`EconomicManager.sustainableUnits` subtracts `cityCount` as "one free unit per
+city" — free support that `unitUpkeep` does not grant, and which a comment five
+lines later contradicts (`EconomicManager.ts:342-357`).
+
+And `AIEconomicManager.planningUnitMaintenance` prices *every future unit* at the
+most expensive unit the civ already owns, so the first tank it builds prices its
+whole army at 4 gold forever. Two implementations of the same cap disagree, and
+`AutoProduction` takes the smaller of the two.
+
+=== D8 — Trade routes are inert
+
+A caravan is 50 shields, consumed, needs the `trade` tech, and routes cap at
+3/city — but 0 routes were ever established in 111 rounds. The ship-based trade
+route in TODO.txt was the right instinct: it removes the walking cost.
+
+== [[ai-arithmetic]] The AI's own arithmetic was wrong in seven places
+
+The failures above are about the *model*. A second class of problem is that the
+AI computed the model incorrectly — mixing currencies, reading stale figures,
+omitting terms the engine includes. Each was verified against the engine's own
+math and is now pinned by a regression test
+(`tests/ai/aiArithmetic.test.ts`, 16 cases; every case fails on the arithmetic
+it replaced).
+
+[cols="1,2,2,2", options="header"]
+|===
+|# |The error |Proof |Fixed by
+
+|A1 |`planFundingForCiv` summed **building** upkeep only, so the
+"is my upkeep draining the treasury?" test could not see the larger line. Unit
+upkeep runs 1.70 g/turn against 0.45 g/turn of buildings in a played
+game |five warriors at 1 gold each and 2 spendable gold read as no crisis |`totalUpkeep(civ.id)`, with the building-only sum as a fallback for test doubles
+|A2 |Public works were priced as a **gold** demand at 40 gold per settler — a
+shield price |a size-12 city with 12 unimproved tiles reported 120 gold that a
+building sale had to raise, for a unit whose real gold cost is 0 |`InfrastructurePlanner` reports worker-turns and settlers only; the demand is gone
+|A3 |An extra army unit was priced at a flat `UNIT_MAINTENANCE × 4` gold — a
+one-off number derived from a per-turn rate |a civ fielding warriors (1 gold
+each) was charged 4 gold per unit |the maintenance of the unit the civ actually fields
+|A4 |The naval budget measured income at **100 % tax**
+(`maxTaxIncome`) while the rate controller defends 35–80 % |`surplus`, `sustain`
+and `wantWarships` were 1.25–2.9× too high — the exact error
+`sustainableUnits` documents fixing for the army |`AIEconomicManager.planningIncome`,
+now the single income the army cap and the navy share
+|A5 |`planBuildingFunding` kept selling while `raised + savedPerTurn >= target`
+— a per-turn rate counted as money in hand |a 60-gold refund plus a 2 g/turn
+saving "covered" a 61-gold shortfall, leaving the treasury 1 gold short and the
+log claiming success |only refunds close a one-off gap
+|A6 |`luxuryNeedPct` could not see `buildingHappiness`, so a city held content by
+its temples was treated as starving |a pop-4 city with two temples (happiness 4
+vs unhappiness 4) returned 100 % luxury, capped to 30 % of all commerce |the
+engine's own `buildingHappinessForCity`, and the rate is now sized per city
+instead of the worst deficit over the poorest commerce
+|A7 |`AIResearch` scored cost efficiency against the raw tech-table cost and
+gross science |moonshot scored as 20 turns away (`300/15`) when the effective
+cost on a 40×40 map is 600 and the real beakers are 16 — 38 turns, so the
+"slow research" penalty never fired |`ResearchManager.estimatedTurns`, injected
+into the game-state snapshot
+|===
+
+One more, from the same audit: `AutoProduction.canAffordAnotherUnit` previewed
+the economy at `taxRate ?? 50, scienceRate ?? 50, luxuryRate ?? 50` — three
+rates summing to 150 %, which `setRates` would never produce and
+`previewEconomy` does not renormalise. A civ running 80/20/0 was previewed at
+50/50/50 (tax understated 37 %) and a civ on 0/0/0 (anarchy, or rates never set)
+was previewed at a healthy 50 % tax. It now previews the civ's real rates.
+
+The pattern underneath all seven: three currencies — shields, gold per turn,
+one-off gold — added together in the same expressions, and two different
+"incomes" used inconsistently. Fixing them does not change any balance number;
+it changes what the AI believes is true.
+
+== What I'd change
+
+Ordered by impact ÷ effort. Items 1–3 are pure bug fixes with no balance change;
+4–9 are balance and need a `GAME_RULES.adoc` update in the same commit.
+
+Status when this document was written: **none of the nine below is implemented
+yet** — they change what the game *is*, so they are a design decision, not a bug
+fix, and each wants its own commit with a re-run of the batch baseline. The seven
+AI-arithmetic fixes in the previous section *are* implemented and tested.
+
+[cols="1,3,2,2", options="header"]
+|===
+|# |Change |Where |Why
+
+|1 |Pay the rate split fractionally; keep the integer for display only, accumulate the remainder on the civ |`EconomicManager.cityOutputs` |Kills "0 gold below 50 % tax"; makes Democracy and every luxury rate meaningful
+|2 |One exchange rate: 2 gold per shield everywhere (or 1.5 everywhere) |`ProductionManager.ts:400`, `GameEngine.ts:6709` |Removes the half-price building loophole
+|3 |Delete the `− cityCount` free support; price units at the maintenance of the unit being queued, not the max owned; keep one implementation of the cap |`EconomicManager.ts:322-358`, `AIEconomicManager.ts:220-230` |The cap currently under-builds armies and then disbands them
+|4 |Make `corruptionRate` and `corruptionReduction` real: base = government rate, each building multiplies by (1 − declared reduction), distance multiplier capped at 1.5 |`CityUtils.ts:34-42` |Turns the government tree and the AI's revolution scoring into real choices
+|5 |Scope settler works to own city radius +1; make roads on worked tiles the first job |`AIManager.chooseImprovementForSettler` |A roaded worked tile = +2 gold/turn forever for 2 settler-turns — the best investment in the game
+|6 |Close the faucets: trade agreements stop minting gold (commerce bonus or one-off payment instead); forgiveness becomes a tracked loan repaying 1 g/turn, with an `ECONOMY_FORGIVEN` event in the progression export |`DiplomacyManager.ts:1158`, `EconomicManager.ts:1607` |419 invisible disbands per game are the symptom; the treasury must stop being free money
+|7 |Add a gold sink that grows with empire size: city upkeep (e.g. 1 gold per city beyond the first 3) |`EconomicManager.totalUpkeep` |Expansion has no gold cost at all today
+|8 |Re-price the citizen: restore the documented appetite ramp `2 + 0.2×max(0, population−5)` and add the Aqueduct housing cap at 10 |`EconomicManager.ts:117`, `TurnManager.ts:1232` |Growth becomes an investment rather than a treadmill that starves the treasury
+|9 |Make trade routes pay: auto-deliver caravans along a road/river network, or raise the lump payout so 50 shields amortise in ~25 turns; raise `MAX_TRADE_ROUTES` to 5 |`GameEngine.ts:3173`, `GameConstants.ts:3` |The system currently produces nothing
+|===
+
+=== Expected effect on the measured baseline
+
+The baseline to compare against is the one in `BALANCE_ANALYSIS.adoc`: 16/28
+civ-games ending city-less, 419 upkeep disbands in one game, 250 scouts and 184
+settlers produced, 0 trade routes, 0/6 games reaching a decision.
+
+* **1 + 6** should roughly triple measured tax income (the quantized floor throws
+  away most of it) and stop the silent forgiveness, so the CSV can tell a healthy
+  civ from a liquidated one;
+* **5** is the only change that lets city commerce scale with population — the
+  single biggest lever on "why is my treasury empty";
+* **4 + 7 + 8** make growth and government choice cost something real, which is
+  what turns the late game from a treadmill into a set of decisions;
+* **2 + 3** stop the AI from building armies it immediately disbands.
+
+== What I would not touch
+
+The growth threshold `(population + 1) × 10`, the granary halving the food box,
+the food-floor rule in the tile assigner, the disband ordering (sole-defender
+first, then expensive), and the AI's rate controller (16–34 rate changes per 400
+rounds, no 0↔100 oscillation). Those measurably work.
+
+== Doc drift worth fixing in the same pass
+
+`doc/GAME_RULES.adoc` disagrees with the code in three economy-relevant places.
+The README says the rules reference wins when it disagrees with the README — it
+should at least agree with the engine:
+
+* it documents the food appetite ramp `perCitizen = 2 + 0.2 × max(0, population −
+  5)`; the engine charges a flat 2;
+* it documents `CITY_MAINTENANCE` per city; no such upkeep exists;
+* it says a bankrupt human is forgiven to 0 gold; the engine forgives every civ to
+  `ABSOLUTE_MIN_GOLD = 8`.
+
+== Reproducing
+
+[source,bash]
+----
+# the long-game baseline this analysis is measured against
+node scripts/run-ai-batch.mjs 4 400 4 /tmp/batch-4civ.json
+
+# economy telemetry: a temporary spec in tests/ai/ (excluded from `npm test`
+# by the `**/tmp*.test.ts` rule) that constructs GameEngine headlessly and
+# prints the census and the gold ledger. Both runs above used seed 7 on
+# AI_VS_AI, 4 civs, startingGold 50.
+----
+
+Related: link:BALANCE_ANALYSIS.adoc[Balance & Behaviour Analysis],
+link:AI_ECONOMY.adoc[AI Economy & Budget Management], link:GAME_RULES.adoc[Game
+Rules Reference].

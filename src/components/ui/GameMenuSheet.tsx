@@ -1,4 +1,6 @@
 import React from 'react';
+import { useTranslation } from '@/i18n/useTranslation';
+import type { TranslationKey } from '@/i18n';
 
 export type GameMenuName = 'GAME' | 'WORLD' | 'INFO';
 
@@ -69,14 +71,17 @@ const GameMenuSheet: React.FC<GameMenuSheetProps> = ({
   onStatistics,
   onWonders,
 }) => {
+  // Hook must run before any early return — see rules of hooks.
+  const { t } = useTranslation();
+
   if (!activeMenu) {
     return null;
   }
 
-  const menuTitle: Record<GameMenuName, string> = {
-    GAME: 'Game',
-    WORLD: 'World',
-    INFO: 'Info',
+  const menuTitle: Record<GameMenuName, TranslationKey> = {
+    GAME: 'menu.game',
+    WORLD: 'menu.world',
+    INFO: 'menu.info',
   };
 
   return (
@@ -87,42 +92,42 @@ const GameMenuSheet: React.FC<GameMenuSheetProps> = ({
       <div
         className="menu-sheet"
         role="menu"
-        aria-label={`${menuTitle[activeMenu]} menu`}
+        aria-label={t('menu.ariaLabel', { title: t(menuTitle[activeMenu]) })}
         style={{
           '--menu-top': `${position.top}px`,
           '--menu-left': `${position.left}px`,
         } as React.CSSProperties}
       >
-        <div className="menu-sheet__title">{menuTitle[activeMenu]}</div>
+        <div className="menu-sheet__title">{t(menuTitle[activeMenu])}</div>
 
         {activeMenu === 'GAME' && (
           <>
-            <MenuItem icon="🆕" label="New Game" onClick={onNewGame} />
-            <MenuItem icon="💾" label="Save Game" onClick={onSaveGame} />
-            <MenuItem icon="⏸️" label="Pause" onClick={onPause} />
-            <MenuItem icon="📁" label="Load Game" onClick={onLoadGame} />
-            <MenuItem icon="⚙️" label="Settings" onClick={onOpenSettings} />
-            <MenuItem icon="🚪" label="Quit" onClick={onQuit} danger />
+            <MenuItem icon="🆕" label={t('menu.newGame')} onClick={onNewGame} />
+            <MenuItem icon="💾" label={t('menu.saveGame')} onClick={onSaveGame} />
+            <MenuItem icon="⏸️" label={t('menu.pause')} onClick={onPause} />
+            <MenuItem icon="📁" label={t('menu.loadGame')} onClick={onLoadGame} />
+            <MenuItem icon="⚙️" label={t('menu.settings')} onClick={onOpenSettings} />
+            <MenuItem icon="🚪" label={t('menu.quit')} onClick={onQuit} danger />
           </>
         )}
 
         {activeMenu === 'WORLD' && (
           <>
-            <MenuItem icon="⚖️" label="Diplomacy" onClick={onDiplomacy} />
-            <MenuItem icon="📊" label="Rates" onClick={onOpenRates} />
-            <MenuItem icon="🏛️" label="Government" onClick={onOpenGovernment} />
-            <MenuItem icon="🧪" label="Tech Tree" onClick={onTechTree} />
-            <MenuItem icon="📈" label="Statistics" onClick={onStatistics} />
-            <MenuItem icon="🏆" label="Wonders" onClick={onWonders} />
+            <MenuItem icon="⚖️" label={t('menu.diplomacy')} onClick={onDiplomacy} />
+            <MenuItem icon="📊" label={t('menu.rates')} onClick={onOpenRates} />
+            <MenuItem icon="🏛️" label={t('menu.government')} onClick={onOpenGovernment} />
+            <MenuItem icon="🧪" label={t('menu.techTree')} onClick={onTechTree} />
+            <MenuItem icon="📈" label={t('menu.statistics')} onClick={onStatistics} />
+            <MenuItem icon="🏆" label={t('menu.wonders')} onClick={onWonders} />
           </>
         )}
 
         {activeMenu === 'INFO' && (
           <>
-            <MenuItem icon="🗺️" label="Download Map" onClick={onDownloadMap} />
-            <MenuItem icon="📜" label="Download Game Progression List" onClick={onDownloadProgression} />
-            <MenuItem icon="🗜️" label="Download Compact Progression (CSV)" onClick={onDownloadProgressionCompact} />
-            <MenuItem icon="❓" label="Help" onClick={onHelp} />
+            <MenuItem icon="🗺️" label={t('menu.downloadMap')} onClick={onDownloadMap} />
+            <MenuItem icon="📜" label={t('menu.downloadProgression')} onClick={onDownloadProgression} />
+            <MenuItem icon="🗜️" label={t('menu.downloadProgressionCompact')} onClick={onDownloadProgressionCompact} />
+            <MenuItem icon="❓" label={t('menu.help')} onClick={onHelp} />
           </>
         )}
       </div>

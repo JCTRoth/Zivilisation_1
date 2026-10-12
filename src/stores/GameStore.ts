@@ -13,6 +13,7 @@ import {
 } from '../data/GameConstants';
 import { beginCameraGlide } from '../game/rendering/CameraGlideGate';
 import { MIN_ZOOM, MAX_ZOOM, clampZoom } from '../utils/CameraUtils';
+import { getLanguage, setLanguage } from '../i18n';
 import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City } from '../../types/game';
 
 // Internal store property types for cached/computed state
@@ -224,6 +225,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   // Settings
   settings: {
     uiScale: 1.0,        // Overall UI scale multiplier (0.5 to 2.0)
+    language: getLanguage(), // Game language, restored from localStorage ('civ1_language')
     skipEndTurnConfirmation: false, // Skip showing end turn confirmation modal
     skipGameResultScreen: false, // Skip the end-of-game screen (cinematic + chronicle)
     autoEndTurn: false, // Automatically end turn when all human player units are done (default disabled)
@@ -1130,9 +1132,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       gameState: { ...state.gameState, ...updates }
     })),
 
-    updateSettings: (updates) => set(state => ({
-      settings: { ...state.settings, ...updates }
-    })),
+    updateSettings: (updates) => {
+      // The language is owned by the i18n runtime (it persists the choice and
+      // notifies every translated component); the store mirrors the value so
+      // the settings screen and future settings exports can read it.
+      if (updates.language) {
+        setLanguage(updates.language as ReturnType<typeof getLanguage>);
+      }
+      return set(state => ({
+        settings: { ...state.settings, ...updates }
+      }));
+    },
     // Enter/exit citizen pick-up mode. Stores the origin tile being picked up
     // so the map renderer + side panel can reflect the "grabbed" citizen.
     setCitizenReassign: (origin: { cityId: string; col: number; row: number } | null) => set(state => ({

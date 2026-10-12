@@ -1,0 +1,120 @@
+/* =============================================================================
+   LANGUAGE SWITCHER
+   -----------------------------------------------------------------------------
+   The language grid inside Settings (and anywhere else the picker is reused).
+   Built from the design-system tokens so it dresses like the rest of the
+   game-modal family: dark elevated cards, gold accent for the picked one.
+   ========================================================================== */
+
+.lang-switch {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: var(--space-3);
+}
+
+/* ---- Language card -------------------------------------------------------- */
+
+.lang-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-input);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.lang-card:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-overlay);
+  transform: translateY(-1px);
+}
+
+.lang-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ---- Selected state: gold frame + check ----------------------------------- */
+
+.lang-card.is-selected {
+  border-color: var(--color-accent);
+  background: rgba(240, 195, 60, 0.08);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.lang-card__flag {
+  font-size: 1.6rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.lang-card__names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.lang-card__native {
+  font-weight: 700;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lang-card__english {
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The check only shows on the picked card, so unselected cards keep their
+   width and the grid never jumps when the selection moves. */
+.lang-card__check {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  text-align: center;
+  font-weight: 700;
+  color: var(--color-accent);
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.lang-card.is-selected .lang-card__check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ---- Compact phones: keep two readable columns ---------------------------- */
+
+@media (max-width: 480px) {
+  .lang-switch {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lang-card {
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .lang-card__flag {
+    font-size: 1.3rem;
+  }
+}

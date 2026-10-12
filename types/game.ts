@@ -713,6 +713,13 @@ export interface Notification {
 
 interface Settings {
   uiScale: number;
+  /**
+   * Game language id ('en' | 'de' | 'fr' | 'ru' | 'es' | 'ja'). Kept in the
+   * store so the settings screen can show it, but the i18n runtime owns the
+   * actual switching and the localStorage persistence ('civ1_language'):
+   * `updateSettings({ language })` forwards to `setLanguage`.
+   */
+  language: string;
   skipEndTurnConfirmation: boolean;
   /**
    * Skip the end-of-game screen (the cinematic takeover and the final

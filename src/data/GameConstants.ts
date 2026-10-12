@@ -1,5 +1,7 @@
 // Game Constants - Core game settings and configuration
 
+import { translateDynamic } from '../i18n';
+
 export const MAX_CARAVAN_TRADE_ROUTES = 3;
 
 /**
@@ -111,10 +113,17 @@ export function gameSpeedTimeoutFactor(step: number): number {
     return 1 + clampGameSpeedStep(step) * 2;
 }
 
-/** Label for the current rung of the ladder. */
+/**
+ * Label for the current rung of the ladder. Translated through the i18n
+ * runtime (`speed.full` / `speed.slowerBy`); the English strings are
+ * unchanged. Components showing the label call `useTranslation()` so the
+ * text follows a language switch.
+ */
 export function gameSpeedLabel(step: number): string {
     const s = clampGameSpeedStep(step);
-    return s === 0 ? 'Full Speed' : `Slower ×${s}`;
+    return s === 0
+        ? translateDynamic('speed.full', undefined, 'Full Speed')
+        : translateDynamic('speed.slowerBy', { factor: s }, `Slower ×${s}`);
 }
 
 /**

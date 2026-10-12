@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Form } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
+import { useTranslation } from '@/i18n/useTranslation';
 import GameModal from '@/components/ui/gamemodals/ModalShell';
 import { GameUtils } from '@/utils/GameUtils';
 import '../../styles/endTurnConfirmModal.css';
@@ -23,6 +24,9 @@ interface EndTurnConfirmModalProps {
  * text in BOTH flavours: `End Turn?` (the locators filter on it) and, for the
  * automatic flavour, the heading `All Your Units Have Moved!`. The manual
  * flavour carries the first as its title, the automatic one as its callout.
+ * Both live in the English dictionary (`endTurn.titleManual` / `endTurn.titleAuto`),
+ * so with the default language the dialog text is byte-identical to before;
+ * other languages translate them through the same keys.
  */
 const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
   show,
@@ -34,6 +38,7 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
 }) => {
   const settings = useGameStore(state => state.settings);
   const actions = useGameStore(state => state.actions);
+  const { t } = useTranslation();
   const [skipNextTime, setSkipNextTime] = useState(settings.skipEndTurnConfirmation);
 
   // The checkbox is a pure interface preference ("don't show this confirmation
@@ -54,7 +59,7 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
     onCancel();
   };
 
-  const stamp = `Turn ${currentTurn} · ${GameUtils.formatYear(currentYear)}`;
+  const stamp = `${t('common.turn', { turn: currentTurn })} · ${GameUtils.formatYear(currentYear)}`;
 
   return (
     <GameModal
@@ -63,47 +68,41 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
       dialogClassName="end-turn-modal"
       tone={isAutomatic ? 'success' : 'info'}
       icon={isAutomatic ? '✅' : '⏭️'}
-      artLabel={isAutomatic ? 'night falls' : 'war council'}
-      eyebrow={isAutomatic ? `End of Turn · ${stamp}` : `Your Counsel · ${stamp}`}
-      title={isAutomatic ? 'All Your Units Have Moved!' : 'End Turn?'}
-      lede={
-        isAutomatic
-          ? 'Every soldier under your command has spent their moves. The world will not wait for you — close the turn now, or hold it while you plan.'
-          : 'Give the word and the rest of the world plays on: rival courts, caravans and warbands all take their turns while your people wait.'
-      }
+      artLabel={isAutomatic ? t('endTurn.artNight') : t('endTurn.artCouncil')}
+      eyebrow={isAutomatic ? t('endTurn.eyebrowAuto', { stamp }) : t('endTurn.eyebrowManual', { stamp })}
+      title={isAutomatic ? t('endTurn.titleAuto') : t('endTurn.titleManual')}
+      lede={isAutomatic ? t('endTurn.ledeAuto') : t('endTurn.ledeManual')}
       actions={
         <>
           <button type="button" className="touch-btn touch-btn--ghost" onClick={handleCancel}>
             <i className="bi bi-x-circle" aria-hidden="true" />
-            Cancel
+            {t('common.cancel')}
           </button>
           <button type="button" className="touch-btn touch-btn--success" onClick={handleConfirm}>
             <i className="bi bi-check-circle" aria-hidden="true" />
-            End Turn
+            {t('endTurn.endTurn')}
           </button>
         </>
       }
     >
       {isAutomatic ? (
         <div className="gm-callout">
-          <span className="gm-callout-title">End Turn?</span>
-          Nothing else is left to order this turn. End it and the world plays out — your cities keep
-          producing and your research keeps climbing while every rival moves in turn. Hold it instead
-          and the map stays yours a while longer.
+          <span className="gm-callout-title">{t('endTurn.titleManual')}</span>
+          {t('endTurn.calloutBody')}
         </div>
       ) : (
         <>
           <section className="gm-section">
-            <h3 className="gm-section-title">The order of play</h3>
+            <h3 className="gm-section-title">{t('endTurn.orderTitle')}</h3>
             <p className="gm-prose">
-              The word is yours to give. Close the turn and every rival court, caravan and warband on
-              the board plays out its moves — <strong>your cities keep producing and your research
-              keeps climbing</strong> the whole while.
+              {t('endTurn.orderProsePre')}
+              <strong>{t('endTurn.orderProseStrong')}</strong>
+              {t('endTurn.orderProsePost')}
             </p>
           </section>
           <p className="gm-note">
-            <strong>Nothing is committed yet.</strong> Cancel returns you to the map exactly as you
-            left it — orders, paths and all.
+            <strong>{t('endTurn.nothingCommittedStrong')}</strong>
+            {t('endTurn.nothingCommittedRest')}
           </p>
         </>
       )}
@@ -112,7 +111,7 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
         <Form.Check
           type="checkbox"
           id="skip-end-turn-confirmation"
-          label="Don't show this confirmation next time"
+          label={t('endTurn.skipConfirmation')}
           checked={skipNextTime}
           onChange={(e) => {
             const checked = e.target.checked;

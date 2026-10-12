@@ -2,6 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { Modal } from 'react-bootstrap';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useGameStore } from '@/stores/GameStore';
+import { useTranslation } from '@/i18n/useTranslation';
+import { tTechName, tWonderName } from '@/i18n/dataNames';
 import { centerCameraOnTile, getGameViewport } from '@/utils/CameraUtils';
 import {
   WONDERS,
@@ -16,7 +18,19 @@ import {
 } from '@/data/WonderData';
 import { WonderCreditFor } from './WonderArtwork';
 import GameModal from './ModalShell';
+import { translateDynamic, type TranslationKey, type TranslationParams } from '@/i18n';
 import '@/styles/wonders.css';
+
+/**
+ * Translate a `wonders.*` key. The keys reach the i18n dictionaries through
+ * the `.i18n-frags/prodwonders.*.txt` merge; until they land in `en.ts` the
+ * `TranslationKey` union does not know them yet, so the parameter is widened
+ * here and resolved through the i18n runtime (identical to `t()` afterwards).
+ */
+const t = (key: string, params?: TranslationParams): string => translateDynamic(key, params);
+
+/** Same widening for `Record<…, TranslationKey>` label maps. */
+const wonderKey = (key: string): TranslationKey => key as TranslationKey;
 
 /** Artwork URL for the hero image — the same path `WonderArtwork` fetches. */
 const wonderArtSrc = (wonder: WonderDefinition): string =>
@@ -61,50 +75,59 @@ interface CivLike {
 
 function civName(civilizations: CivLike[], id: number | null): string {
   if (id === null) return '';
-  return civilizations.find((c) => c.id === id)?.name ?? `Civ ${id}`;
+  return civilizations.find((c) => c.id === id)?.name ?? t('wonders.civUnknown', { id });
 }
 
 /** Coloured dot + name so a wonder's holder is identifiable at a glance. */
 function CivTag({ civilizations, id, you }: { civilizations: CivLike[]; id: number; you?: boolean }) {
+  // Subscribes the tag to language changes (civ fallback name repaints).
+  useTranslation();
   const color = civilizations.find((c) => c.id === id)?.color ?? '#8a94a6';
   return (
     <span className="wonders-civ">
       <span className="wonders-civ__dot" style={{ background: color }} aria-hidden="true" />
       {civName(civilizations, id)}
-      {you && <span className="wonders-civ__you">you</span>}
+      {you && <span className="wonders-civ__you">{t('wonders.you')}</span>}
     </span>
   );
 }
 
-const STATUS_LABEL: Record<WonderStatus, string> = {
-  owned: 'Yours',
-  building: 'Building',
-  contested: 'Race',
-  rival: 'Rival',
-  locked: 'Locked',
-  available: 'Open',
+const STATUS_LABEL: Record<WonderStatus, TranslationKey> = {
+  owned: wonderKey('wonders.status.owned'),
+  building: wonderKey('wonders.status.building'),
+  contested: wonderKey('wonders.status.contested'),
+  rival: wonderKey('wonders.status.rival'),
+  locked: wonderKey('wonders.status.locked'),
+  available: wonderKey('wonders.status.available'),
 };
 
 /** One line of plain context under the status pill. */
-const STATUS_HINT: Record<WonderStatus, string> = {
-  owned: 'Completed by you',
-  building: 'In production',
-  contested: 'Both sides building',
-  rival: 'Held elsewhere',
-  locked: 'Technology missing',
-  available: 'Unclaimed',
+const STATUS_HINT: Record<WonderStatus, TranslationKey> = {
+  owned: wonderKey('wonders.hint.owned'),
+  building: wonderKey('wonders.hint.building'),
+  contested: wonderKey('wonders.hint.contested'),
+  rival: wonderKey('wonders.hint.rival'),
+  locked: wonderKey('wonders.hint.locked'),
+  available: wonderKey('wonders.hint.available'),
 };
 
-/** snake_case tech id → human-readable name (bronze_working → Bronze Working). */
+/**
+ * snake_case tech id → human-readable name (bronze_working → Bronze Working),
+ * resolved through the i18n dictionaries (active language → English →
+ * humanized fallback).
+ */
 function formatTechName(id: string | null | undefined): string {
-  if (!id) return 'None';
-  return id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  if (!id) return t('wonders.techNone');
+  return tTechName(
+    id,
+    id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+  );
 }
 
-const ERA_LABEL: Record<WonderEra, string> = {
-  antiquity: 'Antiquity',
-  middle: 'Middle Ages',
-  industrial: 'Industrial & Modern Age',
+const ERA_LABEL: Record<WonderEra, TranslationKey> = {
+  antiquity: wonderKey('wonders.era.antiquity'),
+  middle: wonderKey('wonders.era.middle'),
+  industrial: wonderKey('wonders.era.industrial'),
 };
 const ERA_ORDER: WonderEra[] = ['antiquity', 'middle', 'industrial'];
 
@@ -136,6 +159,8 @@ function WonderCardItem({
    */
   compact?: boolean;
 }) {
+  // Subscribes the card to language changes (wonder names follow the language).
+  useTranslation();
   const { wonder, status, ownerCivId, builderCivIds, obsolete } = row;
   const builders = builderCivIds.filter((id) => id !== ownerCivId);
   return (
@@ -144,24 +169,24 @@ function WonderCardItem({
         type="button"
         className={`wonder-card wonder-card--${status}`}
         onClick={() => onOpenEntry(wonder.id)}
-        title={`Open Civilopedia entry: ${wonder.name}`}
+        title={t('wonders.openEntry', { name: tWonderName(wonder.id, wonder.name) })}
       >
         <span className="wonder-card__lead">
           <span className="wonder-card__icon" aria-hidden="true">
             {/* Space stations identify by their programme flag, not a generic craft */}
             {compact ? wonder.flag : wonder.icon}
           </span>
-          <span className="wonder-card__name">{wonder.name}</span>
+          <span className="wonder-card__name">{tWonderName(wonder.id, wonder.name)}</span>
           <span className="wonder-card__flag" title={wonder.location} aria-hidden="true">
             {wonder.flag}
           </span>
-          <span className={`gm-chip wonder-chip wonder-chip--${status}`}>{STATUS_LABEL[status]}</span>
+          <span className={`gm-chip wonder-chip wonder-chip--${status}`}>{t(STATUS_LABEL[status])}</span>
           {obsolete && (
             <span
               className="wonder-card__obsolete"
-              title={`Obsolete — ${formatTechName(wonder.obsoleteBy)} discovered`}
+              title={t('wonders.obsoleteTitle', { tech: formatTechName(wonder.obsoleteBy) })}
             >
-              Obsolete
+              {t('wonders.obsolete')}
             </span>
           )}
         </span>
@@ -171,24 +196,24 @@ function WonderCardItem({
         {!compact && (
         <span className="wonder-card__meta">
           <span className="wonder-card__fact">
-            <span className="wonder-card__fact-label">Cost</span>
-            <span className="wonder-card__fact-value">{wonder.cost} shields</span>
+            <span className="wonder-card__fact-label">{t('wonders.fact.cost')}</span>
+            <span className="wonder-card__fact-value">{t('wonders.shields', { count: wonder.cost })}</span>
           </span>
           <span className="wonder-card__fact">
-            <span className="wonder-card__fact-label">Requires</span>
+            <span className="wonder-card__fact-label">{t('wonders.fact.requires')}</span>
             <span className="wonder-card__fact-value">
               {formatTechName(wonder.requiredTechnology)}
             </span>
           </span>
           <span className="wonder-card__fact">
-            <span className="wonder-card__fact-label">Obsolete by</span>
+            <span className="wonder-card__fact-label">{t('wonders.fact.obsoleteBy')}</span>
             <span className="wonder-card__fact-value">
-              {wonder.obsoleteBy ? formatTechName(wonder.obsoleteBy) : 'Never'}
+              {wonder.obsoleteBy ? formatTechName(wonder.obsoleteBy) : t('wonders.never')}
             </span>
           </span>
           <span className="wonder-card__fact">
             <span className="wonder-card__fact-label">
-              {ownerCivId !== null ? 'Owner' : builders.length > 0 ? 'Building' : 'Status'}
+              {ownerCivId !== null ? t('wonders.fact.owner') : builders.length > 0 ? t('wonders.fact.building') : t('wonders.fact.status')}
             </span>
             <span className="wonder-card__fact-value wonder-card__holders">
               {ownerCivId !== null ? (
@@ -203,7 +228,7 @@ function WonderCardItem({
                   />
                 ))
               ) : (
-                <span className="wonder-card__muted">{STATUS_HINT[status]}</span>
+                <span className="wonder-card__muted">{t(STATUS_HINT[status])}</span>
               )}
             </span>
           </span>
@@ -220,6 +245,8 @@ function WonderCardItem({
  * is building) each one. Grouped by documentation-only era for readability.
  */
 const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
+  // Subscribes the ledger to language changes (wonder names repaint on switch).
+  useTranslation();
   const rows = useWonderRows();
   const civilizations = useGameStore((s) => s.civilizations);
   const activePlayer = useGameStore((s) => s.gameState.activePlayer);
@@ -268,11 +295,11 @@ const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
             className="wonder-group__header"
             onClick={() => toggleGroup(groupId)}
             aria-expanded={!collapsed}
-            title={collapsed ? `Expand ${group?.name ?? groupId}` : `Collapse ${group?.name ?? groupId}`}
+            title={collapsed ? t('wonders.group.expand', { name: group?.name ?? groupId }) : t('wonders.group.collapse', { name: group?.name ?? groupId })}
           >
             <span className="wonder-group__icons" aria-hidden="true">
               {members.map((m) => (
-                <span key={m.wonder.id} title={m.wonder.name}>
+                <span key={m.wonder.id} title={tWonderName(m.wonder.id, m.wonder.name)}>
                   {/* Grouped wonders (space stations) show the programme flag */}
                   {m.wonder.groupId ? m.wonder.flag : m.wonder.icon}
                 </span>
@@ -280,7 +307,7 @@ const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
             </span>
             <span className="wonder-group__name">{group?.name ?? groupId}</span>
             <span className="wonder-group__blurb">{group?.blurb ?? ''}</span>
-            <span className="wonder-group__count" title={`${members.length} wonders`}>
+            <span className="wonder-group__count" title={t('wonders.group.wondersCount', { count: members.length })}>
               {members.length}
             </span>
             <span className="wonder-group__chevron" aria-hidden="true">
@@ -289,8 +316,8 @@ const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
           </button>
           {spec && (
             <div className="wonder-group__specs">
-              Cost {spec.cost} shields · Requires {formatTechName(spec.requiredTechnology)} · Obsolete by{' '}
-              {spec.obsoleteBy ? formatTechName(spec.obsoleteBy) : 'Never'}
+              {t('wonders.fact.cost')} {t('wonders.shields', { count: spec.cost })} · {t('wonders.fact.requires')} {formatTechName(spec.requiredTechnology)} · {t('wonders.fact.obsoleteBy')}{' '}
+              {spec.obsoleteBy ? formatTechName(spec.obsoleteBy) : t('wonders.never')}
             </div>
           )}
           {!collapsed && (
@@ -333,12 +360,12 @@ const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
           <span className="wonders-summary__count">
             <strong>{summary.built}</strong> / {summary.total}
           </span>
-          <span className="wonders-summary__label">wonders completed</span>
+          <span className="wonders-summary__label">{t('wonders.completedLabel')}</span>
         </div>
         <div
           className="wonders-summary__bar"
           role="progressbar"
-          aria-label="Wonders completed"
+          aria-label={t('wonders.completedAria')}
           aria-valuenow={summary.built}
           aria-valuemin={0}
           aria-valuemax={summary.total}
@@ -350,7 +377,7 @@ const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
             <li key={status} className={`wonders-summary__stat wonders-summary__stat--${status}`}>
               <span className="wonders-summary__dot" aria-hidden="true" />
               <span className="wonders-summary__stat-value">{summary.counts[status]}</span>
-              <span className="wonders-summary__stat-label">{STATUS_HINT[status]}</span>
+              <span className="wonders-summary__stat-label">{t(STATUS_HINT[status])}</span>
             </li>
           ))}
         </ul>
@@ -364,7 +391,7 @@ const WondersOverview: React.FC<WondersOverviewProps> = ({ onOpenEntry }) => {
           return (
             <section key={era} className="wonders-era">
               <h4 className="wonders-era__title">
-                {ERA_LABEL[era]}
+                {t(ERA_LABEL[era])}
                 <span className="wonders-era__count">{eraRows.length}</span>
               </h4>
 
@@ -413,22 +440,26 @@ const WonderZoom: React.FC<{ wonder: WonderDefinition; show: boolean; onHide: ()
   wonder,
   show,
   onHide,
-}) => (
-  <Modal show={show} onHide={onHide} centered size="lg" className="gm" dialogClassName="wonder-zoom" contentClassName="gm-modal">
-    <Modal.Body className="gm-body" data-tone="gold">
-      <button type="button" className="gm-close" onClick={onHide} aria-label="Close">
-        <i className="bi bi-x-lg" aria-hidden="true" />
-      </button>
-      <img className="wonder-zoom__img" src={wonderArtSrc(wonder)} alt={`${wonder.name} — ${wonder.fullName}`} />
-      <div className="wonder-zoom__caption">
-        <span className="wonder-zoom__name">
-          {wonder.icon} {wonder.name}
-        </span>
-        <WonderCreditFor wonder={wonder} />
-      </div>
-    </Modal.Body>
-  </Modal>
-);
+}) => {
+  // Subscribes the artwork view to language changes (caption name).
+  useTranslation();
+  return (
+    <Modal show={show} onHide={onHide} centered size="lg" className="gm" dialogClassName="wonder-zoom" contentClassName="gm-modal">
+      <Modal.Body className="gm-body" data-tone="gold">
+        <button type="button" className="gm-close" onClick={onHide} aria-label={t('wonders.close')}>
+          <i className="bi bi-x-lg" aria-hidden="true" />
+        </button>
+        <img className="wonder-zoom__img" src={wonderArtSrc(wonder)} alt={`${tWonderName(wonder.id, wonder.name)} — ${wonder.fullName}`} />
+        <div className="wonder-zoom__caption">
+          <span className="wonder-zoom__name">
+            {wonder.icon} {tWonderName(wonder.id, wonder.name)}
+          </span>
+          <WonderCreditFor wonder={wonder} />
+        </div>
+      </Modal.Body>
+    </Modal>
+  );
+};
 
 /**
  * Full wonder entry: the artwork is the hero, then the mechanical payoff, the
@@ -436,6 +467,8 @@ const WonderZoom: React.FC<{ wonder: WonderDefinition; show: boolean; onHide: ()
  * info-screen rule: never invent).
  */
 const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onHide }) => {
+  // Subscribes the entry to language changes (wonder name in the title).
+  useTranslation();
   const rows = useWonderRows();
   const civilizations = useGameStore((s) => s.civilizations);
   const cities = useGameStore((s) => s.cities);
@@ -487,57 +520,57 @@ const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onH
       size="lg"
       className="wonder-entry-overlay"
       dialogClassName="wonder-entry-modal"
-      eyebrow={<>Civilopedia · {ERA_LABEL[wonder.era]}</>}
+      eyebrow={<>Civilopedia · {t(ERA_LABEL[wonder.era])}</>}
       title={
         <>
-          {wonder.icon} {wonder.name}
+          {wonder.icon} {tWonderName(wonder.id, wonder.name)}
         </>
       }
       lede={<>{wonder.fullName} — {wonder.shortEffect}</>}
       artLayout="cover"
       artSrc={wonderArtSrc(wonder)}
-      artAlt={`${wonder.name} — ${wonder.fullName}`}
-      artLabel="wonder illustration"
+      artAlt={`${tWonderName(wonder.id, wonder.name)} — ${wonder.fullName}`}
+      artLabel={t('wonders.artLabel')}
       artCredit={<WonderCreditFor wonder={wonder} variant="hero" />}
       onArtClick={() => setZoomed(true)}
       actions={
         <>
           {wonderCity && (
             <button type="button" className="touch-btn touch-btn--primary" onClick={goToWonder}>
-              📍 Go to {wonderCity.name}
+              {t('wonders.goTo', { city: wonderCity.name })}
             </button>
           )}
           <span className="gm-actions-spacer" />
           <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
-            Close
+            {t('wonders.close')}
           </button>
         </>
       }
     >
       <div className="wonder-entry-meta">
-        <span className={`gm-chip wonder-chip wonder-chip--${status}`}>{STATUS_LABEL[status]}</span>
+        <span className={`gm-chip wonder-chip wonder-chip--${status}`}>{t(STATUS_LABEL[status])}</span>
         <SpecChip
-          tip={`Shields this wonder costs. A city spends its whole shield output on one project at a time.`}
+          tip={t('wonders.tip.shields')}
           className="wonder-chip-spec"
         >
-          🛡 {wonder.cost} shields
+          🛡 {t('wonders.shields', { count: wonder.cost })}
         </SpecChip>
-        <SpecChip tip={`You must have researched ${formatTechName(wonder.requiredTechnology)} before a city can start it.`}>
+        <SpecChip tip={t('wonders.tip.tech', { tech: formatTechName(wonder.requiredTechnology) })}>
           🔬 {formatTechName(wonder.requiredTechnology)}
         </SpecChip>
         <SpecChip
           tip={
             wonder.obsoleteBy
-              ? `Once ANY civilization researches ${formatTechName(wonder.obsoleteBy)}, the effect stops working for everyone — the wonder still counts for score.`
-              : 'This wonder never becomes obsolete; its effect lasts to the end of the game.'
+              ? t('wonders.tip.obsoleteBy', { tech: formatTechName(wonder.obsoleteBy) })
+              : t('wonders.tip.neverObsolete')
           }
         >
-          ⏳ {wonder.obsoleteBy ? `Obsolete: ${formatTechName(wonder.obsoleteBy)}` : 'Never obsolete'}
+          ⏳ {wonder.obsoleteBy ? t('wonders.obsoleteLabel', { tech: formatTechName(wonder.obsoleteBy) }) : t('wonders.neverObsolete')}
         </SpecChip>
-        <SpecChip tip="Wonders cost nothing to maintain, and can never be sold.">
-          🔧 No maintenance
+        <SpecChip tip={t('wonders.tip.noMaintenance')}>
+          🔧 {t('wonders.noMaintenance')}
         </SpecChip>
-        <SpecChip tip={`Where it stands in the real world: ${wonder.location}.`} className="gm-chip--accent">
+        <SpecChip tip={t('wonders.tip.location', { location: wonder.location })} className="gm-chip--accent">
           <span aria-hidden="true">{wonder.flag}</span> {wonder.location}
         </SpecChip>
       </div>
@@ -545,56 +578,55 @@ const WonderEntryModal: React.FC<WonderEntryModalProps> = ({ show, wonderId, onH
       <div className="gm-note">
         {row?.ownerCivId !== null && row?.ownerCivId !== undefined ? (
           <>
-            ✅ Built by <strong>{ownerIsYou ? 'you' : ownerName}</strong>
+            {t('wonders.builtBy')} <strong>{ownerIsYou ? t('wonders.you') : ownerName}</strong>
             {ownerName
               ? ownerIsYou
-                ? ' — the wonder stands in your cities and scores for you.'
-                : ' — the wonder stands in their cities and scores for them.'
+                ? t('wonders.suffixYours')
+                : t('wonders.suffixTheirs')
               : ''}
             {wonderCity && (
               <>
                 {' '}
-                in <strong>{wonderCity.name}</strong>.
+                {t('wonders.inCityPrefix')} <strong>{wonderCity.name}</strong>.
               </>
             )}
           </>
         ) : builderNames.length > 0 ? (
-          <>🏗 Under construction by {builderNames.join(', ')} — first to finish claims it.</>
+          <>{t('wonders.underConstruction')} {builderNames.join(', ')} {t('wonders.firstToFinish')}</>
         ) : (
-          <>⏳ Nobody has started this wonder yet.</>
+          <>{t('wonders.notStarted')}</>
         )}
       </div>
 
       {/* The payoff first: what the wonder actually does to your empire. */}
       <section className="gm-section wonder-entry-effect">
         <h3 className="gm-section-title">
-          <span aria-hidden="true">{wonder.icon}</span> Effect
+          <span aria-hidden="true">{wonder.icon}</span> {t('wonders.effect')}
         </h3>
         {obsolete && (
           <div className="gm-callout">
-            <span className="gm-callout-title">Obsolete</span>
-            ⚠ {formatTechName(wonder.obsoleteBy)} was discovered somewhere; the effect is switched off (the
-            wonder still scores).
+            <span className="gm-callout-title">{t('wonders.obsolete')}</span>
+            ⚠ {formatTechName(wonder.obsoleteBy)} {t('wonders.obsoleteCallout')}
           </div>
         )}
         <p className="gm-prose">{wonder.effectText}</p>
       </section>
 
       <section className="gm-section">
-        <h3 className="gm-section-title">History</h3>
+        <h3 className="gm-section-title">{t('wonders.history')}</h3>
         <p className="gm-prose">{wonder.flavor}</p>
       </section>
 
       {wonder.about && (
         <section className="gm-section">
-          <h3 className="gm-section-title">Trivia</h3>
+          <h3 className="gm-section-title">{t('wonders.trivia')}</h3>
           <p className="gm-prose">{wonder.about}</p>
         </section>
       )}
 
       {wonder.facts.length > 0 && (
         <section className="gm-section">
-          <h3 className="gm-section-title">Some facts</h3>
+          <h3 className="gm-section-title">{t('wonders.someFacts')}</h3>
           <ul className="gm-list wonder-entry-facts">
             {wonder.facts.map((fact, i) => (
               <li key={i}>{fact}</li>
@@ -622,6 +654,8 @@ interface WondersOverviewModalProps {
  * the same `WondersOverview` list; this wrapper serves the WORLD menu entry.
  */
 const WondersOverviewModal: React.FC<WondersOverviewModalProps> = ({ show, onHide }) => {
+  // Subscribes the dialog to language changes (wonder names and copy repaint).
+  useTranslation();
   const [entryId, setEntryId] = useState<string | null>(null);
 
   return (
@@ -632,19 +666,19 @@ const WondersOverviewModal: React.FC<WondersOverviewModalProps> = ({ show, onHid
         tone="gold"
         size="xl"
         dialogClassName="wonders-modal"
-        eyebrow="World Heritage"
-        title="Wonders of the World"
-        lede="Every wonder raised in this world — and every one still waiting to be claimed. Who holds it, who races you for it, what it costs and what it gives: choose an entry to open its chronicle."
+        eyebrow={t('wonders.modalEyebrow')}
+        title={t('wonders.modalTitle')}
+        lede={t('wonders.modalLede')}
         icon="🏆"
-        artLabel="wonder gallery"
+        artLabel={t('wonders.modalArtLabel')}
         actions={
           <>
             <span className="wonders-modal__note">
-              {WONDERS.length} unique wonders · first civilization to finish one owns it forever
+              {t('wonders.modalNote', { count: WONDERS.length })}
             </span>
             <span className="gm-actions-spacer" />
             <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
-              Close
+              {t('wonders.close')}
             </button>
           </>
         }

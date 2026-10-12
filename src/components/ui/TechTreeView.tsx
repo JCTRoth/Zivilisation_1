@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Technology } from '../../../types/game';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+import { useTranslation } from '@/i18n/useTranslation';
+import { tTechName } from '@/i18n/dataNames';
 import '../../styles/TechTreeView.css';
 
 // Very small, dependency-free tree renderer using SVG.
@@ -30,6 +32,14 @@ type Props = {
 const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWidth = 200, nodeHeight = 56, verticalSpacing = 80, horizontalSpacing = 40, researchPath = null, currentResearchId = null, researchProgress = 0, currentTechCost = null, playerResearchedIds, onSelectTech }) => {
   // If store hasn't populated technologies yet, fall back to static data
   const techs = (technologies && technologies.length > 0) ? technologies : TECHNOLOGIES_DATA;
+  // Subscribes the tree to language changes; node labels resolve through
+  // tTechName and repaint when the player switches language.
+  const { t } = useTranslation();
+  /** Display label of a tech by id: localized name, raw id for unknown techs. */
+  const techLabel = (id: string): string => {
+    const found = techs.find((candidate) => candidate.id === id);
+    return found ? tTechName(found.id, found.name) : id;
+  };
   // Helper: is this tech researched by the current player?
   const isPlayerResearched = useCallback(
     (techId: string) => playerResearchedIds?.has(techId) ?? false,
@@ -256,7 +266,7 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
         {/* Path display as first row */}
         {selectedPath && (
           <text x={svgWidth / 2} y={30} className="tech-tree-path-text" fill="#fff" fontSize="16" fontWeight="bold" textAnchor="middle">
-            Path: {selectedPath.map(id => techs.find(t => t.id === id)?.name || id).join(' > ')}
+            {t('techTree.path')} {selectedPath.map(id => techLabel(id)).join(' > ')}
           </text>
         )}
         {/* links */}
@@ -302,9 +312,9 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
               style={{ cursor: isUnavailable ? 'default' : 'pointer', opacity: isUnavailable ? 0.5 : 1 }}
             >
               <rect width={nodeWidth} height={nodeHeight} rx={6} ry={6} fill={fill} stroke={isCurrentResearch ? '#ffd700' : '#0b00a4ff'} strokeWidth={isCurrentResearch ? 3 : 1} />
-              <text x={12} y={20} className="tech-tree-node-text">{tech.name}</text>
+              <text x={12} y={20} className="tech-tree-node-text">{tTechName(tech.id, tech.name)}</text>
               <text x={12} y={36} className="tech-tree-node-cost">
-                {isCurrentResearch ? `${researchProgress || 0}/${nodeCost} sci` : `${tech.cost} sci`}
+                {isCurrentResearch ? `${researchProgress || 0}/${nodeCost} ${t('techTree.sci')}` : `${tech.cost} ${t('techTree.sci')}`}
               </text>
               {isCurrentResearch && progress > 0 && (
                 <rect x={4} y={nodeHeight - 6} width={(nodeWidth - 8) * progress} height={4} rx={2} fill="#ffd700" />
@@ -317,7 +327,7 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
         })}
         {techs.length === 0 && (
           <g>
-            <text x={20} y={30} className="tech-tree-no-tech">No technologies available</text>
+            <text x={20} y={30} className="tech-tree-no-tech">{t('techTree.noTechs')}</text>
           </g>
         )}
       </svg>
@@ -335,24 +345,24 @@ const TechTreeView: React.FC<Props> = ({ technologies = [], width = 800, nodeWid
           }}
         >
           <div className="tooltip-inner bg-dark text-light p-2 border border-warning rounded">
-            <div className="fw-bold">{hoveredTech.name}</div>
-            <div className="small text-warning">Cost: {hoveredTech.cost} science</div>
+            <div className="fw-bold">{tTechName(hoveredTech.id, hoveredTech.name)}</div>
+            <div className="small text-warning">{t('techTree.cost', { cost: hoveredTech.cost })}</div>
             {hoveredTech.description && (
               <div className="small mt-1">{hoveredTech.description}</div>
             )}
             {hoveredTech.prerequisites && hoveredTech.prerequisites.length > 0 && (
               <div className="small mt-1 text-muted">
-                Prerequisites: {hoveredTech.prerequisites.map(id => 
-                  techs.find(t => t.id === id)?.name || id
+                {t('techTree.prerequisites')} {hoveredTech.prerequisites.map(id =>
+                  techLabel(id)
                 ).join(', ')}
               </div>
             )}
             <div className="small mt-1">
-              Status: {isPlayerResearched(hoveredTech.id) ? 
-                <span className="text-success">✓ Researched</span> : 
+              {t('techTree.status')} {isPlayerResearched(hoveredTech.id) ? 
+                <span className="text-success">{t('techTree.researched')}</span> : 
                 isPlayerAvailable(hoveredTech) ? 
-                  <span className="text-info">Available</span> : 
-                  <span className="text-secondary">Locked</span>
+                  <span className="text-info">{t('techTree.available')}</span> : 
+                  <span className="text-secondary">{t('techTree.locked')}</span>
               }
             </div>
           </div>

@@ -12,6 +12,8 @@ import { SquareGrid } from '@/game/SquareGrid';
 import {
   AICityManager,
   AI_COMMERCE_GOVERNOR_MIN_POP,
+  AI_COMMERCE_MIN_TRADE_TILE_SHARE,
+  AI_COMMERCE_MIN_CITY_TRADE,
 } from '@/game/engine/AI/AICityManager';
 import { TERRAIN_TYPES } from '@/data/TerrainConstants';
 import type { City } from '../../types/game';
@@ -88,27 +90,65 @@ afterEach(() => {
 });
 
 describe('Commerce governor for mature AI cities', () => {
-  const manager = new AICityManager({} as never, {} as never);
+  /** A manager that can read the tiles the city works. */
+  const managerFor = (tiles: Record<string, number>) => new AICityManager(
+    { getTileAt: (col: number, row: number) => ({ col, row }) } as never,
+    { cityTileYields: (t: { col: number; row: number }) => ({
+      food: 1, production: 1, trade: tiles[`${t.col},${t.row}`] ?? 0,
+    }) } as never,
+  );
   const city = (overrides: Record<string, unknown>): City =>
     ({ population: 3, foodStored: 0, foodNeeded: 40, ...overrides }) as unknown as City;
+  /** Four worked tiles, three of them producing trade. */
+  const traded = { '2,2': 0, '3,2': 1, '3,3': 1, '2,3': 1 };
+  const untraded = { '2,2': 0, '3,2': 0, '3,3': 0, '2,3': 0 };
+  const workedTiles = new Set(Object.keys(traded));
 
-  it('switches a mature city with a healthy food box to Commerce', () => {
-    const profile = manager.aiGovernorForCity(
-      city({ population: AI_COMMERCE_GOVERNOR_MIN_POP, foodStored: 80, foodNeeded: 100 }),
+  it('switches a mature city with a healthy food box and a trade grid to Commerce', () => {
+    const profile = managerFor(traded).aiGovernorForCity(
+      city({ population: AI_COMMERCE_GOVERNOR_MIN_POP, foodStored: 80, foodNeeded: 100, workingTiles: workedTiles }),
     );
     expect(profile.mode).toBe('commerce');
   });
 
-  it('falls back to the food-first profile when the food box is depleted', () => {
-    const profile = manager.aiGovernorForCity(
-      city({ population: AI_COMMERCE_GOVERNOR_MIN_POP, foodStored: 5, foodNeeded: 100 }),
+  it('keeps a mature city with no trade tiles on the food-first profile', () => {
+    // Population and a full food box used to be the whole rule, so a size-8
+    // city on unworked grassland was governed for commerce: the weights handed
+    // its slots to trade tiles that do not exist, the food surplus collapsed,
+    // and the city stalled on the growth that earned the switch.
+    const profile = managerFor(untraded).aiGovernorForCity(
+      city({ population: AI_COMMERCE_GOVERNOR_MIN_POP, foodStored: 80, foodNeeded: 100, workingTiles: workedTiles }),
     );
     expect(profile.mode).toBe('balanced');
   });
 
+  it('falls back to the food-first profile when the food box is depleted', () => {
+    const profile = managerFor(traded).aiGovernorForCity(
+      city({ population: AI_COMMERCE_GOVERNOR_MIN_POP, foodStored: 5, foodNeeded: 100, workingTiles: workedTiles }),
+    );
+    expect(profile.mode).toBe('balanced');
+  });
+
+  it('needs at least a third of the worked tiles to produce trade', () => {
+    // 1 of 4 is below the bar; 1 of 3 is exactly on it.
+    const few = managerFor({ '2,2': 0, '3,2': 1, '3,3': 0, '2,3': 0 });
+    expect(few.aiGovernorForCity(city({
+      population: AI_COMMERCE_GOVERNOR_MIN_POP, foodStored: 80, foodNeeded: 100, workingTiles: workedTiles,
+    })).mode).toBe('balanced');
+
+    const third = managerFor({ '2,2': 0, '3,2': 1, '3,3': 0 });
+    expect(third.aiGovernorForCity(city({
+      population: AI_COMMERCE_GOVERNOR_MIN_POP, foodStored: 80, foodNeeded: 100,
+      workingTiles: new Set(['2,2', '3,2', '3,3']),
+    })).mode).toBe('commerce');
+
+    expect(AI_COMMERCE_MIN_TRADE_TILE_SHARE).toBeCloseTo(1 / 3);
+    expect(AI_COMMERCE_MIN_CITY_TRADE).toBe(3);
+  });
+
   it('keeps small cities on the balanced profile', () => {
-    const profile = manager.aiGovernorForCity(
-      city({ population: AI_COMMERCE_GOVERNOR_MIN_POP - 1, foodStored: 90, foodNeeded: 100 }),
+    const profile = managerFor(traded).aiGovernorForCity(
+      city({ population: AI_COMMERCE_GOVERNOR_MIN_POP - 1, foodStored: 90, foodNeeded: 100, workingTiles: workedTiles }),
     );
     expect(profile.mode).toBe('balanced');
   });

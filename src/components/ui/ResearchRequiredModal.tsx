@@ -1,4 +1,6 @@
 import React from 'react';
+import { useTranslation } from '@/i18n/useTranslation';
+import type { TranslationKey } from '@/i18n';
 import GameModal from './gamemodals/ModalShell';
 
 interface ResearchRequiredModalProps {
@@ -22,42 +24,43 @@ const ResearchRequiredModal: React.FC<ResearchRequiredModalProps> = ({
   show,
   onHide,
   onChooseResearch,
-}) => (
-  <GameModal
-    show={show}
-    onClose={onHide}
-    tone="info"
-    icon="🔬"
-    artLabel="an idle laboratory"
-    dialogClassName="research-required-modal"
-    eyebrow="Your Academies Are Waiting"
-    title="No Research Selected"
-    lede="Your scholars are ready to work, but nobody has told them what to discover next. Without an order, the science your cities produce this turn is poured on the floor."
-    actions={
-      <>
-        <span className="gm-actions-spacer" />
-        <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
-          Decide Later
-        </button>
-        <button type="button" className="touch-btn touch-btn--primary" onClick={onChooseResearch}>
-          🔬 Choose Technology
-        </button>
-      </>
-    }
-  >
-    <div className="gm-section">
-      <div className="gm-section-title">What happens if you wait</div>
-      <p className="gm-prose mb-0">
-        Open the technology tree now and choose a research. If you end the turn without picking
-        anything, your people will fall back on whatever technology they can find lying around —
-        the science is never wasted, but the path is not yours.
-      </p>
-    </div>
-    <div className="gm-note">
-      Research only moves while something is selected. You can come back here at any time with{' '}
-      <strong>F2</strong>.
-    </div>
-  </GameModal>
-);
+}) => {
+  const { t } = useTranslation();
+  return (
+    <GameModal
+      show={show}
+      onClose={onHide}
+      tone="info"
+      icon="🔬"
+      artLabel={t('researchReq.artLabel' as TranslationKey)}
+      dialogClassName="research-required-modal"
+      eyebrow={t('researchReq.eyebrow' as TranslationKey)}
+      title={t('researchReq.title' as TranslationKey)}
+      lede={t('researchReq.lede' as TranslationKey)}
+      actions={
+        <>
+          <span className="gm-actions-spacer" />
+          <button type="button" className="touch-btn touch-btn--ghost" onClick={onHide}>
+            {t('researchReq.decideLater' as TranslationKey)}
+          </button>
+          <button type="button" className="touch-btn touch-btn--primary" onClick={onChooseResearch}>
+            🔬 {t('researchReq.chooseTechnology' as TranslationKey)}
+          </button>
+        </>
+      }
+    >
+      <div className="gm-section">
+        <div className="gm-section-title">{t('researchReq.waitTitle' as TranslationKey)}</div>
+        <p className="gm-prose mb-0">
+          {t('researchReq.waitProse' as TranslationKey)}
+        </p>
+      </div>
+      <div className="gm-note">
+        {t('researchReq.f2Note' as TranslationKey)}{' '}
+        <strong>F2</strong>.
+      </div>
+    </GameModal>
+  );
+};
 
 export default ResearchRequiredModal;

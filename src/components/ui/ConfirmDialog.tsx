@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Modal } from 'react-bootstrap';
+import { useTranslation } from '@/i18n/useTranslation';
 import '../../styles/confirmDialog.css';
 
 interface ConfirmDialogProps {
@@ -30,19 +31,20 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   title,
   message,
   detail,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  cancelLabel,
   variant = 'primary',
   onConfirm,
   onCancel,
 }) => {
+  const { t } = useTranslation();
   const confirmRef = useRef<HTMLButtonElement | null>(null);
 
   // Focus the confirm button when opened for keyboard users
   useEffect(() => {
     if (show && confirmRef.current) {
-      const t = window.setTimeout(() => confirmRef.current?.focus(), 60);
-      return () => window.clearTimeout(t);
+      const timerId = window.setTimeout(() => confirmRef.current?.focus(), 60);
+      return () => window.clearTimeout(timerId);
     }
     return undefined;
   }, [show]);
@@ -56,9 +58,9 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
   const variantClass = variant === 'danger' ? 'touch-btn--danger' : variant === 'success' ? 'touch-btn--success' : 'touch-btn--primary';
   const tone = variant === 'danger' ? 'danger' : variant === 'success' ? 'success' : 'info';
-  const eyebrow = variant === 'danger' ? 'A Word of Caution' : variant === 'success' ? 'A Fresh Chapter' : 'Awaiting Your Word';
+  const eyebrow = variant === 'danger' ? t('confirm.eyebrowDanger') : variant === 'success' ? t('confirm.eyebrowSuccess') : t('confirm.eyebrowInfo');
   const icon = variant === 'danger' ? '⚠️' : variant === 'success' ? '✅' : '⚖️';
-  const artLabel = variant === 'success' ? 'an open road' : 'Red Alter!';
+  const artLabel = variant === 'success' ? t('confirm.artOpenRoad') : t('confirm.artRedAlert');
 
   return (
     <Modal
@@ -79,7 +81,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         className="gm-body confirm-dialog__inner"
         data-tone={tone}
       >
-        <button type="button" className="gm-close" onClick={onCancel} aria-label="Close">
+        <button type="button" className="gm-close" onClick={onCancel} aria-label={t('common.close')}>
           <i className="bi bi-x-lg" aria-hidden="true" />
         </button>
 
@@ -98,7 +100,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         {detail && (
           <div className="gm-content">
             <div className="gm-callout confirm-dialog__detail">
-              <span className="gm-callout-title">Bear in mind</span>
+              <span className="gm-callout-title">{t('common.bearInMind')}</span>
               {detail}
             </div>
           </div>
@@ -106,7 +108,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
         <footer className="gm-actions">
           <button type="button" className="touch-btn touch-btn--ghost confirm-dialog__btn" onClick={onCancel}>
-            {cancelLabel}
+            {cancelLabel ?? t('common.cancel')}
           </button>
           <button
             type="button"
@@ -114,7 +116,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             className={`touch-btn ${variantClass} confirm-dialog__btn`}
             onClick={onConfirm}
           >
-            {confirmLabel}
+            {confirmLabel ?? t('common.confirm')}
           </button>
         </footer>
       </div>

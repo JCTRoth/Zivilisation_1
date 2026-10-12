@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '@/i18n/useTranslation';
 import '../../styles/pauseScreen.css';
 
 interface PauseScreenProps {
@@ -34,20 +35,25 @@ const PauseScreen: React.FC<PauseScreenProps> = ({
   onRestart,
   onQuit,
 }) => {
+  // Hook must run before any early return — see rules of hooks.
+  const { t } = useTranslation();
+
   if (!show) {
     return null;
   }
 
-  const gameOverTitle = 'Game Over';
+  const gameOverTitle = t('pause.gameOver');
   const turnLabel =
-    currentTurn !== undefined ? `Turn ${currentTurn}${currentYear ? ` · ${currentYear}` : ''}` : null;
+    currentTurn !== undefined
+      ? `${t('common.turn', { turn: currentTurn })}${currentYear ? ` · ${currentYear}` : ''}`
+      : null;
 
   return (
     <div
       className={`pause-screen${gameOver ? ' pause-screen--ended' : ''}`}
       role="dialog"
       aria-modal="true"
-      aria-label={gameOver ? gameOverTitle : 'Game Paused'}
+      aria-label={gameOver ? gameOverTitle : t('pause.gamePaused')}
     >
       <div className="pause-screen__panel">
         <header className="pause-screen__hero">
@@ -56,19 +62,17 @@ const PauseScreen: React.FC<PauseScreenProps> = ({
               {gameOver ? '🏆' : '⏸️'}
             </span>
             <span className="pause-screen__art-tag">
-              {gameOver ? 'a closed chronicle' : 'the map at rest'}
+              {gameOver ? t('pause.artTagClosed') : t('pause.artTagRest')}
             </span>
           </div>
 
           <div className="pause-screen__heading">
             <div className="pause-screen__eyebrow">
-              {gameOver ? 'The Chronicle Closes' : 'The World Waits'}
+              {gameOver ? t('pause.chronicleCloses') : t('pause.worldWaits')}
             </div>
-            <h2 className="pause-screen__title">{gameOver ? gameOverTitle : 'Game Paused'}</h2>
+            <h2 className="pause-screen__title">{gameOver ? gameOverTitle : t('pause.gamePaused')}</h2>
             <p className="pause-screen__lede">
-              {gameOver
-                ? "Your people's story runs out here. The board stands exactly as it fell — a monument to the last turn you played."
-                : 'Your people, your rivals and every turn in progress are holding still. Return to the map when you are ready to rule again.'}
+              {gameOver ? t('pause.ledeGameOver') : t('pause.ledePaused')}
             </p>
           </div>
         </header>
@@ -76,9 +80,7 @@ const PauseScreen: React.FC<PauseScreenProps> = ({
         {(turnLabel || !gameOver) && (
           <div className="pause-screen__body">
             {turnLabel && <span className="pause-screen__status">{turnLabel}</span>}
-            {!gameOver && (
-              <p className="pause-screen__hint">Press Ctrl+P or click Resume to continue</p>
-            )}
+            {!gameOver && <p className="pause-screen__hint">{t('pause.resumeHint')}</p>}
           </div>
         )}
 
@@ -90,7 +92,7 @@ const PauseScreen: React.FC<PauseScreenProps> = ({
               onClick={onResume}
               autoFocus
             >
-              <span aria-hidden="true">▶</span> Resume
+              <span aria-hidden="true">▶</span> {t('pause.resume')}
             </button>
           </div>
         )}
@@ -101,7 +103,7 @@ const PauseScreen: React.FC<PauseScreenProps> = ({
           <div className="pause-screen__actions">
             {onQuit && (
               <button type="button" className="touch-btn touch-btn--ghost" onClick={onQuit}>
-                Quit to Menu
+                {t('pause.quitToMenu')}
               </button>
             )}
             {onRestart && (
@@ -111,7 +113,7 @@ const PauseScreen: React.FC<PauseScreenProps> = ({
                 onClick={onRestart}
                 autoFocus
               >
-                <span aria-hidden="true">▶</span> New Game
+                <span aria-hidden="true">▶</span> {t('menu.newGame')}
               </button>
             )}
           </div>

@@ -97,6 +97,34 @@ export class AIEconomicManager {
   }
 
   /**
+   * Gold per turn this civ's rate controller will actually defend.
+   *
+   * The single definition of "income I can plan against", shared by the army
+   * cap (`sustainableUnits`) and the naval doctrine (`AutoProduction`). Planning
+   * against `maxTaxIncome` — the 100 %-tax figure — sized fleets for money the
+   * civ never collected: the controller holds 35 % while healthy and only rises
+   * toward the government's cap in a crisis, so the surplus was 1.25–2.9× too
+   * high and hulls were built that got disbanded again. Planning against the
+   * civ's *current* rate fails the other way (a science push at 10 % tax would
+   * cap the fleet at zero), which is why this uses the same ceiling
+   * `adjustRatesForAI` enforces.
+   */
+  planningIncome(civ: Civilization): number {
+    const maxTaxIncome = this.econ.maxTaxIncome(civ);
+    const maxSpecGold = this.econ.maxSpecialistGold(civ);
+
+    const cities = (this.gameEngine?.cities ?? []).filter(
+      (c: City) => c.civilizationId === civ.id,
+    );
+    const planningTax = this.policyTaxRate(
+      civ,
+      this.policyLuxury(civ, cities),
+      this.inDeficit(civ) ? AI_SCIENCE_DEEP_FLOOR : AI_SCIENCE_FLOOR,
+    );
+    return Math.floor(maxTaxIncome * planningTax) + maxSpecGold;
+  }
+
+  /**
    * The number of units a civ can sustain without a permanent upkeep deficit.
    *
    * The cap has to answer one question: *if I build this army, will the rate
@@ -122,20 +150,11 @@ export class AIEconomicManager {
     const civId = civ?.id;
     if (civId == null) return 0;
 
-    const maxTaxIncome = this.econ.maxTaxIncome(civ);
-    const maxSpecGold = this.econ.maxSpecialistGold(civ);
-
-    const cities = (this.gameEngine?.cities ?? []).filter(
-      (c: City) => c.civilizationId === civId,
-    );
-    const planningTax = this.policyTaxRate(
-      civ,
-      this.policyLuxury(civ, cities),
-      this.inDeficit(civ) ? AI_SCIENCE_DEEP_FLOOR : AI_SCIENCE_FLOOR,
-    );
-
-    const projectedIncome =
-      Math.floor(maxTaxIncome * planningTax) + maxSpecGold;
+    // One definition of plannable income, shared with the naval doctrine — see
+    // `planningIncome`. It is deliberately NOT `maxTaxIncome` (the 100 %-tax
+    // figure the civ will never collect) and not the civ's current rate either
+    // (a science push at 10 % tax would cap the army at zero).
+    const projectedIncome = this.planningIncome(civ);
 
     // ALWAYS divert 10% of projected income to the reserve, not only while the
     // reserve is short. With the old `min(shortfall, …)` a civ that happened to
@@ -339,8 +358,7 @@ export class AIEconomicManager {
   private luxuryNeedPct(civ: Civilization, cities: City[]): number {
     const gov = getGovernment(civ?.government);
     if (!gov) return 0;
-    let maxNeed = 0;
-    let minAfterCommerce = Infinity;
+    let maxNeedPct = 0;
 
     for (const city of cities) {
       const population = city?.population ?? 1;
@@ -358,16 +376,23 @@ export class AIEconomicManager {
       // said so, and the answer came out `min(0, 30, …) = 0 %` luxury — so a
       // disordered city got no relief from the rates either. Only specialists
       // that actually exist count here.
+      //
+      // Building happiness counts for exactly the same reason: a city holding
+      // two temples is already content, and a planner that cannot see them
+      // divides the empire's commerce into luxury nobody needs. Omitting it
+      // made `luxuryNeedPct` return 100 % for a pop-4 city with two temples
+      // (happiness 4 vs unhappiness 4), which the caller then capped to 30 %
+      // — a third of the empire's commerce spent on a disorder that was never
+      // going to happen.
       const nonLuxHappiness =
         specLuxury
         + martialLawBonus
         + (gov.happinessBonus ?? 0)
         + 2 // base contentment
+        + (this.econ.buildingHappinessForCity?.(city) ?? 0)
         + (this.econ.wonderHappinessForCity?.(city) ?? 0); // a wonder's content is already ours
-      maxNeed = Math.max(
-        maxNeed,
-        Math.max(0, unhappiness - nonLuxHappiness),
-      );
+      const need = Math.max(0, unhappiness - nonLuxHappiness);
+      if (need <= 0) continue;
 
       const commerce = this.econ.cityCommerce(city);
       const effective = commerce * (1 - (gov.commercePenalty ?? 0));
@@ -377,13 +402,19 @@ export class AIEconomicManager {
           effective - CityUtils.calculateCorruption(city, civ, effective),
         ),
       );
-      if (after > 0) minAfterCommerce = Math.min(minAfterCommerce, after);
+      if (after <= 0) continue;
+
+      // PER CITY, not across cities. The old form took the worst deficit in
+      // the empire over the SMALLEST commerce of any city that had any, so one
+      // hard-up town with a two-commerce neighbour set the luxury rate for
+      // everybody — a rate sized for a city that did not exist.
+      maxNeedPct = Math.max(
+        maxNeedPct,
+        Math.ceil((need * 100) / after),
+      );
     }
 
-    if (maxNeed <= 0 || !Number.isFinite(minAfterCommerce)) return 0;
-    return Math.min(
-      100,
-      Math.ceil((maxNeed * 100) / minAfterCommerce),
-    );
+    if (maxNeedPct <= 0) return 0;
+    return Math.min(100, maxNeedPct);
   }
 }

@@ -12,6 +12,11 @@
   gap: 12px;
 }
 
+/* Language section: grid first, then the "current language" note under it. */
+.settings-language-note {
+  margin-top: 10px;
+}
+
 /* ---- Master switches ----------------------------------------------------- */
 
 .settings-toggles {

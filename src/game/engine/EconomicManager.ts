@@ -1139,6 +1139,19 @@ export class EconomicManager {
     return { ...effective, ...happiness };
   }
 
+  /**
+   * Happiness this city's buildings contribute, on its own.
+   *
+   * Public because the AI's luxury planner reasons about the same number the
+   * happiness total uses: a planner that cannot see a city's temples asks the
+   * empire to spend commerce on contentment it already owns (`luxuryNeedPct`
+   * returned 100 % for a pop-4 city holding two temples, which was then capped
+   * to 30 % of all commerce).
+   */
+  buildingHappinessForCity(city: City): number {
+    return this.buildingHappiness(city);
+  }
+
   private buildingHappiness(city: City): number {
     const buildings = city?.buildings ?? [];
     const wonderEffects = this.gameEngine?.wonderEffects;

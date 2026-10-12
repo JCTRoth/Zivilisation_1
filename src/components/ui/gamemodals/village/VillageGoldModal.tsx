@@ -1,4 +1,5 @@
 import GameModal from '../ModalShell';
+import { useTranslation } from '@/i18n/useTranslation';
 import type { VillageResult } from '../../../../../types/game';
 
 interface VillageGoldModalProps {
@@ -11,6 +12,7 @@ interface VillageGoldModalProps {
  * (Civ1: 25, 50, or 100).
  */
 function VillageGoldModal({ result, onHide }: VillageGoldModalProps) {
+  const { t } = useTranslation();
   const gold = result.goldAmount ?? 50;
   return (
     <GameModal
@@ -18,13 +20,13 @@ function VillageGoldModal({ result, onHide }: VillageGoldModalProps) {
       onClose={onHide}
       tone="gold"
       icon="🪙"
-      artLabel="a buried hoard"
-      eyebrow="A Village Encounter"
-      title="Valuable Metals"
-      lede="The villagers kneel, bring out chests that have waited a hundred years in the earth, and lay them at your feet. Some of it is yours by right of passage."
+      artLabel={t('village.gold.art')}
+      eyebrow={t('village.eyebrow')}
+      title={t('village.gold.title')}
+      lede={t('village.gold.lede')}
       actions={
         <button type="button" className="touch-btn touch-btn--primary" onClick={onHide}>
-          Accept the Tribute
+          {t('village.gold.action')}
         </button>
       }
     >
@@ -33,14 +35,13 @@ function VillageGoldModal({ result, onHide }: VillageGoldModalProps) {
           <span className="gm-stat-value">
             <span className="gm-stat-icon" aria-hidden="true">🪙</span>+{gold}
           </span>
-          <span className="gm-stat-label">Gold for your treasury</span>
+          <span className="gm-stat-label">{t('village.gold.stat')}</span>
         </div>
       </div>
       <div className="gm-section">
-        <div className="gm-section-title">What the elders said</div>
+        <div className="gm-section-title">{t('village.gold.section')}</div>
         <p className="gm-prose mb-0">
-          They have no use for it where they are going — and an empire that passes in peace is
-          better than one that passes in pieces. Spend it well.
+          {t('village.gold.prose')}
         </p>
       </div>
     </GameModal>

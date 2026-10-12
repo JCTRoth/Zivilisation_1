@@ -1,5 +1,6 @@
 import React from 'react';
 import GameModal from './ModalShell';
+import { useTranslation } from '@/i18n/useTranslation';
 import type { CombatReportNotice } from '../../../../types/game';
 
 interface CombatReportModalProps {
@@ -34,6 +35,8 @@ const CombatReportModal: React.FC<CombatReportModalProps> = ({
   onContinue,
   onCentre,
 }) => {
+  const { t } = useTranslation();
+
   if (!notice) return null;
 
   const attackerLabel = notice.attackerName || notice.attackerType;
@@ -41,19 +44,22 @@ const CombatReportModal: React.FC<CombatReportModalProps> = ({
   const aDefender = /^aeiouAEIOU/.test(defenderLabel) ? `an ${defenderLabel}` : `a ${defenderLabel}`;
   const title = humanWon
     ? (notice.cityName
-      ? `${attackerLabel} storms ${notice.cityName}`
-      : `${attackerLabel} destroys ${aDefender}`)
+      ? t('combat.title.storms', { unit: attackerLabel, city: notice.cityName })
+      : t('combat.title.destroys', { unit: attackerLabel, defender: defenderLabel, defenderWithArticle: aDefender }))
     : (notice.cityName
-      ? `${notice.cityName} could not hold`
-      : `${/^aeiouAEIOU/.test(attackerLabel) ? 'An' : 'A'} ${attackerLabel} was lost`);
+      ? t('combat.title.cityLost', { city: notice.cityName })
+      : t('combat.title.unitLost', {
+        unit: attackerLabel,
+        unitWithArticle: `${/^aeiouAEIOU/.test(attackerLabel) ? 'An' : 'A'} ${attackerLabel}`,
+      }));
 
   const lede = humanWon
     ? (notice.cityName
-      ? <>Your men broke the line at <strong>{notice.cityName}</strong>. The tile is yours now — if anyone still stands on it.</>
-      : <>Your {attackerLabel} closed the distance and finished the fight. The field belongs to you.</>)
+      ? <>{t('combat.lede.cityWonBefore')}<strong>{notice.cityName}</strong>{t('combat.lede.cityWonAfter')}</>
+      : <>{t('combat.lede.unitWon', { unit: attackerLabel })}</>)
     : (notice.cityName
-      ? <>The defenders of <strong>{notice.cityName}</strong> held — and your {attackerLabel} paid for the attempt.</>
-      : <>Your {defenderLabel} was cut down at ({notice.col}, {notice.row}). The survivors fell back through the smoke.</>);
+      ? <>{t('combat.lede.cityLostBefore')}<strong>{notice.cityName}</strong>{t('combat.lede.cityLostAfter', { unit: attackerLabel })}</>
+      : <>{t('combat.lede.unitLost', { unit: defenderLabel, col: notice.col, row: notice.row })}</>);
 
   return (
     <GameModal
@@ -62,16 +68,16 @@ const CombatReportModal: React.FC<CombatReportModalProps> = ({
       size="lg"
       tone={humanWon ? 'success' : 'danger'}
       icon={humanWon ? '⚔️' : '🛡️'}
-      artLabel="the field of battle"
+      artLabel={t('combat.artLabel')}
       dialogClassName="combat-report-modal"
-      eyebrow={`${humanWon ? 'Victory' : 'Defeat'} · ${stampLabel}`}
+      eyebrow={humanWon ? t('combat.eyebrowVictory', { stamp: stampLabel }) : t('combat.eyebrowDefeat', { stamp: stampLabel })}
       title={title}
       lede={lede}
       actions={
         <>
           <span className="gm-actions-spacer" />
           <button type="button" className="touch-btn touch-btn--ghost" onClick={onCentre}>
-            Centre on Battle
+            {t('combat.centre')}
           </button>
           <button
             type="button"
@@ -79,7 +85,7 @@ const CombatReportModal: React.FC<CombatReportModalProps> = ({
             onClick={onContinue}
             autoFocus
           >
-            {humanWon ? 'Press On' : 'Rally the Survivors'}
+            {humanWon ? t('combat.pressOn') : t('combat.rally')}
           </button>
         </>
       }
@@ -91,7 +97,7 @@ const CombatReportModal: React.FC<CombatReportModalProps> = ({
             {attackerLabel}
           </span>
           <span className="gm-stat-label">
-            {notice.attackerSurvived ? `${notice.attackerHealthAfter} HP left` : 'Destroyed'}
+            {notice.attackerSurvived ? t('combat.hpLeft', { hp: notice.attackerHealthAfter }) : t('combat.destroyed')}
           </span>
         </div>
         <div className={`gm-stat${humanWon ? '' : ' gm-stat--accent'}`}>
@@ -100,34 +106,33 @@ const CombatReportModal: React.FC<CombatReportModalProps> = ({
             {defenderLabel}
           </span>
           <span className="gm-stat-label">
-            {notice.defenderSurvived ? `${notice.defenderHealthAfter} HP left` : 'Destroyed'}
+            {notice.defenderSurvived ? t('combat.hpLeft', { hp: notice.defenderHealthAfter }) : t('combat.destroyed')}
           </span>
         </div>
       </div>
 
       <div className="gm-section">
-        <div className="gm-section-title">The round, by the numbers</div>
+        <div className="gm-section-title">{t('combat.roundByNumbers')}</div>
         <div className="gm-kv-grid">
-          <div className="gm-kv">Attacker: <b>{attackerCivName ?? '—'}</b></div>
-          <div className="gm-kv">Defender: <b>{defenderCivName ?? '—'}</b></div>
-          <div className="gm-kv">Damage dealt: <b>{notice.attackerDamage} HP</b></div>
-          <div className="gm-kv">Damage taken: <b>{notice.defenderDamage} HP</b></div>
+          <div className="gm-kv">{t('combat.attacker')}<b>{attackerCivName ?? '—'}</b></div>
+          <div className="gm-kv">{t('combat.defender')}<b>{defenderCivName ?? '—'}</b></div>
+          <div className="gm-kv">{t('combat.damageDealt')}<b>{t('combat.hpValue', { hp: notice.attackerDamage })}</b></div>
+          <div className="gm-kv">{t('combat.damageTaken')}<b>{t('combat.hpValue', { hp: notice.defenderDamage })}</b></div>
         </div>
       </div>
 
       <div className="gm-section">
-        <div className="gm-section-title">Where it happened</div>
+        <div className="gm-section-title">{t('combat.whereHappened')}</div>
         <div className="gm-kv-grid">
-          <div className="gm-kv">Tile: <b>({notice.col}, {notice.row})</b></div>
-          <div className="gm-kv">Ground: <b>{terrainName ?? 'Unknown'}</b></div>
-          {notice.cityName && <div className="gm-kv">City: <b>{notice.cityName}</b></div>}
+          <div className="gm-kv">{t('combat.tile')}<b>({notice.col}, {notice.row})</b></div>
+          <div className="gm-kv">{t('combat.ground')}<b>{terrainName ?? t('combat.unknown')}</b></div>
+          {notice.cityName && <div className="gm-kv">{t('combat.city')}<b>{notice.cityName}</b></div>}
         </div>
       </div>
 
       {!humanWon && (
         <div className="gm-note">
-          A unit that falls is gone for good. Fortify before you attack next time — a fortified
-          defender on favourable ground is a far harder nut to crack.
+          {t('combat.note')}
         </div>
       )}
     </GameModal>

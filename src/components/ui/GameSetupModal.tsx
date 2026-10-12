@@ -3,25 +3,45 @@ import { Form } from 'react-bootstrap';
 import { CIVILIZATIONS, DIFFICULTY_LEVELS } from '@/data/GameData';
 import { LEADER_PORTRAITS } from '@/data/LeaderPortraits';
 import LeaderPortrait from '@/components/ui/LeaderPortrait';
+import { useTranslation } from '@/i18n/useTranslation';
+import { translateDynamic, type TranslationKey } from '@/i18n';
+import { tGovernmentName } from '@/i18n/dataNames';
 import '../../styles/gameModalShell.css';
 import '../../styles/gameSetupModal.css';
 import { isAutoScenario } from '@/data/GameConstants';
 
-/** Readable names for the map presets — the raw ids are for the engine. */
-const MAP_TYPE_LABELS: Record<string, string> = {
-  NORMAL_SKIRMISH: 'Normal Skirmish',
-  EARTH: 'Earth',
-  CLOSEUP_1V1: 'Close up 1vs1',
-  CLOSEUP_BEATUP: 'Close up beat em up',
-  NAVAL_CLOSEUP: 'Naval close up',
-  NO_SETTLERS: 'No Settlers',
-  MANY_CITIES: 'Many Cities',
-  TECH_LEVEL_10: 'Tech. Level 10',
-  ALL_UNITS: 'All Units Showcase',
-  AI_VS_AI: 'Computer vs Computer',
-  AI_VS_AI_SMALL: 'Computer vs Computer (Small)',
-  AI_VS_AI_NAVAL: 'Computer vs Computer · Naval',
-  AI_VS_AI_NAVAL_TROPICAL: 'Computer vs Computer · Tropical',
+/** Translation keys for the map presets — the raw ids are for the engine. */
+const MAP_TYPE_LABEL_KEYS: Record<string, TranslationKey> = {
+  NORMAL_SKIRMISH: 'setup.mapLabel.NORMAL_SKIRMISH',
+  EARTH: 'setup.mapLabel.EARTH',
+  CLOSEUP_1V1: 'setup.mapLabel.CLOSEUP_1V1',
+  CLOSEUP_BEATUP: 'setup.mapLabel.CLOSEUP_BEATUP',
+  NAVAL_CLOSEUP: 'setup.mapLabel.NAVAL_CLOSEUP',
+  NO_SETTLERS: 'setup.mapLabel.NO_SETTLERS',
+  MANY_CITIES: 'setup.mapLabel.MANY_CITIES',
+  TECH_LEVEL_10: 'setup.mapLabel.TECH_LEVEL_10',
+  ALL_UNITS: 'setup.mapLabel.ALL_UNITS',
+  AI_VS_AI: 'setup.mapLabel.AI_VS_AI',
+  AI_VS_AI_SMALL: 'setup.mapLabel.AI_VS_AI_SMALL',
+  AI_VS_AI_NAVAL: 'setup.mapLabel.AI_VS_AI_NAVAL',
+  AI_VS_AI_NAVAL_TROPICAL: 'setup.mapLabel.AI_VS_AI_NAVAL_TROPICAL',
+};
+
+/** Full option text of the map preset select ("Label · description"). */
+const MAP_TYPE_OPTION_KEYS: Record<string, TranslationKey> = {
+  NORMAL_SKIRMISH: 'setup.mapOption.NORMAL_SKIRMISH',
+  EARTH: 'setup.mapOption.EARTH',
+  CLOSEUP_1V1: 'setup.mapOption.CLOSEUP_1V1',
+  CLOSEUP_BEATUP: 'setup.mapOption.CLOSEUP_BEATUP',
+  NAVAL_CLOSEUP: 'setup.mapOption.NAVAL_CLOSEUP',
+  NO_SETTLERS: 'setup.mapOption.NO_SETTLERS',
+  MANY_CITIES: 'setup.mapOption.MANY_CITIES',
+  TECH_LEVEL_10: 'setup.mapOption.TECH_LEVEL_10',
+  ALL_UNITS: 'setup.mapOption.ALL_UNITS',
+  AI_VS_AI: 'setup.mapOption.AI_VS_AI',
+  AI_VS_AI_SMALL: 'setup.mapOption.AI_VS_AI_SMALL',
+  AI_VS_AI_NAVAL: 'setup.mapOption.AI_VS_AI_NAVAL',
+  AI_VS_AI_NAVAL_TROPICAL: 'setup.mapOption.AI_VS_AI_NAVAL_TROPICAL',
 };
 
 type GameSetupModalProps = {
@@ -47,14 +67,17 @@ type GameSetupModalProps = {
  * table, sealed orders). The player is the mind above the board; this screen
  * is where they claim the chair.
  *
- * e2e contract (do not rename):
- *   h2.modal-title ⊃ "Zivilisation 1" · "Choose Your Civilization" /
- *   "Fine-tune Your Challenge" · .setup-civ-card · .setup-footer ·
- *   .setup-footer__selected-value · .setup-summary · .setup-summary-title
- *   ("Your Setup") · LAST select.setup-setting__control = map preset ·
- *   buttons "Next →" / "← Previous" / "🏛️ Start Game"
+ * e2e contract (do not rename): the load-bearing strings ("Zivilisation 1",
+ * "Choose Your Civilization" / "Fine-tune Your Challenge", "Your Setup",
+ * "Next →" / "← Previous" / "🏛️ Start Game") live in the English dictionary
+ * (`setup.*`), so with the default language the rendered text is identical.
+ * Additionally: .setup-civ-card · .setup-footer · .setup-footer__selected-value
+ * · .setup-summary · .setup-summary-title · LAST select.setup-setting__control
+ * = map preset.
  */
 function GameSetupModal({ show, onStart }: GameSetupModalProps) {
+  // Subscribes the whole wizard to language changes.
+  const { t } = useTranslation();
   // Drag-to-scroll on empty areas of the war table (desktop convenience).
   const bodyRef = useRef<HTMLDivElement>(null);
   const isPanningRef = useRef(false);
@@ -183,21 +206,39 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   const sortedCivilizations = useMemo(() => [...CIVILIZATIONS].sort((a, b) => a.name.localeCompare(b.name)), []);
 
   const selectedCivData = CIVILIZATIONS[selectedCiv] ?? CIVILIZATIONS[0];
-  const difficultyName = DIFFICULTY_LEVELS[difficulty]?.name ?? difficulty;
-  const mapTypeLabel = MAP_TYPE_LABELS[mapType] ?? mapType;
+  const difficultyName = translateDynamic(
+    `data.difficulty.${difficulty}`,
+    undefined,
+    DIFFICULTY_LEVELS[difficulty]?.name ?? difficulty,
+  );
+  const mapTypeLabel = translateDynamic(
+    `setup.mapLabel.${mapType}`,
+    undefined,
+    MAP_TYPE_LABEL_KEYS[mapType] ? t(MAP_TYPE_LABEL_KEYS[mapType]) : mapType,
+  );
   const leaderPortrait = LEADER_PORTRAITS[selectedCivData.leader] ?? null;
+
+  // Slider value words (long forms on the sliders, short forms in the summary).
+  const landMassNames = [t('setup.landMass.0'), t('setup.landMass.1'), t('setup.landMass.2')];
+  const temperatureNames = [t('setup.temperature.0'), t('setup.temperature.1'), t('setup.temperature.2')];
+  const climateNames = [t('setup.climate.0'), t('setup.climate.1'), t('setup.climate.2')];
+  const ageNames = [t('setup.age.0'), t('setup.age.1'), t('setup.age.2')];
+  const landMassShort = [t('setup.landMassShort.0'), t('setup.landMassShort.1'), t('setup.landMassShort.2')];
+  const temperatureShort = [t('setup.temperatureShort.0'), t('setup.temperatureShort.1'), t('setup.temperatureShort.2')];
+  const climateShort = [t('setup.climateShort.0'), t('setup.climateShort.1'), t('setup.climateShort.2')];
+  const ageShort = [t('setup.ageShort.0'), t('setup.ageShort.1'), t('setup.ageShort.2')];
 
   const stepCopy =
     currentStep === 1
       ? {
-          eyebrow: 'The War Council · I',
-          title: 'Choose Your Civilization',
-          lede: 'You are the mind above the board — not a piece on it. Every order you give will be carried out by thousands. Choose the people who will carry your will through the ages.',
+          eyebrow: t('setup.step1Eyebrow'),
+          title: t('setup.step1Title'),
+          lede: t('setup.step1Lede'),
         }
       : {
-          eyebrow: 'The War Council · II',
-          title: 'Fine-tune Your Challenge',
-          lede: 'The table is laid with the known world. Set the rivals, the land, and the weight of history — then give the first order.',
+          eyebrow: t('setup.step2Eyebrow'),
+          title: t('setup.step2Title'),
+          lede: t('setup.step2Lede'),
         };
 
   const nextStep = () => {
@@ -225,7 +266,7 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   if (!show) return null;
 
   return (
-    <div className="setup-screen" role="dialog" aria-modal="true" aria-label="Game setup">
+    <div className="setup-screen" role="dialog" aria-modal="true" aria-label={t('setup.ariaDialog')}>
       {/* Pure-CSS 3D war room: sky, receding walls, a tilted map table,
           floating candle orbs. No image assets — only transforms and light. */}
       <div className="setup-screen__world" ref={worldRef} aria-hidden="true">
@@ -255,7 +296,7 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
         <header className="setup-nameplate">
           <h2 className="modal-title">🏛️ Zivilisation 1</h2>
           <div className="setup-nameplate__right">
-            <span className="setup-nameplate__tag">War Council</span>
+            <span className="setup-nameplate__tag">{t('setup.nameplateTag')}</span>
             <span className="setup-nameplate__steps" aria-hidden="true">
               <span className={`setup-nameplate__dot${currentStep >= 1 ? ' is-on' : ''}`} />
               <span className={`setup-nameplate__dot${currentStep >= 2 ? ' is-on' : ''}`} />
@@ -296,12 +337,12 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                     {civIcons[selectedCivData.name] ?? selectedCivData.name.charAt(0)}
                   </div>
                   <div className="setup-dossier__body">
-                    <span className="setup-dossier__kicker">Your banner</span>
+                    <span className="setup-dossier__kicker">{t('setup.yourBannerKicker')}</span>
                     <strong className="setup-dossier__name" style={{ color: selectedCivData.color }}>
                       {selectedCivData.name}
                     </strong>
                     <span className="setup-dossier__leader">
-                      Commander-in-chief · <strong>{selectedCivData.leader}</strong>
+                      {t('setup.commanderInChief')} · <strong>{selectedCivData.leader}</strong>
                     </span>
                     <span className="setup-dossier__swatch" style={{ background: selectedCivData.color }} />
                   </div>
@@ -323,7 +364,7 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                 </div>
 
                 <div className="gm-section setup-peoples">
-                  <div className="gm-section-title">Raise Your Banner</div>
+                  <div className="gm-section-title">{t('setup.raiseBanner')}</div>
                   <div className="setup-civ-list" role="list">
                     {sortedCivilizations.map((civ) => {
                       const originalIndex = CIVILIZATIONS.findIndex((orig) => orig.name === civ.name);
@@ -366,28 +407,28 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
             {currentStep === 2 && (
               <section className="setup-section" aria-labelledby="setup-step-settings">
                 <div className="gm-section">
-                  <div className="gm-section-title">Terms of Engagement</div>
+                  <div className="gm-section-title">{t('setup.terms')}</div>
                   <div className="setup-settings-grid">
                     <div className="setup-setting">
-                      <span className="setup-setting__label">Difficulty</span>
+                      <span className="setup-setting__label">{t('setup.difficulty')}</span>
                       <Form.Select
                         value={difficulty}
                         onChange={(e) => setDifficulty(e.target.value)}
                         className="setup-setting__control"
-                        aria-label="Difficulty"
+                        aria-label={t('setup.difficulty')}
                       >
                         {difficultyOptions.map(({ id, label }) => (
                           <option key={id} value={id}>
-                            {label}
+                            {translateDynamic(`data.difficulty.${id}`, undefined, label)}
                           </option>
                         ))}
                       </Form.Select>
-                      <span className="setup-setting__hint">Affects AI bonuses and barbarian activity.</span>
+                      <span className="setup-setting__hint">{t('setup.difficultyHint')}</span>
                     </div>
 
                     <div className="setup-setting">
                       <span className="setup-setting__label">
-                        Civilizations in Play <span className="setup-setting__value">{numCivilizations}</span>
+                        {t('setup.civsCount')} <span className="setup-setting__value">{numCivilizations}</span>
                       </span>
                       <Form.Range
                         min="2"
@@ -395,55 +436,43 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                         value={numCivilizations}
                         onChange={(e) => setNumCivilizations(Number(e.target.value))}
                         className="setup-setting__control"
-                        aria-label="Civilizations in play"
+                        aria-label={t('setup.civsCount')}
                       />
-                      <span className="setup-setting__hint">More rivals mean tight borders and faster discoveries.</span>
+                      <span className="setup-setting__hint">{t('setup.civsCountHint')}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="gm-section">
-                  <div className="gm-section-title">The World You Will Claim</div>
+                  <div className="gm-section-title">{t('setup.worldSection')}</div>
                   <div className="setup-settings-grid">
                     <div className="setup-setting">
-                      <span className="setup-setting__label">Map Type</span>
+                      <span className="setup-setting__label">{t('setup.mapType')}</span>
                       <Form.Select
                         value={mapType}
                         onChange={(e) => setMapType(e.target.value)}
                         className="setup-setting__control"
-                        aria-label="Map type"
+                        aria-label={t('setup.mapType')}
                       >
-                        <option value="NORMAL_SKIRMISH">Normal Skirmish · Standard game setup</option>
-                        <option value="EARTH">Earth · 180×90 real-world geography</option>
-                        <option value="CLOSEUP_1V1">Close up 1vs1 · 20x20 map duel</option>
-                        <option value="CLOSEUP_BEATUP">Close up beat em up · 20x20 combat focus</option>
-                        <option value="NAVAL_CLOSEUP">Naval close up · 20x20 water map with fish</option>
-                        <option value="NO_SETTLERS">No Settlers · Start with military units</option>
-                        <option value="MANY_CITIES">Many Cities · 4 cities with infrastructure</option>
-                        <option value="TECH_LEVEL_10">Tech. Level 10 · All technologies researched</option>
-                        <option value="ALL_UNITS">All Units Showcase · Every unit type on the board</option>
-                        <option value="AI_VS_AI">Computer vs Computer · Auto-playing AI duel</option>
-                        <option value="AI_VS_AI_SMALL">Computer vs Computer (Small) · Tall narrow corridor</option>
-                        <option value="AI_VS_AI_NAVAL">Computer vs Computer · Naval Archipelago (8 islands, ferries)</option>
-                        <option value="AI_VS_AI_NAVAL_TROPICAL">
-                          Computer vs Computer · Tropical Archipelago (8 islands, jungle, mountain)
-                        </option>
+                        {Object.entries(MAP_TYPE_OPTION_KEYS).map(([id, key]) => (
+                          <option key={id} value={id}>
+                            {t(key)}
+                          </option>
+                        ))}
                       </Form.Select>
-                      <span className="setup-setting__hint">Choose your game mode.</span>
+                      <span className="setup-setting__hint">{t('setup.mapTypeHint')}</span>
                     </div>
                   </div>
                 </div>
 
                 {mapType !== 'NAVAL_CLOSEUP' && (
                   <div className="gm-section">
-                    <div className="gm-section-title">The Shape of the Land</div>
+                    <div className="gm-section-title">{t('setup.landSection')}</div>
                     <div className="setup-settings-grid setup-settings-grid--pairs">
                       <div className="setup-setting">
                         <span className="setup-setting__label">
-                          Land Mass{' '}
-                          <span className="setup-setting__value">
-                            {['Sparse Islands', 'Standard', 'Pangaea'][landMass]}
-                          </span>
+                          {t('setup.landMass')}{' '}
+                          <span className="setup-setting__value">{landMassNames[landMass]}</span>
                         </span>
                         <Form.Range
                           min="0"
@@ -452,17 +481,15 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                           value={landMass}
                           onChange={(e) => setLandMass(Number(e.target.value))}
                           className="setup-setting__control"
-                          aria-label="Land mass"
+                          aria-label={t('setup.landMass')}
                         />
-                        <span className="setup-setting__hint">How much land appears on the map.</span>
+                        <span className="setup-setting__hint">{t('setup.landMassHint')}</span>
                       </div>
 
                       <div className="setup-setting">
                         <span className="setup-setting__label">
-                          Temperature{' '}
-                          <span className="setup-setting__value">
-                            {['Hot (Desert)', 'Temperate', 'Cold (Arctic)'][temperature]}
-                          </span>
+                          {t('setup.temperature')}{' '}
+                          <span className="setup-setting__value">{temperatureNames[temperature]}</span>
                         </span>
                         <Form.Range
                           min="0"
@@ -471,17 +498,15 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                           value={temperature}
                           onChange={(e) => setTemperature(Number(e.target.value))}
                           className="setup-setting__control"
-                          aria-label="Temperature"
+                          aria-label={t('setup.temperature')}
                         />
-                        <span className="setup-setting__hint">Shifts the latitude-based biome distribution.</span>
+                        <span className="setup-setting__hint">{t('setup.temperatureHint')}</span>
                       </div>
 
                       <div className="setup-setting">
                         <span className="setup-setting__label">
-                          Climate{' '}
-                          <span className="setup-setting__value">
-                            {['Dry (Plains)', 'Moderate', 'Wet (Jungle)'][climate]}
-                          </span>
+                          {t('setup.climate')}{' '}
+                          <span className="setup-setting__value">{climateNames[climate]}</span>
                         </span>
                         <Form.Range
                           min="0"
@@ -490,14 +515,14 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                           value={climate}
                           onChange={(e) => setClimate(Number(e.target.value))}
                           className="setup-setting__control"
-                          aria-label="Climate"
+                          aria-label={t('setup.climate')}
                         />
-                        <span className="setup-setting__hint">Controls moisture and vegetation density.</span>
+                        <span className="setup-setting__hint">{t('setup.climateHint')}</span>
                       </div>
 
                       <div className="setup-setting">
                         <span className="setup-setting__label">
-                          Age <span className="setup-setting__value">{['Young (Flat)', 'Mature', 'Old (Mountains)'][age]}</span>
+                          {t('setup.age')} <span className="setup-setting__value">{ageNames[age]}</span>
                         </span>
                         <Form.Range
                           min="0"
@@ -506,290 +531,286 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                           value={age}
                           onChange={(e) => setAge(Number(e.target.value))}
                           className="setup-setting__control"
-                          aria-label="Age"
+                          aria-label={t('setup.age')}
                         />
-                        <span className="setup-setting__hint">Older maps have more hills and mountains.</span>
+                        <span className="setup-setting__hint">{t('setup.ageHint')}</span>
                       </div>
                     </div>
                   </div>
                 )}
 
                 <div className="gm-section setup-dev">
-                  <div className="gm-section-title">For the Architects</div>
+                  <div className="gm-section-title">{t('setup.devSection')}</div>
                   <Form.Check
                     type="checkbox"
                     id="devModeCheckbox"
-                    label="Dev Mode"
+                    label={t('setup.devMode')}
                     checked={devMode}
                     onChange={(e) => setDevMode(e.target.checked)}
                     className="setup-dev__check"
                   />
-                  <p className="gm-note">
-                    Lifts the fog and reveals what the map hides. Forced on for the computer-versus-computer
-                    scenarios, where somebody has to be able to watch.
-                  </p>
+                  <p className="gm-note">{t('setup.devNote')}</p>
                 </div>
 
                 {/* Sealed orders — everything your people ride out under */}
-                <div className="setup-summary" aria-label="Game summary">
+                <div className="setup-summary" aria-label={t('setup.summaryTitle')}>
                   <div className="setup-summary-header">
-                    <h4 className="setup-summary-title">Your Setup</h4>
-                    <span className="setup-summary-subtitle">
-                      Read the orders back once — your people ride out under them.
-                    </span>
+                    <h4 className="setup-summary-title">{t('setup.summaryTitle')}</h4>
+                    <span className="setup-summary-subtitle">{t('setup.summarySubtitle')}</span>
                   </div>
                   <div className="setup-summary-grid">
                     <div className="setup-summary-item">
-                      <span className="label">Civilization</span>
+                      <span className="label">{t('setup.summaryCiv')}</span>
                       <span className="value" style={{ color: selectedCivData.color }}>
                         {selectedCivData.name}
                       </span>
                     </div>
                     <div className="setup-summary-item">
-                      <span className="label">Leader</span>
+                      <span className="label">{t('setup.summaryLeader')}</span>
                       <span className="value">{selectedCivData.leader}</span>
                     </div>
                     <div className="setup-summary-item">
-                      <span className="label">Difficulty</span>
+                      <span className="label">{t('setup.difficulty')}</span>
                       <span className="value">{difficultyName}</span>
                     </div>
                     <div className="setup-summary-item">
-                      <span className="label">Civilizations</span>
+                      <span className="label">{t('setup.summaryCivilizations')}</span>
                       <span className="value">{numCivilizations}</span>
                     </div>
                     <div className="setup-summary-item">
-                      <span className="label">Map Type</span>
+                      <span className="label">{t('setup.mapType')}</span>
                       <span className="value">{mapTypeLabel}</span>
                     </div>
                     {mapType !== 'NAVAL_CLOSEUP' && (
                       <>
                         <div className="setup-summary-item">
-                          <span className="label">Land Mass</span>
-                          <span className="value">{['Sparse', 'Standard', 'Pangaea'][landMass]}</span>
+                          <span className="label">{t('setup.landMass')}</span>
+                          <span className="value">{landMassShort[landMass]}</span>
                         </div>
                         <div className="setup-summary-item">
-                          <span className="label">Temperature</span>
-                          <span className="value">{['Hot', 'Temperate', 'Cold'][temperature]}</span>
+                          <span className="label">{t('setup.temperature')}</span>
+                          <span className="value">{temperatureShort[temperature]}</span>
                         </div>
                         <div className="setup-summary-item">
-                          <span className="label">Climate</span>
-                          <span className="value">{['Dry', 'Moderate', 'Wet'][climate]}</span>
+                          <span className="label">{t('setup.climate')}</span>
+                          <span className="value">{climateShort[climate]}</span>
                         </div>
                         <div className="setup-summary-item">
-                          <span className="label">Age</span>
-                          <span className="value">{['Young', 'Mature', 'Old'][age]}</span>
+                          <span className="label">{t('setup.age')}</span>
+                          <span className="value">{ageShort[age]}</span>
                         </div>
                       </>
                     )}
                   </div>
                   <div className="setup-summary-details">
-                    <h5>Orders for the First Turn</h5>
+                    <h5>{t('setup.ordersTitle')}</h5>
                     {mapType === 'NORMAL_SKIRMISH' && (
                       <ul>
                         <li>
-                          Map: <strong>80x50 tiles</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.map80x50')}</strong>
                         </li>
                         <li>
-                          Year: <strong>4000 BC</strong>
+                          {t('setup.o.year')} <strong>{t('setup.v.year4000')}</strong>
                         </li>
                         <li>
-                          Units: <strong>1 Settler</strong>
+                          {t('setup.o.units')} <strong>{t('setup.v.oneSettler')}</strong>
                         </li>
                         <li>
-                          Treasury: <strong>50 Gold</strong>
+                          {t('setup.o.treasury')} <strong>{t('setup.v.gold50')}</strong>
                         </li>
                         <li>
-                          Tech: <strong>Irrigation, Mining, Roads</strong>
+                          {t('setup.o.tech')} <strong>{t('setup.v.startTechs')}</strong>
                         </li>
                         <li>
-                          Government: <strong>Despotism</strong>
+                          {t('setup.o.government')}{' '}
+                          <strong>{tGovernmentName('despotism', 'Despotism')}</strong>
                         </li>
                       </ul>
                     )}
                     {mapType === 'EARTH' && (
                       <ul>
                         <li>
-                          Map: <strong>180x90 tiles (Static world map)</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.mapEarth')}</strong>
                         </li>
                         <li>
-                          Source: <strong>Earth 180x90 v1.4</strong>
+                          {t('setup.o.source')} <strong>{t('setup.v.earthSource')}</strong>
                         </li>
                         <li>
-                          Year: <strong>4000 BC</strong>
+                          {t('setup.o.year')} <strong>{t('setup.v.year4000')}</strong>
                         </li>
                         <li>
-                          Units: <strong>1 Settler</strong>
+                          {t('setup.o.units')} <strong>{t('setup.v.oneSettler')}</strong>
                         </li>
                         <li>
-                          Treasury: <strong>50 Gold</strong>
+                          {t('setup.o.treasury')} <strong>{t('setup.v.gold50')}</strong>
                         </li>
                       </ul>
                     )}
                     {mapType === 'CLOSEUP_1V1' && (
                       <ul>
                         <li>
-                          Map: <strong>20x20 tiles (Small)</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.mapSmall')}</strong>
                         </li>
                         <li>
-                          Units: <strong>1 Settler</strong>
+                          {t('setup.o.units')} <strong>{t('setup.v.oneSettler')}</strong>
                         </li>
                         <li>
-                          Treasury: <strong>50 Gold</strong>
+                          {t('setup.o.treasury')} <strong>{t('setup.v.gold50')}</strong>
                         </li>
                         <li>
-                          Mode: <strong>Quick duel</strong>
+                          {t('setup.o.mode')} <strong>{t('setup.v.quickDuel')}</strong>
                         </li>
                       </ul>
                     )}
                     {mapType === 'CLOSEUP_BEATUP' && (
                       <ul>
                         <li>
-                          Map: <strong>20x20 tiles (Small)</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.mapSmall')}</strong>
                         </li>
                         <li>
-                          Units: <strong>1 Settler + 5 Military Units</strong>
+                          {t('setup.o.units')} <strong>{t('setup.v.settlerAnd5')}</strong>
                         </li>
                         <li>
-                          Treasury: <strong>50 Gold</strong>
+                          {t('setup.o.treasury')} <strong>{t('setup.v.gold50')}</strong>
                         </li>
                         <li>
-                          Mode: <strong>Combat-focused</strong>
+                          {t('setup.o.mode')} <strong>{t('setup.v.combatFocused')}</strong>
                         </li>
                       </ul>
                     )}
                     {mapType === 'NAVAL_CLOSEUP' && (
                       <ul>
                         <li>
-                          Map: <strong>20x20 tiles (Water only)</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.mapWater')}</strong>
                         </li>
                         <li>
-                          Units: <strong>2 Triremes</strong>
+                          {t('setup.o.units')} <strong>{t('setup.v.twoTriremes')}</strong>
                         </li>
                         <li>
-                          Resources: <strong>Fish available</strong>
+                          {t('setup.o.resources')} <strong>{t('setup.v.fishAvailable')}</strong>
                         </li>
                         <li>
-                          Mode: <strong>Naval warfare</strong>
+                          {t('setup.o.mode')} <strong>{t('setup.v.navalWarfare')}</strong>
                         </li>
                       </ul>
                     )}
                     {mapType === 'NO_SETTLERS' && (
                       <ul>
                         <li>
-                          Map: <strong>80x50 tiles</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.map80x50')}</strong>
                         </li>
                         <li>
-                          Units: <strong>5 Military Units (No Settlers)</strong>
+                          {t('setup.o.units')} <strong>{t('setup.v.noSettlersUnits')}</strong>
                         </li>
                         <li>
-                          Treasury: <strong>50 Gold</strong>
+                          {t('setup.o.treasury')} <strong>{t('setup.v.gold50')}</strong>
                         </li>
                         <li>
-                          Mode: <strong>Pure combat</strong>
+                          {t('setup.o.mode')} <strong>{t('setup.v.pureCombat')}</strong>
                         </li>
                       </ul>
                     )}
                     {mapType === 'MANY_CITIES' && (
                       <ul>
                         <li>
-                          Map: <strong>80x50 tiles</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.map80x50')}</strong>
                         </li>
                         <li>
-                          Cities: <strong>4 Cities with infrastructure</strong>
+                          {t('setup.o.cities')} <strong>{t('setup.v.fourCities')}</strong>
                         </li>
                         <li>
-                          Units: <strong>2 Warriors</strong>
+                          {t('setup.o.units')} <strong>{t('setup.v.twoWarriors')}</strong>
                         </li>
                         <li>
-                          Improvements: <strong>Roads &amp; Irrigation</strong>
+                          {t('setup.o.improvements')} <strong>{t('setup.v.roadsIrrigation')}</strong>
                         </li>
                         <li>
-                          Mode: <strong>City management focus</strong>
+                          {t('setup.o.mode')} <strong>{t('setup.v.cityFocus')}</strong>
                         </li>
                       </ul>
                     )}
                     {mapType === 'TECH_LEVEL_10' && (
                       <div className="map-type-description">
                         <span className="hint-icon">💡</span>
-                        <span>Start with all technologies researched. Best for testing advanced units.</span>
+                        <span>{t('setup.v.techLevel10Hint')}</span>
                       </div>
                     )}
                     {mapType === 'ALL_UNITS' && (
                       <div className="map-type-description">
                         <span className="hint-icon">🎮</span>
-                        <span>Every single unit type spawned on the board. Perfect for testing and showcasing all units.</span>
+                        <span>{t('setup.v.allUnitsHint')}</span>
                       </div>
                     )}
                     {mapType === 'AI_VS_AI' && (
                       <ul>
                         <li>
-                          Map: <strong>40x40 tiles</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.map40x40')}</strong>
                         </li>
                         <li>
-                          Players: <strong>All civilizations are AI</strong>
+                          {t('setup.o.players')} <strong>{t('setup.v.allAi')}</strong>
                         </li>
                         <li>
-                          Mode: <strong>Fully automatic — no human input</strong>
+                          {t('setup.o.mode')} <strong>{t('setup.v.autoNoInput')}</strong>
                         </li>
                         <li>
-                          Log: <strong>Every move is written to a log file</strong>
+                          {t('setup.o.log')} <strong>{t('setup.v.everyMoveLogged')}</strong>
                         </li>
                       </ul>
                     )}
                     {mapType === 'AI_VS_AI_NAVAL' && (
                       <ul>
                         <li>
-                          Map: <strong>96x60 tiles — 8 hand-tuned islands</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.mapNaval')}</strong>
                         </li>
                         <li>
-                          Players: <strong>All civilizations are AI, one island each</strong>
+                          {t('setup.o.players')} <strong>{t('setup.v.allAiOneIsland')}</strong>
                         </li>
                         <li>
-                          Mode: <strong>Fully automatic naval duel</strong>
+                          {t('setup.o.mode')} <strong>{t('setup.v.autoNavalDuel')}</strong>
                         </li>
                         <li>
-                          Requires: <strong>ferries — nobody can walk to the enemy</strong>
+                          {t('setup.o.requires')} <strong>{t('setup.v.ferriesRequired')}</strong>
                         </li>
                         <li>
-                          Log: <strong>Every move is written to a log file</strong>
+                          {t('setup.o.log')} <strong>{t('setup.v.everyMoveLogged')}</strong>
                         </li>
                       </ul>
                     )}
                     {mapType === 'AI_VS_AI_NAVAL_TROPICAL' && (
                       <ul>
                         <li>
-                          Map: <strong>96x60 tiles — 8 islands with tropical biomes</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.mapTropical')}</strong>
                         </li>
                         <li>
-                          Players: <strong>All civilizations are AI, one island each</strong>
+                          {t('setup.o.players')} <strong>{t('setup.v.allAiOneIsland')}</strong>
                         </li>
                         <li>
-                          Mode: <strong>Fully automatic naval duel</strong>
+                          {t('setup.o.mode')} <strong>{t('setup.v.autoNavalDuel')}</strong>
                         </li>
                         <li>
-                          Features: <strong>jungle, swamp, and a mountain-rich Dragon Island</strong>
+                          {t('setup.o.features')} <strong>{t('setup.v.tropicalFeatures')}</strong>
                         </li>
                         <li>
-                          Requires: <strong>ferries — nobody can walk to the enemy</strong>
+                          {t('setup.o.requires')} <strong>{t('setup.v.ferriesRequired')}</strong>
                         </li>
                         <li>
-                          Log: <strong>Every move is written to a log file</strong>
+                          {t('setup.o.log')} <strong>{t('setup.v.everyMoveLogged')}</strong>
                         </li>
                       </ul>
                     )}
                     {mapType === 'AI_VS_AI_SMALL' && (
                       <ul>
                         <li>
-                          Map: <strong>16x26 tiles (Tall, narrow corridor)</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.mapCorridor')}</strong>
                         </li>
                         <li>
-                          Players: <strong>All civilizations are AI</strong>
+                          {t('setup.o.players')} <strong>{t('setup.v.allAi')}</strong>
                         </li>
                         <li>
-                          Mode: <strong>Fully automatic — fast, tight combat</strong>
+                          {t('setup.o.mode')} <strong>{t('setup.v.fastTightCombat')}</strong>
                         </li>
                         <li>
-                          Log: <strong>Every move is written to a log file</strong>
+                          {t('setup.o.log')} <strong>{t('setup.v.everyMoveLogged')}</strong>
                         </li>
                       </ul>
                     )}
@@ -805,18 +826,20 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
           {currentStep === 1 && (
             <div className="setup-footer__selected">
               <span className="setup-footer__swatch" style={{ background: selectedCivData.color }} aria-hidden="true" />
-              <span className="setup-footer__selected-label">Your banner:</span>
+              <span className="setup-footer__selected-label">{t('setup.yourBanner')}</span>
               <span className="setup-footer__selected-value" style={{ color: selectedCivData.color }}>
                 {selectedCivData.name}
               </span>
-              <span className="setup-footer__selected-leader">led by {selectedCivData.leader}</span>
+              <span className="setup-footer__selected-leader">
+                {t('setup.ledBy')} {selectedCivData.leader}
+              </span>
             </div>
           )}
 
           <div className="setup-footer__nav">
             {currentStep > 1 && (
               <button type="button" onClick={prevStep} className="touch-btn touch-btn--ghost setup-footer__button">
-                ← Previous
+                {t('setup.previous')}
               </button>
             )}
 
@@ -826,7 +849,7 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                 onClick={nextStep}
                 className="touch-btn touch-btn--primary setup-footer__button setup-footer__button--primary"
               >
-                Next →
+                {t('setup.next')}
               </button>
             ) : (
               <button
@@ -834,7 +857,7 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                 onClick={handleStart}
                 className="touch-btn touch-btn--success setup-footer__button setup-footer__button--success"
               >
-                🏛️ Start Game
+                {t('setup.startGame')}
               </button>
             )}
           </div>

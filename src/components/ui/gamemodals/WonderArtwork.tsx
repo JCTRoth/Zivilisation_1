@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from '@/i18n/useTranslation';
 import { WONDER_ARTWORK_CREDITS, type WonderArtworkCredit, type WonderDefinition } from '@/data/WonderData';
 
 interface WonderArtworkProps {
@@ -97,23 +98,25 @@ export const WonderCreditBlock: React.FC<{
   info: WonderArtworkCredit;
   /** `hero` renders for a dark photo background instead of a light card. */
   variant?: 'card' | 'hero';
-}> = ({ info, variant = 'card' }) => (
-  <div className={`wonder-artwork__credit${variant === 'hero' ? ' wonder-artwork__credit--hero' : ''}`}>
-    {/* The article link is the one players are meant to follow. */}
-    <a className="wonder-artwork__readmore" href={info.articleUrl} target="_blank" rel="noreferrer noopener">
-      Read more on Wikipedia
-    </a>
-    {info.galleryUrl && (
-      <a className="wonder-artwork__readmore" href={info.galleryUrl} target="_blank" rel="noreferrer noopener" title="Official photo gallery">
-        {' '}🖼 Official gallery
+}> = ({ info, variant = 'card' }) => {
+  const { t } = useTranslation();
+  return (
+    <div className={`wonder-artwork__credit${variant === 'hero' ? ' wonder-artwork__credit--hero' : ''}`}>
+      {/* The article link is the one players are meant to follow. */}
+      <a className="wonder-artwork__readmore" href={info.articleUrl} target="_blank" rel="noreferrer noopener">
+        {t('art.readMore')}
       </a>
-    )}
-    {hasSource(info) && (
-      <span className="wonder-artwork__credit-text">
-        Artwork:{' '}
-        <a href={info.sourceUrl} target="_blank" rel="noreferrer noopener" title="Wikimedia Commons file page">
-          {info.author}
+      {info.galleryUrl && (
+        <a className="wonder-artwork__readmore" href={info.galleryUrl} target="_blank" rel="noreferrer noopener" title={t('art.galleryTitle')}>
+          {' '}{t('art.officialGallery')}
         </a>
+      )}
+      {hasSource(info) && (
+        <span className="wonder-artwork__credit-text">
+          {t('art.artwork')}{' '}
+          <a href={info.sourceUrl} target="_blank" rel="noreferrer noopener" title={t('art.commonsTitle')}>
+            {info.author}
+          </a>
         {info.licenseUrl ? (
           <>
             {' · '}
@@ -126,8 +129,9 @@ export const WonderCreditBlock: React.FC<{
         )}
       </span>
     )}
-  </div>
-);
+    </div>
+  );
+};
 
 function hasSource(info: WonderArtworkCredit): boolean {
   // Artwork the project owner supplied has no external source, so there is

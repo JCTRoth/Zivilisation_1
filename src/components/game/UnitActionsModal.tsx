@@ -1,4 +1,6 @@
 import React from 'react';
+import { useTranslation } from '@/i18n/useTranslation';
+import type { TranslationKey } from '@/i18n';
 import { UnitActionsModalProps } from './UnitActionsModalProps';
 import '../../styles/unitActionsModal.css';
 
@@ -8,6 +10,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
   onClose,
   gameEngine
 }) => {
+  const { t } = useTranslation();
   if (!contextMenu) return null;
 
   const handleAction = (action: string) => {
@@ -53,7 +56,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
       <div
         className="unit-context-menu"
         role="menu"
-        aria-label="Unit actions"
+        aria-label={t('unitActions.menuLabel' as TranslationKey)}
         style={{
           '--ctx-left': `${Math.max(8, Math.min(contextMenu.x, window.innerWidth - 280))}px`,
           '--ctx-top': `${Math.max(8, Math.min(contextMenu.y, window.innerHeight - 420))}px`,
@@ -64,7 +67,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
         {/* Header */}
         <div className="unit-context-menu__header">
           <div>
-            <strong className="unit-context-menu__title">ORDERS</strong>
+            <strong className="unit-context-menu__title">{t('unitActions.orders' as TranslationKey)}</strong>
             {contextMenu.unit && (
               <div className="unit-context-menu__unit-type">
                 {contextMenu.unit.type}
@@ -84,7 +87,15 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
         {/* Civ1 multi-turn construction progress */}
         {contextMenu.unit?.workTarget && (
           <div className="unit-context-menu__work">
-            🚧 Working on {contextMenu.unit.workTarget} ({contextMenu.unit.workTurns} turn{contextMenu.unit.workTurns !== 1 ? 's' : ''} left)
+            🚧 {contextMenu.unit.workTurns !== 1
+              ? t('unitActions.workingMany' as TranslationKey, {
+                  target: contextMenu.unit.workTarget,
+                  turns: contextMenu.unit.workTurns,
+                })
+              : t('unitActions.workingOne' as TranslationKey, {
+                  target: contextMenu.unit.workTarget,
+                  turns: contextMenu.unit.workTurns,
+                })}
           </div>
         )}
 
@@ -92,10 +103,10 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
         {contextMenu.unit?.fishingRoute && (
           <div className="unit-context-menu__work">
             🎣 {contextMenu.unit.fishingRoute.stage === 'fishing'
-              ? `Fishing ${contextMenu.unit.fishStored ?? 0}/6`
+              ? t('unitActions.fishing' as TranslationKey, { count: contextMenu.unit.fishStored ?? 0 })
               : contextMenu.unit.fishingRoute.stage === 'inbound'
-                ? `Returning to port (${contextMenu.unit.fishStored ?? 0}/6)`
-                : 'Sailing to the fishing ground'}
+                ? t('unitActions.returningToPort' as TranslationKey, { count: contextMenu.unit.fishStored ?? 0 })
+                : t('unitActions.sailingToGround' as TranslationKey)}
           </div>
         )}
 
@@ -113,7 +124,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                   disabled={!canAct(contextMenu.unit) || isSleeping || isFortified}
                   onClick={() => handleAction('fortify')}
                 >
-                  <span aria-hidden="true">🛡️</span>Fortify
+                  <span aria-hidden="true">🛡️</span>{t('unitActions.fortify' as TranslationKey)}
                 </button>
               )}
 
@@ -124,7 +135,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                   className="context-menu-item"
                   onClick={() => handleAction('mobilize')}
                 >
-                  <span aria-hidden="true">⚔️</span>Mobilize
+                  <span aria-hidden="true">⚔️</span>{t('unitActions.mobilize' as TranslationKey)}
                 </button>
               )}
 
@@ -137,7 +148,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                       disabled={isFortified || isSleeping}
                       onClick={() => handleAction('found_city')}
                     >
-                      <span aria-hidden="true">🏛️</span>Found / Join City
+                      <span aria-hidden="true">🏛️</span>{t('unitActions.foundJoinCity' as TranslationKey)}
                     </button>
                   )}
 
@@ -148,7 +159,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                       disabled={!improvementStatus('road').executable || isFortified || isSleeping}
                       onClick={() => handleAction('build_road')}
                     >
-                      <span aria-hidden="true">🛣️</span>Build Road
+                      <span aria-hidden="true">🛣️</span>{t('unitActions.buildRoad' as TranslationKey)}
                     </button>
                   )}
 
@@ -159,7 +170,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                       disabled={!improvementStatus('irrigation').executable || isFortified || isSleeping}
                       onClick={() => handleAction('build_irrigation')}
                     >
-                      <span aria-hidden="true">🌾</span>Build Irrigation
+                      <span aria-hidden="true">🌾</span>{t('unitActions.buildIrrigation' as TranslationKey)}
                     </button>
                   )}
 
@@ -170,7 +181,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                       disabled={!improvementStatus('mine').executable || isFortified || isSleeping}
                       onClick={() => handleAction('build_mine')}
                     >
-                      <span aria-hidden="true">⛏️</span>Build Mine
+                      <span aria-hidden="true">⛏️</span>{t('unitActions.buildMine' as TranslationKey)}
                     </button>
                   )}
 
@@ -181,7 +192,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                       disabled={!improvementStatus('railroad').executable || isFortified || isSleeping}
                       onClick={() => handleAction('build_railroad')}
                     >
-                      <span aria-hidden="true">🚆</span>Build Railroad
+                      <span aria-hidden="true">🚆</span>{t('unitActions.buildRailroad' as TranslationKey)}
                     </button>
                   )}
                 </>
@@ -196,7 +207,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                       disabled={isFortified || isSleeping}
                       onClick={() => handleAction('deploy_fishing_net')}
                     >
-                      <span aria-hidden="true">🎣</span>Deploy Fishing Net
+                      <span aria-hidden="true">🎣</span>{t('unitActions.deployFishingNet' as TranslationKey)}
                     </button>
                   )}
                   {contextMenu.unit.fishingRoute && (
@@ -206,7 +217,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                       disabled={isFortified || isSleeping}
                       onClick={() => handleAction('remove_fishing_net')}
                     >
-                      <span aria-hidden="true">❌</span>Remove Fishing Net (recall)
+                      <span aria-hidden="true">❌</span>{t('unitActions.removeFishingNet' as TranslationKey)}
                     </button>
                   )}
                 </>
@@ -220,7 +231,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                     disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
                     onClick={() => handleAction('diplomat_propose_peace')}
                   >
-                    <span aria-hidden="true">🕊️</span>Propose Peace
+                    <span aria-hidden="true">🕊️</span>{t('unitActions.proposePeace' as TranslationKey)}
                   </button>
                   <button
                     type="button"
@@ -228,7 +239,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                     disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
                     onClick={() => handleAction('diplomat_propose_alliance')}
                   >
-                    <span aria-hidden="true">🤝</span>Propose Alliance
+                    <span aria-hidden="true">🤝</span>{t('unitActions.proposeAlliance' as TranslationKey)}
                   </button>
                   <button
                     type="button"
@@ -236,7 +247,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                     disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
                     onClick={() => handleAction('diplomat_demand_tribute')}
                   >
-                    <span aria-hidden="true">💰</span>Demand Tribute
+                    <span aria-hidden="true">💰</span>{t('unitActions.demandTribute' as TranslationKey)}
                   </button>
                   <button
                     type="button"
@@ -244,7 +255,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                     disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
                     onClick={() => handleAction('diplomat_bribe')}
                   >
-                    <span aria-hidden="true">🎭</span>Bribe Unit
+                    <span aria-hidden="true">🎭</span>{t('unitActions.bribeUnit' as TranslationKey)}
                   </button>
                   <button
                     type="button"
@@ -252,7 +263,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                     disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
                     onClick={() => handleAction('diplomat_gather_intel')}
                   >
-                    <span aria-hidden="true">🔍</span>Gather Intelligence
+                    <span aria-hidden="true">🔍</span>{t('unitActions.gatherIntelligence' as TranslationKey)}
                   </button>
                 </>
               )}
@@ -263,7 +274,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                 disabled={isFortified || isSleeping}
                 onClick={() => handleAction('patrol')}
               >
-                <span aria-hidden="true">🔄</span>Patrol
+                <span aria-hidden="true">🔄</span>{t('unitActions.patrol' as TranslationKey)}
               </button>
 
               <button
@@ -272,7 +283,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                 disabled={isFortified || isSleeping}
                 onClick={() => handleAction('goto')}
               >
-                <span aria-hidden="true">📍</span>Go to
+                <span aria-hidden="true">📍</span>{t('unitActions.goTo' as TranslationKey)}
               </button>
 
               {contextMenu.unit && gameEngine?.goToManager?.getUnitPath(contextMenu.unit.id) && (
@@ -282,7 +293,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                   disabled={isFortified || isSleeping}
                   onClick={() => handleAction('goto_cancel')}
                 >
-                  <span aria-hidden="true">❌</span>GoTo X
+                  <span aria-hidden="true">❌</span>{t('unitActions.goToCancel' as TranslationKey)}
                 </button>
               )}
 
@@ -292,7 +303,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                 disabled={isFortified || isSleeping}
                 onClick={() => handleAction('skip_turn')}
               >
-                <span aria-hidden="true">⏭️</span>Skip Turn
+                <span aria-hidden="true">⏭️</span>{t('unitActions.skipTurn' as TranslationKey)}
               </button>
 
               {/* Disband: remove the unit from the game entirely. Costs the
@@ -305,7 +316,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                   disabled={isFortified || isSleeping}
                   onClick={() => handleAction('disband_unit')}
                 >
-                  <span aria-hidden="true">🗑️</span>Disband
+                  <span aria-hidden="true">🗑️</span>{t('unitActions.disband' as TranslationKey)}
                 </button>
               )}
 
@@ -315,7 +326,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                 className="context-menu-item"
                 onClick={() => handleAction('sleep')}>
                 <span aria-hidden="true">{contextMenu.unit.isSleeping ? '🌅' : '😴'}</span>
-                {contextMenu.unit.isSleeping ? 'Wake Up' : 'Sleep'}
+                {contextMenu.unit.isSleeping ? t('unitActions.wakeUp' as TranslationKey) : t('unitActions.sleep' as TranslationKey)}
               </button>
             </>
           )}
@@ -328,14 +339,14 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                 className="context-menu-item"
                 onClick={() => handleAction('viewProduction')}
               >
-                <span aria-hidden="true">🏭</span>View Production
+                <span aria-hidden="true">🏭</span>{t('unitActions.viewProduction' as TranslationKey)}
               </button>
               <button
                 type="button"
                 className="context-menu-item"
                 onClick={() => handleAction('cityInfo')}
               >
-                <span aria-hidden="true">📊</span>City Info
+                <span aria-hidden="true">📊</span>{t('unitActions.cityInfo' as TranslationKey)}
               </button>
             </>
           )}

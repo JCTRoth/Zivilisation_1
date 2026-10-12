@@ -1,6 +1,8 @@
 import React from 'react';
 import type { GameMenuName } from './GameMenuSheet';
 import type GameEngine from '@/game/engine/GameEngine';
+import { useTranslation } from '@/i18n/useTranslation';
+import type { TranslationKey } from '@/i18n';
 import ResearchIndicator from './ResearchIndicator';
 
 interface TopBarProps {
@@ -16,6 +18,12 @@ interface TopBarProps {
 
 const MENU_ITEMS: GameMenuName[] = ['GAME', 'WORLD', 'INFO'];
 
+const MENU_LABELS: Record<GameMenuName, TranslationKey> = {
+  GAME: 'menu.game',
+  WORLD: 'menu.world',
+  INFO: 'menu.info',
+};
+
 /**
  * Top navigation bar. Compact on phones (scrollable, 44px targets),
  * full-size on desktop.
@@ -29,45 +37,51 @@ const TopBar: React.FC<TopBarProps> = ({
   endTurnDisabled = false,
   topBarRef,
   gameEngine,
-}) => (
-  <div ref={topBarRef} className="game-top-bar" role="banner">
-    <div className="d-flex align-items-center gap-1 topbar-menus">
-      {MENU_ITEMS.map((item) => (
-        <button
-          key={item}
-          type="button"
-          className={`topbar-menu-btn ${activeMenu === item ? 'is-active' : ''}`}
-          aria-haspopup="menu"
-          aria-expanded={activeMenu === item}
-          onClick={(e) => onMenuClick(item, e)}
-        >
-          {item}
-        </button>
-      ))}
-    </div>
+}) => {
+  const { t } = useTranslation();
 
-    <div className="topbar-center">
-      <div className="d-flex align-items-center gap-2 topbar-turn">
-        <span>
-          Turn <strong>{currentTurn}</strong>
-        </span>
-        <span className="text-muted-ui" aria-hidden="true">•</span>
-        <span>{currentYear}</span>
+  return (
+    <div ref={topBarRef} className="game-top-bar" role="banner">
+      <div className="d-flex align-items-center gap-1 topbar-menus">
+        {MENU_ITEMS.map((item) => (
+          <button
+            key={item}
+            type="button"
+            className={`topbar-menu-btn ${activeMenu === item ? 'is-active' : ''}`}
+            aria-haspopup="menu"
+            aria-expanded={activeMenu === item}
+            onClick={(e) => onMenuClick(item, e)}
+          >
+            {/* toUpperCase in the DOM (not CSS) keeps the accessible name
+                "GAME"/"WORLD"/"INFO" the e2e locators filter on. */}
+            {t(MENU_LABELS[item]).toUpperCase()}
+          </button>
+        ))}
       </div>
-      <ResearchIndicator gameEngine={gameEngine} />
-    </div>
 
-    <button
-      type="button"
-      className="touch-btn touch-btn--success topbar-endturn"
-      onClick={onEndTurn}
-      disabled={endTurnDisabled}
-      aria-label="End Turn"
-    >
-      <i className="bi bi-skip-end-fill" aria-hidden="true"></i>
-      <span className="d-none d-lg-inline" aria-hidden="true">End Turn</span>
-    </button>
-  </div>
-);
+      <div className="topbar-center">
+        <div className="d-flex align-items-center gap-2 topbar-turn">
+          <span>
+            {t('common.turn', { turn: '' })} <strong>{currentTurn}</strong>
+          </span>
+          <span className="text-muted-ui" aria-hidden="true">•</span>
+          <span>{currentYear}</span>
+        </div>
+        <ResearchIndicator gameEngine={gameEngine} />
+      </div>
+
+      <button
+        type="button"
+        className="touch-btn touch-btn--success topbar-endturn"
+        onClick={onEndTurn}
+        disabled={endTurnDisabled}
+        aria-label={t('topbar.endTurn')}
+      >
+        <i className="bi bi-skip-end-fill" aria-hidden="true"></i>
+        <span className="d-none d-lg-inline" aria-hidden="true">{t('topbar.endTurn')}</span>
+      </button>
+    </div>
+  );
+};
 
 export default TopBar;

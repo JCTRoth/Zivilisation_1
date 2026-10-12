@@ -3,6 +3,11 @@ import GameModal from '@/components/ui/gamemodals/ModalShell';
 import { useGameStore } from '@/stores/GameStore';
 import { GameUtils } from '@/utils/GameUtils';
 import { WONDER_PROPERTIES } from '@/data/BuildingConstants';
+import { useTranslation } from '@/i18n/useTranslation';
+// The `result.*` keys ship as fragments (.i18n-frags/result.*.txt) and are
+// merged into the dictionaries separately — the key casts below are type-only
+// (no runtime effect) until that merge lands.
+import type { TranslationKey } from '@/i18n';
 import type { GameResult } from '../../../types/game';
 import '@/styles/gameResultOverlay.css';
 
@@ -35,6 +40,8 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
   onRestart,
   onQuit
 }) => {
+  const { t } = useTranslation();
+
   const civId = result?.civilizationId ?? -1;
   const resultStamp = result?.timestamp ?? null;
 
@@ -104,48 +111,81 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
   const isVictory = result.outcome === 'victory';
   const human = result.isHuman;
   const yearLabel =
-    currentYear !== undefined && currentYear !== null ? GameUtils.formatYear(currentYear) : '—';
+    currentYear !== undefined && currentYear !== null
+      ? GameUtils.formatYear(currentYear)
+      : t('result.yearPlaceholder' as TranslationKey);
 
-  const eyebrow = `${isVictory ? 'Victory' : 'Defeat'} · ${result.civName}`;
+  const eyebrow = `${isVictory ? t('result.eyebrow.victory' as TranslationKey) : t('result.eyebrow.defeat' as TranslationKey)} · ${result.civName}`;
 
   const title = !isVictory
-    ? 'Your Empire Has Fallen'
+    ? t('result.title.defeat' as TranslationKey)
     : human
-      ? 'The World Is Yours'
-      : `${result.civName} Claims the World`;
+      ? t('result.title.humanVictory' as TranslationKey)
+      : t('result.title.aiVictory' as TranslationKey, { civ: result.civName });
 
   const lede = !isVictory
-    ? 'Your empire has crumbled. Only stories of your once-great cities remain — and the board keeps the shape of your last stand.'
+    ? t('result.lede.defeat' as TranslationKey)
     : !human
-      ? `The age belongs to ${result.civName}. Every rival lies beneath its banner, and the record of this game is complete.`
+      ? t('result.lede.aiVictory' as TranslationKey, { civ: result.civName })
       : result.reason === 'moonshot'
-        ? 'Your scientists have turned the sky into a road. With the Moonshot complete, your people step into a golden age no rival can follow.'
+        ? t('result.lede.moonshot' as TranslationKey)
         : result.reason === 'domination'
-          ? 'Every city on the map flies your banner. There is no rival left to contest your rule.'
-          : 'The last rival civilization has broken beneath your banner. The world answers to you alone.';
+          ? t('result.lede.domination' as TranslationKey)
+          : t('result.lede.victory' as TranslationKey);
 
   // ---- Act I: cinematic verses -------------------------------------------
   // A few narrative lines, not a stat sheet — the ledger waits in Act II.
   const verses: string[] = !isVictory
     ? [
-        `The chronicle ends in ${yearLabel}, on turn ${currentTurn}.`,
+        t('result.verse.defeat1' as TranslationKey, { year: yearLabel, turn: currentTurn }),
         ledger.capital
-          ? `Your last capital, ${ledger.capital}, falls silent — and with it, a dream that began in the first camp of the age.`
-          : 'Your last cities are gone, and with them a dream that began in the first camp of the age.',
+          ? t('result.verse.defeat2Capital' as TranslationKey, { capital: ledger.capital })
+          : t('result.verse.defeat2' as TranslationKey),
         ledger.lastRival
-          ? `The world now answers to ${ledger.lastRival}.`
-          : 'No single heir remains to claim what was yours.'
+          ? t('result.verse.defeat3Rival' as TranslationKey, { rival: ledger.lastRival })
+          : t('result.verse.defeat3' as TranslationKey)
       ]
     : [
-        `For ${currentTurn} ${currentTurn === 1 ? 'turn' : 'turns'} your people endured — through famine, war and wonder — until ${yearLabel}.`,
+        t('result.verse.victory1' as TranslationKey, {
+          turn: currentTurn,
+          turnUnit:
+            currentTurn === 1
+              ? t('result.unit.turn.singular' as TranslationKey)
+              : t('result.unit.turn.plural' as TranslationKey),
+          year: yearLabel
+        }),
         ledger.capital
-          ? `From ${ledger.capital} outward, ${ledger.cities} ${ledger.cities === 1 ? 'city stands' : 'cities stand'} under one banner, and ${ledger.population} ${ledger.population === 1 ? 'citizen' : 'citizens'} carry your name forward.`
-          : `${ledger.cities} ${ledger.cities === 1 ? 'city stands' : 'cities stand'} under one banner at the close of the age.`,
+          ? t('result.verse.victory2Capital' as TranslationKey, {
+              capital: ledger.capital,
+              cities: ledger.cities,
+              cityUnit:
+                ledger.cities === 1
+                  ? t('result.unit.city.singular' as TranslationKey)
+                  : t('result.unit.city.plural' as TranslationKey),
+              population: ledger.population,
+              citizenUnit:
+                ledger.population === 1
+                  ? t('result.unit.citizen.singular' as TranslationKey)
+                  : t('result.unit.citizen.plural' as TranslationKey)
+            })
+          : t('result.verse.victory2' as TranslationKey, {
+              cities: ledger.cities,
+              cityUnit:
+                ledger.cities === 1
+                  ? t('result.unit.city.singular' as TranslationKey)
+                  : t('result.unit.city.plural' as TranslationKey)
+            }),
         result.reason === 'moonshot'
-          ? 'Among the stars, the Moonshot burns like a second dawn — proof that your age does not end, it lifts.'
+          ? t('result.verse.victory3Moonshot' as TranslationKey)
           : ledger.rivalsStanding === 0
-            ? 'No rival remains. The world is a single story now, and it is yours.'
-            : `Only ${ledger.rivalsStanding} ${ledger.rivalsStanding === 1 ? 'rival stands' : 'rivals stand'} outside your borders — and the chronicle is already being written in your favour.`
+            ? t('result.verse.victory3NoRivals' as TranslationKey)
+            : t('result.verse.victory3' as TranslationKey, {
+                count: ledger.rivalsStanding,
+                rivalUnit:
+                  ledger.rivalsStanding === 1
+                    ? t('result.unit.rival.singular' as TranslationKey)
+                    : t('result.unit.rival.plural' as TranslationKey)
+              })
       ];
 
   // ---- Act II: the chronicle / final ledger --------------------------------
@@ -158,32 +198,32 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
           tone={isVictory ? 'gold' : 'solemn'}
           artSize="lg"
           icon={isVictory ? '👑' : '🕯️'}
-          artLabel={isVictory ? 'crowned laurel' : 'fallen standard'}
+          artLabel={isVictory ? t('result.art.victory' as TranslationKey) : t('result.art.defeat' as TranslationKey)}
           eyebrow={eyebrow}
-          title={isVictory ? 'The Chronicle' : 'The Last Account'}
+          title={isVictory ? t('result.chronicle.title.victory' as TranslationKey) : t('result.chronicle.title.defeat' as TranslationKey)}
           lede={
             isVictory
-              ? `The reign of ${result.civName}, set down in full — every number the bards will argue over.`
-              : `What remains of ${result.civName}, set down before the board is cleared.`
+              ? t('result.chronicle.lede.victory' as TranslationKey, { civ: result.civName })
+              : t('result.chronicle.lede.defeat' as TranslationKey, { civ: result.civName })
           }
           actions={
             <>
               <button type="button" className="touch-btn touch-btn--danger" onClick={onQuit}>
-                Quit
+                {t('result.actions.quit' as TranslationKey)}
               </button>
               {isVictory && (
                 <button type="button" className="touch-btn touch-btn--ghost" onClick={onClose}>
-                  Close
+                  {t('result.actions.close' as TranslationKey)}
                 </button>
               )}
               <button type="button" className="touch-btn touch-btn--primary" onClick={onRestart}>
-                Restart
+                {t('result.actions.restart' as TranslationKey)}
               </button>
             </>
           }
         >
           <section className="gm-section">
-            <h3 className="gm-section-title">The final score</h3>
+            <h3 className="gm-section-title">{t('result.score.title' as TranslationKey)}</h3>
             <div className="gm-stat-grid">
               <div className="gm-stat gm-stat--accent">
                 <span className="gm-stat-value">
@@ -192,7 +232,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   </span>
                   {ledger.score.toLocaleString()}
                 </span>
-                <span className="gm-stat-label">Score</span>
+                <span className="gm-stat-label">{t('result.stat.score' as TranslationKey)}</span>
               </div>
               <div className="gm-stat">
                 <span className="gm-stat-value">
@@ -201,7 +241,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   </span>
                   {currentTurn}
                 </span>
-                <span className="gm-stat-label">Turn reached</span>
+                <span className="gm-stat-label">{t('result.stat.turnReached' as TranslationKey)}</span>
               </div>
               <div className="gm-stat">
                 <span className="gm-stat-value">
@@ -210,13 +250,13 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   </span>
                   {yearLabel}
                 </span>
-                <span className="gm-stat-label">The year</span>
+                <span className="gm-stat-label">{t('result.stat.year' as TranslationKey)}</span>
               </div>
             </div>
           </section>
 
           <section className="gm-section">
-            <h3 className="gm-section-title">The empire at the close</h3>
+            <h3 className="gm-section-title">{t('result.empire.title' as TranslationKey)}</h3>
             <div className="gm-stat-grid">
               <div className="gm-stat">
                 <span className="gm-stat-value">
@@ -225,7 +265,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   </span>
                   {ledger.cities}
                 </span>
-                <span className="gm-stat-label">Cities held</span>
+                <span className="gm-stat-label">{t('result.stat.cities' as TranslationKey)}</span>
               </div>
               <div className="gm-stat">
                 <span className="gm-stat-value">
@@ -234,7 +274,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   </span>
                   {ledger.population.toLocaleString()}
                 </span>
-                <span className="gm-stat-label">Citizens</span>
+                <span className="gm-stat-label">{t('result.stat.citizens' as TranslationKey)}</span>
               </div>
               <div className="gm-stat">
                 <span className="gm-stat-value">
@@ -243,7 +283,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   </span>
                   {fieldUnits}
                 </span>
-                <span className="gm-stat-label">Units in field</span>
+                <span className="gm-stat-label">{t('result.stat.unitsInField' as TranslationKey)}</span>
               </div>
               <div className="gm-stat">
                 <span className="gm-stat-value">
@@ -252,7 +292,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   </span>
                   {ledger.techs} / 54
                 </span>
-                <span className="gm-stat-label">Arts mastered</span>
+                <span className="gm-stat-label">{t('result.stat.artsMastered' as TranslationKey)}</span>
               </div>
               <div className="gm-stat">
                 <span className="gm-stat-value">
@@ -261,7 +301,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   </span>
                   {ledger.wonders}
                 </span>
-                <span className="gm-stat-label">Wonders raised</span>
+                <span className="gm-stat-label">{t('result.stat.wondersRaised' as TranslationKey)}</span>
               </div>
               <div className="gm-stat">
                 <span className="gm-stat-value">
@@ -270,15 +310,15 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   </span>
                   {ledger.rivalsStanding}
                 </span>
-                <span className="gm-stat-label">Rivals standing</span>
+                <span className="gm-stat-label">{t('result.stat.rivalsStanding' as TranslationKey)}</span>
               </div>
             </div>
           </section>
 
           {isVictory && result.reason === 'moonshot' && human && (
             <div className="gm-callout">
-              <span className="gm-callout-title">Across your lands</span>
-              The Moonshot project has ignited celebrations in every city you own.
+              <span className="gm-callout-title">{t('result.callout.title' as TranslationKey)}</span>
+              {t('result.callout.moonshot' as TranslationKey)}
             </div>
           )}
 
@@ -286,19 +326,19 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
             {isVictory ? (
               human ? (
                 <>
-                  <strong>The chronicle is yours.</strong> Study the board, or begin a new age — no
-                  two worlds are ever drawn the same way.
+                  <strong>{t('result.note.victoryLead' as TranslationKey)}</strong>{' '}
+                  {t('result.note.victoryBody' as TranslationKey)}
                 </>
               ) : (
                 <>
-                  <strong>The record is closed.</strong> Begin a new age and see whether your people
-                  can claim the next one.
+                  <strong>{t('result.note.aiVictoryLead' as TranslationKey)}</strong>{' '}
+                  {t('result.note.aiVictoryBody' as TranslationKey)}
                 </>
               )
             ) : (
               <>
-                <strong>Even the greatest empires end.</strong> Begin again: a new map, new rivals
-                and new chances await your people.
+                <strong>{t('result.note.defeatLead' as TranslationKey)}</strong>{' '}
+                {t('result.note.defeatBody' as TranslationKey)}
               </>
             )}
           </p>
@@ -324,10 +364,10 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
 
         <div className="gr-cine__stage">
           <p className="gr-cine__kicker">
-            {isVictory ? 'The chronicle of' : 'Here fell'}
+            {isVictory ? t('result.cine.kicker.victory' as TranslationKey) : t('result.cine.kicker.defeat' as TranslationKey)}
           </p>
           <h1 className="gr-cine__word" data-tone={isVictory ? 'gold' : 'solemn'}>
-            {isVictory ? 'VICTORY' : 'DEFEAT'}
+            {isVictory ? t('result.cine.word.victory' as TranslationKey) : t('result.cine.word.defeat' as TranslationKey)}
           </h1>
           <p className="gr-cine__civ">{result.civName}</p>
           <span className="gr-cine__rule" aria-hidden="true" />
@@ -352,7 +392,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
               onClick={() => setAct('chronicle')}
               autoFocus
             >
-              {isVictory ? 'Unfold the Chronicle' : 'Read the Last Account'}
+              {isVictory ? t('result.cine.cta.victory' as TranslationKey) : t('result.cine.cta.defeat' as TranslationKey)}
               <span className="gr-cine__cta-arrow" aria-hidden="true">
                 →
               </span>
@@ -361,13 +401,13 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
 
           <div className="gr-cine__minor" style={{ animationDelay: `${0.9 + verses.length * 0.45 + 0.55}s` }}>
             <button type="button" className="gr-cine__minor-btn" onClick={onRestart}>
-              Restart
+              {t('result.actions.restart' as TranslationKey)}
             </button>
             <span className="gr-cine__minor-sep" aria-hidden="true">
               ·
             </span>
             <button type="button" className="gr-cine__minor-btn" onClick={onQuit}>
-              Quit
+              {t('result.actions.quit' as TranslationKey)}
             </button>
           </div>
 
@@ -388,7 +428,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                 actions.updateSettings({ skipGameResultScreen: next });
               }}
             />
-            <span>Don't show this screen again — next time, straight to a new game</span>
+            <span>{t('result.skipAgain' as TranslationKey)}</span>
           </label>
         </div>
       </div>

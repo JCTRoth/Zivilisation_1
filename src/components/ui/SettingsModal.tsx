@@ -1,6 +1,9 @@
 import { Form } from "react-bootstrap";
 import { useGameStore } from "@/stores/GameStore";
+import { useTranslation } from "@/i18n/useTranslation";
+import type { LanguageId } from "@/i18n/languages";
 import GameModal from "./gamemodals/ModalShell";
+import LanguageSwitcher from "./LanguageSwitcher";
 import "../../styles/settingsModal.css";
 
 interface SettingsModalProps {
@@ -11,6 +14,9 @@ interface SettingsModalProps {
 function SettingsModal({ show, onHide }: SettingsModalProps) {
   const settings = useGameStore((state) => state.settings);
   const actions = useGameStore((state) => state.actions);
+  // Subscribes this modal to language changes: every label below re-renders
+  // the moment the player picks another language in the switcher.
+  const { t, languageDefinition } = useTranslation();
 
   const handleChange = (key, value) => {
     actions.updateSettings({
@@ -18,6 +24,15 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
     });
   };
 
+  const handleLanguageChange = (language: LanguageId) => {
+    // updateSettings forwards to the i18n runtime, which persists the choice
+    // and repaints the whole UI — including this modal — right away.
+    actions.updateSettings({ language });
+  };
+
+  // Note on "Reset to Defaults": the language is deliberately NOT part of the
+  // reset. It is a persistent player preference (like a save file), stored in
+  // localStorage, not a tuning knob of the current session.
   const resetDefaults = () => {
     console.log("SettingsModal: Reset to Defaults clicked");
     actions.updateSettings({
@@ -80,6 +95,8 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
     </div>
   );
 
+  const instant = t('settings.instant');
+
   return (
     <GameModal
       show={show}
@@ -89,9 +106,9 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
       dialogClassName="settings-modal"
       icon="⚙️"
       artLabel="options"
-      eyebrow="Game Menu · Options"
-      title="Settings"
-      lede="Set the pace and the picture to taste — every switch takes effect the moment you move it, no clerk to ask."
+      eyebrow={t('settings.eyebrow')}
+      title={t('settings.title')}
+      lede={t('settings.lede')}
       actions={
         <>
           <button
@@ -99,7 +116,7 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
             className="touch-btn touch-btn--ghost settings-modal__reset"
             onClick={resetDefaults}
           >
-            <span aria-hidden="true">🔄</span> Reset to Defaults
+            <span aria-hidden="true">🔄</span> {t('common.resetDefaults')}
           </button>
           <button
             type="button"
@@ -109,73 +126,85 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
               onHide();
             }}
           >
-            <span aria-hidden="true">✓</span> Apply &amp; Close
+            <span aria-hidden="true">✓</span> {t('common.applyClose')}
           </button>
         </>
       }
     >
       <Form className="settings-form">
+        {/* The language comes first: it is the one switch that changes every
+            other word on this screen (and in the game) instantly. */}
+        <section className="gm-section">
+          <div className="gm-section-title">{t('settings.sectionLanguage')}</div>
+          <LanguageSwitcher value={settings.language as LanguageId} onChange={handleLanguageChange} />
+          <div className="gm-note settings-language-note">
+            {t('settings.languageCurrent', { name: `${languageDefinition.flag} ${languageDefinition.nativeName}` })}
+            {' — '}
+            {t('settings.languageHint')}
+          </div>
+        </section>
+
         {/* Master switches sit on top: they gate whole groups of controls
             below (animations gate the speed sliders). */}
         <section className="gm-section">
-          <div className="gm-section-title">Campaign switches</div>
+          <div className="gm-section-title">{t('settings.sectionCampaign')}</div>
           <div className="settings-toggles">
             {toggle(
               "enableAnimations",
-              "Enable animations",
+              t('settings.enableAnimations'),
               "enableAnimations",
               settings.enableAnimations,
-              "Master switch for movement and combat cinematics.",
+              t('settings.enableAnimationsHint'),
             )}
             {toggle(
               "autoCamera",
-              "Auto-move camera",
+              t('settings.autoCamera'),
               "autoCamera",
               settings.autoCamera !== false,
-              "Sweep the view to whatever needs your eye.",
+              t('settings.autoCameraHint'),
             )}
             {toggle(
               "autoEndTurn",
-              "Auto-end turn",
+              t('settings.autoEndTurn'),
               "autoEndTurn",
               settings.autoEndTurn,
-              "Advance once every unit has moved.",
+              t('settings.autoEndTurnHint'),
             )}
             {toggle(
               "skipEndTurnConfirmation",
-              "Skip end-turn confirmation",
+              t('settings.skipEndTurnConfirmation'),
               "skipEndTurnConfirmation",
               settings.skipEndTurnConfirmation,
-              "Take the turn the moment you press it.",
+              t('settings.skipEndTurnConfirmationHint'),
             )}
             {toggle(
               "skipGameResultScreen",
-              "Skip end-of-game screen",
+              t('settings.skipGameResultScreen'),
               "skipGameResultScreen",
               settings.skipGameResultScreen,
-              "No victory cinematic, no final ledger — the Game Over panel offers restart and quit instead. The same switch sits on that screen.",
+              t('settings.skipGameResultScreenHint'),
             )}
             {toggle(
               "devMode",
-              "Developer mode",
+              t('settings.devMode'),
               "devMode",
               settings.devMode,
-              "Inspector's tools: the full world table and debug aids.",
+              t('settings.devModeHint'),
             )}
           </div>
         </section>
 
         <section className="gm-section">
-          <div className="gm-section-title">Picture</div>
+          <div className="gm-section-title">{t('settings.sectionPicture')}</div>
           <div className="settings-grid settings-grid--single">
             {renderSlider(
-              "Overall UI scale",
+              t('settings.uiScale'),
               settings.uiScale,
               0.5,
               2.0,
               0.1,
               "uiScale",
-              "Grows or shrinks every panel, button and label (0.50x to 2.00x).",
+              t('settings.uiScaleHint'),
               (v) => `${v.toFixed(2)}x`,
               false,
               "🖥️",
@@ -184,52 +213,49 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
         </section>
 
         <section className="gm-section">
-          <div className="gm-section-title">Motion</div>
+          <div className="gm-section-title">{t('settings.sectionMotion')}</div>
           <div className="settings-grid">
             {renderSlider(
-              "Animation speed",
+              t('settings.animationSpeed'),
               settings.animationSpeed,
               0,
               3,
               0.1,
               "animationSpeed",
-              "Your units and battles, leftmost is instant.",
-              (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
+              t('settings.animationSpeedHint'),
+              (v) => (v === 0 ? instant : `${v.toFixed(1)}x`),
               !settings.enableAnimations,
               "🎬",
             )}
 
             {renderSlider(
-              "Enemy animation speed",
+              t('settings.enemyAnimationSpeed'),
               settings.enemyAnimationSpeed,
               0,
               3,
               0.1,
               "enemyAnimationSpeed",
-              "Rival movement only — independent of your own units.",
-              (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
+              t('settings.enemyAnimationSpeedHint'),
+              (v) => (v === 0 ? instant : `${v.toFixed(1)}x`),
               !settings.enableAnimations,
               "👣",
             )}
 
             {renderSlider(
-              "Camera glide speed",
+              t('settings.cameraGlideSpeed'),
               settings.cameraGlideSpeed,
               0,
               3,
               0.1,
               "cameraGlideSpeed",
-              "How fast the view sweeps to a new focus, leftmost is instant.",
-              (v) => (v === 0 ? "Instant" : `${v.toFixed(1)}x`),
+              t('settings.cameraGlideSpeedHint'),
+              (v) => (v === 0 ? instant : `${v.toFixed(1)}x`),
               !settings.enableAnimations,
               "🎥",
             )}
           </div>
           {!settings.enableAnimations && (
-            <div className="gm-note">
-              Animations are switched off — these speeds take effect once you turn
-              them back on.
-            </div>
+            <div className="gm-note">{t('settings.animationsOffNote')}</div>
           )}
         </section>
       </Form>

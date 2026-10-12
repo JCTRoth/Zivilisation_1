@@ -1,5 +1,7 @@
 import React from 'react';
 import { getWonder } from '@/data/WonderData';
+import { useTranslation } from '@/i18n/useTranslation';
+import type { TranslationKey } from '@/i18n';
 import GameModal from './ModalShell';
 import '@/styles/wonders.css';
 
@@ -34,6 +36,7 @@ interface WonderConflictModalProps {
  * "Go to City" / "Close".
  */
 const WonderConflictModal: React.FC<WonderConflictModalProps> = ({ show, notice, onGoToCity, onClose }) => {
+  const { t } = useTranslation();
   if (!notice) return null;
   const wonder = getWonder(notice.wonderId);
   // Group loss (e.g. Tiangong while the ISS exists): name the wonder that
@@ -41,7 +44,7 @@ const WonderConflictModal: React.FC<WonderConflictModalProps> = ({ show, notice,
   const won = notice.blockedByWonderId && notice.blockedByWonderId !== notice.wonderId
     ? (getWonder(notice.blockedByWonderId) ?? wonder)
     : wonder;
-  const wonName = won?.name ?? 'the wonder';
+  const wonName = won?.name ?? t('wonderConflict.theWonder' as TranslationKey);
 
   return (
     <GameModal
@@ -49,50 +52,53 @@ const WonderConflictModal: React.FC<WonderConflictModalProps> = ({ show, notice,
       onClose={onClose}
       tone="danger"
       dialogClassName="wonder-conflict-modal"
-      eyebrow="A Wonder Slips Away"
+      eyebrow={t('wonderConflict.eyebrow' as TranslationKey)}
       title={
         <>
-          {won?.icon ?? '🏗️'} {wonName} — already completed
+          {won?.icon ?? '🏗️'} {wonName} {t('wonderConflict.titleSuffix' as TranslationKey)}
         </>
       }
-      lede="Another people set the final stone first. Only one of each wonder may ever stand in the world, and this one is not yours."
+      lede={t('wonderConflict.lede' as TranslationKey)}
       icon={won?.icon ?? '🏗️'}
-      artLabel="wonder art"
+      artLabel={t('wonderConflict.artLabel' as TranslationKey)}
       actions={
         <>
           <button type="button" className="touch-btn touch-btn--ghost" onClick={onClose}>
-            Close
+            {t('wonderConflict.close' as TranslationKey)}
           </button>
           <button type="button" className="touch-btn touch-btn--primary" onClick={() => onGoToCity(notice.cityId)}>
-            <i className="bi bi-geo-alt" aria-hidden="true" /> Go to City
+            <i className="bi bi-geo-alt" aria-hidden="true" /> {t('wonderConflict.goToCity' as TranslationKey)}
           </button>
         </>
       }
     >
       <div className="gm-callout">
-        <span className="gm-callout-title">Shields spent, nothing raised</span>
-        Production in <strong>{notice.cityName}</strong> has been cancelled and the city sits idle. The shields
-        already poured into the work are lost — first completion wins, the original Civ 1 rule.
+        <span className="gm-callout-title">{t('wonderConflict.calloutTitle' as TranslationKey)}</span>
+        {t('wonderConflict.calloutPre' as TranslationKey)}
+        <strong>{notice.cityName}</strong>
+        {t('wonderConflict.calloutPost' as TranslationKey)}
       </div>
 
       <section className="gm-section">
-        <h3 className="gm-section-title">Who got there first</h3>
+        <h3 className="gm-section-title">{t('wonderConflict.firstSectionTitle' as TranslationKey)}</h3>
         <div className="gm-kv-grid gm-kv-grid--stack">
           <div className="gm-kv">
-            Winner <b>{notice.ownerCivName} — {notice.ownerCityName}</b>
+            {t('wonderConflict.winner' as TranslationKey)} <b>{notice.ownerCivName} — {notice.ownerCityName}</b>
           </div>
           <div className="gm-kv">
-            Wonder they finished <b>{wonName}</b>
+            {t('wonderConflict.wonderFinished' as TranslationKey)} <b>{wonName}</b>
           </div>
           <div className="gm-kv">
-            Your idle city <b>{notice.cityName}</b>
+            {t('wonderConflict.idleCity' as TranslationKey)} <b>{notice.cityName}</b>
           </div>
         </div>
       </section>
 
       <p className="gm-note">
-        <strong>What to do next:</strong> open <strong>{notice.cityName}</strong> and give it new production. The
-        shields are gone either way, so the sooner that city works again the smaller the setback.
+        <strong>{t('wonderConflict.whatNext' as TranslationKey)}</strong>
+        {t('wonderConflict.openCity' as TranslationKey)}
+        <strong>{notice.cityName}</strong>
+        {t('wonderConflict.newProduction' as TranslationKey)}
       </p>
     </GameModal>
   );

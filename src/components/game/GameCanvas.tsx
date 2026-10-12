@@ -41,6 +41,8 @@ import {
   type TileLookup,
 } from "@/utils/MovementPreview";
 import { KeyboardHandler } from "@/game/engine/KeyboardHandler";
+import { useTranslation } from "@/i18n/useTranslation";
+import type { TranslationKey } from '@/i18n';
 import { debugLog } from '@/utils/DevLog';
 
 /**
@@ -87,6 +89,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   onExamineHex,
   gameEngine = null,
 }) => {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const terrainBaseCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1565,7 +1568,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       if (!ok && actions.addNotification) {
         actions.addNotification({
           type: "warning",
-          message: "Cannot move citizen to that tile",
+          message: t("canvas.cannotMoveCitizen" as TranslationKey),
         });
       }
     } else if (!inRadius) {
@@ -1589,12 +1592,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       if (unitType && actions?.addNotification) {
         actions.addNotification({
           type: "info",
-          message: `GoTo cancelled for ${unitType}`,
+          message: t("canvas.goToCancelled" as TranslationKey, { unit: unitType }),
         });
       }
       triggerRender();
     },
-    [gameEngine, actions, triggerRender],
+    [gameEngine, actions, triggerRender, t],
   );
 
   /**
@@ -1609,7 +1612,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         if (actions?.addNotification)
           actions.addNotification({
             type: "error",
-            message: "GoTo system unavailable",
+            message: t("canvas.goToUnavailable" as TranslationKey),
           });
         return;
       }
@@ -1627,7 +1630,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         if (actions?.addNotification) {
           actions.addNotification({
             type: "warning",
-            message: "Cannot reach destination",
+            message: t("canvas.cannotReachDestination" as TranslationKey),
           });
         }
         return;
@@ -1687,7 +1690,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         goToManager.clearUnitPath(unit.id);
       }
     },
-    [gameEngine, mapData, getTileAt, actions, triggerRender],
+    [gameEngine, mapData, getTileAt, actions, triggerRender, t],
   );
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1865,8 +1868,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               type: next.length > 0 ? "info" : "warning",
               message:
                 next.length > 0
-                  ? `${next.length} unit${next.length === 1 ? "" : "s"} selected — click a destination to move them (right-click / Esc cancels)`
-                  : "Group selection cleared",
+                  ? next.length === 1
+                    ? t("canvas.groupSelectedOne" as TranslationKey, { count: next.length })
+                    : t("canvas.groupSelectedMany" as TranslationKey, { count: next.length })
+                  : t("canvas.groupSelectionCleared" as TranslationKey),
             });
           }
           setContextMenu(null);
@@ -1892,8 +1897,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (actions?.addNotification) {
             actions.addNotification(
               ordered > 0
-                ? { type: "info", message: `Moving ${ordered} unit${ordered === 1 ? "" : "s"}` }
-                : { type: "warning", message: "None of the selected units can move" },
+                ? {
+                    type: "info",
+                    message:
+                      ordered === 1
+                        ? t("canvas.movingUnitsOne" as TranslationKey, { count: ordered })
+                        : t("canvas.movingUnitsMany" as TranslationKey, { count: ordered }),
+                  }
+                : { type: "warning", message: t("canvas.noneCanMove" as TranslationKey) },
             );
           }
           triggerRender();
@@ -2041,7 +2052,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 if (actions?.addNotification) {
                   actions.addNotification({
                     type: "warning",
-                    message: "Unit has no moves remaining",
+                    message: t("canvas.noMovesRemaining" as TranslationKey),
                   });
                 }
               }
@@ -2068,7 +2079,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               if (actions?.addNotification) {
                 actions.addNotification({
                   type: "warning",
-                  message: "Unit has no moves remaining",
+                  message: t("canvas.noMovesRemaining" as TranslationKey),
                 });
               }
             }
@@ -2108,7 +2119,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 if (idx >= 0 && gameEngine.demoteSpecialistToWorker(fullCity.id, idx)) {
                   actions?.addNotification?.({
                     type: 'info',
-                    message: `${cityAt.name}: ${hit.type} returned to tile work.`,
+                    message: t("canvas.specialistReturned" as TranslationKey, {
+                      city: cityAt.name,
+                      specialist: hit.type,
+                    }),
                   });
                   triggerRender();
                 }
@@ -2121,7 +2135,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               if (!ok && actions?.addNotification) {
                 actions.addNotification({
                   type: "warning",
-                  message: "No citizen free to become a specialist.",
+                  message: t("canvas.noCitizenFree" as TranslationKey),
                 });
               }
               triggerRender();
@@ -2433,7 +2447,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       improvement === "mines"
         ? "Mine"
         : improvement.charAt(0).toUpperCase() + improvement.slice(1);
-    return `${label} construction started (${turns} turn${turns > 1 ? "s" : ""})`;
+    return turns > 1
+      ? t("canvas.constructionStartedMany" as TranslationKey, { label, turns })
+      : t("canvas.constructionStartedOne" as TranslationKey, { label, turns });
   };
 
   const executeContextAction = (action: string) => {
@@ -2455,7 +2471,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (actions?.addNotification)
             actions.addNotification({
               type: "success",
-              message: `${unit.type} fortified`,
+              message: t("canvas.toastFortified" as TranslationKey, { unit: unit.type }),
             });
         }
         break;
@@ -2469,7 +2485,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (actions?.addNotification)
             actions.addNotification({
               type: "success",
-              message: `${unit.type} mobilized (no moves this turn)`,
+              message: t("canvas.toastMobilized" as TranslationKey, { unit: unit.type }),
             });
         }
         break;
@@ -2482,8 +2498,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (actions?.addNotification)
             actions.addNotification(
               deployed
-                ? { type: "success", message: `${unit.type} deployed its fishing net` }
-                : { type: "warning", message: "Cannot deploy the fishing net here" },
+                ? {
+                    type: "success",
+                    message: t("canvas.toastFishingNetDeployed" as TranslationKey, { unit: unit.type }),
+                  }
+                : { type: "warning", message: t("canvas.cannotDeployFishingNet" as TranslationKey) },
             );
         }
         break;
@@ -2496,8 +2515,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (actions?.addNotification)
             actions.addNotification(
               recalled
-                ? { type: "info", message: `${unit.type} is returning to port to unload` }
-                : { type: "warning", message: "No fishing route to remove" },
+                ? {
+                    type: "info",
+                    message: t("canvas.toastReturningToPort" as TranslationKey, { unit: unit.type }),
+                  }
+                : { type: "warning", message: t("canvas.noFishingRoute" as TranslationKey) },
             );
         }
         break;
@@ -2512,7 +2534,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             if (actions?.addNotification)
               actions.addNotification({
                 type: "success",
-                message: `${unit.type} woke up`,
+                message: t("canvas.toastWokeUp" as TranslationKey, { unit: unit.type }),
               });
           } else if (gameEngine.unitSleep) {
             console.log(`[ContextMenu] Sleep action for unit ${unit.id}`);
@@ -2522,7 +2544,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             if (actions?.addNotification)
               actions.addNotification({
                 type: "success",
-                message: `${unit.type} sleeping`,
+                message: t("canvas.toastSleeping" as TranslationKey, { unit: unit.type }),
               });
           }
         }
@@ -2537,7 +2559,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (actions?.addNotification)
             actions.addNotification({
               type: "info",
-              message: `${unit.type} turn skipped`,
+              message: t("canvas.toastTurnSkipped" as TranslationKey, { unit: unit.type }),
             });
           if (actions?.selectUnit) actions.selectUnit(null, "user");
         }
@@ -2555,7 +2577,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (actions?.addNotification)
             actions.addNotification({
               type: "info",
-              message: `Click destination for ${unit.type} to go to`,
+              message: t("canvas.toastClickDestination" as TranslationKey, { unit: unit.type }),
             });
         }
         break;
@@ -2577,7 +2599,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (actions?.addNotification)
             actions.addNotification({
               type: "info",
-              message: `GoTo cancelled for ${unit.type}`,
+              message: t("canvas.goToCancelled" as TranslationKey, { unit: unit.type }),
             });
         }
         break;
@@ -2600,8 +2622,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 actions.addNotification({
                   type: "warning",
                   message: isCommandRejection(result)
-                    ? "It is not this civilization's turn"
-                    : "Cannot found city here",
+                    ? t("canvas.notThisCivsTurn" as TranslationKey)
+                    : t("canvas.cannotFoundCity" as TranslationKey),
                 });
             }
           });
@@ -2625,7 +2647,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             if (actions?.addNotification)
               actions.addNotification({
                 type: "warning",
-                message: "Cannot build road here",
+                message: t("canvas.cannotBuildRoad" as TranslationKey),
               });
           }
         }
@@ -2650,7 +2672,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             if (actions?.addNotification)
               actions.addNotification({
                 type: "warning",
-                message: "Cannot build irrigation here",
+                message: t("canvas.cannotBuildIrrigation" as TranslationKey),
               });
           }
         }
@@ -2673,7 +2695,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             if (actions?.addNotification)
               actions.addNotification({
                 type: "warning",
-                message: "Cannot build mine here",
+                message: t("canvas.cannotBuildMine" as TranslationKey),
               });
           }
         }
@@ -2698,7 +2720,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             if (actions?.addNotification)
               actions.addNotification({
                 type: "warning",
-                message: "Cannot build railroad here",
+                message: t("canvas.cannotBuildRailroad" as TranslationKey),
               });
           }
         }
@@ -2739,7 +2761,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (actions?.addNotification) {
             actions.addNotification({
               type: "info",
-              message: `Unit ${unit.type} disbanded`,
+              message: t("canvas.toastUnitDisbanded" as TranslationKey, { unit: unit.type }),
             });
           }
         }
@@ -2762,7 +2784,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             if (actions?.addNotification)
               actions.addNotification({
                 type: "warning",
-                message: "No adjacent foreign unit or city for diplomacy",
+                message: t("canvas.noDiplomacyTarget" as TranslationKey),
               });
             break;
           }
@@ -2793,7 +2815,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               if (actions?.addNotification) {
                 actions.addNotification({
                   type: "info",
-                  message: `📜 Intel on ${r?.civName ?? "Unknown"}: ${r?.numCities ?? "?"} cities, ${r?.numMilitaryUnits ?? "?"} military units, ${r?.gold ?? "?"} gold, researching ${r?.currentResearch ?? "nothing"}, govt: ${r?.government ?? "?"}, attitude: ${r?.attitude ?? "?"}`,
+                  message: t("canvas.intelReport" as TranslationKey, {
+                    civ: String(r?.civName ?? t("canvas.intelUnknown" as TranslationKey)),
+                    cities: String(r?.numCities ?? "?"),
+                    military: String(r?.numMilitaryUnits ?? "?"),
+                    gold: String(r?.gold ?? "?"),
+                    research: String(r?.currentResearch ?? t("canvas.intelNothing" as TranslationKey)),
+                    government: String(r?.government ?? "?"),
+                    attitude: String(r?.attitude ?? "?"),
+                  }),
                 });
               }
             } else if (result.type === "proposal") {
@@ -2805,8 +2835,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 actions.addNotification({
                   type: accepted ? "success" : "warning",
                   message: accepted
-                    ? `Proposal accepted!`
-                    : `Proposal rejected: ${resp?.reason || "unknown"}`,
+                    ? t("canvas.proposalAccepted" as TranslationKey)
+                    : t("canvas.proposalRejected" as TranslationKey, {
+                        reason: String(resp?.reason || t("canvas.reasonUnknown" as TranslationKey)),
+                      }),
                 });
             } else if (result.type === "bribe") {
               const resp = result.response as
@@ -2818,14 +2850,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               if (!resp?.accepted && actions?.addNotification)
                 actions.addNotification({
                   type: "warning",
-                  message: `Bribe failed: ${resp?.reason || "not enough gold"}`,
+                  message: t("canvas.bribeFailed" as TranslationKey, {
+                    reason: String(resp?.reason || t("canvas.notEnoughGold" as TranslationKey)),
+                  }),
                 });
             }
           } else {
             if (actions?.addNotification)
               actions.addNotification({
                 type: "warning",
-                message: result?.reason || "Diplomat action failed",
+                message: result?.reason || t("canvas.diplomatActionFailed" as TranslationKey),
               });
           }
         }
@@ -3268,7 +3302,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             if (actions?.addNotification) {
               actions.addNotification({
                 type: "info",
-                message: `Select a destination for ${ids.length} unit${ids.length === 1 ? "" : "s"}`,
+                message:
+                  ids.length === 1
+                    ? t("canvas.selectDestinationOne" as TranslationKey, { count: ids.length })
+                    : t("canvas.selectDestinationMany" as TranslationKey, { count: ids.length }),
               });
             }
             triggerRender();
