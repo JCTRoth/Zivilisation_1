@@ -76,6 +76,18 @@ describe('AIResearch caravan priority', () => {
     expect(scored.reason).toMatch(/caravan-relevance/);
   });
 
+  it('pushes the chain ROOT, so the branch is reachable at all', () => {
+    // `trade` needs `currency`, which needs `bronze_working`. Boosting only the
+    // tip meant a civ without Bronze Working served the branch last.
+    const scored = AIResearch.scoreTechnology('bronze_working', personality, 'balanced_growth', state(3));
+    expect(scored.reason).toMatch(/caravan-relevance/);
+    // And the root must actually outrank its category rivals for a civ that
+    // cannot see the trade line yet.
+    const withHook = AIResearch.scoreTechnology('bronze_working', personality, 'balanced_growth', state(3));
+    const withoutHook = AIResearch.scoreTechnology('bronze_working', personality, 'balanced_growth', state(0));
+    expect(withHook.score).toBeGreaterThan(withoutHook.score);
+  });
+
   it('does not push it when the routes are already built', () => {
     const without = AIResearch.scoreTechnology('trade', personality, 'balanced_growth', state(0));
     const withPush = AIResearch.scoreTechnology('trade', personality, 'balanced_growth', state(3));

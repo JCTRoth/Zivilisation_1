@@ -369,13 +369,23 @@ export class AIResearch {
     // a push the AI never researched it — a profiled 1,000-round game delivered
     // ZERO trade routes while every city sat three routes short of capacity. Same
     // shape as the Masonry push: the prerequisite of a feature the civ can use.
+    //
+    // The WHOLE CHAIN, not just the tip: `trade` needs `currency`, which needs
+    // `bronze_working`, so a civ without Bronze Working would research the branch
+    // tip last — after every other priority had been served. Pushing the chain
+    // root is what makes the tech arrive at all; the tip's push then keeps it
+    // from being skipped once it is reachable.
     const caravan = gameState.caravanRelevance ?? 0;
-    if (caravan > 0 && (techId === 'trade' || techId === 'currency')) {
+    if (caravan > 0 && techId === 'trade') {
       score += 30 + 15 * caravan;
       reasons.push('caravan-relevance');
     }
+    if (caravan > 0 && techId === 'currency') {
+      score += 25 + 12 * caravan;
+      reasons.push('caravan-relevance');
+    }
     if (caravan > 0 && techId === 'bronze_working') {
-      score += 6;
+      score += 20 + 10 * caravan;
       reasons.push('caravan-relevance');
     }
 

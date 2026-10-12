@@ -547,6 +547,13 @@ export class AIManager {
           debugLog(`[AI] Research selected: ${techChoice}`);
         }
       }
+      // [TEMP-DIAG]
+      if (typeof process !== 'undefined' && process.env?.CARAVAN_DEBUG) {
+        const avail = (AIResearch as unknown as { getAvailableTechnologies: (c: unknown) => string[] }).getAvailableTechnologies(civ);
+        const top = avail.map((id) => ({ id, ...AIResearch.scoreTechnology(id, civ.personality ?? {}, resolveAICivStrategy(civ, aiState), gameState as never) }))
+          .sort((a, b) => b.score - a.score).slice(0, 4);
+        console.info(`[DIAG] r${this.gameEngine.roundManager?.getRoundNumber?.()} ${civ.name} strat=${aiState.strategyProfile} rel=${(gameState as { caravanRelevance?: number }).caravanRelevance} picked=${techChoice} nAvail=${avail.length} nTechs=${(civ.technologies as unknown[] | undefined)?.length ?? -1} hasCurrency=${(civ.technologies as unknown as string[] | undefined)?.includes('currency')} hasTrade=${(civ.technologies as unknown as string[] | undefined)?.includes('trade')} cities=${this.gameEngine.cities.filter((c) => c.civilizationId === civ.id).length} top=${top.map((t) => `${t.id}:${t.score.toFixed(0)}`).join(' ')}`);
+      }
     }
 
     // ─── Phase 2b: Government upgrade ───────────────────────────────
