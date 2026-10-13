@@ -10,6 +10,24 @@ import type { Technology, Unit, City, Civilization, VillageOutcome } from '../..
 import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
 import { getWonder } from '@/data/WonderData';
 import { debugLog } from './DevLog';
+import { t } from '../i18n';
+import { tTechName } from '../i18n/dataNames';
+import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+
+/**
+ * Localized line for a toast this router composes itself. Kept as a thin
+ * wrapper so the call sites read as prose and so a missing key still falls
+ * back to English rather than throwing mid-event.
+ */
+const tEspionage = (key: string, params?: Record<string, string | number>): string =>
+  t(key as Parameters<typeof t>[0], params);
+
+/** English fallback when a key is somehow absent. */
+const tEspionageFallback = (fallback: string): string => fallback;
+
+/** English tech name for an id, used as `tTechName`'s fallback. */
+const techNameFor = (techId: string): string =>
+  TECHNOLOGIES_DATA.find((tech) => tech.id === techId)?.name ?? techId;
 
 export class EngineEventRouter {
   private gameEngine: GameEngine;
@@ -181,6 +199,12 @@ export class EngineEventRouter {
         break;
       case 'AI_DIPLOMACY_OFFER':
         this.onAIDiplomacyOffer(eventData);
+        break;
+      case 'EMBASSY_ESTABLISHED':
+        this.onEmbassyEstablished(eventData);
+        break;
+      case 'ESPIONAGE_RESULT':
+        this.onEspionageResult(eventData);
         break;
       case 'VILLAGE_RESULT':
         this.onVillageResult(eventData);
@@ -953,7 +977,79 @@ export class EngineEventRouter {
       population: city.population ?? 1,
       byCivId,
       fromCivId,
+      // Spoils of war, if the conqueror's scientists found anything to read in
+      // the libraries (a razed city never carries any).
+      techId: eventData.techId as string | undefined,
+      techName: eventData.techName as string | undefined,
     });
+  }
+
+  /**
+   * A diplomat founded an embassy. The negotiation screen keeps its own mirror
+   * of that list (the engine stays the source of truth) so the locked buttons
+   * unlock the moment the diplomat reports success.
+   */
+  private onEmbassyEstablished(eventData: Record<string, unknown>) {
+    const civA = eventData?.civA as number | undefined;
+    const civB = eventData?.civB as number | undefined;
+    if (civA === undefined || civB === undefined) return;
+    if (civA !== HUMAN_PLAYER_ID && civB !== HUMAN_PLAYER_ID) return;
+    const dm = this.gameEngine?.diplomacyManager;
+    if (!dm?.getEmbassyCivs) return;
+    this.actions.setEmbassyCivIds(dm.getEmbassyCivs(HUMAN_PLAYER_ID));
+  }
+
+  /**
+   * An infiltration resolved somewhere in the world.
+   *
+   * The operative's own side already has the outcome — it is the return value
+   * of `executeDiplomatAction`, which the human's UI turns into its report
+   * window. So this handler speaks only to the VICTIM: an AI diplomat that
+   * stole from the player, sabotaged the player's city or founded an embassy
+   * in it would otherwise be a silent event, noticed only via the war
+   * declaration that follows.
+   */
+  private onEspionageResult(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const operativeCivId = eventData?.operativeCivId as number | undefined;
+    const targetCivId = eventData?.targetCivId as number | undefined;
+    const outcome = String(eventData?.outcome ?? '');
+    if (operativeCivId === undefined || targetCivId === undefined) return;
+    // Only the victim is told here; the operative's own report is elsewhere.
+    if (targetCivId !== HUMAN_PLAYER_ID) return;
+
+    const spyName = this.gameEngine?.civilizations?.[operativeCivId]?.name
+      ?? tEspionageFallback('A rival');
+    const cityName = (eventData?.cityName as string | undefined) ?? '';
+
+    switch (outcome) {
+      case 'stolen': {
+        const techId = eventData?.techId as string | undefined;
+        const techName = techId
+          ? tTechName(techId, techNameFor(techId))
+          : tEspionageFallback('a technology');
+        notify('error', tEspionage('espionage.victim.stolen', { civ: spyName, tech: techName }), HUMAN_PLAYER_ID);
+        break;
+      }
+      case 'caught_stealing':
+        notify('success', tEspionage('espionage.victim.caught', { civ: spyName }), HUMAN_PLAYER_ID);
+        break;
+      case 'sabotaged':
+        notify('error', tEspionage('espionage.victim.sabotaged', { civ: spyName, city: cityName }), HUMAN_PLAYER_ID);
+        break;
+      case 'caught_sabotaging':
+        notify('success', tEspionage('espionage.victim.caughtSabotage', { civ: spyName, city: cityName }), HUMAN_PLAYER_ID);
+        break;
+      case 'city_investigated':
+        notify('warning', tEspionage('espionage.victim.investigated', { civ: spyName, city: cityName }), HUMAN_PLAYER_ID);
+        break;
+      case 'embassy_established':
+        // Deliberately silent: the target does not learn that an embassy
+        // exists from the embassy itself. The negotiation screen shows it.
+        break;
+      default:
+        break;
+    }
   }
 
   /**
@@ -1637,10 +1733,10 @@ export class EngineEventRouter {
   }
 
   /**
-   * An AI civilization made a negotiable proposal to the human player. Surface
-   * it in the negotiation screen (with the offering civ pre-selected) instead
-   * of auto-resolving — the player decides. In AI-vs-AI games there is no
-   * human, so offers are never routed here.
+   * An AI civilization made a negotiable proposal to the human player. It is
+   * put to the player as a leader AUDIENCE — the rival speaks its line and the
+   * player answers Yes/No — instead of being auto-resolved. In AI-vs-AI games
+   * there is no human, so offers are never routed here.
    */
   private onAIDiplomacyOffer(eventData: Record<string, unknown>) {
     if (this.isAIVsAI) return;
@@ -1650,11 +1746,9 @@ export class EngineEventRouter {
     const from = civs.find((c: Civilization) => c.id === (eventData.fromCivId as number));
     debugLog('[EngineEventRouter] AI_DIPLOMACY_OFFER from', from?.name ?? eventData.fromCivId, '→', eventData.action);
 
-    if (eventData?.message) {
-      notify('info', eventData.message as string);
-    }
-    this.actions.showIncomingDiplomacyOffer?.({
-      fromCivId: eventData.fromCivId as number,
+    this.actions.openAudience?.({
+      civId: eventData.fromCivId as number,
+      mode: 'offer',
       action: (eventData.action as string) ?? 'propose_peace',
       goldAmount: eventData.goldAmount as number,
       techOffered: typeof eventData.techOffered === 'string' ? eventData.techOffered : undefined,

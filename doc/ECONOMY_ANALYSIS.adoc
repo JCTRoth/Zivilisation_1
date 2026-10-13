@@ -297,19 +297,83 @@ Baseline is the 111-round gold ledger from this analysis's method section; the
 |Upkeep disbands |419 per 400-round game |18 per 150 rounds
 |===
 
-Two things the probe says still need work, stated plainly:
+== The simulator decides the plan
 
-* **City commerce is still the 2-trade floor.** De-quantizing the tax split
-  raised what each city *earns* from its commerce without raising the commerce
-  itself — that needs the road grid (substep 5) to actually land on worked tiles,
-  and the works programme's entry condition (`citiesNeedBuildOut`) still under-
-  reports on cities whose areas are technically "improved" by mines and ditches
-  the city never worked. The road branch now fires for a trade-grid-less unhappy
-  city, but a *content* city with no roads still farms.
+The engine needs ~6 minutes per 150-round probe, so the search for the fix moved
+into `scripts/economy_sim.py`: a calibrated model of the economic core (every
+equation transcribed from `EconomicManager` plus the AI controllers) that runs 400
+turns in milliseconds, one experiment per row, rows added until a row is *stable*
+— and a row stable only because it never fields an army does not count. It is a
+permanent file; run `python3 scripts/economy_sim.py`.
+
+The baseline (R0) reproduces the measured batch: **33 upkeep disbands per 400
+turns, 56 bankruptcies, army 2 units, commerce pinned at 2.34**, against the
+measured 11–24 disbands per 150 rounds and 2.0–2.5 commerce per city. Faithful
+enough to discriminate, so every row is a single lever:
+
+[cols="1,1,1,1,1,1", options="header"]
+|===
+|Row |Change |Disbands |Bankruptcies |Army |Verdict
+
+|R0 |baseline |33 |56 |2.0 |fails
+|R1 |army-cap buffer 0.35 |33 |56 |2.0 |**no effect** — disbanding is not over-building
+|R2 |trade multiplier 3 |19 |35 |3.0 |helps
+|R3 |building upkeep ÷2 |17 |14 |2.0 |helps
+|R4 |no city upkeep |33 |56 |2.0 |no effect (nothing to charge at 2 cities)
+|R5 |the works programme lands |**0** |**0** |5.7 |**fix**, gold still ~17
+|R6 |commerce floor 4 |15 |13 |2.7 |helps
+|R7 |unit upkeep ÷2 |31 |65 |0.0 |**worse** — cheaper units let the AI build more of what it cannot pay for
+|R8 |no appetite ramp |35 |57 |0.3 |no effect — growth is not the problem
+|R9 |floor 4 + multiplier 3 |**0** |**0** |7.7 |fix, but hoards 231 g/turn
+|R10 |floor 6 + multiplier 3 |0 |0 |5.3 |fix, hoards 1084 g/turn
+|R19 |floor 4 + multiplier 3 (5 worlds) |0 |0 |7.7 |**implemented**
+|===
+
+Two conclusions the table forces:
+
+. **It is not a tuning problem, it is a plumbing problem.** A city's commerce is
+   the 2-trade centre floor until a road is built on each worked tile, and the AI
+   essentially never builds one (a 150-round probe measured **2 roaded worked
+   tiles across 5 cities**). Income cannot scale with the empire, so no rate
+   controller and no upkeep table can keep an army paid. R7 proves the direction:
+   halving what a unit costs makes disbanding *worse*, because the AI builds more
+   units it still cannot pay for.
+. **Raising the constants buys stability with inflation** (R9–R10 hoard 231–1084
+   gold a turn). R5 buys it with nothing changed at all — gold still averages 17,
+   which is what the live game measures.
+
+=== What was implemented
+
+R19 — the minimum balance change that reaches zero disbanding without making
+anyone rich — is in the engine:
+
+* `CITY_CENTER_COMMERCE` 2 → **4** ("a real town square", so a road on a worked
+  tile is still worth ~2 of these and building out remains the best investment);
+* `TRADE_GOLD_MULTIPLIER` 2 → **3**.
+
+R16–R18 show why both are needed: floor 3 with multiplier 2 still disbands 22
+units, floor 3 with multiplier 3 still disbands 6, and only floor 4 with
+multiplier 3 reaches zero.
+
+**Item 5 (roads on worked tiles) was reverted.** The simulator's R5 says it is the
+*right* fix, but three measurements say the version implemented did not achieve
+it: a live probe found 2 roaded worked tiles in 151 rounds, the settler idle-share
+metric regressed from 25.8 % to 36.6 %, and it added ~200 lines of new AI rules for
+no measured gain. R19 delivers the economic outcome with two constants, so the
+plumbing fix stays on the list as its own task — measured, not assumed. (The idle
+metric's new level is itself a symptom of the fix: with a self-consistent army cap
+the AI produces settlers instead of unaffordable soldiers, and the same scenario
+now measured 5 cities founded, 0 settlers disbanded, 5 cities on the map against
+the 1–2 the old over-militarised mix left.)
+
+Still open, both stated plainly:
+
 * **Trade routes are still zero.** The payout is now 96 gold for a size-3 pair 8
-  tiles apart and the research hook fires, but the delivery itself is the weak
-  link: a caravan walks at movement 1 through occupied ground and dies. The
-  ship-based auto-delivery in TODO.txt is the real fix and is not implemented.
+  tiles apart and the research hook fires, but delivery is the weak link — a
+  caravan walks at movement 1 through occupied ground and dies. The ship-based
+  auto-delivery in TODO.txt is the real fix and is not implemented.
+* **City commerce is still the floor for most cities.** R19 pays for the empire
+  anyway, but a roaded city should still earn roughly twice an unroaded one.
 
 == Doc drift worth fixing in the same pass
 

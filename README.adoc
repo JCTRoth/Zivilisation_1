@@ -499,6 +499,8 @@ the commit message which rule the number encodes.
 === Balance analysis
 
 * link:doc/BALANCE_ANALYSIS.adoc[Balance & Behaviour Analysis] — 400-round headless games, measured economy/AI failures and a prioritized fix list
+* link:doc/ECONOMY_ANALYSIS.adoc[Economics Analysis] — why the treasury is empty: quantized income, priced-above-output citizens, dead corruption data, and the simulator that decided the fix
+* link:doc/CARAVAN_GOVERNOR.adoc[Caravan Governor] — the per-unit trade brain: mission lifecycle, route economics, travel budget, threat profile, escort
 
 === UI
 

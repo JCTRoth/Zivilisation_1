@@ -26,6 +26,45 @@ export const CARAVAN_RISK_THRESHOLD = 3;
 export const CARAVAN_SAFE_ROUTE_PENALTY = 8;
 
 /**
+ * Turns a delivery mission may spend en route before it is given up.
+ *
+ * A caravan has movement 1 and is defenceless: a target 30 tiles away is a
+ * 30-turn commitment during which the unit produces nothing and can be eaten.
+ * The deadline is what stops the "value grows with distance" scoring from
+ * sending caravans across the world on routes that never pay back.
+ */
+export const CARAVAN_MAX_TRANSIT_TURNS = 25;
+
+/**
+ * Enemy units within this radius of the route feed the risk SCORE. Beyond it an
+ * enemy cannot catch a caravan before the round is out, so it contributes
+ * nothing.
+ */
+export const CARAVAN_THREAT_RADIUS = 1;
+
+/**
+ * Radius at which an enemy makes a tile *dangerous for pathing*.
+ *
+ * Deliberately much tighter than {@link CARAVAN_THREAT_RADIUS}: a tile an enemy
+ * can step onto this turn is where a defenceless unit gets caught, so only that
+ * neighbourhood repels the A* search. Using the scoring radius here would make
+ * every tile near every enemy impassable, and no detour would ever look safer
+ * than the direct route.
+ */
+export const CARAVAN_PATH_DANGER_RADIUS = 1;
+
+/**
+ * A caravan asks for an escort when the route is at least this risky AND a
+ * friendly military unit is within this radius. It then waits instead of
+ * walking into the threat.
+ */
+export const CARAVAN_ESCORT_RISK_MIN = 4;
+export const CARAVAN_ESCORT_RADIUS = 6;
+
+/** Turns a caravan will wait for an escort before it walks anyway. */
+export const CARAVAN_ESCORT_PATIENCE = 4;
+
+/**
  * Island-size thresholds (in passable land tiles) for the AI's naval strategy:
  *  - a SMALL island makes the AI value a Harbor (and consider colonizing
  *    elsewhere),

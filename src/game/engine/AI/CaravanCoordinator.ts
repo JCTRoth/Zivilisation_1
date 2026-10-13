@@ -58,7 +58,7 @@ export interface CaravanCoordinatorWorld {
 }
 
 /** One assignment: this caravan walks to this city. */
-export interface CaravanAssignment {
+interface CaravanAssignment {
   unitId: string;
   targetCityId: string;
   targetCol: number;

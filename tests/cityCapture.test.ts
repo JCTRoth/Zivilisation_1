@@ -525,3 +525,197 @@ describe('AI captures cities', () => {
     expect(attacker.movesRemaining).toBe(0);
   });
 });
+
+/**
+ * Spoils of war (Civ I): the conqueror's scientists plunder the fallen city's
+ * libraries and walk away with ONE technology the former owner knew and the
+ * conqueror did not. The capture screen announces it; the engine grants it.
+ */
+describe('City capture — plundered technology', () => {
+  let engine: GameEngine;
+  let events: Array<{ type: string; data: any }>;
+  let randomSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    engine = new GameEngine(null);
+    (engine as any).sleep = () => Promise.resolve();
+    events = [];
+    engine.onStateChange = (type: string, data?: any) => { events.push({ type, data }); };
+    await engine.initialize({
+      numberOfCivilizations: 2,
+      mapType: 'MANY_CITIES',
+      devMode: false,
+      startingGold: 100,
+    });
+    randomSpy = vi.spyOn(Math, 'random');
+  });
+
+  afterEach(() => {
+    randomSpy.mockRestore();
+    (engine as any).units = [];
+    (engine as any).cities = [];
+    (engine as any).civilizations = [];
+  });
+
+  let cityCounter = 0;
+
+  const isLand = (col: number, row: number): boolean => {
+    const tile = (engine as any).getTileAt?.(col, row);
+    if (!tile) return false;
+    const type = String(tile.type ?? '').toLowerCase();
+    return type !== 'ocean' && type !== 'water';
+  };
+
+  const adjacentLand = (city: any): { col: number; row: number } => {
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const col = city.col + dc;
+      const row = city.row + dr;
+      if (isLand(col, row) && !(engine as any).getUnitAt(col, row)) return { col, row };
+    }
+    throw new Error('No adjacent land tile for city');
+  };
+
+  const addUnit = (id: string, civId: number, pos: { col: number; row: number }) => {
+    (engine as any).units.push({
+      id, civilizationId: civId, type: 'warrior',
+      col: pos.col, row: pos.row, movesRemaining: 1, maxMoves: 1,
+      health: 100, attack: 2, defense: 1, icon: 'warrior',
+      orders: 'none', areTurnsDone: false, isSkipped: false,
+    });
+  };
+
+  const makeEnemyCity = (population: number): any => {
+    const civ1 = engine.civilizations[1];
+    const CHEAP_TERRAIN = new Set(['grassland', 'plains', 'desert', 'tundra', 'river']);
+    const width = (engine as any).map?.width ?? 80;
+    const height = (engine as any).map?.height ?? 50;
+    let spot: { col: number; row: number } | null = null;
+    for (let row = 2; row < height - 2 && !spot; row++) {
+      for (let col = 2; col < width - 2; col++) {
+        if (!isLand(col, row)) continue;
+        const tile = (engine as any).getTileAt?.(col, row);
+        if (!tile || !CHEAP_TERRAIN.has(String(tile.type ?? '').toLowerCase())) continue;
+        if (engine.cities.some((c: any) => Math.abs(c.col - col) + Math.abs(c.row - row) < 4)) continue;
+        if (engine.units.some((u: any) => Math.max(Math.abs(u.col - col), Math.abs(u.row - row)) <= 1)) continue;
+        spot = { col, row };
+        break;
+      }
+    }
+    if (!spot) throw new Error('No free spot for enemy city');
+    const city: any = {
+      id: `plunder_city_${cityCounter++}`,
+      name: 'Plunder City',
+      civilizationId: civ1.id,
+      col: spot.col, row: spot.row,
+      population,
+      foodStored: 0, foodNeeded: population * 20,
+      yields: { food: 0, production: 0, trade: 0, gold: 0, science: 0 },
+      buildings: [], wonders: [], isCapital: false,
+      buildQueue: [], currentProduction: null,
+      productionStored: 0, productionProgress: 0,
+    };
+    (engine as any).cities.push(city);
+    return city;
+  };
+
+  /** The CITY_CAPTURED event the last capture produced. */
+  const lastCaptureEvent = () =>
+    events.filter((e) => e.type === 'CITY_CAPTURED').slice(-1)[0];
+
+  it('grants one technology the fallen civ knew and the conqueror did not', () => {
+    const human = engine.civilizations[0];
+    const enemy = engine.civilizations[1];
+    human.technologies = ['pottery'];
+    enemy.technologies = ['pottery', 'iron_working', 'alphabet'];
+
+    const city = makeEnemyCity(2);
+    addUnit('plunderer', 0, adjacentLand(city));
+    randomSpy.mockReturnValue(0.05); // always win
+
+    (engine as any).moveUnit('plunderer', city.col, city.row);
+
+    const capture = lastCaptureEvent();
+    expect(capture).toBeDefined();
+    expect(capture.data.techId).toBeTruthy();
+    expect(capture.data.techName).toBeTruthy();
+    // Exactly one new tech, and it is one the enemy held.
+    expect(human.technologies).toHaveLength(2);
+    expect(['iron_working', 'alphabet']).toContain(capture.data.techId);
+    expect(human.technologies).toContain(capture.data.techId);
+    // The name is the real display name, not the raw id.
+    expect(capture.data.techName).not.toBe(capture.data.techId);
+  });
+
+  it('carries no spoils when the fallen civ has nothing left to teach', () => {
+    const human = engine.civilizations[0];
+    const enemy = engine.civilizations[1];
+    human.technologies = ['pottery', 'iron_working', 'alphabet'];
+    enemy.technologies = ['pottery'];
+
+    const city = makeEnemyCity(2);
+    addUnit('plunderer_none', 0, adjacentLand(city));
+    randomSpy.mockReturnValue(0.05);
+
+    (engine as any).moveUnit('plunderer_none', city.col, city.row);
+
+    const capture = lastCaptureEvent();
+    expect(capture).toBeDefined();
+    expect(capture.data.techId).toBeUndefined();
+    expect(capture.data.techName).toBeUndefined();
+    expect(human.technologies).toHaveLength(3);
+  });
+
+  it('names the FORMER owner, not the conqueror, in the capture event', () => {
+    // Regression: the moveUnit path read `originalCiv` after resolveCityCombat
+    // had already flipped the city's owner, so the capture screen could never
+    // show the right flag colour.
+    const enemy = engine.civilizations[1];
+    const city = makeEnemyCity(2);
+    addUnit('plunderer_flag', 0, adjacentLand(city));
+    randomSpy.mockReturnValue(0.05);
+
+    (engine as any).moveUnit('plunderer_flag', city.col, city.row);
+
+    const capture = lastCaptureEvent();
+    expect(capture.data.capturedBy).toBe(0);
+    expect(capture.data.originalCiv).toBe(enemy.id);
+    expect(capture.data.city.civilizationId).toBe(0);
+  });
+
+  it('a razed city leaves nothing to plunder', () => {
+    const human = engine.civilizations[0];
+    const enemy = engine.civilizations[1];
+    human.technologies = ['pottery'];
+    enemy.technologies = ['pottery', 'iron_working'];
+
+    // Size 1 → the city is destroyed rather than taken.
+    const city = makeEnemyCity(1);
+    addUnit('razer', 0, adjacentLand(city));
+    randomSpy.mockReturnValue(0.05);
+
+    (engine as any).moveUnit('razer', city.col, city.row);
+
+    const capture = lastCaptureEvent();
+    expect(capture).toBeDefined();
+    expect(capture.data.techId).toBeUndefined();
+    expect(human.technologies).toHaveLength(1);
+  });
+
+  it('the instant capture after the last garrison also pays out', () => {
+    const human = engine.civilizations[0];
+    const enemy = engine.civilizations[1];
+    human.technologies = ['pottery'];
+    enemy.technologies = ['pottery', 'writing'];
+
+    const city = makeEnemyCity(2);
+    addUnit('garrison', 1, { col: city.col, row: city.row });
+    addUnit('besieger', 0, adjacentLand(city));
+    randomSpy.mockReturnValue(0.05);
+
+    (engine as any).moveUnit('besieger', city.col, city.row);
+
+    const capture = lastCaptureEvent();
+    expect(capture.data.techId).toBe('writing');
+    expect(human.technologies).toContain('writing');
+  });
+});

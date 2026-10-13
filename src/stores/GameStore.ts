@@ -222,6 +222,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   // Pending AI→player proposal awaiting a response in the diplomacy screen.
   incomingDiplomacyOffer: null,
 
+  // The leader audience currently on screen (diplomat contact / AI proposal).
+  audienceNotice: null,
+
+  // Rival civs the human has an embassy with (mirrors the engine's ledger).
+  embassyCivIds: [],
+
   // Settings
   settings: {
     uiScale: 1.0,        // Overall UI scale multiplier (0.5 to 2.0)
@@ -232,6 +238,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     autoCamera: true,   // Automatically move camera to focused unit / event
     devMode: false,     // Developer mode: see all players on minimap and switch between them
     enableAnimations: true, // Master switch for movement/combat/camera animations
+    enableSoundEffects: true, // Synthesized UI sound effects (diplomacy, espionage, capture)
     animationSpeed: 1,  // Animation speed multiplier (0 = instant, 1 = normal)
     enemyAnimationSpeed: 1, // Enemy (AI) movement animation speed multiplier (0 = instant)
     cameraGlideSpeed: 1, // Camera glide speed multiplier (0 = instant, 1 = normal)
@@ -839,6 +846,28 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     clearIncomingDiplomacyOffer: () => set(() => ({
       incomingDiplomacyOffer: null
+    })),
+
+    /**
+     * Open the leader-audience screen: a diplomat met a rival (greeting) or an
+     * AI proposal is put to the player (offer). Replaces whatever dialog was
+     * up — the audience is the one thing the player must answer.
+     */
+    openAudience: (notice) => set(state => ({
+      uiState: { ...state.uiState, activeDialog: 'audience' },
+      audienceNotice: notice
+    })),
+
+    clearAudience: () => set(state => ({
+      audienceNotice: null,
+      incomingDiplomacyOffer: null,
+      uiState: state.uiState.activeDialog === 'audience'
+        ? { ...state.uiState, activeDialog: null }
+        : state.uiState
+    })),
+
+    setEmbassyCivIds: (civIds) => set(() => ({
+      embassyCivIds: civIds
     })),
 
     addNotification: (notification) => {

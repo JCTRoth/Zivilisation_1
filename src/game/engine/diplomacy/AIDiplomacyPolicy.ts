@@ -20,6 +20,28 @@ import type { DiplomaticStatus, TreatyType } from '../DiplomacyTypes';
 import type { DiplomaticWeights } from './DiplomaticWeights';
 import type { Opinion } from '../DiplomacyTypes';
 import { seededNoise } from './ProposalScoring';
+import { pickFavourableSwap, type TechTradeContext } from './TechTradeEvaluator';
+
+/**
+ * A `PolicyContext` is the deliberation's own shape; the trade evaluator wants
+ * a narrower one. Rather than widen the evaluator to every field a policy
+ * happens to carry, the two are joined here — so the arithmetic stays readable
+ * on both sides of the seam.
+ */
+function tradeContextFrom(ctx: PolicyContext): TechTradeContext {
+  return {
+    civId: ctx.civId,
+    otherId: ctx.otherId,
+    weights: ctx.weights,
+    status: ctx.status,
+    exhaustion: ctx.exhaustion,
+    ourTechCount: ctx.ourTechCount ?? 0,
+    theirTechCount: ctx.theirTechCount ?? 0,
+    strengthRatio: ctx.ownStrength / Math.max(ctx.theirStrength, 1),
+    round: ctx.round,
+    sequence: ctx.sequence,
+  };
+}
 
 /** One thing a civ might do this evaluation, with its reasoning. */
 export interface DiplomaticCandidate {
@@ -65,6 +87,15 @@ export interface PolicyContext {
   techsWeCanOffer?: string[];
   /** Techs the other has that this civ lacks (Exchange of Knowledge demand). */
   techsWeWant?: string[];
+  /** How many technologies each side holds — "who is already ahead". */
+  ourTechCount?: number;
+  theirTechCount?: number;
+  /**
+   * Whether an embassy exists with this counterpart. Civ I: knowledge is only
+   * exchanged through a working diplomatic channel, so a civ with no embassy
+   * never proposes an Exchange of Knowledge — the player has to found one.
+   */
+  hasEmbassy?: boolean;
 }
 
 const POWER_FLOOR = 1;
@@ -178,6 +209,12 @@ const ACT_THRESHOLDS: Record<string, number> = {
   break_alliance: 2,
   demand_tribute: 8,
   propose_alliance: 6,
+  /**
+   * Founding an embassy is the cheapest thing a civ can do and the gateway to
+   * every term below — without a channel there is no Exchange of Knowledge at
+   * all. Low bar on purpose: it must not lose to a marginal treaty pitch.
+   */
+  establish_embassy: 3,
   default: 6,
 };
 
@@ -238,18 +275,44 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
     push(out, 'propose_trade_agreement', courtship * 0.9, 'wants their trade');
     push(out, 'propose_non_aggression', courtship * 0.7 + fear / 20, 'wants peace of mind');
 
-    // Exchange of Knowledge (Civ I): only when both sides hold something the
-    // other lacks. Worth less than an alliance pitch, more than open borders —
-    // knowledge is power, and goodwill makes a swap easier to land.
-    const canOffer = ctx.techsWeCanOffer?.length ?? 0;
-    const canWant = ctx.techsWeWant?.length ?? 0;
-    if (canOffer > 0 && canWant > 0) {
+    // Open a channel first. Everything below — and the player's own
+    // negotiation screen — stays locked until an embassy exists, so a civ that
+    // has not founded one is being polite with nowhere to sit down. A
+    // diplomatic civ hurries; a xenophobic one dawdles.
+    if (ctx.hasEmbassy === false) {
       push(
         out,
-        'offer_tech_exchange',
-        11 + goodwill / 15 + Math.min(canOffer, canWant) * 0.5,
-        `we each hold ${Math.min(canOffer, canWant)} tech${Math.min(canOffer, canWant) === 1 ? '' : 's'} the other lacks`,
+        'establish_embassy',
+        4 + (ctx.weights.trustSensitivity / 10) * 4 - (ctx.weights.xenophobia / 10) * 4,
+        'no channel to this court yet',
       );
+    }
+
+    // Exchange of Knowledge (Civ I): only when both sides hold something the
+    // other lacks AND a diplomatic channel exists. `hasEmbassy === false` is
+    // the explicit "no channel yet" case; a bare policy context (tests) leaves
+    // it unset and is allowed.
+    //
+    // The score is no longer "you both hold something the other lacks", which
+    // proposed swaps that left the civ worse off — it is the evaluator's own
+    // arithmetic (what we receive minus what we give, weighted by what that
+    // kind of knowledge is worth right now, against the margin this personality
+    // demands). A swap that cannot clear its margin is not a candidate at all.
+    const canOffer = ctx.techsWeCanOffer?.length ?? 0;
+    const canWant = ctx.techsWeWant?.length ?? 0;
+    if (canOffer > 0 && canWant > 0 && ctx.hasEmbassy !== false) {
+      const tradeCtx = tradeContextFrom(ctx);
+      const pick = pickFavourableSwap(ctx.techsWeCanOffer ?? [], ctx.techsWeWant ?? [], tradeCtx);
+      if (pick) {
+        push(
+          out,
+          'offer_tech_exchange',
+          // The margin the civ demanded is already inside `score`, so the
+          // policy's own scale only needs to rank it against the treaties.
+          10 + pick.verdict.score / 4 + goodwill / 15,
+          `${pick.verdict.because}; we each hold ${Math.min(canOffer, canWant)} tech${Math.min(canOffer, canWant) === 1 ? '' : 's'} the other lacks`,
+        );
+      }
     }
 
     // Alliance: the strategic case the old flat −10 never had.

@@ -1,0 +1,206 @@
+= Caravan Governor — Structured Analysis and Redesign
+
+Analysis of `src/game/engine/AI/CaravanGovernor.ts` (the per-unit caravan brain)
+and its civ-level partner `src/game/engine/AI/CaravanCoordinator.ts`, plus the
+redesign that follows from it.
+
+== 1. What the measured game says
+
+The whole system produces **zero trade routes**. A 150-round probe on
+`AI_VS_AI` (4 civs, seed 7) measured:
+
+[cols="1,1,2", options="header"]
+|===
+|Stage |Count |Where it dies
+
+|Caravans produced |**0** |`AutoProduction.shouldBuildCaravan` is gated on `canAffordAnotherUnit` (a gold test) even though a caravan costs 0 gold/turn, and on `canBuildUnit(civ,'caravan')` → the `trade` tech
+|Research hook |fires |`caravanRelevanceForCiv` now pushes `bronze_working → currency → trade`
+|Deliveries |0 |nothing to deliver
+|Improved tiles |24 |(fixed separately — the works corps)
+|===
+
+So the governor is not the current bottleneck; production is. But the governor
+has structural problems of its own that would cap the delivery rate even with a
+steady supply of caravans, and those are what this document analyses.
+
+== 2. The governor as it stands — five concepts
+
+. **Sticky missions.** A target is chosen once and kept until delivered,
+   ineligible, or `CARAVAN_BLOCK_PATIENCE` turns without a route. This exists
+   because the pre-governor chooser re-scored every turn and the caravan paced
+   back and forth. Correct, and it stays.
+. **Risk-taking routing.** The plain A* route is taken even past enemies; a
+   safer alternate to the SAME target is only used when one exists and clearly
+   reduces the risk. Correct in spirit.
+. **Blacklist + patience.** A target the caravan cannot reach is written off per
+   unit. Correct.
+. **One scout per civ.** `CARAVAN_MAX_SCOUTS = 1`, with hand-off when the holder
+   dies. Correct.
+. **Surplus cap.** `MAX_CARAVANS_PER_CITY` in-transit caravans per home city; the
+   newest above the cap are disbanded. Correct.
+
+== 3. The seven structural problems
+
+=== P1 — Value is scored per *trip*, not per *turn*
+
+`pickDeliveryTarget` scores
+`(homePop + destPop) × (1 + dist/4) × (foreign ? 2 : 1)`, so **distance
+multiplies value**. For a unit with movement 1 that is exactly backwards: a city
+8 tiles away is worth the same as one 2 tiles away but takes 4× the turns. The
+governor's own test pins this (the far city B is preferred over the near city A).
+
+The correct unit of account is **value per turn of travel**.
+
+=== P2 — One tile per turn, roads or not
+
+`routePlan` returns `path[1]` — a single step. A caravan on a roaded tile costs
+1/3 movement and could cross three tiles a turn; on a railroad, twenty. The
+governor never uses its movement budget, so a road network (the thing the works
+corps now builds) does nothing for trade.
+
+=== P3 — No notion of route *slots* being worth taking
+
+`isEligibleTarget` refuses a city whose `MAX_CARAVAN_TRADE_ROUTES` slots are
+full. But the engine now evicts the **oldest** route when a new one arrives, so
+a full city is still a good destination when the route being evicted is weaker
+than the new one. The governor cannot see the difference between "full of great
+routes" and "full of junk".
+
+=== P4 — Threat is an undifferentiated blob
+
+`buildDangerMap` puts every enemy unit's whole 8-neighbourhood into one set, so
+an enemy on the far side of the world contributes the same risk as one standing
+on the route. There is no distance weighting, no notion of whether the enemy can
+catch a caravan, and no way to say *postpone*: the only answers are "detour" and
+"take the risk anyway".
+
+=== P5 — No transit deadline
+
+A mission to a city 30 tiles away has no time limit. With `CARAVAN_BLOCK_PATIENCE`
+only counting *no-route* turns, a caravan can spend 40 turns walking and the
+governor has no opinion about it.
+
+=== P6 — No escort concept
+
+Caravans are defenceless (attack 0, defense 0). The governor's answer to danger
+is routing. There is no notion of "wait for a friendly warship", "travel in
+company", or "wait until the war ends" beyond the hard at-war filter.
+
+=== P7 — No civ-level ledger
+
+Missions are keyed by unit id and nothing aggregates them. There is no answer to
+"how long has this civ's caravans been in transit on average", "how many
+deliveries did it ever make", or "is the caravan fleet productive". The
+coordinator partly fills this, but it recomputes from scratch every round and
+keeps no history.
+
+=== P8 — `planUnit` is one 150-line method
+
+Five phases inline, four private helpers, and the lifecycle as a bare string
+kind. It is the reason P1–P7 are expensive to fix: there is nowhere to put a new
+concept.
+
+== 4. The redesign
+
+Kept: the public API (`planUnit`, `assignTarget`, `getMission`, `getScoutHolder`,
+`forget`, `pruneMissing`, `caravansOfCity`), the sticky mission, the
+risk-taking bias, the blacklist, the scout role and the surplus cap. All of the
+existing behaviour tests still pass.
+
+Added, as first-class concepts:
+
+[cols="1,2,2", options="header"]
+|===
+|Concept |What it is |Why
+
+|`MissionPhase`
+|`outbound → delivering → delivered` with explicit `abortReason`, replacing the bare `'wait' | 'scout' | 'idle'` kind
+|A lifecycle is what a deadline, an escort wait and an abort reason need to hang from
+
+|`RouteValuation`
+|`routeValue`, `routeTrade`, `travelTurns`, `valuePerTurn`, `slotGain`
+|Routes are ranked by value per TURN, and a full-slot destination is only taken when the evicted route is weaker
+
+|`TravelBudget`
+|The furthest tile along the path the unit can actually pay for this turn
+|Roads (1/3) and railroads (~1/20) now shorten deliveries
+
+|`ThreatProfile`
+|Enemy units near the route weighted by distance and by whether they can catch a caravan, plus a `postpone` answer
+|"Detour or die" becomes "detour, wait for an escort, or take it"
+
+|`EscortRequest`
+|A caravan marks itself as wanting an escort while a hostile sits on its route and a friendly hull is within reach
+|The first use of the navy that is not a warship race
+
+|`CivLedger`
+|Per civ: in-flight, deliveries, total transit turns, last delivery round
+|Makes the fleet measurable and gives the coordinator history
+
+|`MAX_TRANSIT_TURNS`
+|A mission deadline, after which the target is blacklisted
+|A caravan that has walked for 40 turns stops being a delivery and becomes a waste
+|===
+
+== 5. Implemented
+
+All of the above is now in `src/game/engine/AI/CaravanGovernor.ts`, with the new
+balance numbers in `src/data/GameConstants.ts` and the behaviour pinned by
+`tests/caravanGovernor.test.ts` (21 cases) and `tests/ai/tradeAndWorks.test.ts`.
+
+[cols="1,2,2", options="header"]
+|===
+|Concept |Where |Pinned by
+
+|`MissionPhase` (`outbound → delivering → delivered`, `scouting`, `idle`)
+|`CaravanMission.phase` replaces the old `kind` string
+|`getMission(...).phase` assertions throughout
+
+|`RouteValuation` (`valuePerTurn`, `slotGain`, `travelTurns`)
+|`valueRoute()`, consumed by `pickDeliveryTarget()`
+|"ranks a route by value per TURN, not per trip"; "DOES take a route slot away from a full city when the new route is better"
+
+|`TravelBudget` (`stepWithinBudget`)
+|`routePlan()` returns the furthest tile the unit can pay for, so a roaded
+caravan covers three tiles a turn
+|"covers several tiles in one step when the terrain is cheap"
+
+|`ThreatProfile` (weighted, d ≤ 1 only)
+|`riskOf()` — an enemy two tiles out cannot catch a movement-1 caravan and now
+contributes nothing; `dangerAt()` keeps the tight pathing radius
+|the three risk tests, including the safer-alternate one
+
+|`EscortRequest`
+|`routePlan()` waits `CARAVAN_ESCORT_PATIENCE` turns when a risky route has a
+friendly hull within `CARAVAN_ESCORT_RADIUS`
+|escort constants + the escort branch
+
+|`CivLedger`
+|`getLedger(civId)`: in-flight, deliveries, transit turns, aborts
+|"keeps a per-civ ledger of what the fleet did"
+
+|`CARAVAN_MAX_TRANSIT_TURNS`
+|`routePlan()` abandons a mission that has walked too long
+|"abandons a mission that has taken too long to arrive"
+|===
+
+The one thing deliberately NOT changed: `planUnit` is still the single entry
+point, but every phase is now a named private step with one job, and the
+lifecycle is a union type instead of a bare string — which is what made the new
+concepts cheap to add.
+
+== 6. What still blocks deliveries
+
+The governor is no longer the reason zero routes get built, but two things are:
+
+. **Production.** `AutoProduction.shouldBuildCaravan` gates a 0-gold/turn,
+   50-shield unit on `canAffordAnotherUnit` — a treasury test. Until that gate
+   moves to the food/shield side, there are no caravans to govern.
+. **Reach.** A caravan walks at movement 1 over open ground; the movement budget
+   now exploits roads, but a route across a continent is still dozens of turns.
+   The ship-based trade route in TODO.txt is the real answer for intercontinental
+   pairs.
+
+Both are outside this module and both are measured, not assumed:
+`scripts/economy_sim.py` rows R20-R23 price the trade-route economy against the
+caravan's own payback.

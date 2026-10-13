@@ -1218,12 +1218,12 @@ Defined in: `src/game/engine/EconomicManager.ts`
 
 [source]
 ----
-commerce             = max(tileTrade, CITY_CENTER_COMMERCE=2) + Σ tradeRoutes
+commerce             = max(tileTrade, CITY_CENTER_COMMERCE=4) + Σ tradeRoutes
 afterGovPenalty      = commerce × (1 − government.commercePenalty)
 corruption           = floor(afterGovPenalty × corruptionRate)
 afterCorruption      = max(0, floor(afterGovPenalty − corruption))
 
-tax                  = afterCorruption × taxRate / 100  × 2   (fractional)
+tax                  = afterCorruption × taxRate / 100  × 3   (fractional)
 science              = round(afterCorruption × scienceRate / 100)
                        + buildingScience + specialistScience
 luxury               = floor(afterCorruption × luxuryRate / 100)   (integer)
@@ -1231,12 +1231,23 @@ luxury               = floor(afterCorruption × luxuryRate / 100)   (integer)
 
 Tax rate, science rate and luxury rate must sum to 100.
 
-`tax` is **fractional**: the city's share is computed without flooring and the
-civ banks whole gold once a turn, carrying the remainder on
-`civ.goldFractionCarry`. A 2-commerce city at a 20 % tax rate therefore earns
-0.4 gold a turn — 1 gold every second turn — instead of the 0 it paid when each
-city floored its own share. Luxury stays integer: it is compared against integer
-unhappiness.
+`CITY_CENTER_COMMERCE` is 4 and `TRADE_GOLD_MULTIPLIER` is 3 — both raised
+together, because either alone leaves the economy short. The simulator behind the
+change (`scripts/economy_sim.py`, rows R16–R19) measures the upkeep disbanding at
+22 units per 400 turns with a floor of 3, 6 with multiplier 3, and zero only with
+both. A road on a worked tile is still worth about two of the floor, so building
+out remains the strongest investment in the game.
+
+**Rounding.** The rate split is **fractional** the whole way — a 4-commerce city
+at a 30 % tax rate earns 3.6 gold a turn — and it is rounded **up, exactly once,
+at the moment it is booked into the treasury**: that turn the civ's gold goes up
+by 4. Everything the AI *plans* against (`previewEconomy`, income projections,
+the sustainable-army cap) uses the exact fractional figure, so rounding never
+inflates an empire's projected income; the cash desk is the only place it
+happens. The treasury is therefore always a whole number, and `civ.goldFractionCarry`
+stays 0 (it is kept in the save format so older saves load).
+
+Luxury stays integer: it is compared against integer unhappiness.
 
 === Corruption
 

@@ -154,6 +154,19 @@ export class AutoProduction {
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
     this.settlerGovernor = new SettlerGovernor();
+    // The works corps is sized from the ground: the governor asks how many
+    // tiles in the civ's city radii still need an improvement, and `AIManager`
+    // is the only place that knows (map + terrain tables + city radii). The
+    // governor's own queue is always empty because nothing fills it, so without
+    // this the works corps was permanently zero and the empire never paved a
+    // field (a played game built 2 roaded tiles in 150 rounds).
+    const aiManager = (this.gameEngine as GameEngine & {
+      aiManager?: { countOutstandingWorks?: (civId: number) => number };
+    }).aiManager;
+    if (typeof aiManager?.countOutstandingWorks === 'function') {
+      const countOutstandingWorks = aiManager.countOutstandingWorks.bind(aiManager);
+      this.settlerGovernor.setOutstandingWorksSource(countOutstandingWorks);
+    }
   }
 
   /** Reset any per-game state when starting a new game. */
@@ -1491,19 +1504,21 @@ export class AutoProduction {
    *
    * Rules:
    *  1. Must have the `trade` tech (Caravan prerequisite).
-   *  2. Must NOT be at war (Caravans are fragile peacetime units).
-   *  3. At least one owned city has fewer than 3 trade routes (room for more).
-   *  4. The civ owns fewer than ceil(cities / 2) Caravans already — avoids
+   *  2. At least one owned city has fewer than 3 trade routes (room for more).
+   *  3. The civ owns fewer than ceil(cities / 2) Caravans already — avoids
    *     flooding the map with undelivered Caravans.
-   *  5. The city has enough population (≥ 2) — a pop-1 city should focus on
+   *  4. The city has enough population (≥ 2) — a pop-1 city should focus on
    *     food/growth, not trade.
+   *
+   * **The gate is shields and a citizen, not gold.** A Caravan's upkeep is 0:
+   * asking the treasury (`canAffordAnotherUnit`) whether it may be built is the
+   * wrong currency, and it is why a profiled run built 651 caravans and
+   * delivered none — the unit never got past the gate at all. The two things a
+   * caravan really costs are the 50 shields the city will spend over some turns,
+   * and the citizen it takes when it completes.
    */
   private shouldBuildCaravan(civ: Civilization, city: City, plannedTypes: string[]): boolean {
     if (!canBuildUnit(civ, 'caravan')) return false;
-    // Same solvency gate as every other unit: a caravan produced into a
-    // deficit is disbanded before it can deliver (a profiled run built 651
-    // and disbanded 639 within ~5 rounds).
-    if (!this.canAffordAnotherUnit(civ.id)) return false;
 
     // At least one city has room for more trade routes (max 3 per city).
     const civCities = this.gameEngine.cities.filter(
@@ -1705,6 +1720,28 @@ export class AutoProduction {
     const civ = this.gameEngine?.civilizations?.[civilizationId];
     const econ = this.gameEngine?.economicManager;
     if (!civ || !econ) return false;
+
+    // The cap is denominated in GOLD, so that is what it is spent on.
+    //
+    // It used to be a headcount: `currentUnits + queuedUnits >= sustainableUnits`,
+    // where the ceiling was `unitCount + floor(headroom / unitPrice)`. Both sides
+    // of that comparison charged a caravan, a settler or a scout the same one
+    // slot it gives a rifleman, even though the first three cost 0 gold a turn
+    // and the last costs several. The effect was that a civ paying for its roads
+    // and trade routes ran out of "army" before it ever filed a soldier — the
+    // exact exponential the works programme is supposed to break. A free unit now
+    // exhausts nothing, and a priced one has to fit in what the income actually
+    // leaves after buildings.
+    if (typeof econ.affordableUnitUpkeep === 'function') {
+      const price = typeof econ.unitMaintenanceOf === 'function'
+        ? econ.unitMaintenanceOf(civ, plannedUnitType)
+        : 0;
+      if (price <= 0) return false; // costs no gold → cannot exhaust a gold cap
+      return econ.affordableUnitUpkeep(civ) < price;
+    }
+
+    // Older callers (and the lightweight engine doubles the AI tests use) get
+    // the original count comparison, unchanged.
     const civCities = this.gameEngine.cities.filter(
       (c: City) => c.civilizationId === civilizationId,
     );

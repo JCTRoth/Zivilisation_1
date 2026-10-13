@@ -20,6 +20,7 @@ import {
   INERT_EFFECTS,
   type CityEconomics,
 } from '@/game/engine/AI/BuildingEconomics';
+import { TRADE_GOLD_MULTIPLIER } from '@/game/engine/EconomicManager';
 
 const city = (overrides: Partial<CityEconomics> = {}): CityEconomics => ({
   taxRate: 50,
@@ -90,25 +91,25 @@ describe('trade buildings — the return must beat the upkeep', () => {
   it('values trade through the tax rate', () => {
     // Stock Exchange: +3 trade, 2 upkeep.
     const rich = evaluateBuildingEconomics('stock_exchange', city({ taxRate: 60 }));
-    // 3 × TRADE_GOLD_MULTIPLIER(2) × 0.6 = 3.6 gold/turn.
-    expect(rich.incomePerTurn).toBeCloseTo(3.6, 5);
-    expect(rich.netPerTurn).toBeCloseTo(1.6, 5);
+    // 3 trade × TRADE_GOLD_MULTIPLIER × 0.6 tax.
+    expect(rich.incomePerTurn).toBeCloseTo(3 * TRADE_GOLD_MULTIPLIER * 0.6, 5);
+    expect(rich.netPerTurn).toBeCloseTo(3 * TRADE_GOLD_MULTIPLIER * 0.6 - 2, 5);
     expect(rich.verdict).toBe('profitable');
   });
 
   it('says the same building is a bad buy under a low tax rate', () => {
-    // Democracy caps tax at 10% → 3 × 2 × 0.1 = 0.6 against 2 upkeep.
+    // Democracy caps tax at 10% → 3 trade × TRADE_GOLD_MULTIPLIER × 0.1 against 2 upkeep.
     const poor = evaluateBuildingEconomics('stock_exchange', city({ taxRate: 10 }));
-    expect(poor.incomePerTurn).toBeCloseTo(0.6, 5);
-    expect(poor.netPerTurn).toBeCloseTo(-1.4, 5);
+    expect(poor.incomePerTurn).toBeCloseTo(3 * TRADE_GOLD_MULTIPLIER * 0.1, 5);
+    expect(poor.netPerTurn).toBeCloseTo(3 * TRADE_GOLD_MULTIPLIER * 0.1 - 2, 5);
     expect(poor.verdict).toBe('draining');
     expect(isSellableForBudget(poor)).toBe(true);
   });
 
   it('treats a marketplace as break-even at 50% tax', () => {
-    // +1 trade × 2 × 0.5 = 1 gold against 1 upkeep.
+    // +1 trade × TRADE_GOLD_MULTIPLIER × 0.5 against 1 upkeep.
     const result = evaluateBuildingEconomics('marketplace', city({ taxRate: 50 }));
-    expect(result.netPerTurn).toBe(0);
+    expect(result.netPerTurn).toBeCloseTo(TRADE_GOLD_MULTIPLIER * 0.5 - 1, 5);
     expect(result.verdict).toBe('break_even');
     expect(isSellableForBudget(result)).toBe(false);
   });

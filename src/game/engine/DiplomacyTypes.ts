@@ -61,6 +61,8 @@ export type ImpactEvent =
   | 'tribute_gift'
   | 'unit_bribed'
   | 'spy_detected'
+  | 'technology_stolen'
+  | 'city_sabotaged'
   | 'treaty_cancelled'
   | 'border_pressure'
   // things done FOR you
@@ -163,7 +165,11 @@ export type DiplomatAction =
   | 'offer_tech_exchange'
   | 'propose_mutual_defense'
   | 'propose_embargo'
-  | 'propose_non_aggression';
+  | 'propose_non_aggression'
+  | 'establish_embassy'
+  | 'investigate_city'
+  | 'industrial_sabotage'
+  | 'steal_technology';
 
 export interface DiplomacyProposal {
   fromCivId: number;
@@ -216,6 +222,61 @@ export interface ProposalEvaluation {
 }
 
 // ---------------------------------------------------------------------------
+// Espionage (diplomat actions inside a foreign city)
+// ---------------------------------------------------------------------------
+
+/** What an espionage action did, in the engine's own words. */
+type EspionageOutcome =
+  | 'stolen'
+  | 'caught_stealing'
+  | 'nothing_to_steal'
+  | 'embassy_established'
+  | 'embassy_already'
+  | 'embassy_refused'
+  | 'city_investigated'
+  | 'sabotaged'
+  | 'caught_sabotaging';
+
+/** What a city's owner is up to, as an infiltrated diplomat reports it. */
+export interface CityIntelligence {
+  cityId: string;
+  cityName: string;
+  population: number;
+  buildings: string[];
+  /** Name of whatever is being built (null when the city produces nothing). */
+  production: string | null;
+  productionProgress: number;
+  ownerCivId: number;
+}
+
+/**
+ * The result of one espionage action. The engine resolves the tech / the
+ * detection roll / the war declaration; the UI only has to render the outcome
+ * in the player's language — which is why ids, not names, travel here.
+ */
+export interface EspionageResult {
+  success: boolean;
+  outcome: EspionageOutcome;
+  /** Technology the operative walked out with (outcome 'stolen'). */
+  techId?: string;
+  /**
+   * The target knows what happened. Civ I: stealing technology and being
+   * caught both end a diplomat's career, and both start a war.
+   */
+  coverBlown?: boolean;
+  /** Whether the target declared war as a consequence. */
+  warDeclared?: boolean;
+  /** City the action targeted, when it targeted one. */
+  cityId?: string;
+  /** Name of that city, so the report can name it without another lookup. */
+  cityName?: string;
+  /** Intelligence gathered by 'investigate_city'. */
+  report?: CityIntelligence;
+  /** English fallback reason, mirroring `DiplomacyResponse.reason`. */
+  reason?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Intelligence report (from diplomat spy action)
 // ---------------------------------------------------------------------------
 
@@ -240,7 +301,8 @@ export interface DiplomacyEvent {
       | 'intelligence_gathered' | 'treaty_rejected'
       | 'open_borders_signed' | 'trade_agreement_signed' | 'mutual_defense_signed'
       | 'non_aggression_signed' | 'embargo_declared' | 'treaty_cancelled'
-      | 'tech_exchanged' | 'counter_proposal';
+      | 'tech_exchanged' | 'counter_proposal'
+      | 'embassy_established' | 'technology_stolen' | 'city_sabotaged';
   fromCivId: number;
   toCivId: number;
   details?: string;

@@ -256,6 +256,37 @@ export interface CityEventNotice {
   fromCivId?: number;
   /** Free-form hint for the copy (e.g. 'starvation' is filtered out upstream). */
   reason?: string;
+  /**
+   * Tech the conqueror's scientists plundered from the city libraries, granted
+   * automatically on capture (Civ I spoils of war). Absent when the fallen civ
+   * had nothing left to teach.
+   */
+  techId?: string;
+  techName?: string;
+}
+
+/**
+ * What the "audience" screen shows: a leader audience between the human and a
+ * rival — either a greeting the player asked for by sending a diplomat in, or
+ * an AI-initiated proposal the player has to answer with Yes/No. The screen
+ * deliberately offers NO term selection: the offer is whatever the AI's
+ * personality and research produced.
+ */
+export interface AudienceNotice {
+  /** The rival leader being received. */
+  civId: number;
+  /** `offer` = a proposal awaiting a decision, `greeting` = a plain audience. */
+  mode: 'offer' | 'greeting';
+  /** Diplomatic action proposed (only set in `offer` mode). */
+  action?: string;
+  /** Gold demanded/offered (tribute demands). */
+  goldAmount?: number;
+  /** Technology id the AI offers (Exchange of Knowledge). */
+  techOffered?: string;
+  /** Technology id the AI wants in return (Exchange of Knowledge). */
+  techRequested?: string;
+  /** The leader's spoken line. */
+  message: string;
 }
 
 /**
@@ -635,10 +666,10 @@ export interface Civilization {
    */
   debt?: number;
   /**
-   * Unbanked fraction of this turn's tax income (see
-   * `EconomicManager.taxGoldWithCarry`). Whole gold is banked; the remainder is
-   * carried so a 0.4-gold/turn income is worth 1 gold every second turn rather
-   * than nothing at all.
+   * Always 0. The treasury banks WHOLE COINS, rounded UP at the moment of
+   * booking (`EconomicManager.taxGoldWithCarry`): the rate split stays fractional
+   * all the way through and rounds up exactly once, when it is written into the
+   * treasury. The field is kept so older saves keep loading; nothing reads it.
    */
   goldFractionCarry?: number;
   /** Round the last bankruptcy forgiveness happened (progression export). */
@@ -700,7 +731,7 @@ export interface UIState {
   showCityPanel: boolean;
   showTechTree: boolean;
   showGameMenu: boolean;
-  activeDialog: 'tech' | 'diplomacy' | 'help' | 'pause' | 'city-production' | 'city-details' | 'rates' | 'government' | 'statistics' | 'wonders' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'research-required' | 'auto-end-offer' | 'wonder-completed' | 'wonder-conflict' | 'combat-report' | 'city-founded' | 'city-lost' | null;
+  activeDialog: 'tech' | 'diplomacy' | 'audience' | 'help' | 'pause' | 'city-production' | 'city-details' | 'rates' | 'government' | 'statistics' | 'wonders' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'research-required' | 'auto-end-offer' | 'wonder-completed' | 'wonder-conflict' | 'combat-report' | 'city-founded' | 'city-lost' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
   /** Active citizen pick-up origin ({cityId, col, row}) while reassigning. Null when idle. */
@@ -751,6 +782,12 @@ interface Settings {
   devMode: boolean; // Developer mode: see all players on minimap and switch between them
   /** Master switch for all movement/combat/camera animations. When false, durations are 0 (instant). */
   enableAnimations: boolean;
+  /**
+   * Master switch for the synthesized UI sound effects (diplomacy fanfares,
+   * stolen-tech sting, city-capture cue). Off = `playSfx` is a no-op, so the
+   * rest of the game never has to check the setting itself.
+   */
+  enableSoundEffects: boolean;
   /** Animation speed multiplier (0..3). 0 = instant, 1 = normal, higher = slower. */
   animationSpeed: number;
   /**
@@ -849,6 +886,18 @@ export interface GameStoreState {
   diplomacyFocusCivId: number | null;
   /** Pending AI→player proposal awaiting a response in the diplomacy screen. */
   incomingDiplomacyOffer: IncomingDiplomacyOffer | null;
+  /**
+   * The leader audience currently on screen (diplomat contact or an AI
+   * proposal). Independent of `incomingDiplomacyOffer`: the audience screen is
+   * where BOTH a greeting and an offer are read.
+   */
+  audienceNotice: AudienceNotice | null;
+  /**
+   * Rival civ ids the human has an embassy with. Mirrors the engine's
+   * diplomacy state so the negotiation screen can re-render the moment an
+   * embassy is founded (the engine stays the source of truth).
+   */
+  embassyCivIds: number[];
   // Internal state for preventing rapid focus calls
   _lastFocusCall?: number;
 }
@@ -1052,6 +1101,15 @@ export interface GameActions {
   showIncomingDiplomacyOffer: (offer: IncomingDiplomacyOffer) => void;
   /** Dismiss the pending AI proposal (accepted or rejected). */
   clearIncomingDiplomacyOffer: () => void;
+  /**
+   * Open the leader-audience screen (a diplomat meeting a rival, or an AI
+   * proposal put to the player as Yes/No).
+   */
+  openAudience: (notice: AudienceNotice) => void;
+  /** Close the audience screen (the player left, or the offer was answered). */
+  clearAudience: () => void;
+  /** Mirror the engine's embassy list so the negotiation screen re-renders. */
+  setEmbassyCivIds: (civIds: number[]) => void;
   addNotification: (notification: Omit<Notification, 'id'>) => void;
   removeNotification: (id: number) => void;
   /** Enter citizen pick-up mode (origin tile grabbed) or clear it when null. */

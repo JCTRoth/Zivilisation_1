@@ -17,9 +17,29 @@ export interface ImprovementNeed {
   priority: number;
 }
 
+/** Tiles one works-settler is expected to cover before it needs replacing. */
+const WORKS_TILES_PER_SETTLER = 4;
+
+/** Ceiling on the public-works corps, however much work is outstanding. */
+const MAX_WORKS_CORPS = 3;
+
+/**
+ * How the governor learns how much work is outstanding. Injected by its owner
+ * (`AIManager`) because the count needs the map, the terrain tables and the
+ * city radii — all of which live above this module.
+ */
+export type OutstandingWorksFn = (civId: number) => number;
+
 export class SettlerGovernor {
   private assignments: Map<string, SettlerWorkAssignment> = new Map();
   private improvementQueue: ImprovementNeed[] = [];
+  /** Set by the owner; falls back to the governor's own queue when absent. */
+  private outstandingWorks: OutstandingWorksFn | null = null;
+
+  /** Wire the ground-truth work count in (see {@link OutstandingWorksFn}). */
+  setOutstandingWorksSource(fn: OutstandingWorksFn | null): void {
+    this.outstandingWorks = fn;
+  }
 
   getAssignment(unitId: string): SettlerWorkAssignment | undefined {
     return this.assignments.get(unitId);
@@ -169,8 +189,23 @@ export class SettlerGovernor {
     const assignedSettlers = this.getAssignedCount();
     const queuedImprovements = this.getQueueLength();
 
-    const unassignedWork = Math.max(0, queuedImprovements - assignedSettlers);
-    const workBasedRecommendation = Math.min(3, Math.ceil(unassignedWork / 2));
+    // How many tiles in the civ's city radii still need work. This is the
+    // REAL number, read off the map; the governor's own queue is only what it
+    // has personally promised, and nothing fills it — so sizing the works corps
+    // from the queue alone left it permanently at zero and the empire never
+    // paved a field.
+    const outstanding = typeof civId === 'number'
+      ? this.outstandingWorks?.(civId) ?? queuedImprovements
+      : queuedImprovements;
+
+    const unassignedWork = Math.max(0, outstanding - assignedSettlers);
+    // A settler covers a handful of tiles in the time it takes to replace
+    // itself, so the corps is sized by outstanding work rather than by the
+    // empire's width.
+    const workBasedRecommendation = Math.min(
+      MAX_WORKS_CORPS,
+      Math.ceil(unassignedWork / WORKS_TILES_PER_SETTLER),
+    );
 
     const expansionNeed = cities.length < 5 ? 1 : 0;
     const recommended = Math.max(workBasedRecommendation, expansionNeed);

@@ -265,6 +265,49 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                   >
                     <span aria-hidden="true">🔍</span>{t('unitActions.gatherIntelligence' as TranslationKey)}
                   </button>
+                  <div className="context-menu-divider" role="separator">
+                    {t('unitActions.espionageHeading' as TranslationKey)}
+                  </div>
+                  <button
+                    type="button"
+                    className="context-menu-item"
+                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
+                    onClick={() => handleAction('diplomat_meet_leader')}
+                  >
+                    <span aria-hidden="true">👑</span>{t('unitActions.meetLeader' as TranslationKey)}
+                  </button>
+                  <button
+                    type="button"
+                    className="context-menu-item"
+                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
+                    onClick={() => handleAction('diplomat_establish_embassy')}
+                  >
+                    <span aria-hidden="true">🏛️</span>{t('unitActions.establishEmbassy' as TranslationKey)}
+                  </button>
+                  <button
+                    type="button"
+                    className="context-menu-item"
+                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
+                    onClick={() => handleAction('diplomat_investigate_city')}
+                  >
+                    <span aria-hidden="true">🗺️</span>{t('unitActions.investigateCity' as TranslationKey)}
+                  </button>
+                  <button
+                    type="button"
+                    className="context-menu-item"
+                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
+                    onClick={() => handleAction('diplomat_sabotage')}
+                  >
+                    <span aria-hidden="true">🔥</span>{t('unitActions.industrialSabotage' as TranslationKey)}
+                  </button>
+                  <button
+                    type="button"
+                    className="context-menu-item"
+                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
+                    onClick={() => handleAction('diplomat_steal_tech')}
+                  >
+                    <span aria-hidden="true">📜</span>{t('unitActions.stealTechnology' as TranslationKey)}
+                  </button>
                 </>
               )}
 

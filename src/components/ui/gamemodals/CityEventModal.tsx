@@ -2,6 +2,7 @@ import React from 'react';
 import GameModal from './ModalShell';
 import { useTranslation } from '@/i18n/useTranslation';
 import type { CityEventNotice } from '../../../../types/game';
+import '../../../styles/cityCaptureModal.css';
 
 interface CityEventModalProps {
   show: boolean;
@@ -14,6 +15,10 @@ interface CityEventModalProps {
   terrainName?: string;
   /** Id of the human civilisation — used to tell "taken from you" from "taken for you". */
   playerCivId: number;
+  /** Former owner of a captured city, for the banner that is lowered. */
+  fromCivName?: string;
+  fromCivColor?: string;
+  fromCivIcon?: string;
   onContinue: () => void;
   onGoToCity: () => void;
 }
@@ -30,6 +35,9 @@ const CityEventModal: React.FC<CityEventModalProps> = ({
   byCivName,
   terrainName,
   playerCivId,
+  fromCivName,
+  fromCivColor,
+  fromCivIcon,
   onContinue,
   onGoToCity,
 }) => {
@@ -43,6 +51,16 @@ const CityEventModal: React.FC<CityEventModalProps> = ({
   const isRazed = notice.kind === 'razed';
   const isFounded = notice.kind === 'founded';
   const isJoined = notice.kind === 'joined';
+  const isCaptured = notice.kind === 'captured';
+  /** A city the player TOOK, as opposed to one taken from them. */
+  const isConquest = isCaptured && ours;
+  /**
+   * The banner coming down over a conquered city: the former owner's colour
+   * and device, lowered on its pole. Absent when the flag is the player's own
+   * (a city that joined or was founded raises a new one instead).
+   */
+  const showFlag = isCaptured && !!fromCivColor && fromCivName !== undefined
+    && notice.fromCivId !== playerCivId;
 
   const eyebrow = isFounded
     ? t('cityEvent.eyebrowFounded', { stamp: stampLabel })
@@ -152,6 +170,39 @@ const CityEventModal: React.FC<CityEventModalProps> = ({
           </>
         )}
       </div>
+
+      {/* The enemy banner coming down off the walls. Pure CSS: a pole, a flag
+          in the fallen civ's colour, and one slow slide. */}
+      {showFlag && (
+        <div
+          className="city-event-flag"
+          role="img"
+          aria-label={t('cityEvent.captured.flagLabel', {
+            civ: fromCivName ?? '',
+            city: notice.cityName,
+          })}
+        >
+          <span className="city-event-flag__pole" aria-hidden="true" />
+          <span
+            className="city-event-flag__banner"
+            style={{ background: fromCivColor }}
+            aria-hidden="true"
+          >
+            <span className="city-event-flag__device">{fromCivIcon ?? ''}</span>
+          </span>
+          <span className="city-event-flag__caption" aria-hidden="true">
+            {fromCivName}
+          </span>
+        </div>
+      )}
+
+      {/* Spoils of war: the libraries are plundered for one technology the
+          fallen civ knew and the conqueror did not. */}
+      {isConquest && notice.techName && (
+        <div className="gm-callout city-event-plunder">
+          📜 {t('cityEvent.captured.plunder', { tech: notice.techName })}
+        </div>
+      )}
 
       <div className="gm-section">
         <div className="gm-section-title">

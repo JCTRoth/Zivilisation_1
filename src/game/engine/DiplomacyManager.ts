@@ -22,6 +22,8 @@ import type {
   ImpactEvent,
   TreatyType,
   ProposalEvaluation,
+  EspionageResult,
+  CityIntelligence,
 } from './DiplomacyTypes';
 import { attitudeFromScore } from './DiplomacyTypes';
 import {
@@ -51,6 +53,7 @@ import {
   shouldHonourMutualDefence,
   type PolicyContext,
 } from './diplomacy/AIDiplomacyPolicy';
+import { wouldProposeExchange, type TechTradeContext } from './diplomacy/TechTradeEvaluator';
 import type { Unit, City } from '../../../types/game';
 import GameEngine from './GameEngine';
 import { debugLog } from '../../utils/DevLog';
@@ -79,6 +82,14 @@ const AI_DIPLOMACY_INTERVAL = 5;
  * a real negative impact, scaled up to 3× by how suspicious it is.
  */
 const SPY_DETECTION_BASE = 15;
+/**
+ * Detection odds for the two infiltrations that end careers: stealing a
+ * technology and sabotaging a city. Both are louder than simply reading a
+ * city's ledgers, and both cost the target a war when they succeed — the odds
+ * have to be high enough that espionage is a decision, not an auto-claim.
+ */
+const STEAL_DETECTION_BASE = 45;
+const SABOTAGE_DETECTION_BASE = 50;
 /**
  * Rounds of peace a civ remembers you for, which is what makes a broken peace
  * treaty expensive long after the fact.
@@ -113,6 +124,12 @@ export class DiplomacyManager {
    */
   private contactedPairs: Set<string> = new Set();
   /**
+   * Pairs that have an embassy, keyed exactly like `relations`. An embassy is
+   * what unlocks real negotiation: without one the diplomacy screen will not
+   * let the player talk terms.
+   */
+  private embassyPairs: Set<string> = new Set();
+  /**
    * Per-civ war wear, 0…EXHAUSTION_MAX. Fighting costs, peace heals. This is
    * what turns a grinding stalemate into a negotiated one instead of a war that
    * runs to the end of the game.
@@ -132,6 +149,7 @@ export class DiplomacyManager {
     this.relations.clear();
     this.eventLog = [];
     this.contactedPairs.clear();
+    this.embassyPairs.clear();
     this.warExhaustion.clear();
     this.proposalSequence = 0;
     for (let i = 0; i < civIds.length; i++) {
@@ -157,6 +175,7 @@ export class DiplomacyManager {
     this.relations.clear();
     this.eventLog = [];
     this.contactedPairs.clear();
+    this.embassyPairs.clear();
     this.warExhaustion.clear();
     this.proposalSequence = 0;
   }
@@ -977,6 +996,253 @@ export class DiplomacyManager {
     return { accepted: true, goldTransferred: -cost };
   }
 
+  // ─── Espionage: embassies, city infiltration, tech theft ──────────
+
+  /**
+   * Whether an embassy exists between two civs. An embassy is what turns a
+   * first contact into a working diplomatic channel: without one the
+   * negotiation screen shows the rival but keeps every button locked.
+   */
+  hasEmbassy(civA: number, civB: number): boolean {
+    if (civA === civB) return true;
+    return this.embassyPairs.has(this.key(civA, civB));
+  }
+
+  /** Every counterpart the civ has an embassy with (for the UI's roster). */
+  getEmbassyCivs(civId: number): number[] {
+    const result: number[] = [];
+    for (const key of this.embassyPairs) {
+      const [a, b] = key.split('_').map(Number);
+      if (a === civId) result.push(b);
+      else if (b === civId) result.push(a);
+    }
+    return result;
+  }
+
+  /** Serialize embassy pairs (for save/load). */
+  exportEmbassyPairs(): string[] {
+    return Array.from(this.embassyPairs);
+  }
+
+  restoreEmbassyPairs(pairs: string[]): void {
+    this.embassyPairs = new Set(pairs);
+  }
+
+  /** A diplomat presents its credentials: an embassy is founded. */
+  establishEmbassy(diplomatCivId: number, targetCivId: number): EspionageResult {
+    if (this.isAtWar(diplomatCivId, targetCivId)) {
+      return this.announce({ success: false, outcome: 'embassy_refused', reason: 'At war' }, diplomatCivId, targetCivId);
+    }
+    if (this.hasEmbassy(diplomatCivId, targetCivId)) {
+      return this.announce(
+        { success: false, outcome: 'embassy_already', reason: 'Embassy already established' },
+        diplomatCivId,
+        targetCivId,
+      );
+    }
+    this.embassyPairs.add(this.key(diplomatCivId, targetCivId));
+    this.logEvent({
+      type: 'embassy_established',
+      fromCivId: diplomatCivId,
+      toCivId: targetCivId,
+    });
+    // The UI keeps its own mirror of the embassy list so the negotiation
+    // screen unlocks the moment the diplomat reports success.
+    this.emitEvent('EMBASSY_ESTABLISHED', { civA: diplomatCivId, civB: targetCivId });
+    return this.announce({ success: true, outcome: 'embassy_established' }, diplomatCivId, targetCivId);
+  }
+
+  /**
+   * Infiltrate a city and steal ONE technology — a random one of the techs the
+   * owner knows and we do not, picked blind (Civ I: the player never chooses).
+   *
+   * Stealing is not a quiet act: Civ I always blows the diplomat's cover, and
+   * the victim declares war on the spot. Getting caught BEFORE the theft is
+   * worse — the secrets stay home and the diplomat is lost all the same.
+   */
+  stealTechnology(diplomatCivId: number, targetCivId: number): EspionageResult {
+    if (this.isAtWar(diplomatCivId, targetCivId)) {
+      return this.announce(
+        { success: false, outcome: 'caught_stealing', reason: 'At war' },
+        diplomatCivId,
+        targetCivId,
+      );
+    }
+    const pool = this.getTechTradeOptions(diplomatCivId, targetCivId).theyHaveWeLack;
+    if (pool.length === 0) {
+      return this.announce(
+        { success: false, outcome: 'nothing_to_steal', reason: 'Nothing left to learn' },
+        diplomatCivId,
+        targetCivId,
+      );
+    }
+
+    const caught = this.spyDetection(diplomatCivId, targetCivId, 'steal', STEAL_DETECTION_BASE);
+    if (caught) {
+      const warDeclared = this.blowCover(diplomatCivId, targetCivId, 'spy_detected', 'caught stealing');
+      return this.announce(
+        { success: false, outcome: 'caught_stealing', coverBlown: true, warDeclared, reason: 'Caught in the act' },
+        diplomatCivId,
+        targetCivId,
+      );
+    }
+
+    const techId = pool[Math.floor(Math.random() * pool.length)];
+    // The victim finds out anyway: a stolen secret is discovered eventually,
+    // and Civ I makes that discovery immediate.
+    const warDeclared = this.blowCover(diplomatCivId, targetCivId, 'technology_stolen', `stole ${techId}`);
+    this.logEvent({
+      type: 'technology_stolen',
+      fromCivId: diplomatCivId,
+      toCivId: targetCivId,
+      details: techId,
+    });
+    return this.announce(
+      { success: true, outcome: 'stolen', techId, coverBlown: true, warDeclared },
+      diplomatCivId,
+      targetCivId,
+    );
+  }
+
+  /**
+   * Announce an espionage outcome to whoever is watching.
+   *
+   * The operative's own side already has the result in hand — it is the return
+   * value of `executeDiplomatAction`, which the human's UI turns into its
+   * report window. The *victim* has nothing: an AI diplomat that steals from
+   * the player would otherwise be a silent event, and the player would only
+   * notice the war declaration. So the event carries both civ ids and the
+   * router decides which side (if any) needs telling.
+   */
+  private announce(result: EspionageResult, operativeCivId: number, targetCivId: number): EspionageResult {
+    this.emitEvent('ESPIONAGE_RESULT', {
+      operativeCivId,
+      targetCivId,
+      outcome: result.outcome,
+      success: result.success,
+      techId: result.techId,
+      coverBlown: result.coverBlown ?? false,
+      warDeclared: result.warDeclared ?? false,
+      cityId: result.cityId,
+      cityName: result.cityName,
+      city: result.report ? {
+        name: result.report.cityName,
+        population: result.report.population,
+        production: result.report.production,
+      } : undefined,
+    });
+    return result;
+  }
+
+  /** Read a city from the inside: production, buildings, population. */
+  investigateCity(diplomatCivId: number, city: City): EspionageResult {
+    const report: CityIntelligence = {
+      cityId: city.id,
+      cityName: city.name,
+      population: city.population ?? 0,
+      buildings: city.buildings ? [...city.buildings] : [],
+      production: city.currentProduction?.name ?? null,
+      productionProgress: city.productionProgress ?? 0,
+      ownerCivId: city.civilizationId,
+    };
+    this.logEvent({
+      type: 'intelligence_gathered',
+      fromCivId: diplomatCivId,
+      toCivId: city.civilizationId,
+      details: `Investigated ${city.name}`,
+    });
+    return this.announce(
+      { success: true, outcome: 'city_investigated', cityId: city.id, cityName: city.name, report },
+      diplomatCivId,
+      city.civilizationId,
+    );
+  }
+
+  /**
+   * Sabotage a city's industry: the accumulated shields are lost, and a city
+   * with nothing to destroy is set back to a single unit's worth of work.
+   * Getting caught costs the diplomat and starts a war.
+   */
+  industrialSabotage(diplomatCivId: number, city: City): EspionageResult {
+    if (this.isAtWar(diplomatCivId, city.civilizationId)) {
+      return this.announce(
+        { success: false, outcome: 'caught_sabotaging', reason: 'At war', cityId: city.id, cityName: city.name },
+        diplomatCivId,
+        city.civilizationId,
+      );
+    }
+    const caught = this.spyDetection(diplomatCivId, city.civilizationId, 'sabotage', SABOTAGE_DETECTION_BASE);
+    if (caught) {
+      const warDeclared = this.blowCover(diplomatCivId, city.civilizationId, 'spy_detected', 'caught sabotaging');
+      return this.announce(
+        {
+          success: false,
+          outcome: 'caught_sabotaging',
+          coverBlown: true,
+          warDeclared,
+          cityId: city.id,
+          cityName: city.name,
+          reason: 'Caught in the act',
+        },
+        diplomatCivId,
+        city.civilizationId,
+      );
+    }
+
+    city.productionProgress = 0;
+    const rel = this.getRelation(city.civilizationId, diplomatCivId);
+    if (rel) {
+      this.recordImpactOn(rel, city.civilizationId, 'city_sabotaged', undefined, city.name);
+    }
+    this.logEvent({
+      type: 'city_sabotaged',
+      fromCivId: diplomatCivId,
+      toCivId: city.civilizationId,
+      details: city.name,
+    });
+    return this.announce(
+      { success: true, outcome: 'sabotaged', cityId: city.id, cityName: city.name },
+      diplomatCivId,
+      city.civilizationId,
+    );
+  }
+
+  /**
+   * Seeded detection roll for an infiltration attempt. Deterministic per
+   * (operative, target, kind, round) so a replay resolves identically, and
+   * scaled by how paranoid the victim is.
+   */
+  private spyDetection(
+    diplomatCivId: number,
+    targetCivId: number,
+    kind: string,
+    base: number,
+  ): boolean {
+    const round = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const paranoia = this.weightsFor(targetCivId).paranoia;
+    const chance = Math.max(5, Math.min(90, base + (paranoia - 5) * 6));
+    return seededNoise([diplomatCivId, targetCivId, kind, round]) * 50 + 50 < chance;
+  }
+
+  /**
+   * The target learns what happened and declares war on the spy's civ (Civ I:
+   * a caught agent is an act of war). Returns whether war was declared — false
+   * when the two were already fighting.
+   */
+  private blowCover(
+    diplomatCivId: number,
+    targetCivId: number,
+    event: ImpactEvent,
+    detail: string,
+  ): boolean {
+    const alreadyAtWar = this.isAtWar(diplomatCivId, targetCivId);
+    const rel = this.getRelation(targetCivId, diplomatCivId);
+    if (rel) this.recordImpactOn(rel, targetCivId, event, undefined, detail);
+    if (alreadyAtWar) return false;
+    this.declareWar(targetCivId, diplomatCivId);
+    return true;
+  }
+
   // ─── Turn processing ───────────────────────────────────────────────
 
   /**
@@ -1119,17 +1385,44 @@ export class DiplomacyManager {
   }
 
   /**
-   * Pick a fair Civ I swap: offer the *cheapest* tech they lack, ask for the
-   * *most expensive* tech we lack. Returns null when no pair exists.
+   * Pick a Civ I swap the proposing civ actually benefits from.
+   *
+   * This used to be mechanical — hand over the cheapest thing we hold, ask for
+   * the dearest thing they hold. That picks a *pair*, but never asks whether
+   * the trade leaves us better off: giving away Iron Working for Alphabet
+   * looked like a fair swap simply because Alphabet was the thing we lacked.
+   * The trade is now scored by `TechTradeEvaluator` (what we receive minus what
+   * we give, each weighted by what that kind of knowledge is worth to us right
+   * now), and returns null when nothing on offer clears the civ's margin.
    */
   pickTechSwap(fromCivId: number, toCivId: number): { techOffered: string; techRequested: string } | null {
     const opts = this.getTechTradeOptions(fromCivId, toCivId);
-    if (opts.weHaveTheyLack.length === 0 || opts.theyHaveWeLack.length === 0) return null;
-    const cost = (id: string): number =>
-      TECHNOLOGIES_DATA.find((t) => t.id === id)?.cost ?? 50;
-    const techOffered = [...opts.weHaveTheyLack].sort((a, b) => cost(a) - cost(b))[0];
-    const techRequested = [...opts.theyHaveWeLack].sort((a, b) => cost(b) - cost(a))[0];
-    return { techOffered, techRequested };
+    const pick = wouldProposeExchange(opts.weHaveTheyLack, opts.theyHaveWeLack, this.tradeContext(fromCivId, toCivId));
+    return pick ? pick.proposal : null;
+  }
+
+  /**
+   * The facts `TechTradeEvaluator` needs to price a trade for this civ. Built
+   * here so the human-facing preview and the AI's own deliberation ask the
+   * identical question.
+   */
+  tradeContext(civId: number, otherId: number): TechTradeContext {
+    const rel = this.getRelation(civId, otherId);
+    const own = this.estimateMilitaryStrength(civId);
+    const theirs = this.estimateMilitaryStrength(otherId);
+    return {
+      civId,
+      otherId,
+      weights: this.weightsFor(civId),
+      status: rel?.status ?? 'peace',
+      exhaustion: this.getWarExhaustion(civId),
+      ourTechCount: this.gameEngine.civilizations?.[civId]?.technologies?.length ?? 0,
+      theirTechCount: this.gameEngine.civilizations?.[otherId]?.technologies?.length ?? 0,
+      // Floor of 1 so a civ with no army is not read as infinitely weak.
+      strengthRatio: own / Math.max(theirs, 1),
+      round: this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
+      sequence: this.proposalSequence++,
+    };
   }
 
   /**
@@ -1176,6 +1469,13 @@ export class DiplomacyManager {
       currentYear: this.gameEngine.currentYear ?? -4000,
       techsWeCanOffer: tradeOpts.weHaveTheyLack,
       techsWeWant: tradeOpts.theyHaveWeLack,
+      // How far ahead each side already is — the trade evaluator uses it to
+      // decide whether a court can afford to be generous.
+      ourTechCount: this.gameEngine.civilizations?.[civId]?.technologies?.length ?? 0,
+      theirTechCount: this.gameEngine.civilizations?.[otherId]?.technologies?.length ?? 0,
+      // No working channel, no Exchange of Knowledge: the AI waits for the
+      // player (or one of its own diplomats) to found an embassy first.
+      hasEmbassy: this.hasEmbassy(civId, otherId),
     };
   }
 
@@ -1251,6 +1551,15 @@ export class DiplomacyManager {
           } else {
             this.processProposal({ fromCivId: civId, toCivId: otherId, action: 'demand_tribute', goldAmount: demand });
           }
+          break;
+        }
+
+        case 'establish_embassy': {
+          // Not a negotiation — a channel being opened. Nobody is asked,
+          // because an embassy is not a concession: it is the civ saying "we
+          // will have an address here". Both sides' screens unlock from the
+          // EMBASSY_ESTABLISHED event the manager emits.
+          this.establishEmbassy(civId, otherId);
           break;
         }
 
@@ -1338,11 +1647,13 @@ export class DiplomacyManager {
     action: DiplomatAction,
     goldAmount: number | undefined,
     message: string,
+    techOffered?: string,
+    techRequested?: string,
   ): void {
     // A civ cannot negotiate with someone it has never met. Visibility normally
     // records this; asserting it here keeps the invariant airtight.
     this.markContact(fromCivId, toCivId);
-    this.emitOffer(fromCivId, toCivId, action, goldAmount, message);
+    this.emitOffer(fromCivId, toCivId, action, goldAmount, message, techOffered, techRequested);
   }
 
   // ─── Internal helpers ──────────────────────────────────────────────

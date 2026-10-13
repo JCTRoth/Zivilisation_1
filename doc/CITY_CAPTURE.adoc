@@ -20,6 +20,12 @@ path (`GameEngine.moveUnit` → `resolveCityCombat`).
      and `GovernmentManager.ensureCapital` designates a replacement).
   . *Gold plundering* — 20% of the defender's treasury (capped at 100) is
      transferred to the capturer.
+  . *Plundered knowledge* — the conqueror's scientists take ONE technology the
+     former owner knew and the conqueror did not (`plunderTechOnCapture`, which
+     draws from `DiplomacyManager.getTechTradeOptions().theyHaveWeLack`). The
+     pick is blind: no UI chooses it. `CITY_CAPTURED` carries `techId` /
+     `techName` so the capture screen can announce it, and a razed city
+     carries none — there are no libraries left to read.
   . *Garrison destroyed* — every unit of the old owner standing on the city
      tile is wiped out.
   . *Production reset* — `currentProduction`, `buildQueue`, and stored
@@ -97,8 +103,28 @@ Toast text is suppressed entirely in AI-vs-AI mode (no human is watching).
 `AutoProduction` (re-picks production for the affected civs), `GameLogger`,
 `GameProgression` and `CitySnapshots`.
 
+`CITY_CAPTURED` carries `{ city, capturedBy, originalCiv, techId?, techName? }`.
+`originalCiv` is read *before* `resolveCityCombat` runs, because the capture
+call flips `city.civilizationId` over to the attacker — the capture screen needs
+the *former* owner's colour to lower the right banner.
+
 `CIVILIZATION_ELIMINATED` — see the section above; consumed by
 `EngineEventRouter` (toast) and `VictoryManager` (via `isAlive`).
+
+== Capture screen
+
+`CityEventModal` (dialog ids `city-founded` / `city-lost`, notice kind
+`captured`) renders the conquest as a banner coming down and a bill being read
+out:
+
+* *The lowered banner* — `.city-event-flag` draws a pole with the former
+  owner's colour (`civ.color`) and device (`civ.icon`), animated down the pole
+  by `city-event-flag-lowered` (1500 ms, honoured `prefers-reduced-motion`).
+  The whole thing carries an `aria-label` naming the flag and the city.
+* *The plundered knowledge* — `.city-event-plunder` shows the engine's pick at
+  the bottom of the window: "Our scientists plunder the city libraries and
+  discover the secrets of X!". It only appears when the capture actually
+  produced a tech, and never for a razed city.
 
 == Tests
 

@@ -82,9 +82,30 @@
   padding: 6px;
 }
 
-/* 44px touch targets */
-.context-menu-item {
+/* Section label inside the menu (e.g. the diplomat's INFILTRATION block). */
+.context-menu-divider {
   display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 4px 4px;
+  padding: 0 8px;
+  color: var(--color-text-muted, #8fa3b4);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.context-menu-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border, #2c3d4d);
+}
+
+/* 44px touch targets */
+.context-menu-item {  display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;

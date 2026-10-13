@@ -35,6 +35,9 @@ import GameEngine from "@/game/engine/GameEngine";
 import "../../styles/civ1GameCanvas.css";
 import UnitActionsModal from "./UnitActionsModal";
 import UnitStackModal from "./UnitStackModal";
+import EspionageReportModal, {
+  type EspionageStage,
+} from "@/components/ui/gamemodals/EspionageReportModal";
 import { Pathfinding } from "@/game/engine/Pathfinding";
 import {
   computeMovementPreview,
@@ -43,6 +46,9 @@ import {
 import { KeyboardHandler } from "@/game/engine/KeyboardHandler";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { TranslationKey } from '@/i18n';
+import { tTechName } from '@/i18n/dataNames';
+import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+import { unlockAudio } from '@/utils/Sfx';
 import { debugLog } from '@/utils/DevLog';
 
 /**
@@ -53,6 +59,10 @@ import { debugLog } from '@/utils/DevLog';
 const ANIMATION_FPS = 30;
 
 type HexCoordinates = { col: number; row: number };
+
+/** English tech name for an id, used as the `tTechName` fallback. */
+const techNameFallback = (techId: string): string =>
+  TECHNOLOGIES_DATA.find((tech) => tech.id === techId)?.name ?? techId;
 
 interface GameCanvasProps {
   minimap?: boolean;
@@ -165,6 +175,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   );
   /** Tile whose unit stack modal is open (null = closed). */
   const [stackModal, setStackModal] = useState<HexCoordinates | null>(null);
+  /**
+   * The espionage report a diplomat just produced (stolen technology, blown
+   * cover, city investigation). Held locally: unlike the dialogs that live in
+   * the store, this window belongs to the unit action that opened it.
+   */
+  const [espionageReport, setEspionageReport] = useState<{
+    title: string;
+    eyebrow?: string;
+    stages: EspionageStage[];
+  } | null>(null);
   const [reachableTiles, setReachableTiles] = useState<Map<string, number>>(
     new Map(),
   );
@@ -1109,6 +1129,140 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     return [];
   };
 
+  /**
+   * Turn an espionage result into the beats of the report window. The order is
+   * the drama Civ I plays out: the loot first, then the price — cover blown,
+   * war declared.
+   */
+  const buildEspionageStages = (
+    outcome: string,
+    raw: Record<string, unknown> | undefined,
+    civName: string,
+  ): EspionageStage[] => {
+    const stages: EspionageStage[] = [];
+    const techId = typeof raw?.techId === "string" ? raw.techId : "";
+    const techName = techId
+      ? tTechName(techId, techNameFallback(techId))
+      : "";
+    const cityName = typeof raw?.cityName === "string" ? raw.cityName : "";
+    const coverBlown = raw?.coverBlown === true;
+    const warDeclared = raw?.warDeclared === true;
+
+    if (outcome === "stolen") {
+      stages.push({
+        key: "stolen",
+        icon: "📜",
+        tone: "success",
+        text: t("espionage.steal.success" as TranslationKey, { tech: techName }),
+        cue: "stolenTechnology",
+      });
+    } else if (outcome === "caught_stealing") {
+      stages.push({
+        key: "caught",
+        icon: "🚨",
+        tone: "danger",
+        text: t("espionage.steal.caught" as TranslationKey),
+      });
+    } else if (outcome === "nothing_to_steal") {
+      stages.push({
+        key: "nothing",
+        icon: "🕳️",
+        tone: "warning",
+        text: t("espionage.steal.nothing" as TranslationKey),
+      });
+    } else if (outcome === "embassy_established") {
+      stages.push({
+        key: "embassy",
+        icon: "🏛️",
+        tone: "success",
+        text: t("espionage.embassy.established" as TranslationKey, { civ: civName }),
+      });
+    } else if (outcome === "embassy_already") {
+      stages.push({
+        key: "embassy-already",
+        icon: "🏛️",
+        tone: "info",
+        text: t("espionage.embassy.already" as TranslationKey, { civ: civName }),
+      });
+    } else if (outcome === "embassy_refused") {
+      stages.push({
+        key: "embassy-refused",
+        icon: "🚪",
+        tone: "warning",
+        text: t("espionage.embassy.refused" as TranslationKey, { civ: civName }),
+      });
+    } else if (outcome === "sabotaged") {
+      stages.push({
+        key: "sabotage",
+        icon: "🔥",
+        tone: "success",
+        text: t("espionage.sabotage.success" as TranslationKey, { city: cityName }),
+      });
+    } else if (outcome === "caught_sabotaging") {
+      stages.push({
+        key: "sabotage-caught",
+        icon: "🚨",
+        tone: "danger",
+        text: t("espionage.sabotage.caught" as TranslationKey, { city: cityName }),
+      });
+    } else if (outcome === "city_investigated") {
+      const report = raw?.report as Record<string, unknown> | undefined;
+      const buildings = Array.isArray(report?.buildings)
+        ? (report?.buildings as string[]).join(", ")
+        : "";
+      stages.push({
+        key: "investigate",
+        icon: "🗺️",
+        tone: "info",
+        text: t("espionage.investigate.title" as TranslationKey, {
+          city: String(report?.cityName ?? cityName),
+        }),
+      });
+      stages.push({
+        key: "investigate-pop",
+        icon: "👥",
+        tone: "info",
+        text: `${t("espionage.investigate.population" as TranslationKey)}: ${String(report?.population ?? "?")}`,
+      });
+      if (buildings) {
+        stages.push({
+          key: "investigate-buildings",
+          icon: "🏗️",
+          tone: "info",
+          text: `${t("espionage.investigate.buildings" as TranslationKey)}: ${buildings}`,
+        });
+      }
+      stages.push({
+        key: "investigate-production",
+        icon: "⚒️",
+        tone: "info",
+        text: `${t("espionage.investigate.production" as TranslationKey)}: ${
+          String(report?.production ?? t("espionage.investigate.none" as TranslationKey))
+        } (${String(report?.productionProgress ?? 0)})`,
+      });
+      return stages;
+    }
+
+    if (coverBlown) {
+      stages.push({
+        key: "cover-blown",
+        icon: "☠️",
+        tone: "danger",
+        text: t("espionage.steal.coverBlown" as TranslationKey),
+        cue: "coverBlown",
+      });
+    }
+    if (warDeclared && civName) {
+      stages.push({
+        key: "war",
+        icon: "⚔️",
+        tone: "danger",
+        text: t("espionage.warDeclared" as TranslationKey, { civ: civName }),
+      });
+    }
+    return stages;
+  };
+
   // Compute the reachable tiles for a unit (pure; returns a fresh map).
   const getReachableForUnit = useCallback(
     (unit: Unit): Map<string, number> => {
@@ -1329,6 +1483,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
   // Handle mouse events
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // First real user gesture: warm the audio context so the first cue (a
+    // stolen technology, a conquered city) is not swallowed by autoplay policy.
+    unlockAudio();
     // Cancel any in-progress camera glide when the user interacts directly.
     cameraTweenRef.current = null;
     actions.clearCameraPanRequest();
@@ -2773,7 +2930,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       case "diplomat_propose_alliance":
       case "diplomat_demand_tribute":
       case "diplomat_bribe":
-      case "diplomat_gather_intel": {
+      case "diplomat_gather_intel":
+      case "diplomat_meet_leader":
+      case "diplomat_establish_embassy":
+      case "diplomat_investigate_city":
+      case "diplomat_sabotage":
+      case "diplomat_steal_tech": {
         if (
           unit &&
           gameEngine?.getDiplomatActions &&
@@ -2794,7 +2956,25 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             diplomat_demand_tribute: "demand_tribute",
             diplomat_bribe: "bribe_unit",
             diplomat_gather_intel: "gather_intelligence",
+            diplomat_establish_embassy: "establish_embassy",
+            diplomat_investigate_city: "investigate_city",
+            diplomat_sabotage: "industrial_sabotage",
+            diplomat_steal_tech: "steal_technology",
           };
+
+          // "Meet with Leader" is the audience itself: no engine action, the
+          // player is simply received. Everything else runs through the engine.
+          if (action === "diplomat_meet_leader") {
+            if (actions?.openAudience) {
+              actions.openAudience({
+                civId: diplomatInfo.targetCivId,
+                mode: "greeting",
+                message: "",
+              });
+            }
+            break;
+          }
+
           const result = gameEngine.executeDiplomatAction(
             unit.id,
             actionMap[action],
@@ -2804,9 +2984,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             actions.updateUnits(getAllUnitsFromEngine());
           if (actions?.updateCivilizations)
             actions.updateCivilizations([...gameEngine.civilizations]);
+          if (actions?.updateCities)
+            actions.updateCities(getAllCitiesFromEngine());
           // Civ I behaviour: a diplomat's contact opens the negotiation screen
           // focused on the foreign civ so the player can continue bargaining.
-          if (actions?.openDiplomacy && diplomatInfo?.targetCivId != null) {
+          // Espionage is the exception — its outcome is reported in its own
+          // window, and the player has just seen the enemy's internals.
+          const isEspionage = action === "diplomat_establish_embassy"
+            || action === "diplomat_investigate_city"
+            || action === "diplomat_sabotage"
+            || action === "diplomat_steal_tech";
+          if (!isEspionage && actions?.openDiplomacy && diplomatInfo?.targetCivId != null) {
             actions.openDiplomacy(diplomatInfo.targetCivId);
           }
           if (result?.success) {
@@ -2854,6 +3042,26 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                     reason: String(resp?.reason || t("canvas.notEnoughGold" as TranslationKey)),
                   }),
                 });
+            } else if (result.type === "espionage") {
+              // The espionage report window: one line per beat, the last beat
+              // carrying the war declaration if the cover was blown.
+              const r = result.response as
+                | Record<string, unknown>
+                | undefined;
+              const civName =
+                gameEngine.civilizations?.[diplomatInfo.targetCivId]?.name
+                ?? "";
+              const stages = buildEspionageStages(
+                String(r?.outcome ?? ""),
+                r,
+                civName,
+              );
+              if (stages.length > 0) {
+                setEspionageReport({
+                  title: t("unitActions.stealTechnology" as TranslationKey),
+                  stages,
+                });
+              }
             }
           } else {
             if (actions?.addNotification)
@@ -3315,6 +3523,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             actions.showDialog?.("city-details");
           }}
           onClose={() => setStackModal(null)}
+        />
+      )}
+
+      {/* Espionage report — a diplomat's stolen secret, blown cover or city
+          report, revealed one beat at a time. */}
+      {!minimap && (
+        <EspionageReportModal
+          show={!!espionageReport}
+          title={espionageReport?.title ?? ""}
+          stages={espionageReport?.stages ?? []}
+          onClose={() => setEspionageReport(null)}
         />
       )}
     </div>

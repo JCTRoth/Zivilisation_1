@@ -74,8 +74,9 @@ import {
   scoreEnemyTarget,
   type CityThreatAssessment
 } from './AIStrategy';
-import { AI_COMMERCE_MIN_TRADE_TILE_SHARE } from './AICityManager';
 import type { DiplomatAction } from '../DiplomacyTypes';
+import { chooseEspionageAction, type EspionageContext } from '../diplomacy/EspionagePolicy';
+import { wouldProposeExchange } from '../diplomacy/TechTradeEvaluator';
 import type { Unit, City, Civilization } from '../../../../types/game';
 import GameEngine, { NUCLEAR_BLAST_RADIUS, type PlayerTurnStorage, type MapTile } from '../GameEngine';
 import { getShuffledAdjacentTiles } from '../MovementHelper';
@@ -87,6 +88,38 @@ import { debugLog } from '../../../utils/DevLog';
 // settlers from chasing the 10x10 window maximum forever — as the settler
 // moves, the window re-centers and the "best" spot keeps moving ahead.
 const SETTLE_SCORE_THRESHOLD = 12;
+
+/**
+ * Diplomat actions that resolve inside a foreign city rather than across a
+ * negotiating table. None of them can be offered to the player as a
+ * proposition — you do not ask permission to spy on someone — so the AI runs
+ * them outright and the victim hears about it through ESPIONAGE_RESULT.
+ */
+const ESPIONATION_ACTIONS: ReadonlySet<string> = new Set([
+  'establish_embassy',
+  'investigate_city',
+  'industrial_sabotage',
+  'steal_technology',
+]);
+
+/**
+ * Unit types that never pay a trade visit. Everything else — a warrior, a
+ * scout, a phalanx — may walk up to a foreign city and come home with its
+ * libraries, because Civ I never made knowledge the property of one unit
+ * class.
+ *
+ * The exclusions are units whose turn already has a job that is not
+ * conversation: diplomats have their own menu, settlers are founding, workers
+ * are improving, caravans are delivering (and the CaravanGovernor has already
+ * committed them), and a warhead is a weapon rather than an envoy.
+ */
+const NON_VISITING_UNIT_TYPES: ReadonlySet<string> = new Set([
+  'diplomat',
+  'settler',
+  'worker',
+  'caravan',
+  'nuclear',
+]);
 // If the best settlement location is farther than this Chebyshev distance,
 // found at the current tile instead of walking across the map.
 const MAX_SETTLE_WALK_DISTANCE = 4;
@@ -332,6 +365,14 @@ export class AIManager {
   /** Which cities wanted a caravan last round (for production). */
   private caravanProducerCities = new Map<number, string[]>();
 
+  /**
+   * Round each counterpart was last offered a trade visit, so a unit standing
+   * beside the same wall all game does not ask every single turn. Not saved:
+   * this is a pacing guard, not world state, and a missed round only means the
+   * next visit comes one turn later.
+   */
+  private recentTradeVisit = new Map<number, number>();
+
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
   }
@@ -358,7 +399,8 @@ export class AIManager {
     for (const unit of this.gameEngine.units) {
       if (unit.type !== 'caravan' || unit.isDefeated || unit.civilizationId !== civId) continue;
       const mission = this.caravanGovernor.getMission(unit.id);
-      if (mission?.kind !== 'deliver') continue;
+      const delivering = mission?.phase === 'outbound' || mission?.phase === 'delivering';
+      if (!delivering) continue;
       const city = cityAt(mission.targetCol, mission.targetRow);
       if (city) committed.add(city.id);
     }
@@ -521,6 +563,17 @@ export class AIManager {
     }
     const aiState: AIState = (storage?.turnData?.aiState as AIState) ?? createDefaultAIState();
 
+    // ─── Phase 1b: Trade planning (CaravanCoordinator) ─────────────────
+    // Decided HERE, at the top of the turn, and not lazily under the first
+    // caravan unit it finds: the city-production phase that follows this turn
+    // asks the coordinator which cities want caravans (`citiesWantingCaravans`),
+    // and a civ that has never built a caravan would never enter that branch —
+    // so the plan was always empty, the gate in `shouldBuildCaravan` was always
+    // inert, and the question "should this city build a caravan?" was answered
+    // by the producer's own guesswork instead of by the plan. It is idempotent
+    // per round, so the per-unit call further down is just a no-op.
+    this.coordinateCaravans(civilizationId, roundNumber);
+
     // ─── Phase 1: Strategy evaluation ──────────────────────────────────
     const gameState = this.buildGameState(civilizationId);
     const newStrategy = AIStrategySelector.evaluateStrategy(civ, gameState, aiState);
@@ -546,13 +599,6 @@ export class AIManager {
           this.gameEngine.log('ai', `Research — ${civ.name} selects ${techChoice} (${aiState.strategyProfile})`, { civilizationId, action: 'research', tech: techChoice, strategy: aiState.strategyProfile });
           debugLog(`[AI] Research selected: ${techChoice}`);
         }
-      }
-      // [TEMP-DIAG]
-      if (typeof process !== 'undefined' && process.env?.CARAVAN_DEBUG) {
-        const avail = (AIResearch as unknown as { getAvailableTechnologies: (c: unknown) => string[] }).getAvailableTechnologies(civ);
-        const top = avail.map((id) => ({ id, ...AIResearch.scoreTechnology(id, civ.personality ?? {}, resolveAICivStrategy(civ, aiState), gameState as never) }))
-          .sort((a, b) => b.score - a.score).slice(0, 4);
-        console.info(`[DIAG] r${this.gameEngine.roundManager?.getRoundNumber?.()} ${civ.name} strat=${aiState.strategyProfile} rel=${(gameState as { caravanRelevance?: number }).caravanRelevance} picked=${techChoice} nAvail=${avail.length} nTechs=${(civ.technologies as unknown[] | undefined)?.length ?? -1} hasCurrency=${(civ.technologies as unknown as string[] | undefined)?.includes('currency')} hasTrade=${(civ.technologies as unknown as string[] | undefined)?.includes('trade')} cities=${this.gameEngine.cities.filter((c) => c.civilizationId === civ.id).length} top=${top.map((t) => `${t.id}:${t.score.toFixed(0)}`).join(' ')}`);
       }
     }
 
@@ -888,6 +934,17 @@ export class AIManager {
             this.executeAIDiplomatAction(unit, diplomatInfo);
             break;
           }
+        }
+
+        // An ordinary unit — a warrior, a scout, anything that is not a
+        // diplomat — may still pay a visit. Civ I never restricted knowledge to
+        // one unit type: an army that walks up to a neighbour's wall and comes
+        // home with its libraries is the whole reason a scout is worth
+        // building. The unit does not travel for this purpose; it trades only
+        // if it is ALREADY standing beside a foreign city, so a civ cannot
+        // launch a trade mission by accident.
+        if (this.considerTradeVisit(unit)) {
+          break;
         }
 
         // Nuclear weapons are LAUNCHED, not marched. This branch runs before
@@ -4249,6 +4306,13 @@ export class AIManager {
       return 'bribe_unit';
     }
 
+    // Standing inside a foreign city at peace is an infiltration, and the
+    // scoring for it lives with the rest of the diplomacy arithmetic rather
+    // than in this ladder — see EspionagePolicy. It runs before the treaty
+    // options because founding an embassy is what unlocks them.
+    const infiltration = this.chooseInfiltration(unit, targetCivId, available);
+    if (infiltration) return infiltration;
+
     if (status === 'war') {
       // Outmatched → sue for peace outright; otherwise a ceasefire.
       if (theirStrength > ownStrength * 1.3 && has('propose_peace')) return 'propose_peace';
@@ -4265,6 +4329,157 @@ export class AIManager {
     }
 
     return 'gather_intelligence';
+  }
+
+  /**
+   * Which infiltration this diplomat runs, given what the engine is actually
+   * offering it. Returns null when the city offers nothing to infiltrate (a
+   * unit target, or a war — the engine refuses those anyway) or when the
+   * scoring says nothing is worth the risk.
+   *
+   * The scores live in `EspionagePolicy`; this only assembles the facts the
+   * policy needs, so the decision stays testable without a live engine.
+   */
+  private chooseInfiltration(unit: Unit, targetCivId: number, available: string[]): string | null {
+    const ESPIONATIONS = ['establish_embassy', 'investigate_city', 'steal_technology', 'industrial_sabotage'];
+    const offered = available.filter((a) => ESPIONATIONS.includes(a));
+    if (offered.length === 0) return null;
+
+    const civId = unit.civilizationId;
+    const dm = this.gameEngine.diplomacyManager;
+    const civ = this.gameEngine.civilizations?.[civId];
+    const weights = dm?.weightsFor?.(civId) ?? {
+      hostility: 5, warmongering: 5, trustSensitivity: 5, greed: 5, loyalty: 5,
+      paranoia: 5, vengeance: 5, xenophobia: 5, patience: 5,
+    };
+
+    // The city this diplomat is infiltrating. `getDiplomatActions` finds it in
+    // the diplomat's NEIGHBOURHOOD — a diplomat stands beside a city, never on
+    // it — so looking at the diplomat's own tile would always come back empty
+    // and sabotage would never be scored at all.
+    const city = this.adjacentCityOf(unit, targetCivId);
+
+    const ctx: EspionageContext = {
+      civId,
+      targetCivId,
+      weights,
+      status: dm?.getStatus?.(civId, targetCivId) ?? 'peace',
+      attitude: dm?.getAttitude?.(civId, targetCivId) ?? 'neutral',
+      exhaustion: dm?.getWarExhaustion?.(civId) ?? 0,
+      hasEmbassy: dm?.hasEmbassy?.(civId, targetCivId) ?? false,
+      techsWeWant: dm?.getTechTradeOptions?.(civId, targetCivId)?.theyHaveWeLack ?? [],
+      cityShields: (city as { productionProgress?: number } | undefined)?.productionProgress ?? 0,
+      round: this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
+      sequence: (civ?.name?.length ?? 0) + available.length,
+    };
+
+    const chosen = chooseEspionageAction(ctx);
+    if (!chosen) return null;
+    // Only run what the engine actually put on the menu.
+    return offered.includes(chosen.action) ? chosen.action : null;
+  }
+
+  /**
+   * The enemy city of `civId` this unit stands next to, if any — the same
+   * lookup `GameEngine.getDiplomatActions` performs when it decides what the
+   * menu offers. Units on the city tile are not considered: that is combat.
+   */
+  private adjacentCityOf(unit: Unit, civId: number): City | undefined {
+    const grid = this.gameEngine.squareGrid;
+    if (!grid?.getNeighbors) return undefined;
+    for (const n of grid.getNeighbors(unit.col, unit.row)) {
+      const city = this.gameEngine.getCityAt?.(n.col, n.row);
+      if (city && city.civilizationId === civId) return city;
+    }
+    return undefined;
+  }
+
+  /**
+   * An ordinary unit, already standing beside a foreign city, pays a visit and
+   * proposes an Exchange of Knowledge — if the evaluator says the trade leaves
+   * this civ better off.
+   *
+   * Two things make this a visit rather than a trade mission. The unit never
+   * *travels* for it: it only trades when it is already adjacent, so a warrior
+   * marching past a neighbour's wall may come home with its libraries, and a
+   * civ cannot dispatch one on purpose. And it is not consumed — it has simply
+   * spent a turn talking, so the exchange costs the visit and nothing else.
+   *
+   * Returns true when the visit happened, so the caller can stop processing
+   * the unit: the offer is on its way and the unit has nothing left to do.
+   */
+  private considerTradeVisit(unit: Unit): boolean {
+    // Diplomats have their own, richer menu — this is for everyone else.
+    if (unit.type === 'diplomat') return false;
+    // Civilians and transports have jobs that are not conversation.
+    if (NON_VISITING_UNIT_TYPES.has(unit.type)) return false;
+
+    const civId = unit.civilizationId;
+    const dm = this.gameEngine.diplomacyManager;
+    if (!dm) return false;
+
+    for (const other of this.gameEngine.civilizations ?? []) {
+      if (other.id === civId || other.isAlive === false) continue;
+
+      // Only a city the unit is standing NEXT TO counts. Standing on the tile
+      // itself is combat, and a unit elsewhere is not visiting anything.
+      const city = this.adjacentCityOf(unit, other.id);
+      if (!city) continue;
+
+      // A visit is a peacetime courtesy. At war the unit is a soldier.
+      if (dm.isAtWar?.(civId, other.id)) continue;
+
+      // Civ I: no Exchange of Knowledge without a channel. The same embassy
+      // gate the negotiation screen uses, so a civ cannot skip it by walking
+      // a warrior up to the wall.
+      if (!dm.hasEmbassy?.(civId, other.id)) continue;
+
+      // Do not offer the same court a swap every single turn it stands there.
+      if (this.recentTradeVisit.get(other.id) === this.roundOf()) continue;
+
+      const opts = dm.getTechTradeOptions?.(civId, other.id);
+      if (!opts) continue;
+
+      const pick = wouldProposeExchange(
+        opts.weHaveTheyLack,
+        opts.theyHaveWeLack,
+        dm.tradeContext(civId, other.id),
+      );
+      if (!pick) continue;
+
+      this.recentTradeVisit.set(other.id, this.roundOf());
+      const otherName = other.name ?? `Civ ${other.id}`;
+      const techName = (id: string): string =>
+        TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
+      dm.presentOffer(
+        civId,
+        other.id,
+        'offer_tech_exchange',
+        undefined,
+        `${otherName} offers an Exchange of Knowledge: `
+          + `their ${techName(pick.proposal.techRequested)} for your ${techName(pick.proposal.techOffered)}.`,
+        // The terms travel with the message — without them the audience
+        // screen has a sentence but no deal to accept.
+        pick.proposal.techOffered,
+        pick.proposal.techRequested,
+      );
+
+      this.gameEngine.log?.(
+        'ai',
+        `Trade visit — ${this.gameEngine.civilizations?.[civId]?.name ?? civId} unit ${unit.id} at `
+        + `(${unit.col},${unit.row}) offers ${pick.proposal.techOffered} for `
+        + `${pick.proposal.techRequested} (${pick.verdict.because})`,
+      );
+      unit.movesRemaining = 0;
+      return true;
+    }
+
+    return false;
+  }
+
+  /** The round this AI pass is running in, for the visit cooldown. */
+  private roundOf(): number {
+    return this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
   }
 
   /**
@@ -4345,8 +4560,13 @@ export class AIManager {
     debugLog(`[AI-DIPLOMAT] ${civName} diplomat at (${unit.col},${unit.row}) contacting ${targetCiv?.name ?? targetCivId} → ${action}`);
 
     if (targetCiv?.isHuman === true) {
-      // The human decides — surface an interactive offer, consume the move.
-      if (action === 'gather_intelligence') {
+      // Espionage is not negotiable — nobody is asked whether they consent to
+      // being spied on. It resolves in the engine, and the ESPIONAGE_RESULT
+      // event carries it to the player's screen.
+      if (ESPIONATION_ACTIONS.has(action)) {
+        this.gameEngine.executeDiplomatAction?.(unit.id, action, targetCivId);
+      } else if (action === 'gather_intelligence') {
+        // The human decides — surface an interactive offer, consume the move.
         this.gameEngine.executeDiplomatAction?.(unit.id, 'gather_intelligence', targetCivId);
       } else {
         const gold = action === 'demand_tribute' ? this.diplomatTributeDemand(unit, targetCivId) : undefined;
@@ -4406,10 +4626,8 @@ export class AIManager {
    * its name stops building roads at exactly the moment it needs them most.
    */
   citiesNeedBuildOut(civId: number): boolean {
-    // Measured on what the cities WORK, not on their whole area — see
-    // `improvedFractionOfWorkedArea` for why the area version under-fired.
     return this.ownCities(civId).some(
-      (c: City) => this.improvedFractionOfWorkedArea(c) < CITY_AREA_IMPROVED_TARGET,
+      (c: City) => this.improvedFractionOfCityArea(c) < CITY_AREA_IMPROVED_TARGET,
     );
   }
 
@@ -4460,6 +4678,67 @@ export class AIManager {
    */
   hasSettlerWorksMandate(civId: number): boolean {
     return this.hasMatureCity(civId);
+  }
+
+  /**
+   * How many tiles inside this civ's CITY RADII still need an improvement.
+   *
+   * This is the number the whole road/irrigation economy hangs on, and it used
+   * not to exist: the public-works corps was sized from the SettlerGovernor's
+   * own improvement queue, which nothing ever fills — so the corps was
+   * permanently zero, the works programme had no settlers to run, and a played
+   * game built 2 roaded tiles in 150 rounds while every city's commerce sat on
+   * the centre floor.
+   *
+   * Counted on the ground (tiles the engine would actually accept), not from a
+   * wish list: a tile that is already improved, ocean, arctic or otherwise
+   * unworkable does not count. Deduplicated per tile so a tile in two cities'
+   * radii is one job, not two.
+   */
+  countOutstandingWorks(civId: number): number {
+    const seen = new Set<string>();
+    let outstanding = 0;
+    for (const city of this.ownCities(civId)) {
+      for (const { col, row } of this.cityAreaTiles(city)) {
+        const key = `${col},${row}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const tile = this.gameEngine.getTileAt(col, row);
+        if (!tile || tile.improvement) continue;
+        const terrain = tile.terrain || tile.type || '';
+        if (terrain === 'ocean' || terrain === 'arctic') continue;
+        if (this.isWorkableTerrain(terrain)) outstanding++;
+      }
+    }
+    return outstanding;
+  }
+
+  /**
+   * Outstanding work for ONE city's radius. Same rule as
+   * {@link countOutstandingWorks}, scoped: the city screen shows what the
+   * player can act on, not what the whole empire still owes.
+   */
+  countOutstandingWorksForCity(cityId: string): number {
+    const city = this.ownCities(0).find((c: City) => c.id === cityId)
+      ?? this.gameEngine.cities.find((c: City) => c.id === cityId);
+    if (!city) return 0;
+    let outstanding = 0;
+    for (const { col, row } of this.cityAreaTiles(city)) {
+      const tile = this.gameEngine.getTileAt(col, row);
+      if (!tile || tile.improvement) continue;
+      const terrain = tile.terrain || tile.type || '';
+      if (terrain === 'ocean' || terrain === 'arctic') continue;
+      if (this.isWorkableTerrain(terrain)) outstanding++;
+    }
+    return outstanding;
+  }
+
+  /** Whether a settler can put SOMETHING useful on this terrain. */
+  private isWorkableTerrain(terrain: string): boolean {
+    const roadTerrains = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD]?.tradeBonusTerrains ?? [];
+    return roadTerrains.includes(terrain)
+      || IRRIGABLE_TERRAINS.includes(terrain)
+      || MINABLE_TERRAINS.includes(terrain);
   }
 
   /**
@@ -4559,52 +4838,6 @@ export class AIManager {
   }
 
   /**
-   * The tiles this city actually WORKS, as coordinates.
-   *
-   * `workingTiles` is the engine's own set of "col,row" keys. Cities whose tiles
-   * have never been recomputed — and every lightweight test double — have none,
-   * and fall back to the whole workable area, which is the honest default for
-   * "the tiles this city could be working".
-   */
-  private workedTilesOf(city: City): Array<{ col: number; row: number }> {
-    const working = city.workingTiles;
-    if (working instanceof Set && working.size > 0) {
-      const out: Array<{ col: number; row: number }> = [];
-      for (const key of working) {
-        const sep = key.indexOf(',');
-        if (sep === -1) continue;
-        const col = Number(key.slice(0, sep));
-        const row = Number(key.slice(sep + 1));
-        if (Number.isFinite(col) && Number.isFinite(row)) out.push({ col, row });
-      }
-      if (out.length > 0) return out;
-    }
-    return this.cityAreaTiles(city);
-  }
-
-  /**
-   * How much of what this city WORKS carries an improvement, 0..1.
-   *
-   * This is the number the build-out mandate is measured on, and it used to be
-   * measured on the whole AREA instead — which is why the programme under-fired:
-   * a city whose ring was half covered in MINES on hills nobody worked counted
-   * as fully built out, so no settler was ever sent to pave the fields the
-   * citizens actually stand on, and the city's commerce stayed at the 2-trade
-   * city-centre floor forever. Raw tiles a city works cannot pay for the citizen
-   * standing on them; raw tiles nobody works are decoration.
-   */
-  private improvedFractionOfWorkedArea(city: City): number {
-    const tiles = this.workedTilesOf(city);
-    if (tiles.length === 0) return 1;
-    let improved = 0;
-    for (const { col, row } of tiles) {
-      const tile = this.gameEngine.getTileAt(col, row);
-      if (tile?.improvement) improved++;
-    }
-    return improved / tiles.length;
-  }
-
-  /**
    * Whether a city needs food: a negative surplus, or one about to run out.
    * Uses the engine's own `cityFoodBalance`, which already charges this
    * settler's own upkeep, so a settler standing in the city counts itself.
@@ -4665,14 +4898,8 @@ export class AIManager {
     let bestIrrigationDist = Infinity;
     let bestOutside: { col: number; row: number } | null = null;
     let bestOutsideDist = Infinity;
-    // Roads are tracked in two tiers: on a tile the city WORKS, and anywhere in
-    // the area. The first is the best investment in the game; the second is a
-    // decent one. Keeping them apart is what lets "roads on worked tiles first"
-    // be a rule rather than a tie-break.
-    let bestWorkedRoad: { col: number; row: number } | null = null;
-    let bestWorkedRoadScore = -Infinity;
-    let bestAnyRoad: { col: number; row: number } | null = null;
-    let bestAnyRoadScore = -Infinity;
+    let bestRoad: { col: number; row: number } | null = null;
+    let bestRoadScore = -Infinity;
 
     for (let dCol = -marginRadius; dCol <= marginRadius; dCol++) {
       for (let dRow = -marginRadius; dRow <= marginRadius; dRow++) {
@@ -4714,19 +4941,13 @@ export class AIManager {
           bestIrrigation = { col, row };
         }
         if (roadTerrains.includes(terrain)) {
-          // A tile the city already works is worth far more than one it does
-          // not: the road's trade turns into happiness (or tax) on the very
-          // next turn, and a road on every worked tile is the only thing that
-          // scales a city's commerce with its population.
+          // A tile the city already works is worth twice one it does not: the
+          // road's trade turns into happiness (or tax) on the very next turn.
           const worked = city.workingTiles?.has(`${col},${row}`) ?? false;
-          const score = -dist;
-          if (score > bestAnyRoadScore) {
-            bestAnyRoadScore = score;
-            bestAnyRoad = { col, row };
-          }
-          if (worked && score > bestWorkedRoadScore) {
-            bestWorkedRoadScore = score;
-            bestWorkedRoad = { col, row };
+          const score = (worked ? 100 : 0) - dist;
+          if (score > bestRoadScore) {
+            bestRoadScore = score;
+            bestRoad = { col, row };
           }
         }
         if (dist < bestInAreaDist) {
@@ -4736,17 +4957,7 @@ export class AIManager {
       }
     }
 
-    // ROAD FIRST on a tile the city works — 2 worker-turns for +1 commerce a
-    // turn forever, against a Marketplace's 80 shields and 1 gold for the same
-    // +1 trade. It is the best investment in the game, the only thing that
-    // scales a city's commerce with its population, and it is what makes the
-    // Commerce governor profile legal at all (`aiGovernorForCity` refuses to
-    // switch a city whose tiles produce no trade).
-    //
-    // Food still wins: a city that is about to starve irrigates, because food
-    // is what keeps the city alive and trade is only what keeps it content.
-    if (!needsFood && bestWorkedRoad) return bestWorkedRoad;
-    if (preferTrade && bestAnyRoad) return bestAnyRoad;
+    if (preferTrade && bestRoad) return bestRoad;
     // No margin tiles. The ±(CITY_RADIUS + OUTSIDE_IRRIGATION_FIELDS) ring was
     // returned for food-short cities so a ditch could be chained outward, but
     // the settler that walked out there is judged by a DIFFERENT rule on
@@ -4755,7 +4966,7 @@ export class AIManager {
     // settler standing on a margin tile it had been told to improve and being
     // told it could not. Candidates stay inside the city's radius, so both ends
     // of the hand-off agree.
-    return bestIrrigation ?? bestWorkedRoad ?? bestAnyRoad ?? bestInArea ?? bestOutside;
+    return bestIrrigation ?? bestInArea ?? bestOutside;
   }
 
   /**
@@ -4837,17 +5048,15 @@ export class AIManager {
   }
 
   /**
-   * Whether a city's worked fields still hold an unimproved tile that a road
+   * Whether a city's workable area still holds an unimproved tile that a road
    * would turn into commerce. Roads are the ONLY thing that raises trade, and
    * trade is what the luxury rate converts into happiness — so a city without
-   * roads on its worked tiles cannot pay for its own citizens, however much food
-   * it has. Scans the WORKED tiles, not the area: a mine on an unworked hill is
-   * not this city's build-out.
+   * roads around it cannot pay for its own citizens, however much food it has.
    */
   private hasUnimprovedRoadTile(city: City): boolean {
     const roadDef = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
     const roadTerrains = roadDef?.tradeBonusTerrains ?? [];
-    for (const { col, row } of this.workedTilesOf(city)) {
+    for (const { col, row } of this.cityAreaTiles(city)) {
       const tile = this.gameEngine.getTileAt(col, row);
       if (!tile || tile.improvement) continue;
       const terrain = tile.terrain || tile.type || '';
@@ -4861,48 +5070,15 @@ export class AIManager {
    * its trade cannot cover its unhappiness even at a 100 % luxury rate. While
    * that is true a road is worth more than irrigation, because only trade
    * converts into happiness — and the moment trade catches up the city goes
-   * back to farming. Self-limiting: road until trade ≥ unhappiness, irrigate
+   * back to farming. Self-limiting: road until trade >= unhappiness, irrigate
    * after.
-   *
-   * A city whose worked tiles produce **no trade at all** needs roads for a
-   * reason that has nothing to do with happiness: a road on a worked tile is the
-   * only thing that scales a city's commerce with its population, and without one
-   * the city's income is the 2-trade city-centre floor forever. Gating the road
-   * on unhappiness alone meant that as soon as the fractional tax income and the
-   * new happiness buildings kept every city content, the road programme stopped
-   * — and the Commerce governor profile (which requires a trade grid) could never
-   * become legal.
    */
   private cityNeedsCommerce(city: City, civ: Civilization | undefined): boolean {
     if (!civ) return false;
-    if (!this.cityHasTradeGrid(city)) return true;
     const happy = this.gameEngine.economicManager?.cityHappiness?.(city, civ);
     if (!happy) return false;
     if (!happy.disorder && happy.unhappiness < happy.happiness) return false;
     return (city.yields?.trade ?? 0) < happy.unhappiness;
-  }
-
-  /**
-   * Whether enough of this city's WORKED tiles produce trade for the Commerce
-   * governor profile to be worth applying — the same test
-   * `AICityManager.aiGovernorForCity` makes, so a road programme and the governor
-   * it is preparing the city for can never disagree about what "built out" means.
-   */
-  private cityHasTradeGrid(city: City): boolean {
-    const worked = city.workingTiles;
-    if (!(worked instanceof Set) || worked.size <= 1) return false;
-    let tradeTiles = 0;
-    let total = 0;
-    for (const key of worked) {
-      const sep = key.indexOf(',');
-      if (sep === -1) continue;
-      const tile = this.gameEngine.getTileAt(Number(key.slice(0, sep)), Number(key.slice(sep + 1)));
-      if (!tile) continue;
-      total++;
-      if ((this.gameEngine.economicManager?.cityTileYields?.(tile)?.trade ?? 0) > 0) tradeTiles++;
-    }
-    if (total === 0) return false;
-    return tradeTiles / total >= AI_COMMERCE_MIN_TRADE_TILE_SHARE;
   }
 
   /**
@@ -5017,30 +5193,15 @@ export class AIManager {
     // another +1 food, because food does not convert into happiness. A road on
     // a trade terrain does — and the moment trade catches up with unhappiness
     // `cityNeedsCommerce` turns itself off and farming resumes.
-    //
-    // The second trigger is a city whose worked tiles produce no trade at all:
-    // its commerce is the 2-trade city-centre floor forever, which is what the
-    // Commerce governor profile needs before it will apply and what scales a
-    // city's income with its population. It is deliberately narrower — the city
-    // must still be UNHAPPY (a content city has nothing to buy) and must not be
-    // short of food (starvation kills a city; commerce only decorates it).
     const roadProps = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
     const roadable =
       (roadProps?.tradeBonusTerrains ?? []).includes(terrain) && !tile.improvement;
-    const workedByCity = this.gameEngine.cities.some((c: City) =>
-      c.civilizationId === civId && c.workingTiles?.has(`${unit.col},${unit.row}`)
-    );
-    const happy = nearestCity
-      ? this.gameEngine.economicManager?.cityHappiness?.(nearestCity, civ)
-      : null;
-    const cityIsUnhappy = !!happy && (happy.disorder || happy.unhappiness >= happy.happiness);
-    const wantsRoad =
-      roadable
-      && this.gameEngine.canBuildImprovement(unit.id, 'road')
-      && cityIsUnhappy
-      && (this.cityNeedsCommerce(nearestCity, civ)
-        || (!prioritizeFood && !this.cityHasTradeGrid(nearestCity)));
-    if (nearestCity && wantsRoad) {
+    if (
+      nearestCity &&
+      this.cityNeedsCommerce(nearestCity, civ) &&
+      roadable &&
+      this.gameEngine.canBuildImprovement(unit.id, 'road')
+    ) {
       return 'road';
     }
 
@@ -5074,6 +5235,9 @@ export class AIManager {
     const hasRoad = tile.improvement === IMPROVEMENT_TYPES.ROAD
       || (tile as { road?: boolean; hasRoad?: boolean }).road === true
       || (tile as { road?: boolean; hasRoad?: boolean }).hasRoad === true;
+    const workedByCity = this.gameEngine.cities.some((c: City) =>
+      c.civilizationId === civId && c.workingTiles?.has(`${unit.col},${unit.row}`)
+    );
     if (workedByCity && !hasRoad && roadDef?.tradeBonusTerrains?.includes(terrain) &&
         !tile.improvement && this.gameEngine.canBuildImprovement(unit.id, 'road')) {
       return 'road';

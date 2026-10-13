@@ -56,6 +56,8 @@ interface CivSnapshot {
   luxury: number;
   ferries: number;
   ships: number;
+  caravans: number;
+  routes: number;
   profile: string;
 }
 
@@ -207,6 +209,8 @@ describe('ai batch', () => {
               luxury: c.luxuryRate ?? 0,
               profile: String(c.productionProfile ?? ''),
               settlers: units.filter((u) => u.type === 'settler').length,
+              caravans: units.filter((u) => u.type === 'caravan').length,
+              routes: cities.reduce((n, x) => n + ((x.tradeRoutes as unknown[]) ?? []).length, 0),
               ferries: units.filter((u) => u.type === 'ferry').length,
               ships: units.filter((u) => (u as { type?: string }).type !== undefined && ['sail', 'galley', 'trireme', 'caravel', 'frigate', 'ironclad', 'destroyer', 'cruiser', 'battleship'].includes(u.type as string)).length,
             };
@@ -257,6 +261,8 @@ describe('ai batch', () => {
           gold: c.resources?.gold ?? 0,
           profile: String(c.productionProfile ?? ''),
           settlers: units.filter((u) => u.type === 'settler').length,
+          caravans: units.filter((u) => u.type === 'caravan').length,
+          routes: cities.reduce((n, x) => n + ((x.tradeRoutes as unknown[]) ?? []).length, 0),
           ferries: units.filter((u) => u.type === 'ferry').length,
           ships: units.filter((u) => ['sail', 'galley', 'trireme', 'caravel', 'frigate', 'ironclad', 'destroyer', 'cruiser', 'battleship'].includes(u.type as string)).length,
         };
@@ -356,6 +362,18 @@ console.log(`tile improvements built per game    : ${avg((g) => g.economy.improv
 console.log(`improved tiles near own cities/game : ${avg((g) => g.economy.improvedTilesNearCities).toFixed(0)}`);
 console.log(`improvement jobs started per game   : ${avg((g) => g.economy.improvementTurns).toFixed(0)}`);
 console.log(`barbarian cities at the end/game    : ${avg((g) => g.economy.barbCities ?? 0).toFixed(1)}`);
+console.log('--- trade ---');
+console.log(`caravans alive at the end/game      : ${avg((g) => g.civs.reduce((n, c) => n + c.caravans, 0)).toFixed(1)}`);
+console.log(`civs holding a caravan at the end   : ${avg((g) => g.civs.filter((c) => c.caravans > 0).length).toFixed(2)}`);
+console.log(`TRADE ROUTES at the end/game        : ${avg((g) => g.civs.reduce((n, c) => n + c.routes, 0)).toFixed(1)}`);
+console.log(`civs with >=1 route at the end      : ${avg((g) => g.civs.filter((c) => c.routes > 0).length).toFixed(2)}`);
+console.log(`games with 0 routes                 : ${games.filter((g) => g.civs.every((c) => c.routes === 0)).length} / ${games.length}`);
+// When the first route landed — 0 means never.
+const routeRound = games.map((g) => {
+  const hit = g.timeline.find((t) => t.civs.reduce((n, c) => n + c.routes, 0) > 0);
+  return hit ? hit.round : 0;
+});
+console.log(`first route round (0 = never)       : ${routeRound.filter((r) => r > 0).join(', ') || 'none'}`);
 {
   const produced = {};
   const actions = {};

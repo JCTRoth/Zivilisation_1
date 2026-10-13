@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
 import type { City, Civilization } from '../types/game';
+import { TRADE_GOLD_MULTIPLIER, CITY_CENTER_COMMERCE } from '@/game/engine/EconomicManager';
 
 /**
  * Verify that EconomicManager.previewEconomy() returns correct projected
@@ -9,7 +10,7 @@ import type { City, Civilization } from '../types/game';
  * yields so the math can be checked by hand.
  *
  * Key constants:
- *   TRADE_GOLD_MULTIPLIER = 2   (tax = floor(commerce × rate%) × 2)
+ *   TRADE_GOLD_MULTIPLIER = 2   (tax = commerce × rate% × 2, fractional)
  *   CITY_CENTER_COMMERCE   = 2   (floor on trade yield)
  *   BASE_CONTENTMENT       = 2
  *   Despotism tolerance    = 2   (citizens beyond pop 2 are unhappy)
@@ -85,23 +86,23 @@ describe('previewEconomy — projected per-turn numbers', () => {
       setCapital(city);
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
       expect(preview.commerce).toBe(5);
-      expect(preview.tax).toBe(10); // floor(5 × 1.0) × 2
+      expect(preview.tax).toBe(5 * TRADE_GOLD_MULTIPLIER);
     });
 
-    it('Commerce: 3, Tax 100% → tax = 3 × 2 = 6', () => {
-      const city = makeCity(3);
+    it('Commerce: 6, Tax 100% → tax = 6 × 2 = 12', () => {
+      const city = makeCity(6);
       setCapital(city);
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
-      expect(preview.commerce).toBe(3);
-      expect(preview.tax).toBe(6);
+      expect(preview.commerce).toBe(6);
+      expect(preview.tax).toBe(6 * TRADE_GOLD_MULTIPLIER);
     });
 
     it('Trade yield below CITY_CENTER_COMMERCE (2) is floored up', () => {
-      const city = makeCity(0); // trade=0 → cityCommerce = max(0,2) = 2
+      const city = makeCity(0); // trade=0 → cityCommerce = max(0, 2) = 2
       setCapital(city);
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
-      expect(preview.commerce).toBe(2);
-      expect(preview.tax).toBe(4); // floor(2 × 1.0) × 2
+      expect(preview.commerce).toBe(CITY_CENTER_COMMERCE);
+      expect(preview.tax).toBe(CITY_CENTER_COMMERCE * TRADE_GOLD_MULTIPLIER);
     });
   });
 
@@ -113,9 +114,9 @@ describe('previewEconomy — projected per-turn numbers', () => {
       const city = makeCity(10);
       setCapital(city);
       const preview = econ().previewEconomy(civ(), { tax: 50, science: 50, luxury: 0 });
-      // tax = floor(10 × 0.5) × 2 = 5 × 2 = 10
+      // tax = 10 × 0.5 × 2 = 10
       // science = round(10 × 0.5) = 5
-      expect(preview.tax).toBe(10);
+      expect(preview.tax).toBe(10 * 0.5 * TRADE_GOLD_MULTIPLIER);
       expect(preview.science).toBe(5);
       expect(preview.luxury).toBe(0);
     });
@@ -124,7 +125,7 @@ describe('previewEconomy — projected per-turn numbers', () => {
       const city = makeCity(7);
       setCapital(city);
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
-      expect(preview.tax).toBe(14); // floor(7 × 1.0) × 2
+      expect(preview.tax).toBe(7 * TRADE_GOLD_MULTIPLIER);
       expect(preview.science).toBe(0);
       expect(preview.luxury).toBe(0);
     });
@@ -133,10 +134,10 @@ describe('previewEconomy — projected per-turn numbers', () => {
       const city = makeCity(6);
       setCapital(city);
       const preview = econ().previewEconomy(civ(), { tax: 33, science: 33, luxury: 34 });
-      // tax  = floor(6 × 0.33) × 2 = floor(1.98) × 2 = 1 × 2 = 2
+      // tax  = floor(6 × 0.33) × 2 = 1.98 → 1 × 2 = 2
       // sci  = round(6 × 0.33) = round(1.98) = 2
       // lux  = floor(6 × 0.34) = floor(2.04) = 2
-      expect(preview.tax).toBe(2);
+      expect(preview.tax).toBe(Math.floor(6 * 0.33) * TRADE_GOLD_MULTIPLIER);
       expect(preview.science).toBe(2);
       expect(preview.luxury).toBe(2);
     });
@@ -174,7 +175,7 @@ describe('previewEconomy — projected per-turn numbers', () => {
       // No tolerance: unhappiness = population = 2.
       // happiness = 2 (base contentment). 2 > 2 is false → NOT in disorder.
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
-      expect(preview.tax).toBe(20); // 10 × 2 = 20
+      expect(preview.tax).toBe(10 * TRADE_GOLD_MULTIPLIER);
     });
 
     it('pop 3, 0% luxury → disorder, because base contentment is only 2', () => {
@@ -195,7 +196,7 @@ describe('previewEconomy — projected per-turn numbers', () => {
       // happiness = 5 + 0 + 0 + 0 + 0 + 2 = 7
       // 5 > 7 → false → NOT in disorder
       const preview = econ().previewEconomy(civ(), { tax: 50, science: 0, luxury: 50 });
-      expect(preview.tax).toBe(10); // floor(10 × 0.5) × 2 = 10
+      expect(preview.tax).toBe(10 * 0.5 * TRADE_GOLD_MULTIPLIER);
       expect(preview.luxury).toBe(5);
     });
 
@@ -221,7 +222,7 @@ describe('previewEconomy — projected per-turn numbers', () => {
       // happiness = 0 + 0 + 3 + 0 + 0 + 2 = 5
       // 5 > 5 → false → NOT in disorder
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
-      expect(preview.tax).toBe(20);
+      expect(preview.tax).toBe(10 * TRADE_GOLD_MULTIPLIER);
     });
   });
 
@@ -257,8 +258,8 @@ describe('previewEconomy — projected per-turn numbers', () => {
       }
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
       expect(preview.upkeep).toBe(3);
-      // net = tax − upkeep = 20 − 3 = 17
-      expect(preview.net).toBe(17);
+      // net = 10 × TRADE_GOLD_MULTIPLIER − 3
+      expect(preview.net).toBe(10 * TRADE_GOLD_MULTIPLIER - 3);
     });
 
     it('NONE units (homeCityId=null) are free', () => {
@@ -307,7 +308,7 @@ describe('previewEconomy — projected per-turn numbers', () => {
       }
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
       expect(preview.net).toBe(preview.tax - preview.upkeep);
-      expect(preview.net).toBe(17);
+      expect(preview.net).toBe(10 * TRADE_GOLD_MULTIPLIER - preview.upkeep);
     });
 
     it('disorder + upkeep → net is negative', () => {
@@ -352,7 +353,7 @@ describe('previewEconomy — projected per-turn numbers', () => {
       // commerce = 5 + 8 = 13
       // tax = (5×2) + (8×2) = 10 + 16 = 26
       expect(preview.commerce).toBe(13);
-      expect(preview.tax).toBe(26);
+      expect(preview.tax).toBe(13 * TRADE_GOLD_MULTIPLIER);
     });
   });
 
@@ -381,9 +382,9 @@ describe('previewEconomy — projected per-turn numbers', () => {
       const city = makeCity(10, 1, { scienceBonus: 3 });
       setCapital(city);
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
-      // tax = floor(10 × 1.0) × 2 = 20
+      // tax = 10 × 1.0 × 3 = 30
       // science = round(10 × 0) + 3 = 3 (scienceBonus still counts)
-      expect(preview.tax).toBe(20);
+      expect(preview.tax).toBe(10 * TRADE_GOLD_MULTIPLIER);
       expect(preview.science).toBe(3);
     });
   });
@@ -400,9 +401,9 @@ describe('previewEconomy — projected per-turn numbers', () => {
       const preview = econ().previewEconomy(civ(), { tax: 100, science: 0, luxury: 0 });
       // effective = 20 × (1 - 0.25) = 15
       // afterCorruption = floor(15) = 15 (capital, no corruption)
-      // tax = floor(15 × 1.0) × 2 = 30
+      // tax = 15 × 1.0 × 3 = 45
       expect(preview.commerce).toBe(15);
-      expect(preview.tax).toBe(30);
+      expect(preview.tax).toBe(15 * TRADE_GOLD_MULTIPLIER);
       // Reset government
       civ().government = 'despotism';
     });

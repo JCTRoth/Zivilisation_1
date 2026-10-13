@@ -43,6 +43,7 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
       autoCamera: true,
       devMode: false,
       enableAnimations: true,
+      enableSoundEffects: true,
       animationSpeed: 1,
       enemyAnimationSpeed: 1,
       cameraGlideSpeed: 1,
@@ -155,6 +156,13 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
               "enableAnimations",
               settings.enableAnimations,
               t('settings.enableAnimationsHint'),
+            )}
+            {toggle(
+              "enableSoundEffects",
+              t('settings.enableSoundEffects'),
+              "enableSoundEffects",
+              settings.enableSoundEffects !== false,
+              t('settings.enableSoundEffectsHint'),
             )}
             {toggle(
               "autoCamera",

@@ -1,11 +1,21 @@
 import React from 'react';
 import type { LeaderPortraitConfig } from '@/data/LeaderPortraits';
+import { MOOD_COLORS } from '@/data/LeaderPortraits';
+
+/** Diplomatic attitudes the portrait can be tinted with. */
+type PortraitMood = 'friendly' | 'neutral' | 'annoyed' | 'hostile';
 
 interface LeaderPortraitProps {
   config: LeaderPortraitConfig;
-  mood: 'friendly' | 'neutral' | 'annoyed' | 'hostile';
+  mood: PortraitMood;
   size?: number;
   leaderName?: string;
+  /**
+   * Draw the portrait inside the frame the audience screen uses: a stronger
+   * mood tint and a mood-tuned colour filter, so a fixed piece of artwork still
+   * reads as "angry", "pleased" or "dismissive" at a glance.
+   */
+  expressive?: boolean;
 }
 
 // Import leader images
@@ -232,7 +242,7 @@ function renderScene(cfg: LeaderPortraitConfig, w: number, h: number): React.Rea
 }
 
 /** Leader portrait - uses image file if available, otherwise procedural SVG */
-const LeaderPortrait: React.FC<LeaderPortraitProps> = ({ config, mood, size = 120, leaderName }) => {
+const LeaderPortrait: React.FC<LeaderPortraitProps> = ({ config, mood, size = 120, leaderName, expressive = false }) => {
   const w = size;
   const h = size * 1.3;
   const cx = w / 2;
@@ -242,9 +252,24 @@ const LeaderPortrait: React.FC<LeaderPortraitProps> = ({ config, mood, size = 12
 
   // Use image file if available
   if (leaderName && LEADER_IMAGES[leaderName]) {
+    const moodPalette = MOOD_COLORS[mood] ?? MOOD_COLORS.neutral;
+    // The artwork is fixed, so the mood has to be carried by light and colour:
+    // a warm wash for a friendly court, a hard red for a hostile one. The
+    // audience screen asks for the stronger version of the same treatment.
+    const moodFilter = expressive
+      ? mood === 'hostile'
+        ? 'saturate(1.25) contrast(1.12) hue-rotate(-8deg)'
+        : mood === 'annoyed'
+          ? 'saturate(1.12) contrast(1.06) brightness(1.03)'
+          : mood === 'friendly'
+            ? 'saturate(1.05) brightness(1.06)'
+            : 'none'
+      : 'none';
     return (
-      <div 
+      <div
         className="leader-portrait-image"
+        data-mood={mood}
+        data-expressive={expressive ? 'true' : undefined}
         style={{
           width: w,
           height: h,
@@ -252,19 +277,38 @@ const LeaderPortrait: React.FC<LeaderPortraitProps> = ({ config, mood, size = 12
           borderRadius: '4px',
           overflow: 'hidden',
           background: '#111',
-          border: '2px solid #555'
+          border: expressive
+            ? `2px solid ${moodPalette.border}`
+            : '2px solid #555',
+          boxShadow: expressive ? `inset 0 0 ${Math.round(w * 0.35)}px ${moodPalette.glow}` : undefined,
         }}
       >
-        <img 
-          src={LEADER_IMAGES[leaderName]} 
+        <img
+          src={LEADER_IMAGES[leaderName]}
           alt={leaderName}
           style={{
             width: '100%',
             height: '100%',
             objectFit: 'cover',
-            objectPosition: 'center'
+            objectPosition: 'center',
+            filter: moodFilter,
+            imageRendering: 'pixelated',
           }}
         />
+        {expressive && (
+          /* The mood wash: colour blended over the face so the same portrait
+             reads warm or furious without a second piece of artwork. */
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: moodPalette.bg,
+              mixBlendMode: 'color',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
       </div>
     );
   }

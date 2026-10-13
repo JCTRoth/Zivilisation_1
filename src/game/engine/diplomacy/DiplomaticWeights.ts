@@ -100,6 +100,10 @@ const GOVERNING_WEIGHT: Record<ImpactEvent, keyof DiplomaticWeights> = {
   tribute_gift: 'greed',
   unit_bribed: 'loyalty',
   spy_detected: 'paranoia',
+  // Espionage hits a suspicious civ hardest: a paranoid one is the one that
+  // was watching, and the one that takes a stolen secret most personally.
+  technology_stolen: 'paranoia',
+  city_sabotaged: 'vengeance',
   treaty_cancelled: 'loyalty',
   border_pressure: 'xenophobia',
   peace_made: 'trustSensitivity',

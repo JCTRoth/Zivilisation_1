@@ -5,7 +5,7 @@
  * disorder, and the research-compounding fix.
  */
 import { describe, it, expect } from 'vitest';
-import { EconomicManager } from '../src/game/engine/EconomicManager';
+import { EconomicManager, CITY_CENTER_COMMERCE, TRADE_GOLD_MULTIPLIER } from '../src/game/engine/EconomicManager';
 import { getResourceYields } from '../src/data/TerrainConstants';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -126,7 +126,7 @@ describe('EconomicManager city commerce split', () => {
 
     const out = econ.cityOutputs(city, civ);
     expect(out.commerce).toBe(10); // no capital → no corruption
-    expect(out.tax).toBe(6); // 30% of 10 × TRADE_GOLD_MULTIPLIER(2) = 6
+    expect(out.tax).toBe(Math.floor(10 * 0.3) * TRADE_GOLD_MULTIPLIER);
     expect(out.science).toBe(5);
     expect(out.luxury).toBe(2);
   });
@@ -138,7 +138,10 @@ describe('EconomicManager city commerce split', () => {
     const engine = makeEngine({ civilizations: [civ], cities: [cityA, cityB] });
     const econ = new EconomicManager(engine);
 
-    expect(econ.civGold(0)).toBe(18);     // 6 + 12 (tax × TRADE_GOLD_MULTIPLIER)
+    // Two cities: 10 and 20 commerce at 30% tax each.
+    expect(econ.civGold(0)).toBe(
+      Math.floor(10 * 0.3) * TRADE_GOLD_MULTIPLIER + Math.floor(20 * 0.3) * TRADE_GOLD_MULTIPLIER,
+    );
     expect(econ.civScience(0)).toBe(15);  // 5 + 10
     expect(econ.civLuxury(0)).toBe(6);    // 2 + 4
     expect(econ.civCommerce(0)).toBe(30);
@@ -154,11 +157,11 @@ describe('EconomicManager upkeep & treasury', () => {
     const econ = new EconomicManager(engine);
 
     const result = econ.processTurn(civ);
-    // income +6 (tax 30% of 10 × TRADE_GOLD_MULTIPLIER=2); the single unit is free
-    // (1 city supports 1 unit), so upkeep = 1 city only → gold 50 + 6 - 1 = 55
-    expect(civ.resources.gold).toBe(55);
+    // income +6 (tax 30% of 10 × TRADE_GOLD_MULTIPLIER=2); upkeep = 1 city only
+    // (the single unit is inside the free support) → gold 50 + 9 - 1 = 58
+    expect(civ.resources.gold).toBe(50 + Math.floor(10 * 0.3) * TRADE_GOLD_MULTIPLIER - 1);
     expect(result.upkeep).toBe(1);
-    expect(result.tax).toBe(6);
+    expect(result.tax).toBe(Math.floor(10 * 0.3) * TRADE_GOLD_MULTIPLIER);
     expect(result.deficit).toBe(0);
     expect(result.disbanded).toBe(0);
   });
@@ -177,10 +180,32 @@ describe('EconomicManager upkeep & treasury', () => {
     const econ = new EconomicManager(engine);
 
     const result = econ.processTurn(civ);
-    // upkeep = 1 city + 2 extra units = 3 → gold 50 + 6 - 3 = 53
+    // upkeep = 1 city + 2 extra units = 3 → gold 50 + 9 - 3 = 56
     expect(result.upkeep).toBe(3);
-    expect(civ.resources.gold).toBe(53);
+    expect(civ.resources.gold).toBe(50 + Math.floor(10 * 0.3) * TRADE_GOLD_MULTIPLIER - 3);
     expect(result.deficit).toBe(0);
+  });
+
+  it('banks whole coins, rounded UP, and leaves no fraction in the treasury', () => {
+    // The rule: the rate split stays fractional all the way through and rounds
+    // up exactly once, when it is written into the treasury. A civ earning 2.4
+    // gold a turn gets 3 — not 2, and not 2.4.
+    const civ = makeCiv(0, { taxRate: 30, scienceRate: 0, luxuryRate: 0, isHuman: true });
+    // Commerce 4 (the city-centre floor) at 30 % tax → 4 × 0.3 ×
+    // TRADE_GOLD_MULTIPLIER = 3.6 gross: a real fraction, which is the point.
+    const city = makeCity(0, 4);
+    const engine = makeEngine({ civilizations: [civ], cities: [city], units: [] });
+    const econ = new EconomicManager(engine);
+
+    const before = civ.resources.gold ?? 0;
+    const result = econ.processTurn(civ);
+    const gross = 4 * 0.3 * TRADE_GOLD_MULTIPLIER;
+    expect(Number.isInteger(gross)).toBe(false);      // the arithmetic is fractional
+    expect(Number.isInteger(result.tax)).toBe(true);   // …but never the books
+    // No units and no buildings, so upkeep is the single city's free support.
+    expect(civ.resources.gold).toBe(before + Math.ceil(gross));
+    expect(Number.isInteger(civ.resources.gold)).toBe(true);
+    expect(civ.goldFractionCarry ?? 0).toBe(0);        // nothing survives a round-up
   });
 
   it('allows ordinary deficits without disbanding', () => {
@@ -288,7 +313,7 @@ describe('EconomicManager happiness & disorder', () => {
     const econ = new EconomicManager(engine);
 
     econ.applyCityOutputs(city, civ);
-    expect(city.tax).toBe(6); // 30% of 10 × TRADE_GOLD_MULTIPLIER(2)
+    expect(city.tax).toBe(Math.floor(10 * 0.3) * TRADE_GOLD_MULTIPLIER);
     expect(city.science).toBe(5);
     expect(city.luxury).toBe(2);
     expect(city.disorder).toBe(false);
@@ -420,7 +445,7 @@ describe('EconomicManager tile-based commerce', () => {
     city.col = 5;
     city.row = 5;
     // cityCommerce = max(yields.trade, 2) = max(0, 2) = 2 (CITY_CENTER_COMMERCE floor)
-    expect(econ.cityCommerce(city)).toBe(2);
+    expect(econ.cityCommerce(city)).toBe(CITY_CENTER_COMMERCE);
   });
 
   it('recomputeCityYields writes real yields and building bonuses onto the city', () => {

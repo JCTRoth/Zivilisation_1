@@ -366,6 +366,55 @@ The *Diplomat* is a civilian unit (attack: 0, defense: 0, movement: 2, cost: 30)
 |-10 willingness
 |===
 
+=== Espionage (city infiltration)
+
+Four more actions run *inside* an enemy city. Civ I rule: you infiltrate a city
+you are *not* fighting — none of these are offered while the two civs are at
+war, because a city inside a war zone is entered with soldiers, not with a
+forged letter.
+
+[cols="1,2,2", options="header"]
+|===
+|Action |Description |Outcome
+
+|`establish_embassy`
+|Open a diplomatic channel
+|Always succeeds at peace; unlocks the negotiation screen for that court
+(`DiplomacyManager.hasEmbassy`); announced via `EMBASSY_ESTABLISHED`
+
+|`investigate_city`
+|Read a city's internals
+|Returns a `CityIntelligence` report (population, buildings, production,
+shields banked) and touches nothing
+
+|`industrial_sabotage`
+|Wipe the shields a city has banked
+|Detection roll: 50% base, ±6 per paranoia point; a caught saboteur has its
+cover blown and starts a war, leaving the city untouched
+
+|`steal_technology`
+|Take ONE blind random technology
+|Pool = `getTechTradeOptions().theyHaveWeLack`; detection roll 45% base. Civ I:
+|the cover is *always* blown and the victim *always* declares war — the loot
+lands only when the theft itself succeeded
+|===
+
+Detection is seeded per `(operative, target, kind, round)` via
+`seededNoise`, so a replay resolves identically. Both infiltrations write a
+real negative impact on the victim's ledger (`technology_stolen` −25,
+`city_sabotaged` −18, `spy_detected` −20), scaled by the victim's paranoia or
+vengeance.
+
+=== Embassies
+
+`DiplomacyManager.embassyPairs` records which pairs have a channel, keyed like
+`relations` and persisted in the save as `diplomacyEmbassies`. An embassy is
+the gate on the whole negotiation screen (see <<ui-diplomacy-modal,§12>>): without
+one the rival is still *listed* — you have met them — but their ledgers read
+"Unknown" and no term can be tabled. It also gates the AI's own tech offers:
+`AIDiplomacyPolicy` refuses to propose an Exchange of Knowledge
+(`hasEmbassy === false`), so knowledge only moves through a working channel.
+
 === Willingness calculation
 
 [source]
@@ -608,6 +657,72 @@ The negotiation panel background and border color change based on the leader's a
 |`#f44336`
 |Red glow
 |===
+
+=== The embassy gate
+
+The whole terms block is locked until the player has an embassy with that
+court. Without one:
+
+* the rival still appears in the roster (they have been *met*),
+* the goodwill/grievance/fear ledger is replaced by a single italic line
+  (`.diplomacy-locked-value`) explaining there is no channel yet,
+* the terms section is replaced by `.diplomacy-embassy-gate` — an "Embassy
+  required" badge plus the hint to station a diplomat in their city,
+* "Advanced Treaties" (including the Exchange of Knowledge pickers) does not
+  render at all.
+
+The audience card carries a chip (`.diplomacy-embassy-chip`) showing either
+"🏛️ Embassy established" or "🔒 No embassy", so the state is visible without
+scrolling to the terms.
+
+=== The audience screen
+
+*See <<ui-audience,§12a>> — the full-screen leader audience a "unit meeting
+unit" opens.*
+
+---
+
+[[ui-audience]]
+== 12a. UI — Audience Screen
+
+`AudienceModal` (`src/components/ui/gamemodals/AudienceModal.tsx`, dialog id
+`audience`) is what a *unit meeting unit* opens: a rival leader received across
+a dark hall, with one plain choice at the bottom. It is deliberately not the
+negotiation screen — no columns of numbers, no ledger, no term pickers.
+
+Two ways in:
+
+* *Greeting* — the player picks "Meet with Leader" from a diplomat's action
+  menu. Nothing is proposed; the leader receives you and you may leave.
+* *Offer* — an AI civ puts its own proposal to the player
+  (`AI_DIPLOMACY_OFFER` → `EngineEventRouter.onAIDiplomacyOffer` →
+  `actions.openAudience`). The player answers Yes/No; there is no way to
+  counter-offer from this screen.
+
+Layout: a large pixel portrait tuned to how they feel about you (`mood`
+drives a colour wash and a mood-tuned filter — the artwork is fixed, so the
+mood is carried by light), the leader's name and attitude badge, a speech field
+(green for an offer, grey for a formal audience), and the choice list in
+Civ I's blue.
+
+`IncomingDiplomacyOffer.message` used to be dropped on the floor here — the
+audience screen is what it was for. Tech-exchange and tribute lines are
+rebuilt from the terms in the player's language rather than passing the
+engine's English sentence through.
+
+=== API
+
+[source]
+----
+openAudience(notice: AudienceNotice)   // GameStore — opens dialog 'audience'
+clearAudience()                        // closes it and drops the notice
+----
+
+`AudienceNotice` (`types/game.ts`): `{ civId, mode: 'offer' | 'greeting',
+action?, goldAmount?, techOffered?, techRequested?, message }`.
+
+The screen defers auto-end-turn like every other decision screen
+(`EngineEventHandlers.isDecisionScreenOpen`), and dismissing it re-checks.
 
 ---
 

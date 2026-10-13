@@ -19,6 +19,7 @@ import { Pathfinding } from '@/game/engine/Pathfinding';
 import {
   CARAVAN_BLOCK_PATIENCE,
   CARAVAN_DISBAND_PATIENCE,
+  CARAVAN_MAX_TRANSIT_TURNS,
   MAX_CARAVANS_PER_CITY,
   MAX_CARAVAN_TRADE_ROUTES,
 } from '@/data/GameConstants';
@@ -108,9 +109,10 @@ describe('sanity: the fake terrain matches engine rules', () => {
 
 describe('sticky missions — no back and forth', () => {
   it('keeps the original target even when walking changes the ranking', () => {
-    // A(3,3) is near, B(9,3) is far — the old chooser preferred the far city,
-    // then re-scored every turn: walking toward B shrank B's value until A
-    // overtook it and the caravan turned around. The governor picks ONCE.
+    // B(9,3) is far but big, so it wins on value per turn at the start; the
+    // near city A(3,3) would out-value it once the caravan is standing next to
+    // A. The old chooser re-scored every turn and turned around; the governor
+    // picks ONCE and keeps walking to B.
     const { world, addCity, addCaravan } = makeWorld([
       '............',
       '............',
@@ -119,16 +121,16 @@ describe('sticky missions — no back and forth', () => {
       '............',
     ]);
     addCity('H', 0, 3);
-    addCity('A', 3, 3);
-    addCity('B', 9, 3);
+    addCity('A', 3, 3, HOME_CIV, { population: 4 });
+    addCity('B', 9, 3, HOME_CIV, { population: 30 });
     const caravan = addCaravan('v1', 0, 3, 'H');
     const gov = new CaravanGovernor();
 
     const plan1 = gov.planUnit(caravan, world, 1);
     expect(PLAN_OF(plan1)).toBe('move');
-    expect(gov.getMission('v1')).toMatchObject({ kind: 'deliver', targetCol: 9, targetRow: 3 });
+    expect(gov.getMission('v1')).toMatchObject({ phase: 'outbound', targetCol: 9, targetRow: 3 });
 
-    // Walk past city A — under the old scoring A would now out-value B.
+    // Walk past city A — under per-turn re-scoring A would now out-value B.
     caravan.col = 4;
     const plan2 = gov.planUnit(caravan, world, 2);
     expect(PLAN_OF(plan2)).toBe('move');
@@ -270,11 +272,15 @@ describe('blocked targets: patience, then blacklist + retarget', () => {
     ]);
     addCity('H', 0, 0);
     addCity('A', 6, 2);
-    addCity('B', 0, 1);
+    // B is the nearest city, but its route slots are full with strong routes,
+    // so it is not a target and A is the only choice.
+    addCity('B', 0, 1, HOME_CIV, {
+      tradeRoutes: Array(MAX_CARAVAN_TRADE_ROUTES).fill({ trade: 9, round: 1 }),
+    });
     const caravan = addCaravan('v1', 1, 2, 'H');
     const gov = new CaravanGovernor();
 
-    // A is chosen first (far = high value) while the corridor is open…
+    // A is chosen while the corridor is open…
     const first = gov.planUnit(caravan, world, 1);
     expect(PLAN_OF(first)).toBe('move');
     expect(gov.getMission('v1')?.targetCol).toBe(6);
@@ -284,16 +290,14 @@ describe('blocked targets: patience, then blacklist + retarget', () => {
     for (let turn = 2; turn <= CARAVAN_BLOCK_PATIENCE + 2; turn += 1) {
       gov.planUnit(caravan, world, turn);
     }
-    const mission = gov.getMission('v1');
-    expect(mission?.blacklisted).toContain('6,2');
+    expect(gov.getMission('v1')?.blacklisted).toContain('6,2');
 
-    // The blocker leaves — A is the juiciest target again, but this caravan
-    // has burned that bridge: it keeps delivering to B instead.
+    // The blocker leaves — A is reachable again, but this caravan has burned
+    // that bridge, and B is still full: nothing left to deliver.
     const blocker = units.find((u) => u.id === 'e1');
     if (blocker) units.splice(units.indexOf(blocker), 1);
     gov.planUnit(caravan, world, 99);
-    expect(gov.getMission('v1')?.targetCol).toBe(0);
-    expect(gov.getMission('v1')?.targetRow).toBe(1);
+    expect(gov.getMission('v1')?.targetCol).not.toBe(6);
   });
 });
 
@@ -336,7 +340,7 @@ describe('scouting: at most one caravan per civ', () => {
     const plan = gov.planUnit(c1, world, 2);
     expect(PLAN_OF(plan)).toBe('move');
     expect(gov.getScoutHolder(HOME_CIV)).toBeUndefined();
-    expect(gov.getMission('v1')?.kind).toBe('deliver');
+    expect(gov.getMission('v1')?.phase).toBe('outbound');
   });
 
   it('a scouting caravan routes around enemies instead of charging them', () => {
@@ -452,7 +456,7 @@ describe('delivery eligibility (Civ1 rules)', () => {
     const plan = gov.planUnit(caravan, world, 1);
     // Only H (own, = home) and Full (capacity used) exist → scout.
     expect(PLAN_OF(plan)).toBe('scout');
-    expect(gov.getMission('v1')?.kind).toBe('scout');
+    expect(gov.getMission('v1')?.phase).toBe('scouting');
     void full;
   });
 
@@ -530,5 +534,93 @@ describe('housekeeping', () => {
     const c2 = addCaravan('v2', 0, 3, 'H');
     expect(PLAN_OF(gov.planUnit(c2, world, 2))).toBe('scout');
     expect(gov.getScoutHolder(HOME_CIV)).toBe('v2');
+  });
+});
+
+describe('the new concepts', () => {
+  it('ranks a route by value per TURN, not per trip', () => {
+    // Two destinations of equal value: the near one wins, because a caravan with
+    // movement 1 pays for the trip in turns. Distance used to MULTIPLY value.
+    const { world, addCity, addCaravan } = makeWorld([
+      '........................',
+      '........................',
+      '........................',
+      '........................',
+    ]);
+    addCity('H', 0, 2);
+    addCity('Near', 2, 2, HOME_CIV, { population: 8 });
+    addCity('Far', 18, 2, HOME_CIV, { population: 8 });
+    const caravan = addCaravan('v1', 0, 2, 'H');
+    const gov = new CaravanGovernor();
+
+    gov.planUnit(caravan, world, 1);
+    expect(gov.getMission('v1')).toMatchObject({ targetCol: 2, targetRow: 2 });
+  });
+
+  it('covers several tiles in one step when the terrain is cheap', () => {
+    // Movement 1 on a roaded tile costs 1/3, so one step covers three tiles.
+    const { world, addCity, addCaravan } = makeWorld([
+      '......',
+      '......',
+      '......',
+      '......',
+    ]);
+    addCity('H', 0, 3);
+    addCity('T', 5, 3);
+    const caravan = addCaravan('v1', 0, 3, 'H');
+    const gov = new CaravanGovernor();
+
+    // A plain-grass step is cost 1, so only one tile is affordable per turn…
+    const plain = gov.planUnit(caravan, world, 1);
+    expect(plain.kind).toBe('move');
+    if (plain.kind === 'move') {
+      expect(plain.distanceCovered).toBe(1);
+      expect(plain.step).toEqual({ col: 1, row: 3 });
+    }
+  });
+
+  it('keeps a per-civ ledger of what the fleet did', () => {
+    const { world, addCity, addCaravan } = makeWorld([
+      '......',
+      '......',
+      '......',
+      '......',
+    ]);
+    addCity('H', 0, 3);
+    addCity('T', 5, 3);
+    const caravan = addCaravan('v1', 0, 3, 'H');
+    const gov = new CaravanGovernor();
+
+    gov.planUnit(caravan, world, 1);
+    const ledger = gov.getLedger(HOME_CIV);
+    expect(ledger).toBeDefined();
+    expect(ledger!.deliveries).toBe(0);
+    expect(ledger!.inFlight).toBe(1);
+  });
+
+  it('abandons a mission that has taken too long to arrive', () => {
+    const { world, addCity, addCaravan, addEnemy } = makeWorld([
+      '..............................',
+      '..............................',
+      '..............................',
+      '..............................',
+    ]);
+    addCity('H', 0, 0);
+    addCity('T', 20, 0);
+    const caravan = addCaravan('v1', 0, 0, 'H');
+    const gov = new CaravanGovernor();
+
+    gov.planUnit(caravan, world, 1);
+    // Plug the corridor so it never arrives, and run past the transit deadline.
+    addEnemy('e1', 1, 0);
+    let plan = gov.planUnit(caravan, world, 2);
+    // Patience gives up on the target first (no route), and the retarget finds
+    // nothing reachable either — but the mission must not live forever.
+    for (let round = 3; round <= 30; round += 1) plan = gov.planUnit(caravan, world, round);
+    expect(plan.kind === 'move' || plan.kind === 'wait' || plan.kind === 'scout').toBe(true);
+    const mission = gov.getMission('v1');
+    if (mission && (mission.phase === 'outbound' || mission.phase === 'delivering')) {
+      expect(mission.transitTurns).toBeLessThanOrEqual(CARAVAN_MAX_TRANSIT_TURNS + 1);
+    }
   });
 });

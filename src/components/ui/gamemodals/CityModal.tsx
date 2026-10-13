@@ -6,6 +6,7 @@ import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { isWonderObsolete, getWonder } from '@/data/WonderData';
 import { SPECIALIST_YIELDS, PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
+import { MAX_TRADE_ROUTES } from '@/game/engine/GameEngine';
 import { CITY_GOVERNOR_OPTIONS, governorOption, terrainLabel } from '@/utils/CityGovernorUtils';
 import ProductionSelectionModal from './ProductionSelectionModal';
 import { productionFailureText } from '@/utils/ProductionUtils';
@@ -157,6 +158,18 @@ const CityModal: React.FC<CityModalProps> = ({
         : population >= 8
           ? t('city.hero.metropolis')
           : t('city.hero.town');
+  // Fields inside this city's radius that still need an improvement — the
+  // engine's own count for this one city, so the panel shows what the player
+  // can act on right now.
+  const unimprovedFields = (() => {
+    if (!selectedCity) return 0;
+    const ai = (gameEngine as unknown as {
+      aiManager?: { countOutstandingWorksForCity?: (cityId: string) => number };
+    }).aiManager;
+    return typeof ai?.countOutstandingWorksForCity === 'function'
+      ? ai.countOutstandingWorksForCity(selectedCity.id)
+      : 0;
+  })();
   const eyebrow = t('city.hero.eyebrow', {
     owner: isPlayerCity ? t('city.hero.yourEmpire') : ownerCiv?.name ?? t('city.hero.foreignCity'),
     turn: gameState.currentTurn ?? 1,
@@ -224,6 +237,19 @@ const CityModal: React.FC<CityModalProps> = ({
                   {statTile('🪙', selectedCity.gold ?? 0, t('city.stat.gold'))}
                   {logic.getRouteTrade() > 0 && statTile('🛣️', `+${logic.getRouteTrade()}`, t('city.stat.routeTrade'))}
                 </div>
+                {/* Fields still waiting for a road/irrigation/mine: the number
+                    that decides whether this city's commerce can grow at all —
+                    a raw tile pays its citizen nothing. */}
+                {unimprovedFields > 0 && (
+                  <div className="gm-stat-grid mt-2">
+                    {statTile('🚧', `${unimprovedFields}`, t('city.stat.unimprovedFields'))}
+                  </div>
+                )}
+                {unimprovedFields > 0 && (
+                  <p className="gm-note">
+                    {t('city.overview.unimprovedNote', { count: unimprovedFields, city: cityName })}
+                  </p>
+                )}
                 <p className="gm-note">
                   {t('city.overview.note', { city: cityName })}
                 </p>
@@ -1297,6 +1323,18 @@ const CityModal: React.FC<CityModalProps> = ({
               {(() => {
                 const routes = logic.getTradeRoutes();
                 const routeTrade = logic.getRouteTrade();
+                // The OLDEST route is what a new delivery evicts (Civ1's rule,
+                // `GameEngine.addTradeRoute`), so the panel marks it: a player
+                // about to send a caravan should see which slot it will cost.
+                const roundNow = gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+                const routeAge = (route: { round?: number }): number =>
+                  Math.max(0, roundNow - (route.round ?? roundNow));
+                let oldestIdx = -1;
+                for (let i = 0; i < routes.length; i++) {
+                  if (oldestIdx === -1
+                    || (routes[i].round ?? 0) < (routes[oldestIdx].round ?? 0)) oldestIdx = i;
+                }
+                const oldestRouteKey = oldestIdx === -1 ? null : String(oldestIdx);
                 return (
                   <>
                     <p className="gm-prose">
@@ -1306,7 +1344,7 @@ const CityModal: React.FC<CityModalProps> = ({
                       <div className="gm-section-title">{t('city.trade.routesInUse')}</div>
                       <div className="gm-kv-grid gm-kv-grid--stack">
                         <div className="gm-kv">
-                          {t('city.trade.routesLabel')} <b>{routes.length}/3</b>
+                          {t('city.trade.routesLabel')} <b>{routes.length}/{MAX_TRADE_ROUTES}</b>
                         </div>
                         <div className="gm-kv">
                           {t('city.resources.tradeFromRoutes')}{' '}
@@ -1319,6 +1357,7 @@ const CityModal: React.FC<CityModalProps> = ({
                       {routes.length > 0 ? (
                         <div className="d-flex flex-column gap-2">
                           {routes.map((route, i) => {
+                            const routeKey = String(i);
                             const destCiv = gameEngine.civilizations?.find(
                               (c: Civilization) => c.id === route.civilizationId,
                             );
@@ -1332,6 +1371,14 @@ const CityModal: React.FC<CityModalProps> = ({
                                   </div>
                                   <div className="small text-muted">
                                     {destCiv?.name ?? t('city.trade.civFallback', { id: route.civilizationId })} · {t('city.trade.tilesAway', { count: route.distance })}
+                                    {oldestRouteKey !== null && (
+                                      <>
+                                        {' · '}
+                                        {routeKey === oldestRouteKey
+                                          ? <span className="text-warning">{t('city.trade.oldestEvicted')}</span>
+                                          : t('city.trade.routeAge', { round: routeAge(route) })}
+                                      </>
+                                    )}
                                   </div>
                                 </div>
                                 <div className="text-info fw-semibold">{t('city.trade.perTurn', { amount: route.trade })}</div>

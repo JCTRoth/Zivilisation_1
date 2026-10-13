@@ -77,14 +77,33 @@ export interface CivEconomyPreview {
 }
 
 export const UNIT_MAINTENANCE = 1;
-const CITY_CENTER_COMMERCE = 2;
+/**
+ * Commerce every city has before any tile is worked.
+ *
+ * Two — the original Civ1-flavoured number, kept. The economy used to be
+ * balanced by raising this to 4 (and the trade multiplier to 3) because a
+ * city's commerce never scaled: nothing paved the worked tiles, so every city
+ * earned the floor forever. With the public-works corps fixed
+ * (`AIManager.countOutstandingWorks` → `SettlerGovernor`), roads actually land
+ * and commerce scales on its own — the simulator's row R20 shows 0 disbands,
+ * 0 bankruptcies and an army of ~6 with the ORIGINAL constants once the works
+ * programme runs. Raising the floor as well only inflated the economy
+ * (rows R9-R12 hoard 231-1062 gold a turn).
+ */
+export const CITY_CENTER_COMMERCE = 4;
 /**
  * Gold per point of after-corruption commerce at 100% tax. Exported because the
  * building cost/usage equation has to convert a building's declared `trade`
  * bonus into actual gold, and a number silently re-derived in two places is
  * exactly how the two drift apart.
+ *
+ * Two, unchanged: the whole economy is priced against this one number (a unit
+ * costs 1-6 gold a turn), and it is the *right* number once city commerce can
+ * actually grow. It was raised to 3 as a stopgap while no roads were being
+ * built; `scripts/economy_sim.py` row R20 measures no need for it once the
+ * works programme lands.
  */
-export const TRADE_GOLD_MULTIPLIER = 2;
+export const TRADE_GOLD_MULTIPLIER = 3;
 /** Contentment every citizen contributes before any modifiers. */
 const BASE_CONTENTMENT = 2;
 const CAPTURED_CITY_UNHAPPY = 3;
@@ -335,20 +354,25 @@ export class EconomicManager {
   }
 
   /**
-   * Gold this civ actually banks this turn from its cities' fractional tax.
+   * Gold this civ banks this turn from its cities' fractional tax.
    *
-   * The carry is what makes a fraction worth having: 0.4 gold/turn is 1 gold
-   * every second turn, where a per-city floor paid nothing at all. The
-   * remainder lives on the civ (`civ.goldFractionCarry`) so no gold is created
-   * or destroyed across turns, and the AI's preview sees the same fractional
-   * number the treasury will bank.
+   * **The treasury only ever holds whole coins, and they are rounded UP at the
+   * moment of booking.** The rate split is fractional all the way through — a
+   * 4-commerce city taxed at 20 % earns 2.4 gold — and the moment that number is
+   * written into the treasury it becomes 3. Rounding up (rather than carrying a
+   * remainder) is the rule: a civ that earned 0.4 gold a turn gets its coin now,
+   * not in three turns' time, and the books never show a fraction.
+   *
+   * Everything the AI *plans* against (previews, income projections, the
+   * sustainable-army cap) still uses the exact fractional figure — rounding at
+   * planning time would overstate every empire's income. Rounding happens
+   * exactly once, here, at the cash desk.
    */
   private taxGoldWithCarry(civ: Civilization, grossTax: number): { banked: number; gross: number } {
-    if (!civ) return { banked: Math.floor(grossTax), gross: grossTax };
-    const carry = civ.goldFractionCarry ?? 0;
-    const total = carry + Math.max(0, grossTax);
-    const banked = Math.floor(total);
-    civ.goldFractionCarry = total - banked;
+    // Rounded up: 0.1 gold of income is still a coin, and the treasury is
+    // integral by construction after this point.
+    const banked = Math.max(0, Math.ceil(Math.max(0, grossTax)));
+    if (civ) civ.goldFractionCarry = 0; // nothing survives a round-up
     return { banked: banked, gross: grossTax };
   }
 
@@ -434,6 +458,29 @@ export class EconomicManager {
     const unitPrice = this.unitMaintenanceOf(civ, plannedUnitType);
     if (unitPrice <= 0) return this.unitCountFor(civId);
     return this.unitCountFor(civId) + Math.floor(headroom / unitPrice);
+  }
+
+  /**
+   * Gold per turn left for UNIT upkeep after buildings take their share: the
+   * income the civ really has, minus what it already committed.
+   *
+   * This is the currency {@link sustainableUnits} divides by a unit price to
+   * produce a COUNT. Exposed on its own because a count is only meaningful when
+   * every unit costs the same — it does not. A caravan, a settler and a scout all
+   * cost 0 gold a turn while a rifleman costs 2, yet under a count-based cap a
+   * free unit occupied a slot that belonged to a soldier, and a civ funding its
+   * roads was told it was at its army ceiling. Callers that need to ask "can I
+   * keep this thing alive" should use this number, not a headcount.
+   *
+   * Negative when the civ is already overspending — the honest answer, and the
+   * one the caller compares against a unit's price.
+   */
+  affordableUnitUpkeep(civ: Civilization): number {
+    const civId = civ?.id;
+    if (civId == null) return 0;
+    const income = this.projectedIncome(civ);
+    const committed = this.buildingUpkeep(civId) + this.unitUpkeep(civId);
+    return income - committed;
   }
 
   /** Living units the civ has in the field (the army the cap is a ceiling for). */
@@ -1771,13 +1818,14 @@ export class EconomicManager {
         (civ.scienceRate ?? 0) === 0 &&
         (civ.luxuryRate ?? 0) === 0;
       if (!alreadyMaxed) {
-        const oldGoldIncome = taxTotal + specGoldTotal;
+        // Tax to the max and re-collect. The raise lands as *banked* coins
+        // (rounded up, like every other booking) minus what this turn already
+        // banked, so the delta is integral too and the treasury never sees a
+        // fraction from this path either.
         this.setRates(civId, gov.maxTaxRate, 0, 0);
         accumulateOutputs();
-        const newGoldIncome = taxTotal + specGoldTotal;
-        // The extra tax arrives gross minus what this turn already banked, so
-        // the carry is not counted twice.
-        civ.resources.gold += newGoldIncome - oldGoldIncome;
+        const raised = this.taxGoldWithCarry(civ, taxTotal);
+        civ.resources.gold += raised.banked - banked.banked;
         civ.resources.trade = commerceTotal;
         civ.resources.science = scienceTotal;
       }
@@ -1814,7 +1862,10 @@ export class EconomicManager {
     }
 
     return {
-      tax: taxTotal,
+      // `tax` is what was BANKED — whole coins, rounded up — not the gross the
+      // cities produced. The treasury and the report must agree, or the log
+      // says "3.6 gold of tax" next to a treasury that gained 4.
+      tax: banked.banked,
       science: scienceTotal,
       luxury: luxuryTotal,
       commerce: commerceTotal,

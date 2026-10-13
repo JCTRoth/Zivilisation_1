@@ -3848,7 +3848,11 @@ const occupiedLandmasses = new Set(
         }
       }
       // City combat (native engine logic — the legacy Unit.attackCity API
-      // is incompatible with engine plain-object units).
+      // is incompatible with engine plain-object units). The owner has to be
+      // read BEFORE the call: resolveCityCombat flips `civilizationId` over
+      // to the attacker, and the capture event needs the former owner's
+      // colour for its flag.
+      const ownerCivId = targetCity.civilizationId;
       const outcome = this.resolveCityCombat(unit, targetCity);
       const result = outcome.result;
 
@@ -3871,10 +3875,15 @@ const occupiedLandmasses = new Set(
         unit.movesRemaining = 0;
         unit.hasMovedThisTurn = true;
         if (this.onStateChange) {
+          // Civ I spoils of war: the libraries of a surviving city are
+          // plundered for one technology the conqueror did not know.
+          const spoils = this.plunderTechOnCapture(unit.civilizationId, ownerCivId);
           this.onStateChange('CITY_CAPTURED', {
             city: targetCity,
             capturedBy: unit.civilizationId,
-            originalCiv: targetCity.civilizationId,
+            originalCiv: ownerCivId,
+            techId: spoils?.techId,
+            techName: spoils?.techName,
           });
         }
         return { success: true, reason: 'city_captured', combat: true };
@@ -3897,10 +3906,11 @@ const occupiedLandmasses = new Set(
         unit.movesRemaining = 0;
         unit.hasMovedThisTurn = true;
         if (this.onStateChange) {
+          // No spoils here: a razed city has no libraries left to plunder.
           this.onStateChange('CITY_CAPTURED', {
             city: targetCity,
             capturedBy: unit.civilizationId,
-            originalCiv: targetCity.civilizationId,
+            originalCiv: ownerCivId,
           });
         }
         return { success: true, reason: 'city_captured', combat: true };
@@ -4708,10 +4718,14 @@ const occupiedLandmasses = new Set(
               attacker.hasMovedThisTurn = true;
               this.updateUnitTurnsDoneFlag(attacker);
               if (capture.result === 'captured' && this.onStateChange) {
+                // Civ I spoils of war — the capture screen announces them.
+                const spoils = this.plunderTechOnCapture(attacker.civilizationId, originalCiv);
                 this.onStateChange('CITY_CAPTURED', {
                   city: cityHere,
                   capturedBy: attacker.civilizationId,
                   originalCiv,
+                  techId: spoils?.techId,
+                  techName: spoils?.techName,
                 });
               }
               return true;
@@ -6176,6 +6190,11 @@ const occupiedLandmasses = new Set(
       if (city && city.civilizationId !== diplomat.civilizationId) {
         const status = this.diplomacyManager.getStatus(diplomat.civilizationId, city.civilizationId);
         const actions: string[] = ['gather_intelligence'];
+        // Civ I: you infiltrate a city you are NOT fighting. A city inside a
+        // war zone is entered with soldiers, not with a forged letter.
+        if (status !== 'war') {
+          actions.push('establish_embassy', 'investigate_city', 'industrial_sabotage', 'steal_technology');
+        }
         if (status === 'war') {
           actions.push('propose_ceasefire', 'propose_peace', 'demand_tribute');
         } else if (status === 'ceasefire') {
@@ -6202,6 +6221,16 @@ const occupiedLandmasses = new Set(
       }
     }
 
+    return null;
+  }
+
+  /** The enemy city of `civId` this diplomat stands next to, if any. */
+  private adjacentEnemyCity(diplomat: Unit, civId: number): City | null {
+    const neighbors = this.squareGrid!.getNeighbors(diplomat.col, diplomat.row);
+    for (const n of neighbors) {
+      const city = this.getCityAt(n.col, n.row);
+      if (city && city.civilizationId === civId) return city;
+    }
     return null;
   }
 
@@ -6238,6 +6267,55 @@ const occupiedLandmasses = new Set(
         if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-proposal');
         return { success: true, type: 'proposal', response: result };
 
+      // ── Espionage: everything below happens INSIDE a foreign city ──
+
+      case 'establish_embassy': {
+        result = this.diplomacyManager.establishEmbassy(diplomat.civilizationId, targetCivId);
+        diplomat.movesRemaining = 0;
+        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
+        if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-embassy');
+        return { success: true, type: 'espionage', response: result };
+      }
+
+      case 'investigate_city': {
+        const city = this.adjacentEnemyCity(diplomat, targetCivId);
+        if (!city) return { success: false, reason: 'No adjacent city to investigate' };
+        result = this.diplomacyManager.investigateCity(diplomat.civilizationId, city);
+        diplomat.movesRemaining = 0;
+        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
+        if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-investigate');
+        return { success: true, type: 'espionage', response: result };
+      }
+
+      case 'industrial_sabotage': {
+        const city = this.adjacentEnemyCity(diplomat, targetCivId);
+        if (!city) return { success: false, reason: 'No adjacent city to sabotage' };
+        const espionage = this.diplomacyManager.industrialSabotage(diplomat.civilizationId, city);
+        // A caught agent does not walk home: the diplomat is lost on the spot
+        // (and its civ is now at war — see DiplomacyManager.blowCover).
+        if (espionage.coverBlown) this.units = this.units.filter(u => u.id !== diplomatId);
+        else diplomat.movesRemaining = 0;
+        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
+        if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-sabotage');
+        return { success: true, type: 'espionage', response: espionage };
+      }
+
+      case 'steal_technology': {
+        const espionage = this.diplomacyManager.stealTechnology(diplomat.civilizationId, targetCivId);
+        // The secrets travel with the agent, so the grant happens only when the
+        // theft itself succeeded — a caught spy takes nothing home.
+        if (espionage.success && espionage.techId) {
+          this.grantTech(diplomat.civilizationId, espionage.techId);
+        }
+        // Civ I: a stolen secret is discovered, always. The diplomat's career
+        // ends either way.
+        if (espionage.coverBlown) this.units = this.units.filter(u => u.id !== diplomatId);
+        else diplomat.movesRemaining = 0;
+        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
+        if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-steal-tech');
+        return { success: true, type: 'espionage', response: espionage };
+      }
+
       case 'bribe_unit': {
         // Find the adjacent enemy unit to bribe
         const neighbors = this.squareGrid!.getNeighbors(diplomat.col, diplomat.row);
@@ -6259,6 +6337,22 @@ const occupiedLandmasses = new Set(
       default:
         return { success: false, reason: 'Unknown action' };
     }
+  }
+
+  /**
+   * Civ I spoils of war: the conqueror's scientists plunder the fallen city's
+   * libraries and walk away with ONE random technology the former owner knew
+   * and the conqueror did not. Returns null when there was nothing left to
+   * learn. Reused by the capture screen for its "…discover the secrets of X!"
+   * line, so the UI never has to re-derive the pick.
+   */
+  plunderTechOnCapture(capturerCivId: number, ownerCivId: number): { techId: string; techName: string } | null {
+    const options = this.diplomacyManager.getTechTradeOptions(capturerCivId, ownerCivId).theyHaveWeLack;
+    if (options.length === 0) return null;
+    const techId = options[Math.floor(Math.random() * options.length)];
+    this.grantTech(capturerCivId, techId);
+    const techName = TECHNOLOGIES_DATA.find((t) => t.id === techId)?.name ?? techId;
+    return { techId, techName };
   }
 
   /**
@@ -6943,6 +7037,9 @@ const occupiedLandmasses = new Set(
       const diplomacyRelations: Record<string, unknown>[] = [];
       const diplomacyEvents: Record<string, unknown>[] = [];
       const diplomacyContact: string[] = [];
+      // Which pairs have an embassy — the gate on the negotiation screen, so
+      // it survives a save/load like every other diplomatic fact.
+      const diplomacyEmbassies: string[] = [];
       if (this.diplomacyManager) {
         const rels = this.diplomacyManager.getAllRelations();
         for (const rel of rels) {
@@ -6973,6 +7070,7 @@ const occupiedLandmasses = new Set(
           });
         }
         diplomacyContact.push(...this.diplomacyManager.exportContactedPairs());
+        diplomacyEmbassies.push(...this.diplomacyManager.exportEmbassyPairs());
       }
 
       // Serialize unit GoTo paths from roundManager
@@ -7039,6 +7137,7 @@ const occupiedLandmasses = new Set(
         diplomacyRelations,
         diplomacyEvents,
         diplomacyContact,
+        diplomacyEmbassies,
         unitPaths,
         scoutMemoryRound: this.scoutMemory ? this.scoutMemory.getCurrentRound() : 0,
       };
@@ -7195,6 +7294,11 @@ const occupiedLandmasses = new Set(
         this.diplomacyManager.restoreContactedPairs(saveData.diplomacyContact);
       } else {
         this.diplomacyManager.markAllContactsMet();
+      }
+      // Embassies are a save v4+ fact; older saves simply have none, so the
+      // negotiation screen stays locked until a diplomat founds one.
+      if (Array.isArray(saveData.diplomacyEmbassies)) {
+        this.diplomacyManager.restoreEmbassyPairs(saveData.diplomacyEmbassies);
       }
 
       this.victoryManager.syncStoreActions(this.storeActions);

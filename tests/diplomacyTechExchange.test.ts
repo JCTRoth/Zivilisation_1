@@ -187,7 +187,7 @@ describe('Exchange of Knowledge — scoring', () => {
 });
 
 describe('AI policy proposes tech exchange when both sides have something', () => {
-  it('pushes offer_tech_exchange only when both lists are non-empty', () => {
+  it('proposes offer_tech_exchange only when a swap actually favours us', () => {
     const weights = {
       trustSensitivity: 5, greed: 5, loyalty: 5, warmongering: 5,
       riskTolerance: 5, diplomacy: 5, memory: 5, pride: 5,
@@ -204,12 +204,25 @@ describe('AI policy proposes tech exchange when both sides have something', () =
       turnsSince: 5, roundsSincePeace: 5, sharedEnemy: false,
       round: 5, sequence: 0, currentYear: -3600,
     };
-    const withTrade = scoreCandidates({
+
+    // A trade that pays: hand over Bronze Working (30), receive Iron Working
+    // (50). The evaluator prices it well clear of a neutral margin.
+    const favourable = scoreCandidates({
+      ...base,
+      techsWeCanOffer: ['bronze_working'],
+      techsWeWant: ['iron_working'],
+    } as any);
+    expect(favourable.some((c) => c.action === 'offer_tech_exchange')).toBe(true);
+
+    // The mirror of that trade — give 50, get 30 — is a loss, and the AI no
+    // longer proposes it just because both sides hold something the other
+    // lacks. (The old code scored this identically to the trade above.)
+    const lossmaking = scoreCandidates({
       ...base,
       techsWeCanOffer: ['iron_working'],
       techsWeWant: ['bronze_working'],
     } as any);
-    expect(withTrade.some((c) => c.action === 'offer_tech_exchange')).toBe(true);
+    expect(lossmaking.some((c) => c.action === 'offer_tech_exchange')).toBe(false);
 
     const noTrade = scoreCandidates(base as any);
     expect(noTrade.some((c) => c.action === 'offer_tech_exchange')).toBe(false);

@@ -13,6 +13,7 @@ import WondersOverviewModal from './gamemodals/WondersOverview';
 import VillageModal from './gamemodals/VillageModal';
 import CombatReportModal from './gamemodals/CombatReportModal';
 import CityEventModal from './gamemodals/CityEventModal';
+import AudienceModal from './gamemodals/AudienceModal';
 import ResearchRequiredModal from './ResearchRequiredModal';
 import GameModal from './gamemodals/ModalShell';
 import { useGameStore } from '@/stores/GameStore';
@@ -61,6 +62,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
   const civilizations = useGameStore(state => state.civilizations);
   const incomingDiplomacyOffer = useGameStore(state => state.incomingDiplomacyOffer);
+  const audienceNotice = useGameStore(state => state.audienceNotice);
   const diplomacyFocusCivId = useGameStore(state => state.diplomacyFocusCivId);
   const disbandNotice = useGameStore(state => state.disbandNotice);
   const starvationNotice = useGameStore(state => state.starvationNotice);
@@ -234,6 +236,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
   const civName = (civId?: number) =>
     (civId === undefined ? null : civilizations.find(c => c.id === civId)?.name) ?? undefined;
+
+  /** Empire colour of a civ — the banner a captured city lowers. */
+  const civColor = (civId?: number) =>
+    (civId === undefined ? null : civilizations.find(c => c.id === civId)?.color) ?? undefined;
+
+  /** The civ's device/emoji, drawn on the banner. */
+  const civIcon = (civId?: number) =>
+    (civId === undefined ? null : civilizations.find(c => c.id === civId)?.icon) ?? undefined;
 
   const terrainAt = (col?: number, row?: number) => {
     if (col === undefined || row === undefined || !map?.tiles) return undefined;
@@ -535,6 +545,59 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     }
   };
 
+  /**
+   * Answer the leader audience. A greeting has nothing to decide; an offer is
+   * executed exactly as the AI wrote it — the player never chose the terms, so
+   * there is nothing to re-negotiate here, only yes or no.
+   */
+  const handleAudienceDecision = (accept: boolean): void => {
+    const notice = useGameStore.getState().audienceNotice;
+    if (!notice) return;
+    if (accept && notice.mode === 'offer' && gameEngine?.diplomacyManager) {
+      const result = gameEngine.diplomacyManager.acceptOffer({
+        fromCivId: notice.civId,
+        toCivId: currentPlayer?.id ?? 0,
+        action: notice.action as DiplomatAction,
+        goldAmount: notice.goldAmount,
+        techOffered: notice.techOffered,
+        techRequested: notice.techRequested,
+      });
+      const civName = civilizations[notice.civId]?.name ?? t('gm.unknown' as TranslationKey);
+      notify(
+        result.accepted ? 'success' : 'warning',
+        result.accepted
+          ? t('gm.diplo.feed.offerAccepted' as TranslationKey, {
+            civ: civName,
+            term: (notice.action ?? '').replace(/_/g, ' '),
+          })
+          : result.reason
+            ? t('gm.diplo.feed.offerFailedReason' as TranslationKey, { reason: String(result.reason) })
+            : t('gm.diplo.feed.offerFailed' as TranslationKey),
+      );
+      // A tech swap changes what each civ knows — refresh the store mirror.
+      if (gameEngine?.civilizations) {
+        actions.updateCivilizations([...gameEngine.civilizations]);
+      }
+    } else if (!accept && notice.mode === 'offer') {
+      const civName = civilizations[notice.civId]?.name ?? t('gm.unknown' as TranslationKey);
+      notify('info', t('gm.diplo.feed.offerDeclined' as TranslationKey, { civ: civName }));
+    }
+
+    // The audience defers auto-end like every other decision screen, so
+    // dismissing it re-checks whether the turn can now run out of moves.
+    handleCloseDialog();
+    actions.clearAudience();
+  };
+
+  /**
+   * Close the audience without answering: same re-check as any other blocking
+   * screen, just without a proposal to resolve.
+   */
+  const handleAudienceLeave = (): void => {
+    handleCloseDialog();
+    actions.clearAudience();
+  };
+
   const renderDiplomacy = () => {
     const dm = gameEngine?.diplomacyManager;
     const playerId = currentPlayer?.id ?? 0;
@@ -731,6 +794,15 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
     const selectedCivData = selectedDiploCiv !== null ? civilizations[selectedDiploCiv] : null;
     const selectedStatus = selectedDiploCiv !== null ? (dm?.getStatus(playerId, selectedDiploCiv) ?? 'peace') : 'peace';
+    /**
+     * Whether a diplomatic channel exists with the selected court. Without an
+     * embassy the rival is still listed — you have met them — but their ledgers
+     * stay shut and no term can be tabled. This is what makes "Establish
+     * Embassy" a decision rather than a formality.
+     */
+    const hasEmbassy = selectedDiploCiv !== null
+      ? (typeof dm?.hasEmbassy === 'function' ? dm.hasEmbassy(playerId, selectedDiploCiv) : true)
+      : false;
     // Raw score drives both the tier (via the engine's shared bands) and the
     // meter, so the bar and the word can never disagree.
     const selectedAttitudeScore = selectedDiploCiv !== null ? (dm?.getAttitudeScore?.(playerId, selectedDiploCiv) ?? 0) : 0;
@@ -921,6 +993,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         }}>
                           {ATTITUDE_LABELS[selectedAttitude]?.label || t('gm.unknown' as TranslationKey)}
                         </div>
+                        {/* Whether a channel exists at all — the gate on every
+                            term below. */}
+                        <div className={`diplomacy-embassy-chip ${hasEmbassy ? 'is-established' : 'is-missing'}`}>
+                          {hasEmbassy ? '🏛️ ' : '🔒 '}
+                          {hasEmbassy
+                            ? t('gm.diplo.embassy.est' as TranslationKey)
+                            : t('gm.diplo.embassy.none' as TranslationKey)}
+                        </div>
                         {/* Attitude meter: hostile ← → friendly. The scale is
                             clamped to ±40, the range the bands actually use. */}
                         <div
@@ -949,27 +1029,37 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         </span>
                         {selectedRelation && (
                           /* Goodwill is the one number the whole model turns on,
-                             so it leads; the rest of the ledger follows. */
+                             so it leads; the rest of the ledger follows. Without
+                             an embassy none of it is readable — an untrained
+                             eye cannot tell courtesy from calculation. */
                           <div className="gm-kv-grid gm-kv-grid--stack diplomacy-facts">
-                            <div className="gm-kv">
-                              {t('gm.diplo.goodwill' as TranslationKey)}{' '}
-                              <b style={{ color: selectedGoodwill < 0 ? '#f44336' : selectedGoodwill > 0 ? '#4caf50' : '#9e9e9e' }}>
-                                {selectedGoodwill > 0 ? '+' : ''}{selectedGoodwill}
-                              </b>
-                            </div>
-                            {selectedTheirOpinion.grievance >= 10 && (
-                              <div className="gm-kv">
-                                {t('gm.diplo.grievance' as TranslationKey)} <b style={{ color: '#ff9800' }}>{Math.round(selectedTheirOpinion.grievance)}</b>
+                            {!hasEmbassy ? (
+                              <div className="gm-kv diplomacy-locked-value">
+                                {t('gm.diplo.embassy.hint' as TranslationKey)}
                               </div>
+                            ) : (
+                              <>
+                                <div className="gm-kv">
+                                  {t('gm.diplo.goodwill' as TranslationKey)}{' '}
+                                  <b style={{ color: selectedGoodwill < 0 ? '#f44336' : selectedGoodwill > 0 ? '#4caf50' : '#9e9e9e' }}>
+                                    {selectedGoodwill > 0 ? '+' : ''}{selectedGoodwill}
+                                  </b>
+                                </div>
+                                {selectedTheirOpinion.grievance >= 10 && (
+                                  <div className="gm-kv">
+                                    {t('gm.diplo.grievance' as TranslationKey)} <b style={{ color: '#ff9800' }}>{Math.round(selectedTheirOpinion.grievance)}</b>
+                                  </div>
+                                )}
+                                {selectedTheirOpinion.fear >= 20 && (
+                                  <div className="gm-kv">
+                                    {t('gm.diplo.fear' as TranslationKey)} <b style={{ color: '#ba68c8' }}>{Math.round(selectedTheirOpinion.fear)}</b>
+                                  </div>
+                                )}
+                                <div className="gm-kv">
+                                  {t('gm.diplo.sinceTurn' as TranslationKey)} <b style={{ color: '#aaa' }}>{selectedRelation.since}</b>
+                                </div>
+                              </>
                             )}
-                            {selectedTheirOpinion.fear >= 20 && (
-                              <div className="gm-kv">
-                                {t('gm.diplo.fear' as TranslationKey)} <b style={{ color: '#ba68c8' }}>{Math.round(selectedTheirOpinion.fear)}</b>
-                              </div>
-                            )}
-                            <div className="gm-kv">
-                              {t('gm.diplo.sinceTurn' as TranslationKey)} <b style={{ color: '#aaa' }}>{selectedRelation.since}</b>
-                            </div>
                           </div>
                         )}
                       </div>
@@ -1075,9 +1165,19 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       </div>
                     )}
 
-                    {/* Negotiation buttons */}
+                    {/* Negotiation buttons — locked until an embassy exists. */}
                     <section className="gm-section">
                       <div className="gm-section-title">{t('gm.diplo.terms' as TranslationKey)}</div>
+                      {!hasEmbassy ? (
+                        <div className="diplomacy-embassy-gate">
+                          <span className="diplomacy-embassy-gate__badge">
+                            🏛️ {t('gm.diplo.embassy.required' as TranslationKey)}
+                          </span>
+                          <p className="diplomacy-embassy-gate__hint">
+                            {t('gm.diplo.embassy.hint' as TranslationKey)}
+                          </p>
+                        </div>
+                      ) : (
                       <div className="diplomacy-actions">
                       {selectedStatus === 'war' && (
                         <>
@@ -1151,9 +1251,10 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         </>
                       )}
                     </div>
+                      )}
 
                     {/* Advanced treaties toggle */}
-                    {selectedStatus !== 'war' && (
+                    {selectedStatus !== 'war' && hasEmbassy && (
                       <>
                         <button
                           className="diplomacy-toggle-treaties"
@@ -2266,6 +2367,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       />
       {renderResearchComplete()}
       {renderDiplomacy()}
+      <AudienceModal
+        show={uiState.activeDialog === 'audience'}
+        notice={audienceNotice}
+        gameEngine={gameEngine}
+        onAccept={() => handleAudienceDecision(true)}
+        onReject={() => handleAudienceDecision(false)}
+        onLeave={handleAudienceLeave}
+      />
       {renderHelp()}
       <CityModal show={uiState.activeDialog === 'city-details'} onHide={handleCloseDialog} selectedCity={selectedCity} gameEngine={gameEngine} actions={actions} currentPlayer={currentPlayer} isPlayerCity={isPlayerCity} />
       <RatesModal show={uiState.activeDialog === 'rates'} onHide={handleCloseDialog} gameEngine={gameEngine} />
@@ -2302,6 +2411,9 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         byCivName={civName(cityEvent?.byCivId)}
         terrainName={terrainAt(cityEvent?.col, cityEvent?.row)}
         playerCivId={playerCivId}
+        fromCivName={civName(cityEvent?.fromCivId)}
+        fromCivColor={cityEvent?.fromCivId !== undefined ? civColor(cityEvent.fromCivId) : undefined}
+        fromCivIcon={civIcon(cityEvent?.fromCivId)}
         onContinue={handleCityEventContinue}
         onGoToCity={handleCityEventGoToCity}
       />

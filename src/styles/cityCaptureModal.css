@@ -1,0 +1,102 @@
+/**
+ * The city capture screen.
+ *
+ * Two things happen in the window a conquered city opens: the fallen civ's
+ * banner comes down off the walls, and the librarian's bill is read out — one
+ * technology the conqueror did not have.
+ */
+
+/* ── The lowered banner ───────────────────────────────────────────────── */
+
+.city-event-flag {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 96px;
+  margin: 4px 0 2px;
+  padding: 0 6px 8px;
+  overflow: hidden;
+}
+
+.city-event-flag__pole {
+  position: relative;
+  width: 4px;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #6d7885, #39424d);
+  flex-shrink: 0;
+}
+
+.city-event-flag__pole::before {
+  /* Finial on top of the pole. */
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-accent, #f0c33c);
+  transform: translateX(-50%);
+}
+
+.city-event-flag__banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 58px;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  border-radius: 2px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+  /* Starts flying, ends gathered at the foot of the pole. */
+  transform-origin: left top;
+  animation: city-event-flag-lowered 1500ms var(--ease-out, ease-out) 250ms both;
+}
+
+.city-event-flag__device {
+  font-size: 26px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+
+.city-event-flag__caption {
+  color: var(--color-text-muted, #8fa3b4);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@keyframes city-event-flag-lowered {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(34px) rotate(-14deg);
+    opacity: 0.35;
+  }
+}
+
+/* ── The plundered knowledge ──────────────────────────────────────────── */
+
+.city-event-plunder {
+  border-color: var(--color-success, #35c46c);
+  background: rgba(53, 196, 108, 0.1);
+  color: var(--color-text, #e8eef3);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .city-event-flag__banner {
+    animation: none;
+    transform: translateY(34px) rotate(-14deg);
+    opacity: 0.35;
+  }
+}

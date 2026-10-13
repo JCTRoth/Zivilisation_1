@@ -169,17 +169,31 @@ describe('AI caravan delivery target (Caravan Governor)', () => {
     expect(dest).toEqual({ col: domestic.col, row: domestic.row });
   });
 
-  it('skips cities whose three trade-route slots are full', () => {
+  it('skips a city whose three slots hold strong routes', () => {
     const e = makeEngine();
     const home = addCity(e, 'home', 0, 1, 1, 10);
     const full = addCity(e, 'full', 0, 3, 1, 8);
     full.tradeRoutes = [1, 2, 3].map((n) => ({
-      cityId: `r${n}`, cityName: `r${n}`, civilizationId: 0, trade: 1, distance: 2,
+      cityId: `r${n}`, cityName: `r${n}`, civilizationId: 0, trade: 9, distance: 2, round: 1,
     }));
     const open = addCity(e, 'open', 0, 5, 5, 6);
     const caravan = addCaravan(e, 'car', home.id, 1, 1);
 
     expect(target(e, caravan)).toEqual({ col: open.col, row: open.row });
+  });
+
+  it('DOES take a route slot away from a full city when the new route is better', () => {
+    // The engine evicts the OLDEST route, so a city full of trade-1 junk is a
+    // legitimate target: the new route is worth far more than what it replaces.
+    const e = makeEngine();
+    const home = addCity(e, 'home', 0, 1, 1, 10);
+    const stale = addCity(e, 'stale', 0, 3, 1, 8);
+    stale.tradeRoutes = [1, 2, 3].map((n) => ({
+      cityId: `r${n}`, cityName: `r${n}`, civilizationId: 0, trade: 1, distance: 2, round: 1,
+    }));
+
+    const caravan = addCaravan(e, 'car', home.id, 1, 1);
+    expect(target(e, caravan)).toEqual({ col: stale.col, row: stale.row });
   });
 });
 

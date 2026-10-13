@@ -211,7 +211,10 @@
 /* Leader info beside portrait */
 .diplomacy-leader-info {
   flex: 1;
-  min-width: 0;
+  /* Never collapse below a readable column: this block is `flex: 1` in a row
+     whose other children are floored but not capped, so without a floor of its
+     own it can be squeezed to 0 and the attitude meter goes with it. */
+  min-width: 190px;
 }
 
 .diplomacy-leader-name {
@@ -248,6 +251,11 @@
   flex-direction: column;
   gap: 6px;
   min-width: 100px;
+  /* Capped, not just floored: this is a flex sibling of the leader block, and
+     long prose inside it (the embassy hint) would otherwise stretch the panel
+     until the leader block — whose min-width is 0 — collapses to nothing and
+     takes the attitude meter's width with it. */
+  max-width: 280px;
   align-items: flex-end;
 }
 
@@ -511,6 +519,72 @@
 .diplomacy-tech-input:focus {
   outline: none;
   border-color: var(--color-accent, #f0c33c);
+}
+
+/* ─── Embassy gate ──────────────────────────────── */
+
+/*
+ * Shown instead of the negotiation terms when the player has no embassy with
+ * the selected court. The rival stays listed (they have been met) — but their
+ * ledgers stay shut until a diplomat opens them.
+ */
+.diplomacy-embassy-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px dashed var(--color-border-strong, #3d5163);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-bg-panel, #16202a);
+}
+
+.diplomacy-embassy-gate__badge {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 1px solid var(--color-warning, #f2a33c);
+  border-radius: 999px;
+  color: var(--color-warning, #f2a33c);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.diplomacy-embassy-gate__hint {
+  margin: 0;
+  color: var(--color-text-muted, #b7c3cf);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Placeholder line in place of the goodwill ledger. */
+.diplomacy-locked-value {
+  color: var(--color-text-muted, #b7c3cf);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* Whether a diplomatic channel exists — the gate on every term below. */
+.diplomacy-embassy-chip {
+  align-self: flex-start;
+  padding: 3px 9px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.diplomacy-embassy-chip.is-established {
+  border-color: var(--color-info, #4cc3e8);
+  color: var(--color-info, #4cc3e8);
+}
+
+.diplomacy-embassy-chip.is-missing {
+  border-color: var(--color-border-strong, #3d5163);
+  color: var(--color-text-muted, #b7c3cf);
 }
 
 /* ─── Placeholder ───────────────────────────────── */

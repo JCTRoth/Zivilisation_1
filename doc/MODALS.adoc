@@ -118,6 +118,10 @@ live in `doc/dialogs/`.
 
 |Trade route / starved / disorder / disbanded |store notices |engine events |—
 
+|Audience (leader received) |`audience` |diplomat "Meet with Leader" / AI offer |—
+
+|Espionage report |canvas-local |diplomat steal / embassy / sabotage |—
+
 |End Turn confirm |App state |`Enter` / End Turn |—
 
 |Confirm New Game / Quit |App state |GAME ▸ New Game / Quit |—
@@ -134,7 +138,7 @@ The app has three independent places that decide "a dialog is open". They do
 not share a scheduler — only system A is visible to the engine's auto-end gate.
 
 *A — store-driven `uiState.activeDialog`* :: The union type lives in
-`types/game.ts` (~L636): `tech | diplomacy | help | pause | city-production |
+`types/game.ts`: `tech | diplomacy | audience | help | pause | city-production |
 city-details | rates | government | statistics | wonders | village |
 upkeep-disbanded | city-starved | city-disorder | trade-route-result |
 research-required | auto-end-offer | wonder-completed | wonder-conflict |

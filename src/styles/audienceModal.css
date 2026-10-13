@@ -1,0 +1,189 @@
+/**
+ * The audience screen — a leader received across a dark hall.
+ *
+ * Deliberately unlike the negotiation screen: no columns of numbers, no
+ * ledger. One face, one line of speech, one choice. The frame comes from the
+ * shared modal shell; everything below is what fills it.
+ */
+
+.modal.audience-modal .modal-dialog {
+  width: min(720px, 96vw);
+}
+
+.audience-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  padding: 22px;
+}
+
+/* ── The face ─────────────────────────────────────────────────────────── */
+
+.audience-modal__stage {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.audience-modal__portrait {
+  flex-shrink: 0;
+  padding: 4px;
+  border: 2px solid;
+  border-radius: 6px;
+  background: #0d1319;
+  /* The hall's light comes off the portrait, in their temper's colour. */
+  box-shadow: 0 0 32px rgba(0, 0, 0, 0.6);
+}
+
+.audience-modal__portrait .leader-portrait-image {
+  display: block;
+}
+
+.audience-modal__portrait-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 190px;
+  height: 247px;
+  font-size: 64px;
+}
+
+.audience-modal__ident {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.audience-modal__leader {
+  color: var(--color-accent, #f0c33c);
+  font-family: var(--font-display, var(--font-ui, sans-serif));
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.audience-modal__civ {
+  color: var(--color-text-muted, #8fa3b4);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.audience-modal__mood {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 3px 10px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── The speech field ─────────────────────────────────────────────────── */
+
+.audience-modal__speech {
+  padding: 16px 18px;
+  border: 1px solid var(--color-border, #2c3d4d);
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-bg-panel, #16202a);
+}
+
+/* An offer is a live proposal: the field takes the deal's own green. */
+.audience-modal__speech[data-mode='offer'] {
+  border-color: rgba(76, 175, 80, 0.45);
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.audience-modal__speaker {
+  margin-bottom: 8px;
+  color: var(--color-text-muted, #8fa3b4);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.audience-modal__text {
+  margin: 0;
+  color: var(--color-text, #e8eef3);
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.audience-modal__hint {
+  margin: 10px 0 0;
+  color: var(--color-text-muted, #8fa3b4);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ── The choice ───────────────────────────────────────────────────────── */
+
+.audience-modal__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.audience-choice {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  /* Civ I's choice list was blue text on black. */
+  color: var(--color-info, #4cc3e8);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out, ease-out);
+}
+
+.audience-choice:hover,
+.audience-choice:focus-visible {
+  background: rgba(76, 195, 232, 0.12);
+}
+
+.audience-choice--reject {
+  color: var(--color-danger, #ef5a6e);
+}
+
+.audience-choice--reject:hover,
+.audience-choice--reject:focus-visible {
+  background: rgba(239, 90, 110, 0.12);
+}
+
+.audience-choice--leave {
+  color: var(--color-text-muted, #8fa3b4);
+}
+
+@media (max-width: 575.98px) {
+  .audience-modal__stage {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .audience-modal__portrait .leader-portrait-image {
+    width: 150px !important;
+    height: 195px !important;
+  }
+
+  .audience-modal__portrait-placeholder {
+    width: 150px;
+    height: 195px;
+    font-size: 48px;
+  }
+
+  .audience-modal__leader {
+    font-size: 20px;
+  }
+}
