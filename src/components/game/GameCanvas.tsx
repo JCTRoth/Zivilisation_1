@@ -46,6 +46,10 @@ import {
 import { KeyboardHandler } from "@/game/engine/KeyboardHandler";
 import { useTranslation } from "@/i18n/useTranslation";
 import type { TranslationKey } from '@/i18n';
+import {
+  ESPIONAGE_DIPLOMAT_ACTIONS,
+  type DiplomatAction,
+} from "@/game/engine/DiplomacyTypes";
 import { tTechName } from '@/i18n/dataNames';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { unlockAudio } from '@/utils/Sfx';
@@ -1035,6 +1039,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           mapData.height,
           unit,
           getUnitAtFromEngine,
+          getCityAtFromEngine,
         ),
       );
       triggerRender();
@@ -1060,6 +1065,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Re-draw so committed routes pick up the new selected unit (opacity etc.).
     triggerRender();
   }, [gameState.selectedUnit, triggerRender]);
+
+  // Outside AI-vs-AI games, drop the drawn GoTo route lines when a civ
+  // finishes its turn so stale yellow lines do not linger.
+  useEffect(() => {
+    const civs = gameEngine?.civilizations ?? [];
+    const allAI = civs.length > 0 && civs.every((c: { isHuman?: boolean }) => !c.isHuman);
+    if (allAI) return;
+    setUnitPaths(new Map());
+    triggerRender();
+  }, [gameState.activePlayer, gameEngine, triggerRender]);
 
   const squareToScreen = useCallback(
     (col: number, row: number): { x: number; y: number } => {
@@ -1283,6 +1298,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           mapData.height,
           unit,
           getUnitAtFromEngine,
+          getCityAtFromEngine,
         );
       } catch (e) {
         console.error("[GameCanvas] getReachableForUnit error", e);
@@ -2467,7 +2483,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (!rect) return;
     const x = clientX - rect.left;
     const y = clientY - rect.top;
-    const newZoom = clampZoom(camera.zoom * 1.5);
+    const newZoom = clampZoom(camera.zoom * 1.5, gameEngine.devMode);
     const worldXBefore = x / camera.zoom + camera.x;
     const worldYBefore = y / camera.zoom + camera.y;
     const worldXAfter = x / newZoom + camera.x;
@@ -2551,7 +2567,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       const dy = touches[0].clientY - touches[1].clientY;
       const distance = Math.hypot(dx, dy);
       const scale = distance / pinchStartRef.current.distance;
-      const newZoom = clampZoom(pinchStartRef.current.zoom * scale);
+      const newZoom = clampZoom(pinchStartRef.current.zoom * scale, gameEngine.devMode);
       actions.updateCamera({ zoom: newZoom });
     }
   };
@@ -2621,7 +2637,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       : t("canvas.constructionStartedOne" as TranslationKey, { label, turns });
   };
 
-  const executeContextAction = (action: string) => {
+  const executeContextAction = (action: string, data?: Record<string, unknown>) => {
     console.log(`[ContextMenu] Executing action: ${action}`, { contextMenu });
 
     if (!contextMenu) return;
@@ -2938,22 +2954,38 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       }
 
       // ===== DIPLOMAT ACTIONS =====
-      case "diplomat_propose_peace":
-      case "diplomat_propose_alliance":
-      case "diplomat_demand_tribute":
-      case "diplomat_bribe":
-      case "diplomat_gather_intel":
-      case "diplomat_meet_leader":
-      case "diplomat_establish_embassy":
-      case "diplomat_investigate_city":
-      case "diplomat_sabotage":
-      case "diplomat_steal_tech": {
+      // One case for the whole repertoire: the menu id is `diplomat_` plus the
+      // engine's own action name, so an ability added to `DiplomatAction`
+      // arrives here without anyone having to remember to add a case for it.
+      // This is the `default` branch, which routes here only for `diplomat_*`.
+      default: {
+        if (!action.startsWith("diplomat_")) {
+          console.warn(`[ContextMenu] Unknown action: ${action}`);
+          break;
+        }
         if (
           unit &&
-          gameEngine?.getDiplomatActions &&
+          gameEngine?.getDiplomatTargets &&
           gameEngine?.executeDiplomatAction
         ) {
-          const diplomatInfo = gameEngine.getDiplomatActions(unit.id);
+          const engineAction = action.slice("diplomat_".length);
+          // The menu already resolved which court the player meant; the engine
+          // re-checks it anyway, so a stale click cannot reach an ability the
+          // rules do not grant.
+          const wanted = {
+            targetCivId: Number(data?.targetCivId ?? NaN),
+            cityId: typeof data?.cityId === "string" ? data.cityId : undefined,
+            unitId: typeof data?.unitId === "string" ? data.unitId : undefined,
+          };
+          const targets = gameEngine.getDiplomatTargets(unit.id);
+          const diplomatInfo = Number.isFinite(wanted.targetCivId)
+            ? targets.find(
+              (tg) =>
+                tg.targetCivId === wanted.targetCivId
+                && (!wanted.cityId || tg.cityId === wanted.cityId)
+                && (!wanted.unitId || tg.unitId === wanted.unitId),
+            ) ?? targets.find((tg) => tg.targetCivId === wanted.targetCivId)
+            : targets[0];
           if (!diplomatInfo) {
             if (actions?.addNotification)
               actions.addNotification({
@@ -2962,17 +2994,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               });
             break;
           }
-          const actionMap: Record<string, string> = {
-            diplomat_propose_peace: "propose_peace",
-            diplomat_propose_alliance: "propose_alliance",
-            diplomat_demand_tribute: "demand_tribute",
-            diplomat_bribe: "bribe_unit",
-            diplomat_gather_intel: "gather_intelligence",
-            diplomat_establish_embassy: "establish_embassy",
-            diplomat_investigate_city: "investigate_city",
-            diplomat_sabotage: "industrial_sabotage",
-            diplomat_steal_tech: "steal_technology",
-          };
 
           // "Meet with Leader" is the audience itself: no engine action, the
           // player is simply received. Everything else runs through the engine.
@@ -2989,8 +3010,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
           const result = gameEngine.executeDiplomatAction(
             unit.id,
-            actionMap[action],
+            engineAction,
             diplomatInfo.targetCivId,
+            {
+              cityId: diplomatInfo.cityId,
+              unitId: diplomatInfo.unitId,
+              goldAmount: typeof data?.goldAmount === "number" ? data.goldAmount : undefined,
+              techOffered: typeof data?.techOffered === "string" ? data.techOffered : undefined,
+              techRequested: typeof data?.techRequested === "string" ? data.techRequested : undefined,
+              embargoTargetId: typeof data?.embargoTargetId === "number" ? data.embargoTargetId : undefined,
+            },
           );
           if (actions?.updateUnits)
             actions.updateUnits(getAllUnitsFromEngine());
@@ -3002,10 +3031,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           // focused on the foreign civ so the player can continue bargaining.
           // Espionage is the exception — its outcome is reported in its own
           // window, and the player has just seen the enemy's internals.
-          const isEspionage = action === "diplomat_establish_embassy"
-            || action === "diplomat_investigate_city"
-            || action === "diplomat_sabotage"
-            || action === "diplomat_steal_tech";
+          const isEspionage = ESPIONAGE_DIPLOMAT_ACTIONS.has(
+            engineAction as DiplomatAction,
+          );
           if (!isEspionage && actions?.openDiplomacy && diplomatInfo?.targetCivId != null) {
             actions.openDiplomacy(diplomatInfo.targetCivId);
           }
@@ -3057,7 +3085,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             } else if (result.type === "espionage") {
               // The espionage report window: one line per beat, the last beat
               // carrying the war declaration if the cover was blown.
-              const r = result.response as
+              const r = result.espionage as
                 | Record<string, unknown>
                 | undefined;
               const civName =
@@ -3110,8 +3138,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         }
         break;
 
-      default:
-        console.warn(`[ContextMenu] Unknown action: ${action}`);
+      // NOTE: `default` (the diplomat branch) sits above these cases on purpose.
+      // A `default` clause runs only when no `case` matches, so its position in
+      // the switch does not change which branch these two take.
     }
 
     setContextMenu(null);
@@ -3123,7 +3152,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Smoother zoom with smaller increments
     const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05;
-    const newZoom = clampZoom(camera.zoom * zoomFactor);
+    const newZoom = clampZoom(camera.zoom * zoomFactor, gameEngine.devMode);
 
     // Get mouse position for zoom centering
     const rect = canvasRef.current.getBoundingClientRect();

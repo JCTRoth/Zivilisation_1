@@ -98,6 +98,13 @@ const UNIT_ICON_OVERRIDES: UnitIconOverride[] = [
     unitType: 'trireme',
     svgPath: 'trireme.svg',
     fallbackEmoji: UNIT_PROPERTIES['trireme']?.icon
+  },
+  {
+    unitType: 'frigate',
+    svgPath: 'frigate.svg',
+    // The Egyptian boat glyph the unit used to fall back on renders as tofu
+    // in most font stacks, so this is a real replacement, not a nicety.
+    fallbackEmoji: UNIT_PROPERTIES['frigate']?.icon
   }
 ];
 

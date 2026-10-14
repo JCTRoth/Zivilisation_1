@@ -972,11 +972,11 @@ function App() {
           case "+":
           case "=":
             // Zoom in
-            setCamera({ zoom: clampZoom(camera.zoom * 1.2) });
+            setCamera({ zoom: clampZoom(camera.zoom * 1.2, settings.devMode) });
             break;
           case "-":
             // Zoom out
-            setCamera({ zoom: clampZoom(camera.zoom / 1.2) });
+            setCamera({ zoom: clampZoom(camera.zoom / 1.2, settings.devMode) });
             break;
         }
       }

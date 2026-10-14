@@ -1,0 +1,273 @@
+= Sound Effects — Cue Catalogue & Recording Guide
+
+> *Module:* `src/utils/Sfx.ts`
+> *Call sites:* `src/utils/EngineEventHandlers.ts`, `src/components/ui/gamemodals/EspionageReportModal.tsx`, `src/components/game/GameCanvas.tsx`
+> *Setting:* `settings.enableSoundEffects` (Settings → *Enable sound effects*)
+> *Assets:* `public/assets/sfx/` — **not created yet**, see <<adding-a-recording,Adding a Recording>>
+> *Tests:* `tests/sfx.test.ts`
+
+---
+
+== Table of Contents
+
+. <<overview,Overview>>
+. <<catalogue,Cue Catalogue>>
+. <<pipeline,How a Cue Fires>>
+. <<adding-a-recording,Adding a Recording>>
+. <<gating,When Sound Is Suppressed>>
+. <<loudness,Loudness>>
+. <<testing,Tests>>
+
+---
+
+[[overview]]
+== Overview
+
+The game ships **no audio assets**. Every cue is synthesized from oscillator
+beeps at play time, which costs no bytes, works offline, and means the game has
+sound on day one.
+
+Recordings replace the synthesis *one cue at a time*. Filling in a row of
+`CUE_FILES` in `src/utils/Sfx.ts` makes that one cue play the file instead;
+every other cue keeps its oscillators. Nothing else in the game changes, so a
+recording can land in a single commit and be reverted the same way.
+
+Two rules hold for both paths:
+
+* **The switch comes first.** When `enableSoundEffects` is off, `playSfx`
+  returns before it looks up a file — a muted game never even fetches the
+  asset.
+* **A cue is either a file or a synthesis, never both.** A path that failed to
+  load does not fall back to the oscillators, so a half-configured game cannot
+  double up when the recording finally arrives.
+
+---
+
+[[catalogue]]
+== Cue Catalogue
+
+Seven cues exist. Each has a fixed, kebab-case file name; the *Expected file*
+column is the path relative to `public/`.
+
+[cols="1,3,2,2", options="header"]
+|===
+| Cue | When it plays | Fires at | Expected file
+
+| `unitStrike`
+| Every combat round in which the player is involved and **no unit died** —
+  the blow itself. Repeats each round of a fight.
+| `EngineEventHandlers.onCombat` (`COMBAT_HIT`, `COMBAT_VICTORY`,
+  `COMBAT_DEFEAT` with no destruction)
+| `sfx/unit-strike.ogg`
+
+| `unitDefeated`
+| A combat round in which the player is involved and a unit **was destroyed**
+  — the death, replacing `unitStrike` for that round.
+| `EngineEventHandlers.onCombat`
+| `sfx/unit-defeated.ogg`
+
+| `unitDisbanded`
+| One of the **player's** units is disbanded — by order, or by
+  `EconomicManager` to cover an upkeep deficit.
+| `EngineEventHandlers.onUnitDisbanded`
+| `sfx/unit-disbanded.ogg`
+
+| `cityCaptured`
+| The player **takes** a city (`CITY_CAPTURED` where the captor is the human).
+  Losing a city plays nothing: a victory jingle over your own fall would be
+  the wrong news twice over.
+| `EngineEventHandlers.onCityOwnership`
+| `sfx/city-captured.ogg`
+
+| `stolenTechnology`
+| A diplomat's theft **succeeded** — the first beat of the espionage report,
+  played as the "…gained the secrets of X!" line appears.
+| `EspionageReportModal` (stage `stolen`)
+| `sfx/stolen-technology.ogg`
+
+| `coverBlown`
+| The espionage report reaches its "cover blown" beat, one beat after
+  `stolenTechnology`.
+| `EspionageReportModal` (stage `cover-blown`)
+| `sfx/cover-blown.ogg`
+
+| `uiSelect`
+| *Defined but never called.* No code path invokes it today.
+| —
+| `sfx/ui-select.ogg`
+|===
+
+[NOTE]
+====
+`uiSelect` is in the type and has a synthesis, but nothing plays it. It is
+documented so the row is not mistaken for dead code — wire it up (a menu
+click, an accept/reject press) rather than deleting it, or delete both the cue
+and this row together.
+====
+
+---
+
+[[pipeline]]
+== How a Cue Fires
+
+[source]
+----
+playSfx(cue)
+  │
+  ├─ settings.enableSoundEffects === false ──► return, no lookup, no fetch
+  │
+  ├─ CUE_FILES[cue] is set ──► Audio(path) ──► return
+  │                            cloneNode so the same file can overlap itself
+  │
+  └─ no file ──► AudioContext (lazily created)
+                 ├─ none or suspended ──► resume() once, drop the cue
+                 └─ running ──► oscillator per note in CUES[cue]
+----
+
+The context is created on first use and **cached in module state**. Browsers
+refuse to start an `AudioContext` before a user gesture, so `unlockAudio()` is
+called from `GameCanvas.handleMouseDown` — the first click on the board warms
+the context up and the next cue is not silently swallowed.
+
+`unlockAudio()` is safe to call often; it only resumes a suspended context.
+
+---
+
+[[adding-a-recording]]
+== Adding a Recording
+
+. Create the directory (it does not exist in the repository yet):
++
+[source,bash]
+----
+mkdir -p public/assets/sfx
+----
+
+. Drop the file in. **Name it after the cue in kebab-case** — the table above
+  gives the exact name for each cue. The name is a convention, not a lookup:
+  only the path you write into `CUE_FILES` matters at runtime.
+
+. Edit `CUE_FILES` in `src/utils/Sfx.ts` and uncomment (or add) the row:
++
+[source,typescript]
+----
+export const CUE_FILES: Partial<Record<SfxCue, string>> = {
+  'unitStrike':       '/assets/sfx/unit-strike.ogg',
+  // ...
+};
+----
++
+The key is the cue id (`SfxCue`); the value is the URL **as the browser
+requests it**. Vite serves everything under `public/` at the root, so the file
+`public/assets/sfx/unit-strike.ogg` is `/assets/sfx/unit-strike.ogg`.
+
+. Reload. That cue now plays the file and its oscillators are ignored. All
+  other cues are untouched.
+
+Any format the browser can decode works (`Audio` just takes a URL) — `.ogg` is
+the project's choice: well-supported, and compresses well for the short,
+percussive clips these cues are.
+
+[NOTE]
+====
+`CUE_FILES` is exported and read **live** on every call, so a row added after
+the module loaded takes effect immediately — a test, or a future manifest
+loader, can register a path without editing this module.
+====
+
+---
+
+[[gating]]
+== When Sound Is Suppressed
+
+[cols="2,3", options="header"]
+|===
+| Gate | Effect
+
+| `settings.enableSoundEffects` (off)
+| `playSfx` returns before any lookup or fetch. Toggled in Settings →
+  *Enable sound effects*; the label exists in all six languages.
+
+| No `AudioContext` (node, blocked audio)
+| Synthesis is skipped. File cues still attempt `Audio(path)`, which fails
+  quietly.
+
+| Context still `suspended` (no gesture yet)
+| The cue is **dropped, not queued** — a queue would replay stale combat when
+  the context finally starts. `unlockAudio()` on the first click makes this
+  rare.
+
+| Combat not involving the player
+| `unitStrike` / `unitDefeated` do not fire. The same rule as the toasts: two
+  AI armies clashing off-screen must not fill a quiet turn, and an AI-vs-AI
+  spectator run would otherwise play every round of every war.
+
+| Disband by an AI civ
+| `unitDisbanded` does not fire. The AI disbands constantly, and its
+  bookkeeping is not sound design.
+
+| The player **losing** a city
+| `cityCaptured` does not fire (see the catalogue).
+|===
+
+---
+
+[[loudness]]
+== Loudness
+
+[cols="2,1,3", options="header"]
+|===
+| Cue | Master gain | Note
+
+| Every event fanfare (`stolenTechnology`, `coverBlown`, `cityCaptured`,
+  `uiSelect`)
+| `0.18`
+| The reference level — `BASE_GAIN`.
+
+| `unitDefeated`
+| `0.7 × 0.18 = 0.126`
+| Under the fanfare.
+
+| `unitDisbanded`
+| `0.6 × 0.18 = 0.108`
+| Under the fanfare.
+
+| `unitStrike`
+| `0.55 × 0.18 = 0.099`
+| The quietest: it repeats every combat round.
+|===
+
+The multipliers live in `UNIT_CUE_GAIN` and apply to `BASE_GAIN`. The ordering
+is the whole point: a blow fires on every round while a fanfare fires once per
+game, so unit cues sit *underneath* the events rather than on top of them.
+
+File-backed cues are not routed through the gain node — they use `HTMLAudioElement.volume`
+instead, set to `UNIT_CUE_VOLUME` (`0.45`). Raise or lower the two independently
+when mixing in real recordings.
+
+[NOTE]
+====
+This ordering was once inverted: `UNIT_CUE_GAIN` is documented as a multiplier,
+but the code assigned it as an absolute value, which made a strike three times
+*louder* than a stolen technology. `tests/sfx.test.ts` now pins the relation.
+====
+
+---
+
+[[testing]]
+== Tests
+
+`tests/sfx.test.ts` covers what is invisible until the first `.ogg` arrives:
+
+* a row in `CUE_FILES` produces an `Audio` for exactly that path;
+* the table is read **live**, so registering a path after import still applies;
+* an unmapped cue never reaches the file layer (no double playback);
+* sound off means no fetch at all;
+* every cue in `SfxCue` plays without throwing, muted or not;
+* a unit cue is quieter than an event fanfare, and two identical cues are
+  equally loud.
+
+`disposeAudio()` exists for these tests: the context is module state, so two
+assertions in one file would otherwise share whichever fake the first one
+installed. Nothing in the game calls it — a real context is cheap to keep and
+expensive to recreate.

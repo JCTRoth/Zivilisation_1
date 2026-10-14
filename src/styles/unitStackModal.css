@@ -87,9 +87,13 @@
 .usm-icon {
   flex: 0 0 auto;
   width: 32px;
+  /* Flex, not text-align: the icon inside is a fitted <img> (or an emoji),
+     and an inline-flex child is not centred by text-align. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 1.5rem;
   line-height: 1;
-  text-align: center;
 }
 
 .usm-main {

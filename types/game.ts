@@ -424,6 +424,19 @@ export interface Unit {
   isDefeated?: boolean;
   /** When the unit was defeated (performance.now()), used to delay visual removal. */
   defeatTimestamp?: number;
+  /**
+   * Cumulative HP lost in combat (all rounds, including splash). City healing
+   * restores HP against this ledger — see `healedInCityTotal`.
+   */
+  battleDamageTaken?: number;
+  /**
+   * Cumulative HP restored by city healing. Capped at 15% of
+   * `battleDamageTaken`: field hospitals close wounds, they do not make
+   * veterans young again.
+   */
+  healedInCityTotal?: number;
+  /** Round number in which the unit last healed inside a city (blood-drop marker). */
+  _healedRound?: number;
   /** Whether this unit is a naval unit. */
   isNaval?: boolean;
   /**

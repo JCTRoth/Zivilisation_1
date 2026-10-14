@@ -160,6 +160,69 @@
   text-transform: uppercase;
 }
 
+/* Which of the adjacent courts the diplomat is about to speak to. A diplomat
+   can stand between a city and a unit — sometimes two of the same civ — so the
+   player picks; without this the menu could only ever show one of them. */
+.context-menu-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 4px;
+}
+
+.context-menu-targets__label {
+  width: 100%;
+  color: var(--color-text-muted, #8fa3b4);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.context-menu-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border, #2c3d4d);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text, #e8eef3);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out, ease-out);
+}
+
+.context-menu-target span {
+  font-size: 13px;
+}
+
+.context-menu-target:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.context-menu-target[aria-pressed='true'] {
+  border-color: var(--color-accent, #4aa3df);
+  background: rgba(74, 163, 223, 0.18);
+}
+
+/* A diplomat standing in open country: say why the menu is empty rather than
+   showing buttons that would all fail. */
+.context-menu-hint {
+  padding: 10px 14px;
+  color: var(--color-text-muted, #8fa3b4);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.context-menu-section {
+  display: contents;
+}
+
 @keyframes sheet-up {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }

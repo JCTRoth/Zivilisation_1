@@ -37,7 +37,8 @@ some names of books - Dont use arrows and focuce on one main picture add NO o ad
 * Integrate the new sprash damage also into the AI
 * 
 
-* Units should heal in cities rate abouut 2% every turn up to 20% of there battle demage.
+* Units should heal in cities rate abouut 2% every turn up to 15% of there battle demage.
+show a little blood symbole babove the unit when it heals if unit is not stacked
 
 * Add new units for land transportation of units.
 
@@ -1009,4 +1010,73 @@ Bring order into it
 Do what ever needed
 
 ----------------
+
+ AI player: analyze the settler govoner, make sigificant strageic imporovments to it, use of more unit, and overall the straegy, than make test games to check if it works,
+ if not and it is not only a "bug" or somthing that you can adjust than agaian to siginficant changes and test play again - make it greate and smart! --- Also the settler govoner should be activated if not preset by the AI so improve the corrdinator as well  -- if the navie govoner is improvte significantly! (check it by the test games and statistcs provice detailed report at the end) than contiue with the other AI modules
+
+
+
+ Here is a structured, clear prompt template based on your requirements:
+
+---
+
+### **Prompt Template: AI Settler Governor & Coordinator Overhaul**
+
+> **Role & Goal:** You are an expert AI Developer specializing in strategy game AI (Civilization / Freeciv / 4X engines). Your task is to analyze, refactor, and test the **Settler Governor** and **Coordinator** modules to make them significantly smarter, strategically aggressive, and self-activating.
+
+---
+
+#### **Phase 1: Analysis & Strategic Design**
+
+1. **Current State Audit:**
+* Review the existing Settler Governor logic (location evaluation, expansion pacing, safety/escort requirements, expansion targets).
+* Review the Coordinator logic to check how and when the Settler Governor is triggered or deactivated.
+
+
+2. **Strategic Enhancements:**
+* **Unit Utilization & Escort Integration:** Ensure Settlers are actively escorted by appropriate military units based on local threat assessments.
+* **Expansion Strategy & Timing:** Improve site evaluation heuristics (resources, defensibility, strategic chokepoints, distance penalties, forward settling).
+* **Coordinator Auto-Activation:** Ensure the Settler Governor is enabled by default if no explicit AI mode/preset is provided.
+
+
+
+---
+
+#### **Phase 2: Iterative Refactoring & Automated Testing**
+
+1. **Implementation & Refactoring:**
+* Apply the architectural and strategic improvements to both the Settler Governor and Coordinator modules.
+
+
+2. **Test Game Execution:**
+* Run automated test games against previous AI baselines across diverse map types and difficulty levels.
+* Collect empirical metrics (e.g., win rates, expansion rate, average turns to $N$ cities, unit loss ratio, economic yield at turn 50/100/200).
+
+
+3. **Evaluation Loop:**
+* If performance falls short or strategies fail (beyond simple bugs or minor parameter adjustments), **redesign the core strategic logic** and execute another round of test games.
+* Repeat until the Settler Governor demonstrates a statistically significant improvement over the baseline.
+
+
+
+---
+
+#### **Phase 3: Performance Reporting & Next Steps**
+
+1. **Detailed Evaluation Report:**
+* Provide a comprehensive report detailing:
+* Key structural/algorithmic changes made.
+* Statistical comparison tables (Baseline AI vs. New Settler AI across key metrics).
+* Qualitative assessment of observed strategic behavior during test games.
+
+
+
+
+2. **Phase Completion Trigger:**
+* Once the Settler Governor is proven to be significantly superior, automatically transition to refactoring and testing the next AI module (e.g., War/Military, Tech/Research, Economy/Production).
+
+
+
+---
+
 

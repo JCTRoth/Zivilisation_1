@@ -7,7 +7,7 @@ import { staticMapForMapType } from '@/data/maps';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { TERRAIN_RESOURCES, TERRAIN_TYPES } from '@/data/TerrainConstants';
+import { TERRAIN_RESOURCES, TERRAIN_TYPES, WATER_TERRAIN_TYPES } from '@/data/TerrainConstants';
 import { FISHER_BOAT_STORAGE, fisherFoodPerFish, UNIT_TYPES } from '@/data/UnitConstants';
 import {
   BARBARIAN_CIV_ID,
@@ -41,7 +41,14 @@ import { AICityManager } from './AI/AICityManager';
 import { BarbarianManager } from './BarbarianManager';
 import { UnitTurnQueue } from './UnitTurnQueue';
 import { DiplomacyManager } from './DiplomacyManager';
-import type { DiplomatAction } from './DiplomacyTypes';
+import type {
+  DiplomatAction,
+  DiplomatActionOptions,
+  DiplomatActionResult,
+  DiplomatTarget,
+  DiplomacyProposal,
+} from './DiplomacyTypes';
+import { diplomatActionsFor } from './diplomacy/DiplomatAbilities';
 import { CIV_PRODUCTION_PROFILES, canBuildUnit, getCivProductionProfile, getCivPersonality } from './AI/AITypes';
 import { EconomicManager } from './EconomicManager';
 import { GovernmentManager } from './GovernmentManager';
@@ -58,6 +65,16 @@ import { debugLog } from '../../utils/DevLog';
 
 /** Civ1 "Bridge Building" tech — mapped to the existing Engineering tech. */
 const BRIDGE_BUILDING_TECH = 'engineering';
+
+/**
+ * What a diplomat demands when nobody said how much: a round, payable figure.
+ * The player sets the real number on the negotiation screen, which opens on the
+ * other side of every demand.
+ */
+const DEFAULT_TRIBUTE_DEMAND = 50;
+
+/** Gold per turn a trade agreement pays when nobody said how much. */
+const DEFAULT_TRADE_GOLD_PER_TURN = 2;
 
 /** Max permanent trade routes a city can hold (Civ1). */
 /**
@@ -303,6 +320,10 @@ export default class GameEngine {
     // Callbacks for React state updates
     this.onStateChange = null;
     this.productionManager = new ProductionManager(this);
+    // The AI coordinator first: AutoProduction's works corps reads the
+    // outstanding-works count off it at construction. Built the other way round
+    // the source stayed null forever and the empire never paved a field.
+    this.aiManager = new AIManager(this);
     this.autoProduction = new AutoProduction(this);
     this.economicManager = new EconomicManager(this);
     this.governmentManager = new GovernmentManager(this);
@@ -313,7 +334,6 @@ export default class GameEngine {
     this.goToManager = new GoToManager(this, this.roundManager);
     this.playerStorage = new Map();
     this.scoutMemory = new ScoutMemory(); // Phase 3.1: Initialize scout memory
-    this.aiManager = new AIManager(this);
     // Advanced AI economy: rate/reserve policy + the city governor.
     this.aiEconomicManager = new AIEconomicManager(this, this.economicManager);
     this.aiCityManager = new AICityManager(this, this.economicManager);
@@ -1230,8 +1250,9 @@ export default class GameEngine {
       // unusable or too close to a civ that already settled).
       while (!startPos && staticStarts.length > 0) {
         const candidate = staticStarts.shift()!;
-        const tile = this.getTileAt(candidate.col, candidate.row);
-        if (!tile || tile.type === Constants.TERRAIN.OCEAN || tile.type === Constants.TERRAIN.MOUNTAINS) continue;
+        // Settlers must never spawn on (or beside) water at game start — the
+        // one definition of "dry land" lives in isSpawnableTile.
+        if (!this.isSpawnableTile(candidate.col, candidate.row)) continue;
         const tooClose = this.units.some(
           (u) => this.squareGrid.squareDistance(candidate.col, candidate.row, u.col, u.row) < minDist,
         );
@@ -1246,9 +1267,7 @@ export default class GameEngine {
         const col = Math.floor(startRng() * (mapWidth - 4)) + 2;
         const row = Math.floor(startRng() * (mapHeight - 4)) + 2;
         
-        const tile = this.getTileAt(col, row);
-        if (tile && tile.type !== Constants.TERRAIN.OCEAN &&
-            tile.type !== Constants.TERRAIN.MOUNTAINS) {
+        if (this.isSpawnableTile(col, row)) {
           // Check if position is far enough from other civs
           let validPosition = true;
           for (const otherCiv of this.civilizations) {
@@ -1306,6 +1325,94 @@ export default class GameEngine {
   /**
    * Create starting units for a civilization based on map type
    */
+  /**
+   * The single answer to "may a unit or city be placed here?".
+   *
+   * The dry-land rule used to be written out at seven different sites, and
+   * most of them wrote only part of it — a check against `OCEAN` alone walked
+   * straight past an inland lake, and `ALL_UNITS` placement checked only the
+   * map bounds. That is how starting units ended up on water. Everything that
+   * places something on the board at setup goes through here, so there is one
+   * definition of "land" and one place to change it.
+   *
+   * `naval` asks the same question with the opposite answer: a trireme belongs
+   * in the water and a settler does not. Both are "is this a legal start", and
+   * answering it once means a ship can never be beached by a rule that only
+   * knew about land.
+   */
+  private isSpawnableTile(col: number, row: number, naval = false): boolean {
+    const width = this.map?.width ?? 0;
+    const height = this.map?.height ?? 0;
+    if (col < 0 || row < 0 || col >= width || row >= height) return false;
+    if (this.squareGrid && !this.squareGrid.isValidSquare(col, row)) return false;
+    const tile = this.getTileAt(col, row);
+    if (!tile) return false;
+    const type = String(tile.type ?? '').trim().toLowerCase();
+    const isWater = WATER_TERRAIN_TYPES.includes(type);
+    if (naval) return isWater;
+    // Land units: every kind of water, plus the mountains they cannot start on.
+    return !isWater && type !== Constants.TERRAIN.MOUNTAINS;
+  }
+
+  /**
+   * The nearest spawnable tile to (col, row), searching outward in rings.
+   *
+   * Offset placements — `ALL_UNITS` lays its grid out two tiles apart, the
+   * skirmish variants drop a unit on each side of the start — need this:
+   * their anchor is validated, their neighbours are not, and a lake two tiles
+   * from a valid start silently swallowed a unit. Returns null when there is
+   * nothing usable within `maxRadius`, so the caller can skip the unit rather
+   * than place it somewhere illegal.
+   */
+  private nearestSpawnableTile(
+    col: number,
+    row: number,
+    naval = false,
+    maxRadius = 3,
+  ): { col: number; row: number } | null {
+    if (this.isSpawnableTile(col, row, naval)) return { col, row };
+    for (let radius = 1; radius <= maxRadius; radius++) {
+      for (let dr = -radius; dr <= radius; dr++) {
+        for (let dc = -radius; dc <= radius; dc++) {
+          // Ring only: anything closer was already tested in a smaller ring.
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+          if (this.isSpawnableTile(col + dc, row + dr, naval)) return { col: col + dc, row: row + dr };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Whether this unit type belongs in the water rather than on it. */
+  private isNavalUnitType(type: string): boolean {
+    const props = UNIT_PROPS[type] as { naval?: boolean } | undefined;
+    return props?.naval === true;
+  }
+
+  /** Place one unit on a legal tile of the right kind for its type. */
+  private spawnStartingUnit(civId: number, type: string, col: number, row: number): void {
+    const naval = this.isNavalUnitType(type);
+    // `ALL_UNITS` spreads its grid across the whole map and puts its ships in
+    // the middle of the land half: a vessel at the far edge of that grid is
+    // nine or ten tiles from open water. Three rings stranded them on grass.
+    const spot = this.nearestSpawnableTile(col, row, naval, naval ? 14 : 3)
+      ?? (naval ? { col, row } : null);
+    if (!spot) {
+      console.warn(`[UNITS] No dry tile near (${col},${row}) for a ${type} of civ ${civId} — skipped`);
+      return;
+    }
+    if (spot.col !== col || spot.row !== row) {
+      console.log(`[UNITS] ${type} for civ ${civId} moved (${col},${row}) → (${spot.col},${spot.row}) — off ${naval ? 'land' : 'water'}`);
+    } else if (naval && !this.isSpawnableTile(col, row, true)) {
+      // Genuinely landlocked start: nothing to float a ship on. The old
+      // behaviour kept it here, and deleting a unit the scenario asked for
+      // would be the worse surprise — but say so, because a beached ship is a
+      // broken unit and a silent one is a broken unit nobody can diagnose.
+      console.warn(`[UNITS] ${type} for civ ${civId} has no water within reach of (${col},${row}) — beached`);
+    }
+    this.createUnit(civId, type, spot.col, spot.row);
+  }
+
   private createStartingUnits(civId: number, startPos: { col: number; row: number }, mapType: string) {
     console.log(`[UNITS] createStartingUnits called for civId ${civId}, mapType: ${mapType}, position: (${startPos.col},${startPos.row})`);
     switch (mapType) {
@@ -1324,12 +1431,13 @@ export default class GameEngine {
           const col = startPos.col + offsetCol * 2; // Space units 2 tiles apart
           const row = startPos.row + offsetRow * 2;
           
-          // Ensure the position is valid (use the ACTUAL map bounds, not the
-          // 80x50 default, so units are never placed outside a smaller map).
+          // Every grid slot is two tiles from the last, so an inland lake
+          // anywhere near the start swallowed units — a settler included. The
+          // spawn itself moves the unit to the nearest dry tile.
           if (this.squareGrid?.isValidSquare(col, row)
               ?? (col >= 0 && col < (this.map?.width ?? Constants.MAP_WIDTH)
                 && row >= 0 && row < (this.map?.height ?? Constants.MAP_HEIGHT))) {
-            this.createUnit(civId, unitType, col, row);
+            this.spawnStartingUnit(civId, unitType, col, row);
           }
         });
         break;
@@ -1342,42 +1450,44 @@ export default class GameEngine {
       case 'TECH_LEVEL_10':
         // Standard: 1 settler
         console.log(`[UNITS] Creating 1 settler for civ ${civId}`);
-        this.createUnit(civId, 'settler', startPos.col, startPos.row);
+        this.spawnStartingUnit(civId, 'settler', startPos.col, startPos.row);
         break;
         
       case 'CLOSEUP_BEATUP':
         // 1 settler + variety of military units
-        this.createUnit(civId, 'settler', startPos.col, startPos.row);
-        this.createUnit(civId, 'warriors', startPos.col + 1, startPos.row);
-        this.createUnit(civId, 'phalanx', startPos.col - 1, startPos.row);
-        this.createUnit(civId, 'legion', startPos.col, startPos.row + 1);
-        this.createUnit(civId, 'musketeers', startPos.col, startPos.row - 1);
-        this.createUnit(civId, 'riflemen', startPos.col + 1, startPos.row + 1);
+        this.spawnStartingUnit(civId, 'settler', startPos.col, startPos.row);
+        this.spawnStartingUnit(civId, 'warriors', startPos.col + 1, startPos.row);
+        this.spawnStartingUnit(civId, 'phalanx', startPos.col - 1, startPos.row);
+        this.spawnStartingUnit(civId, 'legion', startPos.col, startPos.row + 1);
+        this.spawnStartingUnit(civId, 'musketeers', startPos.col, startPos.row - 1);
+        this.spawnStartingUnit(civId, 'riflemen', startPos.col + 1, startPos.row + 1);
         break;
         
       case 'NAVAL_CLOSEUP':
-        // Naval units only
-        this.createUnit(civId, 'trireme', startPos.col, startPos.row);
-        this.createUnit(civId, 'trireme', startPos.col + 1, startPos.row);
+        // Naval units only. Routed through the same spawn: the rule knows about
+        // water, so a trireme seeks the sea rather than starting on the dry
+        // anchor tile the position search guarantees.
+        this.spawnStartingUnit(civId, 'trireme', startPos.col, startPos.row);
+        this.spawnStartingUnit(civId, 'trireme', startPos.col + 1, startPos.row);
         break;
         
       case 'NO_SETTLERS':
         // Variety of military units, no settlers
-        this.createUnit(civId, 'warriors', startPos.col, startPos.row);
-        this.createUnit(civId, 'warriors', startPos.col + 1, startPos.row);
-        this.createUnit(civId, 'phalanx', startPos.col - 1, startPos.row);
-        this.createUnit(civId, 'legion', startPos.col, startPos.row + 1);
-        this.createUnit(civId, 'musketeers', startPos.col, startPos.row - 1);
+        this.spawnStartingUnit(civId, 'warriors', startPos.col, startPos.row);
+        this.spawnStartingUnit(civId, 'warriors', startPos.col + 1, startPos.row);
+        this.spawnStartingUnit(civId, 'phalanx', startPos.col - 1, startPos.row);
+        this.spawnStartingUnit(civId, 'legion', startPos.col, startPos.row + 1);
+        this.spawnStartingUnit(civId, 'musketeers', startPos.col, startPos.row - 1);
         break;
         
       case 'MANY_CITIES':
         // 2 warriors (cities created separately)
-        this.createUnit(civId, 'warriors', startPos.col, startPos.row);
-        this.createUnit(civId, 'warriors', startPos.col + 1, startPos.row);
+        this.spawnStartingUnit(civId, 'warriors', startPos.col, startPos.row);
+        this.spawnStartingUnit(civId, 'warriors', startPos.col + 1, startPos.row);
         break;
         
       default:
-        this.createUnit(civId, 'settler', startPos.col, startPos.row);
+        this.spawnStartingUnit(civId, 'settler', startPos.col, startPos.row);
     }
   }
 
@@ -1483,9 +1593,11 @@ export default class GameEngine {
     
     for (let i = 0; i < 4; i++) {
       const pos = cityPositions[i];
-      const tile = this.getTileAt(pos.col, pos.row);
       
-      if (tile && tile.type !== Constants.TERRAIN.OCEAN && tile.type !== Constants.TERRAIN.MOUNTAINS) {
+      // Every kind of water, not just `OCEAN`: a starting city on an inland
+      // lake was reachable only because this check wrote out part of the rule
+      // instead of asking the one place that knows all of it.
+      if (this.isSpawnableTile(pos.col, pos.row)) {
         // City name: sequential from the civ's list (civ may not be in
         // this.civilizations yet at init, so pass it explicitly).
         const cityName = this.getNextCityName(civId, civ);
@@ -2049,9 +2161,16 @@ export default class GameEngine {
     const claimed = new Set<number>();
     for (const civ of this.civilizations ?? []) {
       if (civ.id === civId) continue;
-      const mission = this.getPlayerStorage(civ.id)?.turnData?.colonyMission as
-        { targetLandmassId?: number } | undefined;
-      if (typeof mission?.targetLandmassId === 'number') claimed.add(mission.targetLandmassId);
+      const turnData = this.getPlayerStorage(civ.id)?.turnData as
+        | { colonyMissions?: Array<{ targetLandmassId?: number }>; colonyMission?: { targetLandmassId?: number } }
+        | undefined;
+      // Parallel missions (plus the legacy single slot): every island a rival
+      // is ferrying toward is off-limits, or all ferries converge on one rock.
+      for (const m of turnData?.colonyMissions ?? []) {
+        if (typeof m?.targetLandmassId === 'number') claimed.add(m.targetLandmassId);
+      }
+      const legacy = turnData?.colonyMission;
+      if (typeof legacy?.targetLandmassId === 'number') claimed.add(legacy.targetLandmassId);
     }
     return claimed;
   }
@@ -2357,6 +2476,11 @@ const occupiedLandmasses = new Set(
    * Whether `unitId` may board `ferryId`: the hull is naval and has room, the
    * passenger is a land unit standing on a tile adjacent to (or sharing) the
    * hull's water tile, and it is not already aboard.
+   *
+   * Civ1 launch-platform exclusivity: a Nuclear warhead boards ONLY a
+   * Submarine, and a Submarine boards ONLY a Nuclear warhead (one slot). A
+   * sub that could lift an army would break both the invasion economy and
+   * the endgame — the bomb travels by stealth, the army by ferry.
    */
   canLoadFerry(ferryId: string, unitId: string): boolean {
     const ferry = this.units.find((u) => u.id === ferryId);
@@ -2367,6 +2491,9 @@ const occupiedLandmasses = new Set(
     if (unit.embarkedOn) return false;
     if (UNIT_PROPS[ferry.type]?.naval !== true) return false;
     if (UNIT_PROPS[unit.type]?.naval === true) return false; // ships can't board
+    const passengerIsNuke = unit.type === UNIT_TYPES.NUCLEAR;
+    const hullIsSub = ferry.type === UNIT_TYPES.SUBMARINE;
+    if (passengerIsNuke !== hullIsSub) return false;
     if (this.getTerrainKey(this.getTileAt(ferry.col, ferry.row)) !== 'ocean') return false;
     return this.squareGrid.chebyshevDistance(ferry.col, ferry.row, unit.col, unit.row) <= 1;
   }
@@ -4488,13 +4615,47 @@ const occupiedLandmasses = new Set(
    * Returns true only when a warhead was actually spent, so callers (the AI's
    * per-unit loop, `moveUnit`) can tell a strike from a rejected order.
    */
+  /**
+   * Whether an SDI Defense covers a tile: any city with SDI within 16 tiles
+   * intercepts a warhead aimed there. Public for the AI, which must not waste
+   * a 160-shield warhead on a shielded target.
+   */
+  isCoveredBySDI(targetCol: number, targetRow: number): boolean {
+    const grid = this.squareGrid;
+    if (!grid) return false;
+    return this.cities.some(
+      (c) => (c.buildings ?? []).includes('sdi_defense')
+        && grid.chebyshevDistance(c.col, c.row, targetCol, targetRow) <= 16,
+    );
+  }
+
   detonateNuclear(unitId: string, targetCol: number, targetRow: number): boolean {
     const unit = this.units.find((u) => u.id === unitId);
     if (!unit || unit.isDefeated === true) return false;
     if (unit.type !== UNIT_TYPES.NUCLEAR) return false;
-    if ((unit.movesRemaining ?? 0) <= 0) return false;
     const grid = this.squareGrid;
     if (!grid?.isValidSquare(targetCol, targetRow)) return false;
+
+    // Launch position: a warhead aboard a submarine fires FROM the hull
+    // (Civ1 sneak strike from sea) — anything else fires from its own tile.
+    // Embarked passengers get no moves at turn start, so the moves gate only
+    // applies to unembarked warheads; the sub already paid the sailing.
+    let launchCol = unit.col;
+    let launchRow = unit.row;
+    if (unit.embarkedOn) {
+      const hull = this.units.find((u) => u.id === unit.embarkedOn && !u.isDefeated);
+      if (!hull || hull.type !== UNIT_TYPES.SUBMARINE || hull.civilizationId !== unit.civilizationId) return false;
+      launchCol = hull.col;
+      launchRow = hull.row;
+    } else if ((unit.movesRemaining ?? 0) <= 0) {
+      return false;
+    }
+
+    // Civ1 range: a warhead flies 16 tiles from its launch point. Without this
+    // gate every nuke was map-wide and submarines were pointless; with it the
+    // sneak-sub-to-the-coast tactic is the only way to hit overseas targets.
+    const nukeRange = UNIT_PROPS[UNIT_TYPES.NUCLEAR]?.movement ?? 16;
+    if (grid.chebyshevDistance(launchCol, launchRow, targetCol, targetRow) > nukeRange) return false;
 
     const inBlast = (col: number, row: number) =>
       grid.chebyshevDistance(col, row, targetCol, targetRow) <= NUCLEAR_BLAST_RADIUS;
@@ -4508,6 +4669,11 @@ const occupiedLandmasses = new Set(
       (u) => !u.isDefeated && u.civilizationId !== unit.civilizationId && inBlast(u.col, u.row),
     );
     if (!targetCity && !targetUnit) return false;
+
+    // SDI Defense: a city with SDI Defense within 16 tiles of the strike
+    // (including the target city itself) intercepts the warhead harmlessly.
+    if (this.isCoveredBySDI(targetCol, targetRow)) return false;
+
     const targetCivId = (targetCity ?? targetUnit)!.civilizationId;
 
     // Firing is an act of war, exactly like walking into the enemy — so the
@@ -4550,6 +4716,21 @@ const occupiedLandmasses = new Set(
       city.population = after;
       this.economicManager?.fitCityToPopulation(city);
       damaged.push({ city, before, after });
+    }
+
+    // 3a. Nuclear pollution: the targeted tile and surrounding land tiles fill
+    //     with pollution until a Settler cleans them up.
+    for (let dc = -NUCLEAR_BLAST_RADIUS; dc <= NUCLEAR_BLAST_RADIUS; dc++) {
+      for (let dr = -NUCLEAR_BLAST_RADIUS; dr <= NUCLEAR_BLAST_RADIUS; dr++) {
+        const c = targetCol + dc;
+        const r = targetRow + dr;
+        if (grid.chebyshevDistance(c, r, targetCol, targetRow) <= NUCLEAR_BLAST_RADIUS) {
+          const t = this.getTileAt(c, r);
+          if (t && t.type !== Constants.TERRAIN.OCEAN && t.type !== Constants.TERRAIN.LAKE) {
+            t.improvement = IMPROVEMENT_TYPES.POLLUTION;
+          }
+        }
+      }
     }
 
     // 3. Apply: announce, then kill, then raze.
@@ -4603,6 +4784,74 @@ const occupiedLandmasses = new Set(
   /**
    * Combat between units
    */
+  /**
+   * Splash damage after a successful attack: every other exposed unit stacked
+   * on the defender's tile takes 25% of the primary hit (min 1 HP).
+   *
+   * Complete immunities (no splash at all): a city on the tile, or a fortress
+   * improvement on the tile. Per-unit immunity: fortified units hold their
+   * nerve (and their cover). Embarked cargo is never on the tile to begin
+   * with (`getUnitsAt` excludes it), so boats shield their passengers
+   * automatically. Splash kills run the same defeat pipeline as direct kills
+   * (lingering corpse, delayed removal, scout hook) but award no experience.
+   */
+  private applySplashDamage(
+    attacker: Unit,
+    defender: Unit,
+    primaryDamage: number,
+  ): Array<{ unit: Unit; damage: number; destroyed: boolean }> {
+    const splashed: Array<{ unit: Unit; damage: number; destroyed: boolean }> = [];
+    if (primaryDamage <= 0) return splashed;
+    if (this.getCityAt(defender.col, defender.row)) return splashed;
+    const tile = this.getTileAt(defender.col, defender.row);
+    if (String((tile as { improvement?: unknown } | null)?.improvement ?? '').toLowerCase() === 'fortress') {
+      return splashed;
+    }
+    for (const other of this.getUnitsAt(defender.col, defender.row)) {
+      if (other.id === attacker.id || other.id === defender.id) continue;
+      if (other.isDefeated) continue;
+      // No friendly fire: the attacker's own mates on a shared tile (same-tile
+      // engagements) are never splashed — area fire punishes the enemy's
+      // clustering, not ours.
+      if (other.civilizationId === attacker.civilizationId) continue;
+      if (other.isFortified === true) continue; // entrenched: immune
+      const damage = CombatSystem.splashDamage(primaryDamage);
+      other.health = Math.max(0, (other.health ?? 100) - damage);
+      other.battleDamageTaken = (other.battleDamageTaken ?? 0) + damage;
+      const destroyed = (other.health ?? 0) <= 0;
+      if (destroyed) {
+        other.isDefeated = true;
+        other.defeatTimestamp = Date.now();
+        this.destroyCargoOf(other);
+        if (this.onStateChange) {
+          this.onStateChange('UNIT_DEFEATED', { unit: other });
+        }
+        const otherId = other.id;
+        const otherType = other.type;
+        setTimeout(() => {
+          this.units = this.units.filter(u => u.id !== otherId);
+          this.onStateChange?.('UNIT_REMOVED', { unit: other });
+          if (otherType === 'scout') {
+            this.onScoutDeath(other);
+          }
+        }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
+      }
+      splashed.push({ unit: other, damage, destroyed });
+    }
+    if (splashed.length > 0) {
+      console.log(`[COMBAT] Splash damage: ${splashed.length} stacked unit(s) take ${splashed[0].damage} HP each beside ${defender.type}`);
+      if (this.onStateChange) {
+        this.onStateChange('COMBAT_SPLASH', {
+          attacker,
+          defender,
+          primaryDamage,
+          splashed: splashed.map(s => ({ unitId: s.unit.id, damage: s.damage, destroyed: s.destroyed })),
+        });
+      }
+    }
+    return splashed;
+  }
+
   combatUnit(attacker: Unit, defender: Unit) {
     // A unit already killed in combat (it lingers only for the death animation)
     // cannot start or take part in a new fight.
@@ -4666,6 +4915,10 @@ const occupiedLandmasses = new Set(
     if (outcome.attackerWins) {
       const damage = outcome.defenderDamage;
       defender.health = Math.max(0, (defender.health ?? 100) - damage);
+      defender.battleDamageTaken = (defender.battleDamageTaken ?? 0) + damage;
+      // Stacked mates on open ground eat 25% each (cities, fortresses,
+      // fortified units and embarked cargo are immune — see the helper).
+      this.applySplashDamage(attacker, defender, damage);
 
       if (outcome.defenderDestroyed) {
         // Defender killed — the attacker survives but remains in its ORIGINAL
@@ -4774,6 +5027,9 @@ const occupiedLandmasses = new Set(
 
       console.log(`[COMBAT] ${attacker.type} wounded ${defender.type} (${damage} dmg, ${defender.health} hp left)`);
 
+      defender.battleDamageTaken = (defender.battleDamageTaken ?? 0) + damage;
+      this.applySplashDamage(attacker, defender, damage);
+
       // A non-lethal winning round still counts as combat experience.
       this.awardUnitCombatExperience(attacker, COMBAT_XP.ROUND_WON);
 
@@ -4797,6 +5053,7 @@ const occupiedLandmasses = new Set(
     } else {
       // Defender wins - attacker is damaged (and destroyed at ≤ 0 health)
       attacker.health = Math.max(0, (attacker.health ?? 100) - outcome.attackerDamage);
+      attacker.battleDamageTaken = (attacker.battleDamageTaken ?? 0) + outcome.attackerDamage;
       attacker.movesRemaining = 0;
       attacker.hasMovedThisTurn = true;
 
@@ -4919,6 +5176,7 @@ const occupiedLandmasses = new Set(
         const defender = garrison[0]; // Kill the first garrison unit
         const defenderDamage = Math.max(0, defender.health ?? 100);
         defender.health = 0;
+        defender.battleDamageTaken = (defender.battleDamageTaken ?? 0) + defenderDamage;
         defender.isDefeated = true;
         defender.defeatTimestamp = Date.now();
         this.destroyCargoOf(defender);
@@ -5020,6 +5278,7 @@ const occupiedLandmasses = new Set(
     const counterDamage = options.counterDamage !== false;
     if (counterDamage) {
       attacker.health = Math.max(0, (attacker.health ?? 100) - round.attackerDamage);
+      attacker.battleDamageTaken = (attacker.battleDamageTaken ?? 0) + round.attackerDamage;
     }
     const attackerDestroyed = counterDamage && attacker.health <= 0;
     if (attackerDestroyed) {
@@ -6198,130 +6457,233 @@ const occupiedLandmasses = new Set(
   // ─── Diplomat unit actions ──────────────────────────────────────────
 
   /**
-   * Initiate diplomacy with an adjacent enemy city or unit using a diplomat.
-   * Returns the available actions for the UI to present.
+   * Everything this diplomat can act on right now, each with the complete set
+   * of abilities it has there.
+   *
+   * A diplomat can stand between two courts — a city on one side and a unit on
+   * another — and the player is entitled to choose which one to open with, so
+   * every adjacent foreign city and unit is reported rather than the first one
+   * found. The abilities come from `DiplomatAbilities`, which is the same rule
+   * set `executeDiplomatAction` validates against.
    */
-  getDiplomatActions(diplomatId: string): { targetCivId: number; actions: string[] } | null {
+  getDiplomatTargets(diplomatId: string): DiplomatTarget[] {
     const diplomat = this.units.find(u => u.id === diplomatId);
-    if (!diplomat || diplomat.type !== 'diplomat') return null;
-    if ((diplomat.movesRemaining || 0) <= 0) return null;
+    if (!diplomat || diplomat.type !== 'diplomat') return [];
+    if ((diplomat.movesRemaining || 0) <= 0) return [];
 
-    // Find adjacent enemy unit or city
-    const neighbors = this.squareGrid!.getNeighbors(diplomat.col, diplomat.row);
-    for (const n of neighbors) {
-      // Check for enemy city
+    const dm = this.diplomacyManager;
+    const ourId = diplomat.civilizationId;
+    const targets: DiplomatTarget[] = [];
+    // Barbarians are not a court: no treasury to bribe, no secrets to steal, no
+    // opinion of us to weigh a treaty against. Left in the list they would be
+    // the juiciest-looking target on the board — an unfounded embassy scores
+    // highest of anything a diplomat can do — and an AI diplomat would spend
+    // every turn founding one with a village.
+    const negotiable = (civId: number) => civId !== BARBARIAN_CIV_ID;
+
+    for (const n of this.squareGrid!.getNeighbors(diplomat.col, diplomat.row)) {
       const city = this.getCityAt(n.col, n.row);
-      if (city && city.civilizationId !== diplomat.civilizationId) {
-        const status = this.diplomacyManager.getStatus(diplomat.civilizationId, city.civilizationId);
-        const actions: string[] = ['gather_intelligence'];
-        // Civ I: you infiltrate a city you are NOT fighting. A city inside a
-        // war zone is entered with soldiers, not with a forged letter.
-        if (status !== 'war') {
-          actions.push('establish_embassy', 'investigate_city', 'industrial_sabotage', 'steal_technology');
-        }
-        if (status === 'war') {
-          actions.push('propose_ceasefire', 'propose_peace', 'demand_tribute');
-        } else if (status === 'ceasefire') {
-          actions.push('propose_peace');
-        } else if (status === 'peace') {
-          actions.push('propose_alliance', 'demand_tribute');
-        }
-        return { targetCivId: city.civilizationId, actions };
+      if (city && city.civilizationId !== ourId && negotiable(city.civilizationId)) {
+        targets.push(this.describeDiplomatTarget(dm, ourId, 'city', city.civilizationId, {
+          cityId: city.id,
+          cityName: city.name,
+        }));
+        continue;
       }
 
-      // Check for enemy unit
       const unit = this.getUnitAt(n.col, n.row);
-      if (unit && unit.civilizationId !== diplomat.civilizationId) {
-        const status = this.diplomacyManager.getStatus(diplomat.civilizationId, unit.civilizationId);
-        const actions: string[] = ['gather_intelligence', 'bribe_unit'];
-        if (status === 'war') {
-          actions.push('propose_ceasefire', 'propose_peace');
-        } else if (status === 'ceasefire') {
-          actions.push('propose_peace');
-        } else if (status === 'peace') {
-          actions.push('propose_alliance');
-        }
-        return { targetCivId: unit.civilizationId, actions };
+      if (unit && unit.civilizationId !== ourId && negotiable(unit.civilizationId) && !unit.isDefeated) {
+        targets.push(this.describeDiplomatTarget(dm, ourId, 'unit', unit.civilizationId, {
+          unitId: unit.id,
+          unitType: unit.type,
+        }));
       }
     }
 
-    return null;
+    return targets;
   }
 
-  /** The enemy city of `civId` this diplomat stands next to, if any. */
-  private adjacentEnemyCity(diplomat: Unit, civId: number): City | null {
+  /** Build one `DiplomatTarget`: the facts the ability rules read, resolved. */
+  private describeDiplomatTarget(
+    dm: DiplomacyManager,
+    ourId: number,
+    kind: 'city' | 'unit',
+    targetCivId: number,
+    detail: { cityId?: string; cityName?: string; unitId?: string; unitType?: string },
+  ): DiplomatTarget {
+    const status = dm.getStatus(ourId, targetCivId);
+    // An embargo names a third party, so the other civs are what make the
+    // proposal meaningful — anyone we have met and who is not one of the two.
+    const embargoCandidates = this.civilizations
+      .filter(c => c.id !== ourId && c.id !== targetCivId && c.isAlive !== false && dm.hasContacted(ourId, c.id))
+      .map(c => c.id);
+    const actions = diplomatActionsFor({
+      kind,
+      status,
+      hasEmbassy: dm.hasEmbassy(ourId, targetCivId),
+      activeTreaties: dm.getActiveTreaties(ourId, targetCivId),
+      canTradeTechs: dm.canTradeTechs(ourId, targetCivId).ok,
+      embargoCandidates,
+    });
+    return { targetCivId, kind, status, actions, ...detail };
+  }
+
+  /**
+   * The diplomat's single best contact, for callers that just want "the court
+   * next door": the first adjacent foreign city or unit, or null when the
+   * diplomat is standing nowhere useful.
+   */
+  getDiplomatActions(diplomatId: string): { targetCivId: number; actions: DiplomatAction[] } | null {
+    const [first] = this.getDiplomatTargets(diplomatId);
+    return first ? { targetCivId: first.targetCivId, actions: first.actions } : null;
+  }
+
+  /**
+   * Resolve the target an action was aimed at: the adjacent city or unit of
+   * `targetCivId`, narrowed by `options` when the diplomat stands next to more
+   * than one of them. Null when there is nothing of that civ to act on.
+   */
+  private findDiplomatTarget(
+    diplomat: Unit,
+    targetCivId: number,
+    options?: DiplomatActionOptions,
+  ): DiplomatTarget | null {
+    const all = this.getDiplomatTargets(diplomat.id);
+    const ofCiv = all.filter(t => t.targetCivId === targetCivId);
+    if (ofCiv.length === 0) return null;
+    if (options?.cityId) {
+      const city = ofCiv.find(t => t.kind === 'city' && t.cityId === options.cityId);
+      if (city) return city;
+    }
+    if (options?.unitId) {
+      const unit = ofCiv.find(t => t.kind === 'unit' && t.unitId === options.unitId);
+      if (unit) return unit;
+    }
+    // A city before a unit: the city is where a diplomat has something to say,
+    // a unit is only a body to bribe or a soldier to parley with.
+    return ofCiv.find(t => t.kind === 'city') ?? ofCiv[0];
+  }
+
+  /** The adjacent city of `civId` the action resolved against, if it is one. */
+  private adjacentEnemyCity(diplomat: Unit, civId: number, cityId?: string): City | null {
     const neighbors = this.squareGrid!.getNeighbors(diplomat.col, diplomat.row);
     for (const n of neighbors) {
       const city = this.getCityAt(n.col, n.row);
-      if (city && city.civilizationId === civId) return city;
+      if (city && city.civilizationId === civId && (!cityId || city.id === cityId)) return city;
     }
     return null;
   }
 
   /**
    * Execute a diplomat action. Consumes the diplomat's move.
+   *
+   * The action is checked against the very same ability list the player's menu
+   * is drawn from (`getDiplomatTargets`), so the three ways in — menu, AI and a
+   * direct call — cannot disagree about what a diplomat may do here. That is
+   * what stopped the menu offering "Establish Embassy" in a war zone where the
+   * engine had no intention of running it.
    */
-  executeDiplomatAction(diplomatId: string, action: string, targetCivId: number): { success: boolean; type?: string; report?: unknown; reason?: string; response?: unknown } {
+  executeDiplomatAction(
+    diplomatId: string,
+    action: string,
+    targetCivId: number,
+    options?: DiplomatActionOptions,
+  ): DiplomatActionResult {
     const diplomat = this.units.find(u => u.id === diplomatId);
     if (!diplomat || diplomat.type !== 'diplomat') return { success: false, reason: 'Not a diplomat' };
     if ((diplomat.movesRemaining || 0) <= 0) return { success: false, reason: 'No moves remaining' };
 
+    const target = this.findDiplomatTarget(diplomat, targetCivId, options);
+    if (!target) {
+      return { success: false, reason: this.noAdjacentTargetReason(diplomat, targetCivId) };
+    }
+    if (!target.actions.includes(action as DiplomatAction)) {
+      // The ability exists, just not here — a war zone has no embassy to found,
+      // a city has no unit to bribe, a signed treaty is not offered again.
+      return {
+        success: false,
+        target,
+        reason: `${action.replace(/_/g, ' ')} is not possible here`,
+      };
+    }
+
+    /** Spend the diplomat's turn and let the turn machinery know. */
+    const spend = (why: string) => {
+      diplomat.movesRemaining = 0;
+      if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
+      if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves(why);
+    };
+
     let result: unknown;
 
-    switch (action) {
+    switch (action as DiplomatAction) {
       case 'gather_intelligence':
         result = this.diplomacyManager.gatherIntelligence(diplomat.civilizationId, targetCivId);
-        diplomat.movesRemaining = 0;
-        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
-        if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-gather-intelligence');
-        return { success: true, type: 'intelligence', report: result };
+        spend('diplomat-gather-intelligence');
+        return { success: true, type: 'intelligence', report: result, target };
 
       case 'propose_peace':
       case 'propose_ceasefire':
       case 'propose_alliance':
       case 'demand_tribute':
-        result = this.diplomacyManager.processProposal({
+      case 'offer_open_borders':
+      case 'propose_trade_agreement':
+      case 'propose_mutual_defense':
+      case 'propose_non_aggression':
+      case 'propose_embargo':
+      case 'offer_tech_exchange': {
+        const swap = this.pickTechOfferTerm(diplomat.civilizationId, targetCivId);
+        const proposal: DiplomacyProposal = {
           fromCivId: diplomat.civilizationId,
           toCivId: targetCivId,
           action: action as DiplomatAction,
-          goldAmount: action === 'demand_tribute' ? 50 : undefined,
-        });
-        diplomat.movesRemaining = 0;
-        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
-        if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-proposal');
-        return { success: true, type: 'proposal', response: result };
+          // Every term has a default here, so a bare call still reaches the
+          // responder as a complete proposal: a demand is worth something, a
+          // trade deal pays something, an exchange names a concrete pair and an
+          // embargo a concrete third party. The player who wants different
+          // terms says so — the negotiation screen is open on the other side
+          // of this call.
+          goldAmount: action === 'demand_tribute'
+            ? options?.goldAmount ?? DEFAULT_TRIBUTE_DEMAND
+            : action === 'propose_trade_agreement'
+              ? options?.goldAmount ?? DEFAULT_TRADE_GOLD_PER_TURN
+              : undefined,
+          techOffered: options?.techOffered ?? swap.techOffered,
+          techRequested: options?.techRequested ?? swap.techRequested,
+          embargoTargetId: options?.embargoTargetId ?? this.pickEmbargoTarget(diplomat.civilizationId, targetCivId),
+        };
+        result = this.diplomacyManager.processProposal(proposal);
+        spend('diplomat-proposal');
+        return { success: true, type: 'proposal', response: result, target };
+      }
 
       // ── Espionage: everything below happens INSIDE a foreign city ──
 
       case 'establish_embassy': {
         result = this.diplomacyManager.establishEmbassy(diplomat.civilizationId, targetCivId);
-        diplomat.movesRemaining = 0;
-        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
-        if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-embassy');
-        return { success: true, type: 'espionage', response: result };
+        spend('diplomat-embassy');
+        return { success: true, type: 'espionage', espionage: result, target };
       }
 
       case 'investigate_city': {
-        const city = this.adjacentEnemyCity(diplomat, targetCivId);
-        if (!city) return { success: false, reason: 'No adjacent city to investigate' };
+        const city = this.adjacentEnemyCity(diplomat, targetCivId, target.cityId);
+        if (!city) return { success: false, reason: 'No adjacent city to investigate', target };
         result = this.diplomacyManager.investigateCity(diplomat.civilizationId, city);
-        diplomat.movesRemaining = 0;
-        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
-        if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-investigate');
-        return { success: true, type: 'espionage', response: result };
+        spend('diplomat-investigate');
+        return { success: true, type: 'espionage', espionage: result, target };
       }
 
       case 'industrial_sabotage': {
-        const city = this.adjacentEnemyCity(diplomat, targetCivId);
-        if (!city) return { success: false, reason: 'No adjacent city to sabotage' };
+        const city = this.adjacentEnemyCity(diplomat, targetCivId, target.cityId);
+        if (!city) return { success: false, reason: 'No adjacent city to sabotage', target };
         const espionage = this.diplomacyManager.industrialSabotage(diplomat.civilizationId, city);
         // A caught agent does not walk home: the diplomat is lost on the spot
         // (and its civ is now at war — see DiplomacyManager.blowCover).
         if (espionage.coverBlown) this.units = this.units.filter(u => u.id !== diplomatId);
-        else diplomat.movesRemaining = 0;
+        else spend('diplomat-sabotage');
         if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
         if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-sabotage');
-        return { success: true, type: 'espionage', response: espionage };
+        return { success: true, type: 'espionage', espionage, target };
       }
 
       case 'steal_technology': {
@@ -6334,33 +6696,96 @@ const occupiedLandmasses = new Set(
         // Civ I: a stolen secret is discovered, always. The diplomat's career
         // ends either way.
         if (espionage.coverBlown) this.units = this.units.filter(u => u.id !== diplomatId);
-        else diplomat.movesRemaining = 0;
+        else spend('diplomat-steal-tech');
         if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
         if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-steal-tech');
-        return { success: true, type: 'espionage', response: espionage };
+        return { success: true, type: 'espionage', espionage, target };
       }
 
       case 'bribe_unit': {
-        // Find the adjacent enemy unit to bribe
-        const neighbors = this.squareGrid!.getNeighbors(diplomat.col, diplomat.row);
-        for (const n of neighbors) {
-          const targetUnit = this.getUnitAt(n.col, n.row);
-          if (targetUnit && targetUnit.civilizationId === targetCivId) {
-            result = this.diplomacyManager.bribeUnit(diplomat.civilizationId, targetUnit.id);
-            diplomat.movesRemaining = 0;
-            // Diplomat is consumed after bribery attempt
-            this.units = this.units.filter(u => u.id !== diplomatId);
-            if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
-            if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-bribe');
-            return { success: true, type: 'bribe', response: result };
-          }
-        }
-        return { success: false, reason: 'No adjacent unit to bribe' };
+        const targetUnit = target.unitId ? this.units.find(u => u.id === target.unitId) : null;
+        if (!targetUnit) return { success: false, reason: 'No adjacent unit to bribe', target };
+        result = this.diplomacyManager.bribeUnit(diplomat.civilizationId, targetUnit.id);
+        spend('diplomat-bribe');
+        // The diplomat walks home empty-handed either way — there is nothing
+        // left to say once the money has been counted out.
+        this.units = this.units.filter(u => u.id !== diplomatId);
+        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
+        if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-bribe');
+        return { success: true, type: 'bribe', response: result, target };
       }
 
       default:
-        return { success: false, reason: 'Unknown action' };
+        return { success: false, reason: 'Unknown action', target };
     }
+  }
+
+  /**
+   * A concrete Exchange of Knowledge for `civA`/`civB`, or empty when there is
+   * nothing to swap.
+   *
+   * `pickTechSwap` asks whether the swap leaves the PROPOSER better off, which
+   * is the right question for an AI and the wrong one for a player: a human who
+   * asks for knowledge is entitled to propose a deal the evaluator dislikes and
+   * decide for themselves. So when the evaluator declines, the terms still have
+   * to be filled in — the plainest possible swap, their most advanced secret
+   * against our cheapest one. The negotiation screen opens on the other side of
+   * this call, where the player can name different terms or refuse outright.
+   */
+  private pickTechOfferTerm(civA: number, civB: number): { techOffered?: string; techRequested?: string } {
+    const swap = this.diplomacyManager.pickTechSwap(civA, civB);
+    if (swap) return swap;
+
+    const opts = this.diplomacyManager.getTechTradeOptions(civA, civB);
+    if (opts.weHaveTheyLack.length === 0 || opts.theyHaveWeLack.length === 0) return {};
+    const cost = (id: string): number =>
+      TECHNOLOGIES_DATA.find((t) => t.id === id)?.cost ?? 0;
+    // Their best for our cheapest — a bare proposal, not a recommended one.
+    const techRequested = opts.theyHaveWeLack.reduce(
+      (best, id) => (cost(id) > cost(best) ? id : best),
+      opts.theyHaveWeLack[0],
+    );
+    const techOffered = opts.weHaveTheyLack.reduce(
+      (best, id) => (cost(id) < cost(best) ? id : best),
+      opts.weHaveTheyLack[0],
+    );
+    return { techOffered, techRequested };
+  }
+
+  /**
+   * The third party a joint embargo would name: a shared enemy if there is one
+   * (an embargo is only worth agreeing on when you both hate someone), and
+   * otherwise the weakest other civ either of us has met.
+   */
+  private pickEmbargoTarget(civA: number, civB: number): number | undefined {
+    const dm = this.diplomacyManager;
+    const third = this.civilizations.filter(
+      c => c.id !== civA && c.id !== civB && c.isAlive !== false && dm.hasContacted(civA, c.id),
+    );
+    if (third.length === 0) return undefined;
+    const theirEnemies = new Set(dm.getEnemies(civB));
+    const shared = third.filter(c => theirEnemies.has(c.id));
+    const pool = shared.length > 0 ? shared : third;
+    // Weakest first: a blockade is worth most against someone you could not
+    // have beaten yourself.
+    return pool.reduce((weakest, c) =>
+      (c.resources?.gold ?? 0) < (weakest.resources?.gold ?? 0) ? c : weakest,
+    ).id;
+  }
+
+  /** Why a diplomat has nothing to say to `targetCivId`, in the player's terms. */
+  private noAdjacentTargetReason(diplomat: Unit, targetCivId: number): string {
+    const touchingAnything = this.squareGrid!
+      .getNeighbors(diplomat.col, diplomat.row)
+      .some(n => {
+        const city = this.getCityAt(n.col, n.row);
+        const unit = this.getUnitAt(n.col, n.row);
+        return (city && city.civilizationId !== diplomat.civilizationId)
+          || (unit && unit.civilizationId !== diplomat.civilizationId);
+      });
+    return touchingAnything
+      ? `Nothing to act on: civ ${targetCivId} is not next door (or is barbarian)`
+      : 'No adjacent foreign city or unit';
   }
 
   /**

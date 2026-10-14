@@ -136,6 +136,52 @@ re-run the script instead.
    🏛️ emoji, name, specialists, walls, population and HP
 * Do *not* bake unit or city artwork onto terrain tiles.
 
+=== Which surface shows the artwork
+
+Three places can show a unit, and all three must agree:
+
+[cols="1,2", options="header"]
+|===
+|Surface |How it gets the icon
+
+|The map (`MapRenderer.drawUnit`)
+|Calls `getUnitIcon(type)` every frame and draws the image into a *square*
+the size of the unit's disc. Square, not aspect-fitted: the artwork ranges
+from 1:1 (a phalanx) to 2.8:1 (a frigate), and fitting would shrink a wide
+ship to a sliver inside its tile.
+
+|Unit lists (city garrison, stack modal)
+|`<UnitIcon>` (`src/components/ui/UnitIcon.tsx`), which fits the picture
+inside its box with `object-fit: contain` and falls back to the emoji until
+the file has loaded.
+
+|Audio/graph only
+|—
+
+|===
+
+`<UnitIcon>` subscribes to `subscribeUnitIcons` in `UnitIconLoader` rather
+than reading the cache once: the loader is asynchronous, and without the
+subscription a list opened before the artwork arrived would keep showing the
+emoji for the rest of the session.
+
+=== Adding artwork for a new unit
+
+. Crop the file first (`crop_svgs.sh`, which runs Inkscape
+   `--export-area-drawing`) so the viewBox is tight — an uncropped file gets
+   shrunk to nothing inside its tile.
+. Put it in `src/assets/units/` and add the entry to
+   `src/data/UnitIconConfig.ts`. `tests/unitIconConfig.test.ts` fails if the
+   entry points at a file that is not there.
+. Check the emoji fallback in `UNIT_PROPERTIES`: it must be a glyph the
+   bundled `NotoEmoji-Light.ttf` actually covers. The Chariot and the Frigate
+   both shipped Egyptian hieroglyphs (U+1331D / U+1329D) that render as a tofu
+   box everywhere; the same test now guards every fallback against the
+   astral-rune and Egyptian blocks.
+. Ship filenames do not have to be tidy — `worrier.svg`, `artillerie.svg` and
+   `submarin.svg` keep their original German spellings and the config maps
+   them. Renaming means touching the config, not the art.
+
 == 9. Zoom & image quality
 
 Canvas rendering works in CSS pixels (the backing store is not multiplied by

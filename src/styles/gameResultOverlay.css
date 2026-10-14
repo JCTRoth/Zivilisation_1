@@ -44,8 +44,10 @@ body > canvas[style*='position: fixed'] {
    scrim and the dialog through a PORTAL into <body>, so they are NOT
    descendants of `.game-result-overlay` — a descendant selector silently
    never matched, which is how this bug survived the first attempt at fixing
-   it. `dialogClassName="gm-chronicle"` puts the chronicle's own name on the
-   portalled element:
+   it. `className="gm-chronicle"` puts the chronicle's own name on the
+   portalled `.modal` element itself (`dialogClassName` would land on
+   `.modal-dialog` *inside* `.modal` and could never lift its stacking
+   context):
 
        sky (1060) → scrim (1050) → confetti (99999) → card (100000)
 
@@ -56,6 +58,612 @@ body > canvas[style*='position: fixed'] {
 
 .modal.gm-chronicle {
   z-index: 100000;
+}
+
+/* ============================================================================
+   Act II — the Chronicle, as a scroll of knowledge
+   ----------------------------------------------------------------------------
+   Act I stages the outcome; Act II is the record itself, and it is dressed as
+   what that record would have been: a vellum leaf hung between two turned
+   wooden rods, unrolled FROM THE RIGHT — the way a scroll is read, and the way
+   the left rod travels out to meet it.
+
+   THE SCROLL IS THREE PIECES, and which piece lives where is the whole trick:
+
+     · `.gm-modal`  (the card)  — a transparent frame whose only job is to hold
+       the two rods as ::before/::after. It must NOT be the thing that clips,
+       because the rods stand OUTSIDE the sheet and a clip would eat them.
+     · `.gm-body`   (the sheet) — the vellum, and the element that unrolls.
+     · the rods     (card pseudo-elements) — static on the right, travelling on
+       the left, leading the sheet out of the right-hand rod.
+
+   Animating the SHEET with `clip-path: inset(0 0 0 100%)` is what makes this
+   read right-to-left: the fourth inset value is the LEFT edge, so starting it
+   at 100% hides the whole sheet and sweeping it to 0 uncovers the leaf from
+   its right side inward. A `scaleX` would squash the text on the way; a clip
+   only removes what has not been unrolled yet.
+
+   Ink follows automatically: the shell reads `var(--color-text*)` and
+   `--gm-label`, re-pointed at sepia here, while `--gm-accent` is darkened to a
+   readable antique gold (the bright `#f0c33c` fails on vellum). Defeat gets
+   the same scroll in cold ash-violet.
+   ========================================================================== */
+
+.modal.gm-chronicle {
+  z-index: 100000;
+}
+
+.modal.gm.gm-chronicle {
+  --color-text: #2b1d0e;
+  --color-text-secondary: #4a3820;
+  --color-text-muted: #6d573a;
+  --gm-label: #6d573a;
+
+  /* The scroll's own measurements, so the rod, the sheet and the unroll can
+     never disagree about where the mechanism is. */
+  --sc-rod-out: 22px;  /* how far a rod stands off the sheet */
+  --sc-rod-w: 26px;    /* the width of the wooden band */
+  --sc-rod-lift: 15px; /* how far the rod ends protrude past the sheet */
+  --sc-unroll: 1500ms;
+  --sc-ease: cubic-bezier(0.18, 0.86, 0.24, 1);
+
+  /* A classical old-style face. The system UI stack is a grotesque; nothing
+     else in the game looks like an inscription, so the scroll sets its own. */
+  --scroll-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua',
+    'URW Palladio L', P052, Georgia, 'Times New Roman', serif;
+}
+
+.modal.gm.gm-chronicle .gm-body[data-tone] {
+  --gm-accent: #8a6d1f;
+  --gm-tint: rgba(138, 109, 31, 0.12);
+}
+
+/* The shell re-points --gm-label on `.gm-body` itself (higher specificity than
+   the ancestor above), so muted labels and section titles need their own
+   override or they stay light-grey-on-vellum and wash out. */
+.modal.gm.gm-chronicle .gm-body {
+  --gm-label: #6d573a;
+}
+
+/* ---- The frame: transparent, and the only thing that holds the rods ------- */
+
+.modal.gm.gm-chronicle .gm-modal {
+  position: relative;
+  /* The rods stand proud of the sheet; Bootstrap's `overflow: hidden` and the
+     card's radius are exactly what a scroll must not have. */
+  overflow: visible;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  /* The shadow follows the real silhouette — sheet AND rods — which is most of
+     why the leaf stops reading as a dialog. */
+  filter: drop-shadow(0 26px 46px rgba(0, 0, 0, 0.62));
+}
+
+/* ---- The rods ----------------------------------------------------------- */
+
+.modal.gm.gm-chronicle .gm-modal::before,
+.modal.gm.gm-chronicle .gm-modal::after {
+  content: '';
+  position: absolute;
+  top: calc(-1 * var(--sc-rod-lift));
+  bottom: calc(-1 * var(--sc-rod-lift));
+  /* Wider than the band so the finials can overhang it. */
+  width: calc(var(--sc-rod-out) + var(--sc-rod-w) + 8px);
+  z-index: 3;
+  pointer-events: none;
+  background:
+    /* upper finial: a turned knob, lit from the upper left */
+    radial-gradient(
+      circle 13px at 50% 10px,
+      #f6de9c 0 3px,
+      #dcb542 4px 6px,
+      #a8801d 8px 11px,
+      rgba(0, 0, 0, 0) 12px
+    ),
+    /* lower finial */
+    radial-gradient(
+      circle 13px at 50% calc(100% - 10px),
+      #f6de9c 0 3px,
+      #dcb542 4px 6px,
+      #a8801d 8px 11px,
+      rgba(0, 0, 0, 0) 12px
+    ),
+    /* the band itself, rounded across its width so it reads as a turned rod */
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0) calc(50% - var(--sc-rod-w) / 2),
+      #1f1206 calc(50% - var(--sc-rod-w) / 2) calc(50% - var(--sc-rod-w) / 2 + 4px),
+      #6b4523 calc(50% - var(--sc-rod-w) / 2 + 4px) calc(50% - 6px),
+      #9c6a3c calc(50% - 6px) calc(50% + 2px),
+      #6b4523 calc(50% + 2px) calc(50% + 7px),
+      #1f1206 calc(50% + 7px) calc(50% + var(--sc-rod-w) / 2),
+      rgba(0, 0, 0, 0) calc(50% + var(--sc-rod-w) / 2)
+    );
+}
+
+/* The LEFT rod leads: it starts down on the right rod and is drawn out to the
+   left, and the sheet uncovers behind it. The sheet's clip and this travel are
+   on one timeline and one easing, so the rod is always exactly at the leading
+   edge of the leaf. */
+.modal.gm.gm-chronicle .gm-modal::before {
+  right: calc(100% - 8px);
+  animation: sc-rod-lead var(--sc-unroll) var(--sc-ease) both;
+}
+
+/* The RIGHT rod is the anchor the leaf is wound onto. It never moves. */
+.modal.gm.gm-chronicle .gm-modal::after {
+  left: calc(100% - 8px);
+}
+
+@keyframes sc-rod-lead {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+/* ---- The sheet: vellum, unrolled from the right -------------------------- */
+
+.modal.gm.gm-chronicle .gm-body {
+  position: relative;
+  /* Keeps the vellum inside the leaf's own edges. Safe for the contents: the
+     only thing that overflows is the close button, which belongs to the sheet. */
+  overflow: hidden;
+  color: #2b1d0e;
+  background:
+    /* foxing — the brown blooms age leaves on old vellum */
+    radial-gradient(circle 30px at 13% 21%, rgba(150, 104, 44, 0.13), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(circle 19px at 79% 11%, rgba(150, 104, 44, 0.10), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(circle 38px at 89% 69%, rgba(150, 104, 44, 0.11), rgba(0, 0, 0, 0) 72%),
+    radial-gradient(circle 22px at 27% 85%, rgba(150, 104, 44, 0.10), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(circle 16px at 55% 47%, rgba(150, 104, 44, 0.07), rgba(0, 0, 0, 0) 70%),
+    /* fibre */
+    repeating-linear-gradient(91deg, rgba(146, 104, 44, 0.05) 0 2px, rgba(0, 0, 0, 0) 2px 9px),
+    repeating-linear-gradient(179deg, rgba(146, 104, 44, 0.04) 0 3px, rgba(0, 0, 0, 0) 3px 7px),
+    /* where the leaf is wound onto its rods, it is darkest */
+    linear-gradient(90deg, rgba(92, 58, 20, 0.34), rgba(0, 0, 0, 0) 10%),
+    linear-gradient(270deg, rgba(92, 58, 20, 0.34), rgba(0, 0, 0, 0) 10%),
+    /* scorch along the cut edges */
+    radial-gradient(130% 100% at 50% 0%, rgba(120, 72, 20, 0.20), rgba(0, 0, 0, 0) 40%),
+    radial-gradient(130% 120% at 50% 110%, rgba(120, 72, 20, 0.24), rgba(0, 0, 0, 0) 42%),
+    /* vellum */
+    linear-gradient(180deg, #f7e9c2 0%, #f1ddaa 30%, #ead096 62%, #e0c288 100%);
+  box-shadow:
+    inset 0 0 70px rgba(120, 72, 20, 0.30),
+    inset 0 0 10px rgba(120, 72, 20, 0.45);
+  /* The fourth `inset` value is the LEFT edge — that is the whole direction of
+     this animation. */
+  animation: sc-unroll-rtl var(--sc-unroll) var(--sc-ease) both;
+}
+
+@keyframes sc-unroll-rtl {
+  0% {
+    clip-path: inset(0 0 0 100%);
+    transform: translateX(1.5%);
+    filter: brightness(1.45) saturate(1.08);
+  }
+  62% {
+    clip-path: inset(0 0 0 0);
+    transform: translateX(-0.4%);
+    filter: brightness(1.07);
+  }
+  84% {
+    filter: brightness(1.01);
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+    transform: none;
+    filter: none;
+  }
+}
+
+/* ---- Inscription: the type ---------------------------------------------- */
+
+.modal.gm.gm-chronicle .gm-title {
+  font-family: var(--scroll-serif);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #2b1d0e;
+  /* A hairline of light under the glyphs: cut into the leaf, not printed on it. */
+  text-shadow: 0 1px 0 rgba(255, 248, 220, 0.8);
+}
+
+.modal.gm.gm-chronicle .gm-eyebrow {
+  font-family: var(--scroll-serif);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: #7a5f22;
+}
+
+.modal.gm.gm-chronicle .gm-lede {
+  font-family: var(--scroll-serif);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.5;
+  color: #4a3820;
+}
+
+/* The hero drops its dark slab so the vellum runs edge to edge; the rule
+   carries the tone instead. */
+.modal.gm.gm-chronicle .gm-hero {
+  background:
+    radial-gradient(130% 150% at 0% 0%, var(--gm-tint), rgba(0, 0, 0, 0) 62%),
+    transparent;
+  border-bottom: 1px solid rgba(120, 72, 20, 0.3);
+  padding-bottom: 4px;
+}
+
+/* The medallion becomes a wax seal pressed into the leaf: gold for triumph… */
+.modal.gm.gm-chronicle .gm-art {
+  border-radius: 50%;
+  border: 2px solid #8a6d1f;
+  background: radial-gradient(circle at 35% 30%, #ffe9a8, #e9bd4e 45%, #a87f1e 75%, #6e5212);
+  box-shadow:
+    0 4px 10px rgba(60, 35, 5, 0.45),
+    inset 0 2px 4px rgba(255, 240, 200, 0.6),
+    inset 0 -3px 6px rgba(60, 35, 5, 0.5);
+}
+
+/* …ash-violet for defeat. */
+.modal.gm.gm-chronicle--defeat .gm-art {
+  border-color: #4a4490;
+  background: radial-gradient(circle at 35% 30%, #e3dff5, #a8a2d4 45%, #5f59a0 75%, #37335f);
+  box-shadow:
+    0 4px 10px rgba(20, 18, 45, 0.5),
+    inset 0 2px 4px rgba(235, 232, 255, 0.55),
+    inset 0 -3px 6px rgba(20, 18, 45, 0.55);
+}
+
+/* The caption strip duplicates the title — it would cut across the seal. */
+.modal.gm.gm-chronicle .gm-art-tag {
+  display: none;
+}
+
+/* ---- The ledger --------------------------------------------------------- */
+
+/* Sections stop being cards. A heading, a hairline, and the figures below. */
+.modal.gm.gm-chronicle .gm-section {
+  padding: 4px 0 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+.modal.gm.gm-chronicle .gm-section-title {
+  margin-bottom: 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(120, 72, 20, 0.28);
+  font-family: var(--scroll-serif);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #6d573a;
+}
+
+/* The shell's little accent bar becomes a lozenge — a mark on a seal, not a
+   UI tick. */
+.modal.gm.gm-chronicle .gm-section-title::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--gm-accent);
+  transform: rotate(45deg);
+}
+
+/* Figures are inscribed cartouches, not tiles. */
+.modal.gm.gm-chronicle .gm-stat {
+  align-items: center;
+  text-align: center;
+  padding: 10px 8px;
+  background: rgba(120, 72, 20, 0.055);
+  border: 1px solid rgba(120, 72, 20, 0.22);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 248, 220, 0.5);
+}
+
+.modal.gm.gm-chronicle .gm-stat-value {
+  justify-content: center;
+  font-family: var(--scroll-serif);
+  font-size: 22px;
+  font-weight: 700;
+  color: #2b1d0e;
+}
+
+.modal.gm.gm-chronicle .gm-stat-value .gm-stat-icon {
+  font-size: 14px;
+  opacity: 0.75;
+}
+
+.modal.gm.gm-chronicle .gm-stat--accent .gm-stat-value {
+  color: #7a5f22;
+}
+
+.modal.gm.gm-chronicle .gm-stat-label {
+  font-family: var(--scroll-serif);
+  font-size: 11.5px;
+  letter-spacing: 0.07em;
+  color: #6d573a;
+}
+
+.modal.gm.gm-chronicle .gm-note {
+  font-family: var(--scroll-serif);
+  font-size: 13.5px;
+  line-height: 1.55;
+  border-left: 2px solid rgba(120, 72, 20, 0.4);
+  color: #4a3820;
+}
+
+.modal.gm.gm-chronicle .gm-note strong {
+  color: #2b1d0e;
+}
+
+.modal.gm.gm-chronicle .gm-callout {
+  font-family: var(--scroll-serif);
+  background: rgba(138, 109, 31, 0.1);
+  border-color: rgba(120, 72, 20, 0.3);
+}
+
+/* ---- The actions -------------------------------------------------------- */
+
+/* The bar is part of the leaf, not a footer bolted under it. */
+.modal.gm.gm-chronicle .gm-actions {
+  background: linear-gradient(180deg, rgba(120, 72, 20, 0.08), rgba(120, 72, 20, 0.2));
+  border-top: 1px solid rgba(120, 72, 20, 0.35);
+}
+
+/* Three saturated Bootstrap buttons at the foot of a two-thousand-year-old
+   document read as a settings dialog no matter how good the vellum is. The
+   whole bar is restated in ink: an engraved outline for the two quiet actions
+   and a struck-gold plate for the one the chronicle points at. */
+.modal.gm.gm-chronicle .gm-actions .touch-btn {
+  font-family: var(--scroll-serif);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  border: 1px solid rgba(92, 58, 20, 0.5);
+  border-radius: 4px;
+  background: rgba(255, 248, 220, 0.22);
+  color: #4a3820;
+  box-shadow: inset 0 1px 0 rgba(255, 248, 220, 0.65);
+}
+
+.modal.gm.gm-chronicle .gm-actions .touch-btn:hover {
+  background: rgba(255, 248, 220, 0.42);
+  color: #2b1d0e;
+}
+
+.modal.gm.gm-chronicle .gm-actions .touch-btn--ghost {
+  background: transparent;
+  border-color: rgba(92, 58, 20, 0.4);
+}
+
+.modal.gm.gm-chronicle .gm-actions .touch-btn--danger {
+  border-color: rgba(122, 48, 32, 0.45);
+  color: #7a3020;
+}
+
+.modal.gm.gm-chronicle .gm-actions .touch-btn--danger:hover {
+  background: rgba(122, 48, 32, 0.1);
+  color: #5e2418;
+}
+
+.modal.gm.gm-chronicle .gm-actions .touch-btn--primary {
+  border-color: #8a6d1f;
+  background: linear-gradient(180deg, #e8c65c, #c39a2a 60%, #a87f1e);
+  color: #2b1d0e;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 246, 200, 0.8),
+    0 3px 10px rgba(80, 55, 10, 0.35);
+}
+
+.modal.gm.gm-chronicle .gm-actions .touch-btn--primary:hover {
+  background: linear-gradient(180deg, #f4d97c, #d2a833 60%, #b78c22);
+  color: #1f1408;
+}
+
+.modal.gm.gm-chronicle .gm-close {
+  color: #6d573a;
+}
+
+.modal.gm.gm-chronicle .gm-close:hover {
+  background: rgba(120, 72, 20, 0.14);
+  color: #2b1d0e;
+}
+
+/* ---- Defeat: the same scroll, cold --------------------------------------- */
+
+.modal.gm.gm-chronicle--defeat {
+  --color-text: #23233a;
+  --color-text-secondary: #3c3c58;
+  --color-text-muted: #5d5d7d;
+  --gm-label: #5d5d7d;
+  --scroll-serif: var(--scroll-serif);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-body[data-tone] {
+  --gm-accent: #4a4490;
+  --gm-tint: rgba(74, 68, 144, 0.12);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-body {
+  --gm-label: #5d5d7d;
+  --gm-accent: #4a4490;
+  --gm-tint: rgba(74, 68, 144, 0.12);
+  background:
+    radial-gradient(circle 30px at 13% 21%, rgba(70, 68, 120, 0.11), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(circle 19px at 79% 11%, rgba(70, 68, 120, 0.09), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(circle 38px at 89% 69%, rgba(70, 68, 120, 0.1), rgba(0, 0, 0, 0) 72%),
+    repeating-linear-gradient(91deg, rgba(70, 68, 120, 0.05) 0 2px, rgba(0, 0, 0, 0) 2px 9px),
+    repeating-linear-gradient(179deg, rgba(70, 68, 120, 0.04) 0 3px, rgba(0, 0, 0, 0) 3px 7px),
+    linear-gradient(90deg, rgba(40, 38, 80, 0.32), rgba(0, 0, 0, 0) 10%),
+    linear-gradient(270deg, rgba(40, 38, 80, 0.32), rgba(0, 0, 0, 0) 10%),
+    radial-gradient(130% 100% at 50% 0%, rgba(40, 38, 80, 0.2), rgba(0, 0, 0, 0) 40%),
+    radial-gradient(130% 120% at 50% 110%, rgba(40, 38, 80, 0.24), rgba(0, 0, 0, 0) 42%),
+    linear-gradient(180deg, #e4dff2 0%, #d5cfeb 30%, #c4bde0 62%, #aea8d2 100%);
+  box-shadow:
+    inset 0 0 70px rgba(40, 38, 80, 0.32),
+    inset 0 0 10px rgba(40, 38, 80, 0.45);
+}
+
+/* Ash rods, lilac finials — same turned shape, colder stock. */
+.modal.gm.gm-chronicle--defeat .gm-modal::before,
+.modal.gm.gm-chronicle--defeat .gm-modal::after {
+  background:
+    radial-gradient(
+      circle 13px at 50% 10px,
+      #e6e2f8 0 3px,
+      #b6afe4 4px 6px,
+      #5c5597 8px 11px,
+      rgba(0, 0, 0, 0) 12px
+    ),
+    radial-gradient(
+      circle 13px at 50% calc(100% - 10px),
+      #e6e2f8 0 3px,
+      #b6afe4 4px 6px,
+      #5c5597 8px 11px,
+      rgba(0, 0, 0, 0) 12px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0) calc(50% - var(--sc-rod-w) / 2),
+      #141122 calc(50% - var(--sc-rod-w) / 2) calc(50% - var(--sc-rod-w) / 2 + 4px),
+      #3a3558 calc(50% - var(--sc-rod-w) / 2 + 4px) calc(50% - 6px),
+      #5a5389 calc(50% - 6px) calc(50% + 2px),
+      #3a3558 calc(50% + 2px) calc(50% + 7px),
+      #141122 calc(50% + 7px) calc(50% + var(--sc-rod-w) / 2),
+      rgba(0, 0, 0, 0) calc(50% + var(--sc-rod-w) / 2)
+    );
+}
+
+.modal.gm.gm-chronicle--defeat .gm-modal {
+  filter: drop-shadow(0 26px 46px rgba(0, 0, 0, 0.62));
+}
+
+.modal.gm.gm-chronicle--defeat .gm-title {
+  color: #23233a;
+  text-shadow: 0 1px 0 rgba(245, 243, 255, 0.8);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-eyebrow {
+  color: #4a4490;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-lede {
+  color: #3c3c58;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-hero {
+  border-bottom-color: rgba(40, 38, 80, 0.34);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-section-title {
+  border-bottom-color: rgba(40, 38, 80, 0.3);
+  color: #5d5d7d;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-stat {
+  background: rgba(40, 38, 80, 0.06);
+  border-color: rgba(40, 38, 80, 0.24);
+  box-shadow: inset 0 1px 0 rgba(245, 243, 255, 0.45);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-stat-value {
+  color: #23233a;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-stat--accent .gm-stat-value {
+  color: #4a4490;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-stat-label {
+  color: #5d5d7d;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-note {
+  color: #3c3c58;
+  border-left-color: rgba(40, 38, 80, 0.4);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-note strong {
+  color: #23233a;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-callout {
+  background: rgba(74, 68, 144, 0.1);
+  border-color: rgba(40, 38, 80, 0.3);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-actions {
+  background: linear-gradient(180deg, rgba(40, 38, 80, 0.08), rgba(40, 38, 80, 0.2));
+  border-top-color: rgba(40, 38, 80, 0.35);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-actions .touch-btn {
+  border-color: rgba(40, 38, 80, 0.45);
+  background: rgba(245, 243, 255, 0.22);
+  color: #3c3c58;
+  box-shadow: inset 0 1px 0 rgba(245, 243, 255, 0.6);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-actions .touch-btn:hover {
+  background: rgba(245, 243, 255, 0.42);
+  color: #23233a;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-actions .touch-btn--ghost {
+  background: transparent;
+  border-color: rgba(40, 38, 80, 0.38);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-actions .touch-btn--danger {
+  border-color: rgba(92, 34, 46, 0.45);
+  color: #6e2233;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-actions .touch-btn--primary {
+  border-color: #4a4490;
+  background: linear-gradient(180deg, #c3bcea, #928ad0 60%, #6f68ab);
+  color: #1b1a30;
+  box-shadow:
+    inset 0 1px 0 rgba(245, 243, 255, 0.7),
+    0 3px 10px rgba(20, 18, 45, 0.35);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-actions .touch-btn--primary:hover {
+  background: linear-gradient(180deg, #d3cef2, #a29bdd 60%, #7c75bb);
+  color: #141326;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-close {
+  color: #5d5d7d;
+}
+
+.modal.gm.gm-chronicle--defeat .gm-close:hover {
+  background: rgba(40, 38, 80, 0.14);
+  color: #23233a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The scroll is the content's entrance; with motion off it simply IS there.
+     The rods have to be reset too — `sc-rod-lead` is what parks the left rod
+     on the right one. */
+  .modal.gm.gm-chronicle .gm-body,
+  .modal.gm.gm-chronicle .gm-modal::before {
+    animation: none;
+  }
+
+  .modal.gm.gm-chronicle .gm-body {
+    clip-path: none;
+    filter: none;
+    transform: none;
+  }
+
+  .modal.gm.gm-chronicle .gm-modal::before {
+    transform: none;
+  }
 }
 
 /* ============================================================================
@@ -286,10 +894,9 @@ body > canvas[style*='position: fixed'] {
   gap: 0.65rem;
   width: min(44rem, 100%);
   max-height: calc(100dvh - 2rem);
-  overflow-y: auto;
+  overflow: hidden;
   padding: 1.5rem 1.25rem 2rem;
   text-align: center;
-  scrollbar-width: thin;
 }
 
 .gr-cine__stage::before {
@@ -499,7 +1106,7 @@ body > canvas[style*='position: fixed'] {
 
 .gr-cine__cta:hover .gr-cine__cta-arrow,
 .gr-cine__cta:focus-visible .gr-cine__cta-arrow {
-  transform: translateX(4px);
+  transform: translateX(-4px);
 }
 
 /* ---- Minor actions (Restart / Quit) -------------------------------------- */

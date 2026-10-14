@@ -1055,6 +1055,61 @@ ring).
 |Attacker takes 25 HP. The defender takes nothing.
 |===
 
+=== Splash damage
+
+Defined in: `CombatSystem.splashDamage`, `GameEngine.applySplashDamage`
+
+When a winning attack damages a tile holding **2 or more stacked units** on
+open ground, every other exposed unit on that tile takes **25 % of the
+primary hit** (rounded, minimum 1 HP).
+
+[cols="2,3", options="header"]
+|===
+|Case |Splash
+
+|Open ground, exposed mates
+|`round(primary × 0.25)`, min 1 HP each.
+
+|A city holds the tile
+|None — urban cover is complete immunity.
+
+|Fortress improvement on the tile
+|None.
+
+|Fortified secondary
+|None — that unit holds its nerve (and its cover).
+
+|Embarked cargo
+|None — cargo is never on the tile (`getUnitsAt` excludes it), so boats
+shield their passengers automatically.
+
+|Attacker's own mates (shared-tile engagements)
+|None — no friendly fire.
+|===
+
+Splash kills run the standard defeat pipeline (lingering corpse, delayed
+removal, scout hook, `UNIT_DEFEATED`/`UNIT_REMOVED`) plus a `COMBAT_SPLASH`
+event carrying attacker, defender, primary damage and the victim list. Splash
+kills award **no experience**. Every HP lost — direct or splash — accrues to
+the unit's `battleDamageTaken` ledger, which funds city healing below.
+
+=== City healing
+
+Defined in: `CombatSystem.cityHealAmount`, `TurnManager.resetUnitsForPlayer`
+
+A damaged unit stationed inside one of its **own** cities recovers **2 HP per
+turn**, up to a **lifetime total of 15 % of all battle damage it ever took**
+(`healedInCityTotal` against `battleDamageTaken`). Full-health units and
+exhausted ledgers heal nothing. Entrenched garrisons heal like everyone else
+under the roof; the healing pass runs before the fortified/sleeping early
+returns on purpose.
+
+Whenever a unit heals, the turn stamps `unit._healedRound`. The map draws a
+small 🩸 **blood drop** above its sprite for the rest of the round — but only
+when the unit is **unstacked** (alone on its tile) or currently **selected** as
+the top unit, so crowded tiles stay readable
+(`MapRenderer.healMarkerVisible`).
+
 === Cities
 
 `cityDefense = max(1, population)`, **× 1.5 with city walls** — and walls apply

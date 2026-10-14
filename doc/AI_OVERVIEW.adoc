@@ -353,10 +353,33 @@ The human has an equivalent: `setCityGovernor` in `GameEngine`, with
 
 Pure policy lives in `NavalDoctrine`; the movement lives in `AIManager`.
 
-* Fleet budget is a function of city count and naval pressure.
-* Transports target `0.5 × cities`, warships `1 × cities`, capped at 12 absolute.
-* Warship targets are scored by `WARSHIP_TARGET_VALUE`; landing sites are scored
-  with `DISTANCE_WEIGHT = 0.4`.
+* Fleet budget is a function of city count and naval pressure. Budgets are
+  computed per hull class: a civ that can feed a trireme but not a battleship
+  fields the trireme instead of nothing.
+* Transports target `1.0 × cities` (cap 6 absolute) and scale with parallel
+  objectives — 1 hull for 1–3 islands, 2 for 4–6, 3 for 7+, plus lift per
+  invasion target. Warships target `2 × cities`, capped at 16 absolute.
+* Colony missions run **in parallel** (up to 3 islands at once, one settler +
+  hull each, ferries never double-booked). Islands are picked by size versus
+  sailing time (`scoreColonyIsland`); founding tiles by yield plus high ground
+  (`findBestColonySite`). Landed settlers found instead of re-embarking, and
+  offshore settlers skip mainland works assignments.
+* The naval governor self-activates: `AICoordinator.ensureNavalActivation`
+  bootstraps a transport plus screen on sea worlds with dark water even when
+  no mission was ever preset, and every turn forms escort/hunter/blockade/
+  patrol/sealift fleet groups. Warships that cannot pay for heavies sail
+  cheap screens and scouts first — dark water is charted before the battle
+  line is built.
+* Endgame arm: submarines carry exactly one nuclear warhead and nothing else
+  (`canLoadFerry` exclusivity); warheads fly 16 tiles from city or hull;
+  SDI within 16 of the aim point kills the strike, and the AI never fires
+  into a shield. Fission + Manhattan unlock the arsenal (all civs once built);
+  the `nuclear_endgame` branch races the wonder, stocks up to 3 warheads with
+  delivery subs, and fires via `NukeMission` sneak deployments.
+* Warship targets are scored by `WARSHIP_TARGET_VALUE` with per-role bonuses
+  (raiders want merchants, heavies want fleets, scouts shadow); landing sites
+  are scored with `DISTANCE_WEIGHT = 0.4`, siege guns and fast units weighed
+  in.
 * Island-awareness comes from the landmass graph: `isOnIsland`,
   `getIslandSituation`, `getColonizableIslands`, `areLandConnected`. A civ that
   starts on an island is flagged `civ.startsOnIsland` at setup and re-evaluates
@@ -364,11 +387,36 @@ Pure policy lives in `NavalDoctrine`; the movement lives in `AIManager`.
   priority; under 24 tiles a Harbor is worth building.
 * Colony and invasion missions are separate long-lived objects
   (`updateColonyMission`, `updateInvasionMission`, `planInvasionMission`,
-  `findInvasionBeach`).
+  `findInvasionBeach`). Outmatched beachheads consolidate on defensible
+  ground and fortify instead of attacking into walls one unit at a time.
+* Island troops hold their islands: garrisons and offensive plans only assign
+  land-connected cities/targets, spare island troops stand fortified guard
+  posts on high ground watching the water (`scoreGuardTile`), and island
+  garrisons stay entrenched against sea-only threats.
+* Situational branches (`AIStrategyBranches`, computed once per civ per turn):
+  `nuclear_endgame` outranks `total_war` outranks `island_spread` outranks
+  `steady`. Total war builds siege trains for walled targets and rush-buys
+  attackers with war gold; the endgame arms; island spread runs the parallel
+  sealift. Production, research and gold spending read the stored branch.
 
----
+== 8. Open-ground tactics (splash discipline)
 
-== 8. Running the AI without a browser
+Pure policy lives in `AITactics`; the movement lives in `AIManager`.
+
+* Stacks are safe under a roof (cities, fortresses — splash immunity) and
+  bait on open ground (25 % splash per mate). The AI hunts stacks it can
+  splash and refuses to form them where the enemy can do the same back.
+* Target pick (`pickSplashTarget`): among scanned enemies, an open-ground
+  cluster outranks the merely nearest single; under a roof — and for
+  civilians — nearest wins exactly as before.
+* March discipline (`deStackStep`): combat steps divert around allied stacks
+  on open ground to the nearest free, passable tile toward the objective.
+  Assaults, garrisons and beachheads still concentrate on immune ground, and
+  settlers, scouts and ferries are exempt.
+* Full mechanic: link:GAME_RULES.adoc[Game Rules Reference] § Splash damage
+  and § City healing.
+
+== 9. Running the AI without a browser
 
 [source,bash]
 ----
@@ -399,7 +447,7 @@ link:GAME_PROGRESSION_EXPORT.adoc[Game Progression Export] for the format.
 
 ---
 
-== 9. Deeper reading, in the `doc/` folder
+== 10. Deeper reading, in the `doc/` folder
 
 [cols="1,2", options="header"]
 |===
@@ -438,7 +486,7 @@ link:GAME_PROGRESSION_EXPORT.adoc[Game Progression Export] for the format.
 
 ---
 
-== 10. Known weaknesses
+== 11. Known weaknesses
 
 * `space-bunny-free_ai_gov.adoc` argues the strategy layer is close to dead code
   and that two 500-line if-cascades in `AICityManager` and `AIManager` are the

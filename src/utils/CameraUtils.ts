@@ -16,9 +16,17 @@ import { TILE_SIZE } from '@/data/TerrainData';
 export const MIN_ZOOM = 0.3;
 export const MAX_ZOOM = 3.0;
 
+/**
+ * Maximum zoom OUT level for normal (non-dev) games.
+ * Below this the map becomes unreadably small and the player loses spatial
+ * context — the fog of war and tile detail are designed for this range.
+ */
+export const MIN_ZOOM_NORMAL = 0.5;
+
 /** Clamp a zoom factor to the playable range. */
-export function clampZoom(zoom: number): number {
-  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+export function clampZoom(zoom: number, isDevMode: boolean = false): number {
+  const min = isDevMode ? MIN_ZOOM : Math.max(MIN_ZOOM, MIN_ZOOM_NORMAL);
+  return Math.max(min, Math.min(MAX_ZOOM, zoom));
 }
 
 export interface CameraCenterParams {

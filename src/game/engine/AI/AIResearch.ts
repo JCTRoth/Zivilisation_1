@@ -48,12 +48,28 @@ interface GameStateSnapshot {
   /** True when the civ's start tile was on an island (known from turn one). */
   startsOnIsland?: boolean;
   /**
+   * 0 = no island expansion pending; 1 = colonisable islands visible and the
+   * civ lacks Sailing; 2 = the same while holding 1-2 cities (expansion is
+   * blocked until it sails — the stranded-equivalent urgency). Computed by
+   * AIManager from the island probe + tech, so a 1-city archipelago civ cannot
+   * research Alphabet for a century while 10 islands wait offshore (seed-19:
+   * 60 rounds, 10 known islands, Sailing never picked).
+   */
+  islandExpansionUrgency?: number;
+  /**
    * How much a Fisher Boat would be worth to this civ right now (0 when no
    * coastal city has a worthwhile fishing ground). The Harbor that unlocks it
    * needs Masonry, so a fishing civ researches Masonry instead of never
    * getting the boat the economics asked for.
    */
   fishingRelevance?: number;
+  /**
+   * 0 = no nuclear interest; 1 = wartime fission interest; 2 = late endgame
+   * interest; 3 = Manhattan stands and the civ still lacks Fission (race to
+   * arm). Drives the Fission tip and the Nuclear Power chain root the way
+   * island urgency drives Sailing.
+   */
+  nuclearRelevance?: number;
   /**
    * Real turns to finish one technology, as the engine would charge them.
    *
@@ -186,6 +202,8 @@ export class AIResearch {
     // stayed locked until a city existed — and on the archipelago the AI had
     // already picked its next research by then, so Sailing never came up.
     if (gameState.startsOnIsland === true) return false;
+    // Island expansion pending means the same: the civ SEES somewhere to sail.
+    if ((gameState.islandExpansionUrgency ?? 0) > 0) return false;
     // Otherwise treat missing/unknown access as landlocked for this gate.
     return gameState.currentYear < -1000 && gameState.hasWaterAccess !== true;
   }
@@ -347,6 +365,14 @@ export class AIResearch {
         score += 40;
         reasons.push('stranded-must-sail');
       }
+      // Island expansion pending: the civ SEES islands it cannot reach without
+      // Sailing. A 1-2 city civ with 10 known islands is as stranded as an
+      // island start — Sailing is its expansion tech, not one option among many.
+      const islandUrgency = gameState.islandExpansionUrgency ?? 0;
+      if (islandUrgency > 0) {
+        score += 30 * islandUrgency;
+        reasons.push('island-expansion');
+      }
     }
     if (naval > 0 && techId === 'map_making') {
       score += 6 + 2 * naval;
@@ -387,6 +413,21 @@ export class AIResearch {
     if (caravan > 0 && techId === 'bronze_working') {
       score += 20 + 10 * caravan;
       reasons.push('caravan-relevance');
+    }
+
+    // Nuclear endgame: Fission is the tip of the endgame arm (warheads need
+    // it, Manhattan needs it), Nuclear Power is the chain root. Without a
+    // push the AI researches the atomic age never — a 634-round game reached
+    // 2085 with 31 techs and zero warheads. Same shape as the caravan chain:
+    // push the root so the branch arrives, push the tip so it is not skipped.
+    const nuclear = gameState.nuclearRelevance ?? 0;
+    if (nuclear > 0 && techId === 'nuclear_fission') {
+      score += 35 + 15 * nuclear;
+      reasons.push('nuclear-endgame');
+    }
+    if (nuclear > 0 && techId === 'nuclear_power') {
+      score += 20 + 10 * nuclear;
+      reasons.push('nuclear-chain');
     }
 
     // 7. Era progression — slight bonus for advancing to new eras

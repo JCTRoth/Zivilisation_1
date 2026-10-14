@@ -1543,11 +1543,20 @@ export class EconomicManager {
     const storage = this.gameEngine?.getPlayerStorage?.(civId);
     const turnData = storage?.turnData as unknown as
       | {
+          colonyMissions?: Array<{ settlerId?: string; ferryId?: string | null }>;
           colonyMission?: { settlerId?: string; ferryId?: string | null };
           invasionMission?: { troopIds?: string[]; landedIds?: string[]; ferryId?: string | null };
+          nukeMission?: { nukeId?: string; subId?: string | null };
         }
       | undefined;
     if (!turnData) return ids;
+    for (const m of turnData.colonyMissions ?? []) {
+      if (m?.settlerId) ids.add(String(m.settlerId));
+      if (m?.ferryId) ids.add(String(m.ferryId));
+    }
+    const nukeMission = turnData.nukeMission;
+    if (nukeMission?.nukeId) ids.add(String(nukeMission.nukeId));
+    if (nukeMission?.subId) ids.add(String(nukeMission.subId));
     if (turnData.colonyMission?.settlerId) ids.add(String(turnData.colonyMission.settlerId));
     if (turnData.colonyMission?.ferryId) ids.add(String(turnData.colonyMission.ferryId));
     if (turnData.invasionMission?.ferryId) ids.add(String(turnData.invasionMission.ferryId));

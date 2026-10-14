@@ -56,6 +56,9 @@
   font-size: 1.6rem;
   line-height: 1;
   flex: 0 0 auto;
+  /* Flags render through Noto Color Emoji (Google Fonts, see index.css) so
+     every language card shows the same artwork on every platform. */
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
 }
 
 .lang-card__names {
@@ -102,6 +105,47 @@
   transform: scale(1);
 }
 
+/* ---- Compact mode: dropdown for tight spaces (e.g. setup header) ----------- */
+
+.lang-select {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-bg-input, #1a2332)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239fb2c2' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  color: var(--color-text, #e8eef3);
+  font-size: var(--text-sm, 13px);
+  /* Emoji-first so option flags use Noto Color Emoji; text falls back
+     per-glyph to the system fonts below. */
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.lang-select:hover {
+  border-color: var(--color-border-strong);
+  background-color: var(--color-bg-overlay, #243447);
+}
+
+.lang-select:focus-visible {
+  outline: 2px solid var(--color-primary, #f0c33c);
+  outline-offset: 2px;
+}
+
+.lang-select option {
+  background: var(--color-bg-input, #1a2332);
+  color: var(--color-text, #e8eef3);
+}
+
 /* ---- Compact phones: keep two readable columns ---------------------------- */
 
 @media (max-width: 480px) {
@@ -116,5 +160,11 @@
 
   .lang-card__flag {
     font-size: 1.3rem;
+  }
+
+  .lang-select {
+    height: 28px;
+    font-size: 12px;
+    padding: 0 24px 0 8px;
   }
 }

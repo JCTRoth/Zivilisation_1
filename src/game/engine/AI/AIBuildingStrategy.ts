@@ -365,6 +365,8 @@ export class AIBuildingStrategy {
        * Defaults to true when the field is absent (unit tests).
        */
       garrisonOk?: boolean;
+      /** This turn's strategic branch (total war, nuclear endgame, …). */
+      strategyBranch?: string | null;
     }
   ): BuildingPlan[] {
     const plans: BuildingPlan[] = [];
@@ -471,6 +473,13 @@ export class AIBuildingStrategy {
       // Wonder rush strategy gets blanket bonus
       if (strategy === 'wonder_rush') {
         priority += 8;
+      }
+
+      // Arms race: in the nuclear endgame the Manhattan Project outranks
+      // every other wonder — it unlocks all civs' arsenals including ours.
+      if (wonderType === 'manhattan_project' && gameState.strategyBranch === 'nuclear_endgame') {
+        priority += 25;
+        reasons.push('arms-race');
       }
 
       // Cost penalty for wonders (they're expensive)

@@ -5,6 +5,7 @@ import { LEADER_PORTRAITS } from '@/data/LeaderPortraits';
 import LeaderPortrait from '@/components/ui/LeaderPortrait';
 import { useTranslation } from '@/i18n/useTranslation';
 import { translateDynamic, type TranslationKey } from '@/i18n';
+import LanguageSwitcher from '@/components/ui/LanguageSwitcher';
 import { defaultNationIndexForBrowser } from '@/data/CivilizationByLanguage';
 import { tGovernmentName } from '@/i18n/dataNames';
 import '../../styles/gameModalShell.css';
@@ -78,7 +79,7 @@ type GameSetupModalProps = {
  */
 function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   // Subscribes the whole wizard to language changes.
-  const { t } = useTranslation();
+  const { t, language, setLanguage } = useTranslation();
   // Drag-to-scroll on empty areas of the war table (desktop convenience).
   const bodyRef = useRef<HTMLDivElement>(null);
   const isPanningRef = useRef(false);
@@ -300,6 +301,7 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
         <header className="setup-nameplate">
           <h2 className="modal-title">🏛️ Zivilisation 1</h2>
           <div className="setup-nameplate__right">
+            <LanguageSwitcher value={language} onChange={setLanguage} compact />
             <span className="setup-nameplate__tag">{t('setup.nameplateTag')}</span>
             <span className="setup-nameplate__steps" aria-hidden="true">
               <span className={`setup-nameplate__dot${currentStep >= 1 ? ' is-on' : ''}`} />

@@ -18,6 +18,7 @@ import { useTranslation } from '@/i18n/useTranslation';
 import { tBuildingName, tSpecialistName, tUnitName, tWonderName } from '@/i18n/dataNames';
 import { GameUtils } from '@/utils/GameUtils';
 import GameModal from './ModalShell';
+import { UnitIcon } from '@/components/ui/UnitIcon';
 import type { City, Civilization, GameActions, ProductionItem } from '../../../../types/game';
 import '../../../styles/cityModal.css';
 import '../../../styles/wonders.css';
@@ -1248,8 +1249,12 @@ const CityModal: React.FC<CityModalProps> = ({
                                 key={unit.id}
                                 className="p-2 rounded bg-dark border border-secondary d-flex align-items-center gap-3"
                               >
-                                <span style={{ fontSize: '1.4rem', width: 28, textAlign: 'center' }}>
-                                  {unit.icon || props?.icon || '⚔️'}
+                                <span style={{ display: 'inline-flex', width: 28, justifyContent: 'center' }}>
+                                  <UnitIcon
+                                    unitType={unit.type}
+                                    emoji={unit.icon || props?.icon}
+                                    size={24}
+                                  />
                                 </span>
                                 <div className="flex-grow-1 min-width-0">
                                   <div className="d-flex align-items-center gap-2 flex-wrap">

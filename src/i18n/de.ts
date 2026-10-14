@@ -64,7 +64,7 @@ export const de: PartialTranslationDict = {
   'settings.skipEndTurnConfirmationHint': 'Den Zug nehmen, sobald Sie ihn drücken.',
   'settings.skipGameResultScreen': 'Endbildschirm überspringen',
   'settings.skipGameResultScreenHint':
-    'Kein Siegeskino, kein Schlussregister — das Game-Over-Panel bietet stattdessen Neustart und Beenden. Derselbe Schalter sitzt auf diesem Bildschirm.',
+    'Kein Triumpfkino, kein Schlussregister — das Game-Over-Panel bietet stattdessen Neustart und Beenden. Derselbe Schalter sitzt auf diesem Bildschirm.',
   'settings.devMode': 'Entwicklermodus',
   'settings.devModeHint': 'Werkzeuge des Inspektors: die vollständige Welttabelle und Debug-Hilfen.',
   'settings.uiScale': 'Gesamtgröße der Oberfläche',
@@ -772,7 +772,7 @@ export const de: PartialTranslationDict = {
 
 // result
   'result.yearPlaceholder': '—',
-  'result.eyebrow.victory': 'Sieg',
+  'result.eyebrow.victory': 'Triumpf',
   'result.eyebrow.defeat': 'Niederlage',
   'result.title.defeat': 'Ihr Reich ist gefallen',
   'result.title.humanVictory': 'Die Welt gehört Ihnen',
@@ -831,7 +831,7 @@ export const de: PartialTranslationDict = {
   'result.note.defeatBody': 'Beginnen Sie erneut: Eine neue Karte, neue Rivalen und neue Chancen warten auf Ihr Volk.',
   'result.cine.kicker.victory': 'Die Chronik von',
   'result.cine.kicker.defeat': 'Hier fiel',
-  'result.cine.word.victory': 'SIEG',
+  'result.cine.word.victory': 'TRIUMPF',
   'result.cine.word.defeat': 'NIEDERLAGE',
   'result.cine.cta.victory': 'Die Chronik entfalten',
   'result.cine.cta.defeat': 'Den letzten Bericht lesen',
@@ -1058,7 +1058,7 @@ export const de: PartialTranslationDict = {
 
 // reports
   'combat.artLabel': 'das Schlachtfeld',
-  'combat.eyebrowVictory': 'Sieg · {{stamp}}',
+  'combat.eyebrowVictory': 'Triumpf · {{stamp}}',
   'combat.eyebrowDefeat': 'Niederlage · {{stamp}}',
   'combat.title.storms': '{{unit}} stürmt {{city}}',
   'combat.title.destroys': '{{unit}} vernichtet {{defender}}',
@@ -1327,6 +1327,7 @@ export const de: PartialTranslationDict = {
   'unitActions.patrol': 'Patrouillieren',
   'unitActions.proposeAlliance': 'Bündnis vorschlagen',
   'unitActions.proposePeace': 'Frieden vorschlagen',
+  'unitActions.proposeCeasefire': 'Waffenstillstand vorschlagen',
   'unitActions.removeFishingNet': 'Fischernetz einholen (zurückrufen)',
   'unitActions.returningToPort': 'Rückkehr in den Hafen ({{count}}/6)',
   'unitActions.sailingToGround': 'Fährt zum Fischgrund',
@@ -1342,6 +1343,19 @@ export const de: PartialTranslationDict = {
   'unitActions.industrialSabotage': 'Industriesabotage',
   'unitActions.stealTechnology': 'Technologie stehlen',
   'unitActions.meetLeader': 'Anführer empfangen',
+  'unitActions.bribeHeading': 'BESTECHUNG',
+  'unitActions.chooseTarget': 'SPRECHEN MIT',
+  'unitActions.diplomacyHeading': 'DIPLOMATIE',
+  'unitActions.treatyHeading': 'VERTRÄGE',
+  'unitActions.openBorders': 'Offene Grenzen anbieten',
+  'unitActions.tradeAgreement': 'Handelsabkommen vorschlagen',
+  'unitActions.techExchange': 'Wissenstausch anbieten',
+  'unitActions.mutualDefense': 'Beistandspakt vorschlagen',
+  'unitActions.nonAggression': 'Nichtangriffspakt vorschlagen',
+  'unitActions.embargo': 'Gemeinsames Embargo vorschlagen',
+  'unitActions.noTarget': 'Keine fremde Stadt oder Einheit in der Nähe — rücke den Diplomaten heran.',
+  'unitActions.targetCity': 'Stadt: {{name}} ({{civ}})',
+  'unitActions.targetUnit': 'Einheit: {{name}} ({{civ}})',
 
   // ── Espionage results (diplomat inside a foreign city) ──────────────────
   'espionage.close': 'Schließen',

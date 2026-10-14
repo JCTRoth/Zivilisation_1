@@ -399,6 +399,23 @@ interface DynamicContentParams {
  */
 export class MapRenderer {
   /**
+   * Whether the blood-drop healing marker shows above a unit: it healed
+   * inside a city this round, and it is unstacked (alone on its tile) or the
+   * currently selected top unit — crowded tiles stay readable. Pure so the
+   * display rule is pinned without a canvas.
+   */
+  static healMarkerVisible(
+    healedRound: number | undefined,
+    currentRound: number | undefined,
+    stackSize: number,
+    unitId: string,
+    selectedUnitId: string | null | undefined,
+  ): boolean {
+    if (healedRound == null || healedRound !== currentRound) return false;
+    return stackSize <= 1 || unitId === selectedUnitId;
+  }
+
+  /**
    * Zoom at which the 2× offscreen terrain base (64 px/tile) would be
    * upscaled on screen and the direct, source-texture path takes over.
    */
@@ -1561,7 +1578,7 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
           ctx.font = `bold ${Math.max(12, scaledTileSize * 0.38)}px serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('⚔', x, y);
+          ctx.fillText('⚔️', x, y);
           ctx.restore();
         } else if (isNaval) {
           ctx.fillStyle = 'rgba(255, 0, 0, 0.27)'; // Red for naval units (~1/3 more transparent)
@@ -1699,6 +1716,27 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
               civilizations,
               combatAnimations,
             );
+            // Blood-drop healing marker: a unit that recovered HP inside a
+            // city this round shows a small ⚕ above its sprite — only when
+            // unstacked (alone on the tile) or currently selected as the top
+            // unit, so crowded tiles stay readable.
+            const healedThisRound = MapRenderer.healMarkerVisible(
+              (unit as { _healedRound?: number })._healedRound,
+              gameState.currentTurn,
+              stack.length,
+              unit.id,
+              gameState.selectedUnit,
+            );
+            if (healedThisRound) {
+              const dropX = unitPos.x + stackOffset;
+              const dropY = unitPos.y + stackOffset - scaledTileSize * 0.55;
+              ctx.save();
+              ctx.font = `${Math.max(10, cameraZoom * 12)}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'bottom';
+              ctx.fillText('⚕', dropX, dropY);
+              ctx.restore();
+            }
             drawnOnTile++;
           }
 
@@ -3195,14 +3233,18 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
       ctx.textBaseline = 'middle';
       ctx.strokeStyle = '#FFFFFF';
       ctx.lineWidth = 2.5;
-      ctx.strokeText('⚔', sx, sy - Math.max(8, cameraZoom * 8) - 6);
-      ctx.fillText('⚔', sx, sy - Math.max(8, cameraZoom * 8) - 6);
+      ctx.strokeText('⚔️', sx, sy - Math.max(8, cameraZoom * 8) - 6);
+      ctx.fillText('⚔️', sx, sy - Math.max(8, cameraZoom * 8) - 6);
       ctx.restore();
     }
 
     // Destination marker: ring for a move, ⚔ for an attack.
     const dest = steps[steps.length - 1];
-    if (isExplored(dest.col, dest.row)) {
+    // No destination marker on the tile the unit already stands on (the route
+    // has effectively run its course there); showing it there is just noise.
+    if (dest.col === unit.col && dest.row === unit.row) {
+      // skip destination marker
+    } else if (isExplored(dest.col, dest.row)) {
       const { x: dx, y: dy } = squareToScreen(dest.col, dest.row);
       const destUnit = units.find(
         u => u.col === dest.col && u.row === dest.row && !u.isDefeated
@@ -3224,8 +3266,8 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
         ctx.textBaseline = 'middle';
         ctx.strokeStyle = '#FFFFFF';
         ctx.lineWidth = 2.5;
-        ctx.strokeText('⚔', dx, dy - Math.max(8, cameraZoom * 8) - 10);
-        ctx.fillText('⚔', dx, dy - Math.max(8, cameraZoom * 8) - 10);
+        ctx.strokeText('⚔️', dx, dy - Math.max(8, cameraZoom * 8) - 10);
+        ctx.fillText('⚔️', dx, dy - Math.max(8, cameraZoom * 8) - 10);
       } else {
         ctx.strokeStyle = `rgba(255, 224, 102, ${lineAlpha})`;
         ctx.lineWidth = Math.max(2, cameraZoom * 2);

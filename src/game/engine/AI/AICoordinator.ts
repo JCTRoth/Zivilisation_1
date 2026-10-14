@@ -122,6 +122,19 @@ export interface ArmyGroupOptions {
   roundNumber?: number;
 }
 
+/** What a fleet group is FOR. */
+export type NavalFleetMission = 'escort' | 'hunt' | 'blockade' | 'patrol' | 'sealift';
+
+/** A coordinated fleet group: hulls that sail and fight together. */
+export interface NavalFleetGroup {
+  id: string;
+  shipIds: string[];
+  mission: NavalFleetMission;
+  targetLocation: { col: number; row: number };
+  rallyPoint: { col: number; row: number };
+  status: 'forming' | 'sailing' | 'engaging';
+}
+
 // ---------------------------------------------------------------------------
 // AICoordinator class
 // ---------------------------------------------------------------------------
@@ -513,6 +526,269 @@ export class AICoordinator {
   /** Shared combat-strength model — identical to `calculateGroupStrength`. */
   private static unitStrength(unit: Unit): number {
     return Math.max(1, unit.attack || 0) + (unit.defense || 0) * 0.5;
+  }
+
+  // -------------------------------------------------------------------------
+  // Naval fleet coordination: escort, hunter-killer, blockade, patrol
+  // -------------------------------------------------------------------------
+
+  /**
+   * Ensure the naval governor is ACTIVE even when the AI never preset one.
+   *
+   * The land army always has groups, targets and a plan; the navy historically
+   * had none of those until a colony/invasion mission happened to exist — and
+   * missions only exist after islands/enemies are KNOWN, which needs hulls to
+   * go and find them. So on a sea world the fleet never bootstrapped.
+   *
+   * This is the activation gate the coordinator owns: given the civ's sea
+   * situation, answer what the navy needs RIGHT NOW (transport / escort /
+   * scout / hunter), even when no mission, no group and no doctrine choice
+   * exists yet. `AIManager` calls it at the top of the turn; `AutoProduction`
+   * calls it when the doctrine says "satisfied" but the sea says otherwise.
+   * Pure — the callers build, plan and sail.
+   */
+  static ensureNavalActivation(input: {
+    needsNavy: boolean;
+    landmassCount: number;
+    ownCoastalCities: number;
+    ownTransports: number;
+    ownWarships: number;
+    canBuildShips: boolean;
+    hasColonyMission: boolean;
+    hasInvasionMission: boolean;
+    colonisableIslands: number;
+    seaInvasionTargets: number;
+    unexploredWaterShare: number;
+    atWar: boolean;
+    troopsAvailable: boolean;
+  }): { activate: boolean; needsTransport: boolean; needsEscort: boolean; needsScout: boolean; reason: string } {
+    const {
+      needsNavy, landmassCount, ownCoastalCities, ownTransports, ownWarships,
+      canBuildShips, hasColonyMission, hasInvasionMission,
+      colonisableIslands, seaInvasionTargets, unexploredWaterShare, atWar, troopsAvailable,
+    } = input;
+    const seaWorld = needsNavy || landmassCount > 1;
+    if (!seaWorld || ownCoastalCities === 0 || !canBuildShips) {
+      return { activate: false, needsTransport: false, needsEscort: false, needsScout: false, reason: 'no sea world or no port' };
+    }
+    // Sealift missing while there is somewhere to sail (or dark water to chart).
+    const wantsSealift = colonisableIslands > 0 || seaInvasionTargets > 0
+      || hasColonyMission || hasInvasionMission
+      || (unexploredWaterShare > 0.15 && troopsAvailable);
+    const needsTransport = wantsSealift && ownTransports === 0;
+    // Escort missing while troops are at sea (or about to be).
+    const needsEscort = (ownTransports > 0 || wantsSealift) && ownWarships === 0;
+    // Scouts missing while water is dark and nothing hunts.
+    const needsScout = unexploredWaterShare > 0.25 && ownWarships === 0 && ownTransports === 0;
+    // War across water with no hulls at all is the emergency activation.
+    const warStranded = atWar && seaInvasionTargets > 0 && ownTransports + ownWarships === 0;
+    const activate = needsTransport || needsEscort || needsScout || warStranded;
+    let reason = 'navy active';
+    if (warStranded) reason = 'war across water with no hulls — emergency sealift + escort';
+    else if (needsTransport && needsEscort) reason = 'sea world with sealift to run and no escort — bootstrap transport + screen';
+    else if (needsTransport) reason = 'sea world with islands/targets but no sealift — bootstrap transport';
+    else if (needsEscort) reason = 'troops at sea with no screen — bootstrap escort';
+    else if (needsScout) reason = 'dark water with no hulls — bootstrap scout';
+    return { activate, needsTransport, needsEscort, needsScout, reason };
+  }
+
+  /**
+   * Pair each transport with an escort warship (1 escort per transport, reused
+   * when short). Transports without an escort are the ones that die to the
+   * first enemy sail — this is what stops the "ferry sails alone" losses.
+   * Pure — the caller sails the pairs together.
+   */
+  static assignNavalEscorts(input: {
+    transportIds: readonly string[];
+    warshipIds: readonly string[];
+  }): Map<string, string | null> {
+    const pairs = new Map<string, string | null>();
+    const { transportIds, warshipIds } = input;
+    if (transportIds.length === 0) return pairs;
+    if (warshipIds.length === 0) {
+      for (const t of transportIds) pairs.set(t, null);
+      return pairs;
+    }
+    transportIds.forEach((t, i) => {
+      pairs.set(t, warshipIds[i % warshipIds.length]);
+    });
+    return pairs;
+  }
+
+  /**
+   * Form fleet groups from idle warships + transports: hunter-killers (2-3
+   * warships per known enemy fleet), blockades (1-2 per enemy coastal city),
+   * escorts (1 warship glued to each transport on a mission), patrols (rest).
+   * Land army groups need 3+ units; fleets work in pairs — a lone escort still
+   * screens a transport, and two sails still hunt a fisher boat.
+   * Pure — like formArmyGroups, the caller sails them.
+   */
+  static formNavalGroups(input: {
+    transports: Array<{ id: string; col: number; row: number }>;
+    warships: Array<{ id: string; col: number; row: number; attack?: number }>;
+    enemyFleets: Array<{ col: number; row: number; strength: number }>;
+    enemyCoastalCities: Array<{ col: number; row: number }>;
+    escortPairs?: ReadonlyMap<string, string | null>;
+    existingGroups?: NavalFleetGroup[];
+    distanceFn: (c1: number, r1: number, c2: number, r2: number) => number;
+  }): NavalFleetGroup[] {
+    const { transports, warships, enemyFleets, enemyCoastalCities, escortPairs, existingGroups = [], distanceFn } = input;
+    const groups: NavalFleetGroup[] = [];
+    const assigned = new Set<string>();
+    // Carry forward groups whose ships still exist.
+    const liveIds = new Set([...transports.map((t) => t.id), ...warships.map((w) => w.id)]);
+    for (const g of existingGroups) {
+      const live = g.shipIds.filter((id) => liveIds.has(id));
+      if (live.length >= 1) groups.push({ ...g, shipIds: live });
+    }
+    // Escort groups: each transport + its screen sail together.
+    if (escortPairs) {
+      for (const t of transports) {
+        const escort = escortPairs.get(t.id);
+        if (!escort || assigned.has(t.id) || assigned.has(escort)) continue;
+        const war = warships.find((w) => w.id === escort);
+        if (!war) continue;
+        groups.push({
+          id: `fleet_escort_${t.id}`,
+          shipIds: [t.id, war.id],
+          mission: 'escort',
+          targetLocation: { col: t.col, row: t.row },
+          rallyPoint: { col: t.col, row: t.row },
+          status: 'sailing',
+        });
+        assigned.add(t.id);
+        assigned.add(war.id);
+      }
+    }
+    // Hunter-killers: 2 warships per enemy fleet concentration.
+    const freeWarships = warships.filter((w) => !assigned.has(w.id));
+    for (const fleet of enemyFleets) {
+      const near = freeWarships
+        .filter((w) => !assigned.has(w.id))
+        .map((w) => ({ w, d: distanceFn(w.col, w.row, fleet.col, fleet.row) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 2);
+      if (near.length === 0) continue;
+      const ids = near.map((n) => n.w.id);
+      ids.forEach((id) => assigned.add(id));
+      groups.push({
+        id: `fleet_hunt_${fleet.col}_${fleet.row}`,
+        shipIds: ids,
+        mission: 'hunt',
+        targetLocation: { col: fleet.col, row: fleet.row },
+        rallyPoint: { col: near[0].w.col, row: near[0].w.row },
+        status: 'sailing',
+      });
+      if (groups.length >= 4) break;
+    }
+    // Blockades: 1 warship per enemy coastal city (nearest free hull).
+    for (const city of enemyCoastalCities) {
+      if (groups.length >= 5) break;
+      const near = freeWarships
+        .filter((w) => !assigned.has(w.id))
+        .map((w) => ({ w, d: distanceFn(w.col, w.row, city.col, city.row) }))
+        .sort((a, b) => a.d - b.d)[0];
+      if (!near) continue;
+      assigned.add(near.w.id);
+      groups.push({
+        id: `fleet_blockade_${city.col}_${city.row}`,
+        shipIds: [near.w.id],
+        mission: 'blockade',
+        targetLocation: { col: city.col, row: city.row },
+        rallyPoint: { col: near.w.col, row: near.w.row },
+        status: 'sailing',
+      });
+    }
+    // Patrol: whatever warships remain sail in pairs (or alone).
+    const leftover = freeWarships.filter((w) => !assigned.has(w.id));
+    for (let i = 0; i < leftover.length; i += 2) {
+      const pair = leftover.slice(i, i + 2);
+      groups.push({
+        id: `fleet_patrol_${pair[0].id}`,
+        shipIds: pair.map((w) => w.id),
+        mission: 'patrol',
+        targetLocation: { col: pair[0].col, row: pair[0].row },
+        rallyPoint: { col: pair[0].col, row: pair[0].row },
+        status: 'sailing',
+      });
+    }
+    // Unescorted transports sail as their own (vulnerable) group so the caller
+    // sees them instead of leaving them out of every plan.
+    for (const t of transports) {
+      if (assigned.has(t.id)) continue;
+      groups.push({
+        id: `fleet_sealift_${t.id}`,
+        shipIds: [t.id],
+        mission: 'sealift',
+        targetLocation: { col: t.col, row: t.row },
+        rallyPoint: { col: t.col, row: t.row },
+        status: 'sailing',
+      });
+    }
+    return groups.slice(0, 6);
+  }
+
+  /** Where a hull in a fleet group should sail (escort sticks to its transport). */
+  static getFleetTarget(
+    shipId: string,
+    fleets: NavalFleetGroup[],
+    shipPositions?: ReadonlyMap<string, { col: number; row: number }>,
+  ): { col: number; row: number; mission: NavalFleetMission } | null {
+    for (const fleet of fleets) {
+      if (!fleet.shipIds.includes(shipId)) continue;
+      if (fleet.mission === 'escort' && shipPositions) {
+        // Escorts sail TO their transport, transports sail to the objective.
+        const transportId = fleet.shipIds.find((id) => id !== shipId);
+        const transportPos = transportId ? shipPositions.get(transportId) : undefined;
+        // Heuristic: the first id in an escort pair is the transport (see
+        // formNavalGroups). If this ship IS that first id, it leads.
+        if (fleet.shipIds[0] === shipId) return { ...fleet.targetLocation, mission: fleet.mission };
+        if (transportPos) return { ...transportPos, mission: fleet.mission };
+      }
+      return { ...fleet.targetLocation, mission: fleet.mission };
+    }
+    return null;
+  }
+
+  /**
+   * Which coastal cities are naval bases the fleet depends on (harbour value
+   * for the building auditor): a city with a fleet staging from it, building
+   * a hull, or under blockade threat. A harbour inland or in a quiet backwater
+   * is upkeep without a fleet — the auditor reads this.
+   */
+  static summarizeNavalSituation(input: {
+    city: { id: string; col: number; row: number };
+    fleets: NavalFleetGroup[];
+    units: Unit[];
+    civilizationId: number;
+    coastalCityIds: ReadonlySet<string>;
+    distanceFn: (c1: number, r1: number, c2: number, r2: number) => number;
+    radius?: number;
+  }): { cityId: string; role: 'naval_base' | 'fishing_port' | 'blockaded' | 'quiet'; stagingFleets: number; nearbyHullCount: number } {
+    const { city, fleets, units, civilizationId, coastalCityIds, distanceFn, radius = 6 } = input;
+    if (!coastalCityIds.has(city.id)) {
+      return { cityId: city.id, role: 'quiet', stagingFleets: 0, nearbyHullCount: 0 };
+    }
+    let stagingFleets = 0;
+    for (const f of fleets) {
+      if (distanceFn(f.rallyPoint.col, f.rallyPoint.row, city.col, city.row) <= radius) stagingFleets++;
+    }
+    let nearbyHullCount = 0;
+    let enemyHullNear = 0;
+    for (const u of units) {
+      if (u.isDefeated) continue;
+      const d = distanceFn(u.col, u.row, city.col, city.row);
+      if (d > radius) continue;
+      const isNaval = (u as { type?: string }).type !== undefined; // caller filters naval; count hulls only
+      if (!isNaval) continue;
+      if (u.civilizationId === civilizationId) nearbyHullCount++;
+      else enemyHullNear++;
+    }
+    let role: 'naval_base' | 'fishing_port' | 'blockaded' | 'quiet' = 'quiet';
+    if (enemyHullNear >= 2) role = 'blockaded';
+    else if (stagingFleets > 0 || nearbyHullCount > 0) role = 'naval_base';
+    else role = 'fishing_port';
+    return { cityId: city.id, role, stagingFleets, nearbyHullCount };
   }
 
   // -------------------------------------------------------------------------

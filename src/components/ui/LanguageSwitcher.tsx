@@ -8,6 +8,8 @@ interface LanguageSwitcherProps {
   value: LanguageId;
   /** Called with the picked language id. The caller owns persisting it. */
   onChange: (language: LanguageId) => void;
+  /** Compact mode: horizontal flag-only row for tight spaces (e.g. setup header). */
+  compact?: boolean;
 }
 
 /**
@@ -19,7 +21,7 @@ interface LanguageSwitcherProps {
  * Changing the language is applied instantly by the caller, which means the
  * whole UI — including this switcher's own labels — repaints immediately.
  */
-const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ value, onChange }) => {
+const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ value, onChange, compact = false }) => {
   const { languages, t } = useTranslation();
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -39,6 +41,23 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ value, onChange }) 
     const nextIndex = (index + (forward ? 1 : -1) + count) % count;
     pick(languages[nextIndex].id, nextIndex);
   };
+
+  if (compact) {
+    return (
+      <select
+        className="lang-select"
+        value={value}
+        onChange={(e) => onChange(e.target.value as LanguageId)}
+        aria-label={t('language.ariaGroup')}
+      >
+        {languages.map((language) => (
+          <option key={language.id} value={language.id}>
+            {language.flag} {language.nativeName}
+          </option>
+        ))}
+      </select>
+    );
+  }
 
   return (
     <div className="lang-switch" role="radiogroup" aria-label={t('language.ariaGroup')}>

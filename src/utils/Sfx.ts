@@ -43,8 +43,12 @@ export type SfxCue =
  * and be reverted the same way.
  *
  * Leave a row out (or set it to '') to keep the synthesized version.
+ *
+ * Exported so a test — and, later, a manifest loader — can register a file at
+ * runtime without editing this module. `playSfx` reads it live rather than
+ * snapshotting it, so a row added after load takes effect immediately.
  */
-const CUE_FILES: Partial<Record<SfxCue, string>> = {
+export const CUE_FILES: Partial<Record<SfxCue, string>> = {
   // 'unitStrike':       '/assets/sfx/unit-strike.ogg',
   // 'unitDefeated':     '/assets/sfx/unit-defeated.ogg',
   // 'unitDisbanded':    '/assets/sfx/unit-disbanded.ogg',
@@ -139,6 +143,17 @@ export function unlockAudio(): void {
 }
 
 /**
+ * Drop the cached AudioContext so the next cue builds a fresh one.
+ *
+ * Exists for tests: the context is module state, so two assertions in one file
+ * would otherwise share whichever fake the first one installed. Nothing in the
+ * game calls it — a real context is cheap to keep and expensive to recreate.
+ */
+export function disposeAudio(): void {
+  context = null;
+}
+
+/**
  * Play one of the game's cues. No-op when sound is off in settings, or when
  * the browser has no audio at all.
  *
@@ -168,7 +183,7 @@ export function playSfx(cue: SfxCue): void {
   if (!notes) return;
   const start = ctx.currentTime + 0.02;
   const master = ctx.createGain();
-  master.gain.value = UNIT_CUE_GAIN[cue] ?? 0.18;
+  master.gain.value = (UNIT_CUE_GAIN[cue] ?? 1) * BASE_GAIN;
   master.connect(ctx.destination);
 
   for (const note of notes) {
@@ -189,11 +204,18 @@ export function playSfx(cue: SfxCue): void {
 }
 
 /**
- * Relative loudness per cue, as a multiplier on the master gain.
+ * Loudness of the one-off event fanfares — a stolen technology, a captured
+ * city — which are the sounds a player should clearly hear.
+ */
+const BASE_GAIN = 0.18;
+
+/**
+ * Relative loudness per cue, as a multiplier on `BASE_GAIN`.
  *
  * The unit cues fire on every combat round while the event fanfares fire once
  * per game, so the strikes and deaths sit underneath rather than on top of
- * everything the player is listening for.
+ * everything the player is listening for: 0.55 × 0.18 is a blow heard under a
+ * fanfare, not a blow shouted over it.
  */
 const UNIT_CUE_GAIN: Partial<Record<SfxCue, number>> = {
   unitStrike: 0.55,

@@ -78,16 +78,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
 
   const currentTurn = useGameStore((state) => state.gameState.currentTurn);
   const currentYear = useGameStore((state) => state.gameState.currentYear);
-  const actions = useGameStore((state) => state.actions);
-  const skipResultScreen = useGameStore((state) => state.settings.skipGameResultScreen);
-  // The checkbox starts from the persisted setting, so ticking it here and
-  // ticking the Settings switch are the same fact, not two of them.
-  const [dontShowAgain, setDontShowAgain] = useState(skipResultScreen);
 
-  // A fresh outcome resets the box to whatever is saved.
-  useEffect(() => {
-    setDontShowAgain(skipResultScreen);
-  }, [resultStamp, skipResultScreen]);
   // Select the raw arrays (stable store references) — filtering inside the
   // selector would return a new array every snapshot and loop forever.
   const allCities = useGameStore((state) => state.cities);
@@ -222,7 +213,13 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
           onClose={onClose}
           tone={isVictory ? 'gold' : 'solemn'}
           size="lg"
-          dialogClassName="gm-chronicle"
+          /* `className`, not `dialogClassName`: react-bootstrap puts
+             dialogClassName on `.modal-dialog`, which is INSIDE `.modal` and
+             therefore stuck at the parent's 1055 — raising it would raise
+             nothing. The class has to sit on the portalled element itself.
+             The outcome rides along here too: the wrapper that carries
+             `.defeat` lives outside the portal, so it cannot style this. */
+          className={isVictory ? 'gm-chronicle' : 'gm-chronicle gm-chronicle--defeat'}
           artSize="lg"
           icon={isVictory ? '👑' : '🕯️'}
           artLabel={isVictory ? t('result.art.victory' as TranslationKey) : t('result.art.defeat' as TranslationKey)}
@@ -423,8 +420,9 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
               autoFocus
             >
               {isVictory ? t('result.cine.cta.victory' as TranslationKey) : t('result.cine.cta.defeat' as TranslationKey)}
+              {/* Left, because the chronicle it opens unrolls from the right. */}
               <span className="gr-cine__cta-arrow" aria-hidden="true">
-                →
+                ←
               </span>
             </button>
           </div>
@@ -441,25 +439,6 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
             </button>
           </div>
 
-          {/* "Don't show this again" — the same fact as the Settings switch,
-              written from the screen it applies to so the player never has to
-              remember where the option lives. */}
-          <label
-            className="gr-cine__skip"
-            style={{ animationDelay: `${0.9 + verses.length * 0.45 + 0.75}s` }}
-          >
-            <input
-              type="checkbox"
-              className="gr-cine__skip-box"
-              checked={dontShowAgain}
-              onChange={(e) => {
-                const next = e.target.checked;
-                setDontShowAgain(next);
-                actions.updateSettings({ skipGameResultScreen: next });
-              }}
-            />
-            <span>{t('result.skipAgain' as TranslationKey)}</span>
-          </label>
         </div>
       </div>
     </div>

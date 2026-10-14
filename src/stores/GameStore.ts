@@ -533,7 +533,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ...state.camera,
         ...cameraUpdate,
         ...(cameraUpdate.zoom !== undefined
-          ? { zoom: clampZoom(cameraUpdate.zoom) }
+          ? { zoom: clampZoom(cameraUpdate.zoom, state.settings.devMode) }
           : null),
       }
     })),

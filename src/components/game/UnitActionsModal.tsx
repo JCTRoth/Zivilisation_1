@@ -1,8 +1,61 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from '@/i18n/useTranslation';
+import { tUnitName } from '@/i18n/dataNames';
 import type { TranslationKey } from '@/i18n';
+import type { DiplomatAction, DiplomatTarget } from '@/game/engine/DiplomacyTypes';
 import { UnitActionsModalProps } from './UnitActionsModalProps';
 import '../../styles/unitActionsModal.css';
+
+/**
+ * One entry in the diplomat's menu: which engine ability it runs, what the
+ * button says and which emoji stands in for it.
+ *
+ * The list is deliberately exhaustive over `DiplomatAction` — `Record<DiplomatAction, …>`
+ * is what makes a newly added ability a compile error here instead of a button
+ * that silently never appears.
+ */
+const DIPLOMAT_ACTION_UI: Record<
+  DiplomatAction,
+  { icon: string; label: string; section: 'diplomacy' | 'treaty' | 'bribe' | 'infiltration' }
+> = {
+  gather_intelligence: { icon: '🔍', label: 'unitActions.gatherIntelligence', section: 'diplomacy' },
+  propose_peace: { icon: '🕊️', label: 'unitActions.proposePeace', section: 'diplomacy' },
+  propose_ceasefire: { icon: '🏳️', label: 'unitActions.proposeCeasefire', section: 'diplomacy' },
+  propose_alliance: { icon: '🤝', label: 'unitActions.proposeAlliance', section: 'diplomacy' },
+  demand_tribute: { icon: '💰', label: 'unitActions.demandTribute', section: 'diplomacy' },
+  offer_open_borders: { icon: '🚪', label: 'unitActions.openBorders', section: 'treaty' },
+  propose_trade_agreement: { icon: '📦', label: 'unitActions.tradeAgreement', section: 'treaty' },
+  offer_tech_exchange: { icon: '🔬', label: 'unitActions.techExchange', section: 'treaty' },
+  propose_mutual_defense: { icon: '🛡️', label: 'unitActions.mutualDefense', section: 'treaty' },
+  propose_non_aggression: { icon: '🤚', label: 'unitActions.nonAggression', section: 'treaty' },
+  propose_embargo: { icon: '🚫', label: 'unitActions.embargo', section: 'treaty' },
+  bribe_unit: { icon: '🎭', label: 'unitActions.bribeUnit', section: 'bribe' },
+  establish_embassy: { icon: '🏛️', label: 'unitActions.establishEmbassy', section: 'infiltration' },
+  investigate_city: { icon: '🗺️', label: 'unitActions.investigateCity', section: 'infiltration' },
+  industrial_sabotage: { icon: '🔥', label: 'unitActions.industrialSabotage', section: 'infiltration' },
+  steal_technology: { icon: '📜', label: 'unitActions.stealTechnology', section: 'infiltration' },
+};
+
+/** Sections in the order they are drawn, each with its own heading. */
+const DIPLOMAT_SECTIONS = [
+  { id: 'diplomacy' as const, heading: 'unitActions.diplomacyHeading' },
+  { id: 'treaty' as const, heading: 'unitActions.treatyHeading' },
+  { id: 'bribe' as const, heading: 'unitActions.bribeHeading' },
+  { id: 'infiltration' as const, heading: 'unitActions.espionageHeading' },
+];
+
+/**
+ * Which court the click was aimed at. Travels with the action so a diplomat
+ * standing between a city and a unit of the same civ can be told which one the
+ * player meant, and so the engine never has to guess.
+ */
+function targetData(target: DiplomatTarget): Record<string, unknown> {
+  return {
+    targetCivId: target.targetCivId,
+    cityId: target.cityId,
+    unitId: target.unitId,
+  };
+}
 
 const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
   contextMenu,
@@ -11,10 +64,17 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
   gameEngine
 }) => {
   const { t } = useTranslation();
+  // Which of the adjacent courts the menu is showing. A diplomat can stand
+  // between two rivals; without this the player could only ever open with
+  // whichever one the engine happened to find first.
+  //
+  // Remembered per unit: the modal stays mounted between openings, so a raw
+  // index would carry the previous unit's choice over to the next one.
+  const [selection, setSelection] = useState({ unitId: '', index: 0 });
   if (!contextMenu) return null;
 
-  const handleAction = (action: string) => {
-    onExecuteAction(action);
+  const handleAction = (action: string, data?: Record<string, unknown>) => {
+    onExecuteAction(action, data);
     onClose();
   };
 
@@ -24,6 +84,31 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
   // Sleeping units: Fortify disabled, other actions available
   const isFortified = !!contextMenu.unit?.isFortified;
   const isSleeping = !!contextMenu.unit?.isSleeping;
+
+  // ── Diplomat ────────────────────────────────────────────────────────
+  // Everything comes from the engine, which is the only place that knows what
+  // this diplomat can actually do where it stands: a war zone has no embassy to
+  // found, a city has no unit to bribe, and a signed treaty is not offered
+  // again. The menu used to render a fixed list of buttons regardless, so most
+  // of them led to "diplomat action failed".
+  const diplomat = contextMenu.unit?.type === 'diplomat' ? contextMenu.unit : null;
+  const targets: DiplomatTarget[] = diplomat && gameEngine?.getDiplomatTargets
+    ? gameEngine.getDiplomatTargets(diplomat.id)
+    : [];
+  const targetIndex = selection.unitId === (diplomat?.id ?? '') ? selection.index : 0;
+  const selectTarget = (index: number) => setSelection({ unitId: diplomat?.id ?? '', index });
+  const target = targets[Math.min(targetIndex, Math.max(targets.length - 1, 0))];
+  const targetCivName = (target && gameEngine?.civilizations?.[target.targetCivId]?.name) || '';
+  /** How the chosen court is named in the menu — its city name, or its unit type. */
+  const targetName = (tg: DiplomatTarget): string => (tg.kind === 'city'
+    ? (tg.cityName ?? '')
+    : tUnitName(tg.unitType ?? '', tg.unitType ?? ''));
+  const targetLabel = target
+    ? t(
+      (target.kind === 'city' ? 'unitActions.targetCity' : 'unitActions.targetUnit') as TranslationKey,
+      { name: targetName(target), civ: targetCivName },
+    )
+    : '';
 
   // Settler action availability — mirrors the engine's buildImprovement /
   // foundCityWithSettler checks so only genuinely possible options are shown.
@@ -223,91 +308,82 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                 </>
               )}
 
-              {contextMenu.unit.type === 'diplomat' && (
+              {diplomat && (
                 <>
-                  <button
-                    type="button"
-                    className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
-                    onClick={() => handleAction('diplomat_propose_peace')}
-                  >
-                    <span aria-hidden="true">🕊️</span>{t('unitActions.proposePeace' as TranslationKey)}
-                  </button>
-                  <button
-                    type="button"
-                    className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
-                    onClick={() => handleAction('diplomat_propose_alliance')}
-                  >
-                    <span aria-hidden="true">🤝</span>{t('unitActions.proposeAlliance' as TranslationKey)}
-                  </button>
-                  <button
-                    type="button"
-                    className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
-                    onClick={() => handleAction('diplomat_demand_tribute')}
-                  >
-                    <span aria-hidden="true">💰</span>{t('unitActions.demandTribute' as TranslationKey)}
-                  </button>
-                  <button
-                    type="button"
-                    className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
-                    onClick={() => handleAction('diplomat_bribe')}
-                  >
-                    <span aria-hidden="true">🎭</span>{t('unitActions.bribeUnit' as TranslationKey)}
-                  </button>
-                  <button
-                    type="button"
-                    className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
-                    onClick={() => handleAction('diplomat_gather_intel')}
-                  >
-                    <span aria-hidden="true">🔍</span>{t('unitActions.gatherIntelligence' as TranslationKey)}
-                  </button>
-                  <div className="context-menu-divider" role="separator">
-                    {t('unitActions.espionageHeading' as TranslationKey)}
-                  </div>
-                  <button
-                    type="button"
-                    className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
-                    onClick={() => handleAction('diplomat_meet_leader')}
-                  >
-                    <span aria-hidden="true">👑</span>{t('unitActions.meetLeader' as TranslationKey)}
-                  </button>
-                  <button
-                    type="button"
-                    className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
-                    onClick={() => handleAction('diplomat_establish_embassy')}
-                  >
-                    <span aria-hidden="true">🏛️</span>{t('unitActions.establishEmbassy' as TranslationKey)}
-                  </button>
-                  <button
-                    type="button"
-                    className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
-                    onClick={() => handleAction('diplomat_investigate_city')}
-                  >
-                    <span aria-hidden="true">🗺️</span>{t('unitActions.investigateCity' as TranslationKey)}
-                  </button>
-                  <button
-                    type="button"
-                    className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
-                    onClick={() => handleAction('diplomat_sabotage')}
-                  >
-                    <span aria-hidden="true">🔥</span>{t('unitActions.industrialSabotage' as TranslationKey)}
-                  </button>
-                  <button
-                    type="button"
-                    className="context-menu-item"
-                    disabled={!canAct(contextMenu.unit) || isFortified || isSleeping}
-                    onClick={() => handleAction('diplomat_steal_tech')}
-                  >
-                    <span aria-hidden="true">📜</span>{t('unitActions.stealTechnology' as TranslationKey)}
-                  </button>
+                  {/* With several courts in reach, let the player say which one
+                      the diplomat opens with. One target needs no chooser. */}
+                  {targets.length > 1 && (
+                    <div className="context-menu-targets" role="group">
+                      <span className="context-menu-targets__label">
+                        {t('unitActions.chooseTarget' as TranslationKey)}
+                      </span>
+                      {targets.map((tg, i) => (
+                        <button
+                          key={`${tg.kind}-${tg.cityId ?? tg.unitId}`}
+                          type="button"
+                          className="context-menu-target"
+                          aria-pressed={i === (target ? targets.indexOf(target) : 0)}
+                          onClick={() => selectTarget(i)}
+                        >
+                          <span aria-hidden="true">{tg.kind === 'city' ? '🏙️' : '🎖️'}</span>
+                          {targetName(tg)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {target && (
+                    <div className="unit-context-menu__unit-type">{targetLabel}</div>
+                  )}
+
+                  {!target && (
+                    <div className="context-menu-hint">
+                      {t('unitActions.noTarget' as TranslationKey)}
+                    </div>
+                  )}
+
+                  {target && (
+                    <>
+                      {/* An audience is not an engine action — the player is
+                          simply received, and the negotiation screen opens. */}
+                      {target.kind === 'city' && (
+                        <button
+                          type="button"
+                          className="context-menu-item"
+                          disabled={!canAct(diplomat) || isFortified || isSleeping}
+                          onClick={() => handleAction('diplomat_meet_leader', targetData(target))}
+                        >
+                          <span aria-hidden="true">👑</span>{t('unitActions.meetLeader' as TranslationKey)}
+                        </button>
+                      )}
+
+                      {DIPLOMAT_SECTIONS.map((section) => {
+                        const actions = target.actions.filter(
+                          (a) => DIPLOMAT_ACTION_UI[a].section === section.id,
+                        );
+                        if (actions.length === 0) return null;
+                        return (
+                          <div key={section.id} className="context-menu-section">
+                            <div className="context-menu-divider" role="separator">
+                              {t(section.heading as TranslationKey)}
+                            </div>
+                            {actions.map((action) => (
+                              <button
+                                key={action}
+                                type="button"
+                                className="context-menu-item"
+                                disabled={!canAct(diplomat) || isFortified || isSleeping}
+                                onClick={() => handleAction(`diplomat_${action}`, targetData(target))}
+                              >
+                                <span aria-hidden="true">{DIPLOMAT_ACTION_UI[action].icon}</span>
+                                {t(DIPLOMAT_ACTION_UI[action].label as TranslationKey)}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
                 </>
               )}
 

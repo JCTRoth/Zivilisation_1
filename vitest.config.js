@@ -20,10 +20,15 @@ export default defineConfig({
     // machine's locale — pin it so assertions on English strings hold on every
     // dev box (see tests/setup.ts).
     setupFiles: ['./tests/setup.ts'],
-    // e2e specs use Playwright's runner — exclude them from vitest
-    // `tmp*` files are ad-hoc diagnostics, not tests: they play hundreds of
-    // turns to print telemetry and exhaust the heap (tmpEconDiag.test.ts says
-    // so in its own header). Run them by hand when you need their output.
+    // e2e specs use Playwright's runner — exclude them from vitest.
+    //
+    // `tmp*.test.ts` is a NAMING CONVENTION for ad-hoc diagnostics, not tests:
+    // probes that play hundreds of turns to print telemetry, write JSON to
+    // /tmp, or assert nothing beyond `expect(true).toBe(true)`. They are
+    // excluded so `npm test` cannot be held hostage by a probe that does not
+    // terminate — which is exactly what happened before this rule earned its
+    // keep. A file that asserts something belongs under a name that is not
+    // `tmp*`, and stays in the suite.
     exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**', '**/tmp*.test.ts'],
   },
   resolve: {

@@ -6,6 +6,26 @@ import { getUnitSvgPath } from '@/data/UnitIconConfig';
 
 const iconCache = new Map<string, HTMLImageElement | string>(); // HTMLImageElement for SVG, string for emoji
 const loadingPromises = new Map<string, Promise<HTMLImageElement | string>>();
+/**
+ * Notified whenever an icon settles, so a React surface that asked before the
+ * artwork had arrived can re-render with the picture instead of the emoji.
+ * Without this the map (which polls `getUnitIcon` on every frame) got the
+ * artwork but every list — the stack modal, the city garrison — kept showing
+ * the fallback glyph forever.
+ */
+const iconListeners = new Set<() => void>();
+
+function notifyIconListeners(): void {
+  for (const listener of [...iconListeners]) listener();
+}
+
+/** Subscribe to icon arrivals. Returns an unsubscribe function. */
+export function subscribeUnitIcons(listener: () => void): () => void {
+  iconListeners.add(listener);
+  return () => {
+    iconListeners.delete(listener);
+  };
+}
 
 /**
  * Load a unit icon
@@ -33,22 +53,24 @@ async function loadUnitIcon(unitType: string): Promise<HTMLImageElement | string
     if (svgPath) {
       // Try loading SVG
       const svgImg = new Image();
-      
+
       svgImg.onload = () => {
         iconCache.set(unitType, svgImg);
         loadingPromises.delete(unitType);
+        notifyIconListeners();
         resolve(svgImg);
       };
-      
+
       svgImg.onerror = () => {
         // SVG failed, fall back to emoji from unit data
         const unitData = UNIT_PROPERTIES[unitType];
         const emoji = unitData?.icon || '⚔️';
         iconCache.set(unitType, emoji);
         loadingPromises.delete(unitType);
+        notifyIconListeners();
         resolve(emoji);
       };
-      
+
       // Try loading SVG
       svgImg.src = new URL(`../assets/units/${svgPath}`, import.meta.url).href;
     } else {
@@ -57,6 +79,7 @@ async function loadUnitIcon(unitType: string): Promise<HTMLImageElement | string
       const emoji = unitData?.icon || '⚔️';
       iconCache.set(unitType, emoji);
       loadingPromises.delete(unitType);
+      notifyIconListeners();
       resolve(emoji);
     }
   });

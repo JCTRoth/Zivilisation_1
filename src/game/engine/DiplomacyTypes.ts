@@ -152,13 +152,22 @@ export interface DiplomaticRelation {
 // Diplomat unit action results
 // ---------------------------------------------------------------------------
 
+/**
+ * Everything a diplomat can do. This union is the whole diplomat ability set —
+ * the menu the player is shown, the list the AI chooses from and the switch
+ * `executeDiplomatAction` dispatches on are all built from it, so an ability
+ * can never be listed without being implemented (and vice versa).
+ *
+ * (A `bribe_city` member used to sit here with no mechanic behind it and no way
+ * to reach it: taking a city with gold instead of an army would bypass the
+ * whole military model. It was removed rather than left as a promise.)
+ */
 export type DiplomatAction =
   | 'propose_peace'
   | 'propose_ceasefire'
   | 'propose_alliance'
   | 'demand_tribute'
   | 'bribe_unit'
-  | 'bribe_city'
   | 'gather_intelligence'
   | 'offer_open_borders'
   | 'propose_trade_agreement'
@@ -170,6 +179,83 @@ export type DiplomatAction =
   | 'investigate_city'
   | 'industrial_sabotage'
   | 'steal_technology';
+
+/**
+ * Covert acts — the ones nobody is asked about, because they are not negotiable.
+ *
+ * Shared by the player-facing UI (an infiltration reports in its own window
+ * instead of the negotiation screen) and by the AI (which runs them outright
+ * rather than surfacing them as an offer), so "what counts as espionage" is one
+ * list rather than two that can disagree.
+ */
+export const ESPIONAGE_DIPLOMAT_ACTIONS: ReadonlySet<DiplomatAction> = new Set<DiplomatAction>([
+  'establish_embassy',
+  'investigate_city',
+  'industrial_sabotage',
+  'steal_technology',
+]);
+
+/**
+ * One thing a diplomat can act on: a foreign city or a foreign unit standing
+ * next to it, together with the complete list of abilities that make sense
+ * there *right now*.
+ *
+ * This is the single source of truth behind the player's menu, the AI's
+ * choice and `executeDiplomatAction`'s validation — the three can never
+ * disagree about what is legal, because all three read the same list.
+ */
+export interface DiplomatTarget {
+  /** Civilization that owns the city or unit. */
+  targetCivId: number;
+  kind: 'city' | 'unit';
+  /** The city, when `kind === 'city'`. */
+  cityId?: string;
+  cityName?: string;
+  /** The unit, when `kind === 'unit'`. */
+  unitId?: string;
+  unitType?: string;
+  /** Diplomatic status with that civ at this moment. */
+  status: DiplomaticStatus;
+  /** Every ability the diplomat has here — the ONLY menu that may be shown. */
+  actions: DiplomatAction[];
+}
+
+/**
+ * The terms an action needs beyond its name. All optional: every one of them
+ * has a sensible default the engine supplies, so a bare `executeDiplomatAction`
+ * call from the AI or from a test still resolves to a complete proposal.
+ */
+export interface DiplomatActionOptions {
+  /** Pick a specific adjacent city when several of the same civ stand nearby. */
+  cityId?: string;
+  /** Pick a specific adjacent unit when several of the same civ stand nearby. */
+  unitId?: string;
+  /** Tribute demanded, or the trade agreement's gold-per-turn rate. */
+  goldAmount?: number;
+  /** Technology we hand over in an Exchange of Knowledge. */
+  techOffered?: string;
+  /** Technology we ask for in an Exchange of Knowledge. */
+  techRequested?: string;
+  /** The third party an embargo would be declared against. */
+  embargoTargetId?: number;
+}
+
+/** What `executeDiplomatAction` reports back to its caller. */
+export interface DiplomatActionResult {
+  success: boolean;
+  /** Which family of outcome this was, so the UI can pick a report window. */
+  type?: 'intelligence' | 'proposal' | 'bribe' | 'espionage';
+  /** Report payload for `intelligence` (an `IntelligenceReport`). */
+  report?: unknown;
+  /** Response payload for `proposal` / `bribe` (a `DiplomacyResponse`). */
+  response?: unknown;
+  /** Outcome payload for `espionage` (an `EspionageResult`). */
+  espionage?: unknown;
+  /** English fallback reason when the action could not be performed. */
+  reason?: string;
+  /** The target the action resolved against, for callers that need to report it. */
+  target?: DiplomatTarget;
+}
 
 export interface DiplomacyProposal {
   fromCivId: number;

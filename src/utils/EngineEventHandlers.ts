@@ -814,6 +814,7 @@ export class EngineEventRouter {
     this.actions.updateUnits(this.gameEngine.getAllUnits());
     this.actions.updateCities(this.gameEngine.getAllCities());
     this.actions.updateCivilizations(this.gameEngine.civilizations);
+    this.actions.updateMap?.(this.gameEngine.map);
 
     const fromCivId = eventData?.fromCivId as number;
     const fromCiv = this.gameEngine.civilizations?.[fromCivId];

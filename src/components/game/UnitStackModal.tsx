@@ -5,6 +5,7 @@ import { useGameStore } from '@/stores/GameStore';
 import { GameUtils } from '@/utils/GameUtils';
 import { useTranslation } from '@/i18n/useTranslation';
 import GameModal from '@/components/ui/gamemodals/ModalShell';
+import { UnitIcon } from '@/components/ui/UnitIcon';
 import '@/styles/unitRank.css';
 import '@/styles/unitStackModal.css';
 import type { City, Unit } from '../../../types/game';
@@ -184,7 +185,11 @@ const UnitStackModal: React.FC<UnitStackModalProps> = ({
                 />
 
                 <span className="usm-icon" aria-hidden="true">
-                  {unit.icon || props?.icon || '⚔️'}
+                  <UnitIcon
+                    unitType={unit.type}
+                    emoji={unit.icon || props?.icon}
+                    size={22}
+                  />
                 </span>
 
                 <div className="usm-main">

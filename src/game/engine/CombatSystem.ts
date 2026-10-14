@@ -22,6 +22,12 @@
  *       `COMBAT_DAMAGE`), attacker takes none;
  *       defender wins → attacker takes `COMBAT_DAMAGE`, defender takes none.
  *   - A victorious attacker never advances into the defender's tile.
+ *   - Splash damage: when the attacker damages a tile holding 2+ stacked
+ *     units on open ground, every other exposed unit on the tile takes 25%
+ *     of the primary hit (min 1). Entrenched cover is complete immunity:
+ *     cities, fortress tiles, fortified units and embarked cargo take none.
+ *   - City healing: units inside their own cities recover 2 HP/turn, up to a
+ *     lifetime total of 15% of all battle damage they ever took.
  */
 
 import { TERRAIN_PROPS } from '@/utils/Constants';
@@ -31,6 +37,21 @@ import { getUnitRank, rankStrengthMultiplier } from './UnitRankSystem';
 
 /** HP (%) a lost combat round costs a unit. */
 const COMBAT_DAMAGE = 25;
+
+/**
+ * Splash share: secondary stacked units take this fraction of the primary
+ * attack damage when their tile is hit on open ground.
+ */
+export const SPLASH_DAMAGE_FRACTION = 0.25;
+
+/** HP per turn a unit recovers while stationed inside one of its own cities. */
+export const CITY_HEAL_PER_TURN = 2;
+
+/**
+ * Lifetime city-healing cap as a share of all battle damage the unit ever
+ * took: at most 15% of what combat cost it ever comes back in a city.
+ */
+export const CITY_HEAL_CAP_FRACTION = 0.15;
 
 /** Terrain-ish shape needed for defence bonuses. */
 interface CombatTerrainLike {
@@ -52,6 +73,16 @@ export interface CombatUnitLike {
   rank?: number;
   /** Legacy veterancy flag, read when `rank` is absent (old saves). */
   isVeteran?: boolean;
+  /** Cumulative HP lost in combat (the city-healing ledger). */
+  battleDamageTaken?: number;
+  /** Cumulative HP restored by city healing (capped against the ledger). */
+  healedInCityTotal?: number;
+}
+
+/** One secondary victim of splash damage. */
+export interface SplashVictim {
+  /** Damage this stacked unit takes (25% of the primary hit, min 1). */
+  damage: number;
 }
 
 /** Minimal city shape needed for the city-assault math. */
@@ -240,6 +271,34 @@ export class CombatSystem {
       cityHasWalls: hasWalls,
       wallsApplied,
     };
+  }
+
+  /**
+   * Splash damage for one secondary stacked unit: 25% of the primary attack
+   * damage, at least 1 HP whenever the primary hit landed. Pure — the caller
+   * decides who is exposed (open ground) and who is immune (city, fortress,
+   * fortified, embarked).
+   */
+  static splashDamage(primaryDamage: number): number {
+    if (primaryDamage <= 0) return 0;
+    return Math.max(1, Math.round(primaryDamage * SPLASH_DAMAGE_FRACTION));
+  }
+
+  /**
+   * HP a unit recovers this turn inside one of its own cities: 2 HP, bounded
+   * by missing health above and by the lifetime ledger below (at most 15% of
+   * all battle damage ever taken comes back). Returns 0 when there is nothing
+   * to heal or the ledger is exhausted. Pure — the caller checks city
+   * presence and stamps the blood-drop marker.
+   */
+  static cityHealAmount(unit: CombatUnitLike): number {
+    const missing = 100 - (unit.health ?? 100);
+    if (missing <= 0) return 0;
+    const cap = (unit.battleDamageTaken ?? 0) * CITY_HEAL_CAP_FRACTION;
+    const healed = unit.healedInCityTotal ?? 0;
+    const remaining = cap - healed;
+    if (remaining <= 0) return 0;
+    return Math.min(CITY_HEAL_PER_TURN, missing, Math.floor(remaining));
   }
 
   /**

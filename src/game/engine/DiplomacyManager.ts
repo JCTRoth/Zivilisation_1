@@ -1480,6 +1480,21 @@ export class DiplomacyManager {
   }
 
   /**
+   * The same policy context, built for a pair whether or not a relation record
+   * already exists.
+   *
+   * AI diplomat units deliberate with it: a diplomat that walks up to a court
+   * has to weigh the same terms the per-turn pass weighs, or "the AI uses the
+   * abilities correctly" would only be true of the abilities that happen to be
+   * in both ladders.
+   */
+  policyContextFor(civId: number, otherId: number): PolicyContext | null {
+    const rel = this.getRelation(civId, otherId);
+    if (!rel) return null;
+    return this.policyContext(civId, otherId, rel, this.gameEngine.roundManager?.getRoundNumber?.() ?? 0);
+  }
+
+  /**
    * AI deliberation: score every action worth taking toward this counterpart
    * and act on the best one.
    *

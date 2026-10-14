@@ -296,7 +296,7 @@ const UNIT_TECH_REQUIREMENTS: Record<string, string | null> = {
   carrier: 'flight',
   fighter: 'flight',
   bomber: 'flight',
-  nuclear: 'nuclear_power',
+  nuclear: 'nuclear_fission',
 };
 
 // ---------------------------------------------------------------------------

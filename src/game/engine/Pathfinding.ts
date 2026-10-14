@@ -379,7 +379,8 @@ export class Pathfinding {
     mapWidth: number,
     mapHeight: number,
     unit?: { hasMovedThisTurn?: boolean; maxMoves?: number; civilizationId?: number },
-    getUnitAt?: (col: number, row: number) => { civilizationId: number } | null
+    getUnitAt?: (col: number, row: number) => { civilizationId: number } | null,
+    getCityAt?: (col: number, row: number) => { civilizationId: number } | null
   ): Map<string, number> {
     const reachable = new Map<string, number>();
     const openSet: PathNode[] = [];
@@ -448,7 +449,11 @@ export class Pathfinding {
 
         // --- Unit occupancy check (when getUnitAt is provided) ---
         const occupant = getUnitAt ? getUnitAt(col, row) : null;
-        const isEnemy = occupant && unit && occupant.civilizationId !== unit.civilizationId;
+        const occupantCity = getCityAt ? getCityAt(col, row) : null;
+        const isEnemy = unit && (
+          (!!occupant && occupant.civilizationId !== unit.civilizationId) ||
+          (!!occupantCity && occupantCity.civilizationId !== unit.civilizationId)
+        );
 
         const g = current.g + cost;
 

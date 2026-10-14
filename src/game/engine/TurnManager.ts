@@ -21,6 +21,7 @@ export enum TurnPhase {
 }
 
 import { AIResearch } from './AI/AIResearch';
+import { CombatSystem } from './CombatSystem';
 import { createDefaultAIState, resolveAICivStrategy } from './AI/AITypes';
 import { fishingRelevanceForCiv } from './FisherEconomics';
 import { serializeCities } from '../../utils/CitySnapshots';
@@ -710,9 +711,16 @@ export class TurnManager {
     const UNIT_PROPS = (this.gameEngine.constructor as typeof GameEngine).UNIT_PROPS
       || (globalThis as { UNIT_PROPS?: typeof GameEngine['UNIT_PROPS'] }).UNIT_PROPS;
     const units = this.gameEngine.units.filter((u) => u.civilizationId === playerId);
-    
+
     debugLog(`[TurnManager] Resetting moves for ${units.length} units of player ${playerId}`);
-    
+
+    // Own-city tiles for the healing pass below (one scan, not one per unit).
+    const ownCityKeys = new Set(
+      (this.gameEngine.cities ?? [])
+        .filter((c) => c.civilizationId === playerId)
+        .map((c) => `${c.col},${c.row}`),
+    );
+
     units.forEach((unit) => {
       // A unit killed in combat only lingers for its death animation: it must
       // NOT get fresh movement points at the start of a turn (it would come
@@ -721,6 +729,19 @@ export class TurnManager {
         unit.movesRemaining = 0;
         unit.areTurnsDone = true;
         return;
+      }
+      // City healing: a damaged unit stationed inside one of its own cities
+      // recovers 2 HP, up to a lifetime total of 15% of all battle damage it
+      // ever took (see CombatSystem.cityHealAmount). Runs before the
+      // fortified/sleeping early-returns below on purpose — an entrenched
+      // garrison heals exactly like everyone else under the roof.
+      if (ownCityKeys.has(`${unit.col},${unit.row}`)) {
+        const heal = CombatSystem.cityHealAmount(unit);
+        if (heal > 0) {
+          unit.health = Math.min(100, (unit.health ?? 100) + heal);
+          unit.healedInCityTotal = (unit.healedInCityTotal ?? 0) + heal;
+          unit._healedRound = this.getRoundNumber();
+        }
       }
       // A passenger aboard a ferry is not a separate actor: it travels with
       // the ship and only acts again after being unloaded.

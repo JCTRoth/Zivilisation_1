@@ -40,7 +40,7 @@ export const LANGUAGES: readonly LanguageDefinition[] = [
   { id: 'en', nativeName: 'English', englishName: 'English', flag: '🇬🇧', locale: 'en' },
   { id: 'de', nativeName: 'Deutsch', englishName: 'German', flag: '🇩🇪', locale: 'de' },
   { id: 'fr', nativeName: 'Français', englishName: 'French', flag: '🇫🇷', locale: 'fr' },
-  { id: 'ru', nativeName: 'Русский', englishName: 'Russian', flag: '🇷🇺', locale: 'ru' },
+  { id: 'ru', nativeName: 'Русский', englishName: 'Russian', flag: 'RU', locale: 'ru' },
   { id: 'es', nativeName: 'Español', englishName: 'Spanish', flag: '🇪🇸', locale: 'es' },
   { id: 'ja', nativeName: '日本語', englishName: 'Japanese', flag: '🇯🇵', locale: 'ja' },
 ];

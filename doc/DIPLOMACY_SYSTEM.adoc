@@ -313,6 +313,51 @@ respect come from the military-strength comparison; border friction adds
 
 The *Diplomat* is a civilian unit (attack: 0, defense: 0, movement: 2, cost: 30) that can perform diplomatic actions when adjacent to an enemy unit or city.
 
+==== What a diplomat can do, and where the list comes from
+
+`GameEngine.getDiplomatTargets(diplomatId)` returns one `DiplomatTarget` per
+adjacent foreign city *and* per adjacent foreign unit — a diplomat standing
+between two courts may choose which one to open with, and the unit menu
+(`UnitActionsModal`) shows a chooser when there is more than one. Each target
+carries `actions`: the complete list of abilities the diplomat has *there, right
+now*.
+
+That list is computed by `diplomacy/DiplomatAbilities.diplomatActionsFor` from
+four facts — the target's kind, the diplomatic status, whether an embassy
+exists, and which treaties are already in force — plus whether anything is
+actually tradeable. The same list is what
+
+* the player's menu is drawn from,
+* the AI chooses from (`AIManager.chooseDiplomatContact` → `chooseDiplomatAction`),
+* and `GameEngine.executeDiplomatAction` validates against before doing anything.
+
+so the three doors in cannot disagree about what is legal. Previously the menu
+drew a fixed list of eleven buttons regardless of context (most of which failed
+with "diplomat action failed"), the engine offered ten and implemented nine, and
+the six treaty terms below were reachable only from the diplomacy screen.
+
+Rules the list encodes:
+
+* the negotiation follows the status — war → ceasefire / peace / tribute;
+  ceasefire → peace; peace → alliance / tribute; alliance → tribute;
+* a city inside a *war zone* offers no infiltration and no embassy: a city you
+  are fighting is entered with soldiers, not with a forged letter;
+* terms beyond the basic statuses (`offer_open_borders`,
+  `propose_trade_agreement`, `offer_tech_exchange`, `propose_mutual_defense`,
+  `propose_non_aggression`, `propose_embargo`) require an *embassy* — the same
+  gate the negotiation screen uses — and are not offered again once signed;
+* `propose_embargo` additionally requires a third party to name, and
+  `offer_tech_exchange` requires that both sides hold something the other lacks;
+* `bribe_unit` belongs to a unit and the infiltrations to a city.
+
+Terms the caller does not specify are filled in by the engine, so a bare
+`executeDiplomatAction` still reaches the responder as a complete proposal: a
+demand is worth 50 gold, a trade deal pays 2 gold/turn, an exchange names a
+concrete pair of technologies and an embargo a concrete third party (a shared
+enemy if there is one, otherwise the weakest other civ met). The negotiation
+screen opens on the other side of the call, where the player names their own
+terms or refuses outright.
+
 [cols="1,2,2", options="header"]
 |===
 |Action |Description |Success factors
@@ -413,7 +458,11 @@ the gate on the whole negotiation screen (see <<ui-diplomacy-modal,§12>>): with
 one the rival is still *listed* — you have met them — but their ledgers read
 "Unknown" and no term can be tabled. It also gates the AI's own tech offers:
 `AIDiplomacyPolicy` refuses to propose an Exchange of Knowledge
-(`hasEmbassy === false`), so knowledge only moves through a working channel.
+(`hasEmbassy === false`), so knowledge only moves through a working channel —
+and an AI *diplomat unit* is held to the same gate, because it chooses from the
+same `getDiplomatTargets` menu the player's is drawn from
+(`AIManager.chooseDiplomatTreaty` filters its scored candidates against that
+list).
 
 === Willingness calculation
 

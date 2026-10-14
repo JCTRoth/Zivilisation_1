@@ -32,6 +32,7 @@ import {
   type NavalDoctrineInput,
   type NavalDoctrineResult,
   isWarshipHull,
+  isSealiftHull,
 } from './AI/NavalDoctrine';
 import { AI_RESERVE_TURNS } from './AI/AIEconomicManager';
 import { ABSOLUTE_MIN_GOLD } from './EconomicManager';
@@ -157,15 +158,29 @@ export class AutoProduction {
     // The works corps is sized from the ground: the governor asks how many
     // tiles in the civ's city radii still need an improvement, and `AIManager`
     // is the only place that knows (map + terrain tables + city radii). The
-    // governor's own queue is always empty because nothing fills it, so without
-    // this the works corps was permanently zero and the empire never paved a
-    // field (a played game built 2 roaded tiles in 150 rounds).
+    // governor's own queue is only what it has personally promised, and nothing
+    // fills it — so sizing from the queue alone left the corps permanently at
+    // zero and the empire never paved a field.
+    this.ensureWorksSource();
+  }
+
+  /**
+   * (Re)bind the outstanding-works source if the coordinator exists now. The
+   * constructor binds on the normal path (GameEngine builds the coordinator
+   * first); this covers late attachment (test doubles, load order), so the
+   * settler governor is active by default however the AI was assembled.
+   */
+  private worksSourceBound = false;
+
+  private ensureWorksSource(): void {
+    if (this.worksSourceBound) return;
     const aiManager = (this.gameEngine as GameEngine & {
       aiManager?: { countOutstandingWorks?: (civId: number) => number };
     }).aiManager;
     if (typeof aiManager?.countOutstandingWorks === 'function') {
       const countOutstandingWorks = aiManager.countOutstandingWorks.bind(aiManager);
       this.settlerGovernor.setOutstandingWorksSource(countOutstandingWorks);
+      this.worksSourceBound = true;
     }
   }
 
@@ -467,6 +482,14 @@ export class AutoProduction {
 
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     const strategy: StrategyProfile = this.getStrategyForCiv(city.civilizationId);
+    // Whether the civ that owns this city is the human player. Read once here
+    // and reused by the human-specific branches below; the later branches keep
+    // their own local `isHumanCity` so a change in one place cannot silently
+    // re-order the others.
+    const isHumanCityEarly = civ?.isHuman === true;
+    // Human or AI city: the human autoproduction policy below (small settler
+    // corps, explorers first, no strategic weapons) keys off this flag.
+    const isHumanCity = this.gameEngine.civilizations?.[city.civilizationId]?.isHuman === true;
     // Economy-aware army cap: at/over it the city must not PRODUCE more
     // military units (only defense/settlers/scouts are exempt) — otherwise the
     // army grows until the treasury starves and units are disbanded.
@@ -648,6 +671,25 @@ export class AutoProduction {
       return this.buildDefenderProduction(city, threatAssessment);
     }
 
+    // 2a-human. Explorers first: a human auto-city that is defended, content
+    // and scoutless builds its first scout before any further settler — the
+    // settler corps above would otherwise eat the whole early queue and the
+    // player never sees the map (scouts cost 15 shields vs a settler's 40, so
+    // this never starves expansion; it just orders it). AI cities keep the
+    // old order via the scout corps in step 5b below.
+    if (isHumanCity && hasDefender && !needsHappiness && city.population >= 1
+      && this.canAffordAnotherUnit(city.civilizationId)
+      && this.needsScout(city.civilizationId, plannedTypes.filter((t: string) => t === 'scout').length)) {
+      const scoutProps = UNIT_PROPS.scout;
+      debugLog('[AutoProduction] Human first scout before further settlers');
+      return {
+        type: 'unit',
+        itemType: 'scout',
+        name: scoutProps?.name || 'Scout',
+        cost: scoutProps?.cost || 15
+      };
+    }
+
     // 2a. Minimum city infrastructure. The AI-vs-AI CSV showed cities stuck
     //     queueing one unit type for a dozen turns while a 16-pop city had no
     //     marketplace and no granary — leaving gold and growth on the table.
@@ -704,6 +746,31 @@ export class AutoProduction {
       }
     }
 
+    // 2c. HUMAN cities explore before they expand. A scout costs 15 shields,
+    //     is legal at pop 1 and consumes NO citizen; a settler costs 40 shields,
+    //     eats food from the city and takes a citizen when it completes. For an
+    //     AI civ the settler branch correctly comes first (expansion is the AI's
+    //     job, and its scouts are spawned by the same algorithm), but the human
+    //     autoproduction exists to keep the player's city busy while they form
+    //     plans — and a civ that cannot see the map cannot form any. The old
+    //     order made a human capital queue settlers until the corp target was
+    //     met, so the scout branch below was never reached at all.
+    // (`isHumanCityEarly` is declared once at the top of this method.)
+    if (isHumanCityEarly && !needsHappiness) {
+      const humanScoutPop = city.population ?? 1;
+      const plannedScoutsEarly = plannedTypes.filter((t: string) => t === 'scout').length;
+      if (this.needsScout(city.civilizationId, plannedScoutsEarly, 1) && humanScoutPop >= 1) {
+        const scoutProps = UNIT_PROPS.scout;
+        debugLog(`[AutoProduction] Human city: building scout for exploration (${this.countTotalTroops(city.civilizationId)} troops)`);
+        return {
+          type: 'unit',
+          itemType: 'scout',
+          name: scoutProps?.name || 'Scout',
+          cost: scoutProps?.cost || 15
+        };
+      }
+    }
+
     // 3. Settler expansion FIRST (right after defense) so the civ actually
     //    grows. Previously buildings (and the happiness-emergency path) ran
     //    before this branch, so a civ with 1 city queued colosseum/
@@ -721,6 +788,13 @@ export class AutoProduction {
     const allCivCities = this.gameEngine.cities.filter(
       (c: City) => c.civilizationId === city.civilizationId,
     );
+    // AI expansion target, scaled with the civ's city count. Human cities do not
+    // use this at all: their settler target is a single replacement settler (see
+    // `humanSettlerTarget` below), because the player settles by hand. The old
+    // human formula (`1 + floor(cities/2)`, capped at 3) stacked with a +1 works
+    // bonus below for a target of 2 on a one-city capital — and the scout branch
+    // sat BELOW the settler branch, so the capital churned settlers and never
+    // explored.
     const desiredSettlers = isSmallMap
       ? Math.min(2, expansion.maxSettlers)
       : Math.min(
@@ -764,14 +838,26 @@ export class AutoProduction {
     // the normal state from turn 1 — so AI civs stopped expanding almost
     // immediately (4 cities founded instead of 9) and the sim starved. Convert
     // it to a total by adding the settlers that exist.
+    // A human corps gets NO works bonus at all: the player improves their own
+    // tiles, so autoproduction only backfills settlers that are actually gone.
+    // The old `+1` pushed a one-city human to a target of 2, and the `+1` scout
+    // boost never got to run because the settler branch came first — so the
+    // capital churned settlers and never explored. A human target is now a
+    // strict single-settler replacement pipeline.
+    const humanSettlerTarget = 1;
+    const worksCorps = isHumanCity ? 0 : 2;
     const governorRecommended = isAiControlled
       ? this.settlerGovernor.getRecommendedSettlerCount(allCivCities, this.gameEngine.units)
         + allCivSettlers
-      : desiredSettlers + (wantsWorks ? 2 : 0);
-    const settlerTarget = Math.min(
-      desiredSettlers + (wantsWorks ? 2 : 0),
-      Math.max(0, governorRecommended),
-    );
+      : (isHumanCity
+          ? humanSettlerTarget
+          : desiredSettlers + (wantsWorks ? worksCorps : 0));
+    const settlerTarget = isHumanCity
+      ? humanSettlerTarget
+      : Math.min(
+          desiredSettlers + (wantsWorks ? worksCorps : 0),
+          Math.max(0, governorRecommended),
+        );
     // Economics before the army: a civ that has climbed back to the minimum
     // reserve but still cannot net a positive gold gets a settler even though
     // `canAffordAnotherUnit` says no, and gives up the army for now. See
@@ -787,14 +873,17 @@ export class AutoProduction {
       debugLog('[AutoProduction] City is losing food — settlers paused until it recovers');
     }
 
-    // Prevent City from getting disolved by new Settler produced
+    // Prevent City from getting disolved by new Settler produced. Applies to
+    // human cities too: autoproduction must never dissolve the player's only
+    // city (or any pop-1 city) without being asked — except for the classic
+    // capital move with no settler yet.
     const isAiCity = this.gameEngine.civilizations?.[city.civilizationId]?.isAI === true;
     const wouldConsumeCity = (city.population ?? 1) <= 1;
     const hasSettlerInCiv = this.gameEngine.units.some(
       (u: Unit) => u.civilizationId === city.civilizationId && u.type === 'settler' && !u.isDefeated,
     );
     const isCapitalMove = allCivCities.length <= 1 && !hasSettlerInCiv;
-    const refusesSelfDestruct = isAiCity && wouldConsumeCity && !isCapitalMove;
+    const refusesSelfDestruct = (isAiCity || isHumanCity) && wouldConsumeCity && !isCapitalMove;
 
     // Settlers still cost 1 gold/turn upkeep even though they eat food from
     // the city, so a civ with no headroom cannot afford one — the economy
@@ -824,11 +913,24 @@ export class AutoProduction {
       ).length + queuedSettlers;
 
       // In a gold crisis, allow at most the minimum settler count (1);
-      // otherwise the full desired count (expansion + works corps).
-      const effectiveDesired = goldCrisis ? expansion.minSettlers : settlerTarget;
+      // otherwise the full desired count (expansion + works corps + colony
+      // sealift). Island colonies need SPAWNED settlers: without this the
+      // missions wait for idle ones that never come, and N islands queue
+      // behind zero hulls carrying nobody.
+      // Colony missions are an AI concept (AIManager plans and drives them), so
+      // a human civ must never be charged a colony shortfall: the shortfall is
+      // computed from islands the PLAYER may have no intention of colonising.
+      const colonyNeed = (!isHumanCity && !goldCrisis)
+        ? this.colonySettlerDemand(city.civilizationId)
+        : 0;
+      // A human in a gold crisis keeps the single replacement settler and no
+      // colony bonus — the player is broke, not colonising. An AI keeps its
+      // profile minimum so expansion never hard-stops.
+      const crisisTarget = isHumanCity ? humanSettlerTarget : expansion.minSettlers;
+      const effectiveDesired = (goldCrisis ? crisisTarget : settlerTarget) + colonyNeed;
 
       if (settlerCount < effectiveDesired) {
-        debugLog(`[AutoProduction] Civilization has ${settlerCount} settler(s) (unit list + queued across all cities), building another (target ${settlerTarget}, profile ${strategy}, works ${wantsWorks})`);
+        debugLog(`[AutoProduction] Civilization has ${settlerCount} settler(s) (unit list + queued across all cities), building another (target ${settlerTarget}+colony ${colonyNeed}, profile ${strategy}, works ${wantsWorks}, human ${isHumanCity})`);
         return {
           type: 'unit',
           itemType: 'settler',
@@ -883,6 +985,20 @@ export class AutoProduction {
     ).length;
 
     const aggressivePosture = this.isAggressivePosture(city.civilizationId);
+
+    // 4-pre-0. Manhattan Project: without it no warhead can be built by
+    //          anyone (ProductionManager rejects the item). In the nuclear
+    //          endgame the wonder IS the arsenal's first half, so it outranks
+    //          even warheads — and it outranks the peacetime wonder gate
+    //          (garrisonOk forbids wonders at war, but the arms race does not
+    //          wait for peace).
+    if (this.readStrategyBranch(city.civilizationId) === 'nuclear_endgame') {
+      const manhattan = this.buildManhattanProduction(city);
+      if (manhattan) {
+        debugLog('[AutoProduction] Arms race — building the Manhattan Project');
+        return manhattan;
+      }
+    }
 
     // 4-pre-0. Strategic arsenal: once the civ CAN build a warhead and has a
     //          reason to fire one, a single turn in N is spent on it instead
@@ -963,8 +1079,11 @@ export class AutoProduction {
     // On small maps (AI_VS_AI_SMALL) cities may never reach pop 2 — require
     // only pop 1 there so scouts are still built. On larger maps keep pop 2
     // so the city grows a little before diverting shields to exploration.
-    const scoutPopThreshold = isSmallMap ? 1 : 2;
-    if (this.needsScout(city.civilizationId, plannedScouts) && city.population >= scoutPopThreshold) {
+    // Human players get scouts at pop 1 on all maps — faster exploration.
+    // Human players also get +1 desired scout so they explore more aggressively.
+    const humanScoutBoost = isHumanCity ? 1 : 0;
+    const scoutPopThreshold = isSmallMap || isHumanCity ? 1 : 2;
+    if (this.needsScout(city.civilizationId, plannedScouts, humanScoutBoost) && city.population >= scoutPopThreshold) {
       const scoutProps = UNIT_PROPS.scout;
       debugLog(`[AutoProduction] Building scout for map exploration (${this.countTotalTroops(city.civilizationId)} troops)`);
       return {
@@ -1435,12 +1554,12 @@ export class AutoProduction {
   /**
    * Desired number of scouts based on total troop count:
    *   < 6 troops → 1 scout, 6–11 → 2 scouts, >= 12 → 3 scouts.
+   *   Human players get +1 scout on top of the troop-based count (capped at 3).
    */
-  private getDesiredScoutCount(civilizationId: number): number {
+  private getDesiredScoutCount(civilizationId: number, boost: number = 0): number {
     const totalTroops = this.countTotalTroops(civilizationId);
-    if (totalTroops >= 12) return 3;
-    if (totalTroops >= 6) return 2;
-    return 1;
+    const base = totalTroops >= 12 ? 3 : totalTroops >= 6 ? 2 : 1;
+    return Math.min(3, base + boost);
   }
 
   /**
@@ -1449,7 +1568,7 @@ export class AutoProduction {
    * overshoot the corps target) and enforces an absolute cap so the civ never
    * fields more than `AI_ABSOLUTE_MAX_SCOUTS` scouts.
    */
-  private needsScout(civilizationId: number, plannedScouts: number = 0): boolean {
+  private needsScout(civilizationId: number, plannedScouts: number = 0, boost: number = 0): boolean {
     const aliveScouts = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civilizationId && u.type === 'scout' && !u.isDefeated,
     ).length;
@@ -1466,7 +1585,7 @@ export class AutoProduction {
       }, 0);
     const scoutCount = aliveScouts + queuedScouts + plannedScouts;
     if (scoutCount >= AI_ABSOLUTE_MAX_SCOUTS) return false;
-    return scoutCount < this.getDesiredScoutCount(civilizationId);
+    return scoutCount < this.getDesiredScoutCount(civilizationId, boost);
   }
 
   /**
@@ -1567,7 +1686,7 @@ export class AutoProduction {
 
   private buildOffensiveProduction(city: City): ProductionItem {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
-    const unitType = this.selectOffensiveUnitTypeForCiv(civ);
+    const unitType = this.selectOffensiveUnitTypeForCiv(civ, city);
     const unitProps = UNIT_PROPS[unitType];
     return {
       type: 'unit',
@@ -1605,20 +1724,49 @@ export class AutoProduction {
     );
   }
 
+  /** Manhattan Project for a civ in the nuclear-endgame branch. */
+  private buildManhattanProduction(city: City): ProductionItem | null {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ || civ.isHuman) return null;
+    if (this.isManhattanBuilt()) return null; // one per world, already up
+    const techs = civ.technologies;
+    const fission = techs instanceof Set ? techs.has('nuclear_fission') : Array.isArray(techs) && techs.includes('nuclear_fission');
+    if (!fission) return null;
+    const pm = this.gameEngine.productionManager as {
+      getBuildableBuildingTypes?: (id: string) => string[];
+    } | undefined;
+    const buildable = typeof pm?.getBuildableBuildingTypes === 'function'
+      ? pm.getBuildableBuildingTypes(city.id)
+      : [];
+    if (!buildable.includes('manhattan_project')) return null;
+    const props = WONDER_PROPERTIES['manhattan_project'];
+    if (!props) return null;
+    return { type: 'building', itemType: 'manhattan_project', name: props.name, cost: props.cost };
+  }
+
   /**
    * Whether this city should start a nuclear warhead.
    *
    * The AI only gets to "use nukes if available" if it first builds one, so
-   * this is the production half of that requirement. The gates are deliberately
-   * few: the tech, a reason to fire (at war, or an aggressive posture that is
-   * about to find one), stock still below what the era wants, and a treasury
-   * that is not already under its reserve.
+   * this is the production half of that requirement. Civ1 gates, all three:
+   * Nuclear Fission researched (tech gate), the Manhattan Project completed
+   * somewhere (world gate — ProductionManager rejects the item otherwise, so
+   * queueing without it is shields into the void), and a reason to fire: at
+   * war, an aggressive posture about to find one, or the nuclear-endgame
+   * branch (late, armed world, enemies remain — arsenals are built, not
+   * improvised). Only a treasury actually in deficit holds back.
    */
   private shouldBuildNuclear(city: City): boolean {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     if (!civ) return false;
+    // Strategic weapons need the player's explicit order: a warhead brings
+    // diplomatic fallout no automation should volunteer for.
+    if (civ.isHuman) return false;
     if (!canBuildUnit(civ, 'nuclear')) return false;
-    if (!this.isCivAtWar(city.civilizationId) && !this.isAggressivePosture(city.civilizationId)) {
+    if (!this.isManhattanBuilt()) return false;
+    const branch = this.readStrategyBranch(city.civilizationId);
+    const endgameArms = branch === 'nuclear_endgame';
+    if (!this.isCivAtWar(city.civilizationId) && !this.isAggressivePosture(city.civilizationId) && !endgameArms) {
       return false;
     }
     // Only a civ actually in deficit holds back. `isUnderEconomicPressure`
@@ -1628,7 +1776,29 @@ export class AutoProduction {
     // still never built a single warhead. A warhead costs shields to build and
     // 5 gold/turn to keep; only a negative treasury makes that unaffordable.
     if ((civ.resources?.gold ?? 0) < 0) return false;
-    return this.nuclearStock(civ.id) < this.desiredNuclearStock();
+    return this.nuclearStock(civ.id) < this.desiredNuclearStock(endgameArms);
+  }
+
+  /** Manhattan Project completed by anyone (unlocks every civ's arsenal). */
+  private isManhattanBuilt(): boolean {
+    try {
+      return this.gameEngine.wonderManager?.isBuilt?.('manhattan_project') === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** This turn's strategic branch, as computed by the AI coordinator. */
+  private readStrategyBranch(civilizationId: number): string | null {
+    try {
+      const storage = typeof this.gameEngine.getPlayerStorage === 'function'
+        ? this.gameEngine.getPlayerStorage(civilizationId)
+        : undefined;
+      const branch = (storage?.turnData as Record<string, unknown> | undefined)?.strategyBranch;
+      return typeof branch === 'string' ? branch : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Warheads owned plus warheads already sitting in some city's queue. */
@@ -1649,14 +1819,18 @@ export class AutoProduction {
     return owned + queued;
   }
 
-  /** One warhead is enough while the game is young; the endgame wants two. */
-  private desiredNuclearStock(): number {
+  /** One warhead is enough while the game is young; the endgame stocks more. */
+  private desiredNuclearStock(endgameArms = false): number {
+    if (endgameArms) return 3;
     return (this.gameEngine.currentYear ?? -4000) >= 1500 ? 2 : 1;
   }
 
   private buildNuclearProduction(city: City): ProductionItem | null {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
-    if (!civ || !canBuildUnit(civ, 'nuclear')) return null;
+    if (!civ || civ.isHuman || !canBuildUnit(civ, 'nuclear')) return null;
+    // ProductionManager rejects warheads before Manhattan with
+    // `requires_wonder_manhattan_project` — never queue one it will refuse.
+    if (!this.isManhattanBuilt()) return null;
     const props = UNIT_PROPS['nuclear'];
     if (!props) return null;
     return { type: 'unit', itemType: 'nuclear', name: props.name, cost: props.cost };
@@ -1824,8 +1998,24 @@ export class AutoProduction {
     return preview.net >= 1;
   }
 
-  /** Safe coastal check used to gate the Harbor building (unknown → allow). */
-  private cityHasWaterAccess(city: City): boolean {
+  /**
+   * Colony settler shortfall for this civ: parallel island missions want one
+   * settler each. The AI coordinator (AIManager) sizes it from open islands;
+   * production just asks. Zero when the AI layer is absent (test doubles).
+   */
+  private colonySettlerDemand(civilizationId: number): number {
+    try {
+      const aiManager = this.gameEngine.aiManager as
+        | { colonySettlerShortfall?: (id: number) => number }
+        | undefined;
+      if (typeof aiManager?.colonySettlerShortfall !== 'function') return 0;
+      return Math.max(0, aiManager.colonySettlerShortfall(civilizationId));
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Safe coastal check used to gate the Harbor building (unknown → allow). */  private cityHasWaterAccess(city: City): boolean {
     const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
     if (typeof pm?.cityHasHarborOrCoast !== 'function') return true;
     return pm.cityHasHarborOrCoast(city);
@@ -1876,6 +2066,29 @@ export class AutoProduction {
    * settler that can reach the coast.
    */
   /**
+   * Ferries with no mission: hulls neither the colonies nor the invasion have
+   * claimed. The old check ("any ferry alive") let one colony hull block every
+   * other mission's hull — parallel seeding needs parallel hulls.
+   */
+  private unclaimedFerryCount(civId: number): number {
+    const storage = this.gameEngine.getPlayerStorage?.(civId);
+    const turnData = storage?.turnData as
+      | {
+        colonyMissions?: Array<{ ferryId?: string | null }>;
+        colonyMission?: { ferryId?: string | null };
+        invasionMission?: { ferryId?: string | null };
+      }
+      | undefined;
+    const claimed = new Set<string>();
+    for (const m of turnData?.colonyMissions ?? []) if (m?.ferryId) claimed.add(m.ferryId);
+    if (turnData?.colonyMission?.ferryId) claimed.add(turnData.colonyMission.ferryId);
+    if (turnData?.invasionMission?.ferryId) claimed.add(turnData.invasionMission.ferryId);
+    return this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civId && u.type === 'ferry' && !u.isDefeated && !claimed.has(u.id),
+    ).length;
+  }
+
+  /**
    * A ferry for an active invasion mission that has no hull yet. The mission is
    * planned by AIManager (an enemy city on a landmass we cannot walk to); all
    * this does is make sure a hull is actually on the way.
@@ -1886,10 +2099,9 @@ export class AutoProduction {
     const storage = this.gameEngine.getPlayerStorage?.(civ.id);
     const mission = storage?.turnData?.invasionMission as { ferryId?: string | null } | undefined;
     if (!mission || mission.ferryId) return null;
-    const ownsFerry = this.gameEngine.units.some(
-      (u: Unit) => u.civilizationId === civ.id && u.type === 'ferry' && !u.isDefeated,
-    );
-    if (ownsFerry) return null; // a hull exists; the AI will assign it
+    // A hull exists AND is free; the AI will assign it. A hull busy on a
+    // colony run does not count — the invasion needs its own.
+    if (this.unclaimedFerryCount(civ.id) > 0) return null;
     const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
     if (typeof pm?.cityHasHarborOrCoast !== 'function' || !pm.cityHasHarborOrCoast(city)) return null;
     if (!canBuildUnit(civ, 'ferry')) return null;
@@ -1898,16 +2110,30 @@ export class AutoProduction {
     return { type: 'unit', itemType: 'ferry', name: props.name, cost: props.cost };
   }
 
+  /**
+   * Ferries for active colony missions that have no hull yet. Missions are
+   * planned by AIManager (one per island, up to the parallel cap); each
+   * hull-less mission beyond the free hulls orders one ferry, so N islands
+   * grow N hulls instead of queueing behind one.
+   */
   private buildColonyFerryProduction(city: City): ProductionItem | null {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     if (!civ) return null;
     const storage = this.gameEngine.getPlayerStorage?.(civ.id);
-    const mission = storage?.turnData?.colonyMission as { ferryId?: string | null } | undefined;
-    if (!mission || mission.ferryId) return null;
-    const ownsFerry = this.gameEngine.units.some(
-      (u: Unit) => u.civilizationId === civ.id && u.type === 'ferry' && !u.isDefeated,
-    );
-    if (ownsFerry) return null;
+    const turnData = storage?.turnData as
+      | {
+        colonyMissions?: Array<{ ferryId?: string | null }>;
+        colonyMission?: { ferryId?: string | null };
+      }
+      | undefined;
+    const missions = [
+      ...(turnData?.colonyMissions ?? []),
+      ...(turnData?.colonyMission ? [turnData.colonyMission] : []),
+    ];
+    const hullLess = missions.filter((m) => !m?.ferryId).length;
+    if (hullLess <= 0) return null;
+    // Free hulls cover the earliest missions first; build only for the rest.
+    if (this.unclaimedFerryCount(civ.id) >= hullLess) return null;
     const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
     if (typeof pm?.cityHasHarborOrCoast !== 'function' || !pm.cityHasHarborOrCoast(city)) return null;
     if (!canBuildUnit(civ, 'ferry')) return null;
@@ -2012,6 +2238,12 @@ export class AutoProduction {
    * fleet, their coastal cities and threats to our own coast put us under.
    * Returns null when the doctrine is satisfied or the economy cannot carry a
    * hull, so the caller falls through to land production.
+   *
+   * Activation fix: when the civ NEEDS a navy (split world, coastal port) but
+   * the doctrine says "satisfied" only because nothing is charted yet, still
+   * build the bootstrap hull — a ferry when no sealift exists, otherwise the
+   * cheapest affordable screen. Without this `shouldBuildNavy() === true` but
+   * `buildNavalProduction() === null` forever, and the fleet never starts.
    */
   private buildNavalProduction(city: City): ProductionItem | null {
     const decision = this.navalDoctrineFor(city.civilizationId);
@@ -2023,9 +2255,54 @@ export class AutoProduction {
       : ownWarships < decision.wantWarships
         ? bestAvailableShip
         : null;
-    if (!wanted) return null;
+    if (!wanted) {
+      // Bootstrap: sea world, coastal port, can build ships, but doctrine has
+      // nothing charted yet (dark water, no islands seen, no enemies known).
+      // Build the hull that finds the war, not the hull the war would order.
+      const engine = this.gameEngine as { civNeedsNavy?: (id: number) => boolean; civCanBuildShips?: (id: number) => boolean };
+      const needsNavy = typeof engine.civNeedsNavy === 'function' && engine.civNeedsNavy(city.civilizationId);
+      const canBuild = typeof engine.civCanBuildShips === 'function' && engine.civCanBuildShips(city.civilizationId);
+      const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
+      const coastal = typeof pm?.cityHasHarborOrCoast === 'function' && pm.cityHasHarborOrCoast(city);
+      if (needsNavy && canBuild && coastal) {
+        const civ = this.gameEngine.civilizations?.[city.civilizationId];
+        // Ferry first when no sealift at all (it both scouts and lifts).
+        if (ownTransports === 0 && cheapestAvailableShip && civ && canBuildUnit(civ, cheapestAvailableShip.type)) {
+          const props = UNIT_PROPS[cheapestAvailableShip.type];
+          if (props) {
+            debugLog(`[AutoProduction] Naval activation: bootstrap ${cheapestAvailableShip.type} (sea world, nothing charted yet)`);
+            return { type: 'unit', itemType: cheapestAvailableShip.type, name: props.name, cost: props.cost };
+          }
+        }
+        // Otherwise the cheapest affordable screen — a sail now beats a
+        // battleship never, and it charts the water the doctrine needs.
+        const options = (decision as unknown as { warshipOptions?: AvailableShip[] }).warshipOptions ?? [];
+        const affordable = [...options].sort((a, b) => a.cost - b.cost)[0] ?? bestAvailableShip;
+        if (affordable && civ && canBuildUnit(civ, affordable.type)) {
+          const props = UNIT_PROPS[affordable.type];
+          if (props) {
+            debugLog(`[AutoProduction] Naval activation: bootstrap screen ${affordable.type} (sea world, fleet empty)`);
+            return { type: 'unit', itemType: affordable.type, name: props.name, cost: props.cost };
+          }
+        }
+      }
+      return null;
+    }
     const props = UNIT_PROPS[wanted.type];
     if (!props) return null;
+    // Honour tech gating: the doctrine's hull must actually be buildable here
+    // (coastal port + tech). The caller already gates the port; re-check tech.
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (civ && !canBuildUnit(civ, wanted.type)) {
+      // Fall back to any affordable hull the civ CAN build rather than nothing.
+      const options = (decision as unknown as { warshipOptions?: AvailableShip[] }).warshipOptions ?? [];
+      const fallback = [...options].sort((a, b) => a.cost - b.cost).find((s) => canBuildUnit(civ, s.type));
+      if (!fallback) return null;
+      const fProps = UNIT_PROPS[fallback.type];
+      if (!fProps) return null;
+      debugLog(`[AutoProduction] Naval doctrine fallback: ${fallback.type} (wanted ${wanted.type} not buildable)`);
+      return { type: 'unit', itemType: fallback.type, name: fProps.name, cost: fProps.cost };
+    }
     debugLog(
       `[AutoProduction] Naval doctrine: ${wanted.type} (${decision.reason}; `
       + `budget ${decision.budget.toFixed(1)}, pressure ${decision.pressure.toFixed(1)})`,
@@ -2050,19 +2327,23 @@ export class AutoProduction {
       hasSeaInvasionTarget?: (id: number) => boolean;
       isCivAtWar?: (id: number) => boolean;
       tileHasNavalAccess?: (c: number, r: number) => boolean;
+      getLandmassCount?: () => number;
+      civNeedsNavy?: (id: number) => boolean;
+      civCanBuildShips?: (id: number) => boolean;
+      getPlayerStorage?: (id: number) => { explored?: boolean[] | Uint8Array } | undefined;
     };
     const hasIslandProbe = typeof engine.getColonizableIslands === 'function';
 
     // Cheap, always-fresh counts. They are part of the doctrine input AND the
     // cache key, so a repeated query inside one turn's production pass skips
     // the expensive probes below (island scan, per-city threat, economy).
-    const isTransport = (u: Unit): boolean => (UNIT_PROPS[u.type]?.transportCapacity ?? 0) > 0;
+    const isTransport = (u: Unit): boolean => isSealiftHull(u.type, UNIT_PROPS[u.type]);
     // A hull is only a warship if it can actually fight. Fisher boats are naval
     // and carry nothing, so counting them as escorts let a civ's whole fishing
     // fleet satisfy the warship quota — it stopped buying escorts precisely when
     // it started moving troops by sea, and read enemy fishermen as a war fleet
     // it had to answer with hulls.
-    const isWarship = (u: Unit): boolean => isWarshipHull(UNIT_PROPS[u.type]);
+    const isWarship = (u: Unit): boolean => isWarshipHull(UNIT_PROPS[u.type], u.type);
     const ownNaval = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civId && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true,
     );
@@ -2108,8 +2389,8 @@ export class AutoProduction {
         transportCapacity: props.transportCapacity ?? 0,
       });
     }
-    const transports = available.filter((s) => s.transportCapacity > 0);
-    const warships = available.filter((s) => s.transportCapacity === 0 && s.attack > 0.5);
+    const transports = available.filter((s) => isSealiftHull(s.type, s));
+    const warships = available.filter((s) => isWarshipHull(s, s.type) && s.attack > 0.5);
     const cheapest = transports[0] ?? available[0] ?? null;
     const strongest = [...warships].sort((a, b) => b.attack - a.attack)[0] ?? cheapest;
 
@@ -2139,9 +2420,15 @@ export class AutoProduction {
       : (hasEconomy ? econ!.maxTaxIncome!(civ) : 0);
     const upkeep = hasEconomy ? econ!.totalUpkeep!(civId) : 0;
     // The AI's own reserve policy, in turns of upkeep it wants kept spare.
+    // LAND armies use the full policy (2-3 turns); the FLEET uses 1 turn (min
+    // 4 gold) because hulls are the only way off an island — a 3-turn reserve
+    // priced every navy out of existence (income 40, upkeep 20, reserve 60 →
+    // surplus negative → budget 0 → no ships, forever).
     const reserveTurns = AI_RESERVE_TURNS[strategy]
       ?? AI_RESERVE_TURNS.balanced_growth;
-    const reserve = hasEconomy ? Math.max(8, upkeep * reserveTurns) : 0;
+    const landReserve = hasEconomy ? Math.max(8, upkeep * reserveTurns) : 0;
+    const reserve = hasEconomy ? Math.max(4, upkeep * 1) : 0;
+    void landReserve;
 
     const enemies = new Set<number>(
       (this.gameEngine.diplomacyManager?.getEnemies?.(civId) ?? []).map(Number),
@@ -2155,18 +2442,77 @@ export class AutoProduction {
     const threatCount = this.gameEngine.aiManager?.countThreatenedCities?.(civId) ?? 0;
     const threatenedCoastal = Math.min(threatCount, ownCoastal.length);
 
-    // Enemy cities on a landmass we cannot walk to. AIManager is the only
-    // place that knows which landmasses have a beach the invasion mission can
-    // actually use; the engine-level probe is kept first so lightweight test
-    // doubles can still answer it themselves.
+    // Enemy cities on a landmass we cannot walk to. Count them (not just
+    // boolean): two beaches want two waves, not one hull. AIManager knows
+    // which beaches are landable; the engine probe is kept for test doubles.
     const ai = this.gameEngine.aiManager as
-      | { hasSeaInvasionTarget?: (id: number) => boolean }
+      | { hasSeaInvasionTarget?: (id: number) => boolean; countSeaInvasionTargets?: (id: number) => number }
       | undefined;
-    const seaInvasionTargets = (typeof engine.hasSeaInvasionTarget === 'function'
+    let seaInvasionCount = 0;
+    if (typeof (ai as { countSeaInvasionTargets?: unknown })?.countSeaInvasionTargets === 'function') {
+      seaInvasionCount = (ai as { countSeaInvasionTargets: (id: number) => number }).countSeaInvasionTargets(civId);
+    } else if (typeof engine.hasSeaInvasionTarget === 'function'
       ? engine.hasSeaInvasionTarget(civId)
-      : typeof ai?.hasSeaInvasionTarget === 'function' && ai.hasSeaInvasionTarget(civId))
-      ? 1
-      : 0;
+      : typeof ai?.hasSeaInvasionTarget === 'function' && ai.hasSeaInvasionTarget(civId)) {
+      seaInvasionCount = 1;
+    }
+    // Fallback count: enemy cities across water we can see (no diplomacy
+    // needed — a city across water is a future invasion whether at war or not).
+    if (seaInvasionCount === 0) {
+      try {
+        const ownLandmasses = new Set(ownCities.map((c: City) => (this.gameEngine as unknown as { getLandmassId?: (c: number, r: number) => number }).getLandmassId?.(c.col, c.row) ?? -1));
+        seaInvasionCount = this.gameEngine.cities.filter((c: City) => {
+          if (c.civilizationId === civId) return false;
+          const lm = (this.gameEngine as unknown as { getLandmassId?: (c: number, r: number) => number }).getLandmassId?.(c.col, c.row) ?? -1;
+          return lm >= 0 && !ownLandmasses.has(lm);
+        }).length > 0 ? 1 : 0;
+      } catch { /* stub engine */ }
+    }
+
+    // Strategic sea context for the doctrine's archipelago terms.
+    let landmassCount = 1;
+    try {
+      landmassCount = typeof engine.getLandmassCount === 'function' ? engine.getLandmassCount() : 1;
+    } catch { landmassCount = 1; }
+    let needsNavy = false;
+    try {
+      needsNavy = typeof engine.civNeedsNavy === 'function' && engine.civNeedsNavy(civId);
+    } catch { needsNavy = landmassCount > 1 && ownCoastal.length > 0; }
+    // Share of water still dark: drives scout/picket pressure. Cheap probe —
+    // sample the civ's explored map rather than walking every tile twice.
+    let unexploredWaterShare = 0;
+    try {
+      const storage = engine.getPlayerStorage?.(civId);
+      const explored = storage?.explored as boolean[] | Uint8Array | undefined;
+      const map = (this.gameEngine as unknown as { map?: { width: number; height: number; tiles: Array<{ type?: string }> } }).map;
+      if (explored && map && map.tiles.length === explored.length) {
+        let water = 0;
+        let darkWater = 0;
+        for (let i = 0; i < map.tiles.length; i++) {
+          const t = String(map.tiles[i]?.type ?? '').toLowerCase();
+          if (t === 'ocean' || t === 'river') {
+            water++;
+            if (!explored[i]) darkWater++;
+          }
+        }
+        if (water > 0) unexploredWaterShare = darkWater / water;
+      }
+    } catch { unexploredWaterShare = 0; }
+    // Fleet quality (attack sums, not hull counts — a battleship is not a sail).
+    const fleetPower = (list: Unit[]): number => list.reduce((n, u) => n + Math.max(0, (u.attack ?? UNIT_PROPS[u.type]?.attack ?? 0)), 0);
+    const ownFleetPower = fleetPower(ownNaval.filter(isWarship));
+    const enemyFleetPower = fleetPower(enemyNaval.filter(isWarship));
+    // Fishing grounds needing a screen (harbour cities with boats at sea).
+    const fishingGrounds = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civId && !u.isDefeated && u.type === 'fisher_boat',
+    ).length;
+    // Role splits for fleet-mix (scouts = sail/caravel, heavies = 8+ attack).
+    const isScoutHull = (u: Unit): boolean => u.type === 'sail' || u.type === 'caravel';
+    const isHeavyHull = (u: Unit): boolean => (u.attack ?? UNIT_PROPS[u.type]?.attack ?? 0) >= 8;
+    const ownScouts = ownNaval.filter((u) => isWarship(u) && isScoutHull(u)).length;
+    const ownHeavies = ownNaval.filter((u) => isWarship(u) && isHeavyHull(u)).length;
+    const ownRaiders = ownNaval.filter((u) => isWarship(u) && u.type === 'submarine').length;
+    const ownCarriers = ownNaval.filter((u) => isWarship(u) && u.type === 'carrier').length;
 
     const input: NavalDoctrineInput = {
       // No economic data at all means no treasury reading either; the
@@ -2177,17 +2523,23 @@ export class AutoProduction {
       reservePerTurn: reserve,
       ownTransports,
       ownWarships,
+      ownScouts,
+      ownHeavies,
+      ownRaiders,
+      ownCarriers,
       ownCities: ownCities.length,
       ownCoastalCities: ownCoastal.length,
       threatenedOwnCoastalCities: threatenedCoastal,
       // Without the probe we cannot know about islands, so assume a naval civ
       // with troops has somewhere to sail: that reproduces the pre-doctrine
       // "build a transport first" behaviour instead of building nothing.
+      // On a split world with dark water, assume ONE island until charted —
+      // the bootstrap hull finds the real ones (the chicken-egg fix).
       colonisableIslands: hasIslandProbe
-        ? engine.getColonizableIslands(civId)?.length ?? 0
+        ? (engine.getColonizableIslands(civId)?.length ?? 0) || ((landmassCount > 1 && unexploredWaterShare > 0.3 && ownCoastal.length > 0) ? 1 : 0)
         : (this.gameEngine.units.some((u: Unit) => u.civilizationId === civId
           && !u.isDefeated && !u.embarkedOn && (u.attack ?? 0) > 0.5) ? 1 : 0),
-      seaInvasionTargets: seaInvasionTargets ? 1 : 0,
+      seaInvasionTargets: seaInvasionCount,
       troopsAvailable: this.gameEngine.units.some(
         (u: Unit) => u.civilizationId === civId && !u.isDefeated
           && !u.embarkedOn && (u.attack ?? 0) > 0.5 && !UNIT_PROPS[u.type]?.naval,
@@ -2196,6 +2548,12 @@ export class AutoProduction {
         || (typeof engine.isCivAtWar === 'function' && engine.isCivAtWar(civId)),
       enemyTransports: enemyNaval.filter(isTransport).length,
       enemyWarships: enemyNaval.filter(isWarship).length,
+      enemyFleetPower,
+      ownFleetPower,
+      landmassCount,
+      needsNavy,
+      unexploredWaterShare,
+      fishingGrounds,
       enemyCoastalCities: this.gameEngine.cities.filter(
         (c: City) => c.civilizationId !== civId
           && enemies.has(c.civilizationId)
@@ -2203,6 +2561,8 @@ export class AutoProduction {
       ).length,
       bestAvailableShip: strongest,
       cheapestAvailableShip: cheapest,
+      warshipOptions: warships,
+      transportOptions: transports,
     };
     const verdict = { ...input, ...navalDoctrine(input), ownTransports, ownWarships };
     this.navalDoctrineCache.set(civId, { key: cacheKey, verdict });
@@ -2210,7 +2570,33 @@ export class AutoProduction {
   }
 
   /** Tech-gated offensive unit selection */
-  private selectOffensiveUnitTypeForCiv(civ: Civilization | undefined): string {
+  private selectOffensiveUnitTypeForCiv(civ: Civilization | undefined, city?: City): string {
+    // Siege train: when the committed offensive aims at a walled city, guns
+    // crack what infantry cannot. Walls triple the defense the bulk planner
+    // sizes against, so leading with artillery/cannon is lethality, not
+    // flavor — a warrior wave against walls is shields into a garrison.
+    if (city) {
+      try {
+        const storage = typeof this.gameEngine.getPlayerStorage === 'function'
+          ? this.gameEngine.getPlayerStorage(city.civilizationId)
+          : undefined;
+        const plan = storage?.turnData?.offensivePlan as
+          | { target?: { col: number; row: number }; targetType?: string }
+          | undefined;
+        if (plan?.target && plan.targetType === 'city') {
+          const targetCity = typeof this.gameEngine.getCityAt === 'function'
+            ? this.gameEngine.getCityAt(plan.target.col, plan.target.row)
+            : null;
+          if (targetCity && ((targetCity as City).buildings ?? []).includes('city_walls')) {
+            for (const siege of ['artillery', 'cannon', 'catapult']) {
+              if (UNIT_PROPS[siege] && (!civ || canBuildUnit(civ, siege))) {
+                return siege;
+              }
+            }
+          }
+        }
+      } catch { /* plan inspection is advisory */ }
+    }
     const offensivePreference = ['tank', 'cavalry', 'knights', 'chariot', 'legion', 'archer', 'warrior'];
     for (const unitType of offensivePreference) {
       if (UNIT_PROPS[unitType] && (!civ || canBuildUnit(civ, unitType))) {
@@ -2275,6 +2661,8 @@ export class AutoProduction {
     buildingUpkeep: number;
     /** How much building upkeep it can afford at its current income. */
     buildingUpkeepBudget: number;
+    /** This turn's strategic branch (total war, nuclear endgame, …). */
+    strategyBranch?: string | null;
   } {
     const cities = this.gameEngine.cities?.filter((c: City) => c.civilizationId === civilizationId) || [];
     const civ = this.gameEngine.civilizations?.[civilizationId];
@@ -2351,6 +2739,7 @@ export class AutoProduction {
           ? econ.projectedIncome(civ)
           : 0) * BUILDING_UPKEEP_INCOME_RATIO),
       ),
+      strategyBranch: this.readStrategyBranch(civilizationId),
     };
   }
 
@@ -2360,6 +2749,9 @@ export class AutoProduction {
   processAutoProductionForCivilization(civilizationId: number): void {
     try {
       debugLog('[AutoProduction] Processing auto-production for civilization', civilizationId);
+      // Late-bind the works source: the settler governor must be active
+      // however the engine was assembled (see ensureWorksSource).
+      this.ensureWorksSource();
       
       const civCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civilizationId);
       const civ = this.gameEngine.civilizations?.[civilizationId];
@@ -2475,6 +2867,15 @@ export class AutoProduction {
       const threat = this.evaluateCityThreat(city);
       const isUrgentDefender = threat?.needsDefense && city.currentProduction.type === 'unit'
         && this.isDefensiveProduction(city.currentProduction);
+      // Total war / nuclear endgame: attackers are urgent too. Gold sitting in
+      // the treasury while the committed offensive waits for soldiers is tempo
+      // lost — the economic effectiveness of a war chest is measured in rushed
+      // attackers, not interest. Gated on the branch (not merely "at war") so
+      // peacetime border skirmishes never burn the reserve.
+      const branch = this.readStrategyBranch(civId);
+      const isUrgentAttacker = (branch === 'total_war' || branch === 'nuclear_endgame')
+        && city.currentProduction.type === 'unit'
+        && this.isOffensiveUnitType(city.currentProduction.itemType);
       const productionProgress = city.productionStored ?? 0;
       const productionCost = city.currentProduction.cost ?? 0;
       const remaining = Math.max(0, productionCost - productionProgress);
@@ -2485,15 +2886,16 @@ export class AutoProduction {
       // Rush when: (a) under immediate threat and building a defender, or
       // (b) gold is abundant and the build is nearly done, or
       // (c) the treasury is so far above its reserve that sitting on it is
-      //     the more expensive choice.
+      //     the more expensive choice, or
+      // (d) the branch is total war and an attacker is on the anvil.
       const goldIsAbundant = gold >= minimumReserve * 3;
       const nearlyDone = remaining <= 5;
-      const shouldRush = isUrgentDefender || (goldIsAbundant && nearlyDone) || flush;
+      const shouldRush = isUrgentDefender || (goldIsAbundant && nearlyDone) || flush || isUrgentAttacker;
 
       if (!shouldRush) continue;
       if (rushGold > spendable()) continue; // Can't afford it
 
-      debugLog(`[AutoProduction] ${city.name}: rushing ${city.currentProduction.itemType} for ${rushGold} gold (${remaining} shields remaining, ${isUrgentDefender ? 'threat' : flush ? 'flush treasury' : 'abundant gold'})`);
+      debugLog(`[AutoProduction] ${city.name}: rushing ${city.currentProduction.itemType} for ${rushGold} gold (${remaining} shields remaining, ${isUrgentDefender ? 'threat' : isUrgentAttacker ? 'total-war attacker' : flush ? 'flush treasury' : 'abundant gold'})`);
       if (this.gameEngine.rushCityProduction(city.id)) rushed++;
     }
   }

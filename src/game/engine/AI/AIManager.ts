@@ -17,7 +17,7 @@ import {
   villageDecisionRoll,
   villageEarlyGameFactor,
 } from '@/data/VillageConstants';
-import { isAutoScenario } from '@/data/GameConstants';
+import { isAutoScenario, SMALL_ISLAND_MAX_TILES } from '@/data/GameConstants';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { caravanRelevanceForCiv } from './CaravanEconomics';
 import { planCaravansForCiv, type CaravanCoordinatorWorld } from './CaravanCoordinator';
@@ -62,10 +62,25 @@ import {
 } from './AITypes';
 import {
   classifyNavalTarget,
+  classifyWarshipRole,
+  isSealiftHull,
+  isWarshipHull,
+  scoreColonyIsland,
+  scoreGuardTile,
   scoreLandingSite,
   scoreNavalTarget,
   type NavalTargetClass,
 } from './NavalDoctrine';
+import {
+  scoreNuclearTarget,
+} from './NuclearDoctrine';
+import {
+  scoreStackTarget,
+} from './AITactics';
+import {
+  selectStrategyBranch,
+  type StrategyBranch,
+} from './AIStrategyBranches';
 import {
   assessCityThreat,
   calculateDangerThreshold,
@@ -74,7 +89,13 @@ import {
   scoreEnemyTarget,
   type CityThreatAssessment
 } from './AIStrategy';
-import type { DiplomatAction } from '../DiplomacyTypes';
+import {
+  ESPIONAGE_DIPLOMAT_ACTIONS,
+  type DiplomatAction,
+  type DiplomatActionOptions,
+  type DiplomatTarget,
+} from '../DiplomacyTypes';
+import { chooseAction, scoreCandidates } from '../diplomacy/AIDiplomacyPolicy';
 import { chooseEspionageAction, type EspionageContext } from '../diplomacy/EspionagePolicy';
 import { wouldProposeExchange } from '../diplomacy/TechTradeEvaluator';
 import type { Unit, City, Civilization } from '../../../../types/game';
@@ -88,19 +109,6 @@ import { debugLog } from '../../../utils/DevLog';
 // settlers from chasing the 10x10 window maximum forever — as the settler
 // moves, the window re-centers and the "best" spot keeps moving ahead.
 const SETTLE_SCORE_THRESHOLD = 12;
-
-/**
- * Diplomat actions that resolve inside a foreign city rather than across a
- * negotiating table. None of them can be offered to the player as a
- * proposition — you do not ask permission to spy on someone — so the AI runs
- * them outright and the victim hears about it through ESPIONAGE_RESULT.
- */
-const ESPIONATION_ACTIONS: ReadonlySet<string> = new Set([
-  'establish_embassy',
-  'investigate_city',
-  'industrial_sabotage',
-  'steal_technology',
-]);
 
 /**
  * Unit types that never pay a trade visit. Everything else — a warrior, a
@@ -279,6 +287,24 @@ interface InvasionMission {
   waterTile: { col: number; row: number };
   rendezvous: { col: number; row: number };
   stage: 'gather' | 'sail' | 'siege';
+}
+
+/**
+ * A nuclear delivery mission: a warhead the launch point cannot reach is
+ * carried by submarine to within 16 tiles of its target and fired from the
+ * hull (Civ1 sneak strike). Stages mirror the colony mission:
+ *   gather → the warhead waits at a coastal city, the sub sails alongside;
+ *   sail   → the warhead is aboard and the sub closes to launch waters.
+ * Warheads already within range fire directly from the unit loop and need no
+ * mission; one delivery runs at a time, the rest of the arsenal fires direct.
+ */
+interface NukeMission {
+  nukeId: string;
+  subId: string | null;
+  targetCol: number;
+  targetRow: number;
+  targetCityId?: string;
+  stage: 'gather' | 'sail';
 }
 
 /**
@@ -663,6 +689,21 @@ export class AIManager {
     // Naval invasion: ferry a combat unit to an enemy city we cannot walk to.
     this.updateInvasionMission(civ, storage);
 
+    // Naval-governor activation: if the sea war has no fleet/mission yet,
+    // activate one (bootstrap hulls, fleet groups, escort pairs). Without this
+    // a sea world whose islands/enemies are still in fog never builds its
+    // first hull — the coordinator owns the activation gate.
+    this.ensureNavalGovernorActive(civ, storage);
+
+    // Strategic branch + nuclear delivery: the branch (endgame arm, total war,
+    // island spread, steady) is computed once and stored for production,
+    // research and spending; the nuke mission mates warheads with subs.
+    const branch = this.computeStrategyBranch(civilizationId, storage);
+    if (storage) {
+      (storage.turnData as Record<string, unknown>).strategyBranch = branch.id;
+    }
+    this.updateNukeMission(civ, storage, branch);
+
     // A committed, aggressive civ declares war on its chosen bulk target —
     // this is the "rush": war is started deliberately instead of waiting for
     // first contact, and the bulk army then presses the city.
@@ -719,7 +760,14 @@ export class AIManager {
       (u: Unit) => u.civilizationId === civilizationId && this.isCombatUnit(u)
     );
     const reserveIds = this.getCityDefenseReserveIds(civilizationId, combatUnits);
-    const offensiveUnits = combatUnits.filter((unit: Unit) => !reserveIds.has(unit.id));
+    // Naval sealift troops are NOT land-offensive units: a landing force
+    // waiting at the rendezvous must not be drafted into a land army group
+    // that marches it away from its ferry (the "invasion never sails because
+    // its troops keep joining land groups" stall).
+    const navalReservedIds = this.getNavalReservedUnitIds(storage);
+    const offensiveUnits = combatUnits.filter(
+      (unit: Unit) => !reserveIds.has(unit.id) && !navalReservedIds.has(unit.id),
+    );
     const plan = storage?.turnData?.offensivePlan as AIState['offensivePlan'] | null | undefined;
     const planGroupTargets = plan?.target && plan.reachableBy !== 'sea'
       ? [{
@@ -785,6 +833,10 @@ export class AIManager {
         this.isAtOrAdjacentToFriendlyCity(unit) &&
         this.shouldKeepGarrisonFortified(unit, storage);
       if (isGarrison) continue;
+      // Island guards and consolidating beachheads stay entrenched: releasing
+      // them every turn just re-fortifies them at dusk (log spam) and leaves
+      // the post empty to anything that moves between turns.
+      if (this.isOnIslandGuardPost(unit)) continue;
       this.gameEngine.unfortifyUnit(unit.id);
     }
 
@@ -948,9 +1000,13 @@ export class AIManager {
         // than attacking (Civ I: diplomacy is initiated on physical contact).
         // The action consumes the diplomat's moves, ending its processing.
         if (unit.type === 'diplomat') {
-          const diplomatInfo = this.gameEngine.getDiplomatActions?.(unit.id);
-          if (diplomatInfo) {
-            this.executeAIDiplomatAction(unit, diplomatInfo);
+          const contacts = this.gameEngine.getDiplomatTargets?.(unit.id) ?? [];
+          // Between two courts the diplomat opens with whichever one this turn
+          // can be spent on most productively, rather than whichever tile the
+          // grid yielded first.
+          const choice = this.chooseDiplomatContact(unit, contacts);
+          if (choice) {
+            this.executeAIDiplomatAction(unit, choice.target);
             break;
           }
         }
@@ -968,14 +1024,70 @@ export class AIManager {
 
         // Nuclear weapons are LAUNCHED, not marched. This branch runs before
         // any targeting so a warhead is never swept into `isCombatUnit` land
-        // targeting and walked into a melee it has 0 defense for: the AI picks
-        // the best key target it can see, detonates, and the unit is gone.
-        // With no worthwhile target the warhead is held for next turn.
+        // targeting and walked into a melee it has 0 defense for.
+        //
+        // Two ways to fire: directly at an in-range, SDI-free target, or (no
+        // such target) by boarding the delivery submarine when it sails
+        // alongside. With no worthwhile target and no ride, the warhead is
+        // held for next turn.
         if (unit.type === 'nuclear') {
           const strike = this.chooseNuclearStrike(unit);
-          if (!strike || !this.gameEngine.detonateNuclear(unit.id, strike.col, strike.row)) {
+          if (strike) {
+          // Nuclear-threat diplomacy: before a strike on a human player, the AI
+          // "demands" gold as a deterrent payment. 80% of the time that payment
+          // (when it can be afforded) buys the attack off; otherwise the
+          // warhead still falls.
+          const targetCityForStrike = this.gameEngine.cities.find((c) => c.col === strike.col && c.row === strike.row);
+          const targetUnitForStrike = this.gameEngine.units.find((u) =>
+            !u.isDefeated && u.col === strike.col && u.row === strike.row && u.civilizationId !== unit.civilizationId);
+          const targetCivId = (targetCityForStrike ?? targetUnitForStrike)?.civilizationId ?? -1;
+          const targetCiv = this.gameEngine.civilizations?.[targetCivId];
+          const isHumanTarget = targetCiv?.isHuman === true;
+          if (isHumanTarget && (unit.civilizationId ?? -1) >= 0) {
+            const fromCiv = this.gameEngine.civilizations?.[unit.civilizationId];
+            const demand = 300;
+            const available = targetCiv.resources?.gold ?? 0;
+            if (available >= demand) {
+              if (targetCiv.resources) targetCiv.resources.gold -= demand;
+              if (fromCiv?.resources) fromCiv.resources.gold += demand;
+              this.gameEngine.log('ai', `Nuclear threat — ${fromCiv?.name ?? unit.civilizationId} demands ${demand} gold from ${targetCiv.name}; payment accepted`, {
+                civilizationId: unit.civilizationId, action: 'nuclear_threat', unitId: unit.id, goldAmount: demand,
+              });
+              if (Math.random() < 0.8) {
+                // The payment bought the strike off.
+                this.gameEngine.skipUnit(unit.id);
+                break;
+              }
+              // 20% of the time: threat was empty, fire anyway.
+            } else {
+              this.gameEngine.log('ai', `Nuclear threat — ${fromCiv?.name ?? unit.civilizationId} demands ${demand} gold from ${targetCiv.name}; target cannot pay`, {
+                civilizationId: unit.civilizationId, action: 'nuclear_threat', unitId: unit.id, goldAmount: demand,
+              });
+            }
+          }
+          if (!this.gameEngine.detonateNuclear(unit.id, strike.col, strike.row)) {
             this.gameEngine.skipUnit(unit.id);
           }
+          break;
+          }
+          // No in-range, SDI-free target: board the delivery submarine when it
+          // sails alongside (the mission sub closes to launch waters and fires
+          // from the hull). Otherwise hold the warhead for next turn.
+          const nukeMission = this.getNukeMission(storage);
+          if (nukeMission && nukeMission.nukeId === unit.id && nukeMission.subId) {
+            const sub = this.gameEngine.units.find((u: Unit) => u.id === nukeMission.subId && !u.isDefeated);
+            if (sub && typeof this.gameEngine.canLoadFerry === 'function'
+              && this.gameEngine.canLoadFerry(sub.id, unit.id)) {
+              this.gameEngine.loadFerry(sub.id, unit.id);
+              nukeMission.stage = 'sail';
+              this.setNukeMission(storage, nukeMission);
+              this.gameEngine.log?.('ai', `Nuclear delivery — warhead boards submarine`, {
+                civilizationId: unit.civilizationId, action: 'nuke_load', unitId: sub.id, troopId: unit.id,
+              });
+              break;
+            }
+          }
+          this.gameEngine.skipUnit(unit.id);
           break;
         }
 
@@ -1026,8 +1138,10 @@ export class AIManager {
         // colony missions and completed 0: every mission sat at stage 'gather'
         // with its settler frozen on the capital tile.
         const colonyMission = unit.type === 'settler'
-          ? this.getColonyMission(storage)
-          : null;
+          ? this.getColonyMissionForSettler(storage, unit.id)
+          : unit.type === 'ferry'
+            ? this.getColonyMissionForFerry(storage, unit.id)
+            : null;
         const reservedForColony = !!colonyMission
           && colonyMission.settlerId === unit.id
           && !unit.embarkedOn;
@@ -1054,13 +1168,23 @@ export class AIManager {
           const civStrategy = resolveAICivStrategy(civ, aiState);
           let worksTarget: { col: number; row: number } | null = null;
 
+          // Offshore settlers found, they don't commute: a settler standing on
+          // an island with no land path home must never be assigned a works
+          // tile back on the mainland — it walks to the nearest shore and
+          // stalls there forever instead of founding the city it was shipped
+          // to build (70 landings → 4 cities in one profiled run). The
+          // settlement search below is its only job.
+          const canReachHomeFields = this.settlerSharesLandmassWithCities(unit);
+
           // From city size 6+, irrigation of surrounding tiles is the top
           // priority for settlers — unless the city is under direct threat
-          // or being attacked. This runs BEFORE any other work.
-          const irrigationTarget = this.findIrrigationTargetForMatureCity(unit);
+          // or being attacked. This runs BEFORE any other work. Offshore
+          // settlers skip it (see canReachHomeFields above): there is no
+          // field worth swimming home for.
+          const irrigationTarget = canReachHomeFields ? this.findIrrigationTargetForMatureCity(unit) : null;
           if (irrigationTarget) {
             worksTarget = irrigationTarget;
-          } else if (this.prefersInfrastructureOverExpansion(civ.id, civStrategy)
+          } else if (canReachHomeFields && (this.prefersInfrastructureOverExpansion(civ.id, civStrategy)
             // Size 6 and up: the city's own fields come first, whatever the
             // civ's strategy or city count says. This is the irrigation
             // mandate — see findInfrastructureWorksTarget for the two threat
@@ -1072,7 +1196,7 @@ export class AIManager {
             // founded a city roughly every time one was produced (10 cities
             // founded vs 4 improvements in a 200-round test game), and the
             // empire grew wider than it ever grew up.
-            || this.citiesNeedBuildOut(civ.id)) {
+            || this.citiesNeedBuildOut(civ.id))) {
             // Late-game infrastructure mode (see LATE_INFRA_PROFILES): a civ that
             // already sprawled past LATE_INFRA_CITY_THRESHOLD cities stops
             // treating "found another city" as the default answer. Its settler
@@ -1149,7 +1273,7 @@ export class AIManager {
                   break; // the settler worked its turn
                 }
               }
-              worksTarget = wantsWorks ? this.findTradeRoadTarget(unit) : null;
+              worksTarget = wantsWorks && canReachHomeFields ? this.findTradeRoadTarget(unit) : null;
               if (!worksTarget && this.gameEngine.canJoinCity?.(unit.id)) {
                 const joined = this.gameEngine.foundCityWithSettler(unit.id);
                 if (joined) {
@@ -1212,6 +1336,14 @@ export class AIManager {
         const invasionMission = this.getInvasionMission(storage);
         if (unit.type === 'ferry' && invasionMission?.ferryId === unit.id) {
           if (this.tryInvasionFerryAction(unit, invasionMission, storage)) break;
+        }
+
+        // Nuclear delivery submarine: fires the warhead from aboard at launch
+        // waters, or loads the waiting warhead while gathering. Anything else
+        // is plain sailing (handled by the naval destination below).
+        const deliveryMission = unit.type === 'submarine' ? this.getNukeMission(storage) : null;
+        if (unit.type === 'submarine' && deliveryMission?.subId === unit.id) {
+          if (this.tryNukeSubAction(unit, deliveryMission, storage)) break;
         }
 
         // Fisher Boat: deploy the net the moment it reaches a fish tile; with
@@ -1459,11 +1591,19 @@ export class AIManager {
               break;
             }
           } else {
-            // Move into the tile
-            const tt = this.gameEngine.getTileAt(target.col, target.row);
+            // Move into the tile. Combat units spread off allied stacks on
+            // open ground first (splash discipline): piling onto own troops
+            // where the enemy splashes back is a free multi-kill. Cities and
+            // fortresses stack freely (immunity), as do civilians.
+            const spread = this.deStackStep(unit, target, target);
+            const dest = spread ?? target;
+            if (spread) {
+              debugLog(`[AI] De-stacking: ${unit.id} steps to (${dest.col},${dest.row}) instead of piling onto (${target.col},${target.row})`);
+            }
+            const tt = this.gameEngine.getTileAt(dest.col, dest.row);
             const moveCost = Math.max(1, TERRAIN_PROPS[tt?.type ?? '']?.movement ?? 1);
             if (this.gameEngine.canUnitAffordMove(unit, moveCost)) {
-              const r = this.gameEngine.moveUnit(unit.id, target.col, target.row);
+              const r = this.gameEngine.moveUnit(unit.id, dest.col, dest.row);
               if (!r || !r.success) {
                 // A scout that cannot enter this tile should stop re-targeting
                 // it forever (stuck-target guard).
@@ -1477,7 +1617,7 @@ export class AIManager {
                 this.gameEngine.skipUnit(unit.id);
                 break;
               }
-              this.gameEngine.log('ai', `Move — ${civ.name} ${unit.type}(${unit.id}) → (${target.col},${target.row})`, { civilizationId, action: 'move', unitId: unit.id, unitType: unit.type, targetCol: target.col, targetRow: target.row });
+              this.gameEngine.log('ai', `Move — ${civ.name} ${unit.type}(${unit.id}) → (${dest.col},${dest.row})`, { civilizationId, action: 'move', unitId: unit.id, unitType: unit.type, targetCol: target.col, targetRow: target.row });
             } else {
              debugLog(`[AI] Not enough moves for move (${unit.movesRemaining} < ${moveCost}), skipping`);
               this.gameEngine.log('ai', `Move blocked — ${civ.name} ${unit.type}(${unit.id})`, { civilizationId, action: 'skip', unitId: unit.id, unitType: unit.type, reason: 'insufficient_moves' });
@@ -1528,6 +1668,15 @@ export class AIManager {
               // Deviating from the A* path — the stored GoTo is no longer valid.
               this.gameEngine.roundManager?.clearUnitPath(unit.id);
               next = affordable;
+            }
+            // Splash discipline on the march, same as the adjacent branch:
+            // never pile onto allied stacks on open ground. Deviating drops
+            // the stored GoTo like any other off-path step.
+            const spreadStep = this.deStackStep(unit, next, target);
+            if (spreadStep) {
+              this.gameEngine.roundManager?.clearUnitPath(unit.id);
+              debugLog(`[AI] De-stacking march: ${unit.id} steps to (${spreadStep.col},${spreadStep.row}) instead of piling onto (${next.col},${next.row})`);
+              next = spreadStep;
             }
             const r = this.gameEngine.moveUnit(unit.id, next.col, next.row);
             if (!r || !r.success) {
@@ -2133,7 +2282,30 @@ export class AIManager {
     }
 
     // 4. March at the frontier.
-    return this.findFrontierTile(unit);
+    const frontier = this.findFrontierTile(unit);
+    if (frontier) return frontier;
+
+    // Absolute last resort: step onto any passable neighbour so the settler
+    // is never stuck skipping a turn. Only null when truly boxed in.
+    const grid = this.gameEngine.squareGrid;
+    if (grid) {
+      const steps = [
+        { col: unit.col + 1, row: unit.row },
+        { col: unit.col - 1, row: unit.row },
+        { col: unit.col, row: unit.row + 1 },
+        { col: unit.col, row: unit.row - 1 },
+      ];
+      for (const s of steps) {
+        if (!grid.isValidSquare(s.col, s.row)) continue;
+        const tile = this.gameEngine.getTileAt(s.col, s.row);
+        const terrain = String(tile?.type ?? tile?.terrain ?? '').toLowerCase();
+        if (terrain === 'ocean' || terrain === 'sea' || terrain === 'mountains') continue;
+        if (this.gameEngine.canUnitMoveTo?.(unit.id, s.col, s.row) === false) continue;
+        debugLog(`[AI-SETTLER] Last resort: stepping onto neighbour (${s.col},${s.row})`);
+        return s;
+      }
+    }
+    return null;
   }
 
   /** The own city tile closest to this unit, or null when it owns none. */
@@ -2183,6 +2355,26 @@ export class AIManager {
         }
       }
     }
+
+    // Never leave a settler idle: if unexplored ground is unreachable, fall
+    // back to the nearest passable tile the unit can actually enter, even if
+    // it is already known territory.
+    for (let radius = 1; radius <= 2; radius++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        for (let dr = -radius; dr <= radius; dr++) {
+          if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
+          const col = unit.col + dc;
+          const row = unit.row + dr;
+          if (!grid.isValidSquare(col, row)) continue;
+          const tile = this.gameEngine.getTileAt(col, row);
+          const terrain = String(tile?.type ?? tile?.terrain ?? '');
+          if (terrain === 'ocean' || terrain === 'sea' || terrain === 'mountains') continue;
+          if (this.gameEngine.canUnitMoveTo?.(unit.id, col, row) === false) continue;
+          return { col, row };
+        }
+      }
+    }
+
     return null;
   }
 
@@ -2281,6 +2473,65 @@ export class AIManager {
     return best;
   }
 
+  /**
+   * Splash-aware target pick among scanned enemies: a cluster on open ground
+   * outranks the merely nearest single (its mates eat 25% each for free).
+   * Under a roof there is no splash, so nearest wins exactly as before — the
+   * strict comparison keeps the old order whenever no stack bonus applies.
+   * Civilians keep nearest-first (they flank or flee, never stack-hunt).
+   */
+  private pickSplashTarget<T extends { col: number; row: number; distance?: number }>(
+    unit: Unit,
+    enemies: T[],
+  ): T {
+    if (!this.isCombatUnit(unit) || enemies.length === 0) return enemies[0];
+    let best = enemies[0];
+    let bestScore = -Infinity;
+    for (const e of enemies) {
+      const stack = (typeof this.gameEngine.getUnitsAt === 'function'
+        ? this.gameEngine.getUnitsAt(e.col, e.row)
+        : []).filter((u: Unit) => !u.isDefeated && u.civilizationId !== unit.civilizationId);
+      const tile = this.gameEngine.getTileAt(e.col, e.row);
+      const openGround = !this.gameEngine.getCityAt(e.col, e.row)
+        && String((tile as { improvement?: unknown } | null)?.improvement ?? '').toLowerCase() !== 'fortress';
+      const score = scoreStackTarget({
+        stackSize: Math.max(1, stack.length),
+        distance: e.distance ?? 0,
+        openGround,
+      });
+      if (score > bestScore) {
+        bestScore = score;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Spread off an allied stack on open ground: returns an alternate adjacent
+   * tile (passable, unoccupied, nearest the objective) when stepping onto
+   * `next` would pile onto own troops where splash applies. Null to proceed.
+   * Cities and fortress tiles stack freely (splash immunity) — assaults and
+   * garrisons concentrate there exactly as before. Combat units only.
+   */
+  private deStackStep(
+    unit: Unit,
+    next: { col: number; row: number },
+    target: { col: number; row: number },
+  ): { col: number; row: number } | null {
+    if (!this.isCombatUnit(unit)) return null;
+    if (this.gameEngine.getCityAt(next.col, next.row)) return null;
+    const tile = this.gameEngine.getTileAt(next.col, next.row);
+    if (String((tile as { improvement?: unknown } | null)?.improvement ?? '').toLowerCase() === 'fortress') return null;
+    const allies = (typeof this.gameEngine.getUnitsAt === 'function'
+      ? this.gameEngine.getUnitsAt(next.col, next.row)
+      : []).filter((u: Unit) => u.civilizationId === unit.civilizationId && u.id !== unit.id && !u.isDefeated);
+    if (allies.length === 0) return null;
+    // findAffordableStep already skips allied tiles and prefers the tile
+    // nearest the objective — exactly the spread step wanted here.
+    return this.findAffordableStep(unit, target);
+  }
+
   // ──────────────────────────────────────────────────────────────────────
   // Naval AI
   // ──────────────────────────────────────────────────────────────────────
@@ -2317,21 +2568,315 @@ export class AIManager {
   }
 
   // ──────────────────────────────────────────────────────────────────────
-  // Colony missions: ferry a settler to a small empty island
+  // Colony missions: ferry settlers to small empty islands — in PARALLEL
   // ──────────────────────────────────────────────────────────────────────
+  //
+  // One mission per island: a civ facing an archipelago seeds several islands
+  // at once instead of queueing them behind a single settler and hull. The
+  // legacy single `colonyMission` slot migrates into the array on first read,
+  // so old saves keep working.
 
-  private getColonyMission(storage?: PlayerTurnStorage): ColonyMission | null {
-    const raw = storage?.turnData?.colonyMission as ColonyMission | undefined;
+  /** Max simultaneous colony missions per civ (sealift + settler supply). */
+  private maxParallelColonies(): number {
+    return 3;
+  }
+
+  private getColonyMissions(storage?: PlayerTurnStorage): ColonyMission[] {
+    const turnData = storage?.turnData as
+      | { colonyMissions?: ColonyMission[]; colonyMission?: ColonyMission }
+      | undefined;
+    if (!turnData) return [];
+    if (!Array.isArray(turnData.colonyMissions)) turnData.colonyMissions = [];
+    // Migrate the legacy single slot once.
+    if (turnData.colonyMission) {
+      const legacy = turnData.colonyMission;
+      delete turnData.colonyMission;
+      if (legacy.settlerId && !turnData.colonyMissions.some((m) => m.settlerId === legacy.settlerId)) {
+        turnData.colonyMissions.push(legacy);
+      }
+    }
+    return turnData.colonyMissions;
+  }
+
+  private saveColonyMissions(storage: PlayerTurnStorage | undefined, missions: ColonyMission[]): void {
+    if (!storage) return;
+    (storage.turnData as { colonyMissions?: ColonyMission[] }).colonyMissions = missions;
+  }
+
+  /** The mission carrying this settler, if any. */
+  private getColonyMissionForSettler(storage: PlayerTurnStorage | undefined, settlerId: string): ColonyMission | null {
+    return this.getColonyMissions(storage).find((m) => m.settlerId === settlerId) ?? null;
+  }
+
+  /** The mission this ferry sails for, if any. */
+  private getColonyMissionForFerry(storage: PlayerTurnStorage | undefined, ferryId: string): ColonyMission | null {
+    return this.getColonyMissions(storage).find((m) => m.ferryId === ferryId) ?? null;
+  }
+
+  private removeColonyMission(storage: PlayerTurnStorage | undefined, mission: ColonyMission): void {
+    if (!storage) return;
+    this.saveColonyMissions(
+      storage,
+      this.getColonyMissions(storage).filter((m) => m !== mission),
+    );
+  }
+
+  // ── Nuclear delivery ──────────────────────────────────────────────────
+
+  private getNukeMission(storage?: PlayerTurnStorage): NukeMission | null {
+    const raw = storage?.turnData?.nukeMission as NukeMission | undefined;
     return raw ?? null;
   }
 
-  private setColonyMission(storage: PlayerTurnStorage | undefined, mission: ColonyMission): void {
+  private setNukeMission(storage: PlayerTurnStorage | undefined, mission: NukeMission): void {
     if (!storage) return;
-    storage.turnData.colonyMission = mission;
+    storage.turnData.nukeMission = mission;
   }
 
-  private clearColonyMission(storage?: PlayerTurnStorage): void {
-    if (storage) delete storage.turnData.colonyMission;
+  private clearNukeMission(storage?: PlayerTurnStorage): void {
+    if (storage) delete storage.turnData.nukeMission;
+  }
+
+  /** This civ knows Fission (tech Set or array on test doubles). */
+  private civKnowsFission(civId: number): boolean {
+    const techs = this.gameEngine.civilizations?.[civId]?.technologies;
+    return techs instanceof Set ? techs.has('nuclear_fission') : Array.isArray(techs) && techs.includes('nuclear_fission');
+  }
+
+  /** Manhattan Project built by anyone (unlocks every civ's arsenal). */
+  private isManhattanBuilt(): boolean {
+    try {
+      return this.gameEngine.wonderManager?.isBuilt?.('manhattan_project') === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Own warheads ready to mate with a hull (alive, unembarked). */
+  private readyNukes(civId: number): Unit[] {
+    return this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civId && u.type === 'nuclear' && !u.isDefeated && !u.embarkedOn,
+    );
+  }
+
+  /** Own submarines with a free warhead slot. */
+  private freeNukeSubs(civId: number): Unit[] {
+    return this.gameEngine.units.filter((u: Unit) => {
+      if (u.civilizationId !== civId || u.type !== 'submarine' || u.isDefeated || u.embarkedOn) return false;
+      return this.ferryCargoIds(u).length < Math.max(1, UNIT_PROPS.submarine?.transportCapacity ?? 1);
+    });
+  }
+
+  /**
+   * Enemy cities worth a warhead, best first: SDI-shielded targets excluded
+   * (firing wastes the warhead), each scored by the nuclear doctrine. Cities
+   * only — stacks move, cities don't, and a delivery mission needs a stable
+   * aim point.
+   */
+  private rankNukeTargets(civId: number): Array<{ col: number; row: number; score: number; reason: string; cityId: string }> {
+    const grid = this.gameEngine.squareGrid;
+    const dm = this.gameEngine.diplomacyManager;
+    if (!grid || !dm) return [];
+    const enemies = new Set((dm.getEnemies?.(civId) ?? []).map(Number));
+    enemies.add(BARBARIAN_CIV_ID);
+    const hostile = (other: { civilizationId: number }) => enemies.has(Number(other.civilizationId));
+    const sdi = (col: number, row: number): boolean => {
+      try {
+        return typeof this.gameEngine.isCoveredBySDI === 'function'
+          && this.gameEngine.isCoveredBySDI(col, row);
+      } catch {
+        return false;
+      }
+    };
+    const out: Array<{ col: number; row: number; score: number; reason: string; cityId: string }> = [];
+    for (const city of this.gameEngine.cities) {
+      if (city.civilizationId === civId || !hostile(city)) continue;
+      const scored = scoreNuclearTarget({
+        kind: 'city',
+        col: city.col,
+        row: city.row,
+        weight: city.population ?? 1,
+        bonus: city.isCapital === true ? 25 : 0,
+        sdiCovered: sdi(city.col, city.row),
+      });
+      if (scored.hopeless) continue;
+      out.push({ col: city.col, row: city.row, score: scored.score, reason: `enemy city ${city.name}`, cityId: city.id });
+    }
+    out.sort((a, b) => b.score - a.score);
+    return out;
+  }
+
+  /**
+   * Keep the civ's nuclear delivery valid and plan one when the endgame
+   * branch says arm: a high-value city no ready warhead can reach (16 tiles)
+   * gets a nuke + sub pair. The sub sails alongside the waiting warhead,
+   * loads it, closes to launch waters, and fires from the hull.
+   */
+  private updateNukeMission(civ: Civilization, storage: PlayerTurnStorage | undefined, branch: StrategyBranch): void {
+    if (!storage) return;
+    const civId = civ.id;
+    let mission = this.getNukeMission(storage);
+    if (mission) {
+      const nuke = this.gameEngine.units.find((u: Unit) => u.id === mission!.nukeId && !u.isDefeated);
+      const sub = mission.subId
+        ? this.gameEngine.units.find((u: Unit) => u.id === mission!.subId && !u.isDefeated)
+        : null;
+      const targetCity = mission.targetCityId
+        ? this.gameEngine.cities.find((c) => c.id === mission!.targetCityId)
+        : null;
+      const targetLost = mission.targetCityId != null
+        && (!targetCity || targetCity.civilizationId === civId);
+      let targetShielded = false;
+      try {
+        targetShielded = typeof this.gameEngine.isCoveredBySDI === 'function'
+          && this.gameEngine.isCoveredBySDI(mission.targetCol, mission.targetRow);
+      } catch { targetShielded = false; }
+      if (!nuke || (mission.subId && !sub) || targetLost || targetShielded) {
+        // Warhead spent, hull sunk, city taken, or SDI raised over the aim
+        // point — stand down (re-planning picks the next target below).
+        this.clearNukeMission(storage);
+        mission = null;
+      } else {
+        if (mission.subId && !sub) mission.subId = null;
+        if (mission.stage !== 'sail' && nuke.embarkedOn) mission.stage = 'sail';
+        this.setNukeMission(storage, mission);
+      }
+    }
+    if (mission) return;
+    if (branch.id !== 'nuclear_endgame') return;
+    if (!this.civKnowsFission(civId) || !this.isManhattanBuilt()) return;
+
+    const range = UNIT_PROPS.nuclear?.movement ?? 16;
+    const grid = this.gameEngine.squareGrid;
+    const ready = this.readyNukes(civId);
+    if (ready.length === 0 || !grid) return;
+    const targets = this.rankNukeTargets(civId);
+    for (const target of targets) {
+      // Covered by a ready warhead's own range: no delivery needed, the unit
+      // loop fires it directly.
+      const directCover = ready.some(
+        (n) => grid.chebyshevDistance(n.col, n.row, target.col, target.row) <= range,
+      );
+      if (directCover) continue;
+      // Deliverable by sea: launch waters within 16 of the aim point.
+      if (!this.findLaunchWaters(target, { col: ready[0].col, row: ready[0].row })) continue;
+      // A warhead waiting at a coastal city + a free launch hull.
+      const nuke = ready.find((n) => {
+        const cityHere = this.gameEngine.getCityAt?.(n.col, n.row);
+        return cityHere?.civilizationId === civId && this.navigableWaterAt(n.col, n.row) != null;
+      }) ?? ready[0];
+      const sub = this.freeNukeSubs(civId)
+        .map((s) => ({ s, d: grid.chebyshevDistance(s.col, s.row, nuke.col, nuke.row) }))
+        .sort((a, b) => a.d - b.d)[0]?.s;
+      if (!sub) continue;
+      // One hull, one warhead: a sub already mated is not free (see
+      // freeNukeSubs), so sister warheads wait for the next hull.
+      const newMission: NukeMission = {
+        nukeId: nuke.id,
+        subId: sub.id,
+        targetCol: target.col,
+        targetRow: target.row,
+        targetCityId: target.cityId,
+        stage: nuke.embarkedOn ? 'sail' : 'gather',
+      };
+      this.setNukeMission(storage, newMission);
+      this.gameEngine.log?.('ai', `Nuclear delivery — ${civ.name} mates a warhead with a submarine for ${target.reason}`, {
+        civilizationId: civId,
+        action: 'nuke_mission',
+        unitId: nuke.id,
+        troopId: sub.id,
+        targetCol: target.col,
+        targetRow: target.row,
+      });
+      return;
+    }
+  }
+
+  /**
+   * Nearest navigable water within warhead range of the aim point: where the
+   * delivery sub parks to fire. Null when no launch waters exist (a city
+   * deeper inland than 16 tiles from any water can only be struck directly).
+   */
+  private findLaunchWaters(
+    target: { col: number; row: number },
+    from: { col: number; row: number },
+  ): { col: number; row: number } | null {
+    const grid = this.gameEngine.squareGrid;
+    const map = this.gameEngine.map;
+    if (!grid || !map) return null;
+    const range = UNIT_PROPS.nuclear?.movement ?? 16;
+    let best: { col: number; row: number } | null = null;
+    let bestDist = Infinity;
+    for (let dc = -range; dc <= range; dc++) {
+      for (let dr = -range; dr <= range; dr++) {
+        const col = target.col + dc;
+        const row = target.row + dr;
+        if (!grid.isValidSquare(col, row)) continue;
+        if (grid.chebyshevDistance(col, row, target.col, target.row) > range) continue;
+        const key = String(this.gameEngine.getTileAt(col, row)?.type ?? '').trim().toLowerCase();
+        if (key !== 'ocean' && key !== 'river') continue;
+        if (this.gameEngine.getUnitAt(col, row)) continue;
+        const dist = grid.squareDistance(from.col, from.row, col, row);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { col, row };
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Sail the mission sub (load the waiting warhead, or fire from aboard).
+   * Returns true when the sub acted and its turn is spent.
+   */
+  private tryNukeSubAction(unit: Unit, mission: NukeMission, storage?: PlayerTurnStorage): boolean {
+    if (!mission.subId || unit.id !== mission.subId) return false;
+    const range = UNIT_PROPS.nuclear?.movement ?? 16;
+    const grid = this.gameEngine.squareGrid;
+    const cargo = this.ferryCargoIds(unit);
+    const nuke = this.gameEngine.units.find((u: Unit) => u.id === mission.nukeId && !u.isDefeated);
+    const target = { col: mission.targetCol, row: mission.targetRow };
+    // Loaded: fire the moment the hull closes to range (re-checking SDI —
+    // a shield raised after planning still saves the warhead).
+    if (nuke && cargo.includes(nuke.id)) {
+      let shielded = false;
+      try {
+        shielded = typeof this.gameEngine.isCoveredBySDI === 'function'
+          && this.gameEngine.isCoveredBySDI(target.col, target.row);
+      } catch { shielded = false; }
+      if (!shielded && grid && grid.chebyshevDistance(unit.col, unit.row, target.col, target.row) <= range) {
+        if (this.gameEngine.detonateNuclear(nuke.id, target.col, target.row)) {
+          this.clearNukeMission(storage);
+          this.gameEngine.log?.('ai', `Nuclear strike — warhead fired from submarine at (${target.col},${target.row})`, {
+            civilizationId: unit.civilizationId,
+            action: 'nuke_strike',
+            unitId: nuke.id,
+            troopId: unit.id,
+            targetCol: target.col,
+            targetRow: target.row,
+          });
+          return true;
+        }
+      }
+      return false;
+    }
+    // Gathering: load the waiting warhead when alongside.
+    if (nuke && !nuke.embarkedOn
+      && typeof this.gameEngine.canLoadFerry === 'function'
+      && this.gameEngine.canLoadFerry(unit.id, nuke.id)) {
+      this.gameEngine.loadFerry(unit.id, nuke.id);
+      mission.stage = 'sail';
+      this.setNukeMission(storage, mission);
+      this.gameEngine.log?.('ai', `Nuclear delivery — warhead aboard submarine`, {
+        civilizationId: unit.civilizationId,
+        action: 'nuke_load',
+        unitId: unit.id,
+        troopId: nuke.id,
+      });
+      return true;
+    }
+    return false;
   }
 
   // ── Naval invasion ──────────────────────────────────────────────────────
@@ -2589,6 +3134,73 @@ export class AIManager {
   }
 
   /**
+   * Where a landed force should consolidate when it cannot take its city.
+   * Returns null when the assault is winnable (march on). Otherwise the best
+   * defensive tile by the beach: the force entrenches there (+50% fortified,
+   * terrain, fortress) instead of attacking one unit at a time into a wall.
+   * The ferry is already released for the next wave; the beachhead waits.
+   */
+  private findBeachheadHold(
+    mission: InvasionMission,
+    targetCity: City,
+  ): { col: number; row: number } | null {
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return null;
+    let power = 0;
+    for (const id of mission.landedIds ?? []) {
+      const u = this.gameEngine.units.find((x: Unit) => x.id === id && !x.isDefeated);
+      if (u) power += this.combatPowerOf(u);
+    }
+    if (power <= 0) return null;
+    // City defenders only: the landed force itself stands inside the radius
+    // and must not be counted as the defence it has to beat.
+    let required = 0;
+    for (const u of this.gameEngine.units) {
+      if (u.isDefeated || u.civilizationId !== targetCity.civilizationId) continue;
+      const d = this.gameEngine.squareGrid?.chebyshevDistance(targetCity.col, targetCity.row, u.col, u.row);
+      if (d === undefined || d > 1) continue;
+      required += Math.max(0, (u.attack ?? 0) + (u.defense ?? 0));
+    }
+    // Winnable (with the usual 1.5:1 margin): march on, as before.
+    if (required <= 0 || power >= required * 1.5) return null;
+    let best: { col: number; row: number } | null = null;
+    let bestScore = -Infinity;
+    for (let dc = -3; dc <= 3; dc++) {
+      for (let dr = -3; dr <= 3; dr++) {
+        const col = mission.landTile.col + dc;
+        const row = mission.landTile.row + dr;
+        if (!grid.isValidSquare(col, row)) continue;
+        if (this.gameEngine.getLandmassId?.(col, row) !== mission.targetLandmassId) continue;
+        const tile = this.gameEngine.getTileAt(col, row);
+        if (!tile) continue;
+        const key = String(tile.type ?? tile.terrain ?? '').trim().toLowerCase();
+        if (key === 'ocean' || key === 'lake') continue;
+        if (this.gameEngine.getCityAt(col, row)) continue;
+        const occupant = this.gameEngine.getUnitAt(col, row);
+        // Enemy defenders block the tile; our own landed force piles onto the
+        // beach (amphibious landings stack on one tile), so own units pass.
+        if (occupant && occupant.civilizationId === targetCity.civilizationId) continue;
+        if (typeof this.gameEngine.isTilePassable === 'function' && !this.gameEngine.isTilePassable(col, row)) continue;
+        const terrainDefence = TERRAIN_PROPS[key]?.defense ?? 1;
+        const improvement = String((tile as { improvement?: unknown }).improvement ?? '').toLowerCase();
+        const fortress = improvement === 'fortress' || (tile as { fortress?: unknown }).fortress === true;
+        const score = scoreGuardTile({
+          terrainDefence,
+          fortress,
+          nearFriendlyCity: false,
+          beachDistance: grid.chebyshevDistance(col, row, mission.waterTile.col, mission.waterTile.row),
+          threatened: true,
+        }) - grid.chebyshevDistance(col, row, mission.landTile.col, mission.landTile.row);
+        if (score > bestScore) {
+          bestScore = score;
+          best = { col, row };
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
    * `defenceOf` for every tile of the map, precomputed in one pass: each unit
    * adds its weight to the tiles within Chebyshev `radius` of it. Callers that
    * score many tiles in a row (`findInvasionBeach` walks every coastal tile on
@@ -2658,6 +3270,9 @@ export class AIManager {
     for (const type of Object.keys(UNIT_PROPS)) {
       const props = UNIT_PROPS[type];
       if (!props?.naval || !props.transportCapacity) continue;
+      // Submarines lift one warhead, not landing forces — never size an
+      // invasion wave by them.
+      if (!isSealiftHull(type, props)) continue;
       if (canBuildUnit(civ as never, type)) best = Math.max(best, props.transportCapacity);
     }
     return best;
@@ -2779,101 +3394,201 @@ export class AIManager {
   }
 
   /**
-   * Keep the civ's colony mission valid and (re)assign a ferry. A mission is
-   * created when the civ has seen a small city-free island, owns an idle
-   * settler that can reach a coast, and can either field a ferry or build one.
+   * Keep the civ's colony missions valid and (re)assign ferries, and plan NEW
+   * ones while unclaimed islands await: up to `maxParallelColonies` islands
+   * are seeded at once — each with its own settler and hull — instead of one
+   * mission queueing behind another. A mission needs a live settler that can
+   * reach a coast, an island neither rivals nor our own missions have claimed,
+   * and either an idle ferry or the tech to build one (production orders it).
    */
   private updateColonyMission(civ: Civilization, storage?: PlayerTurnStorage): void {
     if (!storage || typeof this.gameEngine.getColonizableIslands !== 'function') return;
 
-    const islands = this.gameEngine.getColonizableIslands(civ.id);
-    let mission = this.getColonyMission(storage);
-
-    if (mission) {
+    const claimedBySelf = new Set<number>();
+    const refreshed: ColonyMission[] = [];
+    for (const mission of this.getColonyMissions(storage)) {
       const settler = this.gameEngine.units.find(
         (u: Unit) => u.id === mission.settlerId && !u.isDefeated,
       );
       const ferry = mission.ferryId
         ? this.gameEngine.units.find((u: Unit) => u.id === mission.ferryId && !u.isDefeated)
         : null;
+      const islands = this.gameEngine.getColonizableIslands(civ.id);
       const island = islands.find((i) => i.landmassId === mission.targetLandmassId);
       const rendezvous = settler && !settler.embarkedOn
         ? this.findColonyRendezvous(settler)
         : null;
+      // Landed: the settler stands on its island (unloaded last turn with no
+      // moves left to found). Drop the mission so it founds normally in the
+      // unit phase instead of waiting for a ferry it no longer needs.
+      if (settler && !settler.embarkedOn && island
+        && (this.gameEngine.getLandmassId?.(settler.col, settler.row) ?? -1) === mission.targetLandmassId) {
+        continue;
+      }
       if (!settler || !island || (mission.ferryId && !ferry) || (!settler.embarkedOn && !rendezvous)) {
         // The settler/ferry died, the island got settled, or the settler is
-        // landlocked — abandon the mission.
-        this.clearColonyMission(storage);
-        mission = null;
-      } else {
-        mission.landTile = island.landTile;
-        mission.waterTile = island.waterTile;
-        if (!mission.ferryId) {
-          const idle = this.findIdleFerry(civ.id);
-          if (idle) mission.ferryId = idle.id;
-        }
-        this.setColonyMission(storage, mission);
+        // landlocked — abandon this mission; its sisters sail on.
+        continue;
       }
+      // Re-resolve the best founding tile: the island's nearest beach is an
+      // unload point, not a city site. Recomputing is deterministic, so the
+      // mission tracks the best tile even as exploration reveals more.
+      const site = this.findBestColonySite(mission.targetLandmassId);
+      mission.landTile = site?.landTile ?? island.landTile;
+      mission.waterTile = site?.waterTile ?? island.waterTile;
+      if (!mission.ferryId) {
+        const idle = this.findIdleFerry(civ.id, refreshed);
+        if (idle) mission.ferryId = idle.id;
+      }
+      claimedBySelf.add(mission.targetLandmassId);
+      refreshed.push(mission);
     }
-    if (mission) return;
+    this.saveColonyMissions(storage, refreshed);
 
-    const idleFerry = this.findIdleFerry(civ.id);
+    // ── Plan: seed further islands in parallel while settlers/hulls allow ───
     const canBuildShips = typeof this.gameEngine.civCanBuildShips === 'function'
       && this.gameEngine.civCanBuildShips(civ.id);
-    if (!idleFerry && !canBuildShips) return;
-
-    const settler = this.findColonySettler(civ.id);
-    if (!settler || !this.findColonyRendezvous(settler)) return;
-    const island = islands[0];
-    if (!island) return;
-
-    const newMission: ColonyMission = {
-      settlerId: settler.id,
-      ferryId: idleFerry?.id ?? null,
-      targetLandmassId: island.landmassId,
-      landTile: island.landTile,
-      waterTile: island.waterTile,
-      stage: 'gather',
-    };
-    this.setColonyMission(storage, newMission);
-    this.gameEngine.log?.('ai', `Colony mission — ${civ.name} targets a ${island.size}-tile island`, {
-      civilizationId: civ.id,
-      action: 'colony_mission',
-      settlerId: settler.id,
-      landmassId: island.landmassId,
-      targetCol: island.landTile.col,
-      targetRow: island.landTile.row,
-    });
+    while (refreshed.length < this.maxParallelColonies()) {
+      const islands = this.gameEngine.getColonizableIslands(civ.id)
+        .filter((i) => !claimedBySelf.has(i.landmassId));
+      if (islands.length === 0) break;
+      const reservedSettlers = new Set(refreshed.map((m) => m.settlerId));
+      const islandMasses = new Set(islands.map((i) => i.landmassId));
+      const settler = this.findColonySettler(civ.id, reservedSettlers, islandMasses);
+      if (!settler || !this.findColonyRendezvous(settler)) break;
+      const idleFerry = this.findIdleFerry(civ.id, refreshed);
+      if (!idleFerry && !canBuildShips) break;
+      // Best island by value (size vs sailing time), not just the nearest
+      // rock — and the best founding tile on it, not the nearest beach. A
+      // city lives on yields, not on proximity to the departure port.
+      const target = this.chooseColonyTarget(islands);
+      if (!target) break;
+      const { island } = target;
+      const newMission: ColonyMission = {
+        settlerId: settler.id,
+        ferryId: idleFerry?.id ?? null,
+        targetLandmassId: island.landmassId,
+        landTile: target.landTile,
+        waterTile: target.waterTile,
+        stage: 'gather',
+      };
+      refreshed.push(newMission);
+      claimedBySelf.add(island.landmassId);
+      this.saveColonyMissions(storage, refreshed);
+      if (refreshed.length > 1) {
+        this.gameEngine.log?.('ai', `Colony parallel — ${civ.name} seeds ${refreshed.length} islands at once`, {
+          civilizationId: civ.id,
+          action: 'colony_parallel',
+          count: refreshed.length,
+          settlerId: settler.id,
+          landmassId: island.landmassId,
+        });
+      }
+      this.gameEngine.log?.('ai', `Colony mission — ${civ.name} targets a ${island.size}-tile island`, {
+        civilizationId: civ.id,
+        action: 'colony_mission',
+        settlerId: settler.id,
+        landmassId: island.landmassId,
+        targetCol: target.landTile.col,
+        targetRow: target.landTile.row,
+      });
+    }
   }
 
   /**
    * An own ferry with room aboard and nothing to carry. Capacity, not "any
    * cargo": a hull with 2 of 3 slots filled is still in use, but one holding a
-   * single settler can take a second passenger if a mission wants one.
+   * single settler can take a second passenger if a mission wants one. Hulls
+   * already claimed by a colony mission (or the invasion mission) are NOT idle
+   * — handing one hull to two missions sailed neither settler anywhere.
    */
-  private findIdleFerry(civId: number): Unit | null {
+  private findIdleFerry(civId: number, colonyMissions?: ColonyMission[]): Unit | null {
+    const claimed = new Set<string>();
+    for (const m of colonyMissions ?? this.getColonyMissions(this.gameEngine.getPlayerStorage?.(civId))) {
+      if (m.ferryId) claimed.add(m.ferryId);
+    }
+    try {
+      const invasion = this.getInvasionMission(this.gameEngine.getPlayerStorage?.(civId));
+      if (invasion?.ferryId) claimed.add(invasion.ferryId);
+    } catch { /* storage shape varies in tests */ }
     return this.gameEngine.units.find((u: Unit) => {
       if (u.civilizationId !== civId || u.type !== 'ferry' || u.isDefeated) return false;
       if (u.embarkedOn) return false;
+      if (claimed.has(u.id)) return false;
       return this.ferryCargoIds(u).length < this.engineTransportCapacity(u.type);
     }) ?? null;
   }
 
-  /** An own settler available to be shipped to a new island. */
-  private findColonySettler(civId: number): Unit | null {
+  /**
+   * An own settler available to be shipped to a new island: idle, reachable
+   * coast, not already reserved by a sister mission — and not already standing
+   * on an unsettled island (it landed: founding is its job, and reserving it
+   * for another ferry ride means the island city is never founded).
+   */
+  private findColonySettler(
+    civId: number,
+    reservedSettlerIds?: Set<string>,
+    settledLandmasses?: Set<number>,
+  ): Unit | null {
     return this.gameEngine.units.find(
       (u: Unit) => u.civilizationId === civId
         && u.type === 'settler'
         && !u.isDefeated
         && !u.embarkedOn
-        && !u.workTarget,
+        && !u.workTarget
+        && !reservedSettlerIds?.has(u.id)
+        && (settledLandmasses == null
+          || !settledLandmasses.has(this.gameEngine.getLandmassId?.(u.col, u.row) ?? -1)),
     ) ?? null;
   }
 
   /**
+   * How many colony settlers this civ still needs spawned: parallel missions
+   * want one settler each, and a mission holding no live settler is a hull
+   * with nobody to carry. Public for production: it sizes the settler corps.
+   */
+  colonySettlerShortfall(civilizationId: number): number {
+    try {
+      if (typeof this.gameEngine.getColonizableIslands !== 'function') return 0;
+      if (!this.engineCanBuildShips(civilizationId)) return 0;
+      const storage = this.gameEngine.getPlayerStorage?.(civilizationId);
+      const missions = this.getColonyMissions(storage);
+      const islands = this.gameEngine.getColonizableIslands(civilizationId);
+      const desired = Math.min(this.maxParallelColonies(), islands.length);
+      const covered = missions.filter((m) =>
+        this.gameEngine.units.some((u: Unit) => u.id === m.settlerId && !u.isDefeated),
+      ).length;
+      // Missions already holding a live settler need none; islands beyond the
+      // parallel cap need none either (no mission will claim them yet).
+      return Math.max(0, desired - covered);
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Whether a settler can walk to its civ's cities (same landmass as at least
+   * one of them). Offshore settlers cannot commute to home fields: every
+   * works assignment below assumes walkability, so without this gate an
+   * island settler is ordered onto a mainland field, marches to the nearest
+   * shore, and stalls there instead of founding.
+   */
+  private settlerSharesLandmassWithCities(unit: Unit): boolean {
+    try {
+      for (const city of this.gameEngine.cities ?? []) {
+        if ((city as City).civilizationId !== unit.civilizationId) continue;
+        if (this.areLandConnected(unit.col, unit.row, (city as City).col, (city as City).row)) return true;
+      }
+    } catch { /* stub engine */ }
+    return false;
+  }
+
+  /**
    * Where the mission settler waits for the ferry: its own tile when it is
-   * already on the coast, otherwise the nearest coastal land tile on the SAME
-   * landmass (a settler can only walk there).
+   * already on the coast, otherwise the safest near coastal land tile on the
+   * SAME landmass (a settler can only walk there). Safety first: a rendezvous
+   * next to an enemy patrol is a dead settler, so among the nearest coastal
+   * tiles the one with no hostiles nearby wins over the merely closest one.
    */
   private findColonyRendezvous(unit: Unit): { col: number; row: number } | null {
     if (this.gameEngine.findAdjacentOcean?.(unit.col, unit.row)) {
@@ -2882,9 +3597,19 @@ export class AIManager {
     const map = this.gameEngine.map;
     const grid = this.gameEngine.squareGrid;
     if (!map || !grid) return null;
+    // Hostile positions, gathered once: everything the waiting (unescorted)
+    // settler must be kept away from while it stands on the shore.
+    const hostiles: Array<{ col: number; row: number }> = [];
+    try {
+      for (const u of this.gameEngine.units) {
+        if (u.isDefeated || u.civilizationId === unit.civilizationId) continue;
+        if (this.isHostileTo(unit.civilizationId, u.civilizationId)) {
+          hostiles.push({ col: u.col, row: u.row });
+        }
+      }
+    } catch { /* stub engine */ }
     const radius = 20;
-    let best: { col: number; row: number } | null = null;
-    let bestDist = Infinity;
+    const candidates: Array<{ col: number; row: number; dist: number }> = [];
     for (let dc = -radius; dc <= radius; dc++) {
       for (let dr = -radius; dr <= radius; dr++) {
         const col = unit.col + dc;
@@ -2896,18 +3621,102 @@ export class AIManager {
         if (key === 'ocean' || key === 'lake') continue;
         if (!this.areLandConnected(unit.col, unit.row, col, row)) continue;
         if (!this.gameEngine.findAdjacentOcean?.(col, row)) continue;
-        const dist = grid.squareDistance(unit.col, unit.row, col, row);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = { col, row };
+        candidates.push({ col, row, dist: grid.squareDistance(unit.col, unit.row, col, row) });
+      }
+    }
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => a.dist - b.dist);
+    // Nearest handful by feet, safest by hostiles: a short walk past enemies
+    // loses the settler, a slightly longer walk to a quiet beach keeps it.
+    let best: { col: number; row: number } | null = null;
+    let bestScore = Infinity;
+    for (const c of candidates.slice(0, 8)) {
+      let near = 0;
+      for (const h of hostiles) {
+        if (grid.squareDistance(c.col, c.row, h.col, h.row) <= 4) near++;
+      }
+      const score = c.dist + near * 10;
+      if (score < bestScore) {
+        bestScore = score;
+        best = { col: c.col, row: c.row };
+      }
+    }
+    return best;
+  }
+
+  /**
+   * The best founding tile on a colony island: high yields first (a city lives
+   * on food and shields), high ground second (hills defend the newborn city),
+   * and it must touch water or the ferry cannot unload onto it.
+   */
+  private findBestColonySite(landmassId: number): { landTile: { col: number; row: number }; waterTile: { col: number; row: number }; siteYield: number } | null {
+    const map = this.gameEngine.map;
+    const grid = this.gameEngine.squareGrid;
+    if (!map || !grid) return null;
+    let best: { landTile: { col: number; row: number }; waterTile: { col: number; row: number }; siteYield: number; score: number } | null = null;
+    for (let row = 0; row < (map.height ?? 0); row++) {
+      for (let col = 0; col < (map.width ?? 0); col++) {
+        if (this.gameEngine.getLandmassId?.(col, row) !== landmassId) continue;
+        const tile = this.gameEngine.getTileAt(col, row);
+        if (!tile) continue;
+        const key = String(tile.type ?? tile.terrain ?? '').trim().toLowerCase();
+        if (key === 'ocean' || key === 'lake') continue;
+        if (this.gameEngine.getCityAt(col, row)) continue;
+        const water = this.gameEngine.findAdjacentOcean?.(col, row);
+        if (!water) continue;
+        if (grid.chebyshevDistance(water.col, water.row, col, row) > 1) continue;
+        const siteYield = this.tileYieldAt(col, row);
+        const defence = TERRAIN_PROPS[key]?.defense ?? 1;
+        const score = siteYield * 2 + defence * 2;
+        if (!best || score > best.score) {
+          best = { landTile: { col, row }, waterTile: water, siteYield, score };
         }
       }
     }
     return best;
   }
 
-  /** Board/unload the mission settler when the ferry is in position. */
-  private tryColonyFerryAction(
+  /**
+   * Which island to seed: scored by size against sailing time, with the
+   * prospective founding tile's yields breaking ties. Returns the island plus
+   * its best founding/unload tiles (falling back to the probe's nearest-beach
+   * tiles when no better site scans).
+   */
+  private chooseColonyTarget(islands: Array<{
+    landmassId: number;
+    size: number;
+    landTile: { col: number; row: number };
+    waterTile: { col: number; row: number };
+    distance: number;
+  }>): {
+    island: { landmassId: number; size: number; landTile: { col: number; row: number }; waterTile: { col: number; row: number }; distance: number };
+    landTile: { col: number; row: number };
+    waterTile: { col: number; row: number };
+  } | null {
+    if (islands.length === 0) return null;
+    let best: {
+      island: { landmassId: number; size: number; landTile: { col: number; row: number }; waterTile: { col: number; row: number }; distance: number };
+      landTile: { col: number; row: number };
+      waterTile: { col: number; row: number };
+      score: number;
+    } | null = null;
+    for (const island of islands) {
+      const site = this.findBestColonySite(island.landmassId);
+      const score = scoreColonyIsland({
+        size: island.size,
+        distance: island.distance,
+        siteYield: site?.siteYield ?? 0,
+      });
+      const landTile = site?.landTile ?? island.landTile;
+      const waterTile = site?.waterTile ?? island.waterTile;
+      if (!best || score > best.score) {
+        best = { island, landTile, waterTile, score };
+      }
+    }
+    return best;
+  }
+
+  /** Board/unload the mission settler when the ferry is in position. */  private tryColonyFerryAction(
     unit: Unit,
     mission: ColonyMission,
     storage?: PlayerTurnStorage,
@@ -2924,7 +3733,8 @@ export class AIManager {
           && this.gameEngine.canLoadFerry(unit.id, settler.id)) {
         this.gameEngine.loadFerry(unit.id, settler.id);
         mission.stage = 'sail';
-        this.setColonyMission(storage, mission);
+        // Mission object lives in the missions array by reference: the stage
+        // change is already stored, no save call needed.
         this.gameEngine.log?.('ai', `Colony ferry loaded ${settler.type}`, {
           civilizationId: unit.civilizationId, action: 'colony_load', unitId: unit.id,
         });
@@ -2935,7 +3745,9 @@ export class AIManager {
     if (typeof this.gameEngine.canUnloadFerry === 'function'
         && this.gameEngine.canUnloadFerry(unit.id, mission.landTile.col, mission.landTile.row, settler.id)) {
       this.gameEngine.unloadFerry(unit.id, mission.landTile.col, mission.landTile.row, settler.id);
-      this.clearColonyMission(storage);
+      // Only THIS mission completes: sister missions seeding other islands
+      // sail on with their own settlers and hulls.
+      this.removeColonyMission(storage, mission);
       this.gameEngine.log?.('ai', `Colony ferry landed a settler on the island`, {
         civilizationId: unit.civilizationId, action: 'colony_unload', unitId: unit.id,
         targetCol: mission.landTile.col, targetRow: mission.landTile.row,
@@ -3142,9 +3954,9 @@ export class AIManager {
     stuck: { col: number; row: number },
   ): { col: number; row: number } | null {
     const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
-    const colony = this.getColonyMission(storage);
-    if (colony?.ferryId === unit.id) {
-      this.clearColonyMission(storage);
+    const colony = this.getColonyMissionForFerry(storage, unit.id);
+    if (colony) {
+      this.removeColonyMission(storage, colony);
       this.gameEngine.log?.('ai', `Colony abandoned — ${unit.type} cannot reach the island`, {
         civilizationId: unit.civilizationId, action: 'colony_abandon',
         unitId: unit.id, targetCol: stuck.col, targetRow: stuck.row,
@@ -3226,8 +4038,8 @@ export class AIManager {
     }
 
     // A ferry on a colony mission ignores the war and runs its route.
-    const mission = this.getColonyMission(storage);
-    if (mission?.ferryId === unit.id) {
+    const mission = this.getColonyMissionForFerry(storage, unit.id);
+    if (mission) {
       if (this.ferryCargoIds(unit).length > 0) {
         return mission.waterTile; // sail the settler to the island
       }
@@ -3239,6 +4051,28 @@ export class AIManager {
         if (alongside) return alongside;
       }
       return mission.waterTile;
+    }
+
+    // A delivery sub on a nuke mission sails its own route, not the war's: to
+    // launch waters with a warhead aboard, or alongside the waiting warhead
+    // while gathering. (Free submarines hunt via the doctrine below.)
+    const nukeMission = this.getNukeMission(storage);
+    if (nukeMission?.subId === unit.id) {
+      if (this.ferryCargoIds(unit).length > 0) {
+        const launch = this.findLaunchWaters(
+          { col: nukeMission.targetCol, row: nukeMission.targetRow }, unit,
+        );
+        if (launch) return launch;
+      } else {
+        const nuke = this.gameEngine.units.find(
+          (u: Unit) => u.id === nukeMission.nukeId && !u.isDefeated,
+        );
+        if (nuke && !nuke.embarkedOn) {
+          const alongside = this.navigableWaterAt(nuke.col, nuke.row);
+          if (alongside) return alongside;
+        }
+      }
+      return this.findNavalPatrolTarget(unit);
     }
 
     // 1 + 2. Offensive naval doctrine for a hull that can actually fight.
@@ -3268,12 +4102,75 @@ export class AIManager {
     const grid = this.gameEngine.squareGrid;
     if (!grid) return null;
     const ownCivId = unit.civilizationId;
+    // Fleet cohesion: a hull assigned as an escort screens its transport
+    // instead of hunting alone. The transport is the mission; a lone hunter
+    // that abandons it trades a landing force for a skirmish.
+    try {
+      const fleets = (storage?.turnData as Record<string, unknown> | undefined)?.navalFleets as
+        | Array<{ shipIds: string[]; mission: string; targetLocation: { col: number; row: number } }> | undefined;
+      if (fleets) {
+        for (const fleet of fleets) {
+          if (fleet.mission !== 'escort' || !fleet.shipIds.includes(unit.id)) continue;
+          const transportId = fleet.shipIds.find((id) => {
+            if (id === unit.id) return false;
+            const other = this.gameEngine.units.find((u: Unit) => u.id === id);
+            // Sealift only: a submarine launch platform is escorted, it does
+            // not escort (its station is the launch waters, not a ferry).
+            return !!other && isSealiftHull(other.type, UNIT_PROPS[other.type]);
+          });
+          const transport = transportId ? this.gameEngine.units.find((u: Unit) => u.id === transportId && !u.isDefeated) : null;
+          if (transport && !transport.embarkedOn) {
+            const escortPos = this.navigableWaterAt(transport.col, transport.row);
+            if (escortPos) {
+              const d = grid.chebyshevDistance(unit.col, unit.row, escortPos.col, escortPos.row);
+              if (d > 2) return escortPos;
+              // Close enough to screen: fall through to hunting from the screen.
+            }
+          }
+        }
+      }
+    } catch { /* escort cohesion is advisory */ }
+    // Damage control: a battered hull (<=1/3 health) sails home to the nearest
+    // friendly port instead of hunting — a sunk ship screens nothing.
+    try {
+      const maxHp = (unit as { maxHitPoints?: number }).maxHitPoints ?? (unit as { hitPoints?: number }).hitPoints ?? 2;
+      const hp = (unit as { hitPoints?: number }).hitPoints ?? maxHp;
+      if (maxHp > 0 && hp <= Math.max(1, Math.ceil(maxHp / 3))) {
+        let home: { col: number; row: number } | null = null;
+        let bestD = Infinity;
+        for (const c of this.gameEngine.cities) {
+          if ((c as City).civilizationId !== ownCivId) continue;
+          const d = grid.chebyshevDistance(unit.col, unit.row, (c as City).col, (c as City).row);
+          if (d < bestD) {
+            bestD = d;
+            home = this.navigableWaterAt((c as City).col, (c as City).row);
+          }
+        }
+        if (home) return home;
+      }
+    } catch { /* damage check is advisory */ }
     let best: { col: number; row: number } | null = null;
     let bestScore = -Infinity;
+    // Role-aware hunting: raiders (subs) want merchants, heavies want fleets,
+    // scouts shadow rather than suicide. Small bonuses — class order never flips.
+    let attackerRole: 'scout' | 'screen' | 'heavy' | 'raider' | 'carrier' = 'screen';
+    try {
+      const props = UNIT_PROPS[unit.type];
+      if (props) {
+        attackerRole = classifyWarshipRole({
+          type: unit.type,
+          cost: props.cost,
+          maintenance: props.maintenance ?? 1,
+          attack: unit.attack ?? props.attack,
+          defense: unit.defense ?? props.defense,
+          transportCapacity: props.transportCapacity ?? 0,
+        });
+      }
+    } catch { attackerRole = 'screen'; }
 
     const consider = (targetClass: NavalTargetClass, aim: { col: number; row: number }, dist: number, valueMultiplier = 1) => {
       if (dist < 0) return;
-      const { score } = scoreNavalTarget({ targetClass, distance: dist, valueMultiplier, isFresh: true });
+      const { score } = scoreNavalTarget({ targetClass, distance: dist, valueMultiplier, isFresh: true, attackerRole });
       if (score > bestScore) {
         bestScore = score;
         best = aim;
@@ -3509,6 +4406,9 @@ export class AIManager {
    * tiles, so anything we have standing next to the target would die with it:
    * a strike that would touch our own troops is never chosen.
    *
+   * Two hard gates from the doctrine: the aim point must be inside the
+   * warhead's 16-tile flight range from the launch point, and SDI must not
+   * cover it (a shielded strike dies in mid-air — firing wastes the warhead).
    * Only civs we are actually at war with (plus the barbarian faction) are
    * targets, so a peacetime AI holds its arsenal until the war it is fighting
    * says otherwise.
@@ -3524,6 +4424,18 @@ export class AIManager {
     const enemies = new Set((dm.getEnemies?.(civId) ?? []).map(Number));
     enemies.add(BARBARIAN_CIV_ID);
     if (enemies.size === 0) return null;
+
+    const range = UNIT_PROPS.nuclear?.movement ?? 16;
+    const inRange = (at: { col: number; row: number }) =>
+      grid.chebyshevDistance(unit.col, unit.row, at.col, at.row) <= range;
+    const shielded = (at: { col: number; row: number }): boolean => {
+      try {
+        return typeof this.gameEngine.isCoveredBySDI === 'function'
+          && this.gameEngine.isCoveredBySDI(at.col, at.row);
+      } catch {
+        return false;
+      }
+    };
 
     const hostile = (other: { civilizationId: number }) =>
       enemies.has(Number(other.civilizationId));
@@ -3546,21 +4458,33 @@ export class AIManager {
     };
 
     // 1. Key enemy cities. Population is what makes a city worth a nuke, and
-    //    a capital is worth extra because it carries the government.
+    //    a capital is worth extra because it carries the government. Out of
+    //    range or under an SDI shield: never (the missile cannot get there, or
+    //    dies on the way).
     for (const city of this.gameEngine.cities) {
       if (city.civilizationId === civId || !hostile(city)) continue;
+      if (!inRange(city)) continue;
+      const ranked = scoreNuclearTarget({
+        kind: 'city',
+        col: city.col,
+        row: city.row,
+        weight: city.population ?? 1,
+        bonus: city.isCapital === true ? 25 : 0,
+        sdiCovered: shielded(city),
+      });
+      if (ranked.hopeless) continue;
       const garrison = this.gameEngine.units.filter(
         (u) => !u.isDefeated && hostile(u) && inBlast(u.col, u.row, city),
       ).length;
-      const score = (city.population ?? 1) * 10 + garrison * 6 + (city.isCapital === true ? 25 : 0);
-      consider(city, score, `enemy city ${city.name}`);
+      consider(city, ranked.score + garrison * 6, `enemy city ${city.name}`);
     }
 
     // 2. Key enemy military units: a stack we can wipe in one blast. A single
-    //    weak unit is never worth the warhead.
+    //    weak unit is never worth the warhead (the doctrine says hopeless).
     for (const enemy of this.gameEngine.units) {
       if (enemy.isDefeated || enemy.civilizationId === civId || !hostile(enemy)) continue;
       if ((enemy.attack ?? 0) <= 0) continue;
+      if (!inRange(enemy)) continue;
       const stack = this.gameEngine.units.filter(
         (u) => !u.isDefeated && hostile(u) && inBlast(u.col, u.row, enemy),
       );
@@ -3568,8 +4492,15 @@ export class AIManager {
         (sum, u) => sum + Math.max(1, u.attack ?? 0) + (u.defense ?? 0) * 0.5,
         0,
       );
-      if (stack.length < 2 && strength < 12) continue;
-      consider(enemy, strength, `enemy stack of ${stack.length}`);
+      const ranked = scoreNuclearTarget({
+        kind: 'stack',
+        col: enemy.col,
+        row: enemy.row,
+        weight: strength,
+        sdiCovered: shielded(enemy),
+      });
+      if (ranked.hopeless) continue;
+      consider(enemy, ranked.score, `enemy stack of ${stack.length}`);
     }
 
     return best;
@@ -3593,7 +4524,19 @@ export class AIManager {
       if (invasion.stage === 'gather') return invasion.rendezvous;
       if (invasion.stage === 'siege' || invasion.landedIds.includes(unit.id)) {
         const targetCity = this.gameEngine.cities.find((c) => c.id === invasion.targetCityId);
-        if (targetCity) return { col: targetCity.col, row: targetCity.row };
+        if (targetCity) {
+          // Outmatched ashore: consolidate on defensible ground by the beach
+          // and fortify instead of feeding the force into a fortified town one
+          // unit at a time. The ferry is released for the next wave while the
+          // beachhead waits for reinforcements (or a siege train).
+          const hold = this.findBeachheadHold(invasion, targetCity);
+          if (hold) {
+            (unit as { _aiHoldPost?: { col: number; row: number } })._aiHoldPost = hold;
+            return hold;
+          }
+          delete (unit as { _aiHoldPost?: { col: number; row: number } })._aiHoldPost;
+          return { col: targetCity.col, row: targetCity.row };
+        }
         // The city is gone (captured or razed): the job is done.
         this.clearInvasionMission(invasionStorage);
         return null;
@@ -3689,7 +4632,11 @@ export class AIManager {
       );
 
       if (nearbyEnemies.length > 0) {
-        const closest = nearbyEnemies[0];
+        // Splash-aware pick: a cluster on open ground outranks the merely
+        // nearest single — every mate beyond the first eats 25% of the hit
+        // for free. Under a roof there is no splash and nearest wins, as
+        // before. Civilians keep the old nearest-first pick.
+        const closest = this.pickSplashTarget(unit, nearbyEnemies);
         debugLog(`[AI] Area scan found ${nearbyEnemies.length} enemies near ${unit.id}, closest: ${closest.type} at (${closest.col},${closest.row}) dist=${closest.distance}`);
 
         // Broadcast threat alert so other nearby units rally
@@ -3774,6 +4721,22 @@ export class AIManager {
       if (villageTarget) {
         debugLog(`[AI] Unit ${unit.id} (${unit.type}) heading to village at (${villageTarget.col},${villageTarget.row})`);
         return remember(villageTarget);
+      }
+
+      // ── Island guard: spare troops on a small island stand a fortified
+      // watch instead of pacing the same beaches. Outranks probe/picket/
+      // patrol (which would march them off the high ground) but never combat,
+      // alerts or city defence above. Group-committed troops are left alone.
+      if (!unit.isFortified) {
+        const post2guard = AICoordinator.getGroupTarget(unit.id, aiState.armyGroups);
+        const guardCommitted = post2guard?.groupStatus === 'marching' || post2guard?.groupStatus === 'attacking';
+        if (!guardCommitted) {
+          const guardPost = this.findIslandGuardPost(unit);
+          if (guardPost) {
+            debugLog(`[AI] Island guard for ${unit.id}: (${guardPost.col},${guardPost.row})`);
+            return remember(guardPost);
+          }
+        }
       }
 
       // ── Probe outward when idle: idle military units expand the frontier ──
@@ -3866,8 +4829,8 @@ export class AIManager {
     if (unit.type === 'settler') {
       // Colony mission: this settler is reserved for a small island. Walk to
       // the coast and wait for the ferry instead of founding at home.
-      const mission = this.getColonyMission(storage);
-      if (mission && mission.settlerId === unit.id && mission.stage === 'gather') {
+      const mission = this.getColonyMissionForSettler(storage, unit.id);
+      if (mission && mission.stage === 'gather') {
         const rendezvous = this.findColonyRendezvous(unit);
         if (rendezvous) {
           return rendezvous;
@@ -4303,8 +5266,17 @@ export class AIManager {
 
   /**
    * Choose which diplomatic action an AI diplomat performs on contact with a
-   * foreign civ — mirrors `processAIDiplomacy`'s decision logic (peace when
-   * outmatched, alliance when friendly, tribute when dominant, else intel).
+   * foreign civ.
+   *
+   * The negotiation itself (peace when outmatched, alliance when friendly,
+   * tribute when dominant) is a short ladder because those are the only terms
+   * whose answer depends on nothing but the two civs. Everything else is asked
+   * of the shared policy scorer instead — `AIDiplomacyPolicy.scoreCandidates`
+   * is what the per-turn pass already uses, so a diplomat proposing a trade
+   * pact is weighed exactly as carefully as a civ deciding on its own. The
+   * candidates it returns are then filtered down to what the engine actually
+   * offers at this spot, so the AI can never pick an ability the rules do not
+   * grant (an embassy inside a war zone, a bribe of a city).
    */
   private chooseDiplomatAction(unit: Unit, targetCivId: number, available: string[]): string {
     const civId = unit.civilizationId;
@@ -4321,7 +5293,7 @@ export class AIManager {
     // to swing a fight that is going badly, and the one action here that costs
     // money rather than asking for it. Worth it only for a target expensive
     // enough to matter and only when the treasury can survive the fee.
-    if (has('bribe_unit') && this.wouldPayToBribe(civId, targetCivId)) {
+    if (has('bribe_unit') && this.wouldPayToBribe(civId, targetCivId, unit)) {
       return 'bribe_unit';
     }
 
@@ -4347,7 +5319,101 @@ export class AIManager {
       if (personality.aggression >= 6 && ownStrength > theirStrength * 2 && has('demand_tribute')) return 'demand_tribute';
     }
 
+    // ── The remaining terms ───────────────────────────────────────────
+    // Open borders, trade, an exchange of knowledge, a non-aggression pact, a
+    // defence pact, an embargo: all of them are scored by the same policy the
+    // AI's own turn-to-turn diplomacy uses, so a diplomat standing in a city is
+    // not a worse negotiator than the civ that never built one.
+    const treaty = this.chooseDiplomatTreaty(civId, targetCivId, available);
+    if (treaty) return treaty;
+
     return 'gather_intelligence';
+  }
+
+  /**
+   * The best treaty term this diplomat can put on the table here, or null.
+   *
+   * Scored by `AIDiplomacyPolicy.scoreCandidates` and filtered to `available`,
+   * so a term the engine has not offered — one that needs an embassy this pair
+   * has not founded, or one already in force — is never selected.
+   */
+  private chooseDiplomatTreaty(civId: number, targetCivId: number, available: string[]): string | null {
+    const dm = this.gameEngine.diplomacyManager;
+    const ctx = dm?.policyContextFor?.(civId, targetCivId);
+    if (!ctx) return null;
+
+    // The policy also weighs declaring war and breaking an alliance. A diplomat
+    // is not an army: it cannot take a city or walk away from a partner, so
+    // those two are not abilities it has and are dropped before scoring.
+    const candidates = scoreCandidates(ctx).filter(
+      c => c.action !== 'declare_war' && c.action !== 'break_alliance' && available.includes(c.action),
+    );
+    const chosen = chooseAction(candidates, ctx);
+    if (!chosen) return null;
+    debugLog(
+      `[AI-DIPLOMAT] Civ ${civId} → ${targetCivId}: ${chosen.action} `
+      + `(${chosen.score}, because ${chosen.because})`,
+    );
+    return chosen.action;
+  }
+
+  /**
+   * Pick which of the adjacent courts this diplomat opens with.
+   *
+   * A diplomat can stand between two rivals. Choosing by neighbour order meant
+   * the civ silently picked whichever tile the grid happened to yield first, so
+   * the answer is now the court this turn can be spent on most productively:
+   * each is offered to `chooseDiplomatAction` and the resulting action ranked.
+   */
+  private chooseDiplomatContact(
+    unit: Unit,
+    targets: DiplomatTarget[],
+  ): { target: DiplomatTarget; action: string } | null {
+    let best: { target: DiplomatTarget; action: string; value: number } | null = null;
+    for (const target of targets) {
+      const action = this.chooseDiplomatAction(unit, target.targetCivId, target.actions);
+      const value = this.diplomatActionValue(unit, target, action);
+      if (!best || value > best.value) best = { target, action, value };
+    }
+    return best ? { target: best.target, action: best.action } : null;
+  }
+
+  /**
+   * How much this turn's action is worth at this target, used only to rank two
+   * courts against each other. Ordered the way a diplomat's time is: open the
+   * channel first (nothing else is possible without it), then take the
+   * irreversible gains, then the negotiations, then the treaties, and read the
+   * enemy's books only when there is nothing better to do.
+   */
+  private diplomatActionValue(unit: Unit, target: DiplomatTarget, action: string): number {
+    const dm = this.gameEngine.diplomacyManager;
+    const civId = unit.civilizationId;
+    const city = target.cityId
+      ? this.gameEngine.cities.find(c => c.id === target.cityId)
+      : undefined;
+    const cityShields = city?.productionProgress ?? 0;
+    const techsWeWant = dm?.getTechTradeOptions?.(civId, target.targetCivId)?.theyHaveWeLack.length ?? 0;
+
+    switch (action) {
+      // The gateway: without an embassy there is no treaty, no exchange and no
+      // negotiation screen for this court at all.
+      case 'establish_embassy': return 40;
+      case 'steal_technology': return techsWeWant > 0 ? 32 : 5;
+      case 'industrial_sabotage': return cityShields > 0 ? 26 : 4;
+      case 'bribe_unit': return 24;
+      case 'propose_peace': return 22;
+      case 'propose_ceasefire': return 16;
+      case 'offer_tech_exchange': return 20;
+      case 'demand_tribute': return 18;
+      case 'propose_trade_agreement': return 15;
+      case 'propose_alliance': return 14;
+      case 'propose_non_aggression': return 12;
+      case 'offer_open_borders': return 10;
+      case 'propose_mutual_defense': return 9;
+      case 'propose_embargo': return 6;
+      case 'investigate_city': return 8;
+      default: return 2;
+    }
   }
 
   /**
@@ -4360,8 +5426,8 @@ export class AIManager {
    * policy needs, so the decision stays testable without a live engine.
    */
   private chooseInfiltration(unit: Unit, targetCivId: number, available: string[]): string | null {
-    const ESPIONATIONS = ['establish_embassy', 'investigate_city', 'steal_technology', 'industrial_sabotage'];
-    const offered = available.filter((a) => ESPIONATIONS.includes(a));
+    const ESPIONATIONS: DiplomatAction[] = ['establish_embassy', 'investigate_city', 'steal_technology', 'industrial_sabotage'];
+    const offered = available.filter((a) => ESPIONATIONS.includes(a as DiplomatAction)) as DiplomatAction[];
     if (offered.length === 0) return null;
 
     const civId = unit.civilizationId;
@@ -4372,7 +5438,7 @@ export class AIManager {
       paranoia: 5, vengeance: 5, xenophobia: 5, patience: 5,
     };
 
-    // The city this diplomat is infiltrating. `getDiplomatActions` finds it in
+    // The city this diplomat is infiltrating. `getDiplomatTargets` finds it in
     // the diplomat's NEIGHBOURHOOD — a diplomat stands beside a city, never on
     // it — so looking at the diplomat's own tile would always come back empty
     // and sabotage would never be scored at all.
@@ -4400,7 +5466,7 @@ export class AIManager {
 
   /**
    * The enemy city of `civId` this unit stands next to, if any — the same
-   * lookup `GameEngine.getDiplomatActions` performs when it decides what the
+   * lookup `GameEngine.getDiplomatTargets` performs when it decides what the
    * menu offers. Units on the city tile are not considered: that is combat.
    */
   private adjacentCityOf(unit: Unit, civId: number): City | undefined {
@@ -4516,11 +5582,11 @@ export class AIManager {
    *  - the treasury can pay without dropping below the reserve, since the
    *    money is spent the instant the bribe lands.
    */
-  private wouldPayToBribe(civId: number, targetCivId: number): boolean {
+  private wouldPayToBribe(civId: number, targetCivId: number, thisDiplomat?: Unit): boolean {
     const dm = this.gameEngine.diplomacyManager;
     if (!dm?.isAtWar?.(civId, targetCivId)) return false;
 
-    const diplomat = (this.gameEngine.units ?? []).find(
+    const diplomat = thisDiplomat ?? (this.gameEngine.units ?? []).find(
       u => u.civilizationId === civId && String(u.type ?? '') === 'diplomat' && !u.isDefeated,
     );
     if (!diplomat) return false;
@@ -4565,10 +5631,17 @@ export class AIManager {
 
   /**
    * Execute an AI diplomat's action when adjacent to a foreign city/unit.
-   * Human targets get an interactive offer (negotiation screen); AI targets
-   * resolve through the normal proposal path.
+   *
+   * `info` is one entry of `GameEngine.getDiplomatTargets`, so the abilities
+   * are exactly the ones the engine would grant the human's diplomat in the
+   * same spot. Human targets get an interactive offer (negotiation screen);
+   * AI targets resolve through the normal proposal path.
+   *
+   * Every term travels with the offer. A tech exchange sent without its two
+   * technologies, or an embargo without its third party, reached the player as
+   * a sentence with no deal behind it — accepting it could only ever fail.
    */
-  private executeAIDiplomatAction(unit: Unit, info: { targetCivId: number; actions: string[] }): void {
+  private executeAIDiplomatAction(unit: Unit, info: { targetCivId: number; actions: string[] } & Partial<DiplomatTarget>): void {
     const civId = unit.civilizationId;
     const targetCivId = info.targetCivId;
     const civ = this.gameEngine.civilizations?.[civId];
@@ -4578,28 +5651,72 @@ export class AIManager {
 
     debugLog(`[AI-DIPLOMAT] ${civName} diplomat at (${unit.col},${unit.row}) contacting ${targetCiv?.name ?? targetCivId} → ${action}`);
 
+    // The terms, spelled out once so the offer and the direct resolution can
+    // never propose different deals.
+    const dm = this.gameEngine.diplomacyManager;
+    const swap = action === 'offer_tech_exchange' ? dm?.pickTechSwap?.(civId, targetCivId) : null;
+    const embargoTargetId = action === 'propose_embargo' ? this.chooseEmbargoTarget(civId, targetCivId) : undefined;
+    const gold = action === 'demand_tribute'
+      ? this.diplomatTributeDemand(unit, targetCivId)
+      : action === 'propose_trade_agreement' ? 2 : undefined;
+    const terms: DiplomatActionOptions = {
+      cityId: info.cityId,
+      unitId: info.unitId,
+      goldAmount: gold,
+      techOffered: swap?.techOffered,
+      techRequested: swap?.techRequested,
+      embargoTargetId,
+    };
+
     if (targetCiv?.isHuman === true) {
       // Espionage is not negotiable — nobody is asked whether they consent to
       // being spied on. It resolves in the engine, and the ESPIONAGE_RESULT
       // event carries it to the player's screen.
-      if (ESPIONATION_ACTIONS.has(action)) {
-        this.gameEngine.executeDiplomatAction?.(unit.id, action, targetCivId);
+      if (ESPIONAGE_DIPLOMAT_ACTIONS.has(action as DiplomatAction)) {
+        this.gameEngine.executeDiplomatAction?.(unit.id, action, targetCivId, terms);
       } else if (action === 'gather_intelligence') {
         // The human decides — surface an interactive offer, consume the move.
-        this.gameEngine.executeDiplomatAction?.(unit.id, 'gather_intelligence', targetCivId);
+        this.gameEngine.executeDiplomatAction?.(unit.id, 'gather_intelligence', targetCivId, terms);
+      } else if (action === 'bribe_unit') {
+        // Bribery is not a proposal either: the money changes hands or it does
+        // not. The UNIT_BRIBED event tells the player their unit changed hands.
+        this.gameEngine.executeDiplomatAction?.(unit.id, action, targetCivId, terms);
       } else {
-        const gold = action === 'demand_tribute' ? this.diplomatTributeDemand(unit, targetCivId) : undefined;
+        const techName = (id: string): string =>
+          TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
+        const message = swap
+          ? `${civName} offers an Exchange of Knowledge: their ${techName(swap.techRequested)} for your ${techName(swap.techOffered)}.`
+          : `${civName}'s diplomat proposes ${action.replace(/_/g, ' ')}.`;
         this.gameEngine.diplomacyManager?.presentOffer?.(
-          civId, targetCivId, action as unknown as DiplomatAction, gold,
-          `${civName}'s diplomat proposes ${action.replace(/_/g, ' ')}.`,
+          civId, targetCivId, action as DiplomatAction, gold, message,
+          swap?.techOffered, swap?.techRequested,
         );
         unit.movesRemaining = 0;
       }
     } else {
-      this.gameEngine.executeDiplomatAction?.(unit.id, action, targetCivId);
+      this.gameEngine.executeDiplomatAction?.(unit.id, action, targetCivId, terms);
     }
 
     this.gameEngine.log?.('ai', `Diplomat — ${civName} ${action.replace(/_/g, ' ')} with ${targetCiv?.name ?? targetCivId}`);
+  }
+
+  /**
+   * The third party this AI would name in a joint embargo: an enemy it shares
+   * with the partner if there is one — an embargo is worth agreeing to when you
+   * both hate someone — and otherwise the weakest other civ it has met.
+   */
+  private chooseEmbargoTarget(civId: number, targetCivId: number): number | undefined {
+    const dm = this.gameEngine.diplomacyManager;
+    const third = (this.gameEngine.civilizations ?? []).filter(
+      c => c.id !== civId && c.id !== targetCivId && c.isAlive !== false && dm?.hasContacted?.(civId, c.id),
+    );
+    if (third.length === 0) return undefined;
+    const theirEnemies = new Set(dm?.getEnemies?.(targetCivId) ?? []);
+    const shared = third.filter(c => theirEnemies.has(c.id));
+    const pool = shared.length > 0 ? shared : third;
+    return pool.reduce((weakest, c) =>
+      (c.resources?.gold ?? 0) < (weakest.resources?.gold ?? 0) ? c : weakest,
+    ).id;
   }
 
   /**
@@ -6485,7 +7602,12 @@ export class AIManager {
     };
 
     // Worst-served city first: the emptiest walls are the ones worth a soldier.
+    // Only cities on the unit's OWN landmass: a garrison order for a city
+    // across water marches the unit to the shore and stalls it there forever
+    // (island cities were garrisoned by nobody while mainland troops held at
+    // the coast). Island cities are served by island troops.
     const needy = cities
+      .filter((c: City) => this.areLandConnected(unit.col, unit.row, c.col, c.row))
       .map((c: City) => ({ city: c, count: held(c) }))
       .filter((n) => n.count < floor)
       .sort((a, b) => a.count - b.count);
@@ -6510,7 +7632,93 @@ export class AIManager {
   }
 
   private shouldFortifyForDefense(unit: Unit): boolean {
-    return this.isGarrisonEligible(unit) && !unit.isFortified && this.isAtOrAdjacentToFriendlyCity(unit);
+    if (!this.isGarrisonEligible(unit) || unit.isFortified) return false;
+    if (this.isAtOrAdjacentToFriendlyCity(unit)) return true;
+    // Island guard on its post, or a beachhead force consolidating: entrench
+    // for the +50% instead of standing idle (or wandering off it next turn).
+    const hold = (unit as { _aiHoldPost?: { col: number; row: number } })._aiHoldPost;
+    if (hold && hold.col === unit.col && hold.row === unit.row) return true;
+    const guard = this.findIslandGuardPost(unit);
+    return !!guard && guard.col === unit.col && guard.row === unit.row;
+  }
+
+  /**
+   * Where an island troop should stand guard when its cities need no filling.
+   *
+   * Beyond the garrison floor, spare troops on a small island used to probe
+   * and picket — on a 10-tile island that means pacing the same beaches while
+   * the island stands empty of defenders. A guard post is defensible ground
+   * (hills, forest, fortress) watching the water, near a city to fall back
+   * on. Returns null for mainland troops, troops with no own city on their
+   * landmass, and troops already committed elsewhere (invasion troops are
+   * claimed by the invasion branch before this ever runs).
+   */
+  private findIslandGuardPost(unit: Unit): { col: number; row: number } | null {
+    if (!this.isGarrisonEligible(unit)) return null;
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return null;
+    const landmassId = this.gameEngine.getLandmassId?.(unit.col, unit.row) ?? -1;
+    if (landmassId < 0) return null;
+    let islandSize = Infinity;
+    try {
+      islandSize = this.gameEngine.getLandmassSize?.(unit.col, unit.row) ?? Infinity;
+    } catch { islandSize = Infinity; }
+    if (islandSize > SMALL_ISLAND_MAX_TILES) return null; // mainland: normal duty
+    const ownCitiesHere = (this.gameEngine.cities ?? []).filter(
+      (c: City) => c.civilizationId === unit.civilizationId
+        && this.gameEngine.getLandmassId?.(c.col, c.row) === landmassId,
+    );
+    if (ownCitiesHere.length === 0) return null; // no footprint, no guard
+    const atWar = this.gameEngine.isCivAtWar?.(unit.civilizationId) === true;
+    let best: { col: number; row: number } | null = null;
+    let bestScore = -Infinity;
+    const R = 10;
+    for (let dc = -R; dc <= R; dc++) {
+      for (let dr = -R; dr <= R; dr++) {
+        const col = unit.col + dc;
+        const row = unit.row + dr;
+        if (!grid.isValidSquare(col, row)) continue;
+        if (this.gameEngine.getLandmassId?.(col, row) !== landmassId) continue;
+        const tile = this.gameEngine.getTileAt(col, row);
+        if (!tile) continue;
+        const key = String(tile.type ?? tile.terrain ?? '').trim().toLowerCase();
+        if (key === 'ocean' || key === 'lake') continue;
+        if (this.gameEngine.getCityAt(col, row)) continue; // cities have garrisons
+        const occupant = this.gameEngine.getUnitAt(col, row);
+        if (occupant && occupant.id !== unit.id && occupant.civilizationId === unit.civilizationId) continue;
+        if (typeof this.gameEngine.isTilePassable === 'function' && !this.gameEngine.isTilePassable(col, row)) continue;
+        const terrainDefence = TERRAIN_PROPS[key]?.defense ?? 1;
+        const improvement = String((tile as { improvement?: unknown }).improvement ?? '').toLowerCase();
+        const fortress = improvement === 'fortress' || (tile as { fortress?: unknown }).fortress === true;
+        let nearestCity = Infinity;
+        for (const c of ownCitiesHere) {
+          const d = grid.squareDistance(col, row, c.col, c.row);
+          if (d < nearestCity) nearestCity = d;
+        }
+        const beachDistance = this.gameEngine.findAdjacentOcean?.(col, row) ? 0 : 4;
+        const score = scoreGuardTile({
+          terrainDefence,
+          fortress,
+          nearFriendlyCity: nearestCity <= 2,
+          beachDistance,
+          threatened: atWar,
+        });
+        if (score > bestScore) {
+          bestScore = score;
+          best = { col, row };
+        }
+      }
+    }
+    return best;
+  }
+
+  /** Whether a fortified unit sits on its island guard post (keep entrenched). */
+  private isOnIslandGuardPost(unit: Unit): boolean {
+    if (!unit.isFortified) return false;
+    const hold = (unit as { _aiHoldPost?: { col: number; row: number } })._aiHoldPost;
+    if (hold && hold.col === unit.col && hold.row === unit.row) return true;
+    const guard = this.findIslandGuardPost(unit);
+    return !!guard && guard.col === unit.col && guard.row === unit.row;
   }
 
   /**
@@ -6537,9 +7745,37 @@ export class AIManager {
     if (this.getOffensivePlanTarget(unit, storage)) return false;
 
     // At war with an enemy we can actually march to: mobilise, even from a city.
-    if (this.hasReachableEnemyTarget(civId, unit)) return false;
+    // SEA-only threats do not strip a garrison: an island guard released for a
+    // war across water walks to the shore and stalls there (no ferry sails on
+    // a garrison order), while its city stands empty. The invasion mission —
+    // with its reserved troops and ferry — is how overseas wars are fought.
+    if (this.hasLandConnectedEnemyTarget(civId, unit)) return false;
 
     return true;
+  }
+
+  /**
+   * True when a hostile city or combat unit shares the unit's landmass: a war
+   * the garrison can march to (and must be released for). Sea-reachable
+   * enemies alone keep island garrisons entrenched — see above.
+   */
+  private hasLandConnectedEnemyTarget(civilizationId: number, unit: Unit): boolean {
+    const enemies = new Set(
+      (this.gameEngine.diplomacyManager?.getEnemies?.(civilizationId) ?? []).map(Number),
+    );
+    if (enemies.size === 0) return false;
+    const hostile = (civId: unknown) => enemies.has(Number(civId));
+    return (
+      this.gameEngine.cities.some(
+        (c) => hostile(c.civilizationId) && this.areLandConnected(unit.col, unit.row, c.col, c.row),
+      ) ||
+      this.gameEngine.units.some(
+        (u) =>
+          hostile(u.civilizationId) &&
+          !u.isDefeated &&
+          this.areLandConnected(unit.col, unit.row, u.col, u.row),
+      )
+    );
   }
 
   /** Midpoint of a civ's cities, used as "where this civ is" for reachability. */
@@ -6632,19 +7868,247 @@ export class AIManager {
    * old unfiltered version answered yes to exactly that.
    */
   hasSeaInvasionTarget(civilizationId: number, onlyEnemyCivId?: number): boolean {
+    return this.countSeaInvasionTargets(civilizationId, onlyEnemyCivId) > 0;
+  }
+
+  /**
+   * How many enemy cities sit on landmasses a ferry could reach (beachable).
+   * Count, not boolean: two beaches want two waves. Used by AutoProduction's
+   * naval doctrine (`seaInvasionTargets`) to size the sealift + escort.
+   */
+  countSeaInvasionTargets(civilizationId: number, onlyEnemyCivId?: number): number {
     const context = this.buildSeaInvasionContext(civilizationId);
-    if (!context) return false;
+    if (!context) return 0;
     const targets = onlyEnemyCivId !== undefined
       ? new Set([onlyEnemyCivId])
       : new Set(
         (this.gameEngine.diplomacyManager?.getEnemies?.(civilizationId) ?? []).map(Number),
       );
-    if (targets.size === 0) return false;
-    return this.gameEngine.cities.some((c: City) => {
-      if (c.civilizationId === civilizationId) return false;
-      if (!targets.has(c.civilizationId)) return false;
-      return this.isSeaInvasionTarget(c, context);
+    if (targets.size === 0) return 0;
+    let n = 0;
+    for (const c of this.gameEngine.cities) {
+      if ((c as City).civilizationId === civilizationId) continue;
+      if (!targets.has((c as City).civilizationId)) continue;
+      if (this.isSeaInvasionTarget(c as { col: number; row: number }, context)) n++;
+    }
+    return n;
+  }
+
+  /**
+   * The civ's strategic branch this turn: endgame arm, total war, island
+   * spread, or steady routine. Computed once per turn, stored on turnData for
+   * production/research/spending, and used immediately for mission planning.
+   * Pure conditions — see AIStrategyBranches for the priority order.
+   */
+  private computeStrategyBranch(civilizationId: number, storage?: PlayerTurnStorage): StrategyBranch {
+    const civ = this.gameEngine.civilizations?.[civilizationId];
+    const dm = this.gameEngine.diplomacyManager;
+    const year = this.gameEngine.currentYear ?? -4000;
+    let atWar = false;
+    try {
+      atWar = this.gameEngine.isCivAtWar?.(civilizationId) === true
+        || (dm?.getEnemies?.(civilizationId) ?? []).length > 0;
+    } catch { atWar = false; }
+    const techs = civ?.technologies;
+    const fissionKnown = techs instanceof Set
+      ? techs.has('nuclear_fission')
+      : Array.isArray(techs) && techs.includes('nuclear_fission');
+    const manhattanBuilt = this.isManhattanBuilt();
+    const nukeStock = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civilizationId && u.type === 'nuclear' && !u.isDefeated,
+    ).length;
+    const enemies = new Set<number>();
+    try {
+      for (const id of dm?.getEnemies?.(civilizationId) ?? []) enemies.add(Number(id));
+    } catch { /* no diplomacy on stubs */ }
+    let enemyCities = 0;
+    let walledTargetKnown = false;
+    for (const c of this.gameEngine.cities ?? []) {
+      if ((c as City).civilizationId === civilizationId || !enemies.has((c as City).civilizationId)) continue;
+      enemyCities++;
+      if (((c as City).buildings ?? []).includes('city_walls')) walledTargetKnown = true;
+    }
+    try {
+      const remembered = storage?.enemyLocations;
+      if (remembered) {
+        for (const [owner, locs] of remembered) {
+          if (owner === civilizationId || enemies.has(owner)) {
+            for (const loc of locs) if (loc.type === 'city') enemyCities++;
+          }
+        }
+      }
+    } catch { /* intel optional */ }
+    const plan = storage?.turnData?.offensivePlan as { target?: unknown } | undefined;
+    let seaWorld = false;
+    let islandsOpen = 0;
+    try {
+      const landmasses = this.gameEngine.getLandmassCount?.() ?? 1;
+      const coastal = typeof this.gameEngine.civHasCoastalCity === 'function'
+        && this.gameEngine.civHasCoastalCity(civilizationId);
+      seaWorld = landmasses > 1 && coastal;
+      islandsOpen = typeof this.gameEngine.getColonizableIslands === 'function'
+        ? this.gameEngine.getColonizableIslands(civilizationId)?.length ?? 0
+        : 0;
+    } catch { seaWorld = false; }
+    const ownCities = (this.gameEngine.cities ?? []).filter(
+      (c: City) => c.civilizationId === civilizationId,
+    ).length;
+    return selectStrategyBranch({
+      atWar,
+      year,
+      fissionKnown,
+      manhattanBuilt,
+      nukeStock,
+      enemyCities,
+      hasOffensivePlan: !!plan?.target,
+      walledTargetKnown,
+      seaWorld,
+      islandsOpen,
+      ownCities,
     });
+  }
+
+  /**
+   * Naval-governor activation: ensure the sea war has a fleet even when no
+   * mission, no group and no doctrine choice was preset.
+   *
+   * Called once per civ per turn after the colony/invasion planners. It reads
+   * the sea situation, asks `AICoordinator.ensureNavalActivation` what is
+   * missing, forms fleet groups for the hulls that exist, and logs the demand
+   * so AutoProduction's bootstrap (which reads the same sea facts) builds the
+   * hulls. Pure coordination — no hulls are teleported, only planned.
+   */
+  private ensureNavalGovernorActive(civ: Civilization, storage?: PlayerTurnStorage): void {
+    if (!storage) return;
+    try {
+      const civId = civ.id;
+      const isTransport = (u: Unit): boolean => isSealiftHull(u.type, UNIT_PROPS[u.type]);
+      const isWarship = (u: Unit): boolean =>
+        isWarshipHull(UNIT_PROPS[u.type], u.type) && (u.attack ?? UNIT_PROPS[u.type]?.attack ?? 0) > 0.5 && UNIT_PROPS[u.type]?.naval === true;
+      const ownNaval = this.gameEngine.units.filter(
+        (u: Unit) => u.civilizationId === civId && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true,
+      );
+      const ownTransports = ownNaval.filter(isTransport);
+      const ownWarships = ownNaval.filter(isWarship);
+      const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civId);
+      const coastalCityIds = new Set<string>();
+      for (const c of ownCities) {
+        try {
+          if (this.gameEngine.tileHasNavalAccess?.(c.col, c.row)) coastalCityIds.add(c.id);
+          else if (this.gameEngine.findAdjacentOcean?.(c.col, c.row)) coastalCityIds.add(c.id);
+        } catch { /* stub */ }
+      }
+      let landmassCount = 1;
+      try {
+        landmassCount = this.gameEngine.getLandmassCount?.() ?? 1;
+      } catch { landmassCount = 1; }
+      let needsNavy = false;
+      try {
+        needsNavy = typeof this.gameEngine.civNeedsNavy === 'function' && this.gameEngine.civNeedsNavy(civId);
+      } catch { needsNavy = landmassCount > 1 && coastalCityIds.size > 0; }
+      const canBuildShips = this.engineCanBuildShips(civId);
+      const colonyMissions = this.getColonyMissions(storage);
+      const invasionMission = this.getInvasionMission(storage);
+      let islands = 0;
+      try {
+        islands = typeof this.gameEngine.getColonizableIslands === 'function'
+          ? this.gameEngine.getColonizableIslands(civId)?.length ?? 0
+          : 0;
+      } catch { islands = 0; }
+      const seaTargets = this.countSeaInvasionTargets(civId);
+      // Unexplored water share (sampled; drives scout activation).
+      let unexploredWaterShare = 0;
+      try {
+        const explored = this.gameEngine.getPlayerStorage?.(civId)?.explored as boolean[] | Uint8Array | undefined;
+        const map = (this.gameEngine as unknown as { map?: { tiles: Array<{ type?: string }> } }).map;
+        if (explored && map && map.tiles.length === explored.length) {
+          let water = 0;
+          let dark = 0;
+          for (let i = 0; i < map.tiles.length; i++) {
+            const t = String(map.tiles[i]?.type ?? '').toLowerCase();
+            if (t === 'ocean' || t === 'river') {
+              water++;
+              if (!explored[i]) dark++;
+            }
+          }
+          if (water > 0) unexploredWaterShare = dark / water;
+        }
+      } catch { unexploredWaterShare = 0; }
+      const enemies = this.gameEngine.diplomacyManager?.getEnemies?.(civId) ?? [];
+      const troopsAvailable = this.gameEngine.units.some(
+        (u: Unit) => u.civilizationId === civId && !u.isDefeated && !u.embarkedOn
+          && (u.attack ?? 0) > 0.5 && !UNIT_PROPS[u.type]?.naval,
+      );
+      const activation = AICoordinator.ensureNavalActivation({
+        needsNavy,
+        landmassCount,
+        ownCoastalCities: coastalCityIds.size,
+        ownTransports: ownTransports.length,
+        ownWarships: ownWarships.length,
+        canBuildShips,
+        hasColonyMission: colonyMissions.length > 0,
+        hasInvasionMission: !!invasionMission,
+        colonisableIslands: islands,
+        seaInvasionTargets: seaTargets,
+        unexploredWaterShare,
+        atWar: enemies.length > 0,
+        troopsAvailable,
+      });
+      // Form fleet groups for the hulls that exist (escort pairs + hunters).
+      // Stored on turnData so warship targeting can read it next turn; the
+      // per-turn chooseWarshipTarget already hunts, this only ADDS cohesion.
+      try {
+        const distFn = (c1: number, r1: number, c2: number, r2: number) =>
+          this.gameEngine.squareGrid?.squareDistance(c1, r1, c2, r2) ?? Infinity;
+        const enemyFleets: Array<{ col: number; row: number; strength: number }> = [];
+        for (const u of this.gameEngine.units) {
+          if (u.isDefeated || u.civilizationId === civId) continue;
+          if (!UNIT_PROPS[u.type]?.naval) continue;
+          if (!this.isHostileTo(civId, u.civilizationId)) continue;
+          enemyFleets.push({ col: u.col, row: u.row, strength: (u.attack ?? 1) + (u.defense ?? 0) * 0.5 });
+        }
+        const enemyCoastal: Array<{ col: number; row: number }> = [];
+        for (const c of this.gameEngine.cities) {
+          if ((c as City).civilizationId === civId) continue;
+          if (!this.isHostileTo(civId, (c as City).civilizationId)) continue;
+          try {
+            if (this.gameEngine.tileHasNavalAccess?.((c as City).col, (c as City).row)) {
+              enemyCoastal.push({ col: (c as City).col, row: (c as City).row });
+            }
+          } catch { /* stub */ }
+        }
+        const escortPairs = AICoordinator.assignNavalEscorts({
+          transportIds: ownTransports.map((u) => u.id),
+          warshipIds: ownWarships.map((u) => u.id),
+        });
+        const existing = (storage.turnData as Record<string, unknown>).navalFleets as
+          | import('./AICoordinator').NavalFleetGroup[] | undefined;
+        const fleets = AICoordinator.formNavalGroups({
+          transports: ownTransports.map((u) => ({ id: u.id, col: u.col, row: u.row })),
+          warships: ownWarships.map((u) => ({ id: u.id, col: u.col, row: u.row, attack: u.attack })),
+          enemyFleets: enemyFleets.slice(0, 4),
+          enemyCoastalCities: enemyCoastal.slice(0, 4),
+          escortPairs,
+          existingGroups: existing ?? [],
+          distanceFn: distFn,
+        });
+        (storage.turnData as Record<string, unknown>).navalFleets = fleets;
+      } catch { /* fleet grouping is advisory */ }
+      if (activation.activate) {
+        this.gameEngine.log?.('ai', `Naval activation — ${civ.name}: ${activation.reason}`, {
+          civilizationId: civId,
+          action: 'naval_activation',
+          needsTransport: activation.needsTransport,
+          needsEscort: activation.needsEscort,
+          needsScout: activation.needsScout,
+          transports: ownTransports.length,
+          warships: ownWarships.length,
+          islands,
+          seaTargets,
+        });
+        debugLog(`[AI] Naval activation for ${civ.name}: ${activation.reason}`);
+      }
+    } catch { /* activation never blocks the turn */ }
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -7211,6 +8675,13 @@ export class AIManager {
       return null;
     }
 
+    // Island troops stay on island duty: a unit that cannot walk to a LAND
+    // plan's target is not part of that assault (it would stall at the coast
+    // while its island city stands empty). Sea plans are handled above.
+    if (!this.areLandConnected(unit.col, unit.row, plan.target.col, plan.target.row)) {
+      return null;
+    }
+
     // Prune dead/removed units from the assignment list — stale ids used to
     // occupy the required-unit slots forever, so the plan silently stopped
     // assigning attackers.
@@ -7254,9 +8725,10 @@ export class AIManager {
 
   /** Choose one strong/nearby combat unit to remain with each own city. */
   private getCityDefenseReserveIds(civilizationId: number, combatUnits?: Unit[]): Set<string> {
-    const units = combatUnits ?? this.gameEngine.units.filter(
+    const navalReserved = this.getNavalReservedUnitIds(this.gameEngine.getPlayerStorage?.(civilizationId));
+    const units = (combatUnits ?? this.gameEngine.units.filter(
       (unit: Unit) => unit.civilizationId === civilizationId && this.isCombatUnit(unit)
-    );
+    )).filter((u) => !navalReserved.has(u.id));
     const cities = this.gameEngine.cities
       .filter((city: City) => city.civilizationId === civilizationId);
     const reserves = new Set<string>();
@@ -7301,6 +8773,26 @@ export class AIManager {
       }
     }
     return reserves;
+  }
+
+  /**
+   * Units the navy owns right now: invasion troops (waiting, embarked or
+   * ashore) plus the colony settler. Land army groups and city garrisons must
+   * not draft them — they are already committed to a crossing. Without this
+   * the invasion force was repeatedly re-tasked as city guards, and the ferry
+   * waited at the rendezvous forever for troops that never came.
+   */
+  private getNavalReservedUnitIds(storage?: PlayerTurnStorage): Set<string> {
+    const reserved = new Set<string>();
+    try {
+      const invasion = this.getInvasionMission(storage);
+      for (const id of invasion?.troopIds ?? []) reserved.add(id);
+      for (const id of invasion?.landedIds ?? []) reserved.add(id);
+      for (const colony of this.getColonyMissions(storage)) {
+        if (colony?.settlerId) reserved.add(colony.settlerId);
+      }
+    } catch { /* storage shape varies in tests */ }
+    return reserved;
   }
 
   /**
@@ -7655,6 +9147,18 @@ export class AIManager {
     navalRelevance?: number;
     /** True when the civ's start tile was on an island (known from turn one). */
     startsOnIsland?: boolean;
+    /**
+     * 0 = no island expansion pending; 1 = islands visible, needs Sailing;
+     * 2 = the same with 1-2 cities (expansion blocked until it sails).
+     * Fed to AIResearch so Sailing wins the tech race on an archipelago.
+     */
+    islandExpansionUrgency?: number;
+    /**
+     * 0 = no nuclear interest; 1 = wartime fission interest; 2 = late endgame;
+     * 3 = Manhattan stands but Fission is missing (race to arm). Fed to
+     * AIResearch so the atomic branch is researched before it is needed.
+     */
+    nuclearRelevance?: number;
     /** >0 when a coastal city has a fishing ground the FisherEconomics equation approves. */
     fishingRelevance?: number;
     /** Real turns to finish a tech, from the engine's research model. */
@@ -7722,9 +9226,31 @@ export class AIManager {
       }
     }
     const startsOnIsland = civ?.startsOnIsland === true;
-    const navalRelevance =
+    // Island opportunity: colonisable islands the civ can SEE but cannot reach
+    // without Sailing. The old relevance counted only offshore ENEMY cities, so
+    // a civ staring at 10 empty islands with zero contact scored naval=2 and
+    // researched land techs for 60 rounds (seed-19: 4 civs, 0 Sailing). Islands
+    // are expansion targets exactly like enemy cities are war targets.
+    let islandCount = 0;
+    let hasSailing = false;
+    try {
+      const techs = civ?.technologies;
+      hasSailing = techs instanceof Set
+        ? techs.has('sailing')
+        : Array.isArray(techs) && (techs as string[]).includes('sailing');
+    } catch { hasSailing = false; }
+    try {
+      islandCount = typeof this.gameEngine.getColonizableIslands === 'function'
+        ? this.gameEngine.getColonizableIslands(civilizationId)?.length ?? 0
+        : 0;
+    } catch { islandCount = 0; }
+    const islandExpansionUrgency = !hasSailing && islandCount > 0 && hasWaterAccess
+      ? (cities.length <= 2 ? 2 : 1)
+      : 0;
+    const navalRelevance = Math.min(7,
       ((hasWaterAccess || startsOnIsland) ? Math.min(2, Math.max(0, landmassCount - 1)) : 0) +
-      (enemyCitiesOffShore > 0 ? 3 : 0);
+      (enemyCitiesOffShore > 0 ? 3 : 0) +
+      (islandCount > 0 ? 2 : 0));
 
     // How worthwhile is a Fisher Boat right now? A coastal city without a
     // Harbor whose best ground passes the FisherEconomics equation turns this
@@ -7741,6 +9267,30 @@ export class AIManager {
       civilizationId,
       this.gameEngine.isCivAtWar?.(civilizationId) !== true,
     );
+
+    // How worthwhile is the nuclear arm right now? Manhattan standing without
+    // Fission at home is a race to arm (3); a late endgame with enemies left
+    // is interest (2); a mid-game war past 1500 is early interest (1). Zero
+    // otherwise — and always zero once Fission is known (the arm is unlocked,
+    // production takes it from there).
+    let nuclearRelevance = 0;
+    {
+      const techs = civ?.technologies;
+      const fissionKnown = techs instanceof Set
+        ? techs.has('nuclear_fission')
+        : Array.isArray(techs) && techs.includes('nuclear_fission');
+      if (!fissionKnown) {
+        if (this.isManhattanBuilt()) nuclearRelevance = 3;
+        else if ((this.gameEngine.currentYear ?? -4000) >= 1900 && knownEnemyCities > 0) nuclearRelevance = 2;
+        else {
+          let wartime = false;
+          try {
+            wartime = this.gameEngine.isCivAtWar?.(civilizationId) === true;
+          } catch { wartime = false; }
+          if (wartime && (this.gameEngine.currentYear ?? -4000) >= 1500) nuclearRelevance = 1;
+        }
+      }
+    }
 
     // Real turns per technology, straight from the research model: the effective
     // cost (map size × difficulty × how far ahead this civ is) and the beakers
@@ -7782,6 +9332,8 @@ export class AIManager {
       navalRelevance,
       fishingRelevance,
       startsOnIsland,
+      islandExpansionUrgency,
+      nuclearRelevance,
       turnsToResearch,
       caravanRelevance,
     };

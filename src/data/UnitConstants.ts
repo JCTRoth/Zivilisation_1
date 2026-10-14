@@ -12,6 +12,14 @@ import { UnitProperties } from './GameConstants';
  */
 export const FERRY_CAPACITY = 3;
 
+/**
+ * What a Submarine carries: exactly one Nuclear warhead, and nothing else.
+ * Civ1 tasking — the sub is a stealth launch platform, not a transport. The
+ * exclusivity is enforced in `GameEngine.canLoadFerry` (nukes board only
+ * subs, subs board only nukes), so a hull that could lift an army never does.
+ */
+export const SUBMARINE_NUCLEAR_CAPACITY = 1;
+
 export const UNIT_TYPES = {
     // Military Units
     WARRIOR: 'warrior',
@@ -125,7 +133,9 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: false,
-        icon: '𓌝',
+        // Egyptian chariot hieroglyph (U+1331D) — outside Noto Color Emoji, so
+        // it drew as a tofu box. Only seen if chariot.svg fails to load.
+        icon: '🐎',
         requires: 'the_wheel',
         type: 'military'
     },
@@ -335,7 +345,10 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         canSettle: false,
         canWork: false,
         naval: true,
-        icon: '𓊝',
+        // The Egyptian boat glyph this used to carry is outside the Noto colour
+        // emoji set and renders as a tofu box on most systems. It is only ever
+        // seen if the SVG artwork fails to load now.
+        icon: '⛵',
         requires: 'navigation',
         type: 'naval'
     },
@@ -412,6 +425,9 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         naval: true,
         icon: '🔱',
         requires: 'combustion',
+        // Civ1 launch platform: one nuclear warhead, nothing else (see
+        // SUBMARINE_NUCLEAR_CAPACITY and the exclusivity in canLoadFerry).
+        transportCapacity: SUBMARINE_NUCLEAR_CAPACITY,
         type: 'naval'
     },
     [UNIT_TYPES.CARRIER]: {
