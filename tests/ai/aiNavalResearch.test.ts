@@ -77,4 +77,24 @@ describe('naval research priority', () => {
     );
     expect(chosen).toBe('sailing');
   });
+
+  it('treats visible islands as stranded-level urgency for Sailing', () => {
+    // Seed-19: 1-city coastal civ, 10 known islands, no Sailing after 60
+    // rounds — the old relevance (offshore enemies only) scored naval=2 and
+    // land techs won every race. Islands are expansion targets.
+    const urgent = score('sailing', gameState({ navalRelevance: 4, islandExpansionUrgency: 2 }));
+    const plain = score('sailing', gameState({ navalRelevance: 4 }));
+    expect(urgent.score).toBeGreaterThan(plain.score);
+    expect(urgent.reason).toContain('island-expansion');
+  });
+
+  it('selects Sailing for a 1-city civ staring at islands', () => {
+    const civ: never = { technologies: [], personality: {} } as never;
+    const chosen = AIResearch.selectResearch(
+      civ,
+      'science_focus' as never,
+      gameState({ navalRelevance: 4, islandExpansionUrgency: 2, hasWaterAccess: true }) as never,
+    );
+    expect(chosen).toBe('sailing');
+  });
 });

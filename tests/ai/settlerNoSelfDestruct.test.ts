@@ -15,8 +15,8 @@ import { AutoProduction } from '@/game/engine/AutoProduction';
 import type { City, Unit } from '../../types/game';
 
 /** Minimal engine: one AI civ, one city of the given size, no units. */
-function makeEngine(population: number, opts: { isAI?: boolean; withSettler?: boolean; otherCities?: number } = {}) {
-  const { isAI = true, withSettler = false, otherCities = 0 } = opts;
+function makeEngine(population: number, opts: { isAI?: boolean; withSettler?: boolean; otherCities?: number; withScouts?: number } = {}) {
+  const { isAI = true, withSettler = false, otherCities = 0, withScouts = 0 } = opts;
   const city = {
     id: 'city-1',
     name: 'Capital',
@@ -56,6 +56,9 @@ function makeEngine(population: number, opts: { isAI?: boolean; withSettler?: bo
   ];
   if (withSettler) {
     units.push({ id: 's1', type: 'settler', civilizationId: 0, col: 6, row: 6, isDefeated: false } as unknown as Unit);
+  }
+  for (let k = 0; k < withScouts; k++) {
+    units.push({ id: `k${k}`, type: 'scout', civilizationId: 0, col: 7, row: 6, isDefeated: false } as unknown as Unit);
   }
 
   const productionManager = {
@@ -154,8 +157,20 @@ describe('settlers never consume an AI city', () => {
     expect(choose()?.itemType).not.toBe('settler');
   });
 
-  it('human cities are untouched — a player may choose the capital move', () => {
-    const { choose } = makeEngine(1, { isAI: false, otherCities: 1 });
+  it('a lone human pop-1 city still gets its settler (exploration just comes first)', () => {
+    // The self-destruct guard applies to human cities too, so a size-1 city
+    // with a second town is not made to dissolve itself — that branch is covered
+    // by the AI case above. What a human IS still free to do is the classic
+    // capital move: one city, no settler anywhere, so refusing would strand the
+    // civ with no way to ever expand. Exploration is now merely the city's
+    // FIRST choice, not its only one: the scout goes first, then the settler.
+    const { choose } = makeEngine(1, { isAI: false, otherCities: 0, withScouts: 2 });
     expect(choose()?.itemType).toBe('settler');
+  });
+
+  it('a human size-1 city with another city is not made to dissolve itself', () => {
+    // Same symmetry as the AI case: the guard is not an AI-only rule.
+    const { choose } = makeEngine(1, { isAI: false, otherCities: 1, withScouts: 2 });
+    expect(choose()?.itemType).not.toBe('settler');
   });
 });

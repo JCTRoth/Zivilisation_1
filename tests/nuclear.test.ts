@@ -236,6 +236,17 @@ describe('AI nuclear targeting', () => {
     expect(ai(engine).chooseNuclearStrike(nuke)).toBeNull();
   });
 
+  it('never fires into an SDI shield — the missile would die mid-air', () => {
+    const engine = makeEngine();
+    const nuke = addNuke(engine, 1, 1);
+    addCity(engine, 'Shielded', 5, 2, 1, 9, ['sdi_defense']);
+    engine.diplomacyManager.declareWar(0, 1);
+    expect(ai(engine).chooseNuclearStrike(nuke)).toBeNull();
+    // …and the engine refuses the strike too, so the warhead is never spent.
+    expect(engine.detonateNuclear(nuke.id, 5, 2)).toBe(false);
+    expect(engine.units.some((u) => u.id === 'nuke')).toBe(true);
+  });
+
   it('ignores a lone weak unit — a warhead is not worth one spearman', () => {
     const engine = makeEngine();
     const nuke = addNuke(engine, 1, 1);
@@ -246,9 +257,123 @@ describe('AI nuclear targeting', () => {
   });
 });
 
-describe('AI production of warheads', () => {
-  const nukeTech = (engine: GameEngine) => {
-    engine.civilizations[0].technologies = ['nuclear_power'];
+describe('submarine nuclear transport (Civ1 launch platform)', () => {
+  const O = 'ocean';
+  const COAST = [
+    [G, G, G, O, O, O, O, O, O],
+    [G, G, G, O, O, O, O, O, O],
+    [G, G, G, O, O, O, O, O, O],
+    [G, G, G, O, O, O, O, O, O],
+    [G, G, G, O, O, O, O, O, O],
+  ];
+
+  function coastEngine() {
+    const height = COAST.length;
+    const width = COAST[0].length;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const e = new GameEngine(null) as any;
+    e.units = [];
+    e.cities = [];
+    e.onStateChange = null;
+    e.isPaused = true;
+    e.devMode = true;
+    e.activePlayer = 0;
+    e.squareGrid = new SquareGrid(width, height);
+    e.map = {
+      width,
+      height,
+      tiles: COAST.flat().map((type, i) => {
+        const col = i % width;
+        const row = Math.floor(i / width);
+        return { id: `${col},${row}`, col, row, type, terrain: type, movement: 1, defense: 1 };
+      }),
+    };
+    e.civilizations = [
+      { id: 0, name: 'Bombards', isHuman: false, isAlive: true, technologies: ['nuclear_fission'], resources: { gold: 900 } },
+      { id: 1, name: 'Targetia', isHuman: false, isAlive: true, technologies: [], resources: { gold: 900 } },
+    ];
+    e.diplomacyManager = new DiplomacyManager(e as GameEngine);
+    e.diplomacyManager.initialize([0, 1]);
+    e.initializePlayerStorage(0);
+    e.initializePlayerStorage(1);
+    return e as GameEngine;
+  }
+
+  it('a warhead boards only a submarine, and a sub boards only a warhead', () => {
+    const engine = coastEngine();
+    const nuke = addNuke(engine, 2, 2);
+    const sub = addUnit(engine, { id: 'sub', type: 'submarine', col: 3, row: 2, civilizationId: 0, attack: 14, defense: 3, movesRemaining: 3 });
+    const ferry = addUnit(engine, { id: 'fer', type: 'ferry', col: 3, row: 3, civilizationId: 0, attack: 0, defense: 0, movesRemaining: 3 });
+    const troop = addUnit(engine, { id: 't', type: 'phalanx', col: 2, row: 3, civilizationId: 0, attack: 1, defense: 2 });
+    // Nuke ↔ sub: yes. Nuke ↔ ferry, troop ↔ sub: no.
+    expect(engine.canLoadFerry(sub.id, nuke.id)).toBe(true);
+    expect(engine.canLoadFerry(ferry.id, nuke.id)).toBe(false);
+    expect(engine.canLoadFerry(sub.id, troop.id)).toBe(false);
+    expect(engine.canLoadFerry(ferry.id, troop.id)).toBe(true);
+    expect(engine.loadFerry(sub.id, nuke.id)).toBe(true);
+    // One slot: a second warhead does not fit.
+    const nuke2 = addNuke(engine, 2, 1);
+    (nuke2 as Unit).id = 'nuke2';
+    expect(engine.canLoadFerry(sub.id, 'nuke2')).toBe(false);
+  });
+
+  it('fires from aboard the submarine inside 16 tiles', () => {
+    const engine = coastEngine();
+    const nuke = addNuke(engine, 2, 2);
+    const sub = addUnit(engine, { id: 'sub', type: 'submarine', col: 3, row: 2, civilizationId: 0, attack: 14, defense: 3, movesRemaining: 3 });
+    addCity(engine, 'Target', 8, 2, 1, 6);
+    engine.diplomacyManager.declareWar(0, 1);
+    expect(engine.loadFerry(sub.id, nuke.id)).toBe(true);
+    // Sub at (3,2), target at (8,2): 5 tiles — inside warhead range.
+    expect(engine.detonateNuclear(nuke.id, 8, 2)).toBe(true);
+    expect(engine.units.some((u) => u.id === 'nuke')).toBe(false);
+  });
+
+  it('refuses a strike past warhead range', () => {
+    // A genuinely wide theatre: target 23 tiles out, past the 16-tile flight.
+    const width = 30;
+    const height = 5;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const e = new GameEngine(null) as any;
+    e.units = [];
+    e.cities = [];
+    e.onStateChange = null;
+    e.isPaused = true;
+    e.devMode = true;
+    e.activePlayer = 0;
+    e.squareGrid = new SquareGrid(width, height);
+    e.map = {
+      width,
+      height,
+      tiles: Array.from({ length: width * height }, (_, i) => {
+        const col = i % width;
+        const row = Math.floor(i / width);
+        return { id: `${col},${row}`, col, row, type: G, terrain: G, movement: 1, defense: 1 };
+      }),
+    };
+    e.civilizations = [
+      { id: 0, name: 'Bombards', isHuman: false, isAlive: true, technologies: ['nuclear_fission'], resources: { gold: 900 } },
+      { id: 1, name: 'Targetia', isHuman: false, isAlive: true, technologies: [], resources: { gold: 900 } },
+    ];
+    e.diplomacyManager = new DiplomacyManager(e as GameEngine);
+    e.diplomacyManager.initialize([0, 1]);
+    e.initializePlayerStorage(0);
+    e.initializePlayerStorage(1);
+    const engine = e as GameEngine;
+    const nuke = addNuke(engine, 2, 2);
+    addCity(engine, 'FarTarget', 25, 2, 1, 6);
+    engine.diplomacyManager.declareWar(0, 1);
+    // 23 tiles out: the missile cannot get there, so the warhead is held.
+    expect(engine.detonateNuclear(nuke.id, 25, 2)).toBe(false);
+    expect(engine.units.some((u) => u.id === 'nuke')).toBe(true);
+  });
+});
+
+describe('AI production of warheads', () => {  const nukeTech = (engine: GameEngine) => {
+    // Civ1 gates: Nuclear Fission researched AND the Manhattan Project
+    // completed somewhere (which unlocks every civ with the tech).
+    engine.civilizations[0].technologies = ['nuclear_fission'];
+    addCity(engine, 'LosAlamos', 0, 0, 0, 3, ['manhattan_project']);
   };
 
   it('builds one once the civ can and has a reason to fire', () => {
@@ -269,6 +394,17 @@ describe('AI production of warheads', () => {
     const city = addCity(engine, 'Forge', 1, 1, 0, 4);
     engine.diplomacyManager.declareWar(0, 1);
     expect(production(engine).shouldBuildNuclear(city)).toBe(false);
+  });
+
+  it('does not build one before the Manhattan Project exists', () => {
+    // Fission alone is not enough: ProductionManager rejects the item, so the
+    // AI must not queue shields into the void.
+    const engine = makeEngine();
+    engine.civilizations[0].technologies = ['nuclear_fission'];
+    const city = addCity(engine, 'Forge', 1, 1, 0, 4);
+    engine.diplomacyManager.declareWar(0, 1);
+    expect(production(engine).shouldBuildNuclear(city)).toBe(false);
+    expect(production(engine).buildNuclearProduction(city)).toBeNull();
   });
 
   it('does not buy warheads out of a treasury that is already in deficit', () => {

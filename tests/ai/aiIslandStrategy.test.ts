@@ -214,11 +214,12 @@ describe('AI colony mission', () => {
     const manager = e.aiManager as any;
 
     manager.updateColonyMission(e.civilizations[0], storage);
-    const mission = storage.turnData.colonyMission as {
+    const missions = storage.turnData.colonyMissions as Array<{
       settlerId: string; ferryId: string | null; stage: string;
       landTile: { col: number; row: number }; waterTile: { col: number; row: number };
-    };
-    expect(mission).toBeDefined();
+    }>;
+    expect(missions).toHaveLength(1);
+    const mission = missions[0];
     expect(mission.settlerId).toBe('set');
     expect(mission.ferryId).toBe('fer');
     expect(mission.stage).toBe('gather');
@@ -237,7 +238,7 @@ describe('AI colony mission', () => {
     expect(settler.embarkedOn).toBeNull();
     expect(settler.col).toBe(mission.landTile.col);
     expect(settler.row).toBe(mission.landTile.row);
-    expect(storage.turnData.colonyMission).toBeUndefined();
+    expect(storage.turnData.colonyMissions).toHaveLength(0);
 
     // The settler can now found a city on the new island.
     expect(e.foundCityWithSettler(settler.id)).toBeTruthy();

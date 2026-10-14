@@ -223,12 +223,16 @@ describe('AI diplomat units', () => {
     // Force the willingness roll to accept the peace proposal.
     vi.spyOn(Math, 'random').mockReturnValue(0.01);
 
-    const diplomat = { id: 'd2', civilizationId: 1, type: 'diplomat', col: 10, row: 10, movesRemaining: 2 };
+    // The diplomat has to be STANDING NEXT to something of civ 0 — the engine
+    // now checks the contact the rules say a diplomat must have before it can
+    // speak for anyone, so a lone unit in open country proposes nothing.
+    const enemyCity = engine.foundCity(12, 12, 0, 'Parley Town')!;
+    const diplomat = {
+      id: 'd2', civilizationId: 1, type: 'diplomat',
+      col: enemyCity.col + 1, row: enemyCity.row, movesRemaining: 2,
+    };
     engine.units.push(diplomat as any);
-    aiManager.executeAIDiplomatAction(diplomat, {
-      targetCivId: 0,
-      actions: ['gather_intelligence', 'propose_ceasefire', 'propose_peace'],
-    });
+    aiManager.executeAIDiplomatAction(diplomat, engine.getDiplomatTargets(diplomat.id)[0]);
 
     // Peace was made through the normal proposal path (not an offer event).
     expect(dm.getStatus(1, 0)).toBe('peace');
@@ -474,6 +478,208 @@ describe('AI diplomat espionage', () => {
     const action = aiManager.chooseDiplomatAction(diplomat, 0, info.actions);
     expect(action).not.toBe('steal_technology');
     expect(action).not.toBe('establish_embassy');
+  });
+});
+
+/**
+ * AI diplomat treaties — the terms the shared policy scorer produces.
+ *
+ * The tests above pin the negotiation ladder (peace / ceasefire / alliance /
+ * tribute / intel) and the infiltrations. What is under test HERE is that the
+ * remaining abilities of the menu — open borders, trade, a defence pact, a
+ * non-aggression pact, an embargo, an exchange of knowledge — are actually
+ * reachable for an AI diplomat unit and are chosen from the very list the
+ * engine offers, rather than being implemented but unreachable.
+ */
+describe('AI diplomat treaties', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function makeEngine(seed = 20260925): Promise<GameEngine> {
+    const engine = new GameEngine(null);
+    (engine as any).sleep = () => Promise.resolve();
+    await engine.initialize({
+      numberOfCivilizations: 3,
+      mapType: 'CLOSEUP_1V1',
+      devMode: false,
+      startingGold: 50,
+      mapSeed: seed,
+    });
+    return engine;
+  }
+
+  /**
+   * A civ-1 diplomat standing beside a civ-0 city at peace, with an embassy
+   * already founded — so the treaty terms are on the menu.
+   */
+  function placeDiplomat(engine: GameEngine) {
+    const city = engine.foundCity(12, 12, 0, 'Target Town')!;
+    const diplomat = {
+      id: 'treaty_diplomat',
+      civilizationId: 1,
+      type: 'diplomat',
+      col: city.col + 1,
+      row: city.row,
+      movesRemaining: 2,
+      health: 100,
+      icon: 'diplomat',
+      orders: 'none',
+    } as any;
+    (engine as any).units.push(diplomat);
+    engine.diplomacyManager.markContact(1, 0);
+    engine.diplomacyManager.markContact(1, 2);
+    engine.diplomacyManager.establishEmbassy(1, 0);
+    return { diplomat, city };
+  }
+
+  it('the treaty terms are on the menu an AI diplomat is offered', async () => {
+    const engine = await makeEngine();
+    const { diplomat } = placeDiplomat(engine);
+    const menu = engine.getDiplomatTargets(diplomat.id)[0].actions;
+    for (const term of [
+      'offer_open_borders',
+      'propose_trade_agreement',
+      'propose_mutual_defense',
+      'propose_non_aggression',
+    ] as const) {
+      expect(menu, `${term} should be offered`).toContain(term);
+    }
+  });
+
+  it('without an embassy the treaty terms are not offered and not chosen', async () => {
+    const engine = await makeEngine();
+    const city = engine.foundCity(12, 12, 0, 'Target Town')!;
+    const diplomat = {
+      id: 'no_channel', civilizationId: 1, type: 'diplomat',
+      col: city.col + 1, row: city.row, movesRemaining: 2,
+    } as any;
+    (engine as any).units.push(diplomat);
+    engine.diplomacyManager.markContact(1, 0);
+
+    const menu = engine.getDiplomatTargets(diplomat.id)[0].actions;
+    expect(menu).not.toContain('offer_open_borders');
+    expect(menu).not.toContain('propose_trade_agreement');
+    // …and the choice comes out of that list, whatever the policy would like.
+    const chosen = (engine as any).aiManager.chooseDiplomatAction(diplomat, 0, menu);
+    expect(menu).toContain(chosen);
+  });
+
+  it('an AI diplomat can sign a treaty the engine offers it', async () => {
+    const engine = await makeEngine();
+    const aiManager = (engine as any).aiManager;
+    const dm = engine.diplomacyManager;
+    // civ 0 is the human in CLOSEUP_1V1; a treaty proposed TO a human is an
+    // interactive offer, never auto-signed (asserted below). For the signing
+    // path both sides are AI.
+    (engine.civilizations[0] as any).isHuman = false;
+    const { diplomat } = placeDiplomat(engine);
+
+    // Force the scorer onto open borders, then check the whole path runs: the
+    // choice, the execution, and the treaty actually in force afterwards.
+    vi.spyOn(aiManager, 'chooseDiplomatAction').mockReturnValue('offer_open_borders');
+    vi.spyOn(Math, 'random').mockReturnValue(0.01);
+
+    aiManager.executeAIDiplomatAction(diplomat, engine.getDiplomatTargets(diplomat.id)[0]);
+    expect(dm.hasTreaty(1, 0, 'open_borders')).toBe(true);
+    expect(diplomat.movesRemaining).toBe(0);
+  });
+
+  it('a treaty proposed to the HUMAN is an offer, not an auto-signed treaty', async () => {
+    const engine = await makeEngine();
+    const aiManager = (engine as any).aiManager;
+    const dm = engine.diplomacyManager;
+    const events: Array<{ type: string; data: any }> = [];
+    (engine as any).onStateChange = (type: string, data: any) => events.push({ type, data });
+    const { diplomat } = placeDiplomat(engine);
+
+    vi.spyOn(aiManager, 'chooseDiplomatAction').mockReturnValue('offer_open_borders');
+    aiManager.executeAIDiplomatAction(diplomat, engine.getDiplomatTargets(diplomat.id)[0]);
+
+    expect(dm.hasTreaty(1, 0, 'open_borders')).toBe(false);
+    const offers = events.filter(e => e.type === 'AI_DIPLOMACY_OFFER');
+    expect(offers).toHaveLength(1);
+    expect(offers[0].data.action).toBe('offer_open_borders');
+  });
+
+  it('an AI diplomat offers an exchange of knowledge WITH the two technologies', async () => {
+    // Without the terms the offer reached the player as a sentence with no deal
+    // behind it, and accepting it could only ever fail.
+    const engine = await makeEngine();
+    const aiManager = (engine as any).aiManager;
+    const events: Array<{ type: string; data: any }> = [];
+    (engine as any).onStateChange = (type: string, data: any) => events.push({ type, data });
+
+    engine.civilizations[0].technologies = ['pottery', 'iron_working'];
+    engine.civilizations[1].technologies = ['pottery', 'bronze_working'];
+    const { diplomat } = placeDiplomat(engine);
+
+    vi.spyOn(aiManager, 'chooseDiplomatAction').mockReturnValue('offer_tech_exchange');
+    aiManager.executeAIDiplomatAction(diplomat, engine.getDiplomatTargets(diplomat.id)[0]);
+
+    const offers = events.filter(e => e.type === 'AI_DIPLOMACY_OFFER');
+    expect(offers).toHaveLength(1);
+    expect(offers[0].data.action).toBe('offer_tech_exchange');
+    expect(typeof offers[0].data.techOffered).toBe('string');
+    expect(typeof offers[0].data.techRequested).toBe('string');
+  });
+
+  it('bribes a unit in reach rather than asking the human to negotiate a bribe', async () => {
+    // Bribery is not a proposal: `presentOffer('bribe_unit')` reached the
+    // audience screen with no deal the player could accept.
+    const engine = await makeEngine();
+    const aiManager = (engine as any).aiManager;
+    const events: Array<{ type: string; data: any }> = [];
+    (engine as any).onStateChange = (type: string, data: any) => events.push({ type, data });
+    const { diplomat } = placeDiplomat(engine);
+
+    const enemy = {
+      id: 'prey', civilizationId: 0, type: 'phalanx',
+      col: diplomat.col, row: diplomat.row + 1, attack: 10, defense: 5, health: 100,
+    } as any;
+    (engine as any).units.push(enemy);
+    engine.diplomacyManager.declareWar(1, 0);
+    vi.spyOn(aiManager, 'chooseDiplomatAction').mockReturnValue('bribe_unit');
+
+    aiManager.executeAIDiplomatAction(diplomat, {
+      targetCivId: 0, kind: 'unit', unitId: 'prey', status: 'war', actions: ['bribe_unit'],
+    });
+
+    expect(events.some(e => e.type === 'AI_DIPLOMACY_OFFER')).toBe(false);
+    // The diplomat is spent either way — it has nothing left to say.
+    expect(diplomat.movesRemaining).toBe(0);
+  });
+
+  it('opens with the court this turn can be spent on, not the first one found', async () => {
+    const engine = await makeEngine();
+    const aiManager = (engine as any).aiManager;
+    const dm = engine.diplomacyManager;
+    // Two courts in reach: a city of civ 0 at peace, channel already open
+    // (nothing more urgent to do there but read their books), and a city of
+    // civ 2 we are losing to badly (peace is available). The choice must not
+    // be grid order — and the grid here does happen to yield civ 2 first.
+    engine.foundCity(12, 12, 2, 'Losing Ground');
+    engine.foundCity(14, 12, 0, 'Neighbour');
+    const diplomat = {
+      id: 'two_ways', civilizationId: 1, type: 'diplomat',
+      col: 13, row: 12, movesRemaining: 2,
+    } as any;
+    (engine as any).units.push(diplomat);
+    dm.markContact(1, 0);
+    dm.markContact(1, 2);
+    dm.establishEmbassy(1, 0);
+    dm.declareWar(1, 2);
+    vi.spyOn(dm, 'estimateMilitaryStrength').mockImplementation((civId: number) => (civId === 1 ? 5 : 200));
+
+    const targets = engine.getDiplomatTargets(diplomat.id);
+    expect(targets).toHaveLength(2);
+
+    const choice = (aiManager as any).chooseDiplomatContact(diplomat, targets);
+    expect(choice).not.toBeNull();
+    // Sueing for peace is worth more of this turn than reading their ledgers,
+    // and the neighbour's embassy will still be there next turn.
+    expect(choice.target.targetCivId).toBe(2);
+    expect(choice.action).toBe('propose_peace');
   });
 });
 

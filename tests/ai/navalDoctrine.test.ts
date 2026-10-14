@@ -141,8 +141,25 @@ describe('desired transports', () => {
     expect(desiredTransports(input({ seaInvasionTargets: 1 }))).toBe(1);
   });
 
-  it('never exceeds half a hull per city', () => {
+  it('never exceeds one hull per city', () => {
     expect(desiredTransports(input({ colonisableIslands: 1, seaInvasionTargets: 1, ownCities: 1 }))).toBe(1);
+  });
+
+  it('scales sealift with parallel objectives', () => {
+    // 1-3 islands reuse one hull; 4+ need parallel seeding.
+    expect(desiredTransports(input({ colonisableIslands: 5 }))).toBe(2);
+    expect(desiredTransports(input({ colonisableIslands: 8 }))).toBe(3);
+    // Invasions add their own lift on top of colonies.
+    expect(desiredTransports(input({ colonisableIslands: 1, seaInvasionTargets: 3 }))).toBe(3);
+  });
+
+  it('still wants a bootstrap hull on a dark archipelago', () => {
+    // Sea world, coastal port, troops, dark water, nothing charted yet: the
+    // scout-transport that finds the islands (the chicken-egg fix).
+    expect(desiredTransports(input({
+      colonisableIslands: 0, seaInvasionTargets: 0, landmassCount: 8,
+      needsNavy: true, unexploredWaterShare: 0.8, ownCoastalCities: 2,
+    }))).toBe(1);
   });
 });
 
@@ -201,7 +218,7 @@ describe('naval doctrine', () => {
     expect(d.reason).toMatch(/satisfied/);
   });
 
-  it('caps the fleet at one warship per city', () => {
+  it('caps the fleet at two warships per city', () => {
     const d = navalDoctrine(input({
       ownTransports: 2,
       ownCities: 2,
@@ -214,7 +231,52 @@ describe('naval doctrine', () => {
       threatenedOwnCoastalCities: 2,
       bestAvailableShip: BATTLESHIP,
     }));
-    expect(d.wantWarships).toBeLessThanOrEqual(2);
+    // A screen plus a heavy per harbour: sea control needs depth, not one hull.
+    expect(d.wantWarships).toBeLessThanOrEqual(4);
+    expect(d.wantWarships).toBeGreaterThan(2);
+  });
+
+  it('puts to sea on an archipelago even before contact', () => {
+    // Split world, coastal ports, dark water, no enemies seen yet: the old
+    // doctrine answered 0 (pressure 0 → no fleet → no contact → no fleet).
+    const d = navalDoctrine(input({
+      ownCities: 3, ownCoastalCities: 2, landmassCount: 8, needsNavy: true,
+      unexploredWaterShare: 0.6, troopsAvailable: true,
+      treasury: 500, incomePerTurn: 40, upkeepPerTurn: 10, reservePerTurn: 10,
+      bestAvailableShip: TRIREME,
+    }));
+    expect(d.wantTransports + d.wantWarships).toBeGreaterThan(0);
+    expect(d.choice).not.toBeNull();
+  });
+
+  it('buys a cheap screen when the best hull is out of reach', () => {
+    // Treasury feeds a trireme but not a battleship: the old code answered 0
+    // warships and built nothing; the new code fields the screen.
+    const trireme = { type: 'trireme', cost: 80, maintenance: 2, attack: 3, defense: 2, transportCapacity: 0 };
+    const d = navalDoctrine(input({
+      ownTransports: 1,
+      treasury: 100, incomePerTurn: 12, upkeepPerTurn: 5, reservePerTurn: 2,
+      enemyWarships: 2,
+      bestAvailableShip: BATTLESHIP,
+      warshipOptions: [trireme, BATTLESHIP],
+    }));
+    expect(d.choice?.type).toBe('trireme');
+  });
+
+  it('scouts dark water before building the battle line', () => {
+    // Both sail (scout) and ironclad (heavy) affordable, water dark, no scouts
+    // sailing: the sail wins — it finds the islands and the wars. Without this
+    // the bootstrap built heavies, made no contact, planned no missions.
+    const sail = { type: 'sail', cost: 40, maintenance: 1, attack: 1, defense: 1, transportCapacity: 0 };
+    const ironclad = { type: 'ironclad', cost: 120, maintenance: 3, attack: 6, defense: 4, transportCapacity: 0 };
+    const d = navalDoctrine(input({
+      ownTransports: 1,
+      treasury: 500, incomePerTurn: 40, upkeepPerTurn: 10, reservePerTurn: 10,
+      landmassCount: 8, needsNavy: true, unexploredWaterShare: 0.7,
+      bestAvailableShip: ironclad,
+      warshipOptions: [sail, ironclad],
+    }));
+    expect(d.choice?.type).toBe('sail');
   });
 
   it('never asks for a hull when the tech gives none', () => {
