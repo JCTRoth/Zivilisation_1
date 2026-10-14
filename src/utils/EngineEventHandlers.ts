@@ -10,6 +10,7 @@ import type { Technology, Unit, City, Civilization, VillageOutcome } from '../..
 import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
 import { getWonder } from '@/data/WonderData';
 import { debugLog } from './DevLog';
+import { playSfx } from './Sfx';
 import { t } from '../i18n';
 import { tTechName } from '../i18n/dataNames';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
@@ -158,8 +159,16 @@ export class EngineEventRouter {
       case 'UNIT_FORTIFIED':
       case 'UNIT_UNFORTIFIED':
       case 'UNIT_WOKE':
+        this.releaseSpentUserSelection();
+        break;
       case 'UNIT_DEFEATED':
         this.releaseSpentUserSelection();
+        // The statistics screen reports how many units a civ has lost, so the
+        // engine has to be told here rather than deriving it later: by the time
+        // the screen opens the dead unit is already out of `engine.units`.
+        this.gameEngine?.recordUnitDefeated?.(
+          eventData?.unit as { id?: string; civilizationId?: number },
+        );
         break;
       case 'AI_TARGET_HIGHLIGHT':
         this.onAITargetHighlight(eventData);
@@ -624,6 +633,14 @@ export class EngineEventRouter {
     const attackerDestroyed = eventType !== 'COMBAT_VICTORY' && (attacker?.health ?? 1) <= 0;
     const humanAttacker = attacker?.civilizationId === HUMAN_PLAYER_ID;
     const humanInvolved = humanAttacker || defender?.civilizationId === HUMAN_PLAYER_ID;
+
+    // The blow, or the death that followed it. Gated on the human being in
+    // the fight for the same reason the toasts are: two AI armies clashing
+    // off-screen must not fill a quiet turn with noise, and an AI-vs-AI
+    // spectator run would otherwise play every round of every war.
+    if (humanInvolved) {
+      playSfx(defenderDestroyed || attackerDestroyed ? 'unitDefeated' : 'unitStrike');
+    }
     if (!this.isAIVsAI && humanInvolved && (defenderDestroyed || attackerDestroyed)) {
       const fightCity = defender ? this.gameEngine.getCityAt(defender.col, defender.row) : undefined;
       this.actions.queueCombatReport({
@@ -762,11 +779,20 @@ export class EngineEventRouter {
   private onUnitDisbanded(eventData: Record<string, unknown>) {
     // The disbanded unit is already gone from the engine — keep the store in sync.
     this.actions.updateUnits(this.gameEngine.getAllUnits());
+    // A unit walking away is a cost the player should hear — but only their
+    // own. The AI disbands constantly, and its bookkeeping is not sound design.
+    const unit = eventData?.unit as Unit | undefined;
+    if (unit?.civilizationId === HUMAN_PLAYER_ID) {
+      playSfx('unitDisbanded');
+    }
+    // Disbanded units are not battle losses, and the screen says so: a civ
+    // that is starving its army apart from one that is losing it are two very
+    // different pictures.
+    if (unit) this.gameEngine?.recordUnitDisbanded?.(unit);
     // Only surface a modal for the human player, and only for the upkeep
     // (bankruptcy) disband — manual disbands are player-initiated and need no
     // reminder.
     if (eventData?.reason !== 'upkeep_deficit') return;
-    const unit = eventData?.unit as Unit | undefined;
     if (!unit) return;
     const civ = this.gameEngine?.civilizations?.[unit.civilizationId];
     if (civ?.isHuman !== true) return;
@@ -967,6 +993,13 @@ export class EngineEventRouter {
     const playerInvolved =
       byCivId === HUMAN_PLAYER_ID || fromCivId === HUMAN_PLAYER_ID || city.civilizationId === HUMAN_PLAYER_ID;
     if (!playerInvolved) return;
+
+    // Only a city the player TOOK is a triumph worth the fanfare. Losing one
+    // plays the same event, and a victory jingle over your own fall would be
+    // the wrong news twice over.
+    if (eventType === 'CITY_CAPTURED' && byCivId === HUMAN_PLAYER_ID) {
+      playSfx('cityCaptured');
+    }
 
     this.actions.queueCityEvent({
       kind: eventType === 'CITY_JOINED' ? 'joined' : eventType === 'CITY_DESTROYED' ? 'razed' : 'captured',

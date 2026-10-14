@@ -1440,9 +1440,15 @@ function App() {
       />
 
       {/* Pause overlay. Only the pause SCREEN shows here — a spectator pause
-          deliberately leaves it off so the board stays visible. */}
+          deliberately leaves it off so the board stays visible.
+
+          At the end of a game it is the FALLBACK: with the result screen
+          switched off, this panel carries the restart/quit actions instead.
+          Rendering it whenever a result exists — which is what this did — put
+          its buttons underneath the cinematic, showing through the finale's
+          translucent sky as a ghost of a second dialog. */}
       <PauseScreen
-        show={pauseScreenVisible || !!gameResult}
+        show={pauseScreenVisible || (!!gameResult && settings.skipGameResultScreen)}
         onResume={handleResume}
         onRestart={handleResultRestart}
         onQuit={handleResultQuit}

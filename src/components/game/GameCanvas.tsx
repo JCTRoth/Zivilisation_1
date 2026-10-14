@@ -1012,6 +1012,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     // Clear reachable tiles if no unit selected or not human player's turn
     if (!selectedUnitId || gameState.activePlayer !== HUMAN_PLAYER_ID) {
       setReachableTiles(new Map());
+      triggerRender();
       return;
     }
 
@@ -1036,6 +1037,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           getUnitAtFromEngine,
         ),
       );
+      triggerRender();
     }
   }, [
     gameState.selectedUnit,
@@ -1045,6 +1047,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     terrain,
     getTileAt,
     getUnitAtFromEngine,
+    triggerRender,
   ]);
 
   // Selection can change without any mouse movement (auto-select at turn start,
@@ -1054,7 +1057,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     lastHoverKeyRef.current = "";
     previewPathRef.current = null;
     previewTurnMarkersRef.current = [];
-  }, [gameState.selectedUnit]);
+    // Re-draw so committed routes pick up the new selected unit (opacity etc.).
+    triggerRender();
+  }, [gameState.selectedUnit, triggerRender]);
 
   const squareToScreen = useCallback(
     (col: number, row: number): { x: number; y: number } => {
@@ -1810,6 +1815,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       // The hover preview is now committed; clear it until the mouse moves again.
       previewPathRef.current = null;
       previewTurnMarkersRef.current = [];
+
+      // A route has been set for this unit — the player's intent is captured in
+      // the GoTo path, so the unit no longer needs to stay selected (movement
+      // mode, range overlay, cursor). Deselect it so the next unit (if any) can
+      // be focused and the board returns to the default cursor.
+      if (actions?.selectUnit) actions.selectUnit(null, "user");
+      if (actions?.setSelectedUnitIds) actions.setSelectedUnitIds([]);
 
       if ((unit.movesRemaining || 0) > 0) {
         setTimeout(() => {

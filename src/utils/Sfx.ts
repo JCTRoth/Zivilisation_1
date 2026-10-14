@@ -24,7 +24,35 @@ export type SfxCue =
   /** A city fell to the player's forces. */
   | 'cityCaptured'
   /** A menu choice was taken. */
-  | 'uiSelect';
+  | 'uiSelect'
+  /** A unit lands a blow. */
+  | 'unitStrike'
+  /** A unit is destroyed. */
+  | 'unitDefeated'
+  /** A unit was disbanded to cover upkeep (or by order). */
+  | 'unitDisbanded';
+
+/**
+ * Where a cue's sound comes from.
+ *
+ * Every cue ships as synthesized notes — the game needs a sound on day one,
+ * and oscillator beeps cost no bytes. Real recordings replace them one at a
+ * time by filling a row here with a path under `public/assets/sfx/`; the
+ * moment a cue has a file, that file wins and the notes below are ignored for
+ * it. Nothing else in the game changes, so an .ogg can land in a single commit
+ * and be reverted the same way.
+ *
+ * Leave a row out (or set it to '') to keep the synthesized version.
+ */
+const CUE_FILES: Partial<Record<SfxCue, string>> = {
+  // 'unitStrike':       '/assets/sfx/unit-strike.ogg',
+  // 'unitDefeated':     '/assets/sfx/unit-defeated.ogg',
+  // 'unitDisbanded':    '/assets/sfx/unit-disbanded.ogg',
+  // 'cityCaptured':     '/assets/sfx/city-captured.ogg',
+  // 'stolenTechnology': '/assets/sfx/stolen-technology.ogg',
+  // 'coverBlown':       '/assets/sfx/cover-blown.ogg',
+  // 'uiSelect':         '/assets/sfx/ui-select.ogg',
+};
 
 /** One oscillator note: frequency in Hz, starting at `at` seconds. */
 interface Note {
@@ -60,6 +88,25 @@ const CUES: Record<SfxCue, Note[]> = {
     { freq: 784, at: 0.3, dur: 0.26 },
   ],
   uiSelect: [{ freq: 660, at: 0.0, dur: 0.05 }],
+
+  // ── Unit cues ──────────────────────────────────────────────────────
+  // These fire on every combat round, so they are shorter and quieter than
+  // the event fanfares: a dull knock for the blow, a falling pair for the
+  // kill. Nothing here should still be ringing when the next round resolves.
+  unitStrike: [
+    { freq: 180, at: 0.0, dur: 0.06, type: 'triangle' },
+    { freq: 90, at: 0.01, dur: 0.09, type: 'triangle', gain: 0.8 },
+  ],
+  unitDefeated: [
+    { freq: 320, at: 0.0, dur: 0.1, type: 'sawtooth', gain: 0.9 },
+    { freq: 150, at: 0.09, dur: 0.14, type: 'sawtooth', gain: 0.7 },
+    { freq: 70, at: 0.2, dur: 0.2, type: 'triangle', gain: 0.6 },
+  ],
+  unitDisbanded: [
+    // A quieter, unbloodier close — the unit walked away rather than fell.
+    { freq: 300, at: 0.0, dur: 0.08, type: 'triangle', gain: 0.7 },
+    { freq: 200, at: 0.08, dur: 0.14, type: 'triangle', gain: 0.5 },
+  ],
 };
 
 /** Shared context, created lazily on the first cue. */
@@ -92,12 +139,22 @@ export function unlockAudio(): void {
 }
 
 /**
- * Play one of the game's cues. No-op when sound is off in settings, when the
- * browser has no Web Audio, or when the cue is currently playing (a capture in
- * the same frame must not stack ten copies of the fanfare).
+ * Play one of the game's cues. No-op when sound is off in settings, or when
+ * the browser has no audio at all.
+ *
+ * A cue with an entry in `CUE_FILES` plays that file instead of the
+ * synthesized notes — that is the whole .ogg replacement mechanism: add a row
+ * to the table, reload, and the recording takes over.
  */
 export function playSfx(cue: SfxCue): void {
   if (!useGameStore.getState().settings.enableSoundEffects) return;
+
+  const file = CUE_FILES[cue];
+  if (file) {
+    playFile(file);
+    return;
+  }
+
   const ctx = getContext();
   if (!ctx || ctx.state === 'suspended') {
     // Not unlocked yet (no user gesture): try once, and drop the cue rather
@@ -111,7 +168,7 @@ export function playSfx(cue: SfxCue): void {
   if (!notes) return;
   const start = ctx.currentTime + 0.02;
   const master = ctx.createGain();
-  master.gain.value = 0.18;
+  master.gain.value = UNIT_CUE_GAIN[cue] ?? 0.18;
   master.connect(ctx.destination);
 
   for (const note of notes) {
@@ -130,3 +187,47 @@ export function playSfx(cue: SfxCue): void {
     osc.stop(t1 + 0.02);
   }
 }
+
+/**
+ * Relative loudness per cue, as a multiplier on the master gain.
+ *
+ * The unit cues fire on every combat round while the event fanfares fire once
+ * per game, so the strikes and deaths sit underneath rather than on top of
+ * everything the player is listening for.
+ */
+const UNIT_CUE_GAIN: Partial<Record<SfxCue, number>> = {
+  unitStrike: 0.55,
+  unitDefeated: 0.7,
+  unitDisbanded: 0.6,
+};
+
+/** One loaded file per path, so a cue repeated in a battle is not refetched. */
+const fileCache = new Map<string, HTMLAudioElement>();
+
+function playFile(path: string): void {
+  if (typeof Audio === 'undefined') return;
+  try {
+    let audio = fileCache.get(path);
+    if (!audio) {
+      audio = new Audio(path);
+      // A failed load must not surface as an unhandled rejection in the
+      // console on every strike.
+      audio.preload = 'auto';
+      fileCache.set(path, audio);
+    }
+    // `cloneNode` lets the same file overlap itself — a second blow landing
+    // before the first finished restarts it rather than being dropped.
+    const voice = audio.cloneNode(true) as HTMLAudioElement;
+    voice.volume = UNIT_CUE_VOLUME;
+    void voice.play().catch(() => {
+      // Autoplay blocked before the first gesture, or the file is missing.
+      // The synthesized cue is not retried: a half-configured game must not
+      // double up when the file arrives.
+    });
+  } catch {
+    // Audio is unavailable in this context; nothing to play.
+  }
+}
+
+/** Volume for file-backed cues, kept below the Web Audio master gain. */
+const UNIT_CUE_VOLUME = 0.45;

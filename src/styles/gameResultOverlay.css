@@ -34,10 +34,40 @@ body > canvas[style*='position: fixed'] {
 }
 
 /* ============================================================================
+   Act II — confetti vs. the ledger
+   ----------------------------------------------------------------------------
+   The confetti canvas lives in <body> at 99999, so it painted straight over
+   the chronicle's card (Bootstrap puts `.modal` at 1055): gold stars crossed
+   every number, and the finale you had just watched became unreadable.
+
+   The selector has to name the dialog itself. react-bootstrap renders the
+   scrim and the dialog through a PORTAL into <body>, so they are NOT
+   descendants of `.game-result-overlay` — a descendant selector silently
+   never matched, which is how this bug survived the first attempt at fixing
+   it. `dialogClassName="gm-chronicle"` puts the chronicle's own name on the
+   portalled element:
+
+       sky (1060) → scrim (1050) → confetti (99999) → card (100000)
+
+   The scrim needs no adjustment: Bootstrap's own 1050 already sits below the
+   canvas, so the stars fly over the darkened map and behind the card. Act I
+   is a plain div with no `.modal`, so this rule never reaches it.
+   ========================================================================== */
+
+.modal.gm-chronicle {
+  z-index: 100000;
+}
+
+/* ============================================================================
    Act I — the cinematic
    ----------------------------------------------------------------------------
-   Sits above the Bootstrap modal backdrop (1050) but below the confetti
-   canvas (99999). Gold ramp for victory, cold solemn purple for defeat.
+   Three layers, in the only order that works:
+
+       sky (1060) → confetti (99999) → words (100000)
+
+   Gold ramp for victory, cold solemn purple for defeat. The words are over
+   the fireworks and the fireworks are over the sky, so nothing crosses the
+   copy and nothing hides the celebration.
    ========================================================================== */
 
 .gr-cine {
@@ -48,7 +78,10 @@ body > canvas[style*='position: fixed'] {
 
   position: fixed;
   inset: 0;
-  z-index: 1060;
+  /* Above the confetti canvas (99999): this box carries no background of its
+     own — the sky behind it is `.gr-backdrop` — so raising it puts the words
+     over the fireworks without hiding them behind an opaque plate. */
+  z-index: 100000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -57,6 +90,64 @@ body > canvas[style*='position: fixed'] {
   font-family: var(--font-ui, 'Segoe UI', system-ui, sans-serif);
   color: #e8eef3;
   animation: gr-cine-in 900ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+/* ---- Shared backdrop (both acts) ---------------------------------------- */
+
+/**
+ * Sky + rays + embers + vignette, fixed to the viewport.
+ *
+ * Two different homes, two different jobs in the stacking order:
+ *
+ *  • In Act I it sits inside `.gr-cine`, where z-index 0 keeps it under the
+ *    text stage (both land in the same painting layer and DOM order decides).
+ *  • In Act II it is a direct child of the no-box wrapper, so it has to place
+ *    itself in <body>'s context: above the app, below the modal's scrim.
+ *
+ * `pointer-events` stays off — it is scenery, and it must never swallow the
+ * buttons sitting on top of it.
+ */
+.gr-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Above the Bootstrap modal layer (1055) so the Pause panel — which App
+     renders behind a finished game — is swallowed by the finale rather than
+     showing through a backdropless takeover. Still far below the confetti
+     (99999), which is the whole point of splitting it out of `.gr-cine`. */
+  z-index: 1060;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* A slow starfield under the rays. It gives Act II something to look at in
+   the margins the confetti no longer covers, and puts a quiet depth behind
+   Act I's fireworks rather than a flat gradient. */
+.gr-cine__stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle 1.5px at 12% 18%, rgba(255, 236, 178, 0.9), transparent 60%),
+    radial-gradient(circle 1px at 27% 42%, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(circle 1.5px at 44% 12%, rgba(240, 195, 60, 0.8), transparent 60%),
+    radial-gradient(circle 1px at 61% 33%, rgba(255, 255, 255, 0.55), transparent 60%),
+    radial-gradient(circle 2px at 78% 15%, rgba(255, 236, 178, 0.85), transparent 60%),
+    radial-gradient(circle 1px at 88% 44%, rgba(255, 255, 255, 0.6), transparent 60%),
+    radial-gradient(circle 1px at 8% 58%, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(circle 1.5px at 35% 68%, rgba(240, 195, 60, 0.7), transparent 60%),
+    radial-gradient(circle 1px at 70% 62%, rgba(255, 255, 255, 0.45), transparent 60%),
+    radial-gradient(circle 1.5px at 94% 74%, rgba(255, 236, 178, 0.7), transparent 60%);
+  opacity: 0;
+  animation: gr-cine-twinkle 6s ease-in-out infinite alternate;
+}
+
+.gr-backdrop[data-outcome='defeat'] .gr-cine__stars {
+  filter: grayscale(0.7) brightness(0.7) hue-rotate(220deg);
+  animation-duration: 9s;
+}
+
+@keyframes gr-cine-twinkle {
+  from { opacity: 0.35; }
+  to   { opacity: 0.75; }
 }
 
 /* ---- Sky / backdrop ------------------------------------------------------ */
@@ -81,7 +172,7 @@ body > canvas[style*='position: fixed'] {
     linear-gradient(180deg, #060a10 0%, #0b1220 48%, #0a0f18 100%);
 }
 
-.gr-cine[data-outcome='defeat'] .gr-cine__sky {
+.gr-backdrop[data-outcome='defeat'] .gr-cine__sky {
   background:
     radial-gradient(120% 90% at 50% 110%, rgba(155, 140, 240, 0.12), transparent 55%),
     linear-gradient(180deg, #05060c 0%, #0c0d18 50%, #08090f 100%);
@@ -116,7 +207,7 @@ body > canvas[style*='position: fixed'] {
   pointer-events: none;
 }
 
-.gr-cine[data-outcome='defeat'] .gr-cine__rays {
+.gr-backdrop[data-outcome='defeat'] .gr-cine__rays {
   opacity: 0.25;
   filter: hue-rotate(220deg) saturate(0.6);
   animation-duration: 160s;
@@ -166,8 +257,8 @@ body > canvas[style*='position: fixed'] {
   opacity: 0.7;
 }
 
-.gr-cine[data-outcome='defeat'] .gr-cine__embers::before,
-.gr-cine[data-outcome='defeat'] .gr-cine__embers::after {
+.gr-backdrop[data-outcome='defeat'] .gr-cine__embers::before,
+.gr-backdrop[data-outcome='defeat'] .gr-cine__embers::after {
   filter: grayscale(0.8) brightness(0.55) hue-rotate(230deg);
   animation-duration: 28s;
   animation-direction: reverse;

@@ -2379,7 +2379,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       <CityModal show={uiState.activeDialog === 'city-details'} onHide={handleCloseDialog} selectedCity={selectedCity} gameEngine={gameEngine} actions={actions} currentPlayer={currentPlayer} isPlayerCity={isPlayerCity} />
       <RatesModal show={uiState.activeDialog === 'rates'} onHide={handleCloseDialog} gameEngine={gameEngine} />
       <GovernmentModal show={uiState.activeDialog === 'government'} onHide={handleCloseDialog} gameEngine={gameEngine} />
-      <StatisticsModal show={uiState.activeDialog === 'statistics'} onHide={handleCloseDialog} />
+      <StatisticsModal show={uiState.activeDialog === 'statistics'} onHide={handleCloseDialog} gameEngine={gameEngine} />
       <WondersOverviewModal show={uiState.activeDialog === 'wonders'} onHide={handleCloseDialog} />
       <WonderCompletedModal
         show={uiState.activeDialog === 'wonder-completed'}

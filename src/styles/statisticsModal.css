@@ -133,3 +133,18 @@
 .stats-empty {
   padding: 6px 2px 2px;
 }
+
+/*
+ * The two loss columns. They are coloured differently on purpose: red says
+ * "this civ is losing battles", amber says "this civ cannot afford its own
+ * army", and a player who only sees one shade cannot tell the two apart.
+ */
+.stats-cell--warning {
+  color: var(--color-danger, #ef5a6e);
+  font-weight: 700;
+}
+
+.stats-cell--cost {
+  color: var(--color-warning, #f2a33c);
+  font-weight: 700;
+}

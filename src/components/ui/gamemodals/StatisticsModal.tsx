@@ -12,21 +12,30 @@ import { GameUtils } from '@/utils/GameUtils';
 import { useTranslation } from '@/i18n/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import GameModal from './ModalShell';
+import type GameEngine from '@/game/engine/GameEngine';
 import '../../../styles/statisticsModal.css';
 
 interface StatisticsModalProps {
   show: boolean;
   onHide: () => void;
+  /**
+   * The live engine, for the per-civ unit ledger (units lost vs disbanded).
+   * Those counters are engine state — they survive a save/load — so the screen
+   * reads them from there rather than counting from `engine.units`, which by
+   * now only holds the survivors.
+   */
+  gameEngine?: GameEngine | null;
 }
 
 const formatVal = (r: DemographicRow): string =>
   r.fmt === 'pct' ? `${r.value}%` : r.fmt === 'float' ? r.value.toFixed(1) : Number.isInteger(r.value) ? r.value.toLocaleString() : r.value.toFixed(1);
 
-const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
+const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide, gameEngine }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('demographics');
   const civilizations = useGameStore(s => s.civilizations);
   const cities = useGameStore(s => s.cities);
+  const units = useGameStore(s => s.units);
   const map = useGameStore(s => s.map);
   const gameState = useGameStore(s => s.gameState);
   const devMode = useGameStore(s => s.settings?.devMode);
@@ -45,20 +54,35 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
 
   const playerRows = all.find(d => d.civId === currentPlayer?.id)?.rows;
 
-  // ── World tab data (devMode only) ─────────────────────────────────────
-  const worldStats = useMemo(
+  // ── Players tab data (devMode only) ─────────────────────────────────
+  const playerStats = useMemo(
     () =>
       civilizations.map(c => {
         const pop = realPopulation(c.id, cities);
         const civCities = cities.filter(ci => ci.civilizationId === c.id);
+        // Units the store still knows about: everything alive on the board.
+        const alive = units.filter(u => u.civilizationId === c.id);
+        const field = alive.filter(u => (u.attack ?? 0) > 0);
+        const ledger = gameEngine?.getUnitLedger?.(c.id);
         return {
           civ: c,
           cityCount: civCities.length,
           pop,
           score: numberValue(c.score) || civCities.length * 10 + pop * 2,
+          units: alive.length,
+          // Military only — a settler count would say nothing about strength.
+          military: field.length,
+          // What the ledger knows and the board no longer does: the units that
+          // are gone. `lost` is combat, `disbanded` is a treasury that could
+          // not feed them, and the two tell very different stories.
+          lost: ledger?.lost ?? 0,
+          disbanded: ledger?.disbanded ?? 0,
+          techs: Array.isArray(c.technologies) ? c.technologies.length : 0,
+          gold: Math.round(numberValue(c.resources?.gold)),
+          strength: Math.round(gameEngine?.diplomacyManager?.estimateMilitaryStrength?.(c.id) ?? 0),
         };
       }).sort((a, b) => b.score - a.score),
-    [civilizations, cities],
+    [civilizations, cities, units, gameEngine],
   );
 
   const turnLabel = t('stats.eyebrow' as TranslationKey, {
@@ -169,7 +193,7 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
               in the World menu (World → Wonders), so Statistics is only about
               demographics again. */}
 
-          {/* ── World (devMode only) ──────────────────────────────────── */}
+          {/* ── Players (devMode only) ─────────────────────────────────── */}
           {devMode && (
             <Tab eventKey="world" title={t('stats.tabWorld' as TranslationKey)}>
               <div className="gm-section gm-section--flush">
@@ -182,32 +206,53 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide }) => {
                         <th>{t('stats.colScore' as TranslationKey)}</th>
                         <th>{t('stats.colCities' as TranslationKey)}</th>
                         <th>{t('stats.colPopulation' as TranslationKey)}</th>
+                        <th>{t('stats.colUnits' as TranslationKey)}</th>
+                        <th>{t('stats.colMilitary' as TranslationKey)}</th>
+                        <th>{t('stats.colLost' as TranslationKey)}</th>
+                        <th>{t('stats.colDisbanded' as TranslationKey)}</th>
+                        <th>{t('stats.colTechs' as TranslationKey)}</th>
+                        <th>{t('stats.colGold' as TranslationKey)}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {worldStats.map(({ civ, cityCount, pop, score }) => (
-                        <tr key={civ.id}>
+                      {playerStats.map((row) => (
+                        <tr key={row.civ.id}>
                           <td>
-                            <span className="me-2" style={{ color: civ.color }}>●</span>
-                            {civ.name}
-                            {civ.id === currentPlayer?.id && <span className="badge bg-primary ms-2">{t('stats.badgeYou' as TranslationKey)}</span>}
+                            <span className="me-2" style={{ color: row.civ.color }}>●</span>
+                            {row.civ.name}
+                            {row.civ.id === currentPlayer?.id && <span className="badge bg-primary ms-2">{t('stats.badgeYou' as TranslationKey)}</span>}
                           </td>
                           <td>
-                            {civ.isAlive === false
+                            {row.civ.isAlive === false
                               ? <span className="badge bg-danger">{t('stats.badgeOut' as TranslationKey)}</span>
                               : <span className="badge bg-success">{t('stats.badgeAlive' as TranslationKey)}</span>}
                           </td>
-                          <td>{Number.isInteger(score) ? score.toLocaleString() : score.toFixed(1)}</td>
-                          <td>{cityCount.toLocaleString()}</td>
-                          <td>{pop.toLocaleString()}</td>
+                          <td>{Number.isInteger(row.score) ? row.score.toLocaleString() : row.score.toFixed(1)}</td>
+                          <td>{row.cityCount.toLocaleString()}</td>
+                          <td>{row.pop.toLocaleString()}</td>
+                          <td>{row.units.toLocaleString()}</td>
+                          <td>{row.military.toLocaleString()}</td>
+                          {/* Combat losses — red when they outnumber the army
+                              still standing, which is a civ about to fall. */}
+                          <td className={row.lost > row.military ? 'stats-cell--warning' : undefined}>
+                            {row.lost.toLocaleString()}
+                          </td>
+                          {/* Disbanded is not a battle: amber, because it
+                              means the treasury failed the army. */}
+                          <td className={row.disbanded > 0 ? 'stats-cell--cost' : undefined}>
+                            {row.disbanded.toLocaleString()}
+                          </td>
+                          <td>{row.techs}</td>
+                          <td>{row.gold.toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>
                   </Table>
                 </div>
-                {worldStats.length === 0 && (
+                {playerStats.length === 0 && (
                   <div className="gm-prose stats-empty">{t('stats.emptyWorld' as TranslationKey)}</div>
                 )}
+                <div className="gm-note">{t('stats.playersHint' as TranslationKey)}</div>
               </div>
             </Tab>
           )}

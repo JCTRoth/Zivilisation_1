@@ -19,6 +19,27 @@ type GameResultOverlayProps = {
 };
 
 /**
+ * The backdrop both acts share: sky, slow rays, drifting embers, vignette.
+ *
+ * It lives as its own component because Act II used to render no backdrop at
+ * all — the ledger opened on a flat modal over a dimmed map, and the finale
+ * that had just played on this sky dropped to a settings dialog. Both acts now
+ * stand on the same sky, so the chronicle reads as the next beat of the
+ * cinematic rather than as something that interrupts it.
+ *
+ * `outcome` only tints it: gold light for a victory, cold ash for a defeat.
+ */
+const ResultBackdrop: React.FC<{ outcome: 'victory' | 'defeat' }> = ({ outcome }) => (
+  <div className="gr-backdrop" data-outcome={outcome} aria-hidden="true">
+    <div className="gr-cine__sky" />
+    <div className="gr-cine__stars" />
+    <div className="gr-cine__rays" />
+    <div className="gr-cine__embers" />
+    <div className="gr-cine__veil" />
+  </div>
+);
+
+/**
  * The end of a game plays in two acts.
  *
  * Act I — *cinematic*: a full-bleed takeover (not a modal) that stages the
@@ -28,7 +49,8 @@ type GameResultOverlayProps = {
  * for the feeling.
  *
  * Act II — *chronicle*: the shared GameModal shell with the final ledger
- * (score, population, techs, wonders …) and the Restart / Quit actions.
+ * (score, population, techs, wonders …) and the Restart / Quit actions, on the
+ * same backdrop as Act I.
  *
  * The wrapper div generates no box — it only carries the outcome class for
  * the confetti stacking rules in gameResultOverlay.css — because both acts
@@ -192,10 +214,15 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
   if (act === 'chronicle') {
     return (
       <div className={`game-result-overlay ${isVictory ? 'victory' : 'defeat'}`}>
+        {/* The same sky Act I played on — the ledger is the next beat of the
+            finale, not a dialog that interrupts it. */}
+        <ResultBackdrop outcome={isVictory ? 'victory' : 'defeat'} />
         <GameModal
           show
           onClose={onClose}
           tone={isVictory ? 'gold' : 'solemn'}
+          size="lg"
+          dialogClassName="gm-chronicle"
           artSize="lg"
           icon={isVictory ? '👑' : '🕯️'}
           artLabel={isVictory ? t('result.art.victory' as TranslationKey) : t('result.art.defeat' as TranslationKey)}
@@ -350,6 +377,14 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
   // ---- Act I: cinematic takeover ------------------------------------------
   return (
     <div className={`game-result-overlay ${isVictory ? 'victory' : 'defeat'}`}>
+      {/* The backdrop lives OUTSIDE .gr-cine, not inside it. Keeping it inside
+          would force the whole takeover above the confetti — and since the sky
+          is opaque, the fireworks would then be painted over by it. Split here,
+          the sky can sit under the confetti while the words sit over it, which
+          is the only order in which the celebration is both visible and
+          legible. */}
+      <ResultBackdrop outcome={isVictory ? 'victory' : 'defeat'} />
+
       <div
         className="gr-cine"
         data-outcome={isVictory ? 'victory' : 'defeat'}
@@ -357,11 +392,6 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
         aria-modal="true"
         aria-label={title}
       >
-        <div className="gr-cine__sky" aria-hidden="true" />
-        <div className="gr-cine__rays" aria-hidden="true" />
-        <div className="gr-cine__embers" aria-hidden="true" />
-        <div className="gr-cine__veil" aria-hidden="true" />
-
         <div className="gr-cine__stage">
           <p className="gr-cine__kicker">
             {isVictory ? t('result.cine.kicker.victory' as TranslationKey) : t('result.cine.kicker.defeat' as TranslationKey)}

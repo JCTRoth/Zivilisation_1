@@ -213,6 +213,22 @@ export default class GameEngine {
   /** World Wonder effect computation (science, happiness, movement, …). */
   wonderEffects: WonderEffects;
   playerStorage: Map<number, PlayerTurnStorage>; // Per-player persistent storage
+  /**
+   * Per-civ tally of the units a civilization has lost: destroyed in battle
+   * versus disbanded. The statistics screen reports both, and they mean
+   * different things — a lost unit is a battle the civ could not win, a
+   * disbanded one is a treasury it could not feed.
+   *
+   * A plain map on the engine so it serialises with everything else rather
+   * than living in the UI store and vanishing on load.
+   */
+  unitLedger: Map<number, { lost: number; disbanded: number }> = new Map();
+  /**
+   * Unit ids already counted as lost. `UNIT_DEFEATED` is emitted by every
+   * combat path and a delayed removal follows it, so without this a single
+   * death could be counted twice.
+   */
+  private countedDefeats = new Set<string>();
   devMode: boolean; // Developer mode flag
   roundManager: TurnManager; // kept property name for compatibility
   goToManager: GoToManager;
@@ -940,6 +956,8 @@ export default class GameEngine {
     this.victoryManager.reset();
     this.victoryManager.syncStoreActions(this.storeActions);
     this.playerStorage.clear();
+    this.unitLedger.clear();
+    this.countedDefeats.clear();
     
     // Phase 3.1: Reset scout memory for new game
     this.scoutMemory.clear();
@@ -5807,6 +5825,8 @@ const occupiedLandmasses = new Set(
     
     // Reset fog of war and player storage
     this.playerStorage.clear();
+    this.unitLedger.clear();
+    this.countedDefeats.clear();
     if (this.storeActions?.resetFogOfWar) {
       this.storeActions.resetFogOfWar();
     }
@@ -5857,6 +5877,8 @@ const occupiedLandmasses = new Set(
     
     // Reset fog of war before reinitializing
     this.playerStorage.clear();
+    this.unitLedger.clear();
+    this.countedDefeats.clear();
     if (actions?.resetFogOfWar) {
       actions.resetFogOfWar();
     }
@@ -5899,6 +5921,8 @@ const occupiedLandmasses = new Set(
     this.technologies = [];
     this.map = null;
     this.playerStorage.clear();
+    this.unitLedger.clear();
+    this.countedDefeats.clear();
     this.storeActions?.clearGameResult();
   }
 
@@ -6353,6 +6377,77 @@ const occupiedLandmasses = new Set(
     this.grantTech(capturerCivId, techId);
     const techName = TECHNOLOGIES_DATA.find((t) => t.id === techId)?.name ?? techId;
     return { techId, techName };
+  }
+
+  // ─── Unit ledger (statistics) ────────────────────────────────────────
+
+  /**
+   * Record that one of a civ's units was destroyed.
+   *
+   * Counted by unit id, so the several combat paths that can emit
+   * `UNIT_DEFEATED` for the same death — and the delayed removal that follows
+   * it — cannot tally it twice. Returns whether this was a new death, so a
+   * caller can tell a duplicate from a first sight.
+   */
+  recordUnitDefeated(unit: { id?: string; civilizationId?: number }): boolean {
+    const civId = unit?.civilizationId;
+    const id = unit?.id;
+    if (civId === undefined || civId < 0) return false;
+    if (id !== undefined) {
+      if (this.countedDefeats.has(id)) return false;
+      this.countedDefeats.add(id);
+    }
+    const entry = this.ledgerFor(civId);
+    entry.lost += 1;
+    return true;
+  }
+
+  /** Record that one of a civ's units was disbanded rather than killed. */
+  recordUnitDisbanded(unit: { id?: string; civilizationId?: number }): void {
+    const civId = unit?.civilizationId;
+    if (civId === undefined || civId < 0) return;
+    if (unit.id !== undefined) this.countedDefeats.add(unit.id);
+    this.ledgerFor(civId).disbanded += 1;
+  }
+
+  /** The tallies for one civ, zeroed when nothing has happened yet. */
+  getUnitLedger(civId: number): { lost: number; disbanded: number } {
+    return { ...this.ledgerFor(civId) };
+  }
+
+  /** Serialise the ledgers (for save/load), keyed as plain object. */
+  exportUnitLedger(): Record<string, { lost: number; disbanded: number }> {
+    const out: Record<string, { lost: number; disbanded: number }> = {};
+    for (const [civId, entry] of this.unitLedger) out[String(civId)] = { ...entry };
+    return out;
+  }
+
+  restoreUnitLedger(data: Record<string, { lost?: number; disbanded?: number }> | undefined): void {
+    this.unitLedger.clear();
+    this.countedDefeats.clear();
+    if (!data) return;
+    for (const [key, value] of Object.entries(data)) {
+      const civId = Number(key);
+      if (!Number.isFinite(civId)) continue;
+      this.unitLedger.set(civId, {
+        lost: Math.max(0, value?.lost ?? 0),
+        disbanded: Math.max(0, value?.disbanded ?? 0),
+      });
+    }
+    // A loaded game has already lost units before the save was taken; without
+    // these ids the first reload would re-count every death on the board.
+    for (const unit of this.units ?? []) {
+      if (unit.isDefeated) this.countedDefeats.add(unit.id);
+    }
+  }
+
+  private ledgerFor(civId: number): { lost: number; disbanded: number } {
+    let entry = this.unitLedger.get(civId);
+    if (!entry) {
+      entry = { lost: 0, disbanded: 0 };
+      this.unitLedger.set(civId, entry);
+    }
+    return entry;
   }
 
   /**
@@ -7138,6 +7233,7 @@ const occupiedLandmasses = new Set(
         diplomacyEvents,
         diplomacyContact,
         diplomacyEmbassies,
+        unitLedger: this.exportUnitLedger(),
         unitPaths,
         scoutMemoryRound: this.scoutMemory ? this.scoutMemory.getCurrentRound() : 0,
       };
@@ -7199,6 +7295,8 @@ const occupiedLandmasses = new Set(
 
       // Reset all subsystems
       this.playerStorage.clear();
+      this.unitLedger.clear();
+      this.countedDefeats.clear();
       this.scoutMemory.clear();
       this.diplomacyManager.reset();
       this.victoryManager.reset();
@@ -7299,6 +7397,13 @@ const occupiedLandmasses = new Set(
       // negotiation screen stays locked until a diplomat founds one.
       if (Array.isArray(saveData.diplomacyEmbassies)) {
         this.diplomacyManager.restoreEmbassyPairs(saveData.diplomacyEmbassies);
+      }
+      // Unit-loss tallies for the statistics screen. Absent from saves written
+      // before it existed, which simply start at zero rather than failing.
+      if (saveData.unitLedger && typeof saveData.unitLedger === 'object') {
+        this.restoreUnitLedger(saveData.unitLedger as Record<string, { lost?: number; disbanded?: number }>);
+      } else {
+        this.restoreUnitLedger(undefined);
       }
 
       this.victoryManager.syncStoreActions(this.storeActions);

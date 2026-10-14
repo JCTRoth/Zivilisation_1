@@ -857,7 +857,7 @@ export class MapRenderer {
       promotionEffects
     });
 
-    this.drawUnitPaths(ctx, unitPaths, units, cities, map, gameState, squareToScreen, cameraZoom);
+    this.drawUnitPaths(ctx, unitPaths, units, cities, map, gameState.selectedUnit ?? null, squareToScreen, cameraZoom);
   }
 
   /**
@@ -926,6 +926,25 @@ export class MapRenderer {
       if (isVisible) {
         const displayTile = this.getUnitDisplayTile(unit, params.movementAnimations);
         const { x, y } = squareToScreen(displayTile.col, displayTile.row);
+        const scaledTileSize = this.tileSize * cameraZoom;
+        const half = scaledTileSize / 2;
+
+        const civIndex = unit.civilizationId ?? unit.owner;
+        const civ = civilizations.find(c => c.id === civIndex);
+        const civColor = civ?.color || (civIndex === 0 ? '#4169E1' : '#DC143C');
+
+        // The unit's tile outline is the indicator (replacing the old pulsing
+        // round disc). Glow in the owning civ's colour, at 50% transparency.
+        ctx.save();
+        ctx.strokeStyle = civColor;
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = Math.max(2, (2 + pulseValue * 3) * cameraZoom);
+        ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
+        // Inner echo for a softer glow feel, slightly larger.
+        ctx.lineWidth = Math.max(3, (4 + pulseValue * 4) * cameraZoom);
+        ctx.strokeRect(x - half - 1, y - half - 1, scaledTileSize + 2, scaledTileSize + 2);
+        ctx.restore();
+
         this.drawUnitWithPulse(ctx, x, y, unit, pulseValue, cameraZoom, civilizations, combat.alpha);
 
         // Group-move selection (stack modal): a steady gold ring so every
@@ -1174,7 +1193,7 @@ export class MapRenderer {
         }
 
         if (isSelectedHex) {
-          ctx.strokeStyle = '#FF0000';
+          ctx.strokeStyle = '#4169E1';
           ctx.lineWidth = 2;
           ctx.strokeRect(tileX + 1, tileY + 1, scaledTileSize - 2, scaledTileSize - 2);
         }
@@ -1527,8 +1546,16 @@ export class MapRenderer {
         const isAttackTile = _cost < 0;
         if (isAttackTile) {
           // Attackable enemy tile: red with sword hint
-          ctx.fillStyle = 'rgba(220, 40, 40, 0.55)';
-          ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
+          ctx.fillStyle = 'rgba(220, 40, 40, 0.37)'; // ~1/3 more transparent
+          // Slightly enlarged (≈1px overlap) so rounded corners do not leave
+// white seams between adjacent reachable tiles.
+this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaledTileSize + 2, Math.max(2, cameraZoom * 2));
+          ctx.fill();
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.restore();
           ctx.save();
           ctx.fillStyle = '#fff';
           ctx.font = `bold ${Math.max(12, scaledTileSize * 0.38)}px serif`;
@@ -1537,11 +1564,27 @@ export class MapRenderer {
           ctx.fillText('⚔', x, y);
           ctx.restore();
         } else if (isNaval) {
-          ctx.fillStyle = 'rgba(255, 0, 0, 0.4)'; // Red for naval units
-          ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
+          ctx.fillStyle = 'rgba(255, 0, 0, 0.27)'; // Red for naval units (~1/3 more transparent)
+          // Slightly enlarged (≈1px overlap) so rounded corners do not leave
+// white seams between adjacent reachable tiles.
+this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaledTileSize + 2, Math.max(2, cameraZoom * 2));
+          ctx.fill();
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.restore();
         } else {
-          ctx.fillStyle = 'rgba(0, 85, 255, 0.5)'; // Blue for land units
-          ctx.fillRect(x - half, y - half, scaledTileSize, scaledTileSize);
+          ctx.fillStyle = 'rgba(0, 85, 255, 0.33)'; // Blue for land units (~1/3 more transparent)
+          // Slightly enlarged (≈1px overlap) so rounded corners do not leave
+// white seams between adjacent reachable tiles.
+this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaledTileSize + 2, Math.max(2, cameraZoom * 2));
+          ctx.fill();
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.restore();
         }
       });
     }
@@ -1580,10 +1623,11 @@ export class MapRenderer {
           continue;
         }
 
-        // Draw selection highlight
+        // Draw selection highlight (in the owning/player civ colour, not red).
         if (selectedHex && selectedHex.col === col && selectedHex.row === row) {
           const half = scaledTileSize / 2;
-          ctx.strokeStyle = '#FF0000';
+          const ownerCiv = civilizations.find(c => c.id === HUMAN_PLAYER_ID);
+          ctx.strokeStyle = ownerCiv?.color || '#4169E1';
           ctx.lineWidth = 2;
           ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
         }
@@ -1688,7 +1732,11 @@ export class MapRenderer {
           const displayTile = this.getUnitDisplayTile(unitAtTileKey.get(`${col},${row}`)!, movementAnimations);
           const unitPos = squareToScreen(displayTile.col, displayTile.row);
           const half = scaledTileSize / 2;
-          ctx.strokeStyle = '#FF0000';
+          const selectedUnitObj = units.find(u => u.id === selectedUnitId);
+          const civIndex = (selectedUnitObj?.civilizationId ?? selectedUnitObj?.owner ?? 0);
+          const civ = civilizations.find(c => c.id === civIndex);
+          const civColor = civ?.color || (civIndex === 0 ? '#4169E1' : '#DC143C');
+          ctx.strokeStyle = civColor;
           ctx.lineWidth = 3;
           ctx.strokeRect(unitPos.x - half, unitPos.y - half, scaledTileSize, scaledTileSize);
         }
@@ -2126,12 +2174,12 @@ export class MapRenderer {
     units: Unit[],
     cities: City[],
     map: MapState,
-    gameState: GameState,
+    selectedUnitId: string | null,
     squareToScreen: (col: number, row: number) => { x: number; y: number },
     cameraZoom: number
   ): void {
     unitPaths.forEach((path, unitId) => {
-      this.drawUnitPath(ctx, unitId, path, units, cities, map, gameState, squareToScreen, cameraZoom);
+      this.drawUnitPath(ctx, unitId, path, units, cities, map, selectedUnitId, squareToScreen, cameraZoom);
     });
   }
 
@@ -2642,7 +2690,7 @@ export class MapRenderer {
     centerX: number,
     centerY: number,
     unit: Unit,
-    pulseValue: number,
+    _pulseValue: number,
     cameraZoom: number,
     civilizations: Civilization[],
     alpha = 1
@@ -2659,25 +2707,16 @@ export class MapRenderer {
     const civ = civilizations.find(c => c.id === civIndex);
     const civColor = civ?.color || (civIndex === 0 ? '#4169E1' : '#DC143C');
 
-    // Blend only part-way toward the highlight colour so the circle "breathes"
-    // instead of strobing between two extremes.
-    const highlightColor = '#ff5a5a';
-    const pulseColor = this.interpolateColor(civColor, highlightColor, 0.12 + 0.45 * pulseValue);
-
+    // Keep a static (non-breathing) soft disc as the unit's backdrop so the icon
+    // stays legible; the "glowing round indicator" (breathing ring) is removed
+    // and its emphasis moves to the red tile outline (see renderPulsingUnits).
     const innerRadius = Math.max(8, Math.round(radius * 0.95));
     ctx.beginPath();
-    ctx.fillStyle = pulseColor;
-    ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+    ctx.fillStyle = civColor;
     const backgroundAlpha = ctx.globalAlpha;
-    ctx.globalAlpha = backgroundAlpha * 0.3;
+    ctx.globalAlpha = backgroundAlpha * 0.2;
+    ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
     ctx.fill();
-    ctx.globalAlpha = backgroundAlpha;
-
-    // Add a subtle glow effect
-    ctx.strokeStyle = highlightColor;
-    ctx.globalAlpha = backgroundAlpha * (0.35 + 0.65 * pulseValue);
-    ctx.lineWidth = Math.max(1, 1 + pulseValue * 2);
-    ctx.stroke();
     ctx.globalAlpha = backgroundAlpha;
 
     const unitTypeId = unit.type ? String(unit.type) : null;
@@ -2697,15 +2736,15 @@ export class MapRenderer {
       );
     } else {
       // Fallback to emoji from unit data or text icon on colored circle
-      ctx.fillStyle = pulseColor;
+      ctx.fillStyle = civColor;
       ctx.beginPath();
       ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
       const backgroundAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = backgroundAlpha * 0.3;
+      ctx.globalAlpha = backgroundAlpha * 0.2;
       ctx.fill();
       ctx.globalAlpha = backgroundAlpha;
 
-      const iconColor = this.isLightColor(pulseColor) ? '#111' : '#FFF';
+      const iconColor = this.isLightColor(civColor) ? '#111' : '#FFF';
       let emoji = '';
       if (typeof iconResource === 'string') {
         // Cached emoji
@@ -2734,7 +2773,7 @@ export class MapRenderer {
       ctx.font = `${sleepFontSize}px monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = this.isLightColor(pulseColor) ? '#111' : '#FFF';
+      ctx.fillStyle = this.isLightColor(civColor) ? '#111' : '#FFF';
       ctx.fillText(sleepIcon, centerX, centerY + 22);
     }
 
@@ -3045,14 +3084,19 @@ export class MapRenderer {
     units: Unit[],
     cities: City[],
     map: MapState,
-    gameState: GameState,
+    selectedUnitId: string | null,
     squareToScreen: (col: number, row: number) => { x: number; y: number },
     cameraZoom: number
   ): void {
     if (!path || path.length === 0) return;
     const unit = units.find(u => u.id === unitId);
     if (!unit) return;
-    if (gameState.selectedUnit !== unitId) return;
+    // A committed Go-To route stays visible even after the issuing unit has
+    // been deselected: the path itself (and its turn markers) carries the
+    // order until it runs out or is cancelled.
+
+    // 30% transparent unless its own unit is selected again.
+    const opacity = selectedUnitId === unitId ? 1.0 : 0.7;
 
     // The committed GoTo route uses the exact same overlay as the hover
     // preview — including the turn-end ETA numbers, computed from the route.
@@ -3067,7 +3111,9 @@ export class MapRenderer {
       unit.hasMovedThisTurn === true,
     );
 
-    this.drawPathOverlay(ctx, unit, path, map, squareToScreen, cameraZoom, units, cities, turnMarkers);
+    // Pass opacity explicitly (rather than relying on globalAlpha, which some
+    // canvas paths/restore chains drop) so the dimmed route visibly changes.
+    this.drawPathOverlay(ctx, unit, path, map, squareToScreen, cameraZoom, units, cities, turnMarkers, opacity);
   }
 
   /**
@@ -3085,8 +3131,10 @@ export class MapRenderer {
     cameraZoom: number,
     units: Unit[],
     cities: City[],
-    turnMarkers: TurnMarker[]
+    turnMarkers: TurnMarker[],
+    opacity: number = 1
   ): void {
+    const lineAlpha = 0.95 * opacity;
     if (steps.length === 0) return;
 
     const mapWidth = map.width || 0;
@@ -3103,7 +3151,7 @@ export class MapRenderer {
     ];
 
     ctx.save();
-    ctx.strokeStyle = 'rgba(255, 224, 102, 0.95)';
+    ctx.strokeStyle = `rgba(255, 224, 102, ${lineAlpha})`;
     ctx.lineWidth = Math.max(2, cameraZoom * 2);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -3179,7 +3227,7 @@ export class MapRenderer {
         ctx.strokeText('⚔', dx, dy - Math.max(8, cameraZoom * 8) - 10);
         ctx.fillText('⚔', dx, dy - Math.max(8, cameraZoom * 8) - 10);
       } else {
-        ctx.strokeStyle = 'rgba(255, 224, 102, 0.95)';
+        ctx.strokeStyle = `rgba(255, 224, 102, ${lineAlpha})`;
         ctx.lineWidth = Math.max(2, cameraZoom * 2);
         ctx.beginPath();
         ctx.arc(dx, dy, Math.max(6, cameraZoom * 7), 0, Math.PI * 2);
@@ -3189,8 +3237,10 @@ export class MapRenderer {
     ctx.restore();
 
     // Turn-end ETA numbers (same walk the engine performs).
-    if (turnMarkers.length > 0) {
-      this.drawTurnMarkers(ctx, turnMarkers, map, squareToScreen, 0);
+    // Numbers/black circles are part of the "full" route styling; drop them
+    // (while keeping the line) in the transparent case.
+    if (opacity >= 1 && turnMarkers.length > 0) {
+      this.drawTurnMarkers(ctx, turnMarkers, map, squareToScreen, 0, opacity);
     }
   }
 
@@ -3203,10 +3253,12 @@ export class MapRenderer {
     markers: TurnMarker[],
     map: MapState,
     squareToScreen: (col: number, row: number) => { x: number; y: number },
-    _scaledTileSize: number
+    _scaledTileSize: number,
+    opacity: number = 1
   ): void {
     const mapWidth = map.width || 0;
     const revealed = map.revealed;
+    const lineAlpha = 0.95 * opacity;
     // Fixed screen-space dimensions keep the white ETA numbers readable and
     // stable while zooming in or out.
     const radius = 8;
@@ -3224,7 +3276,7 @@ export class MapRenderer {
       ctx.fillStyle = 'rgba(20, 20, 20, 0.85)';
       ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 224, 102, 0.95)';
+      ctx.strokeStyle = `rgba(255, 224, 102, ${lineAlpha})`;
       ctx.lineWidth = Math.max(1, radius * 0.18);
       ctx.stroke();
       ctx.fillStyle = '#ffffff';
@@ -3243,32 +3295,6 @@ export class MapRenderer {
   private resolveTerrain(type: string): { color: string } {
     const upper = type?.toUpperCase();
     return TERRAIN_TYPES[type] || TERRAIN_TYPES[upper] || TERRAIN_TYPES.GRASSLAND;
-  }
-
-  /**
-   * Interpolates between two colors based on a factor.
-   * @param color1 - Start color (hex string)
-   * @param color2 - End color (hex string)
-   * @param factor - Interpolation factor between 0 and 1
-   * @returns Interpolated color as hex string
-   */
-  private interpolateColor(color1: string, color2: string, factor: number): string {
-    const c1 = color1.replace('#', '');
-    const c2 = color2.replace('#', '');
-    
-    const r1 = parseInt(c1.substring(0, 2), 16);
-    const g1 = parseInt(c1.substring(2, 4), 16);
-    const b1 = parseInt(c1.substring(4, 6), 16);
-    
-    const r2 = parseInt(c2.substring(0, 2), 16);
-    const g2 = parseInt(c2.substring(2, 4), 16);
-    const b2 = parseInt(c2.substring(4, 6), 16);
-    
-    const r = Math.round(r1 + (r2 - r1) * factor);
-    const g = Math.round(g1 + (g2 - g1) * factor);
-    const b = Math.round(b1 + (b2 - b1) * factor);
-    
-    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
   }
 
   /**
