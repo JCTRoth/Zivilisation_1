@@ -55,6 +55,17 @@ export interface CaravanCoordinatorWorld {
   isAtWar(a: number, b: number): boolean;
   /** Whether the civ has met the other (foreign routes need knowledge). */
   hasContacted?(a: number, b: number): boolean;
+  /**
+   * Whether a land walker can get from one tile to another without swimming.
+   *
+   * A Caravan has movement 1 over land and cannot enter ocean, so a destination
+   * across water is not a destination — it is a mission the governor can never
+   * route. The coordinator used to hand such targets over anyway: the governor
+   * stalled on them, spent its block patience, blacklisted them, retargeted,
+   * and with nothing reachable left disbanded the caravan. That is the whole
+   * "caravans never deliver" story on a map of islands.
+   */
+  areLandConnected?(c1: number, r1: number, c2: number, r2: number): boolean;
 }
 
 /** One assignment: this caravan walks to this city. */
@@ -206,6 +217,13 @@ function pickTarget(
     if (foreign) {
       if (world.isAtWar(civId, city.civilizationId)) continue;
       if (world.hasContacted && !world.hasContacted(civId, city.civilizationId)) continue;
+    }
+    // Reach: a caravan that cannot WALK there must not be sent there. Skipping
+    // the unreachable candidates here (rather than letting the governor discover
+    // them one at a time) is the difference between a fleet that delivers and one
+    // that spends its patience blacklisting targets.
+    if (world.areLandConnected && home) {
+      if (!world.areLandConnected(home.col, home.row, city.col, city.row)) continue;
     }
     // One caravan per slot this round: a city with 2 free slots may take 2.
     const claimsOnThisCity = [...claimed].filter((id) => id === city.id).length;

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useGameStore } from "./stores/GameStore";
-import { CIVILIZATIONS } from "@/data/GameData";
+import { defaultNationIndexForBrowser } from "@/data/CivilizationByLanguage";
 import { AUTO_END_TURN_OFFER_FLAG, isAutoScenario } from "@/data/GameConstants";
 import { shouldOfferAutoEndTurn, shouldPromptForResearch } from "@/utils/ModalTriggers";
 import GameEngine from "@/game/engine/GameEngine";
@@ -297,9 +297,9 @@ function App() {
       || gameEngine
       || !showGameSetup
     ) return;
-    const defaultCivIndex = CIVILIZATIONS.findIndex(
-      (c) => c.name === "Germans",
-    );
+    // Quickstart, combat lab and URL scenarios skip the wizard, so they take
+    // the same browser-based default it would have opened on.
+    const defaultCivIndex = defaultNationIndexForBrowser();
     if (fromUrl) {
       console.log("[App] URL scenario — launching game:", fromUrl);
       handleGameStart({

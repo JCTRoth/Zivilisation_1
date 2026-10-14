@@ -491,13 +491,22 @@ export class EconomicManager {
   }
 
   /**
-   * Gold per turn one more unit will cost: the planned type's maintenance, or
-   * the most expensive type the civ already fields.
+   * What one more unit of this type will really cost per turn — including the
+   * units that cost nothing.
+   *
+   * {@link unitMaintenanceOf} floors a price at 1 (it divides a gold budget to
+   * produce an army size, and a zero divisor or a zero price would break that
+   * arithmetic). The floor is right for buying soldiers and wrong for the
+   * question the unit cap actually asks — "can this civ keep this unit alive?".
+   * A Caravan's upkeep is genuinely 0 (Civ1: it is consumed by the delivery and
+   * pays nothing afterwards), and pricing it at 1 made it occupy a gold slot it
+   * never draws on, so a civ funding its roads was refused the trade units that
+   * would pay for them.
    */
-  unitMaintenanceOf(civ: Civilization, plannedUnitType?: string): number {
+  plannedUnitUpkeep(civ: Civilization, plannedUnitType?: string): number {
     if (plannedUnitType) {
       const planned = UNIT_PROPS[plannedUnitType]?.maintenance;
-      if (typeof planned === 'number') return Math.max(1, planned);
+      if (typeof planned === 'number') return Math.max(0, planned);
     }
     const owned = (this.gameEngine?.units ?? []).filter(
       (u: Unit) => u.civilizationId === civ?.id && !u.isDefeated && (u.maintenance ?? 0) > 0,
@@ -507,6 +516,14 @@ export class EconomicManager {
       UNIT_MAINTENANCE,
       ...owned.map((u: Unit) => u.maintenance ?? UNIT_MAINTENANCE),
     );
+  }
+
+  /**
+   * Gold per turn one more unit will cost: the planned type's maintenance, or
+   * the most expensive type the civ already fields.
+   */
+  unitMaintenanceOf(civ: Civilization, plannedUnitType?: string): number {
+    return Math.max(1, this.plannedUnitUpkeep(civ, plannedUnitType));
   }
 
   // ------------------------------------------------------------------
@@ -1579,6 +1596,11 @@ export class EconomicManager {
         // shields and the route it was carrying. New production is blocked by
         // the affordability gate instead of liquidating the ones under way.
         u.type !== 'caravan' &&
+        // The same argument, generalised: ANY unit that costs nothing cannot be
+        // the reason the civ is in deficit, so removing it saves no gold and only
+        // destroys the investment. Settlers were the remaining case — 0 gold a
+        // turn, 50 shields, and a road the civ is still earning from.
+        (u.maintenance ?? UNIT_MAINTENANCE) > 0 &&
         !isMissionUnit(u) &&
         !isLoadedFerry(u),
     );
@@ -1623,6 +1645,13 @@ export class EconomicManager {
     const tryDisband = (unit: Unit, force: boolean): boolean => {
       if (removedIds.has(unit.id)) return false;
       if (!force && isSoleCityDefender(unit)) return false;
+      // A unit that costs nothing cannot be the reason the civ is in deficit.
+      // Removing it would not add a single gold to the treasury — it would only
+      // destroy 50 shields and a trade route. The sort puts these last (they pay
+      // 0), but a large deficit walked all the way down and still removed them,
+      // which is how a civ disbanded every caravan it ever built: 18 were
+      // produced in a four-game batch and not one survived to deliver.
+      if (maintenanceOf(unit) <= 0) return false;
       const key = `${unit.col},${unit.row}`;
       if (isDefender(unit)) {
         defenderCounts.set(

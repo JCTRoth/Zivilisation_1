@@ -191,16 +191,35 @@ concepts cheap to add.
 
 == 6. What still blocks deliveries
 
-The governor is no longer the reason zero routes get built, but two things are:
+Two silent turn-killers, found by instrumenting a real engine (and now pinned by
+`tests/ai/caravanPlannerRealEngine.test.ts`, which runs a REAL engine through a
+full AI turn and asserts nothing was reported). Neither produced a failing test;
+both produced a civ that *quietly stopped playing*, because the AI turn's own
+catch swallows any error and the turn still ends normally.
 
-. **Production.** `AutoProduction.shouldBuildCaravan` gates a 0-gold/turn,
-   50-shield unit on `canAffordAnotherUnit` — a treasury test. Until that gate
-   moves to the food/shield side, there are no caravans to govern.
-. **Reach.** A caravan walks at movement 1 over open ground; the movement budget
-   now exploits roads, but a route across a continent is still dozens of turns.
-   The ship-based trade route in TODO.txt is the real answer for intercontinental
-   pairs.
+. `world.isAtWar is not a function` — the coordinator's world is
+   `{ cities, units, isAtWar, hasContacted }`, and the GameEngine exposes none of
+   the last two: diplomacy lives on `diplomacyManager`. The engine was cast
+   straight in, so **every AI turn that had a caravan threw**, aborted, and issued
+   no orders at all. A 150-round probe logged that one error 967,607 times.
+   Fixed by an explicit adapter naming the two questions the planner may ask
+   (`AIManager.coordinateCaravans`).
+. `blacklisted is not iterable` — `CaravanGovernor.assignTarget` (the
+   coordinator's hook) handed `null` into `freshMission`, which spreads its
+   blacklist. Same consequence: the turn dies the moment a caravan is assigned.
 
-Both are outside this module and both are measured, not assumed:
-`scripts/economy_sim.py` rows R20-R23 price the trade-route economy against the
-caravan's own payback.
+A third, quieter bug in the same place: `assignTarget`'s sticky guard was
+inverted, so it re-targeted every walking caravan **every round** — the exact
+pacing the sticky missions exist to prevent. It now only overrides on `force`.
+
+A fourth, in the economy rather than the AI: the upkeep disbander used to find
+caravans only by name. Now any unit that costs 0 gold a turn is exempt — removing
+it cannot cure an upkeep deficit, so it was destroying 50 shields and a road the
+civ was still earning from to save nothing. Settlers were the remaining case.
+
+The lesson the docs should carry: the AI turn is one try/catch around a long
+pipeline, so a throw anywhere disables an entire civ for the rest of that turn,
+and the game shows no symptom. The whole of a civ's behaviour — moving, attacking,
+delivering — disappears behind a silent abort, which is why the two fixes above are
+pinned by a test that runs a **real engine** through a full turn and asserts that
+nothing was reported.

@@ -239,8 +239,13 @@ export class CaravanGovernor {
    */
   assignTarget(unitId: string, col: number, row: number, round: number, force = false): void {
     const existing = this.missions.get(unitId);
-    if ((existing?.phase === 'outbound' || existing?.phase === 'delivering') && !force) {
-      if (existing.targetCol === col && existing.targetRow === row) return;
+    // A delivery already in progress is LEFT ALONE. The instinct to also allow a
+    // re-target when the coordinates happen to match is harmless; the mistake is
+    // the other way round — falling through when they do not, which re-targeted
+    // every walking caravan every single round and defeated the sticky mission
+    // the whole governor exists to provide.
+    if (existing && (existing.phase === 'outbound' || existing.phase === 'delivering') && !force) {
+      return;
     }
     this.missions.set(unitId, this.freshMission(col, row, round, null));
   }
@@ -453,7 +458,7 @@ export class CaravanGovernor {
     col: number,
     row: number,
     round: number,
-    blacklisted: string[],
+    blacklisted: readonly string[] | null,
   ): CaravanMission {
     return {
       phase: 'outbound',
@@ -468,7 +473,11 @@ export class CaravanGovernor {
       risk: 0,
       escortPending: false,
       escortTurns: 0,
-      blacklisted: [...blacklisted],
+      // `assignTarget` hands in `null` for "no memory yet" — a mission created by
+      // the coordinator has no history of its own. Spreading it used to throw a
+      // TypeError inside every AI turn that had an assignment, and the turn's own
+      // catch swallowed it, so the civ silently stopped acting at all.
+      blacklisted: blacklisted ? [...blacklisted] : [],
     };
   }
 
@@ -561,6 +570,20 @@ export class CaravanGovernor {
     };
   }
 
+  /** Movement points the whole path costs, tile by tile (roads included). */
+  private walkCostOf(
+    path: Array<{ col: number; row: number }>,
+    unit: Unit,
+    world: CaravanWorld,
+  ): number {
+    let total = 0;
+    for (let i = 1; i < path.length; i++) {
+      const tile = world.getTileAt(path[i].col, path[i].row);
+      total += Pathfinding.getMovementCost(tile as MapTile, unit.type);
+    }
+    return total;
+  }
+
   /** The furthest tile along `path` the unit can pay for with its movement. */
   private stepWithinBudget(
     unit: Unit,
@@ -646,7 +669,12 @@ export class CaravanGovernor {
     if (path.length <= 1) return null;
 
     const pathCost = path.length - 1;
-    const travelTurns = Math.max(1, Math.ceil(pathCost / this.movementOf(unit) / 3));
+    // Turns of WALKING, counted the way the step above counts them: a roaded tile
+    // costs a third of a turn and open ground a whole one. Dividing the tile
+    // count by 3 always assumed the whole route was paved, which flattered every
+    // route threefold on a clean map — and the value-per-turn ranking is what the
+    // target choice is driven by, so the AI reached for the far cities.
+    const travelTurns = Math.max(1, Math.ceil(this.walkCostOf(path, unit, world) / this.movementOf(unit)));
     if (travelTurns > CARAVAN_MAX_TRANSIT_TURNS) return null;
 
     const destPop = city.population ?? 1;

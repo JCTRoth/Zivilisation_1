@@ -234,8 +234,8 @@ previous section are implemented and tested too.
 Two are **partial**, and the probe says so: **5** (roads on worked tiles) landed
 in the works chooser but city commerce is still the 2-trade floor because the
 works programme's entry condition under-reports, and **9** (trade routes) has
-the new payout, the 5-route cap and the research hook, but delivery is still
-zero because a caravan walks at movement 1 through occupied ground. See
+the new payout, the route cap and the research hook, but delivery was still zero
+— the cause turned out to be plumbing rather than balance, see
 <<Measured effect>>.
 
 [cols="1,3,2,2", options="header"]
@@ -368,10 +368,19 @@ the 1–2 the old over-militarised mix left.)
 
 Still open, both stated plainly:
 
-* **Trade routes are still zero.** The payout is now 96 gold for a size-3 pair 8
-  tiles apart and the research hook fires, but delivery is the weak link — a
-  caravan walks at movement 1 through occupied ground and dies. The ship-based
-  auto-delivery in TODO.txt is the real fix and is not implemented.
+* **Trade routes are still zero.** Three *plumbing* bugs, not balance ones, were the
+  real cause and are now fixed: the coordinator's world was a cast of the engine,
+  which has no `isAtWar`, so **every AI turn that owned a caravan threw and issued
+  no orders** (one 150-round probe logged the error 967,607 times);
+  `assignTarget` handed `null` into a spread, killing the turn the moment a
+  caravan was assigned; and the upkeep disbander removed free units, which cannot
+  cure an upkeep deficit, so a fresh caravan was usually liquidated the next round.
+  With those fixed, caravans are built (~4.5/game, up from 0) and the coordinator
+  now checks reach before assigning a target. What remains is *reach*: a caravan
+  moves at 1 tile a turn over open ground, and on a 40x40 map the engine's own
+  start positions put most city pairs beyond a movement budget that a road would
+  have solved but no road exists yet. The ship-based auto-delivery in TODO.txt is
+  the real fix and is not implemented.
 * **City commerce is still the floor for most cities.** R19 pays for the empire
   anyway, but a roaded city should still earn roughly twice an unroaded one.
 

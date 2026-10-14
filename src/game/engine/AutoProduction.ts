@@ -1733,8 +1733,8 @@ export class AutoProduction {
     // exhausts nothing, and a priced one has to fit in what the income actually
     // leaves after buildings.
     if (typeof econ.affordableUnitUpkeep === 'function') {
-      const price = typeof econ.unitMaintenanceOf === 'function'
-        ? econ.unitMaintenanceOf(civ, plannedUnitType)
+      const price = typeof econ.plannedUnitUpkeep === 'function'
+        ? econ.plannedUnitUpkeep(civ, plannedUnitType)
         : 0;
       if (price <= 0) return false; // costs no gold → cannot exhaust a gold cap
       return econ.affordableUnitUpkeep(civ) < price;

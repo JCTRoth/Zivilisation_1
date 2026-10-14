@@ -5,6 +5,7 @@ import { LEADER_PORTRAITS } from '@/data/LeaderPortraits';
 import LeaderPortrait from '@/components/ui/LeaderPortrait';
 import { useTranslation } from '@/i18n/useTranslation';
 import { translateDynamic, type TranslationKey } from '@/i18n';
+import { defaultNationIndexForBrowser } from '@/data/CivilizationByLanguage';
 import { tGovernmentName } from '@/i18n/dataNames';
 import '../../styles/gameModalShell.css';
 import '../../styles/gameSetupModal.css';
@@ -138,8 +139,11 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   }, []);
 
   const [currentStep, setCurrentStep] = useState(1);
-  const defaultCivIndex = CIVILIZATIONS.findIndex((c) => c.name === 'Germans');
-  const [selectedCiv, setSelectedCiv] = useState(defaultCivIndex >= 0 ? defaultCivIndex : 0);
+  // The nation the wizard opens on follows the browser's own language, which
+  // is the only thing that knows whether you are en-US or en-GB — the game
+  // language has already thrown the region away. Unrouted browsers keep the
+  // standing default.
+  const [selectedCiv, setSelectedCiv] = useState(() => defaultNationIndexForBrowser());
   const [difficulty, setDifficulty] = useState('PRINCE');
   const [numCivilizations, setNumCivilizations] = useState(2);
   const [mapType, setMapType] = useState('NORMAL_SKIRMISH');

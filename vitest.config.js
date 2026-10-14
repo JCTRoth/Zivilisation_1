@@ -16,6 +16,10 @@ export default defineConfig({
     testTimeout: 30000,
     // Configure environment
     environment: 'node',
+    // The game's starting language follows the browser, which here means the
+    // machine's locale — pin it so assertions on English strings hold on every
+    // dev box (see tests/setup.ts).
+    setupFiles: ['./tests/setup.ts'],
     // e2e specs use Playwright's runner — exclude them from vitest
     // `tmp*` files are ad-hoc diagnostics, not tests: they play hundreds of
     // turns to print telemetry and exhaust the heap (tmpEconDiag.test.ts says

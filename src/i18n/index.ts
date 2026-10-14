@@ -19,12 +19,12 @@ import { ru } from './ru';
 import { es } from './es';
 import { ja } from './ja';
 import {
-  DEFAULT_LANGUAGE,
   LANGUAGE_STORAGE_KEY,
   getLanguageDefinition,
   isSupportedLanguage,
   type LanguageId,
 } from './languages';
+import { detectBrowserLanguage } from './languageDetection';
 
 export type { LanguageId } from './languages';
 export type { TranslationKey } from './en';
@@ -35,20 +35,28 @@ const DICTIONARIES: Record<LanguageId, PartialTranslationDict> = { en, de, fr, r
 /** Values accepted for `{{placeholder}}` interpolation. */
 export type TranslationParams = Record<string, string | number>;
 
-let currentLanguage: LanguageId = readStoredLanguage();
+let currentLanguage: LanguageId = readInitialLanguage();
 const listeners = new Set<() => void>();
 
-/** Resolve the persisted language; anything unsupported falls back to English. */
-function readStoredLanguage(): LanguageId {
+/**
+ * Resolve the language the game starts in.
+ *
+ * A choice the player made beats everything — the browser's opinion only
+ * counts while there is nothing stored. That ordering matters: a player who
+ * deliberately switched away from their browser language must never have it
+ * switched back on the next load.
+ */
+function readInitialLanguage(): LanguageId {
   try {
     const stored = globalThis.localStorage?.getItem(LANGUAGE_STORAGE_KEY);
     if (isSupportedLanguage(stored)) {
       return stored;
     }
   } catch {
-    // Storage unavailable (private mode, blocked cookies, node tests) — default.
+    // Storage unavailable (private mode, blocked cookies, node tests) — fall
+    // through to the browser's guess.
   }
-  return DEFAULT_LANGUAGE;
+  return detectBrowserLanguage();
 }
 
 /** The active language id. */

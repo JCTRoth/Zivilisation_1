@@ -234,12 +234,15 @@ describe('blocked targets: patience, then blacklist + retarget', () => {
       '..~~~~~',
     ]);
     addCity('H', 0, 0);
-    addCity('A', 6, 2);
+    // A is far AND big, so it wins on value per TURN (not per trip): the old
+    // ranking flattered any distant city, which is what sent caravans across the
+    // map for routes they could never finish inside a transit deadline.
+    addCity('A', 6, 2, HOME_CIV, { population: 20 });
     addCity('B', 0, 1);
     const caravan = addCaravan('v1', 0, 2, 'H');
     const gov = new CaravanGovernor();
 
-    // Unblocked: the far, high-value A is chosen.
+    // Unblocked: the high-value-per-turn A is chosen.
     const first = gov.planUnit(caravan, world, 1);
     expect(PLAN_OF(first)).toBe('move');
     expect(gov.getMission('v1')?.targetCol).toBe(6);
@@ -622,5 +625,60 @@ describe('the new concepts', () => {
     if (mission && (mission.phase === 'outbound' || mission.phase === 'delivering')) {
       expect(mission.transitTurns).toBeLessThanOrEqual(CARAVAN_MAX_TRANSIT_TURNS + 1);
     }
+  });
+});
+
+
+describe('assignTarget — the coordinator\'s hook', () => {
+  it('creates a mission from nothing, with no history to copy', () => {
+    // The coordinator assigns a target to a caravan that has never had a mission.
+    // Its blacklist starts empty — and must not be built by spreading `null`.
+    const { world, addCity, addCaravan } = makeWorld([
+      '............',
+      '............',
+      '............',
+      '............',
+    ]);
+    addCity('H', 0, 2);
+    addCity('T', 9, 2);
+    const caravan = addCaravan('v1', 0, 2, 'H');
+    const gov = new CaravanGovernor();
+
+    gov.assignTarget('v1', 9, 2, 4);
+
+    const mission = gov.getMission('v1');
+    expect(mission).toMatchObject({
+      phase: 'outbound', targetCol: 9, targetRow: 2, transitTurns: 0, blacklisted: [],
+    });
+    // And it walks: the handed-over target is the one it routes to.
+    const plan = gov.planUnit(caravan, world, 5);
+    expect(plan.kind).toBe('move');
+    if (plan.kind === 'move') expect(plan.target).toEqual({ col: 9, row: 2 });
+  });
+
+  it('does not re-target a caravan that is already walking (unless forced)', () => {
+    const { world, addCity, addCaravan } = makeWorld([
+      '............',
+      '............',
+      '............',
+      '............',
+    ]);
+    addCity('H', 0, 2);
+    addCity('A', 4, 2);
+    addCity('B', 10, 2);
+    const caravan = addCaravan('v1', 0, 2, 'H');
+    const gov = new CaravanGovernor();
+
+    gov.planUnit(caravan, world, 1);               // picks a target
+    const original = gov.getMission('v1')!.targetCol;
+    const other = original === 4 ? 10 : 4;
+
+    // Re-planning mid-walk is exactly the pacing the sticky mission prevents.
+    gov.assignTarget('v1', other, 2, 2);
+    expect(gov.getMission('v1')!.targetCol).toBe(original);
+
+    // …but the coordinator can override when it means it.
+    gov.assignTarget('v1', other, 2, 2, true);
+    expect(gov.getMission('v1')!.targetCol).toBe(other);
   });
 });

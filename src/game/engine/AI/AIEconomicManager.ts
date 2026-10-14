@@ -247,6 +247,9 @@ export class AIEconomicManager {
    * funding planner and the engine all price a unit identically.
    */
   private planningUnitMaintenance(civ: Civilization, plannedUnitType?: string): number {
+    if (typeof this.econ.plannedUnitUpkeep === 'function') {
+      return Math.max(1, this.econ.plannedUnitUpkeep(civ, plannedUnitType));
+    }
     if (typeof this.econ.unitMaintenanceOf === 'function') {
       return this.econ.unitMaintenanceOf(civ, plannedUnitType);
     }

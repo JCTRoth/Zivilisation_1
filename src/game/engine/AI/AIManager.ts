@@ -389,7 +389,6 @@ export class AIManager {
     if (this.caravanCoordinatorRound.get(civId) === round) return;
     this.caravanCoordinatorRound.set(civId, round);
 
-    const world = this.gameEngine as unknown as CaravanCoordinatorWorld;
     // Commit the targets the live governor missions already hold, so a mission
     // in progress is not re-planned and re-targeted under its own caravan. The
     // governor stores coordinates; the coordinator speaks city ids.
@@ -404,6 +403,26 @@ export class AIManager {
       const city = cityAt(mission.targetCol, mission.targetRow);
       if (city) committed.add(city.id);
     }
+
+    // The coordinator's world is NOT the engine: the engine delegates diplomacy
+    // to `diplomacyManager`, and it does not expose `isAtWar` / `hasContacted`
+    // itself. Casting the engine straight in used to throw a TypeError inside
+    // every AI turn — which the turn's own catch swallowed, so the whole turn
+    // (movement, attacks, everything) silently stopped. An adapter is explicit
+    // about which two questions the planner may ask.
+    const diplomacy = this.gameEngine.diplomacyManager;
+    const land = this.gameEngine.areLandConnected;
+    const world: CaravanCoordinatorWorld = {
+      cities: this.gameEngine.cities,
+      units: this.gameEngine.units,
+      isAtWar: (a, b) => (typeof diplomacy?.isAtWar === 'function' ? !!diplomacy.isAtWar(a, b) : false),
+      hasContacted: (a, b) =>
+        typeof diplomacy?.hasContacted === 'function' ? !!diplomacy.hasContacted(a, b) : false,
+      // A caravan walks: a destination across water is not a destination.
+      areLandConnected: typeof land === 'function'
+        ? (a, b, c, d) => land.call(this.gameEngine, a, b, c, d)
+        : undefined,
+    };
 
     const plan = planCaravansForCiv(world, civId, committed);
     this.caravanAssignments.clear();

@@ -1209,6 +1209,20 @@ delivered ZERO routes.
   — de-duplicated so two caravans never race for the same slot. The per-unit
   governor (`AI/CaravanGovernor.ts`) still owns the sticky missions and the
   risk-aware stepping; the coordinator only ever changes the target.
+* **What a caravan costs decides who may build it.** A caravan's upkeep is 0: the
+  gate for building one is therefore *shields and a citizen* (the 50 shields the
+  city will spend, and the citizen it loses when the unit completes), never the
+  per-turn treasury test (`canAffordAnotherUnit`) that a soldier is gated on.
+* **The army cap is gold, not a headcount.** `sustainableUnits` divides a gold
+  budget by a unit price to make a COUNT, which is only meaningful when every unit
+  costs the same. A caravan (0/turn), a settler (0/turn) and a scout (0/turn) are
+  now charged at their real price — nothing — and a priced unit has to fit in what
+  the income leaves after buildings (`affordableUnitUpkeep` /
+  `plannedUnitUpkeep`). Before that, a free unit occupied a gold slot it never
+  drew on, and a civ funding its roads was told it was at its army ceiling.
+* The coordinator plans **once per civ per round, at the top of the turn** — before
+  the city-production phase asks it which cities want caravans. A civ that has
+  never built a caravan has no unit for a lazy planner to hang the plan on.
 
 == The economy
 
@@ -1425,6 +1439,13 @@ upkeep = Σ unit.maintenance            (0–6 per type, no free unit support)
 opening is untouched and the bill starts with the fourth town. Without it a city
 cost the treasury nothing at all — gold bore no relation to empire size, and the
 only outflows were rushes and accidental liquidations.
+
+When a turn ends in deficit, units are disbanded until it is covered — ordered
+non-defenders first, then higher maintenance, then higher cost. **A unit that
+costs nothing is never a candidate**: removing it cannot reduce the deficit, so the
+rule would destroy 50 shields and a road the civ is still earning from to save no
+gold at all. Caravans were carved out by name; the exemption now covers every
+0-maintenance unit, settlers included.
 
 Buying or rushing production costs `PURCHASE_GOLD_PER_SHIELD = 2` gold per
 remaining shield, **for units, buildings and wonders alike**. It used to be two

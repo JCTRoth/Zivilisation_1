@@ -186,8 +186,97 @@ describe('EconomicManager upkeep & treasury', () => {
     expect(result.deficit).toBe(0);
   });
 
-  it('banks whole coins, rounded UP, and leaves no fraction in the treasury', () => {
-    // The rule: the rate split stays fractional all the way through and rounds
+  it('reports the gold left for unit upkeep, negative when overspending', () => {
+    const civ = makeCiv(0, { taxRate: 30, scienceRate: 50, luxuryRate: 20, isHuman: true });
+    const city = makeCity(0, 10);
+    const econ = new EconomicManager(makeEngine({ civilizations: [civ], cities: [city], units: [] }));
+    const base = econ.affordableUnitUpkeep(civ);
+
+    expect(base).toBeGreaterThan(0);
+
+    // The whole point: a unit that costs no gold does not spend any of it.
+    // (Before `plannedUnitUpkeep` existed this was priced at 1 and charged for.)
+    const free = new EconomicManager(makeEngine({
+      civilizations: [civ], cities: [city],
+      units: [{ id: 'c1', civilizationId: 0, type: 'caravan', maintenance: 0, isDefeated: false }],
+    }));
+    expect(free.affordableUnitUpkeep(civ)).toBe(base);
+
+    // A priced army spends some.
+    const army = new EconomicManager(makeEngine({
+      civilizations: [civ], cities: [city],
+      units: [1, 2, 3, 4].map((n) => ({
+        id: `a${n}`, civilizationId: 0, type: 'phalanx', maintenance: 2, isDefeated: false,
+      })),
+    }));
+    expect(army.affordableUnitUpkeep(civ)).toBeLessThan(base);
+
+    // Building upkeep comes out first: units are bought with what is LEFT.
+    const expensive = new EconomicManager(makeEngine({
+      civilizations: [civ],
+      cities: [{ ...city, buildings: ['bank', 'cathedral'] }],
+      units: [],
+    }));
+    expect(expensive.affordableUnitUpkeep(civ)).toBeLessThan(base);
+
+    // Over-committed: the honest answer is negative, which is what the caller
+    // compares a unit's price against.
+    const broke = new EconomicManager(makeEngine({
+      civilizations: [civ],
+      cities: [{ ...city, buildings: ['bank', 'palace', 'temple', 'granary'] }],
+      units: [1, 2, 3, 4, 5, 6].map((n) => ({
+        id: `b${n}`, civilizationId: 0, type: 'riflemen', maintenance: 2, isDefeated: false,
+      })),
+    }));
+    expect(broke.affordableUnitUpkeep(civ)).toBeLessThan(0);
+  });
+
+  it('prices a unit at what it really costs, including the free ones', () => {
+    const civ = makeCiv(0, { taxRate: 30, scienceRate: 50, luxuryRate: 20, isHuman: true });
+    const city = makeCity(0, 10);
+    const engine = makeEngine({ civilizations: [civ], cities: [city], units: [] });
+    const econ = new EconomicManager(engine);
+
+    // Caravan and Settler declare maintenance 0 → the honest price is 0. The
+    // army divisor keeps its floor of 1 so `sustainableUnits` never divides by
+    // zero — but the unit cap must see the truth, or a free unit occupies a
+    // gold slot it never draws on.
+    expect(econ.plannedUnitUpkeep(civ, 'caravan')).toBe(0);
+    expect(econ.plannedUnitUpkeep(civ, 'settler')).toBe(0);
+    expect(econ.unitMaintenanceOf(civ, 'caravan')).toBe(1);
+  });
+
+  it('never disbands a unit that costs nothing', () => {
+    // The disbander walks its sorted list while the deficit is unpaid. A unit
+    // with 0 upkeep reduces that deficit by 0, so removing it is pure waste —
+    // it destroys 50 shields and a road the civ is still earning from, and saves
+    // not one gold. Caravans were carved out of this by name; the rule now
+    // covers every free unit, and the settler is the one that was still dying.
+    const civ = makeCiv(0, { isHuman: true });
+    const city = makeCity(0, 5);
+    const settler = {
+      id: 'settler', type: 'settler', civilizationId: 0, maintenance: 0,
+      homeCityId: 'city-0-5-5', isDefeated: false, health: 100,
+      col: 5, row: 5, attack: 0, defense: 1, cost: 40,
+    };
+    const warriors = [1, 2, 3].map((n) => ({
+      id: `w${n}`, type: 'warrior', civilizationId: 0, maintenance: 1,
+      homeCityId: 'city-0-5-5', isDefeated: false, health: 100,
+      col: 5, row: 5, attack: 1, cost: 10,
+    }));
+    const engine = makeEngine({ civilizations: [civ], cities: [city], units: [settler, ...warriors] });
+    const econ = new EconomicManager(engine);
+
+    // A deficit larger than the entire army can ever pay.
+    (econ as unknown as {
+      disbandUnitsToCoverDeficit: (civId: number, deficit: number, cities: unknown[]) => number;
+    }).disbandUnitsToCoverDeficit(0, 1000, [city]);
+
+    // Every priced unit went — the debt demanded it. The free one is still here.
+    expect(engine.units.map((u: { id: string }) => u.id)).toEqual(['settler']);
+  });
+
+  it('banks whole coins, rounded UP, and leaves no fraction in the treasury', () => {    // The rule: the rate split stays fractional all the way through and rounds
     // up exactly once, when it is written into the treasury. A civ earning 2.4
     // gold a turn gets 3 — not 2, and not 2.4.
     const civ = makeCiv(0, { taxRate: 30, scienceRate: 0, luxuryRate: 0, isHuman: true });
