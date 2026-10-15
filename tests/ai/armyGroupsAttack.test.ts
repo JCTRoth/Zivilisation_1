@@ -292,3 +292,71 @@ describe('Army groups actually attack', () => {
     }
   });
 });
+
+describe('Pre-attack calculation (AIManager wiring)', () => {
+  const enemy = (id: string, col: number, row: number, overrides: Partial<Unit> = {}): Unit => ({
+    ...unit({ id, col, row, civilizationId: 1 }),
+    ...overrides,
+  } as Unit);
+
+  it('keeps an attacker free when a defensive unit can garrison instead', () => {
+    // Civ1 guide: "Don't use an expensive, mobile attack unit where a Phalanx
+    // would do adequately."
+    const e = makeBattleEngine();
+    const phalanx = addWarrior(e, 'phx', 2, 3);
+    phalanx.type = 'phalanx';
+    phalanx.attack = 1;
+    phalanx.defense = 2;
+    const tank = addWarrior(e, 'tnk', 3, 2);
+    tank.type = 'tank';
+    tank.attack = 16;
+    tank.defense = 8;
+    addWarrior(e, 'w5', 6, 6);
+    addWarrior(e, 'w6', 7, 6);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reserves = (e.aiManager as any).getCityDefenseReserveIds(0) as Set<string>;
+    expect(reserves.size).toBeGreaterThanOrEqual(1);
+    expect(reserves.has('phx')).toBe(true);
+    expect(reserves.has('tnk')).toBe(false);
+  });
+
+  it('lowers the odds floor as friendly units focus the same defender', () => {
+    const e = makeBattleEngine();
+    const attacker = unit({ id: 'knight', type: 'knights', col: 9, row: 11, attack: 4, defense: 2 });
+    (e as unknown as { units: unknown[] }).units.push(attacker);
+    const defender = enemy('mus', 11, 11, { type: 'musketeer', attack: 3, defense: 3, isFortified: true });
+    (e as unknown as { units: unknown[] }).units.push(defender);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const manager = e.aiManager as any;
+    const alone = manager.evaluateAttackOdds(attacker, defender);
+    expect(alone.allow).toBe(false);
+    expect(alone.reason).toBe('low_odds');
+
+    // Both friends stand next to the defender's tile → focus fire.
+    addWarrior(e, 'g1', 10, 11);
+    addWarrior(e, 'g2', 11, 10);
+    const supported = manager.evaluateAttackOdds(attacker, defender);
+    expect(supported.allow).toBe(true);
+  });
+
+  it('holds a lone catapult in the open field (siege field discipline)', () => {
+    const e = makeBattleEngine();
+    const catapult = unit({ id: 'cat', type: 'catapult', col: 5, row: 5, attack: 6, defense: 1 });
+    (e as unknown as { units: unknown[] }).units.push(catapult);
+    const defender = enemy('ch1', 6, 6, { type: 'chariot', attack: 4, defense: 2 });
+    (e as unknown as { units: unknown[] }).units.push(defender);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const manager = e.aiManager as any;
+    const lone = manager.evaluateAttackOdds(catapult, defender);
+    expect(lone.allow).toBe(false);
+    expect(lone.reason).toBe('siege_field_discipline');
+
+    // With a front-line unit keeping the target busy, the siege fires.
+    addWarrior(e, 'escort', 6, 5);
+    const escorted = manager.evaluateAttackOdds(catapult, defender);
+    expect(escorted.allow).toBe(true);
+  });
+});

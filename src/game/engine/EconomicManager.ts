@@ -20,7 +20,7 @@ import {
   TERRAIN_TYPES,
   getResourceYields,
 } from '../../data/TerrainConstants';
-import { IMPROVEMENT_PROPERTIES } from '../../data/TileImprovementConstants';
+import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '../../data/TileImprovementConstants';
 import { SPECIALIST_YIELDS, CITY_UPKEEP_PER_CITY, FREE_CITY_SUPPORT, TREATY_ROUTE_TRADE_MULTIPLIER } from '../../data/GameConstants';
 import type { City, Civilization, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
@@ -1839,6 +1839,9 @@ export class EconomicManager {
     civ.resources.production = 0;
     civ.resources.food = 0;
 
+    // ---- Nuclear plant meltdown and pollution ----
+    this.processNuclearPlants(civId, cities);
+
     const upkeep = this.totalUpkeep(civId);
     // Debt service comes out of this turn's income before anything is banked.
     const debtService = this.repayDebt(civ, Math.max(0, banked.banked + specGoldTotal - upkeep));
@@ -1915,4 +1918,111 @@ export class EconomicManager {
 
 
   
+
+  // ---- Nuclear plant meltdown and pollution ----
+
+  /**
+   * Process nuclear power plant effects:
+   * 1. Each nuclear plant generates 3 pollution per turn (tile pollution around city)
+   * 2. Small chance of meltdown causing pollution similar to nuclear strike (but smaller radius)
+   */
+  private processNuclearPlants(_civId: number, cities: City[]): void {
+    if (!this.gameEngine) return;
+    
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return;
+    
+    for (const city of cities) {
+      if (!city.buildings?.includes('nuclear_plant')) continue;
+      
+      // 1. Regular nuclear plant pollution: 3 pollution per turn around the city
+      this.applyNuclearPlantPollution(city);
+      
+      // 2. Meltdown chance: small random chance per turn per plant
+      // Base chance: 1% per turn, increased by city disorder
+      const meltdownChance = this.calculateMeltdownChance(city);
+      if (Math.random() < meltdownChance) {
+        this.triggerNuclearMeltdown(city);
+      }
+    }
+  }
+  
+  /**
+   * Calculate meltdown chance based on city state.
+   * Base 1% chance, doubled if city is in disorder.
+   */
+  private calculateMeltdownChance(city: City): number {
+    let chance = 0.01; // 1% base chance
+    const happiness = this.cityHappiness(city, this.gameEngine.civilizations?.[city.civilizationId]);
+    if (happiness.disorder) chance *= 2; // Double chance if city is in disorder
+    return chance;
+  }
+  
+  /**
+   * Apply regular nuclear plant pollution around the city.
+   * 3 pollution points per turn distributed around the city.
+   */
+  private applyNuclearPlantPollution(city: City): void {
+    const grid = this.gameEngine?.squareGrid;
+    if (!grid) return;
+    
+    const radius = 2; // Same as nuclear blast radius
+    
+    for (let dc = -radius; dc <= radius; dc++) {
+      for (let dr = -radius; dr <= radius; dr++) {
+        const c = city.col + dc;
+        const r = city.row + dr;
+        if (grid.chebyshevDistance(c, r, city.col, city.row) <= radius) {
+          const tile = this.gameEngine.getTileAt(c, r);
+          if (tile && tile.type !== 'ocean' && tile.type !== 'lake') {
+            // Add pollution improvement if not already present
+            if (tile.improvement !== IMPROVEMENT_TYPES.POLLUTION) {
+              tile.improvement = IMPROVEMENT_TYPES.POLLUTION;
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  /**
+   * Trigger a nuclear meltdown - similar to nuclear strike but smaller radius.
+   * Creates pollution in a radius around the city.
+   */
+  private triggerNuclearMeltdown(city: City): void {
+    const grid = this.gameEngine?.squareGrid;
+    if (!grid) return;
+    
+    const radius = 3; // Slightly larger than nuclear blast
+    const centerCol = city.col;
+    const centerRow = city.row;
+    
+    // Notify player
+    this.gameEngine?.onStateChange?.('NUCLEAR_MELTDOWN', {
+      cityId: city.id,
+      cityName: city.name,
+      col: city.col,
+      row: city.row,
+      civilizationId: city.civilizationId,
+    });
+    
+    // Apply pollution in radius around city
+    for (let dc = -radius; dc <= radius; dc++) {
+      for (let dr = -radius; dr <= radius; dr++) {
+        const c = centerCol + dc;
+        const r = centerRow + dr;
+        if (!grid?.isValidSquare(c, r)) continue;
+        if (grid.chebyshevDistance(c, r, centerCol, centerRow) > radius) continue;
+        
+        const tile = this.gameEngine.getTileAt(c, r);
+        if (tile && tile.type !== 'ocean' && tile.type !== 'lake') {
+          tile.improvement = IMPROVEMENT_TYPES.POLLUTION;
+        }
+      }
+    }
+    
+    console.log(`[EconomicManager] Nuclear meltdown at ${city.name} (${city.col},${city.row})`);
+  }
+
+
 }

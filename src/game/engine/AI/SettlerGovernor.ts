@@ -35,10 +35,22 @@ export class SettlerGovernor {
   private improvementQueue: ImprovementNeed[] = [];
   /** Set by the owner; falls back to the governor's own queue when absent. */
   private outstandingWorks: OutstandingWorksFn | null = null;
+  /**
+   * Outstanding work the civ's settlers can actually WALK to. Preferred over
+   * `outstandingWorks` when present: the raw count includes tiles on other
+   * landmasses that no settler may work, and a corps sized for them is a corps
+   * standing still.
+   */
+  private reachableWorks: OutstandingWorksFn | null = null;
 
   /** Wire the ground-truth work count in (see {@link OutstandingWorksFn}). */
   setOutstandingWorksSource(fn: OutstandingWorksFn | null): void {
     this.outstandingWorks = fn;
+  }
+
+  /** Wire the REACHABLE-work count in (see {@link reachableWorks}). */
+  setReachableWorksSource(fn: OutstandingWorksFn | null): void {
+    this.reachableWorks = fn;
   }
 
   getAssignment(unitId: string): SettlerWorkAssignment | undefined {
@@ -189,13 +201,18 @@ export class SettlerGovernor {
     const assignedSettlers = this.getAssignedCount();
     const queuedImprovements = this.getQueueLength();
 
-    // How many tiles in the civ's city radii still need work. This is the
-    // REAL number, read off the map; the governor's own queue is only what it
+    // How many tiles the civ's settlers can reach and still need work. This is
+    // the REAL number, read off the map; the governor's own queue is only what it
     // has personally promised, and nothing fills it — so sizing the works corps
     // from the queue alone left it permanently at zero and the empire never
     // paved a field.
+    //
+    // Measured REACHABLE work, not the raw outstanding count: `countOutstanding
+    // Works` counts every workable tile in every radius, but a settler only works
+    // its own landmass. An empire split by water is told to field 5 settlers for
+    // 2 jobs, and the surplus idles — the 40% -> 41.1% move in the pinned metric.
     const outstanding = typeof civId === 'number'
-      ? this.outstandingWorks?.(civId) ?? queuedImprovements
+      ? (this.reachableWorks?.(civId) ?? this.outstandingWorks?.(civId) ?? queuedImprovements)
       : queuedImprovements;
 
     const unassignedWork = Math.max(0, outstanding - assignedSettlers);

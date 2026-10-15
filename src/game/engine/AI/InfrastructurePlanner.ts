@@ -162,6 +162,19 @@ function bestImprovementForTile(
   if (ctx.isFoodConstrained && canIrrigate && improvementAllowed(IMPROVEMENT_TYPES.IRRIGATION, tile.terrain)) {
     candidates.push(IMPROVEMENT_TYPES.IRRIGATION);
   }
+  // Civ1 guide: "Building Railroads should be your top priority as soon as
+  // you can build them … nothing else does so much for so cheap" (+50 % on
+  // food, production and trade, plus free movement for the army). The road
+  // the tile already carries is the base the railroad needs, so the upgrade
+  // outranks starting a fresh mine — which would rip that road out again —
+  // while a starving city still gets its irrigation first.
+  if (
+    tile.improvement === IMPROVEMENT_TYPES.ROAD &&
+    ctx.technologies.has('railroad') &&
+    improvementAllowed(IMPROVEMENT_TYPES.RAILROAD, tile.terrain)
+  ) {
+    candidates.push(IMPROVEMENT_TYPES.RAILROAD);
+  }
   if (ctx.isAtWar && improvementAllowed(IMPROVEMENT_TYPES.MINES, tile.terrain)) {
     candidates.push(IMPROVEMENT_TYPES.MINES);
   }
@@ -170,14 +183,6 @@ function bestImprovementForTile(
   }
   if (improvementAllowed(IMPROVEMENT_TYPES.MINES, tile.terrain)) {
     candidates.push(IMPROVEMENT_TYPES.MINES);
-  }
-  // Rail is an upgrade of a road the tile already has.
-  if (
-    tile.improvement === IMPROVEMENT_TYPES.ROAD &&
-    ctx.technologies.has('railroad') &&
-    improvementAllowed(IMPROVEMENT_TYPES.RAILROAD, tile.terrain)
-  ) {
-    candidates.push(IMPROVEMENT_TYPES.RAILROAD);
   }
   if (!tile.improvement && improvementAllowed(IMPROVEMENT_TYPES.ROAD, tile.terrain)) {
     candidates.push(IMPROVEMENT_TYPES.ROAD);

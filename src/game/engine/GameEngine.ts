@@ -5159,9 +5159,13 @@ const occupiedLandmasses = new Set(
         && u.id !== attacker.id,
     );
 
-    // City defense: base = population. City walls TRIPLE the total defense
-    // (Civ1) — but air units and siege artillery ignore the walls entirely.
-    const round = CombatSystem.resolveCityRound(attacker, city, );
+    // City defense: base = population. City walls multiply the total defense
+    // by 1.5 (Civ1-flavoured here) — air units and siege artillery ignore the
+    // walls entirely, which is what makes the catapult/cannon the answer to a
+    // walled city.
+    const round = CombatSystem.resolveCityRound(attacker, city, {
+      ignoresWalls: CombatSystem.ignoresCityWalls(attacker),
+    });
 
     // Spend the attacker's remaining movement either way.
     attacker.movesRemaining = 0;

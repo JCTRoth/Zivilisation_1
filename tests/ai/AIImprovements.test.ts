@@ -145,6 +145,21 @@ describe('AI settler tile improvements (Civ1)', () => {
     expect(choose(e, s)).toBe('road');
   });
 
+  it('upgrades an existing road to a railroad before starting new work', async () => {
+    // Civ1 guide: "Building Railroads should be your top priority as soon as
+    // you can build them … nothing else does so much for so cheap."
+    const e = await setupEngine();
+    const { col, row, ncol, nrow } = findLandPair(e);
+    setTile(e, col, row, TERRAIN_TYPES.GRASSLAND);
+    setTile(e, ncol, nrow, TERRAIN_TYPES.GRASSLAND, IMPROVEMENT_TYPES.ROAD);
+    addCity(e, 1, col, row);
+    clearWaterInReach(e, ncol, nrow);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (e as any).civilizations[1].technologies.push('railroad');
+    const s = addSettler(e, 1, ncol, nrow);
+    expect(choose(e, s)).toBe('railroad');
+  });
+
   it('does not improve tiles far from any friendly city', async () => {
     const e = await setupEngine();
     const { ncol, nrow } = findLandPair(e);

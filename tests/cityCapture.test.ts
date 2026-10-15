@@ -9,8 +9,9 @@ import GameEngine from '@/game/engine/GameEngine';
  *  - win vs pop>1  → city changes hands (captured), attacker consumed
  *  - win vs pop==1 → city is destroyed, attacker consumed
  *  - loss          → attacker takes damage / is defeated
- * City walls TRIPLE the city's defense (air units and siege artillery ignore
- * them), are always destroyed on capture, and become obsolete with Metallurgy.
+ * City walls multiply the city's defense by 1.5 (air units and siege
+ * artillery ignore them), are always destroyed on capture, and become
+ * obsolete with Metallurgy.
  * Capturing a city destroys improvements, plunders gold, wipes out the
  * garrison, resets production, and leaves resentful citizens (unrest).
  * Civilian units (settler/worker/caravan/diplomat/scout) cannot attack cities.
@@ -220,16 +221,17 @@ describe('City capture & destruction', () => {
     expect(attacker.health).toBeLessThan(100);
   });
 
-  it('city walls make capture harder (defense tripled)', () => {
+  it('city walls make capture harder (defense ×1.5)', () => {
     const walled = makeEnemyCity(2, { walls: true });
     const open = makeEnemyCity(2);
     const walledPos = adjacentLand(walled);
     const openPos = adjacentLand(open);
 
     // Same attacker vs open city: wins at 0.5 threshold region.
-    // Walled: defense 6 vs attack 2 → attacker wins only if random < 2/8 = 0.25.
+    // Walled: defense 3 (2 * 1.5) vs attack 2 → attacker wins only if
+    // random < 2/5 = 0.4.
     // Open:   defense 2 vs attack 2 → attacker wins only if random < 2/4 = 0.5.
-    // At random = 0.4 the open city is captured, the walled one is not.
+    // At random = 0.4 the open city is captured, the walled one holds.
     addUnit('wA', 0, walledPos);
     addUnit('oA', 0, openPos);
 
@@ -253,6 +255,23 @@ describe('City capture & destruction', () => {
     randomSpy.mockReturnValue(0.5);
 
     const result = (engine as any).moveUnit('bomber1', walled.col, walled.row);
+
+    expect(result.success).toBe(true);
+    expect(engine.cities.find((c: any) => c.id === walled.id)?.civilizationId).toBe(0);
+  });
+
+  it('siege artillery ignores city walls entirely', () => {
+    // The guide's siege advice — "catapults work best … right up against the
+    // enemies' cities" — only works if the wall bonus is skipped. At
+    // random = 0.7 the walls decide the roll: with walls the threshold is
+    // 6/(6+3) = 0.667 (assault fails), without them 6/(6+2) = 0.75 (wins).
+    const walled = makeEnemyCity(2, { walls: true });
+    const pos = adjacentLand(walled);
+    addUnit('cat1', 0, pos, 'catapult', 6);
+
+    randomSpy.mockReturnValue(0.7);
+
+    const result = (engine as any).moveUnit('cat1', walled.col, walled.row);
 
     expect(result.success).toBe(true);
     expect(engine.cities.find((c: any) => c.id === walled.id)?.civilizationId).toBe(0);

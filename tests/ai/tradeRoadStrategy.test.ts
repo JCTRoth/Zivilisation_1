@@ -104,9 +104,11 @@ describe('AI trade-road strategy (roads on worked tiles boost income)', () => {
     const tiles: MockTile[] = [
       { col: 5, row: 5, type: 'forest', improvement: null },
     ];
-    const { chooseImprovementForSettler } = buildManager([city], tiles, (type) => type !== 'irrigation');
-    // Forest is not in road.tradeBonusTerrains → the branch must not fire.
-    expect(chooseImprovementForSettler(settler('s1', 1, 5, 5))).not.toBe('road');
+    // Everything is buildable, so only the ladder's own order decides: forest
+    // grants no road trade → the trade-road branch must not hijack the tile
+    // ahead of food production, and the settler farms it instead.
+    const { chooseImprovementForSettler } = buildManager([city], tiles, () => true);
+    expect(chooseImprovementForSettler(settler('s1', 1, 5, 5))).toBe('irrigation');
   });
 
   it('routes an idle settler to the nearest worked grassland/plains/desert tile lacking a road', () => {

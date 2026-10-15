@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tone sfx probe 2</title>
+<style>body { background: #0b1220; color: #eee; font-family: system-ui; padding: 16px; }</style>
+</head>
+<body>
+<h3>Tone.js sfx probe — noise + blast</h3>
+<pre id="out"></pre>
+<script type="module">
+import { playSfx, unlockAudio, disposeAudio, CUE_VOICES } from '/src/utils/Sfx.ts';
+import * as Tone from 'tone';
+
+const out = document.getElementById('out');
+const log = (...a) => { out.textContent += a.join(' ') + '\n'; };
+window.__probe = {
+  playSfx, unlockAudio, disposeAudio, CUE_VOICES, Tone, log,
+  installMeter() {
+    const meter = new Tone.Meter();
+    Tone.getDestination().connect(meter);
+    window.__probe.meter = meter;
+  },
+  meterValue() { return window.__probe.meter ? window.__probe.meter.getValue() : null; },
+};
+log('module loaded');
+</script>
+</body>
+</html>

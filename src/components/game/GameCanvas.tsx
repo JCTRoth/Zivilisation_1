@@ -30,6 +30,7 @@ import type {
   MovementReachable,
   TurnMarker,
   Unit,
+  VisualEffect,
 } from "../../../types/game";
 import GameEngine from "@/game/engine/GameEngine";
 import "../../styles/civ1GameCanvas.css";
@@ -98,6 +99,47 @@ const MAX_REGION_REPAINT_TILES = 512;
 const NON_COMBAT_UNITS = new Set(['settler', 'worker', 'caravan', 'diplomat']);
 const isCombatUnitType = (type: string): boolean => !NON_COMBAT_UNITS.has(type);
 
+interface VisualEffectProps {
+  effect: VisualEffect;
+}
+
+/**
+ * Renders visual effects like nuclear flash, screen shake, etc.
+ * Uses CSS animations for GPU efficiency.
+ */
+const VisualEffectRenderer: React.FC<VisualEffectProps> = ({ effect }) => {
+  const elapsed = Date.now() - effect.startTime;
+  const progress = Math.min(elapsed / effect.duration, 1);
+  
+  if (effect.type === 'nuclear_flash') {
+    // White flash that fades out quickly
+    const opacity = Math.max(0, 1 - progress * 2); // Fade out in first half
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'white',
+          opacity,
+          pointerEvents: 'none',
+          zIndex: 9999,
+        }}
+      />
+    );
+  }
+  
+  if (effect.type === 'screen_shake') {
+    // Screen shake - the actual shake is applied via a class on the root element
+    // This component just exists to track the effect lifecycle
+    return null;
+  }
+  
+  return null;
+};
+
 const GameCanvas: React.FC<GameCanvasProps> = ({
   minimap = false,
   onExamineHex,
@@ -126,6 +168,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const gameState = useGameStore(useShallow((state) => state.gameState));
   const mapData = useGameStore((state) => state.map);
   const camera = useGameStore((state) => state.camera);
+  const uiState = useGameStore((state) => state.uiState);
   const actions = useGameStore((state) => state.actions);
   const cities = useGameStore((state) => state.cities);
   const units = useGameStore((state) => state.units);
@@ -1506,7 +1549,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     // First real user gesture: warm the audio context so the first cue (a
     // stolen technology, a conquered city) is not swallowed by autoplay policy.
-    unlockAudio();
+    // `void` — Tone's start() is async and nothing here waits on it.
+    void unlockAudio();
     // Cancel any in-progress camera glide when the user interacts directly.
     cameraTweenRef.current = null;
     actions.clearCameraPanRequest();
@@ -3466,7 +3510,22 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     unitPaths.has(selectedUnit.id);
 
   return (
-    <div className="position-relative w-100 h-100">
+    <div
+      className="position-relative w-100 h-100 game-canvas-root"
+      style={{
+        transform: uiState.visualEffects
+          .filter((e) => e.type === 'screen_shake')
+          .map((e) => {
+            const elapsed = Date.now() - e.startTime;
+            const progress = Math.min(elapsed / e.duration, 1);
+            const intensity = e.intensity ?? 10;
+            const shakeX = Math.sin(elapsed * 0.1) * intensity * (1 - progress);
+            const shakeY = Math.cos(elapsed * 0.07) * intensity * (1 - progress);
+            return `translate(${shakeX}px, ${shakeY}px)`;
+          })
+          .join(' '),
+      }}
+    >
       <canvas
         ref={canvasRef}
         className="w-100 h-100 game-canvas-input"
@@ -3577,6 +3636,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           onClose={() => setEspionageReport(null)}
         />
       )}
+    {uiState.visualEffects.map((effect) => (
+        <VisualEffectRenderer key={effect.id} effect={effect} />
+      ))}
     </div>
   );
 };

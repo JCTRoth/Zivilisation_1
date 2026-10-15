@@ -267,7 +267,12 @@ export function estimateCityDefense(engine: GameEngine, city: City): number {
   const hasWalls =
     (city.buildings?.includes?.('city_walls') ?? false) ||
     (city.buildings?.includes?.('walls') ?? false);
-  if (hasWalls) defense *= 3;
+  // Match the engine: `CombatSystem.resolveCityRound` multiplies the city
+  // defence by 1.5 for walls — not by 3. The old ×3 double-penalised every
+  // walled target, so the AI gathered 3× the force it needed and often never
+  // started the siege the guide tells it to fight ("catapults work best …
+  // right up against the enemies' cities").
+  if (hasWalls) defense *= 1.5;
 
   if (engine?.squareGrid && Array.isArray(engine.units)) {
     for (const unit of engine.units) {

@@ -738,6 +738,15 @@ export interface MovementReachable {
   tiles: Map<string, number>;
 }
 
+export interface VisualEffect {
+  id: number;
+  type: 'nuclear_flash' | 'screen_shake';
+  startTime: number;
+  duration: number;
+  intensity?: number;
+  data?: Record<string, unknown>;
+}
+
 export interface UIState {
   showMinimap: boolean;
   showUnitPanel: boolean;
@@ -758,6 +767,8 @@ export interface UIState {
    * AI-vs-AI run wants the map to stay visible.
    */
   isGamePaused: boolean;
+  /** Visual effects like screen flash, shake, etc. */
+  visualEffects: VisualEffect[];
 }
 
 export interface Notification {
@@ -1159,4 +1170,6 @@ export interface GameActions {
   setUnitAnimating: (isAnimating: boolean) => void;
   focusCameraOnTile: (col: number, row: number, keepZoom?: boolean, force?: boolean) => void;
   clearCameraPanRequest: () => void;
+  /** Trigger a visual effect (flash, shake, etc.) */
+  triggerVisualEffect: (effect: Omit<VisualEffect, 'id' | 'startTime'>) => void;
 }

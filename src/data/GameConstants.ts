@@ -65,6 +65,29 @@ export const CARAVAN_ESCORT_RADIUS = 6;
 export const CARAVAN_ESCORT_PATIENCE = 4;
 
 /**
+ * ── Caravan move bonus near a city ─────────────────────────────────────────
+ *
+ * A Caravan plods at movement 1 across the empty map, but a city is where its
+ * business is: on the outskirts it gets a second move for the turn — the extra
+ * step that carries it in from two tiles out and onto the market tile in ONE
+ * turn instead of two. Without it every delivery costs a dead extra turn on the
+ * last leg, and a 10-tile route really takes 11.
+ *
+ * CONTEXTUAL, not a stat: the bonus is granted by the turn reset while the
+ * caravan stands within {@link CARAVAN_CITY_MOVE_RADIUS} of ANY city (a market
+ * is a market), so `UNIT_PROPS.caravan.movement` stays 1 and everything that
+ * reads the raw table — production cost, pathfinding weights, the governor's
+ * travel estimates — keeps seeing the honest base.
+ *
+ * Applied to BOTH `maxMoves` and `movesRemaining`, exactly like the naval
+ * Lighthouse bonus, so the movement preview, GoTo, pathfinding and the AI's
+ * step budget all agree with what the unit can actually do.
+ */
+export const CARAVAN_CITY_MOVE_BONUS = 2;
+
+/** How close to a city counts as "near" for the bonus (Chebyshev tiles). */
+export const CARAVAN_CITY_MOVE_RADIUS = 2;
+/**
  * Island-size thresholds (in passable land tiles) for the AI's naval strategy:
  *  - a SMALL island makes the AI value a Harbor (and consider colonizing
  *    elsewhere),

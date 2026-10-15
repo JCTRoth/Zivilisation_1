@@ -915,11 +915,25 @@ being ocean or river. Lakes do not count.
 
 |Caravan
 |0
-|0
+|**1**
 |1
 |50
 |**0**
 |Requires Trade. Establishes a trade route, then is consumed delivering it.
+Defense **1**, not 0 — civilian in that it cannot attack, but it carries goods
+and guardsmen, and at 0 `CombatSystem.winChance` made the first encounter a
+certain death.
+
+*Move bonus near a city.* Movement is **1** on the open map, but while the
+caravan stands within 2 tiles of ANY city it has **2** moves that turn
+(`CARAVAN_CITY_MOVE_BONUS`, `CARAVAN_CITY_MOVE_RADIUS`, Chebyshev). The bonus is
+contextual — `UNIT_PROPS.caravan.movement` stays 1, so production cost,
+pathfinding weights and the governor's travel estimates all keep seeing the
+honest camel — and it is written to `maxMoves` as well as `movesRemaining`, so the
+movement preview, GoTo and the AI's step budget agree with what it can do. What
+it buys is the last leg: a caravan two tiles out walks in and onto the market
+tile in one turn instead of two, so a 10-tile route is 10 turns, not 11. Pinned
+by `tests/caravanCityMoveBonus.test.ts`.
 
 |Ferry
 |0
@@ -1268,6 +1282,30 @@ delivered ZERO routes.
   gate for building one is therefore *shields and a citizen* (the 50 shields the
   city will spend, and the citizen it loses when the unit completes), never the
   per-turn treasury test (`canAffordAnotherUnit`) that a soldier is gated on.
+* **A caravan is never built into a city under attack.** A hostile within one
+  tile of the producing city (at war, or a barbarian) blocks the build: the
+  caravan would walk out at movement 1 with the enemy already on the doorstep.
+* **The research hook fires from population 1.** `caravanRelevanceForCiv` treats
+  a pop-1 city as able to host a route, because its routes are the FOREIGN kind
+  that pays double and the payout is a function of both ends. The old pop-2 floor
+  delayed the `trade` chain until the first city had grown — 44 rounds later, and
+  past the horizon entirely for a slow-starting civ. See `scripts/
+  trade_pipeline_sim.py`.
+* **The AI's scored research pick always wins.** Two research pickers exist:
+  `AIResearch.scoreTechnology` (which knows the strategy and every relevance
+  hook — caravan, naval, island, fishing, nuclear) and a much older
+  `Civilization.selectNextResearch`, auto-called by `completeTechnology` every
+  time a tech finishes. The latter scores with `evaluateTechnology`, which knows
+  none of that — so it staked out `currentResearch` and the AI's own phase,
+  reading "already decided", skipped its scoring entirely. A civ with caravan
+  relevance 3 and `trade` scoring 85 (highest candidate by 60 points)
+  researched `alphabet` instead. The AI now scores every turn and replaces a
+  pick it did not make; a pick it *did* make is left alone, so in-progress
+  beakers are never reset.
+* **The public-works corps is sized by REACHABLE work.** `countReachableWorks`
+  filters the tile census through the engine's land-connectivity probe, so tiles
+  no settler can walk to are not counted. Sizing the corps from the raw count
+  told an empire split by water to field settlers it had no work for.
 * **The army cap is gold, not a headcount.** `sustainableUnits` divides a gold
   budget by a unit price to make a COUNT, which is only meaningful when every unit
   costs the same. A caravan (0/turn), a settler (0/turn) and a scout (0/turn) are

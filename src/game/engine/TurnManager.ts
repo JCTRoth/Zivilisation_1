@@ -26,6 +26,7 @@ import { createDefaultAIState, resolveAICivStrategy } from './AI/AITypes';
 import { fishingRelevanceForCiv } from './FisherEconomics';
 import { serializeCities } from '../../utils/CitySnapshots';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { CARAVAN_CITY_MOVE_BONUS, CARAVAN_CITY_MOVE_RADIUS } from '@/data/GameConstants';
 import { BUILDING_TYPES } from '@/data/BuildingConstants';
 import { isWonderId, wonderGroupMembers } from '@/data/WonderData';
 import { UNIT_UPGRADE_PATHS } from '@/data/UnitConstants';
@@ -706,6 +707,22 @@ export class TurnManager {
   /**
    * Reset units for a player at the start of their turn
    */
+    /** Whether a Caravan stands near enough to a city for its move bonus. */
+  private caravanNearCity(unit: Unit): boolean {
+    const cities = this.gameEngine.cities ?? [];
+    const grid = this.gameEngine.squareGrid;
+    for (const c of cities) {
+      // Chebyshev — 8-way movement across a square grid. `squareDistance` is
+      // Manhattan (4 for the two-tile diagonal), which would exclude exactly the
+      // diagonal approach that matters most to a unit walking to a city.
+      const d = grid?.chebyshevDistance
+        ? grid.chebyshevDistance(unit.col, unit.row, c.col, c.row)
+        : Math.max(Math.abs(unit.col - c.col), Math.abs(unit.row - c.row));
+      if (d <= CARAVAN_CITY_MOVE_RADIUS) return true;
+    }
+    return false;
+  }
+
   private resetUnitsForPlayer(playerId: number): void {
     // Access UNIT_PROPS from Constants or global scope
     const UNIT_PROPS = (this.gameEngine.constructor as typeof GameEngine).UNIT_PROPS
@@ -770,12 +787,23 @@ export class TurnManager {
       // movement — applied to BOTH maxMoves and the fresh reset so GoTo,
       // pathfinding and the movement preview all see the bonus.
       const baseMoves = unitProps?.movement || 1;
+      // A Caravan near a city gets one more move for the turn (see the
+      // constants block). The only stat it changes is the effective per-turn
+      // movement: `UNIT_PROPS` still says 1, so anything reading the raw table
+      // sees the honest plodding camel and only the unit in play is faster.
+      // Applied to `maxMoves` too so the preview, GoTo and pathfinding agree.
+      const movesPerTurn = (unit.type === 'caravan'
+        && this.caravanNearCity(unit)
+        && baseMoves < CARAVAN_CITY_MOVE_BONUS)
+        ? CARAVAN_CITY_MOVE_BONUS
+        : baseMoves;
       if (unitProps?.naval) {
         const navalBonus = this.gameEngine.wonderEffects?.navalMoveBonus(playerId) ?? 0;
-        unit.maxMoves = baseMoves + navalBonus;
-        unit.movesRemaining = baseMoves + navalBonus;
+        unit.maxMoves = Math.max(movesPerTurn, baseMoves + navalBonus);
+        unit.movesRemaining = unit.maxMoves;
       } else {
-        unit.movesRemaining = baseMoves;
+        unit.maxMoves = movesPerTurn;
+        unit.movesRemaining = movesPerTurn;
       }
       // Civ1: at the start of the owner's turn every unit is "fresh" — full
       // movement restored and no action taken yet, so the Minimum-1-Move

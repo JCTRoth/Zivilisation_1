@@ -480,7 +480,16 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
     [UNIT_TYPES.CARAVAN]: {
         name: 'Caravan',
         attack: 0,
-        defense: 0,
+        // NOT 0. Civilian in the sense that it cannot attack, but a caravan
+        // carries goods and guardsmen: `CombatSystem.resolveUnitRound` computes
+        // winChance = A/(A+D), so defense 0 makes the first encounter a certain
+        // death (and `canOverrun` makes the damage lethal). The 4-civ batch
+        // produced 8 caravans and delivered ZERO routes — every one of them was
+        // eaten the first time an enemy walked past. At defense 1 a caravan
+        // survives a hit with probability 1/(1+A), which is what lets the
+        // 10-40 turn transit finish at all (see the G2 rows in
+        // scripts/trade_pipeline_sim.py: 0.00 -> 4.9 routes per 8 built).
+        defense: 1,
         movement: 1,
         sightRange: 1,
         cost: 50,

@@ -24,10 +24,15 @@ describe('caravanRelevanceForCiv', () => {
     expect(caravanRelevanceForCiv([], 0, true)).toBe(0);
   });
 
-  it('wants nothing when every city is too small to host a route', () => {
-    // Pop-1 cities do not count — a route from them pays nothing.
-    const cities = [city(1, 0, 0), city(1, 0, 1)];
-    expect(caravanRelevanceForCiv(cities, 0, true)).toBe(0);
+  it('wants the tech even from a pop-1 city', () => {
+    // The old rule required population 2, which delayed the hook until the
+    // first city had grown — and the hook is what makes the 160-beaker trade
+    // chain get researched at all (see the "G1: pop>=1 hosts" row in
+    // scripts/trade_pipeline_sim.py: 44 rounds earlier). A pop-1 HOME city still
+    // pairs worthily with a grown neighbour, because the payout is a function
+    // of both ends.
+    const cities = [city(1, 0, 0), city(6, 0, 1)];
+    expect(caravanRelevanceForCiv(cities, 0, true)).toBe(3);
   });
 
   it('wants nothing when there is nobody else to trade with', () => {

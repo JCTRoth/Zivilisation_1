@@ -30,7 +30,7 @@
  *     lifetime total of 15% of all battle damage they ever took.
  */
 
-import { TERRAIN_PROPS } from '@/utils/Constants';
+import { TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { MathUtils } from '@/utils/MathUtils';
 import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
 import { getUnitRank, rankStrengthMultiplier } from './UnitRankSystem';
@@ -191,6 +191,19 @@ export class CombatSystem {
   static winChance(attackerStrength: number, defenderStrength: number): number {
     const total = attackerStrength + defenderStrength;
     return total > 0 ? attackerStrength / total : 0;
+  }
+
+  /**
+   * Whether this attacker type ignores city walls: air units and siege
+   * artillery (catapult, cannon, artillery) are the historical counters to a
+   * walled city — the `CityCombatContext` docblock and `resolveCityCombat`
+   * have always said so, and the Civ1 guide's siege advice ("catapults work
+   * best … right up against the enemies' cities") depends on it. This is the
+   * single predicate the engine passes as `ignoresWalls`.
+   */
+  static ignoresCityWalls(unit: CombatUnitLike): boolean {
+    const unitClass = UNIT_PROPS[String(unit.type ?? '')]?.type;
+    return unitClass === 'siege' || unitClass === 'air';
   }
 
   /**

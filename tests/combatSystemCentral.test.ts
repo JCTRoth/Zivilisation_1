@@ -121,6 +121,19 @@ describe('CombatSystem: city rounds', () => {
     expect(open.cityDefense).toBe(2);
   });
 
+  it('names siege artillery and air units as wall-ignoring attackers', () => {
+    // The predicate the engine passes as `ignoresWalls` in resolveCityCombat:
+    // siege engines and aircraft are the documented counters to walls.
+    expect(CombatSystem.ignoresCityWalls({ type: 'catapult' })).toBe(true);
+    expect(CombatSystem.ignoresCityWalls({ type: 'cannon' })).toBe(true);
+    expect(CombatSystem.ignoresCityWalls({ type: 'artillery' })).toBe(true);
+    expect(CombatSystem.ignoresCityWalls({ type: 'bomber' })).toBe(true);
+    expect(CombatSystem.ignoresCityWalls({ type: 'fighter' })).toBe(true);
+    expect(CombatSystem.ignoresCityWalls({ type: 'warrior' })).toBe(false);
+    expect(CombatSystem.ignoresCityWalls({ type: 'tank' })).toBe(false);
+    expect(CombatSystem.ignoresCityWalls({ type: 'musketeer' })).toBe(false);
+  });
+
   it('a failed assault costs the attacker 25 HP and a won one costs nothing', () => {
     const attacker = unit({ attack: 2 });
     const city = { population: 4, buildings: [] };

@@ -23,17 +23,24 @@ export const MAX_TRADE_ROUTES_PER_CITY = 3;
 /**
  * How much a civ should want the `trade` tech right now, 0–3.
  *
- * 0 — no city could host a route (every city is pop 1 or has all slots full), or
- *     there is nobody else on the map to trade with;
+ * 0 — no city could host a route, or there is nobody else on the map to trade
+ *     with;
  * 1 — some cities have room for a route;
  * 2 — several cities have room;
  * 3 — most of the empire is route-less and the civ is at peace (foreign routes
  *     pay double, but they are only legal at peace).
  *
- * A civ with ONE city qualifies: its routes are foreign ones, which is the
- * valuable kind and exactly the reason to research the tech. Requiring a second
- * own city meant a young civ never unlocked the trade line at all — which is how
- * the system stayed dead while every city sat below the route cap.
+ * A civ with ONE city qualifies: its routes are foreign ones, which are the
+ * valuable kind and exactly the reason to research the tech.
+ *
+ * **A city qualifies at population 1.** It used to require population 2, on the
+ * grounds that a pop-1 route pays nothing — but the hook is what makes the
+ * trade line get researched at all, and the payout is a function of BOTH ends
+ * (a size-6 neighbour pays for a size-1 home). The measured cost of the old
+ * threshold: `scripts/trade_pipeline_sim.py` row "G1: pop>=1 hosts" — a young
+ * civ's first city reaches pop 2 around round 43, so a 160-beaker chain does not
+ * finish until round 78, and any slower growth pushes it past the horizon
+ * entirely. No civ in the 150-round batch ever researched `trade`.
  */
 export function caravanRelevanceForCiv(
   cities: ReadonlyArray<{
@@ -47,7 +54,7 @@ export function caravanRelevanceForCiv(
   const own = cities.filter((c) => c.civilizationId === civilizationId);
   if (own.length === 0) return 0;
   const hosts = own.filter(
-    (c) => (c.tradeRoutes?.length ?? 0) < MAX_TRADE_ROUTES_PER_CITY && (c.population ?? 1) >= 2,
+    (c) => (c.tradeRoutes?.length ?? 0) < MAX_TRADE_ROUTES_PER_CITY,
   );
   if (hosts.length === 0) return 0;
   // Nobody else in the world: a route needs two ends, and our own cities are

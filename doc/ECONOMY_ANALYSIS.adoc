@@ -310,7 +310,6 @@ The baseline (R0) reproduces the measured batch: **33 upkeep disbands per 400
 turns, 56 bankruptcies, army 2 units, commerce pinned at 2.34**, against the
 measured 11–24 disbands per 150 rounds and 2.0–2.5 commerce per city. Faithful
 enough to discriminate, so every row is a single lever:
-
 [cols="1,1,1,1,1,1", options="header"]
 |===
 |Row |Change |Disbands |Bankruptcies |Army |Verdict
@@ -367,7 +366,6 @@ now measured 5 cities founded, 0 settlers disbanded, 5 cities on the map against
 the 1–2 the old over-militarised mix left.)
 
 Still open, both stated plainly:
-
 * **Trade routes are still zero.** Three *plumbing* bugs, not balance ones, were the
   real cause and are now fixed: the coordinator's world was a cast of the engine,
   which has no `isAtWar`, so **every AI turn that owned a caravan threw and issued
@@ -383,6 +381,42 @@ Still open, both stated plainly:
   the real fix and is not implemented.
 * **City commerce is still the floor for most cities.** R19 pays for the empire
   anyway, but a roaded city should still earn roughly twice an unroaded one.
+
+== Three gates, and a fourth the table found
+
+`scripts/trade_pipeline_sim.py` models the three gates a caravan passes and prices
+each lever independently (see also `doc/CARAVAN_GOVERNOR.adoc`). Its baseline row
+reproduces the measured batch: **0 routes from 8 caravans built, 80 % idle
+settler turns, and the `trade` chain not finishing inside the horizon.**
+
+Three of the four fixes are now in and pinned by
+`tests/ai/tradePipelineGates.test.ts`:
+
+[cols="1,3,2", options="header"]
+|===
+|Gate |Change |Where
+
+|G1 research |`caravanRelevanceForCiv` qualifies a pop-1 city; the AI's scored pick
+now replaces the legacy `Civilization.selectNextResearch` choice
+|`CaravanEconomics.ts`, `AIManager` Phase 2
+
+|G2 survival |`UNIT_PROPS.caravan.defense` 0 → 1, plus a production gate that
+refuses a caravan into a city with a hostile within one tile
+|`UnitConstants.ts`, `AutoProduction.cityIsUnsafeForTrade`
+
+|G3 work |The works corps is sized by **reachable** work
+(`AIManager.countReachableWorks`), not the raw tile census
+|`AIManager.ts`, `SettlerGovernor.ts`
+|===
+
+**G1 was the deeper find, and it was not on the list.** The research scorer and
+the engine each hold a picker, and the engine's runs first: `completeTechnology`
+auto-selects the next tech with a scorer that knows nothing about the strategy or
+any relevance hook, and `AIManager`'s phase then read `currentResearch` as "already
+decided" and skipped its own scoring. A civ with relevance 3 and `trade` at 85 —
+60 points clear of the next candidate — researched `alphabet` instead, and every
+caravan/naval/fishing/nuclear hook was unrepresented in roughly half of all picks.
+Pinned by `tests/ai/researchOverride.test.ts`.
 
 == Doc drift worth fixing in the same pass
 
@@ -404,8 +438,14 @@ node scripts/run-ai-batch.mjs 4 400 4 /tmp/batch-4civ.json
 # by the `**/tmp*.test.ts` rule) that constructs GameEngine headlessly and
 # prints the census and the gold ledger. Both runs above used seed 7 on
 # AI_VS_AI, 4 civs, startingGold 50.
+
+# the economy model behind the fix rows
+python3 scripts/economy_sim.py
+
+# the three gates a caravan has to pass (research, survival, work)
+python3 scripts/trade_pipeline_sim.py
 ----
 
 Related: link:BALANCE_ANALYSIS.adoc[Balance & Behaviour Analysis],
 link:AI_ECONOMY.adoc[AI Economy & Budget Management], link:GAME_RULES.adoc[Game
-Rules Reference].
+Rules Reference], link:CARAVAN_GOVERNOR.adoc[Caravan Governor].

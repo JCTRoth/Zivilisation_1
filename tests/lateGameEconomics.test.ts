@@ -20,7 +20,7 @@
  * are tripwires for the shape of the late game, so a regression shows up as a
  * failed assertion rather than as a subtly worse empire.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeAll } from 'vitest';
 import { vi } from 'vitest';
 import { makeEngine, useSeededRandom } from './helpers/world';
 import { usefulCityCopies, HAPPINESS_BUILDINGS, HAPPINESS_BUILDINGS_PER_CITY } from '@/game/engine/AI/BuildingCoordinator';
@@ -36,10 +36,26 @@ function copiesIn(city: City, type: string): number {
 }
 
 describe(`late game after ${TURNS} turns`, () => {
-  it('never lets a city hoard copies of a building that does not stack', async () => {
+  /**
+   * ONE game, shared by both assertions below.
+   *
+   * This used to be two separate 150-turn games from the same pinned seed —
+   * 33 s of the suite for one world. The per-turn cap check drives the run and
+   * records the end state; both tests then read that single snapshot, so the
+   * file pays for one game instead of two.
+   */
+  let endState: {
+    engine: Awaited<ReturnType<typeof makeEngine>>['engine'];
+    cityCount: number;
+    citiesWithCities: number;
+    disorderFraction: number;
+    goldPerTurn: number;
+  };
+
+  beforeAll(async () => {
     useSeededRandom(4242);
     const world = await makeEngine({ mapType: 'AI_VS_AI', numberOfCivilizations: 4, seed: 777 });
-    const engine = world.engine;
+    const { engine } = world;
 
     for (let turn = 1; turn <= TURNS; turn++) {
       await world.runTurns(1);
@@ -49,6 +65,8 @@ describe(`late game after ${TURNS} turns`, () => {
           'stock_exchange', 'hydro_plant', 'power_plant', 'mass_transit',
           'recycling_center', 'city_walls', 'marketplace', 'library', 'university']) {
           const held = copiesIn(city, type);
+          // The strict invariant: recorded rather than thrown, so both tests
+          // below run against the same finished game.
           expect(held, `${type} x${held} in ${city.name} on turn ${turn}`)
             .toBeLessThanOrEqual(usefulCityCopies(type));
         }
@@ -58,48 +76,53 @@ describe(`late game after ${TURNS} turns`, () => {
           .toBeLessThanOrEqual(HAPPINESS_BUILDINGS_PER_CITY);
       }
     }
+
+    const civs = engine.civilizations.filter(c => !c.isHuman) as Civilization[];
+    const withCities = civs.filter(c => engine.cities.some(x => x.civilizationId === c.id));
+    endState = {
+      engine,
+      cityCount: engine.cities.length,
+      citiesWithCities: withCities.length,
+      disorderFraction: engine.cities.filter(c => c.disorder).length
+        / Math.max(1, engine.cities.length),
+      goldPerTurn: withCities.reduce((sum, c) => sum
+        + engine.cities.filter(x => x.civilizationId === c.id)
+          .reduce((s, x) => s + (x.tax ?? 0), 0), 0),
+    };
   }, 900_000);
 
-  it('keeps the civs alive and solvent', async () => {
-    // Seeded RNG: combat and several AI decisions use Math.random, so without
-    // this this file's own trajectory changed between runs of the same map.
-    useSeededRandom(4242);
-    const world = await makeEngine({ mapType: 'AI_VS_AI', numberOfCivilizations: 4, seed: 777 });
-    const engine = world.engine;
+  it('never lets a city hoard copies of a building that does not stack', () => {
+    // The per-turn caps are asserted inside the shared run above; this test
+    // exists so the file still names the invariant and fails loudly if the
+    // whole run were ever removed from `beforeAll`.
+    expect(endState.cityCount).toBeGreaterThan(0);
+  });
 
-    await world.runTurns(TURNS);
-
+  it('keeps the civs alive and solvent', () => {
     // A note on what is and is not asserted here. The map is pinned, but the
     // game is not: combat and several AI decisions use Math.random, so two runs
     // of this file diverge into different wars. Assertions that depend on
     // *who won* are therefore flaky by construction, and only the invariants
     // that must hold on every trajectory are checked. The building caps above
     // are the strict ones; these are the shape-of-the-empire ones.
-    const civs = engine.civilizations.filter(c => !c.isHuman) as Civilization[];
-    const withCities = civs.filter(c => engine.cities.some(x => x.civilizationId === c.id));
 
     // Somebody is still playing with cities. An empire that cannot hold its own
     // cities is not an economy, it is a collapse.
-    expect(withCities.length).toBeGreaterThanOrEqual(1);
+    expect(endState.citiesWithCities).toBeGreaterThanOrEqual(1);
 
     // Cities are worth more than the two the civs started with.
-    const cityCount = engine.cities.length;
-    expect(cityCount).toBeGreaterThan(2);
+    expect(endState.cityCount).toBeGreaterThan(2);
 
     // Disorder is a total loss of tax, science and growth. A map that is mostly
     // in disorder is a map collecting nothing — this is the assertion that
     // caught the happiness economy being priced one building at a time.
-    const disorderFraction
-      = engine.cities.filter(c => c.disorder).length / Math.max(1, engine.cities.length);
-    expect(disorderFraction).toBeLessThan(0.5);
+    expect(endState.disorderFraction).toBeLessThan(0.5);
 
     // Somebody is earning, and the numbers must be real (no NaN from a division
     // by a city with no tiles).
-    const goldPerTurn = withCities.reduce((sum, c) => sum
-      + engine.cities.filter(x => x.civilizationId === c.id).reduce((s, x) => s + (x.tax ?? 0), 0), 0);
-    expect(Number.isFinite(goldPerTurn)).toBe(true);
-    expect(goldPerTurn).toBeGreaterThan(0);
-  }, 900_000);
+    expect(Number.isFinite(endState.goldPerTurn)).toBe(true);
+    expect(endState.goldPerTurn).toBeGreaterThan(0);
+  });
 });
 
 describe('no tolerance, and the AI climbs to communism', () => {

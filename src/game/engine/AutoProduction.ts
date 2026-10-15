@@ -5,7 +5,7 @@
  */
 
 import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVAN_TRADE_ROUTES, MAX_CARAVANS_PER_CITY } from '@/utils/Constants';
-import { PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
+import { PURCHASE_GOLD_PER_SHIELD, CARAVAN_THREAT_RADIUS } from '@/data/GameConstants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { WONDERS, wonderGroupMembers } from '@/data/WonderData';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
@@ -175,12 +175,18 @@ export class AutoProduction {
   private ensureWorksSource(): void {
     if (this.worksSourceBound) return;
     const aiManager = (this.gameEngine as GameEngine & {
-      aiManager?: { countOutstandingWorks?: (civId: number) => number };
+      aiManager?: {
+        countOutstandingWorks?: (civId: number) => number;
+        countReachableWorks?: (civId: number) => number;
+      };
     }).aiManager;
     if (typeof aiManager?.countOutstandingWorks === 'function') {
       const countOutstandingWorks = aiManager.countOutstandingWorks.bind(aiManager);
       this.settlerGovernor.setOutstandingWorksSource(countOutstandingWorks);
       this.worksSourceBound = true;
+    }
+    if (typeof aiManager?.countReachableWorks === 'function') {
+      this.settlerGovernor.setReachableWorksSource(aiManager.countReachableWorks.bind(aiManager));
     }
   }
 
@@ -1669,11 +1675,58 @@ export class AutoProduction {
 
     // Pop ≥ 2 so the city is stable enough to divert shields to trade.
     if ((city.population ?? 1) < 2) return false;
+    // Never build one into a city under attack. A caravan leaving a threatened
+    // city walks out at movement 1 with an enemy already within a tile of it,
+    // which is the single most common way the measured batch lost one — 8 built,
+    // 0 delivered. The defender branch above already preempts this city's
+    // production, but the coordinator can still nominate it, so the gate lives
+    // here too.
+    if (this.cityIsUnsafeForTrade(city)) return false;
     // The coordinator's cities first: a city with empty route slots is where a
     // caravan actually pays, and a city whose slots are full should not get one.
     const wanting = this.gameEngine.aiManager?.citiesWantingCaravans?.(civ.id) ?? [];
     if (wanting.length > 0 && !wanting.includes(city.id)) return false;
     return true;
+  }
+
+  /**
+   * Whether an enemy is close enough that a fresh caravan would be caught
+   * before it cleared the city walls. Deliberately a wider net than the
+   * defender branch uses: a caravan takes 10-40 TURNS to transit and meets
+   * anything moving in that window, and it starts by walking the last few tiles
+   * away from home.
+   */
+  private cityIsUnsafeForTrade(city: City): boolean {
+    const dm = this.gameEngine.diplomacyManager;
+    // Only a declared war (or the perpetual barbarians) produces units that hunt
+    // our cities; peacetime neighbours may wander but do not attack.
+    const atWar = (civId: number): boolean => {
+      if (!dm || typeof dm.isAtWar !== 'function') return false;
+      for (const other of this.gameEngine.civilizations ?? []) {
+        // The array is indexed by civ id and may hold holes (lightweight test
+        // doubles, and any engine that has not filled it).
+        if (!other || other.id === civId || other.isAlive === false) continue;
+        if (dm.isAtWar(civId, other.id)) return true;
+      }
+      return false;
+    };
+    const hostileIds = new Set<number>();
+    if (atWar(city.civilizationId)) {
+      for (const other of this.gameEngine.civilizations ?? []) {
+        if (!other || other.id === city.civilizationId || other.isAlive === false) continue;
+        hostileIds.add(other.id);
+      }
+    }
+    hostileIds.add(BARBARIAN_CIV_ID);
+
+    const grid = this.gameEngine.squareGrid;
+    return this.gameEngine.units.some((u: Unit) => {
+      if (u.isDefeated || !hostileIds.has(u.civilizationId)) return false;
+      const d = grid?.squareDistance
+        ? grid.squareDistance(u.col, u.row, city.col, city.row)
+        : (u.col === city.col && u.row === city.row ? 0 : 99);
+      return d <= CARAVAN_THREAT_RADIUS;
+    });
   }
 
   private isOffensiveUnitType(unitType: string): boolean {

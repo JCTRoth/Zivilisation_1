@@ -6,6 +6,7 @@
  */
 
 import { AIUtility, scanAreaForEnemies, findInterceptPosition, findPatrolWaypoint, type ThreatAlert } from './AIUtility';
+import { decideAiAttack, type AiAttackDecision } from './AttackOdds';
 import { EnemySearcher } from '../EnemySearcher';
 import { ABSOLUTE_MIN_GOLD, CITY_RADIUS, UNIT_MAINTENANCE } from '../EconomicManager';
 import { bribeUnitCost } from '../DiplomacyManager';
@@ -388,6 +389,12 @@ export class AIManager {
   private caravanAssignments = new Map<string, { targetCol: number; targetRow: number }>();
   private caravanSurplus = new Set<string>();
   private caravanCoordinatorRound = new Map<number, number>();
+  /**
+   * The tech each civ is researching *because this AI chose it*. Used to tell
+   * the AI's own pick apart from one the engine's legacy `Civilization.
+   * selectNextResearch` staked out — see Phase 2 in `runAITurn`.
+   */
+  private researchChosenByAI = new Map<number, string>();
   /** Which cities wanted a caravan last round (for production). */
   private caravanProducerCities = new Map<number, string[]>();
 
@@ -633,16 +640,37 @@ export class AIManager {
     // The opening-round lock lives in GameEngine.setResearch (lowest level):
     // during the first rounds the selection below is scored but the engine
     // refuses to start it, so nothing here has to know about the lock.
-    if (!civ.currentResearch) {
-      // selectResearch returns the chosen techId (string) or null.
-      const techChoice = AIResearch.selectResearch(civ, resolveAICivStrategy(civ, aiState), gameState);
-      if (techChoice) {
-        aiState.researchPriority = { techId: techChoice, score: 0, reason: 'strategy' };
-        // Use GameEngine's setResearch to properly set the tech
-        if (typeof this.gameEngine.setResearch === 'function'
-            && this.gameEngine.setResearch(civilizationId, techChoice)) {
-          this.gameEngine.log('ai', `Research — ${civ.name} selects ${techChoice} (${aiState.strategyProfile})`, { civilizationId, action: 'research', tech: techChoice, strategy: aiState.strategyProfile });
-          debugLog(`[AI] Research selected: ${techChoice}`);
+    //
+    // `civ.currentResearch` is NOT proof that this AI chose it. `Civilization.
+    // completeTechnology` (reached from `updateScience`, i.e. every turn the
+    // current tech finishes) auto-calls `selectNextResearch()`, a second and
+    // much older AI picker living inside the Civilization class. It scores with
+    // `evaluateTechnology`, which knows nothing about the caravan / naval /
+    // fishing / nuclear hooks or the civ's strategy — so the moment `currency`
+    // completes it stakes out some other tech, and the `if (!civ.currentResearch)`
+    // guard this used to be skipped the scored selection entirely. That is why a
+    // civ with caravan relevance 3 and `trade` scoring 85 (highest candidate by
+    // 60 points) researched `alphabet` instead: the AI was never asked.
+    //
+    // So score EVERY turn, and replace a choice this AI did not make. A choice it
+    // DID make is left alone, which is what protects in-progress beakers from
+    // being reset turn after turn.
+    {
+      const currentId = (civ.currentResearch as { id?: string } | null)?.id ?? null;
+      const aiChose = currentId !== null && this.researchChosenByAI.get(civilizationId) === currentId;
+      if (!aiChose) {
+        // selectResearch returns the chosen techId (string) or null.
+        const techChoice = AIResearch.selectResearch(civ, resolveAICivStrategy(civ, aiState), gameState);
+        if (techChoice) {
+          aiState.researchPriority = { techId: techChoice, score: 0, reason: 'strategy' };
+          // Use GameEngine's setResearch to properly set the tech
+          if (typeof this.gameEngine.setResearch === 'function'
+              && this.gameEngine.setResearch(civilizationId, techChoice)) {
+            this.researchChosenByAI.set(civilizationId, techChoice);
+            const replaced = currentId && currentId !== techChoice ? ` (was ${currentId})` : '';
+            this.gameEngine.log('ai', `Research — ${civ.name} selects ${techChoice} (${aiState.strategyProfile})`, { civilizationId, action: 'research', tech: techChoice, strategy: aiState.strategyProfile });
+            debugLog(`[AI] Research selected: ${techChoice}${replaced}`);
+          }
         }
       }
     }
@@ -1318,6 +1346,13 @@ export class AIManager {
         const stackedEnemy = this.gameEngine.units.find(u => u.col === unit.col && u.row === unit.row
           && u.id !== unit.id && u.civilizationId !== unit.civilizationId && !u.isDefeated);
         if (stackedEnemy) {
+          // Pre-attack calculation (Civ1 guide: "do not attack without a quick
+          // calculation") — stacked or not, a losing fight is still losing.
+          const stackedOdds = this.evaluateAttackOdds(unit, stackedEnemy);
+          if (!stackedOdds.allow) {
+            this.holdInsteadOfAttacking(unit, civ, stackedEnemy, stackedOdds);
+            break;
+          }
           debugLog(`[AI] Unit ${unit.id} attacks stacked enemy ${stackedEnemy.type} on the same tile`);
           this.gameEngine.log('ai', `Attack — ${civ.name} ${unit.type}(${unit.id}) attacks enemy ${stackedEnemy.type} at (${unit.col},${unit.row})`, { civilizationId, action: 'attack', unitId: unit.id, unitType: unit.type, targetType: stackedEnemy.type, targetCol: unit.col, targetRow: unit.row });
           this.gameEngine.combatUnit(unit, stackedEnemy);
@@ -1544,6 +1579,11 @@ export class AIManager {
             const tt = this.gameEngine.getTileAt(fullEnemy.col, fullEnemy.row);
             const attackCost = Math.max(1, TERRAIN_PROPS[tt?.type ?? '']?.movement ?? 1);
             if (this.gameEngine.canUnitAffordMove(unit, attackCost)) {
+              const adjacentOdds = this.evaluateAttackOdds(unit, fullEnemy);
+              if (!adjacentOdds.allow) {
+                this.holdInsteadOfAttacking(unit, civ, fullEnemy, adjacentOdds);
+                break;
+              }
               debugLog(`[AI] Unit ${unit.id} attacks adjacent enemy ${fullEnemy.type} at (${fullEnemy.col},${fullEnemy.row})`);
               this.gameEngine.log('ai', `Attack — ${civ.name} ${unit.type}(${unit.id}) attacks adjacent ${fullEnemy.type} at (${fullEnemy.col},${fullEnemy.row})`, { civilizationId, action: 'attack', unitId: unit.id, unitType: unit.type, targetType: fullEnemy.type, targetCol: fullEnemy.col, targetRow: fullEnemy.row });
               this.gameEngine.combatUnit(unit, fullEnemy);
@@ -1574,6 +1614,14 @@ export class AIManager {
         if (dist === 1) {
           const targetUnit = this.gameEngine.getUnitAt(target.col, target.row);
           if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
+            // Pre-attack calculation: odds floor, focus-fire support and the
+            // siege field rule (AttackOdds). A unit that must not start this
+            // fight digs in instead of charging.
+            const odds = this.evaluateAttackOdds(unit, targetUnit);
+            if (!odds.allow) {
+              this.holdInsteadOfAttacking(unit, civ, targetUnit, odds);
+              break;
+            }
             // Attack
             debugLog(`[AI] Unit ${unit.id} attacking unit at (${target.col},${target.row})`);
             this.gameEngine.log('ai', `Attack — ${civ.name} ${unit.type}(${unit.id}) attacks enemy ${targetUnit.type} at (${target.col},${target.row})`, { civilizationId, action: 'attack', unitId: unit.id, unitType: unit.type, targetType: targetUnit.type, targetCol: target.col, targetRow: target.row });
@@ -5850,6 +5898,52 @@ export class AIManager {
   }
 
   /**
+   * Outstanding work this civ's settlers can actually REACH: the same tile
+   * census as {@link countOutstandingWorks}, minus the tiles no settler could
+   * walk to.
+   *
+   * A settler works only on its own landmass (`settlerSharesLandmassWithCities`
+   * gates every works assignment), so an empire split by water has tiles in
+   * `countOutstandingWorks` it can never improve. The works corps was sized from
+   * the raw count, so an island civ was told to field 5 settlers for 2 jobs —
+   * and the surplus stood still. That is what moved the settler idle share from
+   * 40 % to 41.1 %, and `scripts/trade_pipeline_sim.py` prices it (G3).
+   *
+   * Falls back to the raw count when the engine has no connectivity probe, so
+   * lightweight test doubles keep the previous behaviour.
+   */
+  countReachableWorks(civId: number): number {
+    const connected = typeof this.gameEngine.areLandConnected === 'function';
+    if (!connected) return this.countOutstandingWorks(civId);
+
+    const cities = this.ownCities(civId);
+    const seen = new Set<string>();
+    let reachable = 0;
+
+    for (const city of cities) {
+      // A tile is workable from THIS city only if some settler standing at this
+      // city can walk to it — which is the same test the works chooser applies.
+      const anchored = cities.filter((c: City) =>
+        this.areLandConnected(c.col, c.row, city.col, city.row),
+      );
+      for (const { col, row } of this.cityAreaTiles(city)) {
+        const key = `${col},${row}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const tile = this.gameEngine.getTileAt(col, row);
+        if (!tile || tile.improvement) continue;
+        const terrain = tile.terrain || tile.type || '';
+        if (terrain === 'ocean' || terrain === 'arctic') continue;
+        if (!this.isWorkableTerrain(terrain)) continue;
+        if (anchored.some((c: City) => this.areLandConnected(c.col, c.row, col, row))) {
+          reachable++;
+        }
+      }
+    }
+    return reachable;
+  }
+
+  /**
    * Outstanding work for ONE city's radius. Same rule as
    * {@link countOutstandingWorks}, scoped: the city screen shows what the
    * player can act on, not what the whole empire still owes.
@@ -6357,6 +6451,18 @@ export class AIManager {
 
     // Food first when the city needs to grow; production first otherwise.
     if (prioritizeFood && canIrrigate) return 'irrigation';
+
+    // Civ1 guide: "Building Railroads should be your top priority as soon as
+    // you can build them" — +50 % on food, production and trade for every
+    // worked tile, plus free movement. An existing road is the base a
+    // railroad needs (`canBuildImprovement` re-checks both that and the
+    // tech), so the upgrade fires before new irrigation/mines start on the
+    // same tile.
+    const hasRoad = tile.improvement === IMPROVEMENT_TYPES.ROAD
+      || (tile as { road?: boolean; hasRoad?: boolean }).road === true
+      || (tile as { road?: boolean; hasRoad?: boolean }).hasRoad === true;
+    if (hasRoad && this.gameEngine.canBuildImprovement(unit.id, 'railroad')) return 'railroad';
+
     if (canMine) return 'mine';
     if (canIrrigate) return 'irrigation';
 
@@ -6366,11 +6472,7 @@ export class AIManager {
     // direct income boost. (`workedByCity` is computed above, with the early
     // commerce-first road branch.)
     const roadDef = IMPROVEMENT_PROPERTIES[IMPROVEMENT_TYPES.ROAD];
-    // Skip tiles that already carry a road (canonical `tile.improvement` or
-    // legacy `tile.road`/`tile.hasRoad` flags from older saves).
-    const hasRoad = tile.improvement === IMPROVEMENT_TYPES.ROAD
-      || (tile as { road?: boolean; hasRoad?: boolean }).road === true
-      || (tile as { road?: boolean; hasRoad?: boolean }).hasRoad === true;
+    // (`hasRoad` is computed above, next to the railroad upgrade.)
     const workedByCity = this.gameEngine.cities.some((c: City) =>
       c.civilizationId === civId && c.workingTiles?.has(`${unit.col},${unit.row}`)
     );
@@ -6378,7 +6480,6 @@ export class AIManager {
         !tile.improvement && this.gameEngine.canBuildImprovement(unit.id, 'road')) {
       return 'road';
     }
-    if (this.gameEngine.canBuildImprovement(unit.id, 'railroad')) return 'railroad';
     if (this.gameEngine.canBuildImprovement(unit.id, 'road')) return 'road';
     return reject(`no_candidate:${terrain}:${tile.improvement ?? '-'}`);
   }
@@ -8723,6 +8824,68 @@ export class AIManager {
     return plan.target;
   }
 
+  /**
+   * The AI's quick pre-attack calculation (Civ1 guide: *"always keep the odds
+   * in your head — do not attack without a quick calculation"*). Combines the
+   * CombatSystem replay of the duel with the discipline rules: the odds floor
+   * (lowered by friendly focus fire) and the siege field rule.
+   */
+  private evaluateAttackOdds(unit: Unit, defender: Unit): AiAttackDecision {
+    const defenderTile = this.gameEngine.getTileAt(defender.col, defender.row);
+    const defenderInCity = this.gameEngine.getCityAt(defender.col, defender.row) !== null;
+    return decideAiAttack(unit, defender, {
+      defenderTile: defenderTile as { type?: string; improvement?: string | null } | null,
+      defenderInCity,
+      support: this.countAttackSupport(unit, defender.col, defender.row),
+    });
+  }
+
+  /** Live friendly combat units standing next to the defender's tile. */
+  private countAttackSupport(attacker: Unit, defenderCol: number, defenderRow: number): number {
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return 0;
+    let support = 0;
+    for (const cell of grid.getNeighbors(defenderCol, defenderRow)) {
+      const mate = this.gameEngine.getUnitAt(cell.col, cell.row);
+      if (
+        mate
+        && mate.id !== attacker.id
+        && mate.civilizationId === attacker.civilizationId
+        && this.isCombatUnit(mate)
+      ) {
+        support++;
+      }
+    }
+    return support;
+  }
+
+  /**
+   * Decline the attack: log the estimate, then dig in — fortify when the unit
+   * is on/next to its own city (the +50 % fortification is exactly what makes
+   * a defender strong), otherwise skip the turn. Holding next to a strong
+   * defender is still the better half of the trade: the defender must come to
+   * us, onto our tile, without its own fortification.
+   */
+  private holdInsteadOfAttacking(unit: Unit, civ: Civilization, defender: Unit, decision: AiAttackDecision): void {
+    const percent = Math.round(decision.chance * 100);
+    debugLog(`[AI] Unit ${unit.id} holds against ${defender.type} at (${defender.col},${defender.row}) — ${percent}% estimated win chance (${decision.reason})`);
+    this.gameEngine.log('ai', `Hold — ${civ.name} ${unit.type}(${unit.id}) declines attack on ${defender.type} (${percent}% est., ${decision.reason})`, {
+      civilizationId: unit.civilizationId,
+      action: 'hold',
+      unitId: unit.id,
+      unitType: unit.type,
+      targetType: defender.type,
+      targetCol: defender.col,
+      targetRow: defender.row,
+      reason: decision.reason,
+    });
+    if (this.shouldFortifyForDefense(unit)) {
+      this.gameEngine.unitFortify(unit.id);
+    } else {
+      this.gameEngine.skipUnit(unit.id);
+    }
+  }
+
   /** Choose one strong/nearby combat unit to remain with each own city. */
   private getCityDefenseReserveIds(civilizationId: number, combatUnits?: Unit[]): Set<string> {
     const navalReserved = this.getNavalReservedUnitIds(this.gameEngine.getPlayerStorage?.(civilizationId));
@@ -8763,6 +8926,14 @@ export class AIManager {
           const bInGarrisonRange = b.distance <= 2 ? 0 : 1;
           if (aInGarrisonRange !== bInGarrisonRange) return aInGarrisonRange - bInGarrisonRange;
           if (a.distance !== b.distance) return a.distance - b.distance;
+          // Civ1 guide: "Don't use an expensive, mobile attack unit where a
+          // Phalanx would do adequately." Among equally close units the
+          // garrison prefers a defensive role (defense >= attack), so tanks,
+          // knights and catapults stay free for the war; within a role the
+          // higher defense still wins.
+          const aRole = (a.unit.defense ?? 0) >= (a.unit.attack ?? 0) ? 0 : 1;
+          const bRole = (b.unit.defense ?? 0) >= (b.unit.attack ?? 0) ? 0 : 1;
+          if (aRole !== bRole) return aRole - bRole;
           const aDefense = a.unit.defense ?? 0;
           const bDefense = b.unit.defense ?? 0;
           return bDefense - aDefense;

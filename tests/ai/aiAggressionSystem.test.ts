@@ -187,8 +187,9 @@ describe('AIAggression.estimateCityDefense', () => {
       { id: 'g2', type: 'archer', civilizationId: 2, col: 5, row: 4, attack: 3, defense: 2 },
     ];
 
-    // population 4 * walls 3 = 12, plus garrison (1 + 1.5) + (3 + 1) = 6.5
-    expect(estimateCityDefense(engine, city)).toBeCloseTo(18.5, 5);
+    // population 4 * walls 1.5 = 6 (walls match CombatSystem.resolveCityRound),
+    // plus garrison (1 + 1.5) + (3 + 1) = 6.5
+    expect(estimateCityDefense(engine, city)).toBeCloseTo(12.5, 5);
   });
 });
 

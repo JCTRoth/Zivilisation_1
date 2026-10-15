@@ -606,7 +606,16 @@ export class CaravanGovernor {
     return chosen.col === unit.col && chosen.row === unit.row ? null : chosen;
   }
 
+  /**
+   * How far this unit can step in one plan. `maxMoves` first, because that is
+   * where the per-turn answer lives: the turn reset writes the caravan's
+   * near-city bonus there (see `CARAVAN_CITY_MOVE_BONUS`), so a caravan standing
+   * within two tiles of a city is planned as a two-mover and walks in and
+   * delivers in one turn. `movement` — the raw table value — is the fallback.
+   */
   private movementOf(unit: Unit): number {
+    const maxMoves = (unit as unknown as { maxMoves?: number }).maxMoves;
+    if (typeof maxMoves === 'number' && maxMoves > 0) return maxMoves;
     const movement = (unit as unknown as { movement?: number }).movement;
     return typeof movement === 'number' && movement > 0 ? movement : 1;
   }
