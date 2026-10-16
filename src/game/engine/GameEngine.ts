@@ -26,6 +26,14 @@ import {
   createRookieRankState,
   normalizeUnitRankFields,
 } from './UnitRankSystem';
+import {
+  cityBuildingEffects,
+  isDefensiveBuilding,
+  isPalaceBuilding,
+  storedBuildingId,
+  stripDefensiveBuildings,
+  stripPalaceBuildings,
+} from './BuildingEffects';
 import { isWideRiverTile } from './RiverRules';
 import { ProductionManager } from './ProductionManager';
 import { AutoProduction } from './AutoProduction';
@@ -138,6 +146,8 @@ export interface GameSettings {
    * time); tests and AI-vs-AI diagnostics set it so a run is reproducible.
    */
   mapSeed?: number;
+  mapWidth?: number;
+  mapHeight?: number;
 }
 
 export interface MapTile {
@@ -1001,8 +1011,18 @@ export default class GameEngine {
     const mapType = this.gameSettings.mapType || 'NORMAL_SKIRMISH';
     let mapWidth = Constants.MAP_WIDTH;
     let mapHeight = Constants.MAP_HEIGHT;
-    
-    if (['CLOSEUP_1V1', 'CLOSEUP_BEATUP', 'NAVAL_CLOSEUP'].includes(mapType)) {
+
+    const userWidth = Number(this.gameSettings.mapWidth);
+    const userHeight = Number(this.gameSettings.mapHeight);
+    const hasUserSize = Number.isFinite(userWidth) && Number.isFinite(userHeight)
+      && userWidth >= 10 && userHeight >= 8;
+    const staticMapType = ['EARTH', 'AI_VS_AI_NAVAL', 'AEGEAN_CAMPAIGN', 'NAVAL_CLOSEUP'].includes(mapType);
+
+    if (hasUserSize && !staticMapType) {
+      mapWidth = Math.max(10, Math.min(300, Math.round(userWidth)));
+      mapHeight = Math.max(8, Math.min(200, Math.round(userHeight)));
+      console.log(`[GameEngine] Using custom map size for ${mapType}: ${mapWidth}x${mapHeight}`);
+    } else if (['CLOSEUP_1V1', 'CLOSEUP_BEATUP', 'NAVAL_CLOSEUP'].includes(mapType)) {
       mapWidth = 20;
       mapHeight = 20;
       console.log(`[GameEngine] Using small map size for ${mapType}: ${mapWidth}x${mapHeight}`);
@@ -1020,12 +1040,19 @@ export default class GameEngine {
       mapWidth = 16;
       mapHeight = 26;
       console.log(`[GameEngine] Using small tall map for ${mapType}: ${mapWidth}x${mapHeight}`);
-    } else if (mapType === 'AI_VS_AI_NAVAL' || mapType === 'AI_VS_AI_NAVAL_TROPICAL') {
+    } else if (mapType === 'AI_VS_AI_NAVAL') {
       // Static archipelago (src/data/maps/naval-archipelago-96x60.json) — must
       // match the static map's dimensions so every tile of it is used.
       mapWidth = 96;
       mapHeight = 60;
       console.log(`[GameEngine] Using naval archipelago map size for ${mapType}: ${mapWidth}x${mapHeight}`);
+    } else if (mapType === 'AEGEAN_CAMPAIGN') {
+      // Static Aegean basin (src/data/maps/naval-aegean-96x60.json). Same
+      // dimensions as the archipelago, but a human-playable naval campaign:
+      // the mainland, Euboea, Crete, Anatolia and the Dodecanese rim one sea.
+      mapWidth = 96;
+      mapHeight = 60;
+      console.log(`[GameEngine] Using Aegean campaign map size for ${mapType}: ${mapWidth}x${mapHeight}`);
     }
     
     // Create hex grid system with appropriate size
@@ -1182,7 +1209,7 @@ export default class GameEngine {
     // different match-up and makes batch results mean something.
     const profileOrder = [...CIV_PRODUCTION_PROFILES];
     const rotateProfiles =
-      mapType === 'AI_VS_AI' || mapType === 'AI_VS_AI_SMALL' || mapType === 'AI_VS_AI_NAVAL' || mapType === 'AI_VS_AI_NAVAL_TROPICAL';
+      mapType === 'AI_VS_AI' || mapType === 'AI_VS_AI_SMALL' || mapType === 'AI_VS_AI_NAVAL';
     if (rotateProfiles && typeof this.gameSettings.mapSeed === 'number') {
       const profileRng = this.makeSeededRng(this.gameSettings.mapSeed, 0x9109d);
       const offset = Math.floor(profileRng() * profileOrder.length);
@@ -1196,12 +1223,13 @@ export default class GameEngine {
         : getCivProductionProfile(i);
       
       // In AI_VS_AI mode every civilization is AI-controlled (no human player).
+      // The Aegean campaign is human-playable, so slot 0 keeps the chair: the
+      // player is the admiral on the Greek mainland, the AIs take the rest.
       const isHuman =
         i === 0 &&
         mapType !== 'AI_VS_AI' &&
         mapType !== 'AI_VS_AI_SMALL' &&
-        mapType !== 'AI_VS_AI_NAVAL' &&
-        mapType !== 'AI_VS_AI_NAVAL_TROPICAL';
+        mapType !== 'AI_VS_AI_NAVAL';
       const civ = {
         id: i,
         name: civData.name,
@@ -1245,6 +1273,8 @@ export default class GameEngine {
       const mapWidth = this.map?.width || Constants.MAP_WIDTH;
       const mapHeight = this.map?.height || Constants.MAP_HEIGHT;
       const minDist = mapWidth <= 20 ? 5 : 12; // Smaller distance for small maps
+      // Water worlds start their civs ON the water: see `startsOnWater`.
+      const navalStart = this.startsOnWater(mapType);
 
       // Prefer the static map's hand-placed starts (skipping any that are
       // unusable or too close to a civ that already settled).
@@ -1252,7 +1282,7 @@ export default class GameEngine {
         const candidate = staticStarts.shift()!;
         // Settlers must never spawn on (or beside) water at game start — the
         // one definition of "dry land" lives in isSpawnableTile.
-        if (!this.isSpawnableTile(candidate.col, candidate.row)) continue;
+        if (!this.isSpawnableTile(candidate.col, candidate.row, navalStart)) continue;
         const tooClose = this.units.some(
           (u) => this.squareGrid.squareDistance(candidate.col, candidate.row, u.col, u.row) < minDist,
         );
@@ -1267,7 +1297,7 @@ export default class GameEngine {
         const col = Math.floor(startRng() * (mapWidth - 4)) + 2;
         const row = Math.floor(startRng() * (mapHeight - 4)) + 2;
         
-        if (this.isSpawnableTile(col, row)) {
+        if (this.isSpawnableTile(col, row, navalStart)) {
           // Check if position is far enough from other civs
           let validPosition = true;
           for (const otherCiv of this.civilizations) {
@@ -1298,9 +1328,11 @@ export default class GameEngine {
         console.log(`[INIT] Creating starting units for civ ${i} (${civData.name}) at (${startPos.col},${startPos.row}), mapType: ${mapType} island=${civ.startsOnIsland}`);
         this.createStartingUnits(i, startPos, mapType);
         
-        // Create starting cities for MANY_CITIES mode
-        if (mapType === 'MANY_CITIES') {
-          this.createStartingCities(i, civ, startPos);
+        // Create starting cities. MANY_CITIES opens with four; NO_SETTLERS gets
+        // exactly one — see `startingCityCount`.
+        const cityCount = this.startingCityCount(mapType);
+        if (cityCount > 0) {
+          this.createStartingCities(i, civ, startPos, cityCount);
         }
       } else {
         console.warn(`[INIT] Failed to find valid starting position for civ ${i} (${civData.name}) after ${attempts} attempts`);
@@ -1387,6 +1419,41 @@ export default class GameEngine {
   private isNavalUnitType(type: string): boolean {
     const props = UNIT_PROPS[type] as { naval?: boolean } | undefined;
     return props?.naval === true;
+  }
+
+  /**
+   * Whether a civ's starting units on THIS map belong in the water.
+   *
+   * NAVAL_CLOSEUP generates an all-ocean world (`MapGenerator.generateWaterOnly`)
+   * and arms every civ with triremes — but the start search below asks
+   * `isSpawnableTile`, whose default answer is DRY LAND. On a map with no land
+   * at all it therefore ran its 100 attempts, found nothing, and created every
+   * civ with no position: no units, no city, nothing. The game was over before
+   * it began (measured: 0 units on the board, game-over on turn 1).
+   *
+   * A water start is legal for exactly one map, and the engine decides it from
+   * the map's own generator rather than from anything the dialog can tilt.
+   */
+  private startsOnWater(mapType: string): boolean {
+    return mapType === 'NAVAL_CLOSEUP';
+  }
+
+  /**
+   * How many pre-placed cities a civ opens with on this map.
+   *
+   *  - MANY_CITIES — four (its whole point).
+   *  - NO_SETTLERS — one. "No settlers" means the player cannot FOUND more
+   *    cities, not that the empire never existed: a civ with no city and no
+   *    settler has no economy, no production and no way to replace its losses,
+   *    so the skirmish is unwinnable-by-construction and over in minutes. One
+   *    capital gives it something to build from.
+   *  - everything else — zero: the civ founds its own first city with its
+   *    settler (or on a water map, never).
+   */
+  private startingCityCount(mapType: string): number {
+    if (mapType === 'MANY_CITIES') return 4;
+    if (mapType === 'NO_SETTLERS') return 1;
+    return 0;
   }
 
   /** Place one unit on a legal tile of the right kind for its type. */
@@ -1583,7 +1650,12 @@ export default class GameEngine {
   /**
    * Create starting cities for MANY_CITIES mode
    */
-  private createStartingCities(civId: number, civ: Civilization, startPos: { col: number; row: number }) {
+  private createStartingCities(
+    civId: number,
+    civ: Civilization,
+    startPos: { col: number; row: number },
+    count: number = 4,
+  ) {
     const cityPositions = [
       { col: startPos.col, row: startPos.row },
       { col: startPos.col + 5, row: startPos.row },
@@ -1591,7 +1663,7 @@ export default class GameEngine {
       { col: startPos.col - 5, row: startPos.row }
     ];
     
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < count && i < cityPositions.length; i++) {
       const pos = cityPositions[i];
       
       // Every kind of water, not just `OCEAN`: a starting city on an inland
@@ -2833,6 +2905,216 @@ const occupiedLandmasses = new Set(
     }
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // Trade Ship — automatic run between two harbour cities (see
+  // establishTradeShipRoute / canEstablishTradeShipRoute)
+  // ────────────────────────────────────────────────────────────────────
+
+  /** The Trade Ship's home harbour: its `homeCityId` while it still belongs to
+   * the same civ, else the nearest own harbour city (a captured home city must
+   * not strand the ship). Null when the civ has no city at all. */
+  getTradeShipHomeCity(unit: Unit): City | null {
+    if (unit.homeCityId) {
+      const byId = this.cities.find(
+        (c: City) => c.id === unit.homeCityId && c.civilizationId === unit.civilizationId,
+      );
+      if (byId) return byId;
+    }
+    let best: City | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const c of this.cities) {
+      if (c.civilizationId !== unit.civilizationId) continue;
+      if (!this.isHarborCity(c)) continue;
+      const d = this.squareGrid?.chebyshevDistance
+        ? this.squareGrid.chebyshevDistance(c.col, c.row, unit.col, unit.row)
+        : (Math.abs(c.col - unit.col) + Math.abs(c.row - unit.row));
+      if (d < bestDistance) { bestDistance = d; best = c; }
+    }
+    return best;
+  }
+
+  private isHarborCity(city: City): boolean {
+    return Array.isArray(city.buildings) && city.buildings.includes('harbor');
+  }
+
+  private setTradeShipPath(unit: Unit, target: { col: number; row: number }): void {
+    if (!this.goToManager?.calculatePath) return;
+    const existing = this.goToManager.getUnitPath?.(unit.id);
+    if (existing && existing.length > 0) {
+      const last = existing[existing.length - 1];
+      if (last.col === target.col && last.row === target.row) return;
+    }
+    const result = this.goToManager.calculatePath(
+      unit,
+      target.col,
+      target.row,
+      (col, row) => this.getTileAt(col, row),
+      this.squareGrid?.width ?? 0,
+      this.squareGrid?.height ?? 0,
+    );
+    if (result.success && result.path.length > 0) {
+      this.goToManager.setUnitPath(unit.id, result.path);
+    }
+  }
+
+  canEstablishTradeShipRoute(unitId: string): boolean {
+    const unit = this.units.find((u: Unit) => u.id === unitId);
+    if (!unit || unit.type !== 'trade_ship') return false;
+    const dest = this.getCityAt(unit.col, unit.row);
+    if (!dest) return false;
+    if (!this.isHarborCity(dest)) return false;
+    const home = this.getTradeShipHomeCity(unit);
+    if (!home) return false;
+    if (!this.isHarborCity(home)) return false;
+    return home.id !== dest.id;
+  }
+
+  establishTradeShipRoute(unitId: string): { success: boolean; gold?: number; reason?: string } {
+    const unit = this.units.find((u: Unit) => u.id === unitId);
+    if (!unit) return { success: false, reason: 'unit_not_found' };
+    if (unit.type !== 'trade_ship') return { success: false, reason: 'not_trade_ship' };
+    const dest = this.getCityAt(unit.col, unit.row);
+    if (!dest) return { success: false, reason: 'not_on_city' };
+    if (!this.isHarborCity(dest)) return { success: false, reason: 'not_a_harbor' };
+    const home = this.getTradeShipHomeCity(unit);
+    if (!home) return { success: false, reason: 'no_home_city' };
+    if (!this.isHarborCity(home)) return { success: false, reason: 'home_not_harbor' };
+    if (home.id === dest.id) return { success: false, reason: 'same_city' };
+
+    unit.tradeShipRoute = { homeCityId: home.id, destCityId: dest.id, stage: 'outbound' };
+    unit.movesRemaining = 0;
+    this.updateUnitTurnsDoneFlag(unit);
+    this.setTradeShipPath(unit, { col: dest.col, row: dest.row });
+    console.log(`[TRADE SHIP] Route established: ${home.name} <-> ${dest.name}`);
+    if (this.onStateChange) {
+      this.onStateChange('TRADE_SHIP_ROUTE_ESTABLISHED', { ship: unit, homeCity: home, destCity: dest });
+    }
+    this.checkAndEndTurnIfNoMoves('trade-ship-route-established');
+    return { success: true };
+  }
+
+  advanceTradeShip(unitId: string): void {
+    const unit = this.units.find((u: Unit) => u.id === unitId);
+    const route = unit?.tradeShipRoute;
+    if (!unit || !route || unit.isDefeated) return;
+
+    const home = this.cities.find((c: City) => c.id === route.homeCityId);
+    const dest = this.cities.find((c: City) => c.id === route.destCityId);
+    if (!home || !dest || home.civilizationId !== unit.civilizationId) {
+      this.clearTradeShipRoute(unit.id);
+      return;
+    }
+
+    const atHome = unit.col === home.col && unit.row === home.row;
+    const atDest = unit.col === dest.col && unit.row === dest.row;
+
+    if (route.stage === 'outbound') {
+      if (atDest) {
+        this.payTradeShipArrival(unit, dest, home);
+        route.stage = 'inbound';
+        this.setTradeShipPath(unit, { col: home.col, row: home.row });
+      } else {
+        this.setTradeShipPath(unit, { col: dest.col, row: dest.row });
+      }
+    } else {
+      if (atHome) {
+        this.payTradeShipArrival(unit, home, dest);
+        route.stage = 'outbound';
+        this.setTradeShipPath(unit, { col: dest.col, row: dest.row });
+      } else {
+        this.setTradeShipPath(unit, { col: home.col, row: home.row });
+      }
+    }
+  }
+
+  private payTradeShipArrival(unit: Unit, arrivedCity: City, otherCity: City): void {
+    const total = this.tradeShipFormula(unit.civilizationId, otherCity, arrivedCity, unit.col, unit.row);
+    if (total <= 0) return;
+    const ownerCiv = this.civilizations?.[unit.civilizationId];
+    if (ownerCiv?.resources) {
+      ownerCiv.resources.gold = (ownerCiv.resources.gold ?? 0) + Math.floor(total * 0.8);
+    }
+    const destCiv = this.civilizations?.[arrivedCity.civilizationId];
+    if (destCiv?.resources) {
+      destCiv.resources.gold = (destCiv.resources.gold ?? 0) + (total - Math.floor(total * 0.8));
+    }
+    if (this.onStateChange) {
+      this.onStateChange('TRADE_SHIP_ARRIVAL', {
+        ship: unit,
+        city: arrivedCity,
+        otherCity,
+        goldTotal: total,
+        ownerShare: Math.floor(total * 0.8),
+        destShare: total - Math.floor(total * 0.8),
+      });
+    }
+  }
+
+  clearTradeShipRoute(unitId: string): void {
+    const unit = this.units.find((u: Unit) => u.id === unitId);
+    if (!unit) return;
+    const had = !!unit.tradeShipRoute;
+    unit.tradeShipRoute = null;
+    if (had) {
+      this.goToManager?.clearUnitPath?.(unit.id);
+    }
+  }
+
+  tradeShipFormula(
+    ownerCivId: number,
+    otherCity: City,
+    arrivedCity: City,
+    shipCol: number,
+    shipRow: number,
+  ): number {
+    let X = 1.0;
+    for (const target of [arrivedCity.civilizationId, otherCity.civilizationId]) {
+      if (target === ownerCivId) continue;
+      const isEnemy = this.diplomacyManager?.getRelation?.(ownerCivId, target)?.status === 'war'
+        || (this.diplomacyManager?.getEnemies?.(ownerCivId)?.includes?.(target) ?? false);
+      if (isEnemy) { X = 2.0; break; }
+      if (this.diplomacyManager?.hasTreaty?.(ownerCivId, target, 'trade_agreement')
+          || this.diplomacyManager?.hasTreaty?.(ownerCivId, target, 'open_borders')
+          || this.diplomacyManager?.hasTreaty?.(ownerCivId, target, 'mutual_defense')) {
+        X = Math.max(X, 1.2);
+      }
+    }
+    const isForeign = arrivedCity.civilizationId !== ownerCivId
+      || otherCity.civilizationId !== ownerCivId;
+    const F = isForeign ? 1.5 : 0;
+    const P = Math.max(1, arrivedCity?.population ?? 1);
+    const T = Math.max(1, otherCity?.population ?? 1);
+    const D = Math.max(1, this.squareGrid?.squareDistance
+      ? this.squareGrid.squareDistance(otherCity.col, otherCity.row, shipCol, shipRow)
+      : this.squareGrid?.chebyshevDistance
+        ? this.squareGrid.chebyshevDistance(otherCity.col, otherCity.row, shipCol, shipRow)
+        : (Math.abs(otherCity.col - shipCol) + Math.abs(otherCity.row - shipRow)));
+    const Cap = (arrivedCity?.isCapital || otherCity?.isCapital) ? 25 : 0;
+    const a = (1 + F * X) * (5 * (P - 10)) + 100 + Cap;
+    const b = Math.min(Math.floor(T * 0.5), Math.floor(D * 0.7));
+    return Math.max(1, Math.floor(a * b));
+  }
+
+  computeTradeShipPrizeValue(sunk: Unit): number {
+    const homeId = sunk.tradeShipRoute?.homeCityId ?? sunk.homeCityId ?? '';
+    const homeCity = (homeId ? this.cities.find((c: City) => c.id === homeId) : null) as City | null;
+    const targetPop = Math.max(1, homeCity?.population ?? 1);
+    const D = Math.max(1, this.squareGrid?.chebyshevDistance
+      ? this.squareGrid.chebyshevDistance(homeCity?.col ?? sunk.col, homeCity?.row ?? sunk.row, sunk.col, sunk.row)
+      : (Math.abs((homeCity?.col ?? sunk.col) - sunk.col) + Math.abs((homeCity?.row ?? sunk.row) - sunk.row)));
+    const X = 2.0;
+    const F = 1.5;
+    const P = targetPop;
+    const T = targetPop;
+    const Cap = homeCity?.isCapital ? 25 : 0;
+    const a = (1 + F * X) * (5 * (P - 10)) + 100 + Cap;
+    const b = Math.min(Math.floor(T * 0.5), Math.floor(D * 0.7));
+    return Math.max(1, Math.floor(a * b));
+  }
+
+  /** Get city at coordinates
+   */
+
   /**
    * Unload the hold into the home city's food box. `foodPerFish` grows with
    * the distance between city and net tile (see `fisherFoodPerFish`); a catch
@@ -3953,8 +4235,7 @@ const occupiedLandmasses = new Set(
             targetCity.capturedTurns = 5;
             if (targetCity.isCapital === true) {
               targetCity.isCapital = false;
-              const pIdx = targetCity.buildings.indexOf('palace');
-              if (pIdx !== -1) targetCity.buildings.splice(pIdx, 1);
+              targetCity.buildings = stripPalaceBuildings(targetCity.buildings) as string[];
               this.governmentManager?.ensureCapital(oldCiv);
             }
             console.log(`[SCOUT RUSH] City ${targetCity.name} captured by civ ${unit.civilizationId} (pop ${targetCity.population})`);
@@ -4126,6 +4407,13 @@ const occupiedLandmasses = new Set(
       // (consumes the caravan, pays gold + science, opens a permanent route).
       if (unit.type === 'caravan' && this.canEstablishTradeRoute(unit.id)) {
         this.establishTradeRoute(unit.id);
+      }
+
+      // Trade Ship: arriving at a (different) harbour city opens the
+      // repeating run between it and the ship's home harbour — the ship
+      // itself is not consumed.
+      if (unit.type === 'trade_ship' && this.canEstablishTradeShipRoute(unit.id)) {
+        this.establishTradeShipRoute(unit.id);
       }
 
       // Update turn done status
@@ -4623,8 +4911,10 @@ const occupiedLandmasses = new Set(
   isCoveredBySDI(targetCol: number, targetRow: number): boolean {
     const grid = this.squareGrid;
     if (!grid) return false;
+    // The battery is the declared `missileDefense` effect (SDI Defense), not
+    // its building id: any future interceptor counts the same way.
     return this.cities.some(
-      (c) => (c.buildings ?? []).includes('sdi_defense')
+      (c) => cityBuildingEffects(c).missileDefense
         && grid.chebyshevDistance(c.col, c.row, targetCol, targetRow) <= 16,
     );
   }
@@ -4707,7 +4997,7 @@ const occupiedLandmasses = new Set(
       if (city.civilizationId === unit.civilizationId) continue;
       if (!inBlast(city.col, city.row)) continue;
       const before = Math.max(1, city.population ?? 1);
-      city.buildings = (city.buildings ?? []).filter((b) => b !== 'city_walls' && b !== 'walls');
+      city.buildings = stripDefensiveBuildings(city.buildings) as string[];
       const after = Math.floor(before / 2);
       if (after <= 0) {
         razed.push(city);
@@ -4936,6 +5226,22 @@ const occupiedLandmasses = new Set(
         defender.isDefeated = true;
         defender.defeatTimestamp = Date.now();
         this.destroyCargoOf(defender);
+
+        // Sinking a Trade Ship awards the sinker the full prize value of
+        // its run (the 80/20 split no longer applies — the sinker takes 100%).
+        if (
+          defender.type === 'trade_ship'
+          && UNIT_PROPS[attacker.type]?.naval === true
+          && attacker.civilizationId !== defender.civilizationId
+        ) {
+          const prize = this.computeTradeShipPrizeValue(defender);
+          const sinkerCiv = this.civilizations?.[attacker.civilizationId];
+          if (sinkerCiv?.resources) {
+            sinkerCiv.resources.gold = (sinkerCiv.resources.gold ?? 0) + prize;
+          }
+          this.clearTradeShipRoute(defender.id);
+          this.onStateChange?.('TRADE_SHIP_SUNK', { ship: defender, sinker: attacker, gold: prize });
+        }
         
         if (this.onStateChange) {
           this.onStateChange('UNIT_DEFEATED', { unit: defender });
@@ -5027,8 +5333,9 @@ const occupiedLandmasses = new Set(
 
       console.log(`[COMBAT] ${attacker.type} wounded ${defender.type} (${damage} dmg, ${defender.health} hp left)`);
 
-      defender.battleDamageTaken = (defender.battleDamageTaken ?? 0) + damage;
-      this.applySplashDamage(attacker, defender, damage);
+      // Ledger + splash already applied once above for both lethal and
+      // non-lethal attacker wins — no second increment here (that doubled
+      // the city-heal cap to 30% and splashed twice).
 
       // A non-lethal winning round still counts as combat experience.
       this.awardUnitCombatExperience(attacker, COMBAT_XP.ROUND_WON);
@@ -5065,7 +5372,19 @@ const occupiedLandmasses = new Set(
         attacker.isDefeated = true;
         attacker.defeatTimestamp = Date.now();
         this.destroyCargoOf(attacker);
-        
+
+        if (attacker.type === 'trade_ship'
+            && UNIT_PROPS[defender.type]?.naval === true
+            && attacker.civilizationId !== defender.civilizationId) {
+          const prize = this.computeTradeShipPrizeValue(attacker);
+          const sinkerCiv = this.civilizations?.[defender.civilizationId];
+          if (sinkerCiv?.resources) {
+            sinkerCiv.resources.gold = (sinkerCiv.resources.gold ?? 0) + prize;
+          }
+          this.clearTradeShipRoute(attacker.id);
+          this.onStateChange?.('TRADE_SHIP_SUNK', { ship: attacker, sinker: defender, gold: prize });
+        }
+
         if (this.onStateChange) {
           this.onStateChange('UNIT_DEFEATED', { unit: attacker });
         }
@@ -5265,8 +5584,7 @@ const occupiedLandmasses = new Set(
       // a new seat of government (the new owner's capital is elsewhere).
       if (city.isCapital === true) {
         city.isCapital = false;
-        const pIdx = city.buildings.indexOf('palace');
-        if (pIdx !== -1) city.buildings.splice(pIdx, 1);
+        city.buildings = stripPalaceBuildings(city.buildings) as string[];
         this.governmentManager?.ensureCapital(oldCiv);
       }
       console.log(`[COMBAT] City ${city.name} captured by civ ${attacker.civilizationId} (pop ${city.population})`);
@@ -5314,38 +5632,37 @@ const occupiedLandmasses = new Set(
   }
 
   /**
-   * Improvements destroyed when a city falls: city walls ALWAYS perish, plus
-   * one random non-palace, non-wonder building per point of population lost
-   * (capture costs exactly 1). Wonders and the palace survive.
+   * Improvements destroyed when a city falls: every defensive structure ALWAYS
+   * perishes, plus one random non-palace, non-wonder building (capture costs
+   * exactly one population point the same way). Wonders and the palace
+   * survive. "Defensive" is read from the declared `defense` effect, so the
+   * rule follows the building data rather than the `city_walls` id.
    */
   private destroyBuildingsOnCapture(city: City): void {
     const buildings = Array.isArray(city.buildings) ? city.buildings : [];
     // Wonders (and the palace) survive a capture — check the canonical wonder
     // table rather than the legacy `city.wonders` array, which was never
     // populated and let a wonder be randomly destroyed on capture.
-    const wonders = new Set(Object.keys(WONDER_PROPERTIES).filter((b) => buildings.includes(b)));
-    const removals: string[] = [];
+    const wonders = new Set(Object.keys(WONDER_PROPERTIES));
 
-    if (buildings.includes('city_walls') || buildings.includes('walls')) {
-      removals.push('city_walls');
-    }
+    const defensives = buildings.filter((b) => isDefensiveBuilding(b));
+    const candidates = buildings.filter((b) => {
+      const id = storedBuildingId(b);
+      if (!id) return false;
+      return !wonders.has(id) && !isPalaceBuilding(b) && !isDefensiveBuilding(b);
+    });
 
-    const candidates = buildings.filter(
-      (b: string) => b !== 'city_walls' && b !== 'walls' && b !== 'palace' && !wonders.has(b),
-    );
+    const lost = [...defensives];
     if (candidates.length > 0) {
-      removals.push(candidates[Math.floor(Math.random() * candidates.length)]);
+      lost.push(candidates[Math.floor(Math.random() * candidates.length)]);
     }
+    if (lost.length === 0) return;
 
-    for (const removed of removals) {
-      const idx = buildings.indexOf(removed);
-      if (idx !== -1) buildings.splice(idx, 1);
-    }
-    const aliasIdx = buildings.indexOf('walls');
-    if (aliasIdx !== -1) buildings.splice(aliasIdx, 1);
-    if (removals.length > 0) {
-      console.log(`[COMBAT] Capture destroyed improvements in ${city.name}: ${removals.join(', ')}`);
-    }
+    const lostSet = new Set(lost);
+    city.buildings = buildings.filter((b) => !lostSet.has(b));
+    console.log(
+      `[COMBAT] Capture destroyed improvements in ${city.name}: ${lost.map((b) => storedBuildingId(b)).join(', ')}`,
+    );
   }
 
   /**
@@ -5965,9 +6282,10 @@ const occupiedLandmasses = new Set(
           tech.available = true;
         }
       }
-      // Space race gate: the Moonshot only becomes researchable once the
-      // International Space Station exists (its "enables spaceship" effect —
-      // this game has no spaceship parts, so the Moonshot is the space race).
+      // Space race gate: the Moonshot only becomes researchable once ANY
+      // space station exists (ISS, Tiangong or Mir — mutually exclusive —
+      // each carries the "enables spaceship" effect; this game has no
+      // spaceship parts, so the Moonshot is the space race).
       if (tech.id === 'moonshot' && !this.wonderEffects?.spaceshipEnabled()) {
         tech.available = false;
       }
@@ -5999,6 +6317,11 @@ const occupiedLandmasses = new Set(
       const hasTech = (id: string): boolean => civTechs.includes(String(id));
       const prereqs = tech.prerequisites ?? [];
       const prereqsMet = prereqs.length === 0 || prereqs.every(hasTech);
+      // Space race gate (mirrors the availability pass above): no station
+      // anywhere — no Moonshot, even by direct selection.
+      if (techId === 'moonshot' && !this.wonderEffects?.spaceshipEnabled()) {
+        return false;
+      }
       // Don't allow researching a tech the civ already owns.
       if (prereqsMet && !hasTech(techId)) {
         civ.currentResearch = tech;
@@ -6021,8 +6344,11 @@ const occupiedLandmasses = new Set(
     const civ = this.civilizations?.[civId];
     if (!civ) return [];
     const owned = new Set<string>((civ.technologies ?? []).map(String));
+    const stationUp = this.wonderEffects?.spaceshipEnabled() ?? false;
     return (this.technologies ?? []).filter((tech) => {
       if (owned.has(String(tech.id))) return false;
+      // Space race gate: Moonshot needs a station (ISS/Tiangong/Mir).
+      if (String(tech.id) === 'moonshot' && !stationUp) return false;
       const prereqs = tech.prerequisites ?? [];
       return prereqs.length === 0 || prereqs.every((p) => owned.has(String(p)));
     });
@@ -6521,6 +6847,9 @@ const occupiedLandmasses = new Set(
     const embargoCandidates = this.civilizations
       .filter(c => c.id !== ourId && c.id !== targetCivId && c.isAlive !== false && dm.hasContacted(ourId, c.id))
       .map(c => c.id);
+    // A call to arms names OUR enemy — and only one this court has met.
+    const jointWarCandidates = dm.getEnemies(ourId)
+      .filter(enemyId => enemyId !== targetCivId && dm.hasContacted(targetCivId, enemyId));
     const actions = diplomatActionsFor({
       kind,
       status,
@@ -6528,6 +6857,7 @@ const occupiedLandmasses = new Set(
       activeTreaties: dm.getActiveTreaties(ourId, targetCivId),
       canTradeTechs: dm.canTradeTechs(ourId, targetCivId).ok,
       embargoCandidates,
+      jointWarCandidates,
     });
     return { targetCivId, kind, status, actions, ...detail };
   }
@@ -6635,6 +6965,7 @@ const occupiedLandmasses = new Set(
       case 'propose_mutual_defense':
       case 'propose_non_aggression':
       case 'propose_embargo':
+      case 'propose_joint_war':
       case 'offer_tech_exchange': {
         const swap = this.pickTechOfferTerm(diplomat.civilizationId, targetCivId);
         const proposal: DiplomacyProposal = {
@@ -6654,7 +6985,12 @@ const occupiedLandmasses = new Set(
               : undefined,
           techOffered: options?.techOffered ?? swap.techOffered,
           techRequested: options?.techRequested ?? swap.techRequested,
-          embargoTargetId: options?.embargoTargetId ?? this.pickEmbargoTarget(diplomat.civilizationId, targetCivId),
+          embargoTargetId: options?.embargoTargetId
+            ?? (action === 'propose_joint_war'
+              // A call to arms defaults to OUR first live enemy — the war the
+              // ally is being asked to join is the one we are actually in.
+              ? this.diplomacyManager.getEnemies(diplomat.civilizationId)[0]
+              : this.pickEmbargoTarget(diplomat.civilizationId, targetCivId)),
         };
         result = this.diplomacyManager.processProposal(proposal);
         spend('diplomat-proposal');
@@ -6703,6 +7039,19 @@ const occupiedLandmasses = new Set(
         else spend('diplomat-steal-tech');
         if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
         if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-steal-tech');
+        return { success: true, type: 'espionage', espionage, target };
+      }
+
+      case 'incite_revolt': {
+        // Covert: the agent works inside the adjacent city. The purse is
+        // handed over up front; a caught agent's career ends on the spot.
+        const city = this.adjacentEnemyCity(diplomat, targetCivId, target.cityId);
+        if (!city) return { success: false, reason: 'No adjacent city to incite', target };
+        const espionage = this.diplomacyManager.inciteRevolt(diplomat.civilizationId, city);
+        if (espionage.coverBlown) this.units = this.units.filter(u => u.id !== diplomatId);
+        else spend('diplomat-incite');
+        if (this.unitTurnQueue) this.unitTurnQueue.checkUnitStatus(diplomatId);
+        if (this.activePlayer === diplomat.civilizationId) this.checkAndEndTurnIfNoMoves('diplomat-incite');
         return { success: true, type: 'espionage', espionage, target };
       }
 
@@ -7451,7 +7800,7 @@ const occupiedLandmasses = new Set(
     city.buildings = buildings;
 
     // Selling the Palace reassigns the capital
-    if (buildingType === 'palace') {
+    if (isPalaceBuilding(buildingType)) {
       this.governmentManager?.ensureCapital(city.civilizationId);
     }
 
@@ -7676,12 +8025,12 @@ const occupiedLandmasses = new Set(
   /**
    * Save game state to localStorage and trigger GAME_SAVED event.
    */
-  saveGame(): boolean {
+  saveGame(slot: string = 'civ1_savegame'): boolean {
     try {
       const json = this.getSaveJSON();
       if (!json) return false;
-      localStorage.setItem('civ1_savegame', json);
-      console.log(`[GameEngine] Game saved (${(json.length / 1024).toFixed(1)} KB)`);
+      localStorage.setItem(slot, json);
+      console.log(`[GameEngine] Game saved (${(json.length / 1024).toFixed(1)} KB) to ${slot}`);
 
       if (this.onStateChange) {
         this.onStateChange('GAME_SAVED', { turn: this.currentTurn });

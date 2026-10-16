@@ -62,6 +62,7 @@ export const LOG_EVENT_ALLOWLIST: ReadonlySet<string> = new Set<string>([
   'COMBAT_VICTORY',
   'COMBAT_DEFEAT',
   'COMBAT_HIT',
+  'COMBAT_SPLASH',
   'UNIT_DEFEATED',
   'CITY_FOUNDED',
   'CITY_CAPTURED',

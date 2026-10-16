@@ -339,3 +339,217 @@ describe('AICoordinator.summarizeCityMilitarySituation', () => {
     expect(summarize({ units, radius: 4 }).nearbyOwnUnits).toBe(1);
   });
 });
+
+describe('AICoordinator.pruneStaleGroups', () => {
+  const liveGroup: ArmyGroup = {
+    id: 'live',
+    unitIds: ['a', 'b', 'c'],
+    targetLocation: { col: 20, row: 20 },
+    rallyPoint: { col: 10, row: 10 },
+    status: 'forming',
+    requiredStrength: 10,
+    currentStrength: 8,
+  };
+  const liveIds = new Set(['a', 'b', 'c', 'd', 'e']);
+  const validTarget = () => true;
+  const invalidTarget = () => false;
+
+  it('keeps a coherent group with live units and a valid target', () => {
+    const pruned = AICoordinator.pruneStaleGroups([liveGroup], liveIds, { isTargetValid: validTarget });
+    expect(pruned).toHaveLength(1);
+    expect(pruned[0].unitIds).toEqual(['a', 'b', 'c']);
+  });
+
+  it('drops a group whose target no longer holds an enemy', () => {
+    const pruned = AICoordinator.pruneStaleGroups([liveGroup], liveIds, { isTargetValid: invalidTarget });
+    expect(pruned).toEqual([]);
+  });
+
+  it('drops a group left with fewer than 2 live units', () => {
+    const pruned = AICoordinator.pruneStaleGroups([liveGroup], new Set(['a']), { isTargetValid: validTarget });
+    expect(pruned).toEqual([]);
+  });
+
+  it('strips dead unit ids from a surviving group', () => {
+    const pruned = AICoordinator.pruneStaleGroups([liveGroup], new Set(['a', 'b']), { isTargetValid: validTarget });
+    expect(pruned).toHaveLength(1);
+    expect(pruned[0].unitIds).toEqual(['a', 'b']);
+  });
+
+  it('keeps groups when no validity check is provided', () => {
+    const pruned = AICoordinator.pruneStaleGroups([liveGroup], liveIds);
+    expect(pruned).toHaveLength(1);
+  });
+});
+
+describe('AICoordinator.scoreSettlerExposure', () => {
+  const BARB = 99;
+  const hostileCivIds = new Set([BARB]);
+  const settler = { col: 10, row: 10 };
+  const score = (over: Record<string, unknown> = {}) =>
+    AICoordinator.scoreSettlerExposure({
+      settler,
+      destination: null,
+      units: [],
+      civilizationId: 1,
+      hostileCivIds,
+      distanceFn,
+      ...over,
+    } as Parameters<typeof AICoordinator.scoreSettlerExposure>[0]);
+
+  it('is zero when no hostile is near', () => {
+    const exposure = score({
+      units: [
+        makeUnit({ civilizationId: 1, col: 10, row: 11 }),
+        makeUnit({ civilizationId: 2, col: 11, row: 10 }),
+      ],
+    });
+    expect(exposure.threat).toBe(0);
+    expect(exposure.hostileCount).toBe(0);
+    expect(exposure.nearestThreatDistance).toBe(-1);
+  });
+
+  it('counts a barbarian by strength over distance', () => {
+    // Warrior 2/1 -> strength 2.5 at distance 2 -> 2.5 / 3 ~= 0.8.
+    const exposure = score({ units: [makeUnit({ civilizationId: BARB, col: 12, row: 10 })] });
+    expect(exposure.hostileCount).toBe(1);
+    expect(exposure.nearestThreatDistance).toBe(2);
+    expect(exposure.threat).toBeCloseTo(0.8, 1);
+  });
+
+  it('counts a raider sitting on the destination, not the settler', () => {
+    const exposure = score({
+      destination: { col: 14, row: 10 },
+      units: [makeUnit({ civilizationId: BARB, col: 14, row: 11 })],
+    });
+    expect(exposure.hostileCount).toBe(1);
+    expect(exposure.nearestThreatDistance).toBe(1);
+  });
+
+  it('ignores defeated and out-of-range hostiles', () => {
+    const exposure = score({
+      units: [
+        makeUnit({ civilizationId: BARB, col: 11, row: 10, isDefeated: true }),
+        makeUnit({ civilizationId: BARB, col: 10, row: 20 }),
+      ],
+    });
+    expect(exposure.threat).toBe(0);
+    expect(exposure.hostileCount).toBe(0);
+  });
+});
+
+describe('AICoordinator.shouldSettlerHold', () => {
+  const high = { threat: 1.5, nearestThreatDistance: 1, hostileCount: 2 };
+  const distant = { threat: 1.5, nearestThreatDistance: 4, hostileCount: 3 };
+  const calm = { threat: 0, nearestThreatDistance: -1, hostileCount: 0 };
+
+  it('holds an unguarded settler facing killing-blow threat up close', () => {
+    expect(AICoordinator.shouldSettlerHold(high, false)).toBe(true);
+  });
+
+  it('never holds a guarded settler', () => {
+    expect(AICoordinator.shouldSettlerHold(high, true)).toBe(false);
+  });
+
+  it('does not freeze the walk for a distant menace', () => {
+    expect(AICoordinator.shouldSettlerHold(distant, false)).toBe(false);
+  });
+
+  it('walks when nothing is near', () => {
+    expect(AICoordinator.shouldSettlerHold(calm, false)).toBe(false);
+  });
+});
+
+describe('AICoordinator.assignSettlerGuards', () => {
+  const pair = (over: Record<string, unknown> = {}) =>
+    AICoordinator.assignSettlerGuards({
+      settlers: [{ id: 's1', col: 10, row: 10 }],
+      guards: [{ id: 'g1', col: 11, row: 10 }],
+      distanceFn,
+      ...over,
+    } as Parameters<typeof AICoordinator.assignSettlerGuards>[0]);
+
+  it('pairs the nearest guard', () => {
+    const pairs = pair({
+      settlers: [{ id: 's1', col: 10, row: 10 }],
+      guards: [
+        { id: 'g1', col: 15, row: 10 },
+        { id: 'g2', col: 11, row: 10 },
+      ],
+    });
+    expect(pairs.get('s1')).toBe('g2');
+  });
+
+  it('assigns one guard per settler — the second walker goes unguarded', () => {
+    const pairs = pair({
+      settlers: [
+        { id: 's1', col: 10, row: 10 },
+        { id: 's2', col: 10, row: 12 },
+      ],
+      guards: [{ id: 'g1', col: 11, row: 10 }],
+    });
+    expect(pairs.get('s1')).toBe('g1');
+    expect(pairs.get('s2')).toBeNull();
+  });
+
+  it('leaves the settler unguarded when no guard is in range', () => {
+    const pairs = pair({ guards: [{ id: 'g1', col: 10, row: 30 }] });
+    expect(pairs.get('s1')).toBeNull();
+  });
+
+  it('keeps a live pairing instead of thrashing to a nearer guard', () => {
+    const pairs = pair({
+      guards: [
+        { id: 'g1', col: 14, row: 10 },
+        { id: 'g2', col: 11, row: 10 },
+      ],
+      existingPairs: new Map([['s1', 'g1']]),
+      liveSettlerIds: new Set(['s1']),
+      liveGuardIds: new Set(['g1', 'g2']),
+    });
+    expect(pairs.get('s1')).toBe('g1');
+  });
+
+  it('re-tasks when the old guard is dead', () => {
+    const pairs = pair({
+      guards: [
+        { id: 'g1', col: 11, row: 10 },
+        { id: 'g2', col: 12, row: 10 },
+      ],
+      existingPairs: new Map([['s1', 'g1']]),
+      liveSettlerIds: new Set(['s1']),
+      liveGuardIds: new Set(['g2']),
+    });
+    expect(pairs.get('s1')).toBe('g2');
+  });
+
+  it('skips settlers that are no longer alive', () => {
+    const pairs = pair({
+      settlers: [
+        { id: 's1', col: 10, row: 10 },
+        { id: 's2', col: 10, row: 12 },
+      ],
+      existingPairs: new Map([['s2', 'g1']]),
+      liveSettlerIds: new Set(['s1']),
+      liveGuardIds: new Set(['g1']),
+    });
+    expect(pairs.has('s2')).toBe(false);
+    expect(pairs.get('s1')).toBe('g1');
+  });
+});
+
+describe('readiness-gated group targeting', () => {
+  it('a 2-unit remnant below strength rallies instead of suiciding', () => {
+    const remnant: ArmyGroup = {
+      id: 'remnant',
+      unitIds: ['u1', 'u2'],
+      targetLocation: { col: 20, row: 20 },
+      rallyPoint: { col: 10, row: 10 },
+      status: 'forming',
+      requiredStrength: 10,
+      currentStrength: 10,
+    };
+    const target = AICoordinator.getGroupTarget('u1', [remnant]);
+    expect(target).toEqual({ col: 10, row: 10, groupStatus: 'forming' });
+  });
+});

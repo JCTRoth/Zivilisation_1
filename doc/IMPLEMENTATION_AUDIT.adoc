@@ -1,0 +1,467 @@
+= Implementation Audit — What Is Done, Partial and Missing
+:date: 2026-10-15
+:toc: macro
+:toclevels: 2
+
+Audit of the whole project (engine, AI, UI, data, docs, CI scripts) against
+``TODO.txt``, ``README.adoc`` and the ``doc/*.adoc`` claims. Every status below
+was verified against code (file/line evidence), not against documentation.
+
+Method: six parallel source audits (gameplay fidelity, diplomacy/espionage, AI,
+wonders, systems/infrastructure, UI/rendering), plus direct verification runs of
+`npm run test`, `npm run type-check`, `npm run lint` and `npm run knip` on both
+the committed HEAD (`05f1fd1`) and the working tree.
+
+toc::[]
+
+== 1. Headline
+
+* The game itself is *playable, winnable and well tested*: **190 Vitest suites,
+  2 115 tests pass** in both HEAD and the working tree (the README's "153
+  suites, 1 537 cases" is stale).
+* The repository is currently **red on its static gates** — the docs claiming
+  "type-check clean, lint clean, knip clean" are stale:
+** type-check: **35 errors at HEAD**, all in `src/utils/EngineEventHandlers.ts`
+   (`TS2345`: call sites pass cue names such as `'wonderCompleted'`,
+   `'turnStart'`, `'unitMoved'` that no longer exist in the `SfxCue` union —
+   a half-finished sound refactor is committed).
+   The working tree (staged) removes ~90 of those call sites and is down to
+   **3 errors**: two missing i18n keys in the in-progress map-size UI of
+   `src/components/ui/GameSetupModal.tsx` (`setup.mapSizeTitle`,
+   `setup.mapSizeHint`) and one unused variable in the untracked
+   `tests/tmpMapAudit.test.ts`.
+** lint: **fails** (`--max-warnings 0`) with 3 `react-hooks/exhaustive-deps`
+   warnings (`App.tsx`, `GameCanvas.tsx` ×2) — same in HEAD and working tree.
+** knip: **not clean**: 14 findings (12 unused exported values such as
+   `STACK_SPLASH_BONUS`, `CITY_HEAL_PER_TURN`, `navalShipBudgetFor`,
+   `MIN_ZOOM_NORMAL`, plus the unused types `ModalTone` and `SplashVictim`).
+* CI (`.github/workflows/tests.yml`) would fail today at the type-check step.
+* In-progress work in the working tree: sound system cut down to 7 synthesized
+  cues (staged), new map-size/category UI in `GameSetupModal.tsx` (+261 lines,
+  missing two i18n keys), game-result overlay CSS redesign, a new untracked map
+  `atlantic-theater-96x60.json`, temp map tests, small AI/engine edits.
+
+== 2. Done (verified working)
+
+=== Core gameplay
+
+* 14 civilizations with leaders, portraits, city-name lists; AI personalities.
+* 33 unit types across land/sea/air/civilian; stacking, GoTo, sleep / fortify /
+  skip / wait; embark/ferry cargo with capacity and cargo-death-on-sink.
+* City founding, joining, capture, destruction, razing, governors, specialists;
+  growth, starvation, granary (keeps half the food box on growth), disorder,
+  martial law; housing cap: Aqueduct gates growth at 10
+  (`EconomicManager.ts:164`, `TurnManager.ts:1325-1346`).
+* Specialists fully implemented: map icons under the city
+  (`getCitySpecialistButtons`), left/right click assign/remove, side-panel
+  tally, default entertainer for unassigned citizens, tests
+  (`tests/specialists.test.ts`, `tests/idleCitizens.test.ts`).
+* Combat: win chance model, terrain defence, fortify/city bonuses, walls ×1.5,
+  garrison rounds, city capture consequences; **splash damage** in engine
+  (`CombatSystem.splashDamage`, `GameEngine.applySplashDamage:4800-4865`) with
+  city/fortress/fortified/embarked immunities, and the **AI is splash-aware**
+  (de-stacking, `AITactics.scoreStackTarget`, `AIManager.deStackStep`).
+* **Veteran ranks**: Rookie → Trained → Seasoned → Battle-Hardened (×1.0–×1.5),
+  XP awards, Barracks seeding, UI badges, tests (`UnitRankSystem.ts`).
+* Healing in cities: +2 HP/turn up to 15 % of battle damage, ⚕ symbol on the
+  map (`CombatSystem.ts:47-54`, `MapRenderer.ts:407-416`).
+* Pollution (nuclear plants, strikes, cleanup, score penalty, demographics
+  metric), nuclear plants meltdown, barbarians, goody huts / villages,
+  tile improvements, rivers (fordable-width rules centralised in
+  `RiverRules.ts`) and lakes (enclosed < 24 tiles, impassable).
+* Fog of war with per-player visibility, explored memory, save/load restore.
+* Victories: Moonshot (research) and elimination — including the settler rule:
+  a civ losing its last city survives only if a settler remains, other units are
+  removed (`GameEngine.ts:5407-5434`).
+
+=== Wonders (24, data-driven)
+
+* 24 wonder definitions with artwork (`src/data/WonderData.ts`), effects wired
+  into economy/happiness/science/ship movement/vision/anarchy/upgrades/nukes,
+  obsolescence gated by *any* civ's tech, global uniqueness, lost-race
+  progress removal, cannot sell, ownership transfers on capture.
+* UI: celebratory completion modal (artwork + effect + lore), Wonders overview
+  with status colours, production-conflict modal (Go to City / Close), city
+  screen Wonders section, per-wonder Civilopedia modal, availability gating in
+  the production picker; 8 dedicated test files.
+* **Known bug (partial):** `WonderEffects.computeSpaceshipEnabled:99-105` checks
+  only `international_space_station`; `tiangong` and `mir` carry the same
+  `enableSpaceship` effect but are ignored — completing either instead of the
+  ISS closes its wonder group *and* leaves the Moonshot gate shut (soft-lock).
+
+=== Economy, trade, resources
+
+* Yields, corruption (courthouse halving), rates, food, happiness, upkeep per
+  unit type, bankruptcy, trade → gold ×2.
+* Trade routes + caravans with a full caravan governor
+  (`CaravanGovernor.ts`, `CaravanCoordinator.ts`, doc + tests).
+* Fisher Boat system with both TODO rules enforced: a net may not be deployed
+  on a tile worked by any city, nor on a tile that already has a net
+  (`GameEngine.canDeployFishingNet:2709-2719`); auto outbound/fishing/inbound
+  route, fish food formula, Harbor requirement, one boat per city.
+
+=== Diplomacy and espionage
+
+* 4 statuses + 5 treaty types, directed goodwill/grievance ledger with
+  personality-scaled impacts, proposal scoring, war wear, parallel-war limits,
+  peace cooldown (8 rounds), consent-based mutual-defence honouring.
+* Tech-for-tech exchange: engine, UI and AI proposals
+  (`DiplomacyManager.ts:704,844`, `TechTradeEvaluator.ts`,
+  `GameModals.tsx:1314-1380`, tests).
+* Embassies (establish/gate UI), sabotage, steal technology, AI espionage
+  policy, espionage report modal.
+* AI diplomacy: demand tribute, nuclear-threat gold extortion (AI → player),
+  AI-AI treaties/ceasefires/alliances happen and end (batch-measured).
+
+=== AI
+
+* Naval invasion / transport missions **are implemented** since the last docs
+  update (stale docs say otherwise): `InvasionMission` gather/sail/siege,
+  beach scoring, real load/unload via ferry APIs, beachhead holds, reservations,
+  regression tests, batch counter `Invasion —`.
+* Army groups (form/rally/march/attack, retreat morale), colony missions,
+  forced building sales with funding planner, economy-building weights under
+  upkeep pressure, nuclear production + strikes + sub delivery, scouting via
+  engine GoTo with unexplored avoidance, systematic naval scouting, city
+  governor (food → contentment → specialists), final war when no enemies
+  remain, unreachable-area detection → navy pivot, no-settle-inside-own-radius
+  rule, infrastructure planner (irrigation/roads from size 6, full coverage 12).
+
+=== Systems, UI, infrastructure
+
+* i18n: 6 languages (en/de/fr/es/ja/ru), 1 760 keys each, 0 missing/extra,
+  language switcher, browser-language detection, wonder lore in all 6
+  languages, enforced by tests. (Engine-composed strings remain English — see
+  partial list.)
+* Save/load: versioned JSON v4 with v1–v4 migrations, round-trip tests.
+* Command layer exists (`types/commands.ts`, `GameEngine.submit`,
+  `GameSession`); 4 commands implemented (move unit, rates, production, found
+  city).
+* Headless batch runners + progression CSV/JSON export; seeded URL scenarios;
+  AI-vs-AI spectator mode.
+* UI: unit stack modal (status/HP/rank/Select, All-movable/Clear, City
+  details), city "Units" tab, Statistics modal with 13 Civ1 demographic
+  metrics and world ranks, end-of-game overlay with skip setting, minimap,
+  camera glides, animations, modals inventory consistent with
+  `doc/MODALS.adoc`.
+
+== 3. Partially implemented (what exactly remains)
+
+[cols="1,2,2", options="header"]
+|===
+|Feature |What exists |What is missing
+
+|Bribing units
+|Three seeded outcomes (`DiplomacyManager.bribeUnit` → `bribeOutcomeForRoll`):
+defect (transfers the unit, declares war), **reported** (owner's commander
+takes the gold and reports the offer — `bribe_exposed` diplomatic impact +
+`BRIBE_REPORTED` event + toast), **silent refusal** (nothing happens). Tests in
+`tests/ai/DiplomacyManager.test.ts`
+|Per-outcome epic-language **modals** — the reported/refused outcomes currently
+reach the player as a toast, not a dedicated modal component
+
+|Tech-for-money
+|Tech-for-tech trading complete (engine/UI/AI); gold `sweetener` on
+`offer_tech_exchange` (engine transfer + `tech_exchanged` impact carrying
+`gold`, one-sided "at least one technology" accepted)
+|UI affordance to attach a gold sweetener when proposing an exchange — the
+engine reads `goldAmount`, but the negotiation screen has no gold input for it
+
+|Gold gifts / requests
+|`demand_tribute` (player→AI and AI→player, with accept/refuse UI);
+`offer_gift` moves gold and emits the `tribute_gift` impact **in both
+ledgers** (receiver and giver — the "never emitted" gap is closed); AI nuclear
+extortion of the player
+|Player UI button to send an unprompted gift; peaceful gold request distinct
+from a demand
+
+|Incite revolt
+|Complete: `DiplomacyManager.inciteRevolt` — paid up front (100×pop),
+**capitals immune**, garrison-scaled success roll, city flip **causes war**,
+caught → `spy_detected` impact. Exposed through `ESPIONAGE_DIPLOMAT_ACTIONS`
+(never negotiated — the victim is not asked) with the full UI entry
+(`UnitActionsModal` 🔥) and `executeDiplomatAction` case
+|Nothing engine-side; AI civs do not yet incite on their own
+
+|AI-to-AI calls for help
+|Complete: `DiplomacyManager.considerCallToArms` runs each diplomatic round —
+a civ at war asks **every ally and mutual-defence partner** to join against
+its main enemy (player via the audience modal, AIs via the normal proposal
+machinery where the joint-war scoring decides); once per war per 16-round
+cooldown; only enemies the listener has **met** are named
+|Offensive "help me attack" asks (currently joins an existing war only);
+the combat cascade is still unconditional
+
+|Embassy observation of AI-AI diplomacy
+|Complete: `DiplomacyManager.getEventLog(observerCivId)` — events touching the
+observer are always visible; a third-party event is visible **only if the
+observer holds an embassy with both parties** (a one-sided embassy is not a
+network). The diplomacy record feed passes the player id, replacing the old
+global log
+|Nothing — the rule is engine-side and shared by every surface
+
+|Multi-group offensives
+|Complete: `AIManager.secondaryGroupTargets` — the committed plan's target is
+listed **first** (it takes every marchable unit), then at most **two**
+secondary fronts on the same war's other cities, nearest the primary first.
+Groups beyond what the primary can absorb open a second front instead of
+stacking beside the main siege. Tests in `tests/ai/armyComposition.test.ts`
+|>2 groups; explicit pincer/multi-target siege scripting
+
+|Army composition by era
+|Complete: `AutoProduction.buildableLandCombat` + `bestBuildableDefender` /
+`bestBuildableAttacker` select from `UNIT_PROPS` by role and by
+`canBuildUnit(civ, type)` — **no hardcoded ladder**, so `mech_inf` and tanks
+are fielded the moment the tech lands. Defenders mix in the era's best
+attacker every third garrison unit. Tests in `tests/ai/armyComposition.test.ts`
+|Threat changes **quantity** (garrison math) rather than type; no
+siege/anti-tank weighting of the mix beyond the defender/shooter alternation
+
+|Naval nuclear arsenal
+|Warheads built and used; submarine delivery wired
+|`desiredNuclearArsenal`/`canAffordNuclear` are dead outside tests — no
+explicit "build N subs for the arsenal" order, so a warhead civ without a sub
+cannot strike overseas reliably
+
+|Anti-fishing-boat raiding
+|Enemy fisher boats are incidental naval targets
+|>3 enemy fishing boats in a 10×10 area detection and a recurring raider
+mission that returns to farm them
+
+|Land transports
+|Naval ferry cargo complete
+|No land transport unit; `canLoadFerry` hard-requires `naval === true`
+
+|Sound
+|7 synthesized cues (stolen tech, cover blown, city captured, UI, strike,
+defeat, disband); setting; tests; WIP is cutting call sites down to these
+|Music/BGM entirely missing; no audio assets shipped; `uiSelect` never
+called; the refactor currently breaks type-check at HEAD (see §1)
+
+|Building effects model
+|Every declared effect consumed (`BuildingEffects.ts`): `trade`/`science`/
+`happiness`/`corruptionReduction`/`pollution` plus — since the implementation
+pass — `production` (flat shields in city yields), `unitProduction` (military
+builds), `veteranUnits` (Seasoned roll-out), `foodStorage`/`growthBonus`
+(growth), `health` (demographics), `defense` (×(1+0.25·N) city defence),
+`missileDefense` (SDI), `isPalace` (capital), `housingCap` (aqueduct),
+`culture` (demographics). AI valuation (`BuildingEconomics.INERT_EFFECTS`)
+now lists only truly unread keys
+|None of the above remains inert; `gold`/`food` effects are still declared
+nowhere and unread
+
+|End-of-game statistics
+|GameResultOverlay shows score, turn, cities, citizens, units, techs, wonders,
+rivals
+|No economics / military / science sections or tabs; not a reopenable
+statistics screen
+
+|Demographics
+|13 Civ1 metrics + ordinal world ranks (StatisticsModal, DemographicsManager)
+|"Greatest cities in the world" list missing; Players/world tab is
+devMode-gated
+
+|Aqueduct housing cap
+|Engine blocks growth, emits `CITY_GROWTH_BLOCKED`
+|The event has no listener — the player gets no explanation/UI hint
+
+|Wonder effects
+|Nearly all effects consumed
+|~~Tiangong/Mir `enableSpaceship` ignored → space-race soft-lock~~ fixed
+(`computeGlobalGate` reads the `enableSpaceship` effect from any built wonder;
+regression test in `wonderEffects.test.ts`); overview
+has no thumbnail placeholder; not reachable from Statistics as documented
+
+|Command layer
+|4 commands validated through `submit()`
+|~51+ UI→engine direct mutations remain (62 grep hits), e.g. examples in
+`GameCanvas.tsx`, `CityModal.tsx`, `App.tsx`
+
+|Determinism
+|Map generation + setup seeded; RNG injectable in combat
+|33 live `Math.random()` sites in the engine (unseeded combat rolls, village
+outcomes, meltdowns, …) and `Date.now()`-based IDs (`TurnManager.ts:1066`,
+`AICoordinator.ts:226`)
+
+|i18n depth
+|UI strings complete in 6 languages
+|Engine-composed strings (diplomacy messages, some notifications) bypass
+i18n and stay English
+
+|Splash damage feedback
+|Engine + AI complete
+|~~`COMBAT_SPLASH` is emitted but handled nowhere~~ fixed: handler + toast in
+`EngineEventHandlers.onSplash`, and the `battleDamageTaken` double increment
+is gone (single increment per hit, see the comment in the combat-win path).
+Tests: `splashHealing.test.ts`
+
+|City "Units" tab
+|Lists units standing on the city tile with status/HP/A/D/rank
+|"Units supported by / homed to the city" section missing (pinned as
+intentional by test, but it is less than the TODO asked for)
+
+|City walls
+|Functionality complete (×1.5 defence, upkeep, capture removal) + "WALLS"
+text ring drawn on the map
+|Visual is a text ring, not a rampart graphic; stale comments say ×3 vs the
+code's ×1.5
+
+|Auto end turn
+|Feature with checkbox + first-timer offer (turn 15)
+|The requested 3-second delay before switching players is not implemented
+
+|Treaties enforcement
+|Trade agreement doubles trade-route income (after a rework)
+|UI/doc still announce "+2 gold/turn" (stale); open borders stored but never
+enforced (`hasOpenBorders` has no callers); embargo flag written but never
+read; breaking non-aggression carries no declaration penalty
+
+|Test coverage gaps
+|2 115 tests green
+|`saveLoadMatrix` v3→v4 downgrade is a no-op (replace targets `"version":3`
+while engine writes v4); no e2e wonder specs; no test for Tiangong/Mir gate;
+no tests for UnitStackModal/group move
+
+|===
+
+== 4. Missing (not started)
+
+[cols="1,2", options="header"]
+|===
+|Feature |Scope to build
+
+|Random disasters
+|The 7 Civ1 disasters (famine, flood, fire, plague, volcano, earthquake,
+pestilence) with rolls, prevention (Granary famine immunity, Aqueduct/Temple
+protection), notifications/modals
+
+|Global warming
+|Pollution accumulation → climate consequences (terrain/sea/food), Civ1 sun
+indicator/modal. Pollution itself exists; warming does not
+
+|Space race 2.0
+|Spaceship parts production, per-part tracking UI, launch, flight-time
+countdown. Today researching the Moonshot tech wins instantly
+(`GameEngine.ts:5980` documents "no spaceship parts")
+
+|Advisors
+|The 6 advisor reports + world reports (none exist; only a stale e2e test
+name mentions "Foreign Advisor")
+
+|Find City
+|City search/list dialog with jump-to-city (only Ctrl+1..9 exists)
+
+|Autosave
+|Automatic save (every 50 turns or configurable); saving is manual-only today
+
+|High scores / hall of fame
+|Persistent score list + submission flow + UI (no highscore code, storage or
+server exists)
+
+|Hot-seat / multi-human
+|2+ human civs, pass-the-keyboard hand-off, per-civ fog/HUD switching.
+Engine has latent multi-human handling but setup/session always create one
+human (`i === 0`)
+
+|Trade Ship
+|New trade-ship unit with the TODO's route/yield/sinking formulas
+
+|River fish
+|Rivers may contain fish at ½ the ocean probability (map generation currently
+places fish only on ocean/coast)
+
+|Country-based civ selection
+|Map country code/IP → civilization id on the start screen
+
+|Multiplayer stack
+|Client/server split, lobby, network play, replay system (nothing exists;
+`session.ts`/`commands.ts` carry design comments only)
+
+|Database backup/restore
+|Export/import/backup of server-side data (no DB, no server)
+
+|===
+
+== 5. Documentation drift found (fix in the same pass as code)
+
+* `README.adoc`: "153 suites / 1 537 cases" → actually 190 / 2 115; claims
+  about clean CI are currently false.
+* `doc/DEVELOPMENT_STATUS.adoc` + `TODO.txt` "Next Steps": still say naval
+  invasion is missing and knip is clean — both stale. Update and re-measure
+  with a fresh batch (the runner already counts `Invasion —`).
+* `doc/WONDERS.adoc`: Statistics→Wonders tab was removed; artwork is `.jpg`,
+  not `.png`; spaceship-gate description does not match the code bug.
+* `doc/DIPLOMACY_SYSTEM.adoc`: describes a removed willingness roll and dead
+  `BRIBE_CITY_BASE_COST`; trade-agreement "+2 gold/turn" text is stale.
+* Stale "23 wonders" comments in `WonderData.ts:143`, `BuildingConstants.ts:327`,
+  `WondersOverview.tsx:244`; `TODO.txt` wonder spec says 23 while listing 24.
+* `cityWalls` test/AI comments say ×3 defence; code applies ×1.5.
+
+== 6. Suggested priority order
+
+|===
+| *Status of this backlog (implementation pass, 2026-10-16)*
+
+*Resolved in code:* P0 repo green (type-check/lint/knip/tests at the time of
+writing, one pre-existing knip finding `SUBMARINE_NUCLEAR_CAPACITY` aside);
+P1 spaceship gate + splash handling; building-effects wiring (P5 item); bribe
+three-outcome system (defect / reported-with-diplomatic-hit / silent refusal,
+`DiplomacyManager.bribeUnit` + `BRIBE_REPORTED` event + tests).
+
+*Resolved this pass:* the six audited backlog areas, taken bottom-up.
+**Wonders** — `computeSpaceshipEnabled`/`computeNuclearAllowed` now read the
+`enableSpaceship`/`enableNuclear` **effect** from any built wonder (Tiangong
+and Mir count), with a regression test. **Building effects** — new
+`BuildingEffects.ts` wires `production`/`unitProduction`/`veteranUnits`/
+`foodStorage`/`growthBonus`/`housingCap`/`defense`/`missileDefense`/
+`isPalace`/`health`/`culture` into the simulation and replaces hardcoded
+building ids; `CombatSystem` and `BarbarianManager` now share one ×(1+0.25·N)
+defence multiplier. **Splash** — already fully implemented. **Bribe** — three
+seeded outcomes with a `bribe_exposed` impact and `BRIBE_REPORTED` toast.
+**Diplomacy** — tech-for-gold sweetener, gold gifts emitting `tribute_gift` in
+both ledgers, incite revolt (paid up front, capitals immune, causes war),
+AI↔AI calls for help, and embassy-gated observation of third-party events.
+**Army** — era-driven composition (no hardcoded ladder, `mech_inf` now
+reachable) and multi-group secondary fronts.
+
+*Still open from this list:* per-outcome bribe **modals** (toasts only today);
+UI affordances for the gold sweetener/gift; offensive "help me attack" asks;
+>2 groups and pincer scripting; and everything in P3–P5 not struck through
+above.
+
+*Known red, NOT from this pass:* `tests/idleUnits.test.ts` ("settler idle
+share 45.5 % vs 45 %") fails against the concurrent session's in-flight
+`AutoProduction.ts` rework (works/expansion ordering, trade-ship production).
+Isolated by construction: with every other file held identical, `AutoProduction`
+at HEAD + this pass's edits passes the test, and the same tree with the other
+session's AutoProduction hunks layered on fails it. This pass's composition,
+diplomacy, army and building edits are each green on the same metric. The
+threshold's own history (25.8 → 36 → 41.1 → 45 as the AI economy evolved)
+documents it as a ratchet — the session owning that rework should close it at
+the source (size the expansion corps by reachable settlement sites) rather
+than ratchet a sixth time.
+|===
+
+. **P0 — get the repo green again.** Finish the sound-cue cleanup
+  (`EngineEventHandlers`), add the two missing `setup.mapSize*` i18n keys,
+  remove/complete the tmp tests, clean the 14 knip findings, fix the 3 lint
+  warnings. Nothing else should be committed before this.
+. **P1 — correctness:** Tiangong/Mir spaceship gate fix (soft-lock) + test;
+  `COMBAT_SPLASH` UI handling; `battleDamageTaken` double increment.
+. **P2 — finish the diplomacy feature set** (highest player-visible value per
+  effort): bribe outcomes + modals, tech-for-money, gold gifts/requests,
+  incite revolt, alliance calls, embassy observation.
+. **P3 — Civ1 fidelity:** disasters, global warming, space race 2.0, advisors,
+  find city, autosave, high scores, end-of-game statistics, greatest-cities
+  list.
+. **P4 — infrastructure:** determinism (RNG + IDs), command-layer rollout,
+  then client/server split → hot-seat → lobby/network → replay → database.
+. **P5 — polish:** remaining building effects, music, naval nuke arsenal,
+  anti-fishing-boat raider mission, land transports, army-composition eras,
+  aqueduct UI feedback, wonder overview thumbnails, doc cleanup listed in §5.
+
+== See also
+
+* `TODO.txt` — the live task list (partially outdated, see §5)
+* `doc/DEVELOPMENT_STATUS.adoc` — predecessor of this audit
+* `doc/GAME_RULES.adoc` — authoritative rules reference

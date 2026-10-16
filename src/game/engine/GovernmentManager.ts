@@ -11,6 +11,7 @@
 
 import { getGovernment } from '../../data/GovernmentData';
 import type { Civilization, City, Unit } from '../../../types/game';
+import { hasBuildingEffect, PALACE_BUILDING_ID, stripPalaceBuildings } from './BuildingEffects';
 import GameEngine from './GameEngine';
 
 /** How many turns a revolution (anarchy) lasts before the new government applies. */
@@ -303,16 +304,17 @@ export class GovernmentManager {
     for (const c of this.gameEngine.cities ?? []) {
       if (c.civilizationId === civId && c.isCapital && c.id !== city.id) {
         c.isCapital = false;
-        if (Array.isArray(c.buildings)) {
-          const idx = c.buildings.indexOf('palace');
-          if (idx !== -1) c.buildings.splice(idx, 1);
-        }
+        // The Palace is whatever building declares `isPalace` — never a
+        // hardcoded id (the effect data is the single source of truth).
+        c.buildings = stripPalaceBuildings(c.buildings) as string[];
       }
     }
 
     city.isCapital = true;
     if (!Array.isArray(city.buildings)) city.buildings = [];
-    if (!city.buildings.includes('palace')) city.buildings.push('palace');
+    if (PALACE_BUILDING_ID && !hasBuildingEffect(city, 'isPalace')) {
+      city.buildings.push(PALACE_BUILDING_ID);
+    }
     civ.capital = city;
     this.gameEngine.log?.('government',
       `${civ.name} moves its capital to ${city.name}`, { civId, cityId: city.id });
@@ -330,7 +332,7 @@ export class GovernmentManager {
     if (capital && (this.gameEngine.cities ?? []).some((c: City) => c.id === capital.id)) return;
 
     const withPalace = (this.gameEngine.cities ?? []).find(
-      (c: City) => c.civilizationId === civId && Array.isArray(c.buildings) && c.buildings.includes('palace'),
+      (c: City) => c.civilizationId === civId && hasBuildingEffect(c, 'isPalace'),
     );
     const first = (this.gameEngine.cities ?? []).find((c: City) => c.civilizationId === civId);
     const replacement = withPalace ?? first;

@@ -30,7 +30,6 @@ import type {
   MovementReachable,
   TurnMarker,
   Unit,
-  VisualEffect,
 } from "../../../types/game";
 import GameEngine from "@/game/engine/GameEngine";
 import "../../styles/civ1GameCanvas.css";
@@ -64,6 +63,43 @@ import { debugLog } from '@/utils/DevLog';
 const ANIMATION_FPS = 30;
 
 type HexCoordinates = { col: number; row: number };
+
+/**
+ * Full-screen "world event" flourishes — currently the nuclear detonation.
+ *
+ * Deliberately dumb: it renders one node per active effect, wires the CSS
+ * animation's end event to `removeVisualEffect`, and does nothing else. No
+ * rAF loop, no per-frame work, nothing in the map's render path. A strike is a
+ * couple of composited layers for under a second, and then the node is gone.
+ */
+function VisualEffects({ disabled }: { disabled?: boolean }) {
+  const effects = useGameStore((state) => state.visualEffects);
+  const removeVisualEffect = useGameStore((state) => state.actions.removeVisualEffect);
+
+  if (disabled || effects.length === 0) return null;
+
+  return (
+    <div className="visual-effect-layer" aria-hidden="true">
+      {effects.map((effect) => (
+        <div
+          key={effect.id}
+          className="visual-effect-nuclear-bloom"
+          style={{
+            // The bloom is driven by its own duration so a longer effect keeps
+            // the light in the sky for longer.
+            animationDuration: `${Math.round(effect.duration * 1.9)}ms`,
+          }}
+          onAnimationEnd={() => removeVisualEffect(effect.id)}
+        >
+          <div
+            className="visual-effect-nuclear-flash"
+            style={{ animationDuration: `${effect.duration}ms` }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** English tech name for an id, used as the `tTechName` fallback. */
 const techNameFallback = (techId: string): string =>
@@ -99,47 +135,6 @@ const MAX_REGION_REPAINT_TILES = 512;
 const NON_COMBAT_UNITS = new Set(['settler', 'worker', 'caravan', 'diplomat']);
 const isCombatUnitType = (type: string): boolean => !NON_COMBAT_UNITS.has(type);
 
-interface VisualEffectProps {
-  effect: VisualEffect;
-}
-
-/**
- * Renders visual effects like nuclear flash, screen shake, etc.
- * Uses CSS animations for GPU efficiency.
- */
-const VisualEffectRenderer: React.FC<VisualEffectProps> = ({ effect }) => {
-  const elapsed = Date.now() - effect.startTime;
-  const progress = Math.min(elapsed / effect.duration, 1);
-  
-  if (effect.type === 'nuclear_flash') {
-    // White flash that fades out quickly
-    const opacity = Math.max(0, 1 - progress * 2); // Fade out in first half
-    return (
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          background: 'white',
-          opacity,
-          pointerEvents: 'none',
-          zIndex: 9999,
-        }}
-      />
-    );
-  }
-  
-  if (effect.type === 'screen_shake') {
-    // Screen shake - the actual shake is applied via a class on the root element
-    // This component just exists to track the effect lifecycle
-    return null;
-  }
-  
-  return null;
-};
-
 const GameCanvas: React.FC<GameCanvasProps> = ({
   minimap = false,
   onExamineHex,
@@ -168,7 +163,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const gameState = useGameStore(useShallow((state) => state.gameState));
   const mapData = useGameStore((state) => state.map);
   const camera = useGameStore((state) => state.camera);
-  const uiState = useGameStore((state) => state.uiState);
   const actions = useGameStore((state) => state.actions);
   const cities = useGameStore((state) => state.cities);
   const units = useGameStore((state) => state.units);
@@ -1050,6 +1044,31 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     [gameEngine],
   );
 
+  const getCityAtFromEngine = useCallback(
+    (col: number, row: number): City | null => {
+      if (!gameEngine) return null;
+      try {
+        if (typeof gameEngine.getCityAt === "function")
+          return gameEngine.getCityAt(col, row);
+        const mapObj = gameEngine.map as {
+          getCityAt?: (c: number, r: number) => City | null;
+        } | null;
+        if (mapObj && typeof mapObj.getCityAt === "function")
+          return mapObj.getCityAt(col, row);
+        const citiesArr = gameEngine.cities;
+        if (Array.isArray(citiesArr))
+          return (
+            citiesArr.find((c: City) => c && c.col === col && c.row === row) ||
+            null
+          );
+      } catch (err) {
+        console.error("[GameCanvas] getCityAtFromEngine error", err);
+      }
+      return null;
+    },
+    [gameEngine],
+  );
+
   // Calculate reachable tiles when selected unit changes. This is the ONLY
   // source for the selected unit's movement range, so auto-selection (turn
   // queue, focusOnNextUnit, unit-moved events) behaves exactly like a click.
@@ -1095,6 +1114,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     terrain,
     getTileAt,
     getUnitAtFromEngine,
+    getCityAtFromEngine,
     triggerRender,
   ]);
 
@@ -1149,32 +1169,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     [camera.x, camera.y, camera.zoom, mapData.height, mapData.width],
   );
 
-  // getUnitAtFromEngine is defined above (near getTileAt).
-
-  const getCityAtFromEngine = useCallback(
-    (col: number, row: number): City | null => {
-      if (!gameEngine) return null;
-      try {
-        if (typeof gameEngine.getCityAt === "function")
-          return gameEngine.getCityAt(col, row);
-        const mapObj = gameEngine.map as {
-          getCityAt?: (c: number, r: number) => City | null;
-        } | null;
-        if (mapObj && typeof mapObj.getCityAt === "function")
-          return mapObj.getCityAt(col, row);
-        const citiesArr = gameEngine.cities;
-        if (Array.isArray(citiesArr))
-          return (
-            citiesArr.find((c: City) => c && c.col === col && c.row === row) ||
-            null
-          );
-      } catch (err) {
-        console.error("[GameCanvas] getCityAtFromEngine error", err);
-      }
-      return null;
-    },
-    [gameEngine],
-  );
+  // getUnitAtFromEngine / getCityAtFromEngine are defined above (near getTileAt).
 
   const getAllCitiesFromEngine = (): City[] => {
     if (!gameEngine) return [];
@@ -1348,7 +1343,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         return new Map();
       }
     },
-    [mapData, terrain, getTileAt, getUnitAtFromEngine],
+    [mapData, terrain, getTileAt, getUnitAtFromEngine, getCityAtFromEngine],
   );
 
   /**
@@ -1549,8 +1544,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     // First real user gesture: warm the audio context so the first cue (a
     // stolen technology, a conquered city) is not swallowed by autoplay policy.
-    // `void` — Tone's start() is async and nothing here waits on it.
-    void unlockAudio();
+    unlockAudio();
     // Cancel any in-progress camera glide when the user interacts directly.
     cameraTweenRef.current = null;
     actions.clearCameraPanRequest();
@@ -2753,6 +2747,28 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         }
         break;
 
+      case "establish_trade_ship_route":
+        if (unit && gameEngine?.establishTradeShipRoute) {
+          const res = gameEngine.establishTradeShipRoute(unit.id);
+          if (actions?.updateUnits)
+            actions.updateUnits(getAllUnitsFromEngine());
+          if (actions?.addNotification)
+            actions.addNotification(
+              res.success
+                ? { type: "success", message: `Trade route opened for ${unit.type}` }
+                : { type: "warning", message: `Cannot establish a trade route here (not on a different harbour)` },
+            );
+        }
+        break;
+
+      case "cancel_trade_ship_route":
+        if (unit && gameEngine?.clearTradeShipRoute) {
+          gameEngine.clearTradeShipRoute(unit.id);
+          if (actions?.updateUnits)
+            actions.updateUnits(getAllUnitsFromEngine());
+        }
+        break;
+
       case "sleep":
         if (unit && gameEngine) {
           if (unit.isSleeping && gameEngine.unitWake) {
@@ -3509,22 +3525,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     selectedUnit !== null &&
     unitPaths.has(selectedUnit.id);
 
+  // The screen shake rides on this same root, so it is one boolean rather than
+  // a per-frame offset: the CSS keyframes do the decaying motion and the
+  // `is-shaking` class is dropped from the store as soon as the last effect
+  // ends.
+  const shaking = useGameStore(
+    (state) => state.visualEffects.some((e) => e.shake > 0),
+  );
+  const animationsEnabled = useGameStore((state) => state.settings.enableAnimations);
+
   return (
     <div
-      className="position-relative w-100 h-100 game-canvas-root"
-      style={{
-        transform: uiState.visualEffects
-          .filter((e) => e.type === 'screen_shake')
-          .map((e) => {
-            const elapsed = Date.now() - e.startTime;
-            const progress = Math.min(elapsed / e.duration, 1);
-            const intensity = e.intensity ?? 10;
-            const shakeX = Math.sin(elapsed * 0.1) * intensity * (1 - progress);
-            const shakeY = Math.cos(elapsed * 0.07) * intensity * (1 - progress);
-            return `translate(${shakeX}px, ${shakeY}px)`;
-          })
-          .join(' '),
-      }}
+      className={`position-relative w-100 h-100 game-canvas-root${
+        shaking && animationsEnabled ? " is-shaking" : ""
+      }`}
     >
       <canvas
         ref={canvasRef}
@@ -3578,6 +3592,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           aria-hidden="true"
         />
       )}
+
+      {/* Full-screen world-event flourishes (nuclear flash). */}
+      {!minimap && <VisualEffects disabled={!animationsEnabled} />}
 
       {/* Context Menu (not shown on minimap) */}
       {!minimap && (
@@ -3636,9 +3653,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           onClose={() => setEspionageReport(null)}
         />
       )}
-    {uiState.visualEffects.map((effect) => (
-        <VisualEffectRenderer key={effect.id} effect={effect} />
-      ))}
     </div>
   );
 };

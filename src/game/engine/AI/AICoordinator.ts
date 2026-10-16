@@ -51,6 +51,16 @@ const MILITARY_SITUATION_RADIUS = 4;
  */
 const INCOMING_ASSAULT_STRENGTH = 2.5;
 
+/**
+ * Radius around a settler — and around the site it walks to — scanned for
+ * hostiles when deciding whether it needs a guard. A raider on the found
+ * site kills the city plan as surely as one on the settler.
+ */
+const SETTLER_THREAT_RADIUS = 4;
+
+/** A combat unit this far from a settler can still be tasked as its guard. */
+const GUARD_ASSIGN_RADIUS = 6;
+
 const round1 = (value: number): number => Math.round(value * 10) / 10;
 
 /**
@@ -105,6 +115,16 @@ export interface CityMilitarySituationInput {
   distanceFn: (col1: number, row1: number, col2: number, row2: number) => number;
   /** Radius that counts as "this city". Defaults to MILITARY_SITUATION_RADIUS. */
   radius?: number;
+}
+
+/** How exposed one settler's walk is, in one number the caller can act on. */
+export interface SettlerExposure {
+  /** Strength-weighted hostile presence (same distance weighting as cities). */
+  threat: number;
+  /** Distance to the nearest hostile counted, or -1 when there is none. */
+  nearestThreatDistance: number;
+  /** Distinct hostile units counted. */
+  hostileCount: number;
 }
 
 /** Options injected by the engine-aware caller (AIManager). */
@@ -240,6 +260,34 @@ export class AICoordinator {
   }
 
   /**
+   * Drop the groups that cannot fight anymore: fewer than 2 live units, or a
+   * target that no longer holds an enemy.
+   *
+   * This is the quiet-turn path. `formArmyGroups` returns its input untouched
+   * when no new group can form, so without pruning the caller had two choices
+   * — keep everything (stale rallies, dead units) or wipe everything. It
+   * wiped: one target-less turn dissolved `forming` groups and their progress
+   * with them. Pruning keeps coherent groups across quiet turns and dissolves
+   * only what is actually gone. Pure — the caller refreshes statuses after.
+   */
+  static pruneStaleGroups(
+    groups: ArmyGroup[],
+    liveUnitIds: ReadonlySet<string>,
+    options: Pick<ArmyGroupOptions, 'isTargetValid'> = {},
+  ): ArmyGroup[] {
+    return groups
+      .filter((group) => {
+        if (options.isTargetValid && !options.isTargetValid(group.targetLocation)) return false;
+        const live = group.unitIds.filter((id) => liveUnitIds.has(id));
+        return live.length >= 2;
+      })
+      .map((group) => ({
+        ...group,
+        unitIds: group.unitIds.filter((id) => liveUnitIds.has(id)),
+      }));
+  }
+
+  /**
    * The group's rally point: the centroid of its units, snapped outward to the
    * nearest passable tile. Returns null when no passable tile is found within
    * `RALLY_SEARCH_RADIUS` (the caller then skips the group).
@@ -280,9 +328,12 @@ export class AICoordinator {
 
       switch (group.status) {
         case 'forming':
-          // A group that already has enough strength does not wait for the
-          // last straggler — it presses on to the target.
-          if (group.currentStrength >= group.requiredStrength) {
+          // Readiness bands decide: a group at full required strength presses
+          // on to the target instead of waiting for stragglers; anything
+          // weaker rallies first. (A 2-unit remnant below strength rallies
+          // rather than suiciding — the rally timeout still marches it if the
+          // group never refills.)
+          if (AICoordinator.evaluateArmyReadiness(group) === 'ready') {
             return { col: group.targetLocation.col, row: group.targetLocation.row, groupStatus: 'forming' };
           }
           // Otherwise move to the rally point.
@@ -526,6 +577,142 @@ export class AICoordinator {
   /** Shared combat-strength model — identical to `calculateGroupStrength`. */
   private static unitStrength(unit: Unit): number {
     return Math.max(1, unit.attack || 0) + (unit.defense || 0) * 0.5;
+  }
+
+  // -------------------------------------------------------------------------
+  // Settler escort (land): guards for walkers, holds for the unguarded
+  // -------------------------------------------------------------------------
+
+  /**
+   * Exposure at or above this asks for a guard: roughly "a hostile presence
+   * on the walk, not yet a killing blow". Holds (see `shouldSettlerHold`)
+   * trigger higher, at killing-blow range.
+   */
+  static readonly SETTLER_GUARD_REQUEST_THREAT = 0.5;
+
+  /**
+   * Exposure at or above this holds an unguarded settler: roughly one real
+   * attacker in striking distance of the walker or its site.
+   */
+  static readonly SETTLER_HOLD_THREAT = 1.0;
+
+  /** A guard is asked to close from this far; holding threat counts this close. */
+  static readonly SETTLER_THREAT_RADIUS = SETTLER_THREAT_RADIUS;
+  static readonly GUARD_ASSIGN_RADIUS = GUARD_ASSIGN_RADIUS;
+
+  /**
+   * How much danger a settler walks in: hostile strength within the threat
+   * radius of the settler AND of its destination, each hostile scored once at
+   * the closer of the two. A raider sitting on the found site kills the plan
+   * as surely as one sitting on the walker.
+   *
+   * Pure — the caller (AIManager) decides who counts as hostile (at-war civs
+   * plus barbarians) and what to do about the number.
+   */
+  static scoreSettlerExposure(input: {
+    settler: { col: number; row: number };
+    destination?: { col: number; row: number } | null;
+    units: Unit[];
+    civilizationId: number;
+    hostileCivIds: ReadonlySet<number>;
+    distanceFn: (col1: number, row1: number, col2: number, row2: number) => number;
+    radius?: number;
+  }): SettlerExposure {
+    const {
+      settler, destination, units, civilizationId, hostileCivIds, distanceFn,
+      radius = SETTLER_THREAT_RADIUS,
+    } = input;
+    let threat = 0;
+    let nearest = Infinity;
+    let hostileCount = 0;
+    for (const unit of units) {
+      if (unit.isDefeated) continue;
+      if (unit.civilizationId === civilizationId) continue;
+      if (!hostileCivIds.has(unit.civilizationId)) continue;
+      const d = Math.min(
+        distanceFn(unit.col, unit.row, settler.col, settler.row),
+        destination ? distanceFn(unit.col, unit.row, destination.col, destination.row) : Infinity,
+      );
+      if (d > radius) continue;
+      threat += AICoordinator.unitStrength(unit) / (d + 1);
+      if (d < nearest) nearest = d;
+      hostileCount += 1;
+    }
+    return {
+      threat: round1(threat),
+      nearestThreatDistance: nearest === Infinity ? -1 : nearest,
+      hostileCount,
+    };
+  }
+
+  /**
+   * Whether an exposed settler should hold instead of walking: no live guard,
+   * killing-blow exposure, and the threat is close (a distant menace is the
+   * guard-request's problem, not a reason to freeze the walk).
+   */
+  static shouldSettlerHold(
+    exposure: SettlerExposure,
+    hasLiveGuard: boolean,
+  ): boolean {
+    if (hasLiveGuard) return false;
+    return exposure.threat >= AICoordinator.SETTLER_HOLD_THREAT
+      && exposure.nearestThreatDistance !== -1
+      && exposure.nearestThreatDistance <= 2;
+  }
+
+  /**
+   * Pair exposed settlers with bodyguards — the land analogue of
+   * `assignNavalEscorts`. Live pairings that still hold together are kept
+   * (re-tasking every turn walks guards back and forth instead of toward the
+   * settler); the gaps are filled with the nearest free guard each. One guard
+   * per settler — unlike a warship, a bodyguard cannot screen two walkers.
+   * Pure — the caller moves the pairs together.
+   */
+  static assignSettlerGuards(input: {
+    settlers: Array<{ id: string; col: number; row: number }>;
+    guards: Array<{ id: string; col: number; row: number }>;
+    /** Current settlerId -> guardId links the caller keeps on the units. */
+    existingPairs?: ReadonlyMap<string, string>;
+    liveSettlerIds?: ReadonlySet<string>;
+    liveGuardIds?: ReadonlySet<string>;
+    distanceFn: (col1: number, row1: number, col2: number, row2: number) => number;
+    maxDistance?: number;
+  }): Map<string, string | null> {
+    const {
+      settlers, guards, existingPairs, liveSettlerIds, liveGuardIds, distanceFn,
+      maxDistance = GUARD_ASSIGN_RADIUS,
+    } = input;
+    const pairs = new Map<string, string | null>();
+    const taken = new Set<string>();
+    const guardAt = new Map(guards.map((g) => [g.id, g]));
+    if (existingPairs) {
+      for (const settler of settlers) {
+        if (liveSettlerIds && !liveSettlerIds.has(settler.id)) continue;
+        const guardId = existingPairs.get(settler.id);
+        if (!guardId || taken.has(guardId)) continue;
+        if (liveGuardIds && !liveGuardIds.has(guardId)) continue;
+        const guard = guardAt.get(guardId);
+        if (!guard) continue;
+        if (distanceFn(guard.col, guard.row, settler.col, settler.row) > maxDistance) continue;
+        pairs.set(settler.id, guardId);
+        taken.add(guardId);
+      }
+    }
+    for (const settler of settlers) {
+      if (pairs.has(settler.id)) continue;
+      if (liveSettlerIds && !liveSettlerIds.has(settler.id)) continue;
+      let best: { id: string; d: number } | null = null;
+      for (const guard of guards) {
+        if (taken.has(guard.id)) continue;
+        if (liveGuardIds && !liveGuardIds.has(guard.id)) continue;
+        const d = distanceFn(guard.col, guard.row, settler.col, settler.row);
+        if (d > maxDistance) continue;
+        if (!best || d < best.d) best = { id: guard.id, d };
+      }
+      pairs.set(settler.id, best ? best.id : null);
+      if (best) taken.add(best.id);
+    }
+    return pairs;
   }
 
   // -------------------------------------------------------------------------

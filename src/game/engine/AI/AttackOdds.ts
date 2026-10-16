@@ -48,7 +48,7 @@ export const AI_ATTACK_MIN_WIN_CHANCE = 0.5;
  * Each friendly unit focusing the same defender lowers the floor by this
  * much: 1 friend → 0.42, 2 → 0.34, 3+ → clamped at the floor below.
  */
-export const AI_ATTACK_SUPPORT_STEP = 0.08;
+const AI_ATTACK_SUPPORT_STEP = 0.08;
 
 /** The floor no amount of support may drop below — never pure suicide. */
 export const AI_ATTACK_FLOOR_CLAMP = 0.3;

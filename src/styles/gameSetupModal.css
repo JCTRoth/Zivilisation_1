@@ -1545,3 +1545,415 @@ select.setup-setting__control:focus {
     margin-top: 10px;
   }
 }
+
+/* ---- Map size graphical tool ---------------------------------------------
+   Layout: stage column (true-scale preview + readout) | panel (presets,
+   sliders, statistics). One constant pixels-per-tile scale — measured from
+   the stage via ResizeObserver — makes every world comparable at a glance;
+   the handles and the dashed ghost are children of the map rect, so they
+   stay attached to the world's own edges at any size. */
+
+.setup-map-size {
+  margin-top: 0.4rem;
+}
+
+.map-size-tool {
+  display: grid;
+  grid-template-columns: minmax(260px, auto) minmax(0, 1fr);
+  gap: 1rem 1.2rem;
+  padding: 1rem;
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(240, 195, 60, 0.08), transparent 55%),
+    linear-gradient(180deg, rgba(16, 24, 36, 0.78), rgba(8, 14, 22, 0.62));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 30px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  /* Dragging must not select the labels around it. */
+  user-select: none;
+}
+
+.map-size-tool__stage-col {
+  display: grid;
+  gap: 0.55rem;
+  align-content: start;
+  justify-items: center;
+}
+
+.map-size-tool__stage {
+  position: relative;
+  box-sizing: border-box;
+  width: 300px;
+  max-width: 100%;
+  height: 196px;
+  /* Room for the edge handles of the biggest world (260×180 fills the box). */
+  padding: 14px;
+  border-radius: 14px;
+  background:
+    radial-gradient(80% 70% at 50% 50%, rgba(240, 195, 60, 0.06), transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* The world itself: water, a hint of continents, the tile grid. Its width
+   and height are set inline (tiles × measured scale). */
+.map-size-tool__map {
+  position: relative;
+  border-radius: 7px;
+  background:
+    radial-gradient(circle at 32% 42%, rgba(96, 168, 120, 0.34) 0 16%, transparent 42%),
+    radial-gradient(circle at 66% 64%, rgba(96, 168, 120, 0.26) 0 12%, transparent 34%),
+    radial-gradient(circle at 54% 24%, rgba(96, 168, 120, 0.18) 0 8%, transparent 26%),
+    linear-gradient(180deg, rgba(46, 110, 150, 0.3), rgba(24, 62, 96, 0.22)),
+    repeating-linear-gradient(0deg, transparent 0 9px, rgba(255, 255, 255, 0.03) 9px 10px),
+    repeating-linear-gradient(90deg, transparent 0 9px, rgba(255, 255, 255, 0.03) 9px 10px);
+  border: 1px solid rgba(240, 195, 60, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(240, 195, 60, 0.14),
+    0 8px 22px rgba(240, 195, 60, 0.1),
+    inset 0 0 18px rgba(6, 14, 22, 0.45);
+  transition: width 130ms ease, height 130ms ease;
+}
+
+/* Direct manipulation: no eased lag between pointer and rectangle. */
+.map-size-tool.is-dragging .map-size-tool__map {
+  transition: none;
+}
+
+.map-size-tool__grid {
+  position: absolute;
+  inset: 3px;
+  border-radius: 5px;
+  background-image: radial-gradient(circle at 1px 1px, rgba(240, 195, 60, 0.3) 1px, transparent 1px);
+  background-size: 11px 11px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Dashed comparison frame: the standard world (or the preset hovered in
+   the ladder), centred on the current world at the identical scale. */
+.map-size-tool__ghost {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  pointer-events: none;
+  transition: width 140ms ease, height 140ms ease;
+}
+
+.map-size-tool__ghost--standard {
+  border-color: rgba(159, 178, 194, 0.55);
+}
+
+.map-size-tool__ghost--preset {
+  border-color: rgba(240, 195, 60, 0.7);
+  box-shadow: 0 0 20px rgba(240, 195, 60, 0.18);
+}
+
+/* Resize grips — small on the eye, fat on the finger (::after extends the
+   hit area by 9px on every side without drawing it). */
+.map-size-tool__handle {
+  position: absolute;
+  z-index: 4;
+  background: linear-gradient(180deg, rgba(240, 195, 60, 0.95), rgba(201, 162, 39, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 12px rgba(240, 195, 60, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
+  border-radius: 999px;
+  cursor: pointer;
+  touch-action: none;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.map-size-tool__handle::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+}
+
+.map-size-tool__handle:hover {
+  box-shadow: 0 0 16px rgba(240, 195, 60, 0.75), 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.map-size-tool__handle--right {
+  right: -5px;
+  top: 50%;
+  width: 11px;
+  height: 30px;
+  cursor: ew-resize;
+}
+
+.map-size-tool__handle--right:hover {
+  transform: translateY(-50%) scale(1.12);
+}
+
+.map-size-tool__handle--bottom {
+  bottom: -5px;
+  left: 50%;
+  width: 30px;
+  height: 11px;
+  cursor: ns-resize;
+}
+
+.map-size-tool__handle--bottom:hover {
+  transform: translateX(-50%) scale(1.12);
+}
+
+.map-size-tool__handle--corner {
+  right: -6px;
+  bottom: -6px;
+  width: 17px;
+  height: 17px;
+  border-radius: 7px;
+  cursor: nwse-resize;
+  /* Grip: two diagonal strokes over the gold pill. */
+  background:
+    linear-gradient(135deg, transparent 44%, rgba(20, 16, 6, 0.75) 44% 56%, transparent 56%),
+    linear-gradient(135deg, transparent 64%, rgba(20, 16, 6, 0.75) 64% 76%, transparent 76%),
+    linear-gradient(180deg, rgba(240, 195, 60, 0.95), rgba(201, 162, 39, 0.9));
+}
+
+.map-size-tool__handle--corner:hover {
+  transform: scale(1.12);
+}
+
+/* Readout + legend under the stage */
+.map-size-tool__stage-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.map-size-tool__readout {
+  padding: 0.22rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(4, 10, 16, 0.55);
+  border: 1px solid rgba(240, 195, 60, 0.3);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  color: var(--setup-gold, #f0c33c);
+  text-shadow: 0 0 14px rgba(240, 195, 60, 0.35);
+}
+
+.map-size-tool__times {
+  margin: 0 0.2em;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.map-size-tool__legend {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--setup-label, #9fb2c2);
+}
+
+.map-size-tool__legend-swatch {
+  flex: none;
+  width: 22px;
+  height: 12px;
+  border: 1px dashed rgba(159, 178, 194, 0.75);
+  border-radius: 4px;
+}
+
+/* Right-hand panel: preset ladder → sliders → statistics */
+.map-size-tool__panel {
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+}
+
+.map-size-tool__presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 0.5rem;
+}
+
+.map-size-tool__chip {
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: 0.45rem 0.4rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-text, #e8eef3);
+  cursor: pointer;
+  transition: transform 130ms ease, border-color 130ms ease, background 130ms ease, box-shadow 130ms ease;
+}
+
+.map-size-tool__chip:hover {
+  background: rgba(240, 195, 60, 0.08);
+  border-color: rgba(240, 195, 60, 0.55);
+  transform: translateY(-2px);
+}
+
+.map-size-tool__chip:focus-visible {
+  outline: 2px solid rgba(240, 195, 60, 0.75);
+  outline-offset: 2px;
+}
+
+.map-size-tool__chip.is-active {
+  background: linear-gradient(180deg, #f5cf55, #dcab2c);
+  border-color: rgba(255, 255, 255, 0.45);
+  color: var(--setup-gold-ink, #141006);
+  box-shadow:
+    0 0 0 1px rgba(240, 195, 60, 0.35),
+    0 8px 18px rgba(240, 195, 60, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transform: translateY(-1px);
+}
+
+.map-size-tool__chip-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.map-size-tool__chip-dims {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--setup-label, #9fb2c2);
+}
+
+.map-size-tool__chip.is-active .map-size-tool__chip-dims {
+  color: rgba(20, 16, 6, 0.75);
+}
+
+.map-size-tool__sliders {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.map-size-tool__field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.map-size-tool__field-label {
+  min-width: 5.6em;
+  color: var(--setup-label, #9fb2c2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+}
+
+.map-size-tool input[type='range'] {
+  width: 100%;
+  accent-color: var(--setup-gold, #f0c33c);
+  cursor: ew-resize;
+}
+
+.map-size-tool__number {
+  width: 70px;
+  padding: 0.25rem 0.45rem;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(4, 10, 16, 0.6);
+  color: var(--color-text, #e8eef3);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.map-size-tool__number:focus {
+  outline: 2px solid rgba(240, 195, 60, 0.6);
+  outline-offset: 1px;
+}
+
+.map-size-tool__lock {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--setup-label, #9fb2c2);
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 130ms ease, border-color 130ms ease, background 130ms ease, box-shadow 130ms ease;
+}
+
+.map-size-tool__lock:hover {
+  color: var(--color-text, #e8eef3);
+  border-color: rgba(240, 195, 60, 0.4);
+}
+
+.map-size-tool__lock:focus-visible {
+  outline: 2px solid rgba(240, 195, 60, 0.75);
+  outline-offset: 2px;
+}
+
+.map-size-tool__lock[aria-pressed='true'] {
+  background: rgba(240, 195, 60, 0.16);
+  border-color: rgba(240, 195, 60, 0.6);
+  color: var(--setup-gold, #f0c33c);
+  box-shadow: inset 0 0 14px rgba(240, 195, 60, 0.14);
+}
+
+/* Live statistics: tiles · ×standard · per civ */
+.map-size-tool__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.map-size-tool__stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.38rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(4, 10, 16, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
+  color: var(--setup-label, #9fb2c2);
+}
+
+.map-size-tool__stat strong {
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--setup-gold, #f0c33c);
+  text-shadow: 0 0 12px rgba(240, 195, 60, 0.3);
+}
+
+/* Stack under the stage once the panel loses its second column */
+@media (max-width: 860px) {
+  .map-size-tool {
+    grid-template-columns: 1fr;
+  }
+
+  .map-size-tool__stage {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-size-tool__map,
+  .map-size-tool__ghost,
+  .map-size-tool__chip,
+  .map-size-tool__handle,
+  .map-size-tool__lock {
+    transition: none;
+  }
+}

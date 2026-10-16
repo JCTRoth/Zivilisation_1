@@ -61,21 +61,29 @@ body > canvas[style*='position: fixed'] {
 }
 
 /* ============================================================================
-   Act II — the Chronicle, as a scroll of knowledge
+   Act II — the Chronicle, as a Torah / antique scroll
    ----------------------------------------------------------------------------
    Act I stages the outcome; Act II is the record itself, and it is dressed as
-   what that record would have been: a vellum leaf hung between two turned
-   wooden rods, unrolled FROM THE RIGHT — the way a scroll is read, and the way
-   the left rod travels out to meet it.
+   what that record would have been: a parchment leaf (klaf) hung between two
+   wooden rollers (atzei chayim), unrolled FROM THE RIGHT — the way a Torah is
+   read, and the way the left roller travels out to meet it.
 
    THE SCROLL IS THREE PIECES, and which piece lives where is the whole trick:
 
      · `.gm-modal`  (the card)  — a transparent frame whose only job is to hold
-       the two rods as ::before/::after. It must NOT be the thing that clips,
-       because the rods stand OUTSIDE the sheet and a clip would eat them.
-     · `.gm-body`   (the sheet) — the vellum, and the element that unrolls.
-     · the rods     (card pseudo-elements) — static on the right, travelling on
-       the left, leading the sheet out of the right-hand rod.
+       the two rollers as ::before/::after. It must NOT be the thing that clips,
+       because the rollers stand OUTSIDE the sheet and a clip would eat them.
+       Both rollers are STATIC — like a real Torah both poles stay attached
+       while the leaf unrolls between them.
+     · `.gm-body`   (the sheet) — the parchment, and the element that unrolls.
+       `.gm-body::before` draws the inset double-rule frame (the sirtut /
+       illuminated border); it is pointer-events:none so it never eats clicks.
+     · `.gm-content` — the writing column. Its background carries the sewn
+       seams (yeriyot): faint vertical stitch lines every ~230px where one
+       skin is sewn to the next.
+     · the rollers  (card pseudo-elements) — turned wood with vertical grain,
+       brass binding bands, and knob finials top and bottom, overlapping the
+       sheet by ~10px so the cut edge tucks visibly BEHIND the roller.
 
    Animating the SHEET with `clip-path: inset(0 0 0 100%)` is what makes this
    read right-to-left: the fourth inset value is the LEFT edge, so starting it
@@ -92,6 +100,10 @@ body > canvas[style*='position: fixed'] {
 .modal.gm-chronicle {
   z-index: 100000;
 }
+
+/* NOTE: no side clearance on the dialog at desktop sizes — Bootstrap's
+   `auto` margins centre it with room to spare. Below 576px the margins are a
+   fixed 0.5rem, so the tucked-in rollers get their clearance there. */
 
 .modal.gm.gm-chronicle {
   --color-text: #2b1d0e;
@@ -141,7 +153,7 @@ body > canvas[style*='position: fixed'] {
   filter: drop-shadow(0 26px 46px rgba(0, 0, 0, 0.62));
 }
 
-/* ---- The rods ----------------------------------------------------------- */
+/* ---- The rollers (atzei chayim) ------------------------------------------ */
 
 .modal.gm.gm-chronicle .gm-modal::before,
 .modal.gm.gm-chronicle .gm-modal::after {
@@ -153,87 +165,189 @@ body > canvas[style*='position: fixed'] {
   width: calc(var(--sc-rod-out) + var(--sc-rod-w) + 8px);
   z-index: 3;
   pointer-events: none;
+  border-radius: 12px;
+  background-repeat: no-repeat;
   background:
-    /* upper finial: a turned knob, lit from the upper left */
+    /* upper finial knob, lit from the upper left */
     radial-gradient(
-      circle 13px at 50% 10px,
-      #f6de9c 0 3px,
-      #dcb542 4px 6px,
-      #a8801d 8px 11px,
+      circle at 50% 12px,
+      #f8e3a6 0 2px,
+      #e3b93f 3px 5px,
+      #8a6414 7px 9px,
+      #3a2708 10px 11px,
       rgba(0, 0, 0, 0) 12px
     ),
-    /* lower finial */
+    /* lower finial knob */
     radial-gradient(
-      circle 13px at 50% calc(100% - 10px),
-      #f6de9c 0 3px,
-      #dcb542 4px 6px,
-      #a8801d 8px 11px,
+      circle at 50% calc(100% - 12px),
+      #f8e3a6 0 2px,
+      #e3b93f 3px 5px,
+      #8a6414 7px 9px,
+      #3a2708 10px 11px,
       rgba(0, 0, 0, 0) 12px
     ),
-    /* the band itself, rounded across its width so it reads as a turned rod */
+    /* brass binding bands near each end */
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0) 0 38px,
+      rgba(30, 16, 4, 0.55) 38px 40px,
+      #d9b45a 40px 43px,
+      #7a5c17 43px 46px,
+      rgba(30, 16, 4, 0.55) 46px 48px,
+      rgba(0, 0, 0, 0) 48px
+    ),
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0) calc(100% - 48px),
+      rgba(30, 16, 4, 0.55) calc(100% - 48px) calc(100% - 46px),
+      #d9b45a calc(100% - 46px) calc(100% - 43px),
+      #7a5c17 calc(100% - 43px) calc(100% - 40px),
+      rgba(30, 16, 4, 0.55) calc(100% - 40px) calc(100% - 38px),
+      rgba(0, 0, 0, 0) calc(100% - 38px)
+    ),
+    /* the turned band itself, rounded across its width so it reads as a
+       cylinder lit from the upper left … */
     linear-gradient(
       90deg,
       rgba(0, 0, 0, 0) calc(50% - var(--sc-rod-w) / 2),
       #1f1206 calc(50% - var(--sc-rod-w) / 2) calc(50% - var(--sc-rod-w) / 2 + 4px),
-      #6b4523 calc(50% - var(--sc-rod-w) / 2 + 4px) calc(50% - 6px),
-      #9c6a3c calc(50% - 6px) calc(50% + 2px),
-      #6b4523 calc(50% + 2px) calc(50% + 7px),
-      #1f1206 calc(50% + 7px) calc(50% + var(--sc-rod-w) / 2),
+      #5d3c1e calc(50% - var(--sc-rod-w) / 2 + 4px) calc(50% - 7px),
+      #c99a5b calc(50% - 7px) calc(50% - 2px),
+      #8a5f30 calc(50% - 2px) calc(50% + 4px),
+      #3a2210 calc(50% + 4px) calc(50% + var(--sc-rod-w) / 2 - 2px),
+      #1f1206 calc(50% + var(--sc-rod-w) / 2 - 2px) calc(50% + var(--sc-rod-w) / 2),
       rgba(0, 0, 0, 0) calc(50% + var(--sc-rod-w) / 2)
+    ),
+    /* … with long vertical grain running down it */
+    repeating-linear-gradient(
+      90deg,
+      rgba(20, 10, 2, 0.16) 0 1px,
+      rgba(0, 0, 0, 0) 1px 4px
     );
 }
 
-/* The LEFT rod leads: it starts down on the right rod and is drawn out to the
-   left, and the sheet uncovers behind it. The sheet's clip and this travel are
-   on one timeline and one easing, so the rod is always exactly at the leading
-   edge of the leaf. */
+/* Both rollers are static anchors the leaf is wound onto: the left roller
+   overlaps the sheet's left cut edge, the right roller its right cut edge,
+   so the parchment visibly tucks BEHIND the wood. (An earlier revision tried
+   to travel the left roller across on the unroll timeline, but a translateX
+   in % only ever moves one roller-width — the rod twitched instead of
+   leading. The sheet's own right-to-left clip carries the unroll alone.) */
 .modal.gm.gm-chronicle .gm-modal::before {
-  right: calc(100% - 8px);
-  animation: sc-rod-lead var(--sc-unroll) var(--sc-ease) both;
+  right: calc(100% - 10px);
 }
 
-/* The RIGHT rod is the anchor the leaf is wound onto. It never moves. */
+/* The RIGHT roller is the anchor the leaf is wound onto. It never moves. */
 .modal.gm.gm-chronicle .gm-modal::after {
-  left: calc(100% - 8px);
+  left: calc(100% - 10px);
 }
 
-@keyframes sc-rod-lead {
-  from { transform: translateX(100%); }
-  to   { transform: translateX(0); }
-}
-
-/* ---- The sheet: vellum, unrolled from the right -------------------------- */
+/* ---- The sheet: parchment, unrolled from the right ----------------------- */
 
 .modal.gm.gm-chronicle .gm-body {
   position: relative;
-  /* Keeps the vellum inside the leaf's own edges. Safe for the contents: the
-     only thing that overflows is the close button, which belongs to the sheet. */
+  /* Keeps the parchment inside the leaf's own edges. Safe for the contents:
+     the only thing that overflows is the close button, which belongs to
+     the sheet. */
   overflow: hidden;
+  border-radius: 3px;
   color: #2b1d0e;
   background:
-    /* foxing — the brown blooms age leaves on old vellum */
+    /* foxing — the brown blooms age leaves on old parchment */
     radial-gradient(circle 30px at 13% 21%, rgba(150, 104, 44, 0.13), rgba(0, 0, 0, 0) 70%),
     radial-gradient(circle 19px at 79% 11%, rgba(150, 104, 44, 0.10), rgba(0, 0, 0, 0) 70%),
     radial-gradient(circle 38px at 89% 69%, rgba(150, 104, 44, 0.11), rgba(0, 0, 0, 0) 72%),
     radial-gradient(circle 22px at 27% 85%, rgba(150, 104, 44, 0.10), rgba(0, 0, 0, 0) 70%),
     radial-gradient(circle 16px at 55% 47%, rgba(150, 104, 44, 0.07), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(ellipse 60px 24px at 45% 6%, rgba(120, 72, 20, 0.08), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(ellipse 80px 26px at 60% 96%, rgba(120, 72, 20, 0.10), rgba(0, 0, 0, 0) 70%),
     /* fibre */
     repeating-linear-gradient(91deg, rgba(146, 104, 44, 0.05) 0 2px, rgba(0, 0, 0, 0) 2px 9px),
     repeating-linear-gradient(179deg, rgba(146, 104, 44, 0.04) 0 3px, rgba(0, 0, 0, 0) 3px 7px),
-    /* where the leaf is wound onto its rods, it is darkest */
-    linear-gradient(90deg, rgba(92, 58, 20, 0.34), rgba(0, 0, 0, 0) 10%),
-    linear-gradient(270deg, rgba(92, 58, 20, 0.34), rgba(0, 0, 0, 0) 10%),
+    /* where the leaf winds onto its rollers it sits in shadow — plus the
+       curl highlight just inside each roll, so the edge reads as thickness */
+    linear-gradient(90deg, rgba(60, 35, 5, 0.42), rgba(255, 248, 220, 0.28) 5%, rgba(0, 0, 0, 0) 10%),
+    linear-gradient(270deg, rgba(60, 35, 5, 0.42), rgba(255, 248, 220, 0.28) 5%, rgba(0, 0, 0, 0) 10%),
     /* scorch along the cut edges */
     radial-gradient(130% 100% at 50% 0%, rgba(120, 72, 20, 0.20), rgba(0, 0, 0, 0) 40%),
     radial-gradient(130% 120% at 50% 110%, rgba(120, 72, 20, 0.24), rgba(0, 0, 0, 0) 42%),
-    /* vellum */
+    /* parchment */
     linear-gradient(180deg, #f7e9c2 0%, #f1ddaa 30%, #ead096 62%, #e0c288 100%);
   box-shadow:
     inset 0 0 70px rgba(120, 72, 20, 0.30),
-    inset 0 0 10px rgba(120, 72, 20, 0.45);
+    inset 0 0 10px rgba(120, 72, 20, 0.45),
+    inset 0 14px 20px -12px rgba(60, 35, 5, 0.55),
+    inset 0 -14px 20px -12px rgba(60, 35, 5, 0.55);
   /* The fourth `inset` value is the LEFT edge — that is the whole direction of
      this animation. */
   animation: sc-unroll-rtl var(--sc-unroll) var(--sc-ease) both;
+  will-change: clip-path;
+}
+
+/* The inset double-rule frame: the sirtut/illuminated border every antique
+   leaf carries. Absolutely positioned over the parchment but under the words
+   (content has its own background), pointer-events off so it never eats a
+   click, and inset far enough that long German/French strings clear it. */
+.modal.gm.gm-chronicle .gm-body::before {
+  content: '';
+  position: absolute;
+  inset: 9px 26px;
+  z-index: 0;
+  pointer-events: none;
+  border: 1px solid rgba(92, 58, 20, 0.42);
+  outline: 1px solid rgba(92, 58, 20, 0.24);
+  outline-offset: 3px;
+  border-radius: 1px;
+}
+
+/* Lift the writing column above the frame, and clear it with padding. */
+.modal.gm.gm-chronicle .gm-hero,
+.modal.gm.gm-chronicle .gm-content,
+.modal.gm.gm-chronicle .gm-actions {
+  position: relative;
+  z-index: 1;
+}
+
+.modal.gm.gm-chronicle .gm-content {
+  padding: 16px 34px 18px;
+  /* sewn seams (yeriyot): every ~230px one skin is stitched to the next —
+     a soft shadow line plus a pale thread highlight beside it */
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0) 0 228px,
+      rgba(92, 58, 20, 0.16) 228px 230px,
+      rgba(255, 248, 220, 0.5) 230px 232px,
+      rgba(0, 0, 0, 0) 232px
+    );
+  scrollbar-width: thin;
+  scrollbar-color: rgba(92, 58, 20, 0.55) rgba(120, 72, 20, 0.12);
+}
+
+.modal.gm.gm-chronicle .gm-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal.gm.gm-chronicle .gm-content::-webkit-scrollbar-track {
+  background: rgba(120, 72, 20, 0.12);
+}
+
+.modal.gm.gm-chronicle .gm-content::-webkit-scrollbar-thumb {
+  background: rgba(92, 58, 20, 0.55);
+  border-radius: 4px;
+}
+
+/* Headpiece: a quiet asterism above the first section, the way an antique
+   leaf opens with an ornament rather than a widget. It scrolls with the
+   text because it belongs to the text. */
+.modal.gm.gm-chronicle .gm-content::before {
+  content: '⁂';
+  display: block;
+  text-align: center;
+  font-size: 15px;
+  letter-spacing: 0.6em;
+  text-indent: 0.6em;
+  color: rgba(122, 95, 34, 0.75);
+  margin: 2px 0 10px;
 }
 
 @keyframes sc-unroll-rtl {
@@ -283,6 +397,19 @@ body > canvas[style*='position: fixed'] {
   font-style: italic;
   line-height: 1.5;
   color: #4a3820;
+}
+
+/* Illuminated initial: the first letter of the lede is set large, the way a
+   scribe opens a parsha. `::first-letter` is ignored by screen readers, so
+   no i18n string is harmed. */
+.modal.gm.gm-chronicle .gm-lede::first-letter {
+  float: left;
+  font-size: 2em;
+  line-height: 0.95;
+  padding-right: 0.1em;
+  font-weight: 700;
+  font-style: normal;
+  color: #7a5f22;
 }
 
 /* The hero drops its dark slab so the vellum runs edge to edge; the rule
@@ -335,6 +462,8 @@ body > canvas[style*='position: fixed'] {
   margin-bottom: 10px;
   padding-bottom: 5px;
   border-bottom: 1px solid rgba(120, 72, 20, 0.28);
+  justify-content: center;
+  text-align: center;
   font-family: var(--scroll-serif);
   font-size: 12.5px;
   font-weight: 700;
@@ -342,9 +471,12 @@ body > canvas[style*='position: fixed'] {
   color: #6d573a;
 }
 
-/* The shell's little accent bar becomes a lozenge — a mark on a seal, not a
-   UI tick. */
-.modal.gm.gm-chronicle .gm-section-title::before {
+/* The shell's little accent bar becomes a pair of lozenges — seal-marks
+   flanking a centred parsha heading, not a UI tick. */
+.modal.gm.gm-chronicle .gm-section-title::before,
+.modal.gm.gm-chronicle .gm-section-title::after {
+  content: '';
+  flex: 0 0 auto;
   width: 6px;
   height: 6px;
   border-radius: 1px;
@@ -352,13 +484,16 @@ body > canvas[style*='position: fixed'] {
   transform: rotate(45deg);
 }
 
-/* Figures are inscribed cartouches, not tiles. */
+/* Figures are inscribed cartouches, not tiles: a double frame like a
+   chiselled tablet, with the number set large in the middle. */
 .modal.gm.gm-chronicle .gm-stat {
   align-items: center;
   text-align: center;
   padding: 10px 8px;
   background: rgba(120, 72, 20, 0.055);
   border: 1px solid rgba(120, 72, 20, 0.22);
+  outline: 1px solid rgba(120, 72, 20, 0.14);
+  outline-offset: 2px;
   border-radius: 6px;
   box-shadow: inset 0 1px 0 rgba(255, 248, 220, 0.5);
 }
@@ -498,43 +633,105 @@ body > canvas[style*='position: fixed'] {
     radial-gradient(circle 38px at 89% 69%, rgba(70, 68, 120, 0.1), rgba(0, 0, 0, 0) 72%),
     repeating-linear-gradient(91deg, rgba(70, 68, 120, 0.05) 0 2px, rgba(0, 0, 0, 0) 2px 9px),
     repeating-linear-gradient(179deg, rgba(70, 68, 120, 0.04) 0 3px, rgba(0, 0, 0, 0) 3px 7px),
-    linear-gradient(90deg, rgba(40, 38, 80, 0.32), rgba(0, 0, 0, 0) 10%),
-    linear-gradient(270deg, rgba(40, 38, 80, 0.32), rgba(0, 0, 0, 0) 10%),
+    linear-gradient(90deg, rgba(20, 18, 45, 0.4), rgba(245, 243, 255, 0.3) 5%, rgba(0, 0, 0, 0) 10%),
+    linear-gradient(270deg, rgba(20, 18, 45, 0.4), rgba(245, 243, 255, 0.3) 5%, rgba(0, 0, 0, 0) 10%),
     radial-gradient(130% 100% at 50% 0%, rgba(40, 38, 80, 0.2), rgba(0, 0, 0, 0) 40%),
     radial-gradient(130% 120% at 50% 110%, rgba(40, 38, 80, 0.24), rgba(0, 0, 0, 0) 42%),
     linear-gradient(180deg, #e4dff2 0%, #d5cfeb 30%, #c4bde0 62%, #aea8d2 100%);
   box-shadow:
     inset 0 0 70px rgba(40, 38, 80, 0.32),
-    inset 0 0 10px rgba(40, 38, 80, 0.45);
+    inset 0 0 10px rgba(40, 38, 80, 0.45),
+    inset 0 14px 20px -12px rgba(20, 18, 45, 0.5),
+    inset 0 -14px 20px -12px rgba(20, 18, 45, 0.5);
 }
 
-/* Ash rods, lilac finials — same turned shape, colder stock. */
+.modal.gm.gm-chronicle--defeat .gm-body::before {
+  border-color: rgba(40, 38, 80, 0.42);
+  outline-color: rgba(40, 38, 80, 0.24);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-content {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0) 0 228px,
+      rgba(40, 38, 80, 0.16) 228px 230px,
+      rgba(245, 243, 255, 0.5) 230px 232px,
+      rgba(0, 0, 0, 0) 232px
+    );
+  scrollbar-color: rgba(40, 38, 80, 0.55) rgba(40, 38, 80, 0.12);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-content::-webkit-scrollbar-track {
+  background: rgba(40, 38, 80, 0.12);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-content::-webkit-scrollbar-thumb {
+  background: rgba(40, 38, 80, 0.55);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-content::before {
+  color: rgba(74, 68, 144, 0.7);
+}
+
+.modal.gm.gm-chronicle--defeat .gm-lede::first-letter {
+  color: #4a4490;
+}
+
+/* Ash rollers, lilac finials — same turned shape, colder stock. */
 .modal.gm.gm-chronicle--defeat .gm-modal::before,
 .modal.gm.gm-chronicle--defeat .gm-modal::after {
+  background-repeat: no-repeat;
   background:
     radial-gradient(
-      circle 13px at 50% 10px,
-      #e6e2f8 0 3px,
-      #b6afe4 4px 6px,
-      #5c5597 8px 11px,
+      circle at 50% 12px,
+      #f2eefa 0 2px,
+      #b6afe4 3px 5px,
+      #5c5597 7px 9px,
+      #141122 10px 11px,
       rgba(0, 0, 0, 0) 12px
     ),
     radial-gradient(
-      circle 13px at 50% calc(100% - 10px),
-      #e6e2f8 0 3px,
-      #b6afe4 4px 6px,
-      #5c5597 8px 11px,
+      circle at 50% calc(100% - 12px),
+      #f2eefa 0 2px,
+      #b6afe4 3px 5px,
+      #5c5597 7px 9px,
+      #141122 10px 11px,
       rgba(0, 0, 0, 0) 12px
+    ),
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0) 0 38px,
+      rgba(10, 8, 25, 0.55) 38px 40px,
+      #b6afe4 40px 43px,
+      #4c4680 43px 46px,
+      rgba(10, 8, 25, 0.55) 46px 48px,
+      rgba(0, 0, 0, 0) 48px
+    ),
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0) calc(100% - 48px),
+      rgba(10, 8, 25, 0.55) calc(100% - 48px) calc(100% - 46px),
+      #b6afe4 calc(100% - 46px) calc(100% - 43px),
+      #4c4680 calc(100% - 43px) calc(100% - 40px),
+      rgba(10, 8, 25, 0.55) calc(100% - 40px) calc(100% - 38px),
+      rgba(0, 0, 0, 0) calc(100% - 38px)
     ),
     linear-gradient(
       90deg,
       rgba(0, 0, 0, 0) calc(50% - var(--sc-rod-w) / 2),
       #141122 calc(50% - var(--sc-rod-w) / 2) calc(50% - var(--sc-rod-w) / 2 + 4px),
-      #3a3558 calc(50% - var(--sc-rod-w) / 2 + 4px) calc(50% - 6px),
-      #5a5389 calc(50% - 6px) calc(50% + 2px),
-      #3a3558 calc(50% + 2px) calc(50% + 7px),
-      #141122 calc(50% + 7px) calc(50% + var(--sc-rod-w) / 2),
+      #35314e calc(50% - var(--sc-rod-w) / 2 + 4px) calc(50% - 7px),
+      #8f88c4 calc(50% - 7px) calc(50% - 2px),
+      #4c4680 calc(50% - 2px) calc(50% + 4px),
+      #221f3a calc(50% + 4px) calc(50% + var(--sc-rod-w) / 2 - 2px),
+      #141122 calc(50% + var(--sc-rod-w) / 2 - 2px) calc(50% + var(--sc-rod-w) / 2),
       rgba(0, 0, 0, 0) calc(50% + var(--sc-rod-w) / 2)
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(8, 6, 20, 0.18) 0 1px,
+      rgba(0, 0, 0, 0) 1px 4px
     );
 }
 
@@ -567,6 +764,7 @@ body > canvas[style*='position: fixed'] {
 .modal.gm.gm-chronicle--defeat .gm-stat {
   background: rgba(40, 38, 80, 0.06);
   border-color: rgba(40, 38, 80, 0.24);
+  outline-color: rgba(40, 38, 80, 0.16);
   box-shadow: inset 0 1px 0 rgba(245, 243, 255, 0.45);
 }
 
@@ -648,10 +846,8 @@ body > canvas[style*='position: fixed'] {
 
 @media (prefers-reduced-motion: reduce) {
   /* The scroll is the content's entrance; with motion off it simply IS there.
-     The rods have to be reset too — `sc-rod-lead` is what parks the left rod
-     on the right one. */
-  .modal.gm.gm-chronicle .gm-body,
-  .modal.gm.gm-chronicle .gm-modal::before {
+     The rollers are static anchors, so only the sheet needs resetting. */
+  .modal.gm.gm-chronicle .gm-body {
     animation: none;
   }
 
@@ -660,9 +856,29 @@ body > canvas[style*='position: fixed'] {
     filter: none;
     transform: none;
   }
+}
 
-  .modal.gm.gm-chronicle .gm-modal::before {
-    transform: none;
+/* ---- Small screens: tuck the rollers in --------------------------------- */
+
+@media (max-width: 576px) {
+  .modal.gm.gm-chronicle {
+    --sc-rod-out: 6px;
+    --sc-rod-w: 18px;
+    --sc-rod-lift: 8px;
+  }
+
+  /* Fixed 0.5rem Bootstrap margins here — widen them past the rollers so
+     they never hang over the viewport edge. */
+  .modal.gm-chronicle .modal-dialog {
+    margin-inline: calc(var(--sc-rod-out) + var(--sc-rod-w));
+  }
+
+  .modal.gm.gm-chronicle .gm-body::before {
+    inset: 7px 14px;
+  }
+
+  .modal.gm.gm-chronicle .gm-content {
+    padding: 14px 20px 16px;
   }
 }
 

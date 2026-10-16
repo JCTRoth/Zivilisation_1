@@ -171,8 +171,16 @@ confusing way to lose a third of your continent.
 
 [source,tsx]
 ----
-<option value="MY_MAP">My Map · 64x48 two-continent strait</option>
+<option value="MY_MAP">⚔️ My Map · 64x48 two-continent strait</option>
 ----
+
+Register the type in `MAP_TYPE_LABEL_KEYS` / `MAP_TYPE_OPTION_KEYS`, file it
+into `MAP_TYPE_CATEGORIES` — human-playable groups first, the AI-vs-AI
+spectator group always last, never mixed — and give it a flavor icon in
+`MAP_TYPE_ICONS` (🤖 is reserved for self-playing AI maps). If the layout is
+hand-authored rather than generated, also add the type to `FIXED_MAP_TYPES`:
+that hides the map-size tool and adds the 🗺️ badge (keep it in sync with the
+engine's `staticMapType` list — a generated map must never wear the badge).
 
 The summary blurb underneath renders from `mapType`, so nothing else is needed.
 Keep the label in the form *"Name · what makes it interesting"* — that is what
@@ -272,7 +280,17 @@ Non-negotiables:
   islands ≥ the empire threshold, islets ≤ the colonisation cap, a water channel
   between every pair, one coastal start per island.
 * **Take the output id as an argument** (`node scripts/generate-naval-map.mjs
-  naval-archipelago-tropical-96x60`) so one script can produce variants.
+  naval-archipelago-96x60`) so one script can produce variants.
+* **Measure clearance in TILES, not in the shape's SDF units.** The Aegean
+  generator first paints the home-island land and records a multi-source
+  distance field before placing islets (`ISLET_CLEAR_HOME = 4`). Its first
+  draft placed islets by comparing SDF distances, and because `-d` runs 0…1
+  while a real shoreline wobbles by a fraction of a tile, both the shapes and
+  the clearances were wrong by a factor of ten: islands fragmented, and islet
+  chains then welded three home islands into one blob.
+* **Composite features for composite geography.** Hellas is one home island in
+  two lobes (the mainland wall plus the Peloponnese), so `feature()` takes a
+  list of parts and `featureAt` reports the whole island by name.
 
 == Verifying a new map
 
@@ -290,7 +308,8 @@ npx vitest run tests/staticMaps.test.ts --no-file-parallelism
 === Play it, unattended
 
 The naval scenario runner is headless — no browser, no clicks, and it writes a
-CSV you can diff between runs:
+CSV you can diff between runs (it pins `AI_VS_AI_NAVAL`, so point a copy at the
+new type to watch it play itself):
 
 [source,bash]
 ----

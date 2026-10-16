@@ -366,18 +366,35 @@ now measured 5 cities founded, 0 settlers disbanded, 5 cities on the map against
 the 1–2 the old over-militarised mix left.)
 
 Still open, both stated plainly:
-* **Trade routes are still zero.** Three *plumbing* bugs, not balance ones, were the
-  real cause and are now fixed: the coordinator's world was a cast of the engine,
-  which has no `isAtWar`, so **every AI turn that owned a caravan threw and issued
-  no orders** (one 150-round probe logged the error 967,607 times);
-  `assignTarget` handed `null` into a spread, killing the turn the moment a
-  caravan was assigned; and the upkeep disbander removed free units, which cannot
-  cure an upkeep deficit, so a fresh caravan was usually liquidated the next round.
-  With those fixed, caravans are built (~4.5/game, up from 0) and the coordinator
-  now checks reach before assigning a target. What remains is *reach*: a caravan
-  moves at 1 tile a turn over open ground, and on a 40x40 map the engine's own
-  start positions put most city pairs beyond a movement budget that a road would
-  have solved but no road exists yet. The ship-based auto-delivery in TODO.txt is
+* **Trade routes are live, but slow.** The chain is now complete and measured.
+  Four *plumbing* bugs were the cause, and all are fixed: the coordinator's world
+  was a cast of the engine, which has no `isAtWar`, so **every AI turn that owned
+  a caravan threw and issued no orders** (one 150-round probe logged the error
+  967,607 times); `assignTarget` handed `null` into a spread, killing the turn
+  the moment a caravan was assigned; the upkeep disbander removed free units,
+  which cannot cure an upkeep deficit, so a fresh caravan was usually liquidated
+  the next round; and `trade` was never researched because the engine's own
+  `Civilization.selectNextResearch` staked out `currentResearch` before the AI's
+  scored pick ever ran.
+  With those fixed, at 320 rounds on `AI_VS_AI`:
+
+  [cols="1,1,1,1,1,1", options="header"]
+  |===
+  |Seed |Civs researching `trade` |Caravans built |**Routes** |Disbands |Cities
+
+  |7 |4/4 |12 |**10** |16 |8
+  |19 |3/4 |2 |**4** |10 |5
+  |51 |4/4 |5 |**2** |0 |7
+  |33 |3/4 |1 |0 |5 |5
+  |===
+
+  At 150 rounds — the old budget — the same fix yields 2 routes on seed 7 and 2
+  on seed 51, with caravans still in transit on the rest. **The limiting factor
+  is now transit time, not any gate**: a caravan moves 1 tile a turn across a
+  40x40 map, so a 14-tile route is 14 turns of open ground (the near-city move
+  bonus covers only the last leg, and roads cut it to ~5 once the works
+  programme lands). The ship-based auto-delivery in TODO.txt is the real answer
+  for pairs further apart than that.
   the real fix and is not implemented.
 * **City commerce is still the floor for most cities.** R19 pays for the empire
   anyway, but a roaded city should still earn roughly twice an unroaded one.
@@ -407,6 +424,14 @@ refuses a caravan into a city with a hostile within one tile
 |G3 work |The works corps is sized by **reachable** work
 (`AIManager.countReachableWorks`), not the raw tile census
 |`AIManager.ts`, `SettlerGovernor.ts`
+
+|G4 order |A city builds in the order **expansion → caravans → works**. The settler
+branch sat above the caravan branch and always included the works corps, so a
+civ with any road left to build queued settlers forever and never built a
+caravan: 15 settlers and 0 caravans per game on civs that had `trade` and three
+empty route slots
+|`AutoProduction.determineProductionItem`, pinned by
+`tests/ai/productionOrdering.test.ts`
 |===
 
 **G1 was the deeper find, and it was not on the list.** The research scorer and
@@ -417,6 +442,88 @@ decided" and skipped its own scoring. A civ with relevance 3 and `trade` at 85 �
 60 points clear of the next candidate — researched `alphabet` instead, and every
 caravan/naval/fishing/nuclear hook was unrepresented in roughly half of all picks.
 Pinned by `tests/ai/researchOverride.test.ts`.
+
+**G4 was the same shape, one level down.** `trade` was researched on 3–4 of 4
+civs, `shouldBuildCaravan` returned true for every city, and not one caravan got
+built — because the branch that returns it sits *below* the settler branch, and
+the settler target always included the public-works corps. Splitting the settler
+need into its cadence (expansion, map-independent) and its works corps
+(map-derived) lets the caravan take the works slot. Measured: caravans built on
+4/4 seeds, 2/1/1/5, where the ordering fix made it 2/0/0/0.
+
+== The long-horizon disbanding: one budget, no cliff
+
+Fixing the economy took disbands at 150 rounds from 419 to 0–5 — and the
+320-round run then exposed the next layer. On seeds 33 and 51 the same metric
+read 48–53, all of it traceable to ONE civ, in four waves: r100 five archers,
+r154 ten units, r173–218 four caravans, and **29 units liquidated in a single
+round at r220**. Its trajectory:
+
+[cols="1,1,1,1,1,1", options="header"]
+|===
+|round |cities |units |upkeep |gold |debt
+
+|80 |2 |17 |13 |3 |0
+|120 |2 |15 |19 |3 |2
+|160 |3 |13 |15 |32 |42
+|240 |3 |35 |52 |95 |57
+|320 |3 |47 |121 |25 |0
+|===
+
+The mechanism is a **feedback gap between the builder and the destroyer**:
+
+* *The builder prices the field, never the queue.* `isUnitCapExhausted` asks a
+  marginal question — "can the headroom pay ONE more unit's upkeep?" — and
+  `affordableUnitUpkeep` charges only units alive in the field. Three cities each
+  see the same headroom and each queue a rifleman; when they land, the upkeep
+  triples in one round.
+* *The destroyer is a cliff.* The disbander waits for `gold < 0`, then loops
+  until `totalUpkeep <= incomeAfterTax`, whatever that takes — 29 units at once,
+  including catapults, cannons and riflemen that took dozens of turns to build.
+* *Nothing connects them.* There is no state between "solvent, keep building"
+  and "bankrupt, liquidate now", so a rate swing (this civ's tax rate moved
+  54→80→35→69 across 240 rounds), a lost city, or an expired route crosses the
+  gap in a single turn.
+
+=== The concept: `armyBudgetFor`
+
+One budget every system reads, and every system changes behaviour on it:
+
+----
+budget  = income(real rates) - buildingUpkeep - cityUpkeep - debtService
+commit  = unitUpkeep(field) + queuedUnitUpkeep(queue)
+----
+
+* **R-A build** — a maintenance-bearing unit can be queued only while
+  `commit + price <= budget`. The queue is now priced
+  (`EconomicManager.queuedUnitUpkeep`): a queued rifleman and a fielded rifleman
+  cost the same gold, so three cities can no longer spend the same headroom.
+* **R-B drawdown** — while the treasury is *still solvent* and the standing
+  army costs more than its budget, retire ONE unit a round through the
+  disbander's own protections (sole city defenders, mission units, loaded
+  ferries, working fisher boats, caravans under way, free units). An empire
+  whose income fell slides down to a size it can pay instead of falling off a
+  ledge. This is `retireSurplusUnit`, and it is a *budget* trigger, not a
+  bankruptcy trigger.
+* **R-C the disbander is demoted, not removed** — it still covers true
+  emergencies (city captured mid-war, losses faster than the drawdown), but the
+  everyday over-run now ends with one unit a round instead of 29.
+* **Debt is priced.** The budget nets `DEBT_REPAYMENT_PER_TURN` service out of
+  income — the caps used to price a loan at zero, so a civ paying 6 of its 12
+  income into repayment was handed an army cap as if the 6 were free.
+
+The simulator row for this concept is **an honest negative result**: R24–R28 in
+`scripts/economy_sim.py` show the budget alone does NOT fix a broken economy —
+rows with the road programme off still disband ~35 units, because there the
+income IS the problem (the pre-existing conclusion). The budget is a stability
+mechanism for a functioning economy, which is what the engine now has after the
+works-programme fix: it buys *no* stability with inflation, collapses nothing,
+and needs no balance constant changed.
+
+Pinned by `tests/standingArmyBudget.test.ts`: queue priced into the cap, debt
+priced into the budget, one unit retired per round, protections honoured, and
+no churn for an army that fits. Three of its seven tests fail when either fix
+is reverted.
 
 == Doc drift worth fixing in the same pass
 

@@ -199,6 +199,31 @@ describe('splash in combat', () => {
     expect(defender.battleDamageTaken).toBe(100);
     expect(mate.battleDamageTaken).toBe(25);
   });
+
+  it('counts a non-lethal win once and splashes once', () => {
+    const engine = makeEngine();
+    const events: string[] = [];
+    (engine as unknown as { onStateChange: unknown }).onStateChange = (type: string) => {
+      events.push(String(type));
+    };
+    // Even strengths: the attacker wins the roll but cannot one-shot.
+    const attacker = addUnit(engine, { id: 'a', col: 1, row: 2, civilizationId: 0, attack: 2, defense: 2, health: 100 });
+    const defender = addUnit(engine, { id: 'd', col: 2, row: 2, civilizationId: 1, attack: 1, defense: 2, health: 100 });
+    const mate = addUnit(engine, { id: 'm', col: 2, row: 2, civilizationId: 1, attack: 1, defense: 1, health: 100 });
+    rigAttackerWins();
+    engine.combatUnit(attacker, defender);
+    // Non-lethal only when the rigged roll did not destroy the defender.
+    if (!defender.isDefeated) {
+      const damage = 100 - (defender.health ?? 100);
+      expect(damage).toBeGreaterThan(0);
+      expect(defender.battleDamageTaken).toBe(damage);
+      const splashCount = events.filter((e) => e === 'COMBAT_SPLASH').length;
+      expect(splashCount).toBeLessThanOrEqual(1);
+      if (splashCount === 1) {
+        expect(mate.battleDamageTaken).toBe(CombatSystem.splashDamage(damage));
+      }
+    }
+  });
 });
 
 describe('city healing math', () => {

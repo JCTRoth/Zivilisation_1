@@ -21,7 +21,7 @@ export const MAX_ZOOM = 3.0;
  * Below this the map becomes unreadably small and the player loses spatial
  * context — the fog of war and tile detail are designed for this range.
  */
-export const MIN_ZOOM_NORMAL = 0.5;
+const MIN_ZOOM_NORMAL = 0.5;
 
 /** Clamp a zoom factor to the playable range. */
 export function clampZoom(zoom: number, isDevMode: boolean = false): number {

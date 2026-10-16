@@ -131,7 +131,6 @@ export const AUTO_SCENARIO_MAP_TYPES: readonly string[] = [
     'AI_VS_AI',
     'AI_VS_AI_SMALL',
     'AI_VS_AI_NAVAL',
-    'AI_VS_AI_NAVAL_TROPICAL',
 ];
 
 /** Whether a map type is a self-playing AI-vs-AI scenario. */

@@ -169,9 +169,8 @@ export class VictoryManager {
   private detectMoonshotWinner(): Civilization | null {
     const civilizations = this.gameEngine.civilizations || [];
     for (const civ of civilizations) {
-      if (!civ.isHuman) {
-        continue;
-      }
+      // Any operational civ can win the space race — AI included. The old
+      // human-only filter meant AI-vs-AI games could never end by Moonshot.
       if (this.hasMoonshot(civ)) {
         return civ;
       }

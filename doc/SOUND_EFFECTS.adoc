@@ -3,8 +3,8 @@
 > *Module:* `src/utils/Sfx.ts`
 > *Call sites:* `src/utils/EngineEventHandlers.ts`, `src/components/ui/gamemodals/EspionageReportModal.tsx`, `src/components/game/GameCanvas.tsx`
 > *Setting:* `settings.enableSoundEffects` (Settings → *Enable sound effects*)
-> *Assets:* `public/assets/sfx/` — **not created yet**, see <<adding-a-recording,Adding a Recording>>
-> *Tests:* `tests/sfx.test.ts`
+> *Assets:* `public/assets/sfx/` — seven recordings ship, see <<adding-a-recording,Adding a Recording>>
+> *Tests:* `tests/sfx.test.ts` (the sound layer), `tests/sfxWiring.test.ts` (which event plays what)
 
 ---
 
@@ -16,6 +16,7 @@
 . <<adding-a-recording,Adding a Recording>>
 . <<gating,When Sound Is Suppressed>>
 . <<loudness,Loudness>>
+. <<screen-flash,The Other Half of the Boom>>
 . <<testing,Tests>>
 
 ---
@@ -23,14 +24,15 @@
 [[overview]]
 == Overview
 
-The game ships **no audio assets**. Every cue is synthesized from oscillator
-beeps at play time, which costs no bytes, works offline, and means the game has
-sound on day one.
+Every cue has a **synthesized fallback** — oscillator beeps built at play time —
+so the game makes a sound even with nothing on disk. Seven cues also ship a
+**recording**, which takes over from the notes the moment its row exists in
+`CUE_FILES` (`src/utils/Sfx.ts`).
 
-Recordings replace the synthesis *one cue at a time*. Filling in a row of
-`CUE_FILES` in `src/utils/Sfx.ts` makes that one cue play the file instead;
-every other cue keeps its oscillators. Nothing else in the game changes, so a
-recording can land in a single commit and be reverted the same way.
+A recording replaces the synthesis *one cue at a time*. Filling in a row makes
+that one cue play the file instead; every other cue keeps its oscillators.
+Nothing else in the game changes, so a recording can land in a single commit
+and be reverted the same way.
 
 Two rules hold for both paths:
 
@@ -49,51 +51,116 @@ Two rules hold for both paths:
 Seven cues exist. Each has a fixed, kebab-case file name; the *Expected file*
 column is the path relative to `public/`.
 
-[cols="1,3,2,2", options="header"]
+Thirteen cues exist. *Recorded* marks a cue that ships a file today; the
+*File* column gives the name it would use, which for a recorded cue is the path
+in `CUE_FILES` relative to `public/`.
+
+[cols="1,3,2,1,2", options="header"]
 |===
-| Cue | When it plays | Fires at | Expected file
+| Cue | When it plays | Fires at | Recorded | File
+
+| `torpedoAttack`
+| A **submarine's** combat round, standing in for `unitStrike` whenever a hull
+  is firing. The weapon sound plays whether or not the round was decisive; a
+  round that sank something also gets `unitDefeated` over the top of it.
+| `EngineEventHandlers.onCombat`
+| yes
+| `sfx/torpedo-attack.mp3`
 
 | `unitStrike`
 | Every combat round in which the player is involved and **no unit died** —
-  the blow itself. Repeats each round of a fight.
+  the blow itself. Repeats each round of a fight. Not used for submarines.
 | `EngineEventHandlers.onCombat` (`COMBAT_HIT`, `COMBAT_VICTORY`,
   `COMBAT_DEFEAT` with no destruction)
+| no
 | `sfx/unit-strike.ogg`
 
 | `unitDefeated`
 | A combat round in which the player is involved and a unit **was destroyed**
   — the death, replacing `unitStrike` for that round.
 | `EngineEventHandlers.onCombat`
+| no
 | `sfx/unit-defeated.ogg`
 
 | `unitDisbanded`
 | One of the **player's** units is disbanded — by order, or by
   `EconomicManager` to cover an upkeep deficit.
 | `EngineEventHandlers.onUnitDisbanded`
+| no
 | `sfx/unit-disbanded.ogg`
 
-| `cityCaptured`
-| The player **takes** a city (`CITY_CAPTURED` where the captor is the human).
-  Losing a city plays nothing: a victory jingle over your own fall would be
-  the wrong news twice over.
+| `tankMove`
+| The player drives a **Tank**. At most once per tank per turn: a move event
+  arrives per tile crossed, and a three-tile drive should rumble once.
+| `EngineEventHandlers.onUnitMoved` → `playMovementCue`
+| yes
+| `sfx/tank-move.mp3`
+
+| `airUnitLaunch`
+| One of the player's **air units leaves a base** — a city or a carrier.
+  Moving between open tiles plays nothing, and so does the rest of a sortie.
+| `EngineEventHandlers.onUnitMoved` → `playMovementCue`
+| yes
+| `sfx/air-unit-launch.mp3`
+
+| `cityAttacked`
+| A city the player is party to comes under **assault** — as the attacker or
+  as its owner. A siege between two AI civs plays nothing.
+| `EngineEventHandlers.onCityAttacked`
+| yes
+| `sfx/city-attacked.mp3`
+
+| `cityCapturedClassic`
+| The player **takes** a city **before 1900 AD**, when the game clock is still
+  in the classical world.
 | `EngineEventHandlers.onCityOwnership`
-| `sfx/city-captured.ogg`
+| yes
+| `sfx/city-captured-classic.mp3`
+
+| `cityCapturedModern`
+| The player **takes** a city **from 1900 AD**. The two marches split the same
+  event by era; see <<city-capture-marches,the note below>>.
+| `EngineEventHandlers.onCityOwnership`
+| yes
+| `sfx/city-captured-modern.mp3`
+
+| `barracksBuilt`
+| A **Barracks** completes — or is bought — in one of the player's cities.
+  Other buildings, and AI cities, stay silent.
+| `EngineEventHandlers.onBuildingCompleted`
+| yes
+| `sfx/barracks-built.mp3`
+
+| `nuclearStrike`
+| A warhead detonates **near the player** — their own strike, or somebody
+  else's landing within `NUCLEAR_BLAST_RADIUS_HOME` (6) tiles of their cities.
+  Also plays on the player's own **reactor meltdown**. Detonations elsewhere
+  are a log line: in an AI-vs-AI run nobody is the player, and a screen that
+  strobed on every foreign nuke would be noise.
+  Synthesized as three layers — a noise crack, a sub-bass body and a low
+  rumble tail — because an oscillator-only explosion sounds like a doorbell.
+| `EngineEventHandlers.onNuclearStrike` / `onNuclearMeltdown`
+| yes
+| `sfx/nuclear-strike.ogg`
 
 | `stolenTechnology`
 | A diplomat's theft **succeeded** — the first beat of the espionage report,
   played as the "…gained the secrets of X!" line appears.
 | `EspionageReportModal` (stage `stolen`)
+| no
 | `sfx/stolen-technology.ogg`
 
 | `coverBlown`
 | The espionage report reaches its "cover blown" beat, one beat after
   `stolenTechnology`.
 | `EspionageReportModal` (stage `cover-blown`)
+| no
 | `sfx/cover-blown.ogg`
 
 | `uiSelect`
 | *Defined but never called.* No code path invokes it today.
 | —
+| no
 | `sfx/ui-select.ogg`
 |===
 
@@ -104,6 +171,18 @@ documented so the row is not mistaken for dead code — wire it up (a menu
 click, an accept/reject press) rather than deleting it, or delete both the cue
 and this row together.
 ====
+
+[[city-capture-marches]]
+=== Why two city-capture marches
+
+`einmarsch stadt klassisch` and `einmarsch stadt modern` are the same moment at
+two points in history, so the game picks between them with its own clock: the
+game year (`GameEngine.currentYear`) against `MODERN_ERA_YEAR` (1900 AD) in
+`EngineEventHandlers.ts`. Before it the classical march plays, from it the
+modern one.
+
+Both are *capture* cues. Losing a city plays neither — a victory march over
+your own fall would be the wrong news twice over.
 
 ---
 
@@ -136,15 +215,10 @@ the context up and the next cue is not silently swallowed.
 [[adding-a-recording]]
 == Adding a Recording
 
-. Create the directory (it does not exist in the repository yet):
-+
-[source,bash]
-----
-mkdir -p public/assets/sfx
-----
-
-. Drop the file in. **Name it after the cue in kebab-case** — the table above
-  gives the exact name for each cue. The name is a convention, not a lookup:
+. Drop the file in `public/assets/sfx/` (it exists — it holds the seven
+  shipped recordings). **Name it after the cue in kebab-case** — the table
+  above gives the name for each cue, and the cue `cityCapturedModern` is the
+  file `city-captured-modern.mp3`. The name is a convention, not a lookup:
   only the path you write into `CUE_FILES` matters at runtime.
 
 . Edit `CUE_FILES` in `src/utils/Sfx.ts` and uncomment (or add) the row:
@@ -152,8 +226,9 @@ mkdir -p public/assets/sfx
 [source,typescript]
 ----
 export const CUE_FILES: Partial<Record<SfxCue, string>> = {
-  'unitStrike':       '/assets/sfx/unit-strike.ogg',
+  'cityCapturedClassic': '/assets/sfx/city-captured-classic.mp3',
   // ...
+  // 'unitStrike':       '/assets/sfx/unit-strike.ogg',
 };
 ----
 +
@@ -164,9 +239,15 @@ requests it**. Vite serves everything under `public/` at the root, so the file
 . Reload. That cue now plays the file and its oscillators are ignored. All
   other cues are untouched.
 
-Any format the browser can decode works (`Audio` just takes a URL) — `.ogg` is
-the project's choice: well-supported, and compresses well for the short,
-percussive clips these cues are.
+Any format the browser can decode works (`Audio` just takes a URL). The shipped
+recordings are `.mp3`, the placeholders above are written as `.ogg` because
+that compresses well for the short percussive clips the remaining cues are —
+neither is a lookup, so either will do.
+
+A recording that is registered but missing from disk plays **nothing**: the
+path *is* the lookup, and the synthesized fallback is deliberately not retried
+so a half-configured game cannot double up. `tests/sfx.test.ts` walks the
+shipped rows and asserts each file exists, which is what catches the typo.
 
 [NOTE]
 ====
@@ -206,8 +287,20 @@ loader, can register a path without editing this module.
 | `unitDisbanded` does not fire. The AI disbands constantly, and its
   bookkeeping is not sound design.
 
+| An AI unit moving
+| `tankMove` / `airUnitLaunch` do not fire. The same rule as the disband: an AI
+  turn is dozens of moves, and its bookkeeping is not sound design.
+
+| An AI-vs-AI siege
+| `cityAttacked` does not fire — neither the city nor the attacker is the
+  player's.
+
+| An AI city finishing a barracks
+| `barracksBuilt` does not fire; the cue is the player's own feedback.
+
 | The player **losing** a city
-| `cityCaptured` does not fire (see the catalogue).
+| Neither `cityCapturedClassic` nor `cityCapturedModern` fires (see the
+  catalogue).
 |===
 
 ---
@@ -219,31 +312,94 @@ loader, can register a path without editing this module.
 |===
 | Cue | Master gain | Note
 
-| Every event fanfare (`stolenTechnology`, `coverBlown`, `cityCaptured`,
-  `uiSelect`)
+| Every event fanfare (`stolenTechnology`, `coverBlown`, `cityCapturedClassic`,
+  `cityCapturedModern`, `uiSelect`)
 | `0.18`
 | The reference level — `BASE_GAIN`.
 
+| `barracksBuilt`
+| `0.85 × 0.18 = 0.153`
+| News the player should not miss, but not a conquest.
+
+| `cityAttacked`
+| `0.8 × 0.18 = 0.144`
+| Same reasoning — an alarm, not a celebration.
+
 | `unitDefeated`
 | `0.7 × 0.18 = 0.126`
+| Under the fanfare.
+
+| `torpedoAttack`
+| `0.65 × 0.18 = 0.117`
 | Under the fanfare.
 
 | `unitDisbanded`
 | `0.6 × 0.18 = 0.108`
 | Under the fanfare.
 
+| `airUnitLaunch`
+| `0.6 × 0.18 = 0.108`
+| Under the fanfare.
+
 | `unitStrike`
 | `0.55 × 0.18 = 0.099`
-| The quietest: it repeats every combat round.
+| Quiet: it repeats every combat round.
+
+| `nuclearStrike`
+| `1 × 0.18 = 0.18`
+| The loudest cue in the game, and the one that earns it: a warhead goes off
+  a handful of times per game at most, and the noise bands carry real energy
+  that a thin oscillator beep would not.
+|===
+
+NOTE: The synthesis is capped at `BASE_GAIN × 1`, so even the nuke cannot
+clip. A recording may go louder through `CUE_FILE_VOLUME`, which is a separate
+scale for a different reason — file volume, not synth envelope.
+
+| `tankMove`
+| `0.5 × 0.18 = 0.09`
+| The quietest: the player triggers it directly, every turn.
 |===
 
 The multipliers live in `UNIT_CUE_GAIN` and apply to `BASE_GAIN`. The ordering
 is the whole point: a blow fires on every round while a fanfare fires once per
 game, so unit cues sit *underneath* the events rather than on top of them.
 
-File-backed cues are not routed through the gain node — they use `HTMLAudioElement.volume`
-instead, set to `UNIT_CUE_VOLUME` (`0.45`). Raise or lower the two independently
-when mixing in real recordings.
+Recorded cues never reach that path. They play through an `HTMLAudioElement`
+at their own volume from `CUE_FILE_VOLUME`, falling back to
+`DEFAULT_FILE_VOLUME` (`0.45`):
+
+[cols="2,1,3", options="header"]
+|===
+| Cue | File volume | Note
+
+| `cityCapturedClassic`, `cityCapturedModern`
+| `0.6`
+| The loudest recording: a conquest, once a game.
+
+| `barracksBuilt`
+| `0.55`
+| A domestic win.
+
+| `cityAttacked`
+| `0.5`
+| An alarm.
+
+| `torpedoAttack`
+| `0.45`
+| (The default.)
+
+| `airUnitLaunch`
+| `0.4`
+| Frequent.
+
+| `tankMove`
+| `0.35`
+| The most frequent recording there is.
+|===
+
+The two scales are independent, so a cue whose recording is mixed hot can be
+turned down without touching what it would sound like un-recorded.
 
 [NOTE]
 ====
@@ -257,17 +413,72 @@ but the code assigned it as an absolute value, which made a strike three times
 [[testing]]
 == Tests
 
-`tests/sfx.test.ts` covers what is invisible until the first `.ogg` arrives:
+`tests/sfx.test.ts` covers the layer itself:
 
 * a row in `CUE_FILES` produces an `Audio` for exactly that path;
 * the table is read **live**, so registering a path after import still applies;
 * an unmapped cue never reaches the file layer (no double playback);
 * sound off means no fetch at all;
 * every cue in `SfxCue` plays without throwing, muted or not;
-* a unit cue is quieter than an event fanfare, and two identical cues are
-  equally loud.
+* a unit cue is quieter than an event fanfare, and two fanfares are equally
+  loud;
+* every shipped row has a real file on disk, named after its cue in kebab-case;
+* the mutation tests put the table back exactly as they found it — the
+  baseline is the shipped rows, not an empty table.
+
+`tests/sfxWiring.test.ts` covers the other half: which event plays what. It
+drives a real engine through the real router with the sound layer mocked, and
+pins the rules that keep the recordings from becoming noise —
+
+* a tank rumbles once per turn, not once per tile;
+* an aircraft plays its takeoff only when it leaves a city or a carrier;
+* the AI's moves are silent;
+* a submarine gets `torpedoAttack` and everyone else `unitStrike`;
+* a city-capture fanfare splits on `MODERN_ERA_YEAR`, and losing a city plays
+  neither march;
+* a barracks speaks only in the player's own city.
 
 `disposeAudio()` exists for these tests: the context is module state, so two
 assertions in one file would otherwise share whichever fake the first one
 installed. Nothing in the game calls it — a real context is cheap to keep and
 expensive to recreate.
+
+---
+
+[[screen-flash]]
+== The Other Half of the Boom
+
+Sound alone does not sell a nuclear detonation, so the same two event handlers
+drive a full-screen flourish: a white flash and a shake of the map. It lives in
+`GameCanvas.VisualEffects` and `styles/civ1GameCanvas.css`, not in the sound
+layer.
+
+A `VisualEffect` on the store carries `col`, `row`, `duration` and `shake`, and
+one is pushed per event by `EngineEventHandlers`. The renderer does nothing but
+turn it into DOM nodes:
+
+* the **flash** is a white layer fading to zero, with a slower radial bloom
+  behind it, so the light reads as light rather than as a white rectangle;
+* the **shake** is a CSS keyframe animation on the canvas root — `transform`
+  only, so it is composited and costs no map repaint. Every keyframe carries a
+  `scale(1.02)`, because the root is exactly the size of its container and a
+  bare translation would bare the background at one edge;
+* both are `forwards`, and the node removes **itself** on `animationend`. There
+  is no rAF loop and no polling, so the whole feature costs nothing except
+  while it is actually playing.
+
+Three rules keep it from becoming annoying:
+
+. **The same gate as the sound.** Only the player's own strike, a blast within
+   6 tiles of their cities, or their own reactor meltdown. In an AI-vs-AI run
+   nobody is the player, so nothing flashes.
+. **A meltdown is a smaller fire.** `onNuclearMeltdown` uses 60 % of the
+   duration and half the shake, so the two explosions are not mistaken for one
+   another.
+. **`enableAnimations` switches it off.** Players who turned animations off get
+   the notification and the sound, not the light show.
+
+`tests/sfxWiring.test.ts` covers the wiring: the flash appears when the player
+fires, when the blast lands near home, and on their own meltdown; it stays away
+when the detonation is somebody else's problem; and the effect is dropped when
+the renderer is done with it.

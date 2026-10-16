@@ -1,14 +1,16 @@
 /**
- * The sound layer — and specifically the mechanism by which recorded .ogg
- * files replace the synthesized cues one at a time.
+ * The sound layer — and specifically the mechanism by which a recorded file
+ * takes over one synthesized cue.
  *
- * The game ships no audio assets: every cue is an oscillator. Real recordings
- * are meant to land in `CUE_FILES` one by one, and the moment a row is filled
- * that file wins over the notes. These tests pin that contract, because it is
- * invisible until the first .ogg arrives — at which point a mistake in it
+ * Every cue ships an oscillator fallback, so the game is audible with no
+ * assets on disk. A cue with a row in `CUE_FILES` plays that file instead and
+ * ignores its notes. These tests pin that contract, because a mistake in it
  * would either play nothing or play the synth on top of the recording.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { playSfx, unlockAudio, disposeAudio, CUE_FILES, type SfxCue } from '@/utils/Sfx';
 import { useGameStore } from '@/stores/GameStore';
 
@@ -17,12 +19,25 @@ import { useGameStore } from '@/stores/GameStore';
 const ALL_CUES: SfxCue[] = [
   'stolenTechnology',
   'coverBlown',
-  'cityCaptured',
+  'cityCapturedClassic',
+  'cityCapturedModern',
   'uiSelect',
   'unitStrike',
+  'torpedoAttack',
   'unitDefeated',
   'unitDisbanded',
+  'airUnitLaunch',
+  'tankMove',
+  'cityAttacked',
+  'barracksBuilt',
+  'nuclearStrike',
 ];
+
+/**
+ * The rows `Sfx.ts` ships with, read before any test registers a row of its
+ * own. The mutation tests below have to put the table back exactly this way.
+ */
+const SHIPPED_CUES = Object.keys(CUE_FILES).sort();
 
 describe('playSfx — gated by the settings switch', () => {
   afterEach(() => {
@@ -118,10 +133,132 @@ describe('the cue set', () => {
     useGameStore.getState().actions.updateSettings({ enableSoundEffects: true });
   });
 
-  it('leaves no files registered after the tests', () => {
+  it('leaves only the shipped recordings registered after the tests', () => {
     // Each test cleans up, but assert it so a future test that forgets cannot
-    // leak a path into another file's run.
-    expect(Object.keys(CUE_FILES).length).toBe(0);
+    // leak a path into another file's run. The shipped rows are the baseline
+    // the table has to come back to — not an empty table, which is what this
+    // asserted back when every cue was still an oscillator.
+    expect(Object.keys(CUE_FILES).sort()).toEqual(SHIPPED_CUES);
+  });
+});
+
+describe('the nuclear strike cue', () => {
+  afterEach(() => {
+    disposeAudio();
+  });
+
+  /** A stand-in Web Audio graph that records how many voice chains the cue built. */
+  function fakeAudioGraph() {
+    const voices: Array<{ noise: boolean; cutoff: number }> = [];
+    (globalThis as { window?: unknown }).window = {
+      AudioContext: class {
+        state = 'running';
+        sampleRate = 8000;
+        currentTime = 0;
+        destination = {};
+        createGain() {
+          return { gain: { value: 0, setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} }, connect: () => {} };
+        }
+        createOscillator() {
+          voices.push({ noise: false, cutoff: 0 });
+          return { type: 'sine', frequency: { value: 0 }, connect: () => {}, start: () => {}, stop: () => {} };
+        }
+        createBiquadFilter() {
+          return { type: 'lowpass', frequency: { value: 0 }, connect: () => {} };
+        }
+        createBufferSource() {
+          voices.push({ noise: true, cutoff: 0 });
+          return { buffer: null as unknown, loop: false, connect: () => {}, start: () => {}, stop: () => {} };
+        }
+        createBuffer(_ch: number, length: number) {
+          return { sampleRate: 8000, length, getChannelData: () => new Float32Array(length) };
+        }
+      },
+    };
+    return voices;
+  }
+
+  it('is layered: a noise crack, a sub-bass body and a rumble tail', () => {
+    // An oscillator-only nuke sounds like a doorbell, which is why the cue
+    // carries noise bands at all. Pin all three layers so a regeneration of
+    // the cue table cannot quietly drop one.
+    const voices = fakeAudioGraph();
+    playSfx('nuclearStrike');
+    const noiseBands = voices.filter((v) => v.noise).length;
+    const tones = voices.filter((v) => !v.noise).length;
+    expect(noiseBands).toBeGreaterThanOrEqual(2);
+    expect(tones).toBeGreaterThanOrEqual(2);
+  });
+
+  it('is the loudest cue in the game', () => {
+    const masters: Array<{ gain: { value: number } }> = [];
+    (globalThis as { window?: unknown }).window = {
+      AudioContext: class {
+        state = 'running';
+        sampleRate = 8000;
+        currentTime = 0;
+        destination = {};
+        createGain() {
+          const g = { gain: { value: 0, setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} }, connect: () => {} };
+          masters.push(g);
+          return g;
+        }
+        createOscillator() {
+          return { type: 'sine', frequency: { value: 0 }, connect: () => {}, start: () => {}, stop: () => {} };
+        }
+        createBiquadFilter() {
+          return { type: 'lowpass', frequency: { value: 0 }, connect: () => {} };
+        }
+        createBufferSource() {
+          return { buffer: null as unknown, loop: false, connect: () => {}, start: () => {}, stop: () => {} };
+        }
+        createBuffer(_ch: number, length: number) {
+          return { sampleRate: 8000, length, getChannelData: () => new Float32Array(length) };
+        }
+      },
+    };
+
+    // Each cue's first constructed gain node is its master.
+    const gainFor = (cue: Parameters<typeof playSfx>[0]): number => {
+      const at = masters.length;
+      playSfx(cue);
+      return masters[at]?.gain.value ?? -1;
+    };
+    const nuke = gainFor('nuclearStrike');
+    const fanfare = gainFor('cityCapturedClassic');
+    const strike = gainFor('unitStrike');
+    expect(nuke).toBeGreaterThan(fanfare);
+    expect(nuke).toBeGreaterThan(strike);
+  });
+});
+
+describe('the shipped recordings', () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+  it('covers every cue that has a row', () => {
+    // Not a formality: the shipped table is the list of cues that are supposed
+    // to have real audio, so a row silently disappearing is a regression.
+    expect(Object.keys(CUE_FILES).length).toBeGreaterThan(0);
+  });
+
+  it('has a real file on disk for every registered path', () => {
+    // Vite serves `public/` at the root, so a row's URL is a path under
+    // `public/`. A typo here plays nothing at all — the file path IS the
+    // lookup — and the synthesized fallback is deliberately not retried, so
+    // the cue would go quiet rather than back to beeps.
+    for (const [cue, url] of Object.entries(CUE_FILES)) {
+      const onDisk = path.join(repoRoot, 'public', url.replace(/^\//, ''));
+      expect(existsSync(onDisk), `${cue} → public${url} is missing`).toBe(true);
+    }
+  });
+
+  it('uses the kebab-case name of its cue', () => {
+    // The doc's naming convention. Nothing depends on it at runtime, but a
+    // table of paths is only readable while the names line up with the cues.
+    for (const [cue, url] of Object.entries(CUE_FILES)) {
+      const kebab = cue.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+      expect(path.basename(url), `${cue} → ${url}`).toContain(kebab);
+    }
   });
 });
 
@@ -145,6 +282,11 @@ describe('the relative loudness of a cue', () => {
     // gain starts from. And each cue's position is read from the array length
     // immediately before that cue, because a cue with more notes pushes every
     // later node further along and makes fixed indices guesswork.
+    //
+    // Every cue measured here has to be one WITHOUT a row in `CUE_FILES`:
+    // a file-backed cue never reaches this path at all, since it plays through
+    // an HTMLAudioElement at its own `CUE_FILE_VOLUME` and builds no gain node.
+    // Measuring one would read `undefined`, not a quiet number.
     const masters: Array<{ gain: { value: number } }> = [];
 
     (globalThis as { window?: unknown }).window = {
@@ -180,16 +322,16 @@ describe('the relative loudness of a cue', () => {
       return masters[at].gain.value;
     };
 
-    const fanfare = firstGainOf('cityCaptured');
+    const fanfare = firstGainOf('stolenTechnology');
     const strike = firstGainOf('unitStrike');
-    const fanfareAgain = firstGainOf('stolenTechnology');
+    const fanfareAgain = firstGainOf('coverBlown');
 
     expect(fanfare).toBeGreaterThan(0);
     expect(strike).toBeGreaterThan(0);
     // The fanfare is the loudest thing in the mix; a unit cue sits under it.
     expect(strike).toBeLessThan(fanfare);
-    // Two identical cues must produce identical loudness — the multiplier
-    // applies per cue, not per call.
+    // Two fanfares must come out equally loud — the multiplier applies per
+    // cue, not per call.
     expect(fanfareAgain).toBe(fanfare);
   });
 });

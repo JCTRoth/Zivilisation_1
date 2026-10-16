@@ -41,6 +41,13 @@ export interface DiplomatAbilityFacts {
   canTradeTechs: boolean;
   /** Third parties an embargo could be agreed against. */
   embargoCandidates: number[];
+  /**
+   * Enemies of OUR side the listener has met — the only civs a call to arms
+   * can honestly name. Ask an ally to fight a stranger and the ask is
+   * nonsense; ask them to join a war they already know is real, and the
+   * joint-war scoring has something to weigh.
+   */
+  jointWarCandidates: number[];
 }
 
 /**
@@ -67,6 +74,16 @@ export function diplomatActionsFor(facts: DiplomatAbilityFacts): DiplomatAction[
       break;
   }
 
+  // A call to arms: we are at war and the listener is a friend who has met
+  // the enemy. Only wars the listener can see are named — asking an ally to
+  // fight a stranger it has never heard of is not a proposal, it is nonsense.
+  if (
+    facts.jointWarCandidates.length > 0
+    && (facts.status === 'alliance' || facts.activeTreaties.includes('mutual_defense'))
+  ) {
+    actions.push('propose_joint_war');
+  }
+
   // ── 2. Terms beyond the basic statuses — these need a channel ─────────
   if (facts.status !== 'war' && facts.hasEmbassy) {
     if (!facts.activeTreaties.includes('open_borders')) actions.push('offer_open_borders');
@@ -88,6 +105,9 @@ export function diplomatActionsFor(facts: DiplomatAbilityFacts): DiplomatAction[
     // is never offered there in the first place.
     if (!facts.hasEmbassy) actions.push('establish_embassy');
     actions.push('investigate_city', 'industrial_sabotage', 'steal_technology');
+    // Incitement is bought from agents inside the city, so it needs the same
+    // peacetime access every other infiltration does.
+    actions.push('incite_revolt');
   }
 
   return actions;

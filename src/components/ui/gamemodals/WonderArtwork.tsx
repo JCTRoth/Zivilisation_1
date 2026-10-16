@@ -95,7 +95,7 @@ export const WonderArtwork: React.FC<WonderArtworkProps> = ({ wonder, active = t
  * (the wonder entry modal lays the artwork out as a full-bleed hero and puts
  * this at its bottom — CC BY requires the attribution to stay visible).
  */
-export const WonderCreditBlock: React.FC<{
+const WonderCreditBlock: React.FC<{
   info: WonderArtworkCredit;
   /** Wonder id — selects the localized Wikipedia article for the link. */
   wonderId?: string;

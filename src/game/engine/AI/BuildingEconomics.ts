@@ -31,6 +31,7 @@
  */
 
 import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
+import { PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
 import { TRADE_GOLD_MULTIPLIER } from '../EconomicManager';
 
 /**
@@ -44,33 +45,60 @@ import { TRADE_GOLD_MULTIPLIER } from '../EconomicManager';
 export const BEAKER_GOLD_EQUIVALENT = 1;
 
 /**
- * Buildings whose advantage is not implemented by the engine.
+ * Gold-equivalent of one shield per turn of steady production.
+ *
+ * The treasury charges `PURCHASE_GOLD_PER_SHIELD` gold to RUSH a shield, but
+ * produced shields arrive gradually and only toward whatever the city queues,
+ * so they are credited at half the rush price — the same rough gold-for-works
+ * exchange the beaker uses for science. Holds the Factory (+2 shields, 3 gold
+ * upkeep) at a slight loss instead of at "worth exactly nothing", which is
+ * what let the sell audit liquidate an industrial empire on a hunch.
+ */
+export const SHIELD_GOLD_EQUIVALENT = PURCHASE_GOLD_PER_SHIELD / 2;
+
+/** Gold-equivalent of one declared `health` point (disease down, lives longer). */
+export const HEALTH_GOLD_EQUIVALENT = 0.5;
+
+/** Gold-equivalent of one `growthBonus` / `foodStorage` point (faster growth). */
+export const GROWTH_GOLD_EQUIVALENT = 0.5;
+
+/** Gold-equivalent of one `culture` point (tracked in the demographics). */
+export const CULTURE_GOLD_EQUIVALENT = 0.25;
+
+/** Worth of a Barracks' veteran workshop: units roll out at ×1.25 strength. */
+export const VETERAN_UNITS_GOLD_EQUIVALENT = 1;
+
+/** Worth of lifting the size-10 housing cap (the Aqueduct's main job). */
+export const HOUSING_CAP_GOLD_EQUIVALENT = 1;
+
+/**
+ * Share of the city's gold output that distance corruption plausibly eats,
+ * times `(1 − corruptionReduction)` — a deliberately conservative stand-in for
+ * the gold CityUtils keeps from being stolen, since the equation has no
+ * distance input of its own.
+ */
+export const CORRUPTION_PROTECTED_SHARE = 0.1;
+
+/**
+ * Effects that are declared but still not implemented anywhere.
  *
  * Listed explicitly rather than derived, because "absent from the table" and
- * "declared but ignored" are different mistakes. `defense`, `pollution` and
- * `corruptionReduction` are handled separately below because the engine does
- * act on them — but by hardcoding the building id and ignoring the declared
- * value, which is a different (and messier) kind of live.
+ * "declared but ignored" are different mistakes. Everything else the engine
+ * now consumes through `BuildingEffects` (production, culture, health,
+ * growthBonus, foodStorage, unitProduction, veteranUnits, corruptionReduction,
+ * missileDefense, isPalace, defense, housingCap) or through WonderEffects —
+ * those are priced in the switch below instead of being marked dead.
+ *
+ * NOTE: `navalMovement` used to be here — the Lighthouse and Magellan's
+ * Expedition now grant their +1 ship movement for real (WonderEffects), so
+ * the engine acts on it. `pollution` is handled in the switch: the engine
+ * reads it for the Civ1 score, never for a yield.
  */
 export const INERT_EFFECTS: ReadonlySet<string> = new Set([
-  'production',
-  'culture',
-  'health',
   'gold',
   'food',
-  'growthBonus',
-  'foodStorage',
-  'unitProduction',
-  'veteranUnits',
-  'corruptionReduction',
-  'missileDefense',
-  'isPalace',
   'wonder',
   'globalDefense',
-  // NOTE: `navalMovement` used to be here — the Lighthouse and Magellan's
-  // Expedition now grant their +1 ship movement for real (WonderEffects), so
-  // the engine acts on it. `production` remains inert for BUILDINGS; wonder
-  // production (Hoover Dam, AI Supercluster) flows through WonderEffects.
   'exploration',
   'diplomacy',
 ]);
@@ -212,6 +240,104 @@ export function evaluateBuildingEconomics(
         break;
       }
 
+      case 'production': {
+        // Flat shields added to the city's yields every turn (BuildingEffects).
+        const gold = magnitude * SHIELD_GOLD_EQUIVALENT;
+        incomePerTurn += gold;
+        liveEffects.push(`production:${magnitude}`);
+        reasons.push(`+${magnitude} shields/turn = +${round1(gold)} gold/turn equivalent`);
+        break;
+      }
+
+      case 'unitProduction': {
+        // Extra shields while a COMBAT unit is under construction (Barracks).
+        const gold = magnitude * SHIELD_GOLD_EQUIVALENT;
+        incomePerTurn += gold;
+        liveEffects.push(`unitProduction:${magnitude}`);
+        reasons.push(`+${magnitude} shields on military builds = +${round1(gold)} gold/turn equivalent`);
+        break;
+      }
+
+      case 'veteranUnits': {
+        // Units built here start Seasoned (rank ×1.25) instead of Rookie.
+        incomePerTurn += VETERAN_UNITS_GOLD_EQUIVALENT;
+        liveEffects.push('veteranUnits:true');
+        reasons.push(`combat units roll out Seasoned (×1.25 from the first round) = +${VETERAN_UNITS_GOLD_EQUIVALENT} gold/turn equivalent`);
+        break;
+      }
+
+      case 'foodStorage': {
+        // Each point keeps a quarter of the food box on growth (Granary: 2 → half).
+        const gold = magnitude * GROWTH_GOLD_EQUIVALENT;
+        incomePerTurn += gold;
+        liveEffects.push(`foodStorage:${magnitude}`);
+        reasons.push(`keeps ${magnitude * 25}% of the food box when the city grows = +${round1(gold)} gold/turn equivalent`);
+        break;
+      }
+
+      case 'growthBonus': {
+        const gold = magnitude * GROWTH_GOLD_EQUIVALENT;
+        incomePerTurn += gold;
+        liveEffects.push(`growthBonus:${magnitude}`);
+        reasons.push(`+${magnitude} food credited on every growth step = +${round1(gold)} gold/turn equivalent`);
+        break;
+      }
+
+      case 'health': {
+        // Demographics: disease down, life expectancy up (DemographicsManager).
+        const gold = magnitude * HEALTH_GOLD_EQUIVALENT;
+        incomePerTurn += gold;
+        liveEffects.push(`health:${magnitude}`);
+        reasons.push(`+${magnitude} health — less disease, longer lives = +${round1(gold)} gold/turn equivalent`);
+        break;
+      }
+
+      case 'housingCap': {
+        // The Aqueduct's main job: the city may grow past the size-10 cap.
+        incomePerTurn += HOUSING_CAP_GOLD_EQUIVALENT;
+        liveEffects.push('housingCap:true');
+        reasons.push(`lifts the size-10 housing cap = +${HOUSING_CAP_GOLD_EQUIVALENT} gold/turn equivalent`);
+        break;
+      }
+
+      case 'culture': {
+        // Tracked in the world demographics; a small credit, never a yield.
+        const gold = magnitude * CULTURE_GOLD_EQUIVALENT;
+        incomePerTurn += gold;
+        liveEffects.push(`culture:${magnitude}`);
+        reasons.push(`+${magnitude} culture in the demographics = +${round1(gold)} gold/turn equivalent`);
+        break;
+      }
+
+      case 'corruptionReduction': {
+        // CityUtils multiplies the corruption rate by this value, compounding
+        // across buildings: the city keeps `(1 − r)` of what distance
+        // corruption would have stolen.
+        const gold = city.cityOutputPerTurn * (1 - magnitude) * CORRUPTION_PROTECTED_SHARE;
+        incomePerTurn += gold;
+        liveEffects.push(`corruptionReduction:${magnitude}`);
+        reasons.push(`cuts distance corruption by ${Math.round((1 - magnitude) * 100)}% = +${round1(gold)} gold/turn at today's output`);
+        break;
+      }
+
+      case 'missileDefense': {
+        // Worth its upkeep only against a rival that can actually field one.
+        if (city.rivalCanBuildAtomicWeapons) {
+          incomePerTurn += city.cityOutputPerTurn;
+          liveEffects.push('missileDefense');
+          reasons.push('a rival can field an atomic weapon — the battery is earning its keep');
+        } else {
+          reasons.push('no rival can build an atomic weapon — nothing to intercept');
+        }
+        break;
+      }
+
+      case 'isPalace': {
+        liveEffects.push('isPalace:true');
+        reasons.push('seat of government — the capital must never be liquidated');
+        break;
+      }
+
       case 'happiness': {
         if (magnitude > 0) {
           // A happiness building is worth exactly the disorder it prevents:
@@ -252,15 +378,16 @@ export function evaluateBuildingEconomics(
       }
 
       case 'defense': {
-        // The engine hardcodes a ×3 city defence when the walls are standing,
-        // so the declared magnitude is cosmetic; what matters is whether the
-        // city is actually under attack.
+        // The engine multiplies city defence by `1 + 0.25 × N` (BuildingEffects
+        // → CombatSystem; City Walls' 2 → ×1.5). What matters for the ledger is
+        // not the multiplier but whether the city is actually under attack.
+        const multiplier = round1(1 + magnitude * 0.25);
         if (city.isThreatened) {
           incomePerTurn += disorderAvoidanceWorth(city);
-          liveEffects.push('defense:×3');
-          reasons.push(`city is threatened — walls multiply its defence, risking ${round1(city.cityOutputPerTurn)} gold/turn of output`);
+          liveEffects.push(`defense:×${multiplier}`);
+          reasons.push(`city is threatened — walls multiply its defence ×${multiplier}, risking ${round1(city.cityOutputPerTurn)} gold/turn of output`);
         } else {
-          liveEffects.push('defense:×3');
+          liveEffects.push(`defense:×${multiplier}`);
           reasons.push('nothing is attacking — the walls earn nothing today');
         }
         break;
@@ -297,23 +424,8 @@ export function evaluateBuildingEconomics(
     }
   }
 
-  // ── A city's granary halves stored food on every growth step ────────────
-  // Not an `effect` the engine reads (it checks the id), but it is real.
-  if (buildingType === 'granary') {
-    liveEffects.push('foodStorage:halves-loss-on-growth');
-    reasons.push('halves food lost to growth each time the city grows');
-  }
-
   // ── SDI Defense: only worth 4 gold/turn against an actual atomic threat ──
-  if (buildingType === 'sdi_defense') {
-    if (city.rivalCanBuildAtomicWeapons) {
-      incomePerTurn += city.cityOutputPerTurn;
-      liveEffects.push('missileDefense');
-      reasons.push('a rival can field an atomic weapon — the battery is earning its 4 gold/turn');
-    } else {
-      reasons.push('no rival can build an atomic weapon — nothing to intercept');
-    }
-  }
+  // (handled by the `missileDefense` effect case above — no hardcoded id)
 
   const hasAnyLiveEffect = liveEffects.length > 0;
   const netPerTurn = round1(incomePerTurn - upkeepPerTurn);

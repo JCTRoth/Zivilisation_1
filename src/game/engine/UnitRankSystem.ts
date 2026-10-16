@@ -26,7 +26,7 @@
  * the engine after each resolved combat.
  */
 
-import { BUILDING_TYPES } from '@/data/BuildingConstants';
+import { hasBuildingEffect } from './BuildingEffects';
 
 /** The four rank grades, bottom (default) to top. */
 export const UNIT_RANK = {
@@ -102,8 +102,19 @@ export const UNIT_RANK_INFO: Record<UnitRank, UnitRankInfo> = {
 /** Top rank of the ladder (progression caps here). */
 export const UNIT_RANK_MAX: UnitRank = UNIT_RANK.BATTLE_HARDENED;
 
-/** Building whose garrison workshops roll units off the ways as Seasoned. */
-const BARRACKS_BUILDING_ID = BUILDING_TYPES.BARRACKS;
+/**
+ * Whether a UNIT_PROPERTIES `type` field counts as a combat unit class.
+ * Combat units are the ones a Barracks' `veteranUnits` effect can seed with
+ * rank, and the ones a building's `unitProduction` shields speed up;
+ * civilians (settlers, caravans, …) are neither.
+ */
+export function isCombatUnitClass(unitClass?: string): boolean {
+  return unitClass === 'military'
+    || unitClass === 'siege'
+    || unitClass === 'naval'
+    || unitClass === 'air'
+    || unitClass === 'scout';
+}
 
 /**
  * Minimal rank-bearing shape. The engine's `Unit` satisfies it; tests can pass
@@ -170,7 +181,8 @@ export interface StartingRankState {
  *
  * Civ1: a city with Barracks produces veteran units. Here that is the third
  * rank (Seasoned) with its threshold experience pre-loaded, so a barracks
- * unit still has to fight its way up to Battle-Hardened.
+ * unit still has to fight its way up to Battle-Hardened. The barracks is read
+ * from the declared `veteranUnits` effect (BuildingEffects), not from its id.
  *
  * `unitClass` is the UNIT_PROPERTIES `type` field — only combat units gain the
  * bonus; civilians (settlers, caravans, …) stay Rookies.
@@ -179,13 +191,7 @@ export function startingRankForCity(
   city: { buildings?: string[] | null } | null | undefined,
   unitClass?: string,
 ): StartingRankState {
-  const isCombatClass = unitClass === 'military'
-    || unitClass === 'siege'
-    || unitClass === 'naval'
-    || unitClass === 'air'
-    || unitClass === 'scout';
-  const hasBarracks = Array.isArray(city?.buildings) && city.buildings.includes(BARRACKS_BUILDING_ID);
-  if (isCombatClass && hasBarracks) {
+  if (isCombatUnitClass(unitClass) && hasBuildingEffect(city, 'veteranUnits')) {
     const rank = UNIT_RANK.SEASONED;
     return {
       experience: UNIT_RANK_INFO[rank].xpThreshold,

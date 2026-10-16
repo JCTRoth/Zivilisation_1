@@ -99,6 +99,9 @@ const GOVERNING_WEIGHT: Record<ImpactEvent, keyof DiplomaticWeights> = {
   tribute_extorted: 'greed',
   tribute_gift: 'greed',
   unit_bribed: 'loyalty',
+  // A caught bribe attempt is espionage with a price tag — like a detected
+  // spy, it is the suspicious civ that was watching and takes it personally.
+  bribe_exposed: 'paranoia',
   spy_detected: 'paranoia',
   // Espionage hits a suspicious civ hardest: a paranoid one is the one that
   // was watching, and the one that takes a stolen secret most personally.

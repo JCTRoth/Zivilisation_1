@@ -19,9 +19,9 @@ import {
 } from '@/data/GameConstants';
 import { shouldOfferAutoEndTurn } from '@/utils/ModalTriggers';
 
-const AUTO = ['AI_VS_AI', 'AI_VS_AI_SMALL', 'AI_VS_AI_NAVAL', 'AI_VS_AI_NAVAL_TROPICAL'];
+const AUTO = ['AI_VS_AI', 'AI_VS_AI_SMALL', 'AI_VS_AI_NAVAL'];
 const HUMAN = ['NORMAL_SKIRMISH', 'EARTH', 'CLOSEUP_1V1', 'CLOSEUP_BEATUP', 'NAVAL_CLOSEUP',
-  'NO_SETTLERS', 'MANY_CITIES', 'TECH_LEVEL_10', 'ALL_UNITS'];
+  'NO_SETTLERS', 'MANY_CITIES', 'TECH_LEVEL_10', 'ALL_UNITS', 'AEGEAN_CAMPAIGN'];
 
 describe('isAutoScenario', () => {
   it('covers every AI-vs-AI scenario, including the naval ones', () => {

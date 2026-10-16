@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
+import {
+  DiplomacyManager,
+  bribeOutcomeForRoll,
+  bribeUnitCost,
+  type BribeOutcome,
+} from '@/game/engine/DiplomacyManager';
+import { ESPIONAGE_DIPLOMAT_ACTIONS } from '@/game/engine/DiplomacyTypes';
 import { TREATY_ROUTE_TRADE_MULTIPLIER } from '@/data/GameConstants';
 import { EconomicManager } from '@/game/engine/EconomicManager';
 
@@ -276,6 +282,281 @@ describe('DiplomacyManager', () => {
     it('should fail for own unit', () => {
       const result = dm.bribeUnit(0, 'u1');
       expect(result.accepted).toBe(false);
+    });
+  });
+
+  describe('bribeUnit — three seeded outcomes', () => {
+    type BribeProbe = {
+      outcome: BribeOutcome;
+      result: { accepted: boolean; reason?: string; goldTransferred?: number };
+      gold: number;
+      unit: any;
+      events: string[];
+      opinionOfBriber: number;
+      manager: DiplomacyManager;
+    };
+
+    /** Fresh world, one fresh enemy unit, one bribe attempt at a crafted id. */
+    const tryBribe = (id: string): BribeProbe => {
+      const eng = createMockGameEngine();
+      eng.units.push({
+        id, type: 'legion', civilizationId: 1, attack: 2, defense: 2, col: 9, row: 9, movesRemaining: 1,
+      });
+      const manager = new DiplomacyManager(eng);
+      manager.initialize([0, 1, 2]);
+      const result = manager.bribeUnit(0, id);
+      const unit = eng.units.find((u: any) => u.id === id);
+      const events = eng.onStateChange.mock.calls.map((c: any[]) => c[0]) as string[];
+      const outcome: BribeOutcome = result.accepted
+        ? 'defected'
+        : /exposed/i.test(result.reason ?? '')
+          ? 'reported'
+          : 'refused';
+      return {
+        outcome,
+        result,
+        gold: eng.civilizations[0].resources.gold,
+        unit,
+        events,
+        opinionOfBriber: manager.getOpinion(1, 0).goodwill,
+        manager,
+      };
+    };
+
+    /** The roll is seeded on the unit id, so ids find every band there is. */
+    const findIdFor = (wanted: BribeOutcome): string => {
+      for (let i = 0; i < 300; i++) {
+        const id = `probe-${i}`;
+        if (tryBribe(id).outcome === wanted) return id;
+      }
+      throw new Error(`no '${wanted}' bribe among 300 probe ids`);
+    };
+
+    it('splits a d100 roll into defect / reported / refused bands', () => {
+      // 60% defect; the failure band splits evenly between the loud and the
+      // quiet way to fail.
+      expect(bribeOutcomeForRoll(0, 60)).toBe('defected');
+      expect(bribeOutcomeForRoll(59, 60)).toBe('defected');
+      expect(bribeOutcomeForRoll(60, 60)).toBe('reported');
+      expect(bribeOutcomeForRoll(79, 60)).toBe('reported');
+      expect(bribeOutcomeForRoll(80, 60)).toBe('refused');
+      expect(bribeOutcomeForRoll(99, 60)).toBe('refused');
+    });
+
+    it('a defecting unit takes the gold, switches sides and starts the war', () => {
+      const probe = tryBribe(findIdFor('defected'));
+      expect(probe.result.accepted).toBe(true);
+      expect(probe.gold).toBe(200 - bribeUnitCost({ attack: 2, defense: 2 }));
+      expect(probe.unit.civilizationId).toBe(0);
+      expect(probe.manager.getStatus(0, 1)).toBe('war');
+      expect(probe.events).toContain('UNIT_BRIBED');
+      expect(probe.events).not.toContain('BRIBE_REPORTED');
+    });
+
+    it('a reported bribe takes the gold, keeps the unit and lands on the ledger', () => {
+      const probe = tryBribe(findIdFor('reported'));
+      expect(probe.result.accepted).toBe(false);
+      expect(probe.result.goldTransferred).toBe(-bribeUnitCost({ attack: 2, defense: 2 }));
+      expect(probe.gold).toBe(200 - bribeUnitCost({ attack: 2, defense: 2 }));
+      expect(probe.unit.civilizationId).toBe(1);
+      expect(probe.events).toContain('BRIBE_REPORTED');
+      expect(probe.events).not.toContain('UNIT_BRIBED');
+      // Caught red-handed: the insult is written down in goodwill terms.
+      expect(probe.opinionOfBriber).toBeLessThan(0);
+      // No war on a caught attempt — war is the price of SUCCESS.
+      expect(probe.manager.getStatus(0, 1)).toBe('peace');
+    });
+
+    it('a silent refusal costs nothing and leaves no trace', () => {
+      const probe = tryBribe(findIdFor('refused'));
+      expect(probe.result.accepted).toBe(false);
+      expect(probe.result.reason).toMatch(/refused/i);
+      expect(probe.result.goldTransferred).toBeUndefined();
+      expect(probe.gold).toBe(200);
+      expect(probe.unit.civilizationId).toBe(1);
+      expect(probe.events).not.toContain('UNIT_BRIBED');
+      expect(probe.events).not.toContain('BRIBE_REPORTED');
+      expect(probe.manager.getStatus(0, 1)).toBe('peace');
+    });
+  });
+
+  // ─── Incite revolt (a covert act, not a proposal) ───────────────────
+
+  describe('inciteRevolt', () => {
+    const withCity = (city: Record<string, unknown>) => {
+      const eng = createMockGameEngine({ cities: [city] });
+      const manager = new DiplomacyManager(eng);
+      manager.initialize([0, 1, 2]);
+      return { eng, manager };
+    };
+
+    it('a capital is immune — gold buys restive provinces, never the seat of government', () => {
+      const { eng, manager } = withCity({ id: 'c2', civilizationId: 1, col: 10, row: 10, population: 3, isCapital: true });
+      const result = manager.inciteRevolt(0, eng.cities[0]);
+      expect(result.success).toBe(false);
+      expect(result.reason).toMatch(/capital/i);
+    });
+
+    it('pays the agent up front and flips the city when the roll lands', () => {
+      // round 0 → roll 0 < 30 (ungarrisoned) → revolt succeeds
+      const { eng, manager } = withCity({ id: 'c2', civilizationId: 1, col: 10, row: 10, population: 2 });
+      eng.roundManager = { getRoundNumber: () => 0 };
+      const result = manager.inciteRevolt(0, eng.cities[0]);
+      expect(result.success).toBe(true);
+      expect(eng.cities[0].civilizationId).toBe(0);      // city flipped
+      expect(eng.civilizations[0].resources.gold).toBe(200 - 200); // 2 pop × 100
+      expect(manager.getStatus(0, 1)).toBe('war');       // buying a city is an act of war
+      expect(eng.cities[0].capturedTurns).toBe(5);
+    });
+
+    it('a garrison of 4 makes the same attempt fail and the agent pays anyway', () => {
+      // round 0 → roll 0; chance = 30 − 10×4 = −10 → floored at 0 → caught
+      const eng = createMockGameEngine({
+        cities: [{ id: 'c2', civilizationId: 1, col: 10, row: 10, population: 2 }],
+        units: [
+          { id: 'g1', type: 'warriors', civilizationId: 1, col: 10, row: 10 },
+          { id: 'g2', type: 'warriors', civilizationId: 1, col: 10, row: 10 },
+          { id: 'g3', type: 'warriors', civilizationId: 1, col: 10, row: 10 },
+          { id: 'g4', type: 'warriors', civilizationId: 1, col: 10, row: 10 },
+        ],
+      });
+      const manager = new DiplomacyManager(eng);
+      manager.initialize([0, 1, 2]);
+      eng.roundManager = { getRoundNumber: () => 0 };
+      const result = manager.inciteRevolt(0, eng.cities[0]);
+      expect(result.success).toBe(false);
+      expect(result.coverBlown).toBe(true);
+      expect(eng.cities[0].civilizationId).toBe(1);      // city stays put
+      expect(eng.civilizations[0].resources.gold).toBe(200 - 200); // still paid
+      expect(manager.getStatus(0, 1)).toBe('war');       // caught inciting starts a war
+    });
+
+    it('refuses at war — there is nothing covert to buy while the guns fire', () => {
+      const { eng, manager } = withCity({ id: 'c2', civilizationId: 1, col: 10, row: 10, population: 2 });
+      manager.declareWar(0, 1);
+      const result = manager.inciteRevolt(0, eng.cities[0]);
+      expect(result.success).toBe(false);
+      expect(result.reason).toMatch(/at war/i);
+    });
+
+    it('the engine routes it as infiltration, not as a negotiable proposal', () => {
+      expect(ESPIONAGE_DIPLOMAT_ACTIONS.has('incite_revolt')).toBe(true);
+      // A proposal path never reaches it any more — there is no case for it
+      // in `executeAcceptedAction`, and the willingness roll is bypassed.
+      const { eng, manager } = withCity({ id: 'c2', civilizationId: 1, col: 10, row: 10, population: 2 });
+      eng.roundManager = { getRoundNumber: () => 0 };
+      const viaProposal = manager.processProposal({
+        fromCivId: 0, toCivId: 1, action: 'incite_revolt',
+      });
+      // The proposal machinery refuses a covert act outright — it is not
+      // something the victim gets to score and decline.
+      expect(viaProposal.accepted).toBe(false);
+      expect(viaProposal.reason).toMatch(/not a negotiable/i);
+    });
+  });
+
+  // ─── Calls to arms (AI↔AI and AI→player) ───────────────────────────
+
+  describe('considerCallToArms', () => {
+    it('an AI at war asks its ally to join, once per war per cooldown', () => {
+      const eng = createMockGameEngine({
+        civilizations: [
+          { id: 0, name: 'Americans', isAlive: true, resources: { gold: 200 }, personality: { aggression: 8, diplomacy: 5, military: 8, expansion: 5, science: 5, economy: 5 } },
+          { id: 1, name: 'Aztecs', isAlive: true, isAI: true, resources: { gold: 100 }, personality: { aggression: 5, diplomacy: 8, military: 5, expansion: 5, science: 5, economy: 5 } },
+          { id: 2, name: 'Babylonians', isAlive: true, isAI: true, resources: { gold: 150 }, personality: { aggression: 5, diplomacy: 5, military: 5, expansion: 5, science: 5, economy: 5 } },
+        ],
+        roundManager: { getRoundNumber: () => 5 },
+      });
+      const manager = new DiplomacyManager(eng);
+      manager.initialize([0, 1, 2]);
+      // 0 and 1 are allies; 0 is at war with 2; 1 has met 2.
+      manager.formAlliance(0, 1);
+      manager.markContact(1, 2);
+      manager.declareWar(0, 2);
+
+      manager.processAIDiplomacy(0);
+
+      // The ally was asked — and, having met the enemy and liking us, joined.
+      expect(manager.getStatus(0, 2)).toBe('war');
+      expect(manager.getStatus(1, 2)).toBe('war');
+    });
+
+    it('does not re-ask within the cooldown', () => {
+      const eng = createMockGameEngine({
+        roundManager: { getRoundNumber: () => 5 },
+      });
+      const manager = new DiplomacyManager(eng);
+      manager.initialize([0, 1, 2]);
+      manager.formAlliance(0, 1);
+      manager.markContact(1, 2);
+      manager.declareWar(0, 2);
+
+      manager.processAIDiplomacy(0);
+      const firstAsk = manager.getEventLog().filter((e) => e.type === 'war_declared').length;
+
+      // Same round again (well inside the 16-round cooldown): no second ask,
+      // and the ally's war does not get re-declared or double-logged.
+      manager.processAIDiplomacy(0);
+      expect(manager.getEventLog().filter((e) => e.type === 'war_declared').length).toBe(firstAsk);
+    });
+
+    it('does not ask someone who has never met the enemy', () => {
+      const eng = createMockGameEngine({
+        roundManager: { getRoundNumber: () => 5 },
+      });
+      const manager = new DiplomacyManager(eng);
+      manager.initialize([0, 1, 2]);
+      manager.formAlliance(0, 1);
+      // Note: 1 has NOT met 2.
+      manager.declareWar(0, 2);
+
+      manager.processAIDiplomacy(0);
+      expect(manager.getStatus(1, 2)).toBe('peace');
+    });
+  });
+
+  // ─── Embassy-gated observation of third-party dealings ──────────────
+
+  describe('getEventLog', () => {
+    const log = (manager: DiplomacyManager) => manager.getEventLog();
+
+    it('shows the full log to no observer (exports, AI-vs-AI, tests)', () => {
+      const { manager } = { manager: new DiplomacyManager(createMockGameEngine()) };
+      manager.initialize([0, 1, 2]);
+      manager.declareWar(1, 2);
+      expect(log(manager).length).toBeGreaterThan(0);
+    });
+
+    it('hides a war between two other civs from a court with no embassy there', () => {
+      const ge = createMockGameEngine();
+      const manager = new DiplomacyManager(ge);
+      manager.initialize([0, 1, 2]);
+      manager.declareWar(1, 2);
+      // Civ 0 has no embassy with 1 or 2 → the war between them is invisible.
+      expect(manager.getEventLog(0).filter((e) => e.type === 'war_declared')).toEqual([]);
+      // …but civ 1 (a party) always sees it.
+      expect(manager.getEventLog(1).filter((e) => e.type === 'war_declared').length).toBeGreaterThan(0);
+    });
+
+    it('reveals it through the embassy network — an embassy with BOTH parties', () => {
+      const ge = createMockGameEngine();
+      const manager = new DiplomacyManager(ge);
+      manager.initialize([0, 1, 2]);
+      manager.establishEmbassy(0, 1);
+      // One embassy: still blind to 1↔2.
+      manager.declareWar(1, 2);
+      expect(manager.getEventLog(0).filter((e) => e.type === 'war_declared')).toEqual([]);
+      // The second embassy completes the network.
+      manager.establishEmbassy(0, 2);
+      expect(manager.getEventLog(0).filter((e) => e.type === 'war_declared').length).toBeGreaterThan(0);
+    });
+
+    it('always shows the observer its own dealings, even with no embassy', () => {
+      const ge = createMockGameEngine();
+      const manager = new DiplomacyManager(ge);
+      manager.initialize([0, 1, 2]);
+      manager.declareWar(0, 1);
+      expect(manager.getEventLog(0).filter((e) => e.type === 'war_declared').length).toBeGreaterThan(0);
     });
   });
 

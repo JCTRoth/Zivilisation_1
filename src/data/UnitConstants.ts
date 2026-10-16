@@ -18,7 +18,7 @@ export const FERRY_CAPACITY = 3;
  * exclusivity is enforced in `GameEngine.canLoadFerry` (nukes board only
  * subs, subs board only nukes), so a hull that could lift an army never does.
  */
-export const SUBMARINE_NUCLEAR_CAPACITY = 1;
+const SUBMARINE_NUCLEAR_CAPACITY = 1;
 
 export const UNIT_TYPES = {
     // Military Units
@@ -51,6 +51,9 @@ export const UNIT_TYPES = {
     CARRIER: 'carrier',
     TRANSPORT: 'transport',
     FISHER_BOAT: 'fisher_boat',
+    // Trade Ships sail between two harbour cities; every arrival at either
+    // end pays out gold (see GameEngine.processTradeShipArrival).
+    TRADE_SHIP: 'trade_ship',
 
     // Civilian Units
     SETTLER: 'settler',
@@ -536,6 +539,24 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         icon: '⛴️',
         requires: 'sailing',
         transportCapacity: FERRY_CAPACITY,
+        type: 'civilian'
+    },
+    [UNIT_TYPES.TRADE_SHIP]: {
+        name: 'Trade Ship',
+        attack: 0,
+        defense: 1,
+        movement: 4,
+        sightRange: 2,
+        cost: 60,
+        maintenance: 2,
+        canSettle: false,
+        canWork: false,
+        naval: true,
+        icon: '🚢',
+        requires: 'trade',
+        // A Trade Ship only sails out of a harbour — the world-city that
+        // funds a route must also be able to receive a land caravan.
+        requiredBuilding: 'harbor',
         type: 'civilian'
     },
     [UNIT_TYPES.FIGHTER]: {

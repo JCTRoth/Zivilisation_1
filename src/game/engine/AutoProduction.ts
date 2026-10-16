@@ -170,23 +170,37 @@ export class AutoProduction {
    * first); this covers late attachment (test doubles, load order), so the
    * settler governor is active by default however the AI was assembled.
    */
-  private worksSourceBound = false;
+  private outstandingSourceBound = false;
+  private reachableSourceBound = false;
+
+  /**
+   * A works-corps settler the expand branch decided was wanted but deferred to
+   * the caravan branch. Set inside `determineProductionItem` and consumed right
+   * after it, so it never outlives the call that computed it — it carries no
+   * per-city state between turns, which is why it is a field and not a parameter.
+   */
+  private pendingWorksSettler: ProductionItem | null = null;
 
   private ensureWorksSource(): void {
-    if (this.worksSourceBound) return;
+    if (this.outstandingSourceBound && this.reachableSourceBound) return;
     const aiManager = (this.gameEngine as GameEngine & {
       aiManager?: {
         countOutstandingWorks?: (civId: number) => number;
         countReachableWorks?: (civId: number) => number;
       };
     }).aiManager;
-    if (typeof aiManager?.countOutstandingWorks === 'function') {
-      const countOutstandingWorks = aiManager.countOutstandingWorks.bind(aiManager);
-      this.settlerGovernor.setOutstandingWorksSource(countOutstandingWorks);
-      this.worksSourceBound = true;
+    // Each source binds on its own flag: a harness (or a late attach) may
+    // expose only one of the two today and the other next call, and a shared
+    // flag would strand the missing one at null forever — the governor then
+    // falls back to `queuedImprovements` and the works corps collapses even
+    // though the census is right there.
+    if (!this.outstandingSourceBound && typeof aiManager?.countOutstandingWorks === 'function') {
+      this.settlerGovernor.setOutstandingWorksSource(aiManager.countOutstandingWorks.bind(aiManager));
+      this.outstandingSourceBound = true;
     }
-    if (typeof aiManager?.countReachableWorks === 'function') {
+    if (!this.reachableSourceBound && typeof aiManager?.countReachableWorks === 'function') {
       this.settlerGovernor.setReachableWorksSource(aiManager.countReachableWorks.bind(aiManager));
+      this.reachableSourceBound = true;
     }
   }
 
@@ -630,6 +644,16 @@ export class AutoProduction {
       return fisherBoat;
     }
 
+    // Trade Ship: a second harbour city lets a civ open a paying sea route.
+    // Offered only when the civ actually has somewhere to send it; the
+    // route itself is opened manually (or by the first arrival) — this just
+    // supplies the hull.
+    const tradeShip = this.buildTradeShipProduction(city);
+    if (tradeShip) {
+      debugLog('[AutoProduction] Naval revenue — building a Trade Ship');
+      return tradeShip;
+    }
+
     const civCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === city.civilizationId);
     const econ = this.gameEngine?.economicManager;
 
@@ -851,7 +875,14 @@ export class AutoProduction {
     // capital churned settlers and never explored. A human target is now a
     // strict single-settler replacement pipeline.
     const humanSettlerTarget = 1;
-    const worksCorps = isHumanCity ? 0 : 2;
+    // The public-works corps is sized by REACHABLE work, not a flat number: a
+    // settler can only pave tiles it can walk to, so once the map is settled the
+    // corps collapses to zero and the civ stops fielding workers that would
+    // stand idle. The governor owns that census; `fallback` is the flat number
+    // used when no work source is wired (test harness without an aiManager).
+    const worksCorps = isHumanCity
+      ? 0
+      : this.settlerGovernor.reachableWorksCorps(city.civilizationId, 2);
     const governorRecommended = isAiControlled
       ? this.settlerGovernor.getRecommendedSettlerCount(allCivCities, this.gameEngine.units)
         + allCivSettlers
@@ -864,6 +895,23 @@ export class AutoProduction {
           desiredSettlers + (wantsWorks ? worksCorps : 0),
           Math.max(0, governorRecommended),
         );
+    /**
+     * The settler need split in two.
+     *
+     * `expansionTarget` is the cadence from `EXPANSION_PARAMS` — how many
+     * settlers the empire needs to keep growing, with no reference to the map.
+     * Everything above it in `governorRecommended` is the public-works corps,
+     * which IS map-derived (outstanding tiles ÷ tiles per settler).
+     *
+     * The split exists because of a measured deadlock: the settler branch sat
+     * ABOVE the caravan branch and its target always included the works corps,
+     * so a civ with any road left to build queued settlers forever and never
+     * built a caravan — 15 settlers and 0 caravans per game, on civs that had
+     * researched `trade` and held three empty route slots each. Ordering is now
+     * expansion → caravans → works, so route capacity is filled before the
+     * empire over-invests in road crews.
+     */
+    const expansionTarget = isHumanCity ? humanSettlerTarget : desiredSettlers;
     // Economics before the army: a civ that has climbed back to the minimum
     // reserve but still cannot net a positive gold gets a settler even though
     // `canAffordAnotherUnit` says no, and gives up the army for now. See
@@ -933,11 +981,23 @@ export class AutoProduction {
       // colony bonus — the player is broke, not colonising. An AI keeps its
       // profile minimum so expansion never hard-stops.
       const crisisTarget = isHumanCity ? humanSettlerTarget : expansion.minSettlers;
-      const effectiveDesired = (goldCrisis ? crisisTarget : settlerTarget) + colonyNeed;
+      // Colony sealift is part of the HARD need, not the works corps: an island
+      // waiting for a hull is stopped, not merely unimproved.
+      const expansionNeed = (goldCrisis ? crisisTarget : expansionTarget) + colonyNeed;
+      const worksNeed = goldCrisis ? 0 : Math.max(0, settlerTarget - expansionTarget);
 
-      if (settlerCount < effectiveDesired) {
-        debugLog(`[AutoProduction] Civilization has ${settlerCount} settler(s) (unit list + queued across all cities), building another (target ${settlerTarget}+colony ${colonyNeed}, profile ${strategy}, works ${wantsWorks}, human ${isHumanCity})`);
+      if (settlerCount < expansionNeed) {
         return {
+          type: 'unit',
+          itemType: 'settler',
+          name: UNIT_PROPS.settler?.name || 'Settler',
+          cost: UNIT_PROPS.settler?.cost || 40
+        };
+      }
+      // Works corps only: this is the part the caravan is allowed to preempt,
+      // and it is re-checked below the caravan branch.
+      if (wantsWorks && settlerCount < expansionNeed + worksNeed) {
+        this.pendingWorksSettler = {
           type: 'unit',
           itemType: 'settler',
           name: UNIT_PROPS.settler?.name || 'Settler',
@@ -1126,6 +1186,17 @@ export class AutoProduction {
           cost: caravanProps.cost
         };
       }
+    }
+
+    // 5c-2. The works-corps settler the expand branch deferred to the caravan.
+    //       Ordering is expansion → caravans → works, so a civ fills its route
+    //       capacity before it over-invests in road crews. Consumed exactly once
+    //       and cleared, so a later call cannot pick up a stale decision.
+    if (this.pendingWorksSettler) {
+      const item = this.pendingWorksSettler;
+      this.pendingWorksSettler = null;
+      debugLog('[AutoProduction] Works corps: building the deferred road crew');
+      return item;
     }
 
     // 5b. Build the building even if not "high-priority"
@@ -1459,7 +1530,7 @@ export class AutoProduction {
 
   private buildDefenderProduction(city: City, threatAssessment?: CityThreatAssessment | null): ProductionItem {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
-    const unitType = this.selectDefenderTypeForCiv(civ);
+    const unitType = this.selectDefenderTypeForCiv(civ, city);
     const unitProps = UNIT_PROPS[unitType];
     const production: ProductionItem = {
       type: 'unit',
@@ -1475,15 +1546,77 @@ export class AutoProduction {
     return production;
   }
 
-  /** Tech-gated defender selection using the given civ's technologies */
-  private selectDefenderTypeForCiv(civ: Civilization | undefined): string {
-    const defenderPreference = ['riflemen', 'musketeer', 'phalanx', 'archer', 'warrior'];
-    for (const unitType of defenderPreference) {
-      if (UNIT_PROPS[unitType] && (!civ || canBuildUnit(civ, unitType))) {
-        return unitType;
+  /**
+   * Every land combat unit this civ can build right now.
+   *
+   * The era is already inside this list: `canBuildUnit` is the tech gate, so
+   * an ancient civ sees warriors/archers/phalanxes and an industrial one sees
+   * musketeers/riflemen/mech_inf — no hardcoded era ladder anywhere. Naval
+   * hulls, civilians and the tactical nuke are excluded by role.
+   */
+  private buildableLandCombat(civ: Civilization | undefined): string[] {
+    return Object.keys(UNIT_PROPS).filter((type) => {
+      const props = UNIT_PROPS[type];
+      if (!props || props.naval === true) return false;
+      const role = String(props.type ?? '');
+      if (role !== 'military' && role !== 'siege') return false;
+      return !civ || canBuildUnit(civ, type);
+    });
+  }
+
+  /** The era's best defender — highest defense, cheapest on a tie. */
+  private bestBuildableDefender(civ: Civilization | undefined): string {
+    let best = 'warrior';
+    let bestScore = -1;
+    for (const type of this.buildableLandCombat(civ)) {
+      const props = UNIT_PROPS[type];
+      const defense = props?.defense ?? 0;
+      const cost = props?.cost ?? 999;
+      const bestCost = UNIT_PROPS[best]?.cost ?? 999;
+      if (defense > bestScore || (defense === bestScore && cost < bestCost)) {
+        best = type;
+        bestScore = defense;
       }
     }
-    return 'warrior';
+    return best;
+  }
+
+  /** The era's best attacker — highest attack, cheapest on a tie. */
+  private bestBuildableAttacker(civ: Civilization | undefined): string {
+    let best = '';
+    let bestScore = -1;
+    for (const type of this.buildableLandCombat(civ)) {
+      const props = UNIT_PROPS[type];
+      const attack = props?.attack ?? 0;
+      const cost = props?.cost ?? 999;
+      const bestCost = best ? (UNIT_PROPS[best]?.cost ?? 999) : 999;
+      if (attack > bestScore || (attack === bestScore && cost < bestCost)) {
+        best = type;
+        bestScore = attack;
+      }
+    }
+    return best || 'warrior';
+  }
+
+  /**
+   * Defender selection: the era's best shield, with a shooter mixed in.
+   *
+   * Every third garrison unit (deterministic per city tile and round — no
+   * hidden counter state) is the era's best ATTACKER instead: a pure shield
+   * wall never takes a tile back, and Civ1 garrisons pair a front line with
+   * something that can shoot over it. Threat changes HOW MANY are built, not
+   * which ones.
+   */
+  private selectDefenderTypeForCiv(civ: Civilization | undefined, city?: City): string {
+    const bestDefender = this.bestBuildableDefender(civ);
+    if (city) {
+      const round = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+      if ((round + (city.col ?? 0) + (city.row ?? 0)) % 3 === 2) {
+        const shooter = this.bestBuildableAttacker(civ);
+        if (shooter !== bestDefender) return shooter;
+      }
+    }
+    return bestDefender;
   }
 
   private shouldSupportOffensivePlan(city: City): boolean {
@@ -2261,6 +2394,40 @@ export class AutoProduction {
     return { type: 'unit', itemType: 'fisher_boat', name: props.name, cost: props.cost };
   }
 
+  /**
+   * Trade Ship: any harbour city that already has a second harbour to trade
+   * with (its own or eventually another's) can fund a repeating sea route.
+   * A handful per civ is enough — excess hulls just sail past each other.
+   */
+  private buildTradeShipProduction(city: City): ProductionItem | null {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return null;
+    if (!this.cityOwnsBuilding(city, 'harbor')) return null;
+    if (!canBuildUnit(civ, 'trade_ship')) return null;
+
+    const harbours = (this.gameEngine.cities ?? []).filter(
+      (c: City) =>
+        c.civilizationId === civ.id && Array.isArray(c.buildings) && c.buildings.includes('harbor'),
+    );
+    if (harbours.length < 2) return null; // nowhere to run to
+
+    const shipCount = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civ.id && u.type === 'trade_ship' && !u.isDefeated,
+    ).length;
+    // One route per harbour pair is plenty — don't spam the seas.
+    if (shipCount >= Math.max(1, Math.floor(harbours.length / 2))) return null;
+
+    const queued = String(city.currentProduction?.itemType ?? '') === 'trade_ship'
+      || (city.buildQueue ?? []).some(
+        (q: { itemType?: string; type?: string }) => String(q?.itemType ?? q?.type ?? '') === 'trade_ship',
+      );
+    if (queued) return null;
+
+    const props = UNIT_PROPS.trade_ship;
+    if (!props) return null;
+    return { type: 'unit', itemType: 'trade_ship', name: props.name, cost: props.cost };
+  }
+
   /** Harbor for a civ isolated on a small island (coastal cities only). */
   private buildHarborProduction(city: City): ProductionItem | null {
     const existing = new Set(city.buildings ?? []);
@@ -2650,13 +2817,11 @@ export class AutoProduction {
         }
       } catch { /* plan inspection is advisory */ }
     }
-    const offensivePreference = ['tank', 'cavalry', 'knights', 'chariot', 'legion', 'archer', 'warrior'];
-    for (const unitType of offensivePreference) {
-      if (UNIT_PROPS[unitType] && (!civ || canBuildUnit(civ, unitType))) {
-        return unitType;
-      }
-    }
-    return 'warrior';
+    // The era's best attacker — data-driven, so mech_inf and tanks arrive the
+    // moment the tech does. Civ1's offensive meta is "build the fastest
+    // killer", and a second rank of infantry beside a tank column only
+    // dilutes the blow the plan is sized around.
+    return this.bestBuildableAttacker(civ);
   }
 
   /**

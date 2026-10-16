@@ -14,7 +14,7 @@ import {
 import { beginCameraGlide } from '../game/rendering/CameraGlideGate';
 import { MIN_ZOOM, MAX_ZOOM, clampZoom } from '../utils/CameraUtils';
 import { getLanguage, setLanguage } from '../i18n';
-import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City, VisualEffect } from '../../types/game';
+import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City } from '../../types/game';
 
 // Internal store property types for cached/computed state
 type StoreWithInternals = GameStoreState & {
@@ -95,8 +95,7 @@ const createInitialUIState = (): UIState => ({
   citizenReassign: null,
   turnButtonDisabled: false,
   currentQueueUnitId: null,
-  turnFlashTrigger: 0,
-  visualEffects: [],
+  turnFlashTrigger: 0
 });
 
 /** City dialogs that a user-initiated unit selection closes (one selection at a time). */
@@ -187,6 +186,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
   // Movement glides (position interpolation between tiles)
   movementAnimations: [],
+
+  // Full-screen world-event flourishes (nuclear flash + screen shake)
+  visualEffects: [],
 
   // True while a human-initiated move/attack animation is playing
   isUnitAnimating: false,
@@ -571,6 +573,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       promotionEffects: state.promotionEffects.filter(e => e.id !== id)
     })),
 
+    addVisualEffect: (effect) => set(state => ({
+      visualEffects: [...state.visualEffects, effect]
+    })),
+
+    removeVisualEffect: (id) => set(state => ({
+      visualEffects: state.visualEffects.filter(e => e.id !== id)
+    })),
+
     addMovementAnimation: (animation) => set(state => ({
       movementAnimations: [...state.movementAnimations, animation]
     })),
@@ -911,29 +921,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       }
     })),
 
-    triggerVisualEffect: (effect: Omit<VisualEffect, 'id' | 'startTime'>) => {
-      const id = ++_notificationCounter;
-      const startTime = Date.now();
-      set(state => ({
-        uiState: {
-          ...state.uiState,
-          visualEffects: [
-            ...state.uiState.visualEffects,
-            { id, startTime, ...effect }
-          ]
-        }
-      }));
-      // Auto-remove after duration
-      setTimeout(() => {
-        set(state => ({
-          uiState: {
-            ...state.uiState,
-            visualEffects: state.uiState.visualEffects.filter(e => e.id !== id)
-          }
-        }));
-      }, effect.duration);
-    },
-
     setLoading: (isLoading) => set(state => ({
       gameState: { ...state.gameState, isLoading }
     })),
@@ -1240,6 +1227,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       uiState: createInitialUIState(),
       combatAnimations: [],
       promotionEffects: [],
+      visualEffects: [],
       disbandNotice: null,
       starvationNotice: null,
       disorderNotice: null,

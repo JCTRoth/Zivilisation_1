@@ -145,7 +145,6 @@ describe('isAutoScenario covers every self-playing map type', () => {
       'AI_VS_AI',
       'AI_VS_AI_SMALL',
       'AI_VS_AI_NAVAL',
-      'AI_VS_AI_NAVAL_TROPICAL',
     ]) {
       expect(isAutoScenario(mapType)).toBe(true);
     }

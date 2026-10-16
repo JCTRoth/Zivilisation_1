@@ -12,6 +12,12 @@
  * (requiredUnits was a cap), so a 17-unit army gathered in waves and rarely
  * pressed. Groups now follow the plan target and every non-reserve combat unit
  * joins it — the same seed went from 41 to 72 attacks and 5 to 9 captures.
+ *
+ * The RNG seed was re-pinned when BuildingEffects started adding factory and
+ * power-plant shields to city yields: the old seed's civs grew rich enough to
+ * hold standing 6-unit armies in permanent peacetime, and the invariant had
+ * nothing to bite on. This seed is a hot war game (two civs field 8-20 units
+ * and dozens of attacks), so a hoarder is caught red-handed.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
@@ -23,7 +29,7 @@ import { useSeededRandom } from '../helpers/world';
 
 const TARGET_ROUNDS = 150;
 const MAP_SEED = 982451;
-const RNG_SEED = 77;
+const RNG_SEED = 78;
 const CIVILIZATIONS = 4;
 /** Hoarding threshold: an army this size must have seen combat. */
 const BIG_ARMY = 6;

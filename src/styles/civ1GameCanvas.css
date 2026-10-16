@@ -85,3 +85,121 @@
 .context-menu-description {
   font-size: 9px;
 }
+/*
+ * Full-screen "world event" flourishes.
+ *
+ * A nuclear detonation is the loudest, most attention-grabbing thing that can
+ * happen in a game, and it is the one event allowed to take the whole screen:
+ * a white flash, and a shake of the map itself.
+ *
+ * Both are plain CSS animations on `transform` and `opacity` — compositor
+ * properties, no layout, no repaint of the map — and both are `forwards` so
+ * the node removes itself when the animation ends rather than being polled by
+ * a rAF loop. A nuke fires a handful of times a game, so there is nothing to
+ * amortize here; the point is that it must cost nothing the rest of the time.
+ */
+.game-canvas-root {
+  transform-origin: center center;
+}
+
+/*
+ * The shake rides on the canvas root so the MAP moves, not a filter over it.
+ * Every keyframe carries a 1.02 scale: the root is exactly the size of its
+ * container, so translating it a few pixels would otherwise bare the
+ * background at one edge. The scale is imperceptible and makes the
+ * translation safe in all four directions.
+ */
+.game-canvas-root.is-shaking {
+  animation: game-canvas-shake 900ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  will-change: transform;
+}
+
+@keyframes game-canvas-shake {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.02);
+  }
+  10%,
+  90% {
+    transform: translate3d(-3px, 2px, 0) scale(1.02);
+  }
+  20%,
+  80% {
+    transform: translate3d(5px, -3px, 0) scale(1.02);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translate3d(-7px, 3px, 0) scale(1.02);
+  }
+  40%,
+  60% {
+    transform: translate3d(7px, -2px, 0) scale(1.02);
+  }
+}
+
+/*
+ * The flash: white, from full opacity to nothing. It sits above every other
+ * canvas layer (the overlay canvas is z-index 1) but below the modals, so a
+ * strike never hides a dialog the player has to answer.
+ */
+.visual-effect-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.visual-effect-nuclear-flash {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  animation: nuclear-flash-fade 320ms ease-out forwards;
+}
+
+/*
+ * A second, larger and slower bloom behind the white: the flash reads as
+ * light rather than as a white rectangle, and it costs one more composited
+ * layer rather than a gradient repaint.
+ */
+.visual-effect-nuclear-bloom {
+  position: absolute;
+  inset: -10%;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.95) 0%, rgba(255, 240, 200, 0.7) 35%, rgba(255, 200, 120, 0) 70%);
+  animation: nuclear-bloom-fade 620ms ease-out forwards;
+}
+
+@keyframes nuclear-flash-fade {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes nuclear-bloom-fade {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.85);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+}
+
+/*
+ * Players who turn animations off get the notification and the sound, not the
+ * light show — `enableAnimations` is the master switch for every other
+ * animation in the game, and this one is no exception.
+ */
+.animations-disabled .game-canvas-root.is-shaking {
+  animation: none;
+}
+
+.animations-disabled .visual-effect-nuclear-flash,
+.animations-disabled .visual-effect-nuclear-bloom {
+  animation: none;
+  opacity: 0;
+}

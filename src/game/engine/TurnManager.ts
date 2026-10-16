@@ -27,10 +27,10 @@ import { fishingRelevanceForCiv } from './FisherEconomics';
 import { serializeCities } from '../../utils/CitySnapshots';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { CARAVAN_CITY_MOVE_BONUS, CARAVAN_CITY_MOVE_RADIUS } from '@/data/GameConstants';
-import { BUILDING_TYPES } from '@/data/BuildingConstants';
 import { isWonderId, wonderGroupMembers } from '@/data/WonderData';
 import { UNIT_UPGRADE_PATHS } from '@/data/UnitConstants';
-import { startingRankForCity } from './UnitRankSystem';
+import { startingRankForCity, isCombatUnitClass } from './UnitRankSystem';
+import { cityBuildingEffects, hasBuildingEffect, isPalaceBuilding } from './BuildingEffects';
 import { citizenFoodDemand, AQUEDUCT_HOUSING_CAP, type ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
@@ -826,6 +826,13 @@ export class TurnManager {
       if (unit.fishingRoute) {
         this.gameEngine.advanceFishing(unit.id);
       }
+
+      // Trade Ship: the automatic harbour-to-harbour run is advanced at the
+      // start of the turn, paying out gold on every arrival, then turning
+      // around.
+      if (unit.tradeShipRoute) {
+        this.gameEngine.advanceTradeShip(unit.id);
+      }
     });
   }
 
@@ -954,7 +961,20 @@ export class TurnManager {
 
     // Add production
     if (city.currentProduction) {
-      const grossShields = city.yields?.production ?? 0;
+      const effects = cityBuildingEffects(city);
+      // Barracks' declared `unitProduction` speeds up the city's COMBAT
+      // builds only — not wonders, buildings or civilians (its description:
+      // "increases the production of military units").
+      const itemUnitType = city.currentProduction.type === 'unit'
+        ? String(city.currentProduction.itemType ?? '')
+        : '';
+      const unitProps = itemUnitType
+        ? (this.gameEngine.constructor as typeof GameEngine).UNIT_PROPS?.[itemUnitType]
+        : undefined;
+      const militaryBonus = isCombatUnitClass(unitProps?.type)
+        ? effects.unitProduction
+        : 0;
+      const grossShields = (city.yields?.production ?? 0) + militaryBonus;
       const shieldSupport = this.calculateCityShieldSupport(city);
       city.productionStored += Math.max(0, grossShields - shieldSupport);
       city.productionProgress = city.productionStored;
@@ -1212,7 +1232,7 @@ export class TurnManager {
     city.buildings.push(buildingType);
 
     // Building a Palace moves the seat of government to this city.
-    if (buildingType === 'palace') {
+    if (isPalaceBuilding(buildingType)) {
       this.gameEngine.governmentManager?.designateCapital(city.civilizationId, city);
     }
 
@@ -1324,16 +1344,14 @@ export class TurnManager {
       }
     } else if (!inDisorder && city.foodStored >= city.foodNeeded) {
       // Growth only happens when the city is NOT in disorder — and only up to
-      // the housing the city's buildings allow. An Aqueduct raises the cap to
+      // the housing the city's buildings allow. A building with the declared
+      // `housingCap` effect (the Aqueduct) raises the cap to
       // AQUEDUCT_HOUSING_CAP; without one the city stops there. The food keeps
       // banking so the growth lands the turn the Aqueduct completes, and the
       // player is told why (the side panel shows the cap).
-      const hasAqueduct = city.buildings?.includes(BUILDING_TYPES.AQUEDUCT) ?? false;
-      // The Aqueduct gates city size at 10: without one the city stops there,
-      // with one there is no ceiling. Before this the Aqueduct's declared
-      // `health: 2` and `growthBonus: 1` were both inert — a 120-shield, 1-gold
-      // building that did literally nothing the engine could see.
-      const housingCap: number = hasAqueduct ? Number.POSITIVE_INFINITY : AQUEDUCT_HOUSING_CAP;
+      const cityEffects = cityBuildingEffects(city);
+      const liftsHousingCap = hasBuildingEffect(city, 'housingCap');
+      const housingCap: number = liftsHousingCap ? Number.POSITIVE_INFINITY : AQUEDUCT_HOUSING_CAP;
       const atHousingCap = (city.population ?? 1) >= housingCap;
       if (atHousingCap) {
         // Keep the box full but stop growing; do not starve either.
@@ -1342,16 +1360,19 @@ export class TurnManager {
           city,
           population: city.population ?? 1,
           housingCap,
-          needsAqueduct: !hasAqueduct,
+          needsAqueduct: !liftsHousingCap,
         });
       } else {
         const storedBeforeGrowth = city.foodStored;
         city.population++;
-        const hasGranary = city.buildings?.includes(BUILDING_TYPES.GRANARY) ?? false;
-        // Civ1 granary: the food box is only HALF emptied on growth; without a
-        // granary the whole box empties (excess food beyond the threshold is
-        // lost).
-        city.foodStored = hasGranary ? Math.floor(storedBeforeGrowth / 2) : 0;
+        // Civ1 granary: the food box is only HALF emptied on growth, declared
+        // as `foodStorage: 2` (each point keeps a quarter of the box). The
+        // `growthBonus` food is credited back on top, so the next growth is a
+        // step ahead as well.
+        const kept = cityEffects.foodRetention > 0
+          ? Math.floor(storedBeforeGrowth * cityEffects.foodRetention)
+          : 0;
+        city.foodStored = kept + cityEffects.growthBonusFood;
         city.foodNeeded = (city.population + 1) * 10;
         debugLog(`[TurnManager] City ${city.name} grew to population ${city.population}`);
       }

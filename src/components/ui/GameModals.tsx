@@ -529,6 +529,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         goldAmount: offer.goldAmount,
         techOffered: offer.techOffered,
         techRequested: offer.techRequested,
+        embargoTargetId: offer.embargoTargetId,
       });
       addDiploLog(result.accepted
         ? t('gm.diplo.feed.offerAccepted' as TranslationKey, { civ: fromCiv?.name ?? t('gm.diplo.feed.them' as TranslationKey), term: offer.action.replace(/_/g, ' ') })
@@ -561,6 +562,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         goldAmount: notice.goldAmount,
         techOffered: notice.techOffered,
         techRequested: notice.techRequested,
+        embargoTargetId: notice.embargoTargetId,
       });
       const civName = civilizations[notice.civId]?.name ?? t('gm.unknown' as TranslationKey);
       notify(
@@ -703,6 +705,16 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               : t('gm.diplo.log.allianceRejected' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           }
           break;
+        case 'offer_gift': {
+          const gift = extra?.goldAmount ?? 50;
+          result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'offer_gift', goldAmount: gift });
+          if (result) {
+            addDiploLog(result.accepted
+              ? t('gm.diplo.log.giftSent' as TranslationKey, { civ: String(civilizations[targetId]?.name), gold: result.goldTransferred ? -result.goldTransferred : gift })
+              : t('gm.diplo.log.giftRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
+          }
+          break;
+        }
         case 'demand_tribute': {
           const demand = extra?.goldAmount ?? 50;
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'demand_tribute', goldAmount: demand });
@@ -739,6 +751,17 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           addDiploLog(result.accepted
             ? t('gm.diplo.log.nonAggressionSigned' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
             : t('gm.diplo.log.pactRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
+          break;
+        case 'propose_joint_war':
+          result = dm.processProposal({
+            fromCivId: playerId,
+            toCivId: targetId,
+            action: 'propose_joint_war',
+            embargoTargetId: extra?.embargoTargetId,
+          });
+          addDiploLog(result.accepted
+            ? t('gm.diplo.log.jointWarAccepted' as TranslationKey, { civ: String(civilizations[targetId]?.name), target: civilizations[extra?.embargoTargetId ?? -1]?.name ?? t('gm.diplo.log.theTarget' as TranslationKey) })
+            : t('gm.diplo.log.jointWarRejected' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           break;
         case 'propose_embargo':
           result = dm.processProposal({
@@ -1216,6 +1239,12 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                             />
                             <button
                               className="diplomacy-btn btn-tribute"
+                              onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'offer_gift', { goldAmount: tributeAmount })}
+                            >
+                              {t('gm.diplo.btn.giftGold' as TranslationKey)}
+                            </button>
+                            <button
+                              className="diplomacy-btn btn-tribute"
                               onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'demand_tribute', { goldAmount: tributeAmount })}
                             >
                               {t('gm.diplo.btn.demandTribute' as TranslationKey)}
@@ -1386,11 +1415,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
                     {/* Global diplomacy history from DiplomacyManager */}
                     {(() => {
-                      const events: Array<{ type: string; fromCivId: number; toCivId: number; goldAmount?: number; details?: string }> = dm?.getEventLog?.() ?? [];
-                      const relevant = events.filter(
-                        (e) => e.fromCivId === selectedDiploCiv || e.toCivId === selectedDiploCiv
-                          || e.fromCivId === playerId || e.toCivId === playerId
-                      ).slice(0, 8);
+                      // The engine decides what this court could know: its own
+                      // affairs always, third-party dealings only through the
+                      // embassy network (an embassy with BOTH parties).
+                      const events: Array<{ type: string; fromCivId: number; toCivId: number; goldAmount?: number; details?: string }> = dm?.getEventLog?.(playerId) ?? [];
+                      const relevant = events.slice(0, 8);
                       if (relevant.length === 0) return null;
                       return (
                         <section className="gm-section">

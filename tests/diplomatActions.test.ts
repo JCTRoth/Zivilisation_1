@@ -34,11 +34,13 @@ const ALL_ABILITIES: DiplomatAction[] = [
   'offer_tech_exchange',
   'propose_mutual_defense',
   'propose_embargo',
+  'propose_joint_war',
   'propose_non_aggression',
   'establish_embassy',
   'investigate_city',
   'industrial_sabotage',
   'steal_technology',
+  'incite_revolt',
 ];
 
 /** What a diplomat has beside a peaceful city it already has a channel to. */
@@ -55,6 +57,7 @@ const CITY_PEACE_MENU: DiplomatAction[] = [
   'investigate_city',
   'industrial_sabotage',
   'steal_technology',
+  'incite_revolt',
 ];
 
 /** A city at peace with a channel open and one third party to embargo. */
@@ -65,6 +68,7 @@ const cityFacts = (over: Partial<DiplomatAbilityFacts> = {}): DiplomatAbilityFac
   activeTreaties: [],
   canTradeTechs: true,
   embargoCandidates: [7],
+  jointWarCandidates: [],
   ...over,
 });
 
@@ -160,10 +164,35 @@ describe('ability rules — what a diplomat can do', () => {
       ...diplomatActionsFor(cityFacts({ status: 'war', hasEmbassy: false })),
       ...diplomatActionsFor(cityFacts({ status: 'ceasefire' })),
       ...diplomatActionsFor(cityFacts({ status: 'alliance' })),
+      ...diplomatActionsFor(cityFacts({ status: 'alliance', jointWarCandidates: [5] })),
       ...diplomatActionsFor(unitFacts()),
       ...diplomatActionsFor(unitFacts({ status: 'war' })),
     ]);
     expect([...ALL_ABILITIES].filter((a) => !reachable.has(a))).toEqual([]);
+  });
+
+  it('a call to arms needs a friend AND a named enemy the friend has met', () => {
+    // No war of ours → nothing to call them into.
+    expect(diplomatActionsFor(cityFacts({ status: 'alliance' }))).not.toContain('propose_joint_war');
+    // An enemy the listener has never met cannot honestly be named.
+    expect(diplomatActionsFor(cityFacts({ status: 'alliance', jointWarCandidates: [] })))
+      .not.toContain('propose_joint_war');
+    // An ally (or a mutual-defence partner) with a met enemy: the ask lands.
+    expect(diplomatActionsFor(cityFacts({ status: 'alliance', jointWarCandidates: [5] })))
+      .toContain('propose_joint_war');
+    expect(diplomatActionsFor(cityFacts({
+      status: 'peace', activeTreaties: ['mutual_defense'], jointWarCandidates: [5],
+    }))).toContain('propose_joint_war');
+    // A stranger at peace with no pact is not somebody we can drag into a war.
+    expect(diplomatActionsFor(cityFacts({ status: 'peace', jointWarCandidates: [5] })))
+      .not.toContain('propose_joint_war');
+  });
+
+  it('incitement is a city infiltration — never offered on a unit or in a war', () => {
+    expect(diplomatActionsFor(cityFacts())).toContain('incite_revolt');
+    expect(diplomatActionsFor(unitFacts())).not.toContain('incite_revolt');
+    expect(diplomatActionsFor(cityFacts({ status: 'war', hasEmbassy: false })))
+      .not.toContain('incite_revolt');
   });
 });
 

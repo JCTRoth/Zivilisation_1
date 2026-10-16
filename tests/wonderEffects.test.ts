@@ -281,6 +281,28 @@ describe('wonder effects', () => {
     expect(moonshot?.available, 'no ISS → no space race').toBe(false);
   });
 
+  it('Tiangong and Mir open the space race exactly like the ISS (mutually exclusive family)', () => {
+    // The three stations are one wonder group: a world builds ONE of them,
+    // and any of them must satisfy the Moonshot gate. Keying the gate on the
+    // ISS id alone soft-locked players who completed Tiangong or Mir.
+    (engine.civilizations[0].technologies as string[]).push('space_flight');
+
+    city.buildings = ['tiangong'];
+    expect(computeSpaceshipEnabled(engine.cities, engine.civilizations)).toBe(true);
+    engine.updateTechnologyAvailability();
+    expect(engine.technologies.find((t) => t.id === 'moonshot')?.available,
+      'Tiangong opens the space race').toBe(true);
+
+    city.buildings = ['mir'];
+    expect(computeSpaceshipEnabled(engine.cities, engine.civilizations)).toBe(true);
+    engine.updateTechnologyAvailability();
+    expect(engine.technologies.find((t) => t.id === 'moonshot')?.available,
+      'Mir opens the space race').toBe(true);
+
+    city.buildings = [];
+    expect(computeSpaceshipEnabled(engine.cities, engine.civilizations)).toBe(false);
+  });
+
   // ── Leonardo ────────────────────────────────────────────────────────────
 
   it("Leonardo's Workshop auto-upgrades obsolete units when the replacement tech is known", async () => {

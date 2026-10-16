@@ -14,10 +14,10 @@
 import { SPLASH_DAMAGE_FRACTION } from '../CombatSystem';
 
 /** Splash bonus per stacked mate beyond the first, in target-score points. */
-export const STACK_SPLASH_BONUS = 12;
+const STACK_SPLASH_BONUS = 12;
 
 /** Stack mates counted before the bonus saturates (a 5-stack is not 4× bait). */
-export const STACK_BONUS_CAP = 4;
+const STACK_BONUS_CAP = 4;
 
 export interface StackTargetScoreInput {
   /** Hostile units standing on the candidate tile. */

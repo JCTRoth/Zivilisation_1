@@ -26,11 +26,20 @@ import {
 
 type Verdict = BuildingEconomics['verdict'];
 
+/** netPerTurn a fixture verdict stands for — verdicts and nets must agree. */
+const NET_FOR: Record<Verdict, number> = {
+  profitable: 5,
+  break_even: 0,
+  draining: -2,
+  inert: -1,
+};
+
 const economics = (buildingType: string, verdict: Verdict): BuildingEconomics => ({
   ...NEUTRAL_CITY_ECONOMICS,
   ...evaluateBuildingEconomics(buildingType, NEUTRAL_CITY_ECONOMICS),
   buildingType,
   verdict,
+  netPerTurn: NET_FOR[verdict],
 });
 
 const candidate = (buildingType: string, cityId: string, verdict: Verdict): BuildingFundingCandidate => ({

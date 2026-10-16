@@ -153,6 +153,11 @@ class GameLogger {
         return `⚔ Combat: ${data.attacker?.type} was defeated by ${data.defender?.type}`;
       case 'COMBAT_HIT':
         return `⚔ Combat: ${data.attacker?.type} wounded ${data.defender?.type} (not enough power to overrun)`;
+      case 'COMBAT_SPLASH': {
+        const splashed = (data.splashed as Array<{ damage?: number }> | undefined) ?? [];
+        const perVictim = splashed[0]?.damage ?? 0;
+        return `💥 Splash: ${splashed.length} stacked unit(s) take ${perVictim} each`;
+      }
       case 'UNIT_DEFEATED':
         return `✝ Unit defeated: ${data.unit?.type}(${data.unit?.id})`;
        case 'CITY_FOUNDED':

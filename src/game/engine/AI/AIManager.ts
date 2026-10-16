@@ -555,6 +555,58 @@ export class AIManager {
   }
 
   /**
+   * Secondary fronts for surplus army groups while a plan is committed.
+   *
+   * The committed objective is listed FIRST by the caller, so it gets first
+   * pick of every marchable unit; these targets only ever absorb force the
+   * primary cannot use — the alternative is a second 5-unit stack sieging
+   * beside the first while the rest of the enemy empire burns nobody's
+   * fingers. Enemy cities of the war's target come first (nearest to the
+   * primary), then any other scouted enemy army. Capped at two, because five
+   * thin fronts is worse than one deep one.
+   */
+  private secondaryGroupTargets(
+    civilizationId: number,
+    storage: PlayerTurnStorage,
+    plan: { target: { col: number; row: number }; targetCivId?: number },
+  ): Array<{ col: number; row: number; type: 'city' | 'unit'; estimatedStrength: number }> {
+    const MAX_SECONDARY_FRONTS = 2;
+    const out: Array<{ col: number; row: number; type: 'city' | 'unit'; estimatedStrength: number }> = [];
+    const distToPrimary = (col: number, row: number): number =>
+      this.gameEngine.squareGrid?.squareDistance(plan.target.col, plan.target.row, col, row) ?? Infinity;
+    const isPrimary = (col: number, row: number): boolean =>
+      col === plan.target.col && row === plan.target.row;
+    const isKnown = (col: number, row: number): boolean =>
+      out.some((t) => t.col === col && t.row === row);
+
+    // 1) The plan enemy's other cities, nearest the primary first: the second
+    //    front stays inside the same war instead of wandering off.
+    const enemyCities = (this.gameEngine.cities ?? [])
+      .filter((c: City) => c.civilizationId === plan.targetCivId)
+      .filter((c: City) => !isPrimary(c.col, c.row))
+      .filter((c: City) => this.engineTileReachableByLand(civilizationId, c.col, c.row))
+      .sort((a, b) => distToPrimary(a.col, a.row) - distToPrimary(b.col, b.row));
+    for (const city of enemyCities) {
+      if (out.length >= MAX_SECONDARY_FRONTS) break;
+      out.push({
+        col: city.col,
+        row: city.row,
+        type: 'city',
+        estimatedStrength: Math.max(1, city.population ?? 1) + 2,
+      });
+    }
+
+    // 2) Any other scouted enemy army, nearest first.
+    for (const target of this.getKnownEnemyTargets(civilizationId, storage)) {
+      if (out.length >= MAX_SECONDARY_FRONTS) break;
+      if (isPrimary(target.col, target.row) || isKnown(target.col, target.row)) continue;
+      if (!this.engineTileReachableByLand(civilizationId, target.col, target.row)) continue;
+      out.push(target);
+    }
+    return out;
+  }
+
+  /**
    * Run an asynchronous AI turn for civilizationId
    */
   private async runAITurn(civilizationId: number) {
@@ -783,7 +835,9 @@ export class AIManager {
     // from raw intel instead split the force: groups marched to stale sightings
     // while the plan assigned only a handful of stragglers, so a 17-unit army
     // gathered in waves and rarely pressed the siege (the "huge army but no
-    // attacks" run). With a plan, every group marches on ITS target.
+    // attacks" run). With a plan, every group marches on ITS target — and only
+    // force the primary cannot use opens a SECOND front (see
+    // `secondaryGroupTargets`), so coordination never eats the main blow.
     const combatUnits = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civilizationId && this.isCombatUnit(u)
     );
@@ -793,49 +847,71 @@ export class AIManager {
     // that marches it away from its ferry (the "invasion never sails because
     // its troops keep joining land groups" stall).
     const navalReservedIds = this.getNavalReservedUnitIds(storage);
+    // Bodyguards already walking with a settler stay with it: drafting them
+    // into a land group would abandon the walker mid-route. Stale links
+    // (settler founded, joined or died) are dropped first.
+    const guardPairs = this.pruneSettlerGuardLinks(civilizationId);
+    const guardIds = new Set(guardPairs.values());
     const offensiveUnits = combatUnits.filter(
-      (unit: Unit) => !reserveIds.has(unit.id) && !navalReservedIds.has(unit.id),
+      (unit: Unit) => !reserveIds.has(unit.id) && !navalReservedIds.has(unit.id) && !guardIds.has(unit.id),
     );
     const plan = storage?.turnData?.offensivePlan as AIState['offensivePlan'] | null | undefined;
     const planGroupTargets = plan?.target && plan.reachableBy !== 'sea'
-      ? [{
-          col: plan.target.col,
-          row: plan.target.row,
-          type: (plan.targetType ?? 'city') as 'city' | 'unit',
-          estimatedStrength: plan.targetDefense ?? 8,
-        }]
+      ? [
+          {
+            col: plan.target.col,
+            row: plan.target.row,
+            type: (plan.targetType ?? 'city') as 'city' | 'unit',
+            estimatedStrength: plan.targetDefense ?? 8,
+          },
+          // Multi-group coordination: the committed objective is listed first
+          // and takes every unit it can use; the surplus opens at most two
+          // secondary fronts instead of stacking beside the main siege.
+          ...this.secondaryGroupTargets(civilizationId, storage, plan),
+        ]
       : null;
     const targets = planGroupTargets ?? this.getKnownEnemyTargets(civilizationId, storage)
       .filter((t) => this.engineTileReachableByLand(civilizationId, t.col, t.row));
 
-    if (offensiveUnits.length >= 3 && targets.length > 0) {
-      const distFn = (c1: number, r1: number, c2: number, r2: number) =>
-        this.gameEngine.squareGrid?.squareDistance(c1, r1, c2, r2) ?? Infinity;
+    const distFn = (c1: number, r1: number, c2: number, r2: number) =>
+      this.gameEngine.squareGrid?.squareDistance(c1, r1, c2, r2) ?? Infinity;
+    // Drop groups whose target was captured/killed.
+    const isTargetValid = (target: { col: number; row: number }) => {
+      const enemyUnit = this.gameEngine.getUnitAt(target.col, target.row);
+      if (enemyUnit && enemyUnit.civilizationId !== civilizationId) return true;
+      const enemyCity = this.gameEngine.getCityAt(target.col, target.row);
+      return !!enemyCity && enemyCity.civilizationId !== civilizationId;
+    };
 
+    if (offensiveUnits.length >= 3 && targets.length > 0) {
       aiState.armyGroups = AICoordinator.formArmyGroups(
         offensiveUnits, targets, aiState.armyGroups, distFn, {
           // Rally points must be passable land the group can walk to.
           isPassable: (col, row) => this.gameEngine.isTilePassable(col, row),
           // A unit on another landmass cannot join a land march.
           isReachable: (unit, target) => this.areLandConnected(unit.col, unit.row, target.col, target.row),
-          // Drop groups whose target was captured/killed.
-          isTargetValid: (target) => {
-            const enemyUnit = this.gameEngine.getUnitAt(target.col, target.row);
-            if (enemyUnit && enemyUnit.civilizationId !== civilizationId) return true;
-            const enemyCity = this.gameEngine.getCityAt(target.col, target.row);
-            return !!enemyCity && enemyCity.civilizationId !== civilizationId;
-          },
+          isTargetValid,
           roundNumber,
         }
       );
       AICoordinator.updateGroupStatuses(
         aiState.armyGroups, offensiveUnits, distFn, roundNumber
       );
-    } else if (aiState.armyGroups.length > 0) {
-      // Do not keep stale groups when all available combat units are needed
-      // for city defense.
-      aiState.armyGroups = [];
+    } else {
+      // Quiet turn (too few free units, or no known targets): prune the dead
+      // wood instead of dissolving everything. The old blanket wipe threw
+      // away `forming` progress every target-less turn; a coherent group
+      // keeps mustering and re-validates its target next turn.
+      aiState.armyGroups = AICoordinator.pruneStaleGroups(
+        aiState.armyGroups,
+        new Set(combatUnits.map((u) => u.id)),
+        { isTargetValid },
+      );
+      AICoordinator.updateGroupStatuses(aiState.armyGroups, combatUnits, distFn, roundNumber);
     }
+
+    // ── Settler guards: walkers under threat get a bodyguard ──────────────
+    this.assignSettlerGuardsForCiv(civilizationId, aiState, reserveIds, navalReservedIds, distFn);
 
     // Save updated state back
     if (storage?.turnData) {
@@ -1501,6 +1577,11 @@ export class AIManager {
         // top of the empire's farmland — the exact overlap the settlement rule
         // forbids. It starts the improvement instead.
         //
+        // The arrival check keys on the settler's SETTLEMENT target, not just
+        // "standing on its target": a hold/flee order also returns a tile the
+        // settler already occupies (or a shelter), and founding there would
+        // drop a city on a hold position — next to the raider it hid from.
+        //
         // A settler waiting for a colony ferry is NOT at a settlement site:
         // chooseAITarget returns its rendezvous (its own tile when already on
         // the coast), and treating that as "settle here" made it attempt to
@@ -1524,6 +1605,8 @@ export class AIManager {
           // Already carrying an improvement → nothing to start here.
           && !this.gameEngine.getTileAt(unit.col, unit.row)?.improvement;
         if (unit.type === 'settler' && !worksArrival && !reservedForColony
+            && unit._aiSettlement != null
+            && unit.col === unit._aiSettlement.col && unit.row === unit._aiSettlement.row
             && unit.col === target.col && unit.row === target.row) {
           debugLog(`[AI-SETTLER] Settler ${unit.id} has reached settlement location (${target.col}, ${target.row}), founding city`);
           this.gameEngine.log('ai', `Settler settles — ${civ.name} founds city at (${target.col},${target.row})`, { civilizationId, action: 'settle', unitId: unit.id, unitType: unit.type, targetCol: target.col, targetRow: target.row });
@@ -1998,9 +2081,35 @@ export class AIManager {
 
     const storage = this.gameEngine.getPlayerStorage?.(civilizationId);
     const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
-    const underThreat = storage
+    const underThreat: string[] = storage
       ? this.identifyThreatenedCities(civilizationId, storage, roundNumber).map(c => c.city.id)
       : [];
+
+    // Roles straight from the formations: a city an army group stages from
+    // is a forward base even when its rally sits just outside the radius
+    // above, and a city under assault keeps its defences whatever the
+    // calendar says. This is the bridge `summarizeCityMilitarySituation`
+    // was built for — without it the auditor never sees the roles.
+    if (grid) {
+      const distFn = (c1: number, r1: number, c2: number, r2: number) =>
+        grid.squareDistance(c1, r1, c2, r2) ?? Infinity;
+      const allUnits = this.gameEngine.units ?? [];
+      for (const city of this.gameEngine.cities ?? []) {
+        if (city.civilizationId !== civilizationId) continue;
+        const situation = AICoordinator.summarizeCityMilitarySituation({
+          city: { id: city.id, col: city.col, row: city.row },
+          groups: armyGroups,
+          units: allUnits,
+          civilizationId,
+          distanceFn: distFn,
+        });
+        if (situation.role === 'assault_staging' && !staging.includes(city.id)) {
+          staging.push(city.id);
+        } else if (situation.role === 'incoming_assault' && !underThreat.includes(city.id)) {
+          underThreat.push(city.id);
+        }
+      }
+    }
 
     return AICoordinator.armyDependentCities({
       cityIds: [],
@@ -4601,6 +4710,12 @@ export class AIManager {
       return this.findFishingGround(unit);
     }
 
+    // Trade Ships: a routed one is driven by the engine's automatic trade
+    // state machine (advanceTradeShip). Their destination is chosen by the
+    // player (a harbour city with a better partner) rather than by a heuristic,
+    // so an unrouted Trade Ship falls through to the generic naval AI.
+    if (unit.type === 'trade_ship' && unit.tradeShipRoute) return null;
+
     // Naval units never use the land targeting logic — they hunt enemy ships,
     // blockade known enemy coastal cities, or patrol/explore open water.
     if (this.isNavalUnitType(unit.type)) {
@@ -4615,6 +4730,21 @@ export class AIManager {
     // unit that breaks formation mid-assault leaves the group too weak to
     // fight and the assault never happens.
     if (this.isCombatUnit(unit)) {
+      // ── Bodyguard duty ──
+      // A guard walks WITH its settler and neither retreats, probes nor
+      // chases: breaking off leaves the walker alone, which is the failure
+      // this pairing exists to prevent.
+      if (unit._aiGuardFor) {
+        const settler = this.gameEngine.units.find(
+          (u: Unit) => u.id === unit._aiGuardFor && !u.isDefeated
+        );
+        const missioned = !!settler && settler.civilizationId === unit.civilizationId
+          && (settler._aiSettlement != null || settler._aiWorksTarget != null);
+        if (missioned && settler) {
+          return { col: settler.col, row: settler.row };
+        }
+        unit._aiGuardFor = null;
+      }
       const groupTarget = AICoordinator.getGroupTarget(unit.id, aiState.armyGroups);
       const groupCommitted = groupTarget?.groupStatus === 'marching' || groupTarget?.groupStatus === 'attacking';
 
@@ -4887,6 +5017,10 @@ export class AIManager {
 
       const cached = unit._aiSettlement;
       if (cached) {
+        // Exposed and alone: shelter or hold instead of walking into the
+        // raider. Guarded walks are covered — the guard soaks the attack.
+        const hold = this.settlerHoldTarget(unit, cached);
+        if (hold) return hold;
         debugLog(`[AI-SETTLER] Settler ${unit.id} heading to settlement (${cached.col},${cached.row})`);
         return { col: cached.col, row: cached.row };
       }
@@ -7112,7 +7246,7 @@ export class AIManager {
 
   /** A unit that can actually defend a city (non-civilian, non-scout, has defense). */
   private isDefensiveUnit(u: Unit): boolean {
-    const civilian = new Set(['settler', 'worker', 'caravan', 'diplomat', 'scout', 'ferry', 'fisher_boat']);
+    const civilian = new Set(['settler', 'worker', 'caravan', 'diplomat', 'scout', 'ferry', 'fisher_boat', 'trade_ship']);
     if (civilian.has(u.type)) return false;
     const props = UNIT_PROPS[u.type];
     return !!props && (props.defense || 0) > 0;
@@ -7654,6 +7788,64 @@ export class AIManager {
       if (d <= 1) return true;
     }
     return false;
+  }
+
+  /**
+   * Where an exposed, unguarded settler goes instead of its found site: the
+   * nearest own shelter within a short walk, or nowhere (hold) when already
+   * sheltered. Walking on into a killer is death; the mission stays cached
+   * so the walk resumes once the threat — or a guard — moves.
+   * Returns null when the walk is safe to continue.
+   */
+  private settlerHoldTarget(
+    unit: Unit,
+    destination: { col: number; row: number },
+  ): { col: number; row: number } | null {
+    // A live guard covers the walk — the guard soaks the attack.
+    if (unit._aiGuardId) {
+      const guard = this.gameEngine.units.find((u: Unit) => u.id === unit._aiGuardId && !u.isDefeated);
+      if (guard) return null;
+      unit._aiGuardId = null;
+    }
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return null;
+    const distFn = (c1: number, r1: number, c2: number, r2: number) =>
+      grid.squareDistance(c1, r1, c2, r2) ?? Infinity;
+    const exposure = AICoordinator.scoreSettlerExposure({
+      settler: unit,
+      destination,
+      units: this.gameEngine.units ?? [],
+      civilizationId: unit.civilizationId,
+      hostileCivIds: this.hostileCivIdsFor(unit.civilizationId),
+      distanceFn: distFn,
+    });
+    if (!AICoordinator.shouldSettlerHold(exposure, false)) return null;
+    if (!this.isAtOrAdjacentToFriendlyCity(unit)) {
+      const shelter = this.nearestOwnCityWithin(unit, 4);
+      if (shelter) {
+        debugLog(`[AI-ESCORT] Settler ${unit.id} flees to ${shelter.name} — threat ${exposure.threat} at ${exposure.nearestThreatDistance}`);
+        return { col: shelter.col, row: shelter.row };
+      }
+    }
+    debugLog(`[AI-ESCORT] Settler ${unit.id} holds — threat ${exposure.threat} at ${exposure.nearestThreatDistance}, no guard`);
+    return { col: unit.col, row: unit.row };
+  }
+
+  /** Nearest own city within maxDist of the unit, if any. */
+  private nearestOwnCityWithin(unit: Unit, maxDist: number): City | null {
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return null;
+    let best: City | null = null;
+    let bestD = Infinity;
+    for (const city of this.gameEngine.cities ?? []) {
+      if (city.civilizationId !== unit.civilizationId) continue;
+      const d = grid.squareDistance(unit.col, unit.row, city.col, city.row) ?? Infinity;
+      if (d <= maxDist && d < bestD) {
+        best = city;
+        bestD = d;
+      }
+    }
+    return best;
   }
 
   /**
@@ -8263,8 +8455,24 @@ export class AIManager {
     // some candidate is not walkable — an all-land map never pays for it.
     let beachLandmasses: Set<number> | null = null;
     const candidates: FinalWarCandidate[] = [];
+
+    // Check if this is an AI vs AI scenario and only barbarians + this AI are left
+    const isAuto = isAutoScenario(this.gameEngine.gameSettings?.mapType);
+    const otherAliveCivs = (this.gameEngine.civilizations ?? []).filter(
+      (other) => other.id !== civ.id && other.id !== BARBARIAN_CIV_ID && other.isAlive !== false && this.isCivStillInGame(other.id),
+    );
+    const onlyBarbariansLeft = isAuto && otherAliveCivs.length === 0;
+
     for (const other of this.gameEngine.civilizations ?? []) {
-      if (other.id === civ.id || other.id === BARBARIAN_CIV_ID) continue;
+      if (other.id === civ.id) continue;
+      
+      // Skip barbarians unless it's an AI vs AI game and only barbarians are left
+      if (other.id === BARBARIAN_CIV_ID) {
+        if (!onlyBarbariansLeft) continue;
+        // Check if barbarians are still in the game (have units or cities)
+        if (!this.isCivStillInGame(BARBARIAN_CIV_ID)) continue;
+      }
+      
       if (other.isAlive === false) continue;
       if (!dm.hasContacted?.(civ.id, other.id)) continue;
       if ((dm.getAllies?.(civ.id) ?? []).includes(other.id)) continue;
@@ -8883,6 +9091,145 @@ export class AIManager {
       this.gameEngine.unitFortify(unit.id);
     } else {
       this.gameEngine.skipUnit(unit.id);
+    }
+  }
+
+  /**
+   * Civs whose units may be shot on sight: everyone we are at war with, plus
+   * barbarians (no diplomacy entries, always hostile). Shared by guard
+   * assignment and the settler hold check so both read the same threat.
+   */
+  private hostileCivIdsFor(civilizationId: number): Set<number> {
+    const hostile = new Set<number>([BARBARIAN_CIV_ID]);
+    const dm = this.gameEngine.diplomacyManager;
+    for (const civ of this.gameEngine.civilizations ?? []) {
+      if (civ.id === civilizationId) continue;
+      try {
+        if (dm?.isAtWar?.(civilizationId, civ.id)) hostile.add(civ.id);
+      } catch { /* diplomacy shape varies in tests */ }
+    }
+    return hostile;
+  }
+
+  /**
+   * Drop guard links whose walker or guard is gone, returning the live
+   * settlerId -> guardId pairs. A guard whose settler founded, joined or
+   * died — or a settler whose guard died — must not keep pointing at a
+   * ghost, or the pairing jams: the guard follows nothing and the settler
+   * reads as guarded while walking alone.
+   */
+  private pruneSettlerGuardLinks(civilizationId: number): Map<string, string> {
+    const pairs = new Map<string, string>();
+    const byId = new Map<string, Unit>();
+    for (const u of this.gameEngine.units ?? []) {
+      if (u.civilizationId === civilizationId && !u.isDefeated) byId.set(u.id, u);
+    }
+    for (const u of byId.values()) {
+      if (!u._aiGuardFor) continue;
+      const settler = byId.get(u._aiGuardFor);
+      if (settler && settler.type === 'settler' && settler._aiSettlement != null) {
+        pairs.set(settler.id, u.id);
+      } else {
+        u._aiGuardFor = null;
+      }
+    }
+    // A settler pointing at a dead or released guard walks guarded on paper
+    // only — clear it so the guard pass re-tasks the walker.
+    const pairedGuardIds = new Set(pairs.values());
+    for (const u of byId.values()) {
+      if (u.type === 'settler' && u._aiGuardId && !pairedGuardIds.has(u._aiGuardId)) {
+        u._aiGuardId = null;
+      }
+    }
+    return pairs;
+  }
+
+  /**
+   * Pair exposed settler-walkers with bodyguards. Only walkers under real
+   * threat request one (see `SETTLER_GUARD_REQUEST_THREAT`); a walker whose
+   * threat cleared releases its guard back to the army instead of loitering
+   * under escort forever. Guards are drawn from combat units that nothing
+   * else owns — never city-defense reserves, sealift troops, or army-group
+   * members — and never from a fortified garrison holding its city.
+   */
+  private assignSettlerGuardsForCiv(
+    civilizationId: number,
+    aiState: AIState,
+    reserveIds: Set<string>,
+    navalReservedIds: Set<string>,
+    distFn: (c1: number, r1: number, c2: number, r2: number) => number,
+  ): void {
+    const units = this.gameEngine.units ?? [];
+    // Missioned walkers: settlers with a cached found site from the movement
+    // loop (sticky across turns, so last turn's target still guides).
+    const settlers = units.filter((u) =>
+      u.civilizationId === civilizationId && !u.isDefeated && u.type === 'settler'
+      && u._aiSettlement != null && !navalReservedIds.has(u.id));
+    if (settlers.length === 0) return;
+
+    const groupMemberIds = new Set(aiState.armyGroups.flatMap((g) => g.unitIds));
+    const candidates = units.filter((u) =>
+      u.civilizationId === civilizationId && !u.isDefeated && this.isCombatUnit(u)
+      && !groupMemberIds.has(u.id) && !reserveIds.has(u.id) && !navalReservedIds.has(u.id)
+      && !(u.isFortified && this.isAtOrAdjacentToFriendlyCity(u)));
+    const liveIds = new Set(units.filter((u) => !u.isDefeated).map((u) => u.id));
+    const hostileCivIds = this.hostileCivIdsFor(civilizationId);
+
+    // Only the threatened ask; the safe release. A guard whose walker is
+    // safe again is freed here (its link is cleared below) instead of
+    // escorting a milk run while the war wants bodies.
+    const requesters: Unit[] = [];
+    for (const s of settlers) {
+      const exposure = AICoordinator.scoreSettlerExposure({
+        settler: s,
+        destination: s._aiSettlement,
+        units,
+        civilizationId,
+        hostileCivIds,
+        distanceFn: distFn,
+      });
+      if (exposure.threat >= AICoordinator.SETTLER_GUARD_REQUEST_THREAT) {
+        requesters.push(s);
+      } else if (s._aiGuardId) {
+        const guard = units.find((u) => u.id === s._aiGuardId);
+        if (guard) guard._aiGuardFor = null;
+        s._aiGuardId = null;
+        debugLog(`[AI-ESCORT] Guard released — ${s.id} threat ${exposure.threat}, walking safe`);
+      }
+    }
+    if (requesters.length === 0) return;
+
+    // Keep pairings whose guard is still an eligible candidate — a reserve
+    // drafted this turn defends its city instead of walking guard.
+    const candidateIds = new Set(candidates.map((u) => u.id));
+    const existingPairs = new Map<string, string>();
+    for (const s of requesters) {
+      if (s._aiGuardId && candidateIds.has(s._aiGuardId)) existingPairs.set(s.id, s._aiGuardId);
+    }
+    const pairs = AICoordinator.assignSettlerGuards({
+      settlers: requesters,
+      guards: candidates,
+      existingPairs,
+      liveSettlerIds: liveIds,
+      liveGuardIds: liveIds,
+      distanceFn: distFn,
+    });
+    for (const [settlerId, guardId] of pairs) {
+      const settler = units.find((u) => u.id === settlerId);
+      if (!guardId) {
+        if (settler) settler._aiGuardId = null;
+        continue;
+      }
+      const guard = units.find((u) => u.id === guardId);
+      if (!settler || !guard) continue;
+      if (settler._aiGuardId !== guardId) {
+        debugLog(`[AI-ESCORT] Guard assigned — ${guard.id} walks with settler ${settler.id}`);
+        this.gameEngine.log?.('ai', `Settler guard — ${guard.id} escorts settler ${settler.id}`, {
+          civilizationId, action: 'settler_guard', unitId: guard.id, troopId: settler.id,
+        });
+      }
+      settler._aiGuardId = guardId;
+      guard._aiGuardFor = settlerId;
     }
   }
 

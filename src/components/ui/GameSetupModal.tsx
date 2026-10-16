@@ -11,6 +11,22 @@ import { tGovernmentName } from '@/i18n/dataNames';
 import '../../styles/gameModalShell.css';
 import '../../styles/gameSetupModal.css';
 import { isAutoScenario } from '@/data/GameConstants';
+import {
+  MAP_DIM_MAX_HEIGHT,
+  MAP_DIM_MAX_WIDTH,
+  MAP_DIM_MIN_HEIGHT,
+  MAP_DIM_MIN_WIDTH,
+  MAP_SIZE_PRESETS,
+  STANDARD_MAP_HEIGHT,
+  STANDARD_MAP_WIDTH,
+  clampMapHeight,
+  clampMapWidth,
+  mapTiles,
+  presetForSize,
+  sizeFactorLabel,
+  tilesPerCiv,
+  type MapSizePreset,
+} from '@/data/MapSizePresets';
 
 /** Translation keys for the map presets — the raw ids are for the engine. */
 const MAP_TYPE_LABEL_KEYS: Record<string, TranslationKey> = {
@@ -26,7 +42,7 @@ const MAP_TYPE_LABEL_KEYS: Record<string, TranslationKey> = {
   AI_VS_AI: 'setup.mapLabel.AI_VS_AI',
   AI_VS_AI_SMALL: 'setup.mapLabel.AI_VS_AI_SMALL',
   AI_VS_AI_NAVAL: 'setup.mapLabel.AI_VS_AI_NAVAL',
-  AI_VS_AI_NAVAL_TROPICAL: 'setup.mapLabel.AI_VS_AI_NAVAL_TROPICAL',
+  AEGEAN_CAMPAIGN: 'setup.mapLabel.AEGEAN_CAMPAIGN',
 };
 
 /** Full option text of the map preset select ("Label · description"). */
@@ -43,8 +59,84 @@ const MAP_TYPE_OPTION_KEYS: Record<string, TranslationKey> = {
   AI_VS_AI: 'setup.mapOption.AI_VS_AI',
   AI_VS_AI_SMALL: 'setup.mapOption.AI_VS_AI_SMALL',
   AI_VS_AI_NAVAL: 'setup.mapOption.AI_VS_AI_NAVAL',
-  AI_VS_AI_NAVAL_TROPICAL: 'setup.mapOption.AI_VS_AI_NAVAL_TROPICAL',
+  AEGEAN_CAMPAIGN: 'setup.mapOption.AEGEAN_CAMPAIGN',
 };
+
+/** Map type categories for organized dropdown with <optgroup>.
+ *
+ * Ordering rule: every human-playable group comes first, the AI-vs-AI
+ * spectator group is ALWAYS last — never interleave them, a human browsing
+ * the list must never trip over a self-playing map mid-way.
+ */
+interface MapTypeCategory {
+  label: TranslationKey;
+  types: string[];
+}
+
+const MAP_TYPE_CATEGORIES: MapTypeCategory[] = [
+  {
+    label: 'setup.mapCategory.standard',
+    types: ['NORMAL_SKIRMISH', 'EARTH'],
+  },
+  {
+    label: 'setup.mapCategory.closeup',
+    types: ['CLOSEUP_1V1', 'CLOSEUP_BEATUP', 'NAVAL_CLOSEUP'],
+  },
+  {
+    label: 'setup.mapCategory.scenarios',
+    types: ['NO_SETTLERS', 'MANY_CITIES', 'TECH_LEVEL_10', 'ALL_UNITS'],
+  },
+  {
+    label: 'setup.mapCategory.naval',
+    types: ['AEGEAN_CAMPAIGN'],
+  },
+  {
+    label: 'setup.mapCategory.ai_vs_ai',
+    types: ['AI_VS_AI', 'AI_VS_AI_SMALL', 'AI_VS_AI_NAVAL'],
+  },
+];
+
+/**
+ * Fixed (hand-authored) maps: identical shores every game, so the map-size
+ * tool is hidden for them and they carry the 🗺️ badge. Keep in sync with the
+ * engine's `staticMapType` list in `GameEngine` — a map the engine generates
+ * must never wear the badge.
+ */
+const FIXED_MAP_TYPES: ReadonlySet<string> = new Set([
+  'EARTH',
+  'NAVAL_CLOSEUP',
+  'AI_VS_AI_NAVAL',
+  'AEGEAN_CAMPAIGN',
+]);
+
+/**
+ * One glanceable glyph per map, prefixed to the option text (native
+ * `<option>` cannot render HTML, but emoji travel fine). 🤖 marks the
+ * self-playing AI-vs-AI maps; everything else gets a flavor icon so the
+ * list scans without reading every description.
+ */
+const MAP_TYPE_ICONS: Record<string, string> = {
+  NORMAL_SKIRMISH: '⚔️',
+  EARTH: '🌍',
+  CLOSEUP_1V1: '🤺',
+  CLOSEUP_BEATUP: '💥',
+  NAVAL_CLOSEUP: '🌊',
+  NO_SETTLERS: '🛡️',
+  MANY_CITIES: '🏙️',
+  TECH_LEVEL_10: '🔬',
+  ALL_UNITS: '🎖️',
+  AEGEAN_CAMPAIGN: '⚓',
+  AI_VS_AI: '🤖',
+  AI_VS_AI_SMALL: '🤖',
+  AI_VS_AI_NAVAL: '🤖',
+};
+
+/** Icon prefix for a map option/summary label, e.g. "🤖", "🌍🗺️", or "". */
+function mapTypeBadge(mapType: string): string {
+  const icon = MAP_TYPE_ICONS[mapType] ?? '';
+  const fixed = FIXED_MAP_TYPES.has(mapType) ? '🗺️' : '';
+  return `${icon}${fixed}`;
+}
 
 type GameSetupModalProps = {
   show: boolean;
@@ -54,6 +146,8 @@ type GameSetupModalProps = {
     numberOfCivilizations: number;
     mapType: string;
     devMode: boolean;
+    mapWidth?: number;
+    mapHeight?: number;
     landMass: number;
     temperature: number;
     climate: number;
@@ -77,6 +171,370 @@ type GameSetupModalProps = {
  * · .setup-summary · .setup-summary-title · LAST select.setup-setting__control
  * = map preset.
  */
+
+function isStaticMapType(mapType: string): boolean {
+  return FIXED_MAP_TYPES.has(mapType);
+}
+
+/**
+ * Whether the world-shaping sliders (land mass, temperature, climate, age)
+ * change the world for this map type.
+ *
+ * The engine has FOUR world generators, and only one of them reads those four
+ * settings:
+ *
+ *  - `MapGenerator.generate()` — the 8-stage procedural one used by
+ *    NORMAL_SKIRMISH, CLOSEUP_1V1, CLOSEUP_BEATUP, NO_SETTLERS, MANY_CITIES,
+ *    TECH_LEVEL_10, ALL_UNITS and both AI-vs-AI procedural maps. All four
+ *    sliders shape it (stages 1–6).
+ *  - `MapGenerator.generateWaterOnly()` — NAVAL_CLOSEUP's all-ocean world. It
+ *    writes one terrain and draws resources; every slider is inert.
+ *  - `MapGenerator.generateFromStatic()` — the hand-authored maps (EARTH and
+ *    both archipelago scenarios). The terrain is read from a JSON file. The
+ *    only thing that varies is how many rivers `stage5_Rivers` draws, and that
+ *    is a function of landMass + climate — a sprinkle, not a world setting.
+ *
+ * A slider that does nothing is a promise the engine does not keep, so the
+ * dialog asks the generator's own trigger instead of imagining. Keep in sync
+ * with the `staticMapType` list in `GameEngine` and the branch table in
+ * `MapGenerator`.
+ */
+function worldShapingSettingsHaveEffect(mapType: string): boolean {
+  return !FIXED_MAP_TYPES.has(mapType);
+}
+
+/**
+ * Whether the Dev-Mode toggle has an effect. AI-vs-AI maps force it on (an
+ * unwatchable spectator game is not a game), so the checkbox is a switch that
+ * cannot be switched.
+ */
+function devModeSettingHasEffect(mapType: string): boolean {
+  return !isAutoScenario(mapType);
+}
+
+/**
+ * The map size chooser — a true-scale world preview plus a preset ladder,
+ * sliders and live statistics.
+ *
+ * The preview measures its own stage (ResizeObserver) and renders every
+ * world at one constant scale, so a 24×16 duel visibly is a tenth of a
+ * 240×150 epic: what the player drags is what the engine generates. The
+ * dashed ghost is the standard 80×50 world (or the preset under the
+ * pointer), always at the same scale.
+ */
+type MapSizeToolProps = {
+  width: number;
+  height: number;
+  /** Civilizations in play — the density stat divides the world by this. */
+  civCount: number;
+  onChange: (width: number, height: number) => void;
+};
+
+/** Stage size assumed until the ResizeObserver reports the real content box. */
+const STAGE_FALLBACK_WIDTH = 296;
+const STAGE_FALLBACK_HEIGHT = 168;
+
+type MapSizeFieldProps = {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (next: number) => void;
+};
+
+/**
+ * One dimension row: a range for the sweep, a number box for the exact
+ * figure. The box edits a draft string while focused and commits on blur or
+ * Enter, so typing "50" is never interrupted by the controlled value
+ * clamping an intermediate "5".
+ */
+function MapSizeField({ label, value, min, max, onCommit }: MapSizeFieldProps) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commitDraft = () => {
+    if (draft === null) return;
+    const text = draft.trim();
+    setDraft(null);
+    if (text === '') return;
+    onCommit(Number(text));
+  };
+
+  return (
+    <label className="map-size-tool__field">
+      <span className="map-size-tool__field-label">{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        onChange={(e) => onCommit(Number(e.currentTarget.value))}
+        aria-label={label}
+      />
+      <input
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        step={1}
+        value={draft ?? String(value)}
+        onChange={(e) => setDraft(e.currentTarget.value)}
+        onBlur={commitDraft}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitDraft();
+        }}
+        className="map-size-tool__number"
+        aria-label={label}
+      />
+    </label>
+  );
+}
+
+function MapSizeTool({ width, height, civCount, onChange }: MapSizeToolProps) {
+  const { t, formatNumber } = useTranslation();
+  const [drag, setDrag] = useState<null | 'w' | 'h' | 'wh'>(null);
+  const [hoverPresetId, setHoverPresetId] = useState<string | null>(null);
+  const [aspectLocked, setAspectLocked] = useState(false);
+  const lockRatioRef = useRef(width / Math.max(1, height));
+  const startRef = useRef({ x: 0, y: 0, w: 0, h: 0, ratio: 1 });
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageBox, setStageBox] = useState({
+    width: STAGE_FALLBACK_WIDTH,
+    height: STAGE_FALLBACK_HEIGHT,
+  });
+
+  // Measure the stage: one constant pixels-per-tile scale for the whole
+  // tool, which is what makes two worlds comparable at a glance.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect || rect.width <= 0 || rect.height <= 0) return;
+      setStageBox({ width: rect.width, height: rect.height });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const scale = Math.min(
+    stageBox.width / MAP_DIM_MAX_WIDTH,
+    stageBox.height / MAP_DIM_MAX_HEIGHT,
+  );
+
+  const commit = useCallback(
+    (nextWidth: number, nextHeight: number) =>
+      onChange(clampMapWidth(nextWidth), clampMapHeight(nextHeight)),
+    [onChange],
+  );
+
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (event: PointerEvent) => {
+      const start = startRef.current;
+      let nextW = start.w;
+      let nextH = start.h;
+      if (drag === 'w' || drag === 'wh') nextW = start.w + (event.clientX - start.x) / scale;
+      if (drag === 'h' || drag === 'wh') nextH = start.h + (event.clientY - start.y) / scale;
+      if (aspectLocked) {
+        // A locked frame follows the axis being dragged; the corner handle
+        // rides the horizontal delta so vertical pixels do not fight it.
+        if (drag === 'h') nextW = nextH * start.ratio;
+        else nextH = nextW / start.ratio;
+      }
+      commit(nextW, nextH);
+    };
+    const onUp = () => setDrag(null);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [drag, commit, aspectLocked, scale]);
+
+  const beginDrag = (axis: 'w' | 'h' | 'wh') => (event: React.PointerEvent) => {
+    event.preventDefault();
+    startRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      w: width,
+      h: height,
+      ratio: width / Math.max(1, height),
+    };
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    setDrag(axis);
+  };
+
+  const setWidth = (raw: number) => {
+    const nextW = clampMapWidth(raw);
+    commit(nextW, aspectLocked ? nextW / lockRatioRef.current : height);
+  };
+
+  const setHeight = (raw: number) => {
+    const nextH = clampMapHeight(raw);
+    commit(aspectLocked ? nextH * lockRatioRef.current : width, nextH);
+  };
+
+  const applyPreset = (preset: MapSizePreset) => {
+    // A preset is a statement about both axes — it re-anchors the locked
+    // ratio instead of being squeezed through the old one.
+    lockRatioRef.current = preset.width / preset.height;
+    setHoverPresetId(null);
+    commit(preset.width, preset.height);
+  };
+
+  const toggleLock = () => {
+    if (aspectLocked) {
+      setAspectLocked(false);
+      return;
+    }
+    lockRatioRef.current = width / Math.max(1, height);
+    setAspectLocked(true);
+  };
+
+  const activePreset = presetForSize(width, height);
+  const hoveredPreset = hoverPresetId
+    ? MAP_SIZE_PRESETS.find((p) => p.id === hoverPresetId) ?? null
+    : null;
+  const ghost =
+    hoveredPreset && (hoveredPreset.width !== width || hoveredPreset.height !== height)
+      ? { kind: 'preset' as const, width: hoveredPreset.width, height: hoveredPreset.height }
+      : !hoveredPreset && (width !== STANDARD_MAP_WIDTH || height !== STANDARD_MAP_HEIGHT)
+        ? { kind: 'standard' as const, width: STANDARD_MAP_WIDTH, height: STANDARD_MAP_HEIGHT }
+        : null;
+
+  const tiles = mapTiles(width, height);
+  const factorLabel = sizeFactorLabel(width, height);
+  const perCiv = tilesPerCiv(width, height, civCount);
+
+  return (
+    <div
+      className={`map-size-tool${drag ? ' is-dragging' : ''}`}
+      role="group"
+      aria-label={t('setup.mapSizeTitle')}
+    >
+      <div className="map-size-tool__stage-col">
+        <div className="map-size-tool__stage" ref={stageRef} aria-hidden="true">
+          <div
+            className="map-size-tool__map"
+            style={{ width: width * scale, height: height * scale }}
+          >
+            <div className="map-size-tool__grid" />
+            {ghost && (
+              <div
+                className={`map-size-tool__ghost map-size-tool__ghost--${ghost.kind}`}
+                style={{ width: ghost.width * scale, height: ghost.height * scale }}
+              />
+            )}
+            <div
+              className="map-size-tool__handle map-size-tool__handle--right"
+              onPointerDown={beginDrag('w')}
+              title={t('setup.sizeWidth')}
+            />
+            <div
+              className="map-size-tool__handle map-size-tool__handle--bottom"
+              onPointerDown={beginDrag('h')}
+              title={t('setup.sizeHeight')}
+            />
+            <div
+              className="map-size-tool__handle map-size-tool__handle--corner"
+              onPointerDown={beginDrag('wh')}
+              title={`${t('setup.sizeWidth')} × ${t('setup.sizeHeight')}`}
+            />
+          </div>
+        </div>
+        <div className="map-size-tool__stage-foot">
+          <div className="map-size-tool__readout" aria-hidden="true">
+            {width}
+            <span className="map-size-tool__times">×</span>
+            {height}
+          </div>
+          <p className="map-size-tool__legend">
+            <span className="map-size-tool__legend-swatch" aria-hidden="true" />
+            {t('setup.sizeLegend')}
+          </p>
+        </div>
+      </div>
+
+      <div className="map-size-tool__panel">
+        <div
+          className="map-size-tool__presets"
+          role="group"
+          aria-label={t('setup.sizePresets')}
+        >
+          {MAP_SIZE_PRESETS.map((preset) => {
+            const isActive = activePreset?.id === preset.id;
+            const preview = () => setHoverPresetId(preset.id);
+            const unpreview = () =>
+              setHoverPresetId((current) => (current === preset.id ? null : current));
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                className={`map-size-tool__chip${isActive ? ' is-active' : ''}`}
+                aria-pressed={isActive}
+                onClick={() => applyPreset(preset)}
+                onMouseEnter={preview}
+                onMouseLeave={unpreview}
+                onFocus={preview}
+                onBlur={unpreview}
+              >
+                <span className="map-size-tool__chip-name">{t(preset.labelKey)}</span>
+                <span className="map-size-tool__chip-dims">
+                  {preset.width}×{preset.height}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="map-size-tool__sliders">
+          <MapSizeField
+            label={t('setup.sizeWidth')}
+            value={width}
+            min={MAP_DIM_MIN_WIDTH}
+            max={MAP_DIM_MAX_WIDTH}
+            onCommit={setWidth}
+          />
+          <MapSizeField
+            label={t('setup.sizeHeight')}
+            value={height}
+            min={MAP_DIM_MIN_HEIGHT}
+            max={MAP_DIM_MAX_HEIGHT}
+            onCommit={setHeight}
+          />
+          <button
+            type="button"
+            className="map-size-tool__lock"
+            aria-pressed={aspectLocked}
+            onClick={toggleLock}
+          >
+            {t('setup.sizeLock')}
+          </button>
+        </div>
+
+        <div className="map-size-tool__stats">
+          <span className="map-size-tool__stat">
+            <strong>{formatNumber(tiles)}</strong>
+            {t('setup.sizeTiles')}
+          </span>
+          <span className="map-size-tool__stat">
+            <strong>{factorLabel}×</strong>
+            {t('setup.sizeVsStandard')}
+          </span>
+          <span className="map-size-tool__stat">
+            <strong>{formatNumber(perCiv)}</strong>
+            {t('setup.sizePerCiv')}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   // Subscribes the whole wizard to language changes.
   const { t, language, setLanguage } = useTranslation();
@@ -88,9 +546,14 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
 
   const isInteractive = useCallback((target: EventTarget | null): boolean => {
     if (!(target instanceof HTMLElement)) return true;
-    const tag = target.tagName.toLowerCase();
-    if (['button', 'select', 'input', 'textarea', 'a', 'label', 'option'].includes(tag)) return true;
-    return !!target.closest('.setup-civ-card, .setup-summary, .setup-nameplate, .setup-footer, .setup-dossier');
+    // Controls routinely wrap their label in spans, so look up the tree, not
+    // just at the pressed tag. The map-size tool's drag handles are plain
+    // divs that own a pointer gesture of their own — panning for them would
+    // steal the drag (and with it the click).
+    if (target.closest('button, select, input, textarea, a, label, option')) return true;
+    return !!target.closest(
+      '.setup-civ-card, .setup-summary, .setup-nameplate, .setup-footer, .setup-dossier, .map-size-tool__handle',
+    );
   }, []);
 
   const handleBodyPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -153,6 +616,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   const [temperature, setTemperature] = useState(1);
   const [climate, setClimate] = useState(1);
   const [age, setAge] = useState(1);
+  const [mapWidth, setMapWidth] = useState(80);
+  const [mapHeight, setMapHeight] = useState(50);
 
   // Look-around: the war room is a CSS 3D box; the pointer shifts its
   // perspective origin a few degrees so the table and walls feel solid.
@@ -177,6 +642,27 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   // AI-vs-AI scenarios are unwatchable without Dev Mode — force it on.
   useEffect(() => {
     if (isAutoScenario(mapType)) setDevMode(true);
+
+    // Preset sizes mirror GameEngine defaults. Custom dimensions are separate
+    // (see DEFAULT_MAP_PRESETS) so changing a map type restores its own base.
+    const presets: Record<string, [number, number]> = {
+      NORMAL_SKIRMISH: [80, 50],
+      EARTH: [180, 90],
+      CLOSEUP_1V1: [20, 20],
+      CLOSEUP_BEATUP: [20, 20],
+      NAVAL_CLOSEUP: [20, 20],
+      NO_SETTLERS: [80, 50],
+      MANY_CITIES: [80, 50],
+      TECH_LEVEL_10: [80, 50],
+      ALL_UNITS: [80, 50],
+      AI_VS_AI: [40, 40],
+      AI_VS_AI_SMALL: [16, 26],
+      AI_VS_AI_NAVAL: [96, 60],
+      AEGEAN_CAMPAIGN: [96, 60],
+    };
+    const next = presets[mapType] ?? [80, 50];
+    setMapWidth(next[0]);
+    setMapHeight(next[1]);
   }, [mapType]);
 
   const totalSteps = 2;
@@ -221,6 +707,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
     undefined,
     MAP_TYPE_LABEL_KEYS[mapType] ? t(MAP_TYPE_LABEL_KEYS[mapType]) : mapType,
   );
+  const mapTypeBadgePrefix = mapTypeBadge(mapType);
+  const mapTypeLabelWithBadge = mapTypeBadgePrefix ? `${mapTypeBadgePrefix} ${mapTypeLabel}` : mapTypeLabel;
   const leaderPortrait = LEADER_PORTRAITS[selectedCivData.leader] ?? null;
 
   // Slider value words (long forms on the sliders, short forms in the summary).
@@ -261,6 +749,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
       numberOfCivilizations: numCivilizations,
       mapType,
       devMode,
+      mapWidth,
+      mapHeight,
       landMass,
       temperature,
       climate,
@@ -460,18 +950,47 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                         className="setup-setting__control"
                         aria-label={t('setup.mapType')}
                       >
-                        {Object.entries(MAP_TYPE_OPTION_KEYS).map(([id, key]) => (
-                          <option key={id} value={id}>
-                            {t(key)}
-                          </option>
+                        {MAP_TYPE_CATEGORIES.map((category) => (
+                          <optgroup key={category.label} label={t(category.label)}>
+                            {category.types.map((id) => {
+                              const key = MAP_TYPE_OPTION_KEYS[id];
+                              if (!key) return null;
+                              const badge = mapTypeBadge(id);
+                              return (
+                                <option key={id} value={id}>
+                                  {badge ? `${badge} ${t(key)}` : t(key)}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
                         ))}
                       </Form.Select>
                       <span className="setup-setting__hint">{t('setup.mapTypeHint')}</span>
+                      <span className="setup-setting__hint" aria-hidden="true">
+                        {t('setup.mapIconLegend')}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                {mapType !== 'NAVAL_CLOSEUP' && (
+                {!isStaticMapType(mapType) && (
+                  <div className="gm-section setup-map-size">
+                    <div className="gm-section-title">{t('setup.mapSizeTitle')}</div>
+                    <MapSizeTool
+                      width={mapWidth}
+                      height={mapHeight}
+                      civCount={numCivilizations}
+                      onChange={(w, h) => {
+                        // The tool clamps to the engine-safe range itself.
+                        setMapWidth(w);
+                        setMapHeight(h);
+                      }}
+                    />
+                    <span className="setup-setting__hint">{t('setup.mapSizeHint')}</span>
+                  </div>
+                )}
+
+                {worldShapingSettingsHaveEffect(mapType) && (
                   <div className="gm-section">
                     <div className="gm-section-title">{t('setup.landSection')}</div>
                     <div className="setup-settings-grid setup-settings-grid--pairs">
@@ -545,18 +1064,32 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                   </div>
                 )}
 
-                <div className="gm-section setup-dev">
-                  <div className="gm-section-title">{t('setup.devSection')}</div>
-                  <Form.Check
-                    type="checkbox"
-                    id="devModeCheckbox"
-                    label={t('setup.devMode')}
-                    checked={devMode}
-                    onChange={(e) => setDevMode(e.target.checked)}
-                    className="setup-dev__check"
-                  />
-                  <p className="gm-note">{t('setup.devNote')}</p>
-                </div>
+                {!worldShapingSettingsHaveEffect(mapType) && (
+                  <div className="gm-section">
+                    <div className="gm-section-title">{t('setup.landSection')}</div>
+                    <p className="gm-note">{t('setup.fixedWorldNote')}</p>
+                  </div>
+                )}
+
+                {devModeSettingHasEffect(mapType) ? (
+                  <div className="gm-section setup-dev">
+                    <div className="gm-section-title">{t('setup.devSection')}</div>
+                    <Form.Check
+                      type="checkbox"
+                      id="devModeCheckbox"
+                      label={t('setup.devMode')}
+                      checked={devMode}
+                      onChange={(e) => setDevMode(e.target.checked)}
+                      className="setup-dev__check"
+                    />
+                    <p className="gm-note">{t('setup.devNote')}</p>
+                  </div>
+                ) : (
+                  <div className="gm-section setup-dev">
+                    <div className="gm-section-title">{t('setup.devSection')}</div>
+                    <p className="gm-note">{t('setup.devForcedNote')}</p>
+                  </div>
+                )}
 
                 {/* Sealed orders — everything your people ride out under */}
                 <div className="setup-summary" aria-label={t('setup.summaryTitle')}>
@@ -585,9 +1118,9 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                     </div>
                     <div className="setup-summary-item">
                       <span className="label">{t('setup.mapType')}</span>
-                      <span className="value">{mapTypeLabel}</span>
+                      <span className="value">{mapTypeLabelWithBadge}</span>
                     </div>
-                    {mapType !== 'NAVAL_CLOSEUP' && (
+                    {worldShapingSettingsHaveEffect(mapType) && (
                       <>
                         <div className="setup-summary-item">
                           <span className="label">{t('setup.landMass')}</span>
@@ -613,7 +1146,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                     {mapType === 'NORMAL_SKIRMISH' && (
                       <ul>
                         <li>
-                          {t('setup.o.map')} <strong>{t('setup.v.map80x50')}</strong>
+                          {t('setup.o.map')}{' '}
+                          <strong>{`${mapWidth}×${mapHeight} ${t('setup.sizeTiles')}`}</strong>
                         </li>
                         <li>
                           {t('setup.o.year')} <strong>{t('setup.v.year4000')}</strong>
@@ -655,7 +1189,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                     {mapType === 'CLOSEUP_1V1' && (
                       <ul>
                         <li>
-                          {t('setup.o.map')} <strong>{t('setup.v.mapSmall')}</strong>
+                          {t('setup.o.map')}{' '}
+                          <strong>{`${mapWidth}×${mapHeight} ${t('setup.sizeTiles')}`}</strong>
                         </li>
                         <li>
                           {t('setup.o.units')} <strong>{t('setup.v.oneSettler')}</strong>
@@ -671,7 +1206,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                     {mapType === 'CLOSEUP_BEATUP' && (
                       <ul>
                         <li>
-                          {t('setup.o.map')} <strong>{t('setup.v.mapSmall')}</strong>
+                          {t('setup.o.map')}{' '}
+                          <strong>{`${mapWidth}×${mapHeight} ${t('setup.sizeTiles')}`}</strong>
                         </li>
                         <li>
                           {t('setup.o.units')} <strong>{t('setup.v.settlerAnd5')}</strong>
@@ -703,7 +1239,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                     {mapType === 'NO_SETTLERS' && (
                       <ul>
                         <li>
-                          {t('setup.o.map')} <strong>{t('setup.v.map80x50')}</strong>
+                          {t('setup.o.map')}{' '}
+                          <strong>{`${mapWidth}×${mapHeight} ${t('setup.sizeTiles')}`}</strong>
                         </li>
                         <li>
                           {t('setup.o.units')} <strong>{t('setup.v.noSettlersUnits')}</strong>
@@ -719,7 +1256,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                     {mapType === 'MANY_CITIES' && (
                       <ul>
                         <li>
-                          {t('setup.o.map')} <strong>{t('setup.v.map80x50')}</strong>
+                          {t('setup.o.map')}{' '}
+                          <strong>{`${mapWidth}×${mapHeight} ${t('setup.sizeTiles')}`}</strong>
                         </li>
                         <li>
                           {t('setup.o.cities')} <strong>{t('setup.v.fourCities')}</strong>
@@ -750,7 +1288,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                     {mapType === 'AI_VS_AI' && (
                       <ul>
                         <li>
-                          {t('setup.o.map')} <strong>{t('setup.v.map40x40')}</strong>
+                          {t('setup.o.map')}{' '}
+                          <strong>{`${mapWidth}×${mapHeight} ${t('setup.sizeTiles')}`}</strong>
                         </li>
                         <li>
                           {t('setup.o.players')} <strong>{t('setup.v.allAi')}</strong>
@@ -782,22 +1321,22 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                         </li>
                       </ul>
                     )}
-                    {mapType === 'AI_VS_AI_NAVAL_TROPICAL' && (
+                    {mapType === 'AEGEAN_CAMPAIGN' && (
                       <ul>
                         <li>
-                          {t('setup.o.map')} <strong>{t('setup.v.mapTropical')}</strong>
+                          {t('setup.o.map')} <strong>{t('setup.v.mapAegean')}</strong>
                         </li>
                         <li>
-                          {t('setup.o.players')} <strong>{t('setup.v.allAiOneIsland')}</strong>
+                          {t('setup.o.players')} <strong>{t('setup.v.mixedHumanAi')}</strong>
                         </li>
                         <li>
-                          {t('setup.o.mode')} <strong>{t('setup.v.autoNavalDuel')}</strong>
+                          {t('setup.o.mode')} <strong>{t('setup.v.navalCampaign')}</strong>
                         </li>
                         <li>
-                          {t('setup.o.features')} <strong>{t('setup.v.tropicalFeatures')}</strong>
+                          {t('setup.o.features')} <strong>{t('setup.v.aegeanFeatures')}</strong>
                         </li>
                         <li>
-                          {t('setup.o.requires')} <strong>{t('setup.v.ferriesRequired')}</strong>
+                          {t('setup.o.requires')} <strong>{t('setup.v.navalTechRequired')}</strong>
                         </li>
                         <li>
                           {t('setup.o.log')} <strong>{t('setup.v.everyMoveLogged')}</strong>
@@ -807,7 +1346,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                     {mapType === 'AI_VS_AI_SMALL' && (
                       <ul>
                         <li>
-                          {t('setup.o.map')} <strong>{t('setup.v.mapCorridor')}</strong>
+                          {t('setup.o.map')}{' '}
+                          <strong>{`${mapWidth}×${mapHeight} ${t('setup.sizeTiles')}`}</strong>
                         </li>
                         <li>
                           {t('setup.o.players')} <strong>{t('setup.v.allAi')}</strong>

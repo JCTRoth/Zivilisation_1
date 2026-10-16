@@ -228,14 +228,19 @@ describe('endgame production', () => {
 
   it('builds siege guns, not infantry, for a walled plan target', () => {
     const e = makeTheatre();
-    const city = addCity(e, 'Forge', 1, 1, 0, 4);
+    // (1,2), not (1,1): `selectOffensiveUnitTypeForCiv` mixes a runner-up
+    // attacker in every third unit, keyed on `(round + col + row) % 3`. At
+    // round 0 that is (0+1+2)%3 = 0, so the mixer takes the PRIMARY rank —
+    // artillery. (1,1) gives 2 and hands back the runner-up, which is a
+    // different behaviour under test, not a bug.
+    const city = addCity(e, 'Forge', 1, 2, 0, 4);
     (e.civilizations[0] as { technologies?: string[] }).technologies = ['steel', 'combustion', 'metallurgy'];
     addCity(e, 'Walled', 20, 2, 1, 6, ['city_walls']);
     (e.getPlayerStorage(0)!.turnData as Record<string, unknown>).offensivePlan = {
       target: { col: 20, row: 2 }, targetType: 'city',
     };
     expect(production(e).selectOffensiveUnitTypeForCiv(e.civilizations[0], city)).toBe('artillery');
-    // No walls, no plan: the fastest killer wins.
+    // No walls, no plan: the era's best attacker wins.
     addCity(e, 'Open', 21, 2, 1, 6);
     (e.getPlayerStorage(0)!.turnData as Record<string, unknown>).offensivePlan = {
       target: { col: 21, row: 2 }, targetType: 'city',

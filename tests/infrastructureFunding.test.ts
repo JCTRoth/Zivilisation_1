@@ -234,8 +234,8 @@ describe('AICoordinator.planBuildingFunding', () => {
       demands: [demand('infrastructure', 200)],
       budget: 0,
       candidates: [
-        candidate('stock_exchange', 80, { taxRate: 10 }),  // net −1.4
-        candidate('sdi_defense', 100),                     // net −4
+        candidate('stock_exchange', 80, { taxRate: 10 }),  // net −0.9
+        candidate('sdi_defense', 100),                     // net −3.75
       ],
     });
     expect(plan.shortfall).toBe(200);
@@ -248,8 +248,8 @@ describe('AICoordinator.planBuildingFunding', () => {
       demands: [demand('army', 500)],
       budget: 0,
       candidates: [
-        candidate('stock_exchange', 80, { taxRate: 60 }), // net +1.6
-        candidate('bank', 60, { taxRate: 60 }),           // net +3
+        candidate('stock_exchange', 80, { taxRate: 60 }), // net +3.6
+        candidate('bank', 60, { taxRate: 60 }),           // net +3.1
       ],
     });
     expect(plan.sales).toEqual([]);
@@ -258,7 +258,7 @@ describe('AICoordinator.planBuildingFunding', () => {
 
   it('stops as soon as the gap is closed rather than liquidating everything', () => {
     const plan = AICoordinator.planBuildingFunding({
-      demands: [demand('infrastructure', 50)],
+      demands: [demand('infrastructure', 40)],
       budget: 0,
       candidates: [
         candidate('marketplace', 40, { taxRate: 10 }),
@@ -286,6 +286,8 @@ describe('AICoordinator.planBuildingFunding', () => {
     });
     expect(plan.sales).toHaveLength(1);
     expect(plan.sales[0].refund).toBe(100);
-    expect(plan.sales[0].verdict).toBe('inert');
+    // SDI without an atomic rival: interception earns nothing, its culture
+    // is a rounding error — a 4 gold/turn drain either way.
+    expect(plan.sales[0].verdict).toBe('draining');
   });
 });

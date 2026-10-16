@@ -33,12 +33,15 @@ const GOODWILL_WEIGHT: Record<string, number> = {
   propose_ceasefire: 0.10,
   propose_alliance: 0.30,
   demand_tribute: 0.10,
+  offer_gift: 0.30,
   offer_open_borders: 0.08,
   propose_trade_agreement: 0.12,
   propose_mutual_defense: 0.26,
   propose_non_aggression: 0.18,
   propose_embargo: 0.14,
   offer_tech_exchange: 0.16,
+  propose_joint_war: 0.24,
+  incite_revolt: 0.06,
 };
 
 /** Starting willingness by action, before any context. */
@@ -47,12 +50,15 @@ const BASE_WILLINGNESS: Record<string, number> = {
   propose_ceasefire: 26,
   propose_alliance: 2,
   demand_tribute: -18,
+  offer_gift: 14,
   offer_open_borders: 8,
   propose_trade_agreement: 12,
   propose_mutual_defense: -4,
   propose_non_aggression: 18,
   propose_embargo: -6,
   offer_tech_exchange: 10,
+  propose_joint_war: -2,
+  incite_revolt: -10,
 };
 
 /** Grievance at which pride simply refuses the deal, whatever the score. */
@@ -186,9 +192,14 @@ export function evaluateProposal(
   if (action === 'demand_tribute') {
     factors.push({ label: 'fear of them', value: round2((opinion.fear / 100) * 12) });
   }
+  if (action === 'offer_gift') {
+    // A gift buys goodwill in direct proportion to size; an ally or a
+    // friendly civ is the natural target. Fear adds nothing — this is kindness.
+    factors.push({ label: 'their goodwill toward us', value: round2((opinion.goodwill / 100) * 10) });
+  }
 
   // Terms. A demand is a cost; a gift is a sweetener.
-  if (typeof proposal.goldAmount === 'number' && proposal.goldAmount > 0) {
+  if (typeof proposal.goldAmount === 'number' && proposal.goldAmount > 0 && action !== 'offer_gift') {
     const goldValue = goldTermValue(proposal.goldAmount, weights, ctx.ownGold);
     if (action === 'demand_tribute') {
       factors.push({ label: `demanding ${Math.round(proposal.goldAmount)} gold`, value: round2(goldValue) });
@@ -224,6 +235,29 @@ export function evaluateProposal(
         label: fairness >= 0 ? 'technology exchange (fair or better)' : 'technology exchange (uneven)',
         value: 8 + fairness,
       });
+      // Gold on top of the swap buys back an uneven trade: ~100 gold ≈ +4.
+      if (typeof proposal.goldAmount === 'number' && proposal.goldAmount > 0) {
+        const sweetener = Math.min(16, Math.round(proposal.goldAmount / 25));
+        factors.push({ label: `${Math.round(proposal.goldAmount)} gold sweetens the trade`, value: sweetener });
+      }
+    }
+  } else if (proposal.techOffered || proposal.techRequested) {
+    // One-sided deal: tech for gold. Without gold on the table there is no
+    // deal at all — a free technology is never given away.
+    if (status === 'war') {
+      factors.push({ label: 'at war — no trade', value: -80 });
+    } else if (typeof proposal.goldAmount === 'number' && proposal.goldAmount > 0) {
+      const techId = (proposal.techRequested ?? proposal.techOffered) as string;
+      const price = techBaseCost(techId);
+      // Paying roughly the research cost is fair; half of it is an insult.
+      const ratio = proposal.goldAmount / Math.max(1, price);
+      const fairness = Math.round((ratio - 1) * 20);
+      factors.push({
+        label: fairness >= 0 ? 'technology bought at a fair price' : 'technology offered too cheaply',
+        value: 6 + fairness,
+      });
+    } else {
+      factors.push({ label: 'a free technology is never given away', value: -60 });
     }
   }
 

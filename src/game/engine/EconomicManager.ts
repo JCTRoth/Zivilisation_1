@@ -22,6 +22,7 @@ import {
 } from '../../data/TerrainConstants';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '../../data/TileImprovementConstants';
 import { SPECIALIST_YIELDS, CITY_UPKEEP_PER_CITY, FREE_CITY_SUPPORT, TREATY_ROUTE_TRADE_MULTIPLIER } from '../../data/GameConstants';
+import { cityBuildingEffects } from './BuildingEffects';
 import type { City, Civilization, Unit } from '../../../types/game';
 import GameEngine from './GameEngine';
 
@@ -56,6 +57,9 @@ export interface ProcessTurnResult {
   upkeep: number;
   deficit: number;
   disbanded: number;
+  /** Units retired by the standing-army drawdown — budget housekeeping,
+   * distinct from the disbander's emergency liquidation. */
+  retired: number;
 }
 
 /** Side-effect-free projection returned by `previewEconomy`. */
@@ -452,7 +456,8 @@ export class EconomicManager {
     const civId = civ?.id;
     if (civId == null) return 0;
     const income = this.projectedIncome(civ);
-    const committed = this.buildingUpkeep(civId) + this.unitUpkeep(civId);
+    const committed = this.buildingUpkeep(civId) + this.unitUpkeep(civId)
+      + this.queuedUnitUpkeep(civId);
     const headroom = income - committed;
     if (headroom <= 0) return this.unitCountFor(civId);
     const unitPrice = this.unitMaintenanceOf(civ, plannedUnitType);
@@ -479,7 +484,12 @@ export class EconomicManager {
     const civId = civ?.id;
     if (civId == null) return 0;
     const income = this.projectedIncome(civ);
-    const committed = this.buildingUpkeep(civId) + this.unitUpkeep(civId);
+    // The queue is charged alongside the field: a queued unit's upkeep begins
+    // the turn it arrives, and three cities reading the same headroom must not
+    // each spend it. See `queuedUnitUpkeep` for the measurement that put this
+    // term here.
+    const committed = this.buildingUpkeep(civId) + this.unitUpkeep(civId)
+      + this.queuedUnitUpkeep(civId);
     return income - committed;
   }
 
@@ -1018,6 +1028,9 @@ export class EconomicManager {
       if (t.yields.trade > 0) tradeSquares++;
     }
     trade += this.buildingBonuses(city).trade;
+    // Factory / Power Plant / …: flat shields the buildings add every turn
+    // (the declared `production` effect; it was inert before BuildingEffects).
+    production += cityBuildingEffects(city).production;
     // Colossus / Statue of Liberty: +N on every worked tile that already
     // produces trade (tile granularity — the building bonus above is flat).
     const wonderEffects = this.gameEngine?.wonderEffects;
@@ -1078,6 +1091,9 @@ export class EconomicManager {
     // path too (flat building trade stays exclusive to recomputeCityYields —
     // see that function).
     const wonderEffects = this.gameEngine?.wonderEffects;
+    // Flat building shields (Factory, Power Plant, …) are not tile-derived and
+    // must survive a manual tile reshuffle exactly like the wonder flat bonus.
+    production += cityBuildingEffects(city).production;
     const tradePerSquare = wonderEffects?.tradePerTradeSquareForCity(city) ?? 0;
     if (tradePerSquare > 0) trade += tradeSquares * tradePerSquare;
     if (wonderEffects) {
@@ -1480,6 +1496,45 @@ export class EconomicManager {
     return totalMaintenance;
   }
 
+  /**
+   * Upkeep the BUILD QUEUE will commit once its units arrive.
+   *
+   * `unitUpkeep` charges only units alive in the field, so the army cap saw
+   * the same headroom from every city: three cities each queued a rifleman,
+   * and when all three landed the upkeep tripled in one round and the upkeep
+   * disbander liquidated what the cities had queued. Measured live (seed 33,
+   * civ2, 320 rounds): 53 disbands in four waves, 29 of them in one round at
+   * r220, immediately after the army had been built to 64 units against an
+   * income that fit about half that. The queue is a future unit's upkeep and
+   * is charged where the cap is computed — a queued rifleman and a fielded
+   * rifleman cost the same gold.
+   */
+  queuedUnitUpkeep(civId: number): number {
+    const cities = (this.gameEngine?.cities ?? []).filter(
+      (c: City) => c.civilizationId === civId,
+    );
+    let total = 0;
+    for (const city of cities) {
+      const items: Array<{ type?: string; itemType?: string }> = [
+        ...(city.currentProduction
+          && city.currentProduction.type === 'unit'
+          ? [city.currentProduction as { type?: string; itemType?: string }]
+          : []),
+        ...(Array.isArray(city.buildQueue)
+          ? (city.buildQueue as Array<{ type?: string; itemType?: string }>).filter(
+            (q) => (q?.type ?? q?.itemType) === 'unit',
+          )
+          : []),
+      ];
+      for (const item of items) {
+        const unitType = item?.itemType ?? item?.type;
+        if (!unitType) continue;
+        total += UNIT_PROPS[unitType]?.maintenance ?? UNIT_MAINTENANCE;
+      }
+    }
+    return total;
+  }
+
 
   /**
    * Total gold-per-turn upkeep cost of all buildings across the civ's cities.
@@ -1563,6 +1618,56 @@ export class EconomicManager {
     for (const id of turnData.invasionMission?.troopIds ?? []) ids.add(String(id));
     for (const id of turnData.invasionMission?.landedIds ?? []) ids.add(String(id));
     return ids;
+  }
+
+  /**
+   * What the STANDING army alone may cost per turn.
+   *
+   * The one budget the builder and the destroyer both read. It is income at
+   * the civ's real rates, minus buildings, minus the empire's cities, minus
+   * the debt service the treasury will lose to this turn. Debt was the
+   * missing line: `{@link repayDebt}` charges it after banking, so a civ
+   * paying 20 of its 30 income into a loan has a budget of 10, but every
+   * cap until now priced the loan at zero and happily built a 20-upkeep army.
+   */
+  armyBudgetFor(civ: Civilization): number {
+    const civId = civ?.id;
+    if (civId == null) return 0;
+    const cities = (this.gameEngine?.cities ?? []).filter(
+      (c: City) => c.civilizationId === civId,
+    );
+    const cityUpkeep = Math.max(
+      0,
+      cities.length - FREE_CITY_SUPPORT,
+    ) * CITY_UPKEEP_PER_CITY;
+    const debtService = DEBT_REPAYMENT_PER_TURN
+      * Math.ceil((civ.debt ?? 0) / DEBT_REPAYMENT_PER);
+    const income = this.projectedIncome(civ);
+    return Math.max(0, income - this.buildingUpkeep(civId) - cityUpkeep - debtService);
+  }
+
+  /**
+   * Retire ONE unit a round while the standing army costs more than its
+   * budget — the slope the disbander never had.
+   *
+   * The disbander is a cliff: it waits for the treasury to go negative, then
+   * liquidates as many units as the imbalance demands, which measured 29 in
+   * one round (r220, seed 33) — catapults, cannons and riflemen that took
+   * dozens of turns to build, destroyed to cure an imbalance that had been
+   * visible for rounds. This runs BEFORE the treasury is empty, on the
+   * budget comparison, and takes at most one unit, so an empire whose income
+   * fell slides down to a size it can pay instead of falling off a ledge.
+   *
+   * It reuses `{@link disbandUnitsToCoverDeficit}` with a deficit of one gold,
+   * so every protection already tested stands: sole city defenders, mission
+   * units, loaded ferries, fisher boats on a route, caravans under way, and
+   * any unit whose maintenance is paid for FREE (a free unit is never the
+   * reason the civ is overspent, and removing it saves no gold).
+   */
+  private retireSurplusUnit(civ: Civilization, cities: City[]): number {
+    const budget = this.armyBudgetFor(civ);
+    if (this.unitUpkeep(civ.id) <= budget) return 0;
+    return this.disbandUnitsToCoverDeficit(civ.id, 1, cities);
   }
 
   /**
@@ -1786,6 +1891,7 @@ export class EconomicManager {
         upkeep: 0,
         deficit: 0,
         disbanded: 0,
+        retired: 0,
       };
     }
     const cities = (this.gameEngine?.cities ?? []).filter(
@@ -1847,6 +1953,18 @@ export class EconomicManager {
     const debtService = this.repayDebt(civ, Math.max(0, banked.banked + specGoldTotal - upkeep));
     civ.resources.gold =
       (civ.resources.gold ?? 0) + banked.banked + specGoldTotal - upkeep - debtService;
+
+    // ---- Standing-army drawdown (the slope the disbander never had) ---
+    // Run while the treasury is STILL SOLVENT: when the standing army costs
+    // more than its budget, retire ONE unit this round. Without this the
+    // imbalance sits invisible until gold goes negative, and the disbander
+    // then liquidates the whole gap at once — 29 units in one round, seed 33
+    // civ2 r220. One unit a round lets an empire whose income fell slide down
+    // to a size it can pay.
+    let retired = 0;
+    if (civ.resources.gold >= 0) {
+      retired = this.retireSurplusUnit(civ, cities);
+    }
 
     // ---- Emergency tax raise before disbanding -----------------------
     // Prefer maxing tax and killing science/luxury over losing units. The
@@ -1913,6 +2031,7 @@ export class EconomicManager {
       upkeep,
       deficit,
       disbanded,
+      retired,
     };
   }
 
@@ -2004,6 +2123,7 @@ export class EconomicManager {
       col: city.col,
       row: city.row,
       civilizationId: city.civilizationId,
+      radius,
     });
     
     // Apply pollution in radius around city

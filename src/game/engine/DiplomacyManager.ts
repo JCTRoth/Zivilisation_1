@@ -25,7 +25,7 @@ import type {
   EspionageResult,
   CityIntelligence,
 } from './DiplomacyTypes';
-import { attitudeFromScore } from './DiplomacyTypes';
+import { ESPIONAGE_DIPLOMAT_ACTIONS, attitudeFromScore } from './DiplomacyTypes';
 import {
   applyImpact,
   createOpinion,
@@ -74,8 +74,34 @@ const BRIBE_UNIT_BASE_COST = 25;
 export function bribeUnitCost(unit: { attack?: number; defense?: number }): number {
   return BRIBE_UNIT_BASE_COST * ((unit.attack || 1) + (unit.defense || 1));
 }
+
+/** The three ways a bribe attempt can end — see `bribeUnit`. */
+export type BribeOutcome = 'defected' | 'reported' | 'refused';
+
+/**
+ * Map a d100 roll onto the three bribe outcomes.
+ *
+ * The defect band is `[0, chance)` — the odds the caller computed from
+ * opinion and paranoia. The FAILURE band splits evenly between the two ways
+ * a bribe can go wrong: a refusal leaves no trace at all, but as often as
+ * not the offer is carried straight to the commander's desk — who pockets
+ * the gold and reports the attempt, and the insult lands on the owner's
+ * ledger for everyone to see.
+ */
+export function bribeOutcomeForRoll(roll: number, chance: number): BribeOutcome {
+  if (roll < chance) return 'defected';
+  if (roll < chance + (100 - chance) / 2) return 'reported';
+  return 'refused';
+}
 /** How many turns before AI re-evaluates diplomatic stance */
 const AI_DIPLOMACY_INTERVAL = 5;
+/**
+ * Minimum rounds between two calls to arms against the same enemy. A civ at
+ * war asks its friends once when the war opens; re-asking every round would
+ * spam the audience modal (and every refusal, remembered, would sour the
+ * friendship the ask was counting on).
+ */
+const CALL_TO_ARMS_COOLDOWN = 16;
 /**
  * Base chance a spying attempt is noticed, before paranoia scales it. Spying
  * was previously free and consequence-free; a civ that catches you now writes
@@ -118,6 +144,12 @@ export class DiplomacyManager {
   /** Log of diplomatic events (most recent first, capped at 50) */
   private eventLog: DiplomacyEvent[] = [];
   /**
+   * Cooldown ledger for war-time calls to arms, keyed `caller:friend:enemy`
+   * → the round the ask was made. In-memory on purpose: a cooldown is a
+   * pacing rule, not game state that has to survive a save.
+   */
+  private callToArmsAsked = new Map<string, number>();
+  /**
    * Civilization pairs that have physically met, keyed exactly like
    * `relations`. Contact is a PAIR fact: when one side sees the other, both
    * learn of each other. Barbarians are never recorded.
@@ -151,6 +183,7 @@ export class DiplomacyManager {
     this.contactedPairs.clear();
     this.embassyPairs.clear();
     this.warExhaustion.clear();
+    this.callToArmsAsked.clear();
     this.proposalSequence = 0;
     for (let i = 0; i < civIds.length; i++) {
       for (let j = i + 1; j < civIds.length; j++) {
@@ -330,8 +363,22 @@ export class DiplomacyManager {
   }
 
   /** Get the recent event log */
-  getEventLog(): DiplomacyEvent[] {
-    return [...this.eventLog];
+  /**
+   * The diplomacy ledger, as far as `observerCivId` can see it.
+   *
+   * Without an observer the full log is returned (AI-vs-AI runs, tests,
+   * exports). With one, entries a court could not know about are dropped: an
+   * event between two OTHER civs is only visible through the observer's
+   * embassy network — you must hold an embassy with BOTH parties to hear of
+   * their dealings. Events touching the observer are always visible.
+   */
+  getEventLog(observerCivId?: number): DiplomacyEvent[] {
+    if (observerCivId === undefined) return [...this.eventLog];
+    return this.eventLog.filter((event) => {
+      if (event.fromCivId === observerCivId || event.toCivId === observerCivId) return true;
+      return this.hasEmbassy(observerCivId, event.fromCivId)
+        && this.hasEmbassy(observerCivId, event.toCivId);
+    });
   }
 
   // ─── Opinion & attitude ────────────────────────────────────────────
@@ -699,6 +746,14 @@ export class DiplomacyManager {
     // Negotiating with someone is how you meet them, if sight did not.
     this.markContact(fromCivId, toCivId);
 
+    // Covert acts are not proposals: the victim is never consulted, so the
+    // willingness roll would only produce a refusal nobody asked for. They
+    // run through the espionage path (`inciteRevolt` and friends), which
+    // resolves on its own seeded terms.
+    if (ESPIONAGE_DIPLOMAT_ACTIONS.has(action)) {
+      return { accepted: false, reason: 'Not a negotiable proposal' };
+    }
+
     // Civ I: no Exchange of Knowledge while the guns are still firing —
     // refuse with a plain reason instead of burying it in the score.
     if (action === 'offer_tech_exchange') {
@@ -843,7 +898,8 @@ export class DiplomacyManager {
 
       case 'offer_tech_exchange': {
         const { techOffered, techRequested } = proposal;
-        if (!techOffered || !techRequested) return { accepted: false, reason: 'Must specify both technologies' };
+        const sweetener = Math.max(0, Math.floor(goldAmount ?? 0));
+        if (!techOffered && !techRequested) return { accepted: false, reason: 'Must specify at least one technology' };
 
         // Civ I rule: no Exchange of Knowledge while at war.
         const tradeRel = this.getRelation(fromCivId, toCivId);
@@ -856,36 +912,104 @@ export class DiplomacyManager {
         // Engine civs store technologies as a string[] (Set methods would throw).
         const fromTechs = fromCiv?.technologies;
         const toTechs = toCiv?.technologies;
-        // Verify both sides have what they claim
-        const fromHas = !!fromTechs && fromTechs.includes(techOffered);
-        const toHas = !!toTechs && toTechs.includes(techRequested);
+        // Verify each side has what it claims — either side may be absent when
+        // gold covers its half of the deal (tech-for-gold).
+        const fromHas = !techOffered || (!!fromTechs && fromTechs.includes(techOffered));
+        const toHas = !techRequested || (!!toTechs && toTechs.includes(techRequested));
         if (!fromHas) return { accepted: false, reason: 'You do not have the offered technology' };
         if (!toHas) return { accepted: false, reason: 'They do not have the requested technology' };
-        // Exchange: add techs to both sides
-        if (fromTechs && !fromTechs.includes(techRequested)) fromTechs.push(techRequested);
-        if (toTechs && !toTechs.includes(techOffered)) toTechs.push(techOffered);
+        // A sweetener must be real money, not a promise.
+        if (sweetener > 0 && (fromCiv?.resources?.gold ?? 0) < sweetener) {
+          return { accepted: false, reason: 'You cannot afford the gold you offered' };
+        }
+        // Exchange: each side learns what the other knew.
+        if (techRequested && fromTechs && !fromTechs.includes(techRequested)) fromTechs.push(techRequested);
+        if (techOffered && toTechs && !toTechs.includes(techOffered)) toTechs.push(techOffered);
+        // Gold always flows proposer → responder on acceptance.
+        if (sweetener > 0 && fromCiv?.resources && toCiv?.resources) {
+          fromCiv.resources.gold -= sweetener;
+          toCiv.resources.gold += sweetener;
+        }
         // Refresh the shared tree UI so newly learned techs light up.
         this.gameEngine.updateTechnologyAvailability?.();
         // A fair swap is one of the few unambiguously good acts in the game.
         const exchangeRel = this.getRelation(toCivId, fromCivId);
         if (exchangeRel) {
+          const terms = [techOffered, techRequested].filter(Boolean).join(' ↔ ')
+            + (sweetener > 0 ? ` + ${sweetener} gold` : '');
           this.recordImpactOn(exchangeRel, toCivId, 'tech_exchanged',
-            { tech: true }, `${techOffered} ↔ ${techRequested}`);
+            { tech: true, gold: sweetener }, terms);
           this.recordImpactOn(exchangeRel, fromCivId, 'tech_exchanged',
-            { tech: true }, `${techOffered} ↔ ${techRequested}`);
+            { tech: true, gold: sweetener }, terms);
         }
         this.logEvent({
           type: 'tech_exchanged',
           fromCivId,
           toCivId,
-          details: `${techOffered} ↔ ${techRequested}`,
+          details: [techOffered, techRequested].filter(Boolean).join(' ↔ ')
+            + (sweetener > 0 ? ` + ${sweetener} gold` : ''),
         });
+        return { accepted: true, goldTransferred: sweetener > 0 ? -sweetener : undefined };
+      }
+
+      case 'propose_joint_war': {
+        const enemyId = proposal.embargoTargetId;
+        if (typeof enemyId !== 'number' || enemyId === fromCivId || enemyId === toCivId) {
+          return { accepted: false, reason: 'Name the common enemy' };
+        }
+        // The responder declares war on the enemy; Civ I cascade (allies of the
+        // defender) is handled by the existing declareWar path.
+        if (this.getRelation(toCivId, enemyId)?.status !== 'war') {
+          this.declareWar(toCivId, enemyId);
+        }
+        const rel = this.getRelation(toCivId, fromCivId);
+        if (rel) this.recordImpactOn(rel, fromCivId, 'common_enemy_defeated', { thirdParty: true }, 'called to arms');
+        this.logEvent({ type: 'war_declared', fromCivId: toCivId, toCivId: enemyId, details: 'joint war called' });
         return { accepted: true };
+      }
+
+      case 'offer_gift': {
+        const gift = Math.max(0, Math.floor(goldAmount ?? 0));
+        if (gift <= 0) return { accepted: false, reason: 'Name an amount of gold to give' };
+        const fromCiv = this.gameEngine.civilizations?.[fromCivId];
+        const toCiv = this.gameEngine.civilizations?.[toCivId];
+        if ((fromCiv?.resources?.gold ?? 0) < gift) {
+          return { accepted: false, reason: 'You cannot afford that gift' };
+        }
+        if (fromCiv?.resources) fromCiv.resources.gold -= gift;
+        if (toCiv?.resources) toCiv.resources.gold += gift;
+        // Goodwill in both ledgers: the receiver likes the giver, and the
+        // giver's own court records the generosity (keepsWord counts it).
+        const giftRel = this.getRelation(toCivId, fromCivId);
+        if (giftRel) {
+          this.recordImpactOn(giftRel, toCivId, 'tribute_gift',
+            { gold: gift }, `${gift} gold`);
+          this.recordImpactOn(giftRel, fromCivId, 'tribute_gift',
+            { gold: gift }, `gave ${gift} gold`);
+        }
+        this.logEvent({
+          type: 'tribute_paid',
+          fromCivId,
+          toCivId,
+          goldAmount: gift,
+        });
+        return { accepted: true, goldTransferred: -gift };
       }
 
       default:
         return { accepted: false, reason: 'Unknown action' };
     }
+  }
+
+  /**
+   * Passively isEmbassy: the embassy gives a standing (and slightly stale)
+   * view of the other court — much coarser than an active gatherIntelligence
+   * run and entirely legal, so it never risks detection but likewise updates
+   * only when the embassy (or a spy) refreshes it.
+   */
+  getEmbassyReport(viewerCivId: number, targetCivId: number): IntelligenceReport | null {
+    if (!this.hasEmbassy(viewerCivId, targetCivId)) return null;
+    return this.gatherIntelligence(viewerCivId, targetCivId);
   }
 
   /** Generate an intelligence report on a civilization */
@@ -933,7 +1057,17 @@ export class DiplomacyManager {
     };
   }
 
-  /** Attempt to bribe an enemy unit with a diplomat */
+  /**
+   * Attempt to bribe an enemy unit with a diplomat.
+   *
+   * Three seeded outcomes, all reproducible for the same attempt at the same
+   * moment:
+   *  - DEFECT: the unit takes the gold and switches sides (war follows);
+   *  - REPORTED: the commander takes the gold and reports the offer — no unit
+   *    changes hands, the money is still gone, and the insult lands on the
+   *    owner's diplomatic ledger (`bribe_exposed`);
+   *  - REFUSED: the commander refuses quietly — no gold, no trace.
+   */
   bribeUnit(diplomatCivId: number, targetUnitId: string): DiplomacyResponse {
     const unit = this.gameEngine.units?.find((u: Unit) => u.id === targetUnitId);
     if (!unit) return { accepted: false, reason: 'Unit not found' };
@@ -957,13 +1091,49 @@ export class DiplomacyManager {
     chance += (this.weightsFor(unit.civilizationId).paranoia - 5) * 2;
     const round = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
     const roll = seededNoise([diplomatCivId, unit.civilizationId, targetUnitId, 'bribe', round]) * 50 + 50;
-    if (roll >= chance) {
+    const outcome = bribeOutcomeForRoll(roll, chance);
+
+    const originalCivId = unit.civilizationId;
+
+    if (outcome === 'refused') {
+      // Quiet refusal: the gold stays in the treasury and nobody learns
+      // anything — the diplomat may simply try again elsewhere.
       return { accepted: false, reason: 'Bribe failed — the unit refused' };
     }
 
-    // Success: transfer the unit
-    const originalCivId = unit.civilizationId;
+    // From here the gold is on the table: both remaining outcomes take it.
     fromCiv.resources.gold -= cost;
+
+    if (outcome === 'reported') {
+      // The offer went straight up the chain of command. No unit changes
+      // hands, but the attempt is caught red-handed and written down — a
+      // smaller sting than losing the unit, and a lasting insult besides.
+      const rel = this.getRelation(originalCivId, diplomatCivId);
+      if (rel) {
+        this.recordImpactOn(rel, originalCivId, 'bribe_exposed',
+          { gold: cost }, unit.type);
+      }
+      this.logEvent({
+        type: 'bribe_reported',
+        fromCivId: diplomatCivId,
+        toCivId: originalCivId,
+        goldAmount: cost,
+        details: `Bribe attempt on ${unit.type} reported`,
+      });
+      debugLog(`[DIPLOMACY] Civ ${diplomatCivId}'s bribe of unit ${targetUnitId} was reported`);
+      // `originalCivId` routes the notification to the human when it was
+      // THEIR commander who took the money and reported it.
+      this.emitEvent('BRIBE_REPORTED', {
+        diplomatCivId, unitId: targetUnitId, originalCivId, cost, unitType: unit.type,
+      });
+      return {
+        accepted: false,
+        reason: `Bribe exposed — the ${unit.type}'s commander took the gold and reported the offer`,
+        goldTransferred: -cost,
+      };
+    }
+
+    // Defected: transfer the unit.
     unit.civilizationId = diplomatCivId;
     unit.movesRemaining = 0;
 
@@ -1204,6 +1374,98 @@ export class DiplomacyManager {
       { success: true, outcome: 'sabotaged', cityId: city.id, cityName: city.name },
       diplomatCivId,
       city.civilizationId,
+    );
+  }
+
+  /**
+   * Covert act: bribe a foreign city into revolt.
+   *
+   * The purse is carried by the agent and spent up front — 100 gold per
+   * citizen — whether the town rises or the offer is carried to its
+   * governor's desk instead. The capital is immune: gold may buy a restless
+   * province, never the rival's seat of government. Success flips the city
+   * and puts the two civs openly at war; being caught is an act of espionage
+   * like any other (the agent's career ends, and usually a war begins).
+   *
+   * Deterministic per (city, round): the same agent pitching the same town
+   * on the same turn always resolves the same way.
+   */
+  inciteRevolt(diplomatCivId: number, city: City): EspionageResult {
+    const victimId = city.civilizationId;
+    if (this.isAtWar(diplomatCivId, victimId)) {
+      return this.announce(
+        { success: false, outcome: 'incite_impossible', reason: 'At war', cityId: city.id, cityName: city.name },
+        diplomatCivId,
+        victimId,
+      );
+    }
+    if (city.isCapital === true) {
+      return this.announce(
+        {
+          success: false, outcome: 'incite_impossible',
+          reason: 'A capital cannot be incited', cityId: city.id, cityName: city.name,
+        },
+        diplomatCivId,
+        victimId,
+      );
+    }
+    const cost = 100 * Math.max(1, city.population ?? 1);
+    const fromCiv = this.gameEngine.civilizations?.[diplomatCivId];
+    if ((fromCiv?.resources?.gold ?? 0) < cost) {
+      return this.announce(
+        {
+          success: false, outcome: 'incite_impossible',
+          reason: `Incitement costs ${cost} gold`, cityId: city.id, cityName: city.name,
+        },
+        diplomatCivId,
+        victimId,
+      );
+    }
+    // Paid up front — the agent carries the purse, success or not.
+    if (fromCiv?.resources) fromCiv.resources.gold -= cost;
+
+    // Deterministic chance: 30% − 10% per garrison unit, floored at 0.
+    const garrison = (this.gameEngine.units ?? []).filter(
+      (u) => u.civilizationId === victimId && u.col === city.col && u.row === city.row,
+    ).length;
+    const roll = (this.gameEngine.roundManager?.getRoundNumber?.() ?? 0) % 100;
+    const chance = Math.max(0, 30 - garrison * 10);
+
+    if (roll < chance) {
+      city.civilizationId = diplomatCivId;
+      city.capturedTurns = 5;
+      this.markContact(diplomatCivId, victimId);
+      const rel = this.getRelation(diplomatCivId, victimId);
+      if (rel) {
+        this.recordImpactOn(rel, victimId, 'city_sabotaged', { gold: cost }, 'incited revolt');
+      }
+      // Buying a city off its owner is an act of war in all but name.
+      if (!this.isAtWar(diplomatCivId, victimId)) {
+        this.declareWar(diplomatCivId, victimId);
+      }
+      this.logEvent({
+        type: 'city_sabotaged',
+        fromCivId: diplomatCivId,
+        toCivId: victimId,
+        goldAmount: cost,
+        details: `${city.name} incited into revolt`,
+      });
+      return this.announce(
+        { success: true, outcome: 'city_revolted', cityId: city.id, cityName: city.name },
+        diplomatCivId,
+        victimId,
+      );
+    }
+
+    // Caught: the offer goes straight to the governor's desk.
+    const warDeclared = this.blowCover(diplomatCivId, victimId, 'spy_detected', 'caught inciting revolt');
+    return this.announce(
+      {
+        success: false, outcome: 'caught_inciting', coverBlown: true, warDeclared,
+        reason: 'Our agent was caught', cityId: city.id, cityName: city.name,
+      },
+      diplomatCivId,
+      victimId,
     );
   }
 
@@ -1495,6 +1757,55 @@ export class DiplomacyManager {
   }
 
   /**
+   * War-time call to arms: ask the friends to join the current war.
+   *
+   * The civ picks its MAIN enemy (the one holding the most cities under
+   * dispute) and asks every ally / mutual-defence partner to join against
+   * it — the player through the audience modal, AIs through the ordinary
+   * proposal machinery, where the joint-war scoring (goodwill, shared enemy,
+   * power ratio) decides. A fresh ask per (caller, friend, enemy) triple may
+   * be made every {@link CALL_TO_ARMS_COOLDOWN} rounds.
+   */
+  private considerCallToArms(civId: number, civName: string, roundNumber: number): void {
+    const enemies = this.getEnemies(civId);
+    if (enemies.length === 0) return;
+
+    const citiesOf = (id: number): City[] =>
+      (this.gameEngine.cities ?? []).filter((c) => c.civilizationId === id);
+    // The main enemy: the one under dispute holding the most cities.
+    const enemyId = enemies.reduce(
+      (best, id) => (citiesOf(id).length > citiesOf(best).length ? id : best),
+      enemies[0],
+    );
+    const enemyCiv = this.gameEngine.civilizations?.[enemyId];
+    if (!enemyCiv || enemyCiv.isAlive === false) return;
+
+    for (const otherId of this.getAllies(civId)) {
+      if (otherId === civId) continue;
+      const otherCiv = this.gameEngine.civilizations?.[otherId];
+      if (!otherCiv || otherCiv.isAlive === false) continue;
+      if (!this.hasContacted(civId, otherId)) continue;
+
+      const key = `${civId}:${otherId}:${enemyId}`;
+      const askedAt = this.callToArmsAsked.get(key);
+      if (askedAt !== undefined && roundNumber - askedAt < CALL_TO_ARMS_COOLDOWN) continue;
+      this.callToArmsAsked.set(key, roundNumber);
+
+      const enemyName = enemyCiv.name ?? 'their enemy';
+      const message = `${civName} calls on you to join its war against ${enemyName}.`;
+      debugLog(`[AI-DIPLO] Civ ${civId} calls ${otherId} to arms against ${enemyId}`);
+      if (otherCiv.isHuman === true) {
+        this.emitOffer(civId, otherId, 'propose_joint_war', undefined, message,
+          undefined, undefined, enemyId);
+      } else {
+        this.processProposal({
+          fromCivId: civId, toCivId: otherId, action: 'propose_joint_war', embargoTargetId: enemyId,
+        });
+      }
+    }
+  }
+
+  /**
    * AI deliberation: score every action worth taking toward this counterpart
    * and act on the best one.
    *
@@ -1512,6 +1823,14 @@ export class DiplomacyManager {
     if (roundNumber % AI_DIPLOMACY_INTERVAL !== 0 && roundNumber > 1) return;
 
     const civName = civ.name ?? `Civilization ${civId}`;
+
+    // A civ at war calls on its friends BEFORE it does anything else on the
+    // diplomatic round: every ally and mutual-defence partner is asked to
+    // join against the enemy holding the most cities under dispute. Player
+    // targets answer through the audience modal; AIs answer through the same
+    // proposal machinery, so the joint-war scoring decides — an AI never
+    // starts a war for free, only for a friend it likes and can afford.
+    this.considerCallToArms(civId, civName, roundNumber);
 
     for (const rel of this.getRelationsForCiv(civId)) {
       const otherId = rel.otherCivId;
@@ -1638,6 +1957,8 @@ export class DiplomacyManager {
     message: string,
     techOffered?: string,
     techRequested?: string,
+    /** Third-party civ this proposal names (joint war target, embargo enemy). */
+    targetId?: number,
   ): void {
     debugLog(`[AI-DIPLO] Offering ${action} to human Civ ${toCivId}`);
     this.emitEvent('AI_DIPLOMACY_OFFER', {
@@ -1647,6 +1968,7 @@ export class DiplomacyManager {
       goldAmount,
       techOffered,
       techRequested,
+      embargoTargetId: targetId,
       message,
     });
   }
@@ -1664,11 +1986,12 @@ export class DiplomacyManager {
     message: string,
     techOffered?: string,
     techRequested?: string,
+    targetId?: number,
   ): void {
     // A civ cannot negotiate with someone it has never met. Visibility normally
     // records this; asserting it here keeps the invariant airtight.
     this.markContact(fromCivId, toCivId);
-    this.emitOffer(fromCivId, toCivId, action, goldAmount, message, techOffered, techRequested);
+    this.emitOffer(fromCivId, toCivId, action, goldAmount, message, techOffered, techRequested, targetId);
   }
 
   // ─── Internal helpers ──────────────────────────────────────────────

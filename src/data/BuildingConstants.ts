@@ -61,7 +61,10 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         requiredTechnology: 'pottery',
         effects: {
             foodStorage: 2,
-            growthBonus: 1
+            growthBonus: 1,
+            // Stored food stays clean: a granary is worth 1 health point in the
+            // demographics (disease −2.5%, life expectancy +2.5 years).
+            health: 1
         },
         description: 'Increases food storage capacity and helps cities grow faster',
         icon: '🌾'
@@ -146,7 +149,10 @@ export const BUILDING_PROPERTIES: Record<string, BuildingProperties> = {
         requiredTechnology: 'construction',
         effects: {
             health: 2,
-            growthBonus: 1
+            growthBonus: 1,
+            // Lifts the size-10 housing cap (see TurnManager growth): without
+            // it a city stops growing at 10.
+            housingCap: true
         },
         description: 'Increases health and helps cities grow larger',
         icon: '🏛️'

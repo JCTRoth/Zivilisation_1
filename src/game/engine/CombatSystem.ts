@@ -34,6 +34,7 @@ import { TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { MathUtils } from '@/utils/MathUtils';
 import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
 import { getUnitRank, rankStrengthMultiplier } from './UnitRankSystem';
+import { cityBuildingEffects } from './BuildingEffects';
 
 /** HP (%) a lost combat round costs a unit. */
 const COMBAT_DAMAGE = 25;
@@ -45,13 +46,13 @@ const COMBAT_DAMAGE = 25;
 export const SPLASH_DAMAGE_FRACTION = 0.25;
 
 /** HP per turn a unit recovers while stationed inside one of its own cities. */
-export const CITY_HEAL_PER_TURN = 2;
+const CITY_HEAL_PER_TURN = 2;
 
 /**
  * Lifetime city-healing cap as a share of all battle damage the unit ever
  * took: at most 15% of what combat cost it ever comes back in a city.
  */
-export const CITY_HEAL_CAP_FRACTION = 0.15;
+const CITY_HEAL_CAP_FRACTION = 0.15;
 
 /** Terrain-ish shape needed for defence bonuses. */
 interface CombatTerrainLike {
@@ -77,12 +78,6 @@ export interface CombatUnitLike {
   battleDamageTaken?: number;
   /** Cumulative HP restored by city healing (capped against the ledger). */
   healedInCityTotal?: number;
-}
-
-/** One secondary victim of splash damage. */
-export interface SplashVictim {
-  /** Damage this stacked unit takes (25% of the primary hit, min 1). */
-  damage: number;
 }
 
 /** Minimal city shape needed for the city-assault math. */
@@ -255,8 +250,9 @@ export class CombatSystem {
   }
 
   /**
-    * City assault odds: attacker strength vs `max(1, population)`, multiplied by 1.5 by
-    * city walls (wall bonus only applies when the attacker does not ignore it).
+    * City assault odds: attacker strength vs `max(1, population)`, multiplied
+    * by the city's DEFENSE EFFECTS (`defense: 2` on City Walls → ×1.5; the
+    * wall bonus only applies when the attacker does not ignore walls).
    */
   static resolveCityRound(
     attacker: CombatUnitLike,
@@ -267,10 +263,11 @@ export class CombatSystem {
     const attackerStrength = this.attackerStrength(attacker);
 
     const buildings = Array.isArray(city.buildings) ? city.buildings : [];
-    const hasWalls = buildings.includes('city_walls') || buildings.includes('walls');
+    const defenseMultiplier = cityBuildingEffects({ buildings }).defenseMultiplier;
+    const hasWalls = defenseMultiplier > 1;
     const wallsApplied = hasWalls && !context.ignoresWalls;
     let cityDefense = Math.max(1, city.population || 1);
-    if (wallsApplied) cityDefense *= 1.5;
+    if (wallsApplied) cityDefense *= defenseMultiplier;
 
     const attackerWinChance = this.winChance(attackerStrength, cityDefense);
     const attackerWins = random() * (attackerStrength + cityDefense) < attackerStrength;

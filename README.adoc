@@ -479,7 +479,7 @@ the commit message which rule the number encodes.
 * link:doc/STATIC_MAPS.adoc[Static Maps] — static map format and registry
 * link:doc/NEW_MAP_GUIDE.adoc[Adding a New Map] — step by step with a checklist
 * link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets] — layers, textures, tile generator
-* link:doc/SOUND_EFFECTS.adoc[Sound Effects] — every cue, when it plays, and how to drop in an .ogg
+* link:doc/SOUND_EFFECTS.adoc[Sound Effects] — every cue, when it plays, the seven shipped recordings, and how to drop in another
 
 === AI
 

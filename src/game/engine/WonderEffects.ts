@@ -86,22 +86,44 @@ export function computeSeesAllCities(
   return civWonderEffects('revealAllCities', cities, civilizations, civId).length > 0;
 }
 
+/**
+ * Any active wonder anywhere carrying a global gate effect of `kind`.
+ *
+ * Reads the wonder data instead of naming ids: the space-station family is
+ * mutually exclusive (only one of ISS / Tiangong / Mir can be completed per
+ * world), so a gate keyed on a single id would silently lock players who built
+ * one of the other two out of the space race.
+ */
+function computeGlobalGate(
+  cities: City[],
+  civilizations: Civilization[],
+  kind: 'enableNuclear' | 'enableSpaceship',
+): boolean {
+  for (const city of cities) {
+    for (const id of wondersInCity(city)) {
+      if (isWonderObsolete(id, civilizations)) continue;
+      if ((getWonder(id)?.effects ?? []).some((effect) => effect.kind === kind)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Any civ that has the tech may build nukes once the Manhattan Project exists. */
 export function computeNuclearAllowed(
   cities: City[],
   civilizations: Civilization[],
 ): boolean {
-  const builtSomewhere = cities.some((c) => (c.buildings ?? []).includes('manhattan_project'));
-  return builtSomewhere && !isWonderObsolete('manhattan_project', civilizations);
+  return computeGlobalGate(cities, civilizations, 'enableNuclear');
 }
 
-/** The space race (Moonshot) opens for everyone once the ISS exists. */
+/** The space race (Moonshot) opens for everyone once ANY space station exists. */
 export function computeSpaceshipEnabled(
   cities: City[],
   civilizations: Civilization[],
 ): boolean {
-  const builtSomewhere = cities.some((c) => (c.buildings ?? []).includes('international_space_station'));
-  return builtSomewhere && !isWonderObsolete('international_space_station', civilizations);
+  return computeGlobalGate(cities, civilizations, 'enableSpaceship');
 }
 
 // ---------------------------------------------------------------------------

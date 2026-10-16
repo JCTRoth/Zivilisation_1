@@ -34,6 +34,9 @@ const DIPLOMAT_ACTION_UI: Record<
   investigate_city: { icon: '🗺️', label: 'unitActions.investigateCity', section: 'infiltration' },
   industrial_sabotage: { icon: '🔥', label: 'unitActions.industrialSabotage', section: 'infiltration' },
   steal_technology: { icon: '📜', label: 'unitActions.stealTechnology', section: 'infiltration' },
+  offer_gift: { icon: '🎁', label: 'unitActions.giveGold', section: 'diplomacy' },
+  propose_joint_war: { icon: '⚔️', label: 'unitActions.callToArms', section: 'diplomacy' },
+  incite_revolt: { icon: '🔥', label: 'unitActions.inciteRevolt', section: 'infiltration' },
 };
 
 /** Sections in the order they are drawn, each with its own heading. */
@@ -303,6 +306,31 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                       onClick={() => handleAction('remove_fishing_net')}
                     >
                       <span aria-hidden="true">❌</span>{t('unitActions.removeFishingNet' as TranslationKey)}
+                    </button>
+                  )}
+                </>
+              )}
+
+{contextMenu.unit.type === 'trade_ship' && (
+                <>
+                  {(gameEngine?.canEstablishTradeShipRoute?.(contextMenu.unit.id) ?? false) && (
+                    <button
+                      type="button"
+                      className="context-menu-item"
+                      disabled={isFortified || isSleeping}
+                      onClick={() => handleAction('establish_trade_ship_route')}
+                    >
+                      <span aria-hidden="true">🚢</span>Establish trade route
+                    </button>
+                  )}
+                  {contextMenu.unit.tradeShipRoute && (
+                    <button
+                      type="button"
+                      className="context-menu-item"
+                      disabled={isFortified || isSleeping}
+                      onClick={() => handleAction('cancel_trade_ship_route')}
+                    >
+                      <span aria-hidden="true">❌</span>Cancel trade route
                     </button>
                   )}
                 </>

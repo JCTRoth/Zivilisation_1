@@ -10,11 +10,43 @@ import type { Technology, Unit, City, Civilization, VillageOutcome } from '../..
 import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
 import { getWonder } from '@/data/WonderData';
 import { debugLog } from './DevLog';
-import { playSfx } from './Sfx';
-import { NUCLEAR_BLAST_RADIUS } from '../game/engine/GameEngine';
+import { playSfx, type SfxCue } from './Sfx';
 import { t } from '../i18n';
 import { tTechName } from '../i18n/dataNames';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+import { UNIT_PROPERTIES, UNIT_TYPES } from '@/data/UnitConstants';
+import { BUILDING_TYPES } from '@/data/BuildingConstants';
+
+/**
+ * The year a captured city starts playing the *modern* entry march instead of
+ * the classical one. By 1900 the tech tree is recognisably contemporary —
+ * combustion, flight and tanks are all reachable — so the fanfare changes with
+ * the century the player is actually playing in.
+ */
+const MODERN_ERA_YEAR = 1900;
+
+/**
+ * How long the nuclear flash takes to fade out. 320 ms is the sweet spot:
+ * long enough to read as an explosion rather than a cursor blink, short
+ * enough that the player has not stopped reading what the toast says.
+ */
+const NUCLEAR_FLASH_MS = 320;
+
+/**
+ * Peak shake amplitude, in pixels, baked into the CSS keyframes by the
+ * `game-canvas-shake` animation. Carried on the effect so the renderer can
+ * decide whether the map moves at all, and so a future quieter effect (a
+ * volcano, an SDI intercept) does not have to reuse the nuke's numbers.
+ */
+const NUCLEAR_SHAKE_PX = 7;
+
+/**
+ * How close a blast has to land to one of the player's own cities for the
+ * flash to be about them. Deliberately wider than the blast radius: the
+ * mushroom cloud is what a nearby civ sees, and the flash is supposed to sell
+ * that.
+ */
+const NUCLEAR_BLAST_RADIUS_HOME = 6;
 
 /**
  * Localized line for a toast this router composes itself. Kept as a thin
@@ -45,6 +77,12 @@ export class EngineEventRouter {
    * production this turn, so the city details modal is only forced open once.
    */
   private idleCityPrompted: Set<string> = new Set();
+  /**
+   * Game turn a per-turn movement cue last fired in, keyed by `cue:unitId`.
+   * A unit crossing several tiles emits one `UNIT_MOVED` per tile, and a tank
+   * should rumble once per drive, not once per tile.
+   */
+  private lastMovementCueTurn: Map<string, number> = new Map();
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
@@ -75,6 +113,9 @@ export class EngineEventRouter {
       case 'COMBAT_HIT':
         this.onCombat(eventType, eventData);
         break;
+      case 'COMBAT_SPLASH':
+        this.onSplash(eventData);
+        break;
       case 'UNIT_PROMOTED':
         this.onUnitPromoted(eventData);
         break;
@@ -83,7 +124,7 @@ export class EngineEventRouter {
         break;
       case 'UNIT_PRODUCED':
       case 'UNIT_PURCHASED':
-        this.onUnitCreated(eventData, eventType === 'UNIT_PURCHASED');
+        this.onUnitCreated(eventData);
         break;
       case 'CITY_FOUNDED':
         this.onCityFounded(eventData);
@@ -156,27 +197,12 @@ export class EngineEventRouter {
       case 'UNIT_SKIPPED':
         this.onUnitSkipped(eventData);
         break;
-      case 'UNIT_SLEPT': {
-        const slept = eventData?.unit as Unit | undefined;
-        if (slept?.civilizationId === HUMAN_PLAYER_ID) playSfx('unitSlept');
-        this.releaseSpentUserSelection();
-        break;
-      }
-      case 'UNIT_FORTIFIED': {
-        const fortified = eventData?.unit as Unit | undefined;
-        if (fortified?.civilizationId === HUMAN_PLAYER_ID) playSfx('unitFortified');
-        this.releaseSpentUserSelection();
-        break;
-      }
+      case 'UNIT_SLEPT':
+      case 'UNIT_FORTIFIED':
       case 'UNIT_UNFORTIFIED':
+      case 'UNIT_WOKE':
         this.releaseSpentUserSelection();
         break;
-      case 'UNIT_WOKE': {
-        const woke = eventData?.unit as Unit | undefined;
-        if (woke?.civilizationId === HUMAN_PLAYER_ID) playSfx('unitWoke');
-        this.releaseSpentUserSelection();
-        break;
-      }
       case 'UNIT_DEFEATED':
         this.releaseSpentUserSelection();
         // The statistics screen reports how many units a civ has lost, so the
@@ -222,6 +248,9 @@ export class EngineEventRouter {
       case 'UNIT_BRIBED':
         this.onUnitBribed(eventData);
         break;
+      case 'BRIBE_REPORTED':
+        this.onBribeReported(eventData);
+        break;
       case 'AI_DIPLOMACY_OFFER':
         this.onAIDiplomacyOffer(eventData);
         break;
@@ -243,8 +272,15 @@ export class EngineEventRouter {
       case 'NUCLEAR_STRIKE':
         this.onNuclearStrike(eventData);
         break;
+      case 'NUCLEAR_MELTDOWN':
+        this.onNuclearMeltdown(eventData);
+        break;
       case 'TRADE_ROUTE_ESTABLISHED':
         this.onTradeRouteEstablished(eventData);
+        break;
+      case 'BUILDING_COMPLETED':
+      case 'BUILDING_PURCHASED':
+        this.onBuildingCompleted(eventData);
         break;
       case 'WONDER_COMPLETED':
         this.onWonderCompleted(eventData);
@@ -278,7 +314,6 @@ export class EngineEventRouter {
     // The result modal only opens for the human player's own encounters.
     if (this.isAIVsAI) return;
     if (eventData.civId !== HUMAN_PLAYER_ID) return;
-    playSfx('villageResult');
 
     const d = eventData as {
       outcome: VillageOutcome;
@@ -315,7 +350,6 @@ export class EngineEventRouter {
     const active = this.gameEngine.activePlayer;
     const civ = this.gameEngine.civilizations?.[active];
     debugLog('[EngineEventRouter] TURN_START for player', active, civ?.name);
-    if (civ?.isHuman) playSfx('turnStart');
 
     // Trigger top-bar flash animation on every turn start
     this.actions.incrementTurnFlash();
@@ -371,6 +405,7 @@ export class EngineEventRouter {
     debugLog('[EngineEventRouter] NEW_GAME: Updating map and initial visibility');
     this.lastQueueLengths.clear();
     this.endTurnPromptShown.clear();
+    this.lastMovementCueTurn.clear();
     (eventData.civilizations as Civilization[]).forEach((civ: Civilization, index: number) => {
       if (!civ.capital) {
         const firstCity = (eventData.cities as City[]).find((c: City) => c.civilizationId === index);
@@ -383,20 +418,23 @@ export class EngineEventRouter {
     this.actions.updateCities(eventData.cities as City[]);
     this.actions.updateTechnologies(eventData.technologies as Technology[]);
     this.actions.updateVisibility();
-    playSfx('newGame');
     this.actions.startGame();
   }
 
   private onUnitMoved(eventData: Record<string, unknown>) {
     const moved = (eventData && eventData.unit ? eventData.unit : null) as Unit | null;
-    const movedUnit = moved as Unit | undefined;
-    if (movedUnit?.civilizationId === HUMAN_PLAYER_ID) playSfx('unitMoved');
     // Capture the unit's tile BEFORE the store updates, so a visible AI move can
     // be glided from its previous tile to the new one (human units are animated
     // by MoveAnimator and don't need this).
     const prevStoreUnit = moved ? useGameStore.getState().units.find(u => u.id === moved.id) : undefined;
     const fromCol = prevStoreUnit?.col ?? moved?.col ?? 0;
     const fromRow = prevStoreUnit?.row ?? moved?.row ?? 0;
+
+    // The player's own armour and aircraft announce themselves. This runs
+    // before the store refresh on purpose: `fromCol`/`fromRow` are still the
+    // tile the unit left, which is what decides whether an aircraft was
+    // launching from a base.
+    this.playMovementCue(moved, fromCol, fromRow);
 
     this.actions.updateUnits(this.gameEngine.getAllUnits());
     this.actions.updateVisibility();
@@ -435,6 +473,65 @@ export class EngineEventRouter {
       // Glide any AI unit the human can currently see (human units are handled by MoveAnimator).
       this.glideVisibleAIMove(moved, fromCol, fromRow);
     }
+  }
+
+  /**
+   * The movement cues: a tank's tracks, an aircraft rolling off a runway.
+   *
+   * The player's own units only. The AI drives tanks and flies sorties all
+   * turn long, and its bookkeeping is not sound design — the same rule
+   * `unitDisbanded` follows. Both cues are rate-limited to once per unit per
+   * turn by {@link playOncePerTurn}.
+   */
+  private playMovementCue(unit: Unit | null, fromCol: number, fromRow: number): void {
+    if (!unit || unit.isDefeated) return;
+    if (unit.civilizationId !== HUMAN_PLAYER_ID) return;
+
+    if (unit.type === UNIT_TYPES.TANK) {
+      this.playOncePerTurn('tankMove', unit.id);
+      return;
+    }
+
+    // An aircraft only "launches" when it leaves a base it was sitting on. A
+    // takeoff cue on each of a fighter's ten sortie tiles would be absurd.
+    if (UNIT_PROPERTIES[unit.type]?.type !== 'air') return;
+    if (!this.isAirBaseTile(unit, fromCol, fromRow)) return;
+    this.playOncePerTurn('airUnitLaunch', unit.id);
+  }
+
+  /**
+   * Whether a tile can base one of `unit`'s aircraft: one of its own cities,
+   * or one of its own carriers.
+   *
+   * A carrier is checked even though the hull cannot stow an aircraft yet
+   * (`canLoadFerry` only lifts a Nuclear warhead onto a Submarine) — the
+   * carrier is the other half of Civ1's basing rule, and a jet that starts a
+   * turn on a carrier tile should take off from it the moment that lands.
+   */
+  private isAirBaseTile(unit: Unit, col: number, row: number): boolean {
+    const city = this.gameEngine.getCityAt?.(col, row);
+    if (city && city.civilizationId === unit.civilizationId) return true;
+    return (this.gameEngine.units ?? []).some((other) => (
+      !other.isDefeated
+      && other.civilizationId === unit.civilizationId
+      && other.type === UNIT_TYPES.CARRIER
+      && other.col === col
+      && other.row === row
+    ));
+  }
+
+  /**
+   * Play `cue` for `unitId` at most once per game turn.
+   *
+   * Movement arrives as one event per tile crossed, so without this a
+   * three-tile tank drive would play its rumble three times over itself.
+   */
+  private playOncePerTurn(cue: SfxCue, unitId: string): void {
+    const turn = useGameStore.getState().gameState.currentTurn;
+    const key = `${cue}:${unitId}`;
+    if (this.lastMovementCueTurn.get(key) === turn) return;
+    this.lastMovementCueTurn.set(key, turn);
+    playSfx(cue);
   }
 
   /**
@@ -660,7 +757,16 @@ export class EngineEventRouter {
     // off-screen must not fill a quiet turn with noise, and an AI-vs-AI
     // spectator run would otherwise play every round of every war.
     if (humanInvolved) {
-      playSfx(defenderDestroyed || attackerDestroyed ? 'unitDefeated' : 'unitStrike');
+      const destroyed = defenderDestroyed || attackerDestroyed;
+      // A submarine's round is a torpedo, not a generic blow: the cue stands
+      // in for `unitStrike` when one of the hulls is firing. The weapon sound
+      // plays whether or not the round was decisive — a torpedo that misses
+      // still launched — and a round that sank something gets the death cue
+      // layered over the hit.
+      const isTorpedo = attacker?.type === UNIT_TYPES.SUBMARINE;
+      if (isTorpedo) playSfx('torpedoAttack');
+      if (destroyed) playSfx('unitDefeated');
+      else if (!isTorpedo) playSfx('unitStrike');
     }
     if (!this.isAIVsAI && humanInvolved && (defenderDestroyed || attackerDestroyed)) {
       const fightCity = defender ? this.gameEngine.getCityAt(defender.col, defender.row) : undefined;
@@ -748,6 +854,34 @@ export class EngineEventRouter {
   }
 
   /**
+   * Secondary splash victims of an open-ground stack hit. The engine already
+   * applied the damage and emits UNIT_DEFEATED/UNIT_REMOVED for kills, so this
+   * only syncs the store and toasts fights the human is part of — no modal,
+   * no camera move, no extra sound (the blow cue already played).
+   */
+  private onSplash(eventData: Record<string, unknown>) {
+    this.actions.updateUnits(this.gameEngine.getAllUnits());
+    this.actions.updateVisibility();
+    const attacker = eventData?.attacker as Unit | undefined;
+    const defender = eventData?.defender as Unit | undefined;
+    const splashed = (eventData?.splashed as Array<{ unitId: string; damage: number; destroyed: boolean }>) ?? [];
+    if (splashed.length === 0) return;
+    const byId = new Map((this.gameEngine.units ?? []).map((u) => [u.id, u]));
+    const humanInvolved = attacker?.civilizationId === HUMAN_PLAYER_ID
+      || defender?.civilizationId === HUMAN_PLAYER_ID
+      || splashed.some((s) => byId.get(s.unitId)?.civilizationId === HUMAN_PLAYER_ID);
+    if (!humanInvolved) return;
+    const perVictim = splashed[0]?.damage ?? 0;
+    const killed = splashed.filter((s) => s.destroyed).length;
+    const killedSuffix = killed > 0 ? ` (${killed} destroyed)` : '';
+    notify(
+      'info',
+      `💥 Splash damage: ${splashed.length} stacked unit(s) take ${perVictim} each${killedSuffix}`,
+      humanOrFirst(attacker?.civilizationId, defender?.civilizationId),
+    );
+  }
+
+  /**
    * A unit crossed a rank threshold (Rookie → Trained → Seasoned →
    * Battle-Hardened). Syncs the store, toasts the promotion for the human
    * player's perspective and — for the player's own units — plays a short
@@ -767,8 +901,6 @@ export class EngineEventRouter {
       `★ ${unitName} promoted to ${rankName}!`,
       humanOrFirst(unit.civilizationId),
     );
-
-    if (unit.civilizationId === HUMAN_PLAYER_ID) playSfx('unitPromoted');
 
     // The flourish is a player-facing reward — only the human's own units get
     // one, so AI-vs-AI promotions never light up the whole map.
@@ -832,6 +964,13 @@ export class EngineEventRouter {
    * telling them what was hit. Deliberately does NOT move the camera — an AI
    * strike during its own turn must not yank the player off wherever they are
    * looking.
+   *
+   * The flash and the shake are gated exactly like the sound: only when the
+   * player is the one who fired, or when the blast landed close enough to home
+   * to be their problem. An AI-vs-AI detonation on the far side of the world is
+   * news for the log, not a light show for the spectator, and a screen that
+   * strobes every time somebody else presses the button teaches the player to
+   * ignore it.
    */
   private onNuclearStrike(eventData: Record<string, unknown>) {
     this.actions.updateUnits(this.gameEngine.getAllUnits());
@@ -846,26 +985,15 @@ export class EngineEventRouter {
     const killed = (eventData?.destroyedUnitIds as string[] | undefined)?.length ?? 0;
     const razed = (eventData?.razedCityIds as string[] | undefined)?.length ?? 0;
 
-    // The blast is only heard when it belongs to the player: one they set off,
-    // or one that lands next to their empire. An AI-vs-AI detonation is
-    // somebody else's news, exactly like their combat.
-    const humanIsStriker = fromCivId === HUMAN_PLAYER_ID;
-    const humanIsTarget = this.gameEngine.cities.some(
-      (c) => c.civilizationId === HUMAN_PLAYER_ID
-        && this.gameEngine.squareGrid
-          .squareDistance(c.col, c.row, col, row) <= NUCLEAR_BLAST_RADIUS + 2,
-    );
-    if (humanIsStriker || humanIsTarget) {
+    if (this.isNuclearStrikeNearHome(fromCivId, col, row)) {
       playSfx('nuclearStrike');
-      // Trigger nuclear flash and screen shake visual effects
-      this.actions.triggerVisualEffect?.({
-        type: 'nuclear_flash',
-        duration: 300,
-      });
-      this.actions.triggerVisualEffect?.({
-        type: 'screen_shake',
-        duration: 1000,
-        intensity: 15,
+      this.actions.addVisualEffect({
+        id: `nuclear-${fromCivId}-${col},${row}-${Date.now()}`,
+        kind: 'nuclear-flash',
+        col,
+        row,
+        duration: NUCLEAR_FLASH_MS,
+        shake: NUCLEAR_SHAKE_PX,
       });
     }
 
@@ -874,6 +1002,82 @@ export class EngineEventRouter {
       `☢ Nuclear strike on ${col},${row}${fromCiv ? ` by ${fromCiv.name}` : ''} — `
         + `${killed} unit(s) destroyed${razed > 0 ? `, ${razed} city razed` : ''}`,
     );
+  }
+
+  /**
+   * Whether a detonation is close enough to the human player's world to be
+   * worth the full light-and-sound treatment.
+   *
+   * Two cases, mirroring each other: the player fired it themselves (a nuke
+   * you launched is always your business), or the blast landed near their own
+   * cities (a wall of fire on your border is also your business). Anything
+   * else — the standard case in an AI-vs-AI run, where nobody is the player —
+   * stays a line in the log, so the screen never strobes for a war between two
+   * civilizations the human cannot act on.
+   */
+  private isNuclearStrikeNearHome(fromCivId: number, col: number, row: number): boolean {
+    if (!Number.isFinite(col) || !Number.isFinite(row)) return false;
+    if (fromCivId === HUMAN_PLAYER_ID) return true;
+
+    const grid = this.gameEngine.squareGrid;
+    // A generous margin past the blast itself: the flash is a whole-screen
+    // effect, so "near" here means close enough to have seen the mushroom
+    // cloud, not close enough to have been hit by it.
+    const nearRadius = NUCLEAR_BLAST_RADIUS_HOME;
+    for (const city of this.gameEngine.cities) {
+      if (city.civilizationId !== HUMAN_PLAYER_ID) continue;
+      const d = grid?.chebyshevDistance(city.col, city.row, col, row) ?? Infinity;
+      if (d <= nearRadius) return true;
+    }
+    return false;
+  }
+
+  /**
+   * A nuclear power plant went up.
+   *
+   * The engine has emitted `NUCLEAR_MELTDOWN` since the plants gained a
+   * meltdown chance, and nothing listened: the player's own city could
+   * detonate, poison every tile around it, and produce no toast, no sound and
+   * no flash. The tiles do turn black with "P" labels, but that is a tile
+   * indicator, not news — and it looks exactly like ordinary industrial
+   * pollution. So this is where the meltdown becomes an event: a line naming
+   * the city, and — because it is a nuclear explosion, and it is the player's
+   * own — the same flash and rumble a warhead gets.
+   */
+  private onNuclearMeltdown(eventData: Record<string, unknown>) {
+    this.actions.updateCities(this.gameEngine.getAllCities());
+    this.actions.updateMap?.(this.gameEngine.map);
+
+    const cityName = (eventData?.cityName as string) ?? 'Unknown';
+    const col = eventData?.col as number;
+    const row = eventData?.row as number;
+    const civId = eventData?.civilizationId as number;
+    const radius = Number(eventData?.radius ?? 3);
+
+    // Only the human's own reactor melting down is their business — an AI's
+    // power station blowing up is a line in the chronicle at most.
+    if (civId === HUMAN_PLAYER_ID) {
+      playSfx('nuclearStrike');
+      this.actions.addVisualEffect({
+        id: `meltdown-${cityName}-${Date.now()}`,
+        kind: 'nuclear-flash',
+        col,
+        row,
+        // A meltdown is a smaller, quicker fire than a warhead: half the
+        // flash and half the shake, so the two are not mistaken for each other.
+        duration: Math.round(NUCLEAR_FLASH_MS * 0.6),
+        shake: Math.max(1, Math.round(NUCLEAR_SHAKE_PX * 0.5)),
+      });
+      notify(
+        'error',
+        t('event.nuclearMeltdown', { city: cityName, radius }) as string,
+      );
+    } else if (this.isNuclearStrikeNearHome(civId, col, row)) {
+      notify(
+        'warning',
+        t('event.nuclearMeltdownAi', { city: cityName }) as string,
+      );
+    }
   }
 
   private onTradeRouteEstablished(eventData: Record<string, unknown>) {
@@ -890,7 +1094,6 @@ export class EngineEventRouter {
     const gold = Number(eventData?.gold ?? 0);
     const science = Number(eventData?.science ?? 0);
     notify('success', `Trade route: ${home.name} → ${dest.name} (+${gold} gold, +${science} science)`, humanOrFirst(caravan?.civilizationId, dest.civilizationId));
-    if (caravan?.civilizationId === HUMAN_PLAYER_ID || dest.civilizationId === HUMAN_PLAYER_ID) playSfx('tradeRouteEstablished');
 
     // Only surface the payout modal for the human player.
     const civ = caravan ? this.gameEngine?.civilizations?.[caravan.civilizationId] : undefined;
@@ -927,12 +1130,17 @@ export class EngineEventRouter {
       // Human-facing toast only (AI-only city fights are filtered by civId).
       const attackerName = attacker?.name || attacker?.type || 'An enemy';
       const involvedCiv = humanOrFirst(attacker?.civilizationId, city.civilizationId);
-      if (city?.civilizationId === HUMAN_PLAYER_ID || attacker?.civilizationId === HUMAN_PLAYER_ID) playSfx('cityAttacked');
       if (defenderDamage > 0) {
         notify('warning', `${attackerName} defeated a defender in ${city.name}`, involvedCiv);
       } else if (attackerDamage > 0) {
         notify('info', `${city.name} repelled ${attackerName}`, involvedCiv);
       }
+      // The assault itself, for a fight the player is part of — as the
+      // attacking general or as the city's owner. A rival-vs-rival siege stays
+      // silent, for the same reason an off-screen AI battle does.
+      const humanAssault = attacker?.civilizationId === HUMAN_PLAYER_ID
+        || city.civilizationId === HUMAN_PLAYER_ID;
+      if (humanAssault) playSfx('cityAttacked');
       const animation = {
         id,
         attackerId: attacker?.id ?? '',
@@ -973,13 +1181,10 @@ export class EngineEventRouter {
     }
   }
 
-  private onUnitCreated(eventData: Record<string, unknown>, purchased = false) {
+  private onUnitCreated(eventData: Record<string, unknown>) {
     this.actions.updateUnits(this.gameEngine.getAllUnits());
     this.actions.updateVisibility();
     const unit = eventData.unit as Unit | undefined;
-    if (unit?.civilizationId === HUMAN_PLAYER_ID) {
-      playSfx(purchased ? 'unitPurchased' : 'unitProduced');
-    }
     if (eventData && unit) {
       // Don't auto-open the unit panel for AI-produced units in AI-vs-AI mode.
       if (!this.isAIVsAI) {
@@ -1009,7 +1214,6 @@ export class EngineEventRouter {
     // Don't auto-open the city panel in AI-vs-AI mode (nobody is managing it).
     if (!this.isAIVsAI && city.civilizationId === 0) this.actions.selectCity(city.id);
     notify('info', `${city.name} founded!`, city.civilizationId);
-    if (city.civilizationId === HUMAN_PLAYER_ID) playSfx('cityFounded');
 
     // A city the HUMAN founds gets the "founded" notice — unless it grew out
     // of a village, which already has its own encounter dialog.
@@ -1052,13 +1256,14 @@ export class EngineEventRouter {
     // plays the same event, and a victory jingle over your own fall would be
     // the wrong news twice over.
     if (eventType === 'CITY_CAPTURED' && byCivId === HUMAN_PLAYER_ID) {
-      playSfx('cityCaptured');
-    }
-    if (eventType === 'CITY_DESTROYED' && (byCivId === HUMAN_PLAYER_ID || fromCivId === HUMAN_PLAYER_ID)) {
-      playSfx('cityDestroyed');
-    }
-    if (eventType === 'CITY_JOINED' && (byCivId === HUMAN_PLAYER_ID || fromCivId === HUMAN_PLAYER_ID)) {
-      playSfx('cityJoined');
+      // Two entry marches. Which one is the game's own clock talking: the
+      // classical fanfare carries most of history and the modern one takes
+      // over once the world has caught up with the century the player is in.
+      playSfx(
+        (this.gameEngine.currentYear ?? 0) >= MODERN_ERA_YEAR
+          ? 'cityCapturedModern'
+          : 'cityCapturedClassic',
+      );
     }
 
     this.actions.queueCityEvent({
@@ -1087,7 +1292,6 @@ export class EngineEventRouter {
     const civB = eventData?.civB as number | undefined;
     if (civA === undefined || civB === undefined) return;
     if (civA !== HUMAN_PLAYER_ID && civB !== HUMAN_PLAYER_ID) return;
-    playSfx('embassyEstablished');
     const dm = this.gameEngine?.diplomacyManager;
     if (!dm?.getEmbassyCivs) return;
     this.actions.setEmbassyCivIds(dm.getEmbassyCivs(HUMAN_PLAYER_ID));
@@ -1165,7 +1369,6 @@ export class EngineEventRouter {
       ? this.gameEngine?.civilizations?.[attackerCivId]?.name
       : undefined;
 
-    if (civId === HUMAN_PLAYER_ID || attackerCivId === HUMAN_PLAYER_ID) playSfx('civilizationEliminated');
     if (civId === HUMAN_PLAYER_ID) {
       notify('error', `${civName} is no more — your last city has fallen, and your scattered units are destroyed with it.`, HUMAN_PLAYER_ID);
       return;
@@ -1201,6 +1404,22 @@ export class EngineEventRouter {
   }
 
   /**
+   * A building finished — or was bought — in one of the civilisations' cities.
+   *
+   * Almost every completion is silent here: auto-production already reacts to
+   * this event and the city panel is the player's own feedback. The barracks
+   * is the one with a recording, so it is the one that speaks, and only when
+   * the city is the player's own.
+   */
+  private onBuildingCompleted(eventData: Record<string, unknown>): void {
+    if (String(eventData?.buildingType ?? '') !== BUILDING_TYPES.BARRACKS) return;
+    const cityId = String(eventData?.cityId ?? '');
+    const city = this.gameEngine?.getAllCities?.().find((c) => c.id === cityId);
+    if (city?.civilizationId !== HUMAN_PLAYER_ID) return;
+    playSfx('barracksBuilt');
+  }
+
+  /**
    * The engine refused to auto-end the turn because a (manually managed) city
    * has nothing in production but could still build something. Point the player
    * at it: warn, select + focus the city, and open its details screen the first
@@ -1225,7 +1444,6 @@ export class EngineEventRouter {
     const civ = this.gameEngine.civilizations?.[civId];
     if (!wonder || !Number.isFinite(civId)) return;
 
-    if (civ?.isHuman) playSfx('wonderCompleted');
     this.actions.queueWonderDialog?.({
       kind: 'completed',
       wonderId,
@@ -1251,7 +1469,6 @@ export class EngineEventRouter {
     const civ = this.gameEngine.civilizations?.[civId];
     if (!civ?.isHuman) return;
     if (this.isAIVsAI) return;
-    playSfx('wonderProductionConflict');
 
     const wonderId = String(eventData?.wonderId ?? '');
     const wonder = getWonder(wonderId);
@@ -1304,7 +1521,7 @@ export class EngineEventRouter {
     if (this.isAIVsAI) return;
     const city = eventData?.city as City | undefined;
     if (!city) return;
-    if (city.civilizationId === HUMAN_PLAYER_ID) playSfx('cityStarved');
+
     this.actions.showCityStarved({
       cityId: city.id,
       cityName: city.name,
@@ -1320,7 +1537,6 @@ export class EngineEventRouter {
     // city.disorder reflects the NEW state (true = entering disorder,
     // false = disorder ended).  The event fires on transitions only.
     const enteringDisorder = city.disorder === true;
-    if (city.civilizationId === HUMAN_PLAYER_ID && enteringDisorder) playSfx('cityDisorder');
 
     this.actions.showCityDisorder({
       cityId: city.id,
@@ -1359,7 +1575,6 @@ export class EngineEventRouter {
       ? `${city.name}: Fisher Boat unloaded ${stored} food (storage full, +2 next round)`
       : `${city.name}: Fisher Boat unloaded ${food} food`;
     notify('success', message, city.civilizationId);
-    if (city.civilizationId === HUMAN_PLAYER_ID) playSfx('fishDelivered');
   }
 
   private onImprovementBuilt(eventData: Record<string, unknown>) {
@@ -1368,8 +1583,6 @@ export class EngineEventRouter {
       this.actions.updateUnits(this.gameEngine.getAllUnits());
       this.actions.updateMap(this.gameEngine.map);
       this.actions.updateVisibility();
-      const unit = eventData?.unit as Unit | undefined;
-      if (unit?.civilizationId === HUMAN_PLAYER_ID) playSfx('improvementBuilt');
       if (eventData && eventData.improvementType) {
         notify('success', `${eventData.improvementType} built`, (eventData?.unit as Unit | undefined)?.civilizationId);
       } else {
@@ -1382,7 +1595,6 @@ export class EngineEventRouter {
 
   private onAutoEndTurn(eventData: Record<string, unknown>) {
     debugLog('[EngineEventRouter] AUTO_END_TURN for civ', eventData?.civilizationId);
-    if (eventData?.civilizationId === HUMAN_PLAYER_ID) playSfx('autoEndTurn');
     // Pure UI updates only - no game logic. The selection is NOT cleared here:
     // `nextTurn` preserves a hand-made unit selection across the turn boundary.
     this.actions.nextTurn();
@@ -1399,7 +1611,6 @@ export class EngineEventRouter {
     const tech = eventData?.tech as Technology | undefined;
     this.actions.updateCivilizations([...(this.gameEngine.civilizations || [])]);
     if (civilizationId !== HUMAN_PLAYER_ID || !tech?.name) return;
-    playSfx('researchAutoSelected');
     notify('info', `No research selected — now researching ${tech.name}.`);
   }
 
@@ -1495,9 +1706,8 @@ export class EngineEventRouter {
     // across the turn boundary (the auto turn manager must not deselect it).
     this.keepHumanUnitSelection();
     
-    const civId = eventData?.civilizationId as number | undefined;
-    if (civId === HUMAN_PLAYER_ID) playSfx('turnEnd');
     // Flash the top bar when the human player's turn ends (auto and manual)
+    const civId = eventData?.civilizationId as number | undefined;
     if (civId != null) {
       const civ = this.gameEngine.civilizations?.[civId];
       if (civ?.isHuman) {
@@ -1572,7 +1782,6 @@ export class EngineEventRouter {
     // structure as well is what actually stops it.
     if (this.isAIVsAI) return;
     if (civilizationId !== HUMAN_PLAYER_ID) return;
-    playSfx('techResearched');
     this.actions.notifyTechResearched({ ...tech } as Technology);
 
     // Auto-advance along the player's selected research path.
@@ -1603,9 +1812,8 @@ export class EngineEventRouter {
   }
 
   private onUnitSkipped(eventData: Record<string, unknown>) {
-    const unit = eventData?.unit as { id?: string; type?: string; civilizationId?: number } | undefined;
+    const unit = eventData?.unit as { id?: string; type?: string } | undefined;
     debugLog('[EngineEventRouter] UNIT_SKIPPED:', unit?.id, unit?.type);
-    if (unit?.civilizationId === HUMAN_PLAYER_ID) playSfx('unitSkipped');
     // Unit was skipped - update unit state in UI
     if (this.actions?.updateUnits) {
       this.actions.updateUnits(this.gameEngine.getAllUnits());
@@ -1762,7 +1970,6 @@ export class EngineEventRouter {
     const msg = `${aggressor?.name ?? 'Unknown'} declared war on ${target?.name ?? 'Unknown'}!`;
     debugLog('[EngineEventRouter] WAR_DECLARED:', msg);
     notify('warning', msg, humanOrFirst(aggressor?.id, target?.id));
-    if (aggressor?.id === HUMAN_PLAYER_ID || target?.id === HUMAN_PLAYER_ID) playSfx('warDeclared');
     this.syncState();
   }
 
@@ -1773,7 +1980,6 @@ export class EngineEventRouter {
     const msg = `Peace between ${civA?.name ?? 'Unknown'} and ${civB?.name ?? 'Unknown'}!`;
     debugLog('[EngineEventRouter] PEACE_MADE:', msg);
     notify('success', msg, humanOrFirst(civA?.id, civB?.id));
-    if (civA?.id === HUMAN_PLAYER_ID || civB?.id === HUMAN_PLAYER_ID) playSfx('peaceMade');
     this.syncState();
   }
 
@@ -1789,10 +1995,6 @@ export class EngineEventRouter {
         ? humanOrFirst(fromId, toId)
         : undefined;
     notify('info', eventData.message as string, routeId);
-    const humanInvolved =
-      routeId === HUMAN_PLAYER_ID ||
-      (typeof eventData?.fromCivId !== 'number' && typeof eventData?.toCivId !== 'number');
-    if (humanInvolved) playSfx('diplomacyEvent');
     // First contact and similar events change what the diplomacy screen may
     // show (the met-civ list is read live from the engine), so refresh.
     this.syncState();
@@ -1805,7 +2007,6 @@ export class EngineEventRouter {
     const msg = `💔 Alliance broken: ${civA?.name ?? 'Unknown'} declared war on ${civB?.name ?? 'Unknown'}!`;
     debugLog('[EngineEventRouter] ALLIANCE_BROKEN:', msg);
     notify('warning', msg, humanOrFirst(civA?.id, civB?.id));
-    if (civA?.id === HUMAN_PLAYER_ID || civB?.id === HUMAN_PLAYER_ID) playSfx('allianceBroken');
     this.syncState();
   }
 
@@ -1816,7 +2017,6 @@ export class EngineEventRouter {
     const msg = `🏳️ Ceasefire agreed: ${civA?.name ?? 'Unknown'} and ${civB?.name ?? 'Unknown'}`;
     debugLog('[EngineEventRouter] CEASEFIRE_SIGNED:', msg);
     notify('success', msg, humanOrFirst(civA?.id, civB?.id));
-    if (civA?.id === HUMAN_PLAYER_ID || civB?.id === HUMAN_PLAYER_ID) playSfx('ceasefireSigned');
     this.syncState();
   }
 
@@ -1827,7 +2027,6 @@ export class EngineEventRouter {
     const msg = `🤝 Alliance formed: ${civA?.name ?? 'Unknown'} and ${civB?.name ?? 'Unknown'}`;
     debugLog('[EngineEventRouter] ALLIANCE_FORMED:', msg);
     notify('success', msg, humanOrFirst(civA?.id, civB?.id));
-    if (civA?.id === HUMAN_PLAYER_ID || civB?.id === HUMAN_PLAYER_ID) playSfx('allianceFormed');
     this.syncState();
   }
 
@@ -1844,7 +2043,24 @@ export class EngineEventRouter {
     const msg = `🎭 ${briber?.name ?? 'Unknown'} bribed a unit from ${owner?.name ?? 'Unknown'}${cost ? ` (${cost} gold)` : ''}`;
     debugLog('[EngineEventRouter] UNIT_BRIBED:', msg);
     notify('warning', msg, humanOrFirst(briber?.id, owner?.id));
-    if (briber?.id === HUMAN_PLAYER_ID || owner?.id === HUMAN_PLAYER_ID) playSfx('unitBribed');
+    this.syncState();
+  }
+
+  /**
+   * A bribe attempt was caught red-handed: the commander kept the gold and
+   * reported the offer. No unit changed hands, so the failure would otherwise
+   * be invisible — the player is told who tried, what it cost, and that the
+   * insult is on the ledger.
+   */
+  private onBribeReported(eventData: Record<string, unknown>) {
+    const civs = this.gameEngine.civilizations || [];
+    const briber = civs.find((c: Civilization) => c.id === (eventData?.diplomatCivId as number));
+    const owner = civs.find((c: Civilization) => c.id === (eventData?.originalCivId as number));
+    const cost = eventData?.cost as number | undefined;
+    const unitType = (eventData?.unitType as string | undefined) ?? 'unit';
+    const msg = `🎭 ${briber?.name ?? 'Unknown'} tried to bribe your ${unitType} — its commander took ${cost ?? 0} gold and reported the offer`;
+    debugLog('[EngineEventRouter] BRIBE_REPORTED:', msg);
+    notify('warning', msg, humanOrFirst(briber?.id, owner?.id));
     this.syncState();
   }
 
@@ -1869,6 +2085,7 @@ export class EngineEventRouter {
       goldAmount: eventData.goldAmount as number,
       techOffered: typeof eventData.techOffered === 'string' ? eventData.techOffered : undefined,
       techRequested: typeof eventData.techRequested === 'string' ? eventData.techRequested : undefined,
+      embargoTargetId: typeof eventData.embargoTargetId === 'number' ? eventData.embargoTargetId : undefined,
       message: eventData.message as string,
     });
     this.syncState();

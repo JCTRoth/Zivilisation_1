@@ -32,8 +32,7 @@ export interface NuclearTargetScore {
 
 /** Value weights: cities outrank stacks, capitals outrank cities. */
 export const NUCLEAR_CITY_VALUE = 10;
-export const NUCLEAR_STACK_VALUE = 6;
-export const NUCLEAR_CAPITAL_BONUS = 25;
+const NUCLEAR_STACK_VALUE = 6;
 
 /**
  * Rank one aim point. SDI-covered targets score hopeless: the missile dies in

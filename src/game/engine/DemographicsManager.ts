@@ -5,6 +5,7 @@
  * read the returned data and render it — zero game-logic in the component.
  */
 import { BUILDING_TYPES } from '../../data/BuildingConstants';
+import { cityBuildingEffects } from './BuildingEffects';
 import type { Civilization, City } from '../../../types/game';
 
 export const numberValue = (v: unknown): number =>
@@ -78,15 +79,18 @@ const pollution = (civId: number, cities: City[]): number =>
       return sum + Math.floor((p * p) / 100);
     }, 0);
 
-/** Disease — base 10% per city, reduced by Aqueducts/Granaries, increased by pollution. */
+/**
+ * Disease — base 10% per city, reduced by the city's declared `health`
+ * points (each point is worth 2.5%: Aqueduct 2 → −5%, Granary 1 → −2.5%,
+ * Hospital 2 → −5%), increased by industrial pollution.
+ */
 const disease = (civId: number, cities: City[]): number => {
   const cc = cities.filter(c => c.civilizationId === civId);
   if (cc.length === 0) return 0;
   let total = 0;
   for (const c of cc) {
     let d = 10;
-    if (hasBuilding(c, BUILDING_TYPES.AQUEDUCT)) d -= 5;
-    if (hasBuilding(c, BUILDING_TYPES.GRANARY)) d -= 3;
+    d -= cityBuildingEffects(c).health * 2.5;
     const p = numberValue(c.yields?.production ?? c.production);
     d += Math.floor((p * p) / 1000);
     total += Math.max(0, d);
@@ -94,35 +98,41 @@ const disease = (civId: number, cities: City[]): number => {
   return Math.round(total / cc.length);
 };
 
-/** Life Expectancy — base 40 years, boosted by Aqueducts, Granaries, Hospitals. */
+/**
+ * Life Expectancy — base 40 years, raised by the same declared `health`
+ * points (2.5 years each), capped at 80.
+ */
 const lifeExpectancy = (civId: number, cities: City[]): number => {
   const cc = cities.filter(c => c.civilizationId === civId);
   if (cc.length === 0) return 40;
   let total = 0;
   for (const c of cc) {
-    let le = 40;
-    if (hasBuilding(c, BUILDING_TYPES.AQUEDUCT)) le += 3;
-    if (hasBuilding(c, BUILDING_TYPES.GRANARY)) le += 1;
-    if (hasBuilding(c, BUILDING_TYPES.HOSPITAL)) le += 5;
+    const le = 40 + cityBuildingEffects(c).health * 2.5;
     total += Math.max(30, Math.min(80, le));
   }
   return Math.round(total / cc.length);
 };
 
-/** Family Size — baseline 3.0, boosted by Granaries and food surplus. */
+/** Family Size — baseline 3.0, boosted by `growthBonus` buildings and food surplus. */
 const familySize = (civId: number, cities: City[]): number => {
   const cc = cities.filter(c => c.civilizationId === civId);
   if (cc.length === 0) return 3.0;
   let total = 0;
   for (const c of cc) {
     let f = 3.0;
-    if (hasBuilding(c, BUILDING_TYPES.GRANARY)) f += 0.2;
+    f += cityBuildingEffects(c).growthBonusFood * 0.2;
     const food = numberValue(c.yields?.food ?? c.food);
     if (food - numberValue(c.population) * 2 > 0) f += 0.1;
     total += f;
   }
   return Math.round((total / cc.length) * 10) / 10;
 };
+
+/** Culture — the declared `culture` points of every building the civ holds. */
+const culture = (civId: number, cities: City[]): number =>
+  cities
+    .filter(c => c.civilizationId === civId)
+    .reduce((sum, c) => sum + cityBuildingEffects(c).culture, 0);
 
 /** Military Service — years of conscription based on government type. */
 const militaryService = (civ: Civilization): number => {
@@ -206,6 +216,7 @@ export const computeDemographics = (
       { label: 'Mfg. Goods', value: mfgGoods(civ.id, cities), unit: 'Mtons', fmt: 'int', metric: 'mfg' },
       { label: 'Land Area', value: landArea(explored), unit: 'sq. miles', fmt: 'int', metric: 'landArea' },
       { label: 'Literacy', value: literacy(civ.id, cities, civ.technologies ?? []), unit: '%', fmt: 'pct', metric: 'literacy' },
+      { label: 'Culture', value: culture(civ.id, cities), unit: '', fmt: 'int', metric: 'culture' },
       { label: 'Disease', value: disease(civ.id, cities), unit: '%', fmt: 'pct', metric: 'disease' },
       { label: 'Pollution', value: pollution(civ.id, cities), unit: 'tons/yr', fmt: 'int', metric: 'pollution' },
       { label: 'Life Expectancy', value: lifeExpectancy(civ.id, cities), unit: 'years', fmt: 'int', metric: 'lifeExpectancy' },

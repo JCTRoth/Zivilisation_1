@@ -186,7 +186,14 @@ export class SettlerGovernor {
     const hasMatureCity = cities.some((c: City) => (c.population ?? 0) >= 6);
     const hasValidSettlementSpot = this.hasValidSettlementSpot(cities);
 
-    if (!hasMatureCity || !hasValidSettlementSpot) {
+    // Forward settling: an empire with exactly one (or zero) cities is locked
+    // out of the mature-city rule until its capital grows to 6, which on a
+    // single food tile can take many turns — long enough to be flanked by a
+    // forward settler from a neighbour. Allow the first satellite even while
+    // the home city is small, so long as there is a workable settlement spot.
+    const earlyEmpire = cities.length <= 1;
+
+    if (!(earlyEmpire && hasValidSettlementSpot) && (!hasMatureCity || !hasValidSettlementSpot)) {
       // Only settlers that are ACTUALLY heading to a site count against the
       // "one at a time" allowance. A settler with no settlement target —
       // blocked by spacing everywhere, reassigned to field works, or stuck —
@@ -228,6 +235,22 @@ export class SettlerGovernor {
     const recommended = Math.max(workBasedRecommendation, expansionNeed);
 
     return Math.max(0, recommended - aliveSettlers);
+  }
+
+  /**
+   * How many settlers the public-works corps is worth, read off REACHABLE
+   * work: a settler can only pave tiles it can walk to, so once the reachable
+   * count collapses toward zero the corps does too. `AutoProduction` adds this
+   * on top of its expansion quota; when the map is fully settled it is 0, and
+   * the civ stops fielding workers that would stand idle (the settler idle-share
+   * metric). A civ with no wired work source falls back to the flat default
+   * the caller passes, so a test harness without `aiManager` is unchanged.
+   */
+  reachableWorksCorps(civId: number, fallback: number): number {
+    if (typeof civId !== 'number') return fallback;
+    const outstanding = this.reachableWorks?.(civId) ?? this.outstandingWorks?.(civId);
+    if (typeof outstanding !== 'number') return fallback;
+    return Math.min(MAX_WORKS_CORPS, Math.ceil(Math.max(0, outstanding) / WORKS_TILES_PER_SETTLER));
   }
 
   private hasValidSettlementSpot(cities: City[]): boolean {

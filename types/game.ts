@@ -285,6 +285,8 @@ export interface AudienceNotice {
   techOffered?: string;
   /** Technology id the AI wants in return (Exchange of Knowledge). */
   techRequested?: string;
+  /** Third-party civ the proposal names (joint war target, embargo enemy). */
+  embargoTargetId?: number;
   /** The leader's spoken line. */
   message: string;
 }
@@ -306,6 +308,8 @@ interface IncomingDiplomacyOffer {
   techOffered?: string;
   /** Technology id the AI wants in return (Exchange of Knowledge). */
   techRequested?: string;
+  /** Third-party civ the proposal names (joint war target, embargo enemy). */
+  embargoTargetId?: number;
   /** Human-readable message describing the offer. */
   message?: string;
 }
@@ -470,10 +474,25 @@ export interface Unit {
     fishingTile: { col: number; row: number };
     stage: 'outbound' | 'fishing' | 'inbound';
   } | null;
+  /**
+   * Trade Ship only: the repeating run between its home harbour and a
+   * destination harbour. The payout is collected every time the ship reaches
+   * one of the two cities, split 80% to the ship's owner / 20% to the
+   * harbour city's owner.
+   */
+  tradeShipRoute?: {
+    homeCityId: string;
+    destCityId: string;
+    stage: 'outbound' | 'inbound';
+  } | null;
   /** Unit sight range for fog of war. */
   sightRange?: number;
   // AI-specific runtime state (set dynamically by AIManager)
   _aiSettlement?: { col: number; row: number; score: number } | null;
+  /** Combat unit id tasked as this settler's bodyguard (land escort pairing). */
+  _aiGuardId?: string | null;
+  /** Settler id this combat unit is bodyguarding — it walks to the settler. */
+  _aiGuardFor?: string | null;
   /** Tile this settler was sent to work on one of its civ's city areas. */
   _aiWorksTarget?: { col: number; row: number } | null;
   _blockedSettlementTargets?: Set<string>;
@@ -738,15 +757,6 @@ export interface MovementReachable {
   tiles: Map<string, number>;
 }
 
-export interface VisualEffect {
-  id: number;
-  type: 'nuclear_flash' | 'screen_shake';
-  startTime: number;
-  duration: number;
-  intensity?: number;
-  data?: Record<string, unknown>;
-}
-
 export interface UIState {
   showMinimap: boolean;
   showUnitPanel: boolean;
@@ -767,8 +777,6 @@ export interface UIState {
    * AI-vs-AI run wants the map to stay visible.
    */
   isGamePaused: boolean;
-  /** Visual effects like screen flash, shake, etc. */
-  visualEffects: VisualEffect[];
 }
 
 export interface Notification {
@@ -886,6 +894,13 @@ export interface GameStoreState {
   promotionEffects: PromotionEffect[];
   /** Active unit-movement glides (position interpolation between tiles). */
   movementAnimations: MovementAnimation[];
+  /**
+   * Active full-screen "world event" effects: the white flash and screen
+   * shake of a nuclear detonation. Keyed by id so overlapping effects layer
+   * instead of replacing one another, and so a component can drop just its
+   * own node when the animation ends.
+   */
+  visualEffects: VisualEffect[];
   /** True while a human-initiated move/attack animation is playing (blocks input & turn end). */
   isUnitAnimating: boolean;
   /** Requested camera pan target; consumed by the camera-pan effect in GameCanvas. */
@@ -942,6 +957,29 @@ export interface MovementAnimation {
   startTime: number;
   /** Glide duration in ms. */
   duration: number;
+}
+
+/**
+ * A full-screen "world event" flourish — currently the nuclear detonation's
+ * white flash, optionally with a screen shake.
+ *
+ * Auto-expiring on purpose: every effect carries its own lifetime, and the
+ * renderer drops it with `setTimeout` rather than tracking it in a rAF loop.
+ * A nuclear strike is the loudest, most attention-grabbing thing that can
+ * happen in a game, so it is the one event allowed to take the whole screen —
+ * and it has to get out of the way by itself, because nobody clicks "dismiss"
+ * on an explosion.
+ */
+interface VisualEffect {
+  id: string;
+  kind: 'nuclear-flash';
+  /** Where the detonation happened (for the log and for a future radial blur). */
+  col: number;
+  row: number;
+  /** Fade-out duration in ms. */
+  duration: number;
+  /** Peak shake amplitude in pixels (0 = flash only, no shake). */
+  shake: number;
 }
 
 /**
@@ -1164,12 +1202,14 @@ export interface GameActions {
   removeCombatAnimation: (id: string) => void;
   addPromotionEffect: (effect: PromotionEffect) => void;
   removePromotionEffect: (id: string) => void;
+  /** Start a full-screen world-event flourish (nuclear flash / screen shake). */
+  addVisualEffect: (effect: VisualEffect) => void;
+  /** Drop a flourish once its animation has run its course. */
+  removeVisualEffect: (id: string) => void;
   addMovementAnimation: (animation: MovementAnimation) => void;
   removeMovementAnimation: (id: string) => void;
   clearMovementAnimations: () => void;
   setUnitAnimating: (isAnimating: boolean) => void;
   focusCameraOnTile: (col: number, row: number, keepZoom?: boolean, force?: boolean) => void;
   clearCameraPanRequest: () => void;
-  /** Trigger a visual effect (flash, shake, etc.) */
-  triggerVisualEffect: (effect: Omit<VisualEffect, 'id' | 'startTime'>) => void;
 }

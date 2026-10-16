@@ -423,6 +423,10 @@ function App() {
       }
       console.log("[App] Processing turn via gameEngine.processTurn()");
       gameEngine.processTurn();
+      // Autosave — separate slot so the manual save is never clobbered mid-game.
+      if (gameEngine && typeof gameEngine.saveGame === 'function') {
+        gameEngine.saveGame('civ1_autosave');
+      }
     },
     [actions, gameEngine],
   );
@@ -1246,6 +1250,7 @@ function App() {
     gameResult,
     gameState.selectedCity,
     gameState.selectedUnit,
+    settings.devMode,
   ]);
 
   if (error) {

@@ -58,6 +58,20 @@ leaving every balance number untouched (gold still averages ~17).
 In the engine that fix is `AIManager.citiesNeedBuildOut` measuring the tiles a
 city WORKS instead of its whole area (a ring half-covered in mines nobody works
 used to count as built out), plus roads-first in `pickWorksTileForCity`.
+
+Rows R24-R28 (added later) answer a second question — the LONG game. At 320
+rounds the live engine still disbanded 48-53 units on seeds 33/51, all from one
+civ, 29 of them in one round, while its tax rate swung 54→80→35→69. That is a
+feedback gap between the builder and the destroyer, not a poverty problem, and
+the rows model it honestly: R24 reproduces the engine's defect (the build queue
+invisible to the army cap), R25-R27 add the standing-army budget — queue
+priced, one-unit-a-round drawdown, debt service netted out. The read: with the
+road programme OFF the budget cannot rescue a civ whose income never scales
+(disbands stay ~33-37, same as R0) — the works fix remains the root cure —
+but it is the mechanism that keeps a FUNCTIONING economy from over-building
+into a 29-unit liquidation. The concept lives in
+`EconomicManager.armyBudgetFor` + `queuedUnitUpkeep` + `retireSurplusUnit`
+and is pinned by `tests/standingArmyBudget.test.ts`.
 """
 
 from __future__ import annotations
@@ -166,6 +180,44 @@ class Params:
     # Army demand: what the civ WANTS, independent of what it can pay.
     defenders_per_city: int = 1
     standing_force: int = 2
+
+    # ── R24+ the standing-army budget ──────────────────────────────────
+    # The engine's measured failure (seed 33, civ2, 53 disbands in four waves,
+    # 29 of them in ONE round at r220) is a feedback gap between the builder
+    # and the destroyer:
+    #
+    #   the builder (`AutoProduction.isUnitCapExhausted`) asks "can I pay ONE
+    #   more unit's upkeep?" — a marginal question — and prices only units
+    #   ALIVE IN THE FIELD. The build queue is invisible: three cities each
+    #   see the same headroom and each queue a rifleman, and when all three
+    #   land the upkeep triples in one round.
+    #
+    #   the destroyer (`EconomicManager.processTurn` when gold < 0) fires a
+    #   CLIFF: `unitsToRemove = totalUpkeep - incomeAfterTax`, looped until it
+    #   fits, which at r220 liquidated 29 units at once — catapults, cannons
+    #   and riflemen that took dozens of turns to build.
+    #
+    #   nothing connects them: there is no state between "solvent, keep
+    #   building" and "bankrupt, liquidate now", so an income wobble (the tax
+    #   rate swung 54→80→35→69 over 240 rounds) crosses the gap in one turn.
+    #
+    # The concept is ONE budget every system shares:
+    #
+    #   armyBudget  = income(policy rates) - buildingUpkeep - cityUpkeep
+    #               - debtService - reserve
+    #   committed   = unitUpkeep(field) + queuedUnitUpkeep(queue)
+    #
+    #   R-A build   queue a maintenance-bearing unit only while
+    #               committed + price <= budget   (a TOTAL check, queue priced)
+    #   R-B drawdown when unitUpkeep(field) > budget, retire ONE unit per round
+    #               (cheapest, never a sole defender / mission unit / caravan
+    #               in transit / ferry with cargo) — a slope, not a cliff
+    #   R-C the disbander is demoted to true emergencies (city captured, war
+    #               losses faster than the drawdown) and fires 1-2 units a game
+    queue_priced: bool = False          # False = the engine's bug: the queue is invisible
+    debt_service_in_budget: bool = False  # the budget subtracts what debt already eats
+    army_budget_drawdown: bool = False   # R-B: retire at most one unit a round
+    drawdown_share: float = 0.60         # the army may hold this share of income
 
 
 # ── Entities ───────────────────────────────────────────────────────────────
@@ -404,6 +456,60 @@ class EconomySim:
             return len(self.civ.units)
         return len(self.civ.units) + int(headroom / max(price, 0.001))
 
+    # ── R24+: the standing-army budget ────────────────────────────────────
+
+    def queued_upkeep(self) -> float:
+        """Upkeep the build queue will commit once its units land.
+
+        The engine's `unitUpkeep` charges only units alive in the field, so
+        three cities each see the same headroom and each queue a rifleman.
+        This is the price of everything currently in a queue (the sim has one
+        in-progress item per city).
+        """
+        return sum(self.p.unit_maintenance.get(c.current_item.split(":", 1)[1], 1.0)
+                   for c in self.civ.cities
+                   if c.current_item and c.current_item.startswith("unit:"))
+
+    def army_budget(self) -> float:
+        """What the standing army may cost per turn. Every system reads this.
+
+        Income at the POLICY rate, minus buildings, minus cities, minus the
+        debt the civ is already servicing, minus a reserve share.
+        """
+        civ, p = self.civ, self.p
+        income = self.gross_income()
+        debt = (p.debt_repay_per_turn * (civ.debt / p.debt_repay_per)
+                if p.debt_service_in_budget else 0.0)
+        return max(0.0, income - self.building_upkeep() - self.city_upkeep()
+                   - debt - income * self.p.ai_reserve_contribution)
+
+    def committed_upkeep(self) -> float:
+        """What the standing army plus its build queue really cost per turn."""
+        civ, p = self.civ, self.p
+        field_cost = self.unit_upkeep()
+        queue_cost = self.queued_upkeep() if p.queue_priced else 0.0
+        return field_cost + queue_cost
+
+    def retire_one_unit(self) -> None:
+        """R-B: the throttle the disbander never had.
+
+        Retire the cheapest maintenance-bearing unit that is not the civ's
+        only defender — the engine's real order (`disbandUnitsToCoverDeficit`
+        prefers non-defenders first, then cheaper), one unit per round instead
+        of 29 at once.
+        """
+        civ, p = self.civ, self.p
+        if len(civ.units) <= p.defenders_per_city:
+            return
+        order = sorted(range(len(civ.units)), key=lambda i: (
+            p.unit_maintenance.get(civ.units[i], 1.0),
+            civ.units[i] != "warrior"))
+        for idx in order:
+            if p.unit_maintenance.get(civ.units[idx], 1.0) > 0:
+                civ.units.pop(idx)
+                civ.disbands += 1
+                return
+
     # ── production choice ─────────────────────────────────────────────────
 
     def choose_item(self, city: City) -> str | None:
@@ -420,7 +526,15 @@ class EconomySim:
             and c.current_item.startswith("unit:"))
         urgent = len(civ.units) < self.desired_army()
         under_cap = army < self.sustainable_units()
-        if (under_cap or (urgent and p.urgent_defender_ignores_cap)):
+        # R-A: the TOTAL check. The marginal one above asks "does the headroom
+        # buy one more of the era unit"; this one asks whether everything the
+        # civ has already committed (field + queue) still fits the budget. A
+        # maintenance-bearing unit needs both; a free unit only needs the count.
+        price = p.unit_maintenance.get(p.era_units[civ.era_index], 1.0)
+        budget_ok = (not p.queue_priced
+                     or price <= 0
+                     or self.committed_upkeep() + price <= self.army_budget())
+        if ((under_cap and budget_ok) or (urgent and p.urgent_defender_ignores_cap)):
             return "unit:" + p.era_units[civ.era_index]
         if "marketplace" not in city.buildings:
             return "marketplace"
@@ -463,6 +577,12 @@ class EconomySim:
             service = p.debt_repay_per_turn * (civ.debt / p.debt_repay_per)
             debt_paid = min(civ.debt, gold_in - upkeep, service)
             civ.debt -= debt_paid
+
+        # R-B: the drawdown runs BEFORE the treasury is empty, on the budget
+        # comparison, not on insolvency — that is what makes it a slope.
+        if p.army_budget_drawdown and self.unit_upkeep() > self.army_budget():
+            self.retire_one_unit()
+            upkeep = self.upkeep()
 
         civ.gold += gold_in - upkeep - debt_paid
         if civ.gold < 0:
@@ -608,6 +728,20 @@ ROWS: List[Params] = [
     row("R22 roads + mult 2.5", road_chance=0.05, trade_gold_multiplier=2.5),
     row("R23 roads + floor 3 + mult 2.5", road_chance=0.05,
         city_center_commerce=3.0, trade_gold_multiplier=2.5),
+
+    # ── R24+: the standing-army budget. The live engine at 320 rounds
+    #    disbanded 48-53 units on seeds 33/51 (0-5 at 150), in four waves with
+    #    29 units in one round, all from the ONE civ whose tax rate swung
+    #    54→80→35→69. The concept: one budget the builder and the destroyer
+    #    share, a queue priced into it, and a one-unit-a-round drawdown.
+    row("R24 engine as-is (queue unpriced)", queue_priced=False),
+    row("R25 queue priced", queue_priced=True),
+    row("R26 queue priced + drawdown", queue_priced=True,
+        army_budget_drawdown=True),
+    row("R27 budget + debt service in it", queue_priced=True,
+        army_budget_drawdown=True, debt_service_in_budget=True),
+    row("R28 the concept, 5 seeds", queue_priced=True,
+        army_budget_drawdown=True, debt_service_in_budget=True),
 ]
 
 

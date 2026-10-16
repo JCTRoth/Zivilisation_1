@@ -144,10 +144,12 @@ describe('tech exchange', () => {
     expect(res.reason).toMatch(/do not have the requested/i);
   });
 
-  it('requires both sides of the exchange to be named', () => {
+  it('requires at least one technology to be named', () => {
+    // Tech-for-money lets one side ask for a tech with nothing offered back —
+    // only a completely empty proposal is refused.
     const res = dm.acceptOffer({ fromCivId: 0, toCivId: 1, action: 'offer_tech_exchange' });
     expect(res.accepted).toBe(false);
-    expect(res.reason).toMatch(/both technologies/i);
+    expect(res.reason).toMatch(/at least one technology/i);
   });
 });
 

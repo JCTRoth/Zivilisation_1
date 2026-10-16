@@ -166,13 +166,16 @@ describe('analyzeCityBuildings — sell candidates', () => {
       .toBeLessThan(0);
   });
 
-  it('sells a building the engine does nothing with at all', () => {
-    // A Factory declares +2 production, which nothing in the engine reads.
+  it('keeps a building the engine actually reads, however deep its upkeep', () => {
+    // A Factory declares +2 production, which BuildingEffects now adds to the
+    // city's yields every turn. Its upkeep still outbids its output (net −1),
+    // but it is no longer "worth exactly nothing", so the sell audit cannot
+    // liquidate an industrial empire on that pretext any more.
     const report = analyze(makeCity('industry', ['factory']));
-    expect(isCandidate(report, 'factory')).toBe(true);
+    expect(isCandidate(report, 'factory')).toBe(false);
     const economics = report.economics.find(e => e.buildingType === 'factory')!;
-    expect(economics.verdict).toBe('inert');
-    expect(economics.incomePerTurn).toBe(0);
+    expect(economics.verdict).toBe('draining');
+    expect(economics.incomePerTurn).toBeGreaterThan(0);
   });
 
   it('caps the recommendations per city', () => {
@@ -218,44 +221,47 @@ describe('analyzeCityBuildings — situation matters', () => {
   });
 
   it('keeps defensive buildings when the city is threatened', () => {
-    const calm = analyze(makeCity('calm', ['barracks', 'barracks']));
-    expect(isCandidate(calm, 'barracks')).toBe(true);
+    // Duplicated walls are redundant AND a 2 gold/turn drain in peacetime —
+    // the shape of building the audit liquidates. An enemy at the gates is
+    // exactly when the second rampart must stay.
+    const calm = analyze(makeCity('calm', ['city_walls', 'city_walls']));
+    expect(isCandidate(calm, 'city_walls')).toBe(true);
 
-    const front = analyze(makeCity('front', ['barracks', 'barracks']), {
+    const front = analyze(makeCity('front', ['city_walls', 'city_walls']), {
       units: [makeUnit({ col: 13, row: 12 })],
     });
-    expect(isCandidate(front, 'barracks')).toBe(false);
+    expect(isCandidate(front, 'city_walls')).toBe(false);
   });
 
   it('treats a nearby enemy city as a threat', () => {
-    const city = makeCity('town', ['barracks', 'barracks']);
+    const city = makeCity('town', ['city_walls', 'city_walls']);
     const calm = analyze(city);
     const besieged = analyze(city, {
       cities: [city, makeCity('enemy-town', [], { civilizationId: 1, col: 15, row: 12 })],
     });
-    expect(isCandidate(calm, 'barracks')).toBe(true);
-    expect(isCandidate(besieged, 'barracks')).toBe(false);
+    expect(isCandidate(calm, 'city_walls')).toBe(true);
+    expect(isCandidate(besieged, 'city_walls')).toBe(false);
   });
 
   it('treats an enemy army group aimed at the city as a threat', () => {
-    const city = makeCity('town', ['barracks', 'barracks']);
+    const city = makeCity('town', ['city_walls', 'city_walls']);
     const group = {
       id: 'g', unitIds: ['a'], targetLocation: { col: 12, row: 12 },
       rallyPoint: { col: 12, row: 12 }, status: 'marching',
       requiredStrength: 5, currentStrength: 5,
     } as unknown as ArmyGroup;
-    expect(isCandidate(analyze(city), 'barracks')).toBe(true);
-    expect(isCandidate(analyze(city, { armyGroups: [group] }), 'barracks')).toBe(false);
+    expect(isCandidate(analyze(city), 'city_walls')).toBe(true);
+    expect(isCandidate(analyze(city, { armyGroups: [group] }), 'city_walls')).toBe(false);
   });
 
-  it('devalues barracks against a gunpowder field', () => {
-    const city = makeCity('town', ['barracks']);
+  it('devalues walls and barracks against a gunpowder field', () => {
+    const city = makeCity('town', ['city_walls', 'city_walls']);
     const modern = analyze(city, {
       units: [makeUnit({ id: 'gun', type: 'artillery', civilizationId: 0, col: 1, row: 1 })],
     });
     const ancient = analyze(city);
     expect(modern.averageScore).toBeLessThan(ancient.averageScore);
-    expect(reasonsFor(modern, 'barracks')).toMatch(/obsolete/);
+    expect(reasonsFor(modern, 'city_walls')).toMatch(/obsolete/);
   });
 });
 

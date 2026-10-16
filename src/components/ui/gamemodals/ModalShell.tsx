@@ -8,7 +8,7 @@ import '../../../styles/gameModalShell.css';
  * card accents and the callouts, so a danger notice *reads* dangerous before
  * the player has parsed a word.
  */
-export type ModalTone = 'info' | 'danger' | 'success' | 'gold' | 'solemn' | 'neutral';
+type ModalTone = 'info' | 'danger' | 'success' | 'gold' | 'solemn' | 'neutral';
 
 interface GameModalProps {
   show: boolean;

@@ -28,6 +28,7 @@ const BASE_IMPACT: Record<ImpactEvent, number> = {
   tribute_extorted: -12,
   tribute_gift: 8,
   unit_bribed: -45,
+  bribe_exposed: -25,
   spy_detected: -20,
   technology_stolen: -25,
   city_sabotaged: -18,
@@ -57,6 +58,7 @@ const IMPACT_TEXT: Record<ImpactEvent, string> = {
   tribute_extorted: 'Paid tribute under duress',
   tribute_gift: 'Received a gift',
   unit_bribed: 'Lost a unit to a bribe',
+  bribe_exposed: 'Caught a bribe attempt red-handed',
   spy_detected: 'Caught spying',
   technology_stolen: 'Stole a technology',
   city_sabotaged: 'Sabotaged a city',
@@ -135,6 +137,10 @@ export function stateMultiplier(
       return 1 + (weights.greed / 10) * 0.5;
     case 'unit_bribed':
       return 1 + (weights.loyalty / 10) * 0.4;
+    case 'bribe_exposed':
+      // A caught bribe attempt is espionage with a price tag: suspicious civs
+      // take it even harder than the failed bribe itself.
+      return 1 + (weights.paranoia / 10) * 1.0;
     case 'spy_detected':
       // Suspicious civs punish espionage brutally — this is the lever that
       // makes "gather intelligence" a real decision instead of a free action.

@@ -4,6 +4,7 @@ import { UNIT_PROPS } from '@/utils/Constants';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { debugLog } from '../../utils/DevLog';
 import { getUnitRank, rankStrengthMultiplier } from './UnitRankSystem';
+import { cityBuildingEffects } from './BuildingEffects';
 
 /**
  * Barbarian AI — "Forge of War" aggressive controller for the phantom
@@ -122,10 +123,13 @@ export class BarbarianManager {
   private estimateCityDefense(city: City): number {
     const engine = this.gameEngine;
     let defense = Math.max(1, city.population ?? 1);
-    const hasWalls =
-      (city.buildings?.includes?.('city_walls') ?? false) ||
-      (city.buildings?.includes?.('walls') ?? false);
-    if (hasWalls) defense *= 3;
+    // The declared `defense` effect is the single wall multiplier (City Walls:
+    // defense 2 → ×1.5), matching the central CombatSystem. It used to be a
+    // separate hardcoded ×3 here, so the barbarians and the player's battles
+    // priced the same rampart differently.
+    const effects = cityBuildingEffects(city);
+    const hasWalls = effects.defenseMultiplier > 1;
+    if (hasWalls) defense *= effects.defenseMultiplier;
     if (engine?.squareGrid?.squareDistance) {
       for (const unit of engine.units ?? []) {
         if (unit.civilizationId !== city.civilizationId || unit.civilizationId === BARBARIAN_CIV_ID) continue;

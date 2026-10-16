@@ -177,7 +177,7 @@ export function navalShipBudget(input: NavalDoctrineInput): number {
  * Split out so the doctrine can ask "the battleship is out of reach, but is a
  * trireme affordable?" instead of answering 0 for the whole fleet.
  */
-export function navalShipBudgetFor(
+function navalShipBudgetFor(
   ship: AvailableShip,
   treasury: number,
   incomePerTurn: number,
@@ -197,7 +197,7 @@ export function navalShipBudgetFor(
 }
 
 /** Cheapest warship budget: what the civ can field even when the best is dear. */
-export function navalCheapBudget(input: NavalDoctrineInput): number {
+function navalCheapBudget(input: NavalDoctrineInput): number {
   const options = (input.warshipOptions ?? []).filter((s) => s.cost > 0);
   if (options.length === 0) return navalShipBudget(input);
   let best = 0;
@@ -469,6 +469,7 @@ export const WARSHIP_TARGET_VALUE: Readonly<Record<NavalTargetClass, number>> = 
   warship: 90,
   coastal_city: 60,
   fisher_boat: 40,
+  trade_ship: 40,
   other_naval: 35,
   scout: 25,
 };
@@ -516,6 +517,7 @@ export type NavalTargetClass =
   | 'warship'
   | 'coastal_city'
   | 'fisher_boat'
+  | 'trade_ship'
   | 'other_naval'
   | 'scout';
 
@@ -607,6 +609,7 @@ export function classifyNavalTarget(opts: {
     return cargoCount > 0 ? 'transport' : 'other_naval';
   }
   if (type === 'fisher_boat') return 'fisher_boat';
+  if (type === 'trade_ship') return 'trade_ship';
   if (type === 'scout') return 'scout';
   if (attack > 0.5) return 'warship';
   return 'other_naval';

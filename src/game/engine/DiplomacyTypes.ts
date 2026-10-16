@@ -60,6 +60,7 @@ export type ImpactEvent =
   | 'tribute_extorted'
   | 'tribute_gift'
   | 'unit_bribed'
+  | 'bribe_exposed'
   | 'spy_detected'
   | 'technology_stolen'
   | 'city_sabotaged'
@@ -167,6 +168,7 @@ export type DiplomatAction =
   | 'propose_ceasefire'
   | 'propose_alliance'
   | 'demand_tribute'
+  | 'offer_gift'
   | 'bribe_unit'
   | 'gather_intelligence'
   | 'offer_open_borders'
@@ -175,10 +177,12 @@ export type DiplomatAction =
   | 'propose_mutual_defense'
   | 'propose_embargo'
   | 'propose_non_aggression'
+  | 'propose_joint_war'
   | 'establish_embassy'
   | 'investigate_city'
   | 'industrial_sabotage'
-  | 'steal_technology';
+  | 'steal_technology'
+  | 'incite_revolt';
 
 /**
  * Covert acts — the ones nobody is asked about, because they are not negotiable.
@@ -193,6 +197,9 @@ export const ESPIONAGE_DIPLOMAT_ACTIONS: ReadonlySet<DiplomatAction> = new Set<D
   'investigate_city',
   'industrial_sabotage',
   'steal_technology',
+  // Inciting a revolt is bought from agents inside a city, not negotiated
+  // with its owner — the victim is never asked, so it belongs here.
+  'incite_revolt',
 ]);
 
 /**
@@ -321,7 +328,10 @@ type EspionageOutcome =
   | 'embassy_refused'
   | 'city_investigated'
   | 'sabotaged'
-  | 'caught_sabotaging';
+  | 'caught_sabotaging'
+  | 'city_revolted'
+  | 'caught_inciting'
+  | 'incite_impossible';
 
 /** What a city's owner is up to, as an infiltrated diplomat reports it. */
 export interface CityIntelligence {
@@ -384,6 +394,7 @@ export interface IntelligenceReport {
 export interface DiplomacyEvent {
   type: 'war_declared' | 'peace_made' | 'ceasefire_signed' | 'alliance_formed'
       | 'alliance_broken' | 'tribute_demanded' | 'tribute_paid' | 'unit_bribed'
+      | 'bribe_reported'
       | 'intelligence_gathered' | 'treaty_rejected'
       | 'open_borders_signed' | 'trade_agreement_signed' | 'mutual_defense_signed'
       | 'non_aggression_signed' | 'embargo_declared' | 'treaty_cancelled'

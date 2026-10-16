@@ -29,7 +29,7 @@
 // happens to be installed as its dependency, which knip rightly flags.
 import { chromium } from '@playwright/test';
 
-const MAP_TYPE = process.argv[2] ?? 'AI_VS_AI_NAVAL_TROPICAL';
+const MAP_TYPE = process.argv[2] ?? 'AEGEAN_CAMPAIGN';
 const RUNS = Number(process.argv[3] ?? 1);
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000/';
 const WINDOW_MS = Number(process.env.WINDOW_MS ?? 8000);

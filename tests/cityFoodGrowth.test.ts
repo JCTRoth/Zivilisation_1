@@ -109,7 +109,9 @@ describe('City food: the free centre + one tile per citizen', () => {
     processGrowth(city, false);
 
     expect(city.population).toBe(2);
-    // 20 stored + 2 surplus = 22 → granary keeps floor(22 / 2) = 11.
-    expect(city.foodStored).toBe(11);
+    // 20 stored + 2 surplus = 22 → the granary's declared `foodStorage: 2`
+    // keeps floor(22 / 2) = 11 (Civ1's half box), and its `growthBonus: 1`
+    // credits one more food toward the next growth.
+    expect(city.foodStored).toBe(12);
   });
 });
