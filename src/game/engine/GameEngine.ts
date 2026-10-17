@@ -2549,6 +2549,31 @@ const occupiedLandmasses = new Set(
   }
 
   /**
+   * How many aircraft this hull can stow at once.
+   *
+   * A carrier's air wing is the other half of its job: a hull that carries
+   * nothing but its own guns is a floating fortress, not a projection of power.
+   */
+  aircraftCapacityOf(carrier: Unit): number {
+    return Math.max(0, UNIT_PROPS[carrier.type]?.aircraftCapacity ?? 0);
+  }
+
+  /**
+   * How many passengers this hull's hold can take at once.
+   *
+   * The HULL defines the hold, not the passenger. A carrier's hold is aircraft
+   * and only aircraft; every other hull's hold is whatever `transportCapacity`
+   * says. Routing by passenger type instead would measure a submarine's hold as
+   * "airframes", which is 0 — and strand every warhead on the dock, because a
+   * Nuclear is `type: 'air'` in the unit table yet travels by submarine.
+   */
+  private holdCapacityFor(hull: Unit): number {
+    return this.aircraftCapacityOf(hull) > 0
+      ? this.aircraftCapacityOf(hull)
+      : this.transportCapacityOf(hull);
+  }
+
+  /**
    * The land units aboard `ferry`, oldest boarding first.
    *
    * Folds in the pre-multi-cargo `cargoUnitId` so a save written when a Ferry
@@ -2575,19 +2600,33 @@ const occupiedLandmasses = new Set(
    * Submarine, and a Submarine boards ONLY a Nuclear warhead (one slot). A
    * sub that could lift an army would break both the invasion economy and
    * the endgame — the bomb travels by stealth, the army by ferry.
+   *
+   * Hold exclusivity, the same rule one level up: a Carrier lifts AIRCRAFT and
+   * nothing else, a Ferry/Transport lifts TROOPS and nothing else. Without the
+   * gate a carrier's hold is measured against troops (so it loads an army) and a
+   * transport's against airframes (so it loads a bomber).
    */
   canLoadFerry(ferryId: string, unitId: string): boolean {
     const ferry = this.units.find((u) => u.id === ferryId);
     const unit = this.units.find((u) => u.id === unitId);
     if (!ferry || !unit || ferry.id === unit.id) return false;
     if (ferry.isDefeated || unit.isDefeated) return false;
-    if (this.getFerryCargo(ferry).length >= this.transportCapacityOf(ferry)) return false;
+    if (this.getFerryCargo(ferry).length >= this.holdCapacityFor(ferry)) return false;
     if (unit.embarkedOn) return false;
     if (UNIT_PROPS[ferry.type]?.naval !== true) return false;
     if (UNIT_PROPS[unit.type]?.naval === true) return false; // ships can't board
     const passengerIsNuke = unit.type === UNIT_TYPES.NUCLEAR;
     const hullIsSub = ferry.type === UNIT_TYPES.SUBMARINE;
+    // Nuke-on-sub is its own pairing and is decided first: a warhead is
+    // `type: 'air'` in the unit table (it flies to its target), but it TRAVELS
+    // by stealth, not by carrier. Routing it through the aircraft gate below
+    // would strand every warhead on the dock.
     if (passengerIsNuke !== hullIsSub) return false;
+    if (!passengerIsNuke) {
+      const passengerIsAir = UNIT_PROPS[unit.type]?.type === 'air';
+      const hullIsCarrier = this.aircraftCapacityOf(ferry) > 0;
+      if (passengerIsAir !== hullIsCarrier) return false;
+    }
     if (this.getTerrainKey(this.getTileAt(ferry.col, ferry.row)) !== 'ocean') return false;
     return this.squareGrid.chebyshevDistance(ferry.col, ferry.row, unit.col, unit.row) <= 1;
   }

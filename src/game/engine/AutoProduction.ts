@@ -635,6 +635,15 @@ export class AutoProduction {
       return invasionFerry;
     }
 
+    // 1d-3. The CARGO for the sealift already afloat: troops to fill a
+    //        transport, aircraft to fill a carrier. Without this the ferries
+    //        sailed half-empty and a carrier went to war with empty decks.
+    const cargo = this.buildSealiftCargoProduction(city);
+    if (cargo) {
+      debugLog(`[AutoProduction] Sealift cargo — building ${cargo.itemType}`);
+      return cargo;
+    }
+
     // 1e. Fisher Boat: a harbor city that is short on food sends a boat to the
     //     ground the FisherEconomics equation approves (replaces the old harbor
     //     ocean-food bonus).
@@ -2272,6 +2281,139 @@ export class AutoProduction {
     return this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civId && u.type === 'ferry' && !u.isDefeated && !claimed.has(u.id),
     ).length;
+  }
+
+  /**
+   * The CARGO for the sealift the civ already has: troops to fill a transport,
+   * aircraft to fill a carrier.
+   *
+   * This was the missing half of every invasion. The doctrine bought the
+   * ferries, the missions claimed them, and the troops came from whatever
+   * standing army happened to exist — so a ferry sailed half-empty across an
+   * ocean and landed three warriors on a defended beach. Sizing the landing
+   * force to the hold that is actually afloat is what turns a fleet into an
+   * invasion.
+   *
+   * Aircraft come first: a carrier with empty decks is a fleet that cannot
+   * strike, and unlike troops an airframe has no other job to be doing.
+   */
+  private buildSealiftCargoProduction(city: City): ProductionItem | null {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return null;
+    const civId = civ.id;
+
+    // ── air wing ──────────────────────────────────────────────────────────
+    const airSpare = this.spareHold(civId, 'air');
+    if (airSpare > 0) {
+      const air = this.bestBuildableAircraft(civ);
+      if (air) {
+        const props = UNIT_PROPS[air];
+        return { type: 'unit', itemType: air, name: props.name, cost: props.cost };
+      }
+    }
+
+    // ── landing force ─────────────────────────────────────────────────────
+    const troopSpare = this.spareHold(civId, 'land');
+    if (troopSpare <= 0) return null;
+
+    const storage = this.gameEngine.getPlayerStorage?.(civId);
+    const turnData = storage?.turnData as
+      | {
+        invasionMission?: { troopIds?: string[]; landedIds?: string[] };
+        colonyMissions?: Array<{ settlerId?: string | null }>;
+        colonyMission?: { settlerId?: string | null };
+      }
+      | undefined;
+
+    // A colony mission wants a SETTLER, not a warrior: the point of the run is
+    // to found a city, and a beach full of spearmen founds nothing.
+    const colonyMissions = [
+      ...(turnData?.colonyMissions ?? []),
+      ...(turnData?.colonyMission ? [turnData.colonyMission] : []),
+    ];
+    const wantsSettler = colonyMissions.some((m) => !m?.settlerId);
+    if (wantsSettler && canBuildUnit(civ, 'settler')) {
+      const props = UNIT_PROPS.settler;
+      return { type: 'unit', itemType: 'settler', name: props.name, cost: props.cost };
+    }
+
+    // Otherwise a landing force, but only when there is somewhere to land it.
+    // Building troops for a hold with no destination is just an army standing on
+    // a dock.
+    const invasion = turnData?.invasionMission;
+    const hasSeaTarget = (() => {
+      const ai = this.gameEngine.aiManager as
+        | { hasSeaInvasionTarget?: (id: number) => boolean; countSeaInvasionTargets?: (id: number) => number }
+        | undefined;
+      try {
+        if (typeof ai?.countSeaInvasionTargets === 'function') return ai.countSeaInvasionTargets(civId) > 0;
+        return typeof ai?.hasSeaInvasionTarget === 'function' && ai.hasSeaInvasionTarget(civId);
+      } catch {
+        return false;
+      }
+    })();
+    if (!invasion && !hasSeaTarget) return null;
+
+    // Force size: enough to fill what is afloat, and no more. Troops standing
+    // on a dock cost upkeep exactly like troops ashore.
+    const embarked = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civId && !u.isDefeated && !!u.embarkedOn,
+    ).length;
+    const force = ((invasion?.troopIds?.length ?? 0) + (invasion?.landedIds?.length ?? 0) + embarked);
+    if (force >= troopSpare + embarked) return null;
+
+    const troop = this.bestLandingTroop(civ);
+    if (!troop) return null;
+    const props = UNIT_PROPS[troop];
+    return { type: 'unit', itemType: troop, name: props.name, cost: props.cost };
+  }
+
+  /**
+   * Empty passenger slots across the civ's hulls of one hold kind.
+   *
+   * "land" is a Ferry/Transport, "air" a Carrier. The two are never mixed: a
+   * carrier's four airframes are not cargo space for a warrior, and a ferry's
+   * three berths are not an airfield.
+   */
+  private spareHold(civId: number, kind: 'land' | 'air'): number {
+    const engine = this.gameEngine as {
+      transportCapacityOf?: (u: Unit) => number;
+      aircraftCapacityOf?: (u: Unit) => number;
+      getFerryCargo?: (u: Unit) => string[];
+    };
+    let spare = 0;
+    for (const hull of this.gameEngine.units) {
+      if (hull.civilizationId !== civId || hull.isDefeated) continue;
+      const props = UNIT_PROPS[hull.type];
+      if (!props?.naval) continue;
+      const capacity = kind === 'air'
+        ? (engine.aircraftCapacityOf?.(hull) ?? props.aircraftCapacity ?? 0)
+        : (engine.transportCapacityOf?.(hull) ?? props.transportCapacity ?? 0);
+      if (capacity <= 0) continue;
+      const aboard = engine.getFerryCargo?.(hull) ?? [];
+      spare += Math.max(0, capacity - aboard.length);
+    }
+    return spare;
+  }
+
+  /** The era's best airframe: a bomber when there is ground to hit, a fighter otherwise. */
+  private bestBuildableAircraft(civ: Civilization): string | null {
+    const options = ['bomber', 'fighter'].filter((type) => canBuildUnit(civ, type));
+    if (options.length === 0) return null;
+    // A bomber is the ground-attack airframe; a fighter cannot take a city. When
+    // the fleet is about to land troops the bomber is the one that earns its
+    // deck space, and the fighter joins later as cover.
+    return options[0];
+  }
+
+  /**
+   * The troop to put on a beach: the era's best attacker, because a landing
+   * force is a force that has to FIGHT its way ashore. Defence is what a
+   * garrison is for.
+   */
+  private bestLandingTroop(civ: Civilization): string | null {
+    const type = this.bestBuildableAttacker(civ);
+    return type && canBuildUnit(civ, type) ? type : null;
   }
 
   /**

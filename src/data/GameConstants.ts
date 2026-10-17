@@ -273,6 +273,18 @@ export interface UnitProperties {
      * land a landing force instead of a lone spear.
      */
     transportCapacity?: number;
+    /**
+     * Carrier hulls only: how many AIRCRAFT the ship can stow.
+     *
+     * Separate from `transportCapacity` on purpose. Everything in the codebase
+     * reads "capacity > 0" as "this is a transport", and a carrier that shared
+     * the transport field would count as sealift (so the doctrine would stop
+     * buying ferries), would stop counting as a warship (so the fleet would lose
+     * its air arm), and would be target-classified as a transport to be sunk
+     * first. Aircraft are their own category: they ride the same cargo layer as
+     * troops, but only a carrier may lift one.
+     */
+    aircraftCapacity?: number;
 }
 
 export interface BuildingProperties {

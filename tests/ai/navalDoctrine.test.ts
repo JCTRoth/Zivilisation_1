@@ -17,6 +17,8 @@ import {
   scoreLandingSite,
   WARSHIP_TARGET_VALUE,
   isWarshipHull,
+  fleetMix,
+  pickFleetMixHull,
   type AvailableShip,
   type NavalDoctrineInput,
 } from '@/game/engine/AI/NavalDoctrine';
@@ -32,6 +34,10 @@ const TRIREME: AvailableShip = {
 /** The transport. */
 const FERRY: AvailableShip = {
   type: 'ferry', cost: 30, maintenance: 1, attack: 0, defense: 0, transportCapacity: 3,
+};
+/** The carrier: attack 1, so it can never win a "strongest hull" contest. */
+const CARRIER: AvailableShip = {
+  type: 'carrier', cost: 160, maintenance: 5, attack: 1, defense: 12, transportCapacity: 0,
 };
 
 function input(over: Partial<NavalDoctrineInput> = {}): NavalDoctrineInput {
@@ -218,7 +224,10 @@ describe('naval doctrine', () => {
     expect(d.reason).toMatch(/satisfied/);
   });
 
-  it('caps the fleet at two warships per city', () => {
+  it('caps the fleet at ONE warship per city', () => {
+    // Reduced from 2/city: the old figure doubled the fleet with every coastal
+    // city and, multiplied by a pressure term that could reach 9, ordered 10+
+    // hulls for a five-city civ. A screen per harbour is what a fleet is for.
     const d = navalDoctrine(input({
       ownTransports: 2,
       ownCities: 2,
@@ -231,9 +240,92 @@ describe('naval doctrine', () => {
       threatenedOwnCoastalCities: 2,
       bestAvailableShip: BATTLESHIP,
     }));
-    // A screen plus a heavy per harbour: sea control needs depth, not one hull.
-    expect(d.wantWarships).toBeLessThanOrEqual(4);
-    expect(d.wantWarships).toBeGreaterThan(2);
+    expect(d.wantWarships).toBeLessThanOrEqual(2);
+    expect(d.wantWarships).toBeGreaterThan(0);
+  });
+
+  it('never lets the fleet exceed the absolute ceiling', () => {
+    // Even a civ that could afford a hundred hulls gets at most eight.
+    const d = navalDoctrine(input({
+      ownTransports: 2,
+      ownCities: 40,
+      ownCoastalCities: 40,
+      treasury: 999999,
+      incomePerTurn: 99999,
+      upkeepPerTurn: 0,
+      reservePerTurn: 0,
+      enemyWarships: 90,
+      enemyCoastalCities: 90,
+      threatenedOwnCoastalCities: 40,
+      bestAvailableShip: BATTLESHIP,
+    }));
+    expect(d.wantWarships).toBeLessThanOrEqual(8);
+  });
+
+  it('clamps stacked pressure instead of adding it to a museum', () => {
+    // Every signal firing at once used to sum to ~9 and multiply the budget into
+    // a fleet three times the size any one of them asked for.
+    const d = navalDoctrine(input({
+      ownTransports: 2,
+      ownCities: 3,
+      ownCoastalCities: 3,
+      treasury: 999999,
+      incomePerTurn: 99999,
+      upkeepPerTurn: 0,
+      reservePerTurn: 0,
+      enemyWarships: 40,
+      enemyTransports: 40,
+      enemyCoastalCities: 40,
+      threatenedOwnCoastalCities: 3,
+      colonisableIslands: 8,
+      seaInvasionTargets: 4,
+      unexploredWaterShare: 0.9,
+      fishingGrounds: 9,
+      landmassCount: 9,
+      needsNavy: true,
+      atWar: true,
+      bestAvailableShip: BATTLESHIP,
+    }));
+    expect(d.pressure).toBeLessThanOrEqual(5);
+  });
+
+  it('builds a fleet MIX, not ten of one hull', () => {
+    // The whole point: a civ short of every role gets the role it is shortest
+    // on, not "the strongest affordable hull" again and again.
+    const carrier = { type: 'carrier', cost: 160, maintenance: 5, attack: 1, defense: 12, transportCapacity: 0 };
+    const submarine = { type: 'submarine', cost: 80, maintenance: 3, attack: 14, defense: 2, transportCapacity: 1 };
+    const sail = { type: 'sail', cost: 20, maintenance: 1, attack: 1, defense: 1, transportCapacity: 0 };
+    const battleship = { type: 'battleship', cost: 180, maintenance: 6, attack: 12, defense: 12, transportCapacity: 0 };
+    const d = navalDoctrine(input({
+      ownTransports: 2,
+      ownWarships: 0,
+      ownCities: 4,
+      ownCoastalCities: 4,
+      treasury: 999999,
+      incomePerTurn: 99999,
+      upkeepPerTurn: 0,
+      reservePerTurn: 0,
+      enemyWarships: 20,
+      enemyTransports: 20,
+      enemyCoastalCities: 20,
+      threatenedOwnCoastalCities: 4,
+      unexploredWaterShare: 0.7,
+      landmassCount: 6,
+      needsNavy: true,
+      bestAvailableShip: battleship,
+      cheapestAvailableShip: sail,
+      warshipOptions: [sail, submarine, battleship, carrier],
+      transportOptions: [],
+    }));
+    // A carrier can never win "strongest affordable", so without a composition
+    // gap no civ ever fielded one. Assert one is actually ordered.
+    expect(d.mix).toBeDefined();
+    expect(d.mix!.carriers).toBeGreaterThanOrEqual(0);
+    expect(d.mix!.raiders).toBeGreaterThanOrEqual(0);
+    expect(d.mix!.scouts).toBeGreaterThanOrEqual(0);
+    // The parts must never sum to more than the whole.
+    const parts = d.mix!.scouts + d.mix!.screens + d.mix!.heavies + d.mix!.raiders + d.mix!.carriers;
+    expect(parts).toBeLessThanOrEqual(d.wantWarships);
   });
 
   it('puts to sea on an archipelago even before contact', () => {
@@ -400,5 +492,165 @@ describe('isWarshipHull: what counts as an escort', () => {
   it('counts an unarmed hull with no stats as nothing', () => {
     expect(isWarshipHull(undefined)).toBe(false);
     expect(isWarshipHull({})).toBe(false);
+  });
+});
+
+describe('fleetMix — the parts always sum to the whole', () => {
+  const mixOf = (total: number, over: Partial<NavalDoctrineInput> = {}) => {
+    const m = fleetMix(total, input(over));
+    return m;
+  };
+  const sum = (m: { scouts: number; screens: number; heavies: number; raiders: number; carriers: number }) =>
+    m.scouts + m.screens + m.heavies + m.raiders + m.carriers;
+
+  it('accounts for every hull, at every size, in every situation', () => {
+    // The regression this guards: the first cut allocated each role from the
+    // total independently and a 4-hull fleet came out as 5 hulls, so the AI
+    // ordered more ships than the doctrine asked for.
+    const situations: Array<Partial<NavalDoctrineInput>> = [
+      {},
+      { enemyWarships: 20, enemyTransports: 20 },
+      { unexploredWaterShare: 0.8, landmassCount: 6, needsNavy: true },
+      {
+        enemyWarships: 40, enemyTransports: 40, unexploredWaterShare: 0.9,
+        landmassCount: 9, needsNavy: true, warshipOptions: [CARRIER],
+      },
+    ];
+    for (let total = 0; total <= 12; total++) {
+      for (const situation of situations) {
+        expect(sum(mixOf(total, situation))).toBe(total);
+      }
+    }
+  });
+
+  it('gives a tiny fleet core hulls, not a parade of specialists', () => {
+    // One hull cannot be a carrier AND a screen. A 2-hull fleet must be able to
+    // fight and screen, which is what screens and heavies are for.
+    const m = mixOf(2, { enemyWarships: 20, unexploredWaterShare: 0.9, warshipOptions: [CARRIER] });
+    expect(m.carriers).toBe(0);
+    expect(m.screens + m.heavies).toBe(2);
+  });
+
+  it('spreads a large fleet across every role the situation calls for', () => {
+    const m = mixOf(8, {
+      enemyWarships: 20,
+      enemyTransports: 20,
+      unexploredWaterShare: 0.8,
+      landmassCount: 8,
+      needsNavy: true,
+      warshipOptions: [CARRIER],
+    });
+    expect(m.screens).toBeGreaterThan(0);
+    expect(m.heavies).toBeGreaterThan(0);
+    expect(m.raiders).toBeGreaterThan(0);
+    expect(m.scouts).toBeGreaterThan(0);
+  });
+
+  it('never builds a carrier without the technology or the fleet to carry it', () => {
+    expect(mixOf(8, { warshipOptions: [] }).carriers).toBe(0);
+    expect(mixOf(4, { warshipOptions: [CARRIER] }).carriers).toBe(0);
+    expect(mixOf(5, { warshipOptions: [CARRIER] }).carriers).toBe(1);
+  });
+
+  it('builds no raiders when there is nothing to raid', () => {
+    expect(mixOf(8, { enemyWarships: 0, enemyTransports: 0 }).raiders).toBe(0);
+  });
+
+  it('builds no scouts when the water is already charted', () => {
+    expect(mixOf(8, { unexploredWaterShare: 0.02, landmassCount: 1 }).scouts).toBe(0);
+  });
+
+  it('is all zeroes for a fleet of none', () => {
+    expect(mixOf(0)).toEqual({ scouts: 0, screens: 0, heavies: 0, raiders: 0, carriers: 0 });
+  });
+});
+
+describe('pickFleetMixHull — fill the biggest gap, not buy the biggest gun', () => {
+  const SAIL: AvailableShip = { type: 'sail', cost: 20, maintenance: 1, attack: 1, defense: 1, transportCapacity: 0 };
+  const CARAVEL: AvailableShip = { type: 'caravel', cost: 60, maintenance: 2, attack: 3, defense: 3, transportCapacity: 0 };
+  const FRIGATE: AvailableShip = { type: 'frigate', cost: 90, maintenance: 3, attack: 6, defense: 5, transportCapacity: 0 };
+  const IRONCLAD: AvailableShip = { type: 'ironclad', cost: 150, maintenance: 5, attack: 10, defense: 10, transportCapacity: 0 };
+  const SUB: AvailableShip = { type: 'submarine', cost: 80, maintenance: 3, attack: 14, defense: 2, transportCapacity: 1 };
+
+  const all = [SAIL, CARAVEL, FRIGATE, IRONCLAD, SUB, CARRIER];
+  const affordAll = () => true;
+  const affordNone = () => false;
+
+  it('returns null when nothing is affordable', () => {
+    expect(pickFleetMixHull(all, { scouts: 0, screens: 0, heavies: 0, raiders: 0, carriers: 0 }, { scouts: 0, screens: 0, heavies: 0, raiders: 0, carriers: 0 }, affordNone)).toBeNull();
+  });
+
+  it('buys the cheapest hull that fills the gap, not the most expensive', () => {
+    // Short of scouts only: both sail and caravel fill the gap, and the sail is
+    // the one that costs 20. The old rule bought the strongest affordable hull
+    // every turn, which is how a fleet became one repeated hull.
+    const want = { scouts: 2, screens: 0, heavies: 0, raiders: 0, carriers: 0 };
+    const onHand = { scouts: 0, screens: 0, heavies: 0, raiders: 0, carriers: 0 };
+    const picked = pickFleetMixHull(all, want, onHand, affordAll);
+    expect(picked).not.toBeNull();
+    expect(picked!.type).toBe('sail');
+  });
+
+  it('picks the role it is furthest behind on', () => {
+    // Screens and scouts full, heavies two short, raiders one short → a heavy,
+    // because that is the largest gap. `classifyWarshipRole` calls ironclad a
+    // heavy (attack 10) and frigate a screen (attack 6), so ironclad is the
+    // cheapest hull that actually fills it.
+    const want = { scouts: 1, screens: 2, heavies: 2, raiders: 1, carriers: 0 };
+    const onHand = { scouts: 1, screens: 2, heavies: 0, raiders: 0, carriers: 0 };
+    const picked = pickFleetMixHull([SAIL, CARAVEL, FRIGATE, IRONCLAD, SUB], want, onHand, affordAll);
+    expect(picked!.type).toBe('ironclad');
+  });
+
+  it('takes the cheaper hull within a role when two both fit', () => {
+    // Sail and caravel are both scouts; the gap is filled either way, so the
+    // 20-shield hull is the right answer to a 20-shield problem.
+    const want = { scouts: 1, screens: 0, heavies: 0, raiders: 0, carriers: 0 };
+    const onHand = { scouts: 0, screens: 0, heavies: 0, raiders: 0, carriers: 0 };
+    expect(pickFleetMixHull([CARAVEL, SAIL], want, onHand, affordAll)!.type).toBe('sail');
+    // ...but a caravel is worth its extra 40 when the sail cannot be afforded.
+    expect(pickFleetMixHull([CARAVEL, SAIL], want, onHand, (s) => s.type === 'caravel')!.type).toBe('caravel');
+  });
+
+  it('prefers a raider over a heavy when the gaps tie', () => {
+    // Both one short. Raiding the enemy's supply line is not replaceable in the
+    // way a bigger gun is, so the raider wins the tie.
+    const want = { scouts: 0, screens: 1, heavies: 1, raiders: 1, carriers: 0 };
+    const onHand = { scouts: 0, screens: 1, heavies: 0, raiders: 0, carriers: 0 };
+    const picked = pickFleetMixHull([IRONCLAD, SUB], want, onHand, affordAll);
+    expect(picked!.type).toBe('submarine');
+  });
+
+  it('orders a carrier only when the fleet is short of one', () => {
+    const want = { scouts: 0, screens: 1, heavies: 1, raiders: 0, carriers: 1 };
+    const onHand = { scouts: 0, screens: 1, heavies: 1, raiders: 0, carriers: 0 };
+    expect(pickFleetMixHull([IRONCLAD, CARRIER], want, onHand, affordAll)!.type).toBe('carrier');
+    const full = { scouts: 0, screens: 1, heavies: 1, raiders: 0, carriers: 1 };
+    expect(pickFleetMixHull([IRONCLAD, CARRIER], want, full, affordAll)!.type).not.toBe('carrier');
+  });
+
+  it('tops up with the cheapest hull when nothing is short', () => {
+    const want = { scouts: 1, screens: 1, heavies: 1, raiders: 1, carriers: 1 };
+    const onHand = { scouts: 1, screens: 1, heavies: 1, raiders: 1, carriers: 1 };
+    const picked = pickFleetMixHull(all, want, onHand, affordAll);
+    expect(picked!.type).toBe('sail');
+  });
+
+  it('falls back to another role when the civ cannot build the short one', () => {
+    // Short of carriers but the civ has no carrier hull: build something else
+    // rather than nothing at all.
+    const want = { scouts: 0, screens: 1, heavies: 0, raiders: 0, carriers: 2 };
+    const onHand = { scouts: 0, screens: 1, heavies: 0, raiders: 0, carriers: 0 };
+    const picked = pickFleetMixHull([SAIL, FRIGATE], want, onHand, affordAll);
+    expect(picked).not.toBeNull();
+  });
+
+  it('is a pure function of its arguments', () => {
+    const want = { scouts: 0, screens: 2, heavies: 0, raiders: 0, carriers: 0 };
+    const onHand = { scouts: 0, screens: 0, heavies: 0, raiders: 0, carriers: 0 };
+    const before = all.map((s) => s.type).join(',');
+    pickFleetMixHull(all, want, onHand, affordAll);
+    expect(all.map((s) => s.type).join(',')).toBe(before);
+    expect(want).toEqual({ scouts: 0, screens: 2, heavies: 0, raiders: 0, carriers: 0 });
   });
 });

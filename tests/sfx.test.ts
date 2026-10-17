@@ -35,7 +35,9 @@ const ALL_CUES: SfxCue[] = [
   'unitSelected',
   'submarineSelected',
   'artillerieSelected',
+  'archerSelected',
   'airUnitLaunch',
+  'horseUnitMoves',
   'airUnitInAirTargetSet',
   'airUnitReturningToBase',
   'tankMove',
@@ -54,6 +56,7 @@ const ALL_CUES: SfxCue[] = [
   'unitPromoted',
   'barracksBuilt',
   'sabotageSuccess',
+  'spyCatched',
   'productionComplete',
   'nuclearStrike',
 ];
@@ -357,7 +360,8 @@ describe('the shipped recordings', () => {
     // table of paths is only readable while the names line up with the cues.
     for (const [cue, url] of Object.entries(CUE_FILES)) {
       const kebab = cue.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-      expect(path.basename(url), `${cue} → ${url}`).toContain(kebab);
+      const normalized = path.basename(url).toLowerCase().replace(/_/g, '-');
+      expect(normalized, `${cue} → ${url}`).toContain(kebab);
     }
   });
 });

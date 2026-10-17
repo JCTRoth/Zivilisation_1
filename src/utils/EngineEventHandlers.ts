@@ -501,6 +501,11 @@ export class EngineEventRouter {
     if (!unit || unit.isDefeated) return;
     if (unit.civilizationId !== HUMAN_PLAYER_ID) return;
 
+    if (unit.type === UNIT_TYPES.CHARIOT || unit.type === UNIT_TYPES.KNIGHTS || unit.type === UNIT_TYPES.CAVALRY) {
+      this.playOncePerTurn('horseUnitMoves', unit.id);
+      return;
+    }
+
     if (unit.type === UNIT_TYPES.TANK) {
       this.playOncePerTurn('tankMove', unit.id);
       return;

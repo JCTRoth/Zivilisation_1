@@ -133,6 +133,12 @@ export interface NavalDoctrineResult {
   wantHeavies?: number;
   /** Escorts wanted to screen the sealift (1 per 2 transports, min 1). */
   wantEscorts?: number;
+  /** Carriers wanted (fleet air arm — at most one). */
+  wantCarriers?: number;
+  /** Submarines wanted (transports are worth more sunk than escorted). */
+  wantRaiders?: number;
+  /** The full role split, for the caller that builds hulls. */
+  mix?: FleetMix;
   /** Warships simultaneously affordable (see equation above). 0 = bankrupt. */
   budget: number;
   /** Cheapest-warship budget: hulls affordable even when the best is not. */
@@ -145,14 +151,55 @@ export interface NavalDoctrineResult {
   reason: string;
 }
 
-/** Cap on transports: a sealift per coastal city, so a naval civ still builds cities. */
+/**
+ * Cap on transports: a sealift per coastal city, so a naval civ still builds cities.
+ *
+ * Left at 1.0 deliberately: `desiredTransports` is already demand-driven (one
+ * hull per three islands, plus one per invasion), so this ceiling only bites in
+ * the extreme case. The transport fleet was never the overbuilding problem —
+ * `MAX_TRANSPORTS_ABSOLUTE` is what bounds it.
+ */
 const MAX_TRANSPORTS_PER_CITY = 1.0;
-/** Absolute ceiling on transports: parallel colony + invasion + shuttle waves. */
-const MAX_TRANSPORTS_ABSOLUTE = 6;
-/** Warships per coastal city on a sea map: a screen plus a heavy per harbour. */
-const MAX_WARSHIPS_PER_CITY = 2;
-/** Never answer a capital-sized fleet even if the maths allows it. */
-const MAX_WARSHIPS_ABSOLUTE = 16;
+/**
+ * Absolute ceiling on transports: parallel colony + invasion + shuttle waves.
+ *
+ * 4, not 6: a sealift is only as useful as the troops it can load, and a civ
+ * that floats six ferries while its army stands on one continent has bought a
+ * shipping company, not a navy. The troops are the limit on the sealift, which
+ * is why the landing-force quota in `AutoProduction` and this number move
+ * together.
+ */
+const MAX_TRANSPORTS_ABSOLUTE = 4;
+/**
+ * Warships per coastal city on a sea map.
+ *
+ * 1.0, not 2.0. The old figure doubled the fleet every time a city touched the
+ * sea, and combined with a pressure term that could reach ~9 it ordered 10+
+ * hulls for a five-city civ — hulls that cost 6 gold/turn each to feed and were
+ * then sunk faster than they were built. A screen plus a heavy per harbour is
+ * what a fleet is FOR; more than that is a museum.
+ */
+const MAX_WARSHIPS_PER_CITY = 1.0;
+/**
+ * Never answer a capital-sized fleet even if the maths allows it.
+ *
+ * 8, not 16. Even the budget cap is not enough on its own: a treasury that can
+ * afford sixteen hulls does not need sixteen hulls, and every one of them is
+ * production not spent on the settlers, caravans and buildings that win games.
+ */
+const MAX_WARSHIPS_ABSOLUTE = 8;
+/**
+ * Pressure is summed from up to nine separate terms. Without a ceiling a
+ * coastal civ at war with dark water and fishing grounds reads as needing a
+ * fleet twice the size the terms individually warrant, because the terms were
+ * written as independent signals but land on one number that is multiplied by
+ * the budget.
+ */
+const MAX_PRESSURE = 5.0;
+/** One carrier is a fleet air arm; two is a carrier fleet, which this is not. */
+const MAX_CARRIERS = 1;
+/** Raiders (submarines) per enemy transport group worth hunting. */
+const MAX_RAIDERS = 2;
 /**
  * Budget used when the caller supplied no economic data whatsoever. Two hulls:
  * enough to express intent (a transport plus an escort) without turning a
@@ -351,22 +398,177 @@ export function classifyWarshipRole(ship: AvailableShip): WarshipRole {
   return 'screen';
 }
 
+/** How many of each role a fleet of this shape wants. */
+export interface FleetMix {
+  scouts: number;
+  screens: number;
+  heavies: number;
+  raiders: number;
+  carriers: number;
+}
+
+/** How many of each role the civ already has afloat. */
+export interface FleetOnHand {
+  scouts: number;
+  screens: number;
+  heavies: number;
+  raiders: number;
+  carriers: number;
+}
+
+/** Roles are considered in this order when two of them are equally short. */
+const ROLE_ORDER: ReadonlyArray<keyof FleetMix> = ['carriers', 'raiders', 'scouts', 'heavies', 'screens'];
+
+/** Role → `FleetMix` key. */
+function mixKey(role: WarshipRole): keyof FleetMix {
+  switch (role) {
+    case 'scout': return 'scouts';
+    case 'heavy': return 'heavies';
+    case 'raider': return 'raiders';
+    case 'carrier': return 'carriers';
+    default: return 'screens';
+  }
+}
+
+/**
+ * Split a fleet target into roles.
+ *
+ * The roles are not a wish list — they are the minimum composition of a fleet
+ * that can do every job at once. Scouts find the war, screens keep the sealift
+ * alive, heavies take the objective, raiders eat the enemy's transports, and one
+ * carrier gives the fleet an air arm. Anything left over goes to screens, which
+ * is the role that is never wrong to have more of.
+ *
+ * `wantWarships` is the total; the parts must sum to at most it, so adding a
+ * carrier never silently enlarges the fleet.
+ */
+export function fleetMix(
+  wantWarships: number,
+  input: NavalDoctrineInput,
+): FleetMix {
+  const total = Math.max(0, Math.floor(wantWarships));
+  const zero: FleetMix = { scouts: 0, screens: 0, heavies: 0, raiders: 0, carriers: 0 };
+  if (total === 0) return zero;
+
+  const canFly = (input.warshipOptions ?? []).some((s) => s.type.toLowerCase() === 'carrier')
+    || (input.ownCarriers ?? 0) > 0;
+  const darkWater = (input.unexploredWaterShare ?? 0) > 0.3;
+  const enemyShips = input.enemyTransports + input.enemyWarships;
+
+  // Specialists are bought out of a RESERVED share, never out of the core. The
+  // core — screens and heavies — is what can take an objective and keep the
+  // sealift alive, so it is capped at 60% of the hulls: there is always room for
+  // at least one of each specialist once the fleet is big enough to matter, and
+  // never so much room that the fleet becomes a parade of carriers.
+  const coreBudget = Math.min(total, Math.max(1, Math.ceil(total * 0.6)));
+  let spare = total - coreBudget;
+
+  // One of each specialist role the situation calls for, in the order they stop
+  // being replaceable: a scout finds the war, a raider sinks the enemy's supply
+  // line, a carrier gives the fleet an air arm. Further hulls of a role come
+  // from the existing quotas (scouts 1/2 coastal cities, raiders 1+1/3 enemy
+  // transports).
+  const scouts = darkWater ? Math.min(1 + Math.floor(desiredScouts(input) / 2), spare) : 0;
+  spare -= scouts;
+  const raiders = enemyShips > 0
+    ? Math.min(1 + Math.floor(input.enemyTransports / 3), MAX_RAIDERS, spare)
+    : 0;
+  spare -= raiders;
+  const carriers = canFly && total >= 5 ? Math.min(MAX_CARRIERS, spare) : 0;
+  spare -= carriers;
+
+  // Whatever the specialists did not take is the core, split between the battle
+  // line and the screen. Every hull is accounted for exactly once.
+  const core = total - scouts - raiders - carriers;
+  const heavies = Math.min(Math.ceil(core / 2), core);
+  const screens = core - heavies;
+
+  return { scouts, screens, heavies, raiders, carriers };
+}
+
+/**
+ * Which hull to build next, given the fleet the civ already has.
+ *
+ * This replaces "build the strongest affordable hull", which produced a fleet of
+ * one type: every hull the civ could build was the same hull, so a civ that
+ * needed a scout got another battleship, and a civ that needed to ferry troops
+ * got a battleship too. The rule here is the one a real navy uses — **fill the
+ * largest gap in the composition first** — and when every gap is filled the
+ * cheapest hull is the right top-up, not the most expensive one.
+ *
+ * Returns null when nothing in the composition is short and the civ should stop
+ * building hulls entirely.
+ */
+export function pickFleetMixHull(
+  options: readonly AvailableShip[],
+  want: FleetMix,
+  onHand: FleetOnHand,
+  afford: (ship: AvailableShip) => boolean,
+): AvailableShip | null {
+  const usable = options.filter((s) => s.cost > 0 && afford(s));
+  if (usable.length === 0) return null;
+
+  // The role most behind its quota first. A tie is broken by ROLE_ORDER, which
+  // puts the roles that cannot be replaced cheaply (a carrier, a raider) ahead
+  // of the ones that can (screens).
+  let bestRole: keyof FleetMix | null = null;
+  let bestShortfall = 0;
+  for (const role of ROLE_ORDER) {
+    const shortfall = want[role] - onHand[role];
+    if (shortfall > bestShortfall) {
+      bestShortfall = shortfall;
+      bestRole = role;
+    }
+  }
+
+  if (bestRole) {
+    const wantRole = (s: AvailableShip): boolean => mixKey(classifyWarshipRole(s)) === bestRole;
+    const candidates = usable.filter(wantRole);
+    if (candidates.length > 0) {
+      // Within a role, take the hull that gets the job done for least shields:
+      // a gap is a gap, and the cheapest ship that fills it is the right one.
+      return [...candidates].sort((a, b) => a.cost - b.cost || b.attack - a.attack)[0];
+    }
+    // The civ cannot build anything in that role (tech), so fall through to a
+    // general top-up rather than building nothing at all.
+  }
+
+  // No role is short: topping up is a screen for the least shields.
+  return [...usable].sort((a, b) => a.cost - b.cost || b.attack - a.attack)[0];
+}
+
 /** The full doctrine decision. */
 export function navalDoctrine(input: NavalDoctrineInput): NavalDoctrineResult {
   const budget = navalShipBudget(input);
   const cheapBudget = navalCheapBudget(input);
-  const pressure = navalPressure(input);
+  // Pressure is a SUM of up to nine signals, each written as if it were the only
+  // one. Uncapped it lands on 8 or 9 and multiplies the budget into a fleet
+  // three times the size the individual signals asked for, which is exactly how
+  // the fleet came to be overbuilt. Capping it keeps every signal meaningful
+  // while stopping them from stacking into a museum.
+  const rawPressure = navalPressure(input);
+  const pressure = clamp(rawPressure, 0, MAX_PRESSURE);
   const coastalBase = Math.max(input.ownCities, input.ownCoastalCities);
   const wantWarships = clamp(
     Math.round(Math.max(budget, cheapBudget * 0.5) * pressure),
     0,
-    Math.min(MAX_WARSHIPS_ABSOLUTE, Math.floor(coastalBase * MAX_WARSHIPS_PER_CITY), Math.floor(Math.max(budget, cheapBudget))),
+    Math.min(
+      MAX_WARSHIPS_ABSOLUTE,
+      Math.floor(coastalBase * MAX_WARSHIPS_PER_CITY),
+      Math.floor(Math.max(budget, cheapBudget)),
+    ),
   );
   const wantTransports = desiredTransports(input);
   const wantEscorts = desiredEscorts(wantTransports, input.ownTransports);
   const wantScouts = desiredScouts(input);
-  // Heavies are the battle line: half the fleet once it exceeds 2 hulls.
-  const wantHeavies = wantWarships > 2 ? Math.ceil(wantWarships / 2) : wantWarships;
+  // The composition is the single source of truth for the split: wantHeavies,
+  // wantScouts, wantRaiders and wantCarriers are all read back out of it, so a
+  // change to how a fleet is sized cannot leave the parts summing to more than
+  // the whole.
+  const mix = fleetMix(wantWarships, input);
+  const wantHeavies = mix.heavies;
+  const wantRaiders = mix.raiders;
+  const wantCarriers = mix.carriers;
 
   let choice: AvailableShip | null = null;
   let reason: string;
@@ -393,61 +595,61 @@ export function navalDoctrine(input: NavalDoctrineInput): NavalDoctrineResult {
       ? `needs ${wantTransports} transport${wantTransports === 1 ? '' : 's'}, has ${input.ownTransports}`
       : `sealift wanted (${wantTransports}) but unaffordable`;
   } else if (input.ownWarships < wantWarships) {
-    // Warships: strongest AFFORDABLE hull, not blindly the strongest hull.
-    // A civ that can feed a trireme but not a battleship gets the trireme —
-    // the old code answered 0 warships and built nothing.
+    // Fleet composition, not "strongest affordable". Building the strongest hull
+    // every time produced a fleet of one type: a civ that needed a scout got
+    // another battleship, a civ that needed to ferry troops got a battleship too,
+    // and a carrier (attack 1) could never win a "strongest" contest so no civ
+    // ever fielded an air arm. `pickFleetMixHull` fills the largest gap in the
+    // composition instead, and within a role buys the cheapest hull that does
+    // the job.
     const options = (input.warshipOptions ?? []).filter((s) => s.cost > 0);
-    const affordable = (ships: AvailableShip[]): AvailableShip | null =>
-      ships.length > 0
-        ? pickAffordableWarship(ships, input.treasury, input.incomePerTurn, input.upkeepPerTurn, input.reservePerTurn)
-        : null;
-    // "More units": carriers and raiders join the line once it exists. A
-    // carrier (attack 1) never wins "strongest affordable", so without this no
-    // civ ever builds air cover; a submarine (raider) is the answer to enemy
-    // fishing/transport prey. One of each per battle line, then heavies.
-    // Exploration first: while water is dark and no scouts sail, the cheapest
-    // fast scout (sail/caravel) outranks the strongest affordable heavy. An
-    // ironclad that cannot find the enemy charts nothing; a sail finds the
-    // islands and the wars that order the rest of the fleet (seed-19 fix: the
-    // bootstrap built ironclads, made no contact, planned no missions, and the
-    // civ finished with zero ferries).
-    const carrier = options.find((s) => s.type.toLowerCase() === 'carrier');
-    const submarine = options.find((s) => s.type.toLowerCase() === 'submarine');
-    const ownCarriers = input.ownCarriers ?? 0;
-    const ownRaiders = input.ownRaiders ?? 0;
-    const scoutOptions = options.filter((s) => classifyWarshipRole(s) === 'scout');
-    const ownScouts = input.ownScouts ?? 0;
-    const darkWater = (input.unexploredWaterShare ?? 0) > 0.4;
-    if (darkWater && scoutOptions.length > 0 && ownScouts < wantScouts) {
-      const scout = affordable(scoutOptions);
-      if (scout) {
-        choice = scout;
-      }
-    }
-    if (!choice) {
-      if (carrier && ownCarriers === 0 && input.ownWarships >= 3
-        && navalShipBudgetFor(carrier, input.treasury, input.incomePerTurn, input.upkeepPerTurn, input.reservePerTurn) >= 1) {
-        choice = carrier;
-      } else if (submarine && ownRaiders === 0 && input.ownWarships >= 2
-        && (input.enemyTransports + (input.fishingGrounds ?? 0) > 0 || input.ownWarships >= 4)
-        && navalShipBudgetFor(submarine, input.treasury, input.incomePerTurn, input.upkeepPerTurn, input.reservePerTurn) >= 1) {
-        choice = submarine;
-      } else {
-        choice = affordable(options) ?? (budget >= 1 ? input.bestAvailableShip : null);
-      }
-    }
+    const afford = (ship: AvailableShip): boolean =>
+      navalShipBudgetFor(ship, input.treasury, input.incomePerTurn, input.upkeepPerTurn, input.reservePerTurn) >= 1;
+    const onHand: FleetOnHand = {
+      scouts: input.ownScouts ?? 0,
+      screens: Math.max(0, input.ownWarships
+        - (input.ownScouts ?? 0) - (input.ownHeavies ?? 0)
+        - (input.ownRaiders ?? 0) - (input.ownCarriers ?? 0)),
+      heavies: input.ownHeavies ?? 0,
+      raiders: input.ownRaiders ?? 0,
+      carriers: input.ownCarriers ?? 0,
+    };
+    choice = pickFleetMixHull(options, mix, onHand, afford);
+
     // Escort urgency: the first escort for a sailing sealift outranks waiting
     // for the perfect heavy. A cheap screen now beats a battleship never.
     if (!choice && cheapBudget >= 1 && options.length > 0) {
       choice = [...options].sort((a, b) => a.cost - b.cost)[0];
     }
+    // Last resort: anything at all, as long as the economy can carry one hull.
+    if (!choice && budget >= 1 && input.bestAvailableShip) {
+      choice = input.bestAvailableShip;
+    }
+    const short = Object.entries(mix)
+      .filter(([role, n]) => n > (onHand as unknown as Record<string, number>)[role])
+      .map(([role]) => role)
+      .join(',') || 'screen';
     reason = choice
-      ? `fleet pressure ${pressure.toFixed(1)} × budget ${Math.max(budget, cheapBudget).toFixed(1)} = ${wantWarships} warship${wantWarships === 1 ? '' : 's'} (escort ${wantEscorts}, scouts ${wantScouts}, heavies ${wantHeavies}), has ${input.ownWarships}`
+      ? `fleet pressure ${pressure.toFixed(1)} × budget ${Math.max(budget, cheapBudget).toFixed(1)} = ${wantWarships} warships (mix: ${wantScouts} scout, ${mix.screens} screen, ${wantHeavies} heavy, ${wantRaiders} raider, ${wantCarriers} carrier) — short of ${short}`
       : `fleet wanted (${wantWarships}) but unaffordable (budget ${budget.toFixed(1)}, cheap ${cheapBudget.toFixed(1)})`;
   } else {
     reason = `satisfied: ${input.ownTransports}/${wantTransports} transports, ${input.ownWarships}/${wantWarships} warships`;
   }
-  return { wantTransports, wantWarships, wantScouts, wantHeavies, wantEscorts, budget, cheapBudget, pressure, choice, reason };
+  return {
+    wantTransports,
+    wantWarships,
+    wantScouts,
+    wantHeavies,
+    wantEscorts,
+    wantRaiders,
+    wantCarriers,
+    mix,
+    budget,
+    cheapBudget,
+    pressure,
+    choice,
+    reason,
+  };
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -758,23 +960,45 @@ export function scoreGuardTile({
 export type FleetNeed = 'transport' | 'escort' | 'scout' | 'heavy' | 'screen' | 'raider' | 'satisfied';
 
 /**
- * The fleet's single biggest deficit, in build order. Transports first (no
- * sealift = no invasion/colonisation), then the escort screen for the troops
- * at sea, then scouts while water is dark, then heavies for the battle line,
- * then raiders/carriers once the line exists. Pure — the caller maps the need
- * to a hull it can actually build.
+ * The fleet's single biggest deficit, in build order.
+ *
+ * Thin wrapper over `fleetMix` — the composition maths lives there and only
+ * there, so a change to how a fleet is sized cannot leave this answer drifting
+ * away from the one the doctrine builds to. Kept because callers want one word,
+ * not a breakdown.
  */
 export function fleetNeed(input: NavalDoctrineInput & { wantTransports: number; wantWarships: number }): FleetNeed {
   if (input.ownTransports < input.wantTransports) return 'transport';
+  // An escort deficit outranks the rest: troops at sea without a screen are a
+  // landing force the enemy can sink for free.
   const wantEscorts = desiredEscorts(input.wantTransports, input.ownTransports);
   if (input.ownWarships < Math.min(wantEscorts, input.wantWarships)) return 'escort';
-  const wantScouts = desiredScouts(input);
-  if ((input.ownScouts ?? 0) < wantScouts && input.ownWarships < input.wantWarships) return 'scout';
-  if (input.ownWarships < input.wantWarships) {
-    const heavies = input.ownHeavies ?? 0;
-    const wantHeavies = input.wantWarships > 2 ? Math.ceil(input.wantWarships / 2) : input.wantWarships;
-    if (heavies < wantHeavies) return 'heavy';
-    return 'screen';
+  const mix = fleetMix(input.wantWarships, input);
+  const onHand: FleetOnHand = {
+    scouts: input.ownScouts ?? 0,
+    screens: Math.max(0, input.ownWarships
+      - (input.ownScouts ?? 0) - (input.ownHeavies ?? 0)
+      - (input.ownRaiders ?? 0) - (input.ownCarriers ?? 0)),
+    heavies: input.ownHeavies ?? 0,
+    raiders: input.ownRaiders ?? 0,
+    carriers: input.ownCarriers ?? 0,
+  };
+  if (input.ownWarships >= input.wantWarships) return 'satisfied';
+  // Largest gap first, matching `pickFleetMixHull`'s order exactly.
+  let best: keyof FleetMix | null = null;
+  let bestShortfall = 0;
+  for (const role of ROLE_ORDER) {
+    const shortfall = mix[role] - onHand[role];
+    if (shortfall > bestShortfall) {
+      bestShortfall = shortfall;
+      best = role;
+    }
   }
-  return 'satisfied';
+  switch (best) {
+    case 'scouts': return 'scout';
+    case 'heavies': return 'heavy';
+    case 'raiders': return 'raider';
+    case 'carriers': return 'heavy';   // a carrier joins the battle line
+    default: return 'screen';
+  }
 }

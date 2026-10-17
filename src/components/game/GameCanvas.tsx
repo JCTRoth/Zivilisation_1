@@ -52,8 +52,8 @@ import {
 } from "@/game/engine/DiplomacyTypes";
 import { tTechName } from '@/i18n/dataNames';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
-import { unlockAudio, playSfx } from '@/utils/Sfx';
-import { unitSelectCue } from '@/utils/SoundEngine';
+import { unlockAudio } from '@/utils/Sfx';
+import { playUnitSelection } from '@/utils/SoundEngine';
 import { UNIT_TYPES } from '@/data/UnitConstants';
 import { debugLog } from '@/utils/DevLog';
 
@@ -1312,7 +1312,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         icon: "☠️",
         tone: "danger",
         text: t("espionage.steal.coverBlown" as TranslationKey),
-        cue: "coverBlown",
+        cue: "spyCatched",
       });
     }
     if (warDeclared && civName) {
@@ -2241,10 +2241,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           }
           // Picking a unit up gets its acknowledgement — a reporting-in blip
           // for a land unit, a sonar ping for a submarine. Own units only: an
-          // enemy under the cursor is information, not a command. The 10 s
-          // unit cooldown keeps click-spam from machine-gunning it.
+          // enemy under the cursor is information, not a command.
+          //
+          // The unit answers ONCE, when it is first picked up. Clicking the
+          // same unit again within a few seconds is the player re-issuing or
+          // cancelling an order, so it gets a bare grunt instead of a second
+          // "Yes, Commander?" — and selecting a DIFFERENT unit always gets that
+          // unit's own acknowledgement, which the old shared cooldown swallowed.
           if (unitAt.civilizationId === HUMAN_PLAYER_ID) {
-            playSfx(unitSelectCue(unitAt.type === UNIT_TYPES.SUBMARINE));
+            playUnitSelection(unitAt.id, unitAt.type === UNIT_TYPES.SUBMARINE, unitAt.type);
           }
           console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type})`);
           triggerRender();

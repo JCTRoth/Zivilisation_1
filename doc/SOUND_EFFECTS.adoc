@@ -591,11 +591,20 @@ cue makes a noise. Three mechanisms, in order:
 |===
 | Family | Window | Cues
 
+| selection
+| 0.3 s
+| `unitSelected`, `submarineSelected`, `artillerieSelected`,
+  `archerSelected`, `unitReSelected`. The shortest window in the game on
+  purpose: a unit's acknowledgement is gated per UNIT, not per sound (see
+  <<_selection_a_unit_answers_once_then_grunts>>), so this family only stops a
+  single click from producing a machine-gun of blips. It must stay far below
+  the repeat window or selecting unit A would silence unit B again.
+
 | unit
 | 10 s
-| `unitSelected`, `submarineSelected`, `tankMove`, `mechInfMove`,
-  `airUnitLaunch` — everything a unit says on its own. Click-spam, a
-  three-tile drive and a column of armour stay quiet.
+| `tankMove`, `mechInfMove`, `airUnitLaunch` — everything a unit says on its
+  own besides answering a click. A three-tile drive and a column of armour
+  stay quiet.
 
 | attack
 | 4 s

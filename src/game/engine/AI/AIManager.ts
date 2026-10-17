@@ -325,6 +325,15 @@ const NAVAL_STALL_TURNS = 2;
 
 /** How far a re-targeted hull must put itself from the objective it gave up. */
 const NAVAL_RETARGET_MIN_DISTANCE = 12;
+/**
+ * How many of the top-scoring targets get a real path check.
+ *
+ * Not all of them: the point is to reject targets behind a coastline, not to
+ * prove the best one is the best one. Four is enough for "the obvious target is
+ * unreachable, try the next", and keeps the cost of hunting at a handful of
+ * short A* runs per hull per turn instead of one per candidate.
+ */
+const NAVAL_REACHABILITY_CANDIDATES = 4;
 
 /**
  * Units every city keeps, whatever else the civ wants to do.
@@ -390,6 +399,18 @@ export class AIManager {
    * a land-map game never allocates one.
    */
   private navalMemories = new Map<number, NavalPatrolMemory>();
+
+  /**
+   * "Can this hull sail to that tile?" answers, valid for one turn.
+   *
+   * Reachability only changes when the map changes, which is once a turn at
+   * most, so re-asking for the same (hull, tile) pair within a turn is pure
+   * waste. Keyed on turn number and cleared on change, so it can never grow.
+   */
+  private navalReachCache: {
+    round: number;
+    entries: Map<string, boolean>;
+  } = { round: -1, entries: new Map() };
 
   /** The naval memory for a civ, created on first use. */
   navalMemoryFor(civId: number): NavalPatrolMemory {
@@ -1350,6 +1371,23 @@ export class AIManager {
         // those fired) was never reached. A 330-civ-turn naval run planned 28
         // colony missions and completed 0: every mission sat at stage 'gather'
         // with its settler frozen on the capital tile.
+        // Emergency evacuation: if enemy troops near this settler are at least
+        // 3x stronger than the local defenders, abandon settlement/founding
+        // and head for the nearest friendly city or an available transport.
+        if (unit.type === 'settler' && this.settlerNeedsEmergencyEvacuation(unit)) {
+          const shelter = this.nearestSettlerShelter(unit);
+          if (shelter) {
+            const step = this.findAffordableStep(unit, shelter);
+            if (step) {
+              const r = this.gameEngine.moveUnit(unit.id, step.col, step.row);
+              if (r?.success) {
+                debugLog(`[AI-SETTLER] Emergency evacuation: ${unit.id} -> (${step.col},${step.row})`);
+                break;
+              }
+            }
+          }
+        }
+
         const colonyMission = unit.type === 'settler'
           ? this.getColonyMissionForSettler(storage, unit.id)
           : unit.type === 'ferry'
@@ -3650,8 +3688,27 @@ export class AIManager {
       }
     }
 
-    // Loaded: put a unit ashore on the beach.
+    // Loaded: put a unit ashore on the beach — but only once the beach is
+    // actually ours to land on.
+    //
+    // `canUnloadFerry` refuses an enemy standing ON the beach tile. That is not
+    // the same as the beach being safe: a tile one step away is shooting at
+    // anything that walks onto the sand, and an invasion that lands anyway dies
+    // in the surf having achieved nothing. The hull therefore waits offshore
+    // while anything hostile holds the beach or its approaches, and the warships
+    // work the shore (see `chooseNavalDestination`'s beaching branch).
     if (!canUnload || !doUnload) return false;
+    if (!this.beachIsClear(unit.civilizationId, mission.landTile)) {
+      // Mark the stall so the fleet knows where to concentrate.
+      this.gameEngine.log?.('ai', `Invasion — ${unit.type} holds offshore, beach not yet clear`, {
+        civilizationId: unit.civilizationId,
+        action: 'invasion_hold',
+        unitId: unit.id,
+        targetCol: mission.landTile.col,
+        targetRow: mission.landTile.row,
+      });
+      return false;
+    }
     if (!canUnload(mission.landTile.col, mission.landTile.row)) return false;
     const landedId = this.ferryCargoIds(unit).find((id) => canUnload(mission.landTile.col, mission.landTile.row, id))
       ?? this.ferryCargoIds(unit)[0];
@@ -3678,6 +3735,90 @@ export class AIManager {
       targetRow: mission.landTile.row,
     });
     return true;
+  }
+
+  /**
+   * Whether a beach is clear to land on, approaches included.
+   *
+   * "Clear" means no foreign unit on the beach tile or within one step of it,
+   * and no foreign city on it. Deliberately the SAME rule as
+   * `canUnloadFerry` — which refuses an occupant of any other civilization, at
+   * war or not — because a check that is merely "hostile" reads a beach as safe
+   * while a neighbour's spearman is standing on it, and the landing then fails
+   * at the exact moment the fleet thought it had succeeded.
+   *
+   * The outer ring matters as much as the tile: `canUnloadFerry` only refuses
+   * an enemy standing exactly on the landing tile, so without the ring check a
+   * force walks onto the sand into a waiting spearman every single time.
+   */
+  private beachIsClear(civId: number, beach: { col: number; row: number }): boolean {
+    for (const unit of this.gameEngine.units) {
+      if (unit.isDefeated) continue;
+      if (unit.civilizationId === civId) continue;
+      const d = Math.max(Math.abs(unit.col - beach.col), Math.abs(unit.row - beach.row));
+      if (d <= 1) return false;
+    }
+    // A foreign city on the beach is worse than a unit: it is a fortification,
+    // and `canUnloadFerry` refuses it outright.
+    const city = this.gameEngine.getCityAt(beach.col, beach.row);
+    if (city && city.civilizationId !== civId) return false;
+    return true;
+  }
+
+  /**
+   * The next hostile on the same landmass as `from` — the one the landed force
+   * can actually walk to.
+   *
+   * "Available from land" is deliberate. An enemy three tiles inland is an
+   * objective the invasion can take; an enemy hull on the far side of the ocean
+   * is not, and sending the fleet after the latter strands the troops the fleet
+   * was brought along to support. Falls back to the nearest hostile of any kind
+   * when the engine cannot tell us which landmass a tile belongs to.
+   */
+  private nextEnemyFromLand(
+    from: { col: number; row: number },
+    civId: number,
+  ): { col: number; row: number } | null {
+    const grid = this.gameEngine.squareGrid;
+    if (!grid) return null;
+    const landmassId = (this.gameEngine as unknown as {
+      getLandmassId?: (c: number, r: number) => number;
+    }).getLandmassId;
+    const sameLandmass = (col: number, row: number): boolean => {
+      if (typeof landmassId !== 'function') return true;
+      try {
+        const a = landmassId(from.col, from.row);
+        const b = landmassId(col, row);
+        return a >= 0 && a === b;
+      } catch {
+        return true;
+      }
+    };
+
+    let best: { col: number; row: number } | null = null;
+    let bestDist = Infinity;
+    const consider = (col: number, row: number): void => {
+      if (!sameLandmass(col, row)) return;
+      const d = grid.chebyshevDistance(from.col, from.row, col, row);
+      if (d < bestDist) {
+        bestDist = d;
+        best = { col, row };
+      }
+    };
+
+    for (const unit of this.gameEngine.units) {
+      if (unit.isDefeated) continue;
+      if (unit.civilizationId === civId) continue;
+      if (!this.isHostileTo(civId, unit.civilizationId)) continue;
+      if (UNIT_PROPS[unit.type]?.naval) continue; // ships are not a land objective
+      consider(unit.col, unit.row);
+    }
+    for (const city of this.gameEngine.cities) {
+      if (city.civilizationId === civId) continue;
+      if (!this.isHostileTo(civId, city.civilizationId)) continue;
+      consider(city.col, city.row);
+    }
+    return best;
   }
 
   /** The land units aboard a hull, tolerating a stub engine without the API. */
@@ -4347,6 +4488,35 @@ export class AIManager {
       return invasion.waterTile;
     }
 
+    // A warship with an invasion pending and an uncleared beach goes to the
+    // beach. This is what makes "clear the beach FIRST" a real sequence rather
+    // than a comment: the ferry holds offshore (see `tryInvasionFerryAction`)
+    // and the fleet concentrates on the approaches until nothing hostile is
+    // left standing on them. Only fighting hulls — a transport has no business
+    // parking under a shore battery.
+    if (invasion && invasion.stage !== 'siege' && (unit.attack ?? 0) > 0) {
+      const beach = invasion.landTile;
+      if (beach && !this.beachIsClear(unit.civilizationId, beach)) {
+        const offBeach = this.navigableWaterAt(beach.col, beach.row)
+          ?? this.gameEngine.findAdjacentOcean?.(beach.col, beach.row);
+        if (offBeach) return offBeach;
+      }
+    }
+
+    // Beach clear and the force ashore (`siege`): the released hulls follow the
+    // advance. "Available from land" is the rule here — the fleet exists to
+    // support troops that have to WALK to their objective, so the next target is
+    // the next hostile on the same landmass as the beachhead, not the nearest
+    // enemy hull anywhere on the ocean. The troops pick the target; the fleet
+    // keeps up with them.
+    if (invasion && invasion.stage === 'siege' && (unit.attack ?? 0) > 0) {
+      const nextEnemy = this.nextEnemyFromLand(invasion.landTile, unit.civilizationId);
+      if (nextEnemy) {
+        const offEnemy = this.navigableWaterAt(nextEnemy.col, nextEnemy.row);
+        if (offEnemy) return offEnemy;
+      }
+    }
+
     // A ferry on a colony mission ignores the war and runs its route.
     const mission = this.getColonyMissionForFerry(storage, unit.id);
     if (mission) {
@@ -4460,7 +4630,16 @@ export class AIManager {
       }
     } catch { /* damage check is advisory */ }
     let best: { col: number; row: number } | null = null;
-    let bestScore = -Infinity;
+    // Every candidate is scored and kept, then the BEST REACHABLE one is taken.
+    // Scoring and reachability have to be two steps: a hull can only be asked
+    // "can you sail there?" about a handful of tiles, so the full candidate list
+    // is ranked on value first and pathfinding only answers for the front of it.
+    const candidates: Array<{
+      targetClass: NavalTargetClass;
+      aim: { col: number; row: number };
+      dist: number;
+      valueMultiplier: number;
+    }> = [];
     // Role-aware hunting: raiders (subs) want merchants, heavies want fleets,
     // scouts shadow rather than suicide. Small bonuses — class order never flips.
     let attackerRole: 'scout' | 'screen' | 'heavy' | 'raider' | 'carrier' = 'screen';
@@ -4480,11 +4659,7 @@ export class AIManager {
 
     const consider = (targetClass: NavalTargetClass, aim: { col: number; row: number }, dist: number, valueMultiplier = 1) => {
       if (dist < 0) return;
-      const { score } = scoreNavalTarget({ targetClass, distance: dist, valueMultiplier, isFresh: true, attackerRole });
-      if (score > bestScore) {
-        bestScore = score;
-        best = aim;
-      }
+      candidates.push({ targetClass, aim, dist, valueMultiplier });
     };
 
     // Enemy hulls: transports outrank warships, then fisher boats and scouts.
@@ -4544,13 +4719,22 @@ export class AIManager {
       consider('coastal_city', aim, dist, walled ? 0.4 : (defended > 0 ? 0.8 : 1.2));
     }
 
-    // Remembered enemy HULLS — the naval memory's own contribution. Only reached
-    // when nothing is in sight, so it can never outbid a live target; it just
+    // Take the best candidate this hull can actually SAIL to.
+    //
+    // "Reachable" is the whole point of the two-step design: a target on the far
+    // side of a continent scores exactly as well as one in the next bay, and
+    // without a path check a warship would spend the war re-issuing orders to a
+    // tile it can never enter. The try/catch is deliberate — a pathfinding
+    // failure must never cost the hull its turn.
+    best = this.bestReachableCandidate(unit, candidates, attackerRole);
+
+    // Nothing live is reachable. Fall back to remembered enemy HULLS — the naval
+    // memory's own contribution. This can never outbid a live target; it just
     // gives a hull with nothing else to do a lead worth following instead of a
     // blind patrol. Hostility is re-checked here (the filter is mandatory, not
     // advisory): sailing toward a remembered contact of a civ we are at peace
     // with is pointless, and acting on that tile would declare war.
-    if (bestScore === -Infinity) {
+    if (!best) {
       const contact = this.navalMemoryFor(ownCivId).bestContact({
         hostileTo: (civId) => this.isHostileTo(ownCivId, civId),
       });
@@ -4566,13 +4750,14 @@ export class AIManager {
             dist,
             0.5, // remembered: worth half of a sighting, never more
           );
+          best = this.bestReachableCandidate(unit, candidates, attackerRole);
         }
       }
     }
 
-    // Remembered enemy positions we have lost sight of, as a last resort so a
-    // warship with nothing in sight still has somewhere to be useful.
-    if (bestScore === -Infinity && storage?.enemyLocations) {
+    // Still nothing: remembered enemy positions we have lost sight of, so a
+    // warship with no lead at all still has somewhere to be useful.
+    if (!best && storage?.enemyLocations) {
       for (const [ownerCivId, locations] of storage.enemyLocations) {
         if (!this.isHostileTo(ownCivId, ownerCivId)) continue;
         for (const loc of locations) {
@@ -4583,8 +4768,87 @@ export class AIManager {
           consider('coastal_city', water, dist, 0.5);
         }
       }
+      best = this.bestReachableCandidate(unit, candidates, attackerRole);
     }
+
     return best;
+  }
+
+  /**
+   * The highest-scoring candidate of `candidates` this hull can actually sail
+   * to, or null when every one of them is behind a coastline.
+   */
+  private bestReachableCandidate(
+    unit: Unit,
+    candidates: Array<{
+      targetClass: NavalTargetClass;
+      aim: { col: number; row: number };
+      dist: number;
+      valueMultiplier: number;
+    }>,
+    attackerRole: 'scout' | 'screen' | 'heavy' | 'raider' | 'carrier',
+  ): { col: number; row: number } | null {
+    const ordered = [...candidates].sort((a, b) =>
+      scoreNavalTarget({ targetClass: b.targetClass, distance: b.dist, valueMultiplier: b.valueMultiplier, isFresh: true, attackerRole }).score
+      - scoreNavalTarget({ targetClass: a.targetClass, distance: a.dist, valueMultiplier: a.valueMultiplier, isFresh: true, attackerRole }).score
+      || a.dist - b.dist);
+
+    // Only the front of the ranked list is pathchecked: the point is to reject
+    // unreachable targets, not to guarantee the mathematically best one.
+    for (const candidate of ordered.slice(0, NAVAL_REACHABILITY_CANDIDATES)) {
+      try {
+        if (this.navalReachable(unit, candidate.aim)) return candidate.aim;
+      } catch {
+        // No path answer available: try the next candidate rather than letting
+        // the hull stand idle over an exception.
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Whether this hull can actually sail to `aim`.
+   *
+   * Chebyshev distance says a target is close; it cannot see a continent in the
+   * way. This is the gate that stops a warship from hunting a unit it will never
+   * reach — the naval equivalent of the caravan's "does a route exist at all".
+   *
+   * Cheap on purpose: the search is capped at `NAVAL_REACH_MAX_TURNS` movement
+   * points and results are memoised per turn, so a fleet of eight hulls costs
+   * eight short A* runs a turn rather than one per candidate per hull.
+   */
+  private navalReachable(unit: Unit, aim: { col: number; row: number }): boolean {
+    const map = this.gameEngine.map;
+    const grid = this.gameEngine.squareGrid;
+    if (!map || !grid) return false;
+    if (unit.col === aim.col && unit.row === aim.row) return true;
+
+    const round = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const cache = this.navalReachCache;
+    if (cache.round !== round) {
+      cache.round = round;
+      cache.entries.clear();
+    }
+    const key = `${unit.id}:${aim.col},${aim.row}`;
+    const cached = cache.entries.get(key);
+    if (cached !== undefined) return cached;
+
+    const result = Pathfinding.findPath(
+      unit.col,
+      unit.row,
+      aim.col,
+      aim.row,
+      (c, r) => this.gameEngine.getTileAt(c, r),
+      unit.type,
+      map.width,
+      map.height,
+    );
+    // `success` is what matters: A* answers "is there a route" directly, and
+    // reading the last node instead would report an unreachable tile as
+    // reachable whenever the search stopped on a partial path.
+    const reachable = result.success === true;
+    cache.entries.set(key, reachable);
+    return reachable;
   }
 
   /**
@@ -7962,6 +8226,63 @@ export class AIManager {
   private isGarrisonEligible(unit: Unit): boolean {
     const civilianTypes = new Set(['settler', 'caravan', 'diplomat', 'worker', 'nuclear']);
     return !civilianTypes.has(unit.type) && (unit.attack || 0) > 0;
+  }
+
+  /**
+   * Emergency evacuation trigger: enemy military strength within 4 tiles of
+   * the settler is at least 3x the defending strength (friendly military
+   * strength within the same radius plus any city garrison). When true the
+   * settler must abandon its mission and flee.
+   */
+  private settlerNeedsEmergencyEvacuation(unit: Unit): boolean {
+    if (!this.gameEngine.squareGrid) return false;
+    const dm = this.gameEngine.diplomacyManager;
+    const enemies = dm ? new Set((dm.getEnemies?.(unit.civilizationId) ?? []).map(Number)) : new Set<number>();
+    if (enemies.size === 0) return false;
+
+    let enemyStrength = 0;
+    for (const other of this.gameEngine.units) {
+      if (other.isDefeated || other.civilizationId === unit.civilizationId) continue;
+      const isHostile = other.civilizationId === BARBARIAN_CIV_ID
+        || (dm?.isAtWar?.(unit.civilizationId, other.civilizationId) ?? false);
+      if (!isHostile) continue;
+      const dist = this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, other.col, other.row);
+      if (dist <= 4) {
+        enemyStrength += (other.attack ?? 1) + (other.defense ?? 1);
+      }
+    }
+    // city garrisons count as defenders
+    let defenderStrength = 0;
+    for (const u of this.gameEngine.units) {
+      if (u.isDefeated || u.civilizationId !== unit.civilizationId) continue;
+      const dist = this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, u.col, u.row);
+      if (dist <= 4) defenderStrength += (u.defense ?? 1);
+    }
+    for (const city of this.gameEngine.cities) {
+      if (city.civilizationId !== unit.civilizationId) continue;
+      const dist = this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, city.col, city.row);
+      if (dist <= 4) defenderStrength += 5; // garrison proxy
+    }
+    if (defenderStrength <= 0) defenderStrength = 1;
+    return enemyStrength >= defenderStrength * 3;
+  }
+
+  /** Nearest friendly city or transport ship tile for an evacuating settler. */
+  private nearestSettlerShelter(unit: Unit): { col: number; row: number } | null {
+    if (!this.gameEngine.squareGrid) return null;
+    let best: { col: number; row: number; dist: number } | null = null;
+    for (const city of this.gameEngine.cities ?? []) {
+      if (city.civilizationId !== unit.civilizationId) continue;
+      const dist = this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, city.col, city.row);
+      if (!best || dist < best.dist) best = { col: city.col, row: city.row, dist };
+    }
+    for (const u of this.gameEngine.units ?? []) {
+      if (u.isDefeated || u.civilizationId !== unit.civilizationId) continue;
+      if (u.type !== 'ferry' && u.type !== 'transport') continue;
+      const dist = this.gameEngine.squareGrid.squareDistance(unit.col, unit.row, u.col, u.row);
+      if (!best || dist < best.dist) best = { col: u.col, row: u.row, dist };
+    }
+    return best ? { col: best.col, row: best.row } : null;
   }
 
   private isSettlerDirectlyThreatened(unit: Unit): boolean {

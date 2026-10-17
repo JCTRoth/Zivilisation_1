@@ -188,6 +188,22 @@ function App() {
           currentYear: engine.currentYear,
         });
 
+        // AI-vs-AI games start zoomed out and centered so the whole map is
+        // visible without player input — this is the "auto-delivery" / overview
+        // mode the AI needs to play effectively.
+        if (isAIVsAI) {
+          const mapWidth = gameSettings.mapWidth ?? 40;
+          const mapHeight = gameSettings.mapHeight ?? 40;
+          const tileSize = 32;
+          const centerX = (mapWidth * tileSize) / 2;
+          const centerY = (mapHeight * tileSize) / 2;
+          actions.updateCamera({
+            x: centerX,
+            y: centerY,
+            zoom: 0.3, // MIN_ZOOM — completely zoomed out
+          });
+        }
+
         // `?combatlab` — pre-pose opposing units so the combat e2e spec has a
         // battlefield ready without playing through the setup wizard.
         if (combatLabRef.current) {

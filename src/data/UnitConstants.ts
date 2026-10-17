@@ -448,7 +448,12 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         naval: true,
         icon: '🛳️',
         requires: 'flight',
-        type: 'naval'
+        type: 'naval',
+        // A carrier carries AIRCRAFT, never troops. Four airframes is a flight:
+        // enough to cover a landing and strike inland without a carrier fleet.
+        // See `aircraftCapacity` in GameConstants for why this is its own field
+        // and not `transportCapacity`.
+        aircraftCapacity: 4
     },
     [UNIT_TYPES.SETTLER]: {
         name: 'Settler',

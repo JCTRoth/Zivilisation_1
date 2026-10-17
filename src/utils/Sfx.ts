@@ -23,6 +23,8 @@ export type SfxCue =
   | 'stolenTechnology'
   /** The diplomat's cover was blown — descending alarm. */
   | 'coverBlown'
+  /** A spy was caught in the act. */
+  | 'spyCatched'
   /** A city fell to the player's forces before the modern era. */
   | 'cityCapturedClassic'
   /** A city fell to the player's forces in the modern era. */
@@ -84,10 +86,20 @@ export type SfxCue =
   | 'unitDisbanded'
   /** The player picked up one of their units — a reporting-in blip. */
   | 'unitSelected'
+  /**
+   * The player clicked a unit they had ALREADY acknowledged within the last few
+   * seconds — a bare grunt. Deliberately not another `unitSelected`: the player
+   * has just heard the full introduction, and a second "Yes, Commander?" over
+   * the top of it is the game repeating itself. This is the "still here" that
+   * answers a re-click without repeating.
+   */
+  | 'unitReSelected'
   /** The player picked up a submarine — a sonar acknowledgement. */
   | 'submarineSelected'
   /** The player picked up an artillery piece — a reporting-in blip. */
   | 'artillerieSelected'
+  /** The player picked up an archer — a reporting-in blip. */
+  | 'archerSelected'
   /** An air unit takes off from a city or a carrier. */
   | 'airUnitLaunch'
   /** An air unit, already airborne, is given a target. */
@@ -96,6 +108,8 @@ export type SfxCue =
   | 'airUnitReturningToBase'
   /** A tank rolls out of its tile. */
   | 'tankMove'
+  /** A horse unit (chariot/knights/cavalry) moves out. */
+  | 'horseUnitMoves'
   /** Mechanised infantry rolls out of its tile — the same beat as a tank. */
   | 'mechInfMove'
   /** The player founded a city — the cheer off the new walls. */
@@ -137,9 +151,12 @@ export const CUE_FILES: Partial<Record<SfxCue, string>> = {
   'nuclearStrike': '/assets/sfx/warzone2100/nuclear-strike-1.ogg',
   'submarineSelected': '/assets/sfx/warzone2100/submarine-selected-1.ogg',
   'artillerieSelected': '/assets/sfx/warzone2100/artillerie-selected-1.ogg',
+  'archerSelected': '/assets/sfx/archer_selected.opus',
+  'horseUnitMoves': '/assets/sfx/horse_unit_moves.opus',
   'airUnitInAirTargetSet': '/assets/sfx/warzone2100/air-unit-in-air-target-set.ogg',
   'airUnitReturningToBase': '/assets/sfx/warzone2100/air-unit-returning-to-base.ogg',
   'sabotageSuccess': '/assets/sfx/warzone2100/sabotage-success-1.ogg',
+  'spyCatched': '/assets/sfx/warzone2100/spy_catched.ogg',
   'productionComplete': '/assets/sfx/warzone2100/production-complete-1.ogg',
 
   // ── Still synthesized — uncomment a row once its file lands ───────
@@ -186,6 +203,12 @@ const CUES: Record<SfxCue, Note[]> = {
     { freq: 330, at: 0.11, dur: 0.12, type: 'sawtooth' },
     { freq: 262, at: 0.22, dur: 0.16, type: 'sawtooth' },
     { freq: 196, at: 0.36, dur: 0.28, type: 'sawtooth', gain: 0.7 },
+  ],
+  spyCatched: [
+    // Caught: three short descending snaps.
+    { freq: 440, at: 0.0, dur: 0.08, type: 'sawtooth', gain: 0.7 },
+    { freq: 330, at: 0.07, dur: 0.08, type: 'sawtooth', gain: 0.7 },
+    { freq: 220, at: 0.14, dur: 0.16, type: 'sawtooth', gain: 0.6 },
   ],
   cityCapturedClassic: [
     { freq: 392, at: 0.0, dur: 0.11 },
@@ -289,6 +312,12 @@ const CUES: Record<SfxCue, Note[]> = {
     { freq: 98, at: 0.0, dur: 0.09, type: 'triangle', gain: 0.8 },
     { freq: 74, at: 0.07, dur: 0.12, type: 'triangle', gain: 0.6 },
   ],
+  horseUnitMoves: [
+    // Hooves: three quick low taps.
+    { freq: 180, at: 0.0, dur: 0.06, type: 'triangle', gain: 0.7 },
+    { freq: 160, at: 0.05, dur: 0.06, type: 'triangle', gain: 0.6 },
+    { freq: 140, at: 0.1, dur: 0.08, type: 'triangle', gain: 0.5 },
+  ],
   mechInfMove: [
     // Mech. Inf. stands in for the tank's tracks: a heavier two-note grind
     // that sits a little lower, because the recording it replaces is a tracked
@@ -342,10 +371,21 @@ const CUES: Record<SfxCue, Note[]> = {
     { freq: 520, at: 0.0, dur: 0.05 },
     { freq: 780, at: 0.05, dur: 0.08 },
   ],
+  unitReSelected: [
+    // The grunt for a re-click: ONE short downward blip, a quarter the length
+    // of the full acknowledgement and falling rather than rising, so it reads
+    // as "still here" instead of as the start of another introduction.
+    { freq: 420, at: 0.0, dur: 0.07, gain: 0.32 },
+  ],
   artillerieSelected: [
     // Reporting in: two crisp blips, a touch heavier.
     { freq: 480, at: 0.0, dur: 0.06 },
     { freq: 720, at: 0.06, dur: 0.09 },
+  ],
+  archerSelected: [
+    // Reporting in: two quick blips.
+    { freq: 560, at: 0.0, dur: 0.05 },
+    { freq: 840, at: 0.05, dur: 0.07 },
   ],
   submarineSelected: [
     // A sonar acknowledgement: two spaced pings.
@@ -622,6 +662,8 @@ const UNIT_CUE_GAIN: Partial<Record<SfxCue, number>> = {
   missileLaunch: 0.6,
   sdiIntercept: 0.65,
   unitSelected: 0.5,
+  // Quieter than the full acknowledgement: it is an aside, not an answer.
+  unitReSelected: 0.32,
   submarineSelected: 0.5,
   sabotageSuccess: 0.6,
   productionComplete: 0.6,
@@ -705,6 +747,8 @@ const CUE_FILE_VOLUME: Partial<Record<SfxCue, number>> = {
   mechInfMove: 0.35,
   submarineSelected: 0.5,
   artillerieSelected: 0.5,
+  archerSelected: 0.5,
+  horseUnitMoves: 0.5,
   airUnitInAirTargetSet: 0.45,
   airUnitReturningToBase: 0.45,
   torpedoAttack: 0.45,
@@ -717,6 +761,7 @@ const CUE_FILE_VOLUME: Partial<Record<SfxCue, number>> = {
   missileLaunch: 0.55,
   sdiIntercept: 0.6,
   sabotageSuccess: 0.55,
+  spyCatched: 0.55,
   productionComplete: 0.55,
   cityAttacked: 0.5,
   barracksBuilt: 0.55,

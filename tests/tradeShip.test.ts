@@ -181,5 +181,7 @@ describe('Trade Ship', () => {
     (engine as unknown as { autoEstablishTradeShipRoute: (id: string) => boolean }).autoEstablishTradeShipRoute(ship.id);
 
     expect(ship.tradeShipRoute?.destCityId).toBe(near.id);
+    // The far harbour was a real candidate — it is simply not the nearest one.
+    expect(ship.tradeShipRoute?.destCityId).not.toBe(far.id);
   });
 });

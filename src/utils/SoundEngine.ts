@@ -34,22 +34,41 @@ import type { SfxCue } from './Sfx';
 import { UNIT_TYPES } from '../data/UnitConstants';
 
 /** Cooldown family of a cue — the anti-spam window it plays under. */
-export type SoundCategory = 'unit' | 'attack' | 'event' | 'ui';
+export type SoundCategory = 'selection' | 'unit' | 'attack' | 'event' | 'ui';
 
 /**
  * How long a cue of each family stays quiet after firing.
  *
- * `unit` (10 s) covers everything a unit says on its own — selections,
- * movement, launches: the sounds the player triggers just by driving.
- * `attack` (4 s) covers every weapon, including the nuclear strike: blows
- * land round after round, and each one must be heard without machine-gunning.
+ * `selection` (0.3 s) is deliberately the shortest window in the game. A unit's
+ * acknowledgement is not gated by a cooldown at all — it is gated by whether the
+ * player is RE-SELECTING the same unit (see `SELECTION_REPEAT_WINDOW_MS`) — so
+ * this family exists only to stop one player mashing the mouse from producing a
+ * machine-gun of blips on a single click. It must stay well under the repeat
+ * window, or selecting unit A and then unit B would silence B, which is exactly
+ * the behaviour it replaced.
+ *
+ * `unit` (10 s) covers everything a unit says on its own — movement, launches:
+ * the sounds the player triggers just by driving.
+ * `attack` (4 s) covers every weapon, including the nuclear strike: blows land
+ * round after round, and each one must be heard without machine-gunning.
  */
 export const SOUND_COOLDOWNS_MS: Record<SoundCategory, number> = {
+  selection: 300,
   unit: 10_000,
   attack: 4_000,
   event: 2_500,
   ui: 400,
 };
+
+/**
+ * How long before re-selecting the SAME unit counts as a fresh introduction.
+ *
+ * 4 s — the midpoint of the 3–5 s window. Inside it the player is re-clicking
+ * the unit they just acknowledged, so a full "Yes, Commander?" would be the
+ * game repeating itself: it gets a bare grunt instead. Outside it, selecting
+ * the unit is a new interaction and gets the full acknowledgement again.
+ */
+export const SELECTION_REPEAT_WINDOW_MS = 4_000;
 
 /** One recording of a cue, with its share of the plays. */
 interface SoundVariant {
@@ -112,7 +131,7 @@ export const SOUND_MANIFEST: Partial<Record<SfxCue, CueManifest>> = {
     variants: [{ file: `${WZ}/nuclear-strike-1.ogg`, weight: 100 }],
   },
   submarineSelected: {
-    category: 'unit',
+    category: 'selection',
     durationSec: 1.5,
     variants: [
       { file: `${WZ}/submarine-selected-1.ogg`, weight: 70 },
@@ -120,7 +139,7 @@ export const SOUND_MANIFEST: Partial<Record<SfxCue, CueManifest>> = {
     ],
   },
   artillerieSelected: {
-    category: 'unit',
+    category: 'selection',
     durationSec: 0.51,
     variants: [
       { file: `${WZ}/artillerie-selected-1.ogg`, weight: 70 },
@@ -147,11 +166,26 @@ export const SOUND_MANIFEST: Partial<Record<SfxCue, CueManifest>> = {
     durationSec: 1.85,
     variants: [{ file: `${WZ}/sabotage-success-1.ogg`, weight: 100 }],
   },
+  spyCatched: {
+    category: 'event',
+    durationSec: 1.0,
+    variants: [{ file: `${WZ}/spy_catched.ogg`, weight: 100 }],
+  },
   productionComplete: {
     category: 'event',
     durationSec: 1.18,
     variants: [{ file: `${WZ}/production-complete-1.ogg`, weight: 100 }],
   },
+  // ── Legacy-style file cues (single recording, file from CUE_FILES) ──
+  archerSelected: { category: 'selection', durationSec: 0.5 },
+  horseUnitMoves: { category: 'unit', durationSec: 0.5 },
+
+  // The repeat-click grunt: a unit re-selected inside its acknowledgement
+  // window says this instead of introducing itself again. Synthesized, so it
+  // has no file — one short downward blip, half the length of the real
+  // acknowledgement, which is what makes it read as "still here" rather than
+  // as a second "Yes, Commander?".
+  unitReSelected: { category: 'selection', durationSec: 0.12 },
 
   // ── Legacy mp3 cues: duration only, the file comes from CUE_FILES ────
   // Measured off the shipped mp3s with ffprobe. The voice stays busy for the
@@ -206,9 +240,15 @@ export const CUE_CATEGORY: Record<SfxCue, SoundCategory> = {
   torpedoAttack: 'attack',
   unitDefeated: 'attack',
   unitDisbanded: 'event',
-  unitSelected: 'unit',
-  submarineSelected: 'unit',
-  artillerieSelected: 'unit',
+  // Selection is its own family: the acknowledgement is gated per UNIT (see
+  // `SELECTION_REPEAT_WINDOW_MS`), not by a shared window, so a player picking
+  // five units in a row hears five units answer instead of one.
+  unitSelected: 'selection',
+  submarineSelected: 'selection',
+  artillerieSelected: 'selection',
+  archerSelected: 'selection',
+  unitReSelected: 'selection',
+  horseUnitMoves: 'unit',
   airUnitInAirTargetSet: 'unit',
   airUnitReturningToBase: 'unit',
   airUnitLaunch: 'unit',
@@ -218,6 +258,7 @@ export const CUE_CATEGORY: Record<SfxCue, SoundCategory> = {
   cityFounded: 'event',
   barracksBuilt: 'event',
   sabotageSuccess: 'event',
+  spyCatched: 'event',
   productionComplete: 'event',
   nuclearStrike: 'attack',
 };
@@ -255,8 +296,11 @@ const DEFAULT_FILE_DURATION_SEC = 0.5;
 const CATEGORY_PRIORITY: Record<SoundCategory, number> = {
   event: 0,
   attack: 1,
-  unit: 2,
-  ui: 3,
+  // A unit answering a click outranks the movement chatter that usually
+  // follows it, so the acknowledgement is never swallowed by its own orders.
+  selection: 2,
+  unit: 3,
+  ui: 4,
 };
 
 /** The waiting line holds this many cues; anything more is dropped. */
@@ -294,6 +338,16 @@ interface EngineConfig {
 let config: EngineConfig | null = null;
 /** Last accepted play, per cue — the cooldown ledger. */
 const lastPlayed = new Map<SfxCue, number>();
+/**
+ * When each unit last gave its acknowledgement, by unit id.
+ *
+ * This replaces the old rule, which was a 10 s cooldown on the cue itself: it
+ * cut click-spam, but it was keyed on the SOUND rather than on the UNIT, so
+ * selecting five units in a row played one acknowledgement and silenced the
+ * other four. Selection is a conversation with a particular unit, so the
+ * history belongs to the unit.
+ */
+const lastSelectionByUnit = new Map<string, number>();
 /** Epoch ms until which the voice is busy. */
 let busyUntil = 0;
 /** Waiting cues, sorted by priority then arrival. */
@@ -324,6 +378,7 @@ export function configureSoundEngine(partial: Partial<EngineConfig> & Pick<Engin
  */
 export function resetSoundPolicy(): void {
   lastPlayed.clear();
+  lastSelectionByUnit.clear();
   queue = [];
   busyUntil = 0;
   generation++;
@@ -496,6 +551,53 @@ export function cityAssaultCue(unitType: string | undefined): boolean {
 }
 
 /** The acknowledgement a unit of `type` gives when the player picks it. */
-export function unitSelectCue(isSubmarine: boolean): SfxCue {
-  return isSubmarine ? 'submarineSelected' : 'unitSelected';
+export function unitSelectCue(isSubmarine: boolean, unitType?: string): SfxCue {
+  if (isSubmarine) return 'submarineSelected';
+  if (unitType === 'archer') return 'archerSelected';
+  return 'unitSelected';
+}
+
+/** What a unit should do when the player clicks it. */
+export type SelectionAck =
+  /** First selection: the full "Yes, Commander?". */
+  | 'ack'
+  /** Re-selected inside the window: a bare grunt, or silence. */
+  | 'brief';
+
+/**
+ * What this click deserves from THIS unit.
+ *
+ * The rule: a unit introduces itself the first time it is picked up. Clicking
+ * it again within `SELECTION_REPEAT_WINDOW_MS` is the player re-issuing or
+ * cancelling an order, not a new conversation — so it gets a short grunt, or
+ * nothing at all. Clicking it after that window is a fresh introduction and
+ * gets the full acknowledgement again.
+ *
+ * Stamps the ledger as a side effect, so call it exactly once per click.
+ */
+export function selectionAckFor(unitId: string, now: number = Date.now()): SelectionAck {
+  const last = lastSelectionByUnit.get(unitId);
+  lastSelectionByUnit.set(unitId, now);
+  if (last === undefined) return 'ack';
+  return now - last < SELECTION_REPEAT_WINDOW_MS ? 'brief' : 'ack';
+}
+
+/**
+ * Play a unit's selection acknowledgement.
+ *
+ * Returns the cue it chose, or null when nothing was played — so a caller can
+ * tell "the unit grunted" from "the unit stayed quiet" without knowing the
+ * policy.
+ */
+export function playUnitSelection(
+  unitId: string,
+  isSubmarine: boolean,
+  unitType: string | undefined,
+  now: number = Date.now(),
+): SfxCue | null {
+  const ack = selectionAckFor(unitId, now);
+  const cue: SfxCue = ack === 'brief'
+    ? 'unitReSelected'
+    : unitSelectCue(isSubmarine, unitType);
+  return requestSound(cue) === 'muted' ? null : cue;
 }

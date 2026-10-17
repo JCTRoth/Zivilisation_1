@@ -17,6 +17,9 @@ import {
   cueDurationSec,
   unitAttackCue,
   unitSelectCue,
+  selectionAckFor,
+  playUnitSelection,
+  SELECTION_REPEAT_WINDOW_MS,
   cityAssaultCue,
   SOUND_MANIFEST,
   SOUND_COOLDOWNS_MS,
@@ -26,6 +29,9 @@ import { CUE_FILES, type SfxCue } from '@/utils/Sfx';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+/** Long enough for the one voice to finish whatever is ringing on it. */
+const CLEAR_VOICE_MS = 5_000;
 
 /** A controllable world for the engine: time, randomness and sound output. */
 function harness() {
@@ -67,14 +73,39 @@ beforeEach(() => {
 });
 
 describe('cooldowns — one voice per family per window', () => {
-  it('a unit sound replays only after 10 seconds', () => {
+  it('a movement sound replays only after 10 seconds', () => {
     const h = harness();
     expect(SOUND_COOLDOWNS_MS.unit).toBe(10_000);
+    expect(requestSound('tankMove')).toBe('played');
+    expect(requestSound('tankMove')).toBe('dropped-cooldown');
+    h.advance(9_999);
+    expect(requestSound('tankMove')).toBe('dropped-cooldown');
+    h.advance(1);
+    expect(requestSound('tankMove')).toBe('played');
+  });
+
+  it('a selection acknowledgement is NOT held to the 10 s window', () => {
+    // The old rule held selections to the same 10 s family as movement, so
+    // picking up five units in a row produced one acknowledgement and four
+    // silences. Selection is a conversation with a particular unit and is gated
+    // per unit instead (see `selectionAckFor`), so its family window is only
+    // long enough to stop one click from machine-gunning.
+    const h = harness();
+    expect(SOUND_COOLDOWNS_MS.selection).toBeLessThan(1_000);
+    expect(requestSound('unitSelected')).toBe('played');
+    // Clear the voice as well as the cooldown — the one voice at a time rule is
+    // unchanged and is what makes these `queued` rather than `played`.
+    h.advance(CLEAR_VOICE_MS);
+    expect(requestSound('archerSelected')).toBe('played');
+    h.advance(CLEAR_VOICE_MS);
+    expect(requestSound('submarineSelected')).toBe('played');
+  });
+
+  it('still stops one click from producing three blips', () => {
+    const h = harness();
     expect(requestSound('unitSelected')).toBe('played');
     expect(requestSound('unitSelected')).toBe('dropped-cooldown');
-    h.advance(9_999);
-    expect(requestSound('unitSelected')).toBe('dropped-cooldown');
-    h.advance(1);
+    h.advance(CLEAR_VOICE_MS);
     expect(requestSound('unitSelected')).toBe('played');
   });
 
@@ -136,15 +167,29 @@ describe('serialization — never two sounds at once', () => {
     const h = harness();
     expect(requestSound('nuclearStrike')).toBe('played'); // holds 4.67 s
     expect(requestSound('cityAttacked')).toBe('queued'); // priority 0
-    expect(requestSound('unitSelected')).toBe('queued'); // priority 2
-    expect(requestSound('tankMove')).toBe('queued'); // priority 2 — line full
-    // A fourth unit sound is no more important than the least important
-    // waiter, so it is dropped rather than evicting real news.
-    expect(requestSound('submarineSelected')).toBe('dropped-busy');
+    expect(requestSound('tankMove')).toBe('queued'); // priority 3
+    expect(requestSound('mechInfMove')).toBe('queued'); // priority 3 — line now full
+    // A newcomer no more important than the least important waiter is dropped
+    // rather than evicting anything: a click never bumps a fanfare.
+    expect(requestSound('unitPromoted')).toBe('dropped-busy');
     h.advance(10_000);
-    // The submarine ping never got in; everything else played exactly once.
-    expect(h.played.filter((p) => p.what.includes('submarine'))).toHaveLength(0);
-    expect(h.played).toHaveLength(4);
+    expect(h.played.filter((p) => p.what.includes('unitPromoted'))).toHaveLength(0);
+  });
+
+  it('a unit answering a click outranks the movement chatter behind it', () => {
+    // The acknowledgement is what the player is listening for; an order they
+    // just issued must not push it out of the line.
+    const h = harness();
+    expect(requestSound('nuclearStrike')).toBe('played'); // holds 4.67 s
+    expect(requestSound('cityAttacked')).toBe('queued'); // priority 0
+    expect(requestSound('tankMove')).toBe('queued'); // priority 3
+    expect(requestSound('mechInfMove')).toBe('queued'); // priority 3 — line now full
+    // The ack (priority 2) evicts the least important waiter (a movement cue).
+    expect(requestSound('unitSelected')).toBe('queued');
+    h.advance(10_000);
+    expect(h.played.some((p) => p.what === 'unitSelected')).toBe(true);
+    const movement = h.played.filter((p) => p.what.includes('tank-move') || p.what.includes('mech'));
+    expect(movement.length).toBe(1); // one of the two was evicted
   });
 
   it('a queued cue does not re-trigger its own cooldown on the way out', () => {
@@ -198,9 +243,9 @@ describe('variants — the main recording plays most of the time', () => {
         files.add(variant.file);
       }
     }
-    // Fifteen recordings shipped, fifteen wired — a file on disk that no cue
+    // Sixteen recordings shipped, sixteen wired — a file on disk that no cue
     // plays is a dead asset, and a cue with no file is a silent promise.
-    expect(files.size).toBe(15);
+    expect(files.size).toBe(16);
   });
 
   it('one file, one purpose — no recording serves two cues', () => {
@@ -244,6 +289,7 @@ describe('variants — the main recording plays most of the time', () => {
       'air-unit-returning-to-base.ogg': 0.5,
       'sdi-intercept-1.ogg': 1.31,
       'sabotage-success-1.ogg': 1.85,
+      'spy_catched.ogg': 1.0,
       'production-complete-1.ogg': 1.18,
     };
     for (const [cue, manifest] of Object.entries(SOUND_MANIFEST)) {
@@ -358,5 +404,71 @@ describe('resetSoundPolicy', () => {
     expect(requestSound('machineGunStrike')).toBe('dropped-cooldown');
     resetSoundPolicy();
     expect(requestSound('machineGunStrike')).toBe('played');
+  });
+});
+
+describe('selection — a unit answers once, then grunts', () => {
+  it('gives the full acknowledgement the first time a unit is picked up', () => {
+    expect(selectionAckFor('u1', 1_000)).toBe('ack');
+  });
+
+  it('grunts instead of re-introducing itself inside the window', () => {
+    selectionAckFor('u1', 1_000);
+    // 4 s is the midpoint of the 3–5 s window the rule asks for.
+    expect(SELECTION_REPEAT_WINDOW_MS).toBeGreaterThanOrEqual(3_000);
+    expect(SELECTION_REPEAT_WINDOW_MS).toBeLessThanOrEqual(5_000);
+    expect(selectionAckFor('u1', 1_000 + 500)).toBe('brief');
+    expect(selectionAckFor('u1', 1_000 + 2_500)).toBe('brief');
+  });
+
+  it('introduces itself again once the window has passed', () => {
+    selectionAckFor('u1', 1_000);
+    expect(selectionAckFor('u1', 1_000 + SELECTION_REPEAT_WINDOW_MS)).toBe('ack');
+  });
+
+  it('treats every unit as its own conversation', () => {
+    // The whole point of the change: picking up five units in a row must give
+    // five acknowledgements. The old shared cooldown gave one.
+    expect(selectionAckFor('a', 1_000)).toBe('ack');
+    expect(selectionAckFor('b', 1_000)).toBe('ack');
+    expect(selectionAckFor('c', 1_000)).toBe('ack');
+    expect(selectionAckFor('d', 1_000)).toBe('ack');
+    expect(selectionAckFor('e', 1_000)).toBe('ack');
+  });
+
+  it('forgets nothing within a turn but is not a permanent record', () => {
+    // The ledger answers "did we just acknowledge this unit?", not "have we
+    // ever". A unit picked up two minutes later is a new introduction.
+    selectionAckFor('u1', 1_000);
+    expect(selectionAckFor('u1', 1_000 + 120_000)).toBe('ack');
+  });
+
+  it('plays the grunt on a re-click and the real acknowledgement otherwise', () => {
+    const h = harness();
+    expect(playUnitSelection('u1', false, 'warrior', 1_000)).toBe('unitSelected');
+    h.advance(CLEAR_VOICE_MS);
+    // Same unit, same moment in the policy clock: the grunt.
+    expect(playUnitSelection('u1', false, 'warrior', 1_001)).toBe('unitReSelected');
+    // A different unit, still the full answer.
+    h.advance(CLEAR_VOICE_MS);
+    expect(playUnitSelection('u2', true, 'submarine', 1_002)).toBe('submarineSelected');
+  });
+
+  it('keeps each unit type speaking in its own voice on the FIRST click', () => {
+    expect(playUnitSelection('s1', true, 'submarine', 1_000)).toBe('submarineSelected');
+    expect(playUnitSelection('a1', false, 'archer', 1_000)).toBe('archerSelected');
+    expect(playUnitSelection('w1', false, 'warrior', 1_000)).toBe('unitSelected');
+  });
+
+  it('returns null when the game is muted', () => {
+    configureSoundEngine({
+      backend: { playFile: () => {}, playSynth: () => {} },
+      isEnabled: () => false,
+    });
+    resetSoundPolicy();
+    expect(playUnitSelection('u1', false, 'warrior', 1_000)).toBeNull();
+    // A muted click still counts as a click: the unit does not hold the answer
+    // back and shout it later.
+    expect(selectionAckFor('u1', 2_000)).toBe('brief');
   });
 });

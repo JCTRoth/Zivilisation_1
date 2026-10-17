@@ -85,6 +85,22 @@ export async function makeEngine(options: MakeEngineOptions = {}): Promise<TestW
   // the real engine.
   (engine as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
   (engine as unknown as { isPaused: boolean }).isPaused = true;
+
+  // Reproducibility has to cover the ROLLS, not just the map. `mapSeed` pins
+  // the terrain, but every AI decision that draws `Math.random` — combat odds,
+  // village outcomes, unit choice — stayed unseeded, so a test seeded 4242
+  // still failed roughly one run in three and every re-run produced a different
+  // game. One seeded stream for the whole test makes "within 30 turns" mean
+  // something.
+  //
+  // Only when the caller has not already chosen one. A test that installs its
+  // own stream (to pin a specific roll sequence, or to pair a known RNG with a
+  // known map) must keep it — silently replacing their seed with ours moved the
+  // garrison test's army rolls onto a different stream and broke it.
+  if (!vi.isMockFunction(Math.random)) {
+    useSeededRandom(seed);
+  }
+
   await engine.initialize({
     numberOfCivilizations,
     mapType,

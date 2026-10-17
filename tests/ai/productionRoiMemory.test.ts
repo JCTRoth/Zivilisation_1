@@ -51,7 +51,10 @@ describe('namespacing — a unit and a building never share a record', () => {
     m.recordForecast({ kind: 'building', key: 'granary', verdict: 'profitable', turn: 1 });
     m.recordForecast({ kind: 'unit', key: 'granary', verdict: 'inert', turn: 1 });
     expect(m.getRecord('building', 'granary')?.forecasts).toBe(1);
-    expect(m.getRecord('unit', 'granary')?.verdict).toBeUndefined();
+    expect(m.getRecord('unit', 'granary')?.forecasts).toBe(1);
+    // Same name, different namespaces: each keeps its own forecast verdict.
+    expect(m.getRecord('building', 'granary')?.lastForecastVerdict).toBe('profitable');
+    expect(m.getRecord('unit', 'granary')?.lastForecastVerdict).toBe('inert');
     expect(m.recordCount()).toBe(2);
   });
 });
