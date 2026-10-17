@@ -3,7 +3,7 @@
 > *Modules:* `src/utils/Sfx.ts` (transport), `src/utils/SoundEngine.ts` (policy)
 > *Call sites:* `src/utils/EngineEventHandlers.ts`, `src/components/ui/gamemodals/EspionageReportModal.tsx`, `src/components/game/GameCanvas.tsx`, `src/components/game/UnitActionsModal.tsx`, `src/components/ui/GameModals.tsx`
 > *Setting:* `settings.enableSoundEffects` (Settings → *Enable sound effects*)
-> *Assets:* `public/assets/sfx/` — seven mp3 recordings, two further project originals (`city-founded.ogg`, `mech-inf-move.opus`) and sixteen Warzone 2100 ogg recordings, see <<adding-a-recording,Adding a Recording>> and <<warzone-attribution,Warzone 2100 Attribution>>
+> *Assets:* `public/assets/sfx/` — seven mp3 recordings, two further project originals (`city-founded.opus`, `mech-inf-move.opus`) and sixteen Warzone 2100 ogg recordings, see <<adding-a-recording,Adding a Recording>> and <<warzone-attribution,Warzone 2100 Attribution>>
 > *Tests:* `tests/sfx.test.ts` (transport), `tests/soundEngine.test.ts` (policy), `tests/sfxWiring.test.ts` (which event plays what)
 
 ---
@@ -164,7 +164,7 @@ in `CUE_FILES` relative to `public/`.
   encounter is a different beat and says nothing about walls going up.
 | `EngineEventHandlers.onCityFounded`
 | yes
-| `sfx/city-founded.ogg`
+| `sfx/city-founded.opus`
 
 | `cityLost`
 | The player **loses** a city to a rival. Deliberately *not* a fanfare and not
@@ -526,7 +526,7 @@ rather than cosmetic:
 | Arrived as | Shipped as | What it actually is
 
 | `GoGoGo.ogg`
-| `city-founded.ogg`
+| `city-founded.opus`
 | A shouted "Go! Go! Go!" — three short bursts with a vocal harmonic stack
   around 1.1/2.2/3.3 kHz. A cheer, which is what a city founded sounds like.
 
@@ -779,7 +779,7 @@ If you edit one of these files (re-cut, remix, filter it), the result stays
 GPLv2: keep it in the same directory, note the change and its date in
 `README.txt`, and the license follows the file automatically. The project's
 own recordings are **not** covered by the GPLv2: the seven `*.mp3` files
-directly under `public/assets/sfx/`, plus `city-founded.ogg` and
+directly under `public/assets/sfx/`, plus `city-founded.opus` and
 `mech-inf-move.opus` (see <<swapped-recording-names,the two late recordings>>).
 They are original to this project and carry no third-party terms.
 

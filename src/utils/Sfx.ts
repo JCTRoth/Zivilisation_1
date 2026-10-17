@@ -86,8 +86,14 @@ export type SfxCue =
   | 'unitSelected'
   /** The player picked up a submarine — a sonar acknowledgement. */
   | 'submarineSelected'
+  /** The player picked up an artillery piece — a reporting-in blip. */
+  | 'artillerieSelected'
   /** An air unit takes off from a city or a carrier. */
   | 'airUnitLaunch'
+  /** An air unit, already airborne, is given a target. */
+  | 'airUnitInAirTargetSet'
+  /** An air unit, after striking, heads back to base. */
+  | 'airUnitReturningToBase'
   /** A tank rolls out of its tile. */
   | 'tankMove'
   /** Mechanised infantry rolls out of its tile — the same beat as a tank. */
@@ -105,22 +111,7 @@ export type SfxCue =
   /** A nuclear warhead detonated — the sound of the century. */
   | 'nuclearStrike';
 
-/**
- * Where a cue's sound comes from.
- *
- * Every cue ships as synthesized notes — the game needs a sound on day one,
- * and oscillator beeps cost no bytes. Real recordings replace them one at a
- * time by filling a row here with a path under `public/assets/sfx/`; the
- * moment a cue has a file, that file wins and the notes below are ignored for
- * it. Nothing else in the game changes, so an .ogg can land in a single commit
- * and be reverted the same way.
- *
- * Leave a row out (or set it to '') to keep the synthesized version.
- *
- * Exported so a test — and, later, a manifest loader — can register a file at
- * runtime without editing this module. `playSfx` reads it live rather than
- * snapshotting it, so a row added after load takes effect immediately.
- */
+
 export const CUE_FILES: Partial<Record<SfxCue, string>> = {
   // ── Shipped recordings, live today ────────────────────────────────
   'cityCapturedClassic': '/assets/sfx/city-captured-classic.mp3',
@@ -132,14 +123,8 @@ export const CUE_FILES: Partial<Record<SfxCue, string>> = {
   // main recording now (with scramble and return as secondaries), so the mp3
   // stays on disk but no row points at it any more.
   'tankMove': '/assets/sfx/tank-move.mp3',
-  // The two recordings below arrived under names that do not match what they
-  // turned out to be, so the rename is load-bearing rather than cosmetic:
-  // `city_founded.opus` is a wide-band machinery rumble and became the
-  // mech-infantry voice, while `GoGoGo.ogg` is a shouted "Go! Go! Go!" and
-  // became the city-founded cheer. Each file is renamed after the cue it
-  // actually serves, which is what the naming convention below asks for.
   'mechInfMove': '/assets/sfx/mech-inf-move.opus',
-  'cityFounded': '/assets/sfx/city-founded.ogg',
+  'cityFounded': '/assets/sfx/city-founded.opus',
 
   // ── Warzone 2100 recordings (GPLv2, see public/assets/sfx/warzone2100/) ──
   // One row per cue, always the MAIN recording — secondaries live in the
@@ -150,10 +135,10 @@ export const CUE_FILES: Partial<Record<SfxCue, string>> = {
   'missileLaunch': '/assets/sfx/warzone2100/missile-launch-1.ogg',
   'sdiIntercept': '/assets/sfx/warzone2100/sdi-intercept-1.ogg',
   'nuclearStrike': '/assets/sfx/warzone2100/nuclear-strike-1.ogg',
-  'unitSelected': '/assets/sfx/warzone2100/unit-selected-1.ogg',
   'submarineSelected': '/assets/sfx/warzone2100/submarine-selected-1.ogg',
-  'airUnitLaunch': '/assets/sfx/warzone2100/air-unit-launch-1.ogg',
-  'uiSelect': '/assets/sfx/warzone2100/ui-select-1.ogg',
+  'artillerieSelected': '/assets/sfx/warzone2100/artillerie-selected-1.ogg',
+  'airUnitInAirTargetSet': '/assets/sfx/warzone2100/air-unit-in-air-target-set.ogg',
+  'airUnitReturningToBase': '/assets/sfx/warzone2100/air-unit-returning-to-base.ogg',
   'sabotageSuccess': '/assets/sfx/warzone2100/sabotage-success-1.ogg',
   'productionComplete': '/assets/sfx/warzone2100/production-complete-1.ogg',
 
@@ -289,6 +274,16 @@ const CUES: Record<SfxCue, Note[]> = {
     { freq: 262, at: 0.07, dur: 0.1, type: 'sawtooth', gain: 0.7 },
     { freq: 392, at: 0.14, dur: 0.14, type: 'sawtooth', gain: 0.6 },
   ],
+  airUnitInAirTargetSet: [
+    // A target is called in mid-air: two rising steps.
+    { freq: 440, at: 0.0, dur: 0.08, type: 'sawtooth', gain: 0.6 },
+    { freq: 660, at: 0.07, dur: 0.1, type: 'sawtooth', gain: 0.6 },
+  ],
+  airUnitReturningToBase: [
+    // Heading home: a falling pair.
+    { freq: 392, at: 0.0, dur: 0.1, type: 'sawtooth', gain: 0.6 },
+    { freq: 262, at: 0.09, dur: 0.14, type: 'sawtooth', gain: 0.5 },
+  ],
   tankMove: [
     // Tracks: two low notes, deliberately shorter than a combat cue.
     { freq: 98, at: 0.0, dur: 0.09, type: 'triangle', gain: 0.8 },
@@ -346,6 +341,11 @@ const CUES: Record<SfxCue, Note[]> = {
     // Reporting in: two crisp blips.
     { freq: 520, at: 0.0, dur: 0.05 },
     { freq: 780, at: 0.05, dur: 0.08 },
+  ],
+  artillerieSelected: [
+    // Reporting in: two crisp blips, a touch heavier.
+    { freq: 480, at: 0.0, dur: 0.06 },
+    { freq: 720, at: 0.06, dur: 0.09 },
   ],
   submarineSelected: [
     // A sonar acknowledgement: two spaced pings.
@@ -703,10 +703,10 @@ const CUE_FILE_VOLUME: Partial<Record<SfxCue, number>> = {
   // The quietest recording there is, tied with the tank: the player drives a
   // mech. Inf. every turn just like a tank, and its rumble is a long one.
   mechInfMove: 0.35,
-  airUnitLaunch: 0.45,
-  unitSelected: 0.5,
   submarineSelected: 0.5,
-  uiSelect: 0.4,
+  artillerieSelected: 0.5,
+  airUnitInAirTargetSet: 0.45,
+  airUnitReturningToBase: 0.45,
   torpedoAttack: 0.45,
   machineGunStrike: 0.55,
   // No `impactStrike` row on purpose: it ships no recording, so it never

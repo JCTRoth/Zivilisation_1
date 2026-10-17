@@ -129,7 +129,7 @@ describe('serialization — never two sounds at once', () => {
     const order = h.played.map((p) => p.what);
     expect(order[0]).toContain('machine-gun-strike');
     expect(order[1]).toContain('city-attacked');
-    expect(order[2]).toContain('ui-select');
+    expect(order[2]).toContain('uiSelect');
   });
 
   it('drops the least important waiter when the line is full', () => {
@@ -161,7 +161,7 @@ describe('variants — the main recording plays most of the time', () => {
     expect(pickVariant('machineGunStrike', () => 0.0)).toContain('machine-gun-strike-1.ogg');
     expect(pickVariant('machineGunStrike', () => 0.69)).toContain('machine-gun-strike-1.ogg');
     expect(pickVariant('machineGunStrike', () => 0.71)).not.toContain('machine-gun-strike-1.ogg');
-    expect(pickVariant('machineGunStrike', () => 0.99)).toContain('machine-gun-strike-3.ogg');
+    expect(pickVariant('machineGunStrike', () => 0.99)).toContain('machine-gun-strike-2.ogg');
   });
 
   it('a single-file cue always resolves to its one recording', () => {
@@ -198,9 +198,9 @@ describe('variants — the main recording plays most of the time', () => {
         files.add(variant.file);
       }
     }
-    // Sixteen recordings shipped, sixteen wired — a file on disk that no cue
+    // Fifteen recordings shipped, fifteen wired — a file on disk that no cue
     // plays is a dead asset, and a cue with no file is a silent promise.
-    expect(files.size).toBe(16);
+    expect(files.size).toBe(15);
   });
 
   it('one file, one purpose — no recording serves two cues', () => {
@@ -232,18 +232,17 @@ describe('variants — the main recording plays most of the time', () => {
     const measured: Record<string, number> = {
       'machine-gun-strike-1.ogg': 1.0,
       'machine-gun-strike-2.ogg': 1.5,
-      'machine-gun-strike-3.ogg': 0.92,
       'naval-strike-1.ogg': 1.74,
       'air-strike-1.ogg': 1.16,
       'missile-launch-1.ogg': 1.07,
       'nuclear-strike-1.ogg': 4.67,
-      'unit-selected-1.ogg': 0.51,
       'submarine-selected-1.ogg': 1.36,
       'submarine-selected-2.ogg': 1.5,
-      'air-unit-launch-1.ogg': 1.06,
-      'air-unit-launch-3.ogg': 1.05,
+      'artillerie-selected-1.ogg': 0.51,
+      'artillerie-selected-2.ogg': 0.51,
+      'air-unit-in-air-target-set.ogg': 0.5,
+      'air-unit-returning-to-base.ogg': 0.5,
       'sdi-intercept-1.ogg': 1.31,
-      'ui-select-1.ogg': 0.3,
       'sabotage-success-1.ogg': 1.85,
       'production-complete-1.ogg': 1.18,
     };

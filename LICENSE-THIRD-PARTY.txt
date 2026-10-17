@@ -24,5 +24,5 @@ follows the file automatically.
 
 Other audio in public/assets/sfx/ is original to this project and is NOT
 covered by the GPLv2. That is the seven *.mp3 recordings plus
-city-founded.ogg and mech-inf-move.opus. See
+city-founded.opus and mech-inf-move.opus. See
 doc/SOUND_EFFECTS.adoc for their provenance.

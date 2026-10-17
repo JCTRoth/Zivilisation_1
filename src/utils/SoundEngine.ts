@@ -88,8 +88,7 @@ export const SOUND_MANIFEST: Partial<Record<SfxCue, CueManifest>> = {
     durationSec: 1.5,
     variants: [
       { file: `${WZ}/machine-gun-strike-1.ogg`, weight: 70 },
-      { file: `${WZ}/machine-gun-strike-2.ogg`, weight: 15 },
-      { file: `${WZ}/machine-gun-strike-3.ogg`, weight: 15 },
+      { file: `${WZ}/machine-gun-strike-2.ogg`, weight: 30 },
     ],
   },
   navalStrike: {
@@ -112,11 +111,6 @@ export const SOUND_MANIFEST: Partial<Record<SfxCue, CueManifest>> = {
     durationSec: 4.67,
     variants: [{ file: `${WZ}/nuclear-strike-1.ogg`, weight: 100 }],
   },
-  unitSelected: {
-    category: 'unit',
-    durationSec: 0.51,
-    variants: [{ file: `${WZ}/unit-selected-1.ogg`, weight: 100 }],
-  },
   submarineSelected: {
     category: 'unit',
     durationSec: 1.5,
@@ -125,23 +119,28 @@ export const SOUND_MANIFEST: Partial<Record<SfxCue, CueManifest>> = {
       { file: `${WZ}/submarine-selected-2.ogg`, weight: 30 },
     ],
   },
-  airUnitLaunch: {
+  artillerieSelected: {
     category: 'unit',
-    durationSec: 1.31,
+    durationSec: 0.51,
     variants: [
-      { file: `${WZ}/air-unit-launch-1.ogg`, weight: 70 },
-      { file: `${WZ}/air-unit-launch-3.ogg`, weight: 30 },
+      { file: `${WZ}/artillerie-selected-1.ogg`, weight: 70 },
+      { file: `${WZ}/artillerie-selected-2.ogg`, weight: 30 },
     ],
+  },
+  airUnitInAirTargetSet: {
+    category: 'unit',
+    durationSec: 0.5,
+    variants: [{ file: `${WZ}/air-unit-in-air-target-set.ogg`, weight: 100 }],
+  },
+  airUnitReturningToBase: {
+    category: 'unit',
+    durationSec: 0.5,
+    variants: [{ file: `${WZ}/air-unit-returning-to-base.ogg`, weight: 100 }],
   },
   sdiIntercept: {
     category: 'attack',
     durationSec: 1.31,
     variants: [{ file: `${WZ}/sdi-intercept-1.ogg`, weight: 100 }],
-  },
-  uiSelect: {
-    category: 'ui',
-    durationSec: 0.3,
-    variants: [{ file: `${WZ}/ui-select-1.ogg`, weight: 100 }],
   },
   sabotageSuccess: {
     category: 'event',
@@ -209,6 +208,9 @@ export const CUE_CATEGORY: Record<SfxCue, SoundCategory> = {
   unitDisbanded: 'event',
   unitSelected: 'unit',
   submarineSelected: 'unit',
+  artillerieSelected: 'unit',
+  airUnitInAirTargetSet: 'unit',
+  airUnitReturningToBase: 'unit',
   airUnitLaunch: 'unit',
   tankMove: 'unit',
   mechInfMove: 'unit',
