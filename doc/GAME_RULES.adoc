@@ -1577,6 +1577,11 @@ If gold goes negative:
 . descending maintenance
 . descending cost
 . A second pass breaks the last-defender rule if it must.
+. At most `EMERGENCY_DISBAND_CAP_PER_TURN` (3) units may be taken per turn;
+  the deficit the intake could not cover stays booked as debt, so a collapse
+  sheds its army over rounds instead of liquidating it in one (measured: a
+  civ whose cities were all captured mid-war kept a 22-upkeep army on no
+  income and lost 12 units in a single round before the cap).
 . The treasury is restored to `ABSOLUTE_MIN_GOLD = 8` and the amount is booked
   as **debt** on the civ (`civ.debt`), repaid out of income at
   `DEBT_REPAYMENT_PER_TURN` (1) gold per turn per `DEBT_REPAYMENT_PER` (50) of

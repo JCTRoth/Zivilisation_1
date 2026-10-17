@@ -242,7 +242,7 @@ export const de: PartialTranslationDict = {
   'setup.ageShort.2': 'Alt',
   'setup.mapSizeTitle': 'Kartengröße',
   'setup.mapSizeHint':
-    'Ziehen Sie an den Rändern oder der Ecke der Kartenvorschau, um die Welt zu formen.',
+    'Wählen Sie eine Vorgabe oder ziehen Sie die Regler, um die Welt zu formen.',
   'setup.sizeTiny': 'Klein',
   'setup.sizeSmall': 'Mittel',
   'setup.sizeStandard': 'Standard',

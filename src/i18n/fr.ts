@@ -241,7 +241,7 @@ export const fr: PartialTranslationDict = {
   'setup.ageShort.2': 'Vieille',
   'setup.mapSizeTitle': 'Taille de la carte',
   'setup.mapSizeHint':
-    'Faites glisser les bords ou le coin de l’aperçu de la carte pour façonner le monde.',
+    'Choisissez un préréglage ou déplacez les curseurs pour façonner le monde.',
   'setup.sizeTiny': 'Minuscule',
   'setup.sizeSmall': 'Petite',
   'setup.sizeStandard': 'Standard',

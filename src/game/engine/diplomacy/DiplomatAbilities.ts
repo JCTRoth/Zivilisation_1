@@ -97,6 +97,21 @@ export function diplomatActionsFor(facts: DiplomatAbilityFacts): DiplomatAction[
     if (facts.canTradeTechs) actions.push('offer_tech_exchange');
   }
 
+  // Gold only changes hands through the channel, and Gold gifts/requests need
+  // an ally to be meaningful — they follow a call-to-arms ticket, not a
+  // stranger at peace.
+  if (facts.status === 'alliance') {
+    actions.push('call_for_help', 'gift_gold', 'request_gold');
+  }
+  // An ally (or mutual-defense partner) with a named, met enemy gets the
+  // explicit call-to-arms button on top.
+  if (
+    facts.jointWarCandidates.length > 0
+    && (facts.status === 'alliance' || facts.activeTreaties.includes('mutual_defense'))
+  ) {
+    if (!actions.includes('propose_joint_war')) actions.push('propose_joint_war');
+  }
+
   // ── 3. Bribery and infiltration, which are about the thing itself ─────
   if (facts.kind === 'unit') {
     actions.push('bribe_unit');

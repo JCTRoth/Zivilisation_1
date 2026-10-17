@@ -950,8 +950,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         // No development-only mutations here; visibility arrays will be updated independently
       }
 
-      // Minimal logging for map initialization
-      console.log('[Store] updateMap: Map updated', { width: newMap.width, height: newMap.height });
+      // Avoid cloning the entire tile array (and re-rendering the map) when the
+      // caller only hands us the same map reference we already hold. The engine
+      // calls updateMap at several turn phases with the same `this.map`, and the
+      // per-call tile clone was repeated work on every phase.
+      if (state.map === mapUpdate) {
+        return state;
+      }
 
       return {
         map: newMap

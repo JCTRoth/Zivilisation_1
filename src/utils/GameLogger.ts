@@ -186,6 +186,8 @@ class GameLogger {
         return `🔬 Research phase — civ ${data.civilizationId}`;
       case 'WAR_DECLARED':
         return `☠ WAR DECLARED: civ ${data.aggressorId ?? data.civilizationId} vs civ ${data.targetId ?? data.targetCivilizationId}`;
+      case 'NUCLEAR_INTERCEPTED':
+        return `🛡️ SDI intercept over ${data.cityName ?? data.cityId}: civ ${data.fromCivId}'s warhead destroyed mid-air`;
       case 'CITY_DESTROYED':
         return `💥💥💥 City destroyed 💥💥💥: ${data.city?.name} (was civ ${data.city?.civilizationId})`;
       case 'CITY_ATTACKED':

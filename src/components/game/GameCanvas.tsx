@@ -52,7 +52,9 @@ import {
 } from "@/game/engine/DiplomacyTypes";
 import { tTechName } from '@/i18n/dataNames';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
-import { unlockAudio } from '@/utils/Sfx';
+import { unlockAudio, playSfx } from '@/utils/Sfx';
+import { unitSelectCue } from '@/utils/SoundEngine';
+import { UNIT_TYPES } from '@/data/UnitConstants';
 import { debugLog } from '@/utils/DevLog';
 
 /**
@@ -1255,6 +1257,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         icon: "🔥",
         tone: "success",
         text: t("espionage.sabotage.success" as TranslationKey, { city: cityName }),
+        // The target goes dark: the power-down recording. Played by the
+        // report modal like every other stage cue.
+        cue: "sabotageSuccess",
       });
     } else if (outcome === "caught_sabotaging") {
       stages.push({
@@ -2233,6 +2238,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           actions.setSelectedUnitIds?.([]);
           if (actions && typeof actions.selectUnit === "function") {
             actions.selectUnit(unitAt.id, "user");
+          }
+          // Picking a unit up gets its acknowledgement — a reporting-in blip
+          // for a land unit, a sonar ping for a submarine. Own units only: an
+          // enemy under the cursor is information, not a command. The 10 s
+          // unit cooldown keeps click-spam from machine-gunning it.
+          if (unitAt.civilizationId === HUMAN_PLAYER_ID) {
+            playSfx(unitSelectCue(unitAt.type === UNIT_TYPES.SUBMARINE));
           }
           console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type})`);
           triggerRender();

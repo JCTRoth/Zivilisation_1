@@ -65,12 +65,16 @@ civ, 29 of them in one round, while its tax rate swung 54→80→35→69. That i
 feedback gap between the builder and the destroyer, not a poverty problem, and
 the rows model it honestly: R24 reproduces the engine's defect (the build queue
 invisible to the army cap), R25-R27 add the standing-army budget — queue
-priced, one-unit-a-round drawdown, debt service netted out. The read: with the
+priced, one-unit-a-round drawdown, debt service netted out — and the live run
+afterwards added an emergency-disbander cap (three units a turn) when seed 51
+showed a city-less civ liquidating 12 units the round its treasury crossed
+zero. The read: with the
 road programme OFF the budget cannot rescue a civ whose income never scales
 (disbands stay ~33-37, same as R0) — the works fix remains the root cure —
 but it is the mechanism that keeps a FUNCTIONING economy from over-building
 into a 29-unit liquidation. The concept lives in
 `EconomicManager.armyBudgetFor` + `queuedUnitUpkeep` + `retireSurplusUnit`
++ `EMERGENCY_DISBAND_CAP_PER_TURN`
 and is pinned by `tests/standingArmyBudget.test.ts`.
 """
 

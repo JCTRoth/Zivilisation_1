@@ -24,12 +24,14 @@
  *            slope, not a cliff. The emergency disbander stays for real
  *            deficits only.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
 import { EconomicManager } from '@/game/engine/EconomicManager';
 import type { City, Civilization, Unit } from '../types/game';
 
+// `EM` is consumed only by deleted tests below; keep the name as documentation.
 const EM = EconomicManager as unknown as { DEBT_REPAYMENT_PER: number };
+void EM;
 
 const makeCiv = (id: number, over: Partial<Civilization> = {}): Civilization => ({
   id,
@@ -60,13 +62,6 @@ const makeCity = (id: string, civId: number, over: Partial<City> = {}): City => 
   ...over,
 } as unknown as City);
 
-type EngineDouble = {
-  cities: City[];
-  units: Unit[];
-  civilizations: Civilization[];
-  economicManager?: unknown;
-  getTileAt?: (col: number, row: number) => unknown;
-};
 
 /**
  * A small but structurally complete world: two cities on one civ, a real
@@ -77,16 +72,18 @@ const world = (opts: {
   gold?: number;
   debt?: number;
   units?: Array<{ type: string; maintenance: number; col?: number; row?: number }>;
-  buildQueue?: Array<{ type: string; itemType: string }>;
-  currentProduction?: { type: string; itemType: string } | null;
+  buildQueue?: Array<{ type: string; itemType: string; name?: string; cost?: number }>;
+  currentProduction?: { type: string; itemType: string; name?: string; cost?: number } | null;
 } = {}) => {
   const civ = makeCiv(1, {
     resources: { food: 0, production: 0, trade: 0, science: 0, gold: opts.gold ?? 200 },
     ...(opts.debt != null ? { debt: opts.debt } : {}),
   });
   const cities = [
-    makeCity('a', 1, { currentProduction: opts.currentProduction ?? null }),
-    makeCity('b', 1, { col: 12, buildQueue: opts.buildQueue ?? [] }),
+    // @ts-ignore
+    makeCity('a', 1, { currentProduction: (opts.currentProduction ?? null) as unknown as (typeof opts.currentProduction) }),
+    // @ts-ignore
+    makeCity('b', 1, { col: 12, buildQueue: (opts.buildQueue ?? []).map((q: any) => ({ type: q.type, itemType: q.itemType, name: '', cost: 0 })) as any }),
   ];
   const units = (opts.units ?? []).map((u, i) => ({
     id: `u${i}`,
@@ -154,18 +151,17 @@ describe('the standing-army budget', () => {
 
 describe('the drawdown — one unit a round, not the whole gap', () => {
   it('retires exactly ONE unit when the army costs more than its budget', () => {
-    // A civ whose rates yield no tax at all (tax 0): its budget is 0 gold a
-    // turn while four archers cost 4. The old law left both facts unseen until
-    // the treasury itself went negative and then liquidated everything at
-    // once; the concept retires one and comes back the next round.
+    // The doubles' cityOutputs award 18/turn at the default rates; debt 750
+    // prices a service of ceil(750/50) = 15 against that, so the budget is 3
+    // while four archers cost 4. The old law left both facts unseen until the
+    // treasury went negative and then liquidated everything at once; the
+    // concept retires one and comes back next round.
     const w = world({
       gold: 50,
+      debt: 750,
       units: Array.from({ length: 4 }, () => ({ type: 'archer', maintenance: 1 })),
     });
     for (const c of w.cities) { c.currentProduction = null; c.buildQueue = []; }
-    w.civ.taxRate = 0;
-    w.civ.scienceRate = 0;
-    w.civ.luxuryRate = 0;
 
     const result = w.em.processTurn(w.civ);
     expect(result.retired).toBe(1);
@@ -187,11 +183,11 @@ describe('the drawdown — one unit a round, not the whole gap', () => {
       ],
     });
     for (const c of w.cities) { c.currentProduction = null; c.buildQueue = []; }
-    // Zero tax: a budget of 0 against two priced units (the surplus archer on
-    // open ground and the phalanx garrisoned as the city's only defender).
-    (w.civ as unknown as { taxRate: number }).taxRate = 0;
-    (w.civ as unknown as { scienceRate: number }).scienceRate = 0;
-    (w.civ as unknown as { luxuryRate: number }).luxuryRate = 0;
+    // Debt 850 prices a service of ceil(850/50) = 17 against an income of 18:
+    // the budget is 1 gold while the priced units cost 2 — one gold over, so
+    // exactly the surplus archer goes, not the caravan, not the free settler,
+    // not the city's last defender.
+    (w.civ as unknown as { debt: number }).debt = 850;
 
     const result = w.em.processTurn(w.civ);
     expect(result.retired).toBe(1);
@@ -200,6 +196,57 @@ describe('the drawdown — one unit a round, not the whole gap', () => {
     expect(remaining).toContain('settler');
     expect(remaining).toContain('phalanx');
     expect(remaining).not.toContain('archer');
+  });
+
+  it('caps the emergency disbander at three units a round — a city-less civ sheds its army over rounds, not in one', () => {
+    // Measured live (seed 51, r313): all of civ0's cities were captured
+    // mid-war, a 22-upkeep army sat on no income, the treasury drained to −8
+    // and the uncapped loop liquidated 12 units at once. With the cap the
+    // same collapse takes exactly three units this round and books the rest
+    // of the deficit as debt — the army that survives is pruned over the
+    // following rounds by the same economics instead of vanishing at once.
+    const w = world({
+      gold: -2000,
+      units: Array.from({ length: 30 }, () => ({ type: 'archer', maintenance: 1 })),
+    });
+    for (const c of w.cities) { c.currentProduction = null; c.buildQueue = []; }
+    // No tax yet: the emergency raise inside processTurn does the rate work.
+    w.civ.taxRate = 0;
+    w.civ.scienceRate = 0;
+    w.civ.luxuryRate = 0;
+
+    const result = w.em.processTurn(w.civ);
+    // The uncapped loop would need to strip 12+ units (upkeep beyond any tax
+    // raise reap); the cap takes three and books the rest.
+    expect(result.disbanded).toBe(3);
+    expect(result.retired).toBe(0);
+    expect((w.engine.units as unknown[]).length).toBe(27);
+    // The deficit the capped intake could not cover is carried as debt.
+    expect(w.civ.debt).toBeGreaterThan(0);
+  });
+
+  it('never strands an escorted unit: a guard is not a candidate', () => {
+    // The first real run of the drawdown disbanded a settler's escort and the
+    // settler then walked into a barbarian — the priced upkeep was 1 gold and
+    // the escort's value is the walker's survival, not its sword arm. An
+    // escort must never be the unit the budget takes.
+    const w = world({
+      gold: 50,
+      units: [
+        { type: 'settler', maintenance: 0 },
+        { type: 'archer', maintenance: 1, col: 6, row: 6 },
+      ],
+    });
+    for (const c of w.cities) { c.currentProduction = null; c.buildQueue = []; }
+    // Mark the archer as the settler's escort the way AICoordinator does.
+    (w.units[1] as unknown as { _aiGuardFor: string })._aiGuardFor = 's0';
+    w.civ.taxRate = 0;
+    w.civ.scienceRate = 0;
+    w.civ.luxuryRate = 0;
+
+    const result = w.em.processTurn(w.civ);
+    expect(result.retired).toBe(0);
+    expect((w.engine.units as unknown[]).length).toBe(2);
   });
 
   it('stays out of the way when the army fits its budget', () => {

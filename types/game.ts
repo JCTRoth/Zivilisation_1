@@ -507,8 +507,11 @@ export interface Unit {
   /** Turns spent walking towards the currently locked settlement target. */
   _lockedTargetAge?: number;
   _lastSettlementTarget?: { col: number; row: number };
-  /** Where this hull last tried to sail, and whether it got any closer. */
-  _navalIntent?: { col: number; row: number; dist: number; stalled: number };
+  // `_navalIntent` used to live here. It was per-hull AI bookkeeping (objective +
+  // stall counter) hanging off a unit the save serialiser copies, so every save
+  // carried a field that only the AI read and nothing restored. It now lives in
+  // the civ's NavalPatrolMemory (`src/game/engine/AI/NavalPatrolMemory.ts`),
+  // where it is prunable, turn-keyed and absent from save games.
   _positionHistory?: string[];
   _probeTarget?: { col: number; row: number };
   _exploreTarget?: { col: number; row: number };

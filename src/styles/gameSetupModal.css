@@ -1572,7 +1572,7 @@ select.setup-setting__control:focus {
     0 12px 30px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  /* Dragging must not select the labels around it. */
+  /* Preset clicks and slider drags must not select the labels around them. */
   user-select: none;
 }
 
@@ -1589,7 +1589,7 @@ select.setup-setting__control:focus {
   width: 300px;
   max-width: 100%;
   height: 196px;
-  /* Room for the edge handles of the biggest world (260×180 fills the box). */
+  /* Inset so even the biggest world (260×180) keeps a little breathing room. */
   padding: 14px;
   border-radius: 14px;
   background:
@@ -1619,11 +1619,6 @@ select.setup-setting__control:focus {
     0 8px 22px rgba(240, 195, 60, 0.1),
     inset 0 0 18px rgba(6, 14, 22, 0.45);
   transition: width 130ms ease, height 130ms ease;
-}
-
-/* Direct manipulation: no eased lag between pointer and rectangle. */
-.map-size-tool.is-dragging .map-size-tool__map {
-  transition: none;
 }
 
 .map-size-tool__grid {
@@ -1656,72 +1651,6 @@ select.setup-setting__control:focus {
 .map-size-tool__ghost--preset {
   border-color: rgba(240, 195, 60, 0.7);
   box-shadow: 0 0 20px rgba(240, 195, 60, 0.18);
-}
-
-/* Resize grips — small on the eye, fat on the finger (::after extends the
-   hit area by 9px on every side without drawing it). */
-.map-size-tool__handle {
-  position: absolute;
-  z-index: 4;
-  background: linear-gradient(180deg, rgba(240, 195, 60, 0.95), rgba(201, 162, 39, 0.9));
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  box-shadow: 0 0 12px rgba(240, 195, 60, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
-  border-radius: 999px;
-  cursor: pointer;
-  touch-action: none;
-  transition: transform 140ms ease, box-shadow 140ms ease;
-}
-
-.map-size-tool__handle::after {
-  content: '';
-  position: absolute;
-  inset: -9px;
-}
-
-.map-size-tool__handle:hover {
-  box-shadow: 0 0 16px rgba(240, 195, 60, 0.75), 0 2px 8px rgba(0, 0, 0, 0.45);
-}
-
-.map-size-tool__handle--right {
-  right: -5px;
-  top: 50%;
-  width: 11px;
-  height: 30px;
-  cursor: ew-resize;
-}
-
-.map-size-tool__handle--right:hover {
-  transform: translateY(-50%) scale(1.12);
-}
-
-.map-size-tool__handle--bottom {
-  bottom: -5px;
-  left: 50%;
-  width: 30px;
-  height: 11px;
-  cursor: ns-resize;
-}
-
-.map-size-tool__handle--bottom:hover {
-  transform: translateX(-50%) scale(1.12);
-}
-
-.map-size-tool__handle--corner {
-  right: -6px;
-  bottom: -6px;
-  width: 17px;
-  height: 17px;
-  border-radius: 7px;
-  cursor: nwse-resize;
-  /* Grip: two diagonal strokes over the gold pill. */
-  background:
-    linear-gradient(135deg, transparent 44%, rgba(20, 16, 6, 0.75) 44% 56%, transparent 56%),
-    linear-gradient(135deg, transparent 64%, rgba(20, 16, 6, 0.75) 64% 76%, transparent 76%),
-    linear-gradient(180deg, rgba(240, 195, 60, 0.95), rgba(201, 162, 39, 0.9));
-}
-
-.map-size-tool__handle--corner:hover {
-  transform: scale(1.12);
 }
 
 /* Readout + legend under the stage */
@@ -1952,7 +1881,6 @@ select.setup-setting__control:focus {
   .map-size-tool__map,
   .map-size-tool__ghost,
   .map-size-tool__chip,
-  .map-size-tool__handle,
   .map-size-tool__lock {
     transition: none;
   }

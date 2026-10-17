@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import type { City, Unit } from '../types/game';
 import type { MapTile } from '@/game/engine/GameEngine';
 import { CaravanGovernor, type CaravanWorld } from '@/game/engine/AI/CaravanGovernor';
+import { CaravanMemory } from '@/game/engine/AI/CaravanMemory';
 import { Pathfinding } from '@/game/engine/Pathfinding';
 import {
   CARAVAN_BLOCK_PATIENCE,
@@ -510,6 +511,106 @@ describe('delivery eligibility (Civ1 rules)', () => {
     const plan = gov.planUnit(caravan, world, 1);
     expect(PLAN_OF(plan)).toBe('move');
     expect(gov.getMission('v1')).toMatchObject({ targetCol: 3, targetRow: 0 });
+  });
+});
+
+describe('route memory steers target choice', () => {
+  // A and B sit the same square-distance from home with the same population, so
+  // the projection is an exact tie and the ONLY thing that can break it is
+  // memory. That makes these tests about the wiring, not about the economy.
+  const tieWorld = () => {
+    const built = makeWorld([
+      '..........',
+      '..........',
+      '..........',
+      '..........',
+      '..........',
+    ]);
+    built.addCity('H', 1, 1);
+    built.addCity('A', 4, 3, RIVAL_CIV, { population: 12 });
+    built.addCity('B', 3, 4, RIVAL_CIV, { population: 12 });
+    // At peace: the governor trades with foreign cities (at war it refuses, per
+    // the eligibility rules above).
+    return built;
+  };
+
+  it('breaks a projected tie in favour of the partner it has delivered to', () => {
+    const { world, addCaravan } = tieWorld();
+    const memory = new CaravanMemory();
+    memory.recordTurn(1);
+    memory.recordAttempt('H', 'B', RIVAL_CIV);
+    memory.recordDelivery({
+      homeCityId: 'H', destCityId: 'B', destCivId: RIVAL_CIV,
+      gold: 40, science: 40, transitTurns: 3,
+    });
+
+    const caravan = addCaravan('v1', 1, 1, 'H');
+    const gov = new CaravanGovernor(memory);
+    expect(PLAN_OF(gov.planUnit(caravan, world, 2))).toBe('move');
+    expect(gov.getMission('v1')).toMatchObject({ targetCol: 3, targetRow: 4 });
+  });
+
+  it('breaks a projected tie against a partner that has only ever failed', () => {
+    const { world, addCaravan } = tieWorld();
+    const memory = new CaravanMemory();
+    memory.recordTurn(1);
+    memory.recordAttempt('H', 'A', RIVAL_CIV);
+    memory.recordFailure('H', 'A', RIVAL_CIV, 'no_route_patience', 3);
+
+    const caravan = addCaravan('v1', 1, 1, 'H');
+    const gov = new CaravanGovernor(memory);
+    expect(PLAN_OF(gov.planUnit(caravan, world, 2))).toBe('move');
+    expect(gov.getMission('v1')).toMatchObject({ targetCol: 3, targetRow: 4 });
+  });
+
+  it('never offers a blacklisted partner, even when it wins the projection', () => {
+    const { world, addCaravan } = tieWorld();
+    const memory = new CaravanMemory();
+    memory.recordTurn(1);
+    // Blacklist BOTH candidates: with memory deciding, no delivery target is
+    // left and the governor falls back to scouting rather than walking a caravan
+    // at a route it has already written off.
+    memory.blacklist('H', 'A', RIVAL_CIV, 'transit_deadline');
+    memory.blacklist('H', 'B', RIVAL_CIV, 'transit_deadline');
+
+    const caravan = addCaravan('v1', 1, 1, 'H');
+    const gov = new CaravanGovernor(memory);
+    expect(PLAN_OF(gov.planUnit(caravan, world, 2))).toBe('scout');
+    expect(gov.getMission('v1')?.targetCityId).toBeNull();
+  });
+
+  it('does not let a stale blacklist outlive its TTL', () => {
+    const { world, addCaravan } = tieWorld();
+    const memory = new CaravanMemory({ blacklistTtlTurns: 5 });
+    memory.recordTurn(1);
+    memory.blacklist('H', 'A', RIVAL_CIV, 'transit_deadline');
+    memory.blacklist('H', 'B', RIVAL_CIV, 'transit_deadline');
+    memory.recordTurn(20); // both blacklists have expired
+
+    const caravan = addCaravan('v1', 1, 1, 'H');
+    const gov = new CaravanGovernor(memory);
+    expect(PLAN_OF(gov.planUnit(caravan, world, 21))).toBe('move');
+  });
+
+  it('still picks a target when the caravan has no home city to key memory on', () => {
+    const built = makeWorld([
+      '..........',
+      '..........',
+      '..........',
+      '..........',
+      '..........',
+    ]);
+    built.addCity('H', 1, 1);
+    built.addCity('A', 6, 3, HOME_CIV, { population: 20 });
+    // No homeCityId on the caravan: `home` is null, so memory cannot be keyed
+    // and the governor must fall back to the plain projection rather than stall.
+    const caravan = built.addCaravan('v1', 1, 1, undefined);
+    const memory = new CaravanMemory();
+    memory.recordTurn(1);
+    memory.blacklist('H', 'A', HOME_CIV, 'transit_deadline');
+    const gov = new CaravanGovernor(memory);
+    expect(PLAN_OF(gov.planUnit(caravan, built.world, 2))).toBe('move');
+    expect(gov.getMission('v1')).toMatchObject({ targetCol: 6, targetRow: 3 });
   });
 });
 

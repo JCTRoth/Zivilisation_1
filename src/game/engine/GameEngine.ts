@@ -3015,6 +3015,58 @@ const occupiedLandmasses = new Set(
     return { success: true };
   }
 
+  /**
+   * Auto-establish a trade route for a trade ship that has no route yet.
+   *
+   * Picks the nearest other harbour city of the same civ as destination, so
+   * a trade ship starts running without player input — build it at a harbour,
+   * and it sails between harbours paying out on every arrival. This is the
+   * "auto-delivery" half of the trade-ship feature: the engine core
+   * (establishTradeShipRoute / advanceTradeShip / payTradeShipArrival) and
+   * the UI ordering already exist; this hooks the two together so no manual
+   * click is needed to open the first route.
+   */
+  autoEstablishTradeShipRoute(unitId: string): boolean {
+    const unit = this.units.find((u: Unit) => u.id === unitId);
+    if (!unit || unit.type !== 'trade_ship') return false;
+    if (unit.tradeShipRoute) return false;
+
+    const home = this.getTradeShipHomeCity(unit);
+    if (!home || !this.isHarborCity(home)) return false;
+
+    const otherHarbours = (this.cities ?? []).filter(
+      (c: City) =>
+        c.civilizationId === unit.civilizationId &&
+        c.id !== home.id &&
+        this.isHarborCity(c),
+    );
+    if (otherHarbours.length === 0) return false;
+
+    // Pick the nearest other harbour as destination.
+    const grid = this.squareGrid;
+    const dest = otherHarbours.sort((a, b) => {
+      const da = grid ? grid.squareDistance(a.col, a.row, unit.col, unit.row) : Infinity;
+      const db = grid ? grid.squareDistance(b.col, b.row, unit.col, unit.row) : Infinity;
+      return da - db;
+    })[0];
+
+    unit.tradeShipRoute = { homeCityId: home.id, destCityId: dest.id, stage: 'outbound' };
+    unit.movesRemaining = 0;
+    this.updateUnitTurnsDoneFlag(unit);
+    this.setTradeShipPath(unit, { col: dest.col, row: dest.row });
+
+    console.log(`[TRADE SHIP] Auto-route established: ${home.name} <-> ${dest.name}`);
+    if (this.onStateChange) {
+      this.onStateChange('TRADE_SHIP_ROUTE_ESTABLISHED', {
+        ship: unit,
+        homeCity: home,
+        destCity: dest,
+      });
+    }
+    this.checkAndEndTurnIfNoMoves('trade-ship-auto-route-established');
+    return true;
+  }
+
   advanceTradeShip(unitId: string): void {
     const unit = this.units.find((u: Unit) => u.id === unitId);
     const route = unit?.tradeShipRoute;

@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { playSfx, unlockAudio, disposeAudio, CUE_FILES, type SfxCue } from '@/utils/Sfx';
+import { resetSoundPolicy, SOUND_MANIFEST } from '@/utils/SoundEngine';
 import { useGameStore } from '@/stores/GameStore';
 
 /** Every cue the game can play. Adding one without a test here is how a cue
@@ -22,16 +23,95 @@ const ALL_CUES: SfxCue[] = [
   'cityCapturedClassic',
   'cityCapturedModern',
   'uiSelect',
-  'unitStrike',
+  'machineGunStrike',
+  'impactStrike',
+  'navalStrike',
+  'airStrike',
+  'missileLaunch',
+  'sdiIntercept',
   'torpedoAttack',
   'unitDefeated',
   'unitDisbanded',
+  'unitSelected',
+  'submarineSelected',
   'airUnitLaunch',
   'tankMove',
+  'mechInfMove',
   'cityAttacked',
+  'cityFounded',
+  'warDeclared',
+  'peaceMade',
+  'wonderCompleted',
+  'cityLost',
+  'civEliminated',
+  'cityStarved',
+  'cityDisorder',
+  'unitProduced',
+  'tradeRouteEstablished',
+  'unitPromoted',
   'barracksBuilt',
+  'sabotageSuccess',
+  'productionComplete',
   'nuclearStrike',
 ];
+
+/**
+ * The SoundEngine behind `playSfx` suppresses a cue re-fired inside its
+ * cooldown window — without a reset between tests, one file's assertions
+ * would silence another's. Every test starts from a cold engine.
+ */
+beforeEach(() => {
+  resetSoundPolicy();
+});
+
+/**
+ * Run `fn` with `cue`'s recording unassigned, so the test hears the
+ * synthesized fallback the cue ships for the day its file goes missing.
+ * Both the manifest entry and the `CUE_FILES` row are lifted and restored —
+ * the shipped assignment is exactly what the next file finds.
+ */
+function withoutRecording(cue: SfxCue, fn: () => void): void {
+  const manifest = SOUND_MANIFEST[cue];
+  const row = CUE_FILES[cue];
+  delete SOUND_MANIFEST[cue];
+  delete CUE_FILES[cue];
+  try {
+    fn();
+  } finally {
+    if (manifest) SOUND_MANIFEST[cue] = manifest;
+    if (row) CUE_FILES[cue] = row;
+  }
+}
+
+/** Async twin of `withoutRecording`, for tests that await the queue drain. */
+async function withoutRecordingAsync(cue: SfxCue, fn: () => Promise<void>): Promise<void> {
+  const manifest = SOUND_MANIFEST[cue];
+  const row = CUE_FILES[cue];
+  delete SOUND_MANIFEST[cue];
+  delete CUE_FILES[cue];
+  try {
+    await fn();
+  } finally {
+    if (manifest) SOUND_MANIFEST[cue] = manifest;
+    if (row) CUE_FILES[cue] = row;
+  }
+}
+
+/**
+ * Run `fn` with `CUE_FILES[cue]` temporarily set — the live-registration
+ * probe — restoring the shipped row (or its absence) afterwards so the
+ * "leaves only the shipped recordings" test below keeps passing.
+ */
+function withRow(cue: SfxCue, path: string, fn: () => void): void {
+  const row = CUE_FILES[cue];
+  CUE_FILES[cue] = path;
+  try {
+    fn();
+  } finally {
+    if (row) CUE_FILES[cue] = row;
+    else delete CUE_FILES[cue];
+  }
+}
 
 /**
  * The rows `Sfx.ts` ships with, read before any test registers a row of its
@@ -57,12 +137,10 @@ describe('playSfx — gated by the settings switch', () => {
     useGameStore.getState().actions.updateSettings({ enableSoundEffects: false });
 
     // The switch has to short-circuit BEFORE the file lookup: a muted game
-    // must not even fetch the asset.
-    CUE_FILES.unitStrike = '/assets/sfx/unit-strike.ogg';
-    playSfx('unitStrike');
+    // must not even fetch the asset. `coverBlown` is the probe because it has
+    // no recording — but the point holds for every cue, file or not.
+    playSfx('coverBlown');
     expect(created).toEqual([]);
-
-    delete CUE_FILES.unitStrike;
   });
 
   it('plays the registered file for a cue that has one', () => {
@@ -75,11 +153,10 @@ describe('playSfx — gated by the settings switch', () => {
       play() { return Promise.resolve(); }
     };
 
-    CUE_FILES.unitStrike = '/assets/sfx/unit-strike.ogg';
-    playSfx('unitStrike');
-    expect(created).toEqual(['/assets/sfx/unit-strike.ogg']);
-
-    delete CUE_FILES.unitStrike;
+    withRow('machineGunStrike', '/assets/sfx/custom-gun.ogg', () => {
+      playSfx('machineGunStrike');
+      expect(created).toEqual(['/assets/sfx/custom-gun.ogg']);
+    });
   });
 
   it('reads CUE_FILES live, so a row registered after import still applies', () => {
@@ -95,10 +172,10 @@ describe('playSfx — gated by the settings switch', () => {
     // The whole point of the design: filling a row replaces that one cue and
     // nothing else, without touching the module or restarting the game.
     expect(created).toEqual([]);
-    CUE_FILES.unitDefeated = '/assets/sfx/unit-defeated.ogg';
-    playSfx('unitDefeated');
-    expect(created).toEqual(['/assets/sfx/unit-defeated.ogg']);
-    delete CUE_FILES.unitDefeated;
+    withRow('unitDefeated', '/assets/sfx/unit-defeated.ogg', () => {
+      playSfx('unitDefeated');
+      expect(created).toEqual(['/assets/sfx/unit-defeated.ogg']);
+    });
   });
 
   it('does not double up: an unmapped cue never touches the file layer', () => {
@@ -113,8 +190,9 @@ describe('playSfx — gated by the settings switch', () => {
 
     // No row → the synthesized path runs (which in node finds no AudioContext
     // and returns quietly). The important half is that it does NOT reach for
-    // an asset.
-    playSfx('unitStrike');
+    // an asset. `coverBlown` is the probe: it has no recording and none is
+    // planned, so this stays an unmapped cue whatever lands next.
+    playSfx('coverBlown');
     expect(created).toEqual([]);
   });
 });
@@ -182,15 +260,17 @@ describe('the nuclear strike cue', () => {
     // An oscillator-only nuke sounds like a doorbell, which is why the cue
     // carries noise bands at all. Pin all three layers so a regeneration of
     // the cue table cannot quietly drop one.
-    const voices = fakeAudioGraph();
-    playSfx('nuclearStrike');
-    const noiseBands = voices.filter((v) => v.noise).length;
-    const tones = voices.filter((v) => !v.noise).length;
-    expect(noiseBands).toBeGreaterThanOrEqual(2);
-    expect(tones).toBeGreaterThanOrEqual(2);
+    withoutRecording('nuclearStrike', () => {
+      const voices = fakeAudioGraph();
+      playSfx('nuclearStrike');
+      const noiseBands = voices.filter((v) => v.noise).length;
+      const tones = voices.filter((v) => !v.noise).length;
+      expect(noiseBands).toBeGreaterThanOrEqual(2);
+      expect(tones).toBeGreaterThanOrEqual(2);
+    });
   });
 
-  it('is the loudest cue in the game', () => {
+  it('is the loudest cue in the game', async () => {
     const masters: Array<{ gain: { value: number } }> = [];
     (globalThis as { window?: unknown }).window = {
       AudioContext: class {
@@ -224,9 +304,26 @@ describe('the nuclear strike cue', () => {
       playSfx(cue);
       return masters[at]?.gain.value ?? -1;
     };
-    const nuke = gainFor('nuclearStrike');
-    const fanfare = gainFor('cityCapturedClassic');
-    const strike = gainFor('unitStrike');
+    // The shipped recordings win over the oscillators, so the synth ladder is
+    // measured with every involved recording lifted — otherwise two of the
+    // three reads would hit the file path, build no gain node, and compare
+    // against -1.
+    let nuke = -1;
+    let fanfare = -1;
+    let strike = -1;
+    // Same queue drain as below: the three synth ladders play one after
+    // another, so the test waits for each voice to free before reading on.
+    const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+    await withoutRecordingAsync('nuclearStrike', () => withoutRecordingAsync('cityCapturedClassic', () => withoutRecordingAsync(
+      'machineGunStrike',
+      async () => {
+        nuke = gainFor('nuclearStrike');
+        await sleep(700);
+        fanfare = gainFor('cityCapturedClassic');
+        await sleep(700);
+        strike = gainFor('machineGunStrike');
+      },
+    )));
     expect(nuke).toBeGreaterThan(fanfare);
     expect(nuke).toBeGreaterThan(strike);
   });
@@ -269,7 +366,7 @@ describe('the relative loudness of a cue', () => {
     useGameStore.getState().actions.updateSettings({ enableSoundEffects: true });
   });
 
-  it('keeps a combat round under an event fanfare', () => {
+  it('keeps a combat round under an event fanfare', async () => {
     // A blow fires on every combat round; a fanfare fires once per game. If a
     // strike is louder than a stolen technology the mix inverts — which is what
     // happened when the multiplier was applied as an absolute value: the unit
@@ -322,9 +419,22 @@ describe('the relative loudness of a cue', () => {
       return masters[at].gain.value;
     };
 
-    const fanfare = firstGainOf('stolenTechnology');
-    const strike = firstGainOf('unitStrike');
-    const fanfareAgain = firstGainOf('coverBlown');
+    // `impactStrike` is the cue for a land unit with no machine gun and it ships
+    // no recording, so it always reaches the synth path — the ladder this test
+    // was written for, with nothing to lift first.
+    let fanfare = -1;
+    let strike = -1;
+    let fanfareAgain = -1;
+    // The engine serializes: while one cue is still ringing the next waits
+    // its turn instead of overlapping it. The waits below are that queue
+    // draining — each cue's master lands exactly where the index arithmetic
+    // expects it, just a beat later.
+    const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+    fanfare = firstGainOf('stolenTechnology');
+    await sleep(700);
+    strike = firstGainOf('impactStrike');
+    await sleep(700);
+    fanfareAgain = firstGainOf('coverBlown');
 
     expect(fanfare).toBeGreaterThan(0);
     expect(strike).toBeGreaterThan(0);

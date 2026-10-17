@@ -292,11 +292,9 @@ function MapSizeField({ label, value, min, max, onCommit }: MapSizeFieldProps) {
 
 function MapSizeTool({ width, height, civCount, onChange }: MapSizeToolProps) {
   const { t, formatNumber } = useTranslation();
-  const [drag, setDrag] = useState<null | 'w' | 'h' | 'wh'>(null);
   const [hoverPresetId, setHoverPresetId] = useState<string | null>(null);
   const [aspectLocked, setAspectLocked] = useState(false);
   const lockRatioRef = useRef(width / Math.max(1, height));
-  const startRef = useRef({ x: 0, y: 0, w: 0, h: 0, ratio: 1 });
   const stageRef = useRef<HTMLDivElement>(null);
   const [stageBox, setStageBox] = useState({
     width: STAGE_FALLBACK_WIDTH,
@@ -327,46 +325,6 @@ function MapSizeTool({ width, height, civCount, onChange }: MapSizeToolProps) {
       onChange(clampMapWidth(nextWidth), clampMapHeight(nextHeight)),
     [onChange],
   );
-
-  useEffect(() => {
-    if (!drag) return;
-    const onMove = (event: PointerEvent) => {
-      const start = startRef.current;
-      let nextW = start.w;
-      let nextH = start.h;
-      if (drag === 'w' || drag === 'wh') nextW = start.w + (event.clientX - start.x) / scale;
-      if (drag === 'h' || drag === 'wh') nextH = start.h + (event.clientY - start.y) / scale;
-      if (aspectLocked) {
-        // A locked frame follows the axis being dragged; the corner handle
-        // rides the horizontal delta so vertical pixels do not fight it.
-        if (drag === 'h') nextW = nextH * start.ratio;
-        else nextH = nextW / start.ratio;
-      }
-      commit(nextW, nextH);
-    };
-    const onUp = () => setDrag(null);
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-    };
-  }, [drag, commit, aspectLocked, scale]);
-
-  const beginDrag = (axis: 'w' | 'h' | 'wh') => (event: React.PointerEvent) => {
-    event.preventDefault();
-    startRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-      w: width,
-      h: height,
-      ratio: width / Math.max(1, height),
-    };
-    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
-    setDrag(axis);
-  };
 
   const setWidth = (raw: number) => {
     const nextW = clampMapWidth(raw);
@@ -412,7 +370,7 @@ function MapSizeTool({ width, height, civCount, onChange }: MapSizeToolProps) {
 
   return (
     <div
-      className={`map-size-tool${drag ? ' is-dragging' : ''}`}
+      className="map-size-tool"
       role="group"
       aria-label={t('setup.mapSizeTitle')}
     >
@@ -429,21 +387,6 @@ function MapSizeTool({ width, height, civCount, onChange }: MapSizeToolProps) {
                 style={{ width: ghost.width * scale, height: ghost.height * scale }}
               />
             )}
-            <div
-              className="map-size-tool__handle map-size-tool__handle--right"
-              onPointerDown={beginDrag('w')}
-              title={t('setup.sizeWidth')}
-            />
-            <div
-              className="map-size-tool__handle map-size-tool__handle--bottom"
-              onPointerDown={beginDrag('h')}
-              title={t('setup.sizeHeight')}
-            />
-            <div
-              className="map-size-tool__handle map-size-tool__handle--corner"
-              onPointerDown={beginDrag('wh')}
-              title={`${t('setup.sizeWidth')} × ${t('setup.sizeHeight')}`}
-            />
           </div>
         </div>
         <div className="map-size-tool__stage-foot">
@@ -547,12 +490,10 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   const isInteractive = useCallback((target: EventTarget | null): boolean => {
     if (!(target instanceof HTMLElement)) return true;
     // Controls routinely wrap their label in spans, so look up the tree, not
-    // just at the pressed tag. The map-size tool's drag handles are plain
-    // divs that own a pointer gesture of their own — panning for them would
-    // steal the drag (and with it the click).
+    // just at the pressed tag.
     if (target.closest('button, select, input, textarea, a, label, option')) return true;
     return !!target.closest(
-      '.setup-civ-card, .setup-summary, .setup-nameplate, .setup-footer, .setup-dossier, .map-size-tool__handle',
+      '.setup-civ-card, .setup-summary, .setup-nameplate, .setup-footer, .setup-dossier',
     );
   }, []);
 

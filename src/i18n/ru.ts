@@ -241,7 +241,7 @@ export const ru: PartialTranslationDict = {
   'setup.ageShort.2': 'Старая',
   'setup.mapSizeTitle': 'Размер карты',
   'setup.mapSizeHint':
-    'Тяните за края или угол превью карты, чтобы придать форму миру.',
+    'Выберите шаблон или перетащите ползунки, чтобы придать форму миру.',
   'setup.sizeTiny': 'Крошечная',
   'setup.sizeSmall': 'Малая',
   'setup.sizeStandard': 'Стандартная',

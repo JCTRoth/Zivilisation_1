@@ -72,6 +72,7 @@ import {
   scoreNavalTarget,
   type NavalTargetClass,
 } from './NavalDoctrine';
+import { NavalPatrolMemory } from './NavalPatrolMemory';
 import {
   scoreNuclearTarget,
 } from './NuclearDoctrine';
@@ -381,6 +382,50 @@ export class AIManager {
   private caravanGovernor = new CaravanGovernor();
 
   /**
+   * Per-civ naval memory (roadmap item 3, `doc/AI_MEMORY.adoc`).
+   *
+   * Keyed by civ id on purpose: swept water, enemy contacts and kill zones are
+   * all statements about what THIS civ has seen, so a shared instance would let
+   * one civilization's scouting contaminate another's fleet. Created lazily —
+   * a land-map game never allocates one.
+   */
+  private navalMemories = new Map<number, NavalPatrolMemory>();
+
+  /** The naval memory for a civ, created on first use. */
+  navalMemoryFor(civId: number): NavalPatrolMemory {
+    let memory = this.navalMemories.get(civId);
+    if (!memory) {
+      memory = new NavalPatrolMemory();
+      this.navalMemories.set(civId, memory);
+    }
+    return memory;
+  }
+
+  /**
+   * Turn boundary for the fleet: advance the memory clock and reconcile the
+   * hulls that are still afloat.
+   *
+   * Cheap on a land map and free of side effects: the civ simply has no naval
+   * memory instance yet, so this returns without allocating one.
+   */
+  private syncNavalMemory(civId: number): void {
+    const memory = this.navalMemories.get(civId);
+    if (!memory) return;
+    const round = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const hulls = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civId && !u.isDefeated && this.isNavalUnitType(String(u.type ?? '')),
+    );
+    memory.recordTurn(round);
+    const lost = memory.reconcileHulls(hulls, round);
+    for (const unitId of lost) {
+      const civ = this.gameEngine.civilizations[civId];
+      this.gameEngine.log?.('ai', `Hull lost — ${civ?.name ?? `civ ${civId}`} remembers the water`, {
+        civilizationId: civId, action: 'naval_loss', unitId, unitType: 'naval',
+      });
+    }
+  }
+
+  /**
    * The civ-level layer above the governor: how many caravans this civ needs,
    * which cities build them, and where each one delivers (de-duplicated across
    * the civ's caravans). Recomputed once per civ per round; the per-unit branch
@@ -469,6 +514,63 @@ export class AIManager {
   /** Cities that should build a caravan this round (coordinator's answer). */
   citiesWantingCaravans(civId: number): string[] {
     return this.caravanProducerCities.get(civId) ?? [];
+  }
+
+  /**
+   * Record a successful caravan delivery into the CaravanGovernor's memory.
+   * Called when a caravan consumes itself on a city tile (GameEngine emits
+   * `TRADE_ROUTE_ESTABLISHED`). `homeCityId`/`destCityId` are the route's two
+   * ends; `transitTurns` is the mission's outbound-turn count (0 if unknown).
+   */
+  recordCaravanDelivery(
+    homeCityId: string,
+    destCityId: string,
+    destCivId: number,
+    gold: number,
+    science: number,
+    transitTurns: number,
+  ): void {
+    try {
+      this.caravanGovernor.getMemory().recordDelivery({
+        homeCityId,
+        destCityId,
+        destCivId,
+        gold,
+        science,
+        transitTurns: Math.max(1, transitTurns || 1),
+      });
+    } catch {
+      // Memory is advisory — never let a bookkeeping slip stall the turn.
+    }
+  }
+
+  /**
+   * Record a failed caravan mission (stall/timeout/Blacklist). Best-effort.
+   */
+  recordCaravanFailure(
+    homeCityId: string,
+    destCityId: string,
+    destCivId: number,
+    reason: 'target_gone' | 'target_ineligible' | 'no_route_patience' | 'no_target' | 'transit_deadline' | 'surplus_over_cap' | 'blocked' | 'unknown',
+    transitTurns?: number,
+  ): void {
+    try {
+      this.caravanGovernor.getMemory().recordFailure(
+        homeCityId, destCityId, destCivId, reason, transitTurns,
+      );
+    } catch {
+      // no-op
+    }
+  }
+
+  /** Read-only view of caravan route (partner) memory. */
+  getCaravanRouteStats() {
+    return this.caravanGovernor.getMemory();
+  }
+
+  /** Transit turns accumulated so far by a caravan's mission (for memory). */
+  getCaravanMissionTransitTurns(unitId: string): number {
+    return this.caravanGovernor.getMission(unitId)?.transitTurns ?? 0;
   }
 
   /**
@@ -947,6 +1049,13 @@ export class AIManager {
     // Drop governor memory of caravans that died, delivered or were disbanded
     // since the last turn (missions and the per-civ scout role).
     this.caravanGovernor.pruneMissing(this.gameEngine.units);
+
+    // Same deal for the fleet: advance the turn clock (which expires stale
+    // contacts, sweeps and kill zones) and drop navigation intents for hulls
+    // that no longer exist. A hull that vanished with an intent still held is
+    // the fleet's clearest evidence of danger, so that tile becomes a kill zone
+    // for a while instead of being quietly forgotten.
+    this.syncNavalMemory(civilizationId);
 
     const aiUnits = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civilizationId && (u.movesRemaining || 0) > 0 && !u.embarkedOn,
@@ -1510,7 +1619,19 @@ export class AIManager {
           }
           if (assignment) {
             this.caravanGovernor.assignTarget(unit.id, assignment.targetCol, assignment.targetRow, roundNumber);
+            // Memory: a caravan just committed to a (home -> dest) walk. Record the
+            // attempt up front so failures/timeouts attribute to the right partner.
+            const home = this.gameEngine.getCaravanHomeCity(unit);
+            const destCity = this.gameEngine.getCityAt(assignment.targetCol, assignment.targetRow);
+            if (home && destCity) {
+              this.caravanGovernor.getMemory().recordAttempt(
+                home.id, destCity.id, destCity.civilizationId,
+              );
+            }
           }
+          // Advance the memory clock once per AI turn (always, not just when
+          // an assignment exists).
+          this.caravanGovernor.recordTurn(roundNumber);
           const plan = this.caravanGovernor.planUnit(unit, this.gameEngine, roundNumber);
           if (plan.kind === 'move') {
             const r = this.gameEngine.moveUnit(unit.id, plan.step.col, plan.step.row);
@@ -1537,6 +1658,23 @@ export class AIManager {
             this.gameEngine.log('ai', `Caravan disband — ${civ.name} caravan(${unit.id}) at (${unit.col},${unit.row}): ${plan.reason}`, {
               civilizationId, action: 'disband', unitId: unit.id, unitType: 'caravan', reason: plan.reason,
             });
+            // Memory: terminal mission outcome — attribute the failure to the
+            // partner the caravan was walking toward (if any).
+            const m = this.caravanGovernor.getMission(unit.id);
+            if (m?.targetCityId) {
+              const home = this.gameEngine.getCaravanHomeCity(unit);
+              const dest = this.gameEngine.cities.find((c) => c.id === m.targetCityId);
+              if (home && dest) {
+                const reason = (plan.reason === 'transit_deadline') ? 'transit_deadline'
+                  : (plan.reason === 'surplus_over_cap') ? 'surplus_over_cap'
+                  : (plan.reason === 'target_gone') ? 'target_gone'
+                  : (plan.reason === 'target_ineligible') ? 'target_ineligible'
+                  : (plan.reason === 'no_target') ? 'no_target'
+                  : (plan.reason === 'no_route_patience') ? 'no_route_patience'
+                  : 'unknown';
+                this.recordCaravanFailure(home.id, dest.id, dest.civilizationId, reason, m.transitTurns);
+              }
+            }
             this.caravanGovernor.forget(unit.id);
             this.gameEngine.disbandUnit(unit.id);
             break;
@@ -4086,13 +4224,28 @@ export class AIManager {
   private hullIsClosing(unit: Unit, target: { col: number; row: number }): boolean {
     const grid = this.gameEngine.squareGrid;
     if (!grid) return true;
+    const memory = this.navalMemoryFor(unit.civilizationId);
     const dist = grid.squareDistance(unit.col, unit.row, target.col, target.row);
-    const previous = unit._navalIntent;
+    const previous = memory.intentFor(unit.id);
     let stalled = 0;
     if (previous && previous.col === target.col && previous.row === target.row) {
       stalled = dist < previous.dist ? 0 : previous.stalled + 1;
     }
-    unit._navalIntent = { col: target.col, row: target.row, dist, stalled };
+    // The intent — including where the hull was standing and whether it was
+    // loaded — used to be written onto `unit._navalIntent`, which put AI
+    // bookkeeping inside a unit the save serialiser copies. It lives in the
+    // civ's naval memory now, so it is prunable and never saved.
+    memory.setIntent(unit.id, {
+      col: target.col,
+      row: target.row,
+      fromCol: unit.col,
+      fromRow: unit.row,
+      dist,
+      stalled,
+      loaded: isSealiftHull(unit.type, UNIT_PROPS[unit.type])
+        ? this.ferryCargoIds(unit).length > 0
+        : undefined,
+    });
     return stalled < NAVAL_STALL_TURNS;
   }
 
@@ -4121,7 +4274,7 @@ export class AIManager {
     }
     const invasion = this.getInvasionMission(storage);
     if (invasion?.ferryId === unit.id) this.clearInvasionMission(storage);
-    unit._navalIntent = undefined;
+    this.navalMemoryFor(unit.civilizationId).clearIntent(unit.id);
 
     const elsewhere = this.findDistantNavalWater(unit, stuck, NAVAL_RETARGET_MIN_DISTANCE);
     if (elsewhere) {
@@ -4339,6 +4492,18 @@ export class AIManager {
       if (ship.isDefeated) continue;
       if (!this.isHostileTo(ownCivId, ship.civilizationId)) continue;
       const dist = grid.chebyshevDistance(unit.col, unit.row, ship.col, ship.row);
+      // Memory: this hull is in sight RIGHT NOW, so write the sighting down
+      // before deciding what to do about it. That record is what lets a warship
+      // sail to the raider's last position after it breaks over the horizon,
+      // instead of dropping back to a blind patrol.
+      this.navalMemoryFor(ownCivId).recordContact({
+        enemyCivId: ship.civilizationId,
+        col: ship.col,
+        row: ship.row,
+        type: ship.type,
+        transportCapacity: UNIT_PROPS[ship.type]?.transportCapacity ?? 0,
+        strength: ship.attack ?? 0,
+      });
       const targetClass = classifyNavalTarget({
         type: ship.type,
         transportCapacity: UNIT_PROPS[ship.type]?.transportCapacity,
@@ -4379,6 +4544,32 @@ export class AIManager {
       consider('coastal_city', aim, dist, walled ? 0.4 : (defended > 0 ? 0.8 : 1.2));
     }
 
+    // Remembered enemy HULLS — the naval memory's own contribution. Only reached
+    // when nothing is in sight, so it can never outbid a live target; it just
+    // gives a hull with nothing else to do a lead worth following instead of a
+    // blind patrol. Hostility is re-checked here (the filter is mandatory, not
+    // advisory): sailing toward a remembered contact of a civ we are at peace
+    // with is pointless, and acting on that tile would declare war.
+    if (bestScore === -Infinity) {
+      const contact = this.navalMemoryFor(ownCivId).bestContact({
+        hostileTo: (civId) => this.isHostileTo(ownCivId, civId),
+      });
+      if (contact) {
+        const water = this.navigableWaterAt(contact.col, contact.row)
+          ?? this.navigableWaterAt(contact.col, contact.row + 1)
+          ?? this.navigableWaterAt(contact.col + 1, contact.row);
+        if (water) {
+          const dist = grid.chebyshevDistance(unit.col, unit.row, water.col, water.row);
+          consider(
+            contact.transportCapacity > 0 ? 'transport' : 'warship',
+            water,
+            dist,
+            0.5, // remembered: worth half of a sighting, never more
+          );
+        }
+      }
+    }
+
     // Remembered enemy positions we have lost sight of, as a last resort so a
     // warship with nothing in sight still has somewhere to be useful.
     if (bestScore === -Infinity && storage?.enemyLocations) {
@@ -4412,6 +4603,13 @@ export class AIManager {
     const grid = this.gameEngine.squareGrid;
     if (!map || !grid) return null;
     const explored = this.gameEngine.getPlayerStorage?.(unit.civilizationId)?.explored;
+    const memory = this.navalMemoryFor(unit.civilizationId);
+
+    // The tile this hull is standing on has, by definition, been patrolled. This
+    // is what lets a later hull tell "water nobody has looked at" from "water we
+    // swept three turns ago and found nothing", which is what stops a fleet from
+    // converging on one corner of the ocean and milling there forever.
+    memory.recordSweep(unit.col, unit.row);
 
     // Gather candidates ring by ring, then CHOOSE among them. Returning the
     // first one found was the bug: the scan starts at the top-left diagonal, so
@@ -4449,7 +4647,22 @@ export class AIManager {
 
     const pool = unknown.length > 0 ? unknown : known;
     if (pool.length === 0) return this.findAnyNavalWater(unit);
-    return pool[this.hullChoiceIndex(unit.id, pool.length)];
+
+    // Memory ranks the pool: water never patrolled wins, then water patrolled
+    // longest ago, and remembered kill zones push a tile down. Everything else
+    // about the candidates is unchanged — this only reorders a pool the scan
+    // already accepted, so it can never introduce a tile the old code refused.
+    // `hullChoiceIndex` stays as the tie-break, so two hulls reading the same
+    // memory still pick different tiles.
+    const ranked = [...pool].sort((a, b) => {
+      const score = (t: { col: number; row: number }): number =>
+        memory.sweepPriority(t.col, t.row) + memory.dangerPressure(t.col, t.row) * 2;
+      return score(a) - score(b) || a.col - b.col || a.row - b.row;
+    });
+    // Take the better half of the memory ranking before the identity offset, so
+    // the offset still spreads hulls out instead of dragging in the worst tile.
+    const shortlist = ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 2)));
+    return shortlist[this.hullChoiceIndex(unit.id, shortlist.length)];
   }
 
   /**

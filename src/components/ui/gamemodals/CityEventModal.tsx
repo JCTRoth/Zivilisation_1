@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import GameModal from './ModalShell';
 import { useTranslation } from '@/i18n/useTranslation';
+import { playSfx, type SfxCue } from '@/utils/Sfx';
 import type { CityEventNotice } from '../../../../types/game';
 import '../../../styles/cityCaptureModal.css';
 
@@ -19,6 +20,12 @@ interface CityEventModalProps {
   fromCivName?: string;
   fromCivColor?: string;
   fromCivIcon?: string;
+  /**
+   * The conquest march, resolved by the caller from the game year. Played
+   * when the dialog OPENS — the fanfare belongs to the news, and the news
+   * arrives here, turns after the city actually fell.
+   */
+  captureCue?: SfxCue | null;
   onContinue: () => void;
   onGoToCity: () => void;
 }
@@ -38,10 +45,19 @@ const CityEventModal: React.FC<CityEventModalProps> = ({
   fromCivName,
   fromCivColor,
   fromCivIcon,
+  captureCue,
   onContinue,
   onGoToCity,
 }) => {
   const { t } = useTranslation();
+
+  // The conquest march sounds when the dialog opens — only for a city the
+  // player TOOK (a victory march over your own fall would be the wrong news
+  // twice over), and never twice for the same opening.
+  useEffect(() => {
+    const conquest = show && notice?.kind === 'captured' && notice?.byCivId === playerCivId;
+    if (conquest && captureCue) playSfx(captureCue);
+  }, [show, notice, captureCue, playerCivId]);
 
   if (!notice) return null;
 

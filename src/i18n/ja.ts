@@ -241,7 +241,7 @@ export const ja: PartialTranslationDict = {
   'setup.ageShort.2': '古い',
   'setup.mapSizeTitle': 'マップサイズ',
   'setup.mapSizeHint':
-    'マッププレビューの辺や角をドラッグして世界を形作ります。',
+    'プリセットを選ぶかスライダーを動かして世界を形作ります。',
   'setup.sizeTiny': '極小',
   'setup.sizeSmall': '小',
   'setup.sizeStandard': '標準',

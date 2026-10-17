@@ -832,6 +832,12 @@ export class TurnManager {
       // around.
       if (unit.tradeShipRoute) {
         this.gameEngine.advanceTradeShip(unit.id);
+      } else if (unit.type === 'trade_ship') {
+        // Auto-establish a route for a trade ship at a harbour with no route
+        // yet — build it, and it runs. This is the "auto-delivery" the trade
+        // ship is meant to provide: no manual click needed to open the first
+        // route.
+        this.gameEngine.autoEstablishTradeShipRoute(unit.id);
       }
     });
   }

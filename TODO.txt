@@ -98,7 +98,7 @@ They increese the ammount of money the player gets from trade routes, and they a
 
 * Multi Language support, including the ability to change the language of the game, and the ability to add new languages to the game.
 
-* Add new ship type, "Trade Ship" 
+* [DONE] Add new ship type, "Trade Ship" 
 A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
 and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.
 Everytime it was in one of city of your civilisation and than reaches than another city of your civilisation or of another civ.
@@ -1080,3 +1080,42 @@ Do what ever needed
 ---
 
 
+I have here some sounds from another game that will be now integrated by you into this game:  IF you choose to use multipole sounds for the same unit than use a main sound and than secodndarry sounds main sound play most of the time - Sounds also can be used for events or when clicked or builded building YOU decide by best will - Legal notice from online search, I talked with an AI that does not know oure project:  Since you are using them strictly as assets, your main source code is completely safe. Your project will not become GPL.
+To keep everything legally watertight, you just need to ensure you aggregate them properly. Here is exactly how to structure your files and handle the documentation:
+
+1. Structure Your Directory (Keep Assets Separate)
+
+Keep the Warzone 2100 audio files in their own distinct folder rather than embedding or compiling their raw data directly into your game's main executable file.
+A clean setup looks like this:
+text
+my-game-project/
+├── Game.exe                 <-- Your private, closed-source code
+├── assets/
+│   ├── textures/
+│   └── audio/
+│       ├── my-own-sounds/
+│       └── warzone2100/     <-- Keep these in their own folder
+│           ├── laser.ogg
+│           ├── explosion.ogg
+│           └── LICENSE.txt  <-- Place a copy of the GPLv2 license here
+└── LICENSE-THIRD-PARTY.txt  <-- A text file in your root folder (see below)
+Use code with caution.
+
+2. Add a Third-Party Notice
+
+In the root directory of y        // Barbarian city cap: if already at the limit, raze instead of capture.
+        if (this.isAtCityCap()) {
+          debugLog(`[BARB] At city cap — razing ${city.name} instead of capturing`);
+          city.population = 1;
+        }our project, create a text file (often named LICENSE-THIRD-PARTY.txt or CREDITS.txt). Inside it, explicitly state that your code is proprietary, but the sounds are open source.
+You can use this exact template:
+Third-Party Asset Notices
+This project contains sound assets from the open-source game Warzone 2100, which are licensed under the GNU General Public License, version 2 (GPLv2).
+These assets are included via "mere aggregation" and remain under the GPLv2. A full copy of the license can be found in the assets/audio/warzone2100/ directory.
+The inclusion of these assets does not extend the GPLv2 license to the primary application source code or any other proprietary assets of this project.
+
+3. Golden Rule: Modifying the Files
+
+• If you use them exactly as they are: You have no further obligations.
+• If you edit them: If you chop up, remix, or heavily filter a Warzone 2100 sound effect, that new, edited sound file must also be made available under the GPLv2 if someone asks for it. Your code, however, still remains unaffected.
+Are you distributing this project as a free download (like on Itch.io or GitHub) or planning a commercial release (like on Steam)? I can let you know if there are any storefront-specific guidelines you should look out for. -- Copy the files and rename them as best - comprehencive integration best practice: /home/jonas/Downloads/sounds/   --- Unit sounds only get played if not played the last 10 seconds before -- Attack sounds only get played if not played the last 4 seconds before  --- Make a list of all placed where sounds will be played return this list as .adoc or extend doc. if allready existing, a sound only gets used for one perpouse! -- abstract implementing the sound system than use it -- never play two sounds at the same time

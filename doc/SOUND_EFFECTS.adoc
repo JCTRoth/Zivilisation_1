@@ -1,10 +1,10 @@
 = Sound Effects — Cue Catalogue & Recording Guide
 
-> *Module:* `src/utils/Sfx.ts`
-> *Call sites:* `src/utils/EngineEventHandlers.ts`, `src/components/ui/gamemodals/EspionageReportModal.tsx`, `src/components/game/GameCanvas.tsx`
+> *Modules:* `src/utils/Sfx.ts` (transport), `src/utils/SoundEngine.ts` (policy)
+> *Call sites:* `src/utils/EngineEventHandlers.ts`, `src/components/ui/gamemodals/EspionageReportModal.tsx`, `src/components/game/GameCanvas.tsx`, `src/components/game/UnitActionsModal.tsx`, `src/components/ui/GameModals.tsx`
 > *Setting:* `settings.enableSoundEffects` (Settings → *Enable sound effects*)
-> *Assets:* `public/assets/sfx/` — seven recordings ship, see <<adding-a-recording,Adding a Recording>>
-> *Tests:* `tests/sfx.test.ts` (the sound layer), `tests/sfxWiring.test.ts` (which event plays what)
+> *Assets:* `public/assets/sfx/` — seven mp3 recordings, two further project originals (`city-founded.ogg`, `mech-inf-move.opus`) and sixteen Warzone 2100 ogg recordings, see <<adding-a-recording,Adding a Recording>> and <<warzone-attribution,Warzone 2100 Attribution>>
+> *Tests:* `tests/sfx.test.ts` (transport), `tests/soundEngine.test.ts` (policy), `tests/sfxWiring.test.ts` (which event plays what)
 
 ---
 
@@ -12,8 +12,13 @@
 
 . <<overview,Overview>>
 . <<catalogue,Cue Catalogue>>
+. <<news-cue-gates,What Keeps the News Cues Quiet>>
+. <<immersion-gaps,The Gaps That Were Left>>
 . <<pipeline,How a Cue Fires>>
+. <<policy,Cooldowns, Serialization and Variants>>
 . <<adding-a-recording,Adding a Recording>>
+. <<warzone-attribution,Warzone 2100 Attribution>>
+. <<trigger-list,Every Trigger>>
 . <<gating,When Sound Is Suppressed>>
 . <<loudness,Loudness>>
 . <<screen-flash,The Other Half of the Boom>>
@@ -25,16 +30,17 @@
 == Overview
 
 Every cue has a **synthesized fallback** — oscillator beeps built at play time —
-so the game makes a sound even with nothing on disk. Seven cues also ship a
+so the game makes a sound even with nothing on disk. Twenty cues also ship a
 **recording**, which takes over from the notes the moment its row exists in
-`CUE_FILES` (`src/utils/Sfx.ts`).
+`CUE_FILES` (`src/utils/Sfx.ts`). The other twenty-one are synthesized only —
+the whole "news" row in the catalogue below, plus five early cues.
 
 A recording replaces the synthesis *one cue at a time*. Filling in a row makes
 that one cue play the file instead; every other cue keeps its oscillators.
 Nothing else in the game changes, so a recording can land in a single commit
 and be reverted the same way.
 
-Two rules hold for both paths:
+Three rules hold for both paths:
 
 * **The switch comes first.** When `enableSoundEffects` is off, `playSfx`
   returns before it looks up a file — a muted game never even fetches the
@@ -42,16 +48,17 @@ Two rules hold for both paths:
 * **A cue is either a file or a synthesis, never both.** A path that failed to
   load does not fall back to the oscillators, so a half-configured game cannot
   double up when the recording finally arrives.
+* **One voice, one purpose.** Every `playSfx` call goes through the
+  SoundEngine (`src/utils/SoundEngine.ts`), which enforces cooldowns, plays
+  at most one sound at a time, and picks the recording — see <<policy,Policy>>.
+  And every recording serves exactly one cue: no file means two things.
 
 ---
 
 [[catalogue]]
 == Cue Catalogue
 
-Seven cues exist. Each has a fixed, kebab-case file name; the *Expected file*
-column is the path relative to `public/`.
-
-Thirteen cues exist. *Recorded* marks a cue that ships a file today; the
+Forty-one cues exist. *Recorded* marks a cue that ships a file today; the
 *File* column gives the name it would use, which for a recorded cue is the path
 in `CUE_FILES` relative to `public/`.
 
@@ -60,24 +67,38 @@ in `CUE_FILES` relative to `public/`.
 | Cue | When it plays | Fires at | Recorded | File
 
 | `torpedoAttack`
-| A **submarine's** combat round, standing in for `unitStrike` whenever a hull
-  is firing. The weapon sound plays whether or not the round was decisive; a
-  round that sank something also gets `unitDefeated` over the top of it.
+| A **submarine's** combat round. The weapon sound plays whether or not the
+  round was decisive; a round that sank something also gets `unitDefeated`
+  over the top of it.
 | `EngineEventHandlers.onCombat`
 | yes
 | `sfx/torpedo-attack.mp3`
 
-| `unitStrike`
-| Every combat round in which the player is involved and **no unit died** —
-  the blow itself. Repeats each round of a fight. Not used for submarines.
+| `machineGunStrike`
+| A **Mech. Inf.** combat round in which the player is involved and no unit
+  died — a burst of automatic fire. *Mech. Inf. only*: it is the single unit in
+  the game that carries machine guns, and every other land unit gets
+  `impactStrike` instead. Three recordings rotate: the first plays most of the
+  time.
 | `EngineEventHandlers.onCombat` (`COMBAT_HIT`, `COMBAT_VICTORY`,
   `COMBAT_DEFEAT` with no destruction)
+| yes
+| `sfx/warzone2100/machine-gun-strike-1.ogg` (+ `-2`, `-3` secondaries)
+
+| `impactStrike`
+| Any other **land** combat round in which the player is involved and no unit
+  died — warrior, archer, phalanx, chariot, knights, legion, catapult, cavalry,
+  musketeer, riflemen, cannon, artillery, tank. A dull knock with no gunfire in
+  it: something hitting something. Repeated each round of a fight, like the
+  machine-gun burst it replaced. Synthesized, so it is the cue a new land unit
+  inherits by default.
+| `EngineEventHandlers.onCombat` (same events as `machineGunStrike`)
 | no
-| `sfx/unit-strike.ogg`
+| —
 
 | `unitDefeated`
 | A combat round in which the player is involved and a unit **was destroyed**
-  — the death, replacing `unitStrike` for that round.
+  — the death, replacing the blow for that round.
 | `EngineEventHandlers.onCombat`
 | no
 | `sfx/unit-defeated.ogg`
@@ -96,16 +117,28 @@ in `CUE_FILES` relative to `public/`.
 | yes
 | `sfx/tank-move.mp3`
 
+| `mechInfMove`
+| The player drives **Mech. Inf.** — the same beat as the tank and the same
+  once-per-unit-per-turn rate limit, but a cue and a file of its own so a
+  column of armour does not read as one vehicle.
+| `EngineEventHandlers.onUnitMoved` → `playMovementCue`
+| yes
+| `sfx/mech-inf-move.opus`
+
 | `airUnitLaunch`
 | One of the player's **air units leaves a base** — a city or a carrier.
   Moving between open tiles plays nothing, and so does the rest of a sortie.
+  Three jet recordings rotate: the takeoff most of the time, a scramble and a
+  return leg the rest.
 | `EngineEventHandlers.onUnitMoved` → `playMovementCue`
 | yes
-| `sfx/air-unit-launch.mp3`
+| `sfx/warzone2100/air-unit-launch-1.ogg` (+ `-2`, `-3` secondaries)
 
 | `cityAttacked`
-| A city the player is party to comes under **assault** — as the attacker or
-  as its owner. A siege between two AI civs plays nothing.
+| A city the player is party to comes under **assault** by a gunpowder-era
+  attacker — as the attacker or as its owner. A siege between two AI civs plays
+  nothing, and neither does an assault by an attacker the cue does not cover:
+  see <<city-assault-gate,the gate below>>.
 | `EngineEventHandlers.onCityAttacked`
 | yes
 | `sfx/city-attacked.mp3`
@@ -124,24 +157,52 @@ in `CUE_FILES` relative to `public/`.
 | yes
 | `sfx/city-captured-modern.mp3`
 
+| `cityFounded`
+| The player **founds** a city. Unlike the two capture marches this is not an
+  era split — founding has no separate modern form, so one recording serves
+  the whole timeline. A city grown out of a village plays it too: the village
+  encounter is a different beat and says nothing about walls going up.
+| `EngineEventHandlers.onCityFounded`
+| yes
+| `sfx/city-founded.ogg`
+
+| `cityLost`
+| The player **loses** a city to a rival. Deliberately *not* a fanfare and not
+  either capture march — the marches are victories, and playing one over your
+  own fall would be the wrong news twice over. A slow fall in a minor with
+  nothing triumphant anywhere in it.
+| `EngineEventHandlers.onCityOwnership` (`CITY_CAPTURED`, `fromCivId` = player)
+| no
+| —
+
 | `barracksBuilt`
 | A **Barracks** completes — or is bought — in one of the player's cities.
-  Other buildings, and AI cities, stay silent.
+  AI cities stay silent.
 | `EngineEventHandlers.onBuildingCompleted`
 | yes
 | `sfx/barracks-built.mp3`
 
+| `productionComplete`
+| A **power plant, hydro plant or nuclear plant** comes online in one of the
+  player's cities — the moment the city is electrified. Nothing else (no
+  unit, no other building) plays it, and AI cities stay silent either way.
+| `EngineEventHandlers.onBuildingCompleted`
+| yes
+| `sfx/warzone2100/production-complete-1.ogg`
+
 | `nuclearStrike`
 | A warhead detonates **near the player** — their own strike, or somebody
   else's landing within `NUCLEAR_BLAST_RADIUS_HOME` (6) tiles of their cities.
-  Also plays on the player's own **reactor meltdown**. Detonations elsewhere
-  are a log line: in an AI-vs-AI run nobody is the player, and a screen that
-  strobed on every foreign nuke would be noise.
+  Always preceded by `missileLaunch`: the whistle, then the great explosion.
+  Also plays on the player's own **reactor meltdown** (without the whistle —
+  a meltdown is nobody's launch). Detonations elsewhere are a log line: in an
+  AI-vs-AI run nobody is the player, and a screen that strobed on every
+  foreign nuke would be noise.
   Synthesized as three layers — a noise crack, a sub-bass body and a low
   rumble tail — because an oscillator-only explosion sounds like a doorbell.
 | `EngineEventHandlers.onNuclearStrike` / `onNuclearMeltdown`
 | yes
-| `sfx/nuclear-strike.ogg`
+| `sfx/warzone2100/nuclear-strike-1.ogg`
 
 | `stolenTechnology`
 | A diplomat's theft **succeeded** — the first beat of the espionage report,
@@ -158,19 +219,225 @@ in `CUE_FILES` relative to `public/`.
 | `sfx/cover-blown.ogg`
 
 | `uiSelect`
-| *Defined but never called.* No code path invokes it today.
-| —
-| no
-| `sfx/ui-select.ogg`
+| The radio click behind a player's decision: issuing a unit order, answering
+  a leader's audience, sending a diplomat off with terms.
+| `UnitActionsModal.handleAction`, `GameModals.handleAudienceDecision`,
+  `GameModals.handleDiplomacyAction`
+| yes
+| `sfx/warzone2100/ui-select-1.ogg`
 |===
 
-[NOTE]
-====
-`uiSelect` is in the type and has a synthesis, but nothing plays it. It is
-documented so the row is not mistaken for dead code — wire it up (a menu
-click, an accept/reject press) rather than deleting it, or delete both the cue
-and this row together.
-====
+=== The Warzone 2100 cues
+
+Seven more cues, one per new recording. Each has the same synthesized
+fallback contract as the rest of the table, and each recording serves exactly
+one cue — the full file-to-purpose assignment is pinned by
+`tests/soundEngine.test.ts`, and the licensing by
+<<warzone-attribution,Warzone 2100 Attribution>>.
+
+[cols="1,3,2,1,2", options="header"]
+|===
+| Cue | When it plays | Fires at | Recorded | File
+
+| `navalStrike`
+| A **surface warship's** combat round (destroyer, cruiser, battleship) in
+  which the player is involved and no unit died — the broadside, standing in
+  for the plain land blow the way `torpedoAttack` does for submarines.
+| `EngineEventHandlers.onCombat`
+| yes
+| `sfx/warzone2100/naval-strike-1.ogg`
+
+| `airStrike`
+| A **fighter's or bomber's** combat round in which the player is involved
+  and no unit died — the attack run, standing in for the plain land blow.
+| `EngineEventHandlers.onCombat`
+| yes
+| `sfx/warzone2100/air-strike-1.ogg`
+
+| `missileLaunch`
+| A warhead **leaves its launcher** near the player — always immediately
+  before `nuclearStrike`, so the whistle reads as the boom's warning.
+| `EngineEventHandlers.onNuclearStrike`
+| yes
+| `sfx/warzone2100/missile-launch-1.ogg`
+
+| `unitSelected`
+| The player **picks up one of their land units** — the reporting-in blip.
+  Enemy units under the cursor are information, not a command, and play
+  nothing.
+| `GameCanvas.handleClick`
+| yes
+| `sfx/warzone2100/unit-selected-1.ogg`
+
+| `submarineSelected`
+| The player **picks up a submarine** — a sonar acknowledgement instead of
+  the reporting-in blip. Two pings rotate, the first most of the time.
+| `GameCanvas.handleClick`
+| yes
+| `sfx/warzone2100/submarine-selected-1.ogg` (+ `-2` secondary)
+
+| `sabotageSuccess`
+| An **industrial sabotage went through** — the target goes dark — reported
+  as the sabotage beat of the espionage report.
+| `GameCanvas.buildEspionageStages` (stage `sabotage`, played by
+  `EspionageReportModal`)
+| yes
+| `sfx/warzone2100/sabotage-success-1.ogg`
+|===
+
+=== The news cues
+
+Ten cues for the moments that decide a game without a single shot being fired.
+An audit of all 71 routed events found these were the big ones played in total
+silence — see <<immersion-gaps,the gaps that were left>>. Every one is
+synthesized: they cost no bytes and need no asset, so the game stays audible on
+day one and a recording can take one over later exactly like any other cue.
+
+[cols="1,4,1,1", options="header"]
+|===
+| Cue | When it plays | Family | File
+
+| `warDeclared`
+| The player is dragged into a war — as aggressor or as target. Drums, not a
+  melody: two low thumps with a noise slap, so it never reads as the espionage
+  alarm. A war between two rivals is silent.
+| event
+| —
+
+| `peaceMade`
+| Hostilities the player is party to end — a peace treaty *or* a ceasefire. One
+  voice for both, because "the fighting stopped" is one event in two costumes.
+  A gentle major cadence that comes to rest, the opposite shape to `warDeclared`.
+| event
+| —
+
+| `wonderCompleted`
+| The player finishes a **Wonder** — the biggest single thing in a game, and it
+  fires once. A slow five-step rise to a held twelfth. A rival's Wonder is
+  silent.
+| event
+| —
+
+| `cityLost`
+| The player loses a city to a rival. A fall in a minor with the last note left
+  hanging. See the catalogue row above.
+| event
+| —
+
+| `civEliminated`
+| A civilisation is wiped out — the player's own (the last note the game
+  plays), or one the player destroyed. A bell toll: one deep strike with a
+  dissonant partial over it. Two rivals wiping each other out is silent.
+| event
+| —
+
+| `cityStarved`
+| One of the **player's** cities starves and is razed. Thin, and it dies away
+  rather than resolving. A famine elsewhere is silent.
+| event
+| —
+
+| `cityDisorder`
+| One of the **player's** cities tips into unrest. An agitated rise that turns
+  on itself. See <<news-cue-gates,the gate>> for why only the onset sounds.
+| event
+| —
+
+| `unitProduced`
+| A unit rolls out of one of the player's cities, built *or* bought. Three even
+  stamps rather than an arch, so it is neither `barracksBuilt` nor
+  `productionComplete` and does not steal the electrification whistle. A
+  caravan is excluded — it is built, not manufactured, and has its own cue.
+| event
+| —
+
+| `tradeRouteEstablished`
+| One of the **player's** caravans opens a route. A rising third and fifth,
+  soft, over a wide city hum — commerce, not conquest.
+| event
+| —
+
+| `unitPromoted`
+| One of the player's units earns its next rank. The only news cue in the
+  `unit` family, and the quietest of all ten: a promotion usually happens
+  mid-battle, so it must sit under the fanfares rather than compete.
+| unit
+| —
+|===
+
+[[news-cue-gates]]
+=== What keeps the news cues quiet
+
+A news cue is the easiest thing in the game to make irritating, because the
+events behind them fire constantly. The AI declares wars on itself, promotes
+units through every long war, starves cities, opens trade routes and finishes
+Wonders all game long — and each of those events is something the player did
+not do and cannot act on.
+
+So all ten go through one helper, `playNewsCue` (`EngineEventHandlers.ts`), and
+it enforces three things:
+
+[cols="2,3", options="header"]
+|===
+| Rule | Why
+
+| The event must involve the player's civilisation
+| A war between two rivals, a rival's famine, an AI promotion: silent. This is
+  the same rule `unitDisbanded` and the movement cues already follow — the
+  AI's bookkeeping is not sound design.
+
+| `isAIVsAI` silences all of them
+| In a self-playing run nobody is there to hear anything. This check is not
+  redundant: civilization 0 still carries the human player id even when the AI
+  drives it, so the id test alone would let a whole spectator run sing.
+
+| The player must be the one who gains or loses
+| For `civEliminated` that means both directions the player is party to — their
+  own civilisation ending *and* one they destroyed. A third party wiping out a
+  fourth is nobody's news.
+|===
+
+Two of the ten have an extra, deliberate narrowing:
+
+* **`cityDisorder` sounds on the onset only.** The event carries the city's
+  *new* state, so it also fires when unrest *ends*. Relief getting the same
+  alarm as the uprising would train the player to ignore the cue, which is the
+  one thing an alarm must never do.
+* **`unitProduced` skips caravans.** A caravan is built rather than
+  manufactured, and announcing it twice — once as a unit, once as a route —
+  would double up on the same event.
+
+[[immersion-gaps]]
+=== The gaps that were left, and one on purpose
+
+The audit behind <<the news cues,the news cues>> covered all 71 routed events
+against the 14 that made a noise. Ten of the silent ones were filled. These are
+the ones that were not, kept here so the silence reads as a decision rather than
+an oversight:
+
+[cols="2,3", options="header"]
+|===
+| Event | Why it stays silent
+
+| `TECH_RESEARCHED`
+| **On purpose.** Research completes every few turns for the whole game, and it
+  is the one news moment frequent enough to become wallpaper. A fanfare for
+  every invention is the single fastest way to make a player mute the game.
+  It is the obvious candidate if a recording ever lands for it.
+
+| `ALLIANCE_FORMED`, `ALLIANCE_BROKEN`, `EMBASSY_ESTABLISHED`
+| Diplomacy bookkeeping. `warDeclared` and `peaceMade` already cover the two
+  moments a war actually turns on.
+
+| `VILLAGE_RESULT`, `FISH_DELIVERED`
+| Routine, and a city grown from a village already plays `cityFounded`.
+
+| `UNIT_SKIPPED`, `UNIT_FORTIFIED`, `UNIT_SLEPT`, `UNIT_WOKE`, `SELECT_QUEUE_UNIT`
+| Direct player actions that already carry `uiSelect`, or that repeat far too
+  often to deserve a cue of their own.
+|===
+
+---
 
 [[city-capture-marches]]
 === Why two city-capture marches
@@ -184,6 +451,102 @@ modern one.
 Both are *capture* cues. Losing a city plays neither — a victory march over
 your own fall would be the wrong news twice over.
 
+[[machine-gun-ownership]]
+=== Who gets the machine gun
+
+The recording behind `machineGunStrike` is Warzone's
+`short_machine_gun_fire` — a burst of automatic fire. It used to be the
+fallback for *every* land unit, so a legion, a catapult and a tank all fired a
+machine gun none of them carried. The gate is now the narrowest one in the
+game:
+
+[cols="2,3", options="header"]
+|===
+| Attacker | Cue
+
+| Mech. Inf.
+| `machineGunStrike` — the only unit with machine guns.
+
+| Every other land unit — warrior, archer, phalanx, chariot, knights, legion,
+  catapult, cavalry, musketeer, riflemen, cannon, artillery, **tank**
+| `impactStrike` — a dull knock, synthesized.
+
+| Submarine / surface warship / aircraft
+| `torpedoAttack` / `navalStrike` / `airStrike` — decided by the platform,
+  before the machine-gun flag is ever consulted.
+|===
+
+The flag lives on `unitAttackCue` as a fourth argument that *defaults to false*,
+so a caller who forgets to pass it gets `impactStrike` — silence rather than
+something untrue. It is also checked after the platform branches, so a
+machine-gunned unit that is really a submarine still fires a torpedo.
+
+A **tank** is the deliberate edge case: it has a coaxial machine gun in the
+real world and could honestly claim this cue, but it gets `impactStrike` so that
+the tank's own voice stays the rumble in `tankMove` plus one distinct blow.
+`impactStrike` is synthesized, which also means a land unit added to the game
+later inherits a sound for free instead of silence.
+
+[[city-assault-gate]]
+=== Who gets the city-attack cue
+
+`cityAttacked` is a **gunpowder bombardment** — walls under fire — so it starts
+with the Musketeer and covers what the gunpowder line leads to. It is not a
+generic "something attacked something" cue:
+
+[cols="2,3", options="header"]
+|===
+| Attacker | Result
+
+| Musketeer, Riflemen, Mech. Inf., Cannon, Artillery
+| `cityAttacked` plays.
+
+| Warrior, Archer, Phalanx, Chariot, Knights, Legion, Catapult, Cavalry
+| Silent — a sword or a stone engine does not bombard walls.
+
+| **Tank**, Fighter, Bomber, Cruiser, Destroyer, Battleship, Submarine
+| Silent — the Tank has its own guns, and an attack run or a broadside is not
+  an assault on the walls. Each still plays its own weapon cue on the combat
+  round.
+|===
+
+The set lives in `cityAssaultCue` (`SoundEngine.ts`) as an explicit list, and it
+**fails closed**: an unknown or missing attacker type returns false, so a unit
+added later cannot inherit a city fanfare nobody reasoned about.
+
+[[swapped-recording-names]]
+=== Two recordings that were renamed into place
+
+`cityFounded` and `mechInfMove` arrived under names that did not describe what
+they turned out to be, so the rename in `public/assets/sfx/` is load-bearing
+rather than cosmetic:
+
+[cols="1,1,3", options="header"]
+|===
+| Arrived as | Shipped as | What it actually is
+
+| `GoGoGo.ogg`
+| `city-founded.ogg`
+| A shouted "Go! Go! Go!" — three short bursts with a vocal harmonic stack
+  around 1.1/2.2/3.3 kHz. A cheer, which is what a city founded sounds like.
+
+| `city_founded.opus`
+| `mech-inf-move.opus`
+| A wide-band machinery rumble — 1.86 s of broadband noise with strong low
+  content and several heavy bursts, and no voice in it at all. A tracked
+  vehicle, which is what Mech. Inf. sounds like.
+|===
+
+Both files were copied verbatim — only the names changed, so the audio data is
+bit-for-bit identical to what was supplied. Each is renamed after the cue it
+actually serves, which is what the convention in
+<<adding-a-recording,Adding a Recording>> asks for; the original names survive
+in this table so the provenance is not lost.
+
+Note also that these two are *project originals*, not third-party assets, so
+they sit directly in `public/assets/sfx/` and are **not** covered by the GPLv2
+— see <<warzone-attribution,Warzone 2100 Attribution>>.
+
 ---
 
 [[pipeline]]
@@ -195,12 +558,15 @@ playSfx(cue)
   │
   ├─ settings.enableSoundEffects === false ──► return, no lookup, no fetch
   │
-  ├─ CUE_FILES[cue] is set ──► Audio(path) ──► return
-  │                            cloneNode so the same file can overlap itself
-  │
-  └─ no file ──► AudioContext (lazily created)
-                 ├─ none or suspended ──► resume() once, drop the cue
-                 └─ running ──► oscillator per note in CUES[cue]
+  └─ SoundEngine.requestSound(cue)            ──► played / queued /
+                                                  dropped (see <<policy>>)
+       │
+       ├─ recording resolved ──► Audio(path) ──► return
+       │                         (one voice: never overlapping, see below)
+       │
+       └─ no recording ──► AudioContext (lazily created)
+                           ├─ none or suspended ──► resume() once, drop the cue
+                           └─ running ──► oscillator per note in CUES[cue]
 ----
 
 The context is created on first use and **cached in module state**. Browsers
@@ -212,14 +578,74 @@ the context up and the next cue is not silently swallowed.
 
 ---
 
+[[policy]]
+== Cooldowns, Serialization and Variants
+
+`src/utils/SoundEngine.ts` is the only thing that decides whether a requested
+cue makes a noise. Three mechanisms, in order:
+
+. **Cooldowns.** A cue replays at most once per its family's window. The
+   ledger is per cue, not global — a blow does not mute a click.
++
+[cols="1,1,3", options="header"]
+|===
+| Family | Window | Cues
+
+| unit
+| 10 s
+| `unitSelected`, `submarineSelected`, `tankMove`, `mechInfMove`,
+  `airUnitLaunch` — everything a unit says on its own. Click-spam, a
+  three-tile drive and a column of armour stay quiet.
+
+| attack
+| 4 s
+| `machineGunStrike`, `impactStrike`, `navalStrike`, `airStrike`,
+  `torpedoAttack`, `missileLaunch`, `nuclearStrike`, `unitDefeated` — every
+  weapon. Blows land round after round, and each one must be heard without
+  machine-gunning.
+
+| event
+| 2.5 s
+| Everything else one-off: captures, sabotage, production, fanfares.
+
+| ui
+| 0.4 s
+| `uiSelect` — fast double-orders must not stutter.
+|===
+
+. **Serialization.** The game has exactly one voice. While a cue is still
+   ringing — for its full file duration, measured off the asset — the next
+   one waits in a priority FIFO three deep: events first, then attacks, then
+   unit sounds, then UI. A full line drops its least important waiter (a
+   fanfare bumps a click; a click never bumps a fanfare). Two sounds never
+   overlap: a torpedo never steps on a fanfare, and the nuclear whistle
+   always finishes before the boom starts.
+
+. **Variants.** A cue with several recordings plays its MAIN file most of
+   the time (weight 70 of 100) and a secondary the rest — the same blow does
+   not sound byte-identical every round, but it stays recognisable. The
+   manifest (`SOUND_MANIFEST`) lists every variant with its weight; the
+   `CUE_FILES` row always points at the main file, and a runtime row that
+   *differs* from it wins outright, so live repointing keeps working.
+
+A file holds the voice for its whole measured length — the durations in the
+manifest were read off the assets with ffprobe, and
+`tests/soundEngine.test.ts` fails if a hold is shorter than any of its
+files. The legacy mp3 cues hold theirs too (`barracksBuilt` a full 6.75 s),
+which is why they fire rarely and only for the player.
+
+---
+
 [[adding-a-recording]]
 == Adding a Recording
 
-. Drop the file in `public/assets/sfx/` (it exists — it holds the seven
-  shipped recordings). **Name it after the cue in kebab-case** — the table
-  above gives the name for each cue, and the cue `cityCapturedModern` is the
-  file `city-captured-modern.mp3`. The name is a convention, not a lookup:
-  only the path you write into `CUE_FILES` matters at runtime.
+. Drop the file in `public/assets/sfx/` — or in a vendor folder like
+  `public/assets/sfx/warzone2100/` when the recording is third-party (see
+  <<warzone-attribution,Warzone 2100 Attribution>>). **Name it after the cue
+  in kebab-case** — the table above gives the name for each cue, and the cue
+  `cityCapturedModern` is the file `city-captured-modern.mp3`. The name is a
+  convention, not a lookup: only the path you write into `CUE_FILES` matters
+  at runtime, and `tests/sfx.test.ts` asserts the convention holds.
 
 . Edit `CUE_FILES` in `src/utils/Sfx.ts` and uncomment (or add) the row:
 +
@@ -228,13 +654,24 @@ the context up and the next cue is not silently swallowed.
 export const CUE_FILES: Partial<Record<SfxCue, string>> = {
   'cityCapturedClassic': '/assets/sfx/city-captured-classic.mp3',
   // ...
-  // 'unitStrike':       '/assets/sfx/unit-strike.ogg',
+  // 'unitDefeated':     '/assets/sfx/unit-defeated.ogg',
 };
 ----
 +
 The key is the cue id (`SfxCue`); the value is the URL **as the browser
 requests it**. Vite serves everything under `public/` at the root, so the file
-`public/assets/sfx/unit-strike.ogg` is `/assets/sfx/unit-strike.ogg`.
+`public/assets/sfx/warzone2100/machine-gun-strike-1.ogg` is
+`/assets/sfx/warzone2100/machine-gun-strike-1.ogg`.
+
+. If the cue gets **several** recordings, add the secondaries to the
+  `SOUND_MANIFEST` entry in `src/utils/SoundEngine.ts` — the `CUE_FILES` row
+  stays the MAIN file, and the manifest holds the weights. The main file
+  plays most of the time; a file that appears in two cues' lists breaks the
+  one-purpose test.
+
+. Measure the file's duration (ffprobe) and put it in the manifest's
+  `durationSec` — the voice stays busy that long, and a shorter hold lets the
+  next cue step on the tail.
 
 . Reload. That cue now plays the file and its oscillators are ignored. All
   other cues are untouched.
@@ -253,13 +690,247 @@ shipped rows and asserts each file exists, which is what catches the typo.
 ====
 `CUE_FILES` is exported and read **live** on every call, so a row added after
 the module loaded takes effect immediately — a test, or a future manifest
-loader, can register a path without editing this module.
+loader, can register a path without editing this module. A runtime row that
+differs from a manifest cue's shipped main file wins outright; the manifest
+only drives the shipped assignment.
 ====
+
+---
+
+[[warzone-attribution]]
+== Warzone 2100 Attribution
+
+Sixteen recordings — every unit, weapon and click sound above marked
+`warzone2100` — are unmodified audio assets from the open-source game
+**Warzone 2100** (https://wz2100.net/), used with gratitude. Only the file
+names were changed (kebab-case, after the cue each file serves); the audio
+data is bit-for-bit identical to the Warzone 2100 originals.
+
+Warzone 2100 ships under the **GNU General Public License, version 2**, and
+so do these files:
+
+* the files live in their own directory, `public/assets/sfx/warzone2100/`,
+  separate from the project's own recordings;
+* `LICENSE.txt` in that directory carries the full GPLv2 text, and
+  `README.txt` the per-file provenance (which Warzone file became which
+  cue file);
+* `LICENSE-THIRD-PARTY.txt` in the repository root states the arrangement:
+  the sounds are included by **mere aggregation** and remain GPLv2 works on
+  their own — their inclusion does not extend the GPL to the game's source
+  code or any other asset.
+
+The assignment — which original became which cue — is:
+
+[cols="2,2", options="header"]
+|===
+| Warzone 2100 original | Cue file (purpose)
+
+| `short_machine_gun_fire_1.ogg`
+| `machine-gun-strike-1.ogg` — the Mech. Inf. burst (main)
+
+| `short_machine_gun_fire_2.ogg`
+| `machine-gun-strike-2.ogg` — secondary burst
+
+| `short_machine_gun_fire_3.ogg`
+| `machine-gun-strike-3.ogg` — secondary burst
+
+| `warship_distroyer_shooting.ogg`
+| `naval-strike-1.ogg` — the surface broadside
+
+| `jet_on_attackroute_close_to_target_or_attacking.ogg`
+| `air-strike-1.ogg` — the attack run
+
+| `missel_launched.ogg`
+| `missile-launch-1.ogg` — the whistle before the boom
+
+| `greate_explosion.ogg`
+| `nuclear-strike-1.ogg` — the great explosion
+
+| `submarine_unit_selected_1.ogg`
+| `submarine-selected-1.ogg` — the main sonar acknowledgement
+
+| `submarine_unit_selected_2.ogg`
+| `submarine-selected-2.ogg` — secondary acknowledgement
+
+| `reporting.ogg`
+| `unit-selected-1.ogg` — reporting in
+
+| `walki_talki.ogg`
+| `ui-select-1.ogg` — the radio click
+
+| `jet_on_the_way.ogg`
+| `air-unit-launch-1.ogg` — the main takeoff
+
+| `interceptors_launched.ogg`
+| `sdi-intercept-1.ogg` — the SDI interception scramble (one file, one
+  purpose; it is *not* a second `airUnitLaunch` recording)
+
+| `jet_returning_to_base.ogg`
+| `air-unit-launch-3.ogg` — secondary return leg
+
+| `power_down.ogg`
+| `sabotage-success-1.ogg` — the target goes dark
+
+| `power_spark_power_plant.ogg`
+| `production-complete-1.ogg` — the works whistle
+|===
+
+If you edit one of these files (re-cut, remix, filter it), the result stays
+GPLv2: keep it in the same directory, note the change and its date in
+`README.txt`, and the license follows the file automatically. The project's
+own recordings are **not** covered by the GPLv2: the seven `*.mp3` files
+directly under `public/assets/sfx/`, plus `city-founded.ogg` and
+`mech-inf-move.opus` (see <<swapped-recording-names,the two late recordings>>).
+They are original to this project and carry no third-party terms.
+
+---
+
+[[trigger-list]]
+== Every Trigger
+
+The complete list of places that play a sound. One row per call site — a cue
+missing here is a cue nobody can hear.
+
+NOTE: The line numbers below are a snapshot taken when this table was last
+edited. They rot on every unrelated change to `EngineEventHandlers.ts`; trust
+the method name, not the number, and do not treat a stale number as a bug.
+
+[cols="1,2,1", options="header"]
+|===
+| Cue | Trigger | Call site
+
+| `machineGunStrike`, `impactStrike`, `navalStrike`, `airStrike`,
+  `torpedoAttack`
+| A combat round the player is part of, no unit died. The blow follows the
+  **attacker** (`unitAttackCue`): submarine → torpedo, surface warship →
+  naval guns, aircraft → attack run, Mech. Inf. → machine guns, every other
+  land unit → a plain impact. See <<machine-gun-ownership,who gets the machine
+  gun>>.
+| `EngineEventHandlers.onCombat` (`EngineEventHandlers.ts:801-803`)
+
+| `unitDefeated`
+| The same round, when something sank.
+| `EngineEventHandlers.onCombat` (`EngineEventHandlers.ts:802`)
+
+| `missileLaunch` → `nuclearStrike`
+| A warhead detonates near the player. Requested in order; the engine plays
+  the whistle first and the explosion after it.
+| `EngineEventHandlers.onNuclearStrike` (`EngineEventHandlers.ts:1026-1027`)
+
+| `nuclearStrike`
+| The player's own reactor melts down (no whistle — a meltdown is nobody's
+  launch).
+| `EngineEventHandlers.onNuclearMeltdown` (`EngineEventHandlers.ts:1120`)
+
+| `cityAttacked`
+| A city the player is party to comes under assault.
+| `EngineEventHandlers.onCityAttacked` (`EngineEventHandlers.ts:1231`)
+
+| `cityCapturedClassic` / `cityCapturedModern`
+| The player takes a city, split by `MODERN_ERA_YEAR`.
+| `EngineEventHandlers.onCityOwnership` (`EngineEventHandlers.ts:1364`)
+
+| `cityFounded`
+| The player founds a city (including one grown out of a village).
+| `EngineEventHandlers.onCityFounded`
+
+| `barracksBuilt`
+| A barracks finishes or is bought in the player's city.
+| `EngineEventHandlers.onBuildingCompleted` (`EngineEventHandlers.ts:1523`)
+
+| `productionComplete`
+| A power plant, hydro plant or nuclear plant electrifies one of the player's
+  cities.
+| `EngineEventHandlers.onBuildingCompleted` (`EngineEventHandlers.ts:1531`)
+
+| `tankMove`
+| The player drives a tank (once per tank per turn).
+| `EngineEventHandlers.playMovementCue` (`EngineEventHandlers.ts:500`)
+
+| `mechInfMove`
+| The player drives mech. inf. (once per unit per turn).
+| `EngineEventHandlers.playMovementCue` (`EngineEventHandlers.ts:500`)
+
+| `airUnitLaunch`
+| One of the player's aircraft leaves a city or a carrier (once per unit per
+  turn).
+| `EngineEventHandlers.playMovementCue` (`EngineEventHandlers.ts:500`)
+
+| `unitSelected` / `submarineSelected`
+| The player clicks one of their own units.
+| `GameCanvas.handleClick` (`GameCanvas.tsx:2247`)
+
+| `unitDisbanded`
+| One of the player's units is disbanded.
+| `EngineEventHandlers.onUnitDisbanded` (`EngineEventHandlers.ts:975`)
+
+| `stolenTechnology`, `coverBlown`
+| The espionage report reaches the theft / cover-blown beat.
+| `EspionageReportModal` (`EspionageReportModal.tsx:59`), stages built in
+  `GameCanvas.buildEspionageStages`
+
+| `sabotageSuccess`
+| The espionage report reaches the sabotage beat.
+| `EspionageReportModal` (`EspionageReportModal.tsx:59`), stage built in
+  `GameCanvas.buildEspionageStages` (`GameCanvas.tsx:1252`)
+
+| `uiSelect`
+| The player issues a unit order, answers a leader, or sends a diplomat off
+  with terms.
+| `UnitActionsModal.handleAction` (`UnitActionsModal.tsx:83`),
+  `GameModals.handleAudienceDecision` (`GameModals.tsx:560`),
+  `GameModals.handleDiplomacyAction` (`GameModals.tsx:672`)
+
+| `warDeclared`
+| A war the player is party to is declared, in either direction.
+| `EngineEventHandlers.onWarDeclared`
+
+| `peaceMade`
+| A peace treaty *or* a ceasefire the player is party to.
+| `EngineEventHandlers.onPeaceMade`, `EngineEventHandlers.onCeasefireSigned`
+
+| `wonderCompleted`
+| The player finishes a Wonder.
+| `EngineEventHandlers.onWonderCompleted`
+
+| `cityLost`
+| A city the player owned is captured by a rival.
+| `EngineEventHandlers.onCityOwnership` (`CITY_CAPTURED`)
+
+| `civEliminated`
+| The player's civilisation ends, or one they destroyed does.
+| `EngineEventHandlers.onCivilizationEliminated`
+
+| `cityStarved`
+| One of the player's cities starves and is razed.
+| `EngineEventHandlers.onCityStarved`
+
+| `cityDisorder`
+| One of the player's cities tips into unrest — **the onset only**.
+| `EngineEventHandlers.onCityDisorder`
+
+| `unitProduced`
+| A unit rolls out of one of the player's cities, built or bought (not a
+  caravan).
+| `EngineEventHandlers.onUnitCreated` (`UNIT_PRODUCED`, `UNIT_PURCHASED`)
+
+| `tradeRouteEstablished`
+| One of the player's caravans opens a route.
+| `EngineEventHandlers.onTradeRouteEstablished`
+
+| `unitPromoted`
+| One of the player's units earns its next rank.
+| `EngineEventHandlers.onUnitPromoted`
+|===
 
 ---
 
 [[gating]]
 == When Sound Is Suppressed
+
+Beyond the policy holds (<<policy,Policy>>), these gates keep specific cues
+quiet. The rule behind all of them is the same: the AI's bookkeeping is not
+sound design.
 
 [cols="2,3", options="header"]
 |===
@@ -278,25 +949,53 @@ loader, can register a path without editing this module.
   the context finally starts. `unlockAudio()` on the first click makes this
   rare.
 
+| Cooldown (unit 10 s, attack 4 s, event 2.5 s, UI 0.4 s)
+| A re-fired cue is dropped. A three-tile drive rumbles once; a five-round
+  battle knocks four times, not forty.
+
+| Voice busy, queue full
+| The lowest-priority waiter is dropped. A fanfare bumps a click; a click
+  never bumps a fanfare.
+
 | Combat not involving the player
-| `unitStrike` / `unitDefeated` do not fire. The same rule as the toasts: two
-  AI armies clashing off-screen must not fill a quiet turn, and an AI-vs-AI
-  spectator run would otherwise play every round of every war.
+| `machineGunStrike` / `impactStrike` / `navalStrike` / `airStrike` /
+  `unitDefeated` do not fire. The same rule as the toasts: two AI armies
+  clashing off-screen must not fill a quiet turn, and an AI-vs-AI spectator run
+  would otherwise play every round of every war.
 
 | Disband by an AI civ
 | `unitDisbanded` does not fire. The AI disbands constantly, and its
   bookkeeping is not sound design.
 
 | An AI unit moving
-| `tankMove` / `airUnitLaunch` do not fire. The same rule as the disband: an AI
-  turn is dozens of moves, and its bookkeeping is not sound design.
+| `tankMove` / `mechInfMove` / `airUnitLaunch` do not fire. The same rule as the
+  disband: an AI turn is dozens of moves, and its bookkeeping is not sound
+  design.
+
+| A rival **founding** a city
+| `cityFounded` does not fire. In an AI-vs-AI run nobody is the player, so it
+  is silent there too.
+
+| A rival's war, famine, Wonder, promotion, unit or caravan
+| None of the ten news cues fire. Same rule as `unitDisbanded`: the AI does all
+  of these constantly and its bookkeeping is not sound design. See
+  <<news-cue-gates,the gate>>.
+
+| Unrest **ending** in a player's city
+| `cityDisorder` does not fire — the event carries the new state, so it also
+  fires on the way out. Only the onset is an alarm.
+
+| Selecting a unit that is not the player's
+| `unitSelected` / `submarineSelected` do not fire — an enemy under the
+  cursor is information, not a command.
 
 | An AI-vs-AI siege
 | `cityAttacked` does not fire — neither the city nor the attacker is the
   player's.
 
-| An AI city finishing a barracks
-| `barracksBuilt` does not fire; the cue is the player's own feedback.
+| An AI city finishing anything
+| `barracksBuilt` / `productionComplete` do not fire; the cues are the
+  player's own feedback.
 
 | The player **losing** a city
 | Neither `cityCapturedClassic` nor `cityCapturedModern` fires (see the
@@ -313,7 +1012,7 @@ loader, can register a path without editing this module.
 | Cue | Master gain | Note
 
 | Every event fanfare (`stolenTechnology`, `coverBlown`, `cityCapturedClassic`,
-  `cityCapturedModern`, `uiSelect`)
+  `cityCapturedModern`, `cityFounded`, `wonderCompleted`, `uiSelect`)
 | `0.18`
 | The reference level — `BASE_GAIN`.
 
@@ -341,25 +1040,87 @@ loader, can register a path without editing this module.
 | `0.6 × 0.18 = 0.108`
 | Under the fanfare.
 
-| `unitStrike`
+| `machineGunStrike`
 | `0.55 × 0.18 = 0.099`
-| Quiet: it repeats every combat round.
+| Quiet: it repeats every combat round. Same level as `impactStrike` — one
+  blow per round, whichever land unit fires it.
+
+| `impactStrike`
+| `0.55 × 0.18 = 0.099`
+| The same rule, and deliberately the same number: swapping which unit fires
+  which must not change how loud a combat round is.
+
+| `navalStrike`, `airStrike`
+| `0.55 × 0.18 = 0.099`
+| Same rule — one blow per round, whichever hull fires it.
+
+| `missileLaunch`
+| `0.6 × 0.18 = 0.108`
+| Under the fanfare: it is the warning, not the event.
+
+| `unitSelected`
+| `0.5 × 0.18 = 0.09`
+| As quiet as a tank: the player triggers it directly, every click.
+
+| `submarineSelected`
+| `0.5 × 0.18 = 0.09`
+| Same — a ping, not a fanfare.
+
+| `sabotageSuccess`
+| `0.6 × 0.18 = 0.108`
+| Under the fanfare.
+
+| `productionComplete`
+| `0.6 × 0.18 = 0.108`
+| News, but weekly news — under the fanfare.
 
 | `nuclearStrike`
 | `1 × 0.18 = 0.18`
 | The loudest cue in the game, and the one that earns it: a warhead goes off
   a handful of times per game at most, and the noise bands carry real energy
   that a thin oscillator beep would not.
+
+| `tankMove`
+| `0.5 × 0.18 = 0.09`
+| The quietest: the player triggers it directly, every turn.
+
+| `mechInfMove`
+| `0.5 × 0.18 = 0.09`
+| The same reasoning, and the same level as the tank it rides beside.
+
+| `wonderCompleted`
+| `0.85 × 0.18 = 0.153`
+| Top of the event range: it is the biggest thing that can happen, once a game.
+
+| `warDeclared`, `civEliminated`
+| `0.8 × 0.18 = 0.144`
+| Alarms, not celebrations — loud enough to stop the player, never triumphant.
+
+| `peaceMade`
+| `0.75 × 0.18 = 0.135`
+| Relief, a shade under the alarms.
+
+| `cityLost`
+| `0.7 × 0.18 = 0.126`
+| Deliberately **under** the fanfare line: bad news must never out-shout good.
+
+| `unitProduced`
+| `0.65 × 0.18 = 0.117`
+| Your own news, but one of several that can land in a turn.
+
+| `cityDisorder`, `cityStarved`, `tradeRouteEstablished`
+| `0.6 × 0.18 = 0.108`
+| Under the fanfare. A famine is grim, not loud.
+
+| `unitPromoted`
+| `0.5 × 0.18 = 0.09`
+| The quietest news cue and the only one in the `unit` family — a promotion
+  usually lands mid-battle and must not compete with it.
 |===
 
 NOTE: The synthesis is capped at `BASE_GAIN × 1`, so even the nuke cannot
 clip. A recording may go louder through `CUE_FILE_VOLUME`, which is a separate
 scale for a different reason — file volume, not synth envelope.
-
-| `tankMove`
-| `0.5 × 0.18 = 0.09`
-| The quietest: the player triggers it directly, every turn.
-|===
 
 The multipliers live in `UNIT_CUE_GAIN` and apply to `BASE_GAIN`. The ordering
 is the whole point: a blow fires on every round while a fanfare fires once per
@@ -377,6 +1138,11 @@ at their own volume from `CUE_FILE_VOLUME`, falling back to
 | `0.6`
 | The loudest recording: a conquest, once a game.
 
+| `cityFounded`
+| `0.6`
+| A conquest's twin: founding is news of the same order, a handful of times a
+  game.
+
 | `barracksBuilt`
 | `0.55`
 | A domestic win.
@@ -390,13 +1156,50 @@ at their own volume from `CUE_FILE_VOLUME`, falling back to
 | (The default.)
 
 | `airUnitLaunch`
+| `0.45`
+| Frequent — the takeoff is the main recording, scramble and return the
+  secondaries.
+
+| `unitSelected`, `submarineSelected`
+| `0.5`
+| Audible over the map, under a fanfare.
+
+| `uiSelect`
 | `0.4`
-| Frequent.
+| A click: felt, not heard across the room.
+
+| `machineGunStrike`, `navalStrike`
+| `0.55`
+| A blow you feel in your teeth; the cooldown keeps it to one per 4 s.
+| `impactStrike` has no recording, so it has no row here — it plays through the
+  synthesizer at the gain above.
+
+| `airStrike`
+| `0.5`
+| An attack run, under the land blow.
+
+| `missileLaunch`, `sabotageSuccess`, `productionComplete`
+| `0.55`
+| News-level, under a conquest.
 
 | `tankMove`
 | `0.35`
 | The most frequent recording there is.
+
+| `mechInfMove`
+| `0.35`
+| Tied with the tank, and for the same reason — except the file is 1.86 s
+  against the tank's 1.71 s, so a louder mix would be a longer drone under a
+  column of armour.
+
+| `nuclearStrike`
+| `0.75`
+| The loudest recording in the mix — and the rarest.
 |===
+
+None of the ten news cues appears in this table: they ship no recordings, so
+they never reach `playFile` and a row here would be dead config. Their loudness
+is the `UNIT_CUE_GAIN` ladder in the previous table.
 
 The two scales are independent, so a cue whose recording is mixed hot can be
 turned down without touching what it would sound like un-recorded.
@@ -413,7 +1216,7 @@ but the code assigned it as an absolute value, which made a strike three times
 [[testing]]
 == Tests
 
-`tests/sfx.test.ts` covers the layer itself:
+`tests/sfx.test.ts` covers the transport:
 
 * a row in `CUE_FILES` produces an `Audio` for exactly that path;
 * the table is read **live**, so registering a path after import still applies;
@@ -424,19 +1227,52 @@ but the code assigned it as an absolute value, which made a strike three times
   loud;
 * every shipped row has a real file on disk, named after its cue in kebab-case;
 * the mutation tests put the table back exactly as they found it — the
-  baseline is the shipped rows, not an empty table.
+  baseline is the shipped rows, not an empty table;
+* every test starts from a cold engine (`resetSoundPolicy`), so no
+  file's cooldowns leak into another's.
+
+`tests/soundEngine.test.ts` covers the policy, on a fake clock with a
+recording backend:
+
+* unit sounds hold 10 s, attack sounds 4 s, and cooldowns are per cue;
+* a second cue queues behind the first and the line drains most important
+  first; a full line drops its least important waiter;
+* the main recording plays most of the time (weight 70), and a runtime row
+  that differs from the shipped main wins outright;
+* all sixteen Warzone files exist, each serves exactly one cue, the
+  `CUE_FILES` row points at the main file, and every manifest hold covers
+  its longest file;
+* the hull-to-weapon mapping (`unitAttackCue`, `unitSelectCue`).
 
 `tests/sfxWiring.test.ts` covers the other half: which event plays what. It
 drives a real engine through the real router with the sound layer mocked, and
 pins the rules that keep the recordings from becoming noise —
 
 * a tank rumbles once per turn, not once per tile;
+* mech. inf. grinds once per turn on its own cue, never the tank's;
+* a city the player founds gets the cheer — from a settler or from a village,
+  and a rival founding one stays silent;
 * an aircraft plays its takeoff only when it leaves a city or a carrier;
 * the AI's moves are silent;
-* a submarine gets `torpedoAttack` and everyone else `unitStrike`;
+* a submarine gets `torpedoAttack`, a warship `navalStrike`, an aircraft
+  `airStrike`, Mech. Inf. gets `machineGunStrike`, and everyone else
+  `impactStrike`;
+* no unit without machine guns ever reaches `machineGunStrike`, and a decisive
+  round does not promote the blow underneath `unitDefeated`;
+* the city-attack cue fires for gunpowder infantry and artillery, and not for a
+  tank, an aircraft, a ship or a pre-gunpowder attacker;
+* each of the ten news cues fires for the player's own event and stays silent
+  for a rival's — including the pair that share a voice (a ceasefire takes
+  `peaceMade`);
+* `cityDisorder` sounds on the onset of unrest and **not** when it ends, and
+  `unitProduced` skips caravans;
+* in an AI-vs-AI run every news cue is silent, even for civilization 0, which
+  still carries the human player id;
+* a nuclear strike plays the launch whistle and then the explosion;
 * a city-capture fanfare splits on `MODERN_ERA_YEAR`, and losing a city plays
   neither march;
-* a barracks speaks only in the player's own city.
+* a barracks speaks in the player's own city, and every other completion
+  gets the works whistle.
 
 `disposeAudio()` exists for these tests: the context is module state, so two
 assertions in one file would otherwise share whichever fake the first one

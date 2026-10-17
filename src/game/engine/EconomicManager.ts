@@ -187,6 +187,20 @@ export const DEBT_REPAYMENT_PER_TURN = 1;
 /** Debt each unit of `DEBT_REPAYMENT_PER_TURN` service covers. */
 export const DEBT_REPAYMENT_PER = 50;
 
+/**
+ * The most units the emergency disbander may take in ONE turn.
+ *
+ * Measured live (seed 51, r313): a civ whose cities were all captured mid-war
+ * kept a 22-upkeep army on no income; the treasury drained to −8 and the
+ * uncapped disbander liquidated 12 units — cannons, riflemen, an artillery —
+ * in a single round. Whatever the disband loop cannot cover is already booked
+ * as debt by `forgiveDeficit`, so capping the intake turns that cliff into a
+ * slope: three units a round, with the rest of the deficit carried as debt
+ * (which the budget then prices, per `armyBudgetFor`). A transient income
+ * collapse now costs a handful of units instead of the whole army at once.
+ */
+const EMERGENCY_DISBAND_CAP_PER_TURN = 3;
+
 const clamp = (v: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, v));
 
@@ -1666,6 +1680,15 @@ export class EconomicManager {
    */
   private retireSurplusUnit(civ: Civilization, cities: City[]): number {
     const budget = this.armyBudgetFor(civ);
+    // A budget of ZERO is not "the army must shrink to nothing" — it is a civ
+    // whose income has not arrived (the opening round, anarchy, a captured
+    // treasury moment). Dismantling the starting warriors against it made a
+    // two-civ duel end by round 3: each side retired a defender per round until
+    // one had no army left. Zero-income solvency is the emergency disbander's
+    // problem (it fires after the tax raise and keeps the last defender); the
+    // slope only runs while the budget says the army is over-paid, not while
+    // the books say there is no money at all.
+    if (budget <= 0) return 0;
     if (this.unitUpkeep(civ.id) <= budget) return 0;
     return this.disbandUnitsToCoverDeficit(civ.id, 1, cities);
   }
@@ -1683,6 +1706,7 @@ export class EconomicManager {
     civId: number,
     deficit: number,
     cities: City[],
+    maxDisbands: number = Infinity,
   ): number {
     // Units committed to an AI colony/invasion mission — or already loaded
     // aboard a ferry — are protected. Disbanding the hull aborts the crossing
@@ -1716,7 +1740,14 @@ export class EconomicManager {
         // turn, 50 shields, and a road the civ is still earning from.
         (u.maintenance ?? UNIT_MAINTENANCE) > 0 &&
         !isMissionUnit(u) &&
-        !isLoadedFerry(u),
+        !isLoadedFerry(u) &&
+        // A unit that is ESCORTING someone is not a candidate either: the
+        // escort's upkeep buys the walker's survival, and removing the guard
+        // strands the escorted unit in exactly the way a disbanded ferry
+        // strands its cargo (the profiled naval session lost 22 crossings).
+        // Priced pairs store the link both ways — the guard reads
+        // `_aiGuardFor`, the escorted unit reads `_aiGuardId`.
+        !u._aiGuardFor,
     );
     if (allUnits.length === 0) return 0;
 
@@ -1781,13 +1812,13 @@ export class EconomicManager {
 
     // Pass 1: honour "don't strip a city bare".
     for (const unit of ordered) {
-      if (remaining <= 0) break;
+      if (remaining <= 0 || disbanded >= maxDisbands) break;
       tryDisband(unit, false);
     }
     // Pass 2: survival trumps defense.
     if (remaining > 0) {
       for (const unit of ordered) {
-        if (remaining <= 0) break;
+        if (remaining <= 0 || disbanded >= maxDisbands) break;
         tryDisband(unit, true);
       }
     }
@@ -1991,6 +2022,11 @@ export class EconomicManager {
     }
 
     // ---- Disbanding protocol ----------------------------------------
+    // The emergency path, capped: a transient income collapse (all cities
+    // captured, a disorder cascade) must not liquidate the whole army in one
+    // round — it takes at most `EMERGENCY_DISBAND_CAP_PER_TURN` units here and
+    // the uncovered deficit is booked as debt, which prunes the rest of the
+    // army over the following rounds instead of destroying it in one.
     let deficit = 0;
     let disbanded = 0;
     if (civ.resources.gold < 0) {
@@ -2000,11 +2036,12 @@ export class EconomicManager {
         0,
         this.totalUpkeep(civId) - incomeAfterTax,
       );
-      while (unitsToRemove > 0) {
+      while (unitsToRemove > 0 && disbanded < EMERGENCY_DISBAND_CAP_PER_TURN) {
         const removed = this.disbandUnitsToCoverDeficit(
           civId,
           unitsToRemove,
           cities,
+          EMERGENCY_DISBAND_CAP_PER_TURN - disbanded,
         );
         if (removed === 0) break;
         disbanded += removed;

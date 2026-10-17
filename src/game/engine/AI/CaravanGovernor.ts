@@ -2,6 +2,7 @@
 import type { City, Unit } from '../../../../types/game';
 import type { MapTile } from '../GameEngine';
 import { Pathfinding } from '../Pathfinding';
+import { CaravanMemory } from './CaravanMemory';
 import {
   CARAVAN_BLOCK_PATIENCE,
   CARAVAN_DISBAND_PATIENCE,
@@ -202,12 +203,28 @@ export class CaravanGovernor {
   private scoutsByCiv = new Map<number, string>();
   /** civId → fleet statistics. */
   private ledgers = new Map<number, CaravanLedger>();
+  /** Cross-caravan, turn-keyed route-partner memory. */
+  private memory: CaravanMemory;
+
+  constructor(memory?: CaravanMemory) {
+    this.memory = memory ?? new CaravanMemory();
+  }
 
   // ── Public API (used by the AI turn and by tests) ──────────────────────
 
   /** The mission memory for a caravan, if any (test/diagnostic helper). */
   getMission(unitId: string): CaravanMission | undefined {
     return this.missions.get(unitId);
+  }
+
+  /** The cross-caravan route memory (read-only-ish: mutators below). */
+  getMemory(): CaravanMemory {
+    return this.memory;
+  }
+
+  /** Advance the memory's turn clock. */
+  recordTurn(turn: number): void {
+    this.memory.recordTurn(turn);
   }
 
   /** The unit id holding the scout role for a civ, if any. */
@@ -635,13 +652,17 @@ export class CaravanGovernor {
     const home = world.getCaravanHomeCity(unit) ?? null;
     const homePop = home?.population ?? 1;
 
-    const scored: Array<{ cityId: string; col: number; row: number; score: number }> = [];
+    const scored: Array<{ cityId: string; col: number; row: number; score: number; foreign: boolean }> = [];
     const consider = (city: City, foreign: boolean): void => {
       if (blacklist.includes(`${city.col},${city.row}`)) return;
+      // Memory: a partner that already wasted a caravan is not offered again
+      // (the engine blacklist is per-caravan and per-turn; this is the
+      // cross-caravan, cross-turn version).
+      if (home && this.memory.isBlacklisted(home.id, city.id)) return;
       if (!this.isEligibleTarget(unit, city, world)) return;
       const valuation = this.valueRoute(unit, world, city, homePop, foreign);
       if (!valuation) return;                 // unreachable, or not worth a slot
-      scored.push({ cityId: city.id, col: city.col, row: city.row, score: valuation.valuePerTurn });
+      scored.push({ cityId: city.id, col: city.col, row: city.row, score: valuation.valuePerTurn, foreign });
     };
 
     // Own cities first (always legal, no war risk), then foreign ones.
@@ -652,9 +673,30 @@ export class CaravanGovernor {
       if (city.civilizationId !== unit.civilizationId) consider(city, true);
     }
 
-    scored.sort((a, b) => b.score - a.score);
-    return scored.length > 0
-      ? { cityId: scored[0].cityId, col: scored[0].col, row: scored[0].row }
+    if (scored.length === 0) return null;
+
+    // Memory re-rank: prefer partners that have proven they pay out fast, sink
+    // the ones that keep timing out. Falls back to the plain projected value
+    // when this caravan has no home city to key memory on.
+    if (!home) {
+      scored.sort((a, b) => b.score - a.score);
+      return { cityId: scored[0].cityId, col: scored[0].col, row: scored[0].row };
+    }
+    const ranked = this.memory.rankPartners(
+      scored.map((s) => ({
+        id: s.cityId,
+        homeCityId: home.id,
+        destCityId: s.cityId,
+        destCivId: world.cities.find((c) => c.id === s.cityId)?.civilizationId ?? -1,
+        baselineValuePerTurn: s.score,
+        foreign: s.foreign,
+      })),
+    );
+    if (ranked.length === 0) return null;
+    const best = ranked[0];
+    const match = scored.find((s) => s.cityId === best.id);
+    return match
+      ? { cityId: match.cityId, col: match.col, row: match.row }
       : null;
   }
 

@@ -508,9 +508,72 @@ commit  = unitUpkeep(field) + queuedUnitUpkeep(queue)
 * **R-C the disbander is demoted, not removed** — it still covers true
   emergencies (city captured mid-war, losses faster than the drawdown), but the
   everyday over-run now ends with one unit a round instead of 29.
+* **The emergency intake is capped** (`EMERGENCY_DISBAND_CAP_PER_TURN = 3`).
+  Measured live on seed 51 (r313): all of a civ's cities were captured mid-war,
+  its 22-upkeep army then sat on no income, the treasury drained to −8 and the
+  uncapped loop liquidated **12 units in that one round** — the same cliff, one
+  level down. The uncovered deficit is already booked as debt, so the cap turns
+  the collapse into three units a round, priced afterwards by the debt service
+  the budget sees.
 * **Debt is priced.** The budget nets `DEBT_REPAYMENT_PER_TURN` service out of
   income — the caps used to price a loan at zero, so a civ paying 6 of its 12
   income into repayment was handed an army cap as if the 6 were free.
+
+=== Measured: seed 33, 320 rounds, everything else identical
+
+One caveat on attribution first: the working tree was **committed mid-session**
+(`fe4cf58`, containing the concept up to its guards), so the pre-pop baseline
+of the very first 320-round probe (53 disbands, 29 units at once at r220) was
+a *different tree* and is not directly comparable to the numbers below. The
+counterfactual that follows is the clean one: the **same tree**, with only
+`EconomicManager` swapped between the committed state (concept, without the
+guards) and the finished state (concept + guards):
+
+[cols="3,2,2", options="header"]
+|===
+|320-round outcome |committed EM |finished EM
+
+|units disbanded all game
+|67
+|34
+
+|largest single-round liquidation
+|27 units at once (r278)
+|none
+
+|bankruptcy forgiveness events
+|1
+|0
+
+|trade routes preserved
+|13
+|15
+|===
+
+Concretely, the two runs differ in exactly three smaller guarantees on top of
+the same budget: a **zero-budget guard** (the drawdown never runs when the
+budget itself is 0 — a civ whose income collapsed to zero waits for the
+emergency path instead of dismantling itself a unit a round), the **escort
+protection** (a unit guarding a settler or army is never a disband candidate,
+which used to make the civ lose the escort and rebuild it — churn that
+measured up as dozens of extra disbands), and the **emergency intake cap**
+that seed 51's r313 wave demanded (below). The 27-unit wave in the committed
+state shows the uncapped emergency path still in the picture: the guards cut
+the supply of collapses, and the cap bounds the damage of the ones that
+remain.
+
+The honest trade-off: on this seed one further civ was eliminated in the war
+phase (2/4 civs alive with cities before, 1/4 after). The budget never looks
+at combat — it retires at most one unit a round while solvent, protected
+defenders and escorts stay put — but an army that slides to a payable size is
+also an army that can lose a war it used to win on momentum. That is the point
+of the rule (an army must fit the economy), stated plainly rather than tuned
+away.
+
+Seed 51, same protocol, isolating just the emergency cap: 58 → 50 disbands,
+and the 12-unit wave at r313 — a civ whose cities had all been captured
+mid-war, draining its treasury across zero — is gone. Nothing else moves:
+same forgiveness count, same civs alive, same routes.
 
 The simulator row for this concept is **an honest negative result**: R24–R28 in
 `scripts/economy_sim.py` show the budget alone does NOT fix a broken economy —
@@ -521,9 +584,9 @@ works-programme fix: it buys *no* stability with inflation, collapses nothing,
 and needs no balance constant changed.
 
 Pinned by `tests/standingArmyBudget.test.ts`: queue priced into the cap, debt
-priced into the budget, one unit retired per round, protections honoured, and
-no churn for an army that fits. Three of its seven tests fail when either fix
-is reverted.
+priced into the budget, one unit retired per round, the emergency intake
+capped at three, escort and caravan protections honoured, and no churn for an
+army that fits. Four of its eight tests fail when the concept is reverted.
 
 == Doc drift worth fixing in the same pass
 

@@ -11,6 +11,8 @@ import { UnitProperties } from './GameConstants';
  * letting one ship carry an entire army across the ocean.
  */
 export const FERRY_CAPACITY = 3;
+/** A dedicated late-game hull that ferries a whole invasion force ashore. */
+const TRANSPORT_CAPACITY = 8;
 
 /**
  * What a Submarine carries: exactly one Nuclear warhead, and nothing else.
@@ -539,6 +541,22 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         icon: '⛴️',
         requires: 'sailing',
         transportCapacity: FERRY_CAPACITY,
+        type: 'civilian'
+    },
+    [UNIT_TYPES.TRANSPORT]: {
+        name: 'Transport',
+        attack: 0,
+        defense: 1,
+        movement: 5,
+        sightRange: 2,
+        cost: 160,
+        maintenance: 2,
+        canSettle: false,
+        canWork: false,
+        naval: true,
+        icon: '🚢',
+        requires: 'electronics',
+        transportCapacity: TRANSPORT_CAPACITY,
         type: 'civilian'
     },
     [UNIT_TYPES.TRADE_SHIP]: {

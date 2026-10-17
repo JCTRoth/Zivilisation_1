@@ -2,6 +2,11 @@
 // (`../../City` exports the engine class, whose fields are `civilization` etc.,
 // and `../../Unit` does not export its class at all.)
 import type { City, Unit } from '../../../../types/game';
+import {
+  SettlerMemory,
+  type SiteMemory,
+  type TileImprovementMemory,
+} from './SettlerMemory';
 
 export interface SettlerWorkAssignment {
   unitId: string;
@@ -42,6 +47,12 @@ export class SettlerGovernor {
    * standing still.
    */
   private reachableWorks: OutstandingWorksFn | null = null;
+  /** Persistent, turn-keyed memory: colony sites, settler losses, improved tiles, ledger. */
+  private memory: SettlerMemory;
+
+  constructor(memory?: SettlerMemory) {
+    this.memory = memory ?? new SettlerMemory();
+  }
 
   /** Wire the ground-truth work count in (see {@link OutstandingWorksFn}). */
   setOutstandingWorksSource(fn: OutstandingWorksFn | null): void {
@@ -91,14 +102,15 @@ export class SettlerGovernor {
     return this.improvementQueue.length;
   }
 
-  updateFromCities(cities: City[], units: Unit[]): void {
+  updateFromCities(cities: City[], units: Unit[], turn?: number): void {
+    if (typeof turn === 'number') this.memory.recordTurn(turn);
     const settlers = units.filter(
       (u: Unit) => u.type === 'settler' && !u.isDefeated,
     );
 
     for (const settler of settlers) {
       if (!this.assignments.has(settler.id)) {
-        const target = this.findBestImprovementTarget(settler, cities);
+        const target = this.findBestImprovementTarget(settler, cities, units);
         if (target) {
           this.assignWork(settler.id, target.col, target.row, target.improvementType);
         }
@@ -120,6 +132,7 @@ export class SettlerGovernor {
   private findBestImprovementTarget(
     settler: Unit,
     cities: City[],
+    units?: readonly Unit[],
   ): { col: number; row: number; improvementType: string } | null {
     let bestTarget: { col: number; row: number; improvementType: string } | null = null;
     let bestScore = -Infinity;
@@ -137,6 +150,9 @@ export class SettlerGovernor {
         const row = Number(parts[1]);
         if (!Number.isFinite(col) || !Number.isFinite(row)) continue;
 
+        // Memory: a settler already improved this tile — don't send another.
+        if (this.memory.isTileImproved(key)) continue;
+
         const isOccupied = this.assignments.has(`${col},${row}`);
         if (isOccupied) continue;
 
@@ -144,7 +160,12 @@ export class SettlerGovernor {
         if (!improvementType) continue;
 
         const dist = Math.max(Math.abs(settler.col - col), Math.abs(settler.row - row));
-        const score = 100 - dist;
+        // Memory: threat near the tile makes the walk costlier — a settler
+        // strolling into a barb camp is a wasted settler.
+        const threat = units
+          ? this.memory.threatScoreAt(col, row, units, settler.civilizationId)
+          : 0;
+        const score = 100 - dist - threat * 0.6;
         if (score > bestScore) {
           bestScore = score;
           bestTarget = { col, row, improvementType };
@@ -183,6 +204,8 @@ export class SettlerGovernor {
     );
     const aliveSettlers = settlers.length;
 
+    const aggressionFactor = this.memory.getExpansionAggressiveness();
+
     const hasMatureCity = cities.some((c: City) => (c.population ?? 0) >= 6);
     const hasValidSettlementSpot = this.hasValidSettlementSpot(cities);
 
@@ -200,9 +223,12 @@ export class SettlerGovernor {
       // cannot consume it, or the civ stops expanding the moment one settler
       // gets unlucky: the allowance stays full forever while nobody founds,
       // the empire stays at one city, and (in the pinned AI-vs-AI run) it was
-      // overrun before it could garrison anything.
+      // overrun before it could garrison anything. Paced by memory: if
+      // settlers keep dying on the walk, the allowance drops toward zero so
+      // the civ builds guards instead of feeding settlers to the map.
       const expanding = settlers.filter((u) => !!u._aiSettlement).length;
-      return Math.max(0, 1 - expanding);
+      const allowance = Math.max(0, 1 - expanding);
+      return Math.max(0, Math.round(allowance * aggressionFactor));
     }
 
     const assignedSettlers = this.getAssignedCount();
@@ -232,9 +258,15 @@ export class SettlerGovernor {
     );
 
     const expansionNeed = cities.length < 5 ? 1 : 0;
-    const recommended = Math.max(workBasedRecommendation, expansionNeed);
+    const recommended = Math.max(
+      workBasedRecommendation,
+      Math.round(expansionNeed * aggressionFactor),
+    );
 
-    return Math.max(0, recommended - aliveSettlers);
+    // Pace the net deficit by memory: when settlers keep dying, the governor
+    // recommends fewer of them so the civ builds guards and walls first.
+    const netNeed = Math.max(0, recommended - aliveSettlers);
+    return Math.max(0, Math.round(netNeed * aggressionFactor));
   }
 
   /**
@@ -255,5 +287,107 @@ export class SettlerGovernor {
 
   private hasValidSettlementSpot(cities: City[]): boolean {
     return cities.length < 8;
+  }
+
+  // ─── Memory access (delegates to SettlerMemory) ─────────────────────────
+
+  /** The governor's turn clock. */
+  currentTurnNumber(): number {
+    return this.memory.currentTurnNumber();
+  }
+
+  /** Advance the memory's turn clock (call once per AI turn). */
+  recordTurn(turn: number): void {
+    this.memory.recordTurn(turn);
+  }
+
+  /** Remember (or refresh) a candidate colony site with its live evaluation. */
+  recordSite(input: Parameters<SettlerMemory['recordSite']>[0]): void {
+    this.memory.recordSite(input);
+  }
+
+  /** Remembered site, or null. */
+  getSite(siteId: string): SiteMemory | null {
+    return this.memory.getSite(siteId);
+  }
+
+  /** Ranked candidate colony sites for expansion (open, high-yield, low-threat). */
+  rankExpansionSites(input: Parameters<SettlerMemory['rankExpansionSites']>[0]): readonly SiteMemory[] {
+    return this.memory.rankExpansionSites(input);
+  }
+
+  /** Mark a site colonized (by anyone). */
+  markColonized(siteId: string, civId: number, turn?: number): void {
+    this.memory.markColonized(siteId, civId, turn);
+  }
+
+  /** Mark a site blocked (enemy unit, barb camp, spacing). */
+  markBlocked(siteId: string, reason: string, turn?: number): void {
+    this.memory.markBlocked(siteId, reason, turn);
+  }
+
+  /** Mark a site as evaluated but poor (low yield) — skip it for expansion. */
+  markPoor(siteId: string, turn?: number): void {
+    this.memory.markPoor(siteId, turn);
+  }
+
+  /** Record a settler lost, optionally tied to a site for pacing. */
+  recordSettlerLost(siteId?: string, turn?: number): void {
+    this.memory.recordSettlerLost(siteId, turn);
+  }
+
+  /** Record a settler built (ledger only). */
+  recordSettlerBuilt(): void {
+    this.memory.recordSettlerBuilt();
+  }
+
+  /** Record a site colonized by us (ledger only). */
+  recordSiteColonized(): void {
+    this.memory.recordSiteColonized();
+  }
+
+  /** Record that a settler completed an improvement on a tile. */
+  recordTileImproved(
+    tileId: string,
+    improvementType: string,
+    settlerId?: string,
+    turn?: number,
+  ): void {
+    this.memory.recordTileImproved(tileId, improvementType, settlerId, turn);
+  }
+
+  /** Whether a tile is already remembered as improved (skip re-assignment). */
+  isTileImproved(tileId: string): boolean {
+    return this.memory.isTileImproved(tileId);
+  }
+
+  /** Improvement memory for a tile, or null. */
+  getTileImprovement(tileId: string): TileImprovementMemory | null {
+    return this.memory.getTileImprovement(tileId);
+  }
+
+  /** Read-only effectiveness ledger. */
+  getLedger(): Readonly<import('./SettlerMemory').SettlerLedger> {
+    return this.memory.getLedger();
+  }
+
+  /** Expansion aggressiveness 0-1 from settler-loss memory (0 = stop building settlers). */
+  getExpansionAggressiveness(): number {
+    return this.memory.getExpansionAggressiveness();
+  }
+
+  /** Number of colony sites currently remembered. */
+  getSiteCount(): number {
+    return this.memory.getSiteCount();
+  }
+
+  /** Threat score 0-100 for a tile based on hostile units within the memory radius. */
+  threatScoreAt(col: number, row: number, units: readonly Unit[], civId: number): number {
+    return this.memory.threatScoreAt(col, row, units, civId);
+  }
+
+  /** The underlying memory instance (for tests / advanced wiring). */
+  getMemory(): SettlerMemory {
+    return this.memory;
   }
 }

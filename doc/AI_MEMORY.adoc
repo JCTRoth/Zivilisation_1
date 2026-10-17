@@ -1,0 +1,245 @@
+= AI Memory — Inventory & Roadmap
+:toc:
+:toclevels: 2
+
+== Purpose
+
+This document records where persistent, turn-keyed memory would improve the
+game's planning — for the AI and for the game engine. It follows the pattern
+already established by `ScoutMemory` and `SettlerMemory`:
+
+* state lives in a small, bounded, injectable module (no engine-owned statics);
+* memory is a cache over the engine's current state — the engine stays the
+  source of truth;
+* reads are pure over the current turn, writes mutate only the instance;
+* bounded and TTL-pruned so it cannot grow forever or stale-guard an
+  observation;
+* safely injectable (tests can pass `null` / a stand-in, runtime wiring is lazy).
+
+Each entry below names the module, what memory would record, the unit whose
+effectiveness it would improve, the expected payoff, and the integration
+touchpoint.
+
+== Status
+
+* ✔ implemented — `ScoutMemory` (`src/game/engine/ScoutMemory.ts`)
+* ✔ implemented — `SettlerMemory` (`src/game/engine/AI/SettlerMemory.ts`,
+  wired into `SettlerGovernor`)
+* ✔ implemented — `CaravanMemory` (`src/game/engine/AI/CaravanMemory.ts`,
+  wired into `CaravanGovernor` + `AIManager`; see §First implementation)
+* ✔ implemented — `NavalPatrolMemory` (`src/game/engine/AI/NavalPatrolMemory.ts`,
+  wired into `AIManager`; see §Second implementation)
+* ☐ pending — the entries in §Candidate list.
+
+Every implemented module is *consumed*, not merely present: each one is read on
+a live code path and covered by a test that fails if the wiring is removed.
+
+== Candidate list (high to low priority)
+
+=== 1. Caravan route-partner memory  (IMPLEMENTED — see §First implementation)
+Caravans are units; their effectiveness is the trade income they open. Today
+the governor scores a destination fresh each mission and walking toward a
+city mid-walk can change the ranking (which produces the pacing oscillation
+the sticky mission was added to tame).
+
+Memory records per destination city / civ:
+* deliveries completed and the gold+science they paid,
+* missions that stalled or timed out (transit deadline),
+* per-partner average `valuePerTurn` actually realized vs. projected,
+* blacklists that should persist across caravans of the same civ.
+
+Integration points: `CaravanGovernor` (mission choice) and
+`AIManager.coordinateCaravans` (which picks the target's home city / target city).
+
+=== 2. Combat-tactics memory (high unit-effectiveness win)
+Units learn what worked: which enemy types a unit class beats, where ambushes
+happened, which tiles are killing zones. Records per civilization pair: enemy
+shape seen, loss/wins, contested tiles (a `Map civ → tiles` cache). Improves
+`AITactics`, `AIAggression`, `NuclearDoctrine` ordering. Today each round is
+scored from scratch, so a lost battle teaches nothing.
+
+Integration: `AICoordinator.formArmyGroups`, `AITactics`, `AttackOdds`.
+
+=== 3. Naval patrol / escort memory  (IMPLEMENTED — see §Second implementation)
+Warships remember which waters they swept, where threats were last spotted, and
+which sealift runs (ferry + troops) are in flight. Improves `NavalDoctrine`
+and escort pairing for Fisher/Trade boats and sealift. Low data volume, high
+turns-to-effect.
+
+Integration: `NavalDoctrine`, `AIManager` naval handling, `FisherEconomics`.
+
+=== 4. Settlement-site memory (colony placement)
+Overlaps `SettlerGovernor` but at the *city-count* level: remember which
+settler-discovered sites turned into actual cities vs. were abandoned/blocked,
+so the next settler isn't sent to a region that failed to settle. Improves
+forward-settling strategy. Distinct from tile-improvement memory.
+
+Integration: `AIStrategyBranches` (`parallelColonies`), `InfrastructurePlanner`.
+
+=== 5. Production ROI memory
+Remember which buildings/units actually paid for themselves in gold, science,
+food and production (vs. projections), so future production choices weigh
+outcomes instead of forecasts. Improves `AIEconomicManager` and
+`AIBuildingStrategy`. Bounded per-civ, decays with turns.
+
+Integration: `AIEconomicManager`, `BuildingEconomics`, `ProductionManager`.
+
+=== 6. Research-effectiveness memory
+Track tech usefulness: which techs enabled profitable buildings, which were
+races lost, which unblocked needed units. Improves `AIResearch`'s
+shortlist (`scoreCandidates` / `techOrderFromPath`). Tech choices are currently
+mostly path-pure.
+
+Integration: `AIResearch`, `AIStrategySelector`.
+
+=== 7. Diplomacy-observation memory (enemy tech & intent)
+DiplomacyManager already remembers relations. Missing: a per-civ record of
+*enemy capabilities observed* (techs, fleet counts, unit ranks, embargo state)
+that decays, so offers are made against what we have actually seen rather
+than against population guesses. Improves `evaluateProposal`, `chooseAction`.
+
+Integration: `DiplomacyManager`, `AIDiplomacyPolicy`, `EspionageResult` paths.
+
+=== 8. Barbarian-camp memory
+Remember camp locations and clearance outcomes to stop scouts re-floating
+the same sites and to time "raid response" units. Improves battlefield scouting
+routes for military units.
+
+Integration: `BarbarianManager`, `AIManager` scout handling.
+
+=== 9. Save/load persistence of AI memory
+None of the memory modules above serialise. A loaded game starts the AI with
+amnesia even though the engine restores units/cities. This is the
+cross-cutting item: once items 1-8 exist, ship a single serialiser that pairs
+with the engine's `getUnitStorage`/restore path.
+
+Integration: `GameEngine` `validateAndCleanState`, serializer, `Storage`.
+
+== Engineering constraints (best practice)
+
+* **Source of truth stays the engine.** Memory is a cache; it must never
+  override cities/units/tiles it disagrees with.
+* **Bounded + TTL.** Every collection caps (`maxEntries`) and prunes stale
+  records so a long game never grows unbounded.
+* **Turn-keyed.** Writes are stamped with the current turn; reads are pure over
+  memory state; `recordTurn(turn)` drives pruning. No clocks in storage.
+* **Injectable.** Memory is constructed by its owner and passable to tests as
+  a stand-in (default `new Memory()`), so unit tests never need a full engine.
+* **Owns no engine mutation.** Memory records *opinions/evaluation*, never
+  mutates units or cities. Mutations go through `GameEngine` methods.
+* **Serialisable interface.** Expose a plain `{ toSnapshot(), fromSnapshot() }`
+  or `{ getState(), setState() }` so Save/Load (item 9) can round-trip.
+* **Tested bottom-up.** Each memory ships with a focused Vitest suite that
+  builds the module in isolation, before any engine wiring.
+
+== Implementation order (bottom-up)
+
+1. ✔ Build `CaravanMemory` (item 1) — the canonical next governor memory.
+2. ✔ Build `NavalPatrolMemory` (item 3) — small, contained, naval-focused.
+3. ☐ Build `ProductionROIMemory` (item 5) — feeds economic decisions.
+4. ☐ Build `ResearchEffectivenessMemory` (item 6).
+5. ☐ Build `CombatTacticsMemory` (item 2) — largest; needs enemy data input.
+6. ☐ Wire AI-observation + barbarian (items 7, 8).
+7. ☐ Cross-cutting serialisation (item 9) once 4+ modules exist.
+8. ☐ `SettlementMemory` (item 4) last — needs site proposer integration.
+
+== First implementation: CaravanMemory (item 1)
+
+`src/game/engine/AI/CaravanMemory.ts`, owned by `CaravanGovernor`.
+
+Caravans are units; their effectiveness is the trade income they open. The
+governor scored a destination fresh each mission, and because longer routes score
+higher, walking toward a city changed the ranking mid-walk — the caravan turned
+around, walked back, and repeated forever. Memory records, per (home city →
+destination city) pair:
+
+* deliveries completed and the gold + science they paid,
+* missions that stalled or timed out, with the reason,
+* transit turns per trip and the fastest one ever achieved,
+* a TTL'd blacklist that survives across caravans of the same civ.
+
+`rankPartners` then re-ranks the candidate set: blacklisted pairs are dropped
+entirely, a partner that has delivered in ≤5 turns is worth 30% more than an
+unknown one, a proven partner 15%, and every timeout subtracts up to 0.4.
+
+Wiring (`CaravanGovernor.pickDeliveryTarget`):
+
+* a pair the memory has blacklisted is never offered as a target;
+* the surviving candidates are ranked by `adjustedValuePerTurn`, so a proven-fast
+  partner outranks a richer projection and a lossy one sinks below it;
+* with no home city to key memory on, the plain projection is used unchanged.
+
+Turn-boundary feed (`AIManager`):
+
+* `recordAttempt` when a caravan commits to a target,
+* `recordDelivery` from `TRADE_ROUTE_ESTABLISHED`, using the mission's real
+  transit-turn count rather than a distance proxy,
+* `recordFailure` when a caravan is disbanded, carrying the plan's abort reason.
+
+`getCaravanAggressiveness()` (delivery success rate, throttled by a recent
+timeout) is available for pacing caravan production; it is deliberately *not*
+wired into the build decision yet — the disband ladder already paces the fleet,
+and two throttles on one decision is worse than one.
+
+Tests: `tests/ai/caravanMemory.test.ts` (9, storage contract) and
+`tests/caravanGovernor.test.ts` (5, wiring — tie-breaks, blacklist skip, TTL
+expiry, and the no-home-city fallback).
+
+== Second implementation: NavalPatrolMemory (item 3)
+
+`src/game/engine/AI/NavalPatrolMemory.ts`, owned per civ by `AIManager`.
+
+The engine knows where every hull is *now* and can say very little about where
+one *was*. A warship that loses sight of a raider over the horizon therefore has
+nothing to do but patrol — which is how a fleet ends up milling in one corner of
+the ocean forever. Four records, in descending value:
+
+1. **Swept water.** A hull marks the tile it stands on as patrolled each turn.
+   `sweepPriority` ranks never-swept first and least-recently-swept next, so an
+   idle fleet spreads across the ocean instead of converging.
+2. **Enemy contacts.** Every hostile hull in sight is recorded before a decision
+   is taken about it. Repeat sightings within 2 tiles merge and raise confidence
+   (capped at ×1.5). `contactScore` decays linearly with age and returns 0 past
+   the TTL, so a remembered contact is a *lead*, never a substitute for a live
+   sighting. A loaded transport outranks a bare warship — the same ordering the
+   live target score applies.
+3. **Danger water.** A hull that held an intent and is no longer in the roster
+   was sunk: its last known tile becomes a TTL'd kill zone, and `dangerPressure`
+   pushes patrols away from it. A penalty, never a refusal — a fleet that refuses
+   to sail loses.
+4. **Sealift runs.** Which ferry is loaded, for which beach, and which escort is
+   paired with it, so escorts do not lose their charge when `turnData.navalFleets`
+   is rebuilt between turns.
+
+Wiring (`AIManager`):
+
+* `navalMemoryFor(civId)` — one instance per civilization, created lazily, so a
+  land-map game allocates nothing and one civ's scouting cannot contaminate
+  another's fleet;
+* `syncNavalMemory` at the turn boundary — advances the clock (which expires
+  stale contacts, sweeps and kill zones) and reconciles the hulls still afloat;
+* `findNavalPatrolTarget` records the current tile as swept, then ranks the
+  candidate pool by memory before the per-hull identity offset, taking the
+  better half so the offset still spreads hulls out;
+* `chooseWarshipTarget` records sightings and, only when nothing is in sight,
+  sails to the best remembered hostile contact at half value;
+* `hullIsClosing` / `retargetStalledHull` keep navigation intent in memory.
+
+Removed as a side effect: `Unit._navalIntent`. The stall counter was AI
+bookkeeping written onto a unit the save serialiser copies, so every save file
+carried a field only the AI read and nothing restored. It now lives in memory,
+where it is prunable, turn-keyed and absent from save games.
+
+Tests: `tests/ai/navalPatrolMemory.test.ts` (33, storage contract) and
+`tests/ai/navalPatrolMemoryWiring.test.ts` (12, wiring — per-civ isolation,
+lazy allocation, intent location, lost-hull danger, empty-ferry-vs-sunk,
+distinct patrol picks).
+
+== Change log
+
+* 2026-10-16 — document created; item 1 (CaravanMemory) started.
+* 2026-10-16 — item 1 finished and wired: `pickDeliveryTarget` consumes
+  `rankPartners`, and five governor-level tests cover the wiring.
+* 2026-10-17 — item 3 (NavalPatrolMemory) built bottom-up and wired;
+  `Unit._navalIntent` retired in favour of it.
+* Next: item 5 (Production ROI memory), then item 6 (research effectiveness).

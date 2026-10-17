@@ -241,7 +241,7 @@ export const es: PartialTranslationDict = {
   'setup.ageShort.2': 'Vieja',
   'setup.mapSizeTitle': 'Tamaño del mapa',
   'setup.mapSizeHint':
-    'Arrastra los bordes o la esquina de la vista previa del mapa para dar forma al mundo.',
+    'Elige un ajuste predefinido o arrastra los controles para dar forma al mundo.',
   'setup.sizeTiny': 'Diminuto',
   'setup.sizeSmall': 'Pequeño',
   'setup.sizeStandard': 'Estándar',

@@ -1,0 +1,28 @@
+Third-Party Asset Notices
+=========================
+
+This project contains sound assets from the open-source game Warzone 2100
+(https://wz2100.net/), which are licensed under the GNU General Public
+License, version 2 (GPLv2).
+
+The files live in their own directory:
+
+    public/assets/sfx/warzone2100/
+
+and are included via "mere aggregation" (GPLv2 section 2, final paragraph):
+they remain GPLv2 works on their own, and their inclusion does NOT extend
+the GPLv2 to the primary application source code or any other proprietary
+asset of this project. A full copy of the GPLv2 can be found in
+public/assets/sfx/warzone2100/LICENSE.txt, and the per-file provenance
+(original Warzone 2100 file names) is documented in
+public/assets/sfx/warzone2100/README.txt.
+
+The 16 files are used UNMODIFIED. If you edit them (chop up, remix, or
+filter them), the resulting files stay GPLv2: keep them in the same
+directory, note the change and its date in README.txt, and the license
+follows the file automatically.
+
+Other audio in public/assets/sfx/ is original to this project and is NOT
+covered by the GPLv2. That is the seven *.mp3 recordings plus
+city-founded.ogg and mech-inf-move.opus. See
+doc/SOUND_EFFECTS.adoc for their provenance.

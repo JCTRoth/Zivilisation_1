@@ -134,4 +134,52 @@ describe('Trade Ship', () => {
     const sunkVal = engine.computeTradeShipPrizeValue(ship);
     expect(sunkVal).toBeGreaterThan(0);
   });
+
+  it('auto-establishes a route for a trade ship at a harbour with another harbour available', () => {
+    const home = makeCity(0, 2, 2);
+    const dest = makeCity(0, 4, 4);
+    const ship = createShip(home, home.col, home.row);
+    expect(ship.tradeShipRoute).toBeNull();
+
+    // Simulate the turn-start hook that auto-establishes routes.
+    (engine as unknown as { autoEstablishTradeShipRoute: (id: string) => boolean }).autoEstablishTradeShipRoute(ship.id);
+
+    expect(ship.tradeShipRoute).not.toBeNull();
+    expect(ship.tradeShipRoute?.homeCityId).toBe(home.id);
+    expect(ship.tradeShipRoute?.destCityId).toBe(dest.id);
+    expect(ship.tradeShipRoute?.stage).toBe('outbound');
+  });
+
+  it('does not auto-establish when the ship already has a route', () => {
+    const home = makeCity(0, 2, 2);
+    const dest = makeCity(0, 4, 4);
+    const ship = createShip(home, dest.col, dest.row);
+    engine.establishTradeShipRoute(ship.id);
+
+    const result = (engine as unknown as { autoEstablishTradeShipRoute: (id: string) => boolean }).autoEstablishTradeShipRoute(ship.id);
+
+    expect(result).toBe(false);
+    expect(ship.tradeShipRoute?.destCityId).toBe(dest.id); // unchanged
+  });
+
+  it('does not auto-establish when there is no other harbour', () => {
+    const home = makeCity(0, 2, 2);
+    const ship = createShip(home, home.col, home.row);
+
+    const result = (engine as unknown as { autoEstablishTradeShipRoute: (id: string) => boolean }).autoEstablishTradeShipRoute(ship.id);
+
+    expect(result).toBe(false);
+    expect(ship.tradeShipRoute).toBeNull();
+  });
+
+  it('picks the nearest other harbour as destination', () => {
+    const home = makeCity(0, 2, 2);
+    const near = makeCity(0, 3, 3);   // distance ~2 from home
+    const far = makeCity(0, 8, 8);    // distance ~12 from home
+    const ship = createShip(home, home.col, home.row);
+
+    (engine as unknown as { autoEstablishTradeShipRoute: (id: string) => boolean }).autoEstablishTradeShipRoute(ship.id);
+
+    expect(ship.tradeShipRoute?.destCityId).toBe(near.id);
+  });
 });

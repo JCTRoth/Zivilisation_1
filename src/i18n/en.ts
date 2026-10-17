@@ -254,7 +254,7 @@ export const en = {
   // a felt jump, and the whole ladder spans a 95× range (see MapSizePresets).
   'setup.mapSizeTitle': 'Map Size',
   'setup.mapSizeHint':
-    'Drag the edges or corner of the map preview to shape the world.',
+    'Choose a preset or drag the sliders to shape the world.',
   'setup.sizeTiny': 'Tiny',
   'setup.sizeSmall': 'Small',
   'setup.sizeStandard': 'Standard',

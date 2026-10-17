@@ -84,7 +84,7 @@ test.describe('AI vs AI (Computer vs Computer)', () => {
 
     // The dedicated summary block explains the mode.
     await expect(page.getByText('Map:')).toBeVisible();
-    await expect(page.getByText(/40x40 tiles/)).toBeVisible();
+    await expect(page.getByText(/40×40 tiles/)).toBeVisible();
     await expect(page.getByText(/All civilizations are AI/)).toBeVisible();
     await expect(page.getByText(/Fully automatic — no human input/)).toBeVisible();
     await expect(page.getByText(/Every move is written to a log file/)).toBeVisible();

@@ -73,7 +73,9 @@ test.describe('Main Game UI', () => {
   });
 
   test('displays turn counter', async ({ page }) => {
-    await expect(page.getByText(/Turn \d+/).first()).toBeVisible();
+    // The label and the number live in separate nodes ("Turn " + <strong>1</strong>),
+    // so match on the container's combined text rather than a single text node.
+    await expect(page.locator('.topbar-turn')).toContainText(/Turn\s+\d+/);
   });
 });
 
@@ -277,7 +279,7 @@ test.describe('Keyboard Shortcuts', () => {
     await page.locator('.game-canvas').first().click();
     await page.keyboard.press('Enter');
     // Either the turn advances or a confirm dialog appears — game should still be functional
-    await expect(page.getByText(/Turn \d+/).first()).toBeVisible();
+    await expect(page.locator('.topbar-turn')).toContainText(/Turn\s+\d+/);
   });
 });
 
@@ -627,7 +629,7 @@ test.describe('AI Behavior', () => {
       await advanceTurns(page, 5);
 
       // Verify game progressed (turn counter > 1)
-      await expect(page.getByText(/Turn [2-9]\d*/).first()).toBeVisible();
+      await expect(page.locator('.topbar-turn')).toContainText(/Turn\s+[2-9]\d*/);
       // Game canvas still renders
       await expect(page.locator('.game-canvas canvas').first()).toBeVisible();
     });
@@ -808,7 +810,7 @@ test.describe('AI Behavior', () => {
 
       // Turn counter should show the game progressed significantly
       const topBarText = await page.locator('.game-top-bar').textContent() ?? '';
-      const turnMatch = topBarText.match(/Turn (\d+)/);
+      const turnMatch = topBarText.match(/Turn\s+(\d+)/);
       expect(turnMatch).not.toBeNull();
       expect(Number(turnMatch![1])).toBeGreaterThanOrEqual(8);
 
@@ -965,7 +967,7 @@ test.describe('AI Behavior', () => {
 
       const topBar = page.locator('.game-top-bar');
       // Should show "Turn 1" and a year like "4000 BC"
-      await expect(topBar.getByText(/Turn \d+/)).toBeVisible();
+      await expect(topBar.locator('.topbar-turn')).toContainText(/Turn\s+\d+/);
       await expect(topBar.getByText(/BC/)).toBeVisible();
     });
 
@@ -1241,7 +1243,7 @@ test.describe('AI Behavior', () => {
       expect(finalText).not.toBe(initialText);
 
       // Extract turn number from "Turn {n}"
-      const turnMatch = finalText?.match(/Turn (\d+)/);
+      const turnMatch = finalText?.match(/Turn\s+(\d+)/);
       expect(turnMatch).not.toBeNull();
       expect(Number(turnMatch![1])).toBeGreaterThanOrEqual(13);
 

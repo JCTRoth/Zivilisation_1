@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from '@/i18n/useTranslation';
 import { tUnitName } from '@/i18n/dataNames';
 import type { TranslationKey } from '@/i18n';
+import { playSfx } from '@/utils/Sfx';
 import type { DiplomatAction, DiplomatTarget } from '@/game/engine/DiplomacyTypes';
 import { UnitActionsModalProps } from './UnitActionsModalProps';
 import '../../styles/unitActionsModal.css';
@@ -37,7 +38,10 @@ const DIPLOMAT_ACTION_UI: Record<
   offer_gift: { icon: '🎁', label: 'unitActions.giveGold', section: 'diplomacy' },
   propose_joint_war: { icon: '⚔️', label: 'unitActions.callToArms', section: 'diplomacy' },
   incite_revolt: { icon: '🔥', label: 'unitActions.inciteRevolt', section: 'infiltration' },
-};
+  call_for_help: { icon: '🆘', label: 'unitActions.callToArms', section: 'diplomacy' },
+  gift_gold: { icon: '🎁', label: 'unitActions.giftGold', section: 'diplomacy' },
+  request_gold: { icon: '💰', label: 'unitActions.requestGold', section: 'diplomacy' },
+} as const;
 
 /** Sections in the order they are drawn, each with its own heading. */
 const DIPLOMAT_SECTIONS = [
@@ -77,6 +81,9 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
   if (!contextMenu) return null;
 
   const handleAction = (action: string, data?: Record<string, unknown>) => {
+    // Every order leaves with a radio click — the 0.4 s UI cooldown keeps a
+    // fast double-order from stuttering.
+    playSfx('uiSelect');
     onExecuteAction(action, data);
     onClose();
   };
