@@ -334,7 +334,7 @@ export const GAME_CONSTANTS: GameConstants = {
     MAP_HEIGHT: 50,
 
     // Game Settings
-    INITIAL_GOLD: 50,
+    INITIAL_GOLD: 80,
     INITIAL_SCIENCE: 0,
     TURNS_PER_YEAR: 10,
     STARTING_YEAR: 4000,

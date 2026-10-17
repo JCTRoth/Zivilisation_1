@@ -63,6 +63,8 @@ export interface PolicyContext {
   ownStrength: number;
   theirStrength: number;
   ownGold: number;
+  /** The other civ's treasury — what they can afford to give or be asked for. */
+  theirGold?: number;
   /** How many wars the civ is already fighting. */
   activeWars: number;
   /** Max wars this civ's temperament permits. */
@@ -330,6 +332,19 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
     // instead of random.
     if (ratio > 2 && fear > 30) {
       push(out, 'demand_tribute', (ratio - 1) * 8 + fear / 12 - 8, 'they are weaker and afraid');
+    }
+
+    // Gold gifting: when the relationship is very good and we have surplus,
+    // a gift reinforces the bond. Scaled by how much gold we can spare.
+    if (goodwill > 50 && ctx.ownGold > 100) {
+      push(out, 'gift_gold', 8 + goodwill / 10 + Math.min(10, ctx.ownGold / 100), 'we are friends and have surplus');
+    }
+
+    // Gold requesting: when the relationship is good (they're likely to say yes)
+    // or when we are much stronger militarily (can threaten war).
+    const theirGold = ctx.theirGold ?? 0;
+    if ((goodwill > 30 && theirGold > 50) || (ratio > 2.5 && theirGold > 80)) {
+      push(out, 'request_gold', 6 + (goodwill > 30 ? goodwill / 15 : 0) + (ratio > 2.5 ? (ratio - 1) * 4 : 0) - 6, goodwill > 30 ? 'they trust us enough' : 'we can threaten them');
     }
 
     // War. Gated hard, then scored by how much the target is worth.

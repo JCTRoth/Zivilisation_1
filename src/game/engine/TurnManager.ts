@@ -1272,7 +1272,16 @@ export class TurnManager {
       const req = (targetProps as { requires?: string | null }).requires;
       if (req && !techs.has(req)) continue;
 
+      // Leonardo's Workshop upgrade cost: 1.5× the target unit's production cost.
       const from = String(unit.type);
+      const targetUnitCost = (targetProps as { cost?: number }).cost ?? 0;
+      const upgradeCost = Math.floor(targetUnitCost * 1.5);
+      const civGold = civ.resources?.gold ?? 0;
+      if (civGold < upgradeCost) {
+        debugLog(`[TurnManager] ${civ.name} cannot afford Leonardo upgrade: ${from} → ${targetType} (cost ${upgradeCost}, gold ${civGold})`);
+        continue;
+      }
+      civ.resources.gold = civGold - upgradeCost;
       unit.type = targetType;
       unit.name = targetProps.name || targetType;
       unit.attack = targetProps.attack || 0;

@@ -26,7 +26,10 @@ function createMockGameEngine(overrides: Record<string, unknown> = {}): any {
         personality: { aggression: 5, diplomacy: 5, military: 5, expansion: 5, science: 5, economy: 5 },
       },
     ],
-    units: [],
+    units: [
+      { id: 'dip0', type: 'diplomat', civilizationId: 0, col: 5, row: 5 },
+      { id: 'dip1', type: 'diplomat', civilizationId: 1, col: 5, row: 5 },
+    ],
     cities: [],
     roundManager: { getRoundNumber: () => 5 },
     onStateChange: vi.fn(),

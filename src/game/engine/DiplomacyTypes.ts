@@ -75,6 +75,7 @@ export type ImpactEvent =
   | 'mutual_defense_signed'
   | 'non_aggression_signed'
   | 'embargo_signed'
+  | 'embassy_established'
   | 'tech_exchanged'
   | 'common_enemy_defeated'
   | 'refused_peace'
@@ -119,7 +120,7 @@ export type OpinionDir = 'aToB' | 'bToA';
 // ---------------------------------------------------------------------------
 
 /** Active treaty types beyond basic diplomatic status */
-export type TreatyType = 'open_borders' | 'trade_agreement' | 'mutual_defense' | 'non_aggression' | 'embargo_target';
+export type TreatyType = 'open_borders' | 'trade_agreement' | 'mutual_defense' | 'non_aggression' | 'embargo_target' | 'embassy';
 
 export interface DiplomaticRelation {
   /** The two civilization IDs involved (sorted ascending for canonical key) */
@@ -169,6 +170,8 @@ export type DiplomatAction =
   | 'propose_alliance'
   | 'demand_tribute'
   | 'offer_gift'
+  | 'gift_gold'
+  | 'request_gold'
   | 'bribe_unit'
   | 'gather_intelligence'
   | 'offer_open_borders'
@@ -178,6 +181,7 @@ export type DiplomatAction =
   | 'propose_embargo'
   | 'propose_non_aggression'
   | 'propose_joint_war'
+  | 'call_for_help'
   | 'establish_embassy'
   | 'investigate_city'
   | 'industrial_sabotage'
@@ -399,7 +403,8 @@ export interface DiplomacyEvent {
       | 'open_borders_signed' | 'trade_agreement_signed' | 'mutual_defense_signed'
       | 'non_aggression_signed' | 'embargo_declared' | 'treaty_cancelled'
       | 'tech_exchanged' | 'counter_proposal'
-      | 'embassy_established' | 'technology_stolen' | 'city_sabotaged';
+      | 'embassy_established' | 'technology_stolen' | 'city_sabotaged'
+  | 'bribe_reported' | 'gold_transferred' | 'call_for_help_accepted' | 'call_for_help_sent';
   fromCivId: number;
   toCivId: number;
   details?: string;

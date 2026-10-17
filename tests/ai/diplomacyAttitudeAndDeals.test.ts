@@ -17,7 +17,11 @@ function createMockGameEngine(overrides: Record<string, any> = {}): any {
       { id: 1, name: 'Aztecs', isAlive: true, isAI: true, resources: { gold: 100 }, technologies: ['iron_working'], personality: { aggression: 5, diplomacy: 5, military: 5, expansion: 5, science: 5, economy: 5 } },
       { id: 2, name: 'Babylonians', isAlive: true, isAI: true, resources: { gold: 150 }, technologies: [], personality: { aggression: 5, diplomacy: 5, military: 5, expansion: 5, science: 5, economy: 5 } },
     ],
-    units: [],
+    units: [
+      { id: 'dip0', type: 'diplomat', civilizationId: 0, col: 5, row: 5 },
+      { id: 'dip1', type: 'diplomat', civilizationId: 1, col: 5, row: 5 },
+      { id: 'dip2', type: 'diplomat', civilizationId: 2, col: 5, row: 5 },
+    ],
     cities: [],
     roundManager: { getRoundNumber: () => 1 },
     onStateChange: vi.fn(),

@@ -35,6 +35,8 @@ import { attitudeFromScore } from '@/game/engine/DiplomacyTypes';
 import { useTranslation } from '@/i18n/useTranslation';
 import { tBuildingName, tTechName, tUnitName } from '@/i18n/dataNames';
 import type { TranslationKey } from '@/i18n';
+import { playSfx } from '@/utils/Sfx';
+import { captureCueForYear } from '@/utils/EngineEventHandlers';
 
 const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const { t } = useTranslation();
@@ -479,6 +481,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   // Advanced-negotiation inputs: how much tribute to demand, which met civ to
   // embargo, and the tech exchange terms.
   const [tributeAmount, setTributeAmount] = useState<number>(50);
+  const [goldTransferAmount, setGoldTransferAmount] = useState<number>(50);
   const [embargoTarget, setEmbargoTarget] = useState<number | ''>('');
   const [techOffer, setTechOffer] = useState<string>('');
   const [techRequest, setTechRequest] = useState<string>('');
@@ -554,6 +557,8 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const handleAudienceDecision = (accept: boolean): void => {
     const notice = useGameStore.getState().audienceNotice;
     if (!notice) return;
+    // Answering a leader is a decision worth a click.
+    playSfx('uiSelect');
     if (accept && notice.mode === 'offer' && gameEngine?.diplomacyManager) {
       const result = gameEngine.diplomacyManager.acceptOffer({
         fromCivId: notice.civId,
@@ -664,6 +669,8 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       extra?: { treaty?: string; goldAmount?: number; embargoTargetId?: number; techOffered?: string; techRequested?: string },
     ) => {
       if (!dm) return;
+      // Sending a diplomat off with terms gets the radio click.
+      playSfx('uiSelect');
       let result: { accepted?: boolean; counterProposal?: typeof counterProposal; reason?: string; goldTransferred?: number } | null = null;
       switch (action) {
         case 'declare_war':
@@ -728,6 +735,32 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           }
           break;
         }
+        case 'gift_gold': {
+          const giftAmount = extra?.goldAmount ?? 50;
+          result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'gift_gold', goldAmount: giftAmount });
+          if (result.counterProposal) {
+            setCounterProposal(result.counterProposal);
+            addDiploLog(`${civilizations[targetId]?.name} counter-proposes instead of accepting the gift.`);
+          } else {
+            addDiploLog(result.accepted
+              ? `You gifted ${result.goldTransferred ?? giftAmount} gold to ${civilizations[targetId]?.name}.`
+              : `${civilizations[targetId]?.name} refused the gift: "${result.reason}"`);
+          }
+          break;
+        }
+        case 'request_gold': {
+          const requestAmount = extra?.goldAmount ?? 50;
+          result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'request_gold', goldAmount: requestAmount });
+          if (result.counterProposal) {
+            setCounterProposal(result.counterProposal);
+            addDiploLog(`${civilizations[targetId]?.name} counter-proposes instead of granting the request.`);
+          } else {
+            addDiploLog(result.accepted
+              ? `${civilizations[targetId]?.name} granted your request for ${result.goldTransferred ?? requestAmount} gold.`
+              : `${civilizations[targetId]?.name} refused your request: "${result.reason}"`);
+          }
+          break;
+        }
         case 'offer_open_borders':
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'offer_open_borders' });
           addDiploLog(result.accepted
@@ -762,6 +795,12 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           addDiploLog(result.accepted
             ? t('gm.diplo.log.jointWarAccepted' as TranslationKey, { civ: String(civilizations[targetId]?.name), target: civilizations[extra?.embargoTargetId ?? -1]?.name ?? t('gm.diplo.log.theTarget' as TranslationKey) })
             : t('gm.diplo.log.jointWarRejected' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
+          break;
+        case 'establish_embassy':
+          result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'establish_embassy' });
+          addDiploLog(result.accepted
+            ? `Embassy established with ${civilizations[targetId]?.name}. You can now observe their diplomacy.`
+            : `${civilizations[targetId]?.name} refused the embassy: "${result.reason}"`);
           break;
         case 'propose_embargo':
           result = dm.processProposal({
@@ -1282,6 +1321,38 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     </div>
                       )}
 
+                    {/* Gold transfer section — gift or request gold, styled like the tribute group */}
+                    {selectedStatus !== 'war' && (
+                      <section className="gm-section">
+                        <div className="gm-section-title">Gold Transfer</div>
+                        <div className="diplomacy-actions">
+                          <span className="diplomacy-tribute-group">
+                            <input
+                              type="number"
+                              min={0}
+                              step={10}
+                              className="diplomacy-tribute-input"
+                              value={goldTransferAmount}
+                              onChange={(e) => setGoldTransferAmount(Math.max(0, Number(e.target.value) || 0))}
+                              title="How much gold to transfer"
+                            />
+                            <button
+                              className="diplomacy-btn btn-peace"
+                              onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'gift_gold', { goldAmount: goldTransferAmount })}
+                            >
+                              🎁 Gift Gold
+                            </button>
+                            <button
+                              className="diplomacy-btn btn-tribute"
+                              onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'request_gold', { goldAmount: goldTransferAmount })}
+                            >
+                              🙏 Request Gold
+                            </button>
+                          </span>
+                        </div>
+                      </section>
+                    )}
+
                     {/* Advanced treaties toggle */}
                     {selectedStatus !== 'war' && hasEmbassy && (
                       <>
@@ -1311,6 +1382,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                             {!activeTreaties.includes('non_aggression') && (
                               <button className="diplomacy-btn btn-treaty" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'propose_non_aggression')}>
                                 {t('gm.diplo.btn.nonAggressionPact' as TranslationKey)}
+                              </button>
+                            )}
+                            {!activeTreaties.includes('embassy') && (
+                              <button className="diplomacy-btn btn-treaty" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'establish_embassy')}>
+                                🏛️ Establish Embassy
                               </button>
                             )}
 
@@ -1448,6 +1524,66 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                                 treaty_cancelled: t('gm.diplo.record.treatyCancelled' as TranslationKey, { from }),
                                 tech_exchanged: t('gm.diplo.record.techExchange' as TranslationKey, { from, to }),
                                 counter_proposal: t('gm.diplo.record.counterProposal' as TranslationKey, { from }),
+                              };
+                              return (
+                                <div key={i} className="diplomacy-log-entry">
+                                  {labels[e.type] ?? `${e.type}: ${e.details ?? ''}`}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      );
+                    })()}
+
+                    {/* AI Diplomacy Observations — when the player has embassies with
+                        both civs in a pair, they can observe AI-to-AI events between them. */}
+                    {(() => {
+                      if (selectedDiploCiv === null || !dm) return null;
+                      const hasEmbassyWithSelected = dm.hasEmbassy(playerId, selectedDiploCiv);
+                      if (!hasEmbassyWithSelected) return null;
+                      // Find all other civs where the player also has an embassy
+                      const embassyPartners = otherCivs.filter(
+                        (c: Civilization) => c.id !== selectedDiploCiv && dm.hasEmbassy(playerId, c.id),
+                      );
+                      if (embassyPartners.length === 0) return null;
+                      // Filter event log for AI-to-AI events between the selected civ and any partner
+                      const allEvents = dm.getEventLog() ?? [];
+                      const observations = allEvents.filter((e) => {
+                        const involvesSelected = e.fromCivId === selectedDiploCiv || e.toCivId === selectedDiploCiv;
+                        const involvesPartner = embassyPartners.some(
+                          (p: Civilization) => e.fromCivId === p.id || e.toCivId === p.id,
+                        );
+                        const isAItoAI = e.fromCivId !== playerId && e.toCivId !== playerId;
+                        return involvesSelected && involvesPartner && isAItoAI;
+                      }).slice(0, 8);
+                      if (observations.length === 0) return null;
+                      return (
+                        <section className="gm-section">
+                          <div className="gm-section-title">AI Diplomacy Observations</div>
+                          <div className="diplomacy-log">
+                            {observations.map((e, i: number) => {
+                              const from = civilizations[e.fromCivId]?.name ?? `Civ ${e.fromCivId}`;
+                              const to = civilizations[e.toCivId]?.name ?? `Civ ${e.toCivId}`;
+                              const labels: Record<string, string> = {
+                                war_declared: `⚔️ ${from} declared war on ${to}`,
+                                peace_made: `🕊️ Peace between ${from} and ${to}`,
+                                ceasefire_signed: `🏳️ Ceasefire between ${from} and ${to}`,
+                                alliance_formed: `🤝 Alliance between ${from} and ${to}`,
+                                alliance_broken: `⛓️‍💥 ${from} broke the alliance with ${to}`,
+                                tribute_paid: `💰 ${from} paid tribute to ${to}${e.goldAmount ? ` (${e.goldAmount}g)` : ''}`,
+                                treaty_rejected: `❌ ${to} rejected ${from}'s proposal`,
+                                unit_bribed: `🎭 ${from} bribed a unit`,
+                                intelligence_gathered: `🔍 ${from} spied on ${to}`,
+                                open_borders_signed: `🚪 Open borders: ${from} ↔ ${to}`,
+                                trade_agreement_signed: `📦 Trade deal: ${from} ↔ ${to}`,
+                                mutual_defense_signed: `🛡️ Defense pact: ${from} ↔ ${to}`,
+                                non_aggression_signed: `🤚 Non-aggression: ${from} ↔ ${to}`,
+                                embargo_declared: `🚫 Embargo declared by ${from} & ${to}`,
+                                embassy_established: `🏛️ Embassy established: ${from} ↔ ${to}`,
+                                treaty_cancelled: `📜 Treaty cancelled by ${from}`,
+                                tech_exchanged: `🔬 Tech exchange: ${from} ↔ ${to}`,
+                                counter_proposal: `📜 Counter-proposal from ${from}`,
                               };
                               return (
                                 <div key={i} className="diplomacy-log-entry">
@@ -2443,6 +2579,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         fromCivName={civName(cityEvent?.fromCivId)}
         fromCivColor={cityEvent?.fromCivId !== undefined ? civColor(cityEvent.fromCivId) : undefined}
         fromCivIcon={civIcon(cityEvent?.fromCivId)}
+        // The conquest march plays when the dialog OPENS, not when the city
+        // fell — the fanfare belongs to the news, and the news arrives here.
+        captureCue={cityEvent?.kind === 'captured'
+          ? captureCueForYear(gameEngine?.currentYear ?? 0)
+          : null}
         onContinue={handleCityEventContinue}
         onGoToCity={handleCityEventGoToCity}
       />

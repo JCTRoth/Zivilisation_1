@@ -121,6 +121,7 @@ const GOVERNING_WEIGHT: Record<ImpactEvent, keyof DiplomaticWeights> = {
   common_enemy_defeated: 'trustSensitivity',
   refused_peace: 'hostility',
   ally_abandoned: 'loyalty',
+  embassy_established: 'trustSensitivity',
 };
 
 /**

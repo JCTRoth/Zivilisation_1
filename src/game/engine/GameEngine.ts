@@ -57,6 +57,7 @@ import type {
   DiplomacyProposal,
 } from './DiplomacyTypes';
 import { diplomatActionsFor } from './diplomacy/DiplomatAbilities';
+import { seededNoise } from './diplomacy/ProposalScoring';
 import { CIV_PRODUCTION_PROFILES, canBuildUnit, getCivProductionProfile, getCivPersonality } from './AI/AITypes';
 import { EconomicManager } from './EconomicManager';
 import { GovernmentManager } from './GovernmentManager';
@@ -117,6 +118,21 @@ export const TRADE_ROUTE_POP_DIVISOR = 2;
  * shell, and not a front-wide wipe either.
  */
 export const NUCLEAR_BLAST_RADIUS = 2;
+
+/**
+ * SDI interception — the Civilopedia numbers, as engine constants.
+ *
+ * A battery kills an engaged warhead with `SDI_INTERCEPT_CHANCE` (the 70%
+ * hit rate), and flies `SDI_ENGAGEMENTS_PER_ROUND` engagements per round:
+ * a four-nuke raid spends the whole budget, so a saturation attack of ten or
+ * more leaks through somewhere. Coverage is the `SDI_COVERAGE_RADIUS`-tile
+ * umbrella around every city carrying the `missileDefense` effect — each
+ * city needs its own SDI Defense, and overlapping umbrellas stack because
+ * every battery rolls (and spends) separately.
+ */
+const SDI_INTERCEPT_CHANCE = 0.7;
+const SDI_ENGAGEMENTS_PER_ROUND = 4;
+const SDI_COVERAGE_RADIUS = 16;
 
 
 /**
@@ -287,6 +303,12 @@ export default class GameEngine {
    * capital, save/load, the city screen) then addressed the wrong city.
    */
   private cityIdCounters: Map<number, number> = new Map();
+  /**
+   * SDI engagements flown this round, keyed `${cityId}:${round}`.
+   * Transient pacing state, not game state: a save in mid-raid does not need
+   * to remember who shot at what, so it is deliberately outside `getSaveJSON`.
+   */
+  private sdiEngagements = new Map<string, number>();
   diplomacyManager: DiplomacyManager; // Civ I–style diplomacy system
 
   // Human-readable recap of the most recent auto-end (what was skipped), used
@@ -4904,9 +4926,13 @@ const occupiedLandmasses = new Set(
    * per-unit loop, `moveUnit`) can tell a strike from a rejected order.
    */
   /**
-   * Whether an SDI Defense covers a tile: any city with SDI within 16 tiles
-   * intercepts a warhead aimed there. Public for the AI, which must not waste
-   * a 160-shield warhead on a shielded target.
+   * Whether an SDI Defense covers a tile: any city with SDI within
+   * `SDI_COVERAGE_RADIUS` tiles of it. Public for the AI, which must not
+   * waste a 160-shield warhead on a shielded target.
+   *
+   * Conservative by design: interception itself is probabilistic (70% per
+   * engagement) and budgeted, but the AI treats coverage as a hard no — a
+   * warhead aimed at a shield is a warhead probably lost.
    */
   isCoveredBySDI(targetCol: number, targetRow: number): boolean {
     const grid = this.squareGrid;
@@ -4915,8 +4941,82 @@ const occupiedLandmasses = new Set(
     // its building id: any future interceptor counts the same way.
     return this.cities.some(
       (c) => cityBuildingEffects(c).missileDefense
-        && grid.chebyshevDistance(c.col, c.row, targetCol, targetRow) <= 16,
+        && grid.chebyshevDistance(c.col, c.row, targetCol, targetRow) <= SDI_COVERAGE_RADIUS,
     );
+  }
+
+  /**
+   * Every foreign SDI battery whose umbrella the missile's flight crosses —
+   * over the target or anywhere along its path — nearest the launch point
+   * first. A warhead aimed past a shielded city dies on the way in, not just
+   * one aimed at it: each city needs its own SDI because umbrellas, not the
+   * target, do the killing.
+   */
+  private sdiBatteriesAlongPath(
+    firerId: number,
+    launchCol: number,
+    launchRow: number,
+    targetCol: number,
+    targetRow: number,
+  ): City[] {
+    const grid = this.squareGrid;
+    if (!grid) return [];
+    const dx = targetCol - launchCol;
+    const dy = targetRow - launchRow;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    // Sample the flight every half tile so the test matches the umbrella
+    // exactly (chebyshev, like `isCoveredBySDI`) instead of approximating it.
+    const steps = Math.ceil(length * 2);
+    const batteries: Array<{ city: City; along: number }> = [];
+    for (const city of this.cities ?? []) {
+      if (city.civilizationId === firerId) continue;
+      if (!cityBuildingEffects(city).missileDefense) continue;
+      let closest = Number.POSITIVE_INFINITY;
+      let closestT = 0;
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const col = launchCol + dx * t;
+        const row = launchRow + dy * t;
+        const dist = grid.chebyshevDistance(city.col, city.row, col, row);
+        if (dist < closest) {
+          closest = dist;
+          closestT = t;
+        }
+      }
+      if (closest <= SDI_COVERAGE_RADIUS) batteries.push({ city, along: closestT });
+    }
+    batteries.sort((a, b) => a.along - b.along);
+    return batteries.map((b) => b.city);
+  }
+
+  /**
+   * Try to kill an incoming warhead before it lands.
+   *
+   * Each battery along the flight gets one engagement if it has budget left
+   * this round (`SDI_ENGAGEMENTS_PER_ROUND` per battery), at
+   * `SDI_INTERCEPT_CHANCE` each. Seeded per (warhead, battery, round), so the
+   * same raid resolves identically. Returns the battery that made the kill,
+   * or null when the missile gets through — whether by dodging every laser
+   * or by arriving after the budget ran dry (saturation).
+   */
+  private trySdiIntercept(
+    unit: Unit,
+    launchCol: number,
+    launchRow: number,
+    targetCol: number,
+    targetRow: number,
+  ): City | null {
+    const round = this.roundManager?.getRoundNumber?.() ?? 0;
+    for (const city of this.sdiBatteriesAlongPath(
+      unit.civilizationId, launchCol, launchRow, targetCol, targetRow,
+    )) {
+      const key = `${city.id}:${round}`;
+      if ((this.sdiEngagements.get(key) ?? 0) >= SDI_ENGAGEMENTS_PER_ROUND) continue;
+      this.sdiEngagements.set(key, (this.sdiEngagements.get(key) ?? 0) + 1);
+      const roll = seededNoise([unit.id, city.id, round]) * 50 + 50;
+      if (roll < SDI_INTERCEPT_CHANCE * 100) return city;
+    }
+    return null;
   }
 
   detonateNuclear(unitId: string, targetCol: number, targetRow: number): boolean {
@@ -4960,14 +5060,18 @@ const occupiedLandmasses = new Set(
     );
     if (!targetCity && !targetUnit) return false;
 
-    // SDI Defense: a city with SDI Defense within 16 tiles of the strike
-    // (including the target city itself) intercepts the warhead harmlessly.
-    if (this.isCoveredBySDI(targetCol, targetRow)) return false;
-
     const targetCivId = (targetCity ?? targetUnit)!.civilizationId;
 
+    // SDI hard refusal: a warhead aimed at anything covered by an umbrella
+    // is spent on contact (see `trySdiIntercept`), so the engine refuses to
+    // launch at all — no declaration, no consumption — and leaves the warhead
+    // in inventory. The AI already vetoes these via `scoreNuclearTarget(...,
+    // sdiCovered)`; this is the engine's own last line on the same rule.
+    if (this.isCoveredBySDI(targetCol, targetRow)) return false;
+
     // Firing is an act of war, exactly like walking into the enemy — so the
-    // declaration (and its log/toast) happens even on a surprise first strike.
+    // declaration (and its log/toast) happens on the launch, even on a
+    // surprise first strike, and even when the missile never arrives.
     if (this.diplomacyManager && unit.civilizationId >= 0 && targetCivId >= 0) {
       const status = this.diplomacyManager.getStatus(unit.civilizationId, targetCivId);
       if (status !== 'war') {
@@ -4977,6 +5081,39 @@ const occupiedLandmasses = new Set(
           targetId: targetCivId,
         });
       }
+    }
+
+    // SDI Defense: foreign batteries whose umbrella the flight crosses — over
+    // the target or anywhere along its path — engage the warhead at 70% each
+    // until their per-round budget runs dry. A killed warhead is SPENT: the
+    // missile dies mid-air, so probing a shield costs the warhead.
+    const interceptor = this.trySdiIntercept(unit, launchCol, launchRow, targetCol, targetRow);
+    if (interceptor) {
+      this.units = this.units.filter((u) => u.id !== unit.id);
+      this.unitTurnQueue?.removeUnit(unit.id);
+      this.onStateChange?.('UNIT_REMOVED', { unit });
+      this.log(
+        'nuclear',
+        `🛡️ SDI intercept over ${interceptor.name}: ${this.civilizations?.[unit.civilizationId]?.name ?? unit.civilizationId}'s warhead destroyed mid-air`,
+        {
+          civilizationId: unit.civilizationId,
+          action: 'nuclear_intercepted',
+          col: targetCol,
+          row: targetRow,
+          interceptorCivId: interceptor.civilizationId,
+          cityId: interceptor.id,
+        },
+      );
+      this.onStateChange?.('NUCLEAR_INTERCEPTED', {
+        fromCivId: unit.civilizationId,
+        interceptorCivId: interceptor.civilizationId,
+        cityId: interceptor.id,
+        cityName: interceptor.name,
+        col: targetCol,
+        row: targetRow,
+      });
+      this.checkAndEndTurnIfNoMoves('nuclear-intercepted');
+      return true;
     }
 
     // 1. Everything foreign inside the blast dies. Embarked troops share their
