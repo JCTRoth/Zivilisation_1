@@ -154,6 +154,7 @@ type GameSetupModalProps = {
     age: number;
     gameMode?: 'single' | 'hotseat';
     humanPlayerIds?: number[];
+    playerCivilizations?: number[];
   }) => void;
 };
 
@@ -563,6 +564,10 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   const [mapHeight, setMapHeight] = useState(50);
   const [gameMode, setGameMode] = useState<'single' | 'hotseat'>('single');
   const [hotseatPlayerCount, setHotseatPlayerCount] = useState(2);
+  // Per-seat nation pick for hotseat. Seat 0 defaults to the player's chosen
+  // civilization; the others default to distinct nations so no two players
+  // start as the same people.
+  const [hotseatCivs, setHotseatCivs] = useState<number[]>([selectedCiv, -1, -1, -1]);
 
   // Look-around: the war room is a CSS 3D box; the pointer shifts its
   // perspective origin a few degrees so the table and walls feel solid.
@@ -609,6 +614,30 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
     setMapWidth(next[0]);
     setMapHeight(next[1]);
   }, [mapType]);
+
+  // Keep the hotseat per-seat nations valid: seat 0 mirrors the single-player
+  // pick, and every active seat gets a distinct nation (auto-filling any seat
+  // the player has not chosen yet).
+  useEffect(() => {
+    setHotseatCivs((prev) => {
+      const next = [...prev];
+      // Seat 0 always tracks the civilization chosen in step 1.
+      next[0] = selectedCiv;
+      const used = new Set<number>([selectedCiv]);
+      for (let seat = 1; seat < hotseatPlayerCount; seat++) {
+        const current = next[seat];
+        if (Number.isInteger(current) && current >= 0 && current < CIVILIZATIONS.length && !used.has(current)) {
+          used.add(current);
+          continue;
+        }
+        // Auto-pick the first nation not already taken.
+        const fallback = CIVILIZATIONS.findIndex((_, idx) => !used.has(idx));
+        next[seat] = fallback;
+        used.add(fallback);
+      }
+      return next;
+    });
+  }, [selectedCiv, hotseatPlayerCount]);
 
   const totalSteps = 2;
   const isFinalStep = currentStep === totalSteps;
@@ -688,9 +717,15 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   };
 
   const handleStart = () => {
-    const humanPlayerIds = gameMode === 'hotseat'
+    const isHotseat = gameMode === 'hotseat';
+    const humanPlayerIds = isHotseat
       ? Array.from({ length: hotseatPlayerCount }, (_, i) => i)
       : [0];
+    const playerCivilizations = isHotseat
+      ? Array.from({ length: hotseatPlayerCount }, (_, i) =>
+          Number.isInteger(hotseatCivs[i]) && hotseatCivs[i] >= 0 ? hotseatCivs[i] : selectedCiv,
+        )
+      : undefined;
     onStart({
       playerCivilization: selectedCiv,
       difficulty,
@@ -705,6 +740,7 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
       age,
       gameMode,
       humanPlayerIds,
+      playerCivilizations,
     });
   };
 
@@ -928,6 +964,55 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                       </div>
                     )}
                   </div>
+
+                  {gameMode === 'hotseat' && (
+                    <div className="gm-section setup-hotseat-nations">
+                      <div className="gm-section-title">{t('setup.hotseat.nations')}</div>
+                      <p className="setup-setting__hint">{t('setup.hotseat.nationsHint')}</p>
+                      <div className="setup-hotseat-nations__list">
+                        {Array.from({ length: Math.min(hotseatPlayerCount, numCivilizations) }, (_, seat) => {
+                          const civIndex = hotseatCivs[seat] ?? -1;
+                          const civ = CIVILIZATIONS[civIndex] ?? CIVILIZATIONS[0];
+                          return (
+                            <div className="setup-hotseat-nation" key={seat}>
+                              <span className="setup-hotseat-nation__label">
+                                {t('setup.hotseat.playerN', { n: seat + 1 })}
+                              </span>
+                              <Form.Select
+                                value={String(civIndex)}
+                                onChange={(e) => {
+                                  const picked = Number(e.target.value);
+                                  // Seat 0 IS the step-1 banner pick: keep them in sync
+                                  // so the dossier and the summary follow the change.
+                                  if (seat === 0) setSelectedCiv(picked);
+                                  setHotseatCivs((prev) => {
+                                    const next = [...prev];
+                                    next[seat] = picked;
+                                    return next;
+                                  });
+                                }}
+                                className="setup-setting__control setup-hotseat-nation__select"
+                                aria-label={t('setup.hotseat.playerN', { n: seat + 1 })}
+                                style={{ color: civ.color }}
+                              >
+                                {sortedCivilizations.map((c) => {
+                                  const originalIndex = CIVILIZATIONS.findIndex((orig) => orig.name === c.name);
+                                  const takenByOther = hotseatCivs.some(
+                                    (v, i) => i !== seat && i < hotseatPlayerCount && v === originalIndex,
+                                  );
+                                  return (
+                                    <option key={c.name} value={String(originalIndex)} disabled={takenByOther}>
+                                      {civIcons[c.name] ?? ''} {c.name} — {c.leader}
+                                    </option>
+                                  );
+                                })}
+                              </Form.Select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="gm-section">

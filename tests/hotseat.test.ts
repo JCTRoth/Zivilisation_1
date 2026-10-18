@@ -106,4 +106,47 @@ describe('Hotseat multiplayer', () => {
     expect(hs3.civilizations[3].isAI).toBe(true);
     (hs3 as unknown as { units: unknown[] }).units = [];
   });
+
+  it('assigns each hotseat seat the nation it picked (playerCivilizations)', async () => {
+    const hs = new GameEngine(null);
+    (hs as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
+    (hs as unknown as { isPaused: boolean }).isPaused = true;
+    // Seat 0 → index 0 (Americans), seat 1 → index 2 (Babylonians)
+    await hs.initialize({
+      numberOfCivilizations: 2,
+      mapType: 'NORMAL_SKIRMISH',
+      devMode: false,
+      startingGold: 100,
+      gameMode: 'hotseat',
+      humanPlayerIds: [0, 1],
+      playerCivilizations: [0, 2],
+    });
+
+    expect(hs.civilizations[0].name).toBe('Americans');
+    expect(hs.civilizations[1].name).toBe('Babylonians');
+    (hs as unknown as { units: unknown[] }).units = [];
+  });
+
+  it('falls back to random fill when playerCivilizations is shorter than the civ count', async () => {
+    const hs = new GameEngine(null);
+    (hs as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
+    (hs as unknown as { isPaused: boolean }).isPaused = true;
+    await hs.initialize({
+      numberOfCivilizations: 3,
+      mapType: 'NORMAL_SKIRMISH',
+      devMode: false,
+      startingGold: 100,
+      gameMode: 'hotseat',
+      humanPlayerIds: [0, 1],
+      playerCivilizations: [1, 3],
+    });
+
+    // Seats 0 and 1 get the picked nations; seat 2 is filled randomly and must
+    // not duplicate either pick.
+    expect(hs.civilizations[0].name).toBe('Aztecs');
+    expect(hs.civilizations[1].name).toBe('Chinese');
+    const names = hs.civilizations.map((c) => c.name);
+    expect(new Set(names).size).toBe(3);
+    (hs as unknown as { units: unknown[] }).units = [];
+  });
 });

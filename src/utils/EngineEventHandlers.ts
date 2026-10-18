@@ -13,10 +13,13 @@ import { debugLog } from './DevLog';
 import { playSfx, type SfxCue } from './Sfx';
 import { unitAttackCue, cityAssaultCue } from './SoundEngine';
 import { t } from '../i18n';
-import { tTechName } from '../i18n/dataNames';
+import type { TranslationKey } from '../i18n';
+import { tBuildingName, tTechName } from '../i18n/dataNames';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { UNIT_PROPERTIES, UNIT_TYPES } from '@/data/UnitConstants';
-import { BUILDING_TYPES } from '@/data/BuildingConstants';
+import { BUILDING_PROPERTIES, BUILDING_TYPES } from '@/data/BuildingConstants';
+import { TILE_SIZE } from '@/data/TerrainData';
+import { getGameViewport } from '@/utils/CameraUtils';
 
 /**
  * The year a captured city starts playing the *modern* entry march instead of
@@ -179,6 +182,9 @@ export class EngineEventRouter {
         break;
       case 'CITY_DISORDER':
         this.onCityDisorder(eventData);
+        break;
+      case 'CITY_DISASTER':
+        this.onCityDisaster(eventData);
         break;
       case 'RESEARCH_AUTO_SELECTED':
         this.onResearchAutoSelected(eventData);
@@ -839,6 +845,28 @@ export class EngineEventRouter {
     }
     if (!this.isAIVsAI && humanInvolved && (defenderDestroyed || attackerDestroyed)) {
       const fightCity = defender ? this.gameEngine.getCityAt(defender.col, defender.row) : undefined;
+      const battleCol = defender?.col ?? attacker?.col ?? 0;
+      const battleRow = defender?.row ?? attacker?.row ?? 0;
+      // The full battle report is only useful when the player did NOT witness
+      // the fight: an on-screen, un-fogged tile already showed the combat
+      // animation, so popping a modal there is noise. In that case a short
+      // toast is enough and the modal is skipped entirely.
+      const storage = this.gameEngine.getPlayerStorage(HUMAN_PLAYER_ID);
+      const fogIndex = battleRow * (this.gameEngine.map?.width ?? 0) + battleCol;
+      const fogged = !storage || storage.visibility[fogIndex] !== true;
+      const camera = useGameStore.getState().camera;
+      const viewport = getGameViewport();
+      const screenX = ((battleCol + 0.5) * TILE_SIZE - camera.x) * camera.zoom;
+      const screenY = ((battleRow + 0.5) * TILE_SIZE - camera.y) * camera.zoom;
+      const onScreen = screenX >= 0 && screenX <= viewport.width && screenY >= 0 && screenY <= viewport.height;
+      const witnessed = onScreen && !fogged;
+      if (witnessed) {
+        const attackerLabel = attackerName || attacker?.type || 'unit';
+        const defenderLabel = defenderName || defender?.type || 'unit';
+        const citySuffix = fightCity ? ` (${fightCity.name})` : '';
+        const outcome = defenderDestroyed || attackerDestroyed ? 'destroyed' : 'damaged';
+        notify('warning', `${attackerLabel} vs ${defenderLabel}${citySuffix} — ${outcome}`, HUMAN_PLAYER_ID);
+      } else {
       this.actions.queueCombatReport({
         kind: humanAttacker ? (defenderDestroyed ? 'victory' : 'defeat') : (attackerDestroyed ? 'victory' : 'defeat'),
         attackerName,
@@ -857,6 +885,7 @@ export class EngineEventRouter {
         row: defender?.row ?? attacker?.row ?? 0,
         cityName: fightCity?.name,
       });
+      }
     }
 
     // Record a combat animation: a cloud appears at the defender's tile, the
@@ -1720,6 +1749,42 @@ export class EngineEventRouter {
       newPopulation: city.population,
       enteringDisorder,
     });
+  }
+
+  /**
+   * A Civ1 disaster struck one of the player's cities — famine, flood, fire,
+   * plague, pirates, a volcano or an earthquake. Rare by design (see
+   * DisasterManager), but announced when they land: a city that lost a third
+   * of its people and its aqueduct should never be discovered only by opening
+   * the city screen and wondering what happened.
+   *
+   * The toast names the city and what was lost, the `cityDisaster` cue plays
+   * for the player's own cities only, and the stores are refreshed before the
+   * turn ends so the city screen shows the new reality immediately.
+   */
+  private onCityDisaster(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const city = eventData?.city as City | undefined;
+    if (!city) return;
+
+    const kind = String(eventData?.kind ?? '');
+    if (!kind) return;
+    const lost = Math.max(0, Number(eventData?.lostPopulation ?? 0));
+    const gold = Math.max(0, Number(eventData?.goldStolen ?? 0));
+    const buildingId = typeof eventData?.destroyedBuilding === 'string' ? eventData.destroyedBuilding : '';
+    const building = buildingId
+      ? tBuildingName(buildingId, BUILDING_PROPERTIES[buildingId]?.name ?? buildingId)
+      : '';
+
+    // The volcano has two tellings: with a building burnt and without.
+    const key = (kind === 'volcano' && building
+      ? 'event.disaster.volcanoBuilding'
+      : `event.disaster.${kind}`) as TranslationKey;
+    const message = t(key, { city: city.name, lost, gold, building });
+
+    notify('warning', message, city.civilizationId);
+    this.playNewsCue('cityDisaster', city.civilizationId);
+    this.syncState();
   }
 
   private onTurnProcessed() {

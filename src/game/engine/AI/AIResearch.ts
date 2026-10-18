@@ -71,6 +71,14 @@ interface GameStateSnapshot {
    */
   nuclearRelevance?: number;
   /**
+   * 0 = nothing to strike or too early; up to 4 when hostile cities are known
+   * late enough that the combustion→flight chain can pay. Mirrors
+   * `AIManager.buildGameStateSnapshot`'s air interest — the naval branch got a
+   * relevance signal first and the naval audit showed the ONE signal decides
+   * whether the branch is ever opened.
+   */
+  airRelevance?: number;
+  /**
    * Real turns to finish one technology, as the engine would charge them.
    *
    * Supplied by AIManager from `ResearchManager.estimatedTurns`, so the scorer
@@ -200,6 +208,35 @@ export class AIResearch {
    * ladder carries the most weight because that is where the fleet stops being
    * one boat and becomes a fleet.
    */
+  /**
+   * How much a tech is worth for the AIR arm.
+   *
+   * The chain flight needs is long (alphabet→writing→...→electricity→the_wheel
+   * →mathematics→engineering→combustion→flight, ~1135 beakers): the middle
+   * rungs already compete under other weights, so the LADDER weights the
+   * defence-expensive rungs. `combustion` is where the air and naval hulls
+   * cross (destroyer/cruiser/submarine AND the flight prerequisite), so its
+   * weight stacks with the naval ladder on purpose. `flight` carries the most
+   * — it is the rung that makes ANY of this usable, and the ladder exists
+   * because the audit found no civ ever reached it otherwise.
+   */
+  // The WHOLE chain, not just the tip: flight needs combustion, which needs
+  // electricity + engineering; engineering needs mathematics; mathematics needs
+  // the_wheel. Pushing only the tip meant the civ researched the rungs in
+  // between only when some other priority asked for them, so Flight arrived
+  // (if at all) dozens of rounds after the ladder intended. Pushing the chain
+  // root is what makes the tech arrive at all — same shape as the caravan
+  // relevance push (trade → currency → bronze_working).
+  private static readonly AIR_LADDER: Readonly<Record<string, number>> = {
+    the_wheel: 3,
+    mathematics: 4,
+    engineering: 6,
+    science_theory: 5,
+    electricity: 6,
+    combustion: 10,
+    flight: 16,
+  };
+
   private static readonly NAVY_HULL_LADDER: Readonly<Record<string, number>> = {
     map_making: 6,
     navigation: 14,
@@ -413,6 +450,19 @@ export class AIResearch {
       if (ladder) {
         score += ladder * (1 + naval * 0.5);
         reasons.push('naval-hull-ladder');
+      }
+    }
+
+    // The AIR ladder, gated the same way: interest on the snapshot, weight per
+    // rung, stacking with the naval ladder where both branches need the tech
+    // (combustion). Without this the air branch never opens — see the ladder
+    // comment for the audit numbers.
+    const air = gameState.airRelevance ?? 0;
+    if (air > 0) {
+      const ladder = AIResearch.AIR_LADDER[techId];
+      if (ladder) {
+        score += ladder * (1 + air * 0.25);
+        reasons.push('air-ladder');
       }
     }
 

@@ -83,6 +83,7 @@ if (CLI.has('--help') || CLI.has('-h')) {
 const TILES_DIR = resolve(process.env.TILES_DIR ?? join(SCRIPT_DIR, 'tiles'));
 const COPY_DIR = resolve(process.env.COPY_DIR ?? join(ROOT, 'public', 'assets', 'tiles'));
 const FEATURES_DIR = resolve(process.env.FEATURES_DIR ?? join(ROOT, 'src', 'assets', 'resources'));
+const BASE_TILES_DIR = process.env.BASE_TILES_DIR ? resolve(process.env.BASE_TILES_DIR) : null;
 const GLYPH_FONT = resolve(process.env.GLYPH_FONT ?? join(ROOT, 'src', 'assets', 'NotoEmoji-Light.ttf'));
 const TILE_PX = Number(process.env.TILE_PX ?? 512);
 const FEATURE_BOX = Number(process.env.FEATURE_BOX ?? 0.85);
@@ -134,7 +135,7 @@ function readAppData() {
 /** Read the app's terrain → base texture mapping so tiles match in-game look. */
 function readTerrainTextures() {
   const source = readFileSync(join(ROOT, 'src', 'game', 'rendering', 'TerrainTextureManager.ts'), 'utf8');
-  const block = source.match(/export const TERRAIN_TEXTURE_FILES[^=]*=\s*{([\s\S]*?)};/);
+  const block = source.match(/(?:export\s+)?const TERRAIN_TEXTURE_FILES[^=]*=\s*{([\s\S]*?)};/);
   if (!block) throw new Error('TERRAIN_TEXTURE_FILES not found in TerrainTextureManager.ts');
   const textures = {};
   for (const [, key, url] of block[1].matchAll(/(\w+):\s*'([^']+)'/g)) {
@@ -154,8 +155,13 @@ function resolveBaseTile(terrain, textures) {
   const stem = primary.replace(/\.png$/i, '');
   for (let n = 1; n <= 4; n++) candidates.push(`${stem}_${n}.png`);
   for (const candidate of candidates) {
-    const path = join(ROOT, 'public', candidate.replace(/^\//, ''));
-    if (existsSync(path)) return path;
+    const name = candidate.split('/').pop();
+    const paths = [];
+    if (BASE_TILES_DIR) paths.push(join(BASE_TILES_DIR, name));
+    paths.push(join(ROOT, 'public', candidate.replace(/^\//, '')));
+    for (const candidatePath of paths) {
+      if (existsSync(candidatePath)) return candidatePath;
+    }
   }
   return null;
 }

@@ -17,6 +17,7 @@
 
 import { useGameStore } from '../stores/GameStore';
 import { configureSoundEngine, requestSound } from './SoundEngine';
+import { duckMusic, unlockMusic } from './Music';
 
 export type SfxCue =
   /** A technology was stolen — short rising fanfare. */
@@ -55,6 +56,15 @@ export type SfxCue =
   | 'cityStarved'
   /** One of the player's cities tips into unrest. */
   | 'cityDisorder'
+  /**
+   * A Civ1 disaster — flood, fire, plague, pirates, volcano or earthquake —
+   * struck one of the player's cities.
+   *
+   * One cue for all seven: what the player needs to hear is "something
+   * happened to a city of yours", and the toast names the disaster. Seven
+   * variants would each fire so rarely that none would stay recognisable.
+   */
+  | 'cityDisaster'
   /** A unit rolls out of one of the player's cities, bought or built. */
   | 'unitProduced'
   /** One of the player's caravans opens a trade route. */
@@ -472,6 +482,18 @@ const CUES: Record<SfxCue, Note[]> = {
     { freq: 311, at: 0.24, dur: 0.12, type: 'sawtooth', gain: 0.5 },
     { freq: 110, at: 0.0, dur: 0.3, type: 'triangle', gain: 0.4 },
   ],
+
+  cityDisaster: [
+    // The ground itself: a low, slow shudder in the sub-bass that neither
+    // rises (fanfares) nor falls away (cityStarved) — it just sits there.
+    // The two low tones beat a semitone apart for the dread; the noise bed
+    // underneath is the rumble, banded as low as the nuclear tail but far
+    // shorter and quieter, so the two are never confused.
+    { freq: 98, at: 0.0, dur: 0.34, type: 'triangle', gain: 0.7 },
+    { freq: 104, at: 0.05, dur: 0.34, type: 'triangle', gain: 0.5 },
+    { freq: 49, at: 0.0, dur: 0.5, type: 'triangle', gain: 0.45 },
+    { freq: 0, at: 0.0, dur: 0.45, gain: 0.35, noise: 0.5, cutoff: 320 },
+  ],
   unitProduced: [
     // A unit rolling out of the workshop: three even stamps rather than an
     // arch, so it is neither `barracksBuilt` nor `productionComplete` and does
@@ -533,13 +555,16 @@ function getContext(): AudioContext | null {
 
 /**
  * Warm the audio context up after a user gesture, so the first real cue is not
- * swallowed by the browser's autoplay policy. Safe to call often.
+ * swallowed by the browser's autoplay policy. Safe to call often. The music
+ * layer gets the same treatment: its playback is blocked until the first
+ * gesture exactly like the effect context.
  */
 export function unlockAudio(): void {
   const ctx = getContext();
   if (ctx && ctx.state === 'suspended') {
     ctx.resume().catch(() => { /* nothing to do — the next cue retries */ });
   }
+  unlockMusic();
 }
 
 /**
@@ -555,6 +580,26 @@ export function disposeAudio(): void {
 }
 
 /**
+ * The cues the music bus steps back for: the once-a-game news beats, the
+ * capture marches and the nuclear strike — the sounds a soundtrack must never
+ * talk over. Ordinary combat is deliberately absent: a war would duck the
+ * music every few seconds, which is a pumping bus, not a mix.
+ */
+const MUSIC_DUCKING_CUES: ReadonlySet<SfxCue> = new Set<SfxCue>([
+  'stolenTechnology',
+  'spyCatched',
+  'sabotageSuccess',
+  'warDeclared',
+  'peaceMade',
+  'wonderCompleted',
+  'cityLost',
+  'civEliminated',
+  'cityCapturedClassic',
+  'cityCapturedModern',
+  'nuclearStrike',
+]);
+
+/**
  * Play one of the game's cues. No-op when sound is off in settings, or when
  * the browser has no audio at all.
  *
@@ -563,10 +608,15 @@ export function disposeAudio(): void {
  * anything below fires. A cue with an entry in `CUE_FILES` plays that file
  * instead of the synthesized notes — that is the whole .ogg replacement
  * mechanism: add a row to the table, reload, and the recording takes over.
+ *
+ * An admitted cue from the ducking set also steps the music bus back for a
+ * moment. Only cues that actually played duck: a queued one would lower the
+ * music ahead of itself, and a dropped one would duck for nothing.
  */
 export function playSfx(cue: SfxCue): void {
   if (!useGameStore.getState().settings.enableSoundEffects) return;
-  requestSound(cue);
+  const status = requestSound(cue);
+  if (status === 'played' && MUSIC_DUCKING_CUES.has(cue)) duckMusic();
 }
 
 /**
@@ -695,6 +745,8 @@ const UNIT_CUE_GAIN: Partial<Record<SfxCue, number>> = {
   unitProduced: 0.65,
   cityDisorder: 0.6,
   cityStarved: 0.6,
+  // Under cityLost: a disaster hurts a city, but the city is still yours.
+  cityDisaster: 0.65,
   tradeRouteEstablished: 0.6,
   // A promotion is a reward on one unit, mid-battle. `unit` family, and the
   // quietest of the news cues, so a lucky streak cannot drown out a war.

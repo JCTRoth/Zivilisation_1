@@ -29,6 +29,7 @@ import { enrichMapForExport } from "@/utils/MapExportUtils";
 import { sendCommand } from "@/utils/session";
 import { preloadAllUnitIcons } from "@/utils/UnitIconLoader";
 import { centerCameraOnTile, getGameViewport, clampZoom } from "@/utils/CameraUtils";
+import { preloadMusic, setMusicState } from "@/utils/Music";
 import { useTranslation } from "@/i18n/useTranslation";
 import { gameLogger } from "@/utils/GameLogger";
 import { gameProgression } from "@/utils/GameProgression";
@@ -137,6 +138,29 @@ function App() {
       console.warn("Failed to preload some unit icons:", err);
     });
   }, []);
+
+  // The soundtrack follows the game's scene: the setup screen is the menu, a
+  // running engine is gameplay (the AI-vs-AI spectator included), a finished
+  // game is the aftermath. Music reads the same state the rest of the UI
+  // does — nothing in the engine or a gameplay script ever touches it.
+  useEffect(() => {
+    if (gameResult) {
+      setMusicState("gameOver");
+    } else if (gameEngine) {
+      setMusicState("gameplay");
+    } else {
+      setMusicState("menu");
+    }
+  }, [gameEngine, gameResult]);
+
+  // The setup screen doubles as the loading screen: warm the gameplay track
+  // while the player is still picking a map, so Start begins in music instead
+  // of in a download. Turning the music switch back on in the menu warms it
+  // too — the effect re-runs when the switch changes.
+  const musicEnabled = settings.enableBackgroundMusic !== false;
+  useEffect(() => {
+    if (!gameEngine && !gameResult && musicEnabled) preloadMusic("gameplay");
+  }, [gameEngine, gameResult, musicEnabled]);
 
   // Connect game engine to React state management
   useGameEngine(gameEngine);

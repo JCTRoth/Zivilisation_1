@@ -1,10 +1,11 @@
 = Sound Effects — Cue Catalogue & Recording Guide
 
 > *Modules:* `src/utils/Sfx.ts` (transport), `src/utils/SoundEngine.ts` (policy)
+> *Music:* `src/utils/Music.ts` — the state-driven BGM layer, see <<music,Background Music>>
 > *Call sites:* `src/utils/EngineEventHandlers.ts`, `src/components/ui/gamemodals/EspionageReportModal.tsx`, `src/components/game/GameCanvas.tsx`, `src/components/game/UnitActionsModal.tsx`, `src/components/ui/GameModals.tsx`
-> *Setting:* `settings.enableSoundEffects` (Settings → *Enable sound effects*)
-> *Assets:* `public/assets/sfx/` — seven mp3 recordings, two further project originals (`city-founded.opus`, `mech-inf-move.opus`) and sixteen Warzone 2100 ogg recordings, see <<adding-a-recording,Adding a Recording>> and <<warzone-attribution,Warzone 2100 Attribution>>
-> *Tests:* `tests/sfx.test.ts` (transport), `tests/soundEngine.test.ts` (policy), `tests/sfxWiring.test.ts` (which event plays what)
+> *Setting:* `settings.enableSoundEffects` and `settings.enableBackgroundMusic` (Settings → *Enable sound effects* / *Background music*)
+> *Assets:* `public/assets/sfx/` — seven mp3 recordings, two further project originals (`city-founded.opus`, `mech-inf-move.opus`) and sixteen Warzone 2100 ogg recordings, see <<adding-a-recording,Adding a Recording>> and <<warzone-attribution,Warzone 2100 Attribution>>; music streams from `public/assets/music/`
+> *Tests:* `tests/sfx.test.ts` (transport), `tests/soundEngine.test.ts` (policy), `tests/sfxWiring.test.ts` (which event plays what), `tests/music.test.ts` (the BGM layer)
 
 ---
 
@@ -21,6 +22,7 @@
 . <<trigger-list,Every Trigger>>
 . <<gating,When Sound Is Suppressed>>
 . <<loudness,Loudness>>
+. <<music,Background Music>>
 . <<screen-flash,The Other Half of the Boom>>
 . <<testing,Tests>>
 
@@ -287,9 +289,10 @@ one cue — the full file-to-purpose assignment is pinned by
 
 === The news cues
 
-Ten cues for the moments that decide a game without a single shot being fired.
-An audit of all 71 routed events found these were the big ones played in total
-silence — see <<immersion-gaps,the gaps that were left>>. Every one is
+Eleven cues for the moments that decide a game without a single shot being
+fired. An audit of all 71 routed events found ten of them were the big ones
+played in total silence — see <<immersion-gaps,the gaps that were left>> — and
+the disaster layer brought the eleventh later, with its own event. Every one is
 synthesized: they cost no bytes and need no asset, so the game stays audible on
 day one and a recording can take one over later exactly like any other cue.
 
@@ -343,6 +346,16 @@ day one and a recording can take one over later exactly like any other cue.
 | event
 | —
 
+| `cityDisaster`
+| One of the **player's** cities is struck by a Civ1 disaster — famine, flood,
+  fire, plague, pirates, a volcano or an earthquake. One low, dissonant
+  shudder in the sub-bass that neither rises (fanfares) nor falls away
+  (starvation); the toast names which disaster it was. Seven variants firing
+  once a game each would never stay recognisable, so all seven share the one
+  voice. A rival's disaster is silent.
+| event
+| —
+
 | `unitProduced`
 | A unit rolls out of one of the player's cities, built *or* bought. Three even
   stamps rather than an arch, so it is neither `barracksBuilt` nor
@@ -359,7 +372,7 @@ day one and a recording can take one over later exactly like any other cue.
 
 | `unitPromoted`
 | One of the player's units earns its next rank. The only news cue in the
-  `unit` family, and the quietest of all ten: a promotion usually happens
+  `unit` family, and the quietest of all eleven: a promotion usually happens
   mid-battle, so it must sit under the fanfares rather than compete.
 | unit
 | —
@@ -374,7 +387,7 @@ units through every long war, starves cities, opens trade routes and finishes
 Wonders all game long — and each of those events is something the player did
 not do and cannot act on.
 
-So all ten go through one helper, `playNewsCue` (`EngineEventHandlers.ts`), and
+So all eleven go through one helper, `playNewsCue` (`EngineEventHandlers.ts`), and
 it enforces three things:
 
 [cols="2,3", options="header"]
@@ -397,7 +410,7 @@ it enforces three things:
   fourth is nobody's news.
 |===
 
-Two of the ten have an extra, deliberate narrowing:
+Two of the eleven have an extra, deliberate narrowing:
 
 * **`cityDisorder` sounds on the onset only.** The event carries the city's
   *new* state, so it also fires when unrest *ends*. Relief getting the same
@@ -411,7 +424,7 @@ Two of the ten have an extra, deliberate narrowing:
 === The gaps that were left, and one on purpose
 
 The audit behind <<the news cues,the news cues>> covered all 71 routed events
-against the 14 that made a noise. Ten of the silent ones were filled. These are
+against the 14 that made a noise. Ten of the silent ones were filled — the disaster cue is a later addition with its own event, not part of that audit. These are
 the ones that were not, kept here so the silence reads as a decision rather than
 an oversight:
 
@@ -948,6 +961,10 @@ the method name, not the number, and do not treat a stale number as a bug.
 | One of the player's cities tips into unrest — **the onset only**.
 | `EngineEventHandlers.onCityDisorder`
 
+| `cityDisaster`
+| One of the player's cities is struck by any of the seven Civ1 disasters.
+| `EngineEventHandlers.onCityDisaster` (`CITY_DISASTER`)
+
 | `unitProduced`
 | A unit rolls out of one of the player's cities, built or bought (not a
   caravan).
@@ -978,6 +995,11 @@ sound design.
 | `settings.enableSoundEffects` (off)
 | `playSfx` returns before any lookup or fetch. Toggled in Settings →
   *Enable sound effects*; the label exists in all six languages.
+
+| `settings.enableBackgroundMusic` (off)
+| `Music.ts` returns before creating an element — the track is not even
+  fetched. Turning the switch back on starts the current scene's music; see
+  <<music,Background Music>>.
 
 | No `AudioContext` (node, blocked audio)
 | Synthesis is skipped. File cues still attempt `Audio(path)`, which fails
@@ -1023,7 +1045,7 @@ sound design.
   is silent there too.
 
 | A rival's war, famine, Wonder, promotion, unit or caravan
-| None of the ten news cues fire. Same rule as `unitDisbanded`: the AI does all
+| None of the eleven news cues fire. Same rule as `unitDisbanded`: the AI does all
   of these constantly and its bookkeeping is not sound design. See
   <<news-cue-gates,the gate>>.
 
@@ -1154,6 +1176,11 @@ sound design.
 | `0.65 × 0.18 = 0.117`
 | Your own news, but one of several that can land in a turn.
 
+| `cityDisaster`
+| `0.65 × 0.18 = 0.117`
+| As heavy as the player's own news gets without being a loss: a disaster
+  hurts a city, but the city is still yours, so it stays under `cityLost`.
+
 | `cityDisorder`, `cityStarved`, `tradeRouteEstablished`
 | `0.6 × 0.18 = 0.108`
 | Under the fanfare. A famine is grim, not loud.
@@ -1243,7 +1270,7 @@ at their own volume from `CUE_FILE_VOLUME`, falling back to
 | The loudest recording in the mix — and the rarest.
 |===
 
-None of the ten news cues appears in this table: they ship no recordings, so
+None of the eleven news cues appears in this table: they ship no recordings, so
 they never reach `playFile` and a row here would be dead config. Their loudness
 is the `UNIT_CUE_GAIN` ladder in the previous table.
 
@@ -1255,6 +1282,111 @@ turned down without touching what it would sound like un-recorded.
 This ordering was once inverted: `UNIT_CUE_GAIN` is documented as a multiplier,
 but the code assigned it as an absolute value, which made a strike three times
 *louder* than a stolen technology. `tests/sfx.test.ts` now pins the relation.
+====
+
+---
+
+[[music]]
+== Background Music
+
+`src/utils/Music.ts` is the soundtrack, and it is a separate layer from the cue
+transport above because it answers a different question. A cue is an **event**
+— "a blow landed, play the blow" — and is over in a second. Music is a
+**scene** — "the game is being played" — and has to be true for an hour.
+
+The game therefore never names a recording. It announces a scene and the
+module decides what that scene sounds like:
+
+[cols="1,2,3", options="header"]
+|===
+| State | Announced when | Track
+
+| `menu`
+| The setup screen (also the first state of a page load)
+| —
+
+| `gameplay`
+| An engine is running: a normal game, hotseat, and the AI-vs-AI spectator
+| `Get_it_going.opus` (`trim` 0.5)
+
+| `gameOver`
+| A game result is on screen
+| —
+|===
+
+A state with no row is **silent, on purpose** — silence is a legitimate
+soundtrack for a scene whose music has not arrived, and the table
+(`MUSIC_TRACKS`) is the only place that changes when it does.
+
+Five rules govern the layer:
+
+. **One voice, crossfaded.** A scene change fades the old recording out and
+   the new one in over `MUSIC_CROSSFADE_MS` (1.5 s). The retired element is
+   then released: paused, its source removed, and `load()` re-run so the
+   streamed buffer can go. A scene that has been left must not hold memory.
+. **Streamed, never decoded.** BGM plays through an `HTMLAudioElement`, which
+   the browser streams in chunks. The cue recordings in `Sfx.ts` are short and
+   are comfortable in memory; a multi-megabyte track is not, and is never
+   pulled in through a full decode.
+. **Warmed ahead, taken over on arrival.** `preloadMusic('gameplay')` runs
+   while the setup screen is open — that screen is this game's loading screen.
+   Entering gameplay takes the warmed element over instead of fetching the
+   track again, so `Start` begins in music rather than in a download.
+. **One bus, ducks on demand.** The element volume is the music bus:
+   `settings.musicVolume` × the recording's own `trim` × the duck factor.
+   When one of the narratively loud cues plays — the news fanfares, the two
+   capture marches, the stolen secret, the blown cover, the sabotage, the
+   nuclear strike (`MUSIC_DUCKING_CUES` in `Sfx.ts`) — the bus drops to 30 %
+   of itself in 150 ms, holds for 1.8 s, and glides back over 0.7 s. Ordinary
+   combat is deliberately absent from that list: a war would duck every few
+   seconds, which is a pumping bus, not a mix.
+. **The switch comes first.** With `enableBackgroundMusic` off, the track is
+   not even fetched. Turning the switch back on starts the current scene's
+   music; turning it off mid-track fades it out and releases it. It is a
+   switch of its own — beside, not inside, `enableSoundEffects` — because a
+   player tuning a game down usually wants the war kept and the score
+   silenced.
+. **Cooldown between plays.** A track plays through once and then waits
+   `MUSIC_COOLDOWN_MS` (25 s) before replaying, so the loop has a breath
+   instead of a hard seam.
+
+Autoplay works exactly like the effect context: a state entered before the
+first user gesture parks, and `unlockMusic()` — called by `unlockAudio()` from
+the first board click — retries it.
+
+=== Adding a Track
+
+. Drop the file in `public/assets/music/` (its own folder, sibling to
+  `sfx/`; long-form music is a different asset class and streams differently).
+. Add a row to `MUSIC_TRACKS` in `src/utils/Music.ts`:
++
+[source,typescript]
+----
+export const MUSIC_TRACKS: Partial<Record<MusicState, MusicTrack>> = {
+  gameplay: { file: '/assets/music/Get_it_going.opus', trim: 0.5 },
+};
+----
++
+The path is the URL the browser requests, exactly as in `CUE_FILES`. `trim`
+is the recording's own level inside the bus — a file mixed hot can be turned
+down without touching the setting, and two files of different loudness can
+share one slider.
+
+. Reload. The state now plays the file, streams it, crossfades into and out of
+  it, and honours the switch and the volume.
+
+All current recordings are full mixes, so one row per state is exact. A game
+with stems (drums here, melody there) would extend `MusicTrack` with a layer
+list and multiply each layer's trim on the same bus; the table above is the
+only place that would change. There is no point building that for one track —
+it is written down here so the second one does not have to be reinvented.
+
+[NOTE]
+====
+`tests/music.test.ts` pins the table, that every registered path exists on
+disk, and the five rules above: playback, crossfade-and-release, streamed
+preload take-over, bus volume, ducking (and that a click never ducks), the
+switch in both directions, and the autoplay retry.
 ====
 
 ---
@@ -1311,9 +1443,11 @@ pins the rules that keep the recordings from becoming noise —
   round does not promote the blow underneath `unitDefeated`;
 * the city-attack cue fires for gunpowder infantry and artillery, and not for a
   tank, an aircraft, a ship or a pre-gunpowder attacker;
-* each of the ten news cues fires for the player's own event and stays silent
+* each of the eleven news cues fires for the player's own event and stays silent
   for a rival's — including the pair that share a voice (a ceasefire takes
   `peaceMade`);
+* a disaster in the player's own city plays `cityDisaster` for all seven kinds,
+  and a rival's disaster stays silent;
 * `cityDisorder` sounds on the onset of unrest and **not** when it ends, and
   `unitProduced` skips caravans;
 * in an AI-vs-AI run every news cue is silent, even for civilization 0, which
@@ -1328,6 +1462,25 @@ pins the rules that keep the recordings from becoming noise —
 assertions in one file would otherwise share whichever fake the first one
 installed. Nothing in the game calls it — a real context is cheap to keep and
 expensive to recreate.
+
+`tests/music.test.ts` covers the BGM layer, on a stubbed `Audio` and fake
+timers — the ramps ARE the behaviour, so the suite drives them rather than
+waits for them:
+
+* the table names `Get_it_going.opus` under `public/assets/music/`, and every
+  registered path exists on disk;
+* entering `gameplay` streams and fades in the track; re-announcing the scene
+  is a no-op;
+* leaving a scene fades the old element out and releases it (paused, source
+  removed); a scene without a track is silence;
+* the music switch off means the track is **not fetched**, back on means the
+  current scene starts, and off mid-track fades out and releases;
+* the element volume is `musicVolume × trim`, and a live slider change glides;
+* `duckMusic()` drops to 30 % and restores, `warDeclared` ducks while
+  `uiSelect` does not, and the preload path warms without playing and is
+  taken over on arrival;
+* a blocked `play()` is retried exactly once by `unlockAudio()`, and not when
+  nothing was blocked.
 
 ---
 

@@ -68,13 +68,24 @@ export class VictoryManager {
     const onlyHuman = humanCivs.length === 1 ? humanCivs[0] : null;
     const defeatedHumans = humanCivs.filter((civ) => !aliveStatus.get(civ.id));
 
+    // Hotseat mode: detect if this is a multi-human game
+    const isHotseatMultiHuman = humanCivs.length > 1;
+
     if (onlyHuman && !aliveStatus.get(onlyHuman.id)) {
       return this.triggerDefeat(onlyHuman, 'elimination');
     }
 
-    const moonshotWinner = this.detectMoonshotWinner();
-    if (moonshotWinner) {
-      return this.triggerVictory(moonshotWinner, 'moonshot');
+    // Hotseat moonshot victory: any human civ with moonshot means ALL humans win together
+    if (isHotseatMultiHuman) {
+      const humanHasMoonshot = humanCivs.some((civ) => aliveStatus.get(civ.id) && this.hasMoonshot(civ));
+      if (humanHasMoonshot) {
+        return this.triggerVictory(humanCivs, 'moonshot');
+      }
+    } else {
+      const moonshotWinner = this.detectMoonshotWinner();
+      if (moonshotWinner) {
+        return this.triggerVictory(moonshotWinner, 'moonshot');
+      }
     }
 
     const survivingCivs = civilizations.filter((civ) => aliveStatus.get(civ.id));
@@ -83,6 +94,13 @@ export class VictoryManager {
     // there is no "own every city" domination shortcut.
     if (survivingCivs.length <= 1) {
       const winner = survivingCivs[0];
+      if (isHotseatMultiHuman && humanCivs.length > 0) {
+        // In hotseat, all surviving human civs win together
+        const survivingHumans = humanCivs.filter((civ) => aliveStatus.get(civ.id));
+        if (survivingHumans.length > 0) {
+          return this.triggerVictory(survivingHumans, 'elimination');
+        }
+      }
       if (winner && winner.isHuman) {
         return this.triggerVictory(winner, 'elimination');
       }
@@ -94,6 +112,19 @@ export class VictoryManager {
         return this.triggerVictory(winner, 'elimination');
       }
       return false;
+    }
+
+    // Hotseat: if ALL surviving civs are human AND at least one civ was
+    // eliminated during the game, all surviving humans win jointly.
+    if (isHotseatMultiHuman && humanCivs.length > 0 && survivingCivs.length > 0) {
+      const onlyHumansSurvive = survivingCivs.every((c) => humanCivs.includes(c));
+      const someCivEliminated = survivingCivs.length < civilizations.length;
+      if (onlyHumansSurvive && someCivEliminated) {
+        const survivingHumans = humanCivs.filter((civ) => aliveStatus.get(civ.id));
+        if (survivingHumans.length > 0) {
+          return this.triggerVictory(survivingHumans, 'elimination');
+        }
+      }
     }
 
     if (defeatedHumans.length > 0) {
@@ -189,7 +220,27 @@ export class VictoryManager {
     return hasUnits || hasCities;
   }
 
-  private triggerVictory(civ: Civilization, reason: VictoryReason): boolean {
+  private triggerVictory(civ: Civilization, reason: VictoryReason): boolean;
+  private triggerVictory(civs: Civilization[], reason: VictoryReason): boolean;
+  private triggerVictory(civOrCivs: Civilization | Civilization[], reason: VictoryReason): boolean {
+    const civs = Array.isArray(civOrCivs) ? civOrCivs : [civOrCivs];
+
+    // Hotseat joint victory: all human civs win together
+    if (civs.length > 1) {
+      const outcome = new GameResult({
+        outcome: 'victory',
+        civilizationId: civs[0].id,
+        civName: civs[0].name,
+        reason,
+        isHuman: true,
+        civilizationIds: civs.map((c) => c.id),
+        civNames: civs.map((c) => c.name)
+      });
+      this.finalizeResult(outcome);
+      return true;
+    }
+
+    const civ = civs[0];
     const outcome = new GameResult({
       outcome: 'victory',
       civilizationId: civ.id,

@@ -30,6 +30,10 @@ import { AICoordinator } from './AICoordinator';
 import { AIResearch } from './AIResearch';
 import { computeAggression, planBulkAttack, BULK_ATTACK_STRENGTH_RATIO, type KnownTarget, type AggressionAssessment } from './AIAggression';
 import {
+  airReachOf,
+  type AirDoctrineVerdict
+} from './AirDoctrine';
+import {
   chooseFinalWarTarget,
   shouldDeclareFinalWar,
   type FinalWarCandidate,
@@ -5237,6 +5241,16 @@ export class AIManager {
       return this.chooseNavalTarget(unit);
     }
 
+    // AIR units: a bomber has no business following the land targeting
+    // search — it does not walk, it does not garrison, and the ground search's
+    // movement math prices a river as an obstacle this bomber does not have.
+    // The doctrine decides the target and it only changes once per round, so
+    // the verdict is cached, and the reach check runs every TURN because the
+    // unit itself is what's moving.
+    if (UNIT_PROPS[unit.type]?.type === 'air' && unit.type !== 'nuclear') {
+      return this.chooseAirTarget(unit);
+    }
+
     const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
     const aiState: AIState = (storage?.turnData?.aiState as AIState) ?? createDefaultAIState();
 
@@ -8261,6 +8275,81 @@ export class AIManager {
    * scout-holding civ could never satisfy "every city has a guard" when
    * duty refused to post — or let dig in — the one unit the metric counted.
    */
+  /**
+   * Where does an airframe go this turn?
+   *
+   * Order of precedence, earliest wins:
+   *   1. Aboard a carrier the HULL drives (stage 'sail'): the airframe
+   *      contributes nothing to steering while it is cargo.
+   *   2. The mission target, if the airframe is within STRIKE REACH of it
+   *      RIGHT NOW: move onto the enemy city — that is an attack, walls
+   *      ignored (CombatSystem), capture when defense breaks.
+   *   3. Otherwise the mission target as a route: Pathfinding is air-aware
+   *      now (flat cost everywhere), so the GoTo layer flies across water
+   *      instead of stalling on an ocean Infinity.
+   *   4. No plan (or killed while en route): drift home to the nearest own
+   *      city — a bomber parked on its base is an airframe available next
+   *      round; a bomber hovering alone at the front is a target.
+   *
+   * IMPORTANT: strike reach checks are against the UNIT'S OWN position, not
+   * the doctrine's base positions: the doctrine plans FROM BASES, execution
+   * flies from wherever the airframe is AFTER last round's strike (cities on
+   * the way home) — the two must never be confused or a bomber marching to a
+   * target from the wrong city will be judged unreachable.
+   */
+  private chooseAirTarget(unit: Unit): { col: number; row: number } | null {
+    if (unit.embarkedOn) return null; // stage 'sail': the deck is driving.
+
+    const ap = this.gameEngine.autoProduction as
+      | { airDoctrineFor?: (id: number) => AirDoctrineVerdict | null }
+      | undefined;
+    const verdict = typeof ap?.airDoctrineFor === 'function'
+      ? ap.airDoctrineFor(unit.civilizationId)
+      : null;
+
+    // 1. Immediate strike from wherever this airframe is.
+    if (verdict && this.gameEngine.squareGrid) {
+      const reach = airReachOf(unit.type);
+      const mission = verdict.mission?.target;
+      const candidates: Array<{ col: number; row: number; cityId: string }> = [];
+      if (mission) candidates.push(mission);
+      for (const t of verdict.directTargets) if (t.cityId !== mission?.cityId) candidates.push(t);
+      for (const t of verdict.carrierTargets) if (t.cityId !== mission?.cityId) candidates.push(t);
+
+      let best: { col: number; row: number; distance: number } | null = null;
+      for (const t of candidates) {
+        const d = this.gameEngine.squareGrid.squareDistance(
+          unit.col, unit.row, t.col, t.row,
+        );
+        if (d <= reach && (!best || d < best.distance)) {
+          best = { col: t.col, row: t.row, distance: d };
+        }
+      }
+      if (best) {
+        debugLog(`[AI-AIR] ${unit.type} ${unit.id} strikes @${best.col},${best.row} (${best.distance}/${reach})`);
+        return { col: best.col, row: best.row };
+      }
+
+      // 2. Route towards the mission even when it is out of reach (GoTo fly).
+      if (mission) return { col: mission.col, row: mission.row };
+    }
+
+    // 3. No plan: drift to the nearest own city and sit ready.
+    return this.nearestOwnCityTo(unit);
+  }
+
+  /** Nearest own-city point for an idle airframe; null when none exists. */
+  private nearestOwnCityTo(unit: Unit): { col: number; row: number } | null {
+    let best: { col: number; row: number; distance: number } | null = null;
+    for (const c of this.gameEngine.cities) {
+      if (c.civilizationId !== unit.civilizationId) continue;
+      const d = this.gameEngine.squareGrid?.squareDistance?.(unit.col, unit.row, c.col, c.row);
+      if (d === undefined || d === null) continue;
+      if (!best || d < best.distance) best = { col: c.col, row: c.row, distance: d };
+    }
+    return best ? { col: best.col, row: best.row } : null;
+  }
+
   private isGarrisonEligible(unit: Unit): boolean {
     const civilianTypes = new Set(['settler', 'caravan', 'diplomat', 'worker', 'nuclear']);
     if (civilianTypes.has(unit.type)) return false;
@@ -10251,6 +10340,14 @@ export class AIManager {
      * AIResearch so the atomic branch is researched before it is needed.
      */
     nuclearRelevance?: number;
+    /**
+     * 0 = nothing to strike or too early to matter; up to 4 when hostile cities
+     * are known and the calendar is late enough that Flight can pay for itself
+     * before the game ends. Fed to AIResearch so the combustion→flight chain is
+     * climbed on PURPOSE instead of the air branch staying dead forever (the
+     * audit found no civ ever researched Flight in 140 rounds).
+     */
+    airRelevance?: number;
     /** >0 when a coastal city has a fishing ground the FisherEconomics equation approves. */
     fishingRelevance?: number;
     /** Real turns to finish a tech, from the engine's research model. */
@@ -10384,6 +10481,35 @@ export class AIManager {
       }
     }
 
+    // How worthwhile is the AIR arm right now? The audit found the air branch
+    // completely dead — Flight ~1135 beakers deep and never once chosen in 140
+    // rounds — so nobody could even ask "should we build bombers". Interest
+    // needs something to STRIKE (known enemy cities) and calendar time for the
+    // combustion→flight chain to pay: it ramps from 1200 AD and holds at full
+    // interest from 1700. At-war adds a step: bomber strikes are for wars.
+    let airRelevance = 0;
+    {
+      const knownEnemies = knownEnemyCities > 0;
+      const year = this.gameEngine.currentYear ?? -4000;
+      const techCount = civ?.technologies instanceof Set
+        ? civ.technologies.size
+        : (civ?.technologies?.length ?? 0);
+      if (knownEnemies) {
+        if (this.isManhattanBuilt()) {
+          airRelevance = 3;
+        } else if (techCount >= 8 || year >= 1700) {
+          airRelevance = 3;
+        } else if (techCount >= 4 || year >= 1200) {
+          airRelevance = 2;
+        } else if (techCount >= 2) {
+          airRelevance = 1;
+        }
+        try {
+          if (this.gameEngine.isCivAtWar?.(civilizationId) === true) airRelevance += 1;
+        } catch { /* not at war — interest stays as computed */ }
+      }
+    }
+
     // Real turns per technology, straight from the research model: the effective
     // cost (map size × difficulty × how far ahead this civ is) and the beakers
     // that survive the known-civ / prerequisite modifiers. `estimatedTurns`
@@ -10426,6 +10552,7 @@ export class AIManager {
       startsOnIsland,
       islandExpansionUrgency,
       nuclearRelevance,
+      airRelevance,
       turnsToResearch,
       caravanRelevance,
     };

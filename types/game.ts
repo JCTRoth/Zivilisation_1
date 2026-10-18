@@ -16,6 +16,10 @@ export class GameResult {
   reason: VictoryReason;
   isHuman: boolean;
   timestamp: number;
+  /** All winning civilization IDs (hotseat joint victory). Single civ when undefined. */
+  civilizationIds?: number[];
+  /** All winning civilization names (hotseat joint victory). Single civ when undefined. */
+  civNames?: string[];
 
   constructor(params: {
     outcome: 'victory' | 'defeat';
@@ -24,6 +28,8 @@ export class GameResult {
     reason: VictoryReason;
     isHuman: boolean;
     timestamp?: number;
+    civilizationIds?: number[];
+    civNames?: string[];
   }) {
     this.outcome = params.outcome;
     this.civilizationId = params.civilizationId;
@@ -31,6 +37,8 @@ export class GameResult {
     this.reason = params.reason;
     this.isHuman = params.isHuman;
     this.timestamp = params.timestamp ?? Date.now();
+    this.civilizationIds = params.civilizationIds;
+    this.civNames = params.civNames;
   }
 }
 
@@ -850,6 +858,18 @@ interface Settings {
    * rest of the game never has to check the setting itself.
    */
   enableSoundEffects: boolean;
+  /**
+   * Master switch for background music (`Music.ts`). Off means the track is
+   * not even fetched; turning it back on restores the current scene's music.
+   * Its own switch next to `enableSoundEffects` on purpose: most players who
+   * tune a game down want the effects kept and the score silenced.
+   */
+  enableBackgroundMusic: boolean;
+  /**
+   * Music-bus volume (0..1). The single knob for the whole soundtrack — every
+   * track multiplies it with its own trim, and ducking scales the product.
+   */
+  musicVolume: number;
   /** Animation speed multiplier (0..3). 0 = instant, 1 = normal, higher = slower. */
   animationSpeed: number;
   /**

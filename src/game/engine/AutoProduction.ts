@@ -18,6 +18,42 @@ import {
 } from './AI/AIStrategy';
 import { canBuildUnit, type StrategyProfile, type AIState, resolveAICivStrategy, type BuildingPlan } from './AI/AITypes';
 import { bestFishingGround } from './FisherEconomics';
+import { estimateCityDefense, UNKNOWN_CITY_DEFENSE } from './AI/AIAggression';
+import {
+  MAX_AIRCRAFT_PER_BASE,
+  STRIKE_FRAME,
+  evaluateAirDoctrine,
+  type AirDoctrineInput,
+  type AirDoctrineVerdict,
+} from './AI/AirDoctrine';
+import { Pathfinding } from './Pathfinding';
+import type { MapTile } from './GameEngine';
+import { WATER_TERRAIN_TYPES } from '@/data/TerrainConstants';
+
+/** OCEAN/SEA:riv-незалежний test at a coordinate (terrain-key based). */
+function waterAt(engine: { getTileAt?: (c: number, r: number) => unknown }, col: number, row: number): boolean {
+  const tile = engine.getTileAt?.(col, row) as { type?: string; terrain?: string } | null | undefined;
+  if (!tile) return false;
+  const key = String(tile.type ?? tile.terrain ?? '').trim().toLowerCase();
+  return WATER_TERRAIN_TYPES.includes(key);
+}
+
+/** Any own city carrying water in its 1-ring: the null-muster prerequisite. */
+function coastAt(engine: Parameters<typeof waterAt>[0], col: number, row: number): boolean {
+  return waterAt(engine, col, row)
+    || waterAt(engine, col + 1, row) || waterAt(engine, col - 1, row)
+    || waterAt(engine, col, row + 1) || waterAt(engine, col, row - 1)
+    || waterAt(engine, col + 1, row + 1) || waterAt(engine, col - 1, row - 1)
+    || waterAt(engine, col + 1, row - 1) || waterAt(engine, col - 1, row + 1);
+}
+
+function nearestCoastalCity(
+  cities: Array<{ col: number; row: number }>,
+  isCoast: (c: number, r: number) => boolean,
+): { col: number; row: number } | null {
+  for (const c of cities) if (isCoast(c.col, c.row)) return c;
+  return null;
+}
 import { AIBuildingStrategy } from './AI/AIBuildingStrategy';
 import { buildingOnRebuyCooldown } from './AI/BuildingAnalyzer';
 import {
@@ -152,6 +188,13 @@ export class AutoProduction {
    * of counts the doctrine consumes, so any of them changing re-runs it.
    */
   private readonly navalDoctrineCache = new Map<number, { key: string; verdict: NavalDoctrineVerdict | null }>();
+  private readonly airDoctrineCache = new Map<number, { key: string; verdict: AirDoctrineVerdict | null }>();
+  /**
+   * Staging physics answers, cached per round and per (muster, target) pair:
+   * Pathfinding across an ocean is the most expensive question the doctrine
+   * asks, and the answer cannot change within a round.
+   */
+  private readonly airStageCache = new Map<string, boolean>();
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
@@ -209,6 +252,8 @@ export class AutoProduction {
   reset(): void {
     // All production decisions are derived from the engine's current state.
     this.navalDoctrineCache.clear();
+    this.airDoctrineCache.clear();
+    this.airStageCache.clear();
   }
 
   /**
@@ -1141,6 +1186,19 @@ export class AutoProduction {
         debugLog(`[AutoProduction] Naval pivot: building ${naval.itemType} (no land-reachable enemy)`);
         return naval;
       }
+    }
+
+    // 4c. AIR PIVOT: the air doctrine's verdict, right after the naval one.
+    //      Order matters and is deliberate: the fleet comes first (air that
+    //      must stage offshore deploys THROUGH a hull the fleet builds), and
+    //      the AIR program comes before an attacker build-up below because a
+    //      strike free of march time also disarms a siege before the walk.
+    //      The doctrine's own caps (per-base, absolute, share) keep this slot
+    //      from eating the army — an air-only civ cannot hold what it cracks.
+    const air = this.buildAirProduction(city);
+    if (air) {
+      debugLog(`[AutoProduction] Air pivot: building ${air.itemType} — ${this.airDoctrineFor(city.civilizationId)?.reason ?? ''}`);
+      return air;
     }
 
     // Check if building is high-priority enough to build over a unit
@@ -2872,6 +2930,256 @@ export class AutoProduction {
    * troops, so a naval civ still gets a hull instead of silently falling
    * through to land production.
    */
+  /**
+   * The air doctrine for one civilization, cached per round like the naval
+   * verdict.
+   *
+   * Doctrine inputs read here, each traced to the engine state the audit used:
+   *  - TARGETS: known enemy city sightings (`enemyLocations`), visibility-
+   *    priced with `estimateCityDefense` when the tile is scouted and the
+   *    AIAggression baseline (`UNKNOWN_CITY_DEFENSE`) when it is not. Defense
+   *    is an ESTIMATE either way; the doctrine is judging whether to start a
+   *    program, not promising a capture.
+   *  - ACROSS WATER: engine landmasses — no own city on the target's landmass
+   *    means ground troops need a hull (the doctrine prices that on the ground
+   *    side, which is exactly the case where air is worth it).
+   *  - ECONOMY: the same rate-controller income the naval doctrine plans
+   *    against, with the fleet's 1-turn reserve (air gets the navy's budget
+   *    posture, not the land army's).
+   */
+  /**
+   * The air-verdict for one civ — PUBLIC because the unit planner in
+   * AIManager routes bombers against the SAME plan production funded. Two
+   * consumers, one cache, one answer per round: if the planner could ask a
+   * different engine for its targets it would route to a plan nobody built.
+   */
+  airDoctrineFor(civId: number): AirDoctrineVerdict | null {
+    const civ = this.gameEngine.civilizations?.[civId];
+    if (!civ) return null;
+
+    const techCount = civ.technologies instanceof Set
+      ? civ.technologies.size
+      : (civ.technologies?.length ?? 0);
+    const bombersOwned = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civId && !u.isDefeated && u.type === 'bomber',
+    ).length;
+    const fightersOwned = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civId && !u.isDefeated && u.type === 'fighter',
+    ).length;
+    const ownCities = this.gameEngine.cities.filter((c: City) => c.civilizationId === civId);
+    if (ownCities.length === 0) return null;
+
+    const cacheKey = [
+      this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
+      ownCities.length, bombersOwned, fightersOwned,
+      this.gameEngine.cities.length, this.gameEngine.units.length,
+      civ.resources?.gold ?? 0, techCount,
+    ].join('|');
+    const cached = this.airDoctrineCache.get(civId);
+    if (cached && cached.key === cacheKey) return cached.verdict;
+
+    const isHostile = new Set<number>(
+      (this.gameEngine.diplomacyManager?.getEnemies?.(civId) ?? []).map(Number),
+    );
+    // A city the diplo officer already calls an enemy is an air candidate; a
+    // city whose sighting is recorded is not enough (the naval doctrine's rule).
+    const isHostileTo = (owner: number): boolean => isHostile.has(owner);
+
+    const storage = this.gameEngine.getPlayerStorage?.(civId) as
+      | { enemyLocations?: Map<number, Array<{ col?: number; row?: number; type?: string }>> }
+      | undefined;
+    const targets: AirDoctrineInput['targets'] = [];
+    if (storage?.enemyLocations) {
+      const aiManager = this.gameEngine.aiManager as
+        | { estimateCityDefensePublic?: never }
+        | undefined;
+      void aiManager;
+      for (const [owner, sightings] of storage.enemyLocations) {
+        for (const sighting of sightings) {
+          if (sighting?.type !== 'city') continue;
+          if (sighting.col === undefined || sighting.row === undefined) continue;
+          const live = this.gameEngine.cities.find(
+            (c: City) => c.col === sighting.col && c.row === sighting.row,
+          );
+          let defense = UNKNOWN_CITY_DEFENSE;
+          if (live && live.civilizationId === owner) {
+            try {
+              defense = estimateCityDefense(this.gameEngine, live);
+            } catch { /* estimate stays at baseline */ }
+          }
+          // The ground arm can walk to a target only if SOME own city shares
+          // its landmass. Anything else is priced with a hull on the ground
+          // side — the honest comparison the doctrine makes its decision on.
+          const ownLandmasses = new Set(ownCities.map(
+            (c: City) => this.gameEngine.getLandmassId?.(c.col, c.row) ?? -1,
+          ));
+          const targetLandmass = this.gameEngine.getLandmassId?.(sighting.col, sighting.row) ?? -1;
+          targets.push({
+            cityId: live?.id ?? `s(${sighting.col},${sighting.row})`,
+            ownerCivId: owner,
+            col: sighting.col,
+            row: sighting.row,
+            defense,
+            acrossWater: ownCities.length > 0 && !ownLandmasses.has(targetLandmass),
+          });
+        }
+      }
+    }
+
+    const isCoast = (col: number, row: number): boolean => coastAt(this.gameEngine as { getTileAt?: (c: number, r: number) => unknown }, col, row);
+    const hasNavalAccess = (c: { col: number; row: number }): boolean => isCoast(c.col, c.row);
+
+    const carriers = this.gameEngine.units
+      .filter((u: Unit) => u.civilizationId === civId
+        && !u.isDefeated
+        && UNIT_PROPS[u.type]?.naval === true
+        && (UNIT_PROPS[u.type]?.aircraftCapacity ?? 0) > 0)
+      .map((u: Unit) => ({ col: u.col, row: u.row, unitId: u.id }));
+
+    // Staging physics: sea within the strike reach of the target, and a naval
+    // path from the muster to that neighborhood. Cached per round+muster+target
+    // and capped in work — a Pathfinding call per (carrier, target) pair across
+    // the whole map is the price of honesty here, capped by the cache.
+    const staging = (musterArg: { col: number; row: number } | null, target: { col: number; row: number }, reach: number): boolean => {
+      // The muster is resolved ONCE here, so 'port' in the key means one
+      // physical origin — a civ's coastal city could change over a game, and
+      // earlier 'round-scoped' keys made the doctrine re-pay a full ocean
+      // pathfind every round for the SAME static targets. Positions of enemy
+      // sightings are static; the map is static; answers go stale only if a
+      // civ dies, in which case the engine's own caches forget too.
+      const from = musterArg ?? nearestCoastalCity(ownCities, isCoast);
+      if (!from) return false;
+      const cacheKey = `${from.col},${from.row}|${target.col},${target.row}|${reach}`;
+      const hit = this.airStageCache.get(cacheKey);
+      if (hit !== undefined) return hit;
+      // Sea within reach of the target, nearest ring first — the parking
+      // neighborhood the carrier must be able to sail to.
+      let seaTile: { col: number; row: number } | null = null;
+      seaSearch: for (let r = 1; r <= reach; r++) {
+        for (let dCol = -r; dCol <= r; dCol++) {
+          for (const dRow of [-r, r]) {
+            const t = { col: target.col + dCol, row: target.row + dRow };
+            if (waterAt(this.gameEngine as { getTileAt?: (c: number, r: number) => unknown }, t.col, t.row)) {
+              seaTile = t; break seaSearch;
+            }
+          }
+        }
+        for (let dRow = -r + 1; dRow < r; dRow++) {
+          for (const dCol of [-r, r]) {
+            const t = { col: target.col + dCol, row: target.row + dRow };
+            if (waterAt(this.gameEngine as { getTileAt?: (c: number, r: number) => unknown }, t.col, t.row)) {
+              seaTile = t; break seaSearch;
+            }
+          }
+        }
+      }
+      let answer = false;
+      if (seaTile) {
+        try {
+          const map = this.gameEngine.map as { width?: number; height?: number } | undefined;
+          const result = Pathfinding.findPath(
+            from.col, from.row, seaTile.col, seaTile.row,
+            (col: number, row: number): MapTile => (this.gameEngine.getTileAt?.(
+              col, row,
+            ) ?? null) as MapTile,
+            'carrier',
+            map?.width ?? 0, map?.height ?? 0,
+            undefined,
+            civId,
+          );
+          answer = result.success;
+        } catch { answer = false; }
+      }
+      this.airStageCache.set(cacheKey, answer);
+      return answer;
+    };
+
+    // Economy: the naval doctrine's posture exactly (1-turn reserve), so air
+    // and fleet compete against the same treasury rules.
+    const econ = this.gameEngine.economicManager as
+      | { maxTaxIncome?: (c: unknown) => number; totalUpkeep?: (id: number) => number }
+      | undefined;
+    const aiEcon = this.gameEngine.aiEconomicManager as
+      | { planningIncome?: (c: unknown) => number }
+      | undefined;
+    const income = typeof aiEcon?.planningIncome === 'function'
+      ? aiEcon.planningIncome(civ)
+      : typeof econ?.maxTaxIncome === 'function' ? econ.maxTaxIncome(civ) : 0;
+    const upkeep = typeof econ?.totalUpkeep === 'function' ? econ.totalUpkeep(civId) : 0;
+    const spareIncome = income - upkeep;
+
+    const verdict = evaluateAirDoctrine({
+      civId,
+      bases: ownCities.map((c: City) => ({ col: c.col, row: c.row, cityId: c.id })),
+      targets,
+      isHostileTo,
+      canBuild: (unitType) => canBuildUnit(civ, unitType),
+      carrierCanStage: staging,
+      carriers,
+      hasCoastalPort: ownCities.some((c: City) => hasNavalAccess!(c)),
+      bombersOwned,
+      fightersOwned,
+      treasury: civ.resources?.gold ?? 0,
+      spareIncome,
+    });
+    this.airDoctrineCache.set(civId, { key: cacheKey, verdict });
+    return verdict;
+  }
+
+  /**
+   * AIR PRODUCTION: the doctrine's plan, turned into a production item.
+   *
+   * Order: the hull BEFORE the airframe when an offshore plan has no deck
+   * (airframes without a deck cannot reach their mission), then the strike arm
+   * to its plan size, then escort cover. A city saturated with airframes does
+   * not keep building them even when the civ total is under plan — bases are
+   * distinct places to park and lose airframes from.
+   */
+  private buildAirProduction(city: City): ProductionItem | null {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return null;
+    const verdict = this.airDoctrineFor(civ.id);
+    if (!verdict?.hasMission) return null;
+
+    // A saturated base builds nothing for the air program.
+    const parked = this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civ.id
+        && !u.isDefeated
+        && UNIT_PROPS[u.type]?.type === 'air'
+        && u.type !== 'nuclear'
+        && u.col === city.col && u.row === city.row,
+    ).length;
+    if (parked >= MAX_AIRCRAFT_PER_BASE) return null;
+
+    // Deck first when the plan needs one and none is under construction being
+    // ignored — carrier production is a UNIT here, keystate is covered by the
+    // doctrine caps, so the deck converges.
+    if (verdict.deployment.carriers > 0
+      && canBuildUnit(civ, 'carrier')
+      && this.gameEngine.units.filter((u: Unit) =>
+        u.civilizationId === civ.id && !u.isDefeated && u.type === 'carrier').length
+      < this.gameEngine.units.filter((u: Unit) =>
+        u.civilizationId === civ.id && !u.isDefeated && UNIT_PROPS[u.type]?.naval === true
+        && (UNIT_PROPS[u.type]?.aircraftCapacity ?? 0) > 0).length + verdict.deployment.carriers) {
+      const props = UNIT_PROPS.carrier;
+      return { type: 'unit', itemType: 'carrier', name: props.name, cost: props.cost };
+    }
+
+    const owned = (type: string) => this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civ.id && !u.isDefeated && u.type === type,
+    ).length;
+
+    if (owned(STRIKE_FRAME) < verdict.deployment.bombs && canBuildUnit(civ, STRIKE_FRAME)) {
+      const props = UNIT_PROPS[STRIKE_FRAME];
+      return { type: 'unit', itemType: STRIKE_FRAME, name: props.name, cost: props.cost };
+    }
+    if (owned('fighter') < verdict.deployment.fighters && canBuildUnit(civ, 'fighter')) {
+      const props = UNIT_PROPS.fighter;
+      return { type: 'unit', itemType: 'fighter', name: props.name, cost: props.cost };
+    }
+    return null;
+  }
+
   private navalDoctrineFor(civId: number): NavalDoctrineVerdict | null {
     const civ = this.gameEngine.civilizations?.[civId];
     if (!civ) return null;

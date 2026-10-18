@@ -50,6 +50,7 @@ const ALL_CUES: SfxCue[] = [
   'cityLost',
   'civEliminated',
   'cityStarved',
+  'cityDisaster',
   'cityDisorder',
   'unitProduced',
   'tradeRouteEstablished',

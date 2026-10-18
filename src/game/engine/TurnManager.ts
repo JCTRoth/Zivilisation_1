@@ -942,6 +942,12 @@ export class TurnManager {
         debugLog(`[TurnManager] City ${city.name} is in disorder — growth halted`);
       }
       this.processCityProduction(city);
+
+      // Random disasters strike at the very end of the city's turn: growth
+      // and production have both landed, so the loss is felt on the turn it
+      // arrives. The manager keeps the Civ1 rules and owns the frequency
+      // (see DisasterManager).
+      this.gameEngine.disasterManager?.processCity(city, civ);
     });
 
     // Process civilization resources (rate-based income + upkeep) and research

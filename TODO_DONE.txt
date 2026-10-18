@@ -249,3 +249,27 @@ Are you distributing this project as a free download (like on Itch.io or GitHub)
 
 
 * [DONE] Development-mode zoom-level indicator in the TopBar
+
+* [DONE] Background music (BGM) — `src/utils/Music.ts` (decoupled from gameplay: state-driven
+  `menu`/`gameplay`/`gameOver` scenes, streamed `HTMLAudioElement` transport, 1.5 s crossfade,
+  preload/unload, dedicated music bus with event ducking, autoplay unlock retry). Track kept under
+  its given name at `public/assets/music/Get_it_going.opus`. Settings: Music toggle + volume
+  (Settings → Audio), i18n in all 6 languages. Docs: `doc/SOUND_EFFECTS.adoc` (Background Music).
+  Tests: `tests/music.test.ts` (16).
+
+* [DONE] City disasters — Civ1's seven, with their prevention mechanics —
+  `src/game/engine/DisasterManager.ts`. Famine/flood/fire/plague/pirates/
+  volcano/earthquake with the manual's trigger and prevention rules
+  (Granary / City Walls / Aqueduct or Medicine / Barracks / Temple; the
+  earthquake is unpreventable). Retuned: far rarer than Civ1 — all seven
+  together stay under 0.5% per eligible city per turn, and the flood, the one
+  that pestered the player, is the rarest at 0.04% — and a little harder
+  (population losses raised to 33–40%, the volcano kills AND burns, pirates
+  wipe the food AND shield stocks while robbing the treasury). Disasters
+  target cities only: military units are never damaged or destroyed, in any
+  era. Fixed check order, at most one disaster per city per turn, Palace and
+  World Wonders never destroyed, never removes the last citizen. Emits
+  `CITY_DISASTER`; the router toasts the owning human player and plays the new
+  `cityDisaster` cue (one voice for all seven). i18n in all 6 languages.
+  Docs: `doc/DISASTERS.adoc`; `doc/SOUND_EFFECTS.adoc` updated for the cue.
+  Tests: `tests/disasters.test.ts` (42), `tests/sfxWiring.test.ts` (gate).

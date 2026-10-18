@@ -61,6 +61,7 @@ import { seededNoise } from './diplomacy/ProposalScoring';
 import { CIV_PRODUCTION_PROFILES, canBuildUnit, getCivProductionProfile, getCivPersonality } from './AI/AITypes';
 import { EconomicManager } from './EconomicManager';
 import { GovernmentManager } from './GovernmentManager';
+import { DisasterManager } from './DisasterManager';
 import { ResearchManager } from './ResearchManager';
 import { WonderManager } from './WonderManager';
 import { WonderEffects } from './WonderEffects';
@@ -174,6 +175,12 @@ export interface GameSettings {
    * player; in hotseat mode every entry is a human seat (e.g. [0, 1]).
    */
   humanPlayerIds?: number[];
+  /**
+   * Per-player nation picks for hotseat: `playerCivilizations[seat]` is the
+   * CIVILIZATIONS index that seat plays. When present, the first N slots get
+   * these nations (seat 0 first); remaining slots are filled randomly.
+   */
+  playerCivilizations?: number[];
 }
 
 export interface MapTile {
@@ -261,6 +268,8 @@ export default class GameEngine {
   economicManager: EconomicManager;
   governmentManager: GovernmentManager;
   researchManager: ResearchManager;
+  /** The seven Civ1 disasters: rare city events with prevention rules. */
+  disasterManager: DisasterManager;
   /** World Wonder ownership, uniqueness and obsolescence. */
   wonderManager: WonderManager;
   /** World Wonder effect computation (science, happiness, movement, …). */
@@ -369,6 +378,7 @@ export default class GameEngine {
     this.autoProduction = new AutoProduction(this);
     this.economicManager = new EconomicManager(this);
     this.governmentManager = new GovernmentManager(this);
+    this.disasterManager = new DisasterManager(this);
     this.researchManager = new ResearchManager(this);
     this.wonderManager = new WonderManager(this);
     this.wonderEffects = new WonderEffects(this);
@@ -1202,19 +1212,40 @@ export default class GameEngine {
   async createCivilizations(mapType: string = 'NORMAL_SKIRMISH') {
     const numCivs = Math.min(this.gameSettings.numberOfCivilizations, CIVILIZATIONS.length);
     const selectedCivs = [];
-    
-    // Always include player's chosen civilization first
-    selectedCivs.push(CIVILIZATIONS[this.gameSettings.playerCivilization]);
-    
-    // Add other random civilizations
+
     // Which civ gets which island must be reproducible when a seed is pinned,
     // otherwise two runs of the same scenario are different games and no
     // before/after comparison means anything (the naval archipelago produced
     // wildly different 120-round outcomes run to run).
     const startRng = this.makeSeededRng(this.gameSettings.mapSeed, 0x5eed);
 
-    const availableCivs = CIVILIZATIONS.filter((_, idx) => idx !== this.gameSettings.playerCivilization);
-    for (let i = 1; i < numCivs; i++) {
+    // Hotseat: each human seat picks its own nation. `playerCivilizations`
+    // lists the chosen CIVILIZATIONS indices, seat 0 first; the remaining slots
+    // are filled randomly from the nations nobody picked. A missing/invalid
+    // entry falls back to the single-player pick so the seat is never empty.
+    const perPlayer = Array.isArray(this.gameSettings.playerCivilizations)
+      ? this.gameSettings.playerCivilizations
+      : null;
+    const usedCivIndices = new Set<number>();
+    if (perPlayer && perPlayer.length > 0) {
+      for (let i = 0; i < numCivs; i++) {
+        const picked = perPlayer[i];
+        const pickIdx =
+          Number.isInteger(picked) && picked >= 0 && picked < CIVILIZATIONS.length && !usedCivIndices.has(picked)
+            ? picked
+            : CIVILIZATIONS.findIndex((_, idx) => !usedCivIndices.has(idx));
+        usedCivIndices.add(pickIdx);
+        selectedCivs.push(CIVILIZATIONS[pickIdx]);
+      }
+    } else {
+      // Single player: the chosen civilization goes first.
+      selectedCivs.push(CIVILIZATIONS[this.gameSettings.playerCivilization]);
+      usedCivIndices.add(this.gameSettings.playerCivilization);
+    }
+
+    // Add other random civilizations to fill any remaining slots.
+    const availableCivs = CIVILIZATIONS.filter((_, idx) => !usedCivIndices.has(idx));
+    while (selectedCivs.length < numCivs && availableCivs.length > 0) {
       const randomIdx = Math.floor(startRng() * availableCivs.length);
       selectedCivs.push(availableCivs.splice(randomIdx, 1)[0]);
     }

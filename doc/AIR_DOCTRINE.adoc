@@ -1,0 +1,75 @@
+= Air Doctrine Overhaul — Phase 3 Report
+:toc:
+
+== Summary
+
+The air branch of the AI was completely dead: no civilization ever researched
+Flight in 140+ round games, so no bomber was ever built and the "air vs.
+ground" trade-off was never once made. This overhaul builds a bottom-up air
+doctrine (`AirDoctrine.ts`), wires it into research, production and execution,
+and re-measures against the same benchmark seeds.
+
+== Baseline (before wiring)
+
+Measured on `AI_VS_AI_NAVAL` seeds 7 and 19, 150 rounds requested (games ended
+by victory at ~65-72 rounds):
+
+[cols="1,1,1"]
+|===
+| Metric | Baseline | After
+
+| civilizations reaching Flight | 0 | 0
+| civilizations reaching Combustion | 0 | 0
+| airframes built | 0 | 0
+| carriers built | 0 | 0
+| avg ms / round | ~49 | ~48
+|===
+
+The "after" numbers are unchanged at zero. See "Measurement limitation" below.
+
+== What was built
+
+* `src/game/engine/AI/AirDoctrine.ts` — pure computational core, 37 tests
+  (`tests/ai/airDoctrine.test.ts`), engine facts 1-8 documented in the file
+  header (reach = `movement`, air flies over everything, ignores walls, can
+  capture, nuclear excluded, no garrison, Chebyshev distance, carrier staging).
+* `AIManager.airRelevance` snapshot field — known enemies + tech depth (was:
+  calendar year >= 1200, unreachable in these games) now tech-depth gated.
+* `AIResearch.AIR_LADDER` — engineering / combustion / flight (plus the
+  prerequisite chain: the_wheel, mathematics, science_theory, electricity)
+  stacking with the naval ladder on combustion.
+* `AutoProduction.airDoctrineFor` (public, round-cached, permanent staging
+  cache) + `buildAirProduction` wired as step 4c "AIR PIVOT".
+* `AIManager.chooseAirTarget` dispatch in `chooseAITarget` (embarked -> null,
+  strike when in reach, else mission route, else nearest own city).
+* `Pathfinding.getMovementCost` air branch: flat cost 1 everywhere.
+* Naval bench extended with air metrics (flightKnown/combustionKnown per civ,
+  airBuilt/carriersBuilt/flightCivs/combustionCivs aggregate).
+
+== Measurement limitation
+
+Games on these seeds end by victory (conquest/score) at ~65-72 rounds, before
+any civilization can complete the Flight chain (7 techs: the_wheel ->
+mathematics -> engineering -> science_theory -> electricity -> combustion ->
+flight). The air ladder fires and selects combustion/flight when they become
+available, but the games end during that research. The doctrine is therefore
+exercised in code and unit tests, but not yet observable in the standard
+benchmark. Reaching Flight measurably requires either (a) longer games or (b) a
+stronger late-game ladder; the latter was deliberately kept moderate so the
+late-game economics test (communism climb) stays green.
+
+== Verification
+
+* `npx tsc --noEmit` — clean
+* `npx vitest run` — 213 test files, 2599 tests, all green
+* `npm run build` — success (3.67s)
+
+== Files touched
+
+* `src/game/engine/AI/AirDoctrine.ts` (new)
+* `src/game/engine/AI/AIManager.ts` (`airRelevance`, `chooseAirTarget`, `nearestOwnCityTo`)
+* `src/game/engine/AI/AIResearch.ts` (`AIR_LADDER`, chain push)
+* `src/game/engine/AutoProduction.ts` (`airDoctrineFor`, `buildAirProduction`, staging cache, 4c pivot)
+* `src/game/engine/Pathfinding.ts` (air branch in `getMovementCost`)
+* `tests/ai/naval-bench.test.ts` (air metrics)
+* `tests/ai/airDoctrine.test.ts` (new, 37 tests)

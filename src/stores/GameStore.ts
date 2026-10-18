@@ -245,6 +245,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     devMode: false,     // Developer mode: see all players on minimap and switch between them
     enableAnimations: true, // Master switch for movement/combat/camera animations
     enableSoundEffects: true, // Synthesized UI sound effects (diplomacy, espionage, capture)
+    enableBackgroundMusic: true, // Background music (BGM) — streamed, one track per game state
+    musicVolume: 0.4, // Music-bus volume (0–1), multiplied by each track's trim
     animationSpeed: 1,  // Animation speed multiplier (0 = instant, 1 = normal)
     enemyAnimationSpeed: 1, // Enemy (AI) movement animation speed multiplier (0 = instant)
     cameraGlideSpeed: 1, // Camera glide speed multiplier (0 = instant, 1 = normal)

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { useSeededRandom } from './helpers/world';
 import GameEngine from '@/game/engine/GameEngine';
 
 /**
@@ -22,6 +23,7 @@ describe('City capture & destruction', () => {
   let randomSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
+    useSeededRandom(7);
     engine = new GameEngine(null);
     (engine as any).sleep = () => Promise.resolve();
     emitted = [];
@@ -31,6 +33,7 @@ describe('City capture & destruction', () => {
       mapType: 'MANY_CITIES',
       devMode: false,
       startingGold: 100,
+      mapSeed: 20260103,
     });
     randomSpy = vi.spyOn(Math, 'random');
   });

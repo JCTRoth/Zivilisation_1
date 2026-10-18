@@ -57,6 +57,9 @@ interface CivMetrics {
    * times each have the same warship count and completely different navies.
    */
   fleet: Record<string, number>;
+  /** Whether the civ reached Flight — the air branch's only gate. */
+  flightKnown: boolean;
+  combustionKnown: boolean;
 }
 
 interface SeedReport {
@@ -71,6 +74,10 @@ interface SeedReport {
   transportsBuilt: number;
   /** Hulls that ever existed, by type — the variety measure. */
   hullsBuilt: Record<string, number>;
+  /** Airframes ever built, all civs of this seed, by type. */
+  airBuilt: Record<string, number>;
+  /** Carriers ever built this seed (the air program's hulls). */
+  carriersBuilt: number;
   citiesFounded: number;
   citiesLost: number;
   civs: CivMetrics[];
@@ -145,6 +152,9 @@ function snapshotCiv(engine: GameEngine, civId: number): CivMetrics {
     techs: (civ?.technologies ?? []).length,
     gold: Math.round(civ?.resources?.gold ?? 0),
     fleet,
+    /** The techs the air branch is gated on (boundable state facts). */
+    flightKnown: civ?.technologies?.includes?.('flight') === true,
+    combustionKnown: civ?.technologies?.includes?.('combustion') === true,
   };
 }
 
@@ -184,6 +194,12 @@ describe('naval AI benchmark', () => {
       let peakTransports = 0;
       const hullsBuilt: Record<string, number> = {};
       const peakByType: Record<string, number> = {};
+      // Air branch: airframes and carriers measured the same way — what
+      // floated/FOLE into existence, not what the log claims.
+      const airBuilt: Record<string, number> = {};
+      const peakAir: Record<string, number> = {};
+      let carriersBuilt = 0;
+      let peakCarriers = 0;
 
       let totalMs = 0;
       let maxMs = 0;
@@ -236,6 +252,21 @@ describe('naval AI benchmark', () => {
             peakByType[type] = n;
           }
         }
+        // Air branches of the same measure. 'carrier' is a hull AND the air
+        // program's platform, so it is tracked on both sides on purpose.
+        const AIR_TYPES = new Set(['fighter', 'bomber', 'carrier']);
+        for (const [type, n] of Object.entries(byType)) {
+          if (!AIR_TYPES.has(type)) continue;
+          const peak = peakAir[type] ?? 0;
+          if (n > peak) {
+            airBuilt[type] = (airBuilt[type] ?? 0) + (n - peak);
+            peakAir[type] = n;
+          }
+        }
+        if (byType.carrier > peakCarriers) {
+          carriersBuilt += byType.carrier - peakCarriers;
+          peakCarriers = byType.carrier;
+        }
       }
 
       const afloat = engine.units.filter((u: Unit) => !u.isDefeated);
@@ -251,6 +282,8 @@ describe('naval AI benchmark', () => {
         warshipsLost,
         transportsBuilt,
         hullsBuilt,
+        airBuilt,
+        carriersBuilt,
         citiesFounded: Math.max(0, engine.cities.length - baselineCities),
         citiesLost: Math.max(0, baselineCities - engine.cities.length),
         civs: active.map((civ) => snapshotCiv(engine, civ.id)),
@@ -287,6 +320,16 @@ describe('naval AI benchmark', () => {
         }
         return total;
       })(),
+      airBuilt: (() => {
+        const total: Record<string, number> = {};
+        for (const r of reports) {
+          for (const [t, n] of Object.entries(r.airBuilt)) total[t] = (total[t] ?? 0) + n;
+        }
+        return total;
+      })(),
+      flightCivs: reports.reduce((n, r) => n + r.civs.filter((c) => c.flightKnown).length, 0),
+      combustionCivs: reports.reduce((n, r) => n + r.civs.filter((c) => c.combustionKnown).length, 0),
+      carriersBuilt: reports.reduce((n, r) => n + r.carriersBuilt, 0),
     };
     {
       const built = agg.hullsBuilt as Record<string, number>;

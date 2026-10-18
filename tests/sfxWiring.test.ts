@@ -740,6 +740,38 @@ describe('cue wiring', () => {
       });
     });
 
+    describe('cityDisaster', () => {
+      const disaster = (civilizationId: number, kind: string): void => {
+        const base = civilizationId === 0 ? humanCity() : aiCity();
+        engine.onStateChange?.('CITY_DISASTER', {
+          city: base,
+          civilizationId,
+          kind,
+          lostPopulation: 0,
+          destroyedBuilding: null,
+          goldStolen: 0,
+        });
+      };
+
+      it('plays when a disaster strikes one of the player\'s cities', () => {
+        disaster(0, 'flood');
+        expect(cues()).toEqual(['cityDisaster']);
+      });
+
+      it('plays for every kind of disaster — one cue, one meaning', () => {
+        for (const kind of ['famine', 'flood', 'fire', 'plague', 'pirates', 'volcano', 'earthquake']) {
+          vi.mocked(playSfx).mockClear();
+          disaster(0, kind);
+          expect(cues(), `kind ${kind}`).toEqual(['cityDisaster']);
+        }
+      });
+
+      it('stays silent for a rival\'s disaster', () => {
+        disaster(1, 'flood');
+        expect(cues()).toEqual([]);
+      });
+    });
+
     describe('unitProduced', () => {
       it('plays when a unit rolls out of one of the player\'s cities', () => {
         engine.onStateChange?.('UNIT_PRODUCED', {

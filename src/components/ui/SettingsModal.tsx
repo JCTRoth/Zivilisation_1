@@ -44,6 +44,8 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
       devMode: false,
       enableAnimations: true,
       enableSoundEffects: true,
+      enableBackgroundMusic: true,
+      musicVolume: 0.4,
       animationSpeed: 1,
       enemyAnimationSpeed: 1,
       cameraGlideSpeed: 1,
@@ -200,6 +202,36 @@ function SettingsModal({ show, onHide }: SettingsModalProps) {
               t('settings.devModeHint'),
             )}
           </div>
+        </section>
+
+        <section className="gm-section">
+          <div className="gm-section-title">{t('settings.sectionMusic')}</div>
+          <div className="settings-toggles">
+            {toggle(
+              "enableBackgroundMusic",
+              t('settings.enableBackgroundMusic'),
+              "enableBackgroundMusic",
+              settings.enableBackgroundMusic !== false,
+              t('settings.enableBackgroundMusicHint'),
+            )}
+          </div>
+          <div className="settings-grid settings-grid--single">
+            {renderSlider(
+              t('settings.musicVolume'),
+              typeof settings.musicVolume === 'number' ? settings.musicVolume : 0.4,
+              0,
+              1,
+              0.05,
+              "musicVolume",
+              t('settings.musicVolumeHint'),
+              (v) => `${Math.round(v * 100)}%`,
+              settings.enableBackgroundMusic === false,
+              "🎵",
+            )}
+          </div>
+          {settings.enableBackgroundMusic === false && (
+            <div className="gm-note">{t('settings.musicOffNote')}</div>
+          )}
         </section>
 
         <section className="gm-section">

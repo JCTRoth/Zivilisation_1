@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { useSeededRandom } from './helpers/world';
 import GameEngine from '@/game/engine/GameEngine';
 import { MIN_CITY_CENTER_DISTANCE } from '@/game/engine/SettlementEvaluator';
 
@@ -27,11 +28,13 @@ describe('Auto End Turn + city founding', () => {
       emitted.push(type);
     };
 
+    useSeededRandom(7);
     await engine.initialize({
       numberOfCivilizations: 2,
       mapType: 'MANY_CITIES',
       devMode: false,
-      startingGold: 100
+      startingGold: 100,
+      mapSeed: 20260103
     });
   });
 
@@ -182,11 +185,13 @@ describe('Auto End Turn after combat', () => {
     engine.onStateChange = (type: string, _data?: any) => {
       emitted.push(type);
     };
+    useSeededRandom(7);
     await engine.initialize({
       numberOfCivilizations: 2,
       mapType: 'MANY_CITIES',
       devMode: false,
-      startingGold: 100
+      startingGold: 100,
+      mapSeed: 20260103
     });
     randomSpy = vi.spyOn(Math, 'random');
   });
@@ -309,11 +314,13 @@ describe('Auto End Turn defers while a city still has production queued', () => 
       emitted.push(type);
     };
 
+    useSeededRandom(7);
     await engine.initialize({
       numberOfCivilizations: 2,
       mapType: 'MANY_CITIES',
       devMode: false,
-      startingGold: 100
+      startingGold: 100,
+      mapSeed: 20260103
     });
   });
 

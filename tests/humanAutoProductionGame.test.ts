@@ -1,4 +1,5 @@
 import { describe, expect, it, afterEach } from 'vitest';
+import { useSeededRandom } from './helpers/world';
 import GameEngine from '@/game/engine/GameEngine';
 
 /**
@@ -29,6 +30,7 @@ describe('Human autoproduction mix over 30 rounds', () => {
     console.log = () => {};
     console.warn = () => {};
     try {
+      useSeededRandom(7);
       engine = new GameEngine(null);
       (engine as any).sleep = () => Promise.resolve();
       await engine.initialize({
@@ -36,6 +38,7 @@ describe('Human autoproduction mix over 30 rounds', () => {
         mapType: 'MANY_CITIES',
         devMode: false,
         startingGold: 100,
+        mapSeed: 20260103,
       });
 
       const humanCiv = (engine as GameEngine).civilizations[0];

@@ -93,6 +93,17 @@ export class Pathfinding {
     // Check if tile is passable for this unit type
     const terrainProps = TERRAIN_PROPS[terrainKey];
 
+    // AIR: `GameEngine.canUnitMoveTo` lets `type: 'air'` fly over water, lakes
+    // and impassable ground as individual steps — but pathfinding had no such
+    // rule, so the GO-TO layer (which plans routes AHEAD of the steps) treated
+    // an ocean as Infinity and a built bomber could never be routed to a target
+    // across water even though a manual hop could. The branch mirrors the step
+    // rule: air pays a flat tile everywhere on the map. Roads and railroads
+    // are ground concerns and make no claim on the sky.
+    const isAirUnit = UNIT_PROPS[String(unitType)]?.type === 'air';
+    if (isAirUnit) return 1;
+    if (!tile) return Infinity;
+
     // Determine if unit is land or water based
     const isWaterUnit = this.isNavalUnit(unitType);
     const isLandUnit = !isWaterUnit;

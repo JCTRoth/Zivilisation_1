@@ -693,6 +693,36 @@
   gap: 8px;
 }
 
+/* Hotseat per-player nation pickers (step 2, only when Hotseat is chosen). */
+.setup-hotseat-nations {
+  margin-top: 12px;
+}
+
+.setup-hotseat-nations__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.setup-hotseat-nation {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setup-hotseat-nation__label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted, rgba(232, 238, 243, 0.7));
+}
+
+.setup-hotseat-nation__select {
+  width: 100%;
+  font-weight: 600;
+}
+
 .setup-civ-card {
   all: unset;
   position: relative;

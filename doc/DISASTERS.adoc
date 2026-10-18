@@ -1,0 +1,205 @@
+= City Disasters — The Seven Civ1 Events, Retuned
+
+> *Module:* `src/game/engine/DisasterManager.ts`
+> *Hook:* `src/game/engine/TurnManager.ts` — `processTurnEvents`, for every city, after growth and production
+> *Event:* `CITY_DISASTER` → `src/utils/EngineEventHandlers.ts` (`onCityDisaster`)
+> *Sound:* `cityDisaster` — see `doc/SOUND_EFFECTS.adoc`
+> *Strings:* `event.disaster.*` in all six dictionaries
+> *Tests:* `tests/disasters.test.ts` (rules, effects, frequency), `tests/sfxWiring.test.ts` (the cue's gate)
+
+---
+
+== Overview
+
+Civ1 rolls a random disaster for a city during turn processing. With a
+decent-sized empire the player met one most turns — usually a flood — which
+turns a catastrophe into background noise and, worse, into a tax on the units
+standing in the city. This implementation keeps the Civ1 rule set and changes
+only the clock and the punch:
+
+* **Far rarer.** The seven chances sum to well under 0.5% per eligible city
+  per turn — roughly one disaster per 230 city-turns. A twenty-city empire
+  sees one every dozen turns or so; *any specific* city seeing *any specific*
+  disaster is a once-in-a-game event. The flood, the one that pestered the
+  player, is deliberately the rarest of the seven.
+* **A little harder.** Civ1's population losses (25–33%) are raised a notch
+  (33–40%), and the secondary losses land in full: fire and earthquakes
+  destroy a building, the volcano kills *and* burns, and pirates empty the
+  food **and** shield stores while robbing the treasury.
+
+[[table]]
+== The Seven, with Their Rules
+
+[cols="1,3,2,3", options="header"]
+|===
+| Disaster | Trigger | Prevention | What it does
+
+| Famine
+| Size 2+, Pottery known
+| Granary
+| Kills 40% of the population (at least one citizen, never the last one) and
+  empties the food stores.
+
+| Flood
+| On or next to a river, Masonry known
+| City Walls
+| Drowns 33% of the population. The rarest roll in the game — see <<tuning>>.
+
+| Fire
+| Size 2+, Construction known, at least one destroyable building
+| Aqueduct
+| Burns one random non-Palace, non-Wonder building.
+
+| Plague
+| Size 2+, Construction known
+| Aqueduct **or** Medicine
+| Kills 33% of the population.
+
+| Pirates
+| Next to deep ocean, with gold or stores worth taking
+| Barracks
+| Steals max(10% of the treasury, 20 gold) and resets the food and shield
+  stocks to 0.
+
+| Volcano
+| On or next to mountains, Ceremonial Burial known
+| Temple
+| Kills 40% of the population and burns one non-Palace, non-Wonder building
+  (when there is one left to burn).
+
+| Earthquake
+| Next to hills, at least one destroyable building
+| — (unpreventable)
+| Destroys one random non-Palace, non-Wonder building. The only defence is
+  geography.
+|===
+
+The Palace and World Wonders are never destroyed: a random event may humble an
+empire's industry, never un-build its history or raze its capital building —
+the same rule city capture follows. A disaster never removes the last citizen;
+a city may be humbled, never erased. Famine *is* starvation's knife, but the
+Granary's protection is checked per event, not per citizen.
+
+[[cities-only]]
+== Cities Only — Units Are Never Touched
+
+A disaster targets the **city**. No event in the manager has a code path to a
+unit: a flood never damages, drowns or destroys a military unit — ancient
+levy or mechanised infantry — and neither does any of the other six. This is
+an explicit design decision, not an omission:
+
+* Civ1's disaster table is a city table; random unit attrition was never part
+  of it.
+* Units cannot dodge an event that fires during the turn flip, so "damaged by
+  a flood" is pure lottery against an army the player placed.
+* The modern-era complaint (an era where armies should manage a river) is
+  already old by the time a legion is standing in a city that has seen fifty
+  floods.
+
+Randomness belongs in the city ledger, not in the order of battle. Every
+disaster is announced as a city event, and `tests/disasters.test.ts` pins that
+a unit standing in the struck city comes out with its health and existence
+untouched.
+
+[[ordering]]
+== One per City, in a Fixed Order
+
+Each eligible city rolls once per turn, cycling through the disaster table in
+a fixed order:
+
+[source,ts]
+----
+DISASTER_CHECK_ORDER = ['famine', 'flood', 'fire', 'plague', 'pirates', 'volcano', 'earthquake']
+----
+
+The first disaster that passes its trigger check, is not prevented, and rolls
+under its chance **lands**; nothing else is tested for that city that turn.
+Two consequences worth knowing:
+
+* At most one disaster per city per turn — catastrophes never stack.
+* The roll is deterministic under a stubbed `Math.random`, so the whole
+  system is testable without seeding the game (`forceRandom(0)` makes every
+  roll land; the first eligible disaster is the one that strikes).
+
+The roll happens at the end of a city's turn processing: growth and the turn's
+production have both landed, so the loss is felt on the turn it arrives, and
+the store refresh at the end of `processTurnEvents` shows the new population,
+the missing building and the emptied stores immediately. AI cities roll too —
+a disaster is news for whoever owns the city; only the *notification* is
+gated to the human player.
+
+[[tuning]]
+== Tuning: Far Rarer Than Civ1, a Little Harder
+
+Chances are per eligible city per turn and live in one exported table:
+
+[cols="2,1,1", options="header"]
+|===
+| Disaster | Chance | Effect (Civ1 → here)
+
+| Famine | 0.09% | −33% pop → −40%, food stores wiped
+| Flood | 0.04% | −25% pop → −33% pop
+| Fire | 0.08% | 1 building (as Civ1)
+| Plague | 0.07% | −25% pop → −33% pop
+| Pirates | 0.07% | gold stolen + stocks wiped
+| Volcano | 0.04% | −33% pop → −40% + building
+| Earthquake | 0.04% | 1 building
+|===
+
+The flood is the rarest on purpose: it was the Civ1 disaster the player
+remembered as constant. In a ten-city empire a specific city sees a flood
+about once every 2,500 turns; the empire as a whole, about once per 250 turns.
+
+Population losses are `floor(population × share)`, at least one citizen and at
+most `population − 1`. The dead citizens' tiles are released exactly the way
+starvation releases them (specialists demoted first, then worked tiles), and
+`foodNeeded` moves with the population so the city screen never shows a stale
+growth target.
+
+[[event]]
+== The Event, the Toast and the Sound
+
+`DisasterManager.strike` applies the effect and emits one event:
+
+[source,ts]
+----
+this.gameEngine.onStateChange?.('CITY_DISASTER', {
+  city,                 // the struck city (live reference, like CITY_STARVED)
+  civilizationId,       // its owner
+  kind,                 // 'famine' | 'flood' | 'fire' | 'plague' | 'pirates' | 'volcano' | 'earthquake'
+  lostPopulation,       // citizens lost (0 for fire, earthquake, empty raids)
+  destroyedBuilding,    // building id or null
+  goldStolen,           // 0 unless pirates
+});
+----
+
+`EngineEventHandlers.onCityDisaster` turns it into a toast for the owning
+human player (`notify('warning', …, city.civilizationId)`, so hotseat seats
+only see their own news), plays the `cityDisaster` cue through the same
+`playNewsCue` gate as the other news cues, and refreshes the store. The
+message is one `event.disaster.<kind>` string per disaster in all six
+languages; the volcano has a second variant that names the burnt building when
+it had one to burn.
+
+[[files]]
+== Where Things Live
+
+* `src/game/engine/DisasterManager.ts` — the rules, chances, effects and the
+  `CITY_DISASTER` emission.
+* `src/game/engine/TurnManager.ts` — one `processCity` call per city at the
+  end of its turn.
+* `src/game/engine/GameEngine.ts` — `disasterManager` field, constructed with
+  the other managers.
+* `src/utils/EngineEventHandlers.ts` — `CITY_DISASTER` → toast + cue.
+* `src/utils/Sfx.ts`, `src/utils/SoundEngine.ts` — the `cityDisaster` cue
+  (one voice for all seven; a cue that fires once a game per kind would never
+  stay recognisable).
+* `src/i18n/{en,de,es,fr,ja,ru}.ts` — the `event.disaster.*` strings.
+* `tests/disasters.test.ts` — triggers, prevention, effects, frequency
+  invariants and a full-pipeline run.
+
+The related replay-safe precedent is the meltdown: `EconomicManager` emits
+`NUCLEAR_MELTDOWN` during `processTurn`, the router turns it into a toast,
+news line and the `nuclearStrike` cue. Disasters follow the same shape, with
+their own manager because seven events deserve their own file rather than a
+seventh lump in a turn processor.
