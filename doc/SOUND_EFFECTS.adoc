@@ -625,10 +625,11 @@ cue makes a noise. Three mechanisms, in order:
 . **Serialization.** The game has exactly one voice. While a cue is still
    ringing — for its full file duration, measured off the asset — the next
    one waits in a priority FIFO three deep: events first, then attacks, then
-   unit sounds, then UI. A full line drops its least important waiter (a
-   fanfare bumps a click; a click never bumps a fanfare). Two sounds never
-   overlap: a torpedo never steps on a fanfare, and the nuclear whistle
-   always finishes before the boom starts.
+   selection acknowledgements, then unit sounds, then UI. A full line drops
+   its least important waiter, and a unit answering a click outranks the
+   movement chatter behind it (a fanfare bumps a click; a click never bumps a
+   fanfare). Two sounds never overlap: a torpedo never steps on a fanfare, and
+   the nuclear whistle always finishes before the boom starts.
 
 . **Variants.** A cue with several recordings plays its MAIN file most of
    the time (weight 70 of 100) and a secondary the rest — the same blow does
@@ -637,6 +638,35 @@ cue makes a noise. Three mechanisms, in order:
    `CUE_FILES` row always points at the main file, and a runtime row that
    *differs* from it wins outright, so live repointing keeps working.
 
+=== Selection: a unit answers once, then grunts
+
+Selection is the one sound in the game the player triggers *deliberately*, and
+it is a conversation with a particular unit rather than an event in the world.
+It is therefore governed per **unit**, not per sound.
+
+* First click on a unit — the full acknowledgement. A land unit reports in
+  (`unitSelected`, or `archerSelected` / `artillerieSelected` in its own
+  voice); a submarine answers with sonar (`submarineSelected`).
+* Clicking the **same** unit again inside `SELECTION_REPEAT_WINDOW_MS` (4 s —
+  the midpoint of the 3–5 s window) is the player re-issuing or cancelling an
+  order, not a new introduction. It gets `unitReSelected`: one short downward
+  blip, a quarter the length of the acknowledgement, that reads as "still
+  here" rather than as a second "Yes, Commander?".
+* Clicking it after the window is a fresh interaction and gets the full
+  acknowledgement again. The ledger answers "did we *just* acknowledge this
+  unit?", not "have we ever".
+* Clicking a **different** unit always gets that unit's own acknowledgement.
+
+This replaces a 10 s cooldown shared by every unit sound. That rule stopped
+click-spam, but it was keyed on the *sound* rather than on the *unit*, so
+picking up five units in a row produced one acknowledgement and four silences —
+exactly backwards for a game where the player moves between units constantly.
+
+One file, one purpose still holds: `unitReSelected` is a cue in its own right
+serving the repeat click, and no recording is shared between it and the full
+acknowledgements.
+
+'''
 A file holds the voice for its whole measured length — the durations in the
 manifest were read off the assets with ffprobe, and
 `tests/soundEngine.test.ts` fails if a hold is shorter than any of its
@@ -958,9 +988,16 @@ sound design.
   the context finally starts. `unlockAudio()` on the first click makes this
   rare.
 
-| Cooldown (unit 10 s, attack 4 s, event 2.5 s, UI 0.4 s)
+| Cooldown (selection 0.3 s, unit 10 s, attack 4 s, event 2.5 s, UI 0.4 s)
 | A re-fired cue is dropped. A three-tile drive rumbles once; a five-round
-  battle knocks four times, not forty.
+  battle knocks four times, not forty. Selection is the exception that proves
+  the rule: its window is barely there, because re-selection is governed per
+  unit (a grunt), not by silence.
+
+| Re-selecting the same unit within 4 s
+| The full acknowledgement is replaced by `unitReSelected`, a bare grunt — or
+  nothing at all, when the queue is busy. See
+  <<_selection_a_unit_answers_once_then_grunts>>.
 
 | Voice busy, queue full
 | The lowest-priority waiter is dropped. A fanfare bumps a click; a click
@@ -1244,6 +1281,10 @@ but the code assigned it as an absolute value, which made a strike three times
 recording backend:
 
 * unit sounds hold 10 s, attack sounds 4 s, and cooldowns are per cue;
+  selection acknowledgements are their own family (0.3 s) and are gated per
+  UNIT, not per sound — see `selectionAckFor` / `playUnitSelection`;
+* a re-click of an already-acknowledged unit within 4 s gets a grunt, a
+  different unit always gets its own acknowledgement;
 * a second cue queues behind the first and the line drains most important
   first; a full line drops its least important waiter;
 * the main recording plays most of the time (weight 70), and a runtime row

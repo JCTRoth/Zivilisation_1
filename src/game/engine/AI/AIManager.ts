@@ -1491,15 +1491,32 @@ export class AIManager {
             // its turn, kept the stale target, and repeated it (the bulk of the
             // `works_fail` / `no_improvement` pile in the test logs).
             unit._aiWorksTarget = null;
+            // A settler RESERVED for an island must not found a city where it
+            // is standing. The settlement search below runs first in the turn
+            // and can consume the settler outright, so `chooseAITarget`'s colony
+            // branch — which correctly walks it to the coast and waits for the
+            // ferry — never got the chance to run. This is why island hopping
+            // produced zero island cities across every benchmark: the mission
+            // was planned, the ferry was built, and the settler founded a town
+            // on its home island before the ferry arrived.
+            const colonyMission = this.getColonyMissionForSettler(storage, unit.id);
+
             // Civ1: expansion FIRST — a settler founds a new city whenever a
             // valid spot exists, so empires actually grow. Previously the join
             // check ran first and every produced settler (spawned on the capital
             // tile) merged back into the capital, leaving civs at 1 city forever.
             let settlement: { col: number; row: number; score: number } | null = null;
-            try {
-              settlement = this.findBestSettlementForSettler(unit, civStrategy);
-            } catch (error) {
-              console.error('[AI-SETTLER] Error in settlement search:', error);
+            // …but never for a settler that is already promised to an island. The
+            // search can consume the settler outright by founding, and skipping
+            // only the TARGET (with `continue`) left it standing still forever —
+            // so the search itself is what gets skipped, and the turn falls
+            // through to `chooseAITarget`, which walks it to the rendezvous.
+            if (!colonyMission) {
+              try {
+                settlement = this.findBestSettlementForSettler(unit, civStrategy);
+              } catch (error) {
+                console.error('[AI-SETTLER] Error in settlement search:', error);
+              }
             }
             if (!this.gameEngine.units.includes(unit)) break; // consumed by founding
             unit._aiSettlement = settlement;
@@ -1727,7 +1744,7 @@ export class AIManager {
           // No valid target. A combat unit parked at/next to a friendly city is
           // defending it — entrench (fortify) for the +50% defense bonus
           // (Civ1: garrisons fortify instead of standing idle).
-          if (this.shouldFortifyForDefense(unit as Unit)) {
+          if (UNIT_PROPS[unit.type]?.type !== 'air' && this.shouldFortifyForDefense(unit as Unit)) {
             debugLog(`[AI] No target — ${unit.type} fortifies to defend the city`);
             this.gameEngine.log('ai', `Fortify — ${civ.name} ${unit.type}(${unit.id}) defends city`, { civilizationId, action: 'fortify', unitId: unit.id, unitType: unit.type });
             this.gameEngine.unitFortify(unit.id);
@@ -1855,7 +1872,7 @@ export class AIManager {
             }
           }
 
-          if (this.shouldFortifyForDefense(unit as Unit)) {
+          if (UNIT_PROPS[unit.type]?.type !== 'air' && this.shouldFortifyForDefense(unit as Unit)) {
             debugLog(`[AI] Unit ${unit.id} fortifies to defend the city`);
             this.gameEngine.log('ai', `Fortify — ${civ.name} ${unit.type}(${unit.id}) defends city`, { civilizationId, action: 'fortify', unitId: unit.id, unitType: unit.type });
             this.gameEngine.unitFortify(unit.id);
@@ -2909,9 +2926,30 @@ export class AIManager {
   // legacy single `colonyMission` slot migrates into the array on first read,
   // so old saves keep working.
 
-  /** Max simultaneous colony missions per civ (sealift + settler supply). */
-  private maxParallelColonies(): number {
-    return 3;
+  /**
+   * How many islands a civ may seed at once.
+   *
+   * This used to be a flat 3, which is the whole answer to "why is island
+   * hopping not more aggressive": an empire with six settlers and four ferries
+   * was allowed exactly as many colonies as one with a single settler and no
+   * hull at all, so the archipelago was settled three rocks at a time however
+   * big the fleet got.
+   *
+   * The cap is now SUPPLY, not policy: a colony is a settler and a hull, so the
+   * ceiling is what the civ actually has to send — free settlers plus free
+   * hulls. Bounded below so a small empire still settles more than one island,
+   * and above because the map cannot be seeded faster than the crossings take.
+   */
+  private maxParallelColonies(civId: number): number {
+    let settlers = 0;
+    let hulls = 0;
+    for (const u of this.gameEngine.units) {
+      if (u.civilizationId !== civId || u.isDefeated || u.embarkedOn) continue;
+      if (u.type === 'settler') settlers++;
+      const props = UNIT_PROPS[u.type];
+      if (props?.naval && (props.transportCapacity ?? 0) > 0 && u.type !== 'submarine') hulls++;
+    }
+    return Math.max(3, Math.min(6, Math.floor(settlers + hulls)));
   }
 
   private getColonyMissions(storage?: PlayerTurnStorage): ColonyMission[] {
@@ -3884,7 +3922,7 @@ export class AIManager {
     // ── Plan: seed further islands in parallel while settlers/hulls allow ───
     const canBuildShips = typeof this.gameEngine.civCanBuildShips === 'function'
       && this.gameEngine.civCanBuildShips(civ.id);
-    while (refreshed.length < this.maxParallelColonies()) {
+    while (refreshed.length < this.maxParallelColonies(civ.id)) {
       const islands = this.gameEngine.getColonizableIslands(civ.id)
         .filter((i) => !claimedBySelf.has(i.landmassId));
       if (islands.length === 0) break;
@@ -3990,7 +4028,7 @@ export class AIManager {
       const storage = this.gameEngine.getPlayerStorage?.(civilizationId);
       const missions = this.getColonyMissions(storage);
       const islands = this.gameEngine.getColonizableIslands(civilizationId);
-      const desired = Math.min(this.maxParallelColonies(), islands.length);
+      const desired = Math.min(this.maxParallelColonies(civilizationId), islands.length);
       const covered = missions.filter((m) =>
         this.gameEngine.units.some((u: Unit) => u.id === m.settlerId && !u.isDefeated),
       ).length;
@@ -8225,7 +8263,9 @@ export class AIManager {
    */
   private isGarrisonEligible(unit: Unit): boolean {
     const civilianTypes = new Set(['settler', 'caravan', 'diplomat', 'worker', 'nuclear']);
-    return !civilianTypes.has(unit.type) && (unit.attack || 0) > 0;
+    if (civilianTypes.has(unit.type)) return false;
+    if (UNIT_PROPS[unit.type]?.type === 'air') return false;
+    return (unit.attack || 0) > 0;
   }
 
   /**

@@ -1876,4 +1876,15 @@ export const ru: PartialTranslationDict = {
   // ── Ограничение караванов ──────────────────────────────────────────────
   'prod.caravanCap': 'Макс. 3 каравана',
   'prod.caravanCapHint': 'В городе одновременно может находиться не более 3 его караванов в пути.',
+  'hotseat.handoff.title': 'Передайте устройство',
+  'hotseat.handoff.passDevice': 'Передайте устройство следующему игроку. Карта скрыта, пока он не будет готов.',
+  'hotseat.handoff.ready': 'Я готов',
+  'hotseat.handoff.dontShowAgain': 'Больше не показывать',
+  'hotseat.turnFor': 'Ход: {player}',
+  'setup.gameMode': 'Режим игры',
+  'setup.gameModeHint': 'Хотсит позволяет 2-4 игрокам делить одно устройство по очереди.',
+  'setup.gameMode.single': 'Один игрок',
+  'setup.gameMode.hotseat': 'Хотсит (2-4 игрока)',
+  'setup.hotseat.players': 'Игроки в хотсите',
+  'setup.hotseat.playersHint': 'Сколько людей делят это устройство. Каждый ходит по очереди.',
 };

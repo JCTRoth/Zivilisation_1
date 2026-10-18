@@ -1185,8 +1185,8 @@ export const en = {
   'cityEvent.title.razed': '{{city}} was burned to the ground',
   'cityEvent.title.yours': '{{city}} is yours',
   'cityEvent.title.fallen': '{{city}} has fallen',
-  'cityEvent.lede.foundedBefore': 'Your settlers have marked out a site and raised the first walls. ',
-  'cityEvent.lede.foundedAfter': ' is a city of your people now — small, hungry, and full of promise.',
+  'cityEvent.lede.foundedBefore': 'In the first light of dawn your settlers laid the cornerstone and raised the first walls of earth and stone. ',
+  'cityEvent.lede.foundedAfter': ' is a city of your people now — small, hungry, and full of promise, ready to make its mark on history.',
   'cityEvent.lede.joinedBefore': 'The elders of ',
   'cityEvent.lede.joinedAfter': ' opened their gates before a shot was fired. Their people are your people from this turn on.',
   'cityEvent.lede.razedBefore': 'Nothing is left of ',
@@ -1902,6 +1902,19 @@ export const en = {
   'gm.tradeRoute.road.strong': 'permanent trade route',
   'gm.tradeRoute.road.post': ', adding trade every single turn from now on. A city keeps up to three routes, and a better road always replaces a weaker one.',
   'gm.tradeRoute.roadFallback': 'Your caravan established a trade route.',
+
+  // ── Hotseat multiplayer ──
+  'hotseat.handoff.title': 'Pass the Device',
+  'hotseat.handoff.passDevice': 'Hand the device to the next player. The map is hidden until they are ready.',
+  'hotseat.handoff.ready': 'I\'m Ready',
+  'hotseat.handoff.dontShowAgain': 'Don\'t show this again',
+  'hotseat.turnFor': 'Turn for {player}',
+  'setup.gameMode': 'Game Mode',
+  'setup.gameModeHint': 'Hotseat lets 2-4 players share one device, taking turns.',
+  'setup.gameMode.single': 'Single Player',
+  'setup.gameMode.hotseat': 'Hotseat (2-4 Players)',
+  'setup.hotseat.players': 'Hotseat Players',
+  'setup.hotseat.playersHint': 'How many humans share this device. Each takes a turn in order.',
 };
 
 /** Every key the game knows. All dictionaries are typed against this. */

@@ -62,6 +62,17 @@ export interface GameState {
    */
   selectionOrigin?: SelectionOrigin | null;
   activePlayer: number;
+  /**
+   * Which human player's perspective the fog-of-war shows. In single-player
+   * this is always 0 (HUMAN_PLAYER_ID). In hotseat it tracks the active human
+   * seat; during AI turns it stays on the last human who played.
+   */
+  viewPlayer: number;
+  /**
+   * Which civ slots are human-controlled in hotseat mode. Defaults to [0]
+   * (single player). Used to determine which turns update the fog viewer.
+   */
+  humanPlayerIds?: number[];
   mapGenerated: boolean;
   winner: string | null;
   currentYear?: number;
@@ -780,6 +791,16 @@ export interface UIState {
    * AI-vs-AI run wants the map to stay visible.
    */
   isGamePaused: boolean;
+  /**
+   * Hotseat handoff state — set when a human player's turn begins in hotseat
+   * mode. Shows the "pass the device" overlay; null when no handoff is active.
+   */
+  hotseatHandoff: {
+    playerId: number;
+    playerName: string;
+    leader: string;
+    color: string;
+  } | null;
 }
 
 export interface Notification {
@@ -814,6 +835,12 @@ interface Settings {
   skipGameResultScreen: boolean;
   autoEndTurn: boolean; // Automatically end turn when all units are done
   autoCamera: boolean; // Automatically move camera to focused unit / event
+  /**
+   * Hotseat: skip the "pass the device" handoff overlay between human turns.
+   * Default false = show it (prevents screen-peeking). Settable from the
+   * handoff screen itself ("don't show this again").
+   */
+  skipHotseatHandoff: boolean;
   devMode: boolean; // Developer mode: see all players on minimap and switch between them
   /** Master switch for all movement/combat/camera animations. When false, durations are 0 (instant). */
   enableAnimations: boolean;
@@ -1098,6 +1125,8 @@ export interface GameActions {
   focusOnNextUnit: () => void;
   updateCamera: (cameraUpdate: Partial<CameraState>) => void;
   toggleUI: (key: keyof UIState) => void;
+  /** Partial-update the UI state (used by the engine event router). */
+  updateUIState: (updates: Partial<UIState>) => void;
   setCurrentQueueUnitId: (unitId: string | null) => void;
   showDialog: (dialog: UIState['activeDialog']) => void;
   hideDialog: () => void;

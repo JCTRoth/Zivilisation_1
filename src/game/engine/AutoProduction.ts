@@ -33,6 +33,7 @@ import {
   type NavalDoctrineResult,
   isWarshipHull,
   isSealiftHull,
+  classifyWarshipRole,
 } from './AI/NavalDoctrine';
 import { AI_RESERVE_TURNS } from './AI/AIEconomicManager';
 import { ABSOLUTE_MIN_GOLD } from './EconomicManager';
@@ -269,6 +270,23 @@ export class AutoProduction {
           // Never keep producing a building the city already owns (the queue
           // item can outlive the building it produced). Re-pick a fresh item.
           debugLog('[AutoProduction] City already has', city.currentProduction.itemType, '- re-picking production');
+          this.gameEngine.removeCurrentProduction(city.id);
+        } else if (
+          city.currentProduction.type === 'unit' &&
+          city.currentProduction.itemType !== 'ferry' &&
+          this.needsHullForMissions(city)
+        ) {
+          // THE NAVAL BOTTLENECK. A colony or invasion mission is planned and
+          // waiting on a hull, and this city has committed its next twenty
+          // turns to a settler. Production is only re-evaluated when the current
+          // item COMPLETES, so a 40-shield settler at 2 shields a turn starves
+          // the mission for the whole game: the missions sat at `ferryId: null`
+          // in every benchmark run, and no island was ever settled.
+          //
+          // A mission with no hull is a commitment already made — a settler
+          // standing on a coast, an army waiting at a rendezvous. It outranks
+          // anything else this city could be building, exactly as a threat does.
+          debugLog('[AutoProduction] Sealift mission waiting on a hull — interrupting', city.currentProduction.itemType);
           this.gameEngine.removeCurrentProduction(city.id);
         } else {
           debugLog('[AutoProduction] City already has production:', city.currentProduction);
@@ -2416,6 +2434,76 @@ export class AutoProduction {
     return type && canBuildUnit(civ, type) ? type : null;
   }
 
+  /** Every sealift hull this civ has afloat, claimed or not. */
+  private civHullCount(civId: number): number {
+    let n = 0;
+    for (const u of this.gameEngine.units) {
+      if (u.civilizationId !== civId || u.isDefeated) continue;
+      const props = UNIT_PROPS[u.type];
+      if (props?.naval && (props.transportCapacity ?? 0) > 0 && u.type !== 'submarine') n++;
+    }
+    return n;
+  }
+
+  /** The cheapest fighting hull this civ can put to sea, or null. */
+  private firstWarshipHull(civ: Civilization): AvailableShip | null {
+    const decision = this.navalDoctrineFor(civ.id);
+    const options = decision?.warshipOptions ?? [];
+    const usable = options.filter((s) => s.cost > 0 && (s.attack ?? 0) > 0 && canBuildUnit(civ, s.type));
+    if (usable.length === 0) return null;
+    // Cheapest first: this is a screen to grow the fleet behind, not the battle
+    // line, and the civ needs it this turn rather than eventually.
+    return [...usable].sort((a, b) => a.cost - b.cost || b.attack - a.attack)[0];
+  }
+
+  /** Whether this civ has anything afloat that can shoot back. */
+  private civHasWarship(civId: number): boolean {
+    for (const u of this.gameEngine.units) {
+      if (u.civilizationId !== civId || u.isDefeated) continue;
+      const props = UNIT_PROPS[u.type];
+      if (!props?.naval) continue;
+      if ((props.transportCapacity ?? 0) > 0 && u.type !== 'submarine') continue;
+      if ((u.attack ?? props.attack ?? 0) > 0) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether an active mission is stranded without a hull.
+   *
+   * True when a colony or invasion mission has no ferry AND there is no unclaimed
+   * hull already on the way to take it. The second half matters: without it the
+   * interruption would fire every turn while the ferry is being built, throwing
+   * away the shields spent on whatever was in progress — the churn the happiness
+   * branch above was written to avoid.
+   */
+  private needsHullForMissions(city: City): boolean {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return false;
+    const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
+    if (typeof pm?.cityHasHarborOrCoast !== 'function' || !pm.cityHasHarborOrCoast(city)) return false;
+    if (!canBuildUnit(civ, 'ferry')) return false;
+
+    const storage = this.gameEngine.getPlayerStorage?.(civ.id);
+    const turnData = storage?.turnData as
+      | {
+        colonyMissions?: Array<{ ferryId?: string | null }>;
+        colonyMission?: { ferryId?: string | null };
+        invasionMission?: { ferryId?: string | null };
+      }
+      | undefined;
+    const missions = [
+      ...(turnData?.colonyMissions ?? []),
+      ...(turnData?.colonyMission ? [turnData.colonyMission] : []),
+    ];
+    const invasion = turnData?.invasionMission;
+    const hullLess =
+      missions.filter((m) => !m?.ferryId).length
+      + (invasion && !invasion.ferryId ? 1 : 0);
+    if (hullLess <= 0) return false;
+    return this.unclaimedFerryCount(civ.id) < hullLess;
+  }
+
   /**
    * A ferry for an active invasion mission that has no hull yet. The mission is
    * planned by AIManager (an enemy city on a landmass we cannot walk to); all
@@ -2462,6 +2550,28 @@ export class AutoProduction {
     if (hullLess <= 0) return null;
     // Free hulls cover the earliest missions first; build only for the rest.
     if (this.unclaimedFerryCount(civ.id) >= hullLess) return null;
+    // AN UNESCORTED SEALIFT IS A TARGET. This path used to build a ferry
+    // whenever a mission wanted one and never came up for air, so it fed every
+    // shield of naval production into hulls that cannot shoot — a four-seed
+    // benchmark finished with 34 ferries and zero warships. The first hull is
+    // always worth building (it is a scout as well as a lift); beyond that the
+    // fleet needs a screen before it needs another prize.
+    //
+    // It RETURNS the escort rather than deferring. Returning null would hand
+    // production to the settler expansion further down the chain, and the warship
+    // would never be built at all — which is exactly what happened when this
+    // guard simply backed out.
+    //
+    // Counted over EVERY hull, not just unclaimed ones: a mission claims its
+    // ferry the moment one exists, so an unclaimed-only count stayed at zero and
+    // the guard never fired at all.
+    if (this.civHullCount(civ.id) >= 1 && !this.civHasWarship(civ.id)) {
+      const escort = this.firstWarshipHull(civ);
+      if (escort) {
+        debugLog('[AutoProduction] Colony ferry deferred — building an escort first');
+        return { type: 'unit', itemType: escort.type, name: UNIT_PROPS[escort.type].name, cost: UNIT_PROPS[escort.type].cost };
+      }
+    }
     const pm = this.gameEngine.productionManager as { cityHasHarborOrCoast?: (c: City) => boolean } | undefined;
     if (typeof pm?.cityHasHarborOrCoast !== 'function' || !pm.cityHasHarborOrCoast(city)) return null;
     if (!canBuildUnit(civ, 'ferry')) return null;
@@ -2496,7 +2606,7 @@ export class AutoProduction {
   private buildFisherBoatProduction(city: City): ProductionItem | null {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     if (!civ) return null;
-    // The Fisher Boat requires the Harbor BUILDING, not just a coast.
+    // The Fisher Boat requires the Harbor BUILDING.
     if (!this.cityOwnsBuilding(city, 'harbor')) return null;
     if (!canBuildUnit(civ, 'fisher_boat')) return null;
 
@@ -2607,16 +2717,97 @@ export class AutoProduction {
    * cheapest affordable screen. Without this `shouldBuildNavy() === true` but
    * `buildNavalProduction() === null` forever, and the fleet never starts.
    */
+  /**
+   * Which hull to lay down next: the one that fills the part of the fleet
+   * furthest behind.
+   *
+   * This replaces "transports first, then the strongest warship". That rule
+   * never reached its second half — on a map with islands to settle
+   * `wantTransports` keeps growing, so the transport branch won every single
+   * turn and a four-seed benchmark finished with 28 ferries and **not one
+   * fighting ship**. A navy with no guns is a shipping line, and it cannot
+   * escort the very ferries it is being built to protect.
+   *
+   * Every part of the fleet competes on the same footing: sealift, scouts,
+   * screens, heavies, raiders and the carrier. The largest shortfall wins, so
+   * the fleet fills out in all directions at once instead of one hull type at a
+   * time — which is what makes it VARIED rather than merely numerous.
+   */
+  private pickNavalHull(decision: NavalDoctrineVerdict, city: City): AvailableShip | null {
+    const civ = this.gameEngine.civilizations?.[city.civilizationId];
+    if (!civ) return decision.cheapestAvailableShip ?? null;
+
+    const options = [
+      ...(decision.warshipOptions ?? []),
+      ...(decision.transportOptions ?? []),
+    ].filter((s) => s.cost > 0 && canBuildUnit(civ, s.type));
+    if (options.length === 0) return decision.cheapestAvailableShip ?? null;
+
+    const isTransportHull = (s: AvailableShip): boolean =>
+      (s.transportCapacity ?? 0) > 0 && s.type.toLowerCase() !== 'submarine';
+    const roleOf = (s: AvailableShip): string =>
+      isTransportHull(s) ? 'transport' : classifyWarshipRole(s);
+
+    // The FIRST hull is a ferry, always: it is the only unit that can carry a
+    // land unit, so a navy of pure warships can neither settle an island nor
+    // invade anybody (see `lakeNaval.test.ts`, which pins this ordering). What
+    // varies a fleet is what happens NEXT — the gaps below make warships win
+    // every tie, so the second hull is a gun and the fleet fills out in all
+    // directions instead of becoming a shipping line.
+    const mix = decision.mix ?? { scouts: 0, screens: 0, heavies: 0, raiders: 0, carriers: 0 };
+    const onHand = {
+      scouts: decision.ownScouts ?? 0,
+      screens: Math.max(0, (decision.ownWarships ?? 0)
+        - (decision.ownScouts ?? 0) - (decision.ownHeavies ?? 0)
+        - (decision.ownRaiders ?? 0) - (decision.ownCarriers ?? 0)),
+      heavies: decision.ownHeavies ?? 0,
+      raiders: decision.ownRaiders ?? 0,
+      carriers: decision.ownCarriers ?? 0,
+    };
+
+    // Sealift first when there is none at all — a fleet that cannot move an
+    // army is not a navy — then the largest warship shortfall.
+    const gaps: Array<{ role: 'transport' | 'carrier' | 'raider' | 'scout' | 'heavy' | 'screen'; short: number }> = [
+      { role: 'transport', short: decision.wantTransports - (decision.ownTransports ?? 0) },
+      { role: 'carrier', short: mix.carriers - onHand.carriers },
+      { role: 'raider', short: mix.raiders - onHand.raiders },
+      { role: 'scout', short: mix.scouts - onHand.scouts },
+      { role: 'heavy', short: mix.heavies - onHand.heavies },
+      { role: 'screen', short: mix.screens - onHand.screens },
+    ];
+    // Ties go to the warship, not to the transport: a second ferry is a second
+    // thing to protect, a second gun protects the first.
+    gaps.sort((a, b) =>
+      b.short - a.short
+      || (a.role === 'transport' ? 1 : 0) - (b.role === 'transport' ? 1 : 0));
+    const gap = gaps[0];
+    if (!gap || gap.short <= 0) return null;
+
+    const fillers = options.filter((s) => roleOf(s) === gap.role);
+    if (fillers.length === 0) {
+      // The civ cannot build that role yet (no tech). Fall back to the next
+      // biggest gap it CAN fill rather than building nothing at all.
+      for (const next of gaps) {
+        if (next.short <= 0) continue;
+        const alt = options.filter((s) => roleOf(s) === next.role);
+        if (alt.length > 0) {
+          return [...alt].sort((a, b) => b.attack - a.attack || a.cost - b.cost)[0];
+        }
+      }
+      return null;
+    }
+    // Within a role take the strongest hull the economy can carry: a fleet of
+    // the cheapest hull available is uniform, not varied, and an obsolete sail
+    // answers nothing a frigate cannot.
+    return [...fillers].sort((a, b) => b.attack - a.attack || a.cost - b.cost)[0];
+  }
+
   private buildNavalProduction(city: City): ProductionItem | null {
     const decision = this.navalDoctrineFor(city.civilizationId);
     if (!decision) return null;
-    const { bestAvailableShip, cheapestAvailableShip, ownTransports, ownWarships } = decision;
+    const { bestAvailableShip, cheapestAvailableShip, ownTransports } = decision;
 
-    const wanted = ownTransports < decision.wantTransports
-      ? cheapestAvailableShip
-      : ownWarships < decision.wantWarships
-        ? bestAvailableShip
-        : null;
+    const wanted = this.pickNavalHull(decision, city);
     if (!wanted) {
       // Bootstrap: sea world, coastal port, can build ships, but doctrine has
       // nothing charted yet (dark water, no islands seen, no enemies known).

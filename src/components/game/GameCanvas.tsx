@@ -19,7 +19,6 @@ import {
 import MoveAnimator from "@/game/rendering/MoveAnimator";
 import { MathUtils } from "@/utils/MathUtils";
 import { centerCameraOnTile, clampZoom } from "@/utils/CameraUtils";
-import { HUMAN_PLAYER_ID } from "@/utils/PlayerConstants";
 import { finishCameraGlide } from "@/game/rendering/CameraGlideGate";
 import { MiniMapRenderer } from "@/game/rendering/MiniMapRenderer";
 import { TerrainTextureManager } from "@/game/rendering/TerrainTextureManager";
@@ -211,8 +210,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   }, [gameState.selectedUnit, units]);
   const isUnitSelectionMode =
     !!selectedUnit &&
-    selectedUnit.civilizationId === HUMAN_PLAYER_ID &&
-    gameState.activePlayer === HUMAN_PLAYER_ID;
+    (gameState.humanPlayerIds ?? [0]).includes(selectedUnit.civilizationId) &&
+    (gameState.humanPlayerIds ?? [0]).includes(gameState.activePlayer);
   const [unitPaths, setUnitPaths] = useState<Map<string, UnitPathStep[]>>(
     new Map(),
   );
@@ -903,7 +902,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
     if (units && units.length > 0) {
       const playerSettler = units.find(
-        (u) => u.civilizationId === HUMAN_PLAYER_ID && u.type === "settler",
+        (u) => u.civilizationId === gameState.activePlayer && u.type === "settler",
       );
       if (playerSettler) {
         initialSettlerSelectionDoneRef.current = true;
@@ -1078,7 +1077,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     const selectedUnitId = gameState.selectedUnit;
 
     // Clear reachable tiles if no unit selected or not human player's turn
-    if (!selectedUnitId || gameState.activePlayer !== HUMAN_PLAYER_ID) {
+    if (!selectedUnitId || !(gameState.humanPlayerIds ?? [0]).includes(gameState.activePlayer)) {
       setReachableTiles(new Map());
       triggerRender();
       return;
@@ -1086,7 +1085,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Only show for the human player's own units (skip sleeping units)
     const unit = units.find((u) => u.id === selectedUnitId);
-    if (!unit || unit.civilizationId !== HUMAN_PLAYER_ID || unit.isSleeping) {
+    if (!unit || !(gameState.humanPlayerIds ?? [0]).includes(unit.civilizationId) || unit.isSleeping) {
       setReachableTiles(new Map());
       return;
     }
@@ -1359,7 +1358,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const isUnitVisibleToHuman = useCallback(
     (unit: Unit): boolean => {
       if (devMode) return true;
-      if (unit.civilizationId === HUMAN_PLAYER_ID) return true;
+      if ((gameState.humanPlayerIds ?? [0]).includes(unit.civilizationId)) return true;
       const width = mapData?.width ?? 0;
       if (!width) return false;
       return !!mapData?.visibility?.[unit.row * width + unit.col];
@@ -2248,7 +2247,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           // cancelling an order, so it gets a bare grunt instead of a second
           // "Yes, Commander?" — and selecting a DIFFERENT unit always gets that
           // unit's own acknowledgement, which the old shared cooldown swallowed.
-          if (unitAt.civilizationId === HUMAN_PLAYER_ID) {
+          if ((gameState.humanPlayerIds ?? [0]).includes(unitAt.civilizationId)) {
             playUnitSelection(unitAt.id, unitAt.type === UNIT_TYPES.SUBMARINE, unitAt.type);
           }
           console.log(`[CLICK] Selected unit ${unitAt.id} (${unitAt.type})`);
@@ -3526,7 +3525,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   // Data for the unit stack modal (recomputed on render so dead units vanish).
   const stackModalUnits = stackModal
     ? (gameEngine?.getUnitsAt?.(stackModal.col, stackModal.row) ?? []).filter(
-        (u) => u.civilizationId === HUMAN_PLAYER_ID && !u.isDefeated,
+        (u) => (gameState.humanPlayerIds ?? [0]).includes(u.civilizationId) && !u.isDefeated,
       )
     : [];
   const stackModalCity = stackModal

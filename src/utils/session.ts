@@ -56,9 +56,11 @@ export function createLocalSession(engine: GameEngine): GameSession {
   let seq = 0;
 
   const actingContext = (): CommandContext => {
-    const humanCiv = engine.civilizations?.find((civ) => civ.isHuman);
+    // In hotseat mode, the active player may be any human seat. Use the
+    // engine's activePlayer so the command is attributed to whoever's turn
+    // it currently is, not always the first human civilization.
     return {
-      actorId: humanCiv?.id ?? HUMAN_PLAYER_ID,
+      actorId: engine.activePlayer ?? (engine.civilizations?.find((civ) => civ.isHuman)?.id ?? HUMAN_PLAYER_ID),
       turn: engine.currentTurn ?? 1,
       seq: ++seq,
     };

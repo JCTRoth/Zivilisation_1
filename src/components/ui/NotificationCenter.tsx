@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Notification } from '../../../types/game';
-import { HUMAN_PLAYER_ID } from '../../utils/PlayerConstants';
+import { useGameStore } from '@/stores/GameStore';
 import { useTranslation } from '@/i18n/useTranslation';
 
 const ICONS: Record<Notification['type'], string> = {
@@ -33,7 +33,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
   }
 
   const visible = notifications.filter(
-    (n) => n.civId === undefined || n.civId === HUMAN_PLAYER_ID,
+    (n) => n.civId === undefined || (n.civId !== undefined && (useGameStore.getState().gameState.humanPlayerIds ?? [0]).includes(n.civId)),
   );
   if (visible.length === 0) return null;
 

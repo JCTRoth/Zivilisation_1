@@ -3,6 +3,7 @@ import type { GameMenuName } from './GameMenuSheet';
 import type GameEngine from '@/game/engine/GameEngine';
 import { useTranslation } from '@/i18n/useTranslation';
 import type { TranslationKey } from '@/i18n';
+import { useGameStore } from '@/stores/GameStore';
 import ResearchIndicator from './ResearchIndicator';
 
 interface TopBarProps {
@@ -39,6 +40,12 @@ const TopBar: React.FC<TopBarProps> = ({
   gameEngine,
 }) => {
   const { t } = useTranslation();
+  const devMode = useGameStore((s) => !!s.settings?.devMode);
+  const zoom = useGameStore((s) => s.camera?.zoom ?? 1);
+  const activePlayer = useGameStore((s) => s.gameState?.activePlayer ?? 0);
+  const civilizations = useGameStore((s) => s.civilizations);
+  const activeCiv = civilizations?.[activePlayer];
+  const isHotseat = (civilizations?.filter((c) => c.isHuman)?.length ?? 0) > 1;
 
   return (
     <div ref={topBarRef} className="game-top-bar" role="banner">
@@ -60,22 +67,37 @@ const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       <div className="topbar-center">
+        {isHotseat && activeCiv && (
+          <div
+            className="topbar-player-badge fw-bold"
+            style={{ color: activeCiv.color, marginRight: '8px', fontSize: '0.9rem' }}
+          >
+            {activeCiv.name}
+          </div>
+        )}
         <div className="d-flex align-items-center gap-2 topbar-turn">
           <span>
             {t('common.turn', { turn: '' })} <strong>{currentTurn}</strong>
           </span>
           <span className="text-muted-ui" aria-hidden="true">•</span>
           <span>{currentYear}</span>
+          {devMode && (
+            <span className="fw-bold text-warning" aria-live="polite">
+              • Zoom {zoom.toFixed(2)}×
+            </span>
+          )}
         </div>
         <ResearchIndicator gameEngine={gameEngine} />
       </div>
 
+      {/* End Turn button — upper right, always available in hotseat mode */}
       <button
         type="button"
         className="touch-btn touch-btn--success topbar-endturn"
         onClick={onEndTurn}
         disabled={endTurnDisabled}
         aria-label={t('topbar.endTurn')}
+        style={{ marginLeft: '8px' }}
       >
         <i className="bi bi-skip-end-fill" aria-hidden="true"></i>
         <span className="d-none d-lg-inline" aria-hidden="true">{t('topbar.endTurn')}</span>

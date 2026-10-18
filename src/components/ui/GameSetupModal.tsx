@@ -152,6 +152,8 @@ type GameSetupModalProps = {
     temperature: number;
     climate: number;
     age: number;
+    gameMode?: 'single' | 'hotseat';
+    humanPlayerIds?: number[];
   }) => void;
 };
 
@@ -559,6 +561,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   const [age, setAge] = useState(1);
   const [mapWidth, setMapWidth] = useState(80);
   const [mapHeight, setMapHeight] = useState(50);
+  const [gameMode, setGameMode] = useState<'single' | 'hotseat'>('single');
+  const [hotseatPlayerCount, setHotseatPlayerCount] = useState(2);
 
   // Look-around: the war room is a CSS 3D box; the pointer shifts its
   // perspective origin a few degrees so the table and walls feel solid.
@@ -684,6 +688,9 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   };
 
   const handleStart = () => {
+    const humanPlayerIds = gameMode === 'hotseat'
+      ? Array.from({ length: hotseatPlayerCount }, (_, i) => i)
+      : [0];
     onStart({
       playerCivilization: selectedCiv,
       difficulty,
@@ -696,6 +703,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
       temperature,
       climate,
       age,
+      gameMode,
+      humanPlayerIds,
     });
   };
 
@@ -871,12 +880,53 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                         min="2"
                         max="7"
                         value={numCivilizations}
-                        onChange={(e) => setNumCivilizations(Number(e.target.value))}
+                        onChange={(e) => {
+                          const next = Number(e.target.value);
+                          setNumCivilizations(next);
+                          // Hotseat players can never exceed the civilizations in play.
+                          setHotseatPlayerCount((c) => Math.min(c, next));
+                        }}
                         className="setup-setting__control"
                         aria-label={t('setup.civsCount')}
                       />
                       <span className="setup-setting__hint">{t('setup.civsCountHint')}</span>
                     </div>
+
+                    <div className="setup-setting">
+                      <span className="setup-setting__label">{t('setup.gameMode')}</span>
+                      <Form.Select
+                        value={gameMode}
+                        onChange={(e) => {
+                          const mode = e.target.value as 'single' | 'hotseat';
+                          setGameMode(mode);
+                          // Never allow more hotseat players than civilizations.
+                          setHotseatPlayerCount((c) => Math.min(c, numCivilizations));
+                        }}
+                        className="setup-setting__control"
+                        aria-label={t('setup.gameMode')}
+                      >
+                        <option value="single">{t('setup.gameMode.single')}</option>
+                        <option value="hotseat">{t('setup.gameMode.hotseat')}</option>
+                      </Form.Select>
+                      <span className="setup-setting__hint">{t('setup.gameModeHint')}</span>
+                    </div>
+
+                    {gameMode === 'hotseat' && (
+                      <div className="setup-setting">
+                        <span className="setup-setting__label">
+                          {t('setup.hotseat.players')} <span className="setup-setting__value">{hotseatPlayerCount}</span>
+                        </span>
+                        <Form.Range
+                          min="2"
+                          max={Math.min(4, numCivilizations)}
+                          value={Math.min(hotseatPlayerCount, numCivilizations)}
+                          onChange={(e) => setHotseatPlayerCount(Number(e.target.value))}
+                          className="setup-setting__control"
+                          aria-label={t('setup.hotseat.players')}
+                        />
+                        <span className="setup-setting__hint">{t('setup.hotseat.playersHint')}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

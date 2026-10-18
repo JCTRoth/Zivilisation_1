@@ -1,0 +1,347 @@
+= Naval AI Overhaul — Phase Report
+:toc:
+:toclevels: 3
+
+Applied the three-phase overhaul framework to the **Naval / Seapower
+Subsystem**. This document is Phase 3 (Performance Reporting); Phases 1 and 2
+are summarised inline with their evidence.
+
+'''''
+
+== Phase 1 — Analysis & Strategic Design
+
+=== Audit Subsystem Baseline
+
+Before touching a line, the subsystem was measured rather than guessed at. The
+existing `scripts/run-naval-session.mjs` harness was **broken** — it wrote its
+generated spec to `tests/ai/tmpNavalSession.test.ts`, which the default vitest
+config excludes by the `tmp*.test.ts` rule, so the runner reported
+`No test files found` and exited 1. It has been repointed at
+`vitest.diag.config.ts`, the config that exists for exactly this class of
+long-running telemetry probe.
+
+A measurement harness was then added (`tests/ai/naval-bench.test.ts`) that plays
+a pinned `AI_VS_AI_NAVAL` game and reads metrics from **engine state**, not from
+log scraping. Two measurement defects were found and fixed before any baseline
+was trusted:
+
+* the engine was being created *paused*, so AI turns were skipped entirely —
+  a first cut recorded 120 "rounds" in 0 ms and four civilizations that never
+  founded a city;
+* the island-city metric read the capital's landmass at game start, when a civ
+  has a settler and no cities, so it recorded `null` and counted zero island
+  cities on every run.
+
+=== Inspect Coordinator Hook
+
+The naval subsystem is driven from two places: `AutoProduction` decides *what a
+city builds* (`shouldBuildNavy` → `buildNavalProduction` → `navalDoctrineFor`),
+and `AIManager` decides *where hulls sail* (`chooseNavalDestination`,
+`chooseWarshipTarget`, the colony/invasion mission records in
+`PlayerTurnStorage.turnData`).
+
+The hook is `setAutoProduction`, which is called when a city's production
+completes. It already had interruption rules — a city under threat, a starving
+city, a city in disorder, a queue item the city already owns. The critical
+observation: **production is only re-evaluated when the current item
+completes.** A 40-shield settler at 2 shields a turn occupies the queue for
+twenty turns.
+
+=== Design Cross-Module Integration
+
+The colony pipeline is a three-module hand-off:
+
+```
+AutoProduction (build the ferry)
+   → AIManager.updateColonyMission (assign the ferry to a mission)
+      → tryColonyFerryAction (board, sail, land, found the city)
+```
+
+All three had to agree. The diagnostic showed modules 2 and 3 were working and
+module 1 was not being *asked*.
+
+=== Enhance Target Heuristics
+
+Target heuristics were already in reasonable shape from the earlier fleet-mix
+work (`fleetMix`, `pickFleetMixHull`, reachability gating, beach clearing). The
+Phase 1 audit found the failure was not in *targeting* but in *pacing*: the
+subsystem could not get a hull into the water to apply any heuristic.
+
+=== Configure Auto-Activation
+
+The naval subsystem is already active by default — `navalDoctrineFor` runs for
+every civ every turn, and there is no AI mode or preset that disables it. No
+change required.
+
+'''
+== Phase 2 — Iterative Refactoring & Automated Testing
+
+=== The defect
+
+Colony missions were planned, islands were known, settlers stood on the coast —
+and every mission sat at `ferryId: null` for the whole game.
+
+[source]
+----
+DIAG missions=2 hullLess=2 unclaimed=0 canBuild=true harbor=true
+DIAG buildColonyFerryProduction -> {"type":"unit","itemType":"ferry",...}   ← correct
+DIAG determineProductionItem    -> {"type":"unit","itemType":"ferry",...}   ← correct
+DIAG cityProd = {"type":"unit","itemType":"settler"}                        ← but this is building
+----
+
+The decision function returned the right answer and the city never acted on it,
+because the city had already committed to a settler and would not re-evaluate
+until that settler finished — by which point the benchmark games were over.
+
+=== The refactor
+
+`AutoProduction.setAutoProduction` gained a fourth interruption case: an
+**unserved sealift mission preempts production.** A colony or invasion mission
+with no hull is a commitment already made — a settler standing on a coast, an
+army waiting at a rendezvous — and it outranks anything else the city could be
+building.
+
+The guard (`needsHullForMissions`) only fires when there is *no unclaimed hull
+already on the way*, so it does not interrupt every turn while the ferry is
+being built and throw away the shields already spent — the exact churn the
+happiness branch above it was written to avoid.
+
+=== Automated test matches
+
+4 seeds, identical worlds for both runs, 60 engine rounds, 4 civilizations,
+`AI_VS_AI_NAVAL`. Rolls pinned with `useSeededRandom`, terrain pinned with
+`mapSeed`, so run A and run B play the same war.
+
+'''
+== Phase 3 — Performance Reporting
+
+=== Statistical comparison
+
+[cols="2,1,1,1,2", options="header"]
+|===
+| Metric | Baseline | Overhauled | Delta | Note
+
+| Transports built
+| 7
+| 32
+| *+25 (+357%)*
+| The hull deficit is being served. Was the binding constraint.
+
+| Cities founded
+| 19
+| 27
+| *+8 (+42%)*
+| More settlers reach land that can hold a city.
+
+| Population
+| 43
+| 64
+| *+21 (+49%)*
+| Cities are growing instead of idling on a settler.
+
+| Total cities
+| 19
+| 25
+| +6
+|
+
+| Warships built
+| 67
+| 69
+| +2
+| Fleet size unchanged — the fix did **not** inflate the navy.
+
+| Warships lost
+| 1
+| 9
+| +8
+| More hulls afloat means more contact. Consistent, not a regression.
+
+| Technologies
+| 84
+| 87
+| +3
+|
+
+| ms per round
+| 53
+| 54
+| +1
+| Cost of the extra work is inside noise.
+
+| *Island cities founded*
+| 0
+| 0
+| *0*
+| *Still failing — see below.*
+|===
+
+=== Qualitative assessment
+
+The overhaul fixed the **bottleneck** and did not paper over it. Production now
+responds to a mission that is waiting on a hull: transports built went up
+4.6×, city founding went up 42%, population went up 49%, and the warship count
+did not move — so the improvement came from building the *right* thing sooner,
+not from building more of everything. The runtime cost is 1 ms per round.
+
+The behavioural change is that a naval plan is no longer fiction. Before, a
+colony mission was a wish: the AI would decide to settle an island and then
+spend the rest of the game training infantry. Now the mission exerts real
+pressure on the economy that has to serve it.
+
+=== What is still failing
+
+**Island cities founded: 0, unchanged.** This is the honest headline. With the
+hull bottleneck removed, the last mile — a settler actually boarding a ferry,
+crossing, landing and founding — is still not completing within the game
+window. The colony missions still sit at `stage: 'gather'` with
+`ferryId: null` in the samples taken, which suggests the ferry is now being
+*built* but not *assigned* to a mission, or is built too late in the game to
+finish the crossing.
+
+This is the correct next target and it is now much more visible: the pipeline
+that feeds it exists and is measurably faster.
+
+=== Algorithmic changes implemented
+
+. `AutoProduction.setAutoProduction` — new interruption rule: an unserved
+  sealift mission (colony or invasion, hull-less, with no unclaimed hull on the
+  way) preempts current production.
+. `AutoProduction.needsHullForMissions` — the guard for the above; checks
+  harbour access, `canBuildUnit(civ,'ferry')`, hull-less missions, and free
+  hulls.
+. `scripts/run-naval-session.mjs` — repointed at `vitest.diag.config.ts`; the
+  harness was silently non-functional.
+. `tests/ai/naval-bench.test.ts` — new deterministic measurement harness with
+  A/B metrics; excluded from `npm test` by the `*bench*` convention.
+. `vitest.config.js` — `*bench*.test.ts` exclusion, documented alongside
+  `tmp*.test.ts`.
+. `tests/helpers/world.ts` (earlier) — `makeEngine` now seeds `Math.random` as
+  well as the map, which is what makes these A/B runs reproducible at all.
+
+=== Method note
+
+Two measurement defects were found *by measuring* and had to be fixed before any
+number was trustworthy: the paused engine that skipped every AI turn, and the
+island metric that read a capital before capitals existed. Both produced
+plausible-looking output that was entirely wrong. Any future module overhaul
+should budget for this — the harness is part of the work.
+
+'''
+== Next module
+
+The framework's next step is the module downstream in the dependency chain. The
+naval subsystem's blocking dependency is now the **colony pipeline's hull
+assignment**, and behind that the **War / Military Subsystem** (invasion
+planning and force composition), which shares the same ferry layer.
+
+Recommended next: **War / Military Subsystem**, starting with the same
+measurement-first discipline — in particular the invasion pipeline, which
+diagnostics show plans missions (`invasion=yes`) but lands nothing.
+
+'''
+== Second round — fleet variety and island-hopping aggression
+
+=== Measurement first (and a metric that had been lying)
+
+The benchmark gained a fleet-composition measure (`hullsBuilt`, `distinctHullTypes`,
+`topHullShare`) because "the navy has 8 ships" and "the navy has 8 ships, all of
+them sails" are different games. Two metric defects fell out immediately:
+
+* `isWarship` counted archers and legions — it never checked `naval`. An earlier
+  round reported a "67-ship navy" that contained one boat.
+* `getLandmassId` was pulled off the engine and called unbound, so `this` was
+  `undefined` and every call threw into a `catch`. **That is why the previous
+  round reported zero island cities** while the game was founding New York on the
+  far side of the ocean.
+
+=== What the numbers actually said
+
+With the metrics repaired, the baseline navy was **28 ferries and not one
+fighting ship** — `topHullShare: 1.0`, `distinctHullTypes: 1`. "Not varied" was
+literally true: there was exactly one hull type, and it could not shoot.
+
+=== Structural changes
+
+. `pickNavalHull` replaces "transports first, then the strongest warship". That
+  rule never reached its second half: on an archipelago `wantTransports` is
+  always hungry, so the transport branch won every turn. The fleet is now filled
+  by **largest shortfall across every role** — sealift, scout, screen, heavy,
+  raider, carrier — and ties go to the warship, not the transport.
+. **Sealift answers to the screen**: `wantTransports` is capped at
+  `wantWarships + 1`, because an unescorted ferry is a prize and three are three
+  prizes. This is what makes production alternate instead of monopolising.
+. The colony-ferry path no longer feeds every shield into hulls that cannot
+  shoot: past the first ferry it *returns the escort* rather than deferring
+  (deferring handed production to the settler expansion, which is how the
+  warship came to be built zero times).
+. A **naval hull ladder** in `AIResearch` — `map_making`, `navigation`, `steel`,
+  `combustion`, `flight` — because variety is a research outcome before it is a
+  production one. The policy previously stopped at `sailing`, so `warshipOptions`
+  never held more than `sail` and there was nothing to vary across.
+. `maxParallelColonies` is supply-driven (settlers + hulls, bounded 3–6) rather
+  than a flat 3, so a big fleet seeds more islands.
+
+=== A regression, caught by the suite
+
+`lakeNaval.test.ts` asserts *"first ferry, then warships"*, with a written
+rationale: a navy of pure warships can neither settle an island nor invade. My
+first cut ("a gun before a second hull") made the first ship a warship and broke
+it. **The test's policy was better than mine** — it is exactly the alternation
+the overhaul wanted. The rule was removed and the warship tie-break kept.
+
+=== Results (4 seeds × 60 rounds)
+
+[cols="2,1,1,2", options="header"]
+|===
+| Metric | Before | After | Assessment
+
+| Fighting ships built
+| 0
+| 2–6
+| *Real change.* A navy now exists at all.
+
+| Distinct hull types
+| 1
+| 2
+| Ferry + sail. 3 at 150 rounds once `map_making` lands.
+
+| `topHullShare`
+| 1.000
+| 0.79–0.92
+| Improved, but see noise below.
+
+| Island cities
+| 10–12
+| 10–12
+| *No change — and the old "0" was the metric bug, not the game.*
+
+| Cities founded
+| 26
+| 25–26
+| Unchanged.
+
+| ms / round
+| 52
+| 50–69
+| Unchanged within noise.
+|===
+
+=== Honest reading
+
+**Fleet variety improved qualitatively**: the benchmark went from "28 ferries,
+zero warships" to a fleet that contains fighting ships and builds to a role mix.
+The mechanism is structural — role-gap production, a sealift-to-screen ratio, and
+a research ladder — not a tuned constant.
+
+**Island hopping did not improve**, and the earlier claim that it was broken was
+wrong: it was a measurement artifact. Islands are being settled at 10–12 per four
+games and the limiter is the map and the settler supply, not the mission cap
+(raising the cap changed nothing). The settler-mission guard is correct
+engineering — a settler promised to an island should not found a town where it
+stands — but it shows no aggregate gain and should be judged on correctness, not
+on this metric.
+
+**Sample size caveat**: these are 4-seed games with 2–6 warships in play, so
+run-to-run variance is large. The 0 → non-zero change is robust; the difference
+between 2 and 6 is not.

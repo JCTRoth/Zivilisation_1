@@ -191,6 +191,23 @@ const KEY_UNLOCK_SCORES: Record<string, number> = {
 // ---------------------------------------------------------------------------
 
 export class AIResearch {
+  /**
+   * How much a tech is worth for the sake of a better HULL.
+   *
+   * Ordered by what each rung unlocks: `map_making` → trireme, `navigation` →
+   * caravel and frigate, `steel` → ironclad and battleship, `combustion` →
+   * destroyer, cruiser and submarine, `flight` → carrier. The middle of the
+   * ladder carries the most weight because that is where the fleet stops being
+   * one boat and becomes a fleet.
+   */
+  private static readonly NAVY_HULL_LADDER: Readonly<Record<string, number>> = {
+    map_making: 6,
+    navigation: 14,
+    steel: 10,
+    combustion: 14,
+    flight: 6,
+  };
+
   private static isNavalTech(techId: string): boolean {
     return techId === 'sailing' || techId === 'map_making';
   }
@@ -377,6 +394,26 @@ export class AIResearch {
     if (naval > 0 && techId === 'map_making') {
       score += 6 + 2 * naval;
       reasons.push('naval-relevance');
+    }
+
+    // The HULL LADDER. Sailing earns a boat; it takes Map Making, Navigation,
+    // Steel and Combustion before a civ has a fleet that can actually fight.
+    // Without this the research policy stopped at Sailing and every civ in the
+    // benchmark finished with the same single hull type — a four-seed run built
+    // 28 ferries and not one warship, because `warshipOptions` never held more
+    // than `sail`. Variety is a RESEARCH outcome before it is a production one:
+    // the fleet can only vary across hulls the civ can build.
+    //
+    // Keyed on the tech alone, not on what the civ knows: candidates are already
+    // prerequisite-filtered, so `navigation` only appears once the civ can take
+    // it. The bonus scales with naval relevance so a land empire at sea goes up
+    // the ladder faster than one that merely has a coast.
+    if (naval > 0) {
+      const ladder = AIResearch.NAVY_HULL_LADDER[techId];
+      if (ladder) {
+        score += ladder * (1 + naval * 0.5);
+        reasons.push('naval-hull-ladder');
+      }
     }
 
     // Fishing: the Harbor (and through it the Fisher Boat) needs Masonry. A

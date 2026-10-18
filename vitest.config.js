@@ -29,7 +29,14 @@ export default defineConfig({
     // terminate — which is exactly what happened before this rule earned its
     // keep. A file that asserts something belongs under a name that is not
     // `tmp*`, and stays in the suite.
-    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**', '**/tmp*.test.ts'],
+    //
+    // `*bench*.test.ts` is the same idea for MEASUREMENTS: the naval AI
+    // benchmark plays whole games to produce a comparison table. Left in the
+    // suite it turned a 70 s run into a timeout and buried the report in a
+    // million lines of engine reasoning. It is still a real test with a real
+    // assertion — run it on purpose with
+    //   npx vitest run tests/ai/navalBenchmark.test.ts --config vitest.diag.config.ts
+    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**', '**/tmp*.test.ts', '**/*bench*.test.ts'],
   },
   resolve: {
     alias: {

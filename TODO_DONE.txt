@@ -1,0 +1,251 @@
+ 1. [DONE] Veteran units: four-rank ladder (Recruit/Regular/Veteran/Elite) in UnitRankSystem, wired into CombatSystem, unit creation (Barracks → Veteran) and the UI.
+* [DONE] Add new ship type, "Trade Ship" 
+- DONE — diplomacy is now a points system. Every act funnels through one
+  formula (delta = base x personality weight x relationship state x magnitude)
+  into a per-direction ledger (goodwill / grievance / fear / respect), so an act
+  costs a paranoid diplomatic civ 2.5x what it costs a belligerent one, and
+  betraying an alliance costs more than breaking a peace. Personality became a
+  weight vector with a stable per-civ offset, and the AI scores candidate
+  actions instead of running a single `aggression >= 4 && ratio >= 1.6` gate.
+- The acceptance roll is gone: a proposal is a readable sum with a
+  personality-scaled bar and +/-5 of seeded noise, and the size of the ask is
+  part of it (a 500-gold demand and a 5-gold one no longer have identical
+  odds). The negotiation screen shows the same arithmetic before you send, and
+  lists what the other side remembers with the points it cost.
+- War restraint: concurrent-war limits by temperament, war wear that dulls
+  aggression and raises the desire for terms, a cooldown on abandoning a
+  signed peace, and mutual defence that an ally may decline (it used to drag
+  them in unconditionally, which is what produced 17-wars-in-465-rounds).
+- AI-vs-AI batch (10 games x 150 rounds, 4 civs) before -> after: peace treaties
+  2 -> 151, alliances 0 -> 42, treaties signed 0 -> 159, ceasefires 440 -> 210,
+### 7. Dead Code Cleanup
+DONE — the 57 unused exports knip reported are gone. Tuning constants and
+
+- The winning attacker no longer vanishes: only the loser is ever collected by
+  the delayed corpse removal, and a city that is ASSAULTED in the same action in
+  which its last garrison unit died no longer counter-strikes the unit that
+  just won (that is what killed it "shortly after" the fight). All four winning
+  paths (field kill, city capture, repelled city, losing attacker) are pinned by
+  fake-timer tests in tests/defeatedUnitsStayDead.test.ts.
+- City modal: the Raw JSON tab is gone (and its dead CSS with it).
+- City modal queue: the first queued item can be moved up again — it is
+  promoted to the current production (the old production drops one slot).
+- City modal -> Citizens is now only an indicator: specialists are assigned from
+  the side panel with icon/emoji toggles (hover explains the yields; the
+  Entertainer is the default) and the worked-tile rows are read-only, because
+  citizens are placed on the map (pick up a worked tile, drop on an idle tile).
+- Manual citizen allocations are marked much more quietly (soft green wash +
+  hairline edge) and the governor never writes its own choices into the manual
+  set, so "manual" always means "the player put it there".
+- Map: a sleeping unit no longer blocks picking up the citizen on its tile.
+- Fortified and sleeping units are never called up by the turn manager: a
+  fortified unit keeps 0 movement and stays "turns done" across turns (a garrison
+  inside a city is not even drawn on the map, so there was nothing to act
+  with), and a sleeping unit keeps its movement but is skipped by the unit
+  queue. Unfortifying or waking hands the movement back, and the AI releases a
+  fortified unit that is no longer a garrison so it can fight again.
+- Side panel: the "1 citizen selected for reassignment" banner is gone. While a
+  citizen is in hand a compact line above the "Selected City" heading says what
+  is happening and how many idle tiles are available; placement stays a map
+  action (the map highlights the idle tiles with a pulsing "+").
+- Specialists are assigned on the MAP: the three icons drawn under the city
+  sprite (Entertainer, Taxman, Scientist) are the selector — filled with a count
+  when assigned, hollow when free. Clicking one converts a citizen that currently
+  works a tile into that specialist; the click no longer opens the city screen.
+  The drawing and the click hit-test share one exported layout function
+  (getCitySpecialistButtons) so they can never drift apart.
+- Side panel: "Specialists" is a read-only tally of how many the city has, by
+  type (e.g. "🕺 Entertainer 2"), with no buttons — assigning is a map action.
+- Side panel: while a citizen is being placed, one plain line inside the city
+  block says where it came from, how many idle tiles there are and how to
+  cancel. No farmer emoji, no close button, no yellow highlight.
+- Side panel: the citizen block (specialist toggles + worked tiles + the city
+  readout) now belongs to the selected CITY and is ALWAYS shown while that city
+  is selected — neither the selected hex (picking a citizen up, clicking a
+  radius tile) nor the turn manager's automatic unit focus can hide it. Only a
+  selection the player made (a unit, or empty ground) hands the panel over.
+- Research starts after the first 5 rounds instead of 3 (RESEARCH_UNLOCK_ROUND).
+- New one-time "Tired of clicking End turn?" offer on move 15: a hero badge, one
+  sentence of what Auto. turn ending does, and a miniature of the side-panel
+  header (gold bar + the checkbox, glowing) that shows WHERE it lives instead of
+  a paragraph about it. Two buttons, a fine print, never asked twice.
+- Fix: waking a unit did not clear areTurnsDone, so a woken unit was never put
+  back in the turn queue; moving or attacking did not clear isSleeping either,
+  so a manually moved unit was skipped again the next turn.
+- tests/unitStates.test.ts pins the meaning of every unit state (fortified,
+  sleeping, skipped, waiting, embarked, defeated) against the turn reset, the
+  unit queue and the can-I-act API, so a regression names the state that broke.
+- CI: a new "Unit Tests" workflow (type-check, lint, vitest) gates every push and
+  PR. The Playwright workflow only ran the browser suite, so all engine tests
+  were ungated. knip runs there too, advisory for now: the unused exports it
+  found have since been cleaned up, so the step can become a hard failure.
+- knip.json now includes tests/ and e2e/ as entry+project files (test-only
+  exports used to look unused) and ignores the four legacy engine classes
+  (src/game/{City,Civilization,Unit,Terrain}.ts) that nothing imports.
+- ESC now deselects the city as well (with no dialog open): it clears the
+  transient selection AND the persistent "focused city" marker, so the city net
+  and its worked tiles disappear from the map too. A pending action still wins —
+  a carried citizen is put back, a group selection is dropped — and the map's
+  hex highlight is cleared along with the city.
+- Coastal auto-production builds a Harbor in a safe coastal city (right after
+  defense; defenders still come first and a city under direct threat never
+  diverts to the Harbor). Adopted on small islands already.
+- The selected-city map preview now shows the Food/Production/Trade yield ICONS
+  with the amount underneath instead of the old dark number dots.
+- A selected unit survives the turn change completely: emptying the unit queue
+  at the END phase no longer wipes a human unit the player is watching, so
+  TURN_END / AI_CLEAR_HIGHLIGHTS re-assert it and the player resumes with the
+  same unit selected (a group selection does clear at the boundary).
+- Research only starts after the first 3 rounds: no "No Research Selected"
+  prompt and no auto-pick before the unlock round; the top-bar indicator says
+  "Research starts soon" during the opening rounds instead of nagging.
+- Multi-unit selection: shift/ctrl/cmd-click gathers units from several tiles
+  into the group, a group can be ordered onto friendly-occupied tiles, the
+  stack modal has All-movable/Clear buttons, and right-click/ESC cancels.
+- City screen has a new "Units" tab: garrison + units supported by the city
+  (status, HP, attack/defense, veteran badges) with a Select button.
+- Selecting a unit no longer stops the auto turn manager: a hand-made selection
+  lock is released as soon as the selected unit cannot act anymore (no moves /
+  sleeping / fortified / skipped / dead), so the automatic next-unit focus and
+  the end-turn flow resume.
+- A selected unit now STAYS selected when the auto turn manager advances the
+  turn (TURN_END / AI_CLEAR_HIGHLIGHTS / nextTurn keep the human's own unit and
+  re-assert it as a hand-made selection; a dead unit is dropped on turn start).
+- Save/Load restores fog of war: the human visibility/explored arrays are saved
+  with the map and rebuilt on the store map on load; the fog arrays now use the
+  real map width as stride (the 80-column default corrupted fog on smaller
+  maps); turn manager round/player/phase, the turn queue and GoTo paths are
+  restored too (paths through the GoToManager so both stores agree).
+- Unit stack modal: clicking a city or a field with multiple own units opens a
+  list (icon, name, veteran/status badges, health bar, attack/defense) where the
+  player activates one unit or ticks 0..N units and then clicks a map
+  destination to move every selected unit that still has movement points (gold
+DONE — Harbor ocean-food replaced by the Fisher Boat:
+* Removed the Civ1 Harbor "+1 food from every worked OCEAN tile" bonus
+  (EconomicManager.tileYieldsForCity is gone).
+* Fisher Boat (fisher_boat): 20 shields, requires the Harbor BUILDING, hold 6
+  fish, movement 2, attack 0 / defense 1, max ONE per city (ProductionManager
+  rejects a second; the city modal shows its status for harbor cities).
+* "Deploy Fishing Net" in the unit context menu (fish tiles only, ocean or
+  river). "Remove Fishing Net" is a recall: home to unload, then automatically
+  back to the same net tile (route kept).
+* Auto-route: outbound → fishing (1 fish/turn until 6) → inbound → unload →
+  outbound, driven by GameEngine.advanceFishing each turn.
+* Distance formula (unchanged): foodPerFish = min(3, 1 + floor(d/4)) with d =
+  Chebyshev distance home city ↔ net tile → 6 / 12 / 18 food per full catch.
+* Unload fills city.foodStored up to foodNeeded; a catch that does not fit
+  grants a one-round +2 food bonus at the next growth step.
+* NEW: a Fish tile only pays its full food to a city while a Fisher Boat is
+  actively using it — without a boat the city draws 1 food less per fish tile.
+* AI: AutoProduction builds one boat per harbor city under food pressure, and
+  AIManager sails it to the nearest known fish tile and deploys the net.
+
+- AI vs AI analysis (session aivsai-2026-09-20T23-11-44-788Z) -
+Fixed directly:
+* civ.score was 0 for the whole game in the progression CSV. VictoryManager
+  now computes the Civ1 score every turn end (population, land area, cities,
+  techs, wonders).
+* Harbor: inland cities can no longer build it (ProductionManager rejects
+  'no_water_access'); the AI gives it 0 priority inland and a coastal bonus.
+* Failed-move memory is now used by ALL land units (not only scouts), so
+  repeated move_failed loops stop sooner.
+* Army groups: reachable rally points, rally timeout, vanguard attack,
+  committed groups ignore retreat, land-only targets, reserve keeps 3 units
+  free, persistent bulk plans.
+
+Also fixed after the analysis:
+* War commitment: aggression at war is weighted higher (+12) and a recent
+  city loss triggers retaliation (+15, and the capturer is preferred as a
+  bulk-attack target for 15 rounds).
+* Army upkeep / gold starvation: the sustainable-unit cap is now enforced for
+  the CURRENT production too (not just queued follow-ups), and the default
+  army mix caps defenders at ~2 per city unless the city is threatened.
+* Move failures/skips: the failed-tile memory is shared by all land units and
+  a committed target on a blocked tile is dropped (stuck recovery).
+* Scout overproduction: scouts queued across ALL cities are counted and the
+  corps is hard-capped at 3.
+* Score completeness: pollution penalty and peace-years bonus implemented.
+* Eliminated civs are emitted once in the compact CSV and then dropped.
+
+- Implement City Wall functionality also show the city wall on the city visually
+- CLEANUP: DONE — the ~54 unused exports knip reported are removed (un-exported
+  where the module uses them, deleted where nothing did). knip is now clean, so
+  its CI step can be made a hard failure.
+
+1.
+THE AI SHOULD MORE AGRESIVELY START TO SELL BUILDINGS WHEN THE BUDGET IS GETTING LOW AND BUILDINGS MAINTAINANCE COSTS ARE THE RESON FOR IT!
+2.
+-  The AI is not allowed to found new cities with in the city radius of a city of its own civilization!
+Thats an absolute rule.
+Also the AI should from city size 6 on start to irrigate the surrounding tiles of the city with settlers if possible.
+Only reason it would be not possible is direct thread to the city or on going attacks on the city.
+Adjust therefor the complete AI with all parts where it is needed!
+3.
+The AI is failing with bigger cities at the moment that get into civil unrest,
+the reson is that the cities do not have roads and irrigation around them,
+so than buildings that make the citie happier get sold (dont change this!),
+adjust the AI so that it builds out the city with roads and irrigation around it so that the city can grow and not get into civil unrest.
+civil unrest is ulitmative breaking military expansion and the AI!
+Analyze all of the AI stragegy than make a plan how to adjust the AI so that it can handle cities over a longer period of time and not get into civil unrest or econmic issues the target also is to have zero abondend units!
+After implementation do test runs with maximum of 300 turns.
+Analze and refelect if the test runs are going in the right direction and if the AI is able to handle bigger cities over a longer period of time.
+Adjust if needed and do test runs again until the AI is able to handle bigger cities over a longer period of time without getting into civil unrest or economic issues.
+If all not helps make bigger changes to the AI and adjust the AI so that it can handle bigger cities over a longer period of time without getting into civil unrest or economic issues.
+than do test runs again until the AI is able to handle bigger cities over a longer period of time without getting into civil unrest or economic issues.
+at the end generate a .adoc report with all the changes and test runs and results and add it to the project documentation.
+If a city has a builded up irrigation and road system it can affort to have 2-3-4-5 citizens that are Entertainers or Taxmans or Scientists and still have a good surplus of food and production and gold.
+Make sure the AI is using this mechanic to the maximum and adjust the AI so that it is able to handle bigger cities over a longer period of time without getting into civil unrest or economic issues.
+
+
+
+Immediate (Quick Wins)
+1. Fix 5 remaining lint errors (unused vars in e2e specs, __dirname in vitest.config.js)
+2. Enable strict: true in tsconfig.json
+3. Upgrade no-explicit-any from warn to error
+4. Remove eslint-errors.txt (fix errors instead of tracking them)
+5. Clean up TODO.txt — remove completed items, organize by priority
+Short-Term (1-4 weeks)
+6. Implement remaining building effects (production, foodStorage, growthBonus — core mechanics that are declared but ignored)
+I have here some sounds from another game that will be now integrated by you into this game:  IF you choose to use multipole sounds for the same unit than use a main sound and than secodndarry sounds main sound play most of the time - Sounds also can be used for events or when clicked or builded building YOU decide by best will - Legal notice from online search, I talked with an AI that does not know oure project:  Since you are using them strictly as assets, your main source code is completely safe. Your project will not become GPL.
+To keep everything legally watertight, you just need to ensure you aggregate them properly. Here is exactly how to structure your files and handle the documentation:
+
+1. Structure Your Directory (Keep Assets Separate)
+
+Keep the Warzone 2100 audio files in their own distinct folder rather than embedding or compiling their raw data directly into your game's main executable file.
+A clean setup looks like this:
+text
+my-game-project/
+├── Game.exe                 <-- Your private, closed-source code
+├── assets/
+│   ├── textures/
+│   └── audio/
+│       ├── my-own-sounds/
+│       └── warzone2100/     <-- Keep these in their own folder
+│           ├── laser.ogg
+│           ├── explosion.ogg
+│           └── LICENSE.txt  <-- Place a copy of the GPLv2 license here
+└── LICENSE-THIRD-PARTY.txt  <-- A text file in your root folder (see below)
+Use code with caution.
+
+2. Add a Third-Party Notice
+
+In the root directory of y        // Barbarian city cap: if already at the limit, raze instead of capture.
+        if (this.isAtCityCap()) {
+          debugLog(`[BARB] At city cap — razing ${city.name} instead of capturing`);
+          city.population = 1;
+        }our project, create a text file (often named LICENSE-THIRD-PARTY.txt or CREDITS.txt). Inside it, explicitly state that your code is proprietary, but the sounds are open source.
+You can use this exact template:
+Third-Party Asset Notices
+This project contains sound assets from the open-source game Warzone 2100, which are licensed under the GNU General Public License, version 2 (GPLv2).
+These assets are included via "mere aggregation" and remain under the GPLv2. A full copy of the license can be found in the assets/audio/warzone2100/ directory.
+The inclusion of these assets does not extend the GPLv2 license to the primary application source code or any other proprietary assets of this project.
+
+3. Golden Rule: Modifying the Files
+
+• If you use them exactly as they are: You have no further obligations.
+• If you edit them: If you chop up, remix, or heavily filter a Warzone 2100 sound effect, that new, edited sound file must also be made available under the GPLv2 if someone asks for it. Your code, however, still remains unaffected.
+Are you distributing this project as a free download (like on Itch.io or GitHub) or planning a commercial release (like on Steam)? I can let you know if there are any storefront-specific guidelines you should look out for. -- Copy the files and rename them as best - comprehencive integration best practice: /home/jonas/Downloads/sounds/   --- Unit sounds only get played if not played the last 10 seconds before -- Attack sounds only get played if not played the last 4 seconds before  --- Make a list of all placed where sounds will be played return this list as .adoc or extend doc. if allready existing, a sound only gets used for one perpouse! -- abstract implementing the sound system than use it -- never play two sounds at the same time
+
+
+
+* [DONE] Development-mode zoom-level indicator in the TopBar

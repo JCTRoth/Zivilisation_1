@@ -304,8 +304,29 @@ export class EngineEventRouter {
       case 'GAME_LOG':
         debugLog('[EngineEventRouter] GAME_LOG:', eventData);
         break;
+      case 'HANDOFF':
+        this.onHandoff(eventData);
+        break;
         default:
         debugLog('Unhandled game engine event:', eventType, eventData);
+    }
+  }
+
+  /**
+   * Hotseat handoff: show the "pass the device" overlay so the next human
+   * player can take the seat without screen-peeking.
+   */
+  private onHandoff(eventData: Record<string, unknown>): void {
+    const actions = this.gameEngine?.storeActions;
+    if (actions?.updateUIState) {
+      actions.updateUIState({
+        hotseatHandoff: {
+          playerId: Number(eventData.playerId ?? 0),
+          playerName: String(eventData.playerName ?? ''),
+          leader: String(eventData.leader ?? ''),
+          color: String(eventData.color ?? '#888'),
+        },
+      });
     }
   }
 
@@ -399,6 +420,15 @@ export class EngineEventRouter {
     // Refresh visibility for the current player so the minimap and main view
     // reflect the correct per-player fog of war on turn start
     this.actions.updateVisibility();
+
+    // Move the camera to the active player's first actionable unit (or capital).
+    // In hotseat mode this is critical: without it the camera stays wherever the
+    // previous player left it, often on a tile that is now black (fogged for the
+    // new player). focusOnNextUnit uses the same visibility rule so it never
+    // lands the camera on a tile the current player cannot see.
+    if (civ?.isHuman) {
+      this.actions.focusOnNextUnit();
+    }
 
     // A selection preserved across the turn boundary must not survive its unit:
     // if the unit died during the AI turns, clear the (user-held) selection.

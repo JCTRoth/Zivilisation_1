@@ -33,6 +33,7 @@ import { startingRankForCity, isCombatUnitClass } from './UnitRankSystem';
 import { cityBuildingEffects, hasBuildingEffect, isPalaceBuilding } from './BuildingEffects';
 import { citizenFoodDemand, AQUEDUCT_HOUSING_CAP, type ProcessTurnResult } from './EconomicManager';
 import type { City, Civilization, Technology, Unit } from '../../../types/game';
+import { useGameStore } from '../../stores/GameStore';
 import GameEngine from './GameEngine';
 import { awaitPendingAnimations } from '../rendering/GlideAnimation';
 import { aiTurnTimeoutMs, gameSpeedTimeoutFactor } from '@/data/GameConstants';
@@ -699,6 +700,30 @@ export class TurnManager {
     // Process turn-based game events (production, purchases, research).
     // Unit moves are reset inside `startTurn` — see there.
     this.processTurnEvents(nextPlayer);
+    
+    // Hotseat handoff: when the next player is a human in hotseat mode, pause
+    // and emit a HANDOFF event so the UI can show the "pass the device" screen.
+    // The game resumes when the player clicks Ready (via `resumeFromHandoff`).
+    const gameMode = this.gameEngine.gameSettings?.gameMode;
+    const humanIds = this.gameEngine.gameSettings?.humanPlayerIds ?? [0];
+    const skipHandoff = useGameStore.getState().settings?.skipHotseatHandoff ?? false;
+    if (gameMode === 'hotseat' && humanIds.includes(nextPlayer) && !skipHandoff) {
+      const civ = this.gameEngine.civilizations?.[nextPlayer];
+      this.gameEngine.setPaused(true);
+      this.gameEngine.onStateChange?.('HANDOFF', {
+        playerId: nextPlayer,
+        playerName: civ?.name ?? `Player ${nextPlayer + 1}`,
+        leader: civ?.leader ?? '',
+        color: civ?.color ?? '#888',
+      });
+      // Remember to start this player's turn when the handoff is acknowledged.
+      this.deferredStartCivId = nextPlayer;
+      return;
+    } else if (gameMode === 'hotseat' && humanIds.includes(nextPlayer) && skipHandoff) {
+      // Skip the handoff overlay — just start the turn directly.
+      this.startTurn(nextPlayer);
+      return;
+    }
     
     // Start the new turn
     this.startTurn(nextPlayer);

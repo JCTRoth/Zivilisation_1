@@ -1878,4 +1878,15 @@ export const es: PartialTranslationDict = {
   // ── Límite de caravanas ────────────────────────────────────────────────
   'prod.caravanCap': 'Máx. 3 caravanas',
   'prod.caravanCapHint': 'Una ciudad puede tener como máximo 3 de sus caravanas en tránsito al mismo tiempo.',
+  'hotseat.handoff.title': 'Pasa el dispositivo',
+  'hotseat.handoff.passDevice': 'Entrega el dispositivo al siguiente jugador. El mapa permanece oculto hasta que esté listo.',
+  'hotseat.handoff.ready': 'Estoy listo',
+  'hotseat.handoff.dontShowAgain': 'No mostrar de nuevo',
+  'hotseat.turnFor': 'Turno de {player}',
+  'setup.gameMode': 'Modo de juego',
+  'setup.gameModeHint': 'Hotseat permite a 2-4 jugadores compartir un dispositivo por turnos.',
+  'setup.gameMode.single': 'Un jugador',
+  'setup.gameMode.hotseat': 'Hotseat (2-4 jugadores)',
+  'setup.hotseat.players': 'Jugadores Hotseat',
+  'setup.hotseat.playersHint': 'Cuántos humanos comparten este dispositivo. Cada uno juega por turnos.',
 };

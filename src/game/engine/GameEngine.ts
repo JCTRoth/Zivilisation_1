@@ -164,6 +164,16 @@ export interface GameSettings {
   mapSeed?: number;
   mapWidth?: number;
   mapHeight?: number;
+  /**
+   * Multiplayer mode. `single` (default) — one human player (civ 0).
+   * `hotseat` — two or more humans share one device, taking turns.
+   */
+  gameMode?: 'single' | 'hotseat';
+  /**
+   * Which civilization slots are human-controlled. Defaults to [0] in single
+   * player; in hotseat mode every entry is a human seat (e.g. [0, 1]).
+   */
+  humanPlayerIds?: number[];
 }
 
 export interface MapTile {
@@ -1247,8 +1257,10 @@ export default class GameEngine {
       // In AI_VS_AI mode every civilization is AI-controlled (no human player).
       // The Aegean campaign is human-playable, so slot 0 keeps the chair: the
       // player is the admiral on the Greek mainland, the AIs take the rest.
+      // In hotseat mode, all `humanPlayerIds` slots are human-controlled.
+      const humanSeats = this.gameSettings.humanPlayerIds ?? [0];
       const isHuman =
-        i === 0 &&
+        humanSeats.includes(i) &&
         mapType !== 'AI_VS_AI' &&
         mapType !== 'AI_VS_AI_SMALL' &&
         mapType !== 'AI_VS_AI_NAVAL';
@@ -6351,24 +6363,25 @@ const occupiedLandmasses = new Set(
    * This properly advances through all remaining phases (CITY_PRODUCTION, RESEARCH, END)
    * before moving to the next player's turn.
    */
-  processTurn() {
+  processTurn(): Promise<void> {
     console.log('[GameEngine] processTurn: Ending human turn via TurnManager.endHumanTurn()');
 
     if (this.isGameOver) {
       console.log('[GameEngine] processTurn: Ignored because the game has concluded');
-      return;
+      return Promise.resolve();
     }
 
     if (this.isPaused) {
       console.log('[GameEngine] processTurn: Ignored because the game is paused');
-      return;
+      return Promise.resolve();
     }
     
     // Delegate to TurnManager.endHumanTurn() which properly advances through all phases
     if (this.roundManager && typeof this.roundManager.endHumanTurn === 'function') {
-      this.roundManager.endHumanTurn();
+      return this.roundManager.endHumanTurn();
     } else {
       console.error('[GameEngine] processTurn: TurnManager not available or endHumanTurn method missing');
+      return Promise.resolve();
     }
   }
 

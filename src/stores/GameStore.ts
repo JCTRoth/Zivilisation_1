@@ -5,14 +5,13 @@ import { Constants } from '../utils/Constants';
 import { SquareGrid } from '../game/SquareGrid';
 import { UNIT_TYPES } from '../data/GameData';
 import { UNIT_PROPERTIES } from '../data/UnitConstants';
-import { HUMAN_PLAYER_ID } from '../utils/PlayerConstants';
 import {
   clampGameSpeedStep,
   fasterGameSpeedStep,
   slowerGameSpeedStep,
 } from '../data/GameConstants';
 import { beginCameraGlide } from '../game/rendering/CameraGlideGate';
-import { MIN_ZOOM, MAX_ZOOM, clampZoom } from '../utils/CameraUtils';
+import { MIN_ZOOM, MAX_ZOOM, clampZoom, centerCameraOnTile, getGameViewport } from '../utils/CameraUtils';
 import { getLanguage, setLanguage } from '../i18n';
 import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City } from '../../types/game';
 
@@ -48,6 +47,8 @@ const createInitialGameState = (): GameState => ({
   focusedCity: null,
   selectionOrigin: null,
   activePlayer: 0,
+  viewPlayer: 0,
+  humanPlayerIds: [0],
   mapGenerated: false,
   winner: null,
   currentYear: -4000,
@@ -95,7 +96,8 @@ const createInitialUIState = (): UIState => ({
   citizenReassign: null,
   turnButtonDisabled: false,
   currentQueueUnitId: null,
-  turnFlashTrigger: 0
+  turnFlashTrigger: 0,
+  hotseatHandoff: null
 });
 
 /** City dialogs that a user-initiated unit selection closes (one selection at a time). */
@@ -237,6 +239,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     language: getLanguage(), // Game language, restored from localStorage ('civ1_language')
     skipEndTurnConfirmation: false, // Skip showing end turn confirmation modal
     skipGameResultScreen: false, // Skip the end-of-game screen (cinematic + chronicle)
+    skipHotseatHandoff: false, // Skip the hotseat "pass the device" overlay
     autoEndTurn: false, // Automatically end turn when all human player units are done (default disabled)
     autoCamera: true,   // Automatically move camera to focused unit / event
     devMode: false,     // Developer mode: see all players on minimap and switch between them
@@ -374,7 +377,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         (state.gameState.selectionOrigin ?? null) === 'user' && previousSelectionId
           ? state.units.find(
               (u) => u.id === previousSelectionId
-                && u.civilizationId === HUMAN_PLAYER_ID
+                && (state.gameState.humanPlayerIds ?? [0]).includes(u.civilizationId)
                 && u.isDefeated !== true,
             ) ?? null
           : null;
@@ -435,7 +438,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       // the camera never trails hidden AI movement. Dev mode overrides this.
       const shouldFocus = (unit: { civilizationId: number; col: number; row: number }): boolean => {
         if (devMode) return true;
-        if (unit.civilizationId === HUMAN_PLAYER_ID) return true;
+        if ((state.gameState.humanPlayerIds ?? [0]).includes(unit.civilizationId)) return true;
         const mapWidth = state.map?.width ?? 0;
         if (!mapWidth) return false;
         return !!state.map?.visibility?.[unit.row * mapWidth + unit.col];
@@ -453,6 +456,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           beginCameraGlide();
         }
 
+        // Immediately commit the camera position so the new player sees their
+        // territory without waiting for the tween (which may not fire in
+        // hotseat mode where the handoff overlay was just dismissed).
+        const immediateTarget = centerCameraOnTile({
+          col: candidate.col,
+          row: candidate.row,
+          zoom: state.camera.zoom,
+          viewportWidth: getGameViewport().width,
+          viewportHeight: getGameViewport().height,
+          mapWidth: state.map?.width ?? 0,
+          mapHeight: state.map?.height ?? 0,
+        });
+
         return {
           ...state,
           _lastFocusCall: now,
@@ -464,6 +480,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             focusedCity: null,
             selectionOrigin: 'auto',
           },
+          camera: (isFinite(immediateTarget.x) && isFinite(immediateTarget.y))
+            ? { ...state.camera, x: immediateTarget.x, y: immediateTarget.y }
+            : state.camera,
           ...(autoCamera ? {
             cameraPanRequest: {
               col: candidate.col,
@@ -479,21 +498,25 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         // turn gate: a city with nothing in production means the player needs
         // to review/queue something, so we land on the capital. Otherwise let
         // the turn end without snapping the camera to a city.
+        //
+        // In hotseat mode, always go to the capital/city so the new player
+        // sees their own territory (never a fogged tile left by the previous player).
         const hasProductionLeft = state.cities.some(
           (c) => c.civilizationId === activeId
             && !c.currentProduction
             && (!Array.isArray(c.buildQueue) || c.buildQueue.length === 0)
         );
-        if (!hasProductionLeft) {
+        const isHotseat = (state.civilizations?.filter((c) => c.isHuman)?.length ?? 0) > 1;
+        if (!hasProductionLeft && !isHotseat) {
           return state;
         }
 
-        // Focus on the capital city of the active player
+        // Focus on the capital city of the active player (or first city if no capital)
         const activeCivilization = state.civilizations.find(c => c.id === activeId);
-        const capitalCity = activeCivilization?.capital;
+        const capitalCity = activeCivilization?.capital || state.cities.find(c => c.civilizationId === activeId);
 
         if (capitalCity) {
-          // Same rule for capitals: only follow the human's own or a visible one.
+          // Same rule for capitals: only follow the human’s own or a visible one.
           if (!shouldFocus({ civilizationId: capitalCity.civilizationId, col: capitalCity.col, row: capitalCity.row })) {
             return state;
           }
@@ -501,6 +524,16 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0 && autoCamera) {
             beginCameraGlide();
           }
+
+          const capitalTarget = centerCameraOnTile({
+            col: capitalCity.col,
+            row: capitalCity.row,
+            zoom: state.camera.zoom,
+            viewportWidth: getGameViewport().width,
+            viewportHeight: getGameViewport().height,
+            mapWidth: state.map?.width ?? 0,
+            mapHeight: state.map?.height ?? 0,
+          });
 
           return {
             ...state,
@@ -513,6 +546,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
               focusedCity: capitalCity.id,
               selectionOrigin: 'auto',
             },
+            camera: (isFinite(capitalTarget.x) && isFinite(capitalTarget.y))
+              ? { ...state.camera, x: capitalTarget.x, y: capitalTarget.y }
+              : state.camera,
             ...(autoCamera ? {
               cameraPanRequest: {
                 col: capitalCity.col,
@@ -523,6 +559,66 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             } : {}),
           };
         }
+      }
+
+      // No unit or capital found — fall back to the active player’s first city
+      // (if any) or the map center so the camera never stays on a fogged tile.
+      // No unit or capital found — fall back to the active player's first city
+      // (if any) or the map center so the camera never stays on a fogged tile.
+      const activeCity = state.cities.find(c => c.civilizationId === activeId);
+      if (activeCity) {
+        if (!shouldFocus({ civilizationId: activeCity.civilizationId, col: activeCity.col, row: activeCity.row })) {
+          return state;
+        }
+        if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0 && autoCamera) {
+          beginCameraGlide();
+        }
+        const cityTarget = centerCameraOnTile({
+          col: activeCity.col,
+          row: activeCity.row,
+          zoom: state.camera.zoom,
+          viewportWidth: getGameViewport().width,
+          viewportHeight: getGameViewport().height,
+          mapWidth: state.map?.width ?? 0,
+          mapHeight: state.map?.height ?? 0,
+        });
+        return {
+          ...state,
+          _lastFocusCall: now,
+          gameState: {
+            ...state.gameState,
+            selectedUnit: null,
+            activeUnit: null,
+            selectedCity: activeCity.id,
+            focusedCity: activeCity.id,
+            selectionOrigin: 'auto',
+          },
+          camera: (isFinite(cityTarget.x) && isFinite(cityTarget.y))
+            ? { ...state.camera, x: cityTarget.x, y: cityTarget.y }
+            : state.camera,
+          ...(autoCamera ? {
+            cameraPanRequest: {
+              col: activeCity.col,
+              row: activeCity.row,
+              keepZoom: true,
+              requestId: `focus-${now}-${Math.random().toString(36).slice(2, 8)}`,
+            }
+          } : {}),
+        };
+      }
+
+      // Last resort: center on the map.
+      const mapW = state.map?.width ?? 0;
+      const mapH = state.map?.height ?? 0;
+      if (mapW > 0 && mapH > 0) {
+        const vp = getGameViewport();
+        const centerX = (mapW * 32) / 2;
+        const centerY = (mapH * 32) / 2;
+        return {
+          ...state,
+          _lastFocusCall: now,
+          camera: { ...state.camera, x: centerX - vp.width / 2 / state.camera.zoom, y: centerY - vp.height / 2 / state.camera.zoom },
+        };
       }
 
       // No unit or capital found, return unchanged state
@@ -543,6 +639,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     toggleUI: (key) => set(state => ({
       uiState: { ...state.uiState, [key]: !state.uiState[key] }
+    })),
+
+    updateUIState: (updates) => set(state => ({
+      uiState: { ...state.uiState, ...updates }
     })),
 
     setTurnButtonDisabled: (disabled: boolean) => set(state => ({
@@ -1007,7 +1107,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         };
       }
 
-      // The store's visibility always reflects the human player's perspective (player 0).
+      // The store's visibility reflects the active human player's perspective.
+      // In hotseat mode, `viewPlayer` tracks which human seat is watching;
+      // in single-player it is always HUMAN_PLAYER_ID (0).
       // The game engine maintains per-player visibility separately for AI decision-making.
       // This ensures the UI (minimap, main canvas) never reveals what other players see.
 
@@ -1017,9 +1119,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
       // Clear current visibility (but keep revealed status)
       // Revealed tiles stay permanently visible
-      // Only reveal around the human player's units
+      // Only reveal around the viewing human player's units
       for (const unit of units) {
-        if (unit.civilizationId !== HUMAN_PLAYER_ID) {
+        if (unit.civilizationId !== state.gameState.viewPlayer) {
           continue;
         }
 
@@ -1052,9 +1154,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         }
       }
 
-      // Reveal around the human player's cities
+      // Reveal around the viewing human player's cities
       for (const city of cities) {
-        if (city.civilizationId === HUMAN_PLAYER_ID) {
+        if (city.civilizationId === state.gameState.viewPlayer) {
           const cityViewRadius = 2; // Cities can see 2 tiles away
           setVisibilityAreaInternal(newVisibility, newRevealed, city.col, city.row, cityViewRadius, map.width, map.height);
         }
@@ -1173,9 +1275,24 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     dismissTechNotification: () => set({ lastResearchedTech: null }),
 
-    updateGameState: (updates) => set(state => ({
-      gameState: { ...state.gameState, ...updates }
-    })),
+    updateGameState: (updates) => set(state => {
+      const newActive = updates.activePlayer;
+      // When the active player changes to a human seat, update the fog-of-war
+      // viewer to that player. During AI turns, `viewPlayer` stays on the last
+      // human so the map never leaks AI visibility.
+      const humanIds = state.gameState.humanPlayerIds ?? [0];
+      const newView =
+        newActive !== undefined && humanIds.includes(newActive)
+          ? newActive
+          : state.gameState.viewPlayer;
+      return {
+        gameState: {
+          ...state.gameState,
+          ...updates,
+          viewPlayer: updates.viewPlayer ?? newView,
+        }
+      };
+    }),
 
     updateSettings: (updates) => {
       // The language is owned by the i18n runtime (it persists the choice and
@@ -1245,6 +1362,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         autoEndTurn: false,
         skipEndTurnConfirmation: false,
         skipGameResultScreen: false,
+        skipHotseatHandoff: false,
       },
     })),
 

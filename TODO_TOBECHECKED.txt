@@ -1,0 +1,14 @@
+T is the population of the city the sunk ship came from.
+
+Still to do (bigger):
+* Verify war commitment in a fresh AI-vs-AI run: with garrisons now able to
+  mobilise, war declarations gated on a reachable target, and the unit cap
+  taking the most conservative estimate, do wars produce sustained offensives
+  and city captures? Watch attacks/round (counted from real COMBAT_* events now)
+  and citiesCaptured in the next progression CSV. The AI's own "Attack —" lines
+  are intent only and no longer counted as attacks.
+* Naval invasion: land armies still cannot attack across water; the navy pivot
+* Multi-group offensives / siege commitment: two groups can form, but there is
+  no coordination between them (no pincer/second-front planning).
+* [TOBECHECKED] Verify naval governor emergency evacuation and settler fast transport in AI vs AI
+* [TOBECHECKED] Verify air-unit (fighter/bomber) usage and garrison exclusion in AI vs AI

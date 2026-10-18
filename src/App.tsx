@@ -12,6 +12,7 @@ import GameModals from "./components/ui/GameModals";
 import GameResultOverlay from "./components/ui/GameResultOverlay";
 import VictoryFireworks from "./components/ui/VictoryFireworks";
 import PauseScreen from "./components/ui/PauseScreen";
+import HotseatHandoffScreen from "./components/ui/HotseatHandoffScreen";
 import GameSpeedControls from "./components/ui/GameSpeedControls";
 import TopBar from "./components/ui/TopBar";
 import MobileBottomBar from "./components/ui/MobileBottomBar";
@@ -186,22 +187,26 @@ function App() {
           mapGenerated: true,
           currentTurn: engine.currentTurn,
           currentYear: engine.currentYear,
+          humanPlayerIds: engine.gameSettings?.humanPlayerIds ?? [0],
         });
 
         // AI-vs-AI games start zoomed out and centered so the whole map is
         // visible without player input — this is the "auto-delivery" / overview
         // mode the AI needs to play effectively.
         if (isAIVsAI) {
-          const mapWidth = gameSettings.mapWidth ?? 40;
-          const mapHeight = gameSettings.mapHeight ?? 40;
+          const mapWidth = engine.map?.width ?? gameSettings.mapWidth ?? 40;
+          const mapHeight = engine.map?.height ?? gameSettings.mapHeight ?? 40;
           const tileSize = 32;
           const centerX = (mapWidth * tileSize) / 2;
           const centerY = (mapHeight * tileSize) / 2;
           actions.updateCamera({
             x: centerX,
             y: centerY,
-            zoom: 0.3, // MIN_ZOOM — completely zoomed out
+            zoom: 0.5, // half zoom — overview of the whole map
           });
+          // Spectator mode: keep the camera centered on the map instead of
+          // following units around.
+          actions.updateSettings({ autoCamera: false });
         }
 
         // `?combatlab` — pre-pose opposing units so the combat e2e spec has a
@@ -482,10 +487,17 @@ function App() {
       } else if (currentSettings.autoEndTurn || !automatic) {
         // End immediately: a manual End-Turn press, or a genuine auto-end
         // (autoEndTurn enabled + engine detected all units are done).
+        // Auto. turn ending waits 3 seconds before advancing, so the player
+        // can see the board before the next civ takes over.
+        const delay = (automatic && currentSettings.autoEndTurn) ? 3000 : 0;
         console.log(
           "[App] Skipping end turn confirmation modal due to user preference",
         );
-        endTurnAndRecap(automatic);
+        if (delay > 0) {
+          setTimeout(() => endTurnAndRecap(automatic), delay);
+        } else {
+          endTurnAndRecap(automatic);
+        }
       }
       // else: engine-triggered prompt with autoEndTurn OFF + skip ON → do nothing.
       // The player ends the turn manually, so auto-end never fires unintentionally.
@@ -1481,6 +1493,56 @@ function App() {
         }
         gameOver={!!gameResult}
       />
+
+      {/* Hotseat handoff overlay — shown between human turns in hotseat mode.
+          Hides the map to prevent screen-peeking; the next player clicks
+          "I'm Ready" to resume the game via setPaused(false). */}
+      {uiState.hotseatHandoff && !gameResult && (
+        <HotseatHandoffScreen
+          playerName={uiState.hotseatHandoff.playerName}
+          leader={uiState.hotseatHandoff.leader}
+          color={uiState.hotseatHandoff.color}
+          onReady={(dontShowAgain) => {
+            actions.updateUIState({ hotseatHandoff: null });
+            if (dontShowAgain) {
+              actions.updateSettings({ skipHotseatHandoff: true });
+            }
+            gameEngine?.setPaused(false);
+            // After the handoff, immediately move the camera to the new
+            // player's first unit or city so they never see a fogged tile.
+            const activeId = gameEngine?.activePlayer ?? 0;
+            const unit = gameEngine?.units?.find(
+              (u: { civilizationId: number; movesRemaining?: number; isSleeping?: boolean }) =>
+                u.civilizationId === activeId && (u.movesRemaining ?? 0) > 0 && !u.isSleeping,
+            );
+            const city = !unit
+              ? gameEngine?.cities?.find((c: { civilizationId: number }) => c.civilizationId === activeId)
+              : null;
+            const target = unit ?? city;
+            if (target) {
+              const tileSize = 32;
+              const canvas = document.querySelector('.game-canvas canvas') as HTMLElement | null;
+              const vp = { width: canvas?.clientWidth || 800, height: canvas?.clientHeight || 600 };
+              const zoom = useGameStore.getState().camera?.zoom ?? 3;
+              const mapW = useGameStore.getState().map?.width ?? 0;
+              const mapH = useGameStore.getState().map?.height ?? 0;
+              const worldW = mapW * tileSize;
+              const worldH = mapH * tileSize;
+              const centerX = (target.col + 0.5) * tileSize;
+              const centerY = (target.row + 0.5) * tileSize;
+              const viewW = vp.width / zoom;
+              const viewH = vp.height / zoom;
+              let x = centerX - viewW / 2;
+              let y = centerY - viewH / 2;
+              x = viewW >= worldW ? (worldW - viewW) / 2 : Math.max(0, Math.min(worldW - viewW, x));
+              y = viewH >= worldH ? (worldH - viewH) / 2 : Math.max(0, Math.min(worldH - viewH, y));
+              actions.updateCamera({ x, y });
+            }
+            actions.updateVisibility();
+            actions.focusOnNextUnit();
+          }}
+        />
+      )}
 
       {/* Self-playing scenarios get a speed bar that stays on screen while the
           game runs: full speed by default, one uniform step per click, and a

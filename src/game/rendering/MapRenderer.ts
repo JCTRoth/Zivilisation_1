@@ -32,7 +32,6 @@ import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import { getUnitIcon } from '@/utils/UnitIconLoader';
 import { TERRAIN_FONT_FAMILY } from '@/utils/TerrainFont';
 import { MathUtils } from '@/utils/MathUtils';
-import { HUMAN_PLAYER_ID } from '@/utils/PlayerConstants';
 import { computeTurnMarkers, type TileLookup } from '@/utils/MovementPreview';
 import { UNIT_RANK, UNIT_RANK_INFO, getUnitRank } from '../engine/UnitRankSystem';
 import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, PromotionEffect, SpecialistType, TurnMarker } from '../../../types/game';
@@ -894,7 +893,8 @@ export class MapRenderer {
       cameraZoom,
       currentQueueUnitId,
       selectedUnitId,
-      selectedUnitIds
+      selectedUnitIds,
+      gameState
     } = params;
 
     // Pulse the current turn-queue unit and (when supplied) the manually
@@ -906,15 +906,16 @@ export class MapRenderer {
     const groupIds = new Set<string>(selectedUnitIds ?? []);
     for (const id of groupIds) ids.add(id);
 
+    const humanIds = gameState.humanPlayerIds ?? [0];
     let unitsToPulse: Unit[];
     if (ids.size > 0) {
       // Only the human's own units pulse — `currentQueueUnitId` tracks the
       // *active* player, which is an AI civ during its turn.
-      unitsToPulse = units.filter(u => ids.has(u.id) && u.civilizationId === HUMAN_PLAYER_ID);
+      unitsToPulse = units.filter(u => ids.has(u.id) && humanIds.includes(u.civilizationId));
     } else {
       // Fall back: all own units with moves
       unitsToPulse = units.filter(u => 
-        u.civilizationId === HUMAN_PLAYER_ID && 
+        humanIds.includes(u.civilizationId) && 
         (u.movesRemaining || 0) > 0
       );
     }
@@ -1643,7 +1644,7 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
         // Draw selection highlight (in the owning/player civ colour, not red).
         if (selectedHex && selectedHex.col === col && selectedHex.row === row) {
           const half = scaledTileSize / 2;
-          const ownerCiv = civilizations.find(c => c.id === HUMAN_PLAYER_ID);
+          const ownerCiv = civilizations.find(c => c.id === (gameState.humanPlayerIds ?? [0])[0]);
           ctx.strokeStyle = ownerCiv?.color || '#4169E1';
           ctx.lineWidth = 2;
           ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
@@ -1676,7 +1677,7 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
         if (stack && isExplored) {
           let drawnOnTile = 0;
           for (const unit of stack) {
-            const isOwnUnit = unit.civilizationId === HUMAN_PLAYER_ID;
+            const isOwnUnit = (gameState.humanPlayerIds ?? [0]).includes(unit.civilizationId);
             if (!isOwnUnit && !isVisible) continue;
             // Killed units are never drawn again — EXCEPT while their combat
             // animation is still running, where the 💥 cloud / death blink

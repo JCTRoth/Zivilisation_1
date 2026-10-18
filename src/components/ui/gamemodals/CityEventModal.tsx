@@ -134,7 +134,7 @@ const CityEventModal: React.FC<CityEventModalProps> = ({
       onClose={onContinue}
       size="lg"
       tone={ours ? 'success' : 'danger'}
-      icon={isFounded ? '🏗️' : isJoined ? '🤝' : isRazed ? '🔥' : '🏚️'}
+      icon={isFounded ? '🏰' : isJoined ? '🤝' : isRazed ? '🔥' : '🏚️'}
       artLabel={ours ? t('cityEvent.artOurs') : t('cityEvent.artLost')}
       dialogClassName="city-event-modal"
       eyebrow={eyebrow}
@@ -162,7 +162,7 @@ const CityEventModal: React.FC<CityEventModalProps> = ({
       <div className="gm-stat-grid">
         <div className="gm-stat gm-stat--accent">
           <span className="gm-stat-value">
-            <span className="gm-stat-icon" aria-hidden="true">🏘️</span>
+            <span className="gm-stat-icon" aria-hidden="true">🏰</span>
             {notice.cityName}
           </span>
           <span className="gm-stat-label">{isRazed ? t('cityEvent.destroyed') : t('cityEvent.city')}</span>

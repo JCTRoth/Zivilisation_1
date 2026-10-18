@@ -1,0 +1,129 @@
+/* ============================================================================
+   Hotseat hand-off screen — full-screen overlay shown between human turns
+   in hotseat multiplayer mode. Prevents screen-peeking by hiding the map.
+   ========================================================================== */
+
+.hotseat-handoff {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: hotseat-handoff-fade 0.25s ease-out;
+}
+
+@keyframes hotseat-handoff-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.hotseat-handoff__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 10, 16, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.hotseat-handoff__card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  max-width: 440px;
+  width: 100%;
+  padding: 40px 32px;
+  background: linear-gradient(145deg, #1a2332 0%, #0f1722 100%);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+
+.hotseat-handoff__banner {
+  width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  opacity: 0.85;
+}
+
+.hotseat-handoff__title {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #e8d5a3;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.hotseat-handoff__pass {
+  margin: 0;
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.65);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.hotseat-handoff__player-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hotseat-handoff__civ-name {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.hotseat-handoff__leader {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hotseat-handoff__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+}
+
+.hotseat-handoff__checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #c0392b;
+}
+
+.hotseat-handoff__ready-btn {
+  margin-top: 8px;
+  padding: 14px 40px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: 0 4px 16px rgba(192, 57, 43, 0.4);
+}
+
+.hotseat-handoff__ready-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(192, 57, 43, 0.55);
+}
+
+.hotseat-handoff__ready-btn:active {
+  transform: translateY(0);
+}

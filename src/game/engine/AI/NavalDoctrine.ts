@@ -558,7 +558,22 @@ export function navalDoctrine(input: NavalDoctrineInput): NavalDoctrineResult {
       Math.floor(Math.max(budget, cheapBudget)),
     ),
   );
-  const wantTransports = desiredTransports(input);
+  // SEALIFT ANSWERS TO THE SCREEN. The raw demand is "one hull per three
+  // islands plus one per invasion", which on an archipelago is always hungry —
+  // and because production filled transports before warships, that hunger was
+  // never satisfied and the warship branch was never reached. A four-seed
+  // benchmark finished with 28 ferries and not one fighting ship: a shipping
+  // line, unable to escort the very convoys it exists to protect.
+  //
+  // Capping the sealift at the screen plus one is what turns a fleet into a
+  // fleet. One unescorted ferry is a scout; three are three prizes. The cap also
+  // does the thing the last overhaul was asked for and did not achieve: it makes
+  // production ALTERNATE between transports and warships, so the navy fills out
+  // in all directions instead of one hull type at a time.
+  const wantTransports = Math.min(
+    desiredTransports(input),
+    Math.max(1, wantWarships + 1),
+  );
   const wantEscorts = desiredEscorts(wantTransports, input.ownTransports);
   const wantScouts = desiredScouts(input);
   // The composition is the single source of truth for the split: wantHeavies,

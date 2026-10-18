@@ -1876,4 +1876,15 @@ export const ja: PartialTranslationDict = {
   // ── キャラバン数の上限 ──────────────────────────────────────────────────
   'prod.caravanCap': '最大キャラバン3',
   'prod.caravanCapHint': '都市ごとのキャラバンは、同時に旅立ちできるのが最大3隻までです。',
+  'hotseat.handoff.title': '端末を渡してください',
+  'hotseat.handoff.passDevice': '次のプレイヤーに端末を渡してください。準備ができるまでマップは非表示です。',
+  'hotseat.handoff.ready': '準備完了',
+  'hotseat.handoff.dontShowAgain': '次回から表示しない',
+  'hotseat.turnFor': '{player}のターン',
+  'setup.gameMode': 'ゲームモード',
+  'setup.gameModeHint': 'ホットシートでは2〜4人のプレイヤーが1台の端末を交代で共有します。',
+  'setup.gameMode.single': 'シングルプレイ',
+  'setup.gameMode.hotseat': 'ホットシート（2〜4人）',
+  'setup.hotseat.players': 'ホットシート人数',
+  'setup.hotseat.playersHint': 'この端末を共有する人数。順番にターンを進めます。',
 };

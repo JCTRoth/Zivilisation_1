@@ -112,7 +112,13 @@ process.on('exit', cleanup);
 
 const res = spawnSync(
   'npx',
-  ['vitest', 'run', 'tests/ai/tmpNavalSession.test.ts', '--no-file-parallelism'],
+  // The diag config, not the default one. This spec IS the kind of file the
+  // default config's `**/tmp*.test.ts` exclusion exists to keep out of
+  // `npm test` — a probe that plays hundreds of turns and asserts
+  // `expect(true).toBe(true)` — so running it under the default config finds
+  // no test files at all and exits 1. `vitest.diag.config.ts` is the config
+  // for exactly this: long telemetry probes, no suite interference.
+  ['vitest', 'run', 'tests/ai/tmpNavalSession.test.ts', '--no-file-parallelism', '--config', 'vitest.diag.config.ts'],
   { cwd: ROOT, env: { ...process.env, NAVAL_CSV_OUT: process.env.NAVAL_CSV_OUT ?? '/tmp/naval.csv', NAVAL_JSON_OUT: process.env.NAVAL_JSON_OUT ?? '/tmp/naval.json' }, encoding: 'utf8', maxBuffer: 1024 * 1024 * 64 },
 );
 cleanup();
