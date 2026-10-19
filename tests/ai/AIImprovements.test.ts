@@ -29,6 +29,10 @@ describe('AI settler tile improvements (Civ1)', () => {
       mapType: 'CLOSEUP_1V1',
       devMode: false,
       startingGold: 100,
+      // Pinned map: the "irrigates next to fresh water" case depends on where
+      // the random map puts the river, so an unpinned map made this file fail
+      // roughly one run in five — a flaky test is a test nobody trusts.
+      mapSeed: 20260919,
     });
     engine = e;
     return e;

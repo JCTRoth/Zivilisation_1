@@ -1005,6 +1005,7 @@ export const en = {
   'rates.projected': 'Projected per turn',
   'rates.stat.commerce': 'Commerce',
   'rates.stat.upkeep': 'Upkeep',
+  'rates.stat.debt': 'Loan service',
   'rates.stat.net': 'Treasury net',
   'rates.noCities': 'You hold no city yet — found one with your settler and the commerce will start flowing.',
   'gov.defaultEmpire': 'Your Empire',

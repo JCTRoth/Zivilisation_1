@@ -2213,6 +2213,285 @@ export default class GameEngine {
   private landmassCacheKey: unknown = null;
 
   /**
+   * Land components separated by OPEN SEA only.
+   *
+   * The plain landmass ids treat every water body as a barrier, because a land
+   * unit really cannot walk across a lake or a wide river. But the NAVAL
+   * question is a different one: "do I need a warship fleet?" — and a lake in
+   * the middle of a continent, or a river cutting it in two, is answered with
+   * NO. A map with a lake and a river on it has two or three "landmasses" by
+   * the walking test, and the AI read that as an archipelago: it opened the
+   * naval research branch, built a warship fleet for a lake, and paid upkeep
+   * for hulls that had nothing to fight.
+   *
+   * So this flood fill splits the land ONLY by ocean that is connected to the
+   * map border — real sea. A lake is a hole in the land, not a shore, and a
+   * river is a stripe, not a shore. `getSeaLandmassCount()` and
+   * `areSeaConnected()` are what the naval code asks.
+   */
+  private seaLandmassIds: Int32Array | null = null;
+  private seaLandmassSizes: number[] = [];
+  private seaLandmassCacheKey: unknown = null;
+  /** 1 where the tile is ocean connected to the map border (real sea). */
+  private trueSeaMask: Uint8Array | null = null;
+  private trueSeaCacheKey: unknown = null;
+
+  /**
+   * Which water tiles are REAL sea: ocean that can be reached from the map
+   * border. A lake enclosed by land is not sea — you cannot sail an ocean
+   * fleet across a pond, and a pond does not make a naval power.
+   */
+  private computeTrueSeaMask(): Uint8Array {
+    if (this.trueSeaMask && this.trueSeaCacheKey === this.map) return this.trueSeaMask;
+    const width = this.map?.width ?? 0;
+    const height = this.map?.height ?? 0;
+    const mask = new Uint8Array(width * height);
+    const queue: number[] = [];
+    const push = (col: number, row: number): void => {
+      if (col < 0 || col >= width || row < 0 || row >= height) return;
+      const idx = row * width + col;
+      if (mask[idx]) return;
+      const tile = this.getTileAt(col, row);
+      if (!tile) return;
+      const key = this.getTerrainKey(tile);
+      if (key !== 'ocean' && key !== 'sea') return;
+      mask[idx] = 1;
+      queue.push(idx);
+    };
+    // Seed from every border tile: the sea is what touches the map edge.
+    for (let col = 0; col < width; col++) { push(col, 0); push(col, height - 1); }
+    for (let row = 0; row < height; row++) { push(0, row); push(width - 1, row); }
+    while (queue.length > 0) {
+      const idx = queue.pop()!;
+      const col = idx % width;
+      const row = Math.floor(idx / width);
+      for (let dc = -1; dc <= 1; dc++) {
+        for (let dr = -1; dr <= 1; dr++) {
+          if (dc === 0 && dr === 0) continue;
+          push(col + dc, row + dr);
+        }
+      }
+    }
+    this.trueSeaMask = mask;
+    this.trueSeaCacheKey = this.map;
+    return mask;
+  }
+
+  /**
+   * Connected-component ids of land, split ONLY by real sea (8-directional).
+   * Lakes and rivers do not split a landmass here: they are obstacles for
+   * walking, not shores for sailing.
+   */
+  private computeSeaLandmassIds(): Int32Array {
+    if (this.seaLandmassIds && this.seaLandmassCacheKey === this.map) return this.seaLandmassIds;
+    const width = this.map?.width ?? 0;
+    const height = this.map?.height ?? 0;
+    const sea = this.computeTrueSeaMask();
+    const ids = new Int32Array(width * height).fill(-2);
+    const sizes: number[] = [];
+    let nextId = 0;
+    const queue: number[] = [];
+
+    // The ONLY barrier here is open sea. A lake is a hole in the land, not a
+    // shore, and a river is a stripe — neither splits the world for a fleet.
+    const seaPassable = (col: number, row: number): boolean => {
+      const idx = row * width + col;
+      if (sea[idx]) return false;
+      const tile = this.getTileAt(col, row);
+      if (!tile) return false;
+      const key = this.getTerrainKey(tile);
+      if (key === TERRAIN_TYPES.LAKE || key === TERRAIN_TYPES.RIVER) return true;
+      return TERRAIN_PROPS[key]?.passable !== false;
+    };
+
+    for (let start = 0; start < ids.length; start++) {
+      if (ids[start] !== -2) continue;
+      const startCol = start % width;
+      const startRow = Math.floor(start / width);
+      if (!seaPassable(startCol, startRow)) continue;
+
+      const groupId = nextId++;
+      ids[start] = groupId;
+      let size = 0;
+      queue.length = 0;
+      queue.push(start);
+      while (queue.length > 0) {
+        const idx = queue.shift()!;
+        size++;
+        const col = idx % width;
+        const row = Math.floor(idx / width);
+        for (let dc = -1; dc <= 1; dc++) {
+          for (let dr = -1; dr <= 1; dr++) {
+            if (dc === 0 && dr === 0) continue;
+            const nc = col + dc;
+            const nr = row + dr;
+            if (nc < 0 || nc >= width || nr < 0 || nr >= height) continue;
+            const nIdx = nr * width + nc;
+            if (ids[nIdx] !== -2) continue;
+            if (!seaPassable(nc, nr)) continue;
+            ids[nIdx] = groupId;
+            queue.push(nIdx);
+          }
+        }
+      }
+      sizes[groupId] = size;
+    }
+
+    this.seaLandmassIds = ids;
+    this.seaLandmassSizes = sizes;
+    this.seaLandmassCacheKey = this.map;
+    return ids;
+  }
+
+  /**
+   * How many landmasses the map has when only REAL SEA separates them.
+   *
+   * 1 on an ordinary land map — whatever rivers and lakes cut across it. More
+   * than one means there is a shore to sail to, which is the only thing that
+   * makes a warship fleet worth anything.
+   */
+  getSeaLandmassCount(): number {
+    this.computeSeaLandmassIds();
+    return this.seaLandmassSizes.length;
+  }
+
+  /** Sea-landmass id of a tile, or -1 for water/out of bounds. */
+  getSeaLandmassId(col: number, row: number): number {
+    if (!this.map || !this.squareGrid?.isValidSquare(col, row)) return -1;
+    const ids = this.computeSeaLandmassIds();
+    const id = ids[row * this.map.width + col];
+    return id >= 0 ? id : -1;
+  }
+
+  /**
+   * True when two tiles sit on the same landmass as far as SAILING goes: no
+   * real sea between them. A lake or a river between them does not count —
+   * they are the same shore.
+   */
+  areSeaConnected(colA: number, rowA: number, colB: number, rowB: number): boolean {
+    const a = this.getSeaLandmassId(colA, rowA);
+    const b = this.getSeaLandmassId(colB, rowB);
+    return a >= 0 && a === b;
+  }
+
+  /**
+   * The sea-landmass id of the MAINLAND — the biggest stretch of land the map
+   * has. Everything else is an island as far as sailing goes. On a one-
+   * continent map this is the continent; on an archipelago it is the largest
+   * island, and the rest are colonisable.
+   */
+  getMainlandSeaLandmassId(): number {
+    this.computeSeaLandmassIds();
+    let best = -1;
+    let bestSize = -1;
+    for (let id = 0; id < this.seaLandmassSizes.length; id++) {
+      const size = this.seaLandmassSizes[id] ?? 0;
+      if (size > bestSize) {
+        bestSize = size;
+        best = id;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * BOAT connectivity: land split only by water a ship cannot cross.
+   *
+   * A ship can sail the ocean and a navigable river, so neither of those
+   * splits the world for a BOAT. A LAKE cannot be entered by any vessel (see
+   * `navalAllowedOnLandTile`), so a lake splits the boat world as hard as it
+   * splits the walking one: no hull in the game can carry a settler across a
+   * pond. The empire split by a lake therefore needs no navy at all, while the
+   * empire split by a wide river does — a trireme ferries the troops over.
+   *
+   * This is the middle of the three answers:
+   *   - `areLandConnected`  — can a soldier walk there? (no water at all)
+   *   - `areBoatConnected`  — can a hull get there? (lakes block)
+   *   - `areSeaConnected`   — is there open sea worth a FLEET? (only the sea
+   *                           blocks)
+   */
+  private boatLandmassIds: Int32Array | null = null;
+  private boatLandmassCacheKey: unknown = null;
+
+  private computeBoatLandmassIds(): Int32Array {
+    if (this.boatLandmassIds && this.boatLandmassCacheKey === this.map) return this.boatLandmassIds;
+    const width = this.map?.width ?? 0;
+    const height = this.map?.height ?? 0;
+    const ids = new Int32Array(width * height).fill(-2);
+    const sizes: number[] = [];
+    let nextId = 0;
+    const queue: number[] = [];
+
+    // A tile is passable for a boat when a vessel can stand on it: land, a
+    // navigable river, or open sea. A LAKE is the one water a ship may not
+    // enter, so it is the barrier.
+    const boatPassable = (col: number, row: number): boolean => {
+      const tile = this.getTileAt(col, row);
+      if (!tile) return false;
+      const key = this.getTerrainKey(tile);
+      if (key === TERRAIN_TYPES.LAKE) return false;
+      if (key === TERRAIN_TYPES.RIVER) return true;
+      if (key === 'ocean' || key === 'sea') return true;
+      return TERRAIN_PROPS[key]?.passable !== false;
+    };
+
+    for (let start = 0; start < ids.length; start++) {
+      if (ids[start] !== -2) continue;
+      const startCol = start % width;
+      const startRow = Math.floor(start / width);
+      if (!boatPassable(startCol, startRow)) continue;
+
+      const groupId = nextId++;
+      ids[start] = groupId;
+      let size = 0;
+      queue.length = 0;
+      queue.push(start);
+      while (queue.length > 0) {
+        const idx = queue.shift()!;
+        size++;
+        const col = idx % width;
+        const row = Math.floor(idx / width);
+        for (let dc = -1; dc <= 1; dc++) {
+          for (let dr = -1; dr <= 1; dr++) {
+            if (dc === 0 && dr === 0) continue;
+            const nc = col + dc;
+            const nr = row + dr;
+            if (nc < 0 || nc >= width || nr < 0 || nr >= height) continue;
+            const nIdx = nr * width + nc;
+            if (ids[nIdx] !== -2) continue;
+            if (!boatPassable(nc, nr)) continue;
+            ids[nIdx] = groupId;
+            queue.push(nIdx);
+          }
+        }
+      }
+      sizes[groupId] = size;
+    }
+
+    this.boatLandmassIds = ids;
+    this.boatLandmassCacheKey = this.map;
+    return ids;
+  }
+
+  /** Boat-landmass id of a tile, or -1 when no boat can stand there. */
+  getBoatLandmassId(col: number, row: number): number {
+    if (!this.map || !this.squareGrid?.isValidSquare(col, row)) return -1;
+    const ids = this.computeBoatLandmassIds();
+    const id = ids[row * this.map.width + col];
+    return id >= 0 ? id : -1;
+  }
+
+  /**
+   * True when a hull can carry something from one tile to the other: no lake
+   * in between. A river or the open sea in between is fine — ships sail both.
+   */
+  areBoatConnected(colA: number, rowA: number, colB: number, rowB: number): boolean {
+    const a = this.getBoatLandmassId(colA, rowA);
+    const b = this.getBoatLandmassId(colB, rowB);
+    return a >= 0 && a === b;
+  }
+
+  /**
    * Connected-component ids of passable land (8-directional). Water, lakes and
    * impassable terrain get -2; distinct continents/islands get distinct ids.
    * A WIDE RIVER (a river tile with a river neighbour, i.e. 2+ tiles across)
@@ -2346,6 +2625,14 @@ const occupiedLandmasses = new Set(
       distance: number;
     }>();
 
+    // The MAINLAND: the biggest landmass as far as sailing goes. A patch of
+    // land across a wide river is a small "landmass" by the walking test, and
+    // the island list used to offer it to the settler planner as an island to
+    // colonise — so the AI researched Sailing, built a hull and ferried a
+    // settler to the other bank of a river it could have walked around. Only
+    // land across REAL SEA is an island.
+    const mainlandSeaId = this.getMainlandSeaLandmassId();
+
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
         const id = ids[row * width + col];
@@ -2354,6 +2641,9 @@ const occupiedLandmasses = new Set(
         if (size > maxTiles) continue;
         if (occupiedLandmasses.has(id)) continue;
         if (!this.isExploredByPlayer(civId, col, row)) continue;
+        // Real sea only: a candidate that belongs to the mainland's shore is
+        // not an island, whatever the walking test says.
+        if (this.getSeaLandmassId(col, row) === mainlandSeaId) continue;
         const waterTile = this.findAdjacentOcean(col, row);
         if (!waterTile) continue;
         // Nearest own city, as a plain loop: `Math.min(...cities.map(...))`
@@ -2504,9 +2794,18 @@ const occupiedLandmasses = new Set(
 
   /**
    * True when a navy is needed: either the civ knows of enemies NONE of which
-   * share a landmass with one of its cities, or its own cities are split
-   * across separate landmasses (a wide river or sea cuts the empire in two).
-   * In both cases land movement alone cannot reach every destination.
+   * a hull can reach, or its own cities are split by water a hull CAN cross.
+   *
+   * Two different questions live here, and they used to be answered with one
+   * number:
+   *
+   *  - "do I need a BOAT?" — a wide river cuts the empire in two and a
+   *    trireme ferries the troops over; a LAKE cuts it in two and nothing in
+   *    the game can cross a lake, so no boat is any use there. The lake
+   *    answer is NO, and the old test (any water splits → needs a navy) made
+   *    the AI hunt for hulls on a map with a pond in it.
+   *  - "do I need a FLEET?" — that is the SEA question, and it is asked
+   *    separately by the naval doctrine (`getSeaLandmassCount`).
    */
   civNeedsNavy(civId: number): boolean {
     const storage = this.getPlayerStorage(civId);
@@ -2514,11 +2813,15 @@ const occupiedLandmasses = new Set(
     const ownCities = this.cities.filter((c: City) => c.civilizationId === civId);
     if (ownCities.length === 0) return false;
 
-    // The empire itself is split (e.g. a wide river between its cities):
-    // ships are needed to connect/defend across the water gap.
+    // The empire itself is split — and a HULL can bridge the gap. A wide
+    // river qualifies (a trireme sails it); a lake does not (no ship may enter
+    // a lake), so a lake-split empire needs no navy at all.
     for (let i = 0; i < ownCities.length; i++) {
       for (let j = i + 1; j < ownCities.length; j++) {
-        if (!this.areLandConnected(ownCities[i].col, ownCities[i].row, ownCities[j].col, ownCities[j].row)) {
+        if (this.areLandConnected(ownCities[i].col, ownCities[i].row, ownCities[j].col, ownCities[j].row)) {
+          continue;
+        }
+        if (this.areBoatConnected(ownCities[i].col, ownCities[i].row, ownCities[j].col, ownCities[j].row)) {
           return true;
         }
       }
@@ -2526,6 +2829,7 @@ const occupiedLandmasses = new Set(
 
     let hasKnownEnemy = false;
     let reachableByLand = false;
+    let reachableByHull = false;
     for (const locations of storage.enemyLocations.values()) {
       for (const loc of locations) {
         hasKnownEnemy = true;
@@ -2533,17 +2837,28 @@ const occupiedLandmasses = new Set(
           reachableByLand = true;
           break;
         }
+        // A hull can reach them (across the sea, across a river) — that is
+        // what makes a navy worth building. An enemy shut off by a LAKE is
+        // out of reach for every unit in the game, fleet included, so a fleet
+        // would not help.
+        if (ownCities.some((c: City) => this.areBoatConnected(c.col, c.row, loc.col, loc.row))) {
+          reachableByHull = true;
+        }
       }
       if (reachableByLand) break;
     }
-    if (hasKnownEnemy && !reachableByLand) return true;
+    if (hasKnownEnemy && !reachableByLand && reachableByHull) return true;
 
-    // A world split by water needs a fleet even before an enemy is known.
+    // A world split by REAL SEA needs a fleet even before an enemy is known.
     // Waiting for contact deadlocks the whole game: a land scout cannot cross
     // the sea, so on an archipelago nobody ever meets anybody, so `hasKnownEnemy`
     // stays false, so no navy is ever built, so nobody ever meets anybody. A
     // 120-round naval game ended with 0 ships and 4 isolated civs.
-    if (this.getLandmassCount() > 1 && this.civHasNavalCity(civId)) {
+    //
+    // The sea-landmass count is the one that says "archipelago": a map with a
+    // lake or a wide river on it is still one shore, and a civ there needs
+    // ferries, not a fleet.
+    if (this.getSeaLandmassCount() > 1 && this.civHasNavalCity(civId)) {
       return true;
     }
 

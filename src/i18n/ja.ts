@@ -944,6 +944,7 @@ export const ja: PartialTranslationDict = {
   'rates.projected': 'ターンごとの予測',
   'rates.stat.commerce': '商業',
   'rates.stat.upkeep': '維持費',
+  'rates.stat.debt': '借入返済',
   'rates.stat.net': '国庫収支',
   'rates.noCities': 'まだ都市を持っていません — 定住者で都市を建設すると、商業が始まります。',
   'gov.defaultEmpire': 'あなたの帝国',

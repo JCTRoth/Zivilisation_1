@@ -37,6 +37,15 @@ const AI_SCIENCE_FLOOR = 20;
  */
 const AI_SCIENCE_DEEP_FLOOR = 10;
 const AI_MIN_TAX = 35;
+/**
+ * The treasury the budget accountant defends (world-census postmortem: two
+ * empires parked on gold 3–10 for 1,400+ rounds while the disband ledger grew
+ * past 200). When net income is negative AND the treasury is under this floor
+ * the controller stops drifting and RECONCILES: rates snap to the position
+ * that pays the bills this round, discretionary gold spending freezes, and
+ * production pivots to income until the books balance again.
+ */
+const RECONCILE_GOLD_FLOOR = 80;
 export const AI_RESERVE_TURNS: Record<StrategyProfile, number> = {
   military_expansion: 3,
   defensive_turtle: 3,
@@ -70,8 +79,68 @@ export class AIEconomicManager {
     );
     if (cities.length === 0) return;
 
-    this.adjustRatesForAI(civ, cities);
+    // The reconciliation ledger runs FIRST, on the books as they stand right
+    // now: negative net income with the treasury under the floor means the
+    // controller must reconcile this round — snap the rates, freeze spending,
+    // pivot production — instead of crawling toward solvency a step a round
+    // while the disbander takes the difference out of the army.
+    const gold = civ.resources?.gold ?? 0;
+    const brokenBooks = this.currentNet(civ) < 0 && gold < RECONCILE_GOLD_FLOOR;
+    if (brokenBooks) {
+      this.reconcileStreaks.set(civ.id, (this.reconcileStreaks.get(civ.id) ?? 0) + 1);
+    } else {
+      this.reconcileStreaks.delete(civ.id);
+    }
+
+    this.adjustRatesForAI(civ, cities, brokenBooks);
   }
+
+  /**
+   * Negative net income at the civ's CURRENT rates, every employer priced:
+   * commerce at the running tax rate, taxmen's gold included, upkeep of units,
+   * buildings, cities, and the debt service the treasury loses this turn.
+   *
+   * The single definition of "the books do not balance", shared by the
+   * ledger and the ratchet, so neither can declare solvency the other's
+   * arithmetic denies.
+   */
+  private currentNet(civ: Civilization): number {
+    if (typeof this.econ.previewEconomy === 'function') {
+      return this.econ.previewEconomy(civ, this.econ.getRates(civ.id)).net;
+    }
+    // Test-double fallback: cash income minus every known cost class.
+    const income = typeof this.econ.projectedIncome === 'function'
+      ? this.econ.projectedIncome(civ)
+      : 0;
+    return income - this.econ.totalUpkeep(civ.id);
+  }
+
+  /**
+   * True while this civ's books are under reconciliation: net income was
+   * negative with the treasury below {@link RECONCILE_GOLD_FLOOR}, and it has
+   * not balanced again since. Concretely, while this holds the AI freezes all
+   * discretionary gold spending and produces nothing it cannot pay wages for —
+   * AutoProduction and the rush-buyer consult this as their HARD CAP.
+   *
+   * The world-census failure this caps: the producer built soldiers the
+   * treasury could not feed (gold already under 80), the disbander took them
+   * back the same round they arrived, and the ledger grew to 219 disbanded
+   * while gold never left 3–8.
+   */
+  public isReconciling(civ: Civilization): boolean {
+    return civ?.id != null && (this.reconcileStreaks.get(civ.id) ?? 0) > 0;
+  }
+
+  /** Consecutive rounds spent under reconciliation (0 when balancing). */
+  public reconcileRounds(civ: Civilization): number {
+    return civ?.id != null ? (this.reconcileStreaks.get(civ.id) ?? 0) : 0;
+  }
+
+  /**
+   * Consecutive reconciliation rounds per civ, for the successor that reads
+   * the freeze after a turn boundary rebuilds nothing.
+   */
+  private reconcileStreaks = new Map<number, number>();
 
   /**
    * Public helper for AutoProduction / AI unit-queue logic.
@@ -97,17 +166,23 @@ export class AIEconomicManager {
   }
 
   /**
-   * Gold per turn this civ's rate controller will actually defend.
+   * Gold per turn this civ's rate controller will defend at its CEILING.
    *
-   * The single definition of "income I can plan against", shared by the army
-   * cap (`sustainableUnits`) and the naval doctrine (`AutoProduction`). Planning
-   * against `maxTaxIncome` — the 100 %-tax figure — sized fleets for money the
-   * civ never collected: the controller holds 35 % while healthy and only rises
-   * toward the government's cap in a crisis, so the surplus was 1.25–2.9× too
-   * high and hulls were built that got disbanded again. Planning against the
-   * civ's *current* rate fails the other way (a science push at 10 % tax would
-   * cap the fleet at zero), which is why this uses the same ceiling
-   * `adjustRatesForAI` enforces.
+   * The planning income for the doctrines that size a FLEET or an AIR FORCE
+   * (`AutoProduction`): how much the civ could collect if the rate controller
+   * ran at the top of its band. Planning against `maxTaxIncome` — the 100 %-tax
+   * figure — sized fleets for money the civ never collected: the controller
+   * holds 35 % while healthy and only rises toward the government's cap in a
+   * crisis, so the surplus was 1.25–2.9× too high and hulls were built that
+   * got disbanded again. Planning against the civ's *current* rate fails the
+   * other way (a science push at 10 % tax would cap the fleet at zero), which
+   * is why this uses the same ceiling `adjustRatesForAI` enforces.
+   *
+   * The ARMY cap (`sustainableUnits`) does NOT use this: it is measured
+   * against the economy's real budget (`EconomicManager.armyBudgetFor`), so
+   * the number the AI plans its soldiers with is the number the disbander
+   * enforces. A doctrine may plan against a ceiling; a standing army may not
+   * be larger than the treasury can pay for today.
    */
   planningIncome(civ: Civilization): number {
     const maxTaxIncome = this.econ.maxTaxIncome(civ);
@@ -144,18 +219,30 @@ export class AIEconomicManager {
    * The cap is a POLICY ceiling layered on top of the engine's own
    * `EconomicManager.sustainableUnits`; `AutoProduction` uses the engine's, so
    * the two can no longer disagree about what a unit costs.
+   *
+   * The money the cap is measured against is the ECONOMY's budget
+   * (`armyBudgetFor`): the income the civ really collects, minus buildings,
+   * minus the empire's cities, minus the debt service. The rate controller
+   * raises the tax rate when the empire grows, so this budget grows with the
+   * civ — but it never grows into money the treasury does not have, which is
+   * exactly what the disbander measures.
    */
   sustainableUnits(civ: Civilization, plannedUnitType?: string): number {
     const civId = civ?.id;
     if (civId == null) return 0;
 
-    // One definition of plannable income, shared with the naval doctrine — see
-    // `planningIncome`. It is deliberately NOT `maxTaxIncome` (the 100 %-tax
-    // figure the civ will never collect) and not the civ's current rate either
-    // (a science push at 10 % tax would cap the army at zero).
-    const projectedIncome = this.planningIncome(civ);
+    // The budget the ECONOMY enforces: income at the civ's real rates, minus
+    // buildings, minus the empire's cities, minus the debt service. This is
+    // the same number the disbander reads (`EconomicManager.armyBudgetFor`),
+    // and it has to be: planning against a looser figure — the 100 %-tax
+    // fantasy, a policy ceiling the rate controller has not reached, or a
+    // budget that forgot the cities and the loan — sizes an army the economy
+    // will take apart again, one unit a turn, for the rest of the game.
+    const budget = typeof this.econ.armyBudgetFor === 'function'
+      ? this.econ.armyBudgetFor(civ)
+      : this.planningIncome(civ) - this.econ.buildingUpkeep(civId);
 
-    // ALWAYS divert 10% of projected income to the reserve, not only while the
+    // ALWAYS divert 10% of that budget to the reserve, not only while the
     // reserve is short. With the old `min(shortfall, …)` a civ that happened to
     // hold its reserve planned its army against 100% of its income — net
     // exactly zero — so the next completed building's upkeep, the next rate
@@ -164,17 +251,15 @@ export class AIEconomicManager {
     // test game). Ten per cent is the headroom that makes "never negative"
     // structural instead of lucky. (It is also never MORE than the old value
     // was when the shortfall was smaller, so the cap only ever tightens.)
-    const reserveContribution = projectedIncome * 0.1;
+    const reserveContribution = budget * 0.1;
 
-    const buildingUpkeep = this.econ.buildingUpkeep(civId);
     // The fleet already fielded is charged against income too: `unitUpkeep` bills
     // every unit every turn, so a civ with a battleship cannot spend that gold on
     // archers. Ignoring it over-counted the cap by the cost of the entire existing
     // army, which is how the AI built past what it could pay for and then let the
     // disbander collect the difference.
     const unitUpkeep = typeof this.econ.unitUpkeep === 'function' ? this.econ.unitUpkeep(civId) : 0;
-    const availableForUnits =
-      projectedIncome - buildingUpkeep - unitUpkeep - reserveContribution;
+    const availableForUnits = budget - unitUpkeep - reserveContribution;
     const existingUnits = (this.gameEngine?.units ?? []).filter(
       (u: { civilizationId: number; isDefeated?: boolean }) =>
         u.civilizationId === civ.id && !u.isDefeated,
@@ -292,7 +377,11 @@ export class AIEconomicManager {
     );
   }
 
-  private adjustRatesForAI(civ: Civilization, cities: City[]): void {
+  private adjustRatesForAI(
+    civ: Civilization,
+    cities: City[],
+    reconciling = false,
+  ): void {
     const gov = getGovernment(civ?.government);
     if (!gov) return;
     const rates = this.econ.getRates(civ.id);
@@ -316,7 +405,9 @@ export class AIEconomicManager {
 
     // 2. Determine Tax Need (Expenses + Reserve Rebuild)
     const inDeficit = gold < 0;
-    const scienceAllowance = inDeficit ? AI_SCIENCE_DEEP_FLOOR : AI_SCIENCE_FLOOR;
+    const scienceAllowance = reconciling || inDeficit
+      ? AI_SCIENCE_DEEP_FLOOR
+      : AI_SCIENCE_FLOOR;
 
     const baseNeed = Math.ceil(
       (Math.max(0, totalExpenses - Math.max(0, gold)) / maxTaxIncome) * 100,
@@ -327,7 +418,17 @@ export class AIEconomicManager {
         ? 0
         : Math.ceil(((shortfall * AI_RESERVE_REBUILD) / maxTaxIncome) * 100);
 
-    const taxNeed = baseNeed + rebuildPct;
+    // Reconciliation priced a DURABLE balance, not a fire-sale: income has to
+    // cover the bills every round out of commerce, WITHOUT burning the bank.
+    // The old `baseNeed` counted the treasury's coins as coverage — so a civ
+    // holding 40 gold against 24 of upkeep reconciled to tax 35 (income 6,
+    // net −15), watched the bank it had just "spen[d]" melt over three rounds,
+    // then met the disbander with the rates it had used as an alibi. Under
+    // reconciliation the tax target is what pays the bills from income alone.
+    const taxNeed = reconciling
+      ? Math.ceil((totalExpenses / maxTaxIncome) * 100)
+      : baseNeed + rebuildPct;
+
     const targetTax = Math.max(
       AI_MIN_TAX,
       Math.min(
@@ -338,10 +439,21 @@ export class AIEconomicManager {
     );
 
     // 3. Gradual Movement (Prevent Oscillation)
-    const crisis = gold < -totalExpenses;
+    // A reconciliation round does NOT crawl toward solvency: the books are
+    // already broken, so steady 10- and 20-steps are just more rounds of
+    // negative net at rates that cannot pay for what the empire owns — the
+    // disbander takes the gap each of those rounds. MAX_DELTA 100 walks the
+    // rate straight to this round's target.
     const deepCrisis = gold < -totalExpenses * 2;
+    const crisis = gold < -totalExpenses;
     const belowReserve = gold < reserveTarget && !inDeficit;
-    const MAX_DELTA = deepCrisis ? 100 : crisis ? 50 : belowReserve ? 20 : 10;
+    const MAX_DELTA = deepCrisis || reconciling
+      ? 100
+      : crisis
+        ? 50
+        : belowReserve
+          ? 20
+          : 10;
 
     let newTax =
       targetTax >= rates.tax
@@ -355,7 +467,7 @@ export class AIEconomicManager {
     // 100% tax therefore kept science at 0% indefinitely (an AI-vs-AI export
     // caught exactly that) — so trim luxury first, then hand the remainder back
     // from tax.
-    const scienceFloor = inDeficit ? AI_SCIENCE_DEEP_FLOOR : AI_SCIENCE_FLOOR;
+    const scienceFloor = inDeficit || reconciling ? AI_SCIENCE_DEEP_FLOOR : AI_SCIENCE_FLOOR;
     let newLuxury = Math.min(luxury, 100 - newTax);
     let newScience = 100 - newTax - newLuxury;
     if (newScience < scienceFloor) {
@@ -366,6 +478,41 @@ export class AIEconomicManager {
     if (newScience < scienceFloor) {
       newTax = Math.max(0, 100 - newLuxury - scienceFloor);
       newScience = 100 - newTax - newLuxury;
+    }
+
+    // 5. The downward ratchet — the law that makes the controller an
+    //    accountant. RELAXING tax is only allowed while the books STILL
+    //    balance at the lighter rates (`net >= 0`, debt service priced).
+    //
+    //    Without this the controller was the engine of the census seesaw they
+    //    were meant to prevent: one disband freed upkeep, gold looked solvent
+    //    again, `targetTax` slid down ten steps a round, the army that the
+    //    producers had sized at the ceiling became unaffordable at the floor,
+    //    and the slope took the difference back out of the field — army 2↔4,
+    //    gold 3↔8, disbanded ledger forever. Now income never voluntarily
+    //    falls below commitments: the rate only comes down once the treasury
+    //    or a smaller army has actually made room for it.
+    //
+    //    Upward movement is never blocked — a crisis may raise tax as hard as
+    //    it needs to. Only the relaxation needs to prove itself solvable.
+    if (newTax < rates.tax) {
+      const projected = typeof this.econ.previewEconomy === 'function'
+        ? this.econ.previewEconomy(civ, { tax: newTax, science: newScience, luxury: newLuxury })
+        : null;
+      const stillSolvent = projected ? projected.net >= 0 : true;
+      if (!stillSolvent) {
+        // The lighter rates cannot pay the bills: keep the income the empire
+        // already collects. (Luxury/science are refilled from the held rate
+        // with the same floor order as above.)
+        newTax = rates.tax;
+        newLuxury = Math.min(luxury, 100 - newTax);
+        newScience = 100 - newTax - newLuxury;
+        if (newScience < scienceFloor) {
+          const trimLux = Math.min(newLuxury, scienceFloor - newScience);
+          newLuxury -= trimLux;
+          newScience += trimLux;
+        }
+      }
     }
 
     this.econ.setRates(civ.id, newTax, newScience, newLuxury);

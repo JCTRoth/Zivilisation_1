@@ -547,6 +547,65 @@ export class AutoProduction {
     };
   }
 
+  /** True while the budget accountant holds this civ's spending freeze. */
+  private isReconcilingCiv(civId: number): boolean {
+    const civ = this.gameEngine.civilizations?.[civId];
+    return civ != null
+      && this.gameEngine.aiEconomicManager?.isReconciling?.(civ) === true;
+  }
+
+  /**
+   * The reconciliation menu: what an empire that cannot pay its bills makes
+   * FIRST — the trade buildings (marketplace → bank → stock exchange), which
+   * turn the commerce it already collects into tax. The first deployable
+   * caravan follows: in this engine a caravan is the quickest sale a city
+   * can make (and the normal caravan branch below keeps routes stocked).
+   *
+   * Returns null when nothing on the menu is available — the caller falls
+   * back to the standard priorities and their growth units.
+   */
+  private chooseIncomeProduction(
+    city: City,
+    civ: Civilization | undefined,
+    plannedTypes: string[],
+  ): ProductionItem | null {
+    const owned = new Set(city.buildings ?? []);
+    const civTechs = new Set<string>();
+    const techs = civ?.technologies;
+    if (Array.isArray(techs)) {
+      for (const t of techs) civTechs.add(String(t));
+    } else if (techs && typeof (techs as Iterable<string>)[Symbol.iterator] === 'function') {
+      for (const t of techs as Iterable<string>) civTechs.add(String(t));
+    }
+
+    for (const b of ['marketplace', 'bank', 'stock_exchange']) {
+      if (owned.has(b) || plannedTypes.includes(b)) continue;
+      const props = BUILDING_PROPS[b] || BUILDING_PROPERTIES[b];
+      if (!props) continue;
+      if (props.requiredTechnology && !civTechs.has(props.requiredTechnology)) continue;
+      return {
+        type: 'building',
+        itemType: b,
+        name: props.name,
+        cost: props.cost,
+      };
+    }
+
+    // A caravan makes gold the round it arrives (sale or trade route) — the
+    // one unit the freeze still allows, because it IS the income growth.
+    const caravanProps = UNIT_PROPS.caravan;
+    if (caravanProps && canBuildUnit(civ, 'caravan')
+      && !plannedTypes.includes('caravan')) {
+      return {
+        type: 'unit',
+        itemType: 'caravan',
+        name: caravanProps.name,
+        cost: caravanProps.cost,
+      };
+    }
+    return null;
+  }
+
   private determineProductionItem(city: City, threatAssessment?: CityThreatAssessment | null, plannedTypes: string[] = []): ProductionItem | null {    // Priority order:
     // 1. Urgent defender if city has none
     // 2. Emergency reinforcements for threatened cities
@@ -658,6 +717,27 @@ export class AutoProduction {
           };
         }
       }
+    }
+
+    // 0g. THE INCOME-GROWTH PIVOT (part of budget reconciliation). When the
+    //     accountant is holding this civ's books — net negative, treasury
+    //     under the floor — a city that is not under threat does not build a
+    //     seventh rifleman an empty treasury will disband on arrival; it
+    //     builds INCOME. Caravans are the empire's fastest sales (the normal
+    //     caravan branch below still runs when no trade building applies),
+    //     then the trade buildings (marketplace → bank → stock exchange),
+    //     then growth. Military and wonder output waits for solvency; 'use
+    //     the treasury to fix the treasury' is the whole idea.
+    if (this.isReconcilingCiv(city.civilizationId)) {
+      const incomeItem = this.chooseIncomeProduction(city, civ, plannedTypes);
+      if (incomeItem) {
+        debugLog(`[AutoProduction] Budget reconciliation: pivot to ${incomeItem.itemType}`);
+        return incomeItem;
+      }
+      // No income item available (everything built, tech missing): fall
+      // through — the normal priorities below still prefer growth/exploration
+      // units, and priced military is already refused by the affordability
+      // gates (`canAffordMoreTroops` / `isUnitCapExhausted`).
     }
 
     // 1c. Island strategy. A civ alone on a VERY SMALL island must escape:
@@ -2176,17 +2256,41 @@ export class AutoProduction {
     // and trade routes ran out of "army" before it ever filed a soldier — the
     // exact exponential the works programme is supposed to break. A free unit now
     // exhausts nothing, and a priced one has to fit in what the income actually
-    // leaves after buildings.
+    // leaves after buildings, cities and debt service.
+    //
+    // Gate 1 — GOLD: the economy's own budget. `affordableUnitUpkeep` is the
+    // same number the disbander reads, so a unit that fits here is a unit the
+    // economy will not take back next turn.
     if (typeof econ.affordableUnitUpkeep === 'function') {
       const price = typeof econ.plannedUnitUpkeep === 'function'
         ? econ.plannedUnitUpkeep(civ, plannedUnitType)
         : 0;
-      if (price <= 0) return false; // costs no gold → cannot exhaust a gold cap
-      return econ.affordableUnitUpkeep(civ) < price;
+      if (price > 0 && econ.affordableUnitUpkeep(civ) < price) return true;
     }
 
-    // Older callers (and the lightweight engine doubles the AI tests use) get
-    // the original count comparison, unchanged.
+    // Gate 2 — COUNT: the AI's policy cap, which holds a reserve on top of the
+    // economy's budget and is therefore the stricter of the two models. It used
+    // to be dead code: the method returned after gate 1, so the contract "the
+    // smaller applies" was never honoured and the AI's reserve was never
+    // respected by the production line.
+    const aiCap = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ, plannedUnitType);
+    if (aiCap != null) {
+      const { currentUnits, queuedUnits } = this.countUnitsAndQueue(civilizationId);
+      if (currentUnits + queuedUnits >= aiCap) return true;
+    }
+
+    // Fallback for lightweight engine doubles (the ones the AI tests use) that
+    // implement neither model: the original count comparison, unchanged.
+    const econCap = typeof econ.sustainableUnits === 'function'
+      ? econ.sustainableUnits(civ, plannedUnitType)
+      : null;
+    if (econCap == null) return false;
+    const { currentUnits, queuedUnits } = this.countUnitsAndQueue(civilizationId);
+    return currentUnits + queuedUnits >= econCap;
+  }
+
+  /** Units in the field plus units already in a city queue for this civ. */
+  private countUnitsAndQueue(civilizationId: number): { currentUnits: number; queuedUnits: number } {
     const civCities = this.gameEngine.cities.filter(
       (c: City) => c.civilizationId === civilizationId,
     );
@@ -2200,16 +2304,7 @@ export class AutoProduction {
       const inProgress = c.currentProduction?.type === 'unit' ? 1 : 0;
       return n + inQueue + inProgress;
     }, 0);
-    const econCap = typeof econ.sustainableUnits === 'function'
-      ? econ.sustainableUnits(civ, plannedUnitType)
-      : null;
-    const aiCap = this.gameEngine.aiEconomicManager?.sustainableUnits?.(civ, plannedUnitType) ?? null;
-    // Whichever model exists; when both do, the conservative one. Lightweight
-    // test doubles implement neither, so the cap never blocks them.
-    const sustainableUnits = econCap != null && aiCap != null
-      ? Math.min(econCap, aiCap)
-      : Math.max(0, econCap ?? aiCap ?? 0);
-    return currentUnits + queuedUnits >= sustainableUnits;
+    return { currentUnits, queuedUnits };
   }
 
   /**
@@ -2791,6 +2886,42 @@ export class AutoProduction {
    * the fleet fills out in all directions at once instead of one hull type at a
    * time — which is what makes it VARIED rather than merely numerous.
    */
+  /**
+   * How many colony missions are holding a settler and waiting for a hull.
+   *
+   * Read straight from the civ's mission ledger: a mission with a live settler
+   * and no ferry is a settler on the shore of an island the civ has already
+   * promised to settle. Each of them needs a hull of its own, and the fleet
+   * planner has to know they are waiting — otherwise it builds gunboats and
+   * the islands stay empty.
+   */
+  private pendingColonyCount(civId: number): number {
+    try {
+      const storage = this.gameEngine.getPlayerStorage?.(civId) as
+        | {
+            turnData?: {
+              colonyMissions?: Array<{ settlerId?: string; ferryId?: string | null }>;
+              colonyMission?: { settlerId?: string; ferryId?: string | null };
+            };
+          }
+        | undefined;
+      const missions = storage?.turnData?.colonyMissions
+        ?? (storage?.turnData?.colonyMission ? [storage.turnData.colonyMission] : []);
+      let pending = 0;
+      for (const mission of missions) {
+        if (!mission?.settlerId) continue;
+        if (mission.ferryId) continue;
+        const settler = this.gameEngine.units.find(
+          (u: Unit) => u.id === mission.settlerId && !u.isDefeated,
+        );
+        if (settler) pending++;
+      }
+      return pending;
+    } catch {
+      return 0;
+    }
+  }
+
   private pickNavalHull(decision: NavalDoctrineVerdict, city: City): AvailableShip | null {
     const civ = this.gameEngine.civilizations?.[city.civilizationId];
     if (!civ) return decision.cheapestAvailableShip ?? null;
@@ -2835,9 +2966,19 @@ export class AutoProduction {
     ];
     // Ties go to the warship, not to the transport: a second ferry is a second
     // thing to protect, a second gun protects the first.
-    gaps.sort((a, b) =>
-      b.short - a.short
-      || (a.role === 'transport' ? 1 : 0) - (b.role === 'transport' ? 1 : 0));
+    //
+    // The ONE exception is a settler already waiting for a hull: that hull
+    // carries a CITY. A warship built instead of it leaves the island empty
+    // and the settler idle — which is exactly how an archipelago ended the
+    // game with a warship fleet and three unclaimed islands.
+    const pendingColony = decision.pendingColonies ?? 0;
+    gaps.sort((a, b) => {
+      if (pendingColony > 0 && a.role === 'transport' && b.role === 'transport') return 0;
+      if (pendingColony > 0 && a.role === 'transport') return -1;
+      if (pendingColony > 0 && b.role === 'transport') return 1;
+      return b.short - a.short
+        || (a.role === 'transport' ? 1 : 0) - (b.role === 'transport' ? 1 : 0);
+    });
     const gap = gaps[0];
     if (!gap || gap.short <= 0) return null;
 
@@ -3140,6 +3281,11 @@ export class AutoProduction {
     if (!civ) return null;
     const verdict = this.airDoctrineFor(civ.id);
     if (!verdict?.hasMission) return null;
+    // The doctrine's funding check is the affordability gate: an airframe the
+    // treasury cannot feed gets disbanded the turn it arrives, so never queue
+    // one the doctrine has already declared un-fundable. (Same rule the naval
+    // doctrine applies to hulls.)
+    if (!verdict.fundable) return null;
 
     // A saturated base builds nothing for the air program.
     const parked = this.gameEngine.units.filter(
@@ -3189,6 +3335,7 @@ export class AutoProduction {
       isCivAtWar?: (id: number) => boolean;
       tileHasNavalAccess?: (c: number, r: number) => boolean;
       getLandmassCount?: () => number;
+      getSeaLandmassCount?: () => number;
       civNeedsNavy?: (id: number) => boolean;
       civCanBuildShips?: (id: number) => boolean;
       getPlayerStorage?: (id: number) => { explored?: boolean[] | Uint8Array } | undefined;
@@ -3331,9 +3478,17 @@ export class AutoProduction {
     }
 
     // Strategic sea context for the doctrine's archipelago terms.
+    //
+    // The SEA landmass count is the one that says "archipelago": a map with a
+    // lake or a wide river on it is still one shore, and the doctrine's
+    // archipelago bonus (a full warship fleet) is exactly the wrong answer for
+    // it. The walking landmass count said "two continents" and the AI built a
+    // battle fleet for a pond.
     let landmassCount = 1;
     try {
-      landmassCount = typeof engine.getLandmassCount === 'function' ? engine.getLandmassCount() : 1;
+      landmassCount = typeof engine.getSeaLandmassCount === 'function'
+        ? engine.getSeaLandmassCount()
+        : typeof engine.getLandmassCount === 'function' ? engine.getLandmassCount() : 1;
     } catch { landmassCount = 1; }
     let needsNavy = false;
     try {
@@ -3401,6 +3556,11 @@ export class AutoProduction {
         : (this.gameEngine.units.some((u: Unit) => u.civilizationId === civId
           && !u.isDefeated && !u.embarkedOn && (u.attack ?? 0) > 0.5) ? 1 : 0),
       seaInvasionTargets: seaInvasionCount,
+      // Colony missions holding a settler but no hull: each one is an island
+      // the civ has already committed to and cannot reach yet. The doctrine
+      // needs the number so the ferry that carries that settler outranks the
+      // warship it would otherwise build.
+      pendingColonies: this.pendingColonyCount(civId),
       troopsAvailable: this.gameEngine.units.some(
         (u: Unit) => u.civilizationId === civId && !u.isDefeated
           && !u.embarkedOn && (u.attack ?? 0) > 0.5 && !UNIT_PROPS[u.type]?.naval,
@@ -3686,6 +3846,18 @@ export class AutoProduction {
     const minimumReserve = this.gameEngine.economicManager?.AI_MIN_GOLD_RESERVE ?? 8;
     const civ = this.gameEngine.civilizations?.[civId];
     if (!civ || civ.isHuman) return;
+
+    // HARD SPENDING CAP — the freeze. While the budget accountant is holding
+    // this civ's books (net income negative, treasury under the floor), every
+    // discretionary gold purchase is off: a treasury at 3–10 gold is one upkeep
+    // bill away from the disbander, and a rush that spends it is the disbander
+    // wearing a nicer suit. The freeze is lifted by `reconcileBudget` once the
+    // books balance again. (Income buildings are bought with SHIELDS, not gold
+    // — the production pivot in `determineProductionItem` still runs.)
+    if (this.gameEngine.aiEconomicManager?.isReconciling?.(civ) === true) {
+      debugLog(`[AutoProduction] Rush-buy frozen for civ ${civId} (budget reconciliation)`);
+      return;
+    }
 
     const gold = civ.resources?.gold ?? 0;
     // Recomputed every iteration: each successful rush actually debits the

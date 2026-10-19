@@ -218,7 +218,7 @@ re-render subscriptions are language-agnostic.
 |Wonder completed/conflict notices, research-required prompt, unit actions
 
 |`canvas.*`, `mobile.*`, `notify.*`
-|Canvas toasts/hints, mobile bottom bar, notification center
+|Canvas toasts/hints, unit orders SidePanel toggle, notification center
 
 |`techTree.*`, `art.*`, `errorBoundary.*`
 |Tech tree labels, wonder artwork credits, the crash screen

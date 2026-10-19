@@ -66,6 +66,52 @@ The following sections have been updated to use GoToManager:
 * GoToManager syncs paths with RoundManager automatically
 * RoundManager still processes automated movements at turn start
 
+=== GoTo Camera Rule (black-screen refocus)
+After a route has been assigned (`assignUnitPath` in GameCanvas), the camera
+comes back to the unit that received the order — but only when the screen is
+more than 80% black at that moment. That happens when the player panned out
+into unexplored space to plot the destination; a black screen shows nothing,
+so the view returns to the unit that will walk the route (which is also where
+the route is actually drawn). A viewport that still shows real map content —
+the route, the destination, own territory — stays exactly where the player
+put it.
+
+* `src/utils/ViewportBlackCoverage.ts` computes the black share of the
+  viewport: unexplored tiles plus off-map space, matching what the renderer
+  paints black (explored-but-fogged tiles are dimmed, not black, and are not
+  counted). `BLACK_COVERAGE_REFOCUS_THRESHOLD` is `0.8`.
+* `useGameStore().actions.focusGoToUnitIfBlind(col, row)` applies the rule at
+  route-assignment time. It delegates to `focusCameraOnTile`, so the pan uses
+  the usual camera glide and honors the player's autoCamera setting.
+* The rule lives at the UI call site, not inside `GoToManager`: engine/AI path
+  assignments must never move the human's camera.
+
+=== Unit Edge-Follow (camera nudges along while a unit moves)
+While a unit is gliding, the render loop watches its interpolated display tile.
+When the tile reaches the viewport's edge margin (half a tile), the camera
+shifts by just the overrun, in the unit's direction — the unit stays fully
+visible and the camera follows it step by step instead of re-centering. A unit
+that walks far (a long GoTo route, a queued march) therefore drags the view
+along with it.
+
+* `nudgeCameraToKeepPointInView` in `src/utils/CameraUtils.ts` is the pure
+  geometry: it compensates only the overrun, never overshoots, and clamps to
+  the map bounds with `clampCameraToMap`. `EDGE_FOLLOW_MARGIN_TILES` is `0.5`.
+* `useGameStore().actions.followMovingUnit(unitId, displayCol, displayRow)` is
+  called from the GameCanvas render loop for every active glide. It applies the
+  same followability rule as `focusOnNextUnit` (own units, or foreign units the
+  human can currently see; dev mode overrides) and honors `autoCamera`.
+* Hidden AI movement is never trailed, AI-vs-AI runs never pan, and the nudge
+  never fights the player: it pauses while a camera pan is in flight and while
+  the player is drag-panning.
+* One moving unit owns the camera at a time. A different unit may only take
+  over after `FOLLOW_SWITCH_COOLDOWN_MS` (3 s) of camera quiet from the previous
+  unit, so two simultaneous GoTo marches cannot tug the view back and forth —
+  the player gets a moment to register the first unit's move before the camera
+  turns to the second.
+* Like the black-screen rule, the follow lives at the UI call site — engine/AI
+  paths never move the human's camera.
+
 == Benefits
 
 . *Centralized Logic* - All Go To functionality in one place
@@ -124,3 +170,6 @@ if (pathResult.success) {
 * `/src/components/game/GameCanvas.tsx` - Primary user interface
 * `/src/game/engine/RoundManager.ts` - Turn management integration
 * `/src/game/engine/Pathfinding.ts` - Underlying pathfinding algorithm
+* `/src/utils/ViewportBlackCoverage.ts` - Black-screen measurement for the GoTo camera rule
+* `/src/utils/CameraUtils.ts` - `nudgeCameraToKeepPointInView` edge-follow geometry
+* `/src/stores/GameStore.ts` - `focusGoToUnitIfBlind` and `followMovingUnit` camera actions, `FOLLOW_SWITCH_COOLDOWN_MS`

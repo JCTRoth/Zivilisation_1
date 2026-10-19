@@ -15,7 +15,6 @@ import PauseScreen from "./components/ui/PauseScreen";
 import HotseatHandoffScreen from "./components/ui/HotseatHandoffScreen";
 import GameSpeedControls from "./components/ui/GameSpeedControls";
 import TopBar from "./components/ui/TopBar";
-import MobileBottomBar from "./components/ui/MobileBottomBar";
 import NotificationCenter from "./components/ui/NotificationCenter";
 import GameMenuSheet, {
   type GameMenuName,
@@ -574,16 +573,6 @@ function App() {
         top: rect.bottom,
         left: rect.left,
       });
-      setActiveMenu(menu);
-    }
-  };
-
-  // Open a menu from the mobile bottom bar (position is irrelevant — CSS renders a bottom sheet)
-  const handleMobileMenuOpen = (menu: GameMenuName) => {
-    if (activeMenu === menu) {
-      setActiveMenu(null);
-    } else {
-      setMenuPosition({ top: window.innerHeight, left: 0 });
       setActiveMenu(menu);
     }
   };
@@ -1437,15 +1426,6 @@ function App() {
           actions.showDialog("wonders");
           setActiveMenu(null);
         }}
-      />
-
-      {/* Mobile primary action bar (thumb zone) */}
-      <MobileBottomBar
-        activeMenu={activeMenu}
-        onOpenMenu={handleMobileMenuOpen}
-        panelOpen={!uiState.sidebarCollapsed}
-        onTogglePanel={() => actions.toggleUI("sidebarCollapsed")}
-        onEndTurn={handleEndTurnRequest}
       />
 
       {/* Confirmation dialogs (replace native window.confirm for consistent mobile UX) */}

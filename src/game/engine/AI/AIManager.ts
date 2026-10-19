@@ -340,6 +340,37 @@ const NAVAL_RETARGET_MIN_DISTANCE = 12;
 const NAVAL_REACHABILITY_CANDIDATES = 4;
 
 /**
+ * How long (rounds) a sea-mission target stays blocked after a hull gave up on
+ * it as unreachable, and when a changed fleet state retries it sooner.
+ *
+ * The stall detector (`retargetStalledHull`) answers "this hull cannot close on
+ * the island right now" — the old planner reset it the very next round and
+ * planned the same mission again, so a two-civ frozen-sea game accumulated
+ * 522 useless "Colony mission / Colony abandoned" pairs (and 496 invasion
+ * plans against 3 landings) while every hull sat in "already at target".
+ * A target therefore goes quiet for `SEA_MISSION_COOLDOWN_ROUNDS` rounds —
+ * unless something that decides reachability actually CHANGED (more idle
+ * transports, more troops, a sailing-tech jump). Roughly two lulls ≈ the time
+ * a new transport takes to build; a stuck civ stops churning and starts
+ * building.
+ */
+const SEA_MISSION_COOLDOWN_ROUNDS = 40;
+
+/** State snapshot recorded with every sea-mission failure. */
+export interface SeaMissionFailure {
+  /** Round the hull gave up on the target. */
+  round: number;
+  /** Idle transports the civ had at that moment. */
+  ferries: number;
+  /** Combat troops that could be part of a landing force at that moment. */
+  troops: number;
+  /** Whether the civ knew the sailing tech at that moment. */
+  sailing: boolean;
+  /** How often this exact target has been given up on in a row. */
+  failures: number;
+}
+
+/**
  * Units every city keeps, whatever else the civ wants to do.
  *
  * One is the floor that makes a city defensible at all, and it is also the
@@ -1168,7 +1199,26 @@ export class AIManager {
 
         // Clear history after punishment so the unit can try fresh next turn
         posHistory.length = 0; 
-        
+
+        // A SETTLER that is standing on a legal city site and cannot make up
+        // its mind should FOUND THERE. The random shuffle below walks it to a
+        // neighbouring tile instead — which is how an empire ends up with
+        // settlers pacing one square for a hundred turns and two cities
+        // instead of ten. The loop is broken by doing the job, not by walking
+        // away from it.
+        if (unit.type === 'settler' && this.canFoundCityHere(unit)) {
+          console.warn(`[AI] 🔄🔄🔄 Settler oscillating ON a city site — founding at (${unit.col},${unit.row})`);
+          this.gameEngine.foundCityWithSettler(unit.id);
+          continue;
+        }
+
+        // A settler that is NOT on a legal site has to look for another one —
+        // the locked target is what keeps sending it back to the same tile.
+        if (unit.type === 'settler') {
+          delete unit._lastSettlementTarget;
+          delete unit._blockedSettlementTargets;
+        }
+
         // Get all 8 adjacent tiles in a randomized order
         const adjacentTiles = getShuffledAdjacentTiles(unit.col, unit.row);
         let brokeLoop = false;
@@ -3370,6 +3420,17 @@ export class AIManager {
 
     const landingPower = force.reduce((sum: number, u: Unit) => sum + this.combatPowerOf(u), 0);
 
+    // Cooldown state for this fleet: which enemy cities were recently given up
+    // on as unreachable, and whether anything that decides reachability has
+    // improved since (see `seaMissionBlocked`). Without this the planner
+    // re-planned the same impossible crossing every ~11 rounds — 496 plans,
+    // 3 landings in one 5,875-round run.
+    const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const failures = this.seaMissionFailures(storage);
+    const idleFerries = this.idleTransportCount(civ.id, new Set([idleFerry?.id].filter(Boolean) as string[]));
+    const troopCount = this.seaTroopCount(civ.id);
+    const sailingKnown = this.civSailingKnown(civ.id);
+
     // Built lazily on the first cross-water target: one O(units × 9) sweep so
     // each beach on every enemy landmass is a O(1) lookup instead of an
     // O(units) scan (the old shape was O(beaches × units) per planning pass).
@@ -3380,10 +3441,20 @@ export class AIManager {
       if (!enemies.has(enemyCity.civilizationId)) continue;
       const landmassId = this.gameEngine.getLandmassId?.(enemyCity.col, enemyCity.row) ?? -1;
       if (landmassId < 0 || landmassId === homeLandmass) continue; // already walkable
+      const fail = failures[`inv:${enemyCity.id}`];
+      if (fail && this.seaMissionBlocked(fail, roundNumber, idleFerries, troopCount, sailingKnown).blocked) {
+        continue; // this crossing was already proved impossible with this fleet
+      }
 
       defenceGrid ??= this.buildDefenceGrid(1);
       const beach = this.findInvasionBeach(landmassId, enemyCity, rendezvous, landingPower, defenceGrid);
       if (!beach) continue;
+      // A hull that cannot sail to the beach tile cannot deliver the force
+      // there: planning the mission anyway is how the "invasion planned →
+      // give up → plan again" loop was born. The bootstrap case (no transport
+      // in the civ YET, but the tech to build one) still plans — the mission
+      // is what justifies ordering the hull.
+      if (idleFerry && !this.navalReachable(idleFerry, beach.waterTile)) continue;
 
       const defenders = this.gameEngine.units.filter(
         (u: Unit) =>
@@ -3884,6 +3955,7 @@ export class AIManager {
 
     const claimedBySelf = new Set<number>();
     const refreshed: ColonyMission[] = [];
+    const roundValue = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
     for (const mission of this.getColonyMissions(storage)) {
       const settler = this.gameEngine.units.find(
         (u: Unit) => u.id === mission.settlerId && !u.isDefeated,
@@ -3908,6 +3980,28 @@ export class AIManager {
         // landlocked — abandon this mission; its sisters sail on.
         continue;
       }
+      // Dead-end release: the island is on a cooldown (a hull already gave up
+      // on it), NO idle transport is waiting and the civ cannot even BUILD one.
+      // Holding the settler on the beach for a crossing nobody can ever make
+      // sterilises both the settler and its guard for the rest of the game —
+      // release them so they found or work somewhere productive. A civ that
+      // can still produce hulls keeps its mission: the sealift demand is what
+      // makes production order the ferry in the first place.
+      const canBuildShipsNow = typeof this.gameEngine.civCanBuildShips === 'function'
+        && this.gameEngine.civCanBuildShips(civ.id);
+      const fail = this.seaMissionFailures(storage)[`col:${mission.targetLandmassId}`];
+      if (!canBuildShipsNow && fail
+        && this.seaMissionBlocked(
+          fail, roundValue,
+          this.idleTransportCount(civ.id, new Set(refreshed.map((m) => m.ferryId).filter(Boolean) as string[])),
+          this.seaTroopCount(civ.id), this.civSailingKnown(civ.id),
+        ).blocked) {
+        this.gameEngine.log?.('ai', `Colony mission released — ${civ.name} settler free (island unreachable, no ferry possible)`, {
+          civilizationId: civ.id, action: 'colony_release',
+          settlerId: mission.settlerId, landmassId: mission.targetLandmassId,
+        });
+        continue;
+      }
       // Re-resolve the best founding tile: the island's nearest beach is an
       // unload point, not a city site. Recomputing is deterministic, so the
       // mission tracks the best tile even as exploration reveals more.
@@ -3926,28 +4020,71 @@ export class AIManager {
     // ── Plan: seed further islands in parallel while settlers/hulls allow ───
     const canBuildShips = typeof this.gameEngine.civCanBuildShips === 'function'
       && this.gameEngine.civCanBuildShips(civ.id);
+    const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+    const failures = this.seaMissionFailures(storage);
+    const sailingKnown = this.civSailingKnown(civ.id);
     while (refreshed.length < this.maxParallelColonies(civ.id)) {
-      const islands = this.gameEngine.getColonizableIslands(civ.id)
-        .filter((i) => !claimedBySelf.has(i.landmassId));
-      if (islands.length === 0) break;
       const reservedSettlers = new Set(refreshed.map((m) => m.settlerId));
-      const islandMasses = new Set(islands.map((i) => i.landmassId));
-      const settler = this.findColonySettler(civ.id, reservedSettlers, islandMasses);
-      if (!settler || !this.findColonyRendezvous(settler)) break;
       const idleFerry = this.findIdleFerry(civ.id, refreshed);
       if (!idleFerry && !canBuildShips) break;
-      // Best island by value (size vs sailing time), not just the nearest
-      // rock — and the best founding tile on it, not the nearest beach. A
-      // city lives on yields, not on proximity to the departure port.
-      const target = this.chooseColonyTarget(islands);
-      if (!target) break;
-      const { island } = target;
+
+      // Candidate islands, best first: ranked exactly like
+      // `chooseColonyTarget` did (size vs sailing time vs founding-tile yield),
+      // then filtered by the two gates the old version lacked:
+      //   cooldown  — an island a hull recently failed to close on is left
+      //               alone unless the fleet state changed (that is what kept
+      //               the 522 colony-plan/abandon pairs churning);
+      //   reach     — an idle hull that cannot SAIL to the island's staging
+      //               water tile is sent nowhere: a mission whose ferry path
+      //               does not exist is not a mission.
+      const idleFerries = this.idleTransportCount(civ.id, new Set([idleFerry?.id].filter(Boolean) as string[]));
+      const troopCount = this.seaTroopCount(civ.id);
+      const ordered = this.gameEngine.getColonizableIslands(civ.id)
+        .map((island) => {
+          const site = this.findBestColonySite(island.landmassId);
+          const landTile = site?.landTile ?? island.landTile;
+          const waterTile = site?.waterTile ?? island.waterTile;
+          const score = scoreColonyIsland({
+            size: island.size,
+            distance: island.distance,
+            siteYield: site?.siteYield ?? 0,
+          });
+          return { island, landTile, waterTile, score };
+        })
+        .sort((a, b) => b.score - a.score)
+        .filter((pick) => {
+          if (claimedBySelf.has(pick.island.landmassId)) return false;
+          const fail = failures[`col:${pick.island.landmassId}`];
+          return !fail
+            || !this.seaMissionBlocked(fail, roundNumber, idleFerries, troopCount, sailingKnown).blocked;
+        });
+
+      let planned: (typeof ordered)[number] | null = null;
+      let plannedSettler: Unit | null = null;
+      // Same eligibility the old planner used: settlers already standing on an
+      // unsettled island are excluded (founding is their job), so only ones on
+      // home/claimed landmasses are shipping candidates.
+      if (ordered.length > 0) {
+        const islandMasses = new Set(ordered.map((p) => p.island.landmassId));
+        const settler = this.findColonySettler(civ.id, reservedSettlers, islandMasses);
+        const rendezvous = settler ? this.findColonyRendezvous(settler) : null;
+        if (settler && rendezvous) {
+          for (const pick of ordered) {
+            if (idleFerry && !this.navalReachable(idleFerry, pick.waterTile)) continue;
+            planned = pick;
+            plannedSettler = settler;
+            break;
+          }
+        }
+      }
+      if (!planned || !plannedSettler) break;
+      const { island, landTile, waterTile } = planned;
       const newMission: ColonyMission = {
-        settlerId: settler.id,
+        settlerId: plannedSettler.id,
         ferryId: idleFerry?.id ?? null,
         targetLandmassId: island.landmassId,
-        landTile: target.landTile,
-        waterTile: target.waterTile,
+        landTile,
+        waterTile,
         stage: 'gather',
       };
       refreshed.push(newMission);
@@ -3958,17 +4095,17 @@ export class AIManager {
           civilizationId: civ.id,
           action: 'colony_parallel',
           count: refreshed.length,
-          settlerId: settler.id,
+          settlerId: plannedSettler.id,
           landmassId: island.landmassId,
         });
       }
       this.gameEngine.log?.('ai', `Colony mission — ${civ.name} targets a ${island.size}-tile island`, {
         civilizationId: civ.id,
         action: 'colony_mission',
-        settlerId: settler.id,
+        settlerId: plannedSettler.id,
         landmassId: island.landmassId,
-        targetCol: target.landTile.col,
-        targetRow: target.landTile.row,
+        targetCol: landTile.col,
+        targetRow: landTile.row,
       });
     }
   }
@@ -4160,40 +4297,6 @@ export class AIManager {
    * its best founding/unload tiles (falling back to the probe's nearest-beach
    * tiles when no better site scans).
    */
-  private chooseColonyTarget(islands: Array<{
-    landmassId: number;
-    size: number;
-    landTile: { col: number; row: number };
-    waterTile: { col: number; row: number };
-    distance: number;
-  }>): {
-    island: { landmassId: number; size: number; landTile: { col: number; row: number }; waterTile: { col: number; row: number }; distance: number };
-    landTile: { col: number; row: number };
-    waterTile: { col: number; row: number };
-  } | null {
-    if (islands.length === 0) return null;
-    let best: {
-      island: { landmassId: number; size: number; landTile: { col: number; row: number }; waterTile: { col: number; row: number }; distance: number };
-      landTile: { col: number; row: number };
-      waterTile: { col: number; row: number };
-      score: number;
-    } | null = null;
-    for (const island of islands) {
-      const site = this.findBestColonySite(island.landmassId);
-      const score = scoreColonyIsland({
-        size: island.size,
-        distance: island.distance,
-        siteYield: site?.siteYield ?? 0,
-      });
-      const landTile = site?.landTile ?? island.landTile;
-      const waterTile = site?.waterTile ?? island.waterTile;
-      if (!best || score > best.score) {
-        best = { island, landTile, waterTile, score };
-      }
-    }
-    return best;
-  }
-
   /** Board/unload the mission settler when the ferry is in position. */  private tryColonyFerryAction(
     unit: Unit,
     mission: ColonyMission,
@@ -4433,6 +4536,107 @@ export class AIManager {
   }
 
   /**
+   * The civ's sea-mission failure book, created lazily in `turnData`.
+   *
+   * Keyed by mission type and target (`col:<landmassId>` / `inv:<cityId>`).
+   * Lives in `turnData` like every other AI memory so a save carries it and a
+   * round boundary wipes nothing; bounded by the number of coasts a civ knows,
+   * and every entry is one round older than the round it was written in.
+   */
+  private seaMissionFailures(storage?: PlayerTurnStorage): Record<string, SeaMissionFailure> {
+    if (!storage) return {};
+    const turnData = storage.turnData as Record<string, unknown>;
+    if (!turnData.seaMissionFailures || typeof turnData.seaMissionFailures !== 'object') {
+      turnData.seaMissionFailures = {};
+    }
+    return turnData.seaMissionFailures as Record<string, SeaMissionFailure>;
+  }
+
+  /**
+   * How many of this civ's transports are idle AND have free space — the same
+   * count the planner sees, so "changed circumstances" reads exactly the fleet
+   * a new mission would sail with. Any hull part of a live mission is not idle.
+   */
+  private idleTransportCount(civId: number, reservedIds: Set<string> = new Set()): number {
+    let count = 0;
+    for (const u of this.gameEngine.units) {
+      if (u.civilizationId !== civId || u.isDefeated || u.embarkedOn) continue;
+      const props = UNIT_PROPS[u.type];
+      if (!props?.naval || (props.transportCapacity ?? 0) <= 0) continue;
+      if (reservedIds.has(u.id)) continue;
+      if (this.ferryCargoIds(u).length >= this.engineTransportCapacity(u.type)) continue;
+      count++;
+    }
+    return count;
+  }
+
+  /** Combat troops this civ could put into a landing force (cheap census). */
+  private seaTroopCount(civId: number): number {
+    return this.gameEngine.units.filter(
+      (u: Unit) => u.civilizationId === civId && !u.isDefeated && this.isCombatUnit(u),
+    ).length;
+  }
+
+  /**
+   * Whether the civ can even consider sailing this round: knowing the sailing
+   * tech is the hard floor for a ferry. Cheap enough to re-read each round.
+   */
+  private civSailingKnown(civId: number): boolean {
+    const civ = this.gameEngine.civilizations?.[civId];
+    if (!civ) return false;
+    if (civ.technologies?.length) return civ.technologies.includes('sailing');
+    // Fallback: what production would refuse anyway.
+    return this.engineCanBuildShips(civId);
+  }
+
+  /**
+   * Whether the target of a failed sea mission is still blocked.
+   *
+   * Unblocked when the cooldown has run out — but sooner when the state that
+   * decides reachability improved: an extra transport, a bigger landing force,
+   * or a sailing tech arriving can turn yesterday's impossible river into
+   * today's doable crossing. A failure streak only ever lengthens the lull,
+   * never blocks unconditionally: the planner's job is still to plan, this only
+   * stops it from whispering the same unreachable mission eleven rounds in a
+   * row.
+   */
+  private seaMissionBlocked(
+    failures: SeaMissionFailure,
+    roundNumber: number,
+    idleFerries: number,
+    troopCount: number,
+    sailingKnown: boolean,
+  ): { blocked: boolean; reason: 'cooldown' | 'changed' | 'ready' } {
+    const changed =
+      idleFerries > failures.ferries ||
+      troopCount > failures.troops ||
+      (sailingKnown && !failures.sailing);
+    if (changed) return { blocked: false, reason: 'changed' };
+    const lull = SEA_MISSION_COOLDOWN_ROUNDS * Math.max(1, failures.failures);
+    const round = roundNumber - failures.round;
+    return { blocked: round < lull, reason: round < lull ? 'cooldown' : 'ready' };
+  }
+
+  /** Record that a hull could not close on this sea-mission target. */
+  private recordSeaMissionFailure(
+    storage: PlayerTurnStorage | undefined,
+    key: string,
+    idleFerries: number,
+    troopCount: number,
+    sailingKnown: boolean,
+  ): void {
+    const failures = this.seaMissionFailures(storage);
+    const previous = failures[key];
+    failures[key] = {
+      round: this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
+      ferries: idleFerries,
+      troops: troopCount,
+      sailing: sailingKnown,
+      failures: (previous?.failures ?? 0) + 1,
+    };
+  }
+
+  /**
    * A hull that cannot reach its objective: release the claim that was pinning
    * it there, and send it to water a real distance away.
    *
@@ -4449,6 +4653,14 @@ export class AIManager {
     const storage = this.gameEngine.getPlayerStorage?.(unit.civilizationId);
     const colony = this.getColonyMissionForFerry(storage, unit.id);
     if (colony) {
+      // Remember the rock the hull could not close on. Without this the planner
+      // resets next round, re-plans the same island, the hull gives up again —
+      // the 522-abandon churn this cooldown closes.
+      const idleFerries = this.idleTransportCount(unit.civilizationId, new Set([unit.id]));
+      this.recordSeaMissionFailure(
+        storage, `col:${colony.targetLandmassId}`, idleFerries, this.seaTroopCount(unit.civilizationId),
+        this.civSailingKnown(unit.civilizationId),
+      );
       this.removeColonyMission(storage, colony);
       this.gameEngine.log?.('ai', `Colony abandoned — ${unit.type} cannot reach the island`, {
         civilizationId: unit.civilizationId, action: 'colony_abandon',
@@ -4456,7 +4668,14 @@ export class AIManager {
       });
     }
     const invasion = this.getInvasionMission(storage);
-    if (invasion?.ferryId === unit.id) this.clearInvasionMission(storage);
+    if (invasion?.ferryId === unit.id) {
+      const idleFerries = this.idleTransportCount(unit.civilizationId, new Set([unit.id]));
+      this.recordSeaMissionFailure(
+        storage, `inv:${invasion.targetCityId}`, idleFerries, this.seaTroopCount(unit.civilizationId),
+        this.civSailingKnown(unit.civilizationId),
+      );
+      this.clearInvasionMission(storage);
+    }
     this.navalMemoryFor(unit.civilizationId).clearIntent(unit.id);
 
     const elsewhere = this.findDistantNavalWater(unit, stuck, NAVAL_RETARGET_MIN_DISTANCE);
@@ -6795,10 +7014,17 @@ export class AIManager {
     const civ = this.gameEngine.civilizations?.[civId];
     if (!civ) return false;
     if ((civ.resources?.gold ?? 0) < ABSOLUTE_MIN_GOLD) return false;
+    // The civ's REAL rates. `?? 50` on each of the three used to hand the
+    // preview 50/50/50 — 150 %, a split `setRates` would never produce (it
+    // renormalises to 100) and `previewEconomy` does not renormalise either.
+    // A civ running 80/20/0 was previewed at 50/50/50, understating its tax
+    // income by 37 %, so it looked broke when it was not and the AI sold
+    // buildings it did not have to sell. Same fix as
+    // `AutoProduction.canAffordAnotherUnit`.
     const preview = this.gameEngine.economicManager?.previewEconomy?.(civ, {
-      tax: civ.taxRate ?? 50,
-      science: civ.scienceRate ?? 50,
-      luxury: civ.luxuryRate ?? 50,
+      tax: civ.taxRate ?? 0,
+      science: civ.scienceRate ?? 0,
+      luxury: civ.luxuryRate ?? 0,
     });
     return !!preview && preview.net < 1;
   }
@@ -7594,13 +7820,29 @@ export class AIManager {
       debugLog('[AI-SETTLER] Civ has no coastal city — favouring a coastal settlement site');
     }
 
+    // Sites another settler of this civ is ALREADY on their way to. The
+    // evaluator only knew about cities and this settler's own blocked list,
+    // so two settlers picked the SAME best site, walked to it together and
+    // spent the game shoving each other off a single tile — the empire grew
+    // one city per settler-pair instead of one per settler.
+    const claimedByOtherSettlers = new Set<string>();
+    for (const other of this.gameEngine.units) {
+      if (other.id === unit.id) continue;
+      if (other.civilizationId !== unit.civilizationId) continue;
+      if (other.type !== 'settler' || other.isDefeated) continue;
+      const claim = other._aiSettlement ?? other._lastSettlementTarget;
+      if (claim) claimedByOtherSettlers.add(`${claim.col},${claim.row}`);
+    }
+
     // Use SettlementEvaluator to find best location
     const bestLocation = SettlementEvaluator.findBestSettlementLocation(
       unit.col,
       unit.row,
       (col, row) => this.gameEngine.getTileAt(col, row),
       (col, row) => this.gameEngine.getCityAt(col, row)
-        || (blockedTargets.has(`${col},${row}`) ? { id: `${col},${row}`, civilizationId: -1, col, row } : null),
+        || (blockedTargets.has(`${col},${row}`) || claimedByOtherSettlers.has(`${col},${row}`)
+          ? { id: `${col},${row}`, civilizationId: -1, col, row }
+          : null),
       (col, row) => this.gameEngine.getUnitAt(col, row),
       weights,
       MIN_CITY_CENTER_DISTANCE, // keep complete workable areas separate
@@ -10511,20 +10753,25 @@ export class AIManager {
     const totalScience = cities.reduce((sum: number, c: City) => sum + (c.science || 0), 0);
     const hasWaterAccess = cities.some((city: City) => this.cityHasDirectWaterAccess(city));
 
-    // How naval is this world for us? More than one landmass plus a coastal
+    // How naval is this world for us? More than one SEA landmass plus a coastal
     // city means there is somewhere to sail to; a known enemy city on another
-    // landmass means there is no other way to reach it. Zero on an ordinary
-    // land map, so land games research exactly as before.
-    const landmassCount = this.gameEngine.getLandmassCount?.() ?? 1;
+    // shore means there is no other way to reach it. Zero on an ordinary land
+    // map, so land games research exactly as before.
+    //
+    // The landmass here is the SEA landmass: a lake or a wide river in the
+    // middle of the continent does not make a naval power, it makes a bridge
+    // problem. Counting those split the land into two "continents" and the AI
+    // opened the naval branch (Sailing, Map Making, Navigation) for a pond.
+    const landmassCount = this.gameEngine.getSeaLandmassCount?.() ?? this.gameEngine.getLandmassCount?.() ?? 1;
     const homeLandmass =
-      cities.length > 0 ? (this.gameEngine.getLandmassId?.(cities[0].col, cities[0].row) ?? -1) : -1;
+      cities.length > 0 ? (this.gameEngine.getSeaLandmassId?.(cities[0].col, cities[0].row) ?? -1) : -1;
     let enemyCitiesOffShore = 0;
     if (homeLandmass >= 0 && storage?.enemyLocations) {
       for (const enemies of storage.enemyLocations.values()) {
         enemyCitiesOffShore += enemies.filter(
           (e) =>
             e.type === 'city' &&
-            (this.gameEngine.getLandmassId?.(e.col, e.row) ?? -1) !== homeLandmass,
+            (this.gameEngine.getSeaLandmassId?.(e.col, e.row) ?? -1) !== homeLandmass,
         ).length;
       }
     }
@@ -10550,10 +10797,26 @@ export class AIManager {
     const islandExpansionUrgency = !hasSailing && islandCount > 0 && hasWaterAccess
       ? (cities.length <= 2 ? 2 : 1)
       : 0;
+    // The empire is split by water a HULL can cross (a wide river, the sea) —
+    // but there is no open sea worth a fleet. One point of relevance: enough
+    // for Sailing, so the civ can build the boat it needs to move its own
+    // troops, and NOT enough to open the warship ladder.
+    let hullSplit = false;
+    for (let i = 0; i < cities.length && !hullSplit; i++) {
+      for (let j = i + 1; j < cities.length; j++) {
+        const a = cities[i];
+        const b = cities[j];
+        if (this.gameEngine.areLandConnected?.(a.col, a.row, b.col, b.row)) continue;
+        if (this.gameEngine.areBoatConnected?.(a.col, a.row, b.col, b.row)) { hullSplit = true; break; }
+      }
+    }
     const navalRelevance = Math.min(7,
       ((hasWaterAccess || startsOnIsland) ? Math.min(2, Math.max(0, landmassCount - 1)) : 0) +
       (enemyCitiesOffShore > 0 ? 3 : 0) +
-      (islandCount > 0 ? 2 : 0));
+      (islandCount > 0 ? 2 : 0) +
+      // A river-split empire wants a BOAT, not a fleet: relevance 1, which
+      // buys Sailing and nothing else.
+      (landmassCount <= 1 && hullSplit ? 1 : 0));
 
     // How worthwhile is a Fisher Boat right now? A coastal city without a
     // Harbor whose best ground passes the FisherEconomics equation turns this

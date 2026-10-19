@@ -66,15 +66,17 @@ export interface ProcessTurnResult {
 export interface CivEconomyPreview {
   /** Total after-corruption commerce across all cities (including disordered). */
   commerce: number;
-  /** Tax income (disordered cities contribute 0). */
+  /** Tax income (disordered cities contribute 0), including the taxmen's gold. */
   tax: number;
   /** Research beakers (disordered cities contribute 0). */
   science: number;
   /** Luxury happiness points (disordered cities contribute 0). */
   luxury: number;
-  /** Unit + building upkeep. */
+  /** Unit + building + city upkeep. */
   upkeep: number;
-  /** tax − upkeep. */
+  /** The gold the treasury loses to its loan this turn. */
+  debtService: number;
+  /** tax − upkeep − debtService — what the turn actually leaves in the purse. */
   net: number;
   /** Whether the civ owns at least one city. */
   hasCities: boolean;
@@ -469,10 +471,12 @@ export class EconomicManager {
   sustainableUnits(civ: Civilization, plannedUnitType?: string): number {
     const civId = civ?.id;
     if (civId == null) return 0;
-    const income = this.projectedIncome(civ);
-    const committed = this.buildingUpkeep(civId) + this.unitUpkeep(civId)
-      + this.queuedUnitUpkeep(civId);
-    const headroom = income - committed;
+    // The headroom comes from `affordableUnitUpkeep`, i.e. from the economy's
+    // real budget (`armyBudgetFor`): income at the civ's rates, minus
+    // buildings, minus the empire's cities, minus the debt service, minus the
+    // upkeep already committed. Rebuilding it here from `projectedIncome` is
+    // what let the AI plan an army the disbander was going to take apart.
+    const headroom = this.affordableUnitUpkeep(civ);
     if (headroom <= 0) return this.unitCountFor(civId);
     const unitPrice = this.unitMaintenanceOf(civ, plannedUnitType);
     if (unitPrice <= 0) return this.unitCountFor(civId);
@@ -480,8 +484,7 @@ export class EconomicManager {
   }
 
   /**
-   * Gold per turn left for UNIT upkeep after buildings take their share: the
-   * income the civ really has, minus what it already committed.
+   * Gold per turn left for UNIT upkeep after everything else takes its share.
    *
    * This is the currency {@link sustainableUnits} divides by a unit price to
    * produce a COUNT. Exposed on its own because a count is only meaningful when
@@ -493,18 +496,24 @@ export class EconomicManager {
    *
    * Negative when the civ is already overspending — the honest answer, and the
    * one the caller compares against a unit's price.
+   *
+   * The budget is `armyBudgetFor` — the SAME number the disbander reads. It
+   * used to be rebuilt here from `projectedIncome` and the building upkeep
+   * only, which left out the empire's city upkeep and the debt service: the
+   * builder thought it had that much more to spend on soldiers than the
+   * disbander would allow, so the AI built an army that was over budget from
+   * the day it was finished and the disbander took the difference back, one
+   * unit a turn, for the rest of the game. One budget, one number, no gap.
    */
   affordableUnitUpkeep(civ: Civilization): number {
     const civId = civ?.id;
     if (civId == null) return 0;
-    const income = this.projectedIncome(civ);
     // The queue is charged alongside the field: a queued unit's upkeep begins
     // the turn it arrives, and three cities reading the same headroom must not
     // each spend it. See `queuedUnitUpkeep` for the measurement that put this
     // term here.
-    const committed = this.buildingUpkeep(civId) + this.unitUpkeep(civId)
-      + this.queuedUnitUpkeep(civId);
-    return income - committed;
+    const budget = this.armyBudgetFor(civ);
+    return budget - this.unitUpkeep(civId) - this.queuedUnitUpkeep(civId);
   }
 
   /** Living units the civ has in the field (the army the cap is a ceiling for). */
@@ -1391,13 +1400,13 @@ export class EconomicManager {
   ): CivEconomyPreview {
     const civId = civ?.id;
     if (civId == null) {
-      return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, net: 0, hasCities: false };
+      return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, debtService: 0, net: 0, hasCities: false };
     }
     const cities = (this.gameEngine?.cities ?? []).filter(
       (c: City) => c.civilizationId === civId,
     );
     if (cities.length === 0) {
-      return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, net: 0, hasCities: false };
+      return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, debtService: 0, net: 0, hasCities: false };
     }
 
     const gov = getGovernment(civ.government);
@@ -1460,7 +1469,34 @@ export class EconomicManager {
     }
 
     const upkeep = this.totalUpkeep(civId);
-    return { commerce, tax, science, luxury, upkeep, net: tax - upkeep, hasCities: true };
+    // The taxmen's own gold is tax income too — the treasury collects it every
+    // turn, exactly like the tile tax (see `processTurn`: the turn banks
+    // `taxTotal + specGoldTotal`). It used to be missing here, so the preview
+    // showed a civ with taxmen as poorer than it was: the AI then refused to
+    // build a unit it could plainly pay for, and the human saw a treasury net
+    // that did not add up. The engine collects it even from a disordered city,
+    // so the preview has to as well.
+    const specialistGold = cities.reduce(
+      (sum, city) => sum + this.specialistYields(city).gold,
+      0,
+    );
+    // The loan is a real cost every turn (`repayDebt` books it before the
+    // treasury is credited), so the preview has to carry it: a civ paying a
+    // gold a turn into its debt looked solvent in the preview and went
+    // negative in the turn — and the emergency disbander took the difference
+    // out of the army.
+    const debtService = DEBT_REPAYMENT_PER_TURN
+      * Math.ceil((civ.debt ?? 0) / DEBT_REPAYMENT_PER);
+    return {
+      commerce,
+      tax: tax + specialistGold,
+      science,
+      luxury,
+      upkeep,
+      debtService,
+      net: tax + specialistGold - upkeep - debtService,
+      hasCities: true,
+    };
   }
 
   // ------------------------------------------------------------------
@@ -2018,6 +2054,41 @@ export class EconomicManager {
         civ.resources.gold += raised.banked - banked.banked;
         civ.resources.trade = commerceTotal;
         civ.resources.science = scienceTotal;
+      }
+    }
+
+    // ---- Liquidate coin magnets before disbanding --------------------
+    // The disbander deletes a built unit FOREVER; a sold maintenance
+    // building pays the wages NOW and stops bleeding next turn as well.
+    // When the rates are already reconciled (AI pre-process has snapped them)
+    // and the treasury is STILL negative, the only honest levers left are the
+    // city's own furniture: sell the cheapest upkeep building per city
+    // (`sellBuilding` allows one sale per city per turn, refuses wonders,
+    // and refunds half the cost to this civ's treasury even off-turn via
+    // `force`). The disband protocol below then only removes what the sales
+    // could not cover.
+    if (civ.resources.gold < 0 && typeof this.gameEngine?.sellBuilding === 'function') {
+      const buildingsOf = (city: City): Array<{ b: string; cost: number }> => {
+        const owned = city.buildings ?? [];
+        const out: Array<{ b: string; cost: number }> = [];
+        for (const b of owned) {
+          const props = BUILDING_PROPERTIES[b];
+          if (!props) continue;
+          // Wonders carry history, not upkeep — and `sellBuilding` refuses
+          // them anyway; the palace is capital, not a coin magnet.
+          if (WONDER_PROPERTIES[b]) continue;
+          out.push({ b, cost: props.cost ?? 0 });
+        }
+        // Cheapest first: less history destroyed to bridge the same gap.
+        return out.sort((a, b) => a.cost - b.cost);
+      };
+      for (const city of [...cities].sort((a, b) => (a.id ?? '').localeCompare(b.id ?? ''))) {
+        if (civ.resources.gold >= 0) break;
+        const cheapest = buildingsOf(city)[0];
+        if (!cheapest) continue;
+        this.gameEngine.sellBuilding(city.id, cheapest.b, { force: true });
+        // The refund was credited to this civ's treasury inside
+        // `sellBuilding` (force path) — re-read it, never assume.
       }
     }
 

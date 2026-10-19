@@ -92,6 +92,18 @@ export interface NavalDoctrineInput {
   troopsAvailable: boolean;
   atWar: boolean;
 
+  /**
+   * Colony missions that hold a settler but NO hull yet.
+   *
+   * Every one of them is an island waiting to be settled, and each needs a
+   * ferry of its own to get there. The doctrine counted islands, not
+   * WAITING islands, and the hull it wanted for them lost every tie against
+   * the warships — so on an archipelago the AI built a warship fleet, never
+   * built the one ferry the settlers were waiting for, and the islands stayed
+   * empty while the treasury paid upkeep for gunboats.
+   */
+  pendingColonies?: number;
+
   // ── enemy force ────────────────────────────────────────────────────────
   enemyTransports: number;
   enemyWarships: number;
@@ -287,6 +299,13 @@ export function desiredTransports(input: NavalDoctrineInput): number {
     else if (islands <= 6) want += 2;
     else want += 3;
   }
+  // A colony mission holding a settler and NO hull is a settler standing on
+  // the shore. It needs a hull of its own — the islands count above only
+  // says "there is somewhere to go", not "there is a boat for this settler".
+  // Without this the island the settler was waiting for never got a hull and
+  // the civ never spread at all.
+  const pending = Math.max(0, Math.floor(input.pendingColonies ?? 0));
+  if (pending > 0) want += pending;
   if (invasions > 0) {
     want += 1 + Math.floor((invasions - 1) / 2);
   }

@@ -1290,5 +1290,19 @@ export interface GameActions {
   clearMovementAnimations: () => void;
   setUnitAnimating: (isAnimating: boolean) => void;
   focusCameraOnTile: (col: number, row: number, keepZoom?: boolean, force?: boolean) => void;
+  /**
+   * Edge-follow: called from the render loop while a unit is gliding, with its
+   * interpolated display tile. When the unit runs past the viewport's edge
+   * margin, the camera shifts by just the overrun, in the unit's direction —
+   * keep a moving unit visible without ever re-centering.
+   */
+  followMovingUnit: (unitId: string, displayCol: number, displayRow: number) => void;
+  /**
+   * GoTo camera rule: called right after a route has been assigned to a unit.
+   * When the screen is mostly unexplored black at that moment, pan the camera
+   * back to the routed unit; otherwise leave the camera where the player put
+   * it.
+   */
+  focusGoToUnitIfBlind: (col: number, row: number) => void;
   clearCameraPanRequest: () => void;
 }

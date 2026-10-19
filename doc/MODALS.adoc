@@ -490,7 +490,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | settings
 | B
-| GAME ▸ Settings (`App.tsx` L1343); `F3` (`App.tsx` L1157); mobile bottom bar.
+| GAME ▸ Settings (`App.tsx` L1343); `F3` (`App.tsx` L1157).
 | Any time.
 | *Uses the shell*: tone `neutral`, `dialogClassName`-free, eyebrow "Game Menu · Options", title "Settings", sliders and toggles bound to `settings`.
 | Reset to Defaults, Apply & Close.
@@ -546,7 +546,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | GameMenuSheet (GAME / WORLD / INFO)
 | B
-| Top-bar menu buttons → `handleMenuClick` (`App.tsx` L506); mobile bottom bar → `handleMobileMenuOpen` (L524).
+| Top-bar menu buttons → `handleMenuClick` (`App.tsx` L506).
 | Any time the top bar is visible.
 | `.menu-sheet` anchored dropdown on desktop, bottom sheet on mobile, with `.menu-sheet__backdrop`, `.menu-sheet__title` and `.menu-item` rows (`.menu-item--danger` for Quit).
 | GAME: New Game, Save Game, Pause, Load Game, Settings, Quit. WORLD: Diplomacy, Rates, Government, Tech Tree, Statistics, Wonders. INFO: Download Map, Download Game Progression List, Download Compact Progression (CSV), Help.

@@ -259,4 +259,37 @@ describe('reach — a caravan must be able to WALK there', () => {
     expect(plan.assignments).toHaveLength(1);
     expect(plan.assignments[0].targetCityId).toBe('near');
   });
+
+  // The island civ: one city, three free route slots, and NO partner on the
+  // same shore. It used to build three caravans that walked nowhere, idled
+  // out their patience and were disbanded — production churn on a trade route
+  // that could never exist. One scout caravan is all it may have.
+  it('an island civ keeps ONE caravan, not one per free slot', () => {
+    const w = world([
+      { id: 'a', col: 0, row: 0, population: 5, civilizationId: 0, tradeRoutes: [] },
+      { id: 'far', col: 9, row: 9, population: 12, civilizationId: 1, tradeRoutes: [] },
+    ], [{ id: 'k1', homeCityId: 'a' }, { id: 'k2', homeCityId: 'a' }, { id: 'k3', homeCityId: 'a' }]);
+    (w as { areLandConnected: (c1: number, r1: number, c2: number, r2: number) => boolean })
+      .areLandConnected = (_c1, r1, _c2, r2) => r1 === r2;
+
+    const plan = planCaravansForCiv(w, 0);
+    // Three caravans in flight, but the civ may only keep one: the surplus is
+    // disbanded instead of wandering.
+    expect(plan.surplus).toHaveLength(2);
+    // And exactly one city builds the next one.
+    expect(plan.producers.map((p) => p.cityId)).toEqual(['a']);
+  });
+
+  it('an island civ nominates ONE producer, not every city with a free slot', () => {
+    const w = world([
+      { id: 'a', col: 0, row: 0, population: 5, civilizationId: 0, tradeRoutes: [] },
+      { id: 'b', col: 0, row: 2, population: 4, civilizationId: 0, tradeRoutes: [] },
+      { id: 'far', col: 9, row: 9, population: 12, civilizationId: 1, tradeRoutes: [] },
+    ]);
+    (w as { areLandConnected: (c1: number, r1: number, c2: number, r2: number) => boolean })
+      .areLandConnected = (_c1, r1, _c2, r2) => r1 === r2;
+
+    const plan = planCaravansForCiv(w, 0);
+    expect(plan.producers).toHaveLength(1);
+  });
 });

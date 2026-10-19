@@ -944,6 +944,7 @@ export const ru: PartialTranslationDict = {
   'rates.projected': 'Прогноз за ход',
   'rates.stat.commerce': 'Торговля',
   'rates.stat.upkeep': 'Содержание',
+  'rates.stat.debt': 'Обслуживание долга',
   'rates.stat.net': 'Сальдо казны',
   'rates.noCities': 'У вас пока нет города — основьте его поселенцем, и торговля пойдёт в гору.',
   'gov.defaultEmpire': 'Ваша империя',

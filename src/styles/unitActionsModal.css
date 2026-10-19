@@ -1,6 +1,10 @@
 /* ============================================================================
    UnitActionsModal — context menu
-   Bottom sheet on mobile, cursor-anchored popover on desktop.
+   Mobile: the "command dock" IS the bottom bar now. The old primary bar
+   repeated menus the top bar already carries; its one unique control (the
+   SidePanel toggle) lives pinned far left of this dock, so the map stays
+   visible, the top bar is never covered, and the panel stays one tap away.
+   Desktop: a cursor-anchored popover.
    ========================================================================== */
 
 .unit-context-backdrop {
@@ -19,36 +23,34 @@
 .unit-context-menu {
   position: fixed;
   z-index: 999;
-  left: 0 !important;
-  right: 0 !important;
+  left: 8px !important;
+  right: 8px !important;
   top: auto !important;
-  bottom: 0 !important;
-  width: 100%;
-  max-width: 100%;
+  bottom: calc(var(--safe-bottom, 0px) + 8px) !important;
+  width: auto;
+  max-width: none;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-elevated, #16202a);
-  border: none;
-  border-top: 1px solid var(--color-border-strong, #3d5163);
-  border-radius: 16px 16px 0 0;
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--color-border-strong, #3d5163);
+  border-radius: 18px;
+  box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.55);
   overflow: hidden;
   color: var(--color-text, #e8eef3);
   font-family: var(--font-mono, monospace);
-  padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
-  max-height: 75dvh;
-  animation: sheet-up 220ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+  max-height: 46dvh;
+  animation: dock-up 200ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
 }
 
-/* Grab handle for the bottom sheet (mobile only) */
+/* Grab handle: the dock is a floating card, the handle says "pull me down". */
 .unit-context-menu::before {
   content: '';
   display: block;
   width: 44px;
-  height: 5px;
+  height: 4px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.25);
-  margin: 8px auto 4px;
+  background: rgba(255, 255, 255, 0.22);
+  margin: 7px auto 2px;
   flex-shrink: 0;
 }
 
@@ -69,56 +71,236 @@
   color: var(--color-text, #e8eef3);
 }
 
+/* Right-hand cluster of the header: coordinates + close button. */
+.unit-context-menu__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .unit-context-menu__coords {
   font-size: 12px;
   color: var(--color-text-muted, #ffffff);
   white-space: nowrap;
 }
 
-.unit-context-menu__scroll {
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  padding: 6px;
+/* Round close button — the backdrop already dismisses the sheet, but a
+   visible target is what a thumb expects on a phone. */
+.unit-context-menu__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  margin-left: 4px;
+  padding: 0;
+  border: 1px solid var(--color-border, #2c3b49);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text, #e8eef3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out, ease-out),
+              transform 120ms var(--ease-out, ease-out);
 }
 
-/* Section label inside the menu (e.g. the diplomat's INFILTRATION block). */
+.unit-context-menu__close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.unit-context-menu__close:active {
+  transform: scale(0.92);
+}
+
+/* The unit (or city) the orders belong to. In the header it sits under the
+   title; for a diplomat it also appears inside the strip as the chosen
+   court, where it has to stay on one line. */
+.unit-context-menu__unit-type {
+  font-size: 12px;
+  color: var(--color-text-muted, #8fa3b4);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* Civ1 multi-turn construction / fishing status: a full-width status bar
+   above the order strip, so it never competes with the buttons. */
+.unit-context-menu__work {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--color-border, #2c3b49);
+  color: var(--color-text, #e8eef3);
+  font-family: var(--font-ui, sans-serif);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Mobile action strip ────────────────────────────────────────────────
+   The orders live in ONE horizontally scrollable row of round pills. A
+   vertical list on a phone pushes the map off-screen and makes the player
+   scroll twice (menu, then map); a sideways strip keeps the whole sheet
+   one gesture tall and lets the thumb swipe along the orders. The SidePanel
+   toggle sits in a fixed cell ahead of the strip so it never scrolls away. */
+.unit-context-menu__scroll-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+.unit-context-menu__scroll {
+  display: flex;
+  flex-direction: row;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: contain;
+  padding: 12px 12px 14px;
+  /* The fade is driven by the scroll position (see UnitActionsModal): it only
+     appears on the side that still has orders hidden. */
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* The preserved SidePanel button: pinned left, pill-shaped like the orders
+   beside it, and a 44px+ touch target in both dimensions (icon-only — the
+   old bar's five-word labels never fit a thumb row anyway). */
+.unit-context-menu__panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  width: 46px;
+  min-height: 46px;
+  margin: 12px 0 14px 10px;
+  padding: 0;
+  border: 1px solid var(--color-border, #2c3b49);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text, #e8eef3);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out, ease-out),
+              color 120ms var(--ease-out, ease-out);
+}
+
+.unit-context-menu__panel:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.unit-context-menu__panel:active {
+  transform: scale(0.94);
+}
+
+.unit-context-menu__panel.is-active {
+  border-color: var(--color-accent, #4aa3df);
+  background: rgba(74, 163, 223, 0.18);
+  color: var(--color-accent, #4aa3df);
+}
+
+.unit-context-menu__scroll.can-scroll-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+}
+
+.unit-context-menu__scroll.can-scroll-left {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 28px);
+  mask-image: linear-gradient(to right, transparent 0, #000 28px);
+}
+
+.unit-context-menu__scroll.can-scroll-left.can-scroll-right {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+}
+
+/* Chevrons that point at the hidden orders. Purely decorative — the strip
+   itself is the scroller. */
+.unit-context-menu__edge {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(10, 16, 22, 0.78);
+  color: var(--color-text, #e8eef3);
+  font-size: 17px;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.unit-context-menu__edge--left {
+  /* Clear the pinned panel cell — the fade mask below still marks the hidden
+     orders, the chevron just points at them from beside the toggle. */
+  left: 60px;
+}
+
+.unit-context-menu__edge--right {
+  right: 3px;
+}
+
+/* Section label inside the menu (e.g. the diplomat's INFILTRATION block).
+   On mobile it becomes a small tag inside the scrolling strip instead of a
+   full-width rule — a rule would break the row into pieces. */
 .context-menu-divider {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 8px 4px 4px;
-  padding: 0 8px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
   color: var(--color-text-muted, #8fa3b4);
   font-family: var(--font-ui, sans-serif);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .context-menu-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--color-border, #2c3d4d);
+  display: none;
 }
 
 /* 44px touch targets */
 .context-menu-item {  display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
+  gap: 8px;
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 46px;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border, #2c3b49);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
   color: var(--color-text, #e8eef3);
   font-family: var(--font-ui, sans-serif);
   font-size: 15px;
   font-weight: 600;
   text-align: left;
+  white-space: nowrap;
+  scroll-snap-align: center;
   cursor: pointer;
   transition: background-color 120ms var(--ease-out, ease-out);
 }
@@ -165,26 +347,32 @@
    player picks; without this the menu could only ever show one of them. */
 .context-menu-targets {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
   gap: 6px;
-  padding: 8px 12px 4px;
+  padding: 0;
 }
 
 .context-menu-targets__label {
-  width: 100%;
+  width: auto;
+  flex: 0 0 auto;
+  align-self: center;
+  padding-right: 4px;
   color: var(--color-text-muted, #8fa3b4);
   font-family: var(--font-ui, sans-serif);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
+  white-space: nowrap;
 }
 
 .context-menu-target {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
   max-width: 100%;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--color-border, #2c3d4d);
   border-radius: 999px;
   background: transparent;
@@ -192,6 +380,8 @@
   font-family: var(--font-ui, sans-serif);
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
+  scroll-snap-align: center;
   cursor: pointer;
   transition: background-color 120ms var(--ease-out, ease-out);
 }
@@ -212,20 +402,22 @@
 /* A diplomat standing in open country: say why the menu is empty rather than
    showing buttons that would all fail. */
 .context-menu-hint {
+  flex: 0 0 auto;
   padding: 10px 14px;
   color: var(--color-text-muted, #8fa3b4);
   font-family: var(--font-ui, sans-serif);
   font-size: 13px;
   line-height: 1.4;
+  white-space: nowrap;
 }
 
 .context-menu-section {
   display: contents;
 }
 
-@keyframes sheet-up {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+@keyframes dock-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 /* Desktop (>= lg): cursor-anchored popover instead of bottom sheet */
@@ -254,14 +446,80 @@
     padding: 8px 14px;
   }
 
+  /* Desktop keeps the classic vertical list: a pointer user expects the
+     popover to read top-to-bottom, and there is room for it. */
+  .unit-context-menu__scroll-wrap {
+    display: block;
+    flex: 1 1 auto;
+  }
+
+  /* The panel toggle is a thumb affordance from the old mobile bar; on
+     desktop the panel is a static sidebar and needs no in-menu button. */
+  .unit-context-menu__panel {
+    display: none;
+  }
+
   .unit-context-menu__scroll {
+    display: block;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scroll-snap-type: none;
     padding: 4px;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  /* The chevrons are a touch affordance; a mouse does not need them. */
+  .unit-context-menu__edge {
+    display: none;
   }
 
   .context-menu-item {
+    width: 100%;
     min-height: 38px;
     padding: 7px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
     font-size: 14px;
+    white-space: normal;
+    scroll-snap-align: none;
+  }
+
+  .context-menu-divider {
+    display: flex;
+    margin: 8px 4px 4px;
+    padding: 0 8px;
+    border-radius: 0;
+    background: none;
+    font-size: 11px;
+  }
+
+  .context-menu-divider::after {
+    display: block;
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--color-border, #2c3d4d);
+  }
+
+  .context-menu-targets {
+    flex-wrap: wrap;
+    padding: 8px 12px 4px;
+  }
+
+  .context-menu-targets__label {
+    width: 100%;
+    padding-right: 0;
+  }
+
+  .context-menu-target {
+    padding: 6px 10px;
+    scroll-snap-align: none;
+  }
+
+  .context-menu-hint {
+    white-space: normal;
   }
 
   .unit-context-backdrop {

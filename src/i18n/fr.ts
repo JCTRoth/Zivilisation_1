@@ -946,6 +946,7 @@ export const fr: PartialTranslationDict = {
   'rates.projected': 'Projection par tour',
   'rates.stat.commerce': 'Commerce',
   'rates.stat.upkeep': 'Entretien',
+  'rates.stat.debt': 'Service de la dette',
   'rates.stat.net': 'Solde net du trésor',
   'rates.noCities': 'Vous ne possédez encore aucune ville — fondez-en une avec votre colon et le commerce commencera à couler.',
   'gov.defaultEmpire': 'Votre empire',

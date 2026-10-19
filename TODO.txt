@@ -16,7 +16,7 @@ If the goal is to closer match the Civilisation 1 manual, consider implementing:
  2. [DONE] Disasters: Add the 7 disasters with their prevention mechanics — see doc/DISASTERS.adoc.
  3. Global warming: Implement the sun indicator and climate change effects.
  5. Diplomacy: Add embassies, tech trading, sabotage, and incite revolt.
- 6. Advisors: Implement the 6 advisor reports and world reports.
+ 6. ?Advisors: Implement the 6 advisor reports and world reports.?
  8. Space race 2.0 modern version of it: Implement spaceship construction with parts and flight time.
  9. Find City: Add the city search feature.
 10. Autosave: Implement automatic saving every 50 turns.
@@ -26,7 +26,6 @@ These additions would significantly increase the game's fidelity to the original
 * Add splash damage when multipile units stand on one place
 * Splash damage does not apply for units in a city or in a fortification or in a boat or in a transporter.
 * Integrate the new sprash damage also into the AI
-* 
 
 * Units should heal in cities rate abouut 2% every turn up to 15% of there battle demage.
 show a little blood symbole babove the unit when it heals if unit is not stacked
@@ -830,6 +829,7 @@ Do what ever needed
 
 Here are the iteration steps for the framework, abstracted from the settler context and generalized for any strategic AI subsystem:
 
+Loop this steps:
 Phase 1: Analysis & Strategic Design
 
 • Audit Subsystem Baseline: Evaluate current module logic, operational pacing, localized safety protocols, and operational targets.
@@ -853,73 +853,11 @@ Phase 3: Performance Reporting & Next Steps
 • Generate Statistical Comparisons: Create comparative data tables contrasting Baseline AI performance vs. Overhauled Subsystem AI across all tracked metrics.
 • Draft Qualitative Assessment: Write a summary detailing observed behavioral improvements and systemic changes under dynamic game conditions.
 • Trigger Phase Transition: Hand off the stabilized code and automatically initialize the overhaul sequence for the next designated module in the AI dependency chain.
+
+----
+
 Would you like me to map this generalized framework onto a specific next module, such as the War/Military Subsystem or the Tech/Research Engine?
 
 * [DONE] Trade Ship auto-delivery: trade ships auto-establish routes between harbours without player input
 * [TOBECHECKED] Verify war commitment balance in AI vs AI with new garrisons and unit caps
 
-
-
-
----------
-
-You are an expert AI Prompt Engineer specializing in game assets for 2D/isometric strategy games (Civilization V style, but more detailed, semi-realistic, and visually rich).
-
-Your task is to generate and optimize image generation prompts for terrain tiles, ground maps, and standalone map features that will be rendered onto a game grid by a script.
-
-Always follow these unified rules when creating or optimizing prompts:
-
-1. CANVAS COVERAGE & NO CROPPED OBJECTS (MINIMUM 90% COVERAGE):
-   - The main subject (e.g., mountain range, forest cluster, ground terrain) MUST fill at least 90% of the canvas area.
-   - For standalone 3D assets (like mountains or tree clusters), ALL objects must be complete and fully visible within the frame. Mountain peaks and tree tops MUST NOT be cut off at the top or edges ("complete standalone elements, generous top padding, no cropped borders").
-   - Eliminate heavy black borders, black corner triangles, diamond layouts, or isolated sprites on black boxes. Use soft edge fades or full-bleed compositions instead.
-
-2. AVOID ARTIFICIAL REPETITION & OVERCROWDING:
-   - Eliminate unnatural, repetitive grid patterns or mirrored elements.
-   - Ground vegetation, rocks, tree placement, and mountain ridges must follow an organic, natural, and varied distribution with high surface detail.
-
-3. REALISTIC WATER REPRESENTATION:
-   - Water MUST always look clearly and realistically like actual fluid water.
-   - Use explicit water keywords: "clear fluid blue water texture, natural caustics, realistic surface ripples, liquid depth transparency" (never flat blue planes or vague misty textures).
-
-4. PERSPECTIVE SPECIFICITY:
-   - For flat ground surfaces/textures (grass, jungle floor): Use strictly "orthographic top-down bird's-eye view" looking straight down at the ground plane, without vertical tree trunks or side views.
-   - For 3D features (mountains, tree clusters, hill features): Use "isometric strategic game view" (3/4 top-down angle) so height is visible, ensuring all top points stay completely inside the frame.
-
-5. ART STYLE & DETAIL LEVEL:
-   - Style: Highly detailed semi-realistic digital painting with intricate textures, realistic lighting, soft shadows, and clean definition.
-   - Avoid overly flat comic styles or excessively thick cartoon outlines.
-
-OUTPUT FORMAT:
-- Provide a clean, optimized, copy-pasteable English prompt for FLUX / SDXL.
-- Add a short 1-2 sentence explanation of the adjustments made. Here is a critical analysis of your generator's current prompt, followed by the **fixed, optimized prompt** ready to paste into FLUX.
-
----
-
-### What's Wrong with the Current Prompt?
-
-1. **Conflicting Directives (The Main Flaw):**
-Your prompt asks for a **"seamless tileable texture map / repeating material sheet"** (which requires edge-to-edge patterns that wrap around boundaries) while simultaneously asking for **"complete standalone elements with natural margins"** and **"no cropped borders"**. FLUX gets confused by these opposing instructions and often creates odd borders or isolated islands.
-2. **"Marsh grass swaying gently in the breeze" & "High vantage point":**
-Describing motion ("swaying") or photographic camera framing ("high vantage point") causes diffusion models to tilt the camera away from a pure flat 2D ground surface.
-3. **Redundant Keywords:**
-Phrases like `100% canvas coverage` and `edge-to-edge full frame fill` are repeated 3–4 times. Excess prompt clutter weakens the model's focus on the actual subject matter and water details.
-
----
-
-### Optimized Prompt for FLUX
-
-Use this clean, streamlined version. It eliminates the conflicting margin commands, forces clear liquid water, and strictly maintains a 90%+ top-down ground coverage:
-
-> **Seamless top-down 2D ground texture map of a murky swamp terrain floor, pure orthographic bird's-eye view looking straight down at the ground plane, 90% to 100% full-bleed canvas coverage, flat surface pattern, seamlessly tileable on all four edges.**
-> **Style & Art Direction:** Highly detailed semi-realistic digital painting, modern strategy game illustration, intricate surface details, natural textures, realistic lighting and soft shading, crisp high resolution, no thick cartoon outlines. Surreal twilight lighting with glowing crystal accents.
-> **Subject Details:** A rich ground surface featuring clear, dark, reflective fluid water pools with realistic liquid transparency and subtle surface caustics. Brown-green stagnant water reflecting surreal twilight light, interspersed with wet mud banks, scattered lily pads, marsh grass tufts, and tiny glowing crystal specks embedded in the mud. Small iridescent swamp ferns and moss spread organically across the terrain floor with natural, non-repetitive variety.
-> **Technical Specs:** Flat map view, strictly top-down overhead perspective, no tree trunks, no side perspective, no vertical horizon, continuous organic texture, crisp 8k digital painting.
-
----
-
-### Key Adjustments Made
-
-* **Removed:** `complete standalone elements with natural margins` and `no cropped borders` (these belong ONLY to 3D feature tiles like mountains/trees, NOT to ground texture maps).
-* **Enhanced Water:** Added `clear, dark, reflective fluid water pools with realistic liquid transparency and subtle surface caustics` to guarantee liquid water fidelity.
-* **Simplified Layout Commands:** Consolidated redundant "100% edge-to-edge" phrases into concise technical specs to prevent prompt bloat. 

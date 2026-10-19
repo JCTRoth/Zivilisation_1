@@ -15,6 +15,7 @@ import {
   TerrainTileRenderInfo,
   UnitPathStep,
   getCitySpecialistButtons,
+  getUnitDisplayTile,
 } from "@/game/rendering/MapRenderer";
 import MoveAnimator from "@/game/rendering/MoveAnimator";
 import { MathUtils } from "@/utils/MathUtils";
@@ -141,8 +142,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   onExamineHex,
   gameEngine = null,
 }) => {
-  const { t } = useTranslation();
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const { t } = useTranslation();  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const terrainBaseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const terrainTypesHashRef = useRef<string>("");
@@ -165,6 +165,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const mapData = useGameStore((state) => state.map);
   const camera = useGameStore((state) => state.camera);
   const actions = useGameStore((state) => state.actions);
+  // SidePanel drawer state, forwarded to the unit orders bar: the SidePanel
+  // toggle is the one control that survived the old mobile bottom bar, and it
+  // now lives pinned to the far left of the unit context menu.
+  const panelOpen = useGameStore((state) => !state.uiState.sidebarCollapsed);
   const cities = useGameStore((state) => state.cities);
   const units = useGameStore((state) => state.units);
   const currentPlayer = useGameStore(
@@ -269,6 +273,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     startTime: number;
     duration: number;
   } | null>(null);
+  /**
+   * Mirrors the `isDragging` state into the render loop's scope: while the
+   * player is panning by hand, the edge-follow must not fight the drag.
+   */
+  const isDraggingRef = useRef<boolean>(false);
   const terrainRebuildNeededRef = useRef<boolean>(false);
   // Tracks whether the starting settler has already been auto-selected for the
   // current game. Prevents the "select starting settler" effect from re-running
@@ -1881,6 +1890,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       if (actions?.selectUnit) actions.selectUnit(null, "user");
       if (actions?.setSelectedUnitIds) actions.setSelectedUnitIds([]);
 
+      // GoTo camera rule: if the screen is more than 80% black right now (the
+      // player scrolled out into unexplored space to plot the route), bring
+      // the view back to the unit that will walk it. A view that still shows
+      // real map content stays where the player put it.
+      actions?.focusGoToUnitIfBlind?.(unit.col, unit.row);
+
       if ((unit.movesRemaining || 0) > 0) {
         setTimeout(() => {
           goToManager
@@ -1920,7 +1935,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     [gameEngine, mapData, getTileAt, actions, triggerRender, t],
   );
 
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>, fromTouch = false) => {
     if (!isDragging) {
       const rect = canvasRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -2216,6 +2231,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           }
 
           if (gameState.selectedUnit === unitAt.id) {
+            // On a phone the orders live in the floating command dock, and a
+            // long-press is not something anybody discovers. Tapping the unit
+            // that is already selected opens the dock instead — the same
+            // gesture opens the menu on a desktop right-click.
+            if (fromTouch) {
+              console.log(
+                `[CLICK] Re-tapped selected unit ${unitAt.id} on touch - opening orders`,
+              );
+              openContextMenuAt(e.clientX, e.clientY);
+              return;
+            }
             // Re-clicking the lone selected unit orders it to its own tile,
             // which cancels any assigned GoTo path. The unit stays selected.
             console.log(
@@ -2430,38 +2456,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   };
 
-  const handleRightClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-
-    // Right-click never starts a drag — ensure any stale drag state is cleared
-    // so the cursor doesn't stay stuck on the "grabbing" hand.
-    setIsDragging(false);
-
-    // Right-click aborts a citizen pick-up (cancel the grab without altering
-    // any tile) before opening the unit context menu.
-    if (citizenReassign) {
-      console.log("[RightClick] Cancelling citizen reassignment");
-      actions.endCitizenReassign();
-      triggerRender();
-      return;
-    }
-
-    // Right-click always ends the unit / group selection mode. The context menu
-    // below is independent of selection (the unit is not re-selected by it).
-    if (gameState.selectedUnit || (gameState.selectedUnitIds?.length ?? 0) > 0) {
-      console.log("[RightClick] Clearing unit selection");
-      clearHoverPreview();
-      setReachableTiles(new Map());
-      if (actions && typeof actions.selectUnit === "function") {
-        actions.selectUnit(null, "user");
-      }
-      actions.setSelectedUnitIds?.([]);
-      triggerRender();
-    }
-
+  /**
+   * Open the unit/city orders at a screen position.
+   *
+   * Shared by the desktop right-click, the mobile long-press and the mobile
+   * "tap the selected unit again" gesture, so all three reach exactly the same
+   * menu with the same contents.
+   */
+  const openContextMenuAt = (clientX: number, clientY: number) => {
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
     const hex = screenToSquare(x, y);
 
     if (!terrain) return;
@@ -2493,25 +2498,49 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       return;
     }
 
-    if (isOwnUnit) {
-      console.log(
-        `[ContextMenu] Right-clicked player unit ${unitAtHex.id} (${unitAtHex.type})`,
-      );
-    } else {
-      console.log(`[ContextMenu] Right-clicked player city ${cityAtHex.name}`);
-    }
-
     const tile = terrain[hex.row]?.[hex.col];
 
     // Set context menu with the actual unit/city objects
     setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
+      x: clientX,
+      y: clientY,
       hex: hex,
       tile: tile,
       unit: unitAtHex,
       city: cityAtHex,
     });
+  };
+
+  const handleRightClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+
+    // Right-click never starts a drag — ensure any stale drag state is cleared
+    // so the cursor doesn't stay stuck on the "grabbing" hand.
+    setIsDragging(false);
+
+    // Right-click aborts a citizen pick-up (cancel the grab without altering
+    // any tile) before opening the unit context menu.
+    if (citizenReassign) {
+      console.log("[RightClick] Cancelling citizen reassignment");
+      actions.endCitizenReassign();
+      triggerRender();
+      return;
+    }
+
+    // Right-click always ends the unit / group selection mode. The context menu
+    // below is independent of selection (the unit is not re-selected by it).
+    if (gameState.selectedUnit || (gameState.selectedUnitIds?.length ?? 0) > 0) {
+      console.log("[RightClick] Clearing unit selection");
+      clearHoverPreview();
+      setReachableTiles(new Map());
+      if (actions && typeof actions.selectUnit === "function") {
+        actions.selectUnit(null, "user");
+      }
+      actions.setSelectedUnitIds?.([]);
+      triggerRender();
+    }
+
+    openContextMenuAt(e.clientX, e.clientY);
   };
 
   // ---- Touch gestures (mobile) ----
@@ -2648,7 +2677,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             clientX: x,
             clientY: y,
             preventDefault: () => {},
-          } as React.MouseEvent<HTMLCanvasElement>);
+          } as React.MouseEvent<HTMLCanvasElement>, true);
         }
       }
 
@@ -3274,6 +3303,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     movementAnimationsRef.current = movementAnimations;
   }, [movementAnimations]);
   useEffect(() => {
+    isDraggingRef.current = isDragging;
+  }, [isDragging]);
+  useEffect(() => {
     combatAnimationsRef.current = combatAnimations;
   }, [combatAnimations]);
   useEffect(() => {
@@ -3320,6 +3352,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       if (now - lastFrame < interval) return;
       lastFrame = now - ((now - lastFrame) % interval);
 
+      const nowMs = performance.now();
+
       // 1. Camera glide — stepped from this loop so a pan never needs its own
       //    rAF chain and never composites the scene twice in one frame.
       const tween = cameraTweenRef.current;
@@ -3340,9 +3374,34 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       }
 
+      // 1b. Edge-follow — a unit gliding past the viewport edge drags the
+      //     camera along by just the overrun, so the player can watch it move
+      //     instead of losing it off-screen. Never while a pan is already in
+      //     flight or while the player is panning by hand (mouse drag or
+      //     touch) — their hands win — and the store action applies the same
+      //     followability rule as focusOnNextUnit (own/visible units only,
+      //     autoCamera honored).
+      if (
+        movementAnimationsRef.current.length > 0 &&
+        !cameraTweenRef.current &&
+        !isDraggingRef.current &&
+        !touchStartRef.current &&
+        !pinchStartRef.current
+      ) {
+        const followState = useGameStore.getState();
+        if (followState.settings?.autoCamera !== false) {
+          for (const anim of movementAnimationsRef.current) {
+            if (nowMs - anim.startTime >= anim.duration) continue;
+            const unit = followState.units.find((u) => u.id === anim.unitId);
+            if (!unit) continue;
+            const display = getUnitDisplayTile(unit, movementAnimationsRef.current);
+            actions.followMovingUnit?.(anim.unitId, display.col, display.row);
+          }
+        }
+      }
+
       // 2. Static composite — only when something invalidated it, the tracked
       //    game state moved on, or a glide/combat animation is in flight.
-      const nowMs = performance.now();
       const animatingNow =
         movementAnimationsRef.current.some(
           (a) => nowMs - a.startTime < a.duration,
@@ -3610,6 +3669,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           onExecuteAction={executeContextAction}
           onClose={() => setContextMenu(null)}
           gameEngine={gameEngine}
+          panelOpen={panelOpen}
+          onTogglePanel={() => actions.toggleUI('sidebarCollapsed')}
         />
       )}
 

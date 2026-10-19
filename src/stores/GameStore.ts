@@ -11,9 +11,26 @@ import {
   slowerGameSpeedStep,
 } from '../data/GameConstants';
 import { beginCameraGlide } from '../game/rendering/CameraGlideGate';
-import { MIN_ZOOM, MAX_ZOOM, clampZoom, centerCameraOnTile, getGameViewport } from '../utils/CameraUtils';
+import { MIN_ZOOM, MAX_ZOOM, clampZoom, centerCameraOnTile, getGameViewport, nudgeCameraToKeepPointInView } from '../utils/CameraUtils';
+import { BLACK_COVERAGE_REFOCUS_THRESHOLD, computeViewportBlackCoverage } from '../utils/ViewportBlackCoverage';
+import { TILE_SIZE } from '../data/TerrainData';
 import { getLanguage, setLanguage } from '../i18n';
 import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City } from '../../types/game';
+
+/**
+ * Edge-follow switch cooldown: while a unit is being followed, the camera is
+ * its own. A *different* moving unit may only take the camera over after this
+ * long, so two simultaneous GoTo marches cannot tug the view back and forth
+ * and the player gets a moment to register the first unit's move.
+ */
+export const FOLLOW_SWITCH_COOLDOWN_MS = 3000;
+
+let followCameraOwner: { unitId: string; atMs: number } | null = null;
+
+/** Test hook: forget the current follow owner (module state survives store resets). */
+export function resetFollowCameraOwner(): void {
+  followCameraOwner = null;
+}
 
 // Internal store property types for cached/computed state
 type StoreWithInternals = GameStoreState & {
@@ -723,6 +740,84 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       };
     }),
 
+    // Edge-follow: keep a moving unit on screen without ever re-centering.
+    // Called from the render loop for every unit mid-glide with its
+    // interpolated display tile; when the unit has moved past the viewport's
+    // edge margin, the camera shifts by just the overrun, in the unit's
+    // direction. Own units and foreign units the human can currently see are
+    // followed (same rule as focusOnNextUnit); hidden AI movement is never
+    // trailed, AI-vs-AI runs never pan, and the player can stop it by turning
+    // autoCamera off.
+    followMovingUnit: (unitId, displayCol, displayRow) => {
+      const state = get();
+      if (state.settings?.autoCamera === false) return;
+      // A watched game only — nobody sits at the screen in an AI-vs-AI run.
+      if (!(state.civilizations ?? []).some((c) => c.isHuman)) return;
+
+      const unit = state.units.find((u) => u.id === unitId);
+      if (!unit) return;
+
+      const devMode = !!state.settings?.devMode;
+      const isOwnUnit = (state.gameState.humanPlayerIds ?? [0]).includes(unit.civilizationId);
+      if (!devMode && !isOwnUnit) {
+        const width = state.map?.width ?? 0;
+        const index = unit.row * width + unit.col;
+        if (!width || !state.map?.visibility?.[index]) return;
+      }
+
+      // One moving unit owns the camera at a time. A different unit (a second
+      // GoTo march, a visible AI move) may only take over once the previous
+      // unit's camera work has been quiet for the cooldown — otherwise two
+      // simultaneous marches would yank the view back and forth every frame.
+      const nowMs = performance.now();
+      if (
+        followCameraOwner &&
+        followCameraOwner.unitId !== unitId &&
+        nowMs - followCameraOwner.atMs < FOLLOW_SWITCH_COOLDOWN_MS
+      ) {
+        return;
+      }
+
+      const viewport = getGameViewport();
+      const next = nudgeCameraToKeepPointInView({
+        targetWorldX: (displayCol + 0.5) * TILE_SIZE,
+        targetWorldY: (displayRow + 0.5) * TILE_SIZE,
+        cameraX: state.camera.x,
+        cameraY: state.camera.y,
+        zoom: state.camera.zoom,
+        viewportWidth: viewport.width,
+        viewportHeight: viewport.height,
+        mapWidth: state.map?.width ?? 0,
+        mapHeight: state.map?.height ?? 0,
+      });
+      if (!next) return;
+      followCameraOwner = { unitId, atMs: nowMs };
+      set((s) => ({ camera: { ...s.camera, x: next.x, y: next.y } }));
+    },
+
+    // GoTo camera rule: after a route is assigned, a screen that is more than
+    // 80% black tells the player nothing (they scrolled out to plot the route
+    // and are now staring at unexplored space), so the camera comes back to
+    // the unit that will walk it. A view with real map content — the drawn
+    // route, the destination, own cities — stays exactly where the player put
+    // it. `focusCameraOnTile` also honors the player's autoCamera setting.
+    focusGoToUnitIfBlind: (col, row) => {
+      const state = get();
+      const map = state.map;
+      const viewport = getGameViewport();
+      const coverage = computeViewportBlackCoverage({
+        camera: state.camera,
+        viewportWidth: viewport.width,
+        viewportHeight: viewport.height,
+        mapWidth: map?.width ?? 0,
+        mapHeight: map?.height ?? 0,
+        revealed: map?.revealed,
+        tiles: map?.tiles,
+      });
+      if (coverage <= BLACK_COVERAGE_REFOCUS_THRESHOLD) return;
+      get().actions.focusCameraOnTile(col, row);
+    },
+
     clearCameraPanRequest: () => set(() => ({
       cameraPanRequest: null
     })),
@@ -1353,36 +1448,41 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     // because auto-ending a turn is opt-in and must never be inherited from a
     // previous game: a player who once ticked "don't ask again" would otherwise
     // start every later game with turns ending on their own.
-    resetGameState: () => set(state => ({
-      gameState: createInitialGameState(),
-      map: createInitialMapState(),
-      camera: createInitialCameraState(),
-      units: [],
-      cities: [],
-      civilizations: [],
-      technologies: [],
-      researchPath: [],
-      techProgress: {},
-      lastResearchedTech: null,
-      uiState: createInitialUIState(),
-      combatAnimations: [],
-      promotionEffects: [],
-      visualEffects: [],
-      disbandNotice: null,
-      starvationNotice: null,
-      disorderNotice: null,
-      tradeRouteResult: null,
-      combatReportQueue: [],
-      cityEventQueue: [],
-      wonderDialogQueue: [],
-      settings: {
-        ...state.settings,
-        autoEndTurn: false,
-        skipEndTurnConfirmation: false,
-        skipGameResultScreen: false,
-        skipHotseatHandoff: false,
-      },
-    })),
+    resetGameState: () => {
+      // A new game starts with a clean edge-follow slate (the owner lives in
+      // module scope, so a store reset does not clear it on its own).
+      resetFollowCameraOwner();
+      set(state => ({
+        gameState: createInitialGameState(),
+        map: createInitialMapState(),
+        camera: createInitialCameraState(),
+        units: [],
+        cities: [],
+        civilizations: [],
+        technologies: [],
+        researchPath: [],
+        techProgress: {},
+        lastResearchedTech: null,
+        uiState: createInitialUIState(),
+        combatAnimations: [],
+        promotionEffects: [],
+        visualEffects: [],
+        disbandNotice: null,
+        starvationNotice: null,
+        disorderNotice: null,
+        tradeRouteResult: null,
+        combatReportQueue: [],
+        cityEventQueue: [],
+        wonderDialogQueue: [],
+        settings: {
+          ...state.settings,
+          autoEndTurn: false,
+          skipEndTurnConfirmation: false,
+          skipGameResultScreen: false,
+          skipHotseatHandoff: false,
+        },
+      }));
+    },
 
     resetFogOfWar: () => set(state => {
       const { map } = state;

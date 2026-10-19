@@ -40,6 +40,36 @@ export interface CameraCenterParams {
 }
 
 /**
+ * Clamp a camera position (world px) to the map bounds so the view never
+ * drifts into empty (black) space. When the view is larger than the map it is
+ * centered instead.
+ */
+export function clampCameraToMap(
+  x: number,
+  y: number,
+  zoom: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  mapWidth: number,
+  mapHeight: number,
+): { x: number; y: number } {
+  const viewWorldW = viewportWidth / zoom;
+  const viewWorldH = viewportHeight / zoom;
+
+  const worldW = mapWidth * TILE_SIZE;
+  const worldH = mapHeight * TILE_SIZE;
+
+  return {
+    x: viewWorldW >= worldW
+      ? (worldW - viewWorldW) / 2
+      : Math.max(0, Math.min(worldW - viewWorldW, x)),
+    y: viewWorldH >= worldH
+      ? (worldH - viewWorldH) / 2
+      : Math.max(0, Math.min(worldH - viewWorldH, y)),
+  };
+}
+
+/**
  * Compute the camera position (world px) that centers a tile, clamping to the
  * map bounds so the view never drifts into empty (black) space.
  *
@@ -55,29 +85,91 @@ export function centerCameraOnTile({
   mapWidth,
   mapHeight,
 }: CameraCenterParams): { x: number; y: number } {
-  // World-space center of the target tile
-  const centerX = (col + 0.5) * TILE_SIZE;
-  const centerY = (row + 0.5) * TILE_SIZE;
+  return clampCameraToMap(
+    (col + 0.5) * TILE_SIZE - viewportWidth / zoom / 2,
+    (row + 0.5) * TILE_SIZE - viewportHeight / zoom / 2,
+    zoom,
+    viewportWidth,
+    viewportHeight,
+    mapWidth,
+    mapHeight,
+  );
+}
 
-  // World-space size of the visible viewport at this zoom
-  const viewWorldW = viewportWidth / zoom;
-  const viewWorldH = viewportHeight / zoom;
+/**
+ * How close a moving unit may get to the viewport edge before the camera
+ * starts following it. Half a tile keeps the unit's whole tile inside the
+ * view: the camera nudges along the moment the tile would otherwise be
+ * clipped, and stops again as soon as it is fully on screen.
+ */
+export const EDGE_FOLLOW_MARGIN_TILES = 0.5;
 
-  const worldW = mapWidth * TILE_SIZE;
-  const worldH = mapHeight * TILE_SIZE;
+export interface EdgeFollowParams {
+  /** World position (px) of the followed point — a moving unit's centre. */
+  targetWorldX: number;
+  targetWorldY: number;
+  cameraX: number;
+  cameraY: number;
+  zoom: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  mapWidth: number;
+  mapHeight: number;
+  /** Edge distance the point should keep, in tiles (defaults to the constant). */
+  marginTiles?: number;
+}
 
-  let x = centerX - viewWorldW / 2;
-  let y = centerY - viewWorldH / 2;
+/**
+ * Edge-follow: the minimal camera nudge that keeps a moving unit inside the
+ * viewport's edge margin. The camera moves by exactly the overrun, in the
+ * direction of the unit — it never re-centers and never overshoots.
+ *
+ * Returns the nudged camera position, or `null` when the point is already
+ * inside the margin, when no data is available, or when the camera is pinned
+ * against the map edge and cannot move any closer.
+ */
+export function nudgeCameraToKeepPointInView({
+  targetWorldX,
+  targetWorldY,
+  cameraX,
+  cameraY,
+  zoom,
+  viewportWidth,
+  viewportHeight,
+  mapWidth,
+  mapHeight,
+  marginTiles = EDGE_FOLLOW_MARGIN_TILES,
+}: EdgeFollowParams): { x: number; y: number } | null {
+  if (!(zoom > 0) || !(viewportWidth > 0) || !(viewportHeight > 0)) return null;
+  if (!(mapWidth > 0) || !(mapHeight > 0)) return null;
 
-  // Clamp to map bounds (center the map when the view is larger than it)
-  x = viewWorldW >= worldW
-    ? (worldW - viewWorldW) / 2
-    : Math.max(0, Math.min(worldW - viewWorldW, x));
-  y = viewWorldH >= worldH
-    ? (worldH - viewWorldH) / 2
-    : Math.max(0, Math.min(worldH - viewWorldH, y));
+  // The margin can never eat more than half the viewport; beyond that there is
+  // no "inside" left to aim for.
+  const marginX = Math.min(Math.max(0, marginTiles) * TILE_SIZE * zoom, viewportWidth / 2);
+  const marginY = Math.min(Math.max(0, marginTiles) * TILE_SIZE * zoom, viewportHeight / 2);
 
-  return { x, y };
+  const screenX = (targetWorldX - cameraX) * zoom;
+  const screenY = (targetWorldY - cameraY) * zoom;
+
+  // Where the point should sit: only the overrun past an edge is compensated.
+  const clampedX = Math.min(Math.max(screenX, marginX), viewportWidth - marginX);
+  const clampedY = Math.min(Math.max(screenY, marginY), viewportHeight - marginY);
+  if (clampedX === screenX && clampedY === screenY) return null;
+
+  const target = clampCameraToMap(
+    cameraX + (screenX - clampedX) / zoom,
+    cameraY + (screenY - clampedY) / zoom,
+    zoom,
+    viewportWidth,
+    viewportHeight,
+    mapWidth,
+    mapHeight,
+  );
+
+  // Pinned at the map edge (or the nudge is too small to matter): leave the
+  // camera untouched rather than emitting a no-op update.
+  if (Math.abs(target.x - cameraX) < 0.01 && Math.abs(target.y - cameraY) < 0.01) return null;
+  return target;
 }
 
 /**

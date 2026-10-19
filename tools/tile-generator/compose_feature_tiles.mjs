@@ -180,7 +180,9 @@ function escapeRegExp(value) {
  */
 function findFeatureVariants(resource) {
   if (!existsSync(FEATURES_DIR)) return [];
-  const files = readdirSync(FEATURES_DIR);
+  const files = readdirSync(FEATURES_DIR).filter(
+    (file) => file.toLowerCase() !== 'backup',
+  );
   const collect = (ext) => {
     const found = [];
     if (files.includes(`${resource}.${ext}`)) found.push(`${resource}.${ext}`);
@@ -344,6 +346,9 @@ function main() {
 
   const knownIdeas = new Set(resources.map((resource) => resource.name.toLowerCase()));
   for (const file of existsSync(FEATURES_DIR) ? readdirSync(FEATURES_DIR) : []) {
+    // A "backup" folder holds the untouched originals of the generated
+    // artwork - it is never composed onto a tile.
+    if (file.toLowerCase() === 'backup') continue;
     const match = /^(.+?)\.(svg|png)$/.exec(file);
     if (!match) continue;
     // Strip the variant suffix: horses_2.svg and fish3.png both belong to

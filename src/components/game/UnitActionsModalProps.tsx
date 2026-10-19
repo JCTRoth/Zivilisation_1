@@ -17,4 +17,9 @@ export interface UnitActionsModalProps {
   onExecuteAction: (action: string, data?: Record<string, unknown>) => void;
   onClose: () => void;
   gameEngine?: GameEngine;
+  /** Whether the SidePanel drawer is open — styles the toggle's active state. */
+  panelOpen?: boolean;
+  /** Toggles the SidePanel. The one control that survived the old mobile
+   *  bottom bar: it now lives at the far left of the orders bar. */
+  onTogglePanel?: () => void;
 }

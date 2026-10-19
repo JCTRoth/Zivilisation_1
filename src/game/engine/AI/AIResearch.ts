@@ -444,8 +444,12 @@ export class AIResearch {
     // Keyed on the tech alone, not on what the civ knows: candidates are already
     // prerequisite-filtered, so `navigation` only appears once the civ can take
     // it. The bonus scales with naval relevance so a land empire at sea goes up
-    // the ladder faster than one that merely has a coast.
-    if (naval > 0) {
+    // the ladder faster than one that merely has a coast. It needs relevance
+    // TWO: relevance 1 is the civ whose empire a RIVER split — it needs the
+    // boat (Sailing) to move its own troops, not a warship branch. The ladder
+    // (map making, navigation, steel) is a fleet's ladder, and a fleet is
+    // what open sea buys.
+    if (naval >= 2) {
       const ladder = AIResearch.NAVY_HULL_LADDER[techId];
       if (ladder) {
         score += ladder * (1 + naval * 0.5);

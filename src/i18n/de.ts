@@ -948,6 +948,7 @@ export const de: PartialTranslationDict = {
   'rates.projected': 'Prognose pro Runde',
   'rates.stat.commerce': 'Handel',
   'rates.stat.upkeep': 'Unterhalt',
+  'rates.stat.debt': 'Darlehensdienst',
   'rates.stat.net': 'Netto für den Schatz',
   'rates.noCities': 'Sie besitzen noch keine Stadt — gründen Sie eine mit Ihrem Siedler, dann fließt der Handel.',
   'gov.defaultEmpire': 'Ihr Reich',

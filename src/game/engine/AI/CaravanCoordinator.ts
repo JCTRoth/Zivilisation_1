@@ -125,11 +125,33 @@ export function planCaravansForCiv(
   };
   const freeSlots = ownCities.reduce((n, c) => n + slotsOf(c.id), 0);
 
+  // ── 1b. Route slots the civ can actually REACH ──────────────────────────
+  // A caravan walks. A slot on a city across the water is not an opportunity
+  // — it is a promise the caravan cannot keep. The island civ is the case
+  // that matters: one city, three free slots, and NOT ONE partner on the same
+  // shore. Counting those slots sent the AI building caravans that walked
+  // nowhere, idled out their patience and were disbanded — production churn
+  // on a trade route that could never exist. A civ with no reachable partner
+  // needs no caravan at all beyond the ONE scout the governor allows.
+  const opportunities = new Map<string, number>();
+  let opportunityCount = 0;
+  for (const city of ownCities) {
+    const candidates = deliveryCandidates(world, civId, city, new Set());
+    opportunities.set(city.id, candidates.length);
+    const free = slotsOf(city.id);
+    opportunityCount += Math.min(free, candidates.length);
+  }
+
   // ── 2. Which cities should build a caravan ──────────────────────────────
   // A city with a free slot and enough population to make the route worth the
   // walk. Pop 1 routes pay almost nothing; the caravan is not free (50 shields
   // and a turn of the city's production).
-  const producers = ownCities
+  //
+  // A city that can walk to a partner is a producer; a city that cannot is
+  // only good for the ONE scout caravan — and only when the civ has nobody to
+  // deliver to at all. Three cities each queueing a scout on an island is the
+  // churn this whole rule exists to stop.
+  const producerCandidates = ownCities
     .map((city) => {
       const free = slotsOf(city.id);
       const pop = city.population ?? 1;
@@ -140,16 +162,29 @@ export function planCaravansForCiv(
     .filter((p) => p.freeSlots > 0 && p.population >= 2)
     .sort((a, b) => b.urgency - a.urgency)
     .map(({ cityId, urgency, freeSlots: slots }) => ({ cityId, urgency, freeSlots: slots }));
+  const withPartner = producerCandidates.filter(
+    (p) => (opportunities.get(p.cityId) ?? 0) > 0,
+  );
+  const producers = withPartner.length > 0
+    ? withPartner
+    // Nobody to deliver to: exactly ONE city builds the scout caravan.
+    : producerCandidates.slice(0, 1);
 
   // ── 3. How many caravans the civ should have in flight ──────────────────
-  // One per free slot, so a caravan is never produced for a slot that does not
-  // exist. Above that, the surplus is disbanded — not left to wander.
+  // One per free slot AND per reachable opportunity, so a caravan is never
+  // produced for a slot that does not exist — or for one no caravan can ever
+  // fill. With no partner at all the civ keeps the single scout caravan. Above
+  // the limit, the surplus is disbanded — not left to wander.
   const inTransitByCity = new Map<string, number>();
   for (const u of myCaravans) {
     const key = u.homeCityId ?? '__none__';
     inTransitByCity.set(key, (inTransitByCity.get(key) ?? 0) + 1);
   }
-  const wanted = Math.min(freeSlots, MAX_IN_TRANSIT_PER_CITY * Math.max(1, ownCities.length));
+  const wanted = Math.min(
+    freeSlots,
+    opportunityCount > 0 ? opportunityCount : 1,
+    MAX_IN_TRANSIT_PER_CITY * Math.max(1, ownCities.length),
+  );
   const surplus: string[] = [];
   if (myCaravans.length > wanted) {
     // The newest go first: `world.units` is append-ordered, so a higher index is
@@ -191,24 +226,21 @@ export function planCaravansForCiv(
 }
 
 /**
- * The best destination for one caravan: highest route value among cities with a
- * free slot that no other caravan of this civ is already walking to.
- *
- * "Free slot" is per TARGET city — a city whose routes are full is not a
- * candidate, and one slot is only claimed once per round so two caravans do not
- * race for it. A city with several free slots may take several caravans.
+ * The cities a caravan from `home` could deliver to: not at war, contacted,
+ * with a free route slot, and — the one that matters on an island map —
+ * REACHABLE on foot. A caravan that cannot walk there must not be sent there.
  */
-function pickTarget(
+function deliveryCandidates(
   world: CaravanCoordinatorWorld,
   civId: number,
-  home: { col: number; row: number; population?: number } | undefined,
+  home: { id?: string; col: number; row: number; population?: number } | undefined,
   claimed: ReadonlySet<string>,
-): { cityId: string; col: number; row: number; value: number; foreign: boolean } | null {
+): Array<{ cityId: string; col: number; row: number; value: number; foreign: boolean; used: number }> {
   const homePop = home?.population ?? 1;
   const dist = (c: { col: number; row: number }): number =>
     Math.max(Math.abs(c.col - (home?.col ?? c.col)), Math.abs(c.row - (home?.row ?? c.row)));
 
-  const candidates: Array<{ cityId: string; col: number; row: number; value: number; foreign: boolean }> = [];
+  const candidates: Array<{ cityId: string; col: number; row: number; value: number; foreign: boolean; used: number }> = [];
   for (const city of world.cities) {
     if (city.civilizationId === civId && city.id === (home as { id?: string } | undefined)?.id) continue;
     const used = city.tradeRoutes?.length ?? 0;
@@ -232,13 +264,36 @@ function pickTarget(
     const d = dist(city);
     const value =
       (homePop + (city.population ?? 1)) * (1 + DISTANCE_WEIGHT * d) * (foreign ? 2 : 1);
-    candidates.push({ cityId: city.id, col: city.col, row: city.row, value, foreign });
+    candidates.push({ cityId: city.id, col: city.col, row: city.row, value, foreign, used });
   }
+  return candidates;
+}
 
+/**
+ * The best destination for one caravan: highest route value among cities with a
+ * free slot that no other caravan of this civ is already walking to.
+ *
+ * "Free slot" is per TARGET city — a city whose routes are full is not a
+ * candidate, and one slot is only claimed once per round so two caravans do not
+ * race for it. A city with several free slots may take several caravans.
+ */
+function pickTarget(
+  world: CaravanCoordinatorWorld,
+  civId: number,
+  home: { col: number; row: number; population?: number } | undefined,
+  claimed: ReadonlySet<string>,
+): { cityId: string; col: number; row: number; value: number; foreign: boolean } | null {
+  const candidates = deliveryCandidates(world, civId, home, claimed);
   candidates.sort((a, b) => b.value - a.value);
   for (const candidate of candidates) {
     if (claimed.has(candidate.cityId)) continue;
-    return candidate;
+    return {
+      cityId: candidate.cityId,
+      col: candidate.col,
+      row: candidate.row,
+      value: candidate.value,
+      foreign: candidate.foreign,
+    };
   }
   return null;
 }

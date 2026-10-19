@@ -946,6 +946,7 @@ export const es: PartialTranslationDict = {
   'rates.projected': 'Proyección por turno',
   'rates.stat.commerce': 'Comercio',
   'rates.stat.upkeep': 'Mantenimiento',
+  'rates.stat.debt': 'Servicio de deuda',
   'rates.stat.net': 'Balance neto del tesoro',
   'rates.noCities': 'Todavía no posee ninguna ciudad: funda una con su colono y el comercio empezará a fluir.',
   'gov.defaultEmpire': 'Su imperio',

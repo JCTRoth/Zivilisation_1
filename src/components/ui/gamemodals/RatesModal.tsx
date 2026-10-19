@@ -89,11 +89,11 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
   // source of truth for commerce → corruption → disorder → rate split → upkeep.
   const preview = useMemo(() => {
     if (!currentPlayer || !gameEngine) {
-      return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, net: 0, hasCities: false };
+      return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, debtService: 0, net: 0, hasCities: false };
     }
     const econ = gameEngine.economicManager;
     if (!econ) {
-      return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, net: 0, hasCities: false };
+      return { commerce: 0, tax: 0, science: 0, luxury: 0, upkeep: 0, debtService: 0, net: 0, hasCities: false };
     }
     const base = econ.previewEconomy(currentPlayer, rates);
     // Cap science through the research manager (beaker modifiers, 4-turn
@@ -263,6 +263,11 @@ function RatesModal({ show, onHide, gameEngine }: RatesModalProps) {
           {statTile('🔬', `+${preview.science}`, t('rates.label.science' as TranslationKey))}
           {statTile('🎭', `+${preview.luxury}`, t('rates.label.luxury' as TranslationKey))}
           {statTile('⚒️', `−${preview.upkeep}`, t('rates.stat.upkeep' as TranslationKey))}
+          {preview.debtService > 0 && statTile(
+            '🏦',
+            `−${preview.debtService}`,
+            t('rates.stat.debt' as TranslationKey),
+          )}
           {statTile(
             '📈',
             `${preview.net >= 0 ? '+' : ''}${preview.net}`,

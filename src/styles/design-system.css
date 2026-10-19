@@ -73,13 +73,11 @@
 
   /* ---- Layout ---- */
   --topbar-h: 52px;
-  --bottombar-h: 60px;
   --sidebar-w: 320px;
 
   /* ---- Z-index scale (single source of truth) ---- */
   --z-canvas: 1;
   --z-topbar: 100;
-  --z-bottombar: 110;
   --z-drawer: 200;
   --z-backdrop: 190;
   --z-dropdown: 300;
@@ -339,7 +337,13 @@ div.game-top-bar {
   position: relative;
   z-index: var(--z-topbar);
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  /* `auto minmax(0, 1fr) auto` instead of `1fr auto 1fr`: with three fixed
+     side tracks the middle one (turn + year + research chip) is sized by its
+     content and the menu buttons then overflow INTO it — "WORLD" and "INFO"
+     printed straight through the turn counter. With the side tracks sized to
+     their content and the middle track allowed to shrink, nothing can ever
+     overlap; the middle column simply gives up width first. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.5rem;
   /* Never let the flex column shrink the top bar (its content must not be
@@ -351,13 +355,7 @@ div.game-top-bar {
   background: linear-gradient(180deg, #141a21 0%, #0f151b 100%);
   border-bottom: 1px solid var(--color-border);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-}
-
-.game-top-bar::-webkit-scrollbar {
-  display: none;
+  overflow: hidden;
 }
 
 /* Left: menu buttons */
@@ -374,6 +372,7 @@ div.game-top-bar {
   gap: 1rem;
   justify-content: center;
   min-width: 0;
+  overflow: hidden;
 }
 
 /* Right: End Turn button */
@@ -474,6 +473,57 @@ div.game-top-bar {
 @media (max-width: 479.98px) {
   .topbar-center .research-indicator-wrap {
     display: none;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   Phone-landscape / small-tablet (< 900px): the menus, the turn readout, the
+   research chip and End Turn are four things fighting for one row. The turn
+   readout may shrink; the research chip may shrink; nothing may overlap.
+   -------------------------------------------------------------------------- */
+@media (max-width: 899.98px) {
+  .topbar-center {
+    gap: 0.5rem;
+  }
+
+  /* The turn readout is the one thing that must stay readable — it gives up
+     the year first, then the word "Turn". */
+  .topbar-turn {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar-turn > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* The research chip shrinks to its icon; the tech tree is one tap away. */
+  .research-indicator-wrap {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .research-indicator {
+    min-width: 0;
+  }
+
+  .research-indicator-name {
+    max-width: 96px;
+  }
+}
+
+@media (max-width: 699.98px) {
+  /* No room for the research name at all — keep the flask icon as the
+     affordance (it opens the tech tree) and drop the words. */
+  .research-indicator-name {
+    display: none;
+  }
+
+  .research-indicator {
+    padding: 0.15rem 0.4rem;
   }
 }
 
@@ -714,61 +764,11 @@ div.game-top-bar {
 
 /* ============================================================================
    Bottom action bar (mobile primary actions)
+   Removed: the bar repeated GAME / WORLD / INFO / End Turn, all of which live
+   in the top bar on every screen size. Its one unique control — the SidePanel
+   toggle — now sits at the far left of the unit context menu (see
+   unitActionsModal.css), which took the bar's place at the bottom edge.
    ========================================================================== */
-
-.mobile-bottom-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: var(--z-bottombar);
-  display: flex;
-  align-items: stretch;
-  background: rgba(15, 21, 27, 0.97);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--color-border);
-  padding-bottom: var(--safe-bottom);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
-}
-
-.mobile-bottom-bar__btn {
-  flex: 1 1 0;
-  min-height: calc(var(--bottombar-h) - 0.25rem);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.125rem;
-  border: none;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0.25rem 0;
-  transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
-}
-
-.mobile-bottom-bar__btn i {
-  font-size: 1.35rem;
-  line-height: 1;
-}
-
-.mobile-bottom-bar__btn:hover {
-  color: var(--color-text);
-}
-
-.mobile-bottom-bar__btn:active {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.mobile-bottom-bar__btn.is-active {
-  color: var(--color-accent);
-}
-
-.mobile-bottom-bar__btn--endturn {
-  color: var(--color-success);
-}
 
 /* ============================================================================
    Side panel (drawer on mobile, sidebar on desktop)
@@ -785,13 +785,13 @@ div.game-top-bar {
 }
 
 /* Mobile: hidden by default; slides in as a drawer.
-   The drawer sits between the top bar and the bottom bar so the
-   primary actions (Menu / End Turn) stay reachable at all times. */
+   With the old bottom bar gone, the drawer reaches the screen's bottom edge
+   (above the notch safe area). */
 .side-panel-shell.mobile-drawer {
   position: fixed;
   top: var(--topbar-h);
   left: 0;
-  bottom: calc(var(--bottombar-h) + var(--safe-bottom));
+  bottom: var(--safe-bottom);
   /* height:100% (desktop) conflicts with top+bottom — let them size it */
   height: auto;
   width: min(88vw, var(--sidebar-w));
@@ -807,15 +807,14 @@ div.game-top-bar {
   transform: translateX(0);
 }
 
-/* Backdrop covers only the map area (between top bar and bottom bar),
-   leaving the bottom action bar fully usable. */
+/* Backdrop covers the map area below the top bar. */
 .mobile-drawer-backdrop {
   position: fixed;
   top: var(--topbar-h);
   left: 0;
   right: 0;
-  bottom: calc(var(--bottombar-h) + var(--safe-bottom));
-  z-index: calc(var(--z-bottombar) - 1);
+  bottom: var(--safe-bottom);
+  z-index: calc(var(--z-drawer) - 1);
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(1px);
   animation: fade-in var(--dur-fast) var(--ease-out);
@@ -1018,13 +1017,6 @@ div.game-top-bar {
   display: none;
 }
 
-@media (max-width: 767.98px) {
-  /* Prevent content being hidden behind the mobile bottom bar */
-  .pad-bottom-bar {
-    padding-bottom: calc(var(--bottombar-h) + var(--safe-bottom));
-  }
-}
-
 /* ============================================================================
    DESKTOP (>= 992px) — familiar PC-Web layout
    ----------------------------------------------------------------------------
@@ -1038,6 +1030,14 @@ div.game-top-bar {
    ========================================================================== */
 
 @media (min-width: 992px) {
+  /* ---- Top bar: back to a truly centred middle column ----
+     The phone layout packs the menus left and End Turn right; on a wide
+     screen there is room for the classic 1fr/auto/1fr grid, which keeps the
+     turn readout optically centred. */
+  div.game-top-bar {
+    grid-template-columns: 1fr auto 1fr;
+  }
+
   /* ---- Menus: anchored dropdowns below the top-bar buttons ---- */
   .menu-sheet {
     position: fixed;
@@ -1098,11 +1098,6 @@ div.game-top-bar {
   .topbar-menu-btn:hover,
   .topbar-menu-btn.is-active {
     background: rgba(255, 255, 255, 0.1);
-  }
-
-  /* ---- Hide the mobile bottom thumb-bar on desktop ---- */
-  .mobile-bottom-bar {
-    display: none;
   }
 
   /* ---- Info panel: static sidebar on the left ---- */

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@/i18n/useTranslation';
 import { tUnitName } from '@/i18n/dataNames';
 import type { TranslationKey } from '@/i18n';
@@ -70,7 +70,9 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
   contextMenu,
   onExecuteAction,
   onClose,
-  gameEngine
+  gameEngine,
+  panelOpen = false,
+  onTogglePanel
 }) => {
   const { t } = useTranslation();
   // Which of the adjacent courts the menu is showing. A diplomat can stand
@@ -80,6 +82,30 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
   // Remembered per unit: the modal stays mounted between openings, so a raw
   // index would carry the previous unit's choice over to the next one.
   const [selection, setSelection] = useState({ unitId: '', index: 0 });
+  // The order strip scrolls sideways on a phone. These two flags say whether
+  // there is more to see on the left / right, which drives the edge fade and
+  // the little chevrons — without them a player never learns that the row
+  // continues and simply misses the orders past the screen edge.
+  const [scrollEdges, setScrollEdges] = useState({ left: false, right: false });
+  const stripRef = useRef<HTMLDivElement | null>(null);
+
+  const updateScrollEdges = useCallback(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    const left = el.scrollLeft > 4;
+    const right = el.scrollLeft < max - 4;
+    setScrollEdges((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+  }, []);
+
+  // The list changes with the unit (a settler shows roads and irrigation, a
+  // diplomat shows treaties), so the edges are re-measured whenever the menu
+  // is opened or its content changes.
+  useEffect(() => {
+    if (!contextMenu) return;
+    updateScrollEdges();
+  }, [contextMenu, updateScrollEdges]);
+
   if (!contextMenu) return null;
 
   const handleAction = (action: string, data?: Record<string, unknown>) => {
@@ -167,7 +193,7 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
             <strong className="unit-context-menu__title">{t('unitActions.orders' as TranslationKey)}</strong>
             {contextMenu.unit && (
               <div className="unit-context-menu__unit-type">
-                {contextMenu.unit.type}
+                {tUnitName(contextMenu.unit.type, contextMenu.unit.type)}
               </div>
             )}
             {!contextMenu.unit && contextMenu.city && (
@@ -176,8 +202,18 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
               </div>
             )}
           </div>
-          <div className="unit-context-menu__coords">
-            ({contextMenu.hex.col}, {contextMenu.hex.row})
+          <div className="unit-context-menu__header-actions">
+            <div className="unit-context-menu__coords">
+              ({contextMenu.hex.col}, {contextMenu.hex.row})
+            </div>
+            <button
+              type="button"
+              className="unit-context-menu__close"
+              aria-label={t('common.close' as TranslationKey)}
+              onClick={onClose}
+            >
+              <span aria-hidden="true">✕</span>
+            </button>
           </div>
         </div>
 
@@ -207,7 +243,29 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
           </div>
         )}
 
-        <div className="unit-context-menu__scroll">
+        <div className="unit-context-menu__scroll-wrap">
+          {/* Side panel toggle — the one survivor of the old mobile bottom bar.
+              The old bar repeated menus the top bar already has, so down here
+              only this survived: pinned far left, OUTSIDE the scrolling strip,
+              so swiping the orders can never carry the panel toggle out of
+              thumb range. Hidden on desktop, where the panel is a static
+              sidebar (see CSS). */}
+          {onTogglePanel && (
+            <button
+              type="button"
+              className={`unit-context-menu__panel${panelOpen ? ' is-active' : ''}`}
+              aria-label={t('mobile.togglePanel' as TranslationKey)}
+              aria-pressed={panelOpen}
+              onClick={onTogglePanel}
+            >
+              <i className="bi bi-layout-sidebar-inset" aria-hidden="true" />
+            </button>
+          )}
+          <div
+            className={`unit-context-menu__scroll${scrollEdges.left ? ' can-scroll-left' : ''}${scrollEdges.right ? ' can-scroll-right' : ''}`}
+            ref={stripRef}
+            onScroll={updateScrollEdges}
+          >
           {/* Unit Actions */}
           {contextMenu.unit && (
             <>
@@ -505,6 +563,16 @@ const UnitActionsModal: React.FC<UnitActionsModalProps> = ({
                 <span aria-hidden="true">📊</span>{t('unitActions.cityInfo' as TranslationKey)}
               </button>
             </>
+          )}
+          </div>
+
+          {/* Chevrons: pure affordance, they only appear when there is more
+              of the strip to scroll to. */}
+          {scrollEdges.left && (
+            <span className="unit-context-menu__edge unit-context-menu__edge--left" aria-hidden="true">‹</span>
+          )}
+          {scrollEdges.right && (
+            <span className="unit-context-menu__edge unit-context-menu__edge--right" aria-hidden="true">›</span>
           )}
         </div>
       </div>

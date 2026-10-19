@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useGameStore } from '@/stores/GameStore';
 import { useTranslation } from '@/i18n/useTranslation';
+import type { TranslationKey } from '@/i18n';
 import { tTechName } from '@/i18n/dataNames';
 import { getTechIcon } from '@/data/TechnologyIcons';
 import type { Technology } from '../../../types/game';
@@ -166,7 +167,14 @@ const ResearchIndicator: React.FC<ResearchIndicatorProps> = ({ gameEngine }) => 
 
   return (
     <div className="research-indicator-wrap" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
-      <button type="button" className="research-indicator" onClick={openTechTree} aria-haspopup="true" aria-expanded={open}>
+      <button
+        type="button"
+        className="research-indicator"
+        onClick={openTechTree}
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label={t('research.title' as TranslationKey)}
+      >
         <span className="research-indicator-chip">{label}</span>
         {hasResearch && (
           <span className="research-indicator-minibar">

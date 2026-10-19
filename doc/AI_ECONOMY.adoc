@@ -219,19 +219,79 @@ saving as money in hand: a 60-gold refund plus a 2 g/turn saving "covered" a
 
 ---
 
-== Summary diagram
+/* ============================================================================
+   BudgetMaster — reconciliation, hard caps, income growth
+   The world-census postmortem (aivsai 2026-10-19 18-31): after 1,416 rounds
+   BOTH empires held gold 3–10 with a disband ledger of 78/219 units, army
+   seesawing 2↔4 units. Three defects worked together:
+     1. the rate controller's `taxNeed` counted the treasury's coins as
+        coverage and RELAXED the tax rate ten steps a round whenever the
+        leftover looked fine — income fell below the committed upkeep on
+        purpose;
+     2. the producer sized the army at the CONTROLLER'S CEILING income, the
+        disbander paid from the CURRENT rate — the two books disagreed and
+        the difference was paid in soldiers;
+     3. once negative, the only levers were the (capped) disbander and a
+        debt spiral — the treasury never liquidated a payable asset.
+   The fix is a single bookkeeping identity (`currentNet`) that every lever
+   now reads, plus three contracts:
+
+   Reconciliation (AIEconomicManager):
+   * trigger  — `currentNet < 0` (commerce at the Civ's running rates, debt
+     service priced) AND `gold < RECONCILE_GOLD_FLOOR` (80).
+   * action   — rates snap to a STRUCTURALLY solvent split in ONE round
+     (MAX_DELTA 100): tax targets `totalExpenses / maxTaxIncome` — income
+     pays the bills out of commerce, not out of the bank; luxury is only
+     bought for a disordered city; science holds the deep floor (10%).
+   * ledger   — consecutive reconciled rounds are kept per civ
+     (`isReconciling` / `reconcileRounds`). While it lives, spending is
+     frozen and production pivots (below).
+
+   The downward ratchet (in adjustRatesForAI, step 5):
+   * a tax-rate CUT is only applied when the projected books at the lighter
+     rates still balance (`previewEconomy(...).net >= 0`). Upward movement is
+     never blocked. This single guard ends the 2↔4-unit seesaw: income can
+     no longer fall below what the standing army already costs.
+
+   Hard spending caps (AutoProduction):
+   * rush-buys are frozen while reconciling (`evaluateGoldSpending` early
+     return) — buying a build with the firehouse gold that is one upkeep
+     bill away from the disbander;
+   * the production pivot: a peaceful city builds INCOME — marketplace →
+     bank → stock exchange (`chooseIncomeProduction`), caravans (the fastest
+     sale), then falls through to the standard growth priorities; military
+     output waits for solvency (the affordability gates refuse it anyway).
+
+   Disband prevention (EconomicManager.processTurn):
+   * after the emergency tax raise, a STILL-negative treasury liquidates its
+     coin magnets first: cheapest upkeep building per city, one sale per
+     city per turn (`sellBuilding` force path, wonders refused). The capped
+     disbander only takes what the sales could not cover.
+   * the one-per-round retire slope stays as the graceful drawdown for an
+     army that fits its budget only barely — it is the ledge that replaced
+     the 29-units-in-one-round cliff, and it preserves last defenders.
+
+   == Summary diagram
 
 [source]
 ----
-          ┌────────────────────────────────────────────────┐
-          │  processTurn(civ)                              │
-          │  1. raiseTaxForAI → target rates (floors,      │
-          │     reserve=8, luxury need, gradual change)    │
-          │  2. collect commerce → tax/science/luxury      │
-          │  3. gold += taxIncome − upkeep                 │
-          │  4. if gold < −3×upkeep → disband expensive    │
-          │     units (scouts last, keep 1/city), forgive  │
-          └────────────────────────────────────────────────┘
+          ┌────────────────────────────────────────────────────────┐
+          │  preProcessTurn (AIEconomicManager)                    │
+          │  currentNet(civ) < 0 && gold < 80 ?  reconcile!        │
+          │    → rates snap to structural solvency (Δ100)          │
+          │    → downward ratchet: cuts need net >= 0 proof        │
+          │    → freeze: no rush-buys, no priced units             │
+          │    → production pivots: trade buildings, caravans      │
+          ├────────────────────────────────────────────────────────┤
+          │  processTurn(civ)                                      │
+          │  1. collect commerce → tax/science/luxury              │
+          │  2. gold += taxIncome − upkeep − debtService           │
+          │  3. gold ≥ 0 && army > budget → retire ONE unit        │
+          │  4. gold < 0 → emergency max tax … still short →       │
+          │     sell cheapest upkeep building per city … −         │
+          │     still short → disband (≤3, keep last defender),    │
+          │     then forgive the rest into the debt                │
+          └────────────────────────────────────────────────────────┘
 ----
 
 Related docs: link:AI_PRODUCTION.adoc[AI Production] (what the AI builds), link:AI_SETTLER_INTEGRATION.adoc[AI Settler Integration].
