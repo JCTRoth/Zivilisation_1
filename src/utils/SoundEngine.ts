@@ -204,6 +204,7 @@ export const SOUND_MANIFEST: Partial<Record<SfxCue, CueManifest>> = {
   // A shouted cheer, under a second (0.771 s) — short enough that founding a
   // second city in the same turn still gets its own voice.
   cityFounded: { category: 'event', durationSec: 0.78 },
+  bribe: { category: 'event', durationSec: 0.8 },
 };
 
 /**
@@ -231,6 +232,7 @@ export const CUE_CATEGORY: Record<SfxCue, SoundCategory> = {
   unitProduced: 'event',
   tradeRouteEstablished: 'event',
   unitPromoted: 'unit',
+  bribe: 'event',
   uiSelect: 'ui',
   machineGunStrike: 'attack',
   impactStrike: 'attack',
@@ -289,6 +291,7 @@ const SYNTH_DURATIONS_SEC: Partial<Record<SfxCue, number>> = {
   unitProduced: 0.42,
   tradeRouteEstablished: 0.48,
   unitPromoted: 0.25,
+  bribe: 0.36,
 };
 
 /** How long a runtime-registered file (or an unknown synth) holds the voice. */

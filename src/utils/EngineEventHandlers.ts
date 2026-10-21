@@ -267,6 +267,9 @@ export class EngineEventRouter {
       case 'BRIBE_REPORTED':
         this.onBribeReported(eventData);
         break;
+      case 'BRIBE_REFUSED':
+        this.onBribeRefused(eventData);
+        break;
       case 'AI_DIPLOMACY_OFFER':
         this.onAIDiplomacyOffer(eventData);
         break;
@@ -2309,11 +2312,27 @@ export class EngineEventRouter {
     const civs = this.gameEngine.civilizations || [];
     const briber = civs.find((c: Civilization) => c.id === (eventData?.diplomatCivId as number));
     const owner = civs.find((c: Civilization) => c.id === (eventData?.originalCivId as number));
-    const cost = eventData?.cost as number | undefined;
-    const msg = `🎭 ${briber?.name ?? 'Unknown'} bribed a unit from ${owner?.name ?? 'Unknown'}${cost ? ` (${cost} gold)` : ''}`;
-    debugLog('[EngineEventRouter] UNIT_BRIBED:', msg);
-    notify('warning', msg, humanOrFirst(briber?.id, owner?.id));
-    this.syncState();
+   const cost = Number(eventData?.cost ?? 0);
+   const unitType = (eventData?.unitType as string | undefined) ?? 'unit';
+   const rulerName = owner?.leaderName ?? owner?.leader ?? owner?.name ?? 'the ruler';
+   const notice = {
+     kind: 'defected' as const,
+     briberCivId: briber?.id ?? Number(eventData?.diplomatCivId ?? 0),
+     targetCivId: owner?.id ?? Number(eventData?.originalCivId ?? 0),
+     unitType,
+     gold: cost,
+     rulerName,
+     message: `The ${unitType} sells its soul for gold and joins ${briber?.name ?? 'the briber'}'s banner.`,
+     effect: 'Diplomatic effect: the former owner declares war and the relationship takes a fierce, lasting hit.',
+   };
+   const msg = `🎭 ${briber?.name ?? 'Unknown'} bribed a unit from ${owner?.name ?? 'Unknown'}${cost ? ` (${cost} gold)` : ''}`;
+   debugLog('[EngineEventRouter] UNIT_BRIBED:', msg);
+   notify('warning', msg, humanOrFirst(briber?.id, owner?.id));
+   if (!this.isAIVsAI && (briber?.id === HUMAN_PLAYER_ID || owner?.id === HUMAN_PLAYER_ID)) {
+     playSfx('bribe');
+     this.actions.showBribeResult?.(notice);
+   }
+   this.syncState();
   }
 
   /**
@@ -2323,15 +2342,57 @@ export class EngineEventRouter {
    * insult is on the ledger.
    */
   private onBribeReported(eventData: Record<string, unknown>) {
-    const civs = this.gameEngine.civilizations || [];
-    const briber = civs.find((c: Civilization) => c.id === (eventData?.diplomatCivId as number));
-    const owner = civs.find((c: Civilization) => c.id === (eventData?.originalCivId as number));
-    const cost = eventData?.cost as number | undefined;
-    const unitType = (eventData?.unitType as string | undefined) ?? 'unit';
-    const msg = `🎭 ${briber?.name ?? 'Unknown'} tried to bribe your ${unitType} — its commander took ${cost ?? 0} gold and reported the offer`;
-    debugLog('[EngineEventRouter] BRIBE_REPORTED:', msg);
-    notify('warning', msg, humanOrFirst(briber?.id, owner?.id));
-    this.syncState();
+   const civs = this.gameEngine.civilizations || [];
+   const briber = civs.find((c: Civilization) => c.id === (eventData?.diplomatCivId as number));
+   const owner = civs.find((c: Civilization) => c.id === (eventData?.originalCivId as number));
+   const cost = Number(eventData?.cost ?? 0);
+   const unitType = (eventData?.unitType as string | undefined) ?? 'unit';
+   const rulerName = owner?.leaderName ?? owner?.leader ?? owner?.name ?? 'the ruler';
+   const notice = {
+     kind: 'reported' as const,
+     briberCivId: briber?.id ?? Number(eventData?.diplomatCivId ?? 0),
+     targetCivId: owner?.id ?? Number(eventData?.originalCivId ?? 0),
+     unitType,
+     gold: cost,
+     rulerName,
+     message: `The commander of the ${unitType} pockets the gold, laughs in your face, and swears loyalty to ${rulerName}.`,
+     effect: 'Diplomatic effect: the attempt is reported and the target civ\'s opinion of the briber falls sharply.',
+   };
+   const msg = `🎭 ${briber?.name ?? 'Unknown'} tried to bribe your ${unitType} — its commander took ${cost ?? 0} gold and reported the offer`;
+   debugLog('[EngineEventRouter] BRIBE_REPORTED:', msg);
+   notify('warning', msg, humanOrFirst(briber?.id, owner?.id));
+   if (!this.isAIVsAI && (briber?.id === HUMAN_PLAYER_ID || owner?.id === HUMAN_PLAYER_ID)) {
+     playSfx('bribe');
+     this.actions.showBribeResult?.(notice);
+   }
+   this.syncState();
+  }
+
+  private onBribeRefused(eventData: Record<string, unknown>) {
+   const civs = this.gameEngine.civilizations || [];
+   const briber = civs.find((c: Civilization) => c.id === (eventData?.diplomatCivId as number));
+   const owner = civs.find((c: Civilization) => c.id === (eventData?.originalCivId as number));
+   const cost = Number(eventData?.cost ?? 0);
+   const unitType = (eventData?.unitType as string | undefined) ?? 'unit';
+   const rulerName = owner?.leaderName ?? owner?.leader ?? owner?.name ?? 'the ruler';
+   const notice = {
+     kind: 'refused' as const,
+     briberCivId: briber?.id ?? Number(eventData?.diplomatCivId ?? 0),
+     targetCivId: owner?.id ?? Number(eventData?.originalCivId ?? 0),
+     unitType,
+     gold: cost,
+     rulerName,
+     message: `The commander of the ${unitType} refuses your purse with disdain and no word reaches ${rulerName}.`,
+     effect: 'Diplomatic effect: none. The refusal was silent, never reported, and leaves no ledger stain.',
+   };
+   const msg = `🎭 ${briber?.name ?? 'Unknown'} offered a bribe to ${owner?.name ?? 'Unknown'}'s ${unitType}, but it was refused without a report`;
+   debugLog('[EngineEventRouter] BRIBE_REFUSED:', msg);
+   notify('info', msg, humanOrFirst(briber?.id, owner?.id));
+   if (!this.isAIVsAI && (briber?.id === HUMAN_PLAYER_ID || owner?.id === HUMAN_PLAYER_ID)) {
+     playSfx('bribe');
+     this.actions.showBribeResult?.(notice);
+   }
+   this.syncState();
   }
 
   /**

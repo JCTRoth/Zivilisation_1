@@ -71,6 +71,8 @@ export type SfxCue =
   | 'tradeRouteEstablished'
   /** One of the player's units is promoted to the next rank. */
   | 'unitPromoted'
+  /** A bribery attempt resolves with scandal, laughter, or a silent refusal. */
+  | 'bribe'
   /**
    * A unit carrying machine guns opens up — Mech. Inf. and nothing else.
    *
@@ -288,6 +290,12 @@ const CUES: Record<SfxCue, Note[]> = {
     // A quieter, unbloodier close — the unit walked away rather than fell.
     { freq: 300, at: 0.0, dur: 0.08, type: 'triangle', gain: 0.7 },
     { freq: 200, at: 0.08, dur: 0.14, type: 'triangle', gain: 0.5 },
+  ],
+  bribe: [
+    { freq: 392, at: 0.0, dur: 0.07, type: 'triangle', gain: 0.55 },
+    { freq: 330, at: 0.08, dur: 0.09, type: 'triangle', gain: 0.45 },
+    { freq: 262, at: 0.18, dur: 0.12, type: 'triangle', gain: 0.4 },
+    { freq: 196, at: 0.30, dur: 0.16, type: 'triangle', gain: 0.35 },
   ],
 
   // ── Movement and weapon cues ───────────────────────────────────────

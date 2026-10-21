@@ -70,6 +70,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const starvationNotice = useGameStore(state => state.starvationNotice);
   const disorderNotice = useGameStore(state => state.disorderNotice);
   const tradeRouteResult = useGameStore(state => state.tradeRouteResult);
+  const bribeResult = useGameStore(state => state.bribeResult);
   const wonderDialogQueue = useGameStore(state => state.wonderDialogQueue);
   const combatReportQueue = useGameStore(state => state.combatReportQueue);
   const cityEventQueue = useGameStore(state => state.cityEventQueue);
@@ -159,6 +160,9 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     }
     if (closing === 'city-disorder') {
       actions.clearCityDisorder();
+    }
+    if (closing === 'bribe-result') {
+      actions.clearBribeResult();
     }
     // A governor change is only *marked* while the city screen is open so the
     // map never reshuffles under the player's eyes — now that it is closed,
@@ -469,6 +473,49 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       </GameModal>
     );
   }
+
+  const renderBribeResult = () => {
+    if (!bribeResult) return null;
+    const briber = civilizations.find(c => c.id === bribeResult.briberCivId);
+    const target = civilizations.find(c => c.id === bribeResult.targetCivId);
+    const titleMap = {
+      defected: 'The purse bought a banner',
+      reported: 'The coin was pocketed and the lie was told',
+      refused: 'The commander turned away the gold',
+    } as const;
+    const toneMap = { defected: 'danger', reported: 'gold', refused: 'info' } as const;
+    const iconMap = { defected: '💰', reported: '🎭', refused: '🛑' } as const;
+    return (
+      <GameModal
+        show={uiState.activeDialog === 'bribe-result'}
+        onClose={() => { handleCloseDialog(); actions.clearBribeResult(); }}
+        size="lg"
+        tone={toneMap[bribeResult.kind]}
+        icon={iconMap[bribeResult.kind]}
+        artLabel="Bribery"
+        eyebrow={turnStamp()}
+        title={titleMap[bribeResult.kind]}
+        lede={bribeResult.message}
+        actions={
+          <button type="button" className="touch-btn touch-btn--primary" onClick={() => { handleCloseDialog(); actions.clearBribeResult(); }}>
+            {t('common.close' as TranslationKey)}
+          </button>
+        }
+      >
+        <div className="gm-section">
+          <div className="gm-section-title">
+            {briber?.name ?? 'Unknown'} → {target?.name ?? 'Unknown'}
+          </div>
+          <p className="gm-prose">
+            {bribeResult.message}
+          </p>
+        </div>
+        <div className="gm-note">
+          <strong>Diplomatic effect:</strong> {bribeResult.effect}
+        </div>
+      </GameModal>
+    );
+  };
 
   // Diplomacy Modal — Civ I–style negotiation interface with leader portraits
   const [selectedDiploCiv, setSelectedDiploCiv] = useState<number | null>(null);
@@ -2650,6 +2697,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         onChooseResearch={() => actions.showDialog('tech')}
       />
       {renderResearchComplete()}
+      {renderBribeResult()}
       {renderDiplomacy()}
       <AudienceModal
         show={uiState.activeDialog === 'audience'}

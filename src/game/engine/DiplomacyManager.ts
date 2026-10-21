@@ -1341,6 +1341,9 @@ export class DiplomacyManager {
     if (outcome === 'refused') {
       // Quiet refusal: the gold stays in the treasury and nobody learns
       // anything — the diplomat may simply try again elsewhere.
+      this.emitEvent('BRIBE_REFUSED', {
+        diplomatCivId, unitId: targetUnitId, originalCivId, cost, unitType: unit.type,
+      });
       return { accepted: false, reason: 'Bribe failed — the unit refused' };
     }
 

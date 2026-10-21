@@ -3145,19 +3145,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                       }),
                 });
             } else if (result.type === "bribe") {
-              const resp = result.response as
-                | Record<string, unknown>
-                | undefined;
-              // Success is announced by the engine's UNIT_BRIBED event (which
-              // also covers an AI bribing the player). Only failures need a
-              // toast here.
-              if (!resp?.accepted && actions?.addNotification)
-                actions.addNotification({
-                  type: "warning",
-                  message: t("canvas.bribeFailed" as TranslationKey, {
-                    reason: String(resp?.reason || t("canvas.notEnoughGold" as TranslationKey)),
-                  }),
-                });
+              // The engine emits a dedicated bribery story modal for the human
+              // player. We intentionally do not show a generic toast here: the
+              // result is story-rich, and the outcome-specific modal is the
+              // proper place to explain the diplomacy change.
             } else if (result.type === "espionage") {
               // The espionage report window: one line per beat, the last beat
               // carrying the war declaration if the cover was blown.

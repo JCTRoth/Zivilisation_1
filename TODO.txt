@@ -23,14 +23,6 @@ If the goal is to closer match the Civilisation 1 manual, consider implementing:
 These additions would significantly increase the game's fidelity to the original Civilisation while maintaining its modern accessibility.
 
 
-
-
-Image Generation Prompt
-*  "🖋️ Leonardo's Workshop" Generate a picture of should be used for a modern Lexicon or a university studie book Article should have
-the classic look of it and look like an drawing paper 8:3 - Colored - No frame around - Dont write about the Brokhaus lexicon or
-some names of books - Dont use arrows and focuce on one main picture add NO o add additional images if main picture
--- Show how emotions and how things used. -- And dont write things on the pictures. 
-
 * Add splash damage when multipile units stand on one place
 * Splash damage does not apply for units in a city or in a fortification or in a boat or in a transporter.
 * Integrate the new sprash damage also into the AI
@@ -41,15 +33,6 @@ show a little blood symbole babove the unit when it heals if unit is not stacked
 
 * Add new units for land transportation of units.
 
-* Bribing units should have the following outcomes:
-  1. Defector
-     The bribing is reported and it as effect on the deplomacy.
-  2. The unit takes the money and does nothing than a modal opens telling the player: The commander of the unit takes your money and laugh at you, he proclaims he proclaims loyalty to **ruler**.
-     The bribing is reported and it as effect on the deplomacy.
-  3. Refues the money but does not tell it to there ruler.
-     The bribing is NOT reported and it has NO effect on the deplomacy.
-For every coutcome a modal should open telling the player what happend and what the effect is on the deplomacy.
-Use epic language for the modals, and make it fun to read.
 
 
 * When no enemy is left on the Map anymore the AI declears active war on other civilizations and starts to attack them, if the AI is not able to do so it should start to build a navy and send it to the other civs to attack them.

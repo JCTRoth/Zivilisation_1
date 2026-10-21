@@ -789,13 +789,24 @@ export interface MovementReachable {
   tiles: Map<string, number>;
 }
 
+export interface BribeNotice {
+  kind: 'defected' | 'reported' | 'refused';
+  briberCivId: number;
+  targetCivId: number;
+  unitType: string;
+  gold: number;
+  message: string;
+  effect: string;
+  rulerName?: string;
+}
+
 export interface UIState {
   showMinimap: boolean;
   showUnitPanel: boolean;
   showCityPanel: boolean;
   showTechTree: boolean;
   showGameMenu: boolean;
-  activeDialog: 'tech' | 'diplomacy' | 'audience' | 'help' | 'pause' | 'city-production' | 'city-details' | 'rates' | 'government' | 'statistics' | 'wonders' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'research-required' | 'auto-end-offer' | 'wonder-completed' | 'wonder-conflict' | 'combat-report' | 'city-founded' | 'city-lost' | null;
+  activeDialog: 'tech' | 'diplomacy' | 'audience' | 'help' | 'pause' | 'city-production' | 'city-details' | 'rates' | 'government' | 'statistics' | 'wonders' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'bribe-result' | 'research-required' | 'auto-end-offer' | 'wonder-completed' | 'wonder-conflict' | 'combat-report' | 'city-founded' | 'city-lost' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
   /** Active citizen pick-up origin ({cityId, col, row}) while reassigning. Null when idle. */
@@ -975,6 +986,8 @@ export interface GameStoreState {
   disorderNotice: DisorderNotice | null;
   /** Info for the "trade route established" modal. */
   tradeRouteResult: TradeRouteResult | null;
+  /** Full-screen bribery story modal data. */
+  bribeResult: BribeNotice | null;
   /** FIFO queue of battle reports (a decisive round that destroyed a unit). */
   combatReportQueue: CombatReportNotice[];
   /** FIFO queue of city-event notices (founded / captured / razed / joined). */
@@ -1189,6 +1202,10 @@ export interface GameActions {
   showTradeRouteResult: (result: TradeRouteResult) => void;
   /** Dismiss the trade-route-result modal. */
   clearTradeRouteResult: () => void;
+  /** Show the bribery-result story modal. */
+  showBribeResult: (notice: BribeNotice) => void;
+  /** Dismiss the bribery-result story modal. */
+  clearBribeResult: () => void;
   /**
    * Push a world-wonder dialog (completion screen or production conflict) on
    * the queue. Opens it immediately unless one is already showing — the next

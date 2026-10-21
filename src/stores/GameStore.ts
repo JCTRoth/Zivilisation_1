@@ -213,6 +213,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   // Info for the "trade route established" modal (Caravan delivery)
   tradeRouteResult: null,
 
+  // Full-screen bribery story modal
+  bribeResult: null,
+
   // FIFO queues for the decisive-battle and city-event modals
   combatReportQueue: [],
   cityEventQueue: [],
@@ -810,6 +813,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     clearTradeRouteResult: () => set(state => ({
       tradeRouteResult: null,
       uiState: { ...state.uiState, activeDialog: null }
+    })),
+
+    showBribeResult: (result) => set(state => ({
+      bribeResult: result,
+      uiState: { ...state.uiState, activeDialog: 'bribe-result' }
+    })),
+
+    clearBribeResult: () => set(state => ({
+      bribeResult: null,
+      uiState: {
+        ...state.uiState,
+        activeDialog: state.uiState.activeDialog === 'bribe-result' ? null : state.uiState.activeDialog
+      }
     })),
 
     queueWonderDialog: (entry) => set(state => {
