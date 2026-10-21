@@ -44,6 +44,13 @@ const BASE_IMPACT: Record<ImpactEvent, number> = {
   embargo_signed: 2,
   embassy_established: 5,
   tech_exchanged: 10,
+  /**
+   * A gift of knowledge. Worth far more than a gift of money: the receiver
+   * learns something it could not have learned cheaply, and the giver gets no
+   * money for it. Handing over a secret is the one act that buys goodwill
+   * without buying anything back.
+   */
+  technology_gifted: 40,
   common_enemy_defeated: 15,
   refused_peace: -8,
   ally_abandoned: -10,
@@ -75,6 +82,7 @@ const IMPACT_TEXT: Record<ImpactEvent, string> = {
   embargo_signed: 'Joined an embargo',
   embassy_established: 'Established an embassy',
   tech_exchanged: 'Exchanged technology',
+  technology_gifted: 'Received a gift of knowledge',
   common_enemy_defeated: 'Stood with me against a common enemy',
   refused_peace: 'Refused my peace offer',
   ally_abandoned: 'Left me to fight my own war',
@@ -90,6 +98,12 @@ export interface ImpactTerms {
   gold?: number;
   /** A technology changed hands. */
   tech?: boolean;
+  /**
+   * What the technology is worth to the giver (its research cost). A gift of
+   * a cheap trick is a courtesy; a gift of a secret the receiver was about to
+   * research is an act of generosity worth twice as much.
+   */
+  techValue?: number;
   /** A third party is involved (embargo target, common enemy). */
   thirdParty?: boolean;
 }
@@ -108,6 +122,11 @@ export function magnitudeOf(terms: ImpactTerms | undefined): number {
     magnitude *= Math.max(0.5, Math.min(2, 0.5 + terms.gold / 200));
   }
   if (terms.tech) magnitude *= 1.4;
+  if (typeof terms.techValue === 'number' && Number.isFinite(terms.techValue) && terms.techValue > 0) {
+    // How much the knowledge is worth decides how much the gesture is worth:
+    // a 20-point trick counts for a little, a 200-point secret for a lot.
+    magnitude *= Math.max(0.75, Math.min(1.75, 0.75 + terms.techValue / 250));
+  }
   return magnitude;
 }
 
@@ -158,6 +177,10 @@ export function stateMultiplier(
     case 'alliance_formed':
     case 'mutual_defense_signed':
       return 1 + (weights.trustSensitivity / 10) * 0.5;
+    case 'technology_gifted':
+      // A court that values trust is the one that is moved most by being given
+      // something it cannot buy.
+      return 1 + (weights.trustSensitivity / 10) * 0.8;
     default:
       // Peace and gifts are absorbed in proportion to openness.
       return 1 + (weights.trustSensitivity / 10) * 0.2;

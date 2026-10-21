@@ -926,6 +926,25 @@
   min-width: 0;
 }
 
+/* The price of a one-sided exchange: knowledge for gold. */
+.diplomacy-tech-exchange__price {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.diplomacy-tech-exchange__price .diplomacy-tribute-input {
+  width: 5.5rem;
+}
+
+/* The row of deal buttons: swap, sell, gift. */
+.diplomacy-tech-exchange__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
 .diplomacy-tech-exchange .diplomacy-btn {
   align-self: flex-start;
   margin-top: 0.15rem;

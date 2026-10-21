@@ -98,6 +98,12 @@ export interface PolicyContext {
    * never proposes an Exchange of Knowledge — the player has to found one.
    */
   hasEmbassy?: boolean;
+  /**
+   * Whether the two courts have diplomats standing together. Knowledge is
+   * only ever handed over face to face, so a civ whose diplomats are far
+   * away does not put a technology on the table.
+   */
+  hasDiplomatContact?: boolean;
 }
 
 const POWER_FLOOR = 1;
@@ -302,7 +308,9 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
     // demands). A swap that cannot clear its margin is not a candidate at all.
     const canOffer = ctx.techsWeCanOffer?.length ?? 0;
     const canWant = ctx.techsWeWant?.length ?? 0;
-    if (canOffer > 0 && canWant > 0 && ctx.hasEmbassy !== false) {
+    // Knowledge changes hands face to face: no diplomats together, no deal.
+    const canDeal = ctx.hasEmbassy !== false && ctx.hasDiplomatContact !== false;
+    if (canOffer > 0 && canWant > 0 && canDeal) {
       const tradeCtx = tradeContextFrom(ctx);
       const pick = pickFavourableSwap(ctx.techsWeCanOffer ?? [], ctx.techsWeWant ?? [], tradeCtx);
       if (pick) {
@@ -315,6 +323,41 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
           `${pick.verdict.because}; we each hold ${Math.min(canOffer, canWant)} tech${Math.min(canOffer, canWant) === 1 ? '' : 's'} the other lacks`,
         );
       }
+    }
+
+    // Knowledge for money. A civ that is ahead in learning has something the
+    // other court wants and can name a price for it; a civ that is behind can
+    // buy what it lacks.
+    if (canDeal && (canOffer > 0 || canWant > 0)) {
+      const ourTechs = ctx.ourTechCount ?? 0;
+      const theirTechs = ctx.theirTechCount ?? 0;
+      if (canOffer > 0 && ourTechs > theirTechs) {
+        push(
+          out,
+          'offer_tech_for_gold',
+          5 + (ourTechs - theirTechs) * 2,
+          'we are ahead in learning and can sell a secret',
+        );
+      } else if (canWant > 0 && ctx.ownGold > 120) {
+        push(
+          out,
+          'offer_tech_for_gold',
+          4 + Math.min(6, ctx.ownGold / 150),
+          'we want what they know and can pay for it',
+        );
+      }
+    }
+
+    // A gift of knowledge buys goodwill that gold cannot buy: the receiver
+    // learns something it could not have learned cheaply, and gets nothing
+    // but goodwill for it. A court that likes us is worth a gift.
+    if (canDeal && canOffer > 0 && goodwill > 35) {
+      push(
+        out,
+        'gift_technology',
+        6 + goodwill / 12,
+        'we are friends and we can share what we know',
+      );
     }
 
     // Alliance: the strategic case the old flat −10 never had.

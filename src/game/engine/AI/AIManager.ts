@@ -6115,6 +6115,8 @@ export class AIManager {
       case 'propose_peace': return 22;
       case 'propose_ceasefire': return 16;
       case 'offer_tech_exchange': return 20;
+      case 'offer_tech_for_gold': return 19;
+      case 'gift_technology': return 17;
       case 'demand_tribute': return 18;
       case 'propose_trade_agreement': return 15;
       case 'propose_alliance': return 14;
@@ -6236,41 +6238,135 @@ export class AIManager {
       const opts = dm.getTechTradeOptions?.(civId, other.id);
       if (!opts) continue;
 
-      const pick = wouldProposeExchange(
-        opts.weHaveTheyLack,
-        opts.theyHaveWeLack,
-        dm.tradeContext(civId, other.id),
-      );
-      if (!pick) continue;
+      const deal = this.pickVisitDeal(civId, other.id, opts);
+      if (!deal) continue;
 
       this.recentTradeVisit.set(other.id, this.roundOf());
       const otherName = other.name ?? `Civ ${other.id}`;
       const techName = (id: string): string =>
         TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
-      dm.presentOffer(
-        civId,
-        other.id,
-        'offer_tech_exchange',
-        undefined,
-        `${otherName} offers an Exchange of Knowledge: `
-          + `their ${techName(pick.proposal.techRequested)} for your ${techName(pick.proposal.techOffered)}.`,
-        // The terms travel with the message — without them the audience
-        // screen has a sentence but no deal to accept.
-        pick.proposal.techOffered,
-        pick.proposal.techRequested,
-      );
+      // The visit is the meeting: the unit stands at the other court's own
+      // door, so the knowledge travels with it and no diplomat has to cross
+      // between the two.
+      const inPerson = true;
+      const message = deal.action === 'offer_tech_exchange'
+        ? `${otherName} offers an Exchange of Knowledge: `
+          + `their ${techName(deal.techRequested ?? '')} for your ${techName(deal.techOffered ?? '')}.`
+        : deal.action === 'gift_technology'
+          ? `${otherName} offers its knowledge of ${techName(deal.techOffered ?? '')} as a gift.`
+          : deal.techOffered
+            ? `${otherName} offers its knowledge of ${techName(deal.techOffered)} for ${deal.goldAmount} gold.`
+            : `${otherName} offers ${deal.goldAmount} gold for its knowledge of ${techName(deal.techRequested ?? '')}.`;
+
+      if (other.isHuman === true) {
+        dm.presentOffer(
+          civId,
+          other.id,
+          deal.action,
+          deal.goldAmount,
+          message,
+          // The terms travel with the message — without them the audience
+          // screen has a sentence but no deal to accept.
+          deal.techOffered,
+          deal.techRequested,
+          undefined,
+          inPerson,
+        );
+      } else {
+        // An AI court answers through the ordinary proposal machinery, so the
+        // same arithmetic decides — an AI never deals on a whim.
+        dm.processProposal({
+          fromCivId: civId,
+          toCivId: other.id,
+          action: deal.action,
+          goldAmount: deal.goldAmount,
+          techOffered: deal.techOffered,
+          techRequested: deal.techRequested,
+          inPerson,
+        });
+      }
 
       this.gameEngine.log?.(
         'ai',
         `Trade visit — ${this.gameEngine.civilizations?.[civId]?.name ?? civId} unit ${unit.id} at `
-        + `(${unit.col},${unit.row}) offers ${pick.proposal.techOffered} for `
-        + `${pick.proposal.techRequested} (${pick.verdict.because})`,
+        + `(${unit.col},${unit.row}) proposes ${deal.action} (${deal.because})`,
       );
       unit.movesRemaining = 0;
       return true;
     }
 
     return false;
+  }
+
+  /**
+   * What a civ puts on the table when one of its units is standing at another
+   * court's wall.
+   *
+   * The AI deals in knowledge in all three shapes the player can: a straight
+   * swap when one is worth making, a secret sold for gold, and a gift of the
+   * same — the last one is what a court that likes the giver gets, and it is
+   * worth far more goodwill than the money would have been.
+   *
+   * None of these may leave the civ worse off, so a swap that does not pay is
+   * not proposed and neither is a sale the civ has no spare knowledge for.
+   */
+  private pickVisitDeal(
+    civId: number,
+    otherId: number,
+    opts: { weHaveTheyLack: string[]; theyHaveWeLack: string[] },
+  ): {
+    action: DiplomatAction;
+    techOffered?: string;
+    techRequested?: string;
+    goldAmount?: number;
+    because: string;
+  } | null {
+    const dm = this.gameEngine.diplomacyManager;
+    if (!dm) return null;
+
+    const pick = wouldProposeExchange(
+      opts.weHaveTheyLack,
+      opts.theyHaveWeLack,
+      dm.tradeContext(civId, otherId),
+    );
+    if (pick) {
+      return {
+        action: 'offer_tech_exchange',
+        techOffered: pick.proposal.techOffered,
+        techRequested: pick.proposal.techRequested,
+        because: pick.verdict.because,
+      };
+    }
+
+    // A court that likes us gets a gift of knowledge rather than a bill.
+    const goodwill = dm.getAttitudeScore?.(otherId, civId) ?? 0;
+    if (goodwill > 30 && opts.weHaveTheyLack.length > 0) {
+      const gift = dm.pickTechGiftTerm?.(civId, otherId);
+      if (gift?.techOffered) {
+        return {
+          action: 'gift_technology',
+          techOffered: gift.techOffered,
+          because: 'they are friends',
+        };
+      }
+    }
+
+    // Being ahead in learning, we can spare a secret — and a secret has a
+    // price. A civ that is not ahead has nothing worth selling.
+    const ourTechs = this.gameEngine.civilizations?.[civId]?.technologies?.length ?? 0;
+    const theirTechs = this.gameEngine.civilizations?.[otherId]?.technologies?.length ?? 0;
+    if (ourTechs > theirTechs && opts.weHaveTheyLack.length > 0) {
+      const terms = dm.pickTechForGoldTerm?.(civId, otherId);
+      if (terms?.techOffered && terms.goldAmount) {
+        return {
+          action: 'offer_tech_for_gold',
+          techOffered: terms.techOffered,
+          goldAmount: terms.goldAmount,
+          because: 'a secret has a price',
+        };
+      }
+    }
+    return null;
   }
 
   /** The round this AI pass is running in, for the visit cooldown. */
@@ -6365,17 +6461,29 @@ export class AIManager {
     // The terms, spelled out once so the offer and the direct resolution can
     // never propose different deals.
     const dm = this.gameEngine.diplomacyManager;
+    // Knowledge can be swapped, sold, or given away — and each of those names
+    // its terms differently.
     const swap = action === 'offer_tech_exchange' ? dm?.pickTechSwap?.(civId, targetCivId) : null;
+    const techForGold = action === 'offer_tech_for_gold'
+      ? dm?.pickTechForGoldTerm?.(civId, targetCivId)
+      : null;
+    const techGift = action === 'gift_technology'
+      ? dm?.pickTechGiftTerm?.(civId, targetCivId)
+      : null;
     const embargoTargetId = action === 'propose_embargo' ? this.chooseEmbargoTarget(civId, targetCivId) : undefined;
     const gold = action === 'demand_tribute'
       ? this.diplomatTributeDemand(unit, targetCivId)
-      : action === 'propose_trade_agreement' ? 2 : undefined;
+      : action === 'propose_trade_agreement' ? 2
+        : action === 'offer_tech_for_gold' ? techForGold?.goldAmount
+          : undefined;
+    const techOffered = swap?.techOffered ?? techForGold?.techOffered ?? techGift?.techOffered;
+    const techRequested = swap?.techRequested ?? techForGold?.techRequested;
     const terms: DiplomatActionOptions = {
       cityId: info.cityId,
       unitId: info.unitId,
       goldAmount: gold,
-      techOffered: swap?.techOffered,
-      techRequested: swap?.techRequested,
+      techOffered,
+      techRequested,
       embargoTargetId,
     };
 
@@ -6397,10 +6505,16 @@ export class AIManager {
           TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
         const message = swap
           ? `${civName} offers an Exchange of Knowledge: their ${techName(swap.techRequested)} for your ${techName(swap.techOffered)}.`
-          : `${civName}'s diplomat proposes ${action.replace(/_/g, ' ')}.`;
+          : techGift?.techOffered
+            ? `${civName} offers its knowledge of ${techName(techGift.techOffered)} as a gift.`
+            : techForGold
+              ? (techForGold.techOffered
+                ? `${civName} offers its knowledge of ${techName(techForGold.techOffered)} for ${techForGold.goldAmount} gold.`
+                : `${civName} offers ${techForGold.goldAmount} gold for its knowledge of ${techName(techForGold.techRequested ?? '')}.`)
+              : `${civName}'s diplomat proposes ${action.replace(/_/g, ' ')}.`;
         this.gameEngine.diplomacyManager?.presentOffer?.(
           civId, targetCivId, action as DiplomatAction, gold, message,
-          swap?.techOffered, swap?.techRequested,
+          techOffered, techRequested,
         );
         unit.movesRemaining = 0;
       }

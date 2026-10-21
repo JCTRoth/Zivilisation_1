@@ -68,6 +68,8 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
   const moodColors = MOOD_COLORS[attitude] ?? MOOD_COLORS.neutral;
 
   const isTechExchange = notice.action === 'offer_tech_exchange';
+  const isTechForGold = notice.action === 'offer_tech_for_gold';
+  const isTechGift = notice.action === 'gift_technology';
 
   // A proposal's own term, in the player's language. The engine composes its
   // message in English, so anything that is not a tech swap is rebuilt from the
@@ -83,6 +85,8 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
     propose_non_aggression: t('gm.diplo.offer.nonAggressionPact' as TranslationKey),
     propose_embargo: t('gm.diplo.offer.embargo' as TranslationKey),
     offer_tech_exchange: t('gm.diplo.offer.techExchange' as TranslationKey),
+    offer_tech_for_gold: t('gm.diplo.offer.techForGold' as TranslationKey),
+    gift_technology: t('gm.diplo.offer.techGift' as TranslationKey),
   };
 
   // The line the leader speaks. A tech exchange is rebuilt from the terms so
@@ -99,13 +103,25 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
         given: techName(notice.techOffered),
         wanted: techName(notice.techRequested),
       })
-      : notice.goldAmount
-        ? t('audience.offer.gold' as TranslationKey, { gold: notice.goldAmount })
-        : termLabel
-          ? `${t('gm.diplo.incoming.pre' as TranslationKey, { civ: civ?.name ?? t('gm.unknown' as TranslationKey) })} ${termLabel}`
-          : notice.message ?? '';
+      : isTechGift && notice.techOffered
+        ? t('audience.offer.techGift' as TranslationKey, { tech: techName(notice.techOffered) })
+        : isTechForGold && notice.techOffered
+          ? t('audience.offer.techForGold' as TranslationKey, {
+            tech: techName(notice.techOffered),
+            gold: notice.goldAmount ?? 0,
+          })
+          : isTechForGold && notice.techRequested
+            ? t('audience.offer.techWanted' as TranslationKey, {
+              tech: techName(notice.techRequested),
+              gold: notice.goldAmount ?? 0,
+            })
+            : notice.goldAmount
+              ? t('audience.offer.gold' as TranslationKey, { gold: notice.goldAmount })
+              : termLabel
+                ? `${t('gm.diplo.incoming.pre' as TranslationKey, { civ: civ?.name ?? t('gm.unknown' as TranslationKey) })} ${termLabel}`
+                : notice.message ?? '';
 
-  const acceptLabel = isTechExchange
+  const acceptLabel = isTechExchange || isTechForGold || isTechGift
     ? t('audience.acceptKnowledge' as TranslationKey)
     : t('audience.accept' as TranslationKey);
 

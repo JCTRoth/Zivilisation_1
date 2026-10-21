@@ -7122,12 +7122,20 @@ const occupiedLandmasses = new Set(
     // A call to arms names OUR enemy — and only one this court has met.
     const jointWarCandidates = dm.getEnemies(ourId)
       .filter(enemyId => enemyId !== targetCivId && dm.hasContacted(targetCivId, enemyId));
+    const tradeOptions = dm.getTechTradeOptions(ourId, targetCivId);
     const actions = diplomatActionsFor({
       kind,
       status,
       hasEmbassy: dm.hasEmbassy(ourId, targetCivId),
       activeTreaties: dm.getActiveTreaties(ourId, targetCivId),
       canTradeTechs: dm.canTradeTechs(ourId, targetCivId).ok,
+      // Knowledge is only handed over face to face: both diplomats have to
+      // be standing together for a technology to change hands at all.
+      hasDiplomatContact: dm.hasDiplomatContact(ourId, targetCivId),
+      // The supply and demand sides of a knowledge deal: what we could sell
+      // them or give them, and what we would have to pay for.
+      techsWeCanOffer: tradeOptions.weHaveTheyLack.length,
+      techsWeWant: tradeOptions.theyHaveWeLack.length,
       embargoCandidates,
       jointWarCandidates,
     });
@@ -7237,32 +7245,103 @@ const occupiedLandmasses = new Set(
       case 'propose_mutual_defense':
       case 'propose_non_aggression':
       case 'propose_embargo':
-      case 'propose_joint_war':
-      case 'offer_tech_exchange': {
-        const swap = this.pickTechOfferTerm(diplomat.civilizationId, targetCivId);
+      case 'propose_joint_war': {
+        // Every term has a default here, so a bare call still reaches the
+        // responder as a complete proposal: a demand is worth something, a
+        // trade deal pays something, an embargo a concrete third party. The
+        // player who wants different terms says so — the negotiation screen is
+        // open on the other side of this call.
         const proposal: DiplomacyProposal = {
           fromCivId: diplomat.civilizationId,
           toCivId: targetCivId,
           action: action as DiplomatAction,
-          // Every term has a default here, so a bare call still reaches the
-          // responder as a complete proposal: a demand is worth something, a
-          // trade deal pays something, an exchange names a concrete pair and an
-          // embargo a concrete third party. The player who wants different
-          // terms says so — the negotiation screen is open on the other side
-          // of this call.
           goldAmount: action === 'demand_tribute'
             ? options?.goldAmount ?? DEFAULT_TRIBUTE_DEMAND
             : action === 'propose_trade_agreement'
               ? options?.goldAmount ?? DEFAULT_TRADE_GOLD_PER_TURN
               : undefined,
-          techOffered: options?.techOffered ?? swap.techOffered,
-          techRequested: options?.techRequested ?? swap.techRequested,
           embargoTargetId: options?.embargoTargetId
             ?? (action === 'propose_joint_war'
               // A call to arms defaults to OUR first live enemy — the war the
               // ally is being asked to join is the one we are actually in.
               ? this.diplomacyManager.getEnemies(diplomat.civilizationId)[0]
               : this.pickEmbargoTarget(diplomat.civilizationId, targetCivId)),
+        };
+        result = this.diplomacyManager.processProposal(proposal);
+        spend('diplomat-proposal');
+        return { success: true, type: 'proposal', response: result, target };
+      }
+
+      case 'gift_gold':
+      case 'offer_gift':
+      case 'request_gold': {
+        // Money offered or asked for. The amount is the player's to name; the
+        // other court decides whether to accept it.
+        const proposal: DiplomacyProposal = {
+          fromCivId: diplomat.civilizationId,
+          toCivId: targetCivId,
+          action: action as DiplomatAction,
+          goldAmount: options?.goldAmount ?? DEFAULT_TRIBUTE_DEMAND,
+        };
+        result = this.diplomacyManager.processProposal(proposal);
+        spend('diplomat-gold');
+        return { success: true, type: 'proposal', response: result, target };
+      }
+
+      case 'call_for_help': {
+        // Ask the ally to take up arms against the enemy we are fighting.
+        const proposal: DiplomacyProposal = {
+          fromCivId: diplomat.civilizationId,
+          toCivId: targetCivId,
+          action: 'call_for_help',
+          embargoTargetId: options?.embargoTargetId
+            ?? this.diplomacyManager.getEnemies(diplomat.civilizationId)[0],
+        };
+        result = this.diplomacyManager.processProposal(proposal);
+        spend('diplomat-call-for-help');
+        return { success: true, type: 'proposal', response: result, target };
+      }
+
+      case 'offer_tech_exchange': {
+        const swap = this.pickTechOfferTerm(diplomat.civilizationId, targetCivId);
+        const proposal: DiplomacyProposal = {
+          fromCivId: diplomat.civilizationId,
+          toCivId: targetCivId,
+          action: 'offer_tech_exchange',
+          techOffered: options?.techOffered ?? swap.techOffered,
+          techRequested: options?.techRequested ?? swap.techRequested,
+        };
+        result = this.diplomacyManager.processProposal(proposal);
+        spend('diplomat-proposal');
+        return { success: true, type: 'proposal', response: result, target };
+      }
+
+      case 'offer_tech_for_gold': {
+        // Knowledge for money: the terms say whether this diplomat is selling a
+        // secret or buying one, and the gold is the price either way.
+        const terms = this.diplomacyManager.pickTechForGoldTerm(diplomat.civilizationId, targetCivId);
+        const proposal: DiplomacyProposal = {
+          fromCivId: diplomat.civilizationId,
+          toCivId: targetCivId,
+          action: 'offer_tech_for_gold',
+          goldAmount: options?.goldAmount ?? terms.goldAmount,
+          techOffered: options?.techOffered ?? terms.techOffered,
+          techRequested: options?.techRequested ?? terms.techRequested,
+        };
+        result = this.diplomacyManager.processProposal(proposal);
+        spend('diplomat-proposal');
+        return { success: true, type: 'proposal', response: result, target };
+      }
+
+      case 'gift_technology': {
+        // A gift of knowledge — no money changes hands, and the receiver's
+        // opinion of the giver improves enormously.
+        const terms = this.diplomacyManager.pickTechGiftTerm(diplomat.civilizationId, targetCivId);
+        const proposal: DiplomacyProposal = {
+          fromCivId: diplomat.civilizationId,
+          toCivId: targetCivId,
+          action: 'gift_technology',
+          techOffered: options?.techOffered ?? terms.techOffered,
         };
         result = this.diplomacyManager.processProposal(proposal);
         spend('diplomat-proposal');

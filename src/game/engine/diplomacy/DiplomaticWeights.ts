@@ -118,6 +118,7 @@ const GOVERNING_WEIGHT: Record<ImpactEvent, keyof DiplomaticWeights> = {
   non_aggression_signed: 'trustSensitivity',
   embargo_signed: 'greed',
   tech_exchanged: 'trustSensitivity',
+  technology_gifted: 'trustSensitivity',
   common_enemy_defeated: 'trustSensitivity',
   refused_peace: 'hostility',
   ally_abandoned: 'loyalty',

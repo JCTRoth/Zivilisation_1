@@ -485,6 +485,9 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const [embargoTarget, setEmbargoTarget] = useState<number | ''>('');
   const [techOffer, setTechOffer] = useState<string>('');
   const [techRequest, setTechRequest] = useState<string>('');
+  // The price of a technology: what a one-sided exchange is worth in gold.
+  // It is only consulted when exactly one side of the deal names a tech.
+  const [techPrice, setTechPrice] = useState<number>(50);
 
   const addDiploLog = (msg: string): void => {
     setDiplomacyLog(prev => [msg, ...prev].slice(0, 20));
@@ -533,6 +536,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         techOffered: offer.techOffered,
         techRequested: offer.techRequested,
         embargoTargetId: offer.embargoTargetId,
+        inPerson: offer.inPerson,
       });
       addDiploLog(result.accepted
         ? t('gm.diplo.feed.offerAccepted' as TranslationKey, { civ: fromCiv?.name ?? t('gm.diplo.feed.them' as TranslationKey), term: offer.action.replace(/_/g, ' ') })
@@ -568,6 +572,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         techOffered: notice.techOffered,
         techRequested: notice.techRequested,
         embargoTargetId: notice.embargoTargetId,
+        inPerson: notice.inPerson,
       });
       const civName = civilizations[notice.civId]?.name ?? t('gm.unknown' as TranslationKey);
       notify(
@@ -652,6 +657,12 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       propose_non_aggression: t('gm.diplo.offer.nonAggressionPact' as TranslationKey),
       propose_embargo: t('gm.diplo.offer.embargo' as TranslationKey),
       offer_tech_exchange: t('gm.diplo.offer.techExchange' as TranslationKey),
+      offer_tech_for_gold: t('gm.diplo.offer.techForGold' as TranslationKey),
+      gift_technology: t('gm.diplo.offer.techGift' as TranslationKey),
+      gift_gold: t('gm.diplo.offer.goldGift' as TranslationKey),
+      request_gold: t('gm.diplo.offer.goldRequest' as TranslationKey),
+      call_for_help: t('gm.diplo.offer.callForHelp' as TranslationKey),
+      propose_joint_war: t('gm.diplo.offer.jointWar' as TranslationKey),
     };
     const STATUS_LABELS: Record<string, string> = {
       peace: t('gm.diplo.status.peace' as TranslationKey),
@@ -740,11 +751,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'gift_gold', goldAmount: giftAmount });
           if (result.counterProposal) {
             setCounterProposal(result.counterProposal);
-            addDiploLog(`${civilizations[targetId]?.name} counter-proposes instead of accepting the gift.`);
+            addDiploLog(t('gm.diplo.log.goldCountered' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           } else {
             addDiploLog(result.accepted
-              ? `You gifted ${result.goldTransferred ?? giftAmount} gold to ${civilizations[targetId]?.name}.`
-              : `${civilizations[targetId]?.name} refused the gift: "${result.reason}"`);
+              ? t('gm.diplo.log.goldGifted' as TranslationKey, { civ: String(civilizations[targetId]?.name), gold: Math.abs(result.goldTransferred ?? giftAmount) })
+              : t('gm.diplo.log.goldGiftRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           }
           break;
         }
@@ -753,11 +764,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'request_gold', goldAmount: requestAmount });
           if (result.counterProposal) {
             setCounterProposal(result.counterProposal);
-            addDiploLog(`${civilizations[targetId]?.name} counter-proposes instead of granting the request.`);
+            addDiploLog(t('gm.diplo.log.goldRequestCountered' as TranslationKey, { civ: String(civilizations[targetId]?.name) }));
           } else {
             addDiploLog(result.accepted
-              ? `${civilizations[targetId]?.name} granted your request for ${result.goldTransferred ?? requestAmount} gold.`
-              : `${civilizations[targetId]?.name} refused your request: "${result.reason}"`);
+              ? t('gm.diplo.log.goldGranted' as TranslationKey, { civ: String(civilizations[targetId]?.name), gold: Math.abs(result.goldTransferred ?? requestAmount) })
+              : t('gm.diplo.log.goldRequestRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           }
           break;
         }
@@ -799,8 +810,8 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         case 'establish_embassy':
           result = dm.processProposal({ fromCivId: playerId, toCivId: targetId, action: 'establish_embassy' });
           addDiploLog(result.accepted
-            ? `Embassy established with ${civilizations[targetId]?.name}. You can now observe their diplomacy.`
-            : `${civilizations[targetId]?.name} refused the embassy: "${result.reason}"`);
+            ? t('gm.diplo.log.embassyEstablished' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
+            : t('gm.diplo.log.embassyRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           break;
         case 'propose_embargo':
           result = dm.processProposal({
@@ -824,6 +835,33 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           addDiploLog(result.accepted
             ? t('gm.diplo.log.techExchanged' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
             : t('gm.diplo.log.exchangeRejected' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
+          break;
+        case 'offer_tech_for_gold':
+          // Knowledge for money. Which way the gold runs is decided by the
+          // terms: naming only what we offer means THEY pay us, naming only
+          // what we want means WE pay them.
+          result = dm.processProposal({
+            fromCivId: playerId,
+            toCivId: targetId,
+            action: 'offer_tech_for_gold',
+            goldAmount: extra?.goldAmount,
+            techOffered: extra?.techOffered,
+            techRequested: extra?.techRequested,
+          });
+          addDiploLog(result.accepted
+            ? t('gm.diplo.log.techBought' as TranslationKey, { civ: String(civilizations[targetId]?.name), gold: Math.abs(result.goldTransferred ?? 0) })
+            : t('gm.diplo.log.exchangeRejected' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
+          break;
+        case 'gift_technology':
+          result = dm.processProposal({
+            fromCivId: playerId,
+            toCivId: targetId,
+            action: 'gift_technology',
+            techOffered: extra?.techOffered,
+          });
+          addDiploLog(result.accepted
+            ? t('gm.diplo.log.techGifted' as TranslationKey, { civ: String(civilizations[targetId]?.name) })
+            : t('gm.diplo.log.techGiftRefused' as TranslationKey, { civ: String(civilizations[targetId]?.name), reason: String(result.reason) }));
           break;
         case 'cancel_treaty': {
           const treaty = extra?.treaty as TreatyType | undefined;
@@ -892,12 +930,28 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
             techOffered: techOffer,
             techRequested: techRequest,
           }
-          : {
-            fromCivId: playerId,
-            toCivId: selectedDiploCiv,
-            action: 'demand_tribute',
-            goldAmount: Number.isFinite(tributeAmount) ? tributeAmount : 50,
-          },
+          : techOffer
+            ? {
+              fromCivId: playerId,
+              toCivId: selectedDiploCiv,
+              action: 'offer_tech_for_gold',
+              techOffered: techOffer,
+              goldAmount: Number.isFinite(techPrice) ? techPrice : 50,
+            }
+            : techRequest
+              ? {
+                fromCivId: playerId,
+                toCivId: selectedDiploCiv,
+                action: 'offer_tech_for_gold',
+                techRequested: techRequest,
+                goldAmount: Number.isFinite(techPrice) ? techPrice : 50,
+              }
+              : {
+                fromCivId: playerId,
+                toCivId: selectedDiploCiv,
+                action: 'demand_tribute',
+                goldAmount: Number.isFinite(tributeAmount) ? tributeAmount : 50,
+              },
       )
       : null;
 
@@ -962,20 +1016,23 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               <div className="diplomacy-incoming-text">
                 {t('gm.diplo.incoming.pre' as TranslationKey, { civ: civilizations[incomingDiplomacyOffer.fromCivId]?.name ?? t('gm.unknown' as TranslationKey) })} <strong>{offerTerm(incomingDiplomacyOffer.action)}</strong>
                 {incomingDiplomacyOffer.goldAmount ? t('gm.diplo.incoming.goldSuffix' as TranslationKey, { gold: incomingDiplomacyOffer.goldAmount }) : ''}
-                {incomingDiplomacyOffer.techOffered && incomingDiplomacyOffer.techRequested && (
-                  <>
-                    {': '}
-                    <strong>
-                      {technologies.find((t) => t.id === incomingDiplomacyOffer.techOffered)?.name
-                        ?? incomingDiplomacyOffer.techOffered}
-                    </strong>
-                    {' ↔ '}
-                    <strong>
-                      {technologies.find((t) => t.id === incomingDiplomacyOffer.techRequested)?.name
-                        ?? incomingDiplomacyOffer.techRequested}
-                    </strong>
-                  </>
-                )}
+                {(() => {
+                  // A deal may name one technology or two. A one-sided name is
+                  // a sale: they either hand theirs over or want ours.
+                  const offer = incomingDiplomacyOffer;
+                  if (!offer.techOffered && !offer.techRequested) return null;
+                  const nameOf = (id: string) =>
+                    technologies.find((tech) => tech.id === id)?.name ?? id;
+                  const both = Boolean(offer.techOffered && offer.techRequested);
+                  return (
+                    <>
+                      {': '}
+                      {offer.techOffered && <strong>{nameOf(offer.techOffered)}</strong>}
+                      {both && ' ↔ '}
+                      {offer.techRequested && <strong>{nameOf(offer.techRequested)}</strong>}
+                    </>
+                  );
+                })()}
               </div>
               <div className="diplomacy-incoming-buttons">
                 <button className="diplomacy-btn btn-peace" onClick={() => handleIncomingOffer(true)}>{t('gm.diplo.accept' as TranslationKey)}</button>
@@ -1324,7 +1381,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     {/* Gold transfer section — gift or request gold, styled like the tribute group */}
                     {selectedStatus !== 'war' && (
                       <section className="gm-section">
-                        <div className="gm-section-title">Gold Transfer</div>
+                        <div className="gm-section-title">{t('gm.diplo.goldTransfer.title' as TranslationKey)}</div>
                         <div className="diplomacy-actions">
                           <span className="diplomacy-tribute-group">
                             <input
@@ -1334,19 +1391,19 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                               className="diplomacy-tribute-input"
                               value={goldTransferAmount}
                               onChange={(e) => setGoldTransferAmount(Math.max(0, Number(e.target.value) || 0))}
-                              title="How much gold to transfer"
+                              title={t('gm.diplo.goldTransfer.amountTitle' as TranslationKey)}
                             />
                             <button
                               className="diplomacy-btn btn-peace"
                               onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'gift_gold', { goldAmount: goldTransferAmount })}
                             >
-                              🎁 Gift Gold
+                              {t('gm.diplo.goldTransfer.gift' as TranslationKey)}
                             </button>
                             <button
                               className="diplomacy-btn btn-tribute"
                               onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'request_gold', { goldAmount: goldTransferAmount })}
                             >
-                              🙏 Request Gold
+                              {t('gm.diplo.goldTransfer.request' as TranslationKey)}
                             </button>
                           </span>
                         </div>
@@ -1386,7 +1443,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                             )}
                             {!activeTreaties.includes('embassy') && (
                               <button className="diplomacy-btn btn-treaty" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'establish_embassy')}>
-                                🏛️ Establish Embassy
+                                {t('gm.diplo.btn.establishEmbassy' as TranslationKey)}
                               </button>
                             )}
 
@@ -1418,7 +1475,12 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
                             {/* Exchange of Knowledge (Civ I): two lists of the
                                 real tech diffs — what they know that we lack,
-                                and what we know that they lack. */}
+                                and what we know that they lack.
+
+                                A swap names one technology on each side. Naming
+                                only one makes it a SALE: the gold is the
+                                price, and it runs to whoever hands the
+                                knowledge over. */}
                             {(() => {
                               const trade = dm?.getTechTradeOptions?.(playerId, selectedDiploCiv!);
                               const canTrade = dm?.canTradeTechs?.(playerId, selectedDiploCiv!);
@@ -1470,16 +1532,65 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                                       </select>
                                     </label>
                                   </div>
-                                  <button
-                                    className="diplomacy-btn btn-treaty"
-                                    disabled={!techOffer || !techRequest}
-                                    onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'offer_tech_exchange', {
-                                      techOffered: techOffer,
-                                      techRequested: techRequest,
-                                    })}
-                                  >
-                                    {t('gm.diplo.exchange.button' as TranslationKey)}
-                                  </button>
+
+                                  {/* The price of the knowledge. Naming only
+                                      one technology turns the swap into a
+                                      sale, and the gold decides which side of
+                                      the deal we are on; naming both makes it a
+                                      sweetener on a swap. */}
+                                  {(techOffer || techRequest) && (
+                                    <div className="diplomacy-tech-exchange__price">
+                                      <span className="diplomacy-tech-exchange__col-label">
+                                        {techOffer && !techRequest
+                                          ? t('gm.diplo.exchange.priceTheyPay' as TranslationKey)
+                                          : t('gm.diplo.exchange.priceWePay' as TranslationKey)}
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={10}
+                                        className="diplomacy-tribute-input"
+                                        value={techPrice}
+                                        onChange={(e) => setTechPrice(Math.max(0, Number(e.target.value) || 0))}
+                                        title={t('gm.diplo.exchange.priceTitle' as TranslationKey)}
+                                      />
+                                    </div>
+                                  )}
+
+                                  <div className="diplomacy-tech-exchange__actions">
+                                    <button
+                                      className="diplomacy-btn btn-treaty"
+                                      disabled={!techOffer || !techRequest}
+                                      onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'offer_tech_exchange', {
+                                        techOffered: techOffer,
+                                        techRequested: techRequest,
+                                      })}
+                                    >
+                                      {t('gm.diplo.exchange.button' as TranslationKey)}
+                                    </button>
+                                    {(techOffer || techRequest) && (
+                                      <button
+                                        className="diplomacy-btn btn-treaty"
+                                        onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'offer_tech_for_gold', {
+                                          techOffered: techOffer,
+                                          techRequested: techRequest,
+                                          goldAmount: techPrice,
+                                        })}
+                                      >
+                                        {t('gm.diplo.exchange.sellButton' as TranslationKey)}
+                                      </button>
+                                    )}
+                                    {techOffer && (
+                                      <button
+                                        className="diplomacy-btn btn-treaty"
+                                        onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'gift_technology', {
+                                          techOffered: techOffer,
+                                        })}
+                                      >
+                                        {t('gm.diplo.exchange.giftButton' as TranslationKey)}
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               );
                             })()}
@@ -1523,6 +1634,10 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                                 embargo_declared: t('gm.diplo.record.embargo' as TranslationKey, { from, to }),
                                 treaty_cancelled: t('gm.diplo.record.treatyCancelled' as TranslationKey, { from }),
                                 tech_exchanged: t('gm.diplo.record.techExchange' as TranslationKey, { from, to }),
+                                tech_gifted: t('gm.diplo.record.techGifted' as TranslationKey, { from, to }),
+                                gold_transferred: t('gm.diplo.record.goldTransferred' as TranslationKey, { from, to, gold: e.goldAmount ?? 0 }),
+                                call_for_help_sent: t('gm.diplo.record.callForHelp' as TranslationKey, { from, to }),
+                                call_for_help_accepted: t('gm.diplo.record.callForHelpAccepted' as TranslationKey, { from, to }),
                                 counter_proposal: t('gm.diplo.record.counterProposal' as TranslationKey, { from }),
                               };
                               return (
@@ -1560,7 +1675,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       if (observations.length === 0) return null;
                       return (
                         <section className="gm-section">
-                          <div className="gm-section-title">AI Diplomacy Observations</div>
+                          <div className="gm-section-title">{t('gm.diplo.observations.title' as TranslationKey)}</div>
                           <div className="diplomacy-log">
                             {observations.map((e, i: number) => {
                               const from = civilizations[e.fromCivId]?.name ?? `Civ ${e.fromCivId}`;
@@ -1583,6 +1698,10 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                                 embassy_established: `🏛️ Embassy established: ${from} ↔ ${to}`,
                                 treaty_cancelled: `📜 Treaty cancelled by ${from}`,
                                 tech_exchanged: `🔬 Tech exchange: ${from} ↔ ${to}`,
+                                tech_gifted: `🎓 ${from} gifted knowledge to ${to}`,
+                                gold_transferred: `💰 ${from} sent ${e.goldAmount ?? 0} gold to ${to}`,
+                                call_for_help_sent: `🆘 ${from} called ${to} for help`,
+                                call_for_help_accepted: `🆘 ${from} answered the call for help`,
                                 counter_proposal: `📜 Counter-proposal from ${from}`,
                               };
                               return (

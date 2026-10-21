@@ -306,6 +306,11 @@ export interface AudienceNotice {
   techRequested?: string;
   /** Third-party civ the proposal names (joint war target, embargo enemy). */
   embargoTargetId?: number;
+  /**
+   * The two units met face to face (a trade visit at the court's own door), so
+   * knowledge can change hands without a diplomat crossing between them.
+   */
+  inPerson?: boolean;
   /** The leader's spoken line. */
   message: string;
 }
@@ -329,6 +334,11 @@ interface IncomingDiplomacyOffer {
   techRequested?: string;
   /** Third-party civ the proposal names (joint war target, embargo enemy). */
   embargoTargetId?: number;
+  /**
+   * The two units met face to face (a trade visit at the court's own door), so
+   * knowledge can change hands without a diplomat crossing between them.
+   */
+  inPerson?: boolean;
   /** Human-readable message describing the offer. */
   message?: string;
 }

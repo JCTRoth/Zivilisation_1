@@ -1,3 +1,55 @@
+ * Implement Human and Human (on one computer) against AI vs AI game modes.
+* Implement End of game statistics that show the player how they did, enconmics, military, and science wise.
+* Implement Civ1 ingame statistics screen that shows the player greatest cities in the worl, and there rank in the world wide demographics.
+* High score system for single player games, including a list of high scores, and the ability to submit high scores to a server.
+* Select the civilization on the start screen on initialization by the country the web browser is set to, or by the country the player is in (IP address).
+    Therefor create a matrix mapping country codes to civilization ids, and use the country code to select the civilization on the start screen.
+
+* Multi Language support, including the ability to change the language of the game, and the ability to add new languages to the game.
+
+* [DONE] Diplomatie: Exchange technologie with others, offer tech. for tech. offer tech. for money, AI should also do all of this. Tech. can only be exchanged when two units meet.
+  Gifting betters meaing of civ. about other civ. emensly. Recive of tech. only possible if tech. is unknown until now to civ.
+  - Knowledge now has three shapes: a swap, a sale for gold, and a gift. The terms
+    decide which, and one function (goldPayerFor) decides who pays the gold, so a
+    "tech for money" deal can no longer have the buyer paying the seller.
+  - A gift of knowledge is worth an enormous amount of goodwill (technology_gifted),
+    scaled by what the knowledge was worth, and it is the one act that buys goodwill
+    without buying anything back.
+  - A technology is only ever handed to a civ that does not know it yet, and only
+    while the two units are actually meeting: a negotiated exchange needs both
+    diplomats within reach, a deal made in person (a trade visit at the other
+    court's doorstep) carries the knowledge with the messenger.
+  - The AI deals in all three shapes too — as a swap, a sale, and a gift.
+
+* [DONE] Diplomatie: Add possiblity to send gold to other civs, and to request gold from other civs. The AI should be bribable, and the player should be able to bribe the AI. The AI should also be able to request gold from the player, and the player should be able to refuse or accept the request.
+  - Gifting gold is no longer a negotiation: the money is the offer, and it improves
+    the receiver's opinion of the giver even when that court dislikes them. The player
+    can pay the AI for anything the AI is willing to be paid for.
+
+* [DONE] One AI should be able to call other AI that is allied with for help when gets attacked of wants to attack others
+  - Both a mutual-defence partner and a plain alliance partner can be called, and the
+    call works offensively as well as defensively. The ally weighs it (capacity, war
+    wear, whether it could win at all) and may refuse, which breaks the pact. The
+    call is one ring deep, so one war cannot walk the whole alliance network.
+
+* [DONE] Sending money to the AI should improve the AI's relationship with the player, and requesting money from the AI should be possible in two ways: 1. The Player and the AI have a very good relationship, and the AI will give the player money for free. 2. Threten the AI with war, and the AI will give the player money to avoid war. Depending on the AI's personality, and Military strength, the AI may or may not give the player money. The AI should also be able to request gold from the player, and the player should be able to refuse or accept the request.
+  * AI to AI use this behavior as well, and the player should be able to observe this behavior in the Diplomacy screen if he has a embassy in boath civs.
+  - A request for money now has its own arithmetic: friendship and fear are the two
+    ways it lands, personality scales both, and the military balance decides how much
+    is asked for. A payment made under duress is remembered as tribute, one made out
+    of friendship as a kindness.
+  - The AI asks for money on the same terms, and the player answers in the audience
+    screen. AI-to-AI dealing shows up in the Diplomacy screen's record and in the
+    "AI Diplomacy Observations" for a player holding an embassy with both courts.
+
+* [DONE] On the Auto End Turn screen, Inform about thr Auto End Turn feature, add there a check box to enable/disable the feature.
+  - The one-time offer already tells the player what the feature does and carries the
+    on/off checkbox, so answering it decides the setting on the spot.
+
+
+ 
+ 
+ 
  1. [DONE] Veteran units: four-rank ladder (Recruit/Regular/Veteran/Elite) in UnitRankSystem, wired into CombatSystem, unit creation (Barracks → Veteran) and the UI.
 * [DONE] Add new ship type, "Trade Ship" 
 - DONE — diplomacy is now a points system. Every act funnels through one

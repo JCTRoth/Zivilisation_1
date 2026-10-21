@@ -27,6 +27,8 @@ const DIPLOMAT_ACTION_UI: Record<
   offer_open_borders: { icon: '🚪', label: 'unitActions.openBorders', section: 'treaty' },
   propose_trade_agreement: { icon: '📦', label: 'unitActions.tradeAgreement', section: 'treaty' },
   offer_tech_exchange: { icon: '🔬', label: 'unitActions.techExchange', section: 'treaty' },
+  offer_tech_for_gold: { icon: '💱', label: 'unitActions.techForGold', section: 'treaty' },
+  gift_technology: { icon: '🎓', label: 'unitActions.giftTechnology', section: 'treaty' },
   propose_mutual_defense: { icon: '🛡️', label: 'unitActions.mutualDefense', section: 'treaty' },
   propose_non_aggression: { icon: '🤚', label: 'unitActions.nonAggression', section: 'treaty' },
   propose_embargo: { icon: '🚫', label: 'unitActions.embargo', section: 'treaty' },

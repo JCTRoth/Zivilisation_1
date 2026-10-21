@@ -25,7 +25,7 @@ import type {
   EspionageResult,
   CityIntelligence,
 } from './DiplomacyTypes';
-import { ESPIONAGE_DIPLOMAT_ACTIONS, attitudeFromScore } from './DiplomacyTypes';
+import { ESPIONAGE_DIPLOMAT_ACTIONS, attitudeFromScore, goldPayerFor } from './DiplomacyTypes';
 import {
   applyImpact,
   createOpinion,
@@ -131,6 +131,8 @@ const AI_OFFER_MESSAGES: Partial<Record<DiplomatAction, (civName: string) => str
   propose_trade_agreement: (n) => `${n} proposes a trade agreement.`,
   propose_non_aggression: (n) => `${n} proposes a non-aggression pact.`,
   offer_tech_exchange: (n) => `${n} offers an Exchange of Knowledge.`,
+  offer_tech_for_gold: (n) => `${n} offers a technology for gold.`,
+  gift_technology: (n) => `${n} offers a gift of knowledge.`,
   gift_gold: (n) => `${n} offers a gift of gold.`,
   request_gold: (n) => `${n} requests a gift of gold.`,
   establish_embassy: (n) => `${n} proposes to establish an embassy.`,
@@ -478,8 +480,16 @@ export class DiplomacyManager {
 
   // ─── State changes ─────────────────────────────────────────────────
 
-  /** Declare war between two civilizations */
-  declareWar(aggressorId: number, targetId: number): void {
+  /**
+   * Declare war between two civilizations.
+   *
+   * `propagateCalls` is false when the war comes from an ally ANSWERING a
+   * call for help: the friend joined the war its partner was already in, and
+   * that must not set off another round of calls. Without the guard one war
+   * walks the alliance network until every court on the map is in it — the
+   * continent-wide war the alliance model exists to prevent.
+   */
+  declareWar(aggressorId: number, targetId: number, options?: { propagateCalls?: boolean }): void {
     const rel = this.getRelation(aggressorId, targetId);
     if (!rel || rel.status === 'war') return;
     // You cannot declare war on someone you have never met.
@@ -533,7 +543,9 @@ export class DiplomacyManager {
 
     // Alliance call for help: if the defender has mutual-defense allies,
     // notify them so they can choose to join the war or break the alliance.
-    this.callForHelp(targetId, aggressorId);
+    if (options?.propagateCalls !== false) {
+      this.callForHelp(targetId, aggressorId);
+    }
   }
 
   /** Establish peace between two civilizations */
@@ -735,6 +747,7 @@ export class DiplomacyManager {
     // the term the old flat −10 alliance penalty had no room for.
     const ownEnemies = new Set(this.getEnemies(toCivId));
     const sharedEnemy = this.getEnemies(fromCivId).some((e) => ownEnemies.has(e));
+    const responderWeights = this.weightsFor(toCivId);
     return {
       responder: toCivId,
       proposer: fromCivId,
@@ -743,7 +756,7 @@ export class DiplomacyManager {
       // that is the reverse direction, and reading it here made every proposal
       // be judged on what the proposer thought of the responder.)
       opinion: rel ? readOpinion(rel, toCivId) : createOpinion(),
-      weights: this.weightsFor(toCivId),
+      weights: responderWeights,
       status: rel?.status ?? 'peace',
       treaties: rel?.activeTreaties ?? [],
       ownStrength,
@@ -751,6 +764,16 @@ export class DiplomacyManager {
       ownGold: this.gameEngine.civilizations?.[toCivId]?.resources?.gold ?? 0,
       goldAmount: proposal.goldAmount,
       sharedEnemy,
+      // War capacity: a call for help is a request to open another front, and
+      // the responder has to be able to answer it.
+      activeWars: this.getEnemies(toCivId).length,
+      maxWars: maxConcurrentWars(responderWeights, this.gameEngine.currentYear),
+      exhaustion: this.getWarExhaustion(toCivId),
+      // The enemy a call to arms names, when the proposal names one: the ally
+      // has to weigh whether it could win that war at all.
+      targetStrength: proposal.embargoTargetId !== undefined
+        ? this.estimateMilitaryStrength(proposal.embargoTargetId)
+        : undefined,
       round: this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
       sequence: this.proposalSequence++,
     };
@@ -786,15 +809,18 @@ export class DiplomacyManager {
     }
 
     // Civ I: no Exchange of Knowledge while the guns are still firing —
-    // refuse with a plain reason instead of burying it in the score.
-    if (action === 'offer_tech_exchange') {
+    // refuse with a plain reason instead of burying it in the score. A gift of
+    // technology is an exchange of the same kind, so it follows the same rule.
+    if (action === 'offer_tech_exchange' || action === 'offer_tech_for_gold' || action === 'gift_technology') {
       const tradeRel = this.getRelation(fromCivId, toCivId);
       if (tradeRel?.status === 'war') {
         return { accepted: false, reason: 'They will not trade while the two of you are at war' };
       }
       // Civ I: an Exchange of Knowledge needs both diplomats physically
       // present — same tile or adjacent — not just a permanent contact flag.
-      if (!this.hasDiplomatContact(fromCivId, toCivId)) {
+      // The one exception is a deal made in person: a unit that walked up to
+      // the other court's own doorstep carries the knowledge with it.
+      if (!proposal.inPerson && !this.hasDiplomatContact(fromCivId, toCivId)) {
         return { accepted: false, reason: 'No diplomat contact' };
       }
       // A swap where either side already knows the tech is not a swap.
@@ -938,8 +964,12 @@ export class DiplomacyManager {
         this.transferGold(fromCivId, toCivId, amount);
         const giftRel = this.getRelation(toCivId, fromCivId);
         if (giftRel) {
+          // Both ledgers move: the receiver likes the giver, and the giver's
+          // own court records the generosity (which counts as keeping a word).
           this.recordImpactOn(giftRel, toCivId, 'tribute_gift',
             { gold: amount }, `${amount} gold gift`);
+          this.recordImpactOn(giftRel, fromCivId, 'tribute_gift',
+            { gold: amount }, `gave ${amount} gold`);
         }
         this.logEvent({
           type: 'gold_transferred',
@@ -948,7 +978,8 @@ export class DiplomacyManager {
           goldAmount: amount,
           details: `Gift of ${amount} gold`,
         });
-        return { accepted: true, goldTransferred: amount };
+        // Sign convention: positive means the money went TO the proposer.
+        return { accepted: true, goldTransferred: -amount };
       }
 
       case 'request_gold': {
@@ -960,8 +991,18 @@ export class DiplomacyManager {
         this.transferGold(toCivId, fromCivId, amount);
         const requestRel = this.getRelation(toCivId, fromCivId);
         if (requestRel) {
-          this.recordImpactOn(requestRel, toCivId, 'tribute_extorted',
-            { gold: amount }, `${amount} gold requested`);
+          // A payment made under duress is remembered as tribute; one made out
+          // of friendship is remembered as a kindness. Which of the two it was
+          // is decided by the balance of power, not by the amount.
+          if (this.isCoercedPayment(fromCivId, toCivId)) {
+            this.recordImpactOn(requestRel, toCivId, 'tribute_extorted',
+              { gold: amount }, `${amount} gold paid to avoid trouble`);
+            this.recordImpactOn(requestRel, fromCivId, 'tribute_extorted',
+              { gold: amount }, `we took ${amount} gold`);
+          } else {
+            this.recordImpactOn(requestRel, toCivId, 'tribute_gift',
+              { gold: amount }, `${amount} gold given to a friend`);
+          }
         }
         this.logEvent({
           type: 'gold_transferred',
@@ -976,17 +1017,21 @@ export class DiplomacyManager {
       case 'call_for_help': {
         const aggressorId = proposal.embargoTargetId;
         if (aggressorId === undefined) return { accepted: false, reason: 'No aggressor specified' };
-        this.declareWar(fromCivId, aggressorId);
+        // The ALLY joins the war — the defender is already in it, so it is the
+        // responder that has to take up arms against the aggressor. The war
+        // does not call for further help: the call is one ring deep.
+        this.declareWar(toCivId, aggressorId, { propagateCalls: false });
         const helpRel = this.getRelation(toCivId, fromCivId);
         if (helpRel) {
-          this.recordImpactOn(helpRel, fromCivId, 'mutual_defense_signed',
-            undefined, `answered call for help against ${aggressorId}`);
+          // An ally that answered the call is an ally that kept its word.
+          this.recordImpactOn(helpRel, fromCivId, 'common_enemy_defeated',
+            undefined, `answered our call for help against ${aggressorId}`);
         }
         this.logEvent({
           type: 'call_for_help_accepted',
-          fromCivId,
+          fromCivId: toCivId,
           toCivId: aggressorId,
-          details: `Civ ${fromCivId} answered the call for help`,
+          details: `Civ ${toCivId} answered the call for help`,
         });
         return { accepted: true };
       }
@@ -1021,7 +1066,8 @@ export class DiplomacyManager {
         return { accepted: true };
       }
 
-      case 'offer_tech_exchange': {
+      case 'offer_tech_exchange':
+      case 'offer_tech_for_gold': {
         const { techOffered, techRequested } = proposal;
         const sweetener = Math.max(0, Math.floor(goldAmount ?? 0));
         if (!techOffered && !techRequested) return { accepted: false, reason: 'Must specify at least one technology' };
@@ -1033,8 +1079,9 @@ export class DiplomacyManager {
         }
 
         // Both diplomats must still be standing together — the player may have
-        // accepted the offer after the units moved apart.
-        if (!this.hasDiplomatContact(fromCivId, toCivId)) {
+        // accepted the offer after the units moved apart. A deal made in
+        // person does not need that: the messenger is already there.
+        if (!proposal.inPerson && !this.hasDiplomatContact(fromCivId, toCivId)) {
           return { accepted: false, reason: 'No diplomat contact' };
         }
 
@@ -1049,18 +1096,38 @@ export class DiplomacyManager {
         const toHas = !techRequested || (!!toTechs && toTechs.includes(techRequested));
         if (!fromHas) return { accepted: false, reason: 'You do not have the offered technology' };
         if (!toHas) return { accepted: false, reason: 'They do not have the requested technology' };
-        // A sweetener must be real money, not a promise.
-        if (sweetener > 0 && (fromCiv?.resources?.gold ?? 0) < sweetener) {
-          return { accepted: false, reason: 'You cannot afford the gold you offered' };
+        // A technology is only ever handed to a civ that does not know it yet —
+        // otherwise the deal is a gift of nothing at all.
+        if (techOffered && toTechs?.includes(techOffered)) {
+          return { accepted: false, reason: 'They already have this technology' };
         }
-        // Exchange: each side learns what the other knew.
+        if (techRequested && fromTechs?.includes(techRequested)) {
+          return { accepted: false, reason: 'You already have this technology' };
+        }
+
+        // WHO pays the gold. In a swap the proposer sweetens the deal and the
+        // money runs to the responder. In a one-sided exchange the money is
+        // the PRICE of the knowledge, so it runs the other way — to whoever
+        // hands the technology over. Without this a "tech for money" deal
+        // would have the buyer paying the seller.
+        const responderPays = goldPayerFor({ techOffered, techRequested }) === 'responder';
+        const payerId = responderPays ? toCivId : fromCivId;
+        const payeeId = responderPays ? fromCivId : toCivId;
+        const payerCiv = this.gameEngine.civilizations?.[payerId];
+        // A sweetener must be real money, not a promise.
+        if (sweetener > 0 && (payerCiv?.resources?.gold ?? 0) < sweetener) {
+          return {
+            accepted: false,
+            reason: responderPays
+              ? 'They cannot afford the price you are asking'
+              : 'You cannot afford the gold you offered',
+          };
+        }
+        // Exchange: each side learns what the other knew. A technology is only
+        // ever handed over to a civ that does not know it yet.
         if (techRequested && fromTechs && !fromTechs.includes(techRequested)) fromTechs.push(techRequested);
         if (techOffered && toTechs && !toTechs.includes(techOffered)) toTechs.push(techOffered);
-        // Gold always flows proposer → responder on acceptance.
-        if (sweetener > 0 && fromCiv?.resources && toCiv?.resources) {
-          fromCiv.resources.gold -= sweetener;
-          toCiv.resources.gold += sweetener;
-        }
+        if (sweetener > 0) this.transferGold(payerId, payeeId, sweetener);
         // Refresh the shared tree UI so newly learned techs light up.
         this.gameEngine.updateTechnologyAvailability?.();
         // A fair swap is one of the few unambiguously good acts in the game.
@@ -1080,7 +1147,50 @@ export class DiplomacyManager {
           details: [techOffered, techRequested].filter(Boolean).join(' ↔ ')
             + (sweetener > 0 ? ` + ${sweetener} gold` : ''),
         });
-        return { accepted: true, goldTransferred: sweetener > 0 ? -sweetener : undefined };
+        // Sign convention: positive means the money went TO the proposer.
+        return { accepted: true, goldTransferred: sweetener > 0 ? (responderPays ? sweetener : -sweetener) : undefined };
+      }
+
+      case 'gift_technology': {
+        const techId = proposal.techOffered;
+        if (!techId) return { accepted: false, reason: 'Name a technology to give' };
+        const giftTradeRel = this.getRelation(fromCivId, toCivId);
+        if (giftTradeRel?.status === 'war') {
+          return { accepted: false, reason: 'They will not trade while the two of you are at war' };
+        }
+        // Knowledge is only ever handed over face to face.
+        if (!proposal.inPerson && !this.hasDiplomatContact(fromCivId, toCivId)) {
+          return { accepted: false, reason: 'No diplomat contact' };
+        }
+        const giver = this.gameEngine.civilizations?.[fromCivId];
+        const receiver = this.gameEngine.civilizations?.[toCivId];
+        const giverTechs = giver?.technologies;
+        const receiverTechs = receiver?.technologies;
+        if (!giverTechs?.includes(techId)) {
+          return { accepted: false, reason: 'You do not have the technology to give' };
+        }
+        // A gift of something the receiver already knows is no gift at all.
+        if (receiverTechs?.includes(techId)) {
+          return { accepted: false, reason: 'They already have this technology' };
+        }
+        receiverTechs?.push(techId);
+        this.gameEngine.updateTechnologyAvailability?.();
+        // A gift of knowledge is the one act that buys goodwill without buying
+        // anything back — so it is worth a great deal to the receiver.
+        const giftRel = this.getRelation(toCivId, fromCivId);
+        if (giftRel) {
+          const terms = { tech: true, techValue: this.techCost(techId) };
+          this.recordImpactOn(giftRel, toCivId, 'technology_gifted', terms, `gift of ${techId}`);
+          this.recordImpactOn(giftRel, fromCivId, 'technology_gifted', terms, `we gave ${techId}`);
+        }
+        this.logEvent({
+          type: 'tech_gifted',
+          fromCivId,
+          toCivId,
+          details: techId,
+          techId,
+        });
+        return { accepted: true };
       }
 
       case 'propose_joint_war': {
@@ -1089,9 +1199,11 @@ export class DiplomacyManager {
           return { accepted: false, reason: 'Name the common enemy' };
         }
         // The responder declares war on the enemy; Civ I cascade (allies of the
-        // defender) is handled by the existing declareWar path.
+        // defender) is handled by the existing declareWar path. A call to arms
+        // is one ring deep, though: joining a friend's war does not set off
+        // another round of calls.
         if (this.getRelation(toCivId, enemyId)?.status !== 'war') {
-          this.declareWar(toCivId, enemyId);
+          this.declareWar(toCivId, enemyId, { propagateCalls: false });
         }
         const rel = this.getRelation(toCivId, fromCivId);
         if (rel) this.recordImpactOn(rel, fromCivId, 'common_enemy_defeated', { thirdParty: true }, 'called to arms');
@@ -1799,6 +1911,70 @@ export class DiplomacyManager {
   }
 
   /**
+   * The technology to hand over in a GIFT of knowledge: the most valuable one
+   * we hold that the other court does not. A gift is worth what it saves the
+   * receiver, so the dearest secret is the most generous one to give away.
+   */
+  pickTechGiftTerm(fromCivId: number, toCivId: number): { techOffered?: string } {
+    const opts = this.getTechTradeOptions(fromCivId, toCivId);
+    if (opts.weHaveTheyLack.length === 0) return {};
+    const techOffered = opts.weHaveTheyLack.reduce(
+      (best, id) => (this.techCost(id) > this.techCost(best) ? id : best),
+      opts.weHaveTheyLack[0],
+    );
+    return { techOffered };
+  }
+
+  /**
+   * The terms of a knowledge-for-money deal: either we sell a secret they
+   * lack, or we buy one they hold, priced at the research cost of the
+   * technology — the one figure both courts can compute without haggling.
+   *
+   * Which side of the deal this civ takes is decided by where it stands in
+   * the learning race: a civ that is ahead can afford to sell, and one that
+   * is behind wants to buy.
+   */
+  pickTechForGoldTerm(fromCivId: number, toCivId: number): {
+    techOffered?: string;
+    techRequested?: string;
+    goldAmount?: number;
+  } {
+    const opts = this.getTechTradeOptions(fromCivId, toCivId);
+    const ourCount = this.gameEngine.civilizations?.[fromCivId]?.technologies?.length ?? 0;
+    const theirCount = this.gameEngine.civilizations?.[toCivId]?.technologies?.length ?? 0;
+    const ourGold = this.gameEngine.civilizations?.[fromCivId]?.resources?.gold ?? 0;
+
+    // Ahead in learning: our spare knowledge is worth more to them than to
+    // us, so it is the one we sell.
+    if (ourCount > theirCount && opts.weHaveTheyLack.length > 0) {
+      const techOffered = opts.weHaveTheyLack.reduce(
+        (best, id) => (this.techCost(id) < this.techCost(best) ? id : best),
+        opts.weHaveTheyLack[0],
+      );
+      return { techOffered, goldAmount: this.techCost(techOffered) };
+    }
+    // Behind: we want what they know, and a secret has a price. Only offer a
+    // purchase the treasury can actually pay for.
+    if (opts.theyHaveWeLack.length > 0) {
+      const techRequested = opts.theyHaveWeLack.reduce(
+        (best, id) => (this.techCost(id) > this.techCost(best) ? id : best),
+        opts.theyHaveWeLack[0],
+      );
+      const price = this.techCost(techRequested);
+      if (ourGold >= price) return { techRequested, goldAmount: price };
+    }
+    // Whatever we can spare beats nothing at all.
+    if (opts.weHaveTheyLack.length > 0) {
+      const techOffered = opts.weHaveTheyLack.reduce(
+        (best, id) => (this.techCost(id) < this.techCost(best) ? id : best),
+        opts.weHaveTheyLack[0],
+      );
+      return { techOffered, goldAmount: this.techCost(techOffered) };
+    }
+    return {};
+  }
+
+  /**
    * The facts `TechTradeEvaluator` needs to price a trade for this civ. Built
    * here so the human-facing preview and the AI's own deliberation ask the
    * identical question.
@@ -1872,8 +2048,11 @@ export class DiplomacyManager {
       ourTechCount: this.gameEngine.civilizations?.[civId]?.technologies?.length ?? 0,
       theirTechCount: this.gameEngine.civilizations?.[otherId]?.technologies?.length ?? 0,
       // No working channel, no Exchange of Knowledge: the AI waits for the
-      // player (or one of its own diplomats) to found an embassy first.
+      // player (or one of its own diplomats) to found an embassy first — and
+      // the two diplomats have to be standing together for knowledge to
+      // change hands at all.
       hasEmbassy: this.hasEmbassy(civId, otherId),
+      hasDiplomatContact: this.hasDiplomatContact(civId, otherId),
     };
   }
 
@@ -2078,6 +2257,61 @@ export class DiplomacyManager {
           break;
         }
 
+        case 'offer_tech_for_gold': {
+          // Knowledge for money. The terms decide which side of the deal this
+          // civ is on: it either sells a secret the other lacks, or buys one
+          // it wants.
+          const terms = this.pickTechForGoldTerm(civId, otherId);
+          if (!terms.techOffered && !terms.techRequested) break;
+          if (!this.hasDiplomatContact(civId, otherId)) break;
+          const techName = (id: string): string =>
+            TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
+          const message = terms.techOffered
+            ? `${civName} offers its knowledge of ${techName(terms.techOffered)} for ${terms.goldAmount} gold.`
+            : `${civName} offers ${terms.goldAmount} gold for its knowledge of ${techName(terms.techRequested ?? '')}.`;
+          if (isPlayerTarget) {
+            this.emitOffer(
+              civId, otherId, 'offer_tech_for_gold', terms.goldAmount, message,
+              terms.techOffered, terms.techRequested,
+            );
+          } else {
+            this.processProposal({
+              fromCivId: civId,
+              toCivId: otherId,
+              action: 'offer_tech_for_gold',
+              goldAmount: terms.goldAmount,
+              techOffered: terms.techOffered,
+              techRequested: terms.techRequested,
+            });
+          }
+          break;
+        }
+
+        case 'gift_technology': {
+          // A gift of knowledge: no money changes hands, and the receiver's
+          // opinion of the giver improves enormously.
+          const terms = this.pickTechGiftTerm(civId, otherId);
+          if (!terms.techOffered) break;
+          if (!this.hasDiplomatContact(civId, otherId)) break;
+          const techName = (id: string): string =>
+            TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
+          const message = `${civName} offers its knowledge of ${techName(terms.techOffered)} as a gift.`;
+          if (isPlayerTarget) {
+            this.emitOffer(
+              civId, otherId, 'gift_technology', undefined, message,
+              terms.techOffered, undefined,
+            );
+          } else {
+            this.processProposal({
+              fromCivId: civId,
+              toCivId: otherId,
+              action: 'gift_technology',
+              techOffered: terms.techOffered,
+            });
+          }
+          break;
+        }
+
         case 'gift_gold': {
           // Give a modest gift scaled by what we can spare and how they feel.
           const ourGold = ctx.ownGold;
@@ -2092,9 +2326,15 @@ export class DiplomacyManager {
         }
 
         case 'request_gold': {
-          // Request gold scaled by how much we think they'll part with.
+          // Request gold scaled by how much we think they'll part with — and
+          // by WHY they will part with it. A friend gives a little out of
+          // goodwill; a rival that has been threatened gives a great deal
+          // more, and that is the whole point of the threat.
           const theirGold = ctx.theirGold ?? 0;
-          const requestAmount = Math.max(10, Math.min(300, Math.floor(theirGold * 0.15)));
+          const friendly = ctx.opinion.goodwill > 30;
+          const threatening = ctx.ownStrength > ctx.theirStrength * 2;
+          const share = friendly ? 0.15 : threatening ? 0.4 : 0.25;
+          const requestAmount = Math.max(10, Math.min(400, Math.floor(theirGold * share)));
           const message = `${civName} requests ${requestAmount} gold.`;
           if (isPlayerTarget) {
             this.emitOffer(civId, otherId, 'request_gold', requestAmount, message);
@@ -2125,6 +2365,8 @@ export class DiplomacyManager {
     techRequested?: string,
     /** Third-party civ this proposal names (joint war target, embargo enemy). */
     targetId?: number,
+    /** The two units met face to face, so no diplomat has to cross over. */
+    inPerson?: boolean,
   ): void {
     debugLog(`[AI-DIPLO] Offering ${action} to human Civ ${toCivId}`);
     this.emitEvent('AI_DIPLOMACY_OFFER', {
@@ -2135,6 +2377,7 @@ export class DiplomacyManager {
       techOffered,
       techRequested,
       embargoTargetId: targetId,
+      inPerson,
       message,
     });
   }
@@ -2153,11 +2396,15 @@ export class DiplomacyManager {
     techOffered?: string,
     techRequested?: string,
     targetId?: number,
+    inPerson?: boolean,
   ): void {
     // A civ cannot negotiate with someone it has never met. Visibility normally
     // records this; asserting it here keeps the invariant airtight.
     this.markContact(fromCivId, toCivId);
-    this.emitOffer(fromCivId, toCivId, action, goldAmount, message, techOffered, techRequested, targetId);
+    this.emitOffer(
+      fromCivId, toCivId, action, goldAmount, message,
+      techOffered, techRequested, targetId, inPerson,
+    );
   }
 
   // ─── Gold transfer helpers ─────────────────────────────────────────
@@ -2176,21 +2423,47 @@ export class DiplomacyManager {
     if (toCiv?.resources) toCiv.resources.gold += amount;
   }
 
+  /**
+   * Whether a payment was made under duress rather than out of goodwill.
+   *
+   * The same request for money means two very different things depending on
+   * why it was granted: a court that parts with its gold because it likes the
+   * asker is making a gift, and one that parts with it because it is afraid
+   * is paying tribute. The balance of power decides which of the two happened.
+   */
+  private isCoercedPayment(askerCivId: number, payerCivId: number): boolean {
+    const rel = this.getRelation(askerCivId, payerCivId);
+    if (rel?.status === 'war') return true;
+    const asker = this.estimateMilitaryStrength(askerCivId);
+    const payer = this.estimateMilitaryStrength(payerCivId);
+    return payer > 0 && asker > payer * 1.5;
+  }
+
+  /**
+   * The research cost of a technology — what a gift of it is worth. Unknown
+   * ids fall back to a middling figure so the arithmetic never reads NaN.
+   */
+  private techCost(techId: string): number {
+    return TECHNOLOGIES_DATA.find((t) => t.id === techId)?.cost ?? 50;
+  }
+
   // ─── Alliance call for help ────────────────────────────────────────
 
   /**
-   * When a civ is attacked, send a call_for_help to every ally that shares a
-   * mutual_defense pact with the defender. The ally can accept (joining the
-   * war on the defender's side) or refuse (breaking the pact and recording an
-   * ally_abandoned impact). Only human allies are offered the choice via
-   * AI_DIPLOMACY_OFFER; AI allies resolve immediately through processProposal.
+   * When a civ is attacked, send a call_for_help to every ally it has — a
+   * mutual-defence partner, or a plain alliance partner, which is a friend
+   * with a treaty of friendship and no written obligation. The ally can
+   * accept (joining the war on the defender's side) or refuse (breaking the
+   * pact and recording an ally_abandoned impact). Only human allies are
+   * offered the choice via AI_DIPLOMACY_OFFER; AI allies resolve immediately
+   * through processProposal.
    */
   private callForHelp(defenderId: number, aggressorId: number): void {
     const defender = this.gameEngine.civilizations?.[defenderId];
     const defenderName = defender?.name ?? `Civilization ${defenderId}`;
     for (const rel of this.getRelationsForCiv(defenderId)) {
       const allyId = rel.otherCivId;
-      if (!rel.activeTreaties?.includes('mutual_defense')) continue;
+      if (!this.isAllyOf(defenderId, allyId)) continue;
       if (this.isAtWar(allyId, aggressorId)) continue;
       const ally = this.gameEngine.civilizations?.[allyId];
       if (!ally || ally.isAlive === false) continue;
@@ -2225,9 +2498,9 @@ export class DiplomacyManager {
 
   /**
    * Offensive mirror of `callForHelp`: when a civ is about to attack, ask its
-   * mutual_defense allies to join the war on the attacker's side. The ally
-   * accepts (declaring war on the target, via the same `call_for_help` action)
-   * or refuses (breaking the pact and recording an ally_abandoned impact, as
+   * allies to join the war on the attacker's side. The ally accepts
+   * (declaring war on the target, via the same `call_for_help` action) or
+   * refuses (breaking the pact and recording an ally_abandoned impact, as
    * in the defensive case). Human allies get an interactive prompt; AI allies
    * resolve immediately through processProposal.
    */
@@ -2237,7 +2510,7 @@ export class DiplomacyManager {
     for (const rel of this.getRelationsForCiv(attackerId)) {
       const allyId = rel.otherCivId;
       if (allyId === targetId) continue;
-      if (!rel.activeTreaties?.includes('mutual_defense')) continue;
+      if (!this.isAllyOf(attackerId, allyId)) continue;
       if (this.isAtWar(allyId, targetId)) continue;
       const ally = this.gameEngine.civilizations?.[allyId];
       if (!ally || ally.isAlive === false) continue;
@@ -2268,6 +2541,17 @@ export class DiplomacyManager {
         });
       }
     }
+  }
+
+  /**
+   * Whether two civs are bound to each other: a mutual-defence pact, or a
+   * plain alliance. Both are friendships the other court can be called on —
+   * the pact obliges, the alliance invites.
+   */
+  private isAllyOf(civId: number, otherId: number): boolean {
+    const rel = this.getRelation(civId, otherId);
+    if (!rel) return false;
+    return rel.status === 'alliance' || rel.activeTreaties?.includes('mutual_defense') === true;
   }
 
   // ─── Internal helpers ──────────────────────────────────────────────

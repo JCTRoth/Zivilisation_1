@@ -77,6 +77,7 @@ export type ImpactEvent =
   | 'embargo_signed'
   | 'embassy_established'
   | 'tech_exchanged'
+  | 'technology_gifted'
   | 'common_enemy_defeated'
   | 'refused_peace'
   | 'ally_abandoned';
@@ -177,6 +178,8 @@ export type DiplomatAction =
   | 'offer_open_borders'
   | 'propose_trade_agreement'
   | 'offer_tech_exchange'
+  | 'offer_tech_for_gold'
+  | 'gift_technology'
   | 'propose_mutual_defense'
   | 'propose_embargo'
   | 'propose_non_aggression'
@@ -268,6 +271,29 @@ export interface DiplomatActionResult {
   target?: DiplomatTarget;
 }
 
+/** Who ends up paying the gold named in a proposal. */
+export type GoldPayer = 'proposer' | 'responder';
+
+/**
+ * Who pays the gold in a technology exchange.
+ *
+ * A swap names a technology in each direction, and any gold on top of it is a
+ * sweetener the PROPOSER adds — the responder is being offered a favour, not
+ * a bill. A ONE-SIDED exchange is a sale, and the money runs the other way:
+ * the side handing over the knowledge is paid for it. Without this rule a
+ * "tech for money" deal would have the buyer handing the money to the seller.
+ *
+ * The engine and the scoring read this one function, so the two can never
+ * disagree about who pays.
+ */
+export function goldPayerFor(proposal: {
+  techOffered?: string;
+  techRequested?: string;
+}): GoldPayer {
+  if (proposal.techOffered && !proposal.techRequested) return 'responder';
+  return 'proposer';
+}
+
 export interface DiplomacyProposal {
   fromCivId: number;
   toCivId: number;
@@ -280,6 +306,16 @@ export interface DiplomacyProposal {
   techRequested?: string;
   /** Target civ for embargo */
   embargoTargetId?: number;
+  /**
+   * The two units met face to face — the offer was made in person, at the
+   * other court's own doorstep, so the knowledge travels with the messenger
+   * and no diplomat has to cross between the two.
+   *
+   * This is what makes a trade visit different from a negotiation: a warrior
+   * who walks up to a foreign city can deal there and then, while a deal
+   * struck from the other side of the world needs a diplomat to carry it.
+   */
+  inPerson?: boolean;
 }
 
 export interface DiplomacyResponse {
@@ -402,11 +438,13 @@ export interface DiplomacyEvent {
       | 'intelligence_gathered' | 'treaty_rejected'
       | 'open_borders_signed' | 'trade_agreement_signed' | 'mutual_defense_signed'
       | 'non_aggression_signed' | 'embargo_declared' | 'treaty_cancelled'
-      | 'tech_exchanged' | 'counter_proposal'
+      | 'tech_exchanged' | 'tech_gifted' | 'counter_proposal'
       | 'embassy_established' | 'technology_stolen' | 'city_sabotaged'
   | 'bribe_reported' | 'gold_transferred' | 'call_for_help_accepted' | 'call_for_help_sent';
   fromCivId: number;
   toCivId: number;
   details?: string;
   goldAmount?: number;
+  /** The technology that changed hands, for tech events. */
+  techId?: string;
 }

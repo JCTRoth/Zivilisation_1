@@ -34,12 +34,17 @@ const GOODWILL_WEIGHT: Record<string, number> = {
   propose_alliance: 0.30,
   demand_tribute: 0.10,
   offer_gift: 0.30,
+  gift_gold: 0.25,
+  request_gold: 0.30,
   offer_open_borders: 0.08,
   propose_trade_agreement: 0.12,
   propose_mutual_defense: 0.26,
   propose_non_aggression: 0.18,
   propose_embargo: 0.14,
   offer_tech_exchange: 0.16,
+  offer_tech_for_gold: 0.20,
+  gift_technology: 0.35,
+  call_for_help: 0.30,
   propose_joint_war: 0.24,
   incite_revolt: 0.06,
 };
@@ -50,13 +55,22 @@ const BASE_WILLINGNESS: Record<string, number> = {
   propose_ceasefire: 26,
   propose_alliance: 2,
   demand_tribute: -18,
-  offer_gift: 14,
+  // A gift of gold is not a negotiation: the responder keeps the money and
+  // may refuse the giver, but the money itself is never the obstacle.
+  offer_gift: 20,
+  gift_gold: 20,
+  // Asking for money is an imposition. It is accepted out of friendship or out
+  // of fear — never out of goodwill of the responder's own accord.
+  request_gold: -12,
   offer_open_borders: 8,
   propose_trade_agreement: 12,
   propose_mutual_defense: -4,
   propose_non_aggression: 18,
   propose_embargo: -6,
   offer_tech_exchange: 10,
+  offer_tech_for_gold: 8,
+  gift_technology: 10,
+  call_for_help: 0,
   propose_joint_war: -2,
   incite_revolt: -10,
 };
@@ -88,6 +102,17 @@ export interface ProposalContext {
   goldAmount?: number;
   /** Both civs currently share this enemy — the reason to ally. */
   sharedEnemy?: boolean;
+  /** How many wars the responder is already fighting. */
+  activeWars?: number;
+  /** How many wars the responder's temperament permits. */
+  maxWars?: number;
+  /** The responder's war wear, 0…EXHAUSTION_MAX. */
+  exhaustion?: number;
+  /**
+   * The strength of the third party a proposal names — the enemy an ally is
+   * being called to fight. Zero when the proposal names nobody.
+   */
+  targetStrength?: number;
   /** Round, for refusal memory and the seeded noise. */
   round: number;
   /** Extra entropy so repeated identical proposals vary a little. */
@@ -169,6 +194,10 @@ export function evaluateProposal(
   // decided by the gold term.
   if (action === 'demand_tribute') {
     factors.push({ label: 'they can hurt me', value: round2(Math.min(POWER_TERM_CAP, (ratio - 1) * 12)) });
+  } else if (action === 'request_gold') {
+    // A request is answered by a court that can be leaned on. The size of the
+    // asker's army is half the threat, and the other half is the fear meter.
+    factors.push({ label: 'they can hurt me', value: round2(Math.min(POWER_TERM_CAP, (ratio - 1) * 12)) });
   } else if (action === 'propose_peace' || action === 'propose_ceasefire') {
     factors.push({ label: 'I am losing', value: round2(Math.min(POWER_TERM_CAP, (ratio - 1) * 14)) });
   } else if (action === 'offer_open_borders' || action === 'propose_non_aggression') {
@@ -188,18 +217,54 @@ export function evaluateProposal(
     factors.push({ label: 'we share an enemy', value: 20 });
   }
 
+  // A call for help. The enemy that is hurting one of us is asking to hurt
+  // the other as well, so the case for answering is obvious — but an ally
+  // weighs it like any other war, and a court already fighting two wars, worn
+  // down to a stub, or facing an enemy it cannot beat says no.
+  if (action === 'call_for_help' || action === 'propose_joint_war') {
+    factors.push({
+      label: 'our friend is in the war already',
+      value: action === 'call_for_help' ? 18 : 12,
+    });
+    if (ctx.treaties.includes('mutual_defense')) {
+      factors.push({ label: 'we have a defence pact', value: 12 });
+    }
+    if ((ctx.activeWars ?? 0) >= (ctx.maxWars ?? 99)) {
+      factors.push({ label: 'we have no capacity for another front', value: -30 });
+    }
+    if ((ctx.exhaustion ?? 0) >= 14) {
+      factors.push({ label: 'we are worn down from war', value: -20 });
+    }
+    if (
+      typeof ctx.targetStrength === 'number'
+      && ctx.targetStrength > 0
+      && ctx.targetStrength > ctx.ownStrength * 1.8
+    ) {
+      factors.push({ label: 'the enemy outclasses us', value: -25 });
+    }
+  }
+
   // Fear makes demands payable and pacts attractive.
   if (action === 'demand_tribute') {
     factors.push({ label: 'fear of them', value: round2((opinion.fear / 100) * 12) });
   }
-  if (action === 'offer_gift') {
-    // A gift buys goodwill in direct proportion to size; an ally or a
-    // friendly civ is the natural target. Fear adds nothing — this is kindness.
-    factors.push({ label: 'their goodwill toward us', value: round2((opinion.goodwill / 100) * 10) });
-  }
+  // A gift is one-sided and cannot be negotiated: the money is the offer, and
+  // refusing it would be refusing a kindness. A court that despises the giver
+  // may still spurn it, but nobody has to be talked into accepting one.
 
-  // Terms. A demand is a cost; a gift is a sweetener.
-  if (typeof proposal.goldAmount === 'number' && proposal.goldAmount > 0 && action !== 'offer_gift') {
+  // Terms. A demand is a cost; a gift is a sweetener. The actions that have
+  // their own gold arithmetic below are excluded here so that the same gold is
+  // never counted twice — and, more importantly, so that a payment is scored
+  // from the point of view of whoever actually pays it.
+  if (
+    typeof proposal.goldAmount === 'number'
+    && proposal.goldAmount > 0
+    && action !== 'offer_gift'
+    && action !== 'gift_gold'
+    && action !== 'request_gold'
+    && action !== 'offer_tech_exchange'
+    && action !== 'gift_technology'
+  ) {
     const goldValue = goldTermValue(proposal.goldAmount, weights, ctx.ownGold);
     if (action === 'demand_tribute') {
       factors.push({ label: `demanding ${Math.round(proposal.goldAmount)} gold`, value: round2(goldValue) });
@@ -218,7 +283,54 @@ export function evaluateProposal(
       factors.push({ label: `${Math.round(proposal.goldAmount)} gold/turn offered`, value: round2(-goldValue * 0.6) });
     }
   }
-  if (proposal.techOffered && proposal.techRequested) {
+
+  // A gift of money: the responder keeps it, so the only question is whether
+  // the size of the gesture makes it worth accepting. A bigger gift is a
+  // friendlier gift.
+  if (action === 'offer_gift' || action === 'gift_gold') {
+    if (typeof proposal.goldAmount === 'number' && proposal.goldAmount > 0) {
+      const goldValue = goldTermValue(proposal.goldAmount, weights, ctx.ownGold);
+      factors.push({ label: `${Math.round(proposal.goldAmount)} gold offered`, value: round2(-goldValue * 0.6) });
+    }
+  }
+
+  // A request for money is the one proposal the responder can accept for two
+  // very different reasons, and the difference matters: a court that likes the
+  // asker pays out of friendship, and a court that fears the asker pays to
+  // keep the peace. Personality decides how much each of those is worth.
+  if (action === 'request_gold') {
+    const friendship = 0.5 + weights.trustSensitivity / 10;
+    const dread = 0.6 + weights.paranoia / 10;
+    factors.push({ label: 'our friendship', value: round2((opinion.goodwill / 100) * 34 * friendship) });
+    factors.push({ label: 'fear of them', value: round2((opinion.fear / 100) * 24 * dread) });
+    if (status === 'war') {
+      // Money is what buys the peace.
+      factors.push({ label: 'pay to end the war', value: 20 });
+    }
+    if (typeof proposal.goldAmount === 'number' && proposal.goldAmount > 0) {
+      const goldValue = goldTermValue(proposal.goldAmount, weights, ctx.ownGold);
+      factors.push({ label: `${Math.round(proposal.goldAmount)} gold asked of us`, value: round2(goldValue) });
+      const beyondSparing = (proposal.goldAmount - ctx.ownGold * 1.5) / Math.max(10, ctx.ownGold);
+      if (beyondSparing > 0) {
+        factors.push({
+          label: 'more than they can spare',
+          value: round2(-30 * Math.min(1, beyondSparing)),
+        });
+      }
+    }
+  }
+
+  if (action === 'gift_technology') {
+    // A gift of knowledge: pure generosity, no price attached. The knowledge
+    // itself is worth something to the receiver, and the relationship decides
+    // whether a court accepts charity from this particular giver at all.
+    if (status === 'war') {
+      factors.push({ label: 'at war — no trade', value: -80 });
+    } else {
+      const value = techBaseCost(proposal.techOffered ?? '');
+      factors.push({ label: 'a gift of knowledge', value: round2(2 + value / 25) });
+    }
+  } else if (proposal.techOffered && proposal.techRequested) {
     // Civ I: no Exchange of Knowledge while the guns are still firing.
     if (status === 'war') {
       factors.push({ label: 'at war — no trade', value: -80 });
@@ -242,18 +354,25 @@ export function evaluateProposal(
       }
     }
   } else if (proposal.techOffered || proposal.techRequested) {
-    // One-sided deal: tech for gold. Without gold on the table there is no
-    // deal at all — a free technology is never given away.
+    // A one-sided deal: knowledge for money. WHO pays decides how the
+    // responder reads the price — a seller wants a high price, a buyer does
+    // not.
     if (status === 'war') {
       factors.push({ label: 'at war — no trade', value: -80 });
     } else if (typeof proposal.goldAmount === 'number' && proposal.goldAmount > 0) {
       const techId = (proposal.techRequested ?? proposal.techOffered) as string;
       const price = techBaseCost(techId);
-      // Paying roughly the research cost is fair; half of it is an insult.
       const ratio = proposal.goldAmount / Math.max(1, price);
-      const fairness = Math.round((ratio - 1) * 20);
+      // The proposer sells (it names the tech it wants) → the responder is
+      // selling, and a high price is good news. The responder sells (the
+      // proposer names the tech it gives) → the responder is buying, and a
+      // high price is a bill.
+      const responderIsSeller = !proposal.techOffered;
+      const fairness = responderIsSeller
+        ? Math.round((ratio - 1) * 20)
+        : Math.round((1 - ratio) * 20);
       factors.push({
-        label: fairness >= 0 ? 'technology bought at a fair price' : 'technology offered too cheaply',
+        label: fairness >= 0 ? 'technology at a fair price' : 'technology at a bad price',
         value: 6 + fairness,
       });
     } else {

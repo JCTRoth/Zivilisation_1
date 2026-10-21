@@ -2356,6 +2356,7 @@ export class EngineEventRouter {
       techOffered: typeof eventData.techOffered === 'string' ? eventData.techOffered : undefined,
       techRequested: typeof eventData.techRequested === 'string' ? eventData.techRequested : undefined,
       embargoTargetId: typeof eventData.embargoTargetId === 'number' ? eventData.embargoTargetId : undefined,
+      inPerson: eventData.inPerson === true ? true : undefined,
       message: eventData.message as string,
     });
     this.syncState();

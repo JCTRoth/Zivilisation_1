@@ -39,6 +39,23 @@ export interface DiplomatAbilityFacts {
   activeTreaties: TreatyType[];
   /** Whether both sides hold a technology the other lacks. */
   canTradeTechs: boolean;
+  /**
+   * Whether both courts have a diplomat standing within reach of the other.
+   * Knowledge is only ever handed over face to face, so a deal that names a
+   * technology is not worth offering without it.
+   */
+  hasDiplomatContact?: boolean;
+  /**
+   * Techs WE hold that the listener lacks — the supply side of a deal. A
+   * secret we hold and they do not is something we can sell them, or give
+   * them outright.
+   */
+  techsWeCanOffer?: number;
+  /**
+   * Techs the LISTENER holds that we lack — the demand side of a deal, and
+   * the reason to name a price for what we want.
+   */
+  techsWeWant?: number;
   /** Third parties an embargo could be agreed against. */
   embargoCandidates: number[];
   /**
@@ -95,6 +112,17 @@ export function diplomatActionsFor(facts: DiplomatAbilityFacts): DiplomatAction[
       actions.push('propose_embargo');
     }
     if (facts.canTradeTechs) actions.push('offer_tech_exchange');
+    // A secret we hold and they lack is money in the bank — they can buy it
+    // from us, or we can hand it over as a gift. Both need the two diplomats
+    // to actually be standing together.
+    if (facts.hasDiplomatContact !== false) {
+      if ((facts.techsWeCanOffer ?? 0) > 0) {
+        actions.push('offer_tech_for_gold', 'gift_technology');
+      } else if ((facts.techsWeWant ?? 0) > 0) {
+        // What we lack and they hold can still be bought, if they are willing.
+        actions.push('offer_tech_for_gold');
+      }
+    }
   }
 
   // Gold only changes hands through the channel, and Gold gifts/requests need

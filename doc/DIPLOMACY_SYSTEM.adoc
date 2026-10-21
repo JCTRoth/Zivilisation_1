@@ -51,6 +51,10 @@ The diplomacy system implements a full diplomatic relations framework inspired b
 * *Non-Aggression Pacts* — soft commitment against hostility
 * *Embargoes* — jointly restrict a third civilization
 * *Technology Exchange* — swap known technologies between civilizations
+* *Knowledge for Gold* — sell a technology for a price, or buy one
+* *Gifts of Knowledge* — hand a technology over for nothing, and be loved for it
+* *Gold Transfers* — gift gold, or ask for it: a friend gives, a rival pays
+* *Calls to Arms* — an ally can be called to fight, defensively or offensively
 * *Counter-Proposals* — AI rejects an offer but suggests alternative terms
 * *Border Friction* — nearby cities worsen attitude automatically
 * *Alliance Cascade* — attacking an ally drags their allies into the war
@@ -601,6 +605,68 @@ This creates a web of alliances that can escalate conflicts realistically.
 * Unit bribe cost: `BRIBE_UNIT_BASE_COST (25) × (attack + defense)`
 * Bribed unit changes ownership immediately (moves set to 0)
 * Base 60% success chance, modified by attitude: friendly +20%, hostile -20%
+
+=== Knowledge: swapping, selling, giving
+
+Three shapes, one action family, and the *terms* decide which is which:
+
+[cols="1,2,2", options="header"]
+|===
+|Shape |Action |Who pays the gold
+
+|Swap
+|`offer_tech_exchange` (a technology each way)
+|The proposer, as a sweetener
+
+|Sale
+|`offer_tech_for_gold` (a technology one way, plus a price)
+|Whoever hands the knowledge over — the money is the *price*, so it runs the other way
+
+|Gift
+|`gift_technology` (a technology, no money)
+|Nobody
+|===
+
+The direction is decided in one place — `goldPayerFor()` in `DiplomacyTypes.ts` — so the engine and the scoring can never disagree about who pays.
+
+* A technology is only ever handed to a civilization that does *not* know it yet.
+* Knowledge changes hands *face to face*: a negotiated exchange needs both diplomats
+  standing within reach of each other (`hasDiplomatContact`). A deal made in person —
+  a unit standing at the other court's own doorstep, as in a trade visit — carries the
+  knowledge with the messenger, and is flagged `inPerson` on the proposal.
+* The AI deals in all three shapes too: `AIDiplomacyPolicy` scores them, and
+  `pickTechGiftTerm` / `pickTechForGoldTerm` name the terms.
+
+=== Gold: giving, asking, and the two ways an ask lands
+
+* `gift_gold` — the responder *keeps* the money. A gift is not a negotiation, so it is
+  accepted even by a court that dislikes the giver: the point of sending it is to win
+  that court over. It improves the receiver's opinion of the giver on both ledgers.
+* `request_gold` — the responder *pays*. It lands for one of two reasons, and the
+  scoring names both:
+  * *friendship* — a good relationship makes the ask hard to refuse;
+  * *fear* — a threatening army (and the fear meter that tracks it) makes it cheaper
+    to pay than to fight.
+  Personality scales both: a trusting court weighs friendship more, a suspicious one
+  weighs fear more. Asking for more than the payer can spare is refused on that ground
+  alone.
+* Which of the two it was is remembered: a payment made under duress is written on the
+  ledger as tribute (`tribute_extorted`), one made out of friendship as a kindness
+  (`tribute_gift`). `isCoercedPayment()` decides, by the balance of power.
+* The AI asks for money on the same terms — a modest sum from a friend, a much larger
+  one from a rival it can threaten — and the player answers in the audience screen.
+
+=== Calls to arms
+
+* When a civilization is attacked, it calls every ally it has: a mutual-defence partner
+  *or* a plain alliance partner (`isAllyOf`).
+* The same call exists offensively: before attacking, a civ asks its allies to join.
+* The ally weighs the call like any other war — no capacity for another front, worn
+  down from war, or an enemy that outclasses it, and it says no. A refusal breaks the
+  mutual-defence pact and is remembered as `ally_abandoned`.
+* The call is *one ring deep*: an ally that joins a war does not set off another round
+  of calls of its own (`declareWar(..., { propagateCalls: false })`), so one war cannot
+  walk the whole alliance network.
 
 ---
 
