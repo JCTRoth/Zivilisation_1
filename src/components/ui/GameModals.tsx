@@ -480,7 +480,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     const target = civilizations.find(c => c.id === bribeResult.targetCivId);
     const titleMap = {
       defected: 'The purse bought a banner',
-      reported: 'The coin was pocketed and the lie was told',
+      reported: 'The coin was pocketed, and the lie was told',
       refused: 'The commander turned away the gold',
     } as const;
     const toneMap = { defected: 'danger', reported: 'gold', refused: 'info' } as const;

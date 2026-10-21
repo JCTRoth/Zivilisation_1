@@ -2322,7 +2322,7 @@ export class EngineEventRouter {
      unitType,
      gold: cost,
      rulerName,
-     message: `The ${unitType} sells its soul for gold and joins ${briber?.name ?? 'the briber'}'s banner.`,
+     message: `The ${unitType} takes the purse, laughs at the bargain, and swears fealty to ${briber?.name ?? 'the briber'} — a treacherous little coup for the coin.`,
      effect: 'Diplomatic effect: the former owner declares war and the relationship takes a fierce, lasting hit.',
    };
    const msg = `🎭 ${briber?.name ?? 'Unknown'} bribed a unit from ${owner?.name ?? 'Unknown'}${cost ? ` (${cost} gold)` : ''}`;
@@ -2355,7 +2355,7 @@ export class EngineEventRouter {
      unitType,
      gold: cost,
      rulerName,
-     message: `The commander of the ${unitType} pockets the gold, laughs in your face, and swears loyalty to ${rulerName}.`,
+     message: `The commander of the ${unitType} pockets the gold, grins like a villain in a bad opera, and declares loyalty to ${rulerName}.`,
      effect: 'Diplomatic effect: the attempt is reported and the target civ\'s opinion of the briber falls sharply.',
    };
    const msg = `🎭 ${briber?.name ?? 'Unknown'} tried to bribe your ${unitType} — its commander took ${cost ?? 0} gold and reported the offer`;
@@ -2382,7 +2382,7 @@ export class EngineEventRouter {
      unitType,
      gold: cost,
      rulerName,
-     message: `The commander of the ${unitType} refuses your purse with disdain and no word reaches ${rulerName}.`,
+     message: `The commander of the ${unitType} refuses the purse with theatrical contempt. No word reaches ${rulerName}; the insult dies in the dust.`,
      effect: 'Diplomatic effect: none. The refusal was silent, never reported, and leaves no ledger stain.',
    };
    const msg = `🎭 ${briber?.name ?? 'Unknown'} offered a bribe to ${owner?.name ?? 'Unknown'}'s ${unitType}, but it was refused without a report`;
