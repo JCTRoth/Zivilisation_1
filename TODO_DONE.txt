@@ -73,6 +73,9 @@
 ### 7. Dead Code Cleanup
 DONE — the 57 unused exports knip reported are gone. Tuning constants and
 
+* Multi Language support, including the ability to change the language of the game, and the ability to add new languages to the game.
+
+
 - The winning attacker no longer vanishes: only the loser is ever collected by
   the delayed corpse removal, and a city that is ASSAULTED in the same action in
   which its last garrison unit died no longer counter-strikes the unit that
@@ -325,3 +328,9 @@ Are you distributing this project as a free download (like on Itch.io or GitHub)
   `cityDisaster` cue (one voice for all seven). i18n in all 6 languages.
   Docs: `doc/DISASTERS.adoc`; `doc/SOUND_EFFECTS.adoc` updated for the cue.
   Tests: `tests/disasters.test.ts` (42), `tests/sfxWiring.test.ts` (gate).
+
+- [DONE] Strict Fisher-boat fishing rules: a city can never work an actively-netted tile and a boat can never net a worked tile; tiles other fisherboats are netting are also excluded. Wired into EconomicManager, GameEngine, AICityManager.
+- [DONE] Diplomacy tech/gold exchanges: tech↔tech, tech↔money (sales and purchases priced at research cost), free gifts of knowledge (records new `tech_gift` impact, +30 in both ledgers), AI participation on all paths, allied-AI call-for-help.
+- [DONE] Diplomacy gold: send/request gold, bribable AI, two routes to money from an AI (good relationship = free, threaten war = personality/military-strength scaled), AI↔AI gold observable in the Diplomacy screen with embassies on both sides.
+- [DONE] Contact rule broadened: a unit beside a unit, or a unit beside the other civ's city (Chebyshev <= 1) — no diplomats-only gate.
+- [DONE] Auto End Turn screen: info text + enable/disable checkbox writing only `settings.autoEndTurn`.

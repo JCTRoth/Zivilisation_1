@@ -921,6 +921,19 @@
   color: rgba(255, 255, 255, 0.55);
 }
 
+/* Gold riding along with a one-sided (or sweetened) tech table. The hint
+   beside the box names who pays, so the button's verdict is never a surprise. */
+.diplomacy-tech-exchange__gold {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.diplomacy-tech-exchange__gold-hint {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
 .diplomacy-tech-exchange .diplomacy-select {
   width: 100%;
   min-width: 0;

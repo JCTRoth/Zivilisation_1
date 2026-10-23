@@ -137,6 +137,56 @@ const MAX_REGION_REPAINT_TILES = 512;
 const NON_COMBAT_UNITS = new Set(['settler', 'worker', 'caravan', 'diplomat']);
 const isCombatUnitType = (type: string): boolean => !NON_COMBAT_UNITS.has(type);
 
+/**
+ * Mobile / small-screen / touch detection.
+ *
+ * There is no right-click on a phone, so the unit orders toolbar has to be
+ * reachable with a normal tap. We treat a device as "touch-like" when it has a
+ * coarse pointer, a small viewport, an actual touch surface, or a mobile user
+ * agent (the latter covers mobile browsers that report a desktop UA).
+ */
+const isMobileOrSmallScreen = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (window.matchMedia && window.matchMedia('(max-width: 991px)').matches) {
+      return true;
+    }
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+      return true;
+    }
+  } catch {
+    // matchMedia may be unavailable in some test environments
+  }
+  if (
+    typeof navigator !== 'undefined' &&
+    ('ontouchstart' in window || (navigator.maxTouchPoints ?? 0) > 0)
+  ) {
+    return true;
+  }
+  if (typeof navigator !== 'undefined') {
+    const ua = navigator.userAgent || '';
+    const mobileKeywords = [
+      'Mobile',
+      'mobile',
+      'Android',
+      'iOS',
+      'iPhone',
+      'iPad',
+      'Opera Mini',
+      'Phone',
+      'Kindle',
+      'SmartTV',
+      'PlayStation',
+      'Web0S',
+      'QtCarBrowser',
+      'IEMobile',
+      'SamsungBrowser',
+    ];
+    if (mobileKeywords.some((k) => ua.includes(k))) return true;
+  }
+  return false;
+};
+
 const GameCanvas: React.FC<GameCanvasProps> = ({
   minimap = false,
   onExamineHex,
@@ -1276,6 +1326,38 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         tone: "danger",
         text: t("espionage.sabotage.caught" as TranslationKey, { city: cityName }),
       });
+    } else if (outcome === "city_revolted") {
+      stages.push({
+        key: "incite",
+        icon: "🔥",
+        tone: "success",
+        text: t("espionage.incite.success" as TranslationKey, { city: cityName }),
+        cue: "sabotageSuccess",
+      });
+    } else if (outcome === "caught_inciting") {
+      stages.push({
+        key: "incite-caught",
+        icon: "🚨",
+        tone: "danger",
+        text: t("espionage.incite.caught" as TranslationKey, { city: cityName }),
+      });
+    } else if (outcome === "incite_impossible") {
+      // The engine refuses incitement for three fixed causes, and the player
+      // needs to learn WHICH one (a capital is hopeless forever, a war ends,
+      // an empty purse can be refilled). The reason strings are the engine's
+      // stable guard clauses, pinned by tests.
+      const reason = typeof raw?.reason === "string" ? raw.reason : "";
+      const key = /capital/i.test(reason)
+        ? "espionage.incite.impossibleCapital"
+        : /war/i.test(reason)
+          ? "espionage.incite.impossibleWar"
+          : "espionage.incite.impossibleCost";
+      stages.push({
+        key: "incite-impossible",
+        icon: "🚫",
+        tone: "warning",
+        text: t(key as TranslationKey, { city: cityName }),
+      });
     } else if (outcome === "city_investigated") {
       const report = raw?.report as Record<string, unknown> | undefined;
       const buildings = Array.isArray(report?.buildings)
@@ -1941,6 +2023,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       const isRightClick = e.button === 2;
+      // On mobile / small screens / touch devices there is no right-click, so
+      // a normal click behaves like a touch tap for the "open orders" gesture.
+      const touchLike = fromTouch || isMobileOrSmallScreen();
 
       // Minimap click - jump to location
       if (minimap) {
@@ -2235,7 +2320,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             // long-press is not something anybody discovers. Tapping the unit
             // that is already selected opens the dock instead — the same
             // gesture opens the menu on a desktop right-click.
-            if (fromTouch) {
+            if (touchLike) {
               console.log(
                 `[CLICK] Re-tapped selected unit ${unitAt.id} on touch - opening orders`,
               );

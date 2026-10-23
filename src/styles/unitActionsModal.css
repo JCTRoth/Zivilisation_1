@@ -11,7 +11,7 @@
   position: fixed;
   inset: 0;
   z-index: 998;
-  background: rgba(0, 0, 0, 0.35);
+  background: transparent;
   animation: fade-in 120ms var(--ease-out, ease-out);
 }
 
@@ -420,8 +420,8 @@
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* Desktop (>= lg): cursor-anchored popover instead of bottom sheet */
-@media (min-width: 992px) {
+/* Unit orders: always render as the regular anchored popover (desktop style),
+   including on mobile / small screens. */
   .unit-context-menu {
     left: var(--ctx-left) !important;
     right: auto !important;
@@ -525,7 +525,6 @@
   .unit-context-backdrop {
     background: transparent;
   }
-}
 
 @keyframes menu-drop-in {
   from {

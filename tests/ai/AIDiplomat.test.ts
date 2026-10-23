@@ -825,10 +825,12 @@ describe('AI trade visits (regular units)', () => {
     const aiManager = (engine as any).aiManager;
     engine.diplomacyManager.establishEmbassy(1, 0);
 
-    // The exact mirror of the profitable trade: hand over Iron Working (50),
-    // get Bronze Working (30). Every pairing available is a loss.
     engine.civilizations[1].technologies = ['pottery', 'iron_working'];
     engine.civilizations[0].technologies = ['pottery', 'bronze_working'];
+    // Rich enough that a sale is not motivated, and too cold for a gift —
+    // so the only question on the table is the (loss-making) swap, which is
+    // refused.
+    engine.civilizations[1].resources.gold = 200;
 
     const { unit } = arrange(engine);
     expect((aiManager as any).considerTradeVisit(unit)).toBe(false);

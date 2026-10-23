@@ -120,7 +120,8 @@ export function applyImpact(
 
   // Keeping promises is what respect is made of; betrayal destroys it.
   const keepsWord = event === 'tribute_gift' || event === 'peace_made' || event === 'trade_signed'
-    || event === 'alliance_formed' || event === 'tech_exchanged' || event === 'common_enemy_defeated';
+    || event === 'alliance_formed' || event === 'tech_exchanged' || event === 'tech_gift'
+    || event === 'common_enemy_defeated';
   const breaksWord = event === 'alliance_break' || event === 'ceasefire_break'
     || event === 'treaty_cancelled' || event === 'surprise_attack' || event === 'unit_bribed';
   if (keepsWord) opinion.respect = clamp(opinion.respect + delta * 0.5, 0, INTENSITY_MAX);

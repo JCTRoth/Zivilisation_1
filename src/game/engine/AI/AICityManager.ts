@@ -629,6 +629,8 @@ export class AICityManager {
     }
     if (worked.length === 0) return false;
 
+    // Fisher rule: a ground a boat is fishing is never a governor target.
+    const fishingGrounds = this.gameEngine.getFishingGroundKeys?.() ?? new Set<string>();
     const available: TileYield[] = [];
     for (let dc = -2; dc <= 2; dc++) {
       for (let dr = -2; dr <= 2; dr++) {
@@ -638,6 +640,7 @@ export class AICityManager {
         if (!this.gameEngine.isTileInCityRadius?.(city, col, row)) continue;
         const key = `${col},${row}`;
         if (working.has(key)) continue;
+        if (fishingGrounds.has(key)) continue;
         const tile = this.gameEngine.getTileAt?.(col, row);
         if (!tile) continue;
         // Never poach a tile another city is already working.

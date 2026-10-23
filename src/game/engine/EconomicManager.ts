@@ -746,6 +746,7 @@ export class EconomicManager {
   getWorkableTiles(city: City): Array<{ col: number; row: number; key: string }> {
     if (!city) return [];
     const worked = city.workingTiles ?? new Set<string>();
+    const hasFishingNet = this.fishingGroundLookup();
     const out: Array<{ col: number; row: number; key: string }> = [];
     for (const sq of this.cityTerritory(city)) {
       const key = `${sq.col},${sq.row}`;
@@ -754,6 +755,8 @@ export class EconomicManager {
       if (owner && owner.id !== city.id) continue;
       // Never offer a tile a foreign unit is standing on.
       if (this.isTileOccupiedByForeignUnit(sq.col, sq.row, city.civilizationId)) continue;
+      // Nor a ground a Fisher Boat is fishing — see canWorkTile.
+      if (hasFishingNet(sq.col, sq.row)) continue;
       out.push({ col: sq.col, row: sq.row, key });
     }
     return out;
@@ -770,6 +773,9 @@ export class EconomicManager {
     const owner = this.territoryOwner(col, row);
     if (owner && owner.id !== city.id) return false;
     if (this.isTileOccupiedByForeignUnit(col, row, city.civilizationId)) return false;
+    // Fisher rule: a netted ground is the boat's, not the city's. While a
+    // boat fishes a tile, no citizen may be put to work on it.
+    if (this.fishingGroundLookup()(col, row)) return false;
     return this.cityTerritory(city).some((sq) => sq.col === col && sq.row === row);
   }
 
@@ -810,6 +816,10 @@ export class EconomicManager {
       if (owner && owner.id !== city.id) continue;
       // A foreign unit on the tile takes it out of production entirely.
       if (this.isTileOccupiedByForeignUnit(sq.col, sq.row, city.civilizationId)) continue;
+      // Fisher rule: a ground a boat is fishing may NOT feed a city — the net
+      // is meant for grounds no city draws from, and the boat keeps it while
+      // it is fishing (the mirror of the deploy gate in GameEngine).
+      if (hasFishingNet(sq.col, sq.row)) continue;
       const tile = this.getTile(sq.col, sq.row);
       if (!tile) continue;
       candidates.push({
@@ -1104,6 +1114,11 @@ export class EconomicManager {
         city.userAssignedTiles?.delete(key);
         continue;
       }
+      // Fisher rule: a netted ground never pays a city, whatever is in the
+      // set (a legacy save can carry a layout the deploy gate would refuse
+      // today). The next recompute drops the key outright; here the yields
+      // simply stop counting it.
+      if (hasFishingNet(col, row)) continue;
       const y = this.cityTileYieldsWith(this.getTile(col, row), hasFishingNet);
       food += y.food;
       production += y.production;

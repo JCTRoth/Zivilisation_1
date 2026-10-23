@@ -403,7 +403,14 @@ describe('every ability runs', () => {
       return;
     }
     const response = result.response as { accepted: boolean; reason?: string };
-    expect(response.reason).not.toMatch(/Must specify .* technolog/i);
+    // Either outcome is fine — what must never happen is a bare "shall we
+    // trade?" reaching the responder with no technology named in it. (An
+    // accepted proposal has no reason at all, hence the split.)
+    if (response.accepted) {
+      expect(response.reason).toBeUndefined();
+    } else {
+      expect(response.reason).not.toMatch(/Must specify .* technolog/i);
+    }
   });
 
   it('an embargo names a third party even when nobody chose one', async () => {

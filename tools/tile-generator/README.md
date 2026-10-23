@@ -97,25 +97,74 @@ For every run:
      put a diamond or a sprite on black) is inpainted with the surrounding
      texture, so the tile is a continuous edge-to-edge surface,
    - writes `tiles/terrain_<terrain>.png`.
-4. For **every feature input picture** in `src/assets/resources`:
-   - only **feature-only** inputs are used (e.g. `fish1.png` … `fish5.png`,
-     which show just the fish on transparency). The VTracer SVGs
-     (`fish.svg`, `horses*.svg`) are full tile scenes *with* backgrounds and
-     are therefore **excluded** — features must never have a background,
-   - prepares the input: white/alpha key, keep the main subject, fit into
-     the 1.5:1 sprite canvas and flatten onto pure black,
-   - renders the sprite with `sd-server` via `img2img`, so the sprite keeps
-     the identity of the input artwork while the local model re-skins it,
+4. For **every feature stem** of the fixed roster:
+
+   - five fish (`fish1..5`, img2img from the artwork),
+   - two **proud, strong, wild horses** (txt2img: standing tall / galloping
+     at full stride - motion is allowed, and the frame may hold **one or a
+     small group** of horses; every horse is anatomically correct with
+     **all four legs clearly visible**),
+   - **one sprite for every game unit** (`unit_<key>.png`, 35 units) - units
+     with real artwork (`src/assets/units/*.svg`, wired in
+     `UnitIconConfig`) are rendered **img2img from a rasterised copy of
+     that artwork**, so the sprite keeps the identity of the picture the
+     game actually uses; all other units render **from their fixed
+     descriptions** in `UNIT_SPECS` (the game's fallback emoji is only
+     recorded in the manifest - it is monochrome and often unrelated, e.g.
+     a top hat for the diplomat, a radiation sign for the nuclear missile -
+     so emoji shapes are never fed to the model). Naval and air units
+     render on a landscape canvas; every mounted unit (chariot, knights,
+     cavalry, caravan) carries the same all-four-legs clause as the horses,
+   - **every unit is rendered in THREE variants** (`unit_<key>.png`,
+     `unit_<key>_2.png`, `unit_<key>_3.png`), each with its own freshly
+     resolved prompt, so a run yields 105 unit sprites,
+   - every unit showing a person or an animal carries the positively
+     phrased clause "*every arm and every leg is drawn complete, clearly
+     visible and in a natural easy stance, nothing cropped*" - a moderate
+     framing clause, deliberately not a hard anatomy audit (which makes
+     FLUX over-correct into doubled/stiff limbs),
+   - **three forests, always** (`terrain_forest_feature_1` **mixed**,
+     `_2` **coniferous**, `_3` **deciduous**) - a group of individual trees,
+     each tree complete with trunk and crown and fully visible inside the
+     frame (txt2img),
+   - the **jungle**: a group of tall tropical trees, connected by winding
+     **lianas** (txt2img),
+   - hills + swamp (img2img),
+   - **FOUR mountain variants, always rendered** (`terrain_mountains_feature_1..4`):
+     several peaks side by side / the **dramatic variant** with a rolled
+     crazy extra (erupting lava, glowing crystals, a huge waterfall, a rock
+     arch, a ruined watchtower) / twin massive peaks / a long ridge line
+     with foothills. Every variant rolls its own atmosphere per iteration
+     (sometimes fog, sometimes snow, sometimes low valley mist, sometimes a
+     clear face), and **every peak is whole and fully visible** (all
+     txt2img),
+   - the seven special resources that previously only had glyph icons:
+     **seal** (arctic), **gems** (jungle), **gold** (mountains), **coal**
+     (hills), **oil** (swamp), **game** (forest), **oasis** (desert) -
+     each a feature-only sprite (txt2img),
+   - stems prepared from artwork (`fish1..5`, `hills_feature`,
+     `swamp_feature`) are **img2img** from the feature-only input flattened
+     onto pure black, so they keep the identity of the artwork; every other
+     stem is composed purely from the prompt,
+   - **all framing rules are phrased positively** ("the whole subject
+     complete and fully visible inside the frame", "generous clear margin on
+     all four sides", "the entire frame beneath the group stays empty solid
+     black") - FLUX.2 ignores negative prompts, so constraints live in the
+     positive prompt and the identity anchors,
    - **copies the untouched render into `features/backup/<name>.png`** before
      the background is removed, so the original is never lost,
    - removes the black background to a **transparent alpha channel** (a
      border flood fill that keeps dark parts *inside* the subject — far more
      accurate than a global black key and instant; `rembg` is available via
-     `--use-rembg`),
+     `--use-rembg`); enclosed background gaps *between* the trees of a group
+     are keyed out as well once they are bigger than 0.2 % of the canvas,
+     so the terrain shows through them,
    - post-processes the sprite: stray opaque blobs are dropped and the
      feature is centred in the canvas,
-   - writes `features/terrain_<terrain>_<resource>.png` — the exact file
-     names `TerrainTextureManager` expects.
+   - writes the exact file names the game and `compose_feature_tiles.mjs`
+     expect (`terrain_ocean_fish.png`, `terrain_forest_feature_2.png`,
+     `terrain_arctic_seal.png`, ...).
+
 5. **Features are never composited onto tiles in this script.** Compose logic
    (`compose_feature_tiles.mjs`) is deliberately kept out of the generator —
    this script only produces the clean asset set.
@@ -213,6 +262,26 @@ python3 tools/tile-generator/generate_variated_tile_sets.py --dry-run
 # one set, only some terrains and features
 python3 tools/tile-generator/generate_variated_tile_sets.py \
     --iterations 1 --terrains forest,ocean --features fish1,horses
+
+# one themed set - the keyword is shot through theme, palette, lighting and
+# every resolved slot; feature animals may swap to close themed equivalents
+# (skeleton horse at Halloween, reindeer at Christmas, sea serpent at
+# Transylvania, ...).  Terrain identities stay untouched.
+python3 tools/tile-generator/generate_variated_tile_sets.py \
+    --theme-keyword "Transylvania and vampires" --iterations 1
+
+# writes a bash script that runs one tile-set job after another (one per
+# comma separated keyword, '' = a classic run) and exits - start the script
+# in the background and check the logs later, no monitoring needed
+python3 tools/tile-generator/generate_variated_tile_sets.py \
+    --write-batch "Halloween,Transylvania and vampires,Christmas,Easter,,," \
+    > batch_check.log
+nohup bash "tools/tile-generator/run_batch_<timestamp>.sh" > batch.out 2>&1 &
+tail -5 tools/tile-generator/run_logs/<job>.log   # progress of one job
+
+# only the unit sprites of all 35 game units (all stems: features + units)
+python3 tools/tile-generator/generate_variated_tile_sets.py \
+    --iterations 1 --no-terrains --features units
 ```
 
 ### Environment overrides
@@ -228,7 +297,10 @@ python3 tools/tile-generator/generate_variated_tile_sets.py \
 | `SIZE` | `512` | Terrain output size in pixels. |
 | `FEATURE_SIZE` | `256` | Feature sprite width (height is 1.5×). |
 | `SEED` | `-1` | Base seed for reproducible runs (-1 = random). |
-| `TERRAINS` / `FEATURES` | all | Comma separated allow lists. |
+| `TERRAINS` / `FEATURES` | all | Comma separated lists. `FEATURES` matches stems by variant base name (`forest_feature` renders forest_feature_1..3 or `mountains_feature` 1..4), the entry `units` renders all 35 unit sprites, and a stem named exactly forces an optional stem on (all stems render always right now). |
+| `THEME_KEYWORD` | *(empty)* | Art-direction keyword for the whole run (Halloween, Christmas, "Transylvania and vampires", Easter, ...). |
+| `WRITE_BATCH` | *(empty)* | Comma separated keyword list; writing the batch script replaces generating. |
+| `BATCH_ITERATIONS` | `1` | Iterations per job inside a generated batch script. |
 | `RETRIES` | `3` | Render attempts per image. |
 | `BG_LEVEL` | `28` | Background removal level (black point, higher removes more). |
 | `BG_SOFTNESS` | `30` | Background removal edge softness (0 = hard edge). |
@@ -236,7 +308,8 @@ python3 tools/tile-generator/generate_variated_tile_sets.py \
 CLI flags `--iterations`, `--output-root`, `--strength`, `--feature-strength`,
 `--steps`, `--cfg`, `--size`, `--feature-size`, `--seed`, `--retries`,
 `--bg-level`, `--bg-softness`, `--terrains`, `--features`, `--dry-run`,
-`--no-terrains`, `--no-features`, `--use-rembg` and `--keep-servers` override
+`--no-terrains`, `--no-features`, `--use-rembg`, `--keep-servers`,
+`--theme-keyword`, `--write-batch` and `--batch-iterations` override
 the environment.
 
 ## Output layout
@@ -257,19 +330,145 @@ tile_sets/
         │   └── terrain_<terrain>.png
         └── features/                     # all feature sprites (alpha!)
             ├── terrain_<terrain>_<resource>.png
+            ├── unit_<unit_key>.png       # one sprite per game unit
+            ├── unit_<unit_key>_2.png     # ... plus 2 more variants each
+            ├── unit_<unit_key>_3.png
             └── backup/                   # the untouched renders
                 └── terrain_<terrain>_<resource>.png
 ```
 
+In every per-iteration `manifest.json` the unit entries also record the
+game data they were built from: `unit` (display name), `game_icon` (the
+fallback emoji shown in the game) and `game_artwork` (the SVG file used as
+the img2img source) plus `source` (`game svg artwork (img2img)` or
+`fixed text description`).
+
 ## Feature rules
 
-- Feature sprites show **only the feature** (e.g. a single fish) — never a
-  scene, never a terrain background.
+- Feature sprites show **only the feature** (e.g. a single fish, a tree
+  group) — never a scene, never a terrain background.
 - Feature sprites have **transparent backgrounds**.
 - Feature input pictures must themselves show only the feature. Full-tile
   scenes (like the VTracer SVGs) are rejected as inputs.
+- Stems in `FEATURE_TEXT_ONLY_STEMS` (horses, the three forests, jungle,
+  all four mountain variants) always render from the prompt alone, so the
+  composition (proud wild pose, tree group, peak range) comes from the
+  generator, not from the old artwork.
 - The output names are the ones the game expects
   (`terrain_ocean_fish.png`, `terrain_forest_feature_1.png`, …).
+- Everything the sprite should obey is phrased **positively** in the prompt
+  ("every tree complete and fully visible inside the frame", "the entire
+  frame beneath the group stays empty solid black"): FLUX.2 has no negative
+  prompt support, so negated constraints would only be ignored.
+- The per-iteration rolls (one atmosphere per mountain variant, the crazy
+  extra of the dramatic mountain variant) are logged under `rolls` in the
+  per-iteration `manifest.json`.
+
+## Unit rules
+
+- **Three variants per unit and iteration** (`unit_<key>.png`,
+  `unit_<key>_2.png`, `unit_<key>_3.png`, `UNIT_VARIANTS = 3`), each with
+  its own freshly resolved prompt and manifest record under
+  `variants` in the per-iteration manifest; variant 1 also carries the
+  classic top-level `output`/`backup` fields.
+- One sprite per game unit, named `unit_<game unit key>.png`
+  (`unit_warrior.png`, `unit_battleship.png`, ...) — 35 units, parsed from
+  `src/data/UnitConstants.ts`.
+- If the game ships artwork (`src/assets/units/*.svg`, referenced by
+  `UnitIconConfig`), that artwork is rasterised with inkscape and used as
+  the img2img input, so the sprite keeps the identity of the real game
+  picture.
+- Everything else (legion, catapult, cavalry, destroyer, diplomat,
+  fisher boat, mech. inf., nuclear, ...) is composed from the fixed,
+  hand-written descriptions in `UNIT_SPECS` — identity phrase, kind
+  anchors and full slot fallbacks per unit.  Units showing a person or an
+  animal add the limb-completeness clause; the catapult, cannon
+  and artillery descriptions describe the classic two-wheeled, spoked-
+  wheel gun-carriage look.
+- The game's fallback emoji is recorded in the manifest only; emoji shapes
+  are never fed to the image model.
+- The message `SVG artwork could not be rasterised -> text-only` in a log
+  means a unit fell back from img2img to its description (missing
+  inkscape or unreadable SVG) — the sprite is still produced.
+- `unit_*` stems render in the batch order of features first, then units;
+  `--features units` renders only units, `--features unit_legion` a single
+  one.
+
+## Themed runs (--theme-keyword)
+
+- The keyword (e.g. `Halloween`, `Christmas`, `Transylvania and vampires`)
+  is injected into the iteration-global resolution — theme phrase, palette
+  and lighting must be clearly shot through with it — and into the theme
+  string every prompt carries.
+- Feature and unit slot resolution additionally receive a clause that
+  allows swapping a featured **animal** for a close themed equivalent (a
+  ghost/skeleton horse at Halloween, a reindeer at Christmas, a sea serpent
+  at Transylvania) while keeping it recognisable: the per-spec anchor
+  lists contain the equivalent nouns (`nightmare`, `reindeer`, `shark`, ...).
+- Terrain identity anchors are untouched: a Halloween forest is still a
+  forest, an Easter desert still a desert.
+- Themed runs are logged under `theme_keyword` in `run.json` and the
+  keyword is part of every theme.
+
+## Art-style runs (--style-keyword)
+
+- A style is **not** a theme: it changes only HOW every asset is rendered
+  (technique, linework, shading, medium), never any subject identity.
+- `--style-keyword <name|phrase>` accepts one of the registry names
+  (`STYLE_KEYS` in the script — `american_comic`, `manga`, `pixel_art`,
+  `papercraft`, `watercolor_storybook`, `stained_glass`, `byzantine_mosaic`,
+  `greek_pottery`, `norse_woodcarving`, `illuminated_manuscript`,
+  `constructivist_poster`, `art_deco_poster`, `linocut_print`,
+  `tarot_engraving`, `vintage_box_art`, `anime_cel`, `naive_folk_art`,
+  `egyptian_tomb`, `ligne_claire`, `painted_miniature`) or any freeform
+  phrase; a registry name is upgraded to its handcrafted descriptor.
+- Injection is deterministic: the descriptor lands in the `Style & Art
+  Direction` line of every terrain and feature/unit prompt (even purely
+  fallback-generated ones) and replaces the FEATURE_RENDERING slot.
+- `--write-batch <names> --batch-style-mode` writes a style tour; with
+  `--batch-terrains` / `--batch-features` you pin one fixed selection
+  across all jobs. The descriptor is recorded as `STYLE_PHRASE` in
+  `keywords_global.json` and in the iteration manifest globals.
+
+## Illustration-style tile generator (new script)
+
+`generate_illustration_styles.py` is a second, focused tile-set generator:
+it produces seamless **terrain tiles in one of the ten classic illustration
+styles** — Line Art, Flat Vector Illustration, Isometric Illustration,
+Watercolor Illustration, Ink Wash / Sumi-e, Pixel Art, Low Poly, Comic Book
+/ Graphic Novel Style, Art Nouveau, Paper Cut / Collage Illustration.
+
+- It reuses the whole abstract slot engine of
+  `generate_variated_tile_sets.py` (the `#KEYWORD#` templates, the identity
+  guards, the fallbacks, the prompt registry) and only swaps the art direction
+  (the `Style & Art Direction` prompt line) for the selected style descriptor.
+  Subject identities are never re-rolled — a forest is still a forest, just
+  drawn as line art now.
+- `--style <key|phrase>` accepts one of the ten illustration keys
+  (`line_art`, `flat_vector`, `isometric`, `watercolor`, `ink_wash`, `pixel_art`,
+  `low_poly`, `comic_book`, `art_nouveau`, `paper_cut`), a comma separated list
+  or any freeform style phrase (e.g. `--style "flat vector"`).
+- Per style and iteration it resolves the global slots, builds and renders all
+  terrain tiles, writes `theme.txt`, `keywords_*.json`, `prompt_*.txt`,
+  `manifest.json` and `tiles/terrain_<terrain>.png` into
+  `tile_sets/<style>_<timestamp>_<iteration>/iteration_<nn>/`.
+
+```bash
+# one style, one tile set
+python3 tools/tile-generator/generate_illustration_styles.py --style line_art
+
+# one style, hand-picked terrains
+python3 tools/tile-generator/generate_illustration_styles.py \
+    --style watercolor --iterations 1 --terrains forest,ocean
+
+# all ten styles
+python3 tools/tile-generator/generate_illustration_styles.py --style all \
+    --iterations 2
+```
+
+- `--write-batch` writes a bash script that runs one illustration-style job
+  per style key (with `--iterations` and `--terrains` forwarded), so a whole
+  style tour can run unattended in the background.
 
 ## Troubleshooting
 

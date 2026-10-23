@@ -13,6 +13,18 @@
   padding-bottom: 10px;
 }
 
+/* The auto-end explainer + switch, shown only in the automatic flavour: a
+   card between the callout and the preference row, so the feature and its
+   switch sit where the player meets the feature. */
+.end-turn-modal-auto-card {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+}
+
+.end-turn-modal-auto-card .gm-prose {
+  margin-bottom: 10px;
+}
+
 .end-turn-modal-skip {
   margin: 0;
 }

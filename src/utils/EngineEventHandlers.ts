@@ -1522,6 +1522,12 @@ export class EngineEventRouter {
       case 'city_investigated':
         notify('warning', tEspionage('espionage.victim.investigated', { civ: spyName, city: cityName }), HUMAN_PLAYER_ID);
         break;
+      case 'city_revolted':
+        notify('error', tEspionage('espionage.victim.revolted', { civ: spyName, city: cityName }), HUMAN_PLAYER_ID);
+        break;
+      case 'caught_inciting':
+        notify('success', tEspionage('espionage.victim.caughtInciting', { civ: spyName, city: cityName }), HUMAN_PLAYER_ID);
+        break;
       case 'embassy_established':
         // Deliberately silent: the target does not learn that an embassy
         // exists from the embassy itself. The negotiation screen shows it.
@@ -1724,6 +1730,8 @@ export class EngineEventRouter {
 
     // Only the player's own city starving is bad news they can act on; a
     // famine across the map is the AI's economy, and it happens a lot.
+    const civ = this.gameEngine?.civilizations?.[city.civilizationId];
+    if (civ?.isHuman !== true) return;
     this.playNewsCue('cityStarved', city.civilizationId);
     this.actions.showCityStarved({
       cityId: city.id,
@@ -1740,6 +1748,11 @@ export class EngineEventRouter {
     // city.disorder reflects the NEW state (true = entering disorder,
     // false = disorder ended).  The event fires on transitions only.
     const enteringDisorder = city.disorder === true;
+
+    // Only the human player's own cities get a modal — a rival's unrest is
+    // the AI's problem, and popping a dialog for it blocks the player's turn.
+    const civ = this.gameEngine?.civilizations?.[city.civilizationId];
+    if (civ?.isHuman !== true) return;
 
     // Only the ONSET sounds. `city.disorder` carries the new state, so the
     // event also fires when unrest *ends* — and relief getting the same alarm

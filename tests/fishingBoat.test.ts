@@ -230,14 +230,29 @@ describe('Fishing grounds need an active boat', () => {
     expect(city.yields?.food).toBe(2);
     expect(boat.fishingRoute).toBeNull();
 
-    // The restriction is on deployment: a city that later starts working the
-    // netted tile draws its full value. (The re-deploy needs fresh moves —
-    // deploying consumes them.)
+    // The restriction holds in BOTH directions: while the boat fishes the
+    // ground, no city may draw food from it — every assignment path refuses.
     boat.movesRemaining = 2;
     expect(e.deployFishingNet('f1')).toBe(true);
+    expect(e.economicManager.canWorkTile(city as never, 3, 0)).toBe(false);
+    expect(e.getWorkableTiles('port').some((t) => t.key === '3,0')).toBe(false);
+    // Manual drop-in ("pick up & drop") is refused before it mutates anything.
+    expect(e.reassignCitizen('port', 0, 0, 3, 0)).toBe(false);
+    expect(city.workingTiles.has('3,0')).toBe(false);
+
+    // A layout that slipped in anyway (a save from before the rule) stops
+    // paying the moment the net is up…
     city.workingTiles.add('3,0');
     e.economicManager.refreshYieldsFromWorkingTiles(city as never);
-    expect(city.yields?.food).toBe(5); // 2 from (0,0) + 3 from the netted (3,0)
+    expect(city.yields?.food).toBe(2); // unchanged — the netted ground pays nobody
+    // …and the automatic re-pick drops the key on the next recompute.
+    e.economicManager.recomputeCityYields(city as never);
+    expect(city.workingTiles.has('3,0')).toBe(false);
+
+    // Even with a free citizen on hand, the assign path refuses the tile.
+    city.population = 2;
+    expect(e.assignCitizenToTile('port', 3, 0)).toBe(false);
+    expect(city.workingTiles.has('3,0')).toBe(false);
   });
 });
 

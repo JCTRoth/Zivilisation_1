@@ -107,6 +107,31 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
         </>
       )}
 
+      {/* Automatic flavour only: the feature the dialog itself represents,
+          explained where the player meets it, with the switch right there.
+          This writes ONLY `settings.autoEndTurn` — never the "don't ask again"
+          preference below, which stays a pure interface choice. */}
+      {isAutomatic && (
+        <section className="gm-section end-turn-modal-auto-card">
+          <h3 className="gm-section-title">{t('gm.autoEnd.title')}</h3>
+          <p className="gm-prose">
+            {t('gm.autoEnd.lede.pre')}{' '}
+            <strong>{t('gm.autoEnd.title')}</strong>{' '}
+            {t('gm.autoEnd.lede.mid')}{' '}
+            <strong>{t('gm.autoEnd.lede.strong2')}</strong>{' '}
+            {t('gm.autoEnd.lede.post')}
+          </p>
+          <Form.Check
+            type="checkbox"
+            id="enable-auto-end-turn"
+            label={t('endTurn.enableAutoEnd')}
+            checked={settings.autoEndTurn}
+            onChange={(e) => actions.updateSettings({ autoEndTurn: e.target.checked })}
+            className="end-turn-modal-skip"
+          />
+        </section>
+      )}
+
       <section className="gm-section end-turn-modal-skip-card">
         <Form.Check
           type="checkbox"
