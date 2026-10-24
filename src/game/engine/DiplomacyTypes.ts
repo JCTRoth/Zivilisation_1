@@ -78,6 +78,7 @@ export type ImpactEvent =
   | 'embassy_established'
   | 'tech_exchanged'
   | 'technology_gifted'
+  | 'tech_gift'
   | 'common_enemy_defeated'
   | 'refused_peace'
   | 'ally_abandoned';

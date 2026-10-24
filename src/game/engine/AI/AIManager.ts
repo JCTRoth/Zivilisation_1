@@ -4949,7 +4949,14 @@ export class AIManager {
       // A loaded transport is worth double: it is a whole landing force.
       const aboard = this.ferryCargoIds(ship).length;
       const capacity = UNIT_PROPS[ship.type]?.transportCapacity ?? 0;
-      const valueMultiplier = capacity > 0 ? 0.6 + 0.4 * Math.min(1, aboard / Math.max(1, capacity)) : 1;
+      let valueMultiplier = capacity > 0 ? 0.6 + 0.4 * Math.min(1, aboard / Math.max(1, capacity)) : 1;
+      // A running Trade Ship pays the enemy treasury on every leg and hands
+      // the sinker its whole prize, so the richer the run, the harder the
+      // hull is hunted. The cap keeps the class order intact (a jackpot trader
+      // outbids coastal cities, never the battle line or a loaded transport).
+      if (ship.type === 'trade_ship') {
+        valueMultiplier = Math.min(1.8, 1 + this.gameEngine.computeTradeShipPrizeValue(ship) / 300);
+      }
       // A land unit (a scout raiding the shore) is only reachable from the
       // water next to it, which is what `navigableWaterAt` gives us.
       const aim = this.isNavalUnitType(ship.type)
@@ -5449,9 +5456,10 @@ export class AIManager {
     }
 
     // Trade Ships: a routed one is driven by the engine's automatic trade
-    // state machine (advanceTradeShip). Their destination is chosen by the
-    // player (a harbour city with a better partner) rather than by a heuristic,
-    // so an unrouted Trade Ship falls through to the generic naval AI.
+    // state machine (advanceTradeShip). The route is opened automatically on
+    // the ship's turn start (autoEstablishTradeShipRoute: the best-paying
+    // partner harbour the civ has met), so an unrouted Trade Ship only falls
+    // through to the generic naval AI until the next turn boundary picks it up.
     if (unit.type === 'trade_ship' && unit.tradeShipRoute) return null;
 
     // Naval units never use the land targeting logic — they hunt enemy ships,

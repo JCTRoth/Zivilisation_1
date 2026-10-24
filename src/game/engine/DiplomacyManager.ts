@@ -444,6 +444,28 @@ export class DiplomacyManager {
     return readOpinionHeldByOther(rel, usCivId);
   }
 
+  /**
+   * Live spatial contact check: a unit of one civ standing beside a unit or
+   * city of the other. Contact is symmetric — either side's proximity counts.
+   */
+  hasUnitContact(usCivId: number, themCivId: number): boolean {
+    const units = (this.gameEngine.getAllUnits?.() ?? this.gameEngine.units ?? []) as any[];
+    const cities = (this.gameEngine.getAllCities?.() ?? this.gameEngine.cities ?? []) as any[];
+    const ours = units.filter((u) => u.civilizationId === usCivId);
+    const theirs = units.filter((u) => u.civilizationId === themCivId);
+    const theirCities = cities.filter((c) => c.civilizationId === themCivId);
+    const ourCities = cities.filter((c) => c.civilizationId === usCivId);
+
+    const adjacent = (a: { col: number; row: number }, b: { col: number; row: number }) =>
+      Math.abs(a.col - b.col) <= 1 && Math.abs(a.row - b.row) <= 1;
+
+    const contactFrom = (sideUnits: any[], otherUnits: any[], otherCities: any[]) =>
+      sideUnits.some((u) => otherUnits.some((t) => adjacent(u, t))
+        || otherCities.some((c) => adjacent(u, c)));
+
+    return contactFrom(ours, theirs, theirCities) || contactFrom(theirs, ours, ourCities);
+  }
+
   /** The diplomatic weight vector for a civ (personality as multipliers). */
   weightsFor(civId: number): DiplomaticWeights {
     return diplomaticWeights(this.gameEngine.civilizations?.[civId]);
@@ -1104,6 +1126,10 @@ export class DiplomacyManager {
         if (techRequested && fromTechs?.includes(techRequested)) {
           return { accepted: false, reason: 'You already have this technology' };
         }
+        // An outright ask for free knowledge is refused — knowledge has a price.
+        if (techRequested && !techOffered && sweetener <= 0) {
+          return { accepted: false, reason: 'They will not give away free technology' };
+        }
 
         // WHO pays the gold. In a swap the proposer sweetens the deal and the
         // money runs to the responder. In a one-sided exchange the money is
@@ -1135,13 +1161,17 @@ export class DiplomacyManager {
         if (exchangeRel) {
           const terms = [techOffered, techRequested].filter(Boolean).join(' ↔ ')
             + (sweetener > 0 ? ` + ${sweetener} gold` : '');
-          this.recordImpactOn(exchangeRel, toCivId, 'tech_exchanged',
+          // A free one-sided gift is recorded as a gift of knowledge, not a
+          // trade — the two move goodwill very differently.
+          const impactEvent = (sweetener === 0 && techOffered && !techRequested)
+            ? 'tech_gift' : 'tech_exchanged';
+          this.recordImpactOn(exchangeRel, toCivId, impactEvent,
             { tech: true, gold: sweetener }, terms);
-          this.recordImpactOn(exchangeRel, fromCivId, 'tech_exchanged',
+          this.recordImpactOn(exchangeRel, fromCivId, impactEvent,
             { tech: true, gold: sweetener }, terms);
         }
         this.logEvent({
-          type: 'tech_exchanged',
+          type: (sweetener === 0 && techOffered && !techRequested) ? 'tech_gifted' : 'tech_exchanged',
           fromCivId,
           toCivId,
           details: [techOffered, techRequested].filter(Boolean).join(' ↔ ')
@@ -1978,6 +2008,63 @@ export class DiplomacyManager {
   }
 
   /**
+   * The AI's preferred one-sided knowledge deal (swap first, then sale, then
+   * gift), or null when nothing is worth tabling.
+   */
+  aiTechDealTerms(fromCivId: number, toCivId: number): {
+    kind: 'swap' | 'purchase' | 'sale' | 'gift';
+    techOffered?: string;
+    techRequested?: string;
+    goldAmount?: number;
+  } | null {
+    const opts = this.getTechTradeOptions(fromCivId, toCivId);
+    const civ = this.gameEngine.civilizations?.[fromCivId];
+    const ourGold = civ?.resources?.gold ?? 0;
+
+    // 1. Swap first.
+    const swap = this.pickTechSwap(fromCivId, toCivId);
+    if (swap) {
+      return { kind: 'swap', techOffered: swap.techOffered, techRequested: swap.techRequested };
+    }
+
+    // 2. Sale: a thin treasury motivates selling a secret they lack.
+    if (opts.weHaveTheyLack.length > 0 && ourGold < 100) {
+      const techOffered = opts.weHaveTheyLack.reduce(
+        (best, id) => (this.techCost(id) < this.techCost(best) ? id : best),
+        opts.weHaveTheyLack[0],
+      );
+      const price = this.techCost(techOffered);
+      return { kind: 'sale', techOffered, goldAmount: price };
+    }
+
+    // 3. Gift: overwhelming goodwill motivates giving a secret away.
+    if (opts.weHaveTheyLack.length > 0) {
+      const techOffered = opts.weHaveTheyLack.reduce(
+        (best, id) => (this.techCost(id) < this.techCost(best) ? id : best),
+        opts.weHaveTheyLack[0],
+      );
+      const goodwill = this.getAttitudeScore(fromCivId, toCivId);
+      if (goodwill >= 60) {
+        return { kind: 'gift', techOffered };
+      }
+    }
+
+    // 4. Purchase: we are behind, have nothing to offer, and can afford what they know.
+    if (opts.weHaveTheyLack.length === 0 && opts.theyHaveWeLack.length > 0) {
+      const techRequested = opts.theyHaveWeLack.reduce(
+        (best, id) => (this.techCost(id) > this.techCost(best) ? id : best),
+        opts.theyHaveWeLack[0],
+      );
+      const price = this.techCost(techRequested);
+      if (ourGold >= price) {
+        return { kind: 'purchase', techRequested, goldAmount: price };
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * The facts `TechTradeEvaluator` needs to price a trade for this civ. Built
    * here so the human-facing preview and the AI's own deliberation ask the
    * identical question.
@@ -2234,27 +2321,34 @@ export class DiplomacyManager {
         }
 
         case 'offer_tech_exchange': {
-          const swap = this.pickTechSwap(civId, otherId);
-          if (!swap) break;
-          // Only offer a swap when both diplomats are actually standing
+          const deal = this.aiTechDealTerms(civId, otherId);
+          if (!deal) break;
+          // Only table it when the two peoples are actually standing
           // together — otherwise the offer would be refused on arrival.
-          if (!this.hasDiplomatContact(civId, otherId)) break;
+          if (!this.hasUnitContact(civId, otherId)) break;
           const techName = (id: string): string =>
             TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
-          const message = `${civName} offers an Exchange of Knowledge: `
-            + `their ${techName(swap.techRequested)} for your ${techName(swap.techOffered)}.`;
+          const message = deal.kind === 'sale'
+            ? `${civName} offers to sell you ${techName(deal.techOffered ?? '')} for ${deal.goldAmount} gold.`
+            : deal.kind === 'purchase'
+              ? `${civName} offers to buy ${techName(deal.techRequested ?? '')} from you for ${deal.goldAmount} gold.`
+              : deal.kind === 'gift'
+                ? `${civName} offers you the secrets of ${techName(deal.techOffered ?? '')} — freely, asking nothing in return.`
+                : `${civName} offers an Exchange of Knowledge: `
+                  + `their ${techName(deal.techRequested ?? '')} for your ${techName(deal.techOffered ?? '')}.`;
           if (isPlayerTarget) {
             this.emitOffer(
-              civId, otherId, 'offer_tech_exchange', undefined, message,
-              swap.techOffered, swap.techRequested,
+              civId, otherId, 'offer_tech_exchange', deal.goldAmount, message,
+              deal.techOffered, deal.techRequested,
             );
           } else {
             this.processProposal({
               fromCivId: civId,
               toCivId: otherId,
               action: 'offer_tech_exchange',
-              techOffered: swap.techOffered,
-              techRequested: swap.techRequested,
+              techOffered: deal.techOffered,
+              techRequested: deal.techRequested,
+              goldAmount: deal.goldAmount,
             });
           }
           break;

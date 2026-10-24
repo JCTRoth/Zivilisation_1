@@ -3415,13 +3415,14 @@ const occupiedLandmasses = new Set(
   /**
    * Auto-establish a trade route for a trade ship that has no route yet.
    *
-   * Picks the nearest other harbour city of the same civ as destination, so
-   * a trade ship starts running without player input — build it at a harbour,
-   * and it sails between harbours paying out on every arrival. This is the
-   * "auto-delivery" half of the trade-ship feature: the engine core
-   * (establishTradeShipRoute / advanceTradeShip / payTradeShipArrival) and
-   * the UI ordering already exist; this hooks the two together so no manual
-   * click is needed to open the first route.
+   * The route is "from a city with a harbour to a city with another harbour":
+   * the candidates are every other harbour city the civ can trade with — its
+   * own remaining harbours, plus foreign harbours of civs it has made contact
+   * with (own and foreign both pay; foreign pays the 150% bonus and prices the
+   * partner civ through X). The destination openes the route that pays the
+   * most on its first leg, scored by the same tradeShipFormula the arrival
+   * uses, so a build-it-and-it-runs Trade Ship starts a profitable run without
+   * player input. Returns false while no routeable partner exists.
    */
   autoEstablishTradeShipRoute(unitId: string): boolean {
     const unit = this.units.find((u: Unit) => u.id === unitId);
@@ -3431,21 +3432,31 @@ const occupiedLandmasses = new Set(
     const home = this.getTradeShipHomeCity(unit);
     if (!home || !this.isHarborCity(home)) return false;
 
-    const otherHarbours = (this.cities ?? []).filter(
+    const candidates = (this.cities ?? []).filter(
       (c: City) =>
-        c.civilizationId === unit.civilizationId &&
-        c.id !== home.id &&
-        this.isHarborCity(c),
+        c.id !== home.id
+        && this.isHarborCity(c)
+        && (c.civilizationId === unit.civilizationId
+          || this.diplomacyManager?.hasContacted?.(unit.civilizationId, c.civilizationId)),
     );
-    if (otherHarbours.length === 0) return false;
+    if (candidates.length === 0) return false;
 
-    // Pick the nearest other harbour as destination.
+    // Score each candidate by what its first leg pays once the ship HAS
+    // ARRIVED at it — so the distance bracket measures the home↔candidate
+    // distance, not the ship's current position (which sits at home while the
+    // route is being opened and would floor every D to 1). Richest leg wins;
+    // a distance tie-break keeps equal-value pairs short.
     const grid = this.squareGrid;
-    const dest = otherHarbours.sort((a, b) => {
-      const da = grid ? grid.squareDistance(a.col, a.row, unit.col, unit.row) : Infinity;
-      const db = grid ? grid.squareDistance(b.col, b.row, unit.col, unit.row) : Infinity;
-      return da - db;
-    })[0];
+    const scored = candidates
+      .map((candidate: City) => ({
+        city: candidate,
+        value: this.tradeShipFormula(
+          unit.civilizationId, home, candidate, candidate.col, candidate.row,
+        ),
+        distance: grid ? grid.squareDistance(candidate.col, candidate.row, unit.col, unit.row) : Infinity,
+      }))
+      .sort((a, b) => b.value - a.value || a.distance - b.distance);
+    const dest = scored[0].city;
 
     unit.tradeShipRoute = { homeCityId: home.id, destCityId: dest.id, stage: 'outbound' };
     unit.movesRemaining = 0;
@@ -3531,6 +3542,19 @@ const occupiedLandmasses = new Set(
     }
   }
 
+  /**
+   * The trade-leg payout exactly as the TODO formula spells it out:
+   * [(1+F*X)*(5*(P-10)) + 100 + Cap] + (Minimum([T*50%], [D*70%])) * 20% / 100
+   *
+   * F is 1.5 on a foreign route (either endpoint belongs to another civ), 0
+   * domestic. X prices the partner civ: 2 while at war (smuggling pays), 1.2
+   * for a friend (an alliance or a treaty — a peace agreement alone is only
+   * NOT-war), 1 otherwise. P is the population of the city the leg pays into,
+   * T the population of the city the route is with, D the distance to it.
+   * Cap adds 25 when one of the two cities is a (capital-connected) capital.
+   * Every [ ] expression rounds down: the population/distance brackets floor
+   * before the min, and the product floors after the ×20/100 scale.
+   */
   tradeShipFormula(
     ownerCivId: number,
     otherCity: City,
@@ -3541,12 +3565,15 @@ const occupiedLandmasses = new Set(
     let X = 1.0;
     for (const target of [arrivedCity.civilizationId, otherCity.civilizationId]) {
       if (target === ownerCivId) continue;
-      const isEnemy = this.diplomacyManager?.getRelation?.(ownerCivId, target)?.status === 'war'
-        || (this.diplomacyManager?.getEnemies?.(ownerCivId)?.includes?.(target) ?? false);
-      if (isEnemy) { X = 2.0; break; }
-      if (this.diplomacyManager?.hasTreaty?.(ownerCivId, target, 'trade_agreement')
-          || this.diplomacyManager?.hasTreaty?.(ownerCivId, target, 'open_borders')
-          || this.diplomacyManager?.hasTreaty?.(ownerCivId, target, 'mutual_defense')) {
+      const status = this.diplomacyManager?.getRelation?.(ownerCivId, target)?.status;
+      if (status === 'war'
+        || (this.diplomacyManager?.getEnemies?.(ownerCivId)?.includes?.(target) ?? false)) {
+        X = 2.0; break;
+      }
+      if (status === 'alliance'
+        || this.diplomacyManager?.hasTreaty?.(ownerCivId, target, 'trade_agreement')
+        || this.diplomacyManager?.hasTreaty?.(ownerCivId, target, 'open_borders')
+        || this.diplomacyManager?.hasTreaty?.(ownerCivId, target, 'mutual_defense')) {
         X = Math.max(X, 1.2);
       }
     }
@@ -3562,10 +3589,21 @@ const occupiedLandmasses = new Set(
         : (Math.abs(otherCity.col - shipCol) + Math.abs(otherCity.row - shipRow)));
     const Cap = (arrivedCity?.isCapital || otherCity?.isCapital) ? 25 : 0;
     const a = (1 + F * X) * (5 * (P - 10)) + 100 + Cap;
+    // "[T*50%]"/"[D*70%]" round down before the min picks the weaker bracket.
     const b = Math.min(Math.floor(T * 0.5), Math.floor(D * 0.7));
-    return Math.max(1, Math.floor(a * b));
+    // The final "*20%/100": the raw line value is scaled by twenty units per
+    // hundred before the leg floors to coin.
+    return Math.max(1, Math.floor((a * b * 20) / 100));
   }
 
+  /**
+   * What the enemy earns for sinking this Trade Ship: the same formula with
+   * the target city REPLACED BY THE SHIP — D is the distance to the ship and
+   * P is the population of the city the ship came from — priced at the
+   * foreign/enemy maximum (F 150%, X 2). The sinker takes 100% of this where
+   * the run itself pays the 80/20 split, so robbing a loaded run pays like a
+   * whole foreign leg.
+   */
   computeTradeShipPrizeValue(sunk: Unit): number {
     const homeId = sunk.tradeShipRoute?.homeCityId ?? sunk.homeCityId ?? '';
     const homeCity = (homeId ? this.cities.find((c: City) => c.id === homeId) : null) as City | null;
@@ -3580,7 +3618,9 @@ const occupiedLandmasses = new Set(
     const Cap = homeCity?.isCapital ? 25 : 0;
     const a = (1 + F * X) * (5 * (P - 10)) + 100 + Cap;
     const b = Math.min(Math.floor(T * 0.5), Math.floor(D * 0.7));
-    return Math.max(1, Math.floor(a * b));
+    // Same "×20%/100" scale as the arrival formula — the prize is exactly the
+    // leg the ship was carrying, 100% to the sinker.
+    return Math.max(1, Math.floor((a * b * 20) / 100));
   }
 
   /** Get city at coordinates
@@ -3693,6 +3733,8 @@ const occupiedLandmasses = new Set(
     const workingTiles = city.workingTiles ?? (city.workingTiles = new Set<string>());
     if (!workingTiles.has(fromKey)) return false; // must pick up a worked tile
     if (workingTiles.has(toKey)) return false;    // target must be an IDLE tile
+    // Fisher rule: a netted ground is the boat's, not the city's.
+    if (this.getFishingGroundKeys().has(toKey)) return false;
 
     const tile = this.getTileAt(toCol, toRow);
     if (!tile) return false;
@@ -3852,6 +3894,8 @@ const occupiedLandmasses = new Set(
         const key = `${c},${r}`;
         if (key === centerKey) continue;
         if (city.workingTiles.has(key)) continue;
+        // Fisher rule: a netted ground is the boat's, not the city's.
+        if (this.getFishingGroundKeys().has(key)) continue;
         if (userAssigned.has(key)) continue;
         const tile = this.getTileAt(c, r);
         if (!tile) continue;
@@ -3975,6 +4019,8 @@ const occupiedLandmasses = new Set(
     if (!city.workingTiles) city.workingTiles = new Set<string>([`${city.col},${city.row}`]);
     const workingTiles = city.workingTiles;
     if (workingTiles.has(key)) return false;
+    // Fisher rule: a netted ground is the boat's, not the city's.
+    if (this.getFishingGroundKeys().has(key)) return false;
 
     // The centre must be in the set for the free-centre maths to hold.
     const centerKey = `${city.col},${city.row}`;

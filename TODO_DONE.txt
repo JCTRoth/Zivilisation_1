@@ -334,3 +334,15 @@ Are you distributing this project as a free download (like on Itch.io or GitHub)
 - [DONE] Diplomacy gold: send/request gold, bribable AI, two routes to money from an AI (good relationship = free, threaten war = personality/military-strength scaled), AI↔AI gold observable in the Diplomacy screen with embassies on both sides.
 - [DONE] Contact rule broadened: a unit beside a unit, or a unit beside the other civ's city (Chebyshev <= 1) — no diplomats-only gate.
 - [DONE] Auto End Turn screen: info text + enable/disable checkbox writing only `settings.autoEndTurn`.
+- [DONE] Tile-generator: folder under `tile_sets/` named by the theme keyword (sanitised, `classic`
+  without one) instead of a Unix timestamp; trireme UNIT_SPECS rewritten to the real source
+  artwork (one oar bank, furled lateen yard, masthead flag, steering oar — no three-tier oars);
+  3 sibling ground tiles per terrain per iteration (`terrain_<t>.png`/`_1`/`_2`, shared palette
+  and light, different arrangement) matching the renderer's `probeVariants`; `original_game_icons`
+  style plus `--unit-style-keyword` for runs in the game's own unit-icon look.
+- [DONE] Trade Ship full form: leg value exactly [(1+F*X)*(5*(P-10))+100+Cap] * min([T*50%],[D*70%])
+  * 20%/100 (brackets floored, 80% owner / 20% target-city owner), which replaces the unscaled
+  base*min payout; sinking pays the whole leg value with the ship as target city (X=2, F=1.5);
+  foreign harbour cities of met civs are routeable and the auto-route opens the best-paying leg;
+  the AI buys hulls with a single own harbour once a foreign harbour is contacted, and its
+  warships hunt Trade Ships harder the richer the run is (class order transcription preserved).

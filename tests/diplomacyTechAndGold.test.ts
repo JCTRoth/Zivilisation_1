@@ -334,7 +334,7 @@ describe('Scoring of money', () => {
     const ev = evaluateProposal(ctx(), {
       fromCivId: 0, toCivId: 1, action: 'request_gold', goldAmount: 100,
     }, 0);
-    const ask = ev.factors.find((f) => f.label.includes('gold asked of us'));
+    const ask = ev.factors.find((f) => f.label.includes('asking us for'));
     expect(ask).toBeDefined();
     expect(ask!.value).toBeLessThan(0);
   });

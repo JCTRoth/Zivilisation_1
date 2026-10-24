@@ -7,6 +7,14 @@
  */
 import { AUTO_END_TURN_OFFER_TURN } from '@/data/GameConstants';
 
+/** Keep an App-owned end-turn prompt behind dialogs managed by the game store. */
+export function shouldShowEndTurnConfirmation(
+  requested: boolean,
+  anotherModalIsOpen: boolean,
+): boolean {
+  return requested && !anotherModalIsOpen;
+}
+
 export interface ResearchPromptInput {
   /** A game is running (not the setup screen). */
   isGameStarted: boolean;

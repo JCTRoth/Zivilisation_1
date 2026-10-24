@@ -399,6 +399,16 @@ describe('warship targeting', () => {
     expect(at('fisher_boat')).toBeGreaterThan(at('scout'));
   });
 
+  it('ranks a trade ship between coastal cities and fisher boats — the money artery first among civilians', () => {
+    const at = (targetClass: Parameters<typeof scoreNavalTarget>[0]['targetClass'], valueMultiplier = 1) =>
+      scoreNavalTarget({ targetClass, distance: 2, valueMultiplier }).score;
+    expect(at('coastal_city')).toBeGreaterThan(at('trade_ship'));
+    expect(at('trade_ship')).toBeGreaterThan(at('fisher_boat'));
+    expect(at('trade_ship')).toBeGreaterThan(at('scout'));
+    // Even a jackpot trader (prize multiplier max) stays below the battle line.
+    expect(at('warship')).toBeGreaterThan(at('trade_ship', 1.8));
+  });
+
   it('lets distance break ties but not overturn a whole class', () => {
     // Two targets of the same class: nearer wins.
     const near = scoreNavalTarget({ targetClass: 'coastal_city', distance: 2 });
@@ -423,6 +433,7 @@ describe('warship targeting', () => {
     expect(classifyNavalTarget({ type: 'ferry', transportCapacity: 3, cargoCount: 2 })).toBe('transport');
     expect(classifyNavalTarget({ type: 'battleship', attack: 18 })).toBe('warship');
     expect(classifyNavalTarget({ type: 'fisher_boat', attack: 0 })).toBe('fisher_boat');
+    expect(classifyNavalTarget({ type: 'trade_ship', attack: 0 })).toBe('trade_ship');
     expect(classifyNavalTarget({ type: 'scout', attack: 0.5 })).toBe('scout');
   });
 });

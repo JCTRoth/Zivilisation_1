@@ -83,106 +83,77 @@ the material itself can never be misread.
 
 For every run:
 
-1. Creates a unix-timestamped folder under `tile_sets/` so previous runs are
-   never overwritten.
+1. Creates a folder named `<label>_<unix-timestamp>` under `tile_sets/`
+   (`<label>` is the sanitised theme keyword, else the style keyword, else
+   `classic`) so runs are findable by name and never overwritten.
 2. Resolves the **global slots** once per iteration — the theme, the shared
    palette and the shared lighting mood. Every tile and sprite of that
    iteration uses them, so the set reads as one coherent art-direction pass.
-3. For **every terrain** (`arctic`, `desert`, `forest`, …):
-   - resolves the seven abstract terrain slots with Qwen,
-   - assembles the structured prompt (title / style / subject details /
-     technical specs) plus the negative prompt,
-   - renders it with `sd-server` (FLUX.2 Klein) via `txt2img`,
-   - post-processes the output: any near-black region (the model likes to
-     put a diamond or a sprite on black) is inpainted with the surrounding
-     texture, so the tile is a continuous edge-to-edge surface,
-   - writes `tiles/terrain_<terrain>.png`.
-4. For **every feature stem** of the fixed roster:
+3. For **every terrain** (`arctic`, `desert`, `forest`, …) it renders
+   **three sibling ground tiles** (`TERRAIN_VARIANTS = 3`):
+
+   - `terrain_<terrain>.png`, `terrain_<terrain>_1.png`,
+     `terrain_<terrain>_2.png` — the game's `TerrainTextureManager` picks one
+     of them per grid cell (stable per tile position), so neighbouring cells
+     of the same terrain show different arrangements instead of one image
+     stamped over and over,
+   - the three share one palette and one light (the iteration globals) and one
+     material; they differ only in how the ground pattern is arranged and
+     scaled (`TERRAIN_VARIANT_NOTES`),
+   - after rendering, `harmonise_terrain_edges` copies the primary tile's
+     outer ring onto its siblings through a soft cross-fade, so **any two of
+     the three meet on the board without a seam** while each keeps its own
+     interior pattern,
+   - each tile is resolved from the seven abstract terrain slots with Qwen,
+     assembled into the structured prompt (title / style / subject details /
+     technical specs) plus the negative prompt, and rendered with `sd-server`
+     (FLUX.2 Klein) via `txt2img`, seamless on all four edges,
+   - post-processing inpaints any near-black region (the model likes to put a
+     diamond or a sprite on black) with the surrounding texture, so the tile is
+     a continuous edge-to-edge surface.
+4. For **every resource/terrain feature stem** of the fixed roster:
 
    - five fish (`fish1..5`, img2img from the artwork),
-   - two **proud, strong, wild horses** (txt2img: standing tall / galloping
-     at full stride - motion is allowed, and the frame may hold **one or a
-     small group** of horses; every horse is anatomically correct with
-     **all four legs clearly visible**),
-   - **one sprite for every game unit** (`unit_<key>.png`, 35 units) - units
-     with real artwork (`src/assets/units/*.svg`, wired in
-     `UnitIconConfig`) are rendered **img2img from a rasterised copy of
-     that artwork**, so the sprite keeps the identity of the picture the
-     game actually uses; all other units render **from their fixed
-     descriptions** in `UNIT_SPECS` (the game's fallback emoji is only
-     recorded in the manifest - it is monochrome and often unrelated, e.g.
-     a top hat for the diplomat, a radiation sign for the nuclear missile -
-     so emoji shapes are never fed to the model). Naval and air units
-     render on a landscape canvas; every mounted unit (chariot, knights,
-     cavalry, caravan) carries the same all-four-legs clause as the horses,
-   - **every unit is rendered in THREE variants** (`unit_<key>.png`,
-     `unit_<key>_2.png`, `unit_<key>_3.png`), each with its own freshly
-     resolved prompt, so a run yields 105 unit sprites,
-   - every unit showing a person or an animal carries the positively
-     phrased clause "*every arm and every leg is drawn complete, clearly
-     visible and in a natural easy stance, nothing cropped*" - a moderate
-     framing clause, deliberately not a hard anatomy audit (which makes
-     FLUX over-correct into doubled/stiff limbs),
-   - **three forests, always** (`terrain_forest_feature_1` **mixed**,
-     `_2` **coniferous**, `_3` **deciduous**) - a group of individual trees,
-     each tree complete with trunk and crown and fully visible inside the
-     frame (txt2img),
-   - the **jungle**: a group of tall tropical trees, connected by winding
-     **lianas** (txt2img),
-   - hills + swamp (img2img),
-   - **FOUR mountain variants, always rendered** (`terrain_mountains_feature_1..4`):
-     several peaks side by side / the **dramatic variant** with a rolled
-     crazy extra (erupting lava, glowing crystals, a huge waterfall, a rock
-     arch, a ruined watchtower) / twin massive peaks / a long ridge line
-     with foothills. Every variant rolls its own atmosphere per iteration
-     (sometimes fog, sometimes snow, sometimes low valley mist, sometimes a
-     clear face), and **every peak is whole and fully visible** (all
-     txt2img),
-   - the seven special resources that previously only had glyph icons:
-     **seal** (arctic), **gems** (jungle), **gold** (mountains), **coal**
-     (hills), **oil** (swamp), **game** (forest), **oasis** (desert) -
-     each a feature-only sprite (txt2img),
-   - stems prepared from artwork (`fish1..5`, `hills_feature`,
-     `swamp_feature`) are **img2img** from the feature-only input flattened
-     onto pure black, so they keep the identity of the artwork; every other
-     stem is composed purely from the prompt,
-   - **all framing rules are phrased positively** ("the whole subject
-     complete and fully visible inside the frame", "generous clear margin on
-     all four sides", "the entire frame beneath the group stays empty solid
-     black") - FLUX.2 ignores negative prompts, so constraints live in the
-     positive prompt and the identity anchors,
-   - **copies the untouched render into `features/backup/<name>.png`** before
-     the background is removed, so the original is never lost,
-   - removes the black background to a **transparent alpha channel** (a
-     border flood fill that keeps dark parts *inside* the subject — far more
-     accurate than a global black key and instant; `rembg` is available via
-     `--use-rembg`); enclosed background gaps *between* the trees of a group
-     are keyed out as well once they are bigger than 0.2 % of the canvas,
-     so the terrain shows through them,
-   - post-processes the sprite: stray opaque blobs are dropped and the
-     feature is centred in the canvas,
-   - writes the exact file names the game and `compose_feature_tiles.mjs`
-     expect (`terrain_ocean_fish.png`, `terrain_forest_feature_2.png`,
-     `terrain_arctic_seal.png`, ...).
+   - two proud wild horses (txt2img),
+   - three forests (mixed, coniferous, deciduous), a liana-connected jungle,
+     hills, swamp and four mountain variants with separately rolled
+     atmosphere,
+   - seven special resources: seal, gems, gold, coal, oil, game and oasis,
+   - artwork-backed feature stems use img2img; other stems use their prompt,
+   - positive silhouette/framing guidance is paired with a FLUX.2 negative
+     prompt; output is saved under `features/` with untouched renders in
+     `features/backup/`,
+   - a border-sampled background color is keyed to transparent alpha, then
+     stray blobs are removed and the sprite is centered.
 
-5. **Features are never composited onto tiles in this script.** Compose logic
-   (`compose_feature_tiles.mjs`) is deliberately kept out of the generator —
-   this script only produces the clean asset set.
+5. For **every selected game unit** (`--units`; all 35 by default):
+
+   - real game SVG artwork is rasterized for img2img when available; all
+     remaining units use identity-pinned descriptions from `UNIT_SPECS`,
+   - each unit receives three distinct prompt/image variants in `units/`, with
+     untouched renders under `units/backup/`,
+   - the whole roster shares a serious, hand-drawn strategy-game direction:
+     mature anime / graphic-novel linework, controlled cel shading, consistent
+     detail density and readable icon silhouettes.
+
+6. **Feature sprites are never composited onto tiles in this script.** Compose
+   logic (`compose_feature_tiles.mjs`) is deliberately kept out of the
+   generator — this script only produces the clean asset set.
 
 ## Background removal
 
-The sprite background is removed with a flood fill that starts at the image
-border, so only background that actually touches the border is removed. Two
-knobs control how aggressive it is:
+The sprite background color is sampled from the image border, then a flood fill
+removes connected pixels close to that color. This handles gray fog, pale sky
+and other non-black generated backdrops instead of assuming pure black. Two
+knobs control edge quality and removal tolerance:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--bg-level` | `28` | The **black point** 0-255. A pixel counts as background when its brightest channel is below the level *and* its darkest channel is below half the level — the background has to be really black, so a dark but coloured subject (a deep blue fish, a dark green canopy) is never eaten away. **Higher removes more.** |
+| `--bg-level` | `28` | Color-distance tolerance (0-255) from the sampled border color. **Higher removes more.** |
 | `--bg-softness` | `30` | The width of the **anti-aliasing ramp** 0-255. The ring of pixels around the removed background fades in instead of being cut with a hard, jagged edge. `0` is a hard edge. |
 
-With the old fixed threshold the key still cut away 441 (fish) to 1092
-(swamp) subject pixels; with the new rule **no** subject pixel is lost any
-more, and the edge is soft.
+The edge pixels are softly feathered; enclosed background gaps can also be
+removed while small enclosed subject details are preserved.
 
 The same `backup` rule applies to the input scan: a folder named `backup` is
 never processed, so the untouched originals can be kept next to the results
@@ -233,6 +204,11 @@ Feature prompts use the same structure, but the title line is
 Subject Details explicitly state that the sprite shows only the feature on a
 completely empty black `#000000` background.
 
+Unit prompts use their own shorter FLUX.2-friendly structure and a shared
+serious hand-drawn strategy-game art direction, so each vehicle, ship and
+historical unit keeps its own identity while the full unit roster looks like
+one illustrated set.
+
 The feature negative prompt bans every *competing* backdrop (scenery, terrain,
 water, horizon, a white or gradient background) but deliberately not the word
 "background" itself — the sprite must sit on a **black** background.
@@ -259,12 +235,12 @@ python3 tools/tile-generator/generate_variated_tile_sets.py --iterations 10
 # only resolve the prompts with the local model, render nothing
 python3 tools/tile-generator/generate_variated_tile_sets.py --dry-run
 
-# one set, only some terrains and features
+# one set, only some terrains and resource features
 python3 tools/tile-generator/generate_variated_tile_sets.py \
     --iterations 1 --terrains forest,ocean --features fish1,horses
 
-# one themed set - the keyword is shot through theme, palette, lighting and
-# every resolved slot; feature animals may swap to close themed equivalents
+# one themed set - the keyword is shot through shared palette and lighting;
+# feature animals may swap to close themed equivalents
 # (skeleton horse at Halloween, reindeer at Christmas, sea serpent at
 # Transylvania, ...).  Terrain identities stay untouched.
 python3 tools/tile-generator/generate_variated_tile_sets.py \
@@ -279,10 +255,59 @@ python3 tools/tile-generator/generate_variated_tile_sets.py \
 nohup bash "tools/tile-generator/run_batch_<timestamp>.sh" > batch.out 2>&1 &
 tail -5 tools/tile-generator/run_logs/<job>.log   # progress of one job
 
-# only the unit sprites of all 35 game units (all stems: features + units)
+# only selected unit sprites; feature and unit selections are independent
 python3 tools/tile-generator/generate_variated_tile_sets.py \
-    --iterations 1 --no-terrains --features units
+    --iterations 1 --no-terrains --units phalanx,mech_inf,settler
+
+# units in the ORIGINAL game's flat vector icon look (terrain keeps its own
+# semi-realistic style) — the FLUX.2 style string above
+python3 tools/tile-generator/generate_variated_tile_sets.py \
+    --iterations 2 --no-terrains --units all \
+    --unit-style-keyword original_game_icons
+
+# every terrain renders THREE sibling ground tiles (terrain_<t>.png,
+# terrain_<t>_1.png, terrain_<t>_2.png) so neighbouring cells of the same
+# terrain do not repeat one image
 ```
+
+### Installing a generated run into the game
+
+One command replaces the app's default tiles/features/units with the output of
+one generated run, so `npm run dev` + a browser reload shows them on the board:
+
+```bash
+# <generated-folder> is either the run folder (tile_sets/<label>_<timestamp>/,
+# its newest iteration is used) or one iteration folder directly
+npm run tiles:install -- tools/tile-generator/tile_sets/classic_1792865487
+
+npm run tiles:install -- <generated-folder> --iteration 2   # a specific one
+npm run tiles:install -- <generated-folder> --dry-run       # list only
+npm run tiles:install -- <generated-folder> --restore       # undo the install
+```
+
+What it does: it combines the generated `tiles/` and `features/` folders into
+`public/assets/tiles/` and the generated `units/` sprites into
+`public/assets/units/`, replacing the shipped assets:
+
+- ground tiles (`terrain_<terrain>.png`, `_1`, `_2`) are copied as they are;
+- the transparent **feature sprites** (`terrain_*_feature*.png` — forests,
+  jungle, hills, swamp, mountains) are copied as they are, because the game
+  draws that layer on top of the ground;
+- the **resource tiles** (`terrain_<terrain>_<resource>.png` — fish, horses,
+  game, seal, gems, gold, coal, oil, oasis) are **combined with their ground
+  tile** first (the sprite is fitted into 85 % of the tile and centred, the
+  geometry `compose_feature_tiles.mjs` uses). That is required:
+  `TerrainTextureManager.getTileTexture` blits that file as the *whole* tile,
+  so a bare transparent sprite would leave the cell empty. ImageMagick
+  (`magick`) is used for the step — the same tool `compose_feature_tiles.mjs`
+  needs; without it the files are copied unchanged and the script says so
+  (`--no-compose` forces that behaviour);
+- generated unit sprites take priority over the bundled SVG artwork, so they
+  appear on the map immediately.
+
+Every replaced original is kept once in `public/assets/_generated_backup/`
+(git-ignored) and `--restore` puts it back — files the install added are
+removed again, leaving the working tree exactly as it was.
 
 ### Environment overrides
 
@@ -297,44 +322,53 @@ python3 tools/tile-generator/generate_variated_tile_sets.py \
 | `SIZE` | `512` | Terrain output size in pixels. |
 | `FEATURE_SIZE` | `256` | Feature sprite width (height is 1.5×). |
 | `SEED` | `-1` | Base seed for reproducible runs (-1 = random). |
-| `TERRAINS` / `FEATURES` | all | Comma separated lists. `FEATURES` matches stems by variant base name (`forest_feature` renders forest_feature_1..3 or `mountains_feature` 1..4), the entry `units` renders all 35 unit sprites, and a stem named exactly forces an optional stem on (all stems render always right now). |
+| `TERRAINS` / `FEATURES` / `UNITS` | all | Comma-separated selections. `FEATURES` matches feature stems by variant base name (`forest_feature` renders forest_feature_1..3); `UNITS` accepts game keys (`phalanx`) or stems (`unit_phalanx`). With no selection both categories are generated. |
 | `THEME_KEYWORD` | *(empty)* | Art-direction keyword for the whole run (Halloween, Christmas, "Transylvania and vampires", Easter, ...). |
+| `STYLE_KEYWORD` | *(empty)* | One art style for every asset (`american_comic`, `manga`, …, `original_game_icons`, or any freeform phrase). |
+| `UNIT_STYLE_KEYWORD` | *(empty)* | One art style for the **unit sprites only**; `original_game_icons` = the flat vector game-icon look. |
 | `WRITE_BATCH` | *(empty)* | Comma separated keyword list; writing the batch script replaces generating. |
 | `BATCH_ITERATIONS` | `1` | Iterations per job inside a generated batch script. |
 | `RETRIES` | `3` | Render attempts per image. |
-| `BG_LEVEL` | `28` | Background removal level (black point, higher removes more). |
+| `BG_LEVEL` | `28` | Border-color distance tolerance (higher removes more). |
 | `BG_SOFTNESS` | `30` | Background removal edge softness (0 = hard edge). |
 
 CLI flags `--iterations`, `--output-root`, `--strength`, `--feature-strength`,
 `--steps`, `--cfg`, `--size`, `--feature-size`, `--seed`, `--retries`,
-`--bg-level`, `--bg-softness`, `--terrains`, `--features`, `--dry-run`,
-`--no-terrains`, `--no-features`, `--use-rembg`, `--keep-servers`,
-`--theme-keyword`, `--write-batch` and `--batch-iterations` override
-the environment.
+`--bg-level`, `--bg-softness`, `--terrains`, `--features`, `--units`, `--dry-run`,
+`--no-terrains`, `--no-features`, `--no-units`, `--use-rembg`, `--keep-servers`,
+`--theme-keyword`, `--style-keyword`, `--unit-style-keyword`, `--write-batch`
+and `--batch-iterations` override the environment.
 
 ## Output layout
 
 ```
 tile_sets/
-└── <unix_timestamp>/
+└── <label>_<unix_timestamp>/
     ├── run.json                          # summary of the whole run
     └── iteration_01/
         ├── theme.txt                     # art-direction theme phrase
         ├── manifest.json                 # prompts, keywords, outputs
         ├── keywords_global.json          # the resolved global slots
-        ├── prompt_<terrain>.txt          # full structured prompt + negative
-        ├── keywords_<terrain>.json       # the resolved terrain slots
-        ├── prompt_feature_<name>.txt     # full structured prompt + negative
+        ├── prompt_<terrain>.txt          # terrain variant 1 prompt + negative
+        ├── keywords_<terrain>.json       # terrain variant 1 slots
+        ├── prompt_<terrain>_1.txt        # ... variant 2
+        ├── prompt_<terrain>_2.txt        # ... variant 3
+        ├── prompt_feature_<name>.txt     # full structured feature prompt + negative
         ├── keywords_feature_<name>.json  # the resolved feature slots
+        ├── prompt_unit_<name>.txt        # full structured unit prompt + negative
+        ├── keywords_unit_<name>.json     # the resolved unit slots
         ├── tiles/                        # all terrain tiles
-        │   └── terrain_<terrain>.png
-        └── features/                     # all feature sprites (alpha!)
-            ├── terrain_<terrain>_<resource>.png
+        │   ├── terrain_<terrain>.png     # ground variant 1
+        │   ├── terrain_<terrain>_1.png   # ground variant 2
+        │   └── terrain_<terrain>_2.png   # ground variant 3
+        ├── features/                     # resource/terrain feature sprites (alpha!)
+        │   ├── terrain_<terrain>_<resource>.png
+        │   └── backup/                   # untouched feature renders
+        └── units/                        # game unit sprites (alpha!)
             ├── unit_<unit_key>.png       # one sprite per game unit
             ├── unit_<unit_key>_2.png     # ... plus 2 more variants each
             ├── unit_<unit_key>_3.png
-            └── backup/                   # the untouched renders
-                └── terrain_<terrain>_<resource>.png
+            └── backup/                   # untouched unit renders
 ```
 
 In every per-iteration `manifest.json` the unit entries also record the
@@ -356,10 +390,8 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
   generator, not from the old artwork.
 - The output names are the ones the game expects
   (`terrain_ocean_fish.png`, `terrain_forest_feature_1.png`, …).
-- Everything the sprite should obey is phrased **positively** in the prompt
-  ("every tree complete and fully visible inside the frame", "the entire
-  frame beneath the group stays empty solid black"): FLUX.2 has no negative
-  prompt support, so negated constraints would only be ignored.
+- Important sprite shape and framing constraints are phrased **positively**;
+  the generator also passes a negative prompt to FLUX.2 for unwanted content.
 - The per-iteration rolls (one atmosphere per mountain variant, the crazy
   extra of the dramatic mountain variant) are logged under `rolls` in the
   per-iteration `manifest.json`.
@@ -377,22 +409,33 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
 - If the game ships artwork (`src/assets/units/*.svg`, referenced by
   `UnitIconConfig`), that artwork is rasterised with inkscape and used as
   the img2img input, so the sprite keeps the identity of the real game
-  picture.
+  picture. For those units the `UNIT_SPECS` description is written to match
+  the **actual source artwork**, not an idealised textbook design — e.g. the
+  Trireme artwork is an ancient Mediterranean galley with **one** low bank of
+  long parallel oars, a large **furled lateen sail** on a long diagonal
+  yardarm, a rectangular masthead banner and a stern steering oar. Asking
+  FLUX.2 for three stacked banks of oars on that canvas produces warped oar
+  layers and hull artifacts, so the spec pins what the image already shows.
 - Everything else (legion, catapult, cavalry, destroyer, diplomat,
   fisher boat, mech. inf., nuclear, ...) is composed from the fixed,
   hand-written descriptions in `UNIT_SPECS` — identity phrase, kind
-  anchors and full slot fallbacks per unit.  Units showing a person or an
-  animal add the limb-completeness clause; the catapult, cannon
+  anchors and full slot fallbacks per unit. Single-figure units add a
+  positively phrased limb-completeness clause; groups and crews use
+  composition-specific instructions instead. The catapult, cannon
   and artillery descriptions describe the classic two-wheeled, spoked-
   wheel gun-carriage look.
 - The game's fallback emoji is recorded in the manifest only; emoji shapes
   are never fed to the image model.
+- Units share a serious hand-drawn graphic-novel / mature-anime strategy-game
+  illustration direction by default: consistent ink contours, controlled cel
+  shading, grounded colors and clean silhouettes at icon size. Explicit
+  `--style-keyword` overrides the default while keeping the treatment coherent.
 - The message `SVG artwork could not be rasterised -> text-only` in a log
   means a unit fell back from img2img to its description (missing
   inkscape or unreadable SVG) — the sprite is still produced.
-- `unit_*` stems render in the batch order of features first, then units;
-  `--features units` renders only units, `--features unit_legion` a single
-  one.
+- Units are selected independently with `--units`: e.g. `--units phalanx` or
+  `--units unit_phalanx,mech_inf`. `--features` selects only feature sprites;
+  the legacy `--features units` spelling remains accepted.
 
 ## Themed runs (--theme-keyword)
 
@@ -400,7 +443,7 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
   is injected into the iteration-global resolution — theme phrase, palette
   and lighting must be clearly shot through with it — and into the theme
   string every prompt carries.
-- Feature and unit slot resolution additionally receive a clause that
+- Feature slot resolution additionally receives a clause that
   allows swapping a featured **animal** for a close themed equivalent (a
   ghost/skeleton horse at Halloween, a reindeer at Christmas, a sea serpent
   at Transylvania) while keeping it recognisable: the per-spec anchor
@@ -420,8 +463,31 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
   `greek_pottery`, `norse_woodcarving`, `illuminated_manuscript`,
   `constructivist_poster`, `art_deco_poster`, `linocut_print`,
   `tarot_engraving`, `vintage_box_art`, `anime_cel`, `naive_folk_art`,
-  `egyptian_tomb`, `ligne_claire`, `painted_miniature`) or any freeform
-  phrase; a registry name is upgraded to its handcrafted descriptor.
+  `egyptian_tomb`, `ligne_claire`, `painted_miniature`,
+  `original_game_icons`) or any freeform phrase; a registry name is upgraded
+  to its handcrafted descriptor.
+- `--unit-style-keyword <name|phrase>` (env `UNIT_STYLE_KEYWORD`) applies a
+  style **to the game unit sprites only** — terrain and resource features keep
+  `--style-keyword`. Use `--unit-style-keyword original_game_icons` to render
+  units in the original game's flat vector icon look:
+
+  ```
+  2D flat vector strategy game asset style, clean graphic game icon art
+  direction. Uniform bold black outlines on elements combined with crisp
+  lineless vector shapes. Flat solid color blocks, hard-edged geometric
+  cel-shading, absolute absence of gradients or textures. Matte finish with
+  simple pill-shaped white specular highlights on polished surfaces.
+  High-contrast bold silhouettes, centered framing, isolated on a uniform
+  flat solid pure black background.
+  ```
+
+  That is what unites the clean lineless game icons (musketeer) and the
+  outlined ones (cannon, archer) into one look: solid opaque colours, one
+  hard-edged shadow step down per surface, pill-shaped white speculars
+  instead of glows, no gradients or texture, hybrid bold outlines on
+  simplified geometric forms. The framing (isometric 3/4, centred, isolated
+  on pure black) stays with the prompt; the style string carries only the
+  technique.
 - Injection is deterministic: the descriptor lands in the `Style & Art
   Direction` line of every terrain and feature/unit prompt (even purely
   fallback-generated ones) and replaces the FEATURE_RENDERING slot.

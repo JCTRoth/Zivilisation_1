@@ -852,13 +852,27 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       }
     })),
 
-    hideDialog: () => set(state => ({
-      // Closing a dialog means the player is done with that decision screen:
-      // release the hand-made selection lock so the turn queue can auto-select
-      // the next unit again. The city marker (`focusedCity`) stays.
-      uiState: { ...state.uiState, activeDialog: null },
-      gameState: { ...state.gameState, selectionOrigin: null }
-    })),
+    hideDialog: () => set(state => {
+      const active = state.uiState.activeDialog;
+      const closingCityEvent = active === 'city-founded' || active === 'city-lost';
+      const nextCityEvent = !closingCityEvent ? state.cityEventQueue[0] : undefined;
+      const nextDialog = nextCityEvent
+        ? nextCityEvent.kind === 'founded' || nextCityEvent.kind === 'joined'
+          ? 'city-founded'
+          : 'city-lost'
+        : null;
+
+      // Closing another screen may unblock a city event that arrived while
+      // that screen was open. Surface it now instead of leaving its queue
+      // stranded until another city event happens to arrive.
+      return {
+        uiState: { ...state.uiState, activeDialog: nextDialog },
+        // Keep the selection lock while a queued notice replaces the dialog.
+        gameState: nextCityEvent
+          ? state.gameState
+          : { ...state.gameState, selectionOrigin: null },
+      };
+    }),
 
     showVillageResult: (result) => set(state => ({
       villageResult: result,

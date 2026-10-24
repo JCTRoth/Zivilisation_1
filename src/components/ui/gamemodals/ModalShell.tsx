@@ -53,6 +53,8 @@ interface GameModalProps {
   children?: React.ReactNode;
   /** Action bar — use `.touch-btn` variants so it matches the rest of the game. */
   actions?: React.ReactNode;
+  /** Disable the transition when another modal must take over immediately. */
+  animation?: boolean;
 }
 
 /**
@@ -85,6 +87,7 @@ const GameModal: React.FC<GameModalProps> = ({
   dialogClassName,
   children,
   actions,
+  animation = true,
 }) => {
   // Every modal shares this shell, so its close button label follows the
   // language like everything else.
@@ -94,6 +97,7 @@ const GameModal: React.FC<GameModalProps> = ({
       show={show}
       onHide={onClose}
       centered
+      animation={animation}
       size={size}
       className={`gm ${className ?? ''}`.trim()}
       dialogClassName={dialogClassName}

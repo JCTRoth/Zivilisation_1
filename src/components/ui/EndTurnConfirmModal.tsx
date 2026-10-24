@@ -13,6 +13,7 @@ interface EndTurnConfirmModalProps {
   currentTurn: number;
   currentYear: number;
   isAutomatic?: boolean;
+  animation?: boolean;
 }
 
 /**
@@ -34,7 +35,8 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
   onCancel,
   currentTurn,
   currentYear,
-  isAutomatic = false
+  isAutomatic = false,
+  animation = true,
 }) => {
   const settings = useGameStore(state => state.settings);
   const actions = useGameStore(state => state.actions);
@@ -65,6 +67,7 @@ const EndTurnConfirmModal: React.FC<EndTurnConfirmModalProps> = ({
     <GameModal
       show={show}
       onClose={handleCancel}
+      animation={animation}
       dialogClassName="end-turn-modal"
       tone={isAutomatic ? 'success' : 'info'}
       icon={isAutomatic ? '✅' : '⏭️'}

@@ -300,7 +300,7 @@ export function evaluateProposal(
   // keep the peace. Personality decides how much each of those is worth.
   if (action === 'request_gold') {
     const friendship = 0.5 + weights.trustSensitivity / 10;
-    const dread = 0.6 + weights.paranoia / 10;
+    const dread = 0.6 + (weights.paranoia ?? 5) / 10;
     factors.push({ label: 'our friendship', value: round2((opinion.goodwill / 100) * 34 * friendship) });
     factors.push({ label: 'fear of them', value: round2((opinion.fear / 100) * 24 * dread) });
     if (status === 'war') {
@@ -309,12 +309,12 @@ export function evaluateProposal(
     }
     if (typeof proposal.goldAmount === 'number' && proposal.goldAmount > 0) {
       const goldValue = goldTermValue(proposal.goldAmount, weights, ctx.ownGold);
-      factors.push({ label: `${Math.round(proposal.goldAmount)} gold asked of us`, value: round2(goldValue) });
+      factors.push({ label: `asking us for ${Math.round(proposal.goldAmount)} gold`, value: round2(goldValue) });
       const beyondSparing = (proposal.goldAmount - ctx.ownGold * 1.5) / Math.max(10, ctx.ownGold);
       if (beyondSparing > 0) {
         factors.push({
           label: 'more than they can spare',
-          value: round2(-30 * Math.min(1, beyondSparing)),
+          value: round2(-45 * Math.min(1, beyondSparing)),
         });
       }
     }

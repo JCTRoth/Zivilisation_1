@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "tiles:install": "node tools/tile-generator/install_generated_assets.mjs",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "knip": "knip",
     "type-check": "tsc --noEmit",

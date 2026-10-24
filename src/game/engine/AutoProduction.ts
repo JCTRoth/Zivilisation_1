@@ -796,9 +796,10 @@ export class AutoProduction {
       return fisherBoat;
     }
 
-    // Trade Ship: a second harbour city lets a civ open a paying sea route.
-    // Offered only when the civ actually has somewhere to send it; the
-    // route itself is opened manually (or by the first arrival) — this just
+    // Trade Ship: a harbour city with a routeable partner (another own harbour
+    // or a contacted foreign harbour) lets a civ open a paying sea route.
+    // Offered only when the civ actually has somewhere to send it; the route
+    // itself opens automatically on the ship's turn start — this just
     // supplies the hull.
     const tradeShip = this.buildTradeShipProduction(city);
     if (tradeShip) {
@@ -2814,7 +2815,20 @@ export class AutoProduction {
       (c: City) =>
         c.civilizationId === civ.id && Array.isArray(c.buildings) && c.buildings.includes('harbor'),
     );
-    if (harbours.length < 2) return null; // nowhere to run to
+    // A route needs a home harbour and a partner harbour. The partner can be
+    // foreign: a single own harbour earns when the civ has contacted a foreign
+    // harbour city (foreign legs pay the 150% bonus on top of the base rate).
+    const contactedForeignHarbour = harbours.length >= 1
+      && (this.gameEngine.cities ?? []).some(
+        (c: City) =>
+          c.civilizationId !== civ.id
+          && Array.isArray(c.buildings)
+          && c.buildings.includes('harbor')
+          && this.gameEngine.diplomacyManager?.hasContacted?.(civ.id, c.civilizationId),
+      );
+    if (harbours.length < 2 && !(harbours.length >= 1 && contactedForeignHarbour)) {
+      return null; // nowhere to run to
+    }
 
     const shipCount = this.gameEngine.units.filter(
       (u: Unit) => u.civilizationId === civ.id && u.type === 'trade_ship' && !u.isDefeated,

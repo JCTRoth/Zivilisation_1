@@ -135,19 +135,20 @@ describe('Trade Ship', () => {
     expect(sunkVal).toBeGreaterThan(0);
   });
 
-  it('auto-establishes a route for a trade ship at a harbour with another harbour available', () => {
+  it('auto-establishes the best-paying route, not the nearest one', () => {
     const home = makeCity(0, 2, 2);
-    const dest = makeCity(0, 4, 4);
+    const near = makeCity(0, 3, 3);   // 2 manhattan tiles: the distance
+    const far = makeCity(0, 8, 8);    // bracket pays big — value beats range
     const ship = createShip(home, home.col, home.row);
-    expect(ship.tradeShipRoute).toBeNull();
 
-    // Simulate the turn-start hook that auto-establishes routes.
     (engine as unknown as { autoEstablishTradeShipRoute: (id: string) => boolean }).autoEstablishTradeShipRoute(ship.id);
 
-    expect(ship.tradeShipRoute).not.toBeNull();
+    // Both legs have pop-10 cities (base 100), but the near harbour sits
+    // inside the [D*70%] bracket: b = min(5, floor(2*0.7)) = 1 → 20 gold, the
+    // far one b = min(5, floor(12*0.7)) = 5 → 100 gold. Value wins.
+    expect(ship.tradeShipRoute?.destCityId).toBe(far.id);
+    expect(ship.tradeShipRoute?.destCityId).not.toBe(near.id);
     expect(ship.tradeShipRoute?.homeCityId).toBe(home.id);
-    expect(ship.tradeShipRoute?.destCityId).toBe(dest.id);
-    expect(ship.tradeShipRoute?.stage).toBe('outbound');
   });
 
   it('does not auto-establish when the ship already has a route', () => {
@@ -172,16 +173,100 @@ describe('Trade Ship', () => {
     expect(ship.tradeShipRoute).toBeNull();
   });
 
-  it('picks the nearest other harbour as destination', () => {
+  // ── Foreign trade routes ───────────────────────────────────────────────────
+  // "a city of your civilisation ... or of another civ": foreign harbour
+  // cities of civs the ship owner has MET are routeable and pay the F=150%
+  // foreign bonus (X prices the partner: 2 at war, 1.2 for a friend).
+
+  it('skips foreign harbours the civ has never met and opens one after contact', () => {
     const home = makeCity(0, 2, 2);
-    const near = makeCity(0, 3, 3);   // distance ~2 from home
-    const far = makeCity(0, 8, 8);    // distance ~12 from home
+    const foreign = makeCity(1, 10, 10, 20);
     const ship = createShip(home, home.col, home.row);
+    const auto = (engine as unknown as { autoEstablishTradeShipRoute: (id: string) => boolean })
+      .autoEstablishTradeShipRoute.bind(engine);
 
-    (engine as unknown as { autoEstablishTradeShipRoute: (id: string) => boolean }).autoEstablishTradeShipRoute(ship.id);
+    // Unmet civ: the foreign harbour is not a routeable partner.
+    expect(auto(ship.id)).toBe(false);
+    expect(ship.tradeShipRoute).toBeNull();
 
-    expect(ship.tradeShipRoute?.destCityId).toBe(near.id);
-    // The far harbour was a real candidate — it is simply not the nearest one.
-    expect(ship.tradeShipRoute?.destCityId).not.toBe(far.id);
+    // Once met: the foreign harbour wins (its foreign bonus pays 45 vs any
+    // domestic alternative — there is none here).
+    (engine as unknown as { diplomacyManager: { restoreContactedPairs: (p: string[]) => void } })
+      .diplomacyManager.restoreContactedPairs(['0_1']);
+    expect(auto(ship.id)).toBe(true);
+    expect(ship.tradeShipRoute?.homeCityId).toBe(home.id);
+    expect(ship.tradeShipRoute?.destCityId).toBe(foreign.id);
+    expect(ship.tradeShipRoute?.stage).toBe('outbound');
+  });
+
+  it('pays a foreign arrival 80% to the ship owner and 20% to the harbour owner', () => {
+    const home = makeCity(0, 2, 2);
+    const foreign = makeCity(1, 10, 10, 20);
+    const ship = createShip(home, foreign.col, foreign.row);
+    engine.establishTradeShipRoute(ship.id);
+
+    const ownerBefore = engine.civilizations?.[0]?.resources?.gold ?? 0;
+    const harbourBefore = engine.civilizations?.[1]?.resources?.gold ?? 0;
+    engine.advanceTradeShip(ship.id);
+    const ownerAfter = engine.civilizations?.[0]?.resources?.gold ?? 0;
+    const harbourAfter = engine.civilizations?.[1]?.resources?.gold ?? 0;
+
+    // Pop-20 foreign harbour, base 100 + (1+1.5·1)·(5·10) = 225 at peace,
+    // b = min(floor(10·0.5), floor(16·0.7)) = 5 → total 225; owner 180, city 45.
+    expect(ownerAfter - ownerBefore).toBe(180);
+    expect(harbourAfter - harbourBefore).toBe(45);
+    expect(harbourAfter - harbourBefore).toBe(Math.floor(225 * 0.2));
+  });
+
+  // ── The formula, exactly as the TODO spells it out ────────────────────────
+
+  it('scales the leg with ×20%/100 ([T*50%] and [D*70%] floor before the min)', () => {
+    // Pop-10 domestic pair 4 manhattan tiles apart: base (1+0)·(5·0)+100 = 100,
+    // b = min(floor(10·0.5), floor(4·0.7)) = 2 → 100·2·20/100 = 40.
+    const home = makeCity(0, 2, 2);
+    const dest = makeCity(0, 4, 4);
+    const total = (engine as unknown as { tradeShipFormula: (...a: unknown[]) => number })
+      .tradeShipFormula(0, home as never, dest as never, dest.col, dest.row);
+    expect(total).toBe(40);
+  });
+
+  it('prices a war partner at X=2 and a foreign route at F=150%', () => {
+    const home = makeCity(0, 2, 2);
+    const foreign = makeCity(1, 10, 10, 20);
+    const formula = (engine as unknown as { tradeShipFormula: (...a: unknown[]) => number })
+      .tradeShipFormula.bind(engine);
+    const leg = () => formula(0, home as never, foreign as never, foreign.col, foreign.row) as number;
+
+    // Peace: F=1.5, X=1 → (1+1.5)·50+100 = 225 → ×5 (b=min(5,11)) ×20/100 = 225.
+    expect(leg()).toBe(225);
+    // War: X=2 → (1+3)·50+100 = 300 → 300.
+    (engine as unknown as { diplomacyManager: { declareWar: (a: number, b: number) => void } })
+      .diplomacyManager.declareWar(0, 1);
+    expect(leg()).toBe(300);
+  });
+
+  it('adds the +25 Cap bracket when a capital city is involved', () => {
+    const home = makeCity(0, 2, 2);
+    const plain = makeCity(0, 8, 8);
+    const capital = makeCity(0, 8, 8);
+    capital.isCapital = true;
+    const formula = (engine as unknown as { tradeShipFormula: (...a: unknown[]) => number })
+      .tradeShipFormula.bind(engine);
+    // Same geometry (D=12 → b=5): the capital line is worth exactly 25 more.
+    expect(formula(0, home as never, capital as never, capital.col, capital.row) as number)
+      .toBe((formula(0, home as never, plain as never, plain.col, plain.row) as number) + 25);
+  });
+
+  it('pays the sinker 100% of the run: target city = the ship, pop = the home city', () => {
+    // Home (2,2) pop 10, ship caught at (5,5): the prize measures the classic
+    // sailing distance — chebyshev(home, ship) = 3 → b = min(5, floor(3·0.7))
+    // = 2; P = T = 10 → base (1+3)·0+100 = 100 (F=1.5, X=2) → prize =
+    // 100·2·20/100 = 40. The old, unscaled formula would have paid 200 —
+    // this pins the ×20%/100 scaling for keeps.
+    const home = makeCity(0, 2, 2);
+    const ship = createShip(home, 5, 5);
+    engine.establishTradeShipRoute(ship.id);
+    ship.col = 5; ship.row = 5;
+    expect(engine.computeTradeShipPrizeValue(ship)).toBe(40);
   });
 });

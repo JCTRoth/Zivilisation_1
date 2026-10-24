@@ -153,6 +153,18 @@ describe('fleet mix helpers', () => {
     const scoutVsFleet = scoreNavalTarget({ targetClass: 'warship', distance: 5, attackerRole: 'scout' }).score;
     expect(scoutVsFleet).toBeGreaterThan(scoutVsScout); // class still dominates
   });
+
+  it('gives raiders the gold-laden Trade Ship as prey too', () => {
+    const raiderVsTrader = scoreNavalTarget({ targetClass: 'trade_ship', distance: 5, attackerRole: 'raider' }).score;
+    const traderPlain = scoreNavalTarget({ targetClass: 'trade_ship', distance: 5 }).score;
+    expect(raiderVsTrader).toBeGreaterThan(traderPlain); // merchants are raider prey
+    expect(raiderVsTrader).toBeGreaterThan(
+      scoreNavalTarget({ targetClass: 'fisher_boat', distance: 5, attackerRole: 'raider' }).score,
+    );
+    // Role never flips class: the enemy battle line still outranks a trader.
+    expect(scoreNavalTarget({ targetClass: 'warship', distance: 5, attackerRole: 'raider' }).score)
+      .toBeGreaterThan(raiderVsTrader);
+  });
   it('lets siege guns crack a walled target', () => {
     const noGuns = scoreLandingSite({ ferryDistance: 2, landingForce: 10, targetCityDefence: 12, walledTarget: true });
     const guns = scoreLandingSite({ ferryDistance: 2, landingForce: 10, targetCityDefence: 12, walledTarget: true, siegePower: 12 });

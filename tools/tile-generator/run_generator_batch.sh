@@ -23,13 +23,12 @@ run_job() {
   fi
 }
 
-run_job halloween --theme-keyword Halloween --iterations 1
-run_job transylvania_and_vampires --theme-keyword 'Transylvania and vampires' --iterations 1
+run_job classic_01 --iterations 3
 run_job christmas --theme-keyword Christmas --iterations 1
-run_job easter --theme-keyword Easter --iterations 1
-run_job classic_01 --iterations 1
-run_job classic_02 --iterations 1
-run_job classic_03 --iterations 1
+run_job halloween --theme-keyword Halloween --iterations 1
+run_job manga --theme-keyword Manga --iterations 1
+run_job comic --theme-keyword Comic --iterations 1
+
 
 echo "=== batch done ($(date -Is)): $fail job(s) failed ==="
 echo "logs: $LOG_DIR"

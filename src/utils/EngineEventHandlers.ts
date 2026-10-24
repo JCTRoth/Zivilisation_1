@@ -168,6 +168,15 @@ export class EngineEventRouter {
       case 'FISH_DELIVERED':
         this.onFishDelivered(eventData);
         break;
+      case 'TRADE_SHIP_ROUTE_ESTABLISHED':
+        this.onTradeShipRouteEstablished(eventData);
+        break;
+      case 'TRADE_SHIP_ARRIVAL':
+        this.onTradeShipArrival(eventData);
+        break;
+      case 'TRADE_SHIP_SUNK':
+        this.onTradeShipSunk(eventData);
+        break;
       case 'AUTO_END_TURN':
         this.onAutoEndTurn(eventData);
         break;
@@ -1832,6 +1841,58 @@ export class EngineEventRouter {
       ? `${city.name}: Fisher Boat unloaded ${stored} food (storage full, +2 next round)`
       : `${city.name}: Fisher Boat unloaded ${food} food`;
     notify('success', message, city.civilizationId);
+  }
+
+  /** The Trade Ship's route went live — tell the owner (foreign routes speak
+   *  out too, so the player knows their hull now sails for another civ). */
+  private onTradeShipRouteEstablished(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const ship = eventData?.ship as Unit | undefined;
+    const home = eventData?.homeCity as City | undefined;
+    const dest = eventData?.destCity as City | undefined;
+    if (!ship || !home || !dest) return;
+    const foreign = dest.civilizationId !== ship.civilizationId;
+    const message = foreign
+      ? `Trade Ship route ${home.name} ↔ ${this.civName(dest.civilizationId)}'s ${dest.name} (foreign bonus)`
+      : `Trade Ship route ${home.name} ↔ ${dest.name}`;
+    notify('info', message, ship.civilizationId);
+  }
+
+  /** A leg paid out: the owner keeps 80%, the arrival city's owner 20%. Both
+   *  sides only hear about their own share. */
+  private onTradeShipArrival(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const ship = eventData?.ship as Unit | undefined;
+    const city = eventData?.city as City | undefined;
+    const destCity = eventData?.otherCity as City | undefined;
+    if (!ship || !city) return;
+    const ownerShare = (eventData.ownerShare as number) ?? 0;
+    const destShare = (eventData.destShare as number) ?? 0;
+    notify('success', `Trade Ship delivered ${ownerShare + destShare} gold to ${city.name} — you earn ${ownerShare}`, ship.civilizationId);
+    if (city.civilizationId !== ship.civilizationId) {
+      const from = destCity ? ` from ${destCity.name}` : '';
+      notify('success', `Trade from ${this.civName(ship.civilizationId)} paid ${city.name}${from}: +${destShare} gold`, city.civilizationId);
+    }
+  }
+
+  /** A Trade Ship was sunk: the sinker pockets the whole prize, the owner
+   *  loses both the hull and the run. */
+  private onTradeShipSunk(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const ship = eventData?.ship as Unit | undefined;
+    const sinker = eventData?.sinker as Unit | undefined;
+    if (!ship) return;
+    const gold = (eventData.gold as number) ?? 0;
+    notify('error', `Your Trade Ship was sunk${sinker ? ' by an enemy warship' : ''} — ${gold} gold prize lost`, ship.civilizationId);
+    if (sinker && sinker.civilizationId !== ship.civilizationId) {
+      notify('success', `Warship sunk an enemy Trade Ship — ${gold} gold prize taken`, sinker.civilizationId);
+    }
+  }
+
+  /** Human-readable civ name for composed toast lines, falling back to the
+   *  raw id when a civ is missing (mid-elimination races). */
+  private civName(civId: number): string {
+    return this.gameEngine.civilizations?.[civId]?.name ?? `civ ${civId}`;
   }
 
   private onImprovementBuilt(eventData: Record<string, unknown>) {

@@ -2,7 +2,11 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useGameStore } from "./stores/GameStore";
 import { defaultNationIndexForBrowser } from "@/data/CivilizationByLanguage";
 import { AUTO_END_TURN_OFFER_FLAG, isAutoScenario } from "@/data/GameConstants";
-import { shouldOfferAutoEndTurn, shouldPromptForResearch } from "@/utils/ModalTriggers";
+import {
+  shouldOfferAutoEndTurn,
+  shouldPromptForResearch,
+  shouldShowEndTurnConfirmation,
+} from "@/utils/ModalTriggers";
 import GameEngine from "@/game/engine/GameEngine";
 import GameCanvas from "./components/game/GameCanvas";
 import SettingsModal from "./components/ui/SettingsModal";
@@ -1459,7 +1463,8 @@ function App() {
 
       {/* End Turn Confirmation Modal */}
       <EndTurnConfirmModal
-        show={showEndTurnConfirm}
+        show={shouldShowEndTurnConfirmation(showEndTurnConfirm, uiState.activeDialog !== null)}
+        animation={uiState.activeDialog === null}
         onConfirm={handleEndTurnConfirm}
         onCancel={handleEndTurnCancel}
         currentTurn={gameState.currentTurn}

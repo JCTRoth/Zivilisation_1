@@ -4,8 +4,26 @@
  * dialogs; the UI itself is covered by the Playwright specs.
  */
 import { describe, it, expect } from 'vitest';
-import { shouldOfferAutoEndTurn, shouldPromptForResearch } from '@/utils/ModalTriggers';
+import {
+  shouldOfferAutoEndTurn,
+  shouldPromptForResearch,
+  shouldShowEndTurnConfirmation,
+} from '@/utils/ModalTriggers';
 import { AUTO_END_TURN_OFFER_TURN, RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
+
+describe('modal exclusivity', () => {
+  it('defers an end-turn confirmation while another game dialog is open', () => {
+    expect(shouldShowEndTurnConfirmation(true, true)).toBe(false);
+  });
+
+  it('shows the pending end-turn confirmation after the other dialog closes', () => {
+    expect(shouldShowEndTurnConfirmation(true, false)).toBe(true);
+  });
+
+  it('does not show a confirmation that was never requested', () => {
+    expect(shouldShowEndTurnConfirmation(false, false)).toBe(false);
+  });
+});
 
 describe('"No Research Selected" prompt', () => {
   const ready = {

@@ -1,5 +1,17 @@
 BUGS:
 
+FAILING TESTS (already fail at committed HEAD 9a16a99, NOT caused by the current
+batches — verified in a clean HEAD worktree):
+* tests/ai/aiCityManagement.test.ts — 4 of 13 fail:
+  - famine prevention: `cityFoodBalance().surplus` stays below AI_MIN_FOOD_SURPLUS
+    after the worker re-assignment (expected >= 1, got 0)
+  - "converts food above the cap into production": surplus 2 instead of > 4
+  - specialist policy: scientist not promoted although the fishing nets feed
+    the city (surplus expected >= 3, got 0)
+  - granary plan: "expanding civ with a stable surplus" computes -2 instead of >= 1
+  All four are in `EconomicManager.cityFoodBalance` / `AICityManager`
+  worker/specialist assignment — fish-net food yields look like the common root.
+
 GOTO/MOVE PREVIEW:
 It is not possible to move unit of own civilization on the the same tile.
 Unit 1 is on tile A, unit 2 is on tile B. It is not possible for Unit 1 to move to tile B if Unit 2 is already there.
@@ -10,6 +22,18 @@ Instead it should free the curser and show only the route.
 -------------------
 FUNCTIONAL TOODO'S:
 -------------------
+
+
+Far further development of the game engine is planned, including:
+
+* Splitting up the game into client and server so that the game can be played over network.
+* Networked multiplayer is not yet implemented, but the game engine is designed to support it in the future.
+* Lobby system for multiplayer games, including a list of available games, and the ability to create and join games.
+* Replay to play replays, I think it would make sense to use the save game, turn log, and map download do the replay stuff.
+* Hall of fame for multiplayer games, including a list of high scores, and the ability to submit high scores to a server.
+
+* Database backup and restore system, including the ability to backup and restore the database, and the ability to export and import the database.
+
 
 AI Recommendations for Improvement after comparisson with Civ1 Manuel:
 If the goal is to closer match the Civilisation 1 manual, consider implementing:
@@ -47,16 +71,6 @@ Selling of buildings should be able to be forced by AICoordinator in order to fr
 * Fisherboats can not fish on tiles other fisherboats are fishing on.
 
 
-Far further development of the game engine is planned, including:
-
-* Splitting up the game into client and server so that the game can be played over network.
-* Networked multiplayer is not yet implemented, but the game engine is designed to support it in the future.
-* Lobby system for multiplayer games, including a list of available games, and the ability to create and join games.
-* Replay to play replays, I think it would make sense to use the save game, turn log, and map download do the replay stuff.
-* Hall of fame for multiplayer games, including a list of high scores, and the ability to submit high scores to a server.
-
-* Database backup and restore system, including the ability to backup and restore the database, and the ability to export and import the database.
-
 -Open-
 
 * Implement Trade Treaties between civilizations, including the ability to establish trade routes between cities, and the ability to negotiate trade agreements with other civilizations.
@@ -80,6 +94,18 @@ If this ship gets sunk by another ship than the owner civ. that where sinking th
 Assume: The traget city in the formular is the ship.
 D is distance to ship.
 Pop is the population of the city the sunk ship came from.
+* [DONE] Trade Ship, full form: the exact formula above ([(1+F*X)*(5*(P-10))+100+Cap]
+  * min([T*50%],[D*70%]) * 20%/100, every bracket floored) lives in
+  `GameEngine.tradeShipFormula`, the 80/20 owner/target split in `payTradeShipArrival`,
+  the 100%-prize sinking value in `computeTradeShipPrizeValue`; foreign harbour
+  cities of civs the owner has met are routeable and `autoEstablishTradeShipRoute`
+  opens the best-paying leg automatically (with tests/tests/tradeShip.test.ts 14).
+* [DONE] AI effectively uses the Trade Ship: it buys hulls also with a single own harbour
+  once it has contacted a foreign harbour city (`AutoProduction.buildTradeShipProduction`),
+  the turn-start hook opens foreign routes (`GameEngine.autoEstablishTradeShipRoute`) and
+  warships hunt them harder: `WARSHIP_TARGET_VALUE.trade_ship` above fisher boats,
+  raiders get the merchant bonus, and the hunt multiplier scales with the run's prize
+  (`AIManager.chooseWarshipTarget`), pinned in tests/ai/navalDoctrine + navalActivation.
   builds ships but there is no transport/invasion mission (only colonies).
   Until this exists, an AI_VS_AI map whose strait splits the civs across two
   continents is an unwinnable stalemate (465-round run: 17 wars, 3 attacks).
@@ -89,7 +115,6 @@ Pop is the population of the city the sunk ship came from.
   marketplace/bank/temple earlier when upkeep pressure starts.
 * Scout/mercenary grants from huts can exceed the corps cap (only production
   is capped); decide whether to convert/dismiss extras.
-* Make the AI effectfly use the Tradeship, and let the AI priotise the sinking of them.
 
 ## Next Steps (Priority Order)
 
@@ -135,12 +160,6 @@ The game engine is designed to support networked multiplayer but it is not yet i
 -----
 BUGS:
 -----
-
-
-
-
-
-- 
   rings mark the group selection; cities get a "City details" button).
 - The store's activePlayer/currentTurn are now synced from the engine at turn
   start (the store previously kept its initial value, so turn-dependent UI ran
@@ -345,265 +364,6 @@ Architectural
 23. Consider ECS pattern for the engine
 24. Add integration tests for save/load
 25. Profile and optimize AI turn performance
-
-
-
-There are exactly 23 unique Wonders. Each can be built only once in the entire game, by only one civilization. Once a civilization completes a Wonder, no other civilization can ever build that same Wonder.
-How construction works
-
-Wonders are produced in a city exactly like regular city improvements or units (using production/shields).
-Each Wonder requires a specific technology to unlock.
-They cost a fixed number of shields (200–600).
-They have no maintenance cost.
-Multiple cities (even belonging to different civilizations) can work on the same Wonder at the same time, but only the first one to finish it gets it. Progress in other cities is then wasted (or converted in some versions, but in original Civ 1 it is generally lost).
-You cannot sell a Wonder.
-Capturing a city that contains a Wonder transfers ownership (and its effects) to the conqueror.
-
-Obsolescence
-Many Wonders become obsolete when any civilization discovers a certain later technology. When that happens, the Wonder’s special effect stops working for its owner (though the Wonder still remains for scoring and historical purposes).
-Some late-game Wonders never become obsolete.
-Effects and scope
-Effects vary widely:
-
-Some affect only the city that built them.
-Some affect all your cities.
-Some affect only cities on the same continent.
-A few have global effects (e.g., enabling spaceships or nuclear weapons for everyone who has the required tech).
-
-Wonders also give a significant score bonus at the end of the game.
-
-**Updated.**
-
-**Three Gorges Dam** has been replaced by a major AI server center.
-
-### New wonder
-**Colossus** (xAI’s AI training cluster / supercomputer)  
-One of the largest known AI compute clusters in the world.
-
-- Cost: 600  
-- Requires: Computers  
-- Obsolete by: Never  
-- Effect: **+40% science in all cities on the same continent**  
-  (Strong research boost that particularly helps the AI catch up in technology, while remaining useful for human players.)
-
----
-
-### Full updated list of 23 Wonders
-
-**Antiquity (8)**
-
-| Wonder                    | Cost | Requires         | Obsolete by     | Effect |
-|---------------------------|------|------------------|-----------------|--------|
-| Colossus                  | 200  | Bronze Working   | Electricity     | +1 trade per trade square (city only) |
-| Great Library             | 300  | Literacy         | University      | +5% science in all cities |
-| Hanging Gardens           | 300  | Pottery          | Invention       | +1 happy in the city + all cities on the same continent |
-| Lighthouse                | 200  | Map Making       | Magnetism       | +1 ship movement |
-| Oracle                    | 200  | Mysticism        | Religion        | Doubles Temple effect (all cities) |
-| Pyramids                  | 400  | Masonry          | Communism       | Change government with only 1 turn of anarchy |
-| Silk Road                 | 300  | Map Making       | Never           | +1 vision range for all units and cities |
-
-**Middle Ages (7)**
-
-| Wonder                       | Cost | Requires          | Obsolete by      | Effect |
-|------------------------------|------|-------------------|------------------|--------|
-| Copernicus’ Observatory      | 400  | Astronomy         | Automobile       | Double science in the city |
-| Isaac Newton’s College       | 400  | Theory of Gravity | Nuclear Fission  | Stronger Library/University bonus |
-| J.S. Bach’s Cathedral        | 400  | Religion          | Never            | 1 unhappy → content per city on the continent |
-| Magellan’s Expedition        | 400  | Navigation        | Never            | +1 ship movement |
-| Michelangelo’s Chapel        | 300  | Religion          | Communism        | +50% Cathedral effect |
-| Shakespeare’s Theatre        | 400  | Medicine          | Electronics      | Makes 4 unhappy citizens content (city only) |
-| Leonardo’s Workshop          | 600  | Invention         | Never            | Automatically upgrades obsolete units |
-
-**Industrial / Modern Age (8)**
-
-| Wonder                          | Cost | Requires              | Obsolete by | Effect |
-|---------------------------------|------|-----------------------|-------------|--------|
-| International Space Station     | 600  | Space Flight         | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
-| Human Genome Project            | 400  | Genetic Engineering   | Never       | +1 happy in every city |
-| Hoover Dam                      | 600  | Electronics           | Never       | Free Hydro Plant effect (only cities without a power plant) on the same continent |
-| Manhattan Project               | 600  | Nuclear Fission       | Never       | Allows nuclear weapons |
-| SETI Program                    | 600  | Computers             | Never       | +30% science in all cities |
-| Super-Kamiokande                | 500  | Computers             | Never       | +15% science in all cities · +1 vision (supernova alert) |
-| Statue of Liberty               | 600  | Democracy             | Never       | +1 trade on every trade square in all your cities |
-| Tiangong                        | 600  | Space Flight          | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
-| Mir                             | 600  | Space Flight          | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
-| Colossus (AI Supercluster)      | 600  | Computers             | Never       | +10% science in all cities on the same continent, 10% more production in all cities on the same continent |
-
-The Ages are only relevant for historical flavor; there have no influence on gameplay mechanics.
-The Wonders are listed in chronological order of their real-world construction.
-Only relevant for Documentation and wonder discription texts.
-
-Recommended places to show screens for the rebalanced wonders
-If this were a mod or a remake, I would show the information in these locations (ranked by importance):
-PriorityWhen / WhereWhat to showWhy1Wonder completion screenBig celebratory screen + full effect description + short historical flavor textMost memorable moment. Players often forget the exact effect later.
-
-World -> Statistics -> Dedicated Wonders overview screen (new button on the main menu bar)List of all 23 Wonders with status colors (Owned / Building / Available / Taken by AI)Extremely useful, especially with 23 wonders. Later Civs and many mods do this.
-Later pictures of the wonders will follow so leaf space on the screen can be used for the wonder's image.
-
-City screen (once built)Icon + name + short effect reminderQuick reference while managing the city.
-
-When a player builds a wonder but the wonder was builded by another civilization or another city or the same player,
-the player gets shown a modal/popup that the wonder was already builded and that the city is now idle, buuton with go to city and close modal.
-
-Implement all of the features fully and greatly!
-Use best practices and make sure the code is clean and well structured.
-Test all of the features and make sure they work as expected.
-
-
-**Yes — here is a significantly extended and improved implementation prompt.**
-
-You can copy-paste this directly as a high-quality specification for a developer or coding agent.
-
----
----
----
-
-### Implementation Prompt: Wonders System (Civilization 1 style – Rebalanced Edition)
-
-#### 1. Core Rules (must be enforced exactly)
-
-There are exactly **23 unique Wonders**.  
-Each Wonder can be built **only once** in the entire game by only one civilization.  
-Once a civilization completes a Wonder, no other civilization can ever build that same Wonder.
-
-**Construction rules**
-- Wonders are produced in a city exactly like regular city improvements or units (using production/shields).
-- Each Wonder requires a specific technology to unlock.
-- They cost a fixed number of shields (200–600).
-- They have **no maintenance cost**.
-- Multiple cities (even belonging to different civilizations) may work on the same Wonder simultaneously.
-- Only the first city to complete it obtains the Wonder. All other cities that were building it lose their progress (progress is wasted, matching original Civ 1 behavior).
-- Wonders **cannot** be sold.
-- Capturing a city that contains a Wonder transfers ownership (and all effects) to the conquering civilization.
-
-**Obsolescence**
-- Many Wonders become obsolete when *any* civilization discovers a specific later technology.
-- When a Wonder becomes obsolete, its special effect stops working for its owner.
-- The Wonder itself remains for scoring and historical purposes.
-- Some late-game Wonders never become obsolete.
-
-**Effects and scope**
-- Effects can be:
-  - City-only
-  - Civilization-wide
-  - Continent-wide
-  - Global (e.g. enabling spaceships or nuclear weapons for everyone who has the required technology)
-- Wonders grant a significant score bonus at the end of the game.
-
-**Important note**  
-The three ages (Antiquity / Middle Ages / Industrial-Modern) are **only for historical flavor and documentation**. They have **no influence** on gameplay mechanics.  
-Wonders are listed in chronological order of their real-world inspiration purely for documentation and flavor text.
-
-#### 2. Complete Wonder List (final version)
-
-**Antiquity (8)**
-
-| Wonder              | Cost | Requires         | Obsolete by   | Effect                                                      |
-|---------------------|------|------------------|---------------|-------------------------------------------------------------|
-| Colossus            | 200  | Bronze Working   | Electricity   | +1 trade per trade square (city only)                       |
-| Great Library       | 300  | Literacy         | University    | +5% science in all cities                                   |
-| Hanging Gardens     | 300  | Pottery          | Invention     | +1 happy in the city + all cities on the same continent     |
-| Lighthouse          | 200  | Map Making       | Magnetism     | +1 ship movement                                            |
-| Oracle              | 200  | Mysticism        | Religion      | Doubles Temple effect (all cities)                          |
-| Pyramids            | 400  | Masonry          | Communism     | Change government with only 1 turn of anarchy               |
-| Silk Road           | 300  | Map Making       | Never         | +1 vision range for all units and cities                    |
-
-**Middle Ages (7)**
-
-| Wonder                    | Cost | Requires          | Obsolete by     | Effect                                        |
-|---------------------------|------|-------------------|-----------------|-----------------------------------------------|
-| Copernicus’ Observatory   | 400  | Astronomy         | Automobile      | Double science in the city                    |
-| Isaac Newton’s College    | 400  | Theory of Gravity | Nuclear Fission | Stronger Library/University bonus             |
-| J.S. Bach’s Cathedral     | 400  | Religion          | Never           | 1 unhappy → content per city on the continent |
-| Magellan’s Expedition     | 400  | Navigation        | Never           | +1 ship movement                              |
-| Michelangelo’s Chapel     | 300  | Religion          | Communism       | +50% Cathedral effect                         |
-| Shakespeare’s Theatre     | 400  | Medicine          | Electronics     | Makes 4 unhappy citizens content (city only)  |
-| Leonardo’s Workshop       | 600  | Invention         | Never           | Automatically upgrades obsolete units         |
-
-**Industrial / Modern Age (8)**
-
-| Wonder                          | Cost | Requires            | Obsolete by | Effect                                                                 |
-|---------------------------------|------|---------------------|-------------|------------------------------------------------------------------------|
-| International Space Station     | 600  | Space Flight        | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
-| Human Genome Project            | 400  | Genetic Engineering | Never       | +1 happy in every city                                                 |
-| Hoover Dam                      | 600  | Electronics         | Never       | Free Hydro Plant effect (only cities without a power plant) on the same continent |
-| Manhattan Project               | 600  | Nuclear Fission     | Never       | Allows nuclear weapons                                                 |
-| SETI Program                    | 600  | Computers           | Never       | +30% science in all cities                                             |
-| Super-Kamiokande                | 500  | Computers           | Never       | +15% science in all cities · +1 vision (supernova alert)               |
-| Statue of Liberty               | 600  | Democracy           | Never       | +1 trade on every trade square in all your cities                      |
-| Tiangong                        | 600  | Space Flight        | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
-| Mir                             | 600  | Space Flight        | Never       | Enables spaceship construction. +20% science in all cities. Reveals all cities on the map. |
-| Colossus (AI Supercluster)      | 600  | Computers           | Never       | +10% science **and** +10% production in all cities on the same continent |
-
-#### 3. Required User Interface Features (must implement fully)
-
-**A. Wonder Completion Screen (highest priority)**
-- Full-screen celebratory modal/screen when a Wonder is completed.
-- Must show:
-  - Large image of the Wonder (leave clear space for the image)
-  - Wonder name
-  - Full mechanical effect in plain language
-  - Short historical / flavor text
-  - “Continue” button
-
-**B. Dedicated Wonders Overview Screen**
-- Accessible via: **World → Statistics → Wonders** (or a dedicated button on the main menu bar)
-- Shows all 23 Wonders in a clean, scrollable list or grid.
-- For each Wonder display:
-  - Name
-  - Status with color coding:
-    - Green = Owned by the player
-    - Blue = Currently being built by the player
-    - Yellow = Being built by both the player and another civilization
-    - Red = Owned or being built by another civilization
-    - Grey = Not yet available / locked
-  - Cost, required technology, obsolescence technology
-  - Short effect summary
-  - Space reserved for a small thumbnail image of the Wonder
-- Clicking a Wonder opens its full Civilopedia-style entry.
-
-**C. City Screen**
-- Once a Wonder is built in a city, show:
-  - Icon
-  - Name
-  - Very short effect reminder (one line)
-
-**D. Production Conflict Modal (critical)**
-When a player tries to complete (or is about to complete) a Wonder that has already been finished by another civilization or another city:
-
-- Show a clear modal/popup with the message:  
-  **“This Wonder has already been completed by another civilization / city. Production has been cancelled and the city is now idle.”**
-- Buttons:
-  - **Go to City** (centers the map on the city and opens the city screen)
-  - **Close**
-
-**E. Additional required places**
-- Civilopedia entry for every Wonder (full historical + mechanical description).
-- Clear indication in the city production menu of which Wonders are still available.
-- Tooltip or side panel when hovering/selecting a Wonder in the production list.
-
-#### 4. Implementation Requirements
-
-- Implement **all** features fully and robustly.
-- Use clean, well-structured, maintainable code (prefer modular design: Wonder data, Wonder effects engine, UI components separated).
-- All effects must be correctly applied and removed on obsolescence or ownership change.
-- Properly handle multiplayer / simultaneous construction race conditions.
-- Leave clear visual space on all relevant screens for Wonder images (images will be added later).
-- Write unit tests and integration tests for:
-  - Construction and completion
-  - Ownership transfer on city capture
-  - Obsolescence
-  - Effect application/removal
-  - The production conflict modal
-  - The Wonders overview screen status colors
-- Make the system easy to extend (new Wonders should be data-driven).
-
-#### 5. Deliverables
-- Fully working Wonders system matching every rule above
-- All listed UI screens and modals
-- Clean architecture and tests
-- Documentation of the data format used for Wonders
-
 
 
 ------------------------------------------

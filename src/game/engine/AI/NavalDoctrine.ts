@@ -697,15 +697,17 @@ export function navalDoctrine(input: NavalDoctrineInput): NavalDoctrineResult {
  * easily replace, and killing it strands the force on the wrong shore. Enemy
  * warships come next — a raider that ignores the fleet sailing at it does not
  * get a second sortie. Then coastal cities (the actual prize), then the small
- * civilian hulls that fund the enemy's treasury, then scouts, which are the
+ * civilian hulls — a Trade Ship slightly above a Fisher Boat because its run
+ * pays the enemy treasury on every leg (and its sinking pays the prize), so it
+ * is both the money artery and the fatter purse — then scouts, which are the
  * least valuable kill.
  */
 export const WARSHIP_TARGET_VALUE: Readonly<Record<NavalTargetClass, number>> = {
   transport: 100,
   warship: 90,
   coastal_city: 60,
+  trade_ship: 45,
   fisher_boat: 40,
-  trade_ship: 40,
   other_naval: 35,
   scout: 25,
 };
@@ -815,7 +817,7 @@ export function scoreNavalTarget({
   const freshness = isFresh ? 8 : 0;
   let roleBonus = 0;
   if (attackerRole === 'raider') {
-    if (targetClass === 'transport' || targetClass === 'fisher_boat') roleBonus = 10;
+    if (targetClass === 'transport' || targetClass === 'trade_ship' || targetClass === 'fisher_boat') roleBonus = 10;
     else if (targetClass === 'warship') roleBonus = -6;
   } else if (attackerRole === 'heavy') {
     if (targetClass === 'warship') roleBonus = 8;

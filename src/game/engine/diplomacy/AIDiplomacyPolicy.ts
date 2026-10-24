@@ -325,6 +325,34 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
       }
     }
 
+    // One-sided terms (a sale or a gift) only when no favourable swap was
+    // available: a swap that clears its margin takes priority over selling or
+    // giving knowledge away. These ride on `offer_tech_exchange` so the
+    // negotiation screen can fill in the gold and the technology.
+    const swapPick = (canOffer > 0 && canWant > 0 && canDeal)
+      ? pickFavourableSwap(ctx.techsWeCanOffer ?? [], ctx.techsWeWant ?? [], tradeContextFrom(ctx))
+      : null;
+    if (!swapPick && canDeal && canOffer > 0) {
+      const ourGold = ctx.ownGold ?? 0;
+      const theirGold = ctx.theirGold ?? 0;
+      if (ourGold < 120 && theirGold >= 100) {
+        push(
+          out,
+          'offer_tech_exchange',
+          5,
+          'our treasury is thin and they can pay',
+        );
+      }
+      if (goodwill > 60) {
+        push(
+          out,
+          'offer_tech_exchange',
+          6 + goodwill / 12,
+          'goodwill too great to charge for it',
+        );
+      }
+    }
+
     // Knowledge for money. A civ that is ahead in learning has something the
     // other court wants and can name a price for it; a civ that is behind can
     // buy what it lacks.

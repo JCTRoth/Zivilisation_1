@@ -44,6 +44,7 @@ const BASE_IMPACT: Record<ImpactEvent, number> = {
   embargo_signed: 2,
   embassy_established: 5,
   tech_exchanged: 10,
+  tech_gift: 25,
   /**
    * A gift of knowledge. Worth far more than a gift of money: the receiver
    * learns something it could not have learned cheaply, and the giver gets no
@@ -82,6 +83,7 @@ const IMPACT_TEXT: Record<ImpactEvent, string> = {
   embargo_signed: 'Joined an embargo',
   embassy_established: 'Established an embassy',
   tech_exchanged: 'Exchanged technology',
+  tech_gift: 'Gifted technology',
   technology_gifted: 'Received a gift of knowledge',
   common_enemy_defeated: 'Stood with me against a common enemy',
   refused_peace: 'Refused my peace offer',

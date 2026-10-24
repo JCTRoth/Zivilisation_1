@@ -15,16 +15,18 @@ Per iteration:
      ``#KEYWORD#`` slots) is resolved by Qwen into concrete phrases.  The
      terrain identity ("a temperate forest floor") is a hard constraint, so a
      forest tile can never degrade into a desert.
-  3. For every feature the *abstract* feature template is resolved the same
-     way.  Stems with a feature-only input picture (``fish1.png``,
-     ``hill...``) are rendered from it (flattened onto pure black) via
-     img2img, so the sprite keeps the identity of the input artwork; all
-     other stems are composed purely from the prompt onto the black sprite
-     background.  Every feature carries a fixed positive clause that keeps
-     the subject complete and fully visible inside the frame - FLUX ignores
-     negative prompts, so framing rules are phrased positively only.
-  4. The black ``#000000`` background of every sprite is keyed out to a
-     transparent alpha channel.
+   3. For every feature the *abstract* feature template is resolved the same
+      way.  Stems with a feature-only input picture (``fish1.png``,
+      ``hill...``) are rendered from it (flattened onto pure black) via
+      img2img, so the sprite keeps the identity of the input artwork; all
+      other stems are composed purely from the prompt onto the black sprite
+      background. Features and game units are separately selectable, prompted,
+      recorded in their own manifest section and written to separate folders.
+   4. Every unit shares a serious hand-drawn anime / graphic-novel strategy
+      illustration direction; unit-specific prompts prioritize its identity
+      and clear game-icon silhouette.
+   5. The sampled border background color of every sprite is keyed out to a
+      transparent alpha channel.
 
 Per iteration the feature set is: five fish, two proud wild horses (one or
 more horses allowed, every horse anatomically correct with all four legs,
@@ -39,29 +41,37 @@ icon glyphs (seal, gems, gold, coal, oil, game, oasis).  AND THREE sprite
 variants for every unit of the game (unit_<key>.png, unit_<key>_2.png,
 unit_<key>_3.png): units with real SVG artwork (src/assets/units) are
 rendered img2img from it, the rest are rendered from their fixed
-descriptions in UNIT_SPECS; units showing a person or animal carry a
-positively phrased limb-completeness clause.
+descriptions in UNIT_SPECS; single-figure units carry a positively phrased
+limb-completeness clause, while group compositions get tailored guidance.
 
 With ``--theme-keyword`` (/t/ THEME_KEYWORD) one art-direction keyword (e.g.
-Halloween, Christmas, "Transylvania and vampires") is shot through theme,
-palette, lighting and every resolved slot; feature animals may swap to close
-themed equivalents (skeleton horse, reindeer, sea serpent, ...).
+Halloween, Christmas, "Transylvania and vampires") is shot through the shared
+mood, palette and lighting; feature animals may swap to close themed
+equivalents, while unit identities remain intact and only take restrained
+color or accessory treatment.
 
 With ``--style-keyword`` (STYLE_KEYWORD) one art style (a STYLE_KEYS name
 such as american_comic or manga, or a freeform phrase) changes only HOW every
 asset is rendered - technique, linework and medium - while every subject
-identity stays untouched; ``--write-batch --batch-style-mode`` writes a whole
-style tour (add ``--batch-terrains``/``--batch-features`` to pin one selection
-across all jobs).
+identity stays untouched; ``--unit-style-keyword`` (UNIT_STYLE_KEYWORD) does
+the same for the game unit sprites alone (``original_game_icons`` renders them
+in the original game's flat vector icon look);
+``--write-batch --batch-style-mode`` writes a whole style tour (add
+``--batch-terrains``/``--batch-features`` to pin one selection across all
+jobs).
 
 With ``--write-batch`` the generator writes a bash script that runs one
 tile-set job after another (one per comma-separated keyword, '' = classic
 run), so a whole campaign can run unattended in the background.
 
-Result: ``<output-root>/<unix-timestamp>/iteration_01 .. iteration_N`` each
-containing ``tiles/`` (all terrain tiles) and ``features/`` (all feature
-sprites, transparent background).  Per-iteration ``keywords_*.json`` files log
-which concrete phrases the local model used for each abstract slot.
+Result: ``<output-root>/<label>_<unix-timestamp>/iteration_01 .. iteration_N``
+each containing ``tiles/``, ``features/`` (resource/terrain feature sprites)
+and ``units/`` (game unit sprites), with transparent backgrounds. Per-iteration
+``keywords_*.json`` files log the concrete phrases used for each abstract slot.
+Every terrain renders ``TERRAIN_VARIANTS`` (3) sibling ground tiles
+(``terrain_<terrain>.png`` plus ``_1``/``_2``) that share one palette and one
+light but differ in pattern arrangement, so neighbouring cells of one terrain
+never repeat a single image.
 
 Features are NEVER painted onto terrain tiles here - composition is done
 elsewhere (``compose_feature_tiles.mjs``); this script only produces the
@@ -180,19 +190,47 @@ TERRAINS = [
 
 TERRAIN_PROMPT = """Seamless top-down 2D ground texture map of {subject}, pure orthographic bird's-eye view looking straight down at the ground plane, 90% to 100% full-bleed canvas coverage, flat surface pattern, seamlessly tileable on all four edges, natural varied non-repeating pattern.
 
-Style & Art Direction: Highly detailed semi-realistic digital painting, modern strategy game illustration, intricate surface details, natural textures, realistic lighting and soft shading, crisp high resolution, no thick cartoon outlines.{style} {theme}
+Style & Art Direction: Hand-painted flat 2D game texture art, stylised semi-realistic strategy-game illustration. Vivid saturated colours with strong clear hues, crisp contrast, even daylight from directly above; the picture is a flat texture sheet with no depth, no perspective and no 3D rendering. Intricate surface details, painterly brushwork, crisp high resolution, no thick cartoon outlines.{style} {theme}
 
 Subject Details: {details}
 
-Technical Specs: Flat map view, strictly top-down overhead perspective, no tree trunks, no side perspective, no vertical horizon, continuous organic texture, no repeating grid pattern, even coverage from edge to edge, crisp 8k digital painting."""
+Technical Specs: Flat map view, strictly top-down overhead perspective, no tree trunks, no side perspective, no vertical horizon, no camera tilt, no depth of field, continuous organic texture, no repeating grid pattern, even coverage from edge to edge, rich saturated vivid colours, crisp 8k digital painting of a flat surface."""
+
+FEATURE_ART_DIRECTION = (
+    "Hand-drawn strategy-game illustration, clean confident ink contours, "
+    "controlled cel shading, subtle painterly texture and a vivid saturated "
+    "palette with strong clear hues"
+)
+UNIT_ART_DIRECTION = (
+    "A coherent set of serious drawn strategy-game unit illustrations, like "
+    "mature anime concept art crossed with a refined graphic novel: expressive "
+    "but realistic proportions, confident dark ink contours, controlled cel "
+    "shadows, subtle painterly material texture and restrained cinematic "
+    "highlights. Keep the same line weight, shading, detail density and "
+    "grounded palette across every unit, with a clear readable silhouette at "
+    "small game-icon size. Clearly hand-drawn; no glossy 3D, chibi proportions "
+    "or comic exaggeration."
+)
 
 FEATURE_PROMPT = """isometric 2D video game {presentation} of {subject}, isolated standalone central sprite, isometric strategic 3/4 game view showing height and volume, centrally composed asset, well-balanced framing, the whole subject complete and fully visible in the central canvas area, every part of the silhouette fully inside the frame and surrounded by generous clear margin on all four sides, tightly framed around the subject, centered on a completely uniform pure black background that fills the whole canvas edge to edge, easy masking background, game UI icon sprite, isolated subject.
 
-Style & Art Direction: Hand-drawn fantasy strategy game illustration, Civilization V game asset style, clean dark linework outlines, smooth cell shading, vibrant yet grounded color palette.{style} {theme}
+Style & Art Direction: {art_direction}{style} {theme}
 
 Subject Details: {details} The sprite shows ONLY the feature itself - {subject} - floating on a completely empty solid pure black #000000 background, clean flat black around every edge of the subject for easy masking.
 
 Technical Specs: High contrast, top-down 45-degree isometric camera view, perfectly isolated subject on a pure black #000000 background, the full silhouette inside the frame with crisp black margin on all four sides, 8k resolution, crisp vector-like digital painting."""
+
+# FLUX.2 Klein responds better to one concise visual hierarchy than to a
+# photography-style specification sheet. Every unit gets this same structure
+# and art-direction passage, while its concrete silhouette/materials change.
+UNIT_PROMPT = """A polished 2D strategy-game unit icon depicting {subject}, viewed from a slightly elevated three-quarter isometric angle. Show one complete, centered unit silhouette with generous clear margin on every side, isolated on a perfectly uniform pure black background.
+
+Shared unit-set art direction: {art_direction}
+Run mood (palette and light only): {theme}
+
+Unit design: {details}
+
+Keep the defining silhouette and major shapes immediately readable at small game-icon size. Clean intentional linework, controlled shadows, no environment or narrative scene."""
 
 NEGATIVE_TERRAIN = (
     "photorealistic, realistic landscape, photography, border frame, "
@@ -201,7 +239,10 @@ NEGATIVE_TERRAIN = (
     "empty background, transparent corners, grid lines, diamond layout, "
     "repeating pattern, tiled grid, isolated subject on black, black "
     "background, pitch black, vignette, frame, picture, poster, text, "
-    "watermark, characters, buildings, animals"
+    "watermark, characters, buildings, animals, 3D render, 3D scene, "
+    "isometric perspective, tilted camera, side view, depth of field, "
+    "ray tracing, volumetric light, dramatic cast shadows across the surface, "
+    "desaturated colours, muted palette, washed out colours, dull faded tones"
 )
 
 # NOTE: the bare word "background" is deliberately NOT negative here - the
@@ -215,6 +256,20 @@ NEGATIVE_FEATURE = (
     "text, watermark, multiple objects, collage, thumbnail layout, "
     "white background, light background, gradient background, textured "
     "background, studio backdrop, floor, wall, table"
+)
+
+# Unit art can be a composed group (a shield wall, a crew beside its vehicle,
+# or a wagon with its team), so do not apply the feature-only "multiple
+# objects" negative. Keep the isolated black key background and the shared
+# hand-drawn treatment instead.
+NEGATIVE_UNIT = (
+    "scenery, backdrop, environment, landscape, horizon, sky, clouds, terrain, "
+    "ground plane, border frame, cast shadow, diamond tile, hexagon, tile grid, "
+    "photorealistic, photography, photo, 3D render, glossy CGI, blurry lines, "
+    "low resolution, text, letters, watermark, collage, thumbnail layout, "
+    "white background, light background, gradient background, textured "
+    "background, studio backdrop, floor, wall, table, chibi, cute mascot, "
+    "super-deformed proportions, cropped subject"
 )
 
 # ===========================================================================
@@ -272,9 +327,12 @@ GLOBAL_SLOT_SPECS = [
      "max_words": 8, "forbidden": GLOBAL_THEME_FORBIDDEN},
     {"name": "GLOBAL_PALETTE",
      "help": "the shared colour mood of the whole asset set - only colours and "
-             "tones, 3-6 words, no light, no shadows, no sun",
+             "tones, 3-6 words, no light, no shadows, no sun; always vivid and "
+             "saturated colours, never muted, pastel or washed out",
      "max_words": 8, "forbidden": ["light", "shadow", "glow", "sun", "moon",
-                                    "ray", "beam"]},
+                                    "ray", "beam", "muted", "pastel",
+                                    "desaturated", "washed", "faded", "dull",
+                                    "dusty"]},
     {"name": "GLOBAL_LIGHTING",
      "help": "the shared lighting mood of the whole asset set - only the "
              "quality and direction of the light, 3-6 words",
@@ -323,7 +381,8 @@ TERRAIN_SLOT_SPECS = [
              "terrain - it must match the theme",
      "max_words": 14, "theme": True},
     {"name": "COLOR_PALETTE",
-     "help": "the concrete colour range of this terrain - it must match the theme",
+     "help": "the concrete colour range of this terrain - vivid and saturated, "
+             "it must match the theme",
      "max_words": 10, "theme": True},
 ]
 
@@ -483,6 +542,28 @@ TERRAIN_BASE_CONSTRAINT = (
     "no frame and no vignette - only the flat ground surface, edge to edge."
 )
 
+# How many ground tiles are rendered per terrain and iteration.  The game
+# draws one of them per grid cell (TerrainTextureManager picks a stable
+# variant per tile position), so the siblings must read as the SAME terrain -
+# same palette, same light, same material - while differing in how the pattern
+# is arranged.  That is what stops a stretch of ocean or grassland from
+# looking like one image stamped over and over.
+TERRAIN_VARIANTS = 3
+
+# What makes sibling tiles of one terrain differ without drifting apart.  The
+# three notes are cycled per variant; they only ever describe arrangement and
+# scale, never a different material, colour or light.
+TERRAIN_VARIANT_NOTES = (
+    "This tile is variant 1 of 3: the pattern lies in a broad, open, even "
+    "arrangement with room to breathe.",
+    "This tile is variant 2 of 3: the same ground pattern is arranged "
+    "differently, with its shapes grouped more closely and turned at another "
+    "angle than in its sibling tiles.",
+    "This tile is variant 3 of 3: the same ground pattern is arranged "
+    "differently again, with a finer, denser scatter of its shapes than in its "
+    "sibling tiles.",
+)
+
 # --- abstract terrain templates -------------------------------------------
 
 TERRAIN_SUBJECT_TEMPLATE = "a #SURFACE_FORM#"
@@ -490,8 +571,9 @@ TERRAIN_SUBJECT_TEMPLATE = "a #SURFACE_FORM#"
 TERRAIN_DETAILS_TEMPLATE = (
     "A continuous surface of #BASE_MATERIAL# with #TEXTURE_DETAIL#, "
     "#ACCENT_ELEMENT#, and #EDGE_ELEMENT#. #LIGHTING_NOTE# The surface is "
-    "rendered in #COLOR_PALETTE#, unified by a #GLOBAL_PALETTE# and "
-    "#GLOBAL_LIGHTING#."
+    "rendered in #COLOR_PALETTE#, unified by #GLOBAL_PALETTE# and "
+    "#GLOBAL_LIGHTING#. Every colour is vivid and saturated - strong clear "
+    "hues, no muted or dusty tones - and the surface stays perfectly flat."
 )
 
 # --- abstract feature templates -------------------------------------------
@@ -500,7 +582,13 @@ FEATURE_SUBJECT_TEMPLATE = "a single #FEATURE_KIND#"
 
 FEATURE_DETAILS_TEMPLATE = (
     "The feature is #FEATURE_FORM#, with #FEATURE_DETAIL#. It is painted in "
-    "#FEATURE_PALETTE# and unified by a #GLOBAL_PALETTE#. #FEATURE_LIGHTING#. "
+    "#FEATURE_PALETTE# and unified by #GLOBAL_PALETTE#. #FEATURE_LIGHTING#. "
+    "#FEATURE_RENDERING#."
+)
+
+UNIT_DETAILS_TEMPLATE = (
+    "The unit is #FEATURE_FORM#, with #FEATURE_DETAIL#. It is painted in "
+    "#FEATURE_PALETTE# and unified by #GLOBAL_PALETTE#. #FEATURE_LIGHTING#. "
     "#FEATURE_RENDERING#."
 )
 
@@ -508,8 +596,8 @@ FEATURE_DETAILS_TEMPLATE = (
 
 GLOBAL_FALLBACKS = {
     "THEME_PHRASE": "balanced natural daylight",
-    "GLOBAL_PALETTE": "natural daylight colours",
-    "GLOBAL_LIGHTING": "soft balanced natural daylight",
+    "GLOBAL_PALETTE": "a shared palette of vivid saturated natural colours",
+    "GLOBAL_LIGHTING": "clear even natural daylight",
 }
 
 TERRAIN_FALLBACKS = {
@@ -716,11 +804,10 @@ MOUNTAIN_CRAZY = [
     "A colossal natural rock arch spans two of the peaks high above the ground.",
 ]
 
-# When the run carries a direction keyword (--theme-keyword), every feature
-# and unit slot resolution gets this clause: themed dressing - and, where the
-# slot is an animal, swapping it for a close themed equivalent - is allowed.
-# The identity anchors of the slot still hold: a "skeleton horse" still
-# contains "horse", a Christmas "reindeer" still matches the game deer slot.
+# When the run carries a direction keyword (--theme-keyword), feature slot
+# resolution may use themed dressing and swap featured animals for close
+# equivalents. The unit resolver deliberately does not receive this clause:
+# unit identities and their historical/mechanical forms stay stable.
 THEMED_EQUIVALENT_CLAUSE = (
     "The run direction keyword allows heavy themed dressing, and where the "
     "subject is an animal it MAY be swapped for a close themed equivalent "
@@ -747,6 +834,7 @@ STYLE_KEYS = (
     "constructivist_poster", "art_deco_poster", "linocut_print",
     "tarot_engraving", "vintage_box_art", "anime_cel", "naive_folk_art",
     "egyptian_tomb", "ligne_claire", "painted_miniature",
+    "original_game_icons",
 )
 
 STYLE_DESCRIPTIONS: dict[str, str] = {
@@ -812,6 +900,14 @@ STYLE_DESCRIPTIONS: dict[str, str] = {
         "hand-painted tabletop miniature: glossy enamel highlight layering "
         "with micro-brush precision, dramatic contrast lighting, display "
         "figure finish",
+    "original_game_icons":
+        "2D flat vector strategy game asset style, clean graphic game icon art "
+        "direction. Uniform bold black outlines on elements combined with "
+        "crisp lineless vector shapes. Flat solid color blocks, hard-edged "
+        "geometric cel-shading, absolute absence of gradients or textures. "
+        "Matte finish with simple pill-shaped white specular highlights on "
+        "polished surfaces. High-contrast bold silhouettes, centered framing, "
+        "isolated on a uniform flat solid pure black background",
 }
 
 
@@ -982,24 +1078,21 @@ UNIT_SPECS: dict[str, dict[str, Any]] = {
         forbidden=["crossbow", "firearm"],
     ),
     "unit_phalanx": _unit_spec(
-        "phalanx spearman", ["spearman", "phalanx", "hoplite"],
-        "a braced spearman behind his round bronze shield with his long "
-        "spear upright",
+        "hoplite", ["spearman", "phalanx", "hoplite"],
+        "a disciplined rank of classical Greek hoplites, each braced behind "
+        "a round bronze shield with a long spear held upright",
         "horsehair-crested helmet, bronze cuirass and greaves",
         "polished bronze and deep crimson cloth",
-        identity="the Phalanx game unit: a close-formation spearman of an "
-                 "antique phalanx (themed dressing allowed - a skeletal or "
-                 "otherwise themed spearman still reads as hoplite)",
-        fixed=("The rank stands shoulder to shoulder like a real antique "
-               "phalanx: overlapping round shields form a solid front "
-               "line, every long spear is raised upright behind the "
-               "helmets with clear background space between each shaft "
-               "and every helmet, and below the shield line every "
-               "soldier's legs stay visible."),
-        kind_help=("one singular figure noun for a spearman of the rank "
-                   "('hoplite' or 'phalanx spearman') - the count is "
-                   "carried by the rank template itself"),
-        subject_template="a tight antique phalanx rank of #FEATURE_KIND#",
+        identity="the Phalanx game unit: a disciplined classical Greek "
+                 "hoplite shield-wall",
+        fixed=("Show a compact shoulder-to-shoulder rank of living human "
+               "hoplites, not a single isolated soldier: overlapping round "
+               "shields make one clear defensive front, with upright spears "
+               "visible above the helmets. Keep the formation readable as "
+               "one unit emblem."),
+        kind_help=("one singular noun phrase naming a hoplite; "
+                   "the formation template carries the group count"),
+        subject_template="a tight classical Greek phalanx of #FEATURE_KIND#",
         forbidden=["firearm", "musket"],
     ),
     "unit_chariot": _unit_spec(
@@ -1109,14 +1202,24 @@ UNIT_SPECS: dict[str, dict[str, Any]] = {
         fixed=_UNIT_LEGS_CLAUSE,
     ),
     "unit_mech_inf": _unit_spec(
-        "mechanised infantry squad", ["mechanised infantry", "mech infantry",
-                                      "infantry squad"],
-        "a squad of helmeted mechanised riflemen advancing together beside "
-        "a compact armoured personnel carrier",
-        "flak vests, assault rifles and olive webbing gear",
+        "mechanized infantry squad", ["mechanized infantry", "mech infantry",
+                                      "infantry fighting vehicle", "APC"],
+        "three clearly human modern infantry soldiers in helmets and field "
+        "uniforms advancing beside a compact tracked infantry fighting "
+        "vehicle, with an angular armored hull, broad visible tracks, a "
+        "troop compartment and a small roof-mounted autocannon",
+        "ordinary rifles, webbing, a rear troop ramp and practical armor "
+        "plates; the soldiers are dismounted and visibly separate from the vehicle",
         "olive drab and gunmetal",
-        identity="the Mech. Inf. game unit: one mechanised infantry squad",
-        forbidden=["ancient", "musket", "sword"],
+        identity="the Mech. Inf. game unit: human mechanized infantry fighting "
+                 "alongside its armored personnel carrier",
+        fixed=("The vehicle is a real crewed armored personnel carrier or "
+               "infantry fighting vehicle, not a humanoid machine: keep its "
+               "tracks, low armored body and troop-carrying shape plainly "
+               "visible. Show ordinary human riflemen on foot beside it; "
+               "they wear practical uniforms and helmets, not powered suits."),
+        forbidden=["ancient", "musket", "sword", "robot", "android",
+                   "humanoid machine", "powered armor", "exoskeleton", "sci-fi"],
     ),
     "unit_cannon": _unit_spec(
         "field cannon", ["cannon", "artillery gun"],
@@ -1165,13 +1268,28 @@ UNIT_SPECS: dict[str, dict[str, Any]] = {
     ),
     "unit_trireme": _unit_spec(
         "ancient war galley", ["trireme", "galley", "warship"],
-        "an ancient war galley seen in full profile, three rows of oars "
-        "pulled out, a bronze wave-ram bow and a curled stern ornament",
-        "a painted eye on the bow, a brailed sail and oar ports with leather "
-        "bosses",
-        "tarred timber with red and ochre paintwork",
-        identity="the Trireme game unit: an ancient war galley with three "
-                 "banks of oars",
+        "an ancient Mediterranean war galley seen in full profile: a single "
+        "low bank of long parallel wooden oars sweeping out and down to the "
+        "water, one tall mast carrying a large diagonal lateen sail furled "
+        "along its long yardarm, and a heavy steering oar slanting over the "
+        "stern",
+        "a rectangular banner flying from the masthead, a painted eye on the "
+        "bow, low railings and oar ports along the hull, coiled rope at the "
+        "stern",
+        "tarred warm oak with cream sailcloth, red and ochre paintwork",
+        identity="the Trireme game unit: an ancient Mediterranean war galley "
+                 "with one bank of oars and a furled lateen sail",
+        fixed=("The galley has ONE single low bank of long parallel wooden "
+               "oars sweeping out along the hull and down to the water. The "
+               "single mast carries one large lateen sail furled along its "
+               "long diagonal yardarm - a triangular lateen rig. A rectangular "
+               "flag flies from the masthead, and a long steering oar slants "
+               "over the stern."),
+        kind_help=("the complete ship: hull, its single bank of long oars, the "
+                   "furled diagonal lateen sail and the stern steering oar - "
+                   "all of them belong to the noun, nothing may be dropped"),
+        forbidden=["steam", "motor", "engine", "square sail", "square rig",
+                   "multiple banks", "three rows of oars", "container ship"],
     ),
     "unit_caravel": _unit_spec(
         "caravel", ["caravel", "sailing ship", "exploring vessel"],
@@ -1250,36 +1368,55 @@ UNIT_SPECS: dict[str, dict[str, Any]] = {
         identity="the Transport game unit: a troop transport ship",
     ),
     "unit_trade_ship": _unit_spec(
-        "merchant trade ship", ["merchant ship", "trade ship", "cargo ship"],
-        "a stocky merchant trade ship with cargo cranes loading crates onto "
-        "the deck",
-        "stacked crates, bollards and a funnel painted with a house flag",
-        "hull red below the waterline and black above",
-        identity="the Trade Ship game unit: a merchant trade ship",
+        "wooden sailing merchantman", ["merchant ship", "trade ship", "cargo ship"],
+        "a sturdy 17th-century Dutch-style merchant sailing ship with three "
+        "masts, square cream sails, a deep rounded wooden hull and a high "
+        "ornate stern, shown in a clear three-quarter view",
+        "visible rigging, a few neatly lashed cargo crates on deck and a small "
+        "company pennant without readable lettering",
+        "weathered oak brown, sailcloth cream, muted navy and restrained ochre accents",
+        identity="the Trade Ship game unit: a large age-of-sail merchantman "
+                 "carrying overseas cargo",
+        forbidden=["container ship", "modern freighter", "steam funnel", "photograph"],
     ),
     "unit_fisher_boat": _unit_spec(
-        "fishing boat", ["fishing boat", "fishing vessel", "rowboat"],
-        "a small wooden fishing boat with a lantern mast and a weathered "
-        "fisherman hauling in a net",
-        "coiled nets, crates of the catch and oars shipped aboard",
-        "rustic planks with a bottle-green gunwale",
-        identity="the Fisher Boat game unit: a small wooden fishing boat",
+        "traditional wooden fishing botter", ["fishing boat", "fishing vessel", "botter"],
+        "a compact, stout wooden North Sea fishing boat with a rounded hull, "
+        "one mast and a simple gaff sail, shown in three-quarter view",
+        "a low open cockpit, raised wooden leeboard, bundled fishing nets, "
+        "coiled rope and a small basket of fish",
+        "tarred dark oak, weathered warm canvas, muted sea green and silver accents",
+        identity="the Fisher Boat game unit: a small traditional inshore "
+                 "wooden fishing vessel",
+        forbidden=["large merchant ship", "cargo crane", "container ship"],
     ),
     "unit_ferry": _unit_spec(
-        "ferry boat", ["ferry", "passenger ferry"],
-        "a broad double-decked ferry with an open vehicle deck forward, a "
-        "glassed passenger cabin aft and a twin funnel",
-        "a row of lifebuoys, ramp chains and a company flag on the mast",
-        "crisp white with a signal-green funnel band",
-        identity="the Ferry game unit: a passenger and vehicle ferry",
+        "military landing craft ferry", ["ferry", "landing craft", "vehicle ferry"],
+        "a low, broad steel military ferry with a blunt squared bow and a "
+        "large hinged bow ramp lowered, a compact pilothouse at the stern, "
+        "seen in three-quarter view",
+        "one small armored vehicle secured on the open vehicle deck, visible "
+        "ramp chains, simple railings and a short antenna mast",
+        "muted naval grey, dark steel edges and restrained olive-drab cargo accents",
+        identity="the Ferry game unit: a practical vehicle-carrying landing craft",
+        forbidden=["cruise ship", "passenger liner", "sailing ship", "container ship"],
     ),
     "unit_settler": _unit_spec(
-        "pioneer settler", ["settler", "pioneer", "colonist"],
-        "a pioneer settler striding forward with a walking staff and a large "
-        "bundle of belongings on the shoulder",
-        "patched clothes, a wide-brimmed hat and rolled bedding",
-        "homespun linen browns and sun-faded cloth",
-        identity="the Settler game unit: a determined pioneer settler",
+        "covered settler wagon", ["covered wagon", "settler wagon", "Conestoga wagon", "pioneer"],
+        "a sturdy wooden pioneer wagon with a high arched canvas canopy on "
+        "curved ribs, tall plank sides, large iron-rimmed spoked wheels and "
+        "a long front drawbar, pulled by a pair of oxen",
+        "muted canvas curtains rolled open, a few travel bundles secured on "
+        "the wagon and one plainly human pioneer walking beside the team",
+        "warm oak, canvas beige, iron grey and subdued homespun earth tones",
+        identity="the Settler game unit: a covered pioneer wagon carrying a "
+                 "small founding party",
+        fixed=("The covered wagon is the unmistakable central silhouette: a "
+               "barrel-arched canvas roof on visible ribs over a wooden box "
+               "body, with large spoked wheels and a long drawbar. Keep the "
+               "ox team and walking pioneer secondary and clearly attached "
+               "to the wagon journey."),
+        forbidden=["modern car", "tractor", "motor vehicle", "tourist wagon", "chuckwagon kitchen"],
     ),
     "unit_diplomat": _unit_spec(
         "court diplomat", ["diplomat", "envoy", "courtier"],
@@ -1337,10 +1474,10 @@ UNIT_SPECS = {f"unit_{key}": UNIT_SPECS[f"unit_{key}"]
 # limb-completeness clause; pure machines (tank, cannon, ships, ...) do not
 # have arms or legs, so the clause would only confuse the prompt there.
 _UNIT_PERSON_STEMS = {
-    "unit_warrior", "unit_scout", "unit_archer", "unit_phalanx",
-    "unit_chariot", "unit_knights", "unit_legion", "unit_musketeer",
-    "unit_riflemen", "unit_cavalry", "unit_mech_inf",
-    "unit_settler", "unit_diplomat", "unit_caravan",
+    "unit_warrior", "unit_scout", "unit_archer",
+    "unit_knights", "unit_legion", "unit_musketeer",
+    "unit_riflemen", "unit_cavalry",
+    "unit_diplomat",
 }
 for _stem in _UNIT_PERSON_STEMS:
     _spec = UNIT_SPECS[_stem]
@@ -1363,9 +1500,16 @@ UNIT_WIDE_STEMS = {
     "unit_fisher_boat", "unit_ferry", "unit_fighter", "unit_bomber",
 }
 
-# the whole stem list the engine knows: terrain features first, then units
-FEATURE_STEM_ORDER_ALL = list(FEATURE_STEM_ORDER) + list(UNIT_STEM_ORDER)
-
+UNIT_NEGATIVE_EXTRA = {
+    "unit_mech_inf": (
+        "humanoid robot, android, robot soldier, powered armor, exoskeleton, "
+        "futuristic sci-fi machine"
+    ),
+    "unit_trade_ship": "modern container ship, diesel freighter, cruise liner",
+    "unit_fisher_boat": "large merchantman, cargo crane, container ship",
+    "unit_ferry": "cruise ship, passenger liner, sailing ship, container ship",
+    "unit_settler": "tractor, modern car, motor vehicle, tourist wagon",
+}
 
 def load_unit_game_icons() -> tuple[dict[str, str], dict[str, str]]:
     """Parse the emoji icon and display name of every game unit.
@@ -1786,20 +1930,33 @@ _GROUP_KIND_BANS = ["cluster", "clump", "group", "wall", "bunch", "mix",
 
 
 def select_feature_stems(wanted: set[str] | None) -> list[str]:
-    """Resolve the --features filter to the concrete stems to render.
+    """Resolve ``--features`` to feature-only stems (never game units).
 
-    A filter entry matches a stem exactly or by variant base: "forest_feature"
-    hits forest_feature_1..3, "mountains_feature" hits _1 and _2, and the
-    special entry "units" hits every unit stem.  Stems that are only pulled
-    in over their base name keep their optional-roll behaviour
-    (FEATURE_OPTIONAL_STEMS); naming a stem exactly forces it on.
+    A filter entry matches a stem exactly or by variant base. The historic
+    ``--features units`` spelling remains accepted as a compatibility alias,
+    but new callers should use the dedicated ``--units`` option.
     """
+    feature_stems = list(FEATURE_STEM_ORDER)
     if not wanted:
-        return list(FEATURE_STEM_ORDER_ALL)
-    return [stem for stem in FEATURE_STEM_ORDER_ALL
-            if stem in wanted
-            or ("units" in wanted and stem in UNIT_SPECS)
-            or re.sub(r"_\d+$", "", stem) in wanted]
+        return feature_stems
+    if "all" in wanted:
+        return feature_stems
+    return [stem for stem in feature_stems
+            if stem in wanted or re.sub(r"_\d+$", "", stem) in wanted]
+
+
+def select_unit_stems(wanted: set[str] | None) -> list[str]:
+    """Resolve ``--units`` values to canonical ``unit_<key>`` stems.
+
+    Accept either the canonical stem (``unit_phalanx``) or its game key
+    (``phalanx``). An empty filter means all units when the unit category is
+    selected explicitly.
+    """
+    unit_stems = list(UNIT_STEM_ORDER)
+    if not wanted or "all" in wanted:
+        return unit_stems
+    normalized = {value.removeprefix("unit_") for value in wanted}
+    return [stem for stem in unit_stems if stem in wanted or stem[5:] in normalized]
 
 
 def roll_weighted(entries: list[tuple[str, float]]) -> str | None:
@@ -2360,6 +2517,7 @@ def fill_template(text: str, values: dict[str, str]) -> str:
     out = re.sub(r"(?:\s*,\s*)+", ", ", out)       # repeated commas
     out = re.sub(r",\s*\.", ".", out)              # dangling comma before period
     out = re.sub(r"\s*\.\s*\.", ".", out)          # doubled period
+    out = re.sub(r"\.\s+and\b", " and", out)       # "…tones. and light" -> "…tones and light"
     out = re.sub(r"\s+", " ", out)
     return out.strip()
 
@@ -2424,11 +2582,15 @@ def _fix_articles(text: str) -> str:
 
 def build_terrain_prompt(terrain: str, theme: str, global_values: dict[str, str],
                           registry: VariationRegistry,
-                          style_desc: str = "") -> tuple[str, dict[str, str]]:
+                          style_desc: str = "",
+                          variant_note: str = "") -> tuple[str, dict[str, str]]:
     """Resolve the terrain slots and assemble the full terrain prompt.
 
     A prompt that is already in the registry is re-rolled, so no two tiles of
-    a run ever share the same description.
+    a run ever share the same description.  ``variant_note`` pins one of the
+    TERRAIN_VARIANTS siblings of the same terrain: same palette, same light,
+    a different arrangement of the same ground pattern, so the three tiles can
+    sit next to each other on the board.
     """
     fallbacks = dict(TERRAIN_FALLBACKS.get(terrain, {}))
     fallbacks.update({k: v for k, v in global_values.items()})
@@ -2449,8 +2611,11 @@ def build_terrain_prompt(terrain: str, theme: str, global_values: dict[str, str]
             identity=TERRAIN_IDENTITIES[terrain],
             theme=theme,
             context=(
-                "The result is a flat ground texture seen from directly above, "
-                "so describe only the surface, never objects standing on it"
+                "The result is a flat 2D ground texture seen from directly "
+                "above - no depth, no height, no cliffs, no camera view - so "
+                "describe only the surface, never objects standing on it. "
+                "Every colour phrase must be vivid and saturated: no muted, "
+                "pastel, dusty, washed-out or gloomy words"
             ),
             anchors={
                 "SURFACE_FORM": TERRAIN_ANCHORS.get(terrain, []),
@@ -2473,6 +2638,8 @@ def build_terrain_prompt(terrain: str, theme: str, global_values: dict[str, str]
         extra = TERRAIN_EXTRA_CONSTRAINTS.get(terrain, "")
         identity_clause = TERRAIN_IDENTITY_CLAUSE.get(terrain, "")
         details = f"{details} {identity_clause} {extra} {TERRAIN_BASE_CONSTRAINT}".strip()
+        if variant_note:
+            details = f"{details} {variant_note}"
 
         prompt = _fix_articles(TERRAIN_PROMPT.format(
             subject=subject, theme=theme, details=details, style=style_text))
@@ -2490,7 +2657,8 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
                          presentation: str = "resource feature sprite",
                          context_extra: str = "",
                          style_desc: str = "",
-                         style_context: str = "") -> tuple[str, dict[str, str]]:
+                         style_context: str = "",
+                         unit_style_desc: str = "") -> tuple[str, dict[str, str]]:
     """Resolve the feature slots and assemble the full feature prompt.
 
     A prompt that is already in the registry is re-rolled, so no two sprites
@@ -2509,6 +2677,33 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
     fixed_text = " ".join(fixed_clauses)
     style_text = (f" Rendered completely in the selected art style: "
                   f"{style_desc}.") if style_desc else ""
+    is_unit = bool(spec.get("unit"))
+    if is_unit:
+        # The unit art direction is its own lever: --unit-style-keyword wins,
+        # then the global --style-keyword, then the default serious drawn set.
+        chosen = unit_style_desc or style_desc
+        if chosen:
+            # The unit style is stated once in the dedicated art-direction
+            # slot below; repeating the long custom phrase confuses FLUX.2.
+            style_text = ""
+            art_direction = (
+                f"{chosen}. Keep every unit in this set consistent in "
+                "line weight, shading, proportions and detail density"
+            )
+        else:
+            art_direction = UNIT_ART_DIRECTION
+        unit_context = (
+            "This is one member of a cohesive set of illustrated strategy-game "
+            "units. Keep the specified historical or mechanical identity exact; "
+            "use a concise, literal description of the defining silhouette and "
+            "materials. Render it as a hand-drawn unit illustration rather than "
+            "an environmental scene. Keep any run theme to restrained "
+            "color or small decoration; do not transform the unit into a different "
+            "kind of subject."
+        )
+    else:
+        art_direction = FEATURE_ART_DIRECTION
+        unit_context = ""
 
     # per-slot bans for FEATURE_KIND: pose/detail words belong to FEATURE_FORM
     slot_specs = [dict(s) for s in FEATURE_SLOT_SPECS]
@@ -2541,16 +2736,22 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
             slot_specs, fallbacks, registry,
             identity=spec["identity"],
             theme=theme,
-            context=(
-                "The feature is a single object shown from a three-quarter "
-                "isometric game view"
-                + (f". {context_extra}" if context_extra else "")
+        context=(
+                ("The unit is one complete, composed game-unit icon shown "
+                 "from a three-quarter isometric view; a formation, crew or "
+                 "support vehicle may contain several parts but must read as "
+                 "one unit silhouette"
+                 if is_unit else
+                 "The feature is a single object shown from a three-quarter "
+                 "isometric game view")
+                + (f". {unit_context}" if unit_context else "")
+                + (f". {context_extra}" if context_extra and not is_unit else "")
                 + (f" {style_context}." if style_context else "")
             ),
             anchors=spec.get("anchors") and {"FEATURE_KIND": spec["anchors"]},
             forbidden=FEATURE_FORBIDDEN.get(spec_key),
             help_overrides=help_overrides,
-            label=f"feature '{stem}'",
+            label=f"{'unit' if is_unit else 'feature'} '{stem}'",
         )
 
         values = dict(GLOBAL_FALLBACKS)
@@ -2580,22 +2781,32 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
         if values.get("FEATURE_RENDERING"):
             values["FEATURE_RENDERING"] = _end_sentence(
                 _capitalise(values["FEATURE_RENDERING"].rstrip(".")))
-            if style_desc:
+            if (unit_style_desc or style_desc) and is_unit:
+                values["FEATURE_RENDERING"] = (
+                    "Matching the selected shared unit-set art direction")
+            elif style_desc:
                 values["FEATURE_RENDERING"] = (
                     "Rendered completely in the selected art style: "
                     f"{style_desc}.")
+            elif is_unit:
+                values["FEATURE_RENDERING"] = (
+                    "Matching the shared serious inked unit-set illustration style")
 
         subject = fill_template(subject_template, values)
-        details = fill_template(FEATURE_DETAILS_TEMPLATE, values)
+        details_template = UNIT_DETAILS_TEMPLATE if is_unit else FEATURE_DETAILS_TEMPLATE
+        details = fill_template(details_template, values)
         if fixed_text:
             details = f"{details} {fixed_text}"
 
-        prompt = _fix_articles(FEATURE_PROMPT.format(
+        prompt_template = UNIT_PROMPT if is_unit else FEATURE_PROMPT
+        prompt = _fix_articles(prompt_template.format(
             subject=subject, theme=theme, details=details,
-            presentation=presentation, style=style_text))
+            presentation=presentation, style=style_text,
+            art_direction=art_direction))
         if registry.is_new_prompt(prompt):
             break
-        print(f"    [~] feature '{stem}': prompt repeated, re-rolling")
+        print(f"    [~] {'unit' if is_unit else 'feature'} '{stem}': "
+              "prompt repeated, re-rolling")
     registry.remember_prompt(prompt)
     return prompt, values
 
@@ -2785,29 +2996,33 @@ def _feather_edge(background: np.ndarray, brightness: np.ndarray,
 
 def key_out_black(image: Image.Image, level: int = BG_LEVEL,
                   softness: int = BG_SOFTNESS) -> Image.Image:
-    """Make the black background of a sprite transparent.
+    """Make the background of a sprite transparent.
 
-    A flood fill from the image border removes every pixel that is connected
-    to the border *and* looks like background: the background has to be
-    really black, so dark parts *inside* the subject survive.  Enclosed black
-    regions bigger than a small threshold (gaps between the trees of a group)
-    are keyed out as well - they are background the terrain behind the sprite
-    must show through.  The edges are feathered with the softness ramp, so
-    nothing is cut off with a hard line.
+    Instead of assuming the background is black, the dominant colour along the
+    image border is sampled and used as the key colour.  This keeps foggy
+    mountain backgrounds (or any non-black backdrop) from surviving as a
+    grey/black halo.  A flood fill from the border removes every pixel that is
+    connected to the border *and* close to that colour; enclosed regions bigger
+    than a small threshold are keyed out as well.  The edges are feathered
+    with the softness ramp, so nothing is cut off with a hard line.
     """
     im = image.convert("RGB")
     arr = np.array(im).astype(np.int16)
-    brightest = arr.max(axis=2)
-    darkest = arr.min(axis=2)
-    candidate = (brightest < level) & (darkest < max(1, level * 0.5))
+    h, w = arr.shape[:2]
+    border = np.concatenate([arr[0, :, :], arr[-1, :, :],
+                             arr[:, 0, :], arr[:, -1, :]], axis=0)
+    bg_color = np.median(border, axis=0).astype(np.int16)
+    diff = arr - bg_color[None, None, :]
+    dist = np.sqrt((diff.astype(np.float32) ** 2).sum(axis=2))
+    tolerance = max(level, 32)
+    candidate = dist < tolerance
     background = _flood_from_border(candidate)
-    # enclosed background holes ('gaps between the trees'): keep tiny ones -
-    # they are usually real subject detail like an eye - key out the big ones
     min_area = max(1, int(image.width * image.height * 0.002))
     background |= _enclosed_background(candidate, background, min_area)
     out = arr.astype(np.uint8)
     out[background] = 0
-    alpha = _feather_edge(background, brightest, level, softness)
+    brightness = np.clip(dist, 0, 255).astype(np.uint8)
+    alpha = _feather_edge(background, brightness, level, softness)
     return Image.fromarray(np.dstack([out, alpha]), "RGBA")
 
 
@@ -2959,6 +3174,51 @@ def tile_is_usable(png_path: Path) -> bool:
     black = float((arr < 24).mean())
     white = float((arr > 245).mean())
     return black < 0.55 and white < 0.75
+
+
+def harmonise_terrain_edges(primary: Path, others: list[Path],
+                            ring: int = 16) -> None:
+    """Give sibling ground tiles the SAME border so they can sit side by side.
+
+    The game picks one variant per grid cell (TerrainTextureManager), so two
+    different variants can meet on the board. Each tile is seamless on its own,
+    but variant A's edge is not variant B's edge - that seam is exactly what
+    makes one terrain look like several images stuck together.
+
+    Fix: copy the primary tile's outer ring onto every sibling through a soft
+    cross-fade. The outermost pixel of all three then reads identically, so any
+    pair meets without a line, while each tile keeps its own interior pattern.
+    The primary is already self-seamless, so the copied ring is too.
+    """
+    if not others:
+        return
+    try:
+        base = np.array(Image.open(primary).convert("RGB")).astype(np.float32)
+    except Exception:
+        return
+    h, w = base.shape[:2]
+    ring = max(2, min(ring, h // 4, w // 4))
+
+    # Distance-in-from-the-border ramp: 1 exactly on the edge, 0 past `ring`.
+    ys = np.minimum(np.arange(h), h - 1 - np.arange(h))[:, None]
+    xs = np.minimum(np.arange(w), w - 1 - np.arange(w))[None, :]
+    depth = np.minimum(ys, xs).astype(np.float32)
+    weight = np.clip(1.0 - depth / ring, 0.0, 1.0) ** 2
+    weight = weight[:, :, None]
+
+    for other in others:
+        if not other.exists() or other.resolve() == primary.resolve():
+            continue
+        try:
+            img = Image.open(other).convert("RGB")
+            if img.size != (w, h):
+                img = img.resize((w, h), Image.LANCZOS)
+            arr = np.array(img).astype(np.float32)
+        except Exception:
+            continue
+        merged = base * weight + arr * (1.0 - weight)
+        Image.fromarray(np.clip(merged, 0, 255).astype(np.uint8), "RGB").save(
+            other, "PNG")
 
 
 def clean_feature_sprite(png_path: Path, fill_ratio: float = 0.86,
@@ -3143,7 +3403,7 @@ class ServerManager:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Generate variated tile sets (terrain tiles + feature sprites).",
+        description="Generate variated terrain tiles, feature sprites and game-unit artwork.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--iterations", type=int,
@@ -3172,8 +3432,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--retries", type=int, default=int(os.environ.get("RETRIES", "3")),
                         help="render attempts per image before the fallback is used")
     parser.add_argument("--bg-level", type=int, default=int(os.environ.get("BG_LEVEL", str(BG_LEVEL))),
-                        help="background removal level: the black point 0-255, higher "
-                             "removes more (default: %(default)s)")
+                        help="background removal color-distance tolerance 0-255; "
+                             "higher removes more (default: %(default)s)")
     parser.add_argument("--bg-softness", type=int,
                         default=int(os.environ.get("BG_SOFTNESS", str(BG_SOFTNESS))),
                         help="background removal softness 0-255: the width of the "
@@ -3181,14 +3441,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--terrains", default=os.environ.get("TERRAINS", ""),
                         help="comma separated list of terrains (default: all)")
     parser.add_argument("--features", default=os.environ.get("FEATURES", ""),
-                        help="comma separated feature stems, matches also by "
-                             "variant base name ('forest_feature' renders "
-                             "forest_feature_1..3); a stem named exactly "
-                             "forces an optional variant on")
+                        help="comma separated resource/terrain feature stems, "
+                             "matches also by variant base name ('forest_feature' "
+                             "renders forest_feature_1..3); use --units for game units")
+    parser.add_argument("--units", default=os.environ.get("UNITS"),
+                        help="comma separated game unit keys or stems "
+                             "(e.g. phalanx,settler or unit_phalanx); all units "
+                             "when requested without a list")
     parser.add_argument("--dry-run", action="store_true",
                         help="only resolve the prompts with the local model, render nothing")
     parser.add_argument("--no-features", action="store_true",
-                        help="skip the feature sprites")
+                        help="skip resource and terrain feature sprites")
+    parser.add_argument("--no-units", action="store_true",
+                        help="skip game unit sprites")
     parser.add_argument("--no-terrains", action="store_true",
                         help="skip the terrain tiles")
     parser.add_argument("--keep-servers", action="store_true",
@@ -3213,9 +3478,16 @@ def build_parser() -> argparse.ArgumentParser:
                         default=os.environ.get("STYLE_KEYWORD", ""),
                         help="one art STYLE for this whole run (a STYLE_KEYS "
                              "name such as american_comic, manga, pixel_art, "
-                             "... or any freeform style phrase) - changes "
-                             "only HOW everything is rendered; subject "
-                             "identities stay untouched")
+                             "original_game_icons, ... or any freeform style "
+                             "phrase) - changes only HOW everything is "
+                             "rendered; subject identities stay untouched")
+    parser.add_argument("--unit-style-keyword",
+                        default=os.environ.get("UNIT_STYLE_KEYWORD", ""),
+                        help="art STYLE for the game unit sprites only "
+                             "(a STYLE_KEYS name such as "
+                             "original_game_icons for the flat vector game-icon "
+                             "look, or any freeform phrase); terrain and "
+                             "resource features keep --style-keyword")
     parser.add_argument("--write-batch",
                         default=os.environ.get("WRITE_BATCH", ""),
                         help="writes a bash script that runs one tile-set job "
@@ -3233,8 +3505,12 @@ def build_parser() -> argparse.ArgumentParser:
                              "every generated job (--terrains ...)")
     parser.add_argument("--batch-features",
                         default=os.environ.get("BATCH_FEATURES", ""),
-                        help="with --write-batch: feature/unit whitelist "
+                        help="with --write-batch: feature whitelist "
                              "passed to every generated job (--features ...)")
+    parser.add_argument("--batch-units",
+                        default=os.environ.get("BATCH_UNITS", ""),
+                        help="with --write-batch: unit whitelist passed to "
+                             "every generated job (--units ...)")
     parser.add_argument("--batch-iterations", type=int,
                         default=int(os.environ.get("BATCH_ITERATIONS", "1")),
                         help="iterations per job inside a generated batch "
@@ -3288,26 +3564,34 @@ def write_batch_script(runs: list[str], iterations: int,
     lines = [
         "#!/usr/bin/env bash",
         "# Auto-generated by tools/tile-generator/generate_variated_tile_sets.py.",
-        "# Runs one tile-set job after another, each with its own log under",
-        "# tools/tile-generator/run_logs/.  Start it in the background:",
+        "# Runs one tile-set job after another. Progress is shown on the console",
+        "# and kept in tools/tile-generator/run_logs/<job>.log; the images of a",
+        "# job land in tools/tile-generator/tile_sets/<job>/.",
+        "# Start it in the background:",
         f"#   nohup bash {script.name} > batch.out 2>&1 &",
-        "set -u",
+        "set -uo pipefail",
         f'cd "{ROOT}"',
         'GEN="tools/tile-generator/generate_variated_tile_sets.py"',
         'LOG_DIR="tools/tile-generator/run_logs"',
-        'mkdir -p "$LOG_DIR"',
+        'OUT_ROOT="tools/tile-generator/tile_sets"',
+        'mkdir -p "$LOG_DIR" "$OUT_ROOT"',
         "",
         "fail=0",
         "",
         "run_job() {",
         '  local label="$1"; shift',
         '  local log="$LOG_DIR/$label.log"',
+        '  local out="$OUT_ROOT/$label"',
+        '  echo ""',
         '  echo "=== job: $label ($(date -Is)) ==="',
-        '  if python3 -u "$GEN" "$@" >>"$log" 2>&1; then',
-        '    echo "    OK     -> $log"',
+        '  echo "    log: $log"',
+        '  echo "    out: $out"',
+        '  # tee: progress on the console AND in the job log.',
+        '  if python3 -u "$GEN" "$@" --output-root "$out" 2>&1 | tee -a "$log"; then',
+        '    echo "    OK     -> $out ($(find "$out" -name "*.png" | wc -l) images)"',
         "  else",
         '    fail=$((fail+1))',
-        '    echo "    FAILED -> $log"',
+        '    echo "    FAILED -> see $log"',
         "  fi",
         "}",
         "",
@@ -3317,8 +3601,10 @@ def write_batch_script(runs: list[str], iterations: int,
         lines.append(f'run_job {shlex.quote(label)} {quoted}'.rstrip())
     lines += [
         "",
+        'echo ""',
         'echo "=== batch done ($(date -Is)): $fail job(s) failed ==="',
-        f'echo "logs: $LOG_DIR"',
+        'echo "logs:   $LOG_DIR"',
+        'echo "images: $OUT_ROOT/<job label>/<run>/iteration_XX/"',
         'exit "$fail"',
         "",
     ]
@@ -3340,6 +3626,29 @@ def main() -> int:
         style_context = style_clauses(style_name, style_desc)
         print(f"[*] art style: {style_name} - rendering only, identities "
               f"untouched")
+    unit_style_name, unit_style_desc = "", ""
+    if args.unit_style_keyword.strip():
+        unit_style_name, unit_style_desc = resolve_style(args.unit_style_keyword)
+        print(f"[*] unit art style: {unit_style_name} - units only, identities "
+              f"untouched")
+
+    # Folder name under tile_sets/: the theme/style keyword (sanitised), or
+    # "classic" when no keyword was given — so a run is findable by name.
+    if theme_keyword:
+        run_name = re.sub(r"[^a-z0-9]+", "_", theme_keyword.lower()).strip("_") or "classic"
+    elif args.style_keyword.strip():
+        run_name = re.sub(r"[^a-z0-9]+", "_", args.style_keyword.strip().lower()).strip("_") or "classic"
+    elif args.unit_style_keyword.strip():
+        run_name = re.sub(r"[^a-z0-9]+", "_", args.unit_style_keyword.strip().lower()).strip("_") or "classic"
+    else:
+        run_name = "classic"
+
+    run_name = run_name + "_" + str(int(time.time()))
+    if args.dry_run:
+        # A dry run only writes prompts/manifests, never images.  Tagging the
+        # folder keeps it from being mistaken for a real run that produced
+        # nothing (a real run writes its images into tiles/, features/, units/).
+        run_name += "_dryrun"
 
     if args.write_batch:
         extra: list[str] = []
@@ -3347,6 +3656,8 @@ def main() -> int:
             extra += ["--terrains", args.batch_terrains.strip()]
         if args.batch_features.strip():
             extra += ["--features", args.batch_features.strip()]
+        if args.batch_units.strip():
+            extra += ["--units", args.batch_units.strip()]
         script = write_batch_script(
             args.write_batch.split(","), args.batch_iterations,
             style_mode=args.batch_style_mode, extra_args=extra)
@@ -3366,17 +3677,38 @@ def main() -> int:
         if not is_backup_path(p)
     )
     inputs_by_stem = {p.stem: p for p in feature_inputs}
-    wanted = ({f.strip().lower() for f in args.features.split(",") if f.strip()}
-              if args.features else None)
-    stems = select_feature_stems(wanted)
-    if not stems:
-        print(f"[-] --features {args.features!r} matches none of: "
-              f"{', '.join(FEATURE_STEM_ORDER_ALL)}")
+    feature_wanted = {f.strip().lower() for f in args.features.split(",") if f.strip()}
+    unit_wanted = ({u.strip().lower() for u in args.units.split(",") if u.strip()}
+                   if args.units is not None else None)
+    # Backward compatibility: older scripts used `--features units` to select
+    # the unit category. New invocations should use the independent --units.
+    legacy_units = "units" in feature_wanted
+    feature_wanted.discard("units")
+    selection_provided = bool(feature_wanted) or args.units is not None or legacy_units
+    if selection_provided:
+        feature_stems = select_feature_stems(feature_wanted) if feature_wanted else []
+        unit_stems = select_unit_stems(unit_wanted) if args.units is not None else []
+        if legacy_units and args.units is None:
+            unit_stems = select_unit_stems(None)
+    else:
+        feature_stems = select_feature_stems(None)
+        unit_stems = select_unit_stems(None)
+    if args.no_features:
+        feature_stems = []
+    if args.no_units:
+        unit_stems = []
+    stems = feature_stems + unit_stems
+    if selection_provided and not stems and not (args.no_features or args.no_units):
+        print(f"[-] --features {args.features!r} / --units {args.units!r} "
+              f"matched no assets")
+        return 2
+    if not stems and args.no_terrains:
+        print("[-] Nothing to do: no terrain tiles and no feature/unit "
+              "sprites selected")
         return 2
     for p in feature_inputs:
         print(f"[*] feature input: {p.name}")
     unit_icons, unit_names = load_unit_game_icons()
-    unit_stems = [s for s in stems if s in UNIT_SPECS]
     unit_svg_count = sum(1 for s in unit_stems
                          if UNIT_SVG_FILES.get(s[len("unit_"):]))
     print(f"[*] unit sprites   : {len(unit_stems)} "
@@ -3390,7 +3722,7 @@ def main() -> int:
 
     output_root = Path(args.output_root)
     output_root.mkdir(parents=True, exist_ok=True)
-    run_dir = output_root / str(int(time.time()))
+    run_dir = output_root / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"[*] output: {run_dir}")
 
@@ -3400,8 +3732,15 @@ def main() -> int:
     started = time.time()
     run_manifest: dict[str, Any] = {
         "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "output": str(run_dir),
+        "dry_run": bool(args.dry_run),
         "iterations": args.iterations,
+        "selected_features": feature_stems,
+        "selected_units": unit_stems,
         "theme_keyword": theme_keyword,
+        "style_keyword": style_name or "",
+        "unit_style_keyword": unit_style_name or "",
+        "terrain_variants": TERRAIN_VARIANTS,
         "size": args.size,
         "feature_size": args.feature_size,
         "steps": args.steps,
@@ -3446,9 +3785,15 @@ def main() -> int:
             iter_dir = run_dir / f"iteration_{i:02d}"
             tiles_dir = iter_dir / "tiles"
             features_dir = iter_dir / "features"
+            units_dir = iter_dir / "units"
             tiles_dir.mkdir(parents=True, exist_ok=True)
-            features_dir.mkdir(parents=True, exist_ok=True)
-            iter_manifest: dict[str, Any] = {"iteration": i, "tiles": {}, "features": {}}
+            if feature_stems:
+                features_dir.mkdir(parents=True, exist_ok=True)
+            if unit_stems:
+                units_dir.mkdir(parents=True, exist_ok=True)
+            iter_manifest: dict[str, Any] = {
+                "iteration": i, "tiles": {}, "features": {}, "units": {},
+            }
 
             print(f"\n=== Iteration {i}/{args.iterations} ===")
             iter_started = time.time()
@@ -3465,6 +3810,12 @@ def main() -> int:
                     f". The run direction keyword is '{theme_keyword}': the "
                     "theme phrase, palette and lighting must be clearly shot "
                     "through with it"
+                )
+            else:
+                global_context += (
+                    ". No direction keyword was given, so pick a bright "
+                    "clear daytime mood in vivid saturated colours - not "
+                    "dusk, not twilight, not overcast gloom"
                 )
             global_values = resolve_slot_bundle(
                 GLOBAL_SLOT_SPECS, GLOBAL_FALLBACKS, registry,
@@ -3495,52 +3846,86 @@ def main() -> int:
             # ---- 2. terrain tiles ----------------------------------------
             if not args.no_terrains:
                 for terrain in terrains:
-                    prompt, keywords = build_terrain_prompt(
-                        terrain, theme, global_values, registry,
-                        style_desc=style_desc,
-                    )
-                    (iter_dir / f"prompt_{terrain}.txt").write_text(
-                        prompt + "\n\nNegative prompt: " + NEGATIVE_TERRAIN + "\n"
-                    )
-                    (iter_dir / f"keywords_{terrain}.json").write_text(
-                        json.dumps(keywords, indent=2, sort_keys=True) + "\n"
-                    )
-                    iter_manifest["tiles"][terrain] = {
-                        "prompt": prompt,
-                        "keywords": keywords,
-                    }
+                    # Every terrain gets TERRAIN_VARIANTS sibling ground tiles:
+                    # one shared palette/light, three arrangements of the same
+                    # pattern, so neighbouring cells of one terrain never look
+                    # like the same image repeated.
+                    entry: dict[str, Any] = {"variants": {}}
+                    iter_manifest["tiles"][terrain] = entry
+                    written_tiles: list[Path] = []
+                    for variant in range(1, TERRAIN_VARIANTS + 1):
+                        suffix = "" if variant == 1 else f"_{variant - 1}"
+                        variant_note = TERRAIN_VARIANT_NOTES[
+                            (variant - 1) % len(TERRAIN_VARIANT_NOTES)]
+                        prompt, keywords = build_terrain_prompt(
+                            terrain, theme, global_values, registry,
+                            style_desc=style_desc,
+                            variant_note=variant_note,
+                        )
+                        (iter_dir / f"prompt_{terrain}{suffix}.txt").write_text(
+                            prompt + "\n\nNegative prompt: " + NEGATIVE_TERRAIN + "\n"
+                        )
+                        (iter_dir / f"keywords_{terrain}{suffix}.json").write_text(
+                            json.dumps(keywords, indent=2, sort_keys=True) + "\n"
+                        )
+                        vrec: dict[str, Any] = {
+                            "prompt": prompt,
+                            "keywords": keywords,
+                        }
+                        if variant == 1:
+                            entry["prompt"] = prompt
+                            entry["keywords"] = keywords
+                        entry["variants"][str(variant)] = vrec
 
-                    if args.dry_run:
-                        print(f"    ~ tile {terrain} (dry run)")
-                        continue
+                        if args.dry_run:
+                            print(f"    ~ tile {terrain} [{variant}/"
+                                  f"{TERRAIN_VARIANTS}] (dry run)")
+                            continue
 
-                    out_path = tiles_dir / f"terrain_{terrain}.png"
-                    seed = None if args.seed < 0 else args.seed + i * 100 + len(terrain)
-                    t0 = time.time()
-                    ok = render(prompt, NEGATIVE_TERRAIN, out_path,
-                                args.size, args.size, seed=seed)
-                    if ok:
-                        clean_terrain_tile(out_path)
-                        if not tile_is_usable(out_path):
-                            print(f"    ! tile {terrain}: unusable output")
-                            ok = False
-                    if ok:
-                        print(f"    + tile {terrain} ({human(time.time() - t0)})")
-                        iter_manifest["tiles"][terrain]["output"] = str(
-                            out_path.relative_to(run_dir))
-                    else:
-                        fallback = PUBLIC_TILES / f"terrain_{terrain}.png"
-                        if not fallback.exists():
-                            fallback = PUBLIC_TILES / f"terrain_{terrain}_1.png"
-                        if fallback.exists():
-                            shutil.copy(fallback, out_path)
-                            iter_manifest["tiles"][terrain]["output"] = str(
-                                out_path.relative_to(run_dir))
-                            iter_manifest["tiles"][terrain]["fallback"] = True
-                        print(f"    ! tile {terrain}: fallback to the original tile")
+                        out_path = tiles_dir / f"terrain_{terrain}{suffix}.png"
+                        seed = (None if args.seed < 0 else
+                                args.seed + i * 100 + len(terrain) * 7
+                                + variant * 13)
+                        t0 = time.time()
+                        ok = render(prompt, NEGATIVE_TERRAIN, out_path,
+                                    args.size, args.size, seed=seed)
+                        if ok:
+                            clean_terrain_tile(out_path)
+                            if not tile_is_usable(out_path):
+                                print(f"    ! tile {terrain} [{variant}]: "
+                                      f"unusable output")
+                                ok = False
+                        if ok:
+                            print(f"    + tile {terrain} [{variant}/"
+                                  f"{TERRAIN_VARIANTS}] "
+                                  f"({human(time.time() - t0)})")
+                            vrec["output"] = str(out_path.relative_to(run_dir))
+                            written_tiles.append(out_path)
+                            if variant == 1:
+                                entry["output"] = vrec["output"]
+                        else:
+                            fallback = PUBLIC_TILES / f"terrain_{terrain}{suffix}.png"
+                            if not fallback.exists():
+                                fallback = PUBLIC_TILES / f"terrain_{terrain}.png"
+                            if not fallback.exists():
+                                fallback = PUBLIC_TILES / f"terrain_{terrain}_1.png"
+                            if fallback.exists():
+                                shutil.copy(fallback, out_path)
+                                vrec["output"] = str(out_path.relative_to(run_dir))
+                                vrec["fallback"] = True
+                                written_tiles.append(out_path)
+                                if variant == 1:
+                                    entry["output"] = vrec["output"]
+                                print(f"    ! tile {terrain} [{variant}]: "
+                                      f"fallback to the original tile")
+
+                    # Siblings share one border so any two of them can meet on
+                    # the board without showing a seam between variants.
+                    if len(written_tiles) > 1:
+                        harmonise_terrain_edges(written_tiles[0], written_tiles[1:])
 
             # ---- 3. feature sprites --------------------------------------
-            if not args.no_features:
+            if feature_stems or unit_stems:
                 tmp_dir = iter_dir / "_tmp"
                 tmp_dir.mkdir(exist_ok=True)
 
@@ -3548,15 +3933,19 @@ def main() -> int:
                 # and the mountain atmosphere
                 rolls: dict[str, Any] = {}
                 active: list[str] = []
-                for stem in stems:
+                for stem in feature_stems:
                     chance = FEATURE_OPTIONAL_STEMS.get(stem)
                     if chance is not None:
-                        forced = bool(wanted and stem in wanted)
+                        forced = stem in feature_wanted
                         if not forced and random.random() >= chance:
                             rolls[stem] = "skipped (optional roll)"
                             continue
                     active.append(stem)
                 atmosphere_by_stem: dict[str, str] = {}
+                # Units are a separate asset category from feature sprites.
+                # Keep their selection, manifest entries, prompt files and
+                # generated output directory separate too.
+                active.extend(unit_stems)
                 for stem in active:
                     if stem.startswith("mountains_feature"):
                         # every mountain variant rolls its own atmosphere
@@ -3637,7 +4026,8 @@ def main() -> int:
                             entry["source"] = "game svg artwork (img2img)"
                         else:
                             entry["source"] = "fixed text description"
-                    iter_manifest["features"][stem] = entry
+                    asset_manifest = iter_manifest["units" if is_unit else "features"]
+                    asset_manifest[stem] = entry
 
                     variant_count = UNIT_VARIANTS if is_unit else 1
                     for variant in range(1, variant_count + 1):
@@ -3649,14 +4039,20 @@ def main() -> int:
                             context_extra=THEMED_EQUIVALENT_CLAUSE,
                             style_desc=style_desc,
                             style_context=style_context,
+                            unit_style_desc=unit_style_desc,
                         )
+                        asset_prefix = "unit" if is_unit else "feature"
+                        prompt_stem = unit_key if is_unit else stem
+                        negative_prompt = NEGATIVE_UNIT if is_unit else NEGATIVE_FEATURE
+                        if is_unit and UNIT_NEGATIVE_EXTRA.get(stem):
+                            negative_prompt += ", " + UNIT_NEGATIVE_EXTRA[stem]
                         (iter_dir /
-                         f"prompt_feature_{stem}{suffix}.txt").write_text(
+                         f"prompt_{asset_prefix}_{prompt_stem}{suffix}.txt").write_text(
                             prompt + "\n\nNegative prompt: "
-                            + NEGATIVE_FEATURE + "\n"
+                            + negative_prompt + "\n"
                         )
                         (iter_dir /
-                         f"keywords_feature_{stem}{suffix}.json").write_text(
+                         f"keywords_{asset_prefix}_{prompt_stem}{suffix}.json").write_text(
                             json.dumps(keywords, indent=2, sort_keys=True)
                             + "\n"
                         )
@@ -3671,25 +4067,26 @@ def main() -> int:
                             entry["variants"][str(variant)] = vrec
 
                         if args.dry_run:
-                            print(f"    ~ feature {stem} [{variant}/"
+                            print(f"    ~ {asset_prefix} {stem} [{variant}/"
                                   f"{variant_count}] (dry run)")
                             continue
 
                         raw_path = tmp_dir / f"{stem}_raw{suffix}.png"
                         out_name = FEATURE_OUTPUT_NAMES.get(stem, stem)
                         out_name = f"{out_name}{suffix}"
-                        out_path = features_dir / f"{out_name}.png"
+                        asset_dir = units_dir if is_unit else features_dir
+                        out_path = asset_dir / f"{out_name}.png"
 
                         t0 = time.time()
                         seed = (None if args.seed < 0 else
                                 args.seed + i * 1000 + len(stem)
                                 + variant * 7)
-                        ok = render(prompt, NEGATIVE_FEATURE, raw_path, fw, fh,
+                        ok = render(prompt, negative_prompt, raw_path, fw, fh,
                                     init_image=init_image, seed=seed)
 
                         # the untouched original is kept next to the result,
                         # before the background is removed
-                        backup_path = (features_dir / BACKUP_DIR_NAME /
+                        backup_path = (asset_dir / BACKUP_DIR_NAME /
                                        f"{out_name}.png")
                         backup_path.parent.mkdir(parents=True, exist_ok=True)
                         if raw_path.exists():
@@ -3720,7 +4117,7 @@ def main() -> int:
                             # a stem without input art cannot fall back; for a
                             # multi-variant unit the other variants still run
                             vrec["failed"] = True
-                            print(f"    ! feature {stem} [{variant}/"
+                            print(f"    ! {asset_prefix} {stem} [{variant}/"
                                   f"{variant_count}]: render failed"
                                   + (", no fallback input (variant skipped)"
                                      if init_image is None else
@@ -3749,7 +4146,7 @@ def main() -> int:
                             entry["output"] = vrec["output"]
                             entry["backup"] = vrec["backup"]
                             entry["method"] = method
-                        print(f"    + feature {stem} "
+                        print(f"    + {asset_prefix} {stem} "
                               f"[{variant}/{variant_count}] -> {out_name}.png "
                               f"({method}, {human(time.time() - t0)})")
 

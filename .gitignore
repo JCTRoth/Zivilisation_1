@@ -133,3 +133,7 @@ TODO.txt
 # is not where these end up (scripts/tmp-*.mjs).
 tmp-*.mjs
 tools/tile-generator/tile_sets/*
+
+# Safety net taken by `npm run tiles:install` before it replaces the app's
+# tiles/features/units. Undo with `npm run tiles:install -- <folder> --restore`.
+public/assets/_generated_backup/
