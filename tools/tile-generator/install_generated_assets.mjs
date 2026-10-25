@@ -42,7 +42,7 @@
  *   --dry-run       list what would be done, change nothing
  *   --no-units      skip the unit sprites
  *   --no-compose    copy the resource tiles as-is instead of combining them
- *   --box 0.85      size of the feature on the tile, as a fraction of the tile
+ *   --box 0.85      override the per-resource visible-size fraction
  *   --no-backup     do not keep a copy of the assets being replaced
  *   --restore       put back the backup taken by an earlier install
  *
@@ -116,16 +116,31 @@ function pngFiles(dir) {
     .sort();
 }
 
-/** Intrinsic width/height from the PNG header (IHDR), without any tool. */
-function readPngSize(path) {
-  const buf = readFileSync(path);
-  if (buf.length < 24 || buf.readUInt32BE(0) !== 0x89504e47) {
-    throw new Error(`not a PNG: ${path}`);
-  }
-  const width = buf.readUInt32BE(16);
-  const height = buf.readUInt32BE(20);
-  if (width <= 0 || height <= 0) throw new Error(`cannot read the size of ${path}`);
-  return { width, height };
+
+// Target visible footprint by resource kind, not by the dimensions of the
+// generated canvas. The source is alpha-trimmed before resizing, so model-added
+// transparent margins cannot make one subject look smaller than another.
+// Fractions are the maximum visible width or height relative to one game tile.
+const RESOURCE_FOOTPRINT = {
+  fish: 0.58,
+  horses: 0.68,
+  seal: 0.60,
+  oasis: 0.68,
+  game: 0.62,
+  gems: 0.56,
+  gold: 0.56,
+  coal: 0.56,
+  oil: 0.56,
+};
+const DEFAULT_RESOURCE_FOOTPRINT = 0.62;
+const BOX_OVERRIDE = numberFlag('--box');
+
+function resourceFootprint(fileName) {
+  if (BOX_OVERRIDE !== null) return BOX_OVERRIDE;
+  const kind = fileName.match(
+    /_(fish|horses|seal|oasis|game|gems|gold|coal|oil)(?:_\d+)?\.png$/i,
+  )?.[1]?.toLowerCase();
+  return RESOURCE_FOOTPRINT[kind] ?? DEFAULT_RESOURCE_FOOTPRINT;
 }
 
 /**
@@ -213,7 +228,6 @@ const iteration = resolveIteration(inputPath);
 const tilesDir = join(iteration, 'tiles');
 const featuresDir = join(iteration, 'features');
 const unitsDir = join(iteration, 'units');
-const BOX = numberFlag('--box') ?? 0.85;
 
 console.log(`[*] installing ${iteration}`);
 if (DRY_RUN) console.log('    (dry run — nothing is written)');
@@ -290,14 +304,10 @@ for (const file of resources) {
     continue;
   }
 
-  // Fit the sprite into the tile box, keep its aspect, centre it — the same
-  // geometry `compose_feature_tiles.mjs` uses for resource artwork.
+  // Fit the visible subject (not its padded source canvas) into a per-kind
+  // footprint, preserve its aspect ratio, and center it over the terrain.
   const src = join(featuresDir, file);
-  const { width, height } = readPngSize(src);
-  const box = Math.round(512 * BOX);
-  const scale = Math.min(box / width, box / height);
-  const fw = Math.max(1, Math.round(width * scale));
-  const fh = Math.max(1, Math.round(height * scale));
+  const box = Math.max(1, Math.round(512 * resourceFootprint(file)));
 
   if (!existsSync(dst)) added.push(dst);
   backup(dst, 'features');
@@ -306,7 +316,8 @@ for (const file of resources) {
   const tmp = join(BACKUP_DIR, '_tmp', file);
   mkdirSync(dirname(tmp), { recursive: true });
   const resized = spawnSync('magick', [
-    src, '-filter', 'Lanczos', '-resize', `${fw}x${fh}!`, tmp,
+    src, '-fuzz', '1%', '-trim', '+repage', '-filter', 'Lanczos',
+    '-resize', `${box}x${box}`, tmp,
   ], { encoding: 'utf8' });
   const merged = spawnSync('magick', [
     base, tmp, '-gravity', 'center', '-composite', dst,

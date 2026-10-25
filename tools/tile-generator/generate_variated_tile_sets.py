@@ -44,11 +44,9 @@ rendered img2img from it, the rest are rendered from their fixed
 descriptions in UNIT_SPECS; single-figure units carry a positively phrased
 limb-completeness clause, while group compositions get tailored guidance.
 
-With ``--theme-keyword`` (/t/ THEME_KEYWORD) one art-direction keyword (e.g.
-Halloween, Christmas, "Transylvania and vampires") is shot through the shared
-mood, palette and lighting; feature animals may swap to close themed
-equivalents, while unit identities remain intact and only take restrained
-color or accessory treatment.
+With ``--theme-keyword`` (/t/ THEME_KEYWORD) a theme may add sparse small
+accents only. Terrain materials, natural palettes, animal/unit identities,
+and neutral lighting remain unchanged.
 
 With ``--style-keyword`` (STYLE_KEYWORD) one art style (a STYLE_KEYS name
 such as american_comic or manga, or a freeform phrase) changes only HOW every
@@ -178,8 +176,8 @@ TERRAINS = [
 
 # ===========================================================================
 # Prompt structure (matches the project art direction)
-#   Title line .......: "seamless top-down 2D ground texture map of ..."
-#   Style & Art ......: semi-realistic strategy game illustration + theme
+#   Title line .......: "seamless, tileable texture of ..."
+#   Style & Art ......: selected game art style
 #   Subject Details ..: concrete description of what is across the surface
 #   Technical Specs ..: orthographic top-down camera, full-bleed, no framing
 #   Negative prompt ..: photorealism / backgrounds / framing artifacts
@@ -188,13 +186,15 @@ TERRAINS = [
 # templates further down - they are never hard-coded.
 # ===========================================================================
 
-TERRAIN_PROMPT = """Seamless top-down 2D ground texture map of {subject}, pure orthographic bird's-eye view looking straight down at the ground plane, 90% to 100% full-bleed canvas coverage, flat surface pattern, seamlessly tileable on all four edges, natural varied non-repeating pattern.
+TERRAIN_PROMPT = """A seamless, tileable top-down 2D strategy-game texture of {subject}, viewed straight down and filling the entire image edge to edge as a full-bleed surface. Show only the terrain surface, as if this image were an arbitrary crop from a much larger continuous texture; the same material and pattern continue beyond all four image edges. No depicted object, patch outline, frame, or separate edge.
 
-Style & Art Direction: Hand-painted flat 2D game texture art, stylised semi-realistic strategy-game illustration. Vivid saturated colours with strong clear hues, crisp contrast, even daylight from directly above; the picture is a flat texture sheet with no depth, no perspective and no 3D rendering. Intricate surface details, painterly brushwork, crisp high resolution, no thick cartoon outlines.{style} {theme}
+Style & Art Direction: Clear, restrained game-ready terrain art with a small number of broad, low-frequency color shapes and only a few simple details. The natural terrain material and its distinct base colors dominate. Keep the surface flat, evenly lit and easy to distinguish from neighboring terrain; no painterly brushwork or dense microtexture.{style}
+
+Theme accents only: {theme}. The theme may appear in a few small isolated accents covering at most 5% of the image. It must not change the terrain material, dominant color family, or neutral daylight. No neon, spectral glow, runes, webs, bones, or other high-contrast decoration across the ground.
 
 Subject Details: {details}
 
-Technical Specs: Flat map view, strictly top-down overhead perspective, no tree trunks, no side perspective, no vertical horizon, no camera tilt, no depth of field, continuous organic texture, no repeating grid pattern, even coverage from edge to edge, rich saturated vivid colours, crisp 8k digital painting of a flat surface."""
+Technical Specs: Flat map view, strictly top-down, no tree trunks, no side perspective, no horizon, no camera tilt, no depth of field. Use broad readable color clusters and restrained details. The outermost pixels are ordinary terrain, not a border band; opposite edges continue the same pattern. No vignette, halo, contrasting rim, shoreline frame, or shadowed corners."""
 
 FEATURE_ART_DIRECTION = (
     "Hand-drawn strategy-game illustration, clean confident ink contours, "
@@ -214,11 +214,13 @@ UNIT_ART_DIRECTION = (
 
 FEATURE_PROMPT = """isometric 2D video game {presentation} of {subject}, isolated standalone central sprite, isometric strategic 3/4 game view showing height and volume, centrally composed asset, well-balanced framing, the whole subject complete and fully visible in the central canvas area, every part of the silhouette fully inside the frame and surrounded by generous clear margin on all four sides, tightly framed around the subject, centered on a completely uniform pure black background that fills the whole canvas edge to edge, easy masking background, game UI icon sprite, isolated subject.
 
-Style & Art Direction: {art_direction}{style} {theme}
+Style & Art Direction: {art_direction}{style}
+
+Theme accents only: {theme}. Keep the subject's natural colors and identity; no theme-driven replacement, glow, or dramatic lighting.
 
 Subject Details: {details} The sprite shows ONLY the feature itself - {subject} - floating on a completely empty solid pure black #000000 background, clean flat black around every edge of the subject for easy masking.
 
-Technical Specs: High contrast, top-down 45-degree isometric camera view, perfectly isolated subject on a pure black #000000 background, the full silhouette inside the frame with crisp black margin on all four sides, 8k resolution, crisp vector-like digital painting."""
+Technical Specs: High contrast, top-down 45-degree isometric camera view, perfectly isolated subject on a pure black #000000 background, the full silhouette inside the frame with crisp black margin on all four sides, clean readable game sprite."""
 
 # FLUX.2 Klein responds better to one concise visual hierarchy than to a
 # photography-style specification sheet. Every unit gets this same structure
@@ -226,7 +228,7 @@ Technical Specs: High contrast, top-down 45-degree isometric camera view, perfec
 UNIT_PROMPT = """A polished 2D strategy-game unit icon depicting {subject}, viewed from a slightly elevated three-quarter isometric angle. Show one complete, centered unit silhouette with generous clear margin on every side, isolated on a perfectly uniform pure black background.
 
 Shared unit-set art direction: {art_direction}
-Run mood (palette and light only): {theme}
+Theme accents only: {theme}. Preserve the unit's natural/material colors, defining silhouette, and clear neutral lighting; use at most a small secondary color or decoration.
 
 Unit design: {details}
 
@@ -236,13 +238,19 @@ NEGATIVE_TERRAIN = (
     "photorealistic, realistic landscape, photography, border frame, "
     "ground plane background, horizon line, sky, ambient occlusion shadows on "
     "canvas, cut off edges, blurry lines, 3D render artifacts, low resolution, "
-    "empty background, transparent corners, grid lines, diamond layout, "
-    "repeating pattern, tiled grid, isolated subject on black, black "
+    "empty background, transparent corners, visible grid lines, diamond layout, "
+    "isolated subject on black, black "
     "background, pitch black, vignette, frame, picture, poster, text, "
     "watermark, characters, buildings, animals, 3D render, 3D scene, "
     "isometric perspective, tilted camera, side view, depth of field, "
     "ray tracing, volumetric light, dramatic cast shadows across the surface, "
-    "desaturated colours, muted palette, washed out colours, dull faded tones"
+    "desaturated colours, muted palette, washed out colours, dull faded tones, "
+    "high-frequency detail, excessive microtexture, noisy texture, intricate "
+    "repeating detail, neon, bioluminescent veins, spectral glow, glowing lines, "
+    "runes, webs, bones, scattered debris, painterly brushwork, framed picture, "
+    "border band, contrasting perimeter, white halo, "
+    "cloudy edge, muddy edge, shoreline border, land ring, dark corners, "
+    "gradient edge, drop shadow, isolated patch"
 )
 
 # NOTE: the bare word "background" is deliberately NOT negative here - the
@@ -287,9 +295,9 @@ NEGATIVE_UNIT = (
 #   terrain slots  (one call per terrain)
 #     SURFACE_FORM    macro shape / kind of terrain
 #     BASE_MATERIAL   dominant ground material
-#     TEXTURE_DETAIL  micro texture and small structures
+#     TEXTURE_DETAIL  broad, low-frequency ground pattern
 #     ACCENT_ELEMENT  scattered decorations on the surface
-#     EDGE_ELEMENT    small details toward the tile corners
+#     EDGE_ELEMENT    ordinary surface continuation at image boundaries
 #     LIGHTING_NOTE   light / shadow / mood sentence
 #     COLOR_PALETTE   concrete colour range of this terrain
 #
@@ -321,22 +329,26 @@ GLOBAL_THEME_FORBIDDEN = [
 
 GLOBAL_SLOT_SPECS = [
     {"name": "THEME_PHRASE",
-     "help": "the shared mood of the whole asset set - ONLY a season, a time of "
-             "day and a light quality (3-8 words), never a place, story, event "
-             "or object",
-     "max_words": 8, "forbidden": GLOBAL_THEME_FORBIDDEN},
+     "help": "a short label for the requested theme, without changing any "
+             "subject identity, terrain material, dominant colors, or lighting",
+     "max_words": 8,
+     "forbidden": GLOBAL_THEME_FORBIDDEN + ["dusk", "twilight", "night", "dark",
+                   "dramatic", "eerie", "spooky", "flickering", "glow",
+                   "spectral", "gloom"]},
     {"name": "GLOBAL_PALETTE",
-     "help": "the shared colour mood of the whole asset set - only colours and "
-             "tones, 3-6 words, no light, no shadows, no sun; always vivid and "
-             "saturated colours, never muted, pastel or washed out",
+     "help": "one or two restrained accent colors for tiny decorations only; "
+             "never the dominant colors of terrain, animals, or materials",
      "max_words": 8, "forbidden": ["light", "shadow", "glow", "sun", "moon",
-                                    "ray", "beam", "muted", "pastel",
-                                    "desaturated", "washed", "faded", "dull",
-                                    "dusty"]},
+                                     "ray", "beam", "muted", "pastel",
+                                     "desaturated", "washed", "faded", "dull",
+                                     "dusty", "black", "neon", "lurid",
+                                     "spectral", "ghostly", "fluorescent"]},
     {"name": "GLOBAL_LIGHTING",
-     "help": "the shared lighting mood of the whole asset set - only the "
-             "quality and direction of the light, 3-6 words",
-     "max_words": 8, "not_color_list": True},
+     "help": "neutral, even daylight shared by the whole set; no colored glow "
+             "or dramatic shadows",
+     "max_words": 8, "not_color_list": True,
+             "forbidden": ["dusk", "twilight", "night", "dark", "dramatic", "glow",
+                   "flickering", "colored", "neon"]},
 ]
 
 # Colour words - a slot that is nothing but a list of these describes a
@@ -360,6 +372,10 @@ COLOR_WORDS = {
 # ``theme: False`` marks a slot that must describe the *physical* surface
 # only - the theme must never leak into it (that is what turned a forest into
 # a battlefield or an ocean into an ice field).
+_TERRAIN_FRAME_BANS = [
+    "border", "rim", "frame", "ring", "halo", "vignette", "shoreline",
+    "beach", "dark corners", "white perimeter", "gradient edge",
+]
 TERRAIN_SLOT_SPECS = [
     {"name": "SURFACE_FORM",
      "help": "the overall kind of terrain, e.g. 'vast frozen glacial ice plain'",
@@ -368,22 +384,33 @@ TERRAIN_SLOT_SPECS = [
      "help": "the dominant ground material of the surface",
      "max_words": 10, "theme": False},
     {"name": "TEXTURE_DETAIL",
-     "help": "micro texture and small structures spread across the surface",
-     "max_words": 14, "theme": False},
+     "help": "one or two broad, low-frequency ground patterns; simple and "
+             "readable at small map scale, never fine or intricate",
+     "max_words": 14, "theme": False,
+     "forbidden": ["micro", "intricate", "busy", "dense", "high-frequency",
+                   "bioluminescent", "neon", "spectral", "glowing", "glow",
+                   "veins", "sparkling", "runes", "webs", "bones"]
+                   + _TERRAIN_FRAME_BANS},
     {"name": "ACCENT_ELEMENT",
-     "help": "small scattered decorations lying on the surface",
-     "max_words": 14, "theme": False},
+     "help": "at most a few sparse, low-contrast details; no dense scatter or "
+             "theme decoration",
+     "max_words": 14, "theme": False,
+     "forbidden": ["dense", "intricate", "neon", "spectral", "glowing",
+                   "glow", "bioluminescent", "runes", "webs", "bones",
+                   "debris", "sparkling"]},
     {"name": "EDGE_ELEMENT",
-     "help": "tiny details placed toward the tile corners",
-     "max_words": 14, "theme": False},
+     "help": "ordinary continuation of the same surface through the image "
+             "boundary; no separate border, rim, or corner ornament",
+     "max_words": 14, "theme": False,
+     "forbidden": _TERRAIN_FRAME_BANS},
     {"name": "LIGHTING_NOTE",
-     "help": "one short sentence about the light and shadow falling on this "
-             "terrain - it must match the theme",
-     "max_words": 14, "theme": True},
+     "help": "one short sentence describing clear, neutral, even daylight and "
+             "soft minimal shadows",
+     "max_words": 14, "theme": False},
     {"name": "COLOR_PALETTE",
-     "help": "the concrete colour range of this terrain - vivid and saturated, "
-             "it must match the theme",
-     "max_words": 10, "theme": True},
+     "help": "the terrain's natural dominant colors only, in a small clear "
+             "range; ignore the theme and do not include accent colors",
+     "max_words": 10, "theme": False},
 ]
 
 FEATURE_SLOT_SPECS = [
@@ -402,8 +429,8 @@ FEATURE_SLOT_SPECS = [
      "help": "the natural colour range of the feature's own material",
      "max_words": 10, "theme": False},
     {"name": "FEATURE_LIGHTING",
-     "help": "how the light falls on the feature - it must match the theme",
-     "max_words": 10, "theme": True},
+     "help": "neutral even light that keeps the feature's natural colors clear",
+     "max_words": 10, "theme": False},
     {"name": "FEATURE_RENDERING",
      "help": "the rendering treatment, e.g. 'clean dark outlines with soft cell "
              "shading'",
@@ -479,14 +506,13 @@ TERRAIN_PALETTE_ANCHORS = {
     "hills": ["green", "brown", "olive", "earth", "tan"],
     "jungle": ["green", "emerald", "olive", "lime", "jade", "forest"],
     "mountains": ["grey", "gray", "brown", "slate", "stone", "mauve"],
-    "ocean": ["blue", "navy", "sapphire", "teal", "cyan", "aqua", "indigo",
-              "turquoise", "sea green"],
+    "ocean": ["blue", "sapphire", "teal", "cyan", "aqua", "turquoise",
+              "sea green"],
     "plains": ["gold", "green", "olive", "straw", "tan", "amber", "yellow"],
     "river": ["blue", "teal", "cyan", "aqua", "green", "turquoise", "sapphire"],
     "swamp": ["olive", "brown", "green", "murky", "moss", "umber", "muddy"],
     "tundra": ["grey", "gray", "green", "moss", "lichen", "olive", "pale", "brown"],
 }
-
 # A short, fixed clause that pins the material of a terrain down.  The
 # abstract slots still describe every detail, but the tile can never stop
 # being the terrain it is supposed to be.
@@ -524,6 +550,15 @@ TERRAIN_COLOR_FORBIDDEN = {
     terrain: [w for w in words if w not in _COLOR_SAFE_WORDS]
     for terrain, words in TERRAIN_FORBIDDEN.items()
 }
+_THEME_COLOR_FORBIDDEN = [
+    "black", "crimson", "magenta", "purple", "violet", "lavender", "neon",
+    "lurid", "spectral", "ghostly", "fluorescent", "electric", "glowing",
+]
+for _terrain in TERRAIN_COLOR_FORBIDDEN:
+    TERRAIN_COLOR_FORBIDDEN[_terrain].extend(_THEME_COLOR_FORBIDDEN)
+TERRAIN_COLOR_FORBIDDEN["ocean"].extend(["navy", "indigo", "deep", "dark"])
+TERRAIN_COLOR_FORBIDDEN["grassland"].extend(
+    ["dark", "deep", "muddy", "orange", "amber", "burnt", "pumpkin"])
 
 # Extra hard constraints that must survive every variation.
 TERRAIN_EXTRA_CONSTRAINTS = {
@@ -554,14 +589,12 @@ TERRAIN_VARIANTS = 3
 # three notes are cycled per variant; they only ever describe arrangement and
 # scale, never a different material, colour or light.
 TERRAIN_VARIANT_NOTES = (
-    "This tile is variant 1 of 3: the pattern lies in a broad, open, even "
-    "arrangement with room to breathe.",
-    "This tile is variant 2 of 3: the same ground pattern is arranged "
-    "differently, with its shapes grouped more closely and turned at another "
-    "angle than in its sibling tiles.",
-    "This tile is variant 3 of 3: the same ground pattern is arranged "
-    "differently again, with a finer, denser scatter of its shapes than in its "
-    "sibling tiles.",
+    "This is variant 1 of 3: use a broad, calm arrangement of the same terrain "
+    "shapes and scale.",
+    "This is variant 2 of 3: rearrange the same terrain shapes without adding "
+    "detail or changing their scale.",
+    "This is variant 3 of 3: rearrange the same terrain shapes again, keeping "
+    "the same density, scale, and palette.",
 )
 
 # --- abstract terrain templates -------------------------------------------
@@ -569,11 +602,12 @@ TERRAIN_VARIANT_NOTES = (
 TERRAIN_SUBJECT_TEMPLATE = "a #SURFACE_FORM#"
 
 TERRAIN_DETAILS_TEMPLATE = (
-    "A continuous surface of #BASE_MATERIAL# with #TEXTURE_DETAIL#, "
-    "#ACCENT_ELEMENT#, and #EDGE_ELEMENT#. #LIGHTING_NOTE# The surface is "
-    "rendered in #COLOR_PALETTE#, unified by #GLOBAL_PALETTE# and "
-    "#GLOBAL_LIGHTING#. Every colour is vivid and saturated - strong clear "
-    "hues, no muted or dusty tones - and the surface stays perfectly flat."
+    "A continuous surface of #BASE_MATERIAL# with #TEXTURE_DETAIL# and only "
+    "#ACCENT_ELEMENT#. #EDGE_ELEMENT#. #LIGHTING_NOTE# #GLOBAL_LIGHTING#. "
+    "The dominant terrain colors are #COLOR_PALETTE#. Use #GLOBAL_PALETTE# "
+    "only for a few tiny "
+    "secondary accents, never to tint or replace the ground colors. Keep the "
+    "surface flat, simple, and recognizable at small map scale."
 )
 
 # --- abstract feature templates -------------------------------------------
@@ -581,14 +615,16 @@ TERRAIN_DETAILS_TEMPLATE = (
 FEATURE_SUBJECT_TEMPLATE = "a single #FEATURE_KIND#"
 
 FEATURE_DETAILS_TEMPLATE = (
-    "The feature is #FEATURE_FORM#, with #FEATURE_DETAIL#. It is painted in "
-    "#FEATURE_PALETTE# and unified by #GLOBAL_PALETTE#. #FEATURE_LIGHTING#. "
+    "The feature is #FEATURE_FORM#, with #FEATURE_DETAIL#. Its natural "
+    "material colors are #FEATURE_PALETTE#; #GLOBAL_PALETTE# may appear only "
+    "as a tiny accent. #FEATURE_LIGHTING#. "
     "#FEATURE_RENDERING#."
 )
 
 UNIT_DETAILS_TEMPLATE = (
-    "The unit is #FEATURE_FORM#, with #FEATURE_DETAIL#. It is painted in "
-    "#FEATURE_PALETTE# and unified by #GLOBAL_PALETTE#. #FEATURE_LIGHTING#. "
+    "The unit is #FEATURE_FORM#, with #FEATURE_DETAIL#. Its natural "
+    "material colors are #FEATURE_PALETTE#; #GLOBAL_PALETTE# may appear only "
+    "as a tiny accent. #FEATURE_LIGHTING#. "
     "#FEATURE_RENDERING#."
 )
 
@@ -596,117 +632,117 @@ UNIT_DETAILS_TEMPLATE = (
 
 GLOBAL_FALLBACKS = {
     "THEME_PHRASE": "balanced natural daylight",
-    "GLOBAL_PALETTE": "a shared palette of vivid saturated natural colours",
-    "GLOBAL_LIGHTING": "clear even natural daylight",
+    "GLOBAL_PALETTE": "sparse natural accent colors",
+    "GLOBAL_LIGHTING": "clear neutral daylight",
 }
 
 TERRAIN_FALLBACKS = {
     "arctic": {
         "SURFACE_FORM": "vast frozen arctic ice plain",
         "BASE_MATERIAL": "packed white-blue glacial ice",
-        "TEXTURE_DETAIL": "deep cracked crevasses and raised pressure ridges",
-        "ACCENT_ELEMENT": "drifting snow patches and pale frost crystals sparkling along the ridges",
-        "EDGE_ELEMENT": "small shards of translucent ice near the tile corners",
-        "LIGHTING_NOTE": "Subtle pale blue shadows pool inside the crevasses",
+        "TEXTURE_DETAIL": "broad smooth ice fields with a few wide pressure ridges",
+        "ACCENT_ELEMENT": "a few sparse pale snow patches",
+        "EDGE_ELEMENT": "the same ice surface continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
         "COLOR_PALETTE": "white, ice blue and pale frost grey tones",
     },
     "desert": {
         "SURFACE_FORM": "sun-scorched desert of golden sand dunes",
         "BASE_MATERIAL": "rolling ochre and golden sand",
-        "TEXTURE_DETAIL": "soft wind-rippled dune ridges and dry cracked patches of pale earth",
-        "ACCENT_ELEMENT": "scattered small smooth pebbles",
-        "EDGE_ELEMENT": "sparse tiny cactus and dry brush near the tile edges",
-        "LIGHTING_NOTE": "Warm sunlight rakes across the dune ridges",
+        "TEXTURE_DETAIL": "broad wind-shaped dune bands with simple smooth shading",
+        "ACCENT_ELEMENT": "a few sparse small stones",
+        "EDGE_ELEMENT": "the same sand surface continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
         "COLOR_PALETTE": "ochre, gold and sun-bleached tan tones",
     },
     "forest": {
         "SURFACE_FORM": "temperate forest floor ground surface",
         "BASE_MATERIAL": "dark brown forest soil",
-        "TEXTURE_DETAIL": "fallen leaves, small ferns, moss patches, twigs and scattered acorns",
-        "ACCENT_ELEMENT": "dappled light patterns shifting across the soil",
-        "EDGE_ELEMENT": "a few low-growing forest plants toward the tile corners",
-        "LIGHTING_NOTE": "Soft dappled sunlight filters through onto the ground",
+        "TEXTURE_DETAIL": "broad patches of soil, moss, and fallen leaves",
+        "ACCENT_ELEMENT": "a few sparse leaves and twigs",
+        "EDGE_ELEMENT": "the same forest floor continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
         "COLOR_PALETTE": "dark browns, deep greens and mossy tones",
     },
     "grassland": {
         "SURFACE_FORM": "open green grassland",
         "BASE_MATERIAL": "lush bright green meadow grass",
-        "TEXTURE_DETAIL": "soft rolling tufts with a gentle carpet-like shading",
-        "ACCENT_ELEMENT": "tiny wildflowers in yellow and white and a few small rounded bushes",
-        "EDGE_ELEMENT": "scattered grass tufts near the tile corners",
+        "TEXTURE_DETAIL": "broad, softly shaded patches of short meadow grass",
+        "ACCENT_ELEMENT": "a few sparse tiny yellow and white flowers",
+        "EDGE_ELEMENT": "the same grass surface continues uniformly, without a distinct edge",
         "LIGHTING_NOTE": "Even natural daylight lays soft green shading across the meadow",
         "COLOR_PALETTE": "fresh greens with yellow and white accents",
     },
     "hills": {
         "SURFACE_FORM": "cluster of smooth rolling green and brown hills",
         "BASE_MATERIAL": "grassy sod hilltops packed tightly across the surface",
-        "TEXTURE_DETAIL": "green grass on top and exposed light brown earth on the steep sides",
-        "ACCENT_ELEMENT": "small rocky outcrops and a few shrubs between the hills",
-        "EDGE_ELEMENT": "gentle hill slopes fading toward the tile corners",
-        "LIGHTING_NOTE": "Soft directional light models the hill curvature",
+        "TEXTURE_DETAIL": "broad green slopes with simple light-brown earth bands",
+        "ACCENT_ELEMENT": "a few sparse rocks between the hills",
+        "EDGE_ELEMENT": "the same hill pattern continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
         "COLOR_PALETTE": "greens and light earth browns",
     },
     "jungle": {
         "SURFACE_FORM": "tropical jungle floor ground surface",
         "BASE_MATERIAL": "dark moist soil covered in dense moss",
-        "TEXTURE_DETAIL": "small ferns, tropical leaf litter and low ground vines",
-        "ACCENT_ELEMENT": "scattered exotic leaf debris and tiny sprouting plants",
-        "EDGE_ELEMENT": "creeping vines reaching toward the tile corners",
-        "LIGHTING_NOTE": "Humid dim light with deep soft shadows",
+        "TEXTURE_DETAIL": "broad patches of dark soil and simple tropical leaf shapes",
+        "ACCENT_ELEMENT": "a few sparse leaves on the ground",
+        "EDGE_ELEMENT": "the same jungle floor continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
         "COLOR_PALETTE": "dark greens and moist earth browns",
     },
     "mountains": {
         "SURFACE_FORM": "rocky mountain ground surface",
         "BASE_MATERIAL": "grey-brown scree and broken rocks",
-        "TEXTURE_DETAIL": "gravel, shattered stone and patches of bare rock",
-        "ACCENT_ELEMENT": "sharp-edged rock fragments",
-        "EDGE_ELEMENT": "loose gravel drifting toward the tile corners",
-        "LIGHTING_NOTE": "Crisp high-altitude light throws hard small shadows",
+        "TEXTURE_DETAIL": "broad patches of bare rock and coarse scree",
+        "ACCENT_ELEMENT": "a few sparse larger stones",
+        "EDGE_ELEMENT": "the same rocky surface continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
         "COLOR_PALETTE": "greys and muted browns",
     },
     "ocean": {
         "SURFACE_FORM": "deep open ocean water surface",
         "BASE_MATERIAL": "natural blue water with realistic depth transparency",
-        "TEXTURE_DETAIL": "subtle realistic surface ripples and gentle wave crests with white sea foam",
-        "ACCENT_ELEMENT": "light caustic patterns shifting across the surface",
-        "EDGE_ELEMENT": "lighter turquoise shallows toward the tile corners",
-        "LIGHTING_NOTE": "Bright daylight sparkles on the moving water",
+        "TEXTURE_DETAIL": "broad, calm blue wave bands with simple cyan highlights",
+        "ACCENT_ELEMENT": "a few small pale wave crests",
+        "EDGE_ELEMENT": "the same blue water continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal highlights",
         "COLOR_PALETTE": "layered blues with turquoise accents",
     },
     "plains": {
         "SURFACE_FORM": "open dry plains",
         "BASE_MATERIAL": "dry golden-green plain grassland with short patchy grass",
-        "TEXTURE_DETAIL": "small tufts of wheat-coloured steppe grass",
-        "ACCENT_ELEMENT": "scattered tiny stones and a few small dry shrubs",
-        "EDGE_ELEMENT": "patchy dry grass toward the tile corners",
-        "LIGHTING_NOTE": "Warm natural light with a dry hazy softness",
+        "TEXTURE_DETAIL": "broad patches of short golden-green steppe grass",
+        "ACCENT_ELEMENT": "a few sparse small stones",
+        "EDGE_ELEMENT": "the same dry grass surface continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
         "COLOR_PALETTE": "warm earthy golden-green tones",
     },
     "river": {
         "SURFACE_FORM": "winding fresh water river",
         "BASE_MATERIAL": "natural blue river water with realistic depth transparency",
-        "TEXTURE_DETAIL": "subtle realistic surface ripples and a naturally varied water flow",
-        "ACCENT_ELEMENT": "smooth river stones along the banks",
-        "EDGE_ELEMENT": "bright green grassy banks with small reeds at the water edge",
-        "LIGHTING_NOTE": "Clear daylight reflects off the moving water",
+        "TEXTURE_DETAIL": "broad blue current bands with simple turquoise highlights",
+        "ACCENT_ELEMENT": "a few sparse stones along the water",
+        "EDGE_ELEMENT": "the same river surface continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal highlights",
         "COLOR_PALETTE": "fresh blues and greens",
     },
     "swamp": {
         "SURFACE_FORM": "murky swamp ground surface",
         "BASE_MATERIAL": "dark muddy water and brown-green stagnant pools",
-        "TEXTURE_DETAIL": "marsh grass tufts, lily pads and soft muddy banks",
-        "ACCENT_ELEMENT": "floating lily pads drifting on the still water",
-        "EDGE_ELEMENT": "marsh grass thickening toward the tile corners",
-        "LIGHTING_NOTE": "Dim overcast light with murky soft shadows",
+        "TEXTURE_DETAIL": "broad patches of muddy water and olive marsh grass",
+        "ACCENT_ELEMENT": "a few sparse lily pads",
+        "EDGE_ELEMENT": "the same swamp surface continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
         "COLOR_PALETTE": "dark olives, browns and muddy greens",
     },
     "tundra": {
         "SURFACE_FORM": "cold windswept tundra",
         "BASE_MATERIAL": "pale grey-green tundra ground",
-        "TEXTURE_DETAIL": "patches of dry moss and lichen and thin brittle grass tufts",
-        "ACCENT_ELEMENT": "scattered small rocks and dirty melting snow in the shade",
-        "EDGE_ELEMENT": "lichen patches creeping toward the tile corners",
-        "LIGHTING_NOTE": "Cold diffuse light with muted shadows",
+        "TEXTURE_DETAIL": "broad pale patches of moss, lichen, and frozen soil",
+        "ACCENT_ELEMENT": "a few sparse small stones",
+        "EDGE_ELEMENT": "the same tundra surface continues uniformly, without a distinct edge",
+        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
         "COLOR_PALETTE": "muted grey-green and pale cold tones",
     },
 }
@@ -793,35 +829,31 @@ MOUNTAIN_ATMOSPHERE = [
     ("Low mist wraps the valleys beneath the range while the peaks stay clear.", 0.10),
 ]
 
-# The second mountain image always carries a dramatic extra feature -
-# one of these is rolled per iteration.
+# The second mountain image carries a restrained ground-surface variation,
+# not a new scene or structure. One broad natural variation is rolled per run.
 MOUNTAIN_CRAZY = [
-    "One central peak is an erupting volcano, glowing orange lava rivers spill down its flanks.",
-    "A huge waterfall plunges between two of the peaks and wreathes their lower slopes in mist.",
-    "Giant glowing crystal spires grow out of the central rock faces and cast coloured light.",
-    "One summit is a lush green rocky island with tiny trees, the other peaks stay bare rock.",
-    "An ancient ruined stone watchtower sits on one summit, wrapped in drifting cloud.",
-    "A colossal natural rock arch spans two of the peaks high above the ground.",
+    "One broad pale scree fan crosses the rocky ground in a simple natural shape.",
+    "A few broad slate-gray stone bands cross the otherwise uniform ground.",
+    "A small number of large muted-brown boulder patches break up the gray scree.",
+    "One broad light-gray limestone area contrasts with the surrounding rock.",
+    "Wide natural bands of gray and brown scree form a calm, readable pattern.",
+    "A few large flat stone slabs lie among broad patches of coarse scree.",
 ]
 
 # When the run carries a direction keyword (--theme-keyword), feature slot
-# resolution may use themed dressing and swap featured animals for close
-# equivalents. The unit resolver deliberately does not receive this clause:
-# unit identities and their historical/mechanical forms stay stable.
-THEMED_EQUIVALENT_CLAUSE = (
-    "The run direction keyword allows heavy themed dressing, and where the "
-    "subject is an animal it MAY be swapped for a close themed equivalent "
-    "(for example a skeleton horse or ghost horse at Halloween, a reindeer "
-    "at Christmas, a sea serpent at Transylvania) as long as the core animal "
-    "noun stays clearly recognisable"
+# resolution allows only restrained accents; the animal/object identity and
+# natural colors stay fixed.
+THEME_ACCENT_CLAUSE = (
+    "The theme may add at most one small secondary-color accent or tiny "
+    "decoration. Never replace, transform, or obscure the subject; an animal "
+    "must remain the same recognizable animal with natural anatomy and colors"
 )
 
 # ===========================================================================
 # ART-STYLE keywords (--style-keyword)
 #
-# A style is NOT a theme: a theme dresses the subjects (snow, vampires,
-# hearts) and may swap them for themed equivalents; a style only changes HOW
-# everything is rendered (technique, linework, shading, medium).  The
+# A style is NOT a theme: a theme may add sparse small accents; a style changes
+# HOW everything is rendered (technique, linework, shading, medium). The
 # selected subject identities stay completely untouched.  The style text is
 # injected deterministically into both the terrain and the feature/unit
 # prompt templates, so even fallback prompts carry it.
@@ -846,8 +878,9 @@ STYLE_DESCRIPTIONS: dict[str, str] = {
         "Japanese manga art: crisp black-and-white ink work, screentone "
         "shading, clean economical linework, expressive emphasis strokes",
     "pixel_art":
-        "16-bit pixel art sprite: chunky readable pixels, limited retro "
-        "SNES-era palette, hard pixel edges, dithered shading",
+        "16-bit strategy-game pixel art: chunky readable pixels, a limited "
+        "clear palette, hard pixel edges, broad color clusters, and simple "
+        "two- or three-tone shading; no dithering, gradients, or texture noise",
     "papercraft":
         "layered papercraft: cut-paper shapes with visible paper edges and "
         "fold seams, stacked depth layers, soft cast paper shadows",
@@ -1470,6 +1503,72 @@ UNIT_SPECS: dict[str, dict[str, Any]] = {
 UNIT_SPECS = {f"unit_{key}": UNIT_SPECS[f"unit_{key}"]
               for key in UNIT_KEY_ORDER}
 
+
+def read_game_unit_keys() -> list[str]:
+    """Every unit key the game defines in ``UNIT_TYPES`` (UnitConstants.ts).
+
+    Returns [] when the game source cannot be read - the generator then
+    falls back to its hand-maintained built-in list.
+    """
+    try:
+        src = UNIT_CONSTANTS_PATH.read_text()
+    except OSError:
+        return []
+    match = re.search(r"export const UNIT_TYPES\s*=\s*\{(.*?)\}\s*as const",
+                      src, re.S)
+    if not match:
+        return []
+    return re.findall(r":\s*'([a-z_0-9]+)'", match.group(1))
+
+
+def sync_game_units() -> list[str]:
+    """Fold every unit the game defines into the generator's unit set.
+
+    The built-in ``UNIT_KEY_ORDER`` mirrors the shipped ruleset, but a unit
+    added to ``UNIT_TYPES`` later would silently get no sprite. This picks
+    new keys up automatically: a generic spec is written when the hand-tuned
+    table has none yet, and an SVG named exactly after the key (even without
+    a ``UNIT_SVG_FILES`` entry) turns it into an img2img source. Returns the
+    keys that were picked up; [] means already in sync (or no game source).
+    """
+    game_keys = read_game_unit_keys()
+    if not game_keys:
+        print(f"[!] unit sync: {UNIT_CONSTANTS_PATH.name} unreadable - "
+              f"generating the built-in set of {len(UNIT_KEY_ORDER)} units")
+        return []
+    known = set(UNIT_KEY_ORDER)
+    dropped = [key for key in UNIT_KEY_ORDER if key not in set(game_keys)]
+    if dropped:
+        print(f"[!] unit sync: units the game does not define (typo?): "
+              f"{', '.join(dropped)}")
+    added: list[str] = []
+    label = lambda key: key.replace("_", " ")  # noqa: E731
+    for key in game_keys:
+        if key in known:
+            continue
+        stem = f"unit_{key}"
+        if stem not in UNIT_SPECS:
+            UNIT_SPECS[stem] = _unit_spec(
+                label(key),
+                [w for w in key.split("_") if len(w) > 2],
+                f"the {label(key)} game unit in three-quarter isometric "
+                "view, centered, complete and clearly recognisable",
+                "clean appropriate material detail for its role",
+                "the shared unit palette of the set",
+                identity=f"the {label(key)} game unit",
+            )
+        UNIT_KEY_ORDER.append(key)
+        UNIT_STEM_ORDER.append(stem)
+        added.append(key)
+        # without a UNIT_SVG_FILES mapping, a same-named svg is still candy
+        if not UNIT_SVG_FILES.get(key) and (UNIT_ICON_DIR / f"{key}.svg").exists():
+            UNIT_SVG_FILES[key] = f"{key}.svg"
+    if added:
+        print(f"[*] unit sync: picked up new game units: {', '.join(added)}")
+    else:
+        print(f"[*] unit sync: {len(UNIT_KEY_ORDER)} game units, all covered")
+    return added
+
 # Every unit that shows a person or an animal additionally carries the
 # limb-completeness clause; pure machines (tank, cannon, ships, ...) do not
 # have arms or legs, so the clause would only confuse the prompt there.
@@ -1561,9 +1660,8 @@ def rasterise_unit_svg(unit_key: str, dst: Path, width: int = 320) -> bool:
 FEATURE_SPECS = {
     "fish": {
         "identity": "a single fish",
-        # 'shark'/'piranha'/'koi' let themed runs swap in a close equivalent
         "anchors": ["fish", "carp", "trout", "salmon", "perch", "pike", "eel",
-                    "shark", "piranha", "koi"],
+                    "koi"],
         "fallbacks": {
             "FEATURE_KIND": "fish",
             "FEATURE_FORM": "a streamlined body with a forked tail and clearly separated fins",
@@ -1783,9 +1881,7 @@ FEATURE_SPECS = {
     "game": {
         "identity": "a single wild game animal",
         "kind_help": "a plain animal noun such as 'stag', 'elk' or 'roe deer' - one animal",
-        # 'reindeer'/'doe' let themed runs swap in a close equivalent
-        "anchors": ["deer", "stag", "elk", "roe deer", "buck", "reindeer",
-                    "doe"],
+        "anchors": ["deer", "stag", "elk", "roe deer", "buck", "doe"],
         "fallbacks": {
             "FEATURE_KIND": "stag",
             "FEATURE_FORM": "an alert stag standing with the head raised and a fine branching antler crown",
@@ -2612,10 +2708,11 @@ def build_terrain_prompt(terrain: str, theme: str, global_values: dict[str, str]
             theme=theme,
             context=(
                 "The result is a flat 2D ground texture seen from directly "
-                "above - no depth, no height, no cliffs, no camera view - so "
-                "describe only the surface, never objects standing on it. "
-                "Every colour phrase must be vivid and saturated: no muted, "
-                "pastel, dusty, washed-out or gloomy words"
+                "above - no depth, no height, no cliffs, no camera view. "
+                "Terrain identity and its natural base colors dominate. Use "
+                "broad, low-frequency patterns and sparse details. The theme "
+                "may affect only tiny secondary accents; lighting stays "
+                "neutral and even."
             ),
             anchors={
                 "SURFACE_FORM": TERRAIN_ANCHORS.get(terrain, []),
@@ -2702,7 +2799,12 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
             "kind of subject."
         )
     else:
-        art_direction = FEATURE_ART_DIRECTION
+        art_direction = (
+            f"Selected art style: {style_desc}"
+            if style_desc else FEATURE_ART_DIRECTION
+        )
+        if style_desc:
+            style_text = ""
         unit_context = ""
 
     # per-slot bans for FEATURE_KIND: pose/detail words belong to FEATURE_FORM
@@ -2786,8 +2888,7 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
                     "Matching the selected shared unit-set art direction")
             elif style_desc:
                 values["FEATURE_RENDERING"] = (
-                    "Rendered completely in the selected art style: "
-                    f"{style_desc}.")
+                    "Rendered consistently in the selected art style")
             elif is_unit:
                 values["FEATURE_RENDERING"] = (
                     "Matching the shared serious inked unit-set illustration style")
@@ -3163,6 +3264,91 @@ def clean_terrain_tile(png_path: Path) -> None:
     cv2.imwrite(str(png_path), out)
 
 
+def _nearest_palette_color(values: np.ndarray, palette: np.ndarray) -> np.ndarray:
+    """Snap RGB values to an existing pixel-art palette."""
+    shape = values.shape
+    flat = values.reshape(-1, 3).astype(np.float32)
+    distances = ((flat[:, None, :] - palette[None, :, :]) ** 2).sum(axis=2)
+    return palette[distances.argmin(axis=1)].reshape(shape)
+
+
+def repair_terrain_edges(png_path: Path, crop_fraction: float = 0.10,
+                         blend_fraction: float = 0.08,
+                         pixel_art: bool = False) -> None:
+    """Remove generated perimeter framing and make opposite edges tileable.
+
+    A centered crop removes common halos, rims, shorelines, and vignettes, then
+    restores the original dimensions. A short wrap blend makes opposing edges
+    agree exactly; pixel-art blends are snapped to colors already in the image.
+    """
+    try:
+        image = Image.open(png_path).convert("RGB")
+    except Exception as exc:
+        print(f"    [!] could not repair terrain edges for {png_path.name}: {exc}")
+        return
+
+    width, height = image.size
+    crop_x = max(0, min(round(width * crop_fraction), max(0, (width - 2) // 2)))
+    crop_y = max(0, min(round(height * crop_fraction), max(0, (height - 2) // 2)))
+    if crop_x or crop_y:
+        image = image.crop((crop_x, crop_y, width - crop_x, height - crop_y))
+        resampling = Image.NEAREST if pixel_art else Image.LANCZOS
+        image = image.resize((width, height), resampling)
+
+    if blend_fraction > 0:
+        arr = np.array(image).astype(np.float32)
+        height, width = arr.shape[:2]
+        band_x = min(max(1, round(width * blend_fraction)), width // 4)
+        band_y = min(max(1, round(height * blend_fraction)), height // 4)
+
+        palette = None
+        if pixel_art:
+            colors, counts = np.unique(
+                arr.astype(np.uint8).reshape(-1, 3), axis=0, return_counts=True,
+            )
+            if len(colors) > 128:
+                colors = colors[np.argsort(counts)[-128:]]
+            palette = colors.astype(np.float32)
+
+        def shared_edge_color(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+            shared = (a + b) * 0.5
+            return _nearest_palette_color(shared, palette) if palette is not None else shared
+
+        # Blend left/right pairs. At the outermost pixels the pair is identical;
+        # the influence falls smoothly to zero inside the band.
+        for offset in range(band_x):
+            strength = 1.0 - offset / band_x
+            left = arr[:, offset, :].copy()
+            right = arr[:, width - 1 - offset, :].copy()
+            shared = shared_edge_color(left, right)
+            next_left = left + (shared - left) * strength
+            next_right = right + (shared - right) * strength
+            if palette is not None:
+                next_left = _nearest_palette_color(next_left, palette)
+                next_right = _nearest_palette_color(next_right, palette)
+            arr[:, offset, :] = next_left
+            arr[:, width - 1 - offset, :] = next_right
+
+        # Repeat for top/bottom. This preserves the left/right equality at the
+        # four corners while making every opposing edge pair seamless.
+        for offset in range(band_y):
+            strength = 1.0 - offset / band_y
+            top = arr[offset, :, :].copy()
+            bottom = arr[height - 1 - offset, :, :].copy()
+            shared = shared_edge_color(top, bottom)
+            next_top = top + (shared - top) * strength
+            next_bottom = bottom + (shared - bottom) * strength
+            if palette is not None:
+                next_top = _nearest_palette_color(next_top, palette)
+                next_bottom = _nearest_palette_color(next_bottom, palette)
+            arr[offset, :, :] = next_top
+            arr[height - 1 - offset, :, :] = next_bottom
+
+        image = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGB")
+
+    image.save(png_path, "PNG")
+
+
 def tile_is_usable(png_path: Path) -> bool:
     """Reject tiles that are (almost) completely black or blown out."""
     try:
@@ -3424,6 +3610,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="classifier-free guidance scale")
     parser.add_argument("--size", type=int, default=int(os.environ.get("SIZE", "512")),
                         help="terrain tile size in pixels")
+    parser.add_argument("--edge-crop", type=float,
+                        default=float(os.environ.get("EDGE_CROP", "0.10")),
+                        help="crop this fraction from every terrain edge, then resize back")
+    parser.add_argument("--edge-blend", type=float,
+                        default=float(os.environ.get("EDGE_BLEND", "0.08")),
+                        help="wrap-blend this fraction of opposite terrain edges for seamless tiling")
     parser.add_argument("--feature-size", type=int,
                         default=int(os.environ.get("FEATURE_SIZE", "256")),
                         help="feature sprite width in pixels (height is 1.5x)")
@@ -3468,12 +3660,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--qwen-model", default=str(QWEN_MODEL))
     parser.add_argument("--theme-keyword",
                         default=os.environ.get("THEME_KEYWORD", ""),
-                        help="one art-direction keyword for this whole run "
-                             "(e.g. Halloween, Christmas, 'Transylvania and "
-                             "vampires', Easter) - theme, palette, lighting "
-                             "and every slot phrase are clearly shot through "
-                             "with it, and feature animals may swap to close "
-                             "themed equivalents")
+                        help="one theme keyword for sparse small accents only "
+                             "(e.g. Halloween, Christmas, Easter); terrain "
+                             "materials, natural colors, identities and "
+                             "neutral lighting stay unchanged")
     parser.add_argument("--style-keyword",
                         default=os.environ.get("STYLE_KEYWORD", ""),
                         help="one art STYLE for this whole run (a STYLE_KEYS "
@@ -3617,20 +3807,30 @@ def main() -> int:
     global LLAMA_RESTART_HOOK
     args = build_parser().parse_args()
     theme_keyword = args.theme_keyword.strip()
+    if not 0 <= args.edge_crop < 0.25:
+        print("[-] --edge-crop must be in the range [0, 0.25)")
+        return 2
+    if not 0 <= args.edge_blend <= 0.25:
+        print("[-] --edge-blend must be in the range [0, 0.25]")
+        return 2
     if theme_keyword:
-        print(f"[*] direction keyword: {theme_keyword!r} - theme, palette, "
-              f"lighting and slot phrases will be shot through with it")
+        print(f"[*] direction keyword: {theme_keyword!r} - restrained small "
+              f"accents only; terrain identity and natural colors stay fixed")
     style_name, style_desc, style_context = "", "", ""
     if args.style_keyword.strip():
         style_name, style_desc = resolve_style(args.style_keyword)
         style_context = style_clauses(style_name, style_desc)
         print(f"[*] art style: {style_name} - rendering only, identities "
               f"untouched")
+    pixel_art_terrain = "pixel" in style_desc.lower()
     unit_style_name, unit_style_desc = "", ""
     if args.unit_style_keyword.strip():
         unit_style_name, unit_style_desc = resolve_style(args.unit_style_keyword)
         print(f"[*] unit art style: {unit_style_name} - units only, identities "
               f"untouched")
+    print(f"[*] terrain edge repair: crop {args.edge_crop:.0%}, "
+          f"wrap blend {args.edge_blend:.0%}"
+          + (" (pixel palette preserved)" if pixel_art_terrain else ""))
 
     # Folder name under tile_sets/: the theme/style keyword (sanitised), or
     # "classic" when no keyword was given — so a run is findable by name.
@@ -3658,6 +3858,8 @@ def main() -> int:
             extra += ["--features", args.batch_features.strip()]
         if args.batch_units.strip():
             extra += ["--units", args.batch_units.strip()]
+        extra += ["--edge-crop", str(args.edge_crop),
+                  "--edge-blend", str(args.edge_blend)]
         script = write_batch_script(
             args.write_batch.split(","), args.batch_iterations,
             style_mode=args.batch_style_mode, extra_args=extra)
@@ -3665,6 +3867,10 @@ def main() -> int:
         print(f"    start it in the background with:")
         print(f"    nohup bash \"{script}\" > \"{script.with_suffix('.out')}\" 2>&1 &")
         return 0
+
+    # Cover every unit the game actually defines - including ones added to
+    # UNIT_TYPES after this table was written - before anything is selected.
+    sync_game_units()
 
     terrains = [t.strip() for t in args.terrains.split(",") if t.strip()] or list(TERRAINS)
     unknown = [t for t in terrains if t not in TERRAINS]
@@ -3742,6 +3948,8 @@ def main() -> int:
         "unit_style_keyword": unit_style_name or "",
         "terrain_variants": TERRAIN_VARIANTS,
         "size": args.size,
+        "terrain_edge_crop": args.edge_crop,
+        "terrain_edge_blend": args.edge_blend,
         "feature_size": args.feature_size,
         "steps": args.steps,
         "cfg": args.cfg,
@@ -3808,14 +4016,15 @@ def main() -> int:
             if theme_keyword:
                 global_context += (
                     f". The run direction keyword is '{theme_keyword}': the "
-                    "theme phrase, palette and lighting must be clearly shot "
-                    "through with it"
+                    "theme phrase may name it, but the shared palette must "
+                    "contain only one or two restrained accent colors and "
+                    "lighting must remain neutral, even daylight. Do not "
+                    "alter natural terrain/material colors or subject identity"
                 )
             else:
                 global_context += (
-                    ". No direction keyword was given, so pick a bright "
-                    "clear daytime mood in vivid saturated colours - not "
-                    "dusk, not twilight, not overcast gloom"
+                    ". Pick one or two restrained natural accent colors and "
+                    "clear neutral daylight; do not make the set dark or dramatic"
                 )
             global_values = resolve_slot_bundle(
                 GLOBAL_SLOT_SPECS, GLOBAL_FALLBACKS, registry,
@@ -3829,7 +4038,7 @@ def main() -> int:
             if registry.themes:
                 theme = resolve_theme(registry, {"THEME_PHRASE": theme})
             if theme_keyword and theme_keyword.lower() not in theme.lower():
-                theme = f"{theme}, strongly infused with a {theme_keyword} mood"
+                theme = f"{theme}, {theme_keyword} shown only in sparse small accents"
             registry.remember_theme(theme)
             global_values["THEME_PHRASE"] = theme
             if style_desc:
@@ -3891,6 +4100,11 @@ def main() -> int:
                                     args.size, args.size, seed=seed)
                         if ok:
                             clean_terrain_tile(out_path)
+                            repair_terrain_edges(
+                                out_path, crop_fraction=args.edge_crop,
+                                blend_fraction=args.edge_blend,
+                                pixel_art=pixel_art_terrain,
+                            )
                             if not tile_is_usable(out_path):
                                 print(f"    ! tile {terrain} [{variant}]: "
                                       f"unusable output")
@@ -4036,7 +4250,7 @@ def main() -> int:
                             stem, spec_key, twist, theme, global_values,
                             registry, extra_clauses=extra,
                             presentation=presentation,
-                            context_extra=THEMED_EQUIVALENT_CLAUSE,
+                            context_extra=THEME_ACCENT_CLAUSE,
                             style_desc=style_desc,
                             style_context=style_context,
                             unit_style_desc=unit_style_desc,

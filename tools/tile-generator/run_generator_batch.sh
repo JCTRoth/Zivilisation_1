@@ -23,10 +23,10 @@ run_job() {
   fi
 }
 
-run_job classic_01 --iterations 3
-run_job christmas --theme-keyword Christmas --iterations 1
-run_job halloween --theme-keyword Halloween --iterations 1
-run_job manga --theme-keyword Manga --iterations 1
+run_job classic_01 --iterations 1
+# run_job christmas --theme-keyword Christmas --iterations 1
+# run_job halloween --theme-keyword Halloween --iterations 1
+# run_job manga --theme-keyword Manga --iterations 1
 run_job comic --theme-keyword Comic --iterations 1
 
 

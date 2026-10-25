@@ -16,18 +16,18 @@ single time.
 
 ```
 # global slots (one call per iteration - shared by the whole set)
-THEME_PHRASE     the mood of the set (season, time of day, light quality)
-GLOBAL_PALETTE   the shared colour mood
-GLOBAL_LIGHTING  the shared lighting mood
+THEME_PHRASE     a short theme label; identity and base colors stay fixed
+GLOBAL_PALETTE   one or two accent colors for tiny decorations only
+GLOBAL_LIGHTING  neutral, even daylight
 
 # terrain slots (one call per terrain)
 SURFACE_FORM     the overall kind of terrain
 BASE_MATERIAL    the dominant ground material
-TEXTURE_DETAIL   micro texture and small structures
-ACCENT_ELEMENT   small scattered decorations on the surface
-EDGE_ELEMENT     tiny details toward the tile corners
-LIGHTING_NOTE    one short sentence about light and shadow
-COLOR_PALETTE    the concrete colour range of the terrain
+TEXTURE_DETAIL   broad, low-frequency ground pattern
+ACCENT_ELEMENT   a few sparse, low-contrast details
+EDGE_ELEMENT     continuous terrain material, no corner ornaments
+LIGHTING_NOTE    neutral daylight and minimal shadows
+COLOR_PALETTE    the natural dominant colors of this terrain
 
 # feature slots (one call per feature)
 FEATURE_KIND     what the feature is
@@ -42,10 +42,9 @@ The terrain template reads like this (only the slots vary, ever):
 
 ```
 subject ....: "a #SURFACE_FORM#"
-details ....: "A continuous surface of #BASE_MATERIAL# with #TEXTURE_DETAIL#,
-               #ACCENT_ELEMENT#, and #EDGE_ELEMENT#. #LIGHTING_NOTE# The surface
-               is rendered in #COLOR_PALETTE#, unified by a #GLOBAL_PALETTE#
-               and #GLOBAL_LIGHTING#."
+details ....: "A continuous surface of #BASE_MATERIAL# with broad #TEXTURE_DETAIL#
+               and only #ACCENT_ELEMENT#. The dominant terrain colors are
+               #COLOR_PALETTE#; #GLOBAL_PALETTE# appears only in tiny accents."
 ```
 
 ### Keeping the subject recognisable
@@ -57,8 +56,9 @@ resolution is fenced in by four independent guards:
 |---|---|
 | `TERRAIN_IDENTITIES` / `FEATURE_SPECS["identity"]` | The model is told what the asset is and must stay that. |
 | `TERRAIN_ANCHORS` / `anchors` | `SURFACE_FORM` must contain a word of the terrain (`forest`, `dune`, …). |
-| `TERRAIN_PALETTE_ANCHORS` | The colour palette must keep the colour family of the terrain. |
+| `TERRAIN_PALETTE_ANCHORS` | The natural palette must keep the terrain's color family; theme colors cannot replace it. |
 | `TERRAIN_FORBIDDEN` / `FEATURE_FORBIDDEN` | Words that would betray the subject are rejected (`cracks` on water, `school` for a single fish). |
+| Theme/pattern constraints | Theme colors are limited to tiny accents; broad low-frequency patterns and neutral light keep terrain readable. |
 
 `TERRAIN_IDENTITY_CLAUSE` adds one short fixed sentence per terrain
 ("Liquid open sea water with moving ripples, unmistakably deep water.") so
@@ -108,9 +108,12 @@ For every run:
      assembled into the structured prompt (title / style / subject details /
      technical specs) plus the negative prompt, and rendered with `sd-server`
      (FLUX.2 Klein) via `txt2img`, seamless on all four edges,
-   - post-processing inpaints any near-black region (the model likes to put a
-     diamond or a sprite on black) with the surrounding texture, so the tile is
-     a continuous edge-to-edge surface.
+    - post-processing inpaints any near-black region, crops the outer 10% to
+      remove generated rims/halos, resizes back to the requested dimensions,
+      and wrap-blends opposite edges so they match exactly. Pixel-art crops use
+      nearest-neighbor resizing and edge blends snap to the image palette;
+    - `--edge-crop` and `--edge-blend` tune those steps, and can be set to `0`
+      to disable either correction.
 4. For **every resource/terrain feature stem** of the fixed roster:
 
    - five fish (`fish1..5`, img2img from the artwork),
@@ -128,6 +131,13 @@ For every run:
 
 5. For **every selected game unit** (`--units`; all 35 by default):
 
+   - the unit list is synced with the game before every run: `UNIT_TYPES` in
+     `src/data/UnitConstants.ts` is read and any unit the table below does not
+     cover yet is picked up automatically with a generic description, so a
+     new playable unit can never be left without a sprite. A same-named SVG
+     in `src/assets/units/` makes it img2img even if `UNIT_SVG_FILES` does not
+     list it yet. Units the generator knows but the game does not define are
+     reported (a typo in the table would otherwise be invisible),
    - real game SVG artwork is rasterized for img2img when available; all
      remaining units use identity-pinned descriptions from `UNIT_SPECS`,
    - each unit receives three distinct prompt/image variants in `units/`, with
@@ -159,45 +169,56 @@ The same `backup` rule applies to the input scan: a folder named `backup` is
 never processed, so the untouched originals can be kept next to the results
 without ever being used as an input.
 
+## Apply results of generated Images
+
+```
+npm run tiles:install -- tools/tile-generator/tile_sets/halloween_1792877504
+```
+
 ## Prompt structure
 
 All prompts follow this structure (example: mountains):
 
 ```
-Seamless top-down 2D ground texture map of a rough uneven rocky terrain, pure
-orthographic bird's-eye view looking straight down at the ground plane, 90% to
-100% full-bleed canvas coverage, flat surface pattern, seamlessly tileable on
-all four edges, natural varied non-repeating pattern.
+A seamless, tileable top-down 2D strategy-game texture of <terrain>, viewed
+straight down and filling the entire image edge to edge. Show only the terrain
+surface, as an arbitrary crop from a much larger continuous texture; the same
+material and pattern continue beyond all four image edges. No depicted object,
+patch outline, frame, or separate edge.
 
-Style & Art Direction: Highly detailed semi-realistic digital painting, modern
-strategy game illustration, intricate surface details, natural textures,
-realistic lighting and soft shading, crisp high resolution, no thick cartoon
-outlines. <theme phrase>
+Style & Art Direction: <selected style, e.g. 16-bit pixel art with broad color
+clusters and simple shading>. The natural terrain material and its distinct
+base colors dominate; use only a few simple low-frequency details.
 
-Subject Details: A continuous surface of <BASE_MATERIAL> with <TEXTURE_DETAIL>,
-<ACCENT_ELEMENT>, and <EDGE_ELEMENT>. <LIGHTING_NOTE> The surface is rendered
-in <COLOR_PALETTE>, unified by a <GLOBAL_PALETTE> and <GLOBAL_LIGHTING>.
-<identity clause> No peaks, no cliffs, no vertical elements - only the flat
-rocky ground layer. Strict top-down bird's-eye view. No horizon, no sky, no
-scenery, no buildings, no characters, no animals, no frame and no vignette -
-only the flat ground surface, edge to edge.
+Theme accents only: <theme>. A few small isolated accents are permitted, but
+they must not change the material, dominant colors, or neutral daylight.
+Terrain details: broad <TEXTURE_DETAIL>; only <ACCENT_ELEMENT>. The dominant
+terrain colors are <COLOR_PALETTE>; <GLOBAL_PALETTE> appears only in tiny
+accents. <identity clause>
 
-Technical Specs: Flat map view, strictly top-down overhead perspective, no
-tree trunks, no side perspective, no vertical horizon, continuous organic
-texture, no repeating grid pattern, even coverage from edge to edge, crisp 8k
-digital painting.
+Technical Specs: Flat top-down map view, broad readable color clusters, sparse
+details. The outermost pixels are ordinary terrain, not a border band; opposite
+edges continue the same pattern. No vignette, halo, contrasting rim, shoreline
+frame, or shadowed corners.
 ```
 
 Negative prompt (terrain):
 
 ```
-photorealistic, realistic landscape, photography, border frame, ground plane
-background, horizon line, sky, ambient occlusion shadows on canvas, cut off
-edges, blurry lines, 3D render artifacts, low resolution, empty background,
-transparent corners, grid lines, diamond layout, repeating pattern, tiled grid,
-isolated subject on black, black background, pitch black, vignette, frame,
-picture, poster, text, watermark, characters, buildings, animals
+photorealistic, busy microtexture, high-frequency noise, intricate repeating
+detail, neon, spectral glow, glowing lines, painterly brushwork, framed picture,
+border band, contrasting perimeter, white/cloudy halo,
+muddy edge, shoreline border, land ring, dark corners, gradient edge, drop
+shadow, isolated patch, horizon, sky, cut off edges, 3D render artifacts,
+transparent corners, diamond layout, vignette, text, watermark, characters,
+buildings, animals
 ```
+
+Generated terrain is cropped inward by `--edge-crop` (10% by default), resized
+back to the requested dimensions, and wrap-blended across opposite edges by
+`--edge-blend` (8% by default). This removes common AI-drawn rims and makes the
+result tileable; pixel-art runs use nearest-neighbor resizing and palette-snapped
+edge blending.
 
 Feature prompts use the same structure, but the title line is
 `isometric 2D video game resource feature sprite of <subject>, …` and the
@@ -239,12 +260,11 @@ python3 tools/tile-generator/generate_variated_tile_sets.py --dry-run
 python3 tools/tile-generator/generate_variated_tile_sets.py \
     --iterations 1 --terrains forest,ocean --features fish1,horses
 
-# one themed set - the keyword is shot through shared palette and lighting;
-# feature animals may swap to close themed equivalents
-# (skeleton horse at Halloween, reindeer at Christmas, sea serpent at
-# Transylvania, ...).  Terrain identities stay untouched.
+# Halloween accents with consistent pixel-art treatment across terrain,
+# features, and units. Theme details do not change materials or identities.
 python3 tools/tile-generator/generate_variated_tile_sets.py \
-    --theme-keyword "Transylvania and vampires" --iterations 1
+    --theme-keyword Halloween --style-keyword pixel_art \
+    --unit-style-keyword pixel_art --iterations 1
 
 # writes a bash script that runs one tile-set job after another (one per
 # comma separated keyword, '' = a classic run) and exits - start the script
@@ -295,8 +315,10 @@ What it does: it combines the generated `tiles/` and `features/` folders into
   draws that layer on top of the ground;
 - the **resource tiles** (`terrain_<terrain>_<resource>.png` — fish, horses,
   game, seal, gems, gold, coal, oil, oasis) are **combined with their ground
-  tile** first (the sprite is fitted into 85 % of the tile and centred, the
-  geometry `compose_feature_tiles.mjs` uses). That is required:
+  tile** first. The installer trims transparent padding and scales the visible
+  subject to a resource-specific footprint (for example, fish 58% and horses
+  68% of a tile), then centers it. `--box <fraction>` overrides these sizes.
+  That is required:
   `TerrainTextureManager.getTileTexture` blits that file as the *whole* tile,
   so a bare transparent sprite would leave the cell empty. ImageMagick
   (`magick`) is used for the step — the same tool `compose_feature_tiles.mjs`
@@ -308,6 +330,12 @@ What it does: it combines the generated `tiles/` and `features/` folders into
 Every replaced original is kept once in `public/assets/_generated_backup/`
 (git-ignored) and `--restore` puts it back — files the install added are
 removed again, leaving the working tree exactly as it was.
+
+In-game terrain transitions are kept short (at most 16% of a tile), feature
+sprites are centered and no longer bleed sideways into adjacent cells, and a
+subtle one-pixel grid is drawn over the cached terrain layer. Source textures
+are center-cropped and opposite-edge blended during generation; tile borders
+are a renderer treatment, not generated art.
 
 ### Environment overrides
 
@@ -323,7 +351,7 @@ removed again, leaving the working tree exactly as it was.
 | `FEATURE_SIZE` | `256` | Feature sprite width (height is 1.5×). |
 | `SEED` | `-1` | Base seed for reproducible runs (-1 = random). |
 | `TERRAINS` / `FEATURES` / `UNITS` | all | Comma-separated selections. `FEATURES` matches feature stems by variant base name (`forest_feature` renders forest_feature_1..3); `UNITS` accepts game keys (`phalanx`) or stems (`unit_phalanx`). With no selection both categories are generated. |
-| `THEME_KEYWORD` | *(empty)* | Art-direction keyword for the whole run (Halloween, Christmas, "Transylvania and vampires", Easter, ...). |
+| `THEME_KEYWORD` | *(empty)* | Theme keyword for sparse small accents only; terrain materials, natural colors, identities, and neutral lighting stay unchanged. |
 | `STYLE_KEYWORD` | *(empty)* | One art style for every asset (`american_comic`, `manga`, …, `original_game_icons`, or any freeform phrase). |
 | `UNIT_STYLE_KEYWORD` | *(empty)* | One art style for the **unit sprites only**; `original_game_icons` = the flat vector game-icon look. |
 | `WRITE_BATCH` | *(empty)* | Comma separated keyword list; writing the batch script replaces generating. |
@@ -331,10 +359,13 @@ removed again, leaving the working tree exactly as it was.
 | `RETRIES` | `3` | Render attempts per image. |
 | `BG_LEVEL` | `28` | Border-color distance tolerance (higher removes more). |
 | `BG_SOFTNESS` | `30` | Background removal edge softness (0 = hard edge). |
+| `EDGE_CROP` | `0.10` | Fraction cropped from every terrain-image edge before resizing back. |
+| `EDGE_BLEND` | `0.08` | Fraction blended across opposite edges to make the terrain texture wrap seamlessly. |
 
 CLI flags `--iterations`, `--output-root`, `--strength`, `--feature-strength`,
 `--steps`, `--cfg`, `--size`, `--feature-size`, `--seed`, `--retries`,
-`--bg-level`, `--bg-softness`, `--terrains`, `--features`, `--units`, `--dry-run`,
+`--bg-level`, `--bg-softness`, `--edge-crop`, `--edge-blend`, `--terrains`,
+`--features`, `--units`, `--dry-run`,
 `--no-terrains`, `--no-features`, `--no-units`, `--use-rembg`, `--keep-servers`,
 `--theme-keyword`, `--style-keyword`, `--unit-style-keyword`, `--write-batch`
 and `--batch-iterations` override the environment.
@@ -439,17 +470,13 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
 
 ## Themed runs (--theme-keyword)
 
-- The keyword (e.g. `Halloween`, `Christmas`, `Transylvania and vampires`)
-  is injected into the iteration-global resolution — theme phrase, palette
-  and lighting must be clearly shot through with it — and into the theme
-  string every prompt carries.
-- Feature slot resolution additionally receives a clause that
-  allows swapping a featured **animal** for a close themed equivalent (a
-  ghost/skeleton horse at Halloween, a reindeer at Christmas, a sea serpent
-  at Transylvania) while keeping it recognisable: the per-spec anchor
-  lists contain the equivalent nouns (`nightmare`, `reindeer`, `shark`, ...).
-- Terrain identity anchors are untouched: a Halloween forest is still a
-  forest, an Easter desert still a desert.
+- The keyword (e.g. `Halloween`, `Christmas`) may add a few small decorative
+  accents. It does not change terrain materials, dominant natural colors,
+  subject identities, or neutral daylight.
+- Featured animals stay the same animal with natural anatomy and colors; a
+  Halloween horse remains a horse rather than becoming a ghost or skeleton.
+- Terrain patterns use broad readable shapes with sparse details. The natural
+  palette of grass, water, desert, and other terrain types remains dominant.
 - Themed runs are logged under `theme_keyword` in `run.json` and the
   keyword is part of every theme.
 
@@ -466,6 +493,16 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
   `egyptian_tomb`, `ligne_claire`, `painted_miniature`,
   `original_game_icons`) or any freeform phrase; a registry name is upgraded
   to its handcrafted descriptor.
+- For a coherent pixel-art set, set both terrain/feature and unit styles:
+
+  ```bash
+  python3 tools/tile-generator/generate_variated_tile_sets.py \
+      --theme-keyword Halloween --style-keyword pixel_art \
+      --unit-style-keyword pixel_art --iterations 1
+  ```
+
+  Pixel art uses broad clusters, a limited palette, hard pixel edges, and
+  simple shading rather than dithering or texture noise.
 - `--unit-style-keyword <name|phrase>` (env `UNIT_STYLE_KEYWORD`) applies a
   style **to the game unit sprites only** — terrain and resource features keep
   `--style-keyword`. Use `--unit-style-keyword original_game_icons` to render

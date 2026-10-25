@@ -4,13 +4,12 @@
  * Two-layer rendering system inspired by Battle for Wesnoth:
  *
  *  Layer 1 — base ground tiles (seamless, flat top-down, 256x256)
- *    Drawn first for every tile. Transitions use smooth color gradients
- *    (no texture bleeding = no blob patterns at corners).
+ *    Drawn first for every tile. Short, restrained transitions soften terrain
+ *    changes without blending large areas of neighboring tiles together.
  *
  *  Layer 2 — feature sprites (isometric, transparent bg, 256x384 = 1.5:1)
- *    Drawn in painter's-algorithm row order so lower-row features
- *    appear in front. Each sprite is offset upward by half a tile height
- *    so mountain peaks / tree tops extend a little into the row above.
+ *    Drawn in painter's-algorithm row order so lower-row features appear in
+ *    front. Each type has a controlled footprint and a modest upward overhang.
  */
 
 import { SPECIAL_RESOURCES } from '@/data/TerrainConstants';
@@ -39,6 +38,15 @@ const FEATURE_TEXTURE_FILES: Partial<Record<string, string>> = {
   HILLS:     '/assets/tiles/terrain_hills_feature.png',
   MOUNTAINS: '/assets/tiles/terrain_mountains_feature.png',
   SWAMP:     '/assets/tiles/terrain_swamp_feature.png',
+};
+
+/** Visible feature footprint as a fraction of one tile; contain side bleed. */
+const FEATURE_DISPLAY_SCALE: Partial<Record<string, number>> = {
+  FOREST: 0.80,
+  JUNGLE: 0.84,
+  HILLS: 0.78,
+  MOUNTAINS: 0.84,
+  SWAMP: 0.76,
 };
 
 /**
@@ -109,7 +117,16 @@ const TERRAIN_BLEND_COLOR: Record<string, string> = {
  * How far terrain transitions bleed into the current tile, as a fraction
  * of the tile size (0–0.5).  Tweak this to control edge/corner distance.
  */
-const TRANSITION_DISTANCE = 0.15;
+const TRANSITION_DISTANCE = 0.06;
+const TRANSITION_PRIORITY_STEP = 0.01;
+const MAX_TRANSITION_DISTANCE = 0.16;
+
+function transitionDistance(priorityDiff: number): number {
+  return Math.min(
+    MAX_TRANSITION_DISTANCE,
+    TRANSITION_DISTANCE + priorityDiff * TRANSITION_PRIORITY_STEP,
+  );
+}
 
 /** Max number of numbered variants to probe per type beyond the primary image. */
 const MAX_VARIANT_PROBES = 4;
@@ -147,9 +164,6 @@ export class TerrainTextureManager {
   private readonly maskedCornerCache = new Map<string, HTMLCanvasElement>();
   /** Keep the caches bounded: tileSize changes with zoom. */
   private static readonly MASK_CACHE_LIMIT = 512;
-  /** Dedicated offscreen canvas for feature blending (wider than a tile). */
-  private featureCanvas: HTMLCanvasElement | null = null;
-
   readonly ready: Promise<void>;
   /**
    * Settles when every optional feature-on-tile texture has loaded (or
@@ -324,9 +338,9 @@ export class TerrainTextureManager {
 
   // ── Texture-based edge transitions (Wesnoth-style) ──────────────────────
   //
-  // Draws a strip of the actual neighbor terrain texture at the shared edge,
-  // masked with a gradient that fades from ~75 % at the seam to 0 % at ~40 %
-  // into the current tile.  Uses a cached offscreen canvas for compositing.
+  // Draws a narrow strip of the actual neighbor terrain texture at the shared
+  // edge, masked with a short gradient so adjacent terrains remain distinct.
+  // Uses a cached offscreen canvas for compositing.
   //
   // The neighbor texture is drawn at its natural position relative to the
   // current tile so only the "bleeding" portion shows through the mask.
@@ -347,7 +361,7 @@ export class TerrainTextureManager {
 
     // Scale blend strength with priority difference; clamp to a reasonable range.
     const edgeAlpha = 1.0;
-    const fadeFrac  = Math.min(0.45, TRANSITION_DISTANCE + priorityDiff * 0.03);
+    const fadeFrac  = transitionDistance(priorityDiff);
 
     const masked = this.cachedMasked(
       this.maskedEdgeCache,
@@ -464,7 +478,7 @@ export class TerrainTextureManager {
 
     // Radius shrinks the mask the further the neighbour outranks this tile.
     const priorityDiff = winnerPriority - currentPriority;
-    const radius = Math.min(0.45, TRANSITION_DISTANCE + priorityDiff * 0.03) * tileSize;
+    const radius = transitionDistance(priorityDiff) * tileSize;
 
     const masked = this.cachedMasked(
       this.maskedCornerCache,
@@ -505,7 +519,7 @@ export class TerrainTextureManager {
 
   // ── Color-based edge transitions (fallback) ──────────────────────────────
   //
-  // Draws a solid-color gradient from the shared edge inward.
+  // Draws a short, low-opacity color gradient from the shared edge inward.
   // Used when textures are not yet loaded.
 
   drawColorTransition(
@@ -513,8 +527,8 @@ export class TerrainTextureManager {
     neighborType: string,
     tileX: number, tileY: number, tileSize: number,
     direction: 'N' | 'E' | 'S' | 'W',
-    blendFraction = 0.32,
-    maxAlpha       = 0.60,
+    blendFraction = 0.12,
+    maxAlpha       = 0.35,
   ): void {
     const colorBase = TERRAIN_BLEND_COLOR[neighborType.toUpperCase()];
     if (!colorBase) return;
@@ -550,16 +564,10 @@ export class TerrainTextureManager {
     ctx.restore();
   }
 
-  // ── Feature sprite (painter's algorithm, upward offset + side bleed) ──────
-  //
-  // Sprite is 1.5:1 (width : 1.5*width). The lower width×width portion sits on
-  // the tile; the top half-tile extends above.
-  //
-  // To soften hard tile-boundary edges the sprite is drawn at 1.5× tile width
-  // (25% bleed into each side neighbor).  A horizontal gradient mask fades the
-  // bleed zones to transparent, so adjacent same-type features blend together
-  // and isolated features have soft edges — identical in spirit to the base
-  // terrain edge transitions.
+  // ── Feature sprite (painter's algorithm, modest upward overhang) ──────────
+  // The generated portrait sprite is fitted inside a terrain-specific width,
+  // centered on its tile, and bottom-aligned. It no longer bleeds sideways;
+  // only the top of taller features may extend slightly into the row above.
 
   drawFeature(
     ctx: CanvasRenderingContext2D,
@@ -570,41 +578,12 @@ export class TerrainTextureManager {
     const img = this.getFeatureTexture(terrainType, col, row);
     if (!img) return;
 
-    const overhang  = tileSize * 0.5;
-    const sideBleed = tileSize * 0.05;
-    const drawW     = tileSize + sideBleed * 2;
-    const drawH     = tileSize * 1.5;
-    const drawX     = tileX - sideBleed;
-    const drawY     = tileY - overhang;
-
-    if (!this.featureCanvas) {
-      this.featureCanvas = document.createElement('canvas');
-    }
-    const fc = this.featureCanvas;
-    const needW = Math.ceil(drawW);
-    const needH = Math.ceil(drawH);
-    if (fc.width < needW || fc.height < needH) {
-      fc.width  = needW;
-      fc.height = needH;
-    }
-    const fCtx = fc.getContext('2d')!;
-    fCtx.clearRect(0, 0, needW, needH);
-    fCtx.drawImage(img, 0, 0, drawW, drawH);
-
-    // Fade the bleed zones to transparent so adjacent features blend
-    // into each other rather than cutting off at the tile boundary.
-    fCtx.globalCompositeOperation = 'destination-in';
-    const fadeStop = (sideBleed * 1.5) / drawW;
-    const g = fCtx.createLinearGradient(0, 0, drawW, 0);
-    g.addColorStop(0,            'rgba(0,0,0,0)');
-    g.addColorStop(fadeStop,     'rgba(0,0,0,1)');
-    g.addColorStop(1 - fadeStop, 'rgba(0,0,0,1)');
-    g.addColorStop(1,            'rgba(0,0,0,0)');
-    fCtx.fillStyle = g;
-    fCtx.fillRect(0, 0, drawW, drawH);
-    fCtx.globalCompositeOperation = 'source-over';
-
-    ctx.drawImage(fc, 0, 0, drawW, drawH, drawX, drawY, drawW, drawH);
+    const scale = FEATURE_DISPLAY_SCALE[terrainType.toUpperCase()] ?? 0.80;
+    const drawW = tileSize * scale;
+    const drawH = tileSize * 1.5 * scale;
+    const drawX = tileX + (tileSize - drawW) / 2;
+    const drawY = tileY + tileSize - drawH;
+    ctx.drawImage(img, drawX, drawY, drawW, drawH);
   }
 
   /**

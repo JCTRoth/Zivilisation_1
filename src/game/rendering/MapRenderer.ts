@@ -690,6 +690,32 @@ export class MapRenderer {
         this.drawStaticTileSymbols(ctx, tile, x, y, centerX, centerY, scaledTile, col, row, resolutionScale);
       }
     }
+
+    // Keep the modular tile grid readable even when terrain transitions or
+    // feature overhangs soften neighboring textures. The lines are painted in
+    // the cached base (at 2x resolution) and stay subtle beneath dynamic UI.
+    if (typeof ctx.fillRect === 'function') {
+      const gridWidth = resolutionScale;
+      const gridLeft = startCol * scaledTile;
+      const gridRight = endCol * scaledTile;
+      const gridTop = startRow * scaledTile;
+      const gridBottom = endRow * scaledTile;
+      ctx.save();
+      ctx.fillStyle = 'rgba(8, 16, 22, 0.18)';
+      for (let col = startCol; col <= endCol; col++) {
+        const centerX = col * scaledTile;
+        const x = Math.max(gridLeft, centerX - gridWidth / 2);
+        const right = Math.min(gridRight, centerX + gridWidth / 2);
+        ctx.fillRect(x, gridTop, right - x, gridBottom - gridTop);
+      }
+      for (let row = startRow; row <= endRow; row++) {
+        const centerY = row * scaledTile;
+        const y = Math.max(gridTop, centerY - gridWidth / 2);
+        const bottom = Math.min(gridBottom, centerY + gridWidth / 2);
+        ctx.fillRect(gridLeft, y, gridRight - gridLeft, bottom - y);
+      }
+      ctx.restore();
+    }
   }
 
   /**
@@ -1270,6 +1296,30 @@ export class MapRenderer {
         }
       }
     }
+
+    // Match the cached terrain path in low-memory/direct-render mode.
+    const gridWidth = Math.max(1, camera.zoom);
+    ctx.save();
+    ctx.fillStyle = 'rgba(8, 16, 22, 0.18)';
+    for (let row = bounds.startRow; row < bounds.endRow; row++) {
+      for (let col = bounds.startCol; col < bounds.endCol; col++) {
+        if (!terrainGrid[row]?.[col]?.explored) continue;
+        const { x, y } = squareToScreen(col, row);
+        const left = x - scaledTileSize / 2;
+        const top = y - scaledTileSize / 2;
+        const right = left + scaledTileSize;
+        const bottom = top + scaledTileSize;
+        ctx.fillRect(right - gridWidth / 2, top, gridWidth, scaledTileSize);
+        ctx.fillRect(left, bottom - gridWidth / 2, scaledTileSize, gridWidth);
+        if (col === 0 || !terrainGrid[row]?.[col - 1]?.explored) {
+          ctx.fillRect(left - gridWidth / 2, top, gridWidth, scaledTileSize);
+        }
+        if (row === 0 || !terrainGrid[row - 1]?.[col]?.explored) {
+          ctx.fillRect(left, top - gridWidth / 2, scaledTileSize, gridWidth);
+        }
+      }
+    }
+    ctx.restore();
   }
 
   /**
