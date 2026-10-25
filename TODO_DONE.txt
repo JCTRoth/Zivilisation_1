@@ -346,3 +346,30 @@ Are you distributing this project as a free download (like on Itch.io or GitHub)
   foreign harbour cities of met civs are routeable and the auto-route opens the best-paying leg;
   the AI buys hulls with a single own harbour once a foreign harbour is contacted, and its
   warships hunt Trade Ships harder the richer the run is (class order transcription preserved).
+
+
+Side panel menu:
+
+Remove:
+<div class="sp-block"><div class="sp-block-head"><span class="sp-block-label">Specialists <span class="sp-block-count">(0/1)</span></span></div><div class="side-panel-specialist-tally"><div class="side-panel-specialist-tally-item" title="Entertainer — +2 Luxury"><span class="side-panel-specialist-tally-icon">🕺</span><span class="side-panel-specialist-tally-name">Entertainer</span><span class="side-panel-specialist-tally-count">0</span><span class="side-panel-specialist-btns"><button type="button" class="side-panel-specialist-btn" disabled="" title="None assigned" aria-label="Remove Entertainer">−</button><button type="button" class="side-panel-specialist-btn" title="Promote to Entertainer" aria-label="Add Entertainer">+</button></span></div><div class="side-panel-specialist-tally-item" title="Taxman — +2 Gold"><span class="side-panel-specialist-tally-icon">💸</span><span class="side-panel-specialist-tally-name">Taxman</span><span class="side-panel-specialist-tally-count">0</span><span class="side-panel-specialist-btns"><button type="button" class="side-panel-specialist-btn" disabled="" title="None assigned" aria-label="Remove Taxman">−</button><button type="button" class="side-panel-specialist-btn" title="Promote to Taxman" aria-label="Add Taxman">+</button></span></div><div class="side-panel-specialist-tally-item" title="Scientist — +2 Science"><span class="side-panel-specialist-tally-icon">🥼</span><span class="side-panel-specialist-tally-name">Scientist</span><span class="side-panel-specialist-tally-count">0</span><span class="side-panel-specialist-btns"><button type="button" class="side-panel-specialist-btn" disabled="" title="None assigned" aria-label="Remove Scientist">−</button><button type="button" class="side-panel-specialist-btn" title="Promote to Scientist" aria-label="Add Scientist">+</button></span></div></div></div>
+
+Instead show the 
+side-panel-specialist-tally-icon 's
+🕺 💸 🥼
+on the 
+worked-tile-row worked-tile-row--center
+On every worked-tile-row worked-tile-row--center you show 🕺 💸 🥼
+When the user clicks of one of them than it get color and bigger
+
+Change the selection of the tiles, the user should be able to select the that he converts to a sepecialist.
+when a tile is converted to a sepcialist and the city is deselected and selected again than this tile does not show any more in the sidepanle list,
+since no one is working any more on it
+
+Make it a coherent system.
+A non assigned worker/citizen always gets by default a entertainer,
+make sure orker/citizen never get "lost".
+Make sure all is implemented from bottom up.
+
+* Add splash damage when multipile units stand on one place
+* Splash damage does not apply for units in a city or in a fortification or in a boat or in a transporter.
+* Integrate the new sprash damage also into the AI
