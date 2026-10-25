@@ -1,7 +1,14 @@
-BUGS:
+TODO.txt — OPEN work only.
+  finished .................. TODO_DONE.txt
+  implemented, needs a run ... TODO_TOBECHECKED.txt
+(cleaned up 2026-10-25: completed items were moved out, duplicated markers and
+reference dumps were dropped — everything removed is still in the git history
+of this file)
+
+==================== BUGS (verified 2026-10-25) ====================
 
 FAILING TESTS (already fail at committed HEAD 9a16a99, NOT caused by the current
-batches — verified in a clean HEAD worktree):
+batches — verified in a clean HEAD worktree, re-run 2026-10-25: 4 failed / 9 passed):
 * tests/ai/aiCityManagement.test.ts — 4 of 13 fail:
   - famine prevention: `cityFoodBalance().surplus` stays below AI_MIN_FOOD_SURPLUS
     after the worker re-assignment (expected >= 1, got 0)
@@ -12,126 +19,11 @@ batches — verified in a clean HEAD worktree):
   All four are in `EconomicManager.cityFoodBalance` / `AICityManager`
   worker/specialist assignment — fish-net food yields look like the common root.
 
-GOTO/MOVE PREVIEW:
-It is not possible to move unit of own civilization on the the same tile.
-Unit 1 is on tile A, unit 2 is on tile B. It is not possible for Unit 1 to move to tile B if Unit 2 is already there.
 
-After setting the destination of a unit on the map, the curser still shows the cross for the destination selection.
-Instead it should free the curser and show only the route. 
-
--------------------
-FUNCTIONAL TOODO'S:
--------------------
-
-
-Far further development of the game engine is planned, including:
-
-* Splitting up the game into client and server so that the game can be played over network.
-* Networked multiplayer is not yet implemented, but the game engine is designed to support it in the future.
-* Lobby system for multiplayer games, including a list of available games, and the ability to create and join games.
-* Replay to play replays, I think it would make sense to use the save game, turn log, and map download do the replay stuff.
-* Hall of fame for multiplayer games, including a list of high scores, and the ability to submit high scores to a server.
-
-* Database backup and restore system, including the ability to backup and restore the database, and the ability to export and import the database.
-
-AI Recommendations for Improvement after comparisson with Civ1 Manuel:
-If the goal is to closer match the Civilisation 1 manual, consider implementing:
- 2. [DONE] Disasters: Add the 7 disasters with their prevention mechanics — see doc/DISASTERS.adoc.
- 3. Global warming: Implement the sun indicator and climate change effects.
- 5. Diplomacy: Add embassies, tech trading, sabotage, and incite revolt.
- 6. ?Advisors: Implement the 6 advisor reports and world reports.?
- 8. Space race 2.0 modern version of it: Implement spaceship construction with parts and flight time.
- 9. Find City: Add the city search feature.
-10. Autosave: Implement automatic saving every 50 turns.
-These additions would significantly increase the game's fidelity to the original Civilisation while maintaining its modern accessibility.
-
-
-
-* Units should heal in cities rate abouut 2% every turn up to 15% of there battle demage.
-show a little blood symbole babove the unit when it heals if unit is not stacked
-
-* Add new units for land transportation of units.
-
-
-
-* When no enemy is left on the Map anymore the AI declears active war on other civilizations and starts to attack them, if the AI is not able to do so it should start to build a navy and send it to the other civs to attack them.
-
-* If AI detects that it is on a water rich map the AI should use for systemic scouting of the map Frigates/Galleons/Ironclads or fisherboats to find other civs and to find good city locations.
-* A scout boat should if possible only use pathfinding to get to the target (same as GoTo) and should avoid tiles that are already explored by the AI.
-* If the AI spots in a 10 by 10 tile area more than 3 enemy fishing boats and only minor war ships it should build or send a frigate/galleon/ironclad/destroyer/carrier to destroy the enemy fishing boats and return regulary to distroy more enemy fishing boats.
-* If avilable to the AI it should use nuklar weapons and target key enemy cities and key enemy military units and than send units on land or water to take over the enemy cities and destroy the remaining enemy military units if more nuklar weapons are avilable to the AI it should use them regulary to destroy the enemy cities and military units.
-
-Selling of buildings should be able to be forced by AICoordinator in order to free money for infrastructure build up (irrigations/ streets/ RailRoads) there for analyze if infrastructure is needed if a city is bigger than 6 it starts to be needed at level 12 all tiles around it that are bulidible on should be builded on (if not constant attacks by the enemy are hindering this since settlers are a valuble target) - The selling of buildings also can be done in order to build up a army that needs regular income or to bribe units of the enemy, therefor run a cost usage equation. Really check for every building if the effect of the building needed for the city at the moment? SDI for example only needed if the enemy is also able to produce atomic wapons. The Stock Exchange is only usefull if the math. calulation return higher return of it for the city than its cost and so on
-
-* Fisherboats can not fish on tiles used by a city to get food from.
-* Fisherboats can not fish on tiles other fisherboats are fishing on.
-
-
--Open-
-
-* Implement Trade Treaties between civilizations, including the ability to establish trade routes between cities, and the ability to negotiate trade agreements with other civilizations.
-They increese the ammount of money the player gets from trade routes, and they also increase the amount of money the player gets from trade routes with other civilizations that have a trade treaty with the player but with lower ammount than the player gets from trade routes with civilizations that have a trade treaty with the player and the other civilization has a trade treaty with the player.
-
-
-
-## Next Steps (Priority Order)
-
-### 1. Naval Invasion / Transport Missions
-The navy pivot builds ships but there is **no transport/invasion mission** — only colony missions exist. Until this is implemented, an AI-vs-AI map whose strait splits civs across two continents is an unwinnable stalemate (465-round run: 17 wars, 3 attacks). This is the single biggest gameplay gap.
-
-### 2. Multi-Group Offensives / Siege Commitment
-Two army groups can form, but there is **no coordination** between them — no pincer/second-front planning. Groups operate independently.
-
-### 3. Army Composition by Era
-The AI still over-produces the era's default defender. Needs stronger era/threat-aware composition weights so armies evolve with technology.
-
-### 4. Economy Buildings Earlier
-The AI reaches 0–8 gold with big armies. Marketplace/Bank/Temple should be built earlier when upkeep pressure starts.
-
-### 5. Diplomacy Overhaul
-  all war declarations 473 -> 378. Wars now END, which is the whole point: the
-  old model produced 440 ceasefires and two peace treaties per ten games.
-- STILL TODO:
-  - Tech exchange (offer tech for tech, tech for money) — engine + UI exist,
-    but no tech-for-money (sell a tech) proposal
-  - Gold transfer (send/request gold as a gift, not a demand)
-  - AI-to-AI alliance calls for help
-  - Embassy-based observation of AI-to-AI diplomacy
-
-### 6. End-of-Game Statistics & High Scores
-- End-of-game statistics screen (economics, military, science)
-- Civ1-style demographics screen (greatest cities, world rankings)
-- High score system with server submission
-
-helpers that are genuinely used inside their own module were un-exported; the
-rest (getTerrainInfo, manhattan, terrainWeight, BASE_CONTENTMENT's stale
-comment, the duplicate `export default` on AICityManager/CombatSystem, the
-`MoveAnimator` named export, the dead `GameEngine` interface and the duplicated
-`EnemyLocation`/`PlayerTurnStorage` in types/game.ts, and the unused
-`expectInvariants` test helper) were deleted. knip now reports nothing.
-
-### 8. Client/Server Split
-The game engine is designed to support networked multiplayer but it is not yet implemented. A lobby system, network multiplayer, and replay system are all planned.
-
-
-
------
-BUGS:
------
-  rings mark the group selection; cities get a "City details" button).
-- The store's activePlayer/currentTurn are now synced from the engine at turn
-  start (the store previously kept its initial value, so turn-dependent UI ran
-  for the wrong player).
-
-- the GoTo and the MovePreview should be joint, code and visually
-- attacking doesnt work if it goes through a friendly unit
-- when moving units over enemy cities, they attack them instead
-- when attacking, don't set that as a path that will be done automatically next turn
-  -> just because unit can't reach that path (because it is blocked by enemy unit) it shouldn't auto attack next turn
-
+UI / cities / research / economy:
 - when citiy is selected, tiles could preview which resources they support
 - improve building stuff ui in cities
-- Only show the Tosts that are related to the player 
+- Only show the Tosts that are related to the player
 - bribe unit is bugged?
 - nothing happens when producing caravans, fix it!
 - Make it impossible to research somthing that is already discovered/researched by the civ.
@@ -141,78 +33,125 @@ BUGS:
 - are the libraries of other cities even doing anything? i am getting one science while having multiple cities with libraries
 - buying units directly should not be 50% cheaper
 - why is research prograss towards the end of a research getting slower?
-  ->  it should be constant right?
+  -> it should be constant right?
+
 - resources in cities don't seem to be calculated correctly
-  what is starvation doing?
-  Here is how the starvation logic works written out as structured pseudo-code, followed by an exact breakdown of how the Granary functions in Civilization 1.Civ 1 City Food & Starvation Pseudo-codetext// Run once per city at the end of every turn
-FUNCTION UpdateCityFood(city):
-    // 1. Calculate Food Production
-    total_food_produced = CalculateTilesFood(city.worked_tiles)
+  what is starvation doing?  -> see the Civ1 food/granary spec at the bottom of
+  this file (REFERENCE section); the bug above is the open task.
 
-    // 2. Calculate Food Consumption
-    citizen_consumption = city.population * 2
-    
-    settler_consumption = 0
-    IF city.government_type IN [DESPOTISM, ANARCHY, MONARCHY, COMMUNISM]:
-        settler_consumption = city.supported_settlers * 1
-    ELSE IF city.government_type IN [REPUBLIC, DEMOCRACY]:
-        settler_consumption = city.supported_settlers * 2
-        
-    total_consumption = citizen_consumption + settler_consumption
+- Selling of buildings should be able to be forced by AICoordinator in order to free
+  money for infrastructure build up (irrigations/streets/RailRoads) there for analyze if
+  infrastructure is needed if a city is bigger than 6 it starts to be needed at level 12 all
+  tiles around it that are buildible on should be builded on (if not constant attacks by the
+  enemy are hindering this since settlers are a valuble target) - The selling of buildings
+  also can be done in order to build up a army that needs regular income or to bribe units of
+  the enemy, therefor run a cost usage equation. Really check for every building if the effect
+  of the building needed for the city at the moment? SDI for example only needed if the enemy
+  is also able to produce atomic wapons. The Stock Exchange is only usefull if the math.
+  calulation return higher return of it for the city than its cost and so on.
+  (force-selling already works — AIManager.ts `sellBuilding(..., { force: true })`;
+  what is missing is the benefit/cost equation that decides WHEN and WHAT to sell.)
 
-    // 3. Determine Net Food Status
-    net_food = total_food_produced - total_consumption
+Assets:
+- Check where our assets are currently stored, bring order into it, do whatever needed.
 
-    // 4. Apply Net Food to Storage
-    city.food_storage = city.food_storage + net_food
+==================== NEXT STEPS (priority order) ====================
 
-    // 5. Check for Starvation
-    IF city.food_storage < 0:
-        city.population = city.population - 1
-        city.food_storage = 0
-        TriggerNotification(city.name + " starves! Population reduced.")
-        
-        // Handle city elimination if population hits zero
-        IF city.population <= 0:
-            DestroyCity(city)
-            
-    // 6. Check for Growth (For Context)
-    ELSE IF city.food_storage >= city.growth_threshold:
-        city.population = city.population + 1
-        IF city.has_granary == TRUE:
-            city.food_storage = city.growth_threshold / 2 // Granary retains half
-        ELSE:
-            city.food_storage = 0 // Standard reset
-        TriggerNotification(city.name + " grows to size " + city.population)
-Granary WorksIn Civilization 1, the Granary (costing 60 shields to build) has two distinct mechanics.
-It serves as an accelerator for population growth and a shield against an unpredictable random event.
-0. It stores food in it self when a city has a food surplus.
-The size of it is 20. When the city has no food any more it uses the food storage until it is empty.
-1. The Growth Retention Benefit (Primary Function)When a city grows,
-it normally empties its entire food storage box back to 0.
-Without a Granary: If your food box needs 20 food to grow,
-it resets to 0 / 20 (or 0 / 30 for the next size) the moment the city population increases.
-With a Granary: The game retains 50% of the food box threshold upon growth.
-If the city needed 20 food to grow, the box instantly resets to 10 instead of 0.
-This effectively cuts the time it takes for your city to grow a subsequent time in half.
-2. The Disaster Immunity Benefit (Secondary Function)Civ 1 features random "Disaster" mechanics that
-can strike individual cities during the turn flip. One of these disasters is Famine.
-Without a Granary: If a random Famine event hits your city,
-it immediately kills 1 citizen and wipes out a portion of your stored food,
-even if your tiles are producing a food surplus.With a Granary:
-The city is 100% immune to the random Famine disaster.
-Important Note on Starvation: As shown in the pseudo-code above,
-the Granary does not prevent turn-by-turn starvation caused by mismanagement.
-If your tiles produce less food than your citizens and settlers eat (net_food < 0),
-the food storage will eventually drop below zero, and a citizen will die regardless
-of whether a Granary is present.If you are trying to calculate the exact food storage
-capacity threshold for a specific city size to plug into your formulas.
+### 1. Naval Invasion / Transport Missions
+The navy pivot builds ships but there is **no transport/invasion mission** — only colony
+missions exist. Until this is implemented, an AI-vs-AI map whose strait splits civs across
+two continents is an unwinnable stalemate (465-round run: 17 wars, 3 attacks). This is the
+single biggest gameplay gap. The Civ1 transport backend spec (capacity cap, automatic
+boarding of sleeping units, deep-ocean sinking + Lighthouse, cargo wipe on sinking,
+ship-chaining) is in the WATER STUFF section below.
 
+### 2. Multi-Group Offensives / Siege Commitment
+Two army groups can form, but there is **no coordination** between them — no
+pincer/second-front planning. Groups operate independently.
 
-------------
-Water stuff
-------------
+### 3. Army Composition by Era
+The AI still over-produces the era's default defender. Needs stronger era/threat-aware
+composition weights so armies evolve with technology.
 
+### 4. Economy Buildings Earlier
+The AI reaches 0–8 gold with big armies. Marketplace/Bank/Temple should be built earlier
+when upkeep pressure starts.
+
+### 5. Client/Server Split
+See the "Planing Server Client Splitup" section at the bottom (5 blockers first:
+determinism, IDs, storage, timers, command layer).
+
+### 6. Civ1-manual leftovers
+  3. Global warming: implement the sun indicator and climate change effects.
+  6. Advisors: implement the 6 advisor reports and world reports.
+  9. Find City: add the city search feature.
+  (2. Disasters, 5. Diplomacy and the tech/gold/gifting parts are DONE — see TODO_DONE.txt)
+
+==================== FEATURES / FUNCTIONAL (open) ====================
+
+Long-term engine/game:
+* Splitting up the game into client and server so that the game can be played over network.
+* Networked multiplayer is not yet implemented, but the game engine is designed to support it.
+* Lobby system for multiplayer games (list of available games, create and join).
+* Replay to play replays — use the save game, turn log and map download for the replay stuff.
+* Hall of fame for multiplayer games (list of high scores, submit to a server).
+* Database backup and restore system, export and import of the database.
+
+AI strategy:
+* When no enemy is left on the Map anymore the AI declares active war on other civilizations
+  and starts to attack them, if the AI is not able to do so it should start to build a navy
+  and send it to the other civs to attack them.
+* If AI detects that it is on a water rich map the AI should use for systemic scouting of the
+  map Frigates/Galleons/Ironclads or fisherboats to find other civs and to find good city
+  locations.
+* A scout boat should if possible only use pathfinding to get to the target (same as GoTo)
+  and should avoid tiles that are already explored by the AI.
+* If the AI spots in a 10 by 10 tile area more than 3 enemy fishing boats and only minor war
+  ships it should build or send a frigate/galleon/ironclad/destroyer/carrier to destroy the
+  enemy fishing boats and return regularly to destroy more enemy fishing boats.
+* If available to the AI it should use nuclear weapons and target key enemy cities and key
+  enemy military units and than send units on land or water to take over the enemy cities and
+  destroy the remaining military units; if more nuclear weapons are available the AI should
+  use them regularly.
+* Scout/mercenary grants from huts can exceed the corps cap (only production is capped);
+  decide whether to convert/dismiss the extras.
+
+Gameplay:
+* Add new units for land transportation of units.
+* "Auto. turn ending" should get a 3 seconds timeout, so before switching to the next
+  player/civ it waits 3 seconds.
+* Trade Treaties between civilizations: establish trade routes between cities and negotiate
+  trade agreements. They increase the money from trade routes; routes with a civ that has a
+  trade treaty with the player pay more than routes with civs that do not.
+
+UI:
+Game Modals: Make these a joy for the eyes, fitting into the game, with placeholders for
+pictures where appropriate. Individual modals may deviate from the overall appearance of the
+game when meaningful and close.
+- The texts are designed to immerse the player in the game: lengthen, shorten, add texts,
+  direct addressing — everything possible, make it great!
+- Some have a list of all modals as a table: when they are shown to the player, what will be
+  shown at what time, etc.
+- Make a list of missing modals if you think this is the case.
+
+AI subsystem overhaul loop (next modules):
+Run the same 3-phase framework below against the next AI module (War/Military first, then
+Tech/Research, then Economy/Production) — the Settler Governor phase is DONE and its report
+lives in doc/AI_SETTLER_INTEGRATION.adoc + doc/space-bunny-free_ai_gov.adoc.
+
+==================== REFACTORING / ARCHITECTURE ====================
+* Split GameEngine.ts (grown to 9,074 lines) — extract FogOfWar, TradeRoute, Village managers.
+* Split AIManager.ts (grown to 11,100 lines) — separate turn orchestration from
+  movement/combat logic.
+* Delete legacy classes (src/game/City.ts, Civilization.ts, Unit.ts, Terrain.ts — dead code).
+* Medium-Term: client/server split for networked multiplayer; replay system.
+* Architectural: introduce a typed event bus (replace the single onStateChange callback),
+  add proper log level management, consider an ECS pattern for the engine,
+  profile and optimize AI turn performance.
+
+--------------------
+WATER STUFF (design spec for Next Step 1)
+--------------------
 
 * The AI should load units into transport ships
 Here is the technical breakdown of the Civ 1 transport backend systems, adapted strictly for your game's specific rules (removing stack death and adding the unit selection modal):
@@ -223,7 +162,7 @@ In the Civ 1 engine, units do not possess an "embarked" flag status like in mode
 * **The sleeping Automatic Boarding:** When a transport ship exits a city tile, the code executes a query check for any land units flagged as sleeping (S key) or Sleep inside that city. If found, the engine changes their coordinates to match the moving ship, dragging them along as cargo automatically.
 
 ### 🆕 Unit Selection Modal (Cargo Management UI)
-Because multiple units can share the exact same transport tile, a **Unit Selection Modal** is required for player interaction. 
+Because multiple units can share the exact same transport tile, a **Unit Selection Modal** is required for player interaction.
 * **Trigger:** When a player selects a transport ship and issues an "Unload" or "Activate" command.
 * **Functionality:** A modal popup appears displaying the icons and stats of the land units currently assigned to that ship's coordinates. The player selects the specific unit they wish to wake up or unload, preventing accidental activation of the wrong unit in a crowded tile.
 
@@ -235,7 +174,7 @@ The early-game Trireme uses a specific probability check if it finishes its turn
 ## 3. Combat Resolution (Individual Defense)
 *Note: The classic Civ 1 "Death Stack" mechanic does not exist in this game.*
 * **Individual Combat:** When an enemy naval unit attacks a tile containing your transport ship and any escort vessels, combat is resolved strictly on a 1-on-1 basis. The attacker engages the specific unit occupying the defensive slot; escort ships do not automatically absorb hits for the transport.
-* **Destruction Consequence:** If the transport ship is directly attacked and loses the combat resolution calculation, it is destroyed. Because of the Cargo Wipe logic, all land units stored in its coordinate array are instantly destroyed alongside it. 
+* **Destruction Consequence:** If the transport ship is directly attacked and loses the combat resolution calculation, it is destroyed. Because of the Cargo Wipe logic, all land units stored in its coordinate array are instantly destroyed alongside it.
 
 ## 4. The Infinite Movement Exploit: "Ship Chaining"
 Because of how the Civ 1 engine resets and checks unit movement points (MP), players can take advantage of a logic loophole:
@@ -243,56 +182,46 @@ Because of how the Civ 1 engine resets and checks unit movement points (MP), pla
 * **The Relay Hand-off:** If you park two transport ships on the exact same tile, you can manually "wake up" (W key) the land units inside Transport A. The engine sees them as standing on a valid transport tile, so they still have full movement points. You can then command them to "Sleep" again, and the engine will register them as occupying Transport B.
 * **The Infinite Loop:** By lining up ships across the entire ocean map—each spaced exactly at the maximum movement range of the previous ship—you can hand off units from ship to ship. The engine allows you to move an army across a massive ocean map in a single turn, bypassing the turn timer mechanics entirely.
 
-## 5. Implement a new modal when clicked on a tile where multipile units are at the same time it opens, shows all units with there status (fortified, sleeping and so on, with health bar)
-by clicking on a defening or sleeping unit I activate the unit.
+--------------------
+AI subsystem overhaul — generalized framework (loop this for every module)
+--------------------
 
+Loop these steps:
 
-## 6. Cities have no limit on units inside them.
-Extend the city menu by new tab that works the same way the modal for unit managment works
-Dont show the units fortified in the city directly on the map but show the fortified icon of it on the city
+Phase 1: Analysis & Strategic Design
+• Audit Subsystem Baseline: Evaluate current module logic, operational pacing, localized safety protocols, and operational targets.
+• Inspect Coordinator Hook: Check how the global coordinator system handles execution triggers, throttling, and deactivation for the module.
+• Design Cross-Module Integration: Establish coordination rules with secondary assets (e.g., defensive or escort units) based on real-time threat assessments.
+• Enhance Target Heuristics: Update evaluation algorithms to factor in value optimization, defensive viability, proximity penalties, and competitive posturing.
+• Configure Auto-Activation: Ensure the subsystem defaults to an active state if no explicit AI mode or global preset is provided.
 
+Phase 2: Iterative Refactoring & Automated Testing
+• Refactor Codebase: Apply the core architectural and strategic enhancements directly to the subsystem and global coordinator modules.
+• Launch Test Matches: Execute automated simulation games against baseline AI profiles across diverse environments and difficulty parameters.
+• Gather Empirical Metrics: Track data points including execution efficiency, operational progression milestones, asset loss ratios, and resource yields at fixed turn intervals.
+• Evaluate Strategy Performance: Analyze automated simulation outcomes to identify core strategic flaws or logic bottlenecks.
+• Pivot and Redesign: Overhaul the core architectural logic if performance falls below the baseline, completely bypassing basic value tweaking.
+• Re-run Evaluation Loop: Repeat testing and refactoring cycles until the overhauled subsystem demonstrates a statistically significant improvement over the baseline.
 
-7. Implement naval invasion missions (biggest gameplay gap — cross-water wars are stalemates)
-8. Split GameEngine.ts (7,089 lines) — extract FogOfWar, TradeRoute, Village managers
-9. Split AIManager.ts (7,343 lines) — separate turn orchestration from movement/combat logic
-10. Delete legacy classes (src/game/City.ts, Civilization.ts, Unit.ts, Terrain.ts — dead code)
-Medium-Term (1-3 months)
-11. [DONE] Implement veteran units (badge + combat formula term) — see UnitRankSystem.ts (4-rank ladder)
-12. Implement housing cap (Aqueduct gates city size at 10)
-13. [DONE] Add sound effects and music — cue set (SoundEngine) + streaming background music (Music.ts); see doc/SOUND_EFFECTS.adoc
-14. Implement per-civ doctrines (design doc exists)
-15. Add end-of-game statistics screen
-16. Implement tech exchange and gold transfer diplomacy
-Long-Term (3+ months)
-17. Client/server split for networked multiplayer
-18. Hot-seat multiplayer
-19. Replay system
-20. High score system
-Architectural
-21. Introduce typed event bus (replace single onStateChange callback)
-22. Add proper log level management
-23. Consider ECS pattern for the engine
-24. Add integration tests for save/load
-25. Profile and optimize AI turn performance
+Phase 3: Performance Reporting & Next Steps
+• Compile Algorithmic Changes: Document structural and heuristic modifications implemented within the codebase.
+• Generate Statistical Comparisons: Create comparative data tables contrasting Baseline AI performance vs. Overhauled Subsystem AI across all tracked metrics.
+• Draft Qualitative Assessment: Write a summary detailing observed behavioral improvements and systemic changes under dynamic game conditions.
+• Trigger Phase Transition: Hand off the stabilized code and automatically initialize the overhaul sequence for the next designated module in the AI dependency chain.
 
-
-------------------------------------------
+--------------------
 Planing Server Client Splitup
-------------------------------------------
-
+--------------------
 
 Five blockers to fix before the split (all cheap, all in shared code)
 1. Determinism — 48 Math.random in src/, 34 in engine. CombatSystem accepts context.random but GameEngine.ts:4545,4756 never passes it, so combat rolls are unseeded today. Route every gameplay roll through one engine RNG seeded from the lobby seed; tests already prove this works (useSeededRandom).
 2. IDs — 'u_' + Date.now() + '_' + Math.random() (TurnManager.ts:1019). Replace with a deterministic counter; same for AICoordinator army-group ids.
 3. Storage — engine calls localStorage directly (GameEngine.ts:6809,6828). Extract a SaveStore interface; server implements it, browser keeps localStorage. The v4 blob + v1–v4 migrations are already portable.
 4. Timers — DEFEATED_UNIT_REMOVAL_DELAY_MS corpse timer, aiTurnTimeoutMs (TurnManager.ts:477), and the visual sleep() pacing must become simulation ticks/deadlines, not wall clock.
-
 5. Command layer — ~55 UI→engine direct calls (moveUnit, setRates, setCityProduction, foundCityWithSettler…) with no ownership/turn validation.
 Today that's safe (one client); on a server it's an exploit surface. Introduce submit(command, {civId, turn, seq}) with validation;
 components call session.send(cmd) instead. This is also the seam that fixes the Zustand question from before
 — the store becomes a projection of the event stream, whatever the transport.
-
-
 
 I surveyed the whole project (70k lines, 154 test files, 52 engine files). The good news: the engine is already a server-shaped program — zero document/window coupling in src/game/engine/, it runs headless in 154 node-env tests and two scripts/*.mjs runners, TurnManager already drives all civs including AI in one phased loop, map gen is seed-pinned, and combat/AI already accept injectable RNG. You are not rewriting a browser app into a server app; you're moving a headless sim out of the browser.
 Proposed layout — 3 packages
@@ -317,183 +246,64 @@ server	nothing today — all new; reuses scripts/run-ai-batch.mjs cadence and te
 web/client	src/components/**, src/game/rendering/** (MapRenderer, MoveAnimator, GlideAnimation), src/stores, src/utils/EngineEventHandlers, KeyboardHandler.ts, App.tsx, UseGameEngine (rewritten to session)
 src/game/City.ts, Civilization.ts, Unit.ts, Terrain.ts (~2,500 dead lines) get deleted in the process, not ported.
 
-
-------------
-
-Game Modals: 
-Make these a joy for the eyes, fitting into the spile, with placeholders for pictures where appropriate.
-Individual modals may deviate from the overall appearance of the games when meaningful and close.
-- The texts are designed to immerse the player in the game, lengthen, shorten, add texts, direct addressing everything possible make it great! 
-- Some have a list of all modals as a table when they will be shown to the player what will be shown at what time, etc, etc 
-- Make a list of missing modals if you think this is the case
-
-
-------------
-
-# Trading Technology in Civilization 1 (1991)
-
-Quick prerequisites before any trading can happen:
-
-- **You must have met the civilization** (contact must be established).
-- **Both sides need something to swap** — Civ 1 trades are strictly one tech for one tech. No multi-tech deals, no cash sweeteners.
-
----
-
-**Step 1 — Make contact (map screen)**
-Move any of your units onto a square occupied by another civ's unit, or into one of their cities. A popup announces the meeting (e.g., *"You have made contact with the Russians!"*) and you're usually taken straight to the leader screen. This works both ways — an AI unit bumping into yours triggers the same dialogue.
-
-**Step 2 — The Foreign Minister screen (F3)**
-To talk to a civ again later, press F3 (in the DOS original; ports vary). This screen lists every civilization you've met, with leader names and government types. Highlight the civ you want and choose the option to talk/negotiate.
-
-**Step 3 — The leader negotiation screen**
-A portrait of the AI leader appears with a menu of proposals, roughly:
-- Exchange of Knowledge
-- Propose Peace (if at war)
-- Propose Alliance (if at peace)
-- Demand Tribute
-- Declare War
-- End Talks
-
-Select **Exchange of Knowledge**. If you're at war with them, don't be surprised if they refuse to do business until peace is made.
-
-**Step 4 — The Exchange of Knowledge screen**
-Here the game shows technologies in two groups: **techs they have that you lack**, and **techs you have that they lack**. Sometimes the AI opens by proposing a specific swap itself; otherwise you pick one tech from each side — one to receive, one to give in return.
-
-**Step 5 — Their verdict**
-The AI weighs the two techs against each other (roughly by research cost and era). If the deal looks fair, it accepts and both techs change hands instantly. If your offer is too cheap in its eyes, it refuses — come back with something richer and ask again.
-
-**Step 6 — Confirm the result**
-Back on the map you'll get a confirmation message. The new tech appears as known on your Science Advisor screen and in the Civilopedia. Your current research continues as normal, but new options may have unlocked. You can usually keep talking and make additional swaps as long as both sides still have techs the other wants.
-
----
-
-**Worth knowing:**
-
-- **AI civs trade techs among themselves** during their turns, so knowledge spreads around the world even if you never talk to anyone.
-- **The Great Library** wonder automatically grants you any advance known by at least two other civs — free "trades" with no diplomacy required.
-- **The dishonest alternative:** walk a Diplomat into one of their cities and steal a technology (random pick) — instant knowledge, guaranteed diplomatic consequences.
-- Friendlier leaders tend to be more willing to deal, so keeping relations civil pays off.
-
-----------
-----------
-
-I've the last city of a civilisation is taken and one of the units is not a settler than distory all remaining units of the civilisation.
-
-
-
-"Auto. turn ending" should get a 3 seconds timeout, so before switching to the next player/civ. it waits 3 seconds.
-
--------------
-
-Assets
-Check where are currently assets are stored
-Bring order into it
-Do what ever needed
-
-----------------
-
- AI player: analyze the settler govoner, make sigificant strageic imporovments to it, use of more unit, and overall the straegy, than make test games to check if it works,
- if not and it is not only a "bug" or somthing that you can adjust than agaian to siginficant changes and test play again - make it greate and smart! --- Also the settler govoner should be activated if not preset by the AI so improve the corrdinator as well  -- if the navie govoner is improvte significantly! (check it by the test games and statistcs provice detailed report at the end) than contiue with the other AI modules
-
-
-
- Here is a structured, clear prompt template based on your requirements:
-
----
-
-### **Prompt Template: AI Settler Governor & Coordinator Overhaul**
-
-> **Role & Goal:** You are an expert AI Developer specializing in strategy game AI (Civilization / Freeciv / 4X engines). Your task is to analyze, refactor, and test the **Settler Governor** and **Coordinator** modules to make them significantly smarter, strategically aggressive, and self-activating.
-
----
-
-#### **Phase 1: Analysis & Strategic Design**
-
-1. **Current State Audit:**
-* Review the existing Settler Governor logic (location evaluation, expansion pacing, safety/escort requirements, expansion targets).
-* Review the Coordinator logic to check how and when the Settler Governor is triggered or deactivated.
-
-
-2. **Strategic Enhancements:**
-* **Unit Utilization & Escort Integration:** Ensure Settlers are actively escorted by appropriate military units based on local threat assessments.
-* **Expansion Strategy & Timing:** Improve site evaluation heuristics (resources, defensibility, strategic chokepoints, distance penalties, forward settling).
-* **Coordinator Auto-Activation:** Ensure the Settler Governor is enabled by default if no explicit AI mode/preset is provided.
-
-
-
----
-
-#### **Phase 2: Iterative Refactoring & Automated Testing**
-
-1. **Implementation & Refactoring:**
-* Apply the architectural and strategic improvements to both the Settler Governor and Coordinator modules.
-
-
-2. **Test Game Execution:**
-* Run automated test games against previous AI baselines across diverse map types and difficulty levels.
-* Collect empirical metrics (e.g., win rates, expansion rate, average turns to $N$ cities, unit loss ratio, economic yield at turn 50/100/200).
-
-
-3. **Evaluation Loop:**
-* If performance falls short or strategies fail (beyond simple bugs or minor parameter adjustments), **redesign the core strategic logic** and execute another round of test games.
-* Repeat until the Settler Governor demonstrates a statistically significant improvement over the baseline.
-
-
-
----
-
-#### **Phase 3: Performance Reporting & Next Steps**
-
-1. **Detailed Evaluation Report:**
-* Provide a comprehensive report detailing:
-* Key structural/algorithmic changes made.
-* Statistical comparison tables (Baseline AI vs. New Settler AI across key metrics).
-* Qualitative assessment of observed strategic behavior during test games.
-
-
-
-
-2. **Phase Completion Trigger:**
-* Once the Settler Governor is proven to be significantly superior, automatically transition to refactoring and testing the next AI module (e.g., War/Military, Tech/Research, Economy/Production).
-
-
-
----
-
-
--------------
-
-Here are the iteration steps for the framework, abstracted from the settler context and generalized for any strategic AI subsystem:
-
-Loop this steps:
-Phase 1: Analysis & Strategic Design
-
-• Audit Subsystem Baseline: Evaluate current module logic, operational pacing, localized safety protocols, and operational targets.
-• Inspect Coordinator Hook: Check how the global coordinator system handles execution triggers, throttling, and deactivation for the module.
-• Design Cross-Module Integration: Establish coordination rules with secondary assets (e.g., defensive or escort units) based on real-time threat assessments.
-• Enhance Target Heuristics: Update evaluation algorithms to factor in value optimization, defensive viability, proximity penalties, and competitive posturing.
-• Configure Auto-Activation: Ensure the subsystem defaults to an active state if no explicit AI mode or global preset is provided.
-
-Phase 2: Iterative Refactoring & Automated Testing
-
-• Refactor Codebase: Apply the core architectural and strategic enhancements directly to the subsystem and global coordinator modules.
-• Launch Test Matches: Execute automated simulation games against baseline AI profiles across diverse environments and difficulty parameters.
-• Gather Empirical Metrics: Track data points including execution efficiency, operational progression milestones, asset loss ratios, and resource yields at fixed turn intervals.
-• Evaluate Strategy Performance: Analyze automated simulation outcomes to identify core strategic flaws or logic bottlenecks.
-• Pivot and Redesign: Overhaul the core architectural logic if performance falls below the baseline, completely bypassing basic value tweaking.
-• Re-run Evaluation Loop: Repeat testing and refactoring cycles until the overhauled subsystem demonstrates a statistically significant improvement over the baseline.
-
-Phase 3: Performance Reporting & Next Steps
-
-• Compile Algorithmic Changes: Document structural and heuristic modifications implemented within the codebase.
-• Generate Statistical Comparisons: Create comparative data tables contrasting Baseline AI performance vs. Overhauled Subsystem AI across all tracked metrics.
-• Draft Qualitative Assessment: Write a summary detailing observed behavioral improvements and systemic changes under dynamic game conditions.
-• Trigger Phase Transition: Hand off the stabilized code and automatically initialize the overhaul sequence for the next designated module in the AI dependency chain.
-
-----
-
-Would you like me to map this generalized framework onto a specific next module, such as the War/Military Subsystem or the Tech/Research Engine?
-
-* [DONE] Trade Ship auto-delivery: trade ships auto-establish routes between harbours without player input
-* [TOBECHECKED] Verify war commitment balance in AI vs AI with new garrisons and unit caps
-
+--------------------
+REFERENCE — Civ1 city food & starvation rules (spec for the open starvation bug)
+--------------------
+
+Here is how the starvation logic works written out as structured pseudo-code, followed by an exact breakdown of how the Granary functions in Civilization 1.
+
+// Run once per city at the end of every turn
+FUNCTION UpdateCityFood(city):
+    // 1. Calculate Food Production
+    total_food_produced = CalculateTilesFood(city.worked_tiles)
+
+    // 2. Calculate Food Consumption
+    citizen_consumption = city.population * 2
+
+    settler_consumption = 0
+    IF city.government_type IN [DESPOTISM, ANARCHY, MONARCHY, COMMUNISM]:
+        settler_consumption = city.supported_settlers * 1
+    ELSE IF city.government_type IN [REPUBLIC, DEMOCRACY]:
+        settler_consumption = city.supported_settlers * 2
+
+    total_consumption = citizen_consumption + settler_consumption
+
+    // 3. Determine Net Food Status
+    net_food = total_food_produced - total_consumption
+
+    // 4. Apply Net Food to Storage
+    city.food_storage = city.food_storage + net_food
+
+    // 5. Check for Starvation
+    IF city.food_storage < 0:
+        city.population = city.population - 1
+        city.food_storage = 0
+        TriggerNotification(city.name + " starves! Population reduced.")
+        // Handle city elimination if population hits zero
+        IF city.population <= 0:
+            DestroyCity(city)
+
+    // 6. Check for Growth (For Context)
+    ELSE IF city.food_storage >= city.growth_threshold:
+        city.population = city.population + 1
+        IF city.has_granary == TRUE:
+            city.food_storage = city.growth_threshold / 2 // Granary retains half
+        ELSE:
+            city.food_storage = 0 // Standard reset
+        TriggerNotification(city.name + " grows to size " + city.population)
+
+Granary: in Civilization 1 the Granary (costing 60 shields) has two distinct mechanics.
+It serves as an accelerator for population growth and as a shield against a random event.
+0. It stores food in itself when a city has a food surplus. The size of it is 20. When the
+   city has no food any more it uses the food storage until it is empty.
+1. Growth Retention: without a Granary the food box empties completely on growth
+   (20 food to grow -> resets to 0/20, or 0/30 for the next size); with a Granary 50% of
+   the threshold is retained (20 food -> resets to 10), which halves the time to the next
+   growth step.
+2. Disaster Immunity: Civ 1 has random "Disaster" mechanics that can strike cities at the
+   turn flip. One of them is Famine. Without a Granary a Famine immediately kills 1 citizen
+   and wipes a portion of the stored food even when the city has a food surplus. With a
+   Granary the city is 100% immune to the random Famine disaster.
+Important: the Granary does NOT prevent turn-by-turn starvation caused by mismanagement —
+if the tiles produce less food than the citizens and settlers eat (net_food < 0), the food
+storage eventually drops below zero and a citizen dies regardless of the Granary.

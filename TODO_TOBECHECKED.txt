@@ -1,61 +1,28 @@
-T is the population of the city the sunk ship came from.
-
-Still to do (bigger):
+Verification runs still needed (implemented, not yet proven in a game):
 * Verify war commitment in a fresh AI-vs-AI run: with garrisons now able to
   mobilise, war declarations gated on a reachable target, and the unit cap
   taking the most conservative estimate, do wars produce sustained offensives
   and city captures? Watch attacks/round (counted from real COMBAT_* events now)
   and citiesCaptured in the next progression CSV. The AI's own "Attack —" lines
   are intent only and no longer counted as attacks.
-* Naval invasion: land armies still cannot attack across water; the navy pivot
-* Multi-group offensives / siege commitment: two groups can form, but there is
-  no coordination between them (no pincer/second-front planning).
 * [TOBECHECKED] Verify naval governor emergency evacuation and settler fast transport in AI vs AI
 * [TOBECHECKED] Verify air-unit (fighter/bomber) usage and garrison exclusion in AI vs AI
+* [TOBECHECKED] Space race: Civ1-manual item 8 asked for spaceship construction
+  with parts and flight time. The game deliberately implements the Moonshot
+  instead (GameEngine.ts: "this game has no spaceship parts, so the Moonshot is
+  the space race") — decide whether that satisfies the manual item or whether
+  real spaceship parts are wanted.
+* [TOBECHECKED] Autosave: Civ1-manual item 10 asked for an autosave every 50
+  turns. The game already autosaves on EVERY turn into the separate slot
+  `civ1_autosave` (App.tsx) — decide whether that replaces the item.
+
+Note: the former "Still to do (bigger)" block (naval invasion, multi-group
+offensives, army composition by era, economy buildings earlier, scout/mercenary
+grants over the corps cap) is OPEN work and now lives in TODO.txt. The
+trade-ship formula + its [DONE] notes moved to TODO_DONE.txt.
 
 
-
-A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
-and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.
-Everytime it was in one of city of your civilisation and than reaches than another city of your civilisation or of another civ.
-the players get money.
-One ship owner civ. gets 80% of the following calulation and the owner of the raget city 20%:
-[(1+F*X)*(5*(P-10))+100+Cap)* (Minimum ([T*50%], [D*70%]))*20%/100]
-F is 150% (1.5) if it is a Foreign Trade Route, 0 if domestic
-X = 2*Enemy Civ. , 1*Your Own, 1.2 Friend, Peach Agreement NOT war.
-P is the population of the city Getting the trade route
-T is the population of the City the Trade Route is With
-D is the Distance to the City
-Cap is 25 if one of the cities is conected to the Capital, 0 if not
-[] indicates rounding down
-If this ship gets sunk by another ship than the owner civ. that where sinking the ship gets 100% of what the formular would had resulted,
-Assume: The traget city in the formular is the ship.
-D is distance to ship.
-Pop is the population of the city the sunk ship came from.
-* [DONE] Trade Ship, full form: the exact formula above ([(1+F*X)*(5*(P-10))+100+Cap]
-  * min([T*50%],[D*70%]) * 20%/100, every bracket floored) lives in
-  `GameEngine.tradeShipFormula`, the 80/20 owner/target split in `payTradeShipArrival`,
-  the 100%-prize sinking value in `computeTradeShipPrizeValue`; foreign harbour
-  cities of civs the owner has met are routeable and `autoEstablishTradeShipRoute`
-  opens the best-paying leg automatically (with tests/tests/tradeShip.test.ts 14).
-* [DONE] AI effectively uses the Trade Ship: it buys hulls also with a single own harbour
-  once it has contacted a foreign harbour city (`AutoProduction.buildTradeShipProduction`),
-  the turn-start hook opens foreign routes (`GameEngine.autoEstablishTradeShipRoute`) and
-  warships hunt them harder: `WARSHIP_TARGET_VALUE.trade_ship` above fisher boats,
-  raiders get the merchant bonus, and the hunt multiplier scales with the run's prize
-  (`AIManager.chooseWarshipTarget`), pinned in tests/ai/navalDoctrine + navalActivation.
-  builds ships but there is no transport/invasion mission (only colonies).
-  Until this exists, an AI_VS_AI map whose strait splits the civs across two
-  continents is an unwinnable stalemate (465-round run: 17 wars, 3 attacks).
-* Army composition by era: the AI still over-produces the era's default
-  defender; add stronger era/threat-aware composition weights.
-* Economy buildings earlier: the AI reaches 0-8 gold with big armies; build
-  marketplace/bank/temple earlier when upkeep pressure starts.
-* Scout/mercenary grants from huts can exceed the corps cap (only production
-  is capped); decide whether to convert/dismiss extras.
-
-
-  ?-Working-?
+?-Working-?
 
 - it should not be possible to build water units on cities that have no water connection
   -> I can not move water units on water / river if next to it (probably not supposed to be)
@@ -89,12 +56,12 @@ Rivers can contain fish also only 1/2 of % that tile as fish feature than Ocan t
 Improve the city managemnt of the AI.
 It should get and advanced management of the city.
 The AI should manage Food, Production, Money/Gold fitting the siution and strategy given by the AICoordinator
-The AI should by all means prevent femens therefor it uses city management, if needed granary (long term plan to have 
+The AI should by all means prevent femens therefor it uses city management, if needed granary (long term plan to have
 build a lot of settlers/expansation) or a low surplus of food production over all.
 The AI should use irrigation of settlers around the city.
 Building irrigations requires settler that need food them self so this should be part of an equation but should be done if fitting in strategy and benefitting.
 City growth is important, needs stable surplus of food.
-Also: Ai: the more far away a village from next town and the more towns the civ. hat the higher % that AI takes village instead of ignoring it to not get over runned by babrians.  
+Also: Ai: the more far away a village from next town and the more towns the civ. hat the higher % that AI takes village instead of ignoring it to not get over runned by babrians.
 
 - TODo -
 * improve the budget keeping / money handling of the AI, not overweight but should better do it use all mesures for it
@@ -104,4 +71,3 @@ never build if not needed, on very smaal islands even more
 * If Island is very small than highest prio to building ship
 * If AI detects by ship a smaal island with no city on it, send a settler and build a city there
 * Improve the AI scout and in general unit movement on islands
-

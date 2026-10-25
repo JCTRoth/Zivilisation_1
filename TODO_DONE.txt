@@ -72,6 +72,12 @@
   2 -> 151, alliances 0 -> 42, treaties signed 0 -> 159, ceasefires 440 -> 210,
 ### 7. Dead Code Cleanup
 DONE — the 57 unused exports knip reported are gone. Tuning constants and
+helpers that are genuinely used inside their own module were un-exported; the
+rest (getTerrainInfo, manhattan, terrainWeight, BASE_CONTENTMENT's stale
+comment, the duplicate `export default` on AICityManager/CombatSystem, the
+`MoveAnimator` named export, the dead `GameEngine` interface and the duplicated
+`EnemyLocation`/`PlayerTurnStorage` in types/game.ts, and the unused
+`expectInvariants` test helper) were deleted. knip now reports nothing.
 
 * Multi Language support, including the ability to change the language of the game, and the ability to add new languages to the game.
 
@@ -373,3 +379,90 @@ Make sure all is implemented from bottom up.
 * Add splash damage when multipile units stand on one place
 * Splash damage does not apply for units in a city or in a fortification or in a boat or in a transporter.
 * Integrate the new sprash damage also into the AI
+
+========================================================================
+Moved out of TODO.txt on 2026-10-25 — verified present in the code
+========================================================================
+* [DONE] GOTO/MOVE: a unit of the player CAN move onto a tile already occupied
+  by a friendly unit (stacking) — GameCanvas.tsx click handler "Moving ... onto
+  friendly tile — stacking"; the hover preview computes the path for a friendly
+  destination too. Tests: tests/unitStacking.test.ts, tests/movementPreview.test.ts.
+* [DONE] GOTO/MOVE: the crosshair ("pick a destination") cursor is released as
+  soon as the unit has a route — GameCanvas.tsx sets `cursor: crosshair` only
+  while `isUnitSelectionMode && !selectedUnitHasPath`, the red line carries the
+  information from then on. Covered in e2e/game.spec.ts.
+* [DONE] Units heal in their own cities: 2 HP/turn, lifetime capped at 15% of
+  all battle damage the unit ever took (CombatSystem CITY_HEAL_PER_TURN /
+  CITY_HEAL_CAP_FRACTION), with the little heal marker above a non-stacked
+  unit (MapRenderer.healMarkerVisible).
+* [DONE] When the last city of a civilisation is taken and one of the surviving
+  units is not a settler, all remaining units of that civilisation are destroyed
+  (GameEngine.ts:6319).
+* [DONE] Civ1-manual item 5 (Diplomacy): embassies, tech trading, sabotage and
+  incite revolt are implemented (src/game/engine/diplomacy/ — DiplomatAbilities,
+  EspionagePolicy, DiplomaticImpacts).
+* [DONE] Next Steps #5 Diplomacy, all four "STILL TODO" bullets:
+  tech-for-money sales, gold transfer (send/request gift), AI-to-AI alliance
+  calls for help, and embassy-based observation of AI-to-AI diplomacy.
+* [DONE] Next Steps #6: end-of-game statistics screen, Civ1 demographics
+  (greatest cities / world rankings) and the high score system.
+* [DONE] Next Steps #7: Dead Code Cleanup (joined into the note above).
+* [DONE] Medium-Term 12: housing cap — the Aqueduct's `housingCap` effect gates
+  city growth (TurnManager.ts:1393-1400, AQUEDUCT_HOUSING_CAP).
+* [DONE] Medium-Term 14: per-civ doctrines (AirDoctrine, NuclearDoctrine,
+  StrategicDoctrine branches) — doc/leader-doctrines.adoc.
+* [DONE] Long-Term 18: hot-seat multiplayer (human vs human on one machine) —
+  tests/hotseat.test.ts, tests/hotseatGameLoop.test.ts.
+* [DONE] Architectural 24: save/load integration tests —
+  tests/saveLoad.test.ts, tests/saveLoadMatrix.test.ts.
+* [DONE] Water-stuff item 5/6: the unit-selection modal for several units on one
+  tile (activate a fortified/sleeping unit, health bar + status) and the city
+  "Units" tab listing garrison + supported units — see the unit stack modal and
+  the city Units tab notes above. Cities have no limit on the units inside them.
+* [DONE] Leftover fragment from the old BUGS block: group-selection rings, the
+  "City details" button, and the store's activePlayer/currentTurn now being
+  synced from the engine at turn start.
+* [DONE] AI Settler Governor & Coordinator overhaul — the 3-phase
+  audit/refactor/test-game loop was run for the settler governor; report in
+  doc/AI_SETTLER_INTEGRATION.adoc and doc/space-bunny-free_ai_gov.adoc. The
+  generalized framework stays in TODO.txt for the next modules.
+
+------------------------------------------------------------------------
+Trade Ship (moved from TODO_TOBECHECKED.txt — implemented and tested)
+------------------------------------------------------------------------
+A trade ship can establish a trade route from a city with a harbour to a city with another harbour,
+and then the ship uses GoTo (pathfinding) to drive between the two cities automatically.
+Everytime it was in one city of your civilisation and then reaches another city of your
+civilisation or of another civ, the players get money.
+One ship owner civ. gets 80% of the following calculation and the owner of the target city 20%:
+[(1+F*X)*(5*(P-10))+100+Cap)* (Minimum ([T*50%], [D*70%]))*20%/100]
+F is 150% (1.5) if it is a Foreign Trade Route, 0 if domestic
+X = 2*Enemy Civ., 1*Your Own, 1.2 Friend, Peace Agreement NOT war.
+P is the population of the city Getting the trade route
+T is the population of the City the Trade Route is With
+D is the Distance to the City
+Cap is 25 if one of the cities is connected to the Capital, 0 if not
+[] indicates rounding down
+If this ship gets sunk by another ship then the owner civ. that sunk the ship gets 100% of what
+the formula would have resulted. Assume: the target city in the formula is the ship,
+D is the distance to the ship, Pop is the population of the city the sunk ship came from.
+* [DONE] Trade Ship, full form: the exact formula above ([(1+F*X)*(5*(P-10))+100+Cap]
+  * min([T*50%],[D*70%]) * 20%/100, every bracket floored) lives in
+  `GameEngine.tradeShipFormula`, the 80/20 owner/target split in `payTradeShipArrival`,
+  the 100%-prize sinking value in `computeTradeShipPrizeValue`; foreign harbour
+  cities of civs the owner has met are routeable and `autoEstablishTradeShipRoute`
+  opens the best-paying leg automatically (with tests/tradeShip.test.ts 14).
+* [DONE] AI effectively uses the Trade Ship: it buys hulls also with a single own harbour
+  once it has contacted a foreign harbour city (`AutoProduction.buildTradeShipProduction`),
+  the turn-start hook opens foreign routes (`GameEngine.autoEstablishTradeShipRoute`) and
+  warships hunt them harder: `WARSHIP_TARGET_VALUE.trade_ship` above fisher boats,
+  raiders get the merchant bonus, and the hunt multiplier scales with the run's prize
+  (`AIManager.chooseWarshipTarget`), pinned in tests/ai/navalDoctrine + navalActivation.
+
+  GoTo / movement / combat:
+- the GoTo and the MovePreview should be joint, code and visually
+- attacking doesnt work if it goes through a friendly unit
+- when moving units over enemy cities, they attack them instead
+- when attacking, don't set that as a path that will be done automatically next turn
+  -> just because unit can't reach that path (because it is blocked by enemy unit)
+  it shouldn't auto attack next turn
