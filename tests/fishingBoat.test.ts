@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
 import { SquareGrid } from '@/game/SquareGrid';
 import { AutoProduction } from '@/game/engine/AutoProduction';
+import { CityModalLogic } from '@/components/ui/gamemodals/CityModalLogic';
 import { UNIT_PROPERTIES, FISHER_BOAT_STORAGE, fisherFoodPerFish, fisherCatchValue } from '@/data/UnitConstants';
 import { TERRAIN_TYPES } from '@/data/TerrainConstants';
 import type { City, ProductionItem, SpecialistType, TradeRoute, Unit } from '../types/game';
@@ -353,6 +354,86 @@ describe('Fisher Boat production gating', () => {
     const queued = e.productionManager.setCityProduction('port', item as never);
     expect(queued.success).toBe(false);
     expect(queued.reason).toBe('fisher_boat_limit');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AVAILABILITY: offered only when EVERY requirement is fulfilled
+// ---------------------------------------------------------------------------
+
+/**
+ * The boat's `requires` tech is null — a "has the technology?" check alone
+ * would mark it available in any city on the map. The real gate is the whole
+ * rule set: Harbor BUILDING + water access + the one-per-city cap. These pin
+ * `canBuildItemType` (the answer the production modal greys its row with) and
+ * `getBuildableUnitTypes` (the list the modal filters to).
+ */
+describe('Fisher Boat availability — all requirements, not just the tech', () => {
+  function availabilityEngine(buildings: string[]) {
+    const e = makeEngine([
+      [O, O, O, O, O],
+      [O, G, G, O, O],
+      [O, O, O, O, O],
+    ]);
+    const city = addCity(e, 'port', 0, 1, 1, buildings);
+    setFish(e, 3, 0);
+    return { e, city };
+  }
+
+  it('names the missing building and keeps the boat off the available list', () => {
+    const { e, city } = availabilityEngine([]);
+
+    expect(e.productionManager.canBuildItemType(city.id, 'fisher_boat'))
+      .toEqual({ ok: false, reason: 'requires_building_harbor' });
+    expect(e.productionManager.getBuildableUnitTypes(city.id))
+      .not.toContain('fisher_boat');
+
+    // Harbor built → every requirement now holds.
+    city.buildings = ['harbor'];
+    expect(e.productionManager.canBuildItemType(city.id, 'fisher_boat'))
+      .toEqual({ ok: true });
+    expect(e.productionManager.getBuildableUnitTypes(city.id))
+      .toContain('fisher_boat');
+  });
+
+  it('drops the boat once the city already fields or is building one', () => {
+    const { e, city } = availabilityEngine(['harbor']);
+    expect(e.productionManager.getBuildableUnitTypes(city.id))
+      .toContain('fisher_boat');
+
+    addUnit(e, 'f1', 'fisher_boat', 3, 0, { homeCityId: city.id });
+    expect(e.productionManager.canBuildItemType(city.id, 'fisher_boat'))
+      .toEqual({ ok: false, reason: 'fisher_boat_limit' });
+    expect(e.productionManager.getBuildableUnitTypes(city.id))
+      .not.toContain('fisher_boat');
+
+    // Still unbuildable while the replacement is on the queue…
+    e.units = [];
+    city.buildQueue = [
+      { type: 'unit', itemType: 'fisher_boat', name: 'Fisher Boat', cost: 20 },
+    ];
+    expect(e.productionManager.canBuildItemType(city.id, 'fisher_boat').ok)
+      .toBe(false);
+
+    // …and free again once the queue is cleared.
+    city.buildQueue = [];
+    expect(e.productionManager.canBuildItemType(city.id, 'fisher_boat').ok)
+      .toBe(true);
+  });
+
+  it('is the same answer the city screen shows the player', () => {
+    const { e, city } = availabilityEngine([]);
+    const logic = new CityModalLogic(city as unknown as City, e, null, e.civilizations[0]);
+
+    expect(logic.getAvailableProductionKeys()).not.toContain('fisher_boat');
+    expect(logic.canBuildUnit('fisher_boat'))
+      .toEqual({ ok: false, reason: 'requires_building_harbor' });
+    // A unit with no building/tech gate is unaffected by the same check.
+    expect(logic.canBuildUnit('warrior').ok).toBe(true);
+
+    city.buildings = ['harbor'];
+    expect(logic.getAvailableProductionKeys()).toContain('fisher_boat');
+    expect(logic.canBuildUnit('fisher_boat').ok).toBe(true);
   });
 });
 

@@ -449,8 +449,8 @@ export class DiplomacyManager {
    * city of the other. Contact is symmetric — either side's proximity counts.
    */
   hasUnitContact(usCivId: number, themCivId: number): boolean {
-    const units = (this.gameEngine.getAllUnits?.() ?? this.gameEngine.units ?? []) as any[];
-    const cities = (this.gameEngine.getAllCities?.() ?? this.gameEngine.cities ?? []) as any[];
+    const units = (this.gameEngine.getAllUnits?.() ?? this.gameEngine.units ?? []) as Unit[];
+    const cities = (this.gameEngine.getAllCities?.() ?? this.gameEngine.cities ?? []) as City[];
     const ours = units.filter((u) => u.civilizationId === usCivId);
     const theirs = units.filter((u) => u.civilizationId === themCivId);
     const theirCities = cities.filter((c) => c.civilizationId === themCivId);
@@ -459,7 +459,7 @@ export class DiplomacyManager {
     const adjacent = (a: { col: number; row: number }, b: { col: number; row: number }) =>
       Math.abs(a.col - b.col) <= 1 && Math.abs(a.row - b.row) <= 1;
 
-    const contactFrom = (sideUnits: any[], otherUnits: any[], otherCities: any[]) =>
+    const contactFrom = (sideUnits: Unit[], otherUnits: Unit[], otherCities: City[]) =>
       sideUnits.some((u) => otherUnits.some((t) => adjacent(u, t))
         || otherCities.some((c) => adjacent(u, c)));
 

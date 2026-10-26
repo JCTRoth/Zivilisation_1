@@ -26,6 +26,7 @@ type Rows = string[][];
 const G = TERRAIN_TYPES.GRASSLAND;
 const D = TERRAIN_TYPES.DESERT;
 const O = TERRAIN_TYPES.OCEAN;
+const P = TERRAIN_TYPES.PLAINS;
 
 interface TestCity {
   id: string;
@@ -119,25 +120,15 @@ function addResource(engine: GameEngine, col: number, row: number, resource: str
 }
 
 /**
- * Put a Fisher Boat's net on a fishing ground. Since the harbor ocean-food
- * removal, a Fish tile only pays its full food value while a boat is actively
- * using it — these fixtures need nets to model "fish tiles are the fix".
+ * Irrigate a tile: +1 food. Under the Fisher rule a boat's fishing ground is
+ * never worked by a city, so these fixtures feed the city from irrigated land
+ * instead — grassland (2 food) becomes 3, which is what lets a governor reach
+ * a stable surplus without a single fish tile.
  */
-function addFishingNet(engine: GameEngine, col: number, row: number, homeCityId = 'city-1'): void {
+function irrigate(engine: GameEngine, col: number, row: number): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (engine as any).units.push({
-    id: `fisher-${col}-${row}`,
-    type: 'fisher_boat',
-    civilizationId: 0,
-    col,
-    row,
-    health: 100,
-    movesRemaining: 0,
-    isDefeated: false,
-    homeCityId,
-    fishStored: 0,
-    fishingRoute: { homeCityId, fishingTile: { col, row }, stage: 'fishing' },
-  });
+  const tile = (engine as any).getTileAt(col, row);
+  if (tile) tile.improvement = 'irrigation';
 }
 
 // ---------------------------------------------------------------------------
@@ -171,13 +162,16 @@ describe('AI city management: food balance', () => {
 
 describe('AI city management: famine prevention', () => {
   it('re-assigns workers to food tiles until the surplus is stable', () => {
-    // City centre + two deserts worked (0 food); fish tiles are the fix.
+    // City centre + two deserts worked (0 food each) → the city starves. A few
+    // irrigated grassland tiles in the radius are the fix the governor must
+    // find. (A Fisher Boat's ground is off-limits to citizens — see
+    // fishingBoat.test.ts — so food security comes from worked land.)
     const { engine, city, civ } = makeEngine([
-      [O, O, O, O, O],
-      [O, O, O, O, O],
-      [G, G, G, D, O],
-      [O, O, D, O, O],
-      [O, O, O, O, O],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
+      [G, G, G, D, G],
+      [G, G, D, G, G],
+      [G, G, G, G, G],
     ], {
       population: 3,
       // Content city (two temples): with tolerance gone a size-3 city is always
@@ -187,12 +181,9 @@ describe('AI city management: famine prevention', () => {
       buildings: ['temple', 'temple'],
       workingTiles: new Set(['2,2', '3,2', '2,3']),
     });
-    addResource(engine, 1, 1, 'Fish');
-    addResource(engine, 2, 1, 'Fish');
-    addResource(engine, 3, 1, 'Fish');
-    // Two boats work the best grounds, so those tiles pay full value.
-    addFishingNet(engine, 1, 1);
-    addFishingNet(engine, 2, 1);
+    irrigate(engine, 1, 1);
+    irrigate(engine, 3, 1);
+    irrigate(engine, 1, 3);
     engine.economicManager.refreshYieldsFromWorkingTiles(city as never);
     const before = engine.economicManager.cityFoodBalance(city as never, civ as never);
     expect(before.surplus).toBeLessThan(AI_MIN_FOOD_SURPLUS);
@@ -208,14 +199,15 @@ describe('AI city management: famine prevention', () => {
   });
 
   it('converts food above the cap into production without endangering growth', () => {
-    // City centre + three fish tiles worked (surplus well above the cap); a
-    // hills tile in the radius is a better production tile.
+    // City centre + three irrigated grassland tiles worked (surplus well above
+    // the cap); a plains tile carrying Horses in the radius is a better
+    // production tile.
     const { engine, city, civ } = makeEngine([
-      [O, O, O, O, O],
-      [O, O, O, O, O],
-      [O, TERRAIN_TYPES.PLAINS, G, O, O],
-      [O, O, O, O, O],
-      [O, O, O, O, O],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
+      [G, P, G, G, G],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
     ], {
       population: 2,
       workingTiles: new Set(['2,2', '1,1', '3,1', '2,1']),
@@ -225,12 +217,12 @@ describe('AI city management: famine prevention', () => {
       // content so this test isolates the food→production conversion.
       buildings: ['temple'],
     });
-    addResource(engine, 1, 1, 'Fish');
-    addResource(engine, 3, 1, 'Fish');
-    addResource(engine, 2, 1, 'Fish');
-    addFishingNet(engine, 1, 1);
+    irrigate(engine, 2, 2);
+    irrigate(engine, 1, 1);
+    irrigate(engine, 3, 1);
+    irrigate(engine, 2, 1);
     // The plains tile carries Horses (+2 production) — more valuable than the
-    // surplus fish tile when food is already abundant.
+    // surplus irrigated tile when food is already abundant.
     addResource(engine, 1, 2, 'Horses');
     engine.economicManager.refreshYieldsFromWorkingTiles(city as never);
     expect(engine.economicManager.cityFoodBalance(city as never, civ as never).surplus).toBeGreaterThan(4);
@@ -238,7 +230,7 @@ describe('AI city management: famine prevention', () => {
 
     engine.aiCityManager!.manageCity(city as never, civ as never, 'balanced_growth');
 
-    // The governor traded excess food for production (hills) and kept growth safe.
+    // The governor traded excess food for production (horses) and kept growth safe.
     expect(city.yields.production).toBeGreaterThan(beforeProduction);
     expect(engine.economicManager.cityFoodBalance(city as never, civ as never).surplus).toBeGreaterThanOrEqual(AI_MIN_FOOD_SURPLUS);
   });
@@ -251,11 +243,11 @@ describe('AI city management: famine prevention', () => {
 describe('AI city management: specialist policy', () => {
   it('promotes a Scientist for a science-focused civ when food is secure', () => {
     const { engine, city, civ } = makeEngine([
-      [O, O, O, O, O],
-      [O, O, O, O, O],
-      [O, O, G, O, O],
-      [O, O, O, O, O],
-      [O, O, O, O, O],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
     ], {
       population: 3,
       // Two temples, not one: with no tolerance the size-3 city needs happiness
@@ -265,10 +257,10 @@ describe('AI city management: specialist policy', () => {
       buildings: ['temple', 'temple'],
       workingTiles: new Set(['2,2', '1,1', '3,1', '2,1']),
     });
-    addResource(engine, 1, 1, 'Fish');
-    addResource(engine, 3, 1, 'Fish');
-    addResource(engine, 2, 1, 'Fish');
-    addFishingNet(engine, 1, 1);
+    irrigate(engine, 2, 2);
+    irrigate(engine, 1, 1);
+    irrigate(engine, 3, 1);
+    irrigate(engine, 2, 1);
     engine.economicManager.refreshYieldsFromWorkingTiles(city as never);
     expect(engine.economicManager.cityFoodBalance(city as never, civ as never).surplus).toBeGreaterThanOrEqual(3);
 
@@ -299,15 +291,15 @@ describe('AI city management: specialist policy', () => {
 describe('AI city management: granary plan', () => {
   it('recommends a Granary for an expanding civ with a stable surplus', () => {
     const { engine, city, civ } = makeEngine([
-      [O, O, O, O, O],
-      [O, O, O, O, O],
-      [O, O, G, O, O],
-      [O, O, O, O, O],
-      [O, O, O, O, O],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
+      [G, G, G, G, G],
     ], { population: 3, workingTiles: new Set(['2,2', '1,1', '3,1']) });
-    addResource(engine, 1, 1, 'Fish');
-    addResource(engine, 3, 1, 'Fish');
-    addFishingNet(engine, 1, 1);
+    irrigate(engine, 2, 2);
+    irrigate(engine, 1, 1);
+    irrigate(engine, 3, 1);
     engine.economicManager.refreshYieldsFromWorkingTiles(city as never);
     expect(engine.economicManager.cityFoodBalance(city as never, civ as never).surplus).toBeGreaterThanOrEqual(1);
 

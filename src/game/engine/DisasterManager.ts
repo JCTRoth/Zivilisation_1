@@ -105,7 +105,7 @@ export const DISASTER_CHECK_ORDER: readonly CityDisasterKind[] = [
 ];
 
 /** Pirates take the larger of this share of the treasury and the floor. */
-export const PIRATE_GOLD_SHARE = 0.1;
+const PIRATE_GOLD_SHARE = 0.1;
 export const PIRATE_GOLD_FLOOR = 20;
 
 /** What one landed disaster did — the payload of the `CITY_DISASTER` event. */

@@ -148,3 +148,54 @@
   color: var(--color-warning, #f2a33c);
   font-weight: 700;
 }
+
+/* ---- Cities tab (sortable census) ---------------------------------------- */
+
+/* The Producing column carries an emoji plus an item name; cap it so one
+   long local name cannot stretch the whole scrollable table. */
+.stats-table--cities .stats-cell--producing {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sortable headers: the th hands padding to a full-width button so the
+   whole header cell is the click target. */
+.stats-table thead th.is-sortable {
+  padding: 0;
+}
+
+.stats-sort-btn {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.stats-sort-btn--end {
+  justify-content: flex-end;
+}
+
+.stats-sort-btn:hover,
+.stats-sort-btn:focus-visible {
+  color: var(--color-text, #e8eef3);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.stats-sort-btn.is-active {
+  color: var(--gm-accent, #3d9bff);
+}
+
+.stats-sort-btn__arrow {
+  font-size: 8px;
+  line-height: 1;
+}

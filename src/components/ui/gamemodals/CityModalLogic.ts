@@ -200,6 +200,20 @@ export class CityModalLogic {
     return [];
   }
 
+  /**
+   * The engine's full gate for ONE unit in this city: `ok` only when every
+   * requirement holds — required tech, required BUILDING (the Fisher Boat
+   * needs its Harbor), the naval water-access rule and the per-city cap
+   * (one Fisher Boat, max 3 in-transit Caravans come from the UI itself).
+   * `reason` is the machine-readable rejection code, so the production modal
+   * can grey a row out with the exact sentence the engine would answer.
+   */
+  canBuildUnit(itemType: string): { ok: boolean; reason?: string } {
+    const pm = this.gameEngine?.productionManager;
+    if (typeof pm?.canBuildItemType !== 'function') return { ok: true };
+    return pm.canBuildItemType(this.city.id, itemType);
+  }
+
   canAffordBuyNow(itemType: string): boolean {
     // Check if city has already purchased something this turn
     const purchasedThisTurn = this.city.purchasedThisTurn || [];

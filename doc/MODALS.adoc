@@ -282,7 +282,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 | A (local state in `CityModal`)
 | "Choose Production…" button in the city-details action bar (`CityModal.tsx` L183 → `setShowProductionModal(true)`).
 | While city-details is open.
-| *Uses the shell*: title "Select Production", gold readout, "Show unavailable" switch, tabs Units / Buildings / Wonders with cost, turns, tech gates and race-warning tooltips.
+| *Uses the shell*: title "Select Production", gold readout, "Show unavailable" switch, tabs Units / Buildings / Wonders with cost, turns, tech and building gates (units go through the engine's `canBuildItemType`, so a Fisher Boat without its Harbor is hidden — or greyed with its reason when "Show unavailable" is on) and race-warning tooltips.
 | Add to build queue, Buy now, select a row; ✕.
 | none
 

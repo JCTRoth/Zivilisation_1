@@ -20,6 +20,7 @@ import {
 } from '@/data/WonderData';
 import { WonderArtwork } from './WonderArtwork';
 import { localizedWonder } from '@/i18n/wonderLore';
+import { productionFailureText } from '@/utils/ProductionUtils';
 import GameModal from './ModalShell';
 import { translateDynamic, type TranslationKey, type TranslationParams } from '@/i18n';
 import '@/styles/cityModal.css';
@@ -66,6 +67,17 @@ interface ProductionSelectionModalProps {
   cityName?: string;
   /** City id — enforces the "max 3 caravans per city" cap on this screen. */
   cityId?: string;
+  /**
+   * The engine's full production gate for one unit in THIS city: `ok` when
+   * every requirement holds, otherwise the machine-readable `reason`.
+   *
+   * Tech alone is not enough — the Fisher Boat has no required technology but
+   * needs the Harbor BUILDING, water access and its one-per-city slot. Rows
+   * are offered as available only when this AND the tech/caravan checks pass,
+   * so the modal can never promise something `ProductionManager` will reject.
+   * Absent (a caller without an engine) → no extra gate.
+   */
+  unitGate?: (key: string) => { ok: boolean; reason?: string };
 }
 
 /** True when the civ has researched every tech in the (possibly single) requirement. */
@@ -153,6 +165,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
   productionPerTurn = 0,
   cityName,
   cityId,
+  unitGate,
 }) => {
   // Subscribes the modal to language changes: unit/building/wonder/tech names
   // below resolve through the dataNames helpers and repaint on a switch.
@@ -427,12 +440,17 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
     return out;
   };
 
-  // Rows actually offered this turn (tech-gated unless "Show unavailable").
+  // Rows actually offered this turn. "Available" means EVERY requirement, not
+  // just the tech one: `unitGate` is the engine's own answer (Harbor building,
+  // water access, one-Fisher-Boat-per-city, …), so a row the engine would
+  // reject is never offered as buildable here.
   const unitRows = sortItems(
     Object.keys(UNIT_PROPS)
       .map((key) => {
         const unit = UNIT_PROPS[key];
         const requires = (unit as { requires?: string | string[] }).requires;
+        const requiredBuilding =
+          (unit as { requiredBuilding?: string | null }).requiredBuilding ?? null;
         // Max 3 in-transit caravans per home city (same cap the Caravan
         // Governor enforces for the AI): at the cap the row is shown but
         // greyed out with the cap as its reason.
@@ -441,13 +459,18 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
           !!cityId &&
           storeUnits.filter((u) => u.type === 'caravan' && !(u as { isDefeated?: boolean }).isDefeated && (u as { homeCityId?: string }).homeCityId === cityId).length >=
             MAX_CARAVANS_PER_CITY;
+        const gate = unitGate?.(key);
+        const gateReason = gate && !gate.ok ? gate.reason ?? 'blocked' : '';
         return {
           key,
           name: unit.name,
           cost: unit.cost,
-          canBuild: hasRequiredTechs(currentPlayer, requires) && !caravanCapped,
+          canBuild:
+            hasRequiredTechs(currentPlayer, requires) && !caravanCapped && !gateReason,
           caravanCapped,
+          gateReason,
           requires,
+          requiredBuilding,
           unit,
         };
       })
@@ -554,7 +577,7 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                         </td>
                       </tr>
                     )}
-                    {unitRows.map(({ key, name, cost, canBuild, caravanCapped, requires, unit }) => {
+                    {unitRows.map(({ key, name, cost, canBuild, caravanCapped, gateReason, requires, requiredBuilding, unit }) => {
                       const requiredTech = Array.isArray(requires) ? requires.join(', ') : requires || '';
                       const stats = t('prod.stats', {
                         attack: unit.attack,
@@ -564,6 +587,19 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                       const purchaseCost = getPurchaseCost('unit', cost);
                       const affordable = canAfford('unit', cost);
                       const canBuy = canBuild && affordable && !purchasedThisTurn && !!onPurchase;
+                      // Human-readable "why not" for a row the ENGINE gates
+                      // (Harbor missing, boat already in service, …) — the same
+                      // sentence the rejection notification shows. The caravan
+                      // cap keeps its own note in the requirement column.
+                      const blockedReason = gateReason
+                        ? productionFailureText(gateReason)
+                        : '';
+                      const buildingName = requiredBuilding
+                        ? tBuildingName(
+                            requiredBuilding,
+                            BUILDING_PROPS[requiredBuilding]?.name ?? requiredBuilding,
+                          )
+                        : '';
                       return (
                         <tr key={key} className={canBuild ? '' : 'text-muted'}>
                           <td>{tUnitName(key, name)}</td>
@@ -573,7 +609,21 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                                 {t('prod.caravanCap')}
                               </span>
                             ) : (
-                              formatTechName(requiredTech)
+                              <>
+                                {formatTechName(requiredTech)}
+                                {/* A unit can also need a BUILDING in this city
+                                    (the Fisher Boat needs its Harbor); showing
+                                    it here is what makes the greyed row
+                                    actionable instead of just "None". */}
+                                {requiredBuilding && (
+                                  <span
+                                    className="ms-1 text-warning"
+                                    title={t('prod.requiresBuilding', { building: buildingName })}
+                                  >
+                                    ⚓ {buildingName}
+                                  </span>
+                                )}
+                              </>
                             )}
                           </td>
                           <td>{stats}</td>
@@ -608,6 +658,9 @@ const ProductionSelectionModal: React.FC<ProductionSelectionModalProps> = ({
                                 >
                                   {purchaseCost}🪙
                                 </Button>
+                              )}
+                              {!canBuild && blockedReason && (
+                                <span className="small text-white-50">{blockedReason}</span>
                               )}
                             </div>
                           </td>

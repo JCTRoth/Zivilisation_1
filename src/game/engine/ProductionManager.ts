@@ -179,6 +179,21 @@ export class ProductionManager {
   }
 
   /**
+   * Public form of the gate for ONE item: `ok` when the city could start it
+   * right now, plus the machine-readable `reason` when it cannot.
+   *
+   * The production screen asks this per row so an item is only ever offered as
+   * available when EVERY requirement holds — and not merely when its tech is
+   * researched. The Fisher Boat is the case that made this explicit: its
+   * `requires` is null, so a tech-only check marked it buildable in any city,
+   * while it actually needs the Harbor BUILDING, water access and its
+   * one-per-city slot (see `canBuildItem`).
+   */
+  canBuildItemType(cityId: string, itemType: string): { ok: boolean; reason?: string } {
+    return this.canBuildItem(cityId, itemType);
+  }
+
+  /**
    * Unit types this city could start building right now: tech requirements and
    * the Civ1 naval rule (a naval unit needs a harbour or a coastal location).
    * Used by the city production UI and the "idle city" auto-end gate.

@@ -789,7 +789,7 @@ export interface MovementReachable {
   tiles: Map<string, number>;
 }
 
-export interface BribeNotice {
+interface BribeNotice {
   kind: 'defected' | 'reported' | 'refused';
   briberCivId: number;
   targetCivId: number;

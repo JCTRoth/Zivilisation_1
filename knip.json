@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["src/App.tsx", "tests/**/*.test.ts", "e2e/**/*.spec.ts", "e2e/**/*.ts", "scripts/**/*.mjs"],
   "project": ["src/**/*.{ts,tsx}", "types/**/*.ts", "tests/**/*.ts", "e2e/**/*.ts"],
+  "ignoreBinaries": ["magick"],
   "ignore": [
     "src/game/City.ts",
     "src/game/Civilization.ts",

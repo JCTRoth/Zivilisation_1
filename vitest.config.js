@@ -36,7 +36,14 @@ export default defineConfig({
     // million lines of engine reasoning. It is still a real test with a real
     // assertion — run it on purpose with
     //   npx vitest run tests/ai/navalBenchmark.test.ts --config vitest.diag.config.ts
-    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**', '**/tmp*.test.ts', '**/*bench*.test.ts'],
+    //
+    // `*[Pp]robe*.test.ts` is the same idea for TELEMETRY reporters: a probe
+    // (e.g. navalSpreadProbe) asserts nothing, enables `__civDebugLogs`, buffers
+    // every engine log line in memory, and plays 150 rounds — which OOM'd the
+    // 4 GB Node heap mid-suite. It reports via stdout, not assertions, so it is
+    // not a gate. Run it on purpose with
+    //   npx vitest run tests/navalSpreadProbe.test.ts --config vitest.diag.config.ts
+    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**', '**/tmp*.test.ts', '**/*bench*.test.ts', '**/*[Pp]robe*.test.ts'],
   },
   resolve: {
     alias: {

@@ -84,15 +84,7 @@ export const MUSIC_DUCK_LEVEL = 0.3;
 /** How long a duck holds before the bus comes back, in ms. */
 export const MUSIC_DUCK_HOLD_MS = 1_800;
 /** Cooldown after a track finishes before it plays again, in ms. */
-export const MUSIC_COOLDOWN_MS = 25_000;
-/** Alias kept for callers that name the cooldown after the playlist. */
-export const MUSIC_PLAYLIST_COOLDOWN_MS = MUSIC_COOLDOWN_MS;
-export const MUSIC_TRACK_COOLDOWN_MS = MUSIC_COOLDOWN_MS;
-export const MUSIC_REPLAY_COOLDOWN_MS = MUSIC_COOLDOWN_MS;
-export const MUSIC_LOOP_COOLDOWN_MS = MUSIC_COOLDOWN_MS;
-export const MUSIC_COOLDOWN_SECONDS = 25;
-export const MUSIC_PLAYLIST_COOLDOWN_SECONDS = 25;
-export const MUSIC_COOLDOWN = 25_000;
+const MUSIC_COOLDOWN_MS = 25_000;
 /** Step size of every volume ramp, in ms — small enough to sound linear. */
 const RAMP_STEP_MS = 50;
 /** Fallback music volume for a settings object without the field (old saves). */

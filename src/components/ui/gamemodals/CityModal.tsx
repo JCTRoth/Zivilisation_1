@@ -1418,6 +1418,7 @@ const CityModal: React.FC<CityModalProps> = ({
         productionPerTurn={logic.getProductionPerTurn()}
         cityName={cityName}
         cityId={selectedCity.id}
+        unitGate={(key) => logic.canBuildUnit(key)}
         onAddToQueue={(key) => {
           handleQueueProduction(key);
         }}

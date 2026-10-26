@@ -157,7 +157,7 @@ export interface ReachableTarget extends AirTarget {
   capturable: boolean;
 }
 
-export interface AirMission {
+interface AirMission {
   target: ReachableTarget;
   /** The doctrine always plans the strike arm as bombers (fact 3, see below). */
   airframe: 'bomber';
@@ -165,7 +165,7 @@ export interface AirMission {
   economy: AirVsGround;
 }
 
-export interface AirDeployment {
+interface AirDeployment {
   bombs: number;
   /** Escort cover, built only once the strike arm pays for itself. */
   fighters: number;

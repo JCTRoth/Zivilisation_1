@@ -200,6 +200,16 @@ DONE — Harbor ocean-food replaced by the Fisher Boat:
   actively using it — without a boat the city draws 1 food less per fish tile.
 * AI: AutoProduction builds one boat per harbor city under food pressure, and
   AIManager sails it to the nearest known fish tile and deploys the net.
+* AVAILABILITY: the production screen now offers the boat only when EVERY
+  requirement holds. Its `requires` tech is null, so the old tech-only check
+  in ProductionSelectionModal marked it buildable in any city — Harborless,
+  landlocked or already at its one-per-city cap alike. The row now goes
+  through `ProductionManager.canBuildItemType` (the same gate that answers
+  setCityProduction: Harbor BUILDING, naval water access, one boat per city),
+  which `CityModalLogic.canBuildUnit` hands to the modal as `unitGate`: the
+  row is hidden without "Show unavailable", greyed with the exact reason
+  ("it requires a harbor in this city") when shown, and the requirement
+  column shows "⚓ Harbor" instead of "None" (tests/fishingBoat.test.ts).
 
 - AI vs AI analysis (session aivsai-2026-09-20T23-11-44-788Z) -
 Fixed directly:

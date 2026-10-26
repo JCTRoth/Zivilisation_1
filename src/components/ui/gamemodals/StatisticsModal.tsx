@@ -8,11 +8,17 @@ import {
   numberValue,
   type DemographicRow,
 } from '@/game/engine/DemographicsManager';
+import { ModalUtils } from './ModalUtils';
+import { CityUtils } from '@/utils/CityUtils';
+import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
+import { WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { GameUtils } from '@/utils/GameUtils';
 import { useTranslation } from '@/i18n/useTranslation';
+import { tBuildingName, tUnitName, tWonderName } from '@/i18n/dataNames';
 import type { TranslationKey } from '@/i18n';
 import GameModal from './ModalShell';
 import type GameEngine from '@/game/engine/GameEngine';
+import type { City, ProductionItem } from '../../../../types/game';
 import '../../../styles/statisticsModal.css';
 
 interface StatisticsModalProps {
@@ -29,6 +35,106 @@ interface StatisticsModalProps {
 
 const formatVal = (r: DemographicRow): string =>
   r.fmt === 'pct' ? `${r.value}%` : r.fmt === 'float' ? r.value.toFixed(1) : Number.isInteger(r.value) ? r.value.toLocaleString() : r.value.toFixed(1);
+
+// ── Cities tab ────────────────────────────────────────────────────────────
+// One row per city owned by the player, sortable on every column. The
+// census reuses the same calculators the City screen uses (CityUtils for the
+// trade split, the engine's economicManager for food and garrison) so the two
+// screens can never disagree about a city's numbers.
+
+type CitySortKey =
+  | 'name'
+  | 'population'
+  | 'producing'
+  | 'turnsLeft'
+  | 'productionPerTurn'
+  | 'foodSurplus'
+  | 'growth'
+  | 'trade'
+  | 'gold'
+  | 'science'
+  | 'buildings'
+  | 'garrison';
+
+interface CityStatRow {
+  city: City;
+  name: string;
+  isCapital: boolean;
+  disorder: boolean;
+  population: number;
+  /** Localizable id of the active production item (`''` = nothing started). */
+  producingKey: string;
+  producingKind: 'unit' | 'building';
+  producingIcon: string;
+  producingNameFallback: string;
+  /** Turns until the active item is finished — `null` when nothing is built. */
+  turnsLeft: number | null;
+  productionPerTurn: number;
+  /** Food per turn after eating; negative = the city cannot feed itself. */
+  foodSurplus: number;
+  /** Turns until the next citizen (`0` while not growing). */
+  growthTurns: number;
+  /** Turns until the granary is empty (`0` while not starving). */
+  starvationTurns: number;
+  trade: number;
+  gold: number;
+  science: number;
+  buildings: number;
+  garrison: number;
+}
+
+interface CityColumnDef {
+  key: CitySortKey;
+  label: TranslationKey;
+  numeric?: boolean;
+  /** First-click direction; numeric columns start at their most useful end. */
+  defaultDir?: 'asc' | 'desc';
+}
+
+const CITY_COLUMNS: CityColumnDef[] = [
+  { key: 'name', label: 'stats.colCity' },
+  { key: 'population', label: 'stats.colPop', numeric: true },
+  { key: 'producing', label: 'stats.colProducing' },
+  { key: 'turnsLeft', label: 'stats.colTurns', numeric: true, defaultDir: 'asc' },
+  { key: 'productionPerTurn', label: 'city.stat.production', numeric: true },
+  { key: 'foodSurplus', label: 'city.stat.food', numeric: true },
+  { key: 'growth', label: 'stats.colGrowth', numeric: true, defaultDir: 'asc' },
+  { key: 'trade', label: 'city.stat.trade', numeric: true },
+  { key: 'gold', label: 'stats.colGold', numeric: true },
+  { key: 'science', label: 'city.stat.science', numeric: true },
+  { key: 'buildings', label: 'stats.colBuildings', numeric: true },
+  { key: 'garrison', label: 'stats.colGarrison', numeric: true },
+];
+
+const cityIcon = (item: ProductionItem): string => {
+  const key = item?.itemType ?? item?.type ?? '';
+  if (!key) return '🏗️';
+  return UNIT_PROPS[key]?.icon ?? BUILDING_PROPS[key]?.icon ?? (item?.type === 'unit' ? '⚔️' : '🏗️');
+};
+
+/**
+ * Sort key of one row for one column. `null` is only returned for a missing
+ * production item (the Turns column) — the comparator pins nulls to the last
+ * row regardless of direction, because "nothing started" is never the answer.
+ */
+const citySortValue = (key: CitySortKey, row: CityStatRow): string | number | null => {
+  switch (key) {
+    case 'name': return row.name.toLowerCase();
+    case 'population': return row.population;
+    case 'producing': return row.producingNameFallback.toLowerCase();
+    case 'turnsLeft': return row.turnsLeft;
+    case 'productionPerTurn': return row.productionPerTurn;
+    // Growth sorts by surplus, not by turns: a starving city's negative
+    // surplus puts it first either way — the row that needs the eye.
+    case 'growth': return row.foodSurplus;
+    case 'foodSurplus': return row.foodSurplus;
+    case 'trade': return row.trade;
+    case 'gold': return row.gold;
+    case 'science': return row.science;
+    case 'buildings': return row.buildings;
+    case 'garrison': return row.garrison;
+  }
+};
 
 const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide, gameEngine }) => {
   const { t } = useTranslation();
@@ -53,6 +159,132 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide, gameEng
   );
 
   const playerRows = all.find(d => d.civId === currentPlayer?.id)?.rows;
+
+  // ── Cities tab data ────────────────────────────────────────────────────
+  const cityRows = useMemo<CityStatRow[]>(() => {
+    if (!currentPlayer) return [];
+    const player = currentPlayer;
+    const econ = gameEngine?.economicManager;
+    const civCities = cities.filter(c => c.civilizationId === player.id);
+    // The seat of government: engine flag first, the civ's pointer second, and
+    // as a last resort the civ's first city — the same fallback
+    // GameResultOverlay uses, because scenario starts (MANY_CITIES,
+    // NO_SETTLERS) place cities without ever flagging one.
+    const capitalId =
+      civCities.find(c => c.isCapital === true)?.id ??
+      (player.capital && civCities.some(c => c.id === player.capital?.id) ? player.capital.id : undefined) ??
+      civCities[0]?.id;
+
+    return civCities
+      .map((city): CityStatRow => {
+        // The same trade→tax/science split the City screen shows.
+        const resources = CityUtils.calculateCityResources(city, player);
+        // The engine's food ledger is authoritative when available — it also
+        // charges the settlers the plain census does not know about.
+        const balance = typeof econ?.cityFoodBalance === 'function'
+          ? econ.cityFoodBalance(city, player)
+          : null;
+        const item = city.currentProduction ?? null;
+        const itemKind: 'unit' | 'building' = item?.type === 'unit' ? 'unit' : 'building';
+        return {
+          city,
+          name: city.name,
+          isCapital: capitalId === city.id,
+          disorder: city.disorder === true,
+          population: numberValue(city.population),
+          producingKey: String(item?.itemType ?? item?.type ?? ''),
+          producingKind: itemKind,
+          producingIcon: item ? cityIcon(item) : '',
+          producingNameFallback: ModalUtils.getProductionName(item),
+          turnsLeft: item
+            ? ModalUtils.getTurnsRemaining(
+                ModalUtils.getProductionProgressValue(city),
+                ModalUtils.getProductionCost(item),
+                ModalUtils.getProductionPerTurn(city),
+              )
+            : null,
+          productionPerTurn: ModalUtils.getProductionPerTurn(city),
+          foodSurplus: balance?.surplus ?? resources.food.surplus,
+          growthTurns: balance?.turnsUntilGrowth ?? resources.food.turnsUntilGrowth,
+          starvationTurns: balance?.turnsUntilStarvation ?? resources.food.turnsUntilStarvation,
+          trade: resources.trade.total,
+          gold: resources.taxes.amount,
+          science: resources.science.amount,
+          buildings: Array.isArray(city.buildings) ? city.buildings.length : 0,
+          garrison: typeof econ?.garrisonOnCityTile === 'function'
+            ? econ.garrisonOnCityTile(player, city)
+            : units.filter(
+                u =>
+                  u?.civilizationId === player.id &&
+                  u.isDefeated !== true &&
+                  (u.attack ?? 0) > 0 &&
+                  u.col === city.col &&
+                  u.row === city.row,
+              ).length,
+        };
+      });
+  }, [cities, currentPlayer, units, gameEngine]);
+
+  const [citySort, setCitySort] = useState<{ key: CitySortKey; dir: 'asc' | 'desc' }>({
+    key: 'name',
+    dir: 'asc',
+  });
+
+  const sortedCityRows = useMemo<CityStatRow[]>(() => {
+    const dir = citySort.dir === 'asc' ? 1 : -1;
+    return [...cityRows].sort((a, b) => {
+      const av = citySortValue(citySort.key, a);
+      const bv = citySortValue(citySort.key, b);
+      // A city with nothing in production sorts to the very end.
+      if (av === null || bv === null) return (av === null ? 1 : 0) - (bv === null ? 1 : 0);
+      return (typeof av === 'string' || typeof bv === 'string'
+        ? String(av).localeCompare(String(bv))
+        : av - bv) * dir;
+    });
+  }, [cityRows, citySort]);
+
+  const clickCitySort = (col: CityColumnDef) => {
+    setCitySort(prev =>
+      prev.key === col.key
+        ? { key: col.key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key: col.key, dir: col.defaultDir ?? (col.numeric ? 'desc' : 'asc') },
+    );
+  };
+
+  const renderCityHeader = (col: CityColumnDef) => {
+    const active = citySort.key === col.key;
+    return (
+      <th
+        key={col.key}
+        className={col.numeric ? 'text-end is-sortable' : 'is-sortable'}
+        aria-sort={active ? (citySort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+      >
+        <button
+          type="button"
+          className={`stats-sort-btn ${col.numeric ? 'stats-sort-btn--end' : ''} ${active ? 'is-active' : ''}`}
+          onClick={() => clickCitySort(col)}
+        >
+          <span>{t(col.label)}</span>
+          {active && (
+            <span className="stats-sort-btn__arrow" aria-hidden="true">
+              {citySort.dir === 'asc' ? '▲' : '▼'}
+            </span>
+          )}
+        </button>
+      </th>
+    );
+  };
+
+  /** Localized name of what a city is building; data ids → `data.*.id` keys. */
+  const cityNameProduction = (row: CityStatRow): string => {
+    const isWonder = row.producingKind === 'building' && !!WONDER_PROPERTIES[row.producingKey];
+    if (isWonder) return tWonderName(row.producingKey, row.producingNameFallback);
+    return row.producingKind === 'unit'
+      ? tUnitName(row.producingKey, row.producingNameFallback)
+      : tBuildingName(row.producingKey, row.producingNameFallback);
+  };
+
+  const fmtSigned = (n: number): string => (n > 0 ? `+${n}` : String(n));
 
   // ── Players tab data (devMode only) ─────────────────────────────────
   const playerStats = useMemo(
@@ -192,6 +424,96 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide, gameEng
           {/* NOTE: the Wonders tab used to live here. It now has its own screen
               in the World menu (World → Wonders), so Statistics is only about
               demographics again. */}
+
+          {/* ── Cities — every city the player owns, sortable columns ─────── */}
+          <Tab eventKey="cities" title={t('stats.tabCities' as TranslationKey)}>
+            {cityRows.length > 0 ? (
+              <div className="gm-section gm-section--flush">
+                <div className="stats-table-head">
+                  <span className="gm-chip gm-chip--accent">{currentPlayer?.name}</span>
+                  <span className="stats-table-head__hint">{t('stats.citiesHint' as TranslationKey)}</span>
+                </div>
+                <div className="table-responsive">
+                  <Table
+                    variant="dark"
+                    size="sm"
+                    className="mb-0 align-middle stats-table stats-table--cities"
+                    aria-label={t('stats.tabCities' as TranslationKey)}
+                  >
+                    <thead>
+                      <tr>{CITY_COLUMNS.map(renderCityHeader)}</tr>
+                    </thead>
+                    <tbody>
+                      {sortedCityRows.map((row, i) => {
+                        const starving = row.foodSurplus < 0;
+                        return (
+                          <tr key={row.city.id} className={i % 2 === 0 ? 'table-active' : ''}>
+                            <td className="text-nowrap">
+                              <span className="fw-semibold text-white">{row.name}</span>
+                              {row.isCapital && (
+                                <span className="badge bg-secondary ms-1">{t('stats.badgeCapital' as TranslationKey)}</span>
+                              )}
+                              {row.disorder && (
+                                <span className="badge bg-danger ms-1">{t('stats.badgeDisorder' as TranslationKey)}</span>
+                              )}
+                            </td>
+                            <td className="text-end">{row.population}</td>
+                            <td className="stats-cell--producing">
+                              {row.producingKey ? (
+                                <>
+                                  <span className="me-1" aria-hidden="true">{row.producingIcon}</span>
+                                  {cityNameProduction(row)}
+                                </>
+                              ) : (
+                                <span className="text-white-50">—</span>
+                              )}
+                            </td>
+                            <td className="text-end">
+                              {row.turnsLeft === null ? <span className="text-white-50">—</span> : row.turnsLeft}
+                            </td>
+                            <td className="text-end">{row.productionPerTurn}</td>
+                            <td className={`text-end ${row.foodSurplus < 0 ? 'stats-cell--warning' : undefined}`}>
+                              {fmtSigned(row.foodSurplus)}
+                            </td>
+                            <td className={`text-end ${starving ? 'stats-cell--warning' : undefined}`}>
+                              {row.foodSurplus > 0 ? (
+                                Math.max(1, row.growthTurns)
+                              ) : starving ? (
+                                <span
+                                  title={
+                                    row.starvationTurns > 0
+                                      ? t('stats.starvingTurns' as TranslationKey, { turns: row.starvationTurns })
+                                      : t('stats.starvingNow' as TranslationKey)
+                                  }
+                                >
+                                  ⚠{row.starvationTurns > 0 ? ` ${row.starvationTurns}` : ''}
+                                </span>
+                              ) : (
+                                <span className="text-white-50">—</span>
+                              )}
+                            </td>
+                            <td className="text-end">{row.trade}</td>
+                            <td className="text-end">{row.gold}</td>
+                            <td className="text-end">{row.science}</td>
+                            <td className="text-end">{row.buildings}</td>
+                            {/* A city without a garrison holds no happy citizens
+                                and no walls — flag it right in the table. */}
+                            <td className={`text-end ${row.garrison === 0 ? 'stats-cell--warning' : undefined}`}>
+                              {row.garrison}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </Table>
+                </div>
+              </div>
+            ) : (
+              <div className="gm-section">
+                <div className="gm-prose stats-empty">{t('stats.emptyCities' as TranslationKey)}</div>
+              </div>
+            )}
+          </Tab>
 
           {/* ── Players (devMode only) ─────────────────────────────────── */}
           {devMode && (

@@ -974,7 +974,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       }
     }
-  }, [units, gameState.isGameStarted, gameState.currentTurn, actions]);
+  }, [units, gameState.isGameStarted, gameState.currentTurn, gameState.activePlayer, actions]);
 
   // Focus the canvas when game engine is available for keyboard controls
   useEffect(() => {
@@ -1169,6 +1169,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   }, [
     gameState.selectedUnit,
     gameState.activePlayer,
+    gameState.humanPlayerIds,
     units,
     mapData,
     terrain,
@@ -1454,7 +1455,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       if (!width) return false;
       return !!mapData?.visibility?.[unit.row * width + unit.col];
     },
-    [devMode, mapData],
+    [devMode, mapData, gameState.humanPlayerIds],
   );
 
   const renderStaticContent = useCallback(() => {

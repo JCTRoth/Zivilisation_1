@@ -1,0 +1,27 @@
+
+--------------------
+AI subsystem overhaul — generalized framework (loop this for every module)
+--------------------
+
+Loop these steps:
+
+Phase 1: Analysis & Strategic Design
+• Audit Subsystem Baseline: Evaluate current module logic, operational pacing, localized safety protocols, and operational targets.
+• Inspect Coordinator Hook: Check how the global coordinator system handles execution triggers, throttling, and deactivation for the module.
+• Design Cross-Module Integration: Establish coordination rules with secondary assets (e.g., defensive or escort units) based on real-time threat assessments.
+• Enhance Target Heuristics: Update evaluation algorithms to factor in value optimization, defensive viability, proximity penalties, and competitive posturing.
+• Configure Auto-Activation: Ensure the subsystem defaults to an active state if no explicit AI mode or global preset is provided.
+
+Phase 2: Iterative Refactoring & Automated Testing
+• Refactor Codebase: Apply the core architectural and strategic enhancements directly to the subsystem and global coordinator modules.
+• Launch Test Matches: Execute automated simulation games against baseline AI profiles across diverse environments and difficulty parameters.
+• Gather Empirical Metrics: Track data points including execution efficiency, operational progression milestones, asset loss ratios, and resource yields at fixed turn intervals.
+• Evaluate Strategy Performance: Analyze automated simulation outcomes to identify core strategic flaws or logic bottlenecks.
+• Pivot and Redesign: Overhaul the core architectural logic if performance falls below the baseline, completely bypassing basic value tweaking.
+• Re-run Evaluation Loop: Repeat testing and refactoring cycles until the overhauled subsystem demonstrates a statistically significant improvement over the baseline.
+
+Phase 3: Performance Reporting & Next Steps
+• Compile Algorithmic Changes: Document structural and heuristic modifications implemented within the codebase.
+• Generate Statistical Comparisons: Create comparative data tables contrasting Baseline AI performance vs. Overhauled Subsystem AI across all tracked metrics.
+• Draft Qualitative Assessment: Write a summary detailing observed behavioral improvements and systemic changes under dynamic game conditions.
+• Trigger Phase Transition: Hand off the stabilized code and automatically initialize the overhaul sequence for the next designated module in the AI dependency chain.
