@@ -983,6 +983,66 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, [gameEngine, minimap]);
 
+  // AI-vs-AI runs get their overview camera written in App during game start,
+  // *before* this canvas exists — at that point the container sizes come from
+  // the window fallback, so a sidebar/top-bar layout leaves the map visibly
+  // off-center once mounted. Once the canvas has its real box, re-snap the
+  // camera to the exact center: one-shot per engine instance (a fresh game
+  // re-snaps), only within the first frames after mount — before any user
+  // input could have moved the camera.
+  const overviewSnapForRef = useRef<GameEngine | null>(null);
+  useEffect(() => {
+    if (!gameEngine || minimap) return;
+    const civs = gameEngine.civilizations ?? [];
+    if (!(civs.length > 0 && civs.every((c) => !c.isHuman))) return;
+    if (overviewSnapForRef.current === gameEngine) return;
+
+    let cancelled = false;
+    let frame = 0;
+    const snap = () => {
+      if (cancelled) return;
+      const canvas = canvasRef.current;
+      const state = useGameStore.getState();
+      const overviewMap = state.map;
+      if (
+        canvas &&
+        overviewMap &&
+        canvas.clientWidth > 0 &&
+        canvas.clientHeight > 0 &&
+        overviewMap.width > 0 &&
+        overviewMap.height > 0
+      ) {
+        overviewSnapForRef.current = gameEngine;
+        // Keep the zoom App picked (0.5× overview); only correct the offset,
+        // now that the real viewport (minus sidebar/top bar) is measurable.
+        const zoom = state.camera.zoom || 0.5;
+        const centered = centerCameraOnTile({
+          col: overviewMap.width / 2 - 0.5,
+          row: overviewMap.height / 2 - 0.5,
+          zoom,
+          viewportWidth: canvas.clientWidth,
+          viewportHeight: canvas.clientHeight,
+          mapWidth: overviewMap.width,
+          mapHeight: overviewMap.height,
+        });
+        if (isFinite(centered.x) && isFinite(centered.y)) {
+          state.actions.updateCamera({ x: centered.x, y: centered.y });
+        }
+        return;
+      }
+      // Canvas not laid out yet — retry a few frames so a slow first paint
+      // can't leave the run off-center, but never spin forever.
+      if (frame < 30) {
+        frame += 1;
+        requestAnimationFrame(snap);
+      }
+    };
+    requestAnimationFrame(snap);
+    return () => {
+      cancelled = true;
+    };
+  }, [gameEngine, minimap]);
+
   /** All units from the engine — stable for the keyboard handler effect. */
   const getAllUnitsFromEngine = useCallback((): Unit[] => {
     if (!gameEngine) return [];

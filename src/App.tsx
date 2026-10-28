@@ -223,13 +223,24 @@ function App() {
         if (isAIVsAI) {
           const mapWidth = engine.map?.width ?? gameSettings.mapWidth ?? 40;
           const mapHeight = engine.map?.height ?? gameSettings.mapHeight ?? 40;
-          const tileSize = 32;
-          const centerX = (mapWidth * tileSize) / 2;
-          const centerY = (mapHeight * tileSize) / 2;
+          const zoom = 0.5; // half zoom — overview of the whole map
+          // Center the view (not a tile): camera x/y is the viewport's
+          // world-space top-left corner, so writing raw map-center pixels here
+          // would open the run on the map's bottom-right quadrant.
+          const viewport = getGameViewport();
+          const centered = centerCameraOnTile({
+            col: mapWidth / 2 - 0.5, // geometric center tile of the map
+            row: mapHeight / 2 - 0.5,
+            zoom,
+            viewportWidth: viewport.width,
+            viewportHeight: viewport.height,
+            mapWidth,
+            mapHeight,
+          });
           actions.updateCamera({
-            x: centerX,
-            y: centerY,
-            zoom: 0.5, // half zoom — overview of the whole map
+            x: centered.x,
+            y: centered.y,
+            zoom,
           });
           // Spectator mode: keep the camera centered on the map instead of
           // following units around.
