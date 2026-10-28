@@ -557,6 +557,12 @@ const BLOCKING_DIALOGS: ReadonlyArray<{ text: string; button: string }> = [
   { text: 'End Turn?', button: 'Cancel' },
   { text: 'No Research Selected', button: 'Decide Later' },
   { text: 'Auto. turn ending', button: 'Got it' },
+  // The city-event story modal ("Washington is founded") opens the moment a
+  // settler founds a city. Escape alone cannot clear it: the following
+  // Ctrl+1 stacks the city screen on top, one Escape pops only that top
+  // modal, and the notice is left sitting over the canvas — every right-click
+  // in the tile scans below is then intercepted by it.
+  { text: 'is founded', button: 'Continue' },
 ];
 
 /**
