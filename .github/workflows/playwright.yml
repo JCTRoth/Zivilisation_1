@@ -16,8 +16,15 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
+      # *.svg / image assets are Git-LFS-tracked (see .gitattributes). Without
+      # `lfs: true` the checkout leaves pointer files behind, so tests that read
+      # the real artwork fail ("trireme.svg should be SVG: expected 'version
+      # https://git-lfs.github.com/spec/v1'") and the browser game renders
+      # without unit art.
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          lfs: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
