@@ -17,6 +17,7 @@ import '../../styles/sidePanel.css';
 import '../../styles/unitRank.css';
 import type { City, Civilization, SpecialistType, Unit } from '../../../types/game';
 import GameEngine from '@/game/engine/GameEngine';
+import { teamColor, teamName } from '@/data/TeamConstants';
 import { useTranslation } from '@/i18n/useTranslation';
 import { tSpecialistName, tUnitName } from '@/i18n/dataNames';
 import type { TranslationParams } from '@/i18n';
@@ -755,7 +756,24 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
             </div>
 
             <div className="name-div">
-              <div className="player-name">{displayPlayer.name}</div>
+              <div className="player-name">
+                {displayPlayer.name}
+                {(() => {
+                  const teamId = gameEngine?.teamManager?.enabled
+                    ? gameEngine.teamManager.getTeamId(displayPlayer.id)
+                    : null;
+                  if (teamId === null || teamId === undefined) return null;
+                  return (
+                    <span
+                      className="side-team-badge"
+                      style={{ borderColor: teamColor(teamId), color: teamColor(teamId) }}
+                      title={t('side.teamBadgeHint', { team: teamName(teamId) })}
+                    >
+                      {teamName(teamId)}
+                    </span>
+                  );
+                })()}
+              </div>
               <div className="side-panel-small-muted player-leader">
                 {(displayPlayer as { civilizationName?: string })?.civilizationName || displayPlayer.leader || t('side.unknownCivilization')}
               </div>

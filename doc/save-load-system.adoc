@@ -31,7 +31,7 @@ When the user clicks **Save Game**, the following flow occurs:
 
 The serialized save data includes:
 
-* `version` — Save format version (currently `1`)
+* `version` — Save format version (currently `5`; versions `1`–`5` load)
 * `timestamp` — When the save was created
 * `gameSettings` — Game configuration (number of civilizations, map size, difficulty, etc.)
 * `currentTurn` — Current turn number
@@ -40,8 +40,11 @@ The serialized save data includes:
 * `map` — Full map state (tiles, terrain, improvements, visibility, explored status)
 * `units` — All units with their properties (type, position, health, moves, orders, etc.)
 * `cities` — All cities with production, population, buildings, build queue, etc.
-* `civilizations` — All civilizations with resources, technologies, diplomatic state, etc.
+* `civilizations` — All civilizations with resources, technologies, diplomatic state,
+  and (in v5) the denormalised `teamId`, etc.
 * `technologies` — Technology tree state
+* `gameSettings.fixedAlliances` — Whether the game uses fixed alliances (v5)
+* `gameSettings.teamAssignments` — Slot-indexed team indices (v5)
 
 On success, a notification *"Game saved to civ1-save-turn-{turn}.json"* is shown. On failure, appropriate error notifications are displayed.
 
@@ -52,13 +55,16 @@ When the user clicks **Load Game**, the following flow occurs:
 . `handleLoadGame()` creates a hidden `<input type="file" accept=".json">` element and programmatically clicks it.
 . The browser's native file picker dialog opens, filtered to `.json` files.
 . When the user selects a file, its content is read via `file.text()`.
-. The JSON is validated — must have `version === 1`.
+. The JSON is validated — must have `version` in `1..5`.
 . The valid JSON is stored in `localStorage` under `civ1_savegame`.
 . `gameEngine.loadGame()` is called, which:
 .. Reads the JSON from `localStorage`
 .. Restores all engine properties (currentTurn, currentYear, activePlayer, map, units, cities, civilizations, technologies)
 .. Recreates the `SquareGrid` pathfinding grid
-.. Re-initializes subsystems (`playerStorage`, `scoutMemory`, `diplomacyManager`, `victoryManager`)
+.. Re-initializes subsystems (`playerStorage`, `scoutMemory`, `diplomacyManager`, `teamManager`, `victoryManager`)
+.. Rebuilds fixed-alliance membership from `gameSettings.teamAssignments`, then
+   reapplies `DiplomacyManager.applyTeamInvariants()` *after* the relations are
+   restored, so a stale teammate war in the save is repaired to an alliance
 .. Rebuilds the unit turn queue
 .. Syncs everything to the Zustand store via `storeActions`
 . A final store sync is performed in the UI layer to ensure all views are updated.
@@ -84,9 +90,13 @@ Save files are plain JSON with the following structure:
 [source,json]
 ----
 {
-  "version": 1,
+  "version": 5,
   "timestamp": 1717539200000,
-  "gameSettings": { ... },
+  "gameSettings": {
+    "fixedAlliances": true,
+    "teamAssignments": [0, 0, 1],
+    ...
+  },
   "currentTurn": 42,
   "currentYear": -3200,
   "activePlayer": 0,
@@ -99,15 +109,37 @@ Save files are plain JSON with the following structure:
   },
   "units": [ ... ],
   "cities": [ ... ],
-  "civilizations": [ ... ],
+  "civilizations": [ { "id": 0, "teamId": 0, ... }, ... ],
   "technologies": [ ... ]
 }
 ----
 
+=== Save format versions
+
+[cols="1,3", options="header"]
+|===
+|Version |Changes
+
+|1
+|Initial format.
+
+|2–4
+|Earlier diplomacy/economy additions. No team fields.
+
+|5
+|Fixed alliances: `gameSettings.fixedAlliances`,
+`gameSettings.teamAssignments` and `civilizations[].teamId`.
+|===
+
+Versions 1–4 load as free-for-all. A version-5 save with
+`fixedAlliances: false` (or an invalid team assignment) also loads as
+free-for-all. See link:FIXED_ALLIANCES.adoc[Fixed Alliances].
+
 === Limitations
 
 * Only one save can exist in `localStorage` at a time (the `civ1_savegame` key is overwritten on each save). However, since saves are also downloaded as files, users can keep multiple save files on disk by renaming them.
-* Save format version `1` is not forward-compatible — future versions will need a migration path.
+* Save format version `5` is the current format; versions `1`–`4` load with
+  free-for-all defaults. A save written by a *newer* format is rejected.
 * No cloud save support (only local file download/upload).
 * Large maps with many units may produce save files of several megabytes.
 

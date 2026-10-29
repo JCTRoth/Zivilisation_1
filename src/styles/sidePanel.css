@@ -791,3 +791,19 @@
   border-radius: 10px;
   overflow: hidden;
 }
+
+/* Fixed-alliance badge in the player header */
+.side-team-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.45rem;
+  padding: 0.02rem 0.42rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  background: rgba(0, 0, 0, 0.2);
+}

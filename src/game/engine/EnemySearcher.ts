@@ -139,7 +139,9 @@ export class EnemySearcher {
     getCityAt: (col: number, row: number) => { id: string; civilizationId: number; col: number; row: number } | null | undefined,
     isVisible: (col: number, row: number) => boolean,
     civilizationId: number,
-    maxRadius?: number
+    maxRadius?: number,
+    /** Locked teammates are friendly even though they are another civ. */
+    isFriendlyCiv?: (civId: number) => boolean,
   ): SearchResult | null {
     if (this.VERBOSE_LOGGING) {
       debugLog(`[EnemySearcher] Starting search from (${startCol}, ${startRow}) for civ ${civilizationId}`);
@@ -201,7 +203,9 @@ export class EnemySearcher {
 
       // Check for enemy city (prioritized)
       const city = getCityAt(col, row);
-      if (city && city.civilizationId !== civilizationId) {
+      if (city
+        && city.civilizationId !== civilizationId
+        && !isFriendlyCiv?.(city.civilizationId)) {
         if (distance < nearestCityDistance) {
           nearestCityDistance = distance;
           nearestCity = {
@@ -222,7 +226,10 @@ export class EnemySearcher {
       // Only if no nearby city found
       if (!nearestCity || distance < nearestCityDistance) {
         const unit = getUnitAt(col, row);
-        if (unit && unit.civilizationId !== civilizationId && distance < nearestUnitDistance) {
+        if (unit
+          && unit.civilizationId !== civilizationId
+          && !isFriendlyCiv?.(unit.civilizationId)
+          && distance < nearestUnitDistance) {
           nearestUnitDistance = distance;
           nearestUnit = {
             col,
@@ -265,7 +272,9 @@ export class EnemySearcher {
     getCityAt: (col: number, row: number) => { id: string; civilizationId: number; col: number; row: number } | null | undefined,
     isVisible: (col: number, row: number) => boolean,
     civilizationId: number,
-    maxRadius: number
+    maxRadius: number,
+    /** Locked teammates are friendly even though they are another civ. */
+    isFriendlyCiv?: (civId: number) => boolean,
   ): SearchResult[] {
     // Pre-allocate with estimated capacity
     const cities: SearchResult[] = [];
@@ -294,7 +303,9 @@ export class EnemySearcher {
 
       // Check city first (higher priority)
       const city = getCityAt(col, row);
-      if (city && city.civilizationId !== civilizationId) {
+      if (city
+        && city.civilizationId !== civilizationId
+        && !isFriendlyCiv?.(city.civilizationId)) {
         cities.push({
           col,
           row,
@@ -308,7 +319,9 @@ export class EnemySearcher {
 
       // Check unit
       const unit = getUnitAt(col, row);
-      if (unit && unit.civilizationId !== civilizationId) {
+      if (unit
+        && unit.civilizationId !== civilizationId
+        && !isFriendlyCiv?.(unit.civilizationId)) {
         units.push({
           col,
           row,

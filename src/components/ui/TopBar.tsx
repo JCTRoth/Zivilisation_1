@@ -4,6 +4,7 @@ import type GameEngine from '@/game/engine/GameEngine';
 import { useTranslation } from '@/i18n/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { useGameStore } from '@/stores/GameStore';
+import { teamColor, teamName } from '@/data/TeamConstants';
 import ResearchIndicator from './ResearchIndicator';
 
 interface TopBarProps {
@@ -67,6 +68,21 @@ const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       <div className="topbar-center">
+        {activeCiv && (() => {
+          const teamId = gameEngine?.teamManager?.enabled
+            ? gameEngine.teamManager.getTeamId(activeCiv.id)
+            : null;
+          if (teamId === null || teamId === undefined) return null;
+          return (
+            <span
+              className="topbar-team-badge"
+              style={{ borderColor: teamColor(teamId), color: teamColor(teamId) }}
+              title={t('topbar.teamBadgeHint', { team: teamName(teamId) })}
+            >
+              {teamName(teamId)}
+            </span>
+          );
+        })()}
         {isHotseat && activeCiv && (
           <div
             className="topbar-player-badge fw-bold"

@@ -7537,7 +7537,11 @@ const occupiedLandmasses = new Set(
     // An embargo names a third party, so the other civs are what make the
     // proposal meaningful — anyone we have met and who is not one of the two.
     const embargoCandidates = this.civilizations
-      .filter(c => c.id !== ourId && c.id !== targetCivId && c.isAlive !== false && dm.hasContacted(ourId, c.id))
+      .filter(c => c.id !== ourId
+        && c.id !== targetCivId
+        && c.isAlive !== false
+        && !this.teamManager.isTeammate(ourId, c.id)
+        && dm.hasContacted(ourId, c.id))
       .map(c => c.id);
     // A call to arms names OUR enemy — and only one this court has met.
     const jointWarCandidates = dm.getEnemies(ourId)
@@ -7558,6 +7562,7 @@ const occupiedLandmasses = new Set(
       techsWeWant: tradeOptions.theyHaveWeLack.length,
       embargoCandidates,
       jointWarCandidates,
+      isTeammate: this.teamManager.isTeammate(ourId, targetCivId),
     });
     return { targetCivId, kind, status, actions, ...detail };
   }

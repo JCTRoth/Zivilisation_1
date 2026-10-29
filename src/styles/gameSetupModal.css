@@ -1915,3 +1915,129 @@ select.setup-setting__control:focus {
     transition: none;
   }
 }
+
+/* ─── Fixed alliances (locked teams) ─────────────────────────────────── */
+
+.setup-teams__check {
+  margin: 0.55rem 0 0.2rem;
+  color: var(--color-text, #e8eef3);
+}
+
+.setup-teams__check .form-check-input {
+  background-color: rgba(4, 10, 16, 0.7);
+  border-color: rgba(240, 195, 60, 0.45);
+}
+
+.setup-teams__check .form-check-input:checked {
+  background-color: var(--setup-gold, #f0c33c);
+  border-color: var(--setup-gold, #f0c33c);
+}
+
+.setup-teams__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+}
+
+.setup-teams__preset {
+  font-size: 0.78rem;
+  padding: 0.35rem 0.7rem;
+}
+
+.setup-teams__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.55rem;
+}
+
+.setup-teams__count {
+  width: auto;
+  min-width: 8rem;
+}
+
+.setup-teams__list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.setup-teams__row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.6rem;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  background: rgba(4, 10, 16, 0.42);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.setup-teams__slot {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--setup-label, #9fb2c2);
+}
+
+.setup-teams__civ {
+  flex: 1 1 8rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.setup-teams__human {
+  flex: 0 0 auto;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(91, 155, 213, 0.5);
+  color: #9cc8ef;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.setup-teams__select {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 7rem;
+}
+
+.setup-teams__sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.setup-teams__size {
+  padding: 0.18rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--setup-label, #9fb2c2);
+  background: rgba(4, 10, 16, 0.5);
+}
+
+.setup-teams__error {
+  margin: 0.55rem 0 0;
+  color: #ff8a80;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 620px) {
+  .setup-teams__row {
+    flex-wrap: wrap;
+  }
+
+  .setup-teams__select {
+    flex: 1 1 100%;
+  }
+}

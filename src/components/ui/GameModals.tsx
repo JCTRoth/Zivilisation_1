@@ -37,6 +37,7 @@ import { tBuildingName, tTechName, tUnitName } from '@/i18n/dataNames';
 import type { TranslationKey } from '@/i18n';
 import { playSfx } from '@/utils/Sfx';
 import { captureCueForYear } from '@/utils/EngineEventHandlers';
+import { teamColor, teamName } from '@/data/TeamConstants';
 
 const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const { t } = useTranslation();
@@ -660,6 +661,10 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const renderDiplomacy = () => {
     const dm = gameEngine?.diplomacyManager;
     const playerId = currentPlayer?.id ?? 0;
+    const teams = gameEngine?.teamManager;
+    const teamGame = teams?.enabled === true;
+    const playerTeamId = teamGame ? teams?.getTeamId(playerId) ?? null : null;
+    const playerTeamMembers = playerTeamId !== null ? teams?.getTeamMembers(playerTeamId) ?? [] : [];
     // Only civilizations the player has actually met may be negotiated with —
     // rivals are discovered by scouting, not handed over on turn 1.
     const metCivIds = typeof dm?.getMetCivs === 'function' ? new Set(dm.getMetCivs(playerId)) : null;
@@ -941,6 +946,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
     const selectedCivData = selectedDiploCiv !== null ? civilizations[selectedDiploCiv] : null;
     const selectedStatus = selectedDiploCiv !== null ? (dm?.getStatus(playerId, selectedDiploCiv) ?? 'peace') : 'peace';
+    // A locked teammate is always allied, and the alliance itself is not a
+    // negotiable term. The screen still offers trade, knowledge and gold, but
+    // every hostile or redundant button is withheld.
+    const selectedIsTeammate = selectedDiploCiv !== null
+      && (teams?.isTeammate(playerId, selectedDiploCiv) ?? false);
+    const selectedTeamId = teamGame && selectedDiploCiv !== null
+      ? teams?.getTeamId(selectedDiploCiv) ?? null
+      : null;
     /**
      * Whether a diplomatic channel exists with the selected court. Without an
      * embassy the rival is still listed — you have met them — but their ledgers
@@ -1109,10 +1122,47 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               {/* Left: Civilization list */}
               <div className="diplomacy-civ-list">
                 <div className="gm-section-title diplomacy-pane-title">{t('gm.diplo.knownCourts' as TranslationKey)}</div>
+                {teamGame && playerTeamId !== null && playerTeamMembers.length > 0 && (
+                  <div className="diplomacy-team-roster">
+                    <div className="diplomacy-team-roster__title">
+                      <span
+                        className="diplomacy-team-badge"
+                        style={{ background: teamColor(playerTeamId), borderColor: teamColor(playerTeamId) }}
+                      >
+                        {teamName(playerTeamId)}
+                      </span>
+                      {t('gm.diplo.team.roster' as TranslationKey)}
+                    </div>
+                    {playerTeamMembers.map((civId: number) => {
+                      const member = civilizations[civId];
+                      if (!member) return null;
+                      return (
+                        <div key={civId} className="diplomacy-team-roster__row">
+                          <span style={{ color: member.color }}>●</span>
+                          <span>{member.name}</span>
+                          {civId === playerId && (
+                            <span className="diplomacy-team-roster__you">
+                              {t('gm.diplo.team.you' as TranslationKey)}
+                            </span>
+                          )}
+                          {member.isAlive === false && (
+                            <span className="diplomacy-team-roster__out">
+                              {t('gm.diplo.team.out' as TranslationKey)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <p className="diplomacy-team-roster__hint">
+                      {t('gm.diplo.team.rosterHint' as TranslationKey)}
+                    </p>
+                  </div>
+                )}
                 {otherCivs.map((civ: Civilization) => {
                   const status = dm?.getStatus(playerId, civ.id) ?? 'peace';
                   const treaties = dm?.getActiveTreaties?.(playerId, civ.id) ?? [];
                   const isSelected = selectedDiploCiv === civ.id;
+                  const civTeamId = teamGame ? teams?.getTeamId(civ.id) ?? null : null;
                   return (
                     <button
                       key={civ.id}
@@ -1121,6 +1171,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     >
 
                       <span className="diplomacy-civ-name">
+                        {civTeamId !== null && (
+                          <span
+                            className="diplomacy-team-badge diplomacy-team-badge--inline"
+                            style={{ borderColor: teamColor(civTeamId), color: teamColor(civTeamId) }}
+                          >
+                            T{civTeamId + 1}
+                          </span>
+                        )}
                         {civ.name}
                         {treaties.length > 0 && <span className="diplomacy-treaty-count">+{treaties.length}</span>}
                       </span>
@@ -1153,6 +1211,14 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         <div className="diplomacy-leader-title">
                           {portraitConfig?.title || t('gm.diplo.leaderTitle' as TranslationKey, { civ: selectedCivData.name })}
                         </div>
+                        {selectedTeamId !== null && (
+                          <span
+                            className="diplomacy-team-badge diplomacy-team-badge--leader"
+                            style={{ borderColor: teamColor(selectedTeamId), color: teamColor(selectedTeamId) }}
+                          >
+                            {teamName(selectedTeamId)}
+                          </span>
+                        )}
                         <div className="diplomacy-attitude-badge" style={{
                           color: ATTITUDE_LABELS[selectedAttitude]?.color || '#9e9e9e',
                           borderColor: ATTITUDE_LABELS[selectedAttitude]?.color || '#9e9e9e',
@@ -1231,6 +1297,26 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       </div>
                     </div>
 
+                    {selectedIsTeammate && (
+                      <div className="diplomacy-team-lock" role="note">
+                        <div className="diplomacy-team-lock__title">
+                          <span
+                            className="diplomacy-team-badge"
+                            style={{ background: teamColor(selectedTeamId), borderColor: teamColor(selectedTeamId) }}
+                          >
+                            {teamName(selectedTeamId)}
+                          </span>
+                          {t('gm.diplo.team.lockedTitle' as TranslationKey)}
+                        </div>
+                        <p className="diplomacy-team-lock__body">
+                          {t('gm.diplo.team.lockedBody' as TranslationKey)}
+                        </p>
+                        <p className="diplomacy-team-lock__hint">
+                          {t('gm.diplo.team.lockedHint' as TranslationKey)}
+                        </p>
+                      </div>
+                    )}
+
                     {/* Military strength comparison */}
                     {(() => {
                       const playerStr = dm?.estimateMilitaryStrength?.(playerId) ?? 0;
@@ -1263,11 +1349,13 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                           {activeTreaties.map((treaty: string) => (
                             <span key={treaty} className="diplomacy-treaty-badge">
                               {TREATY_LABELS[treaty]?.icon || '📜'} {TREATY_LABELS[treaty]?.label || treaty}
-                              <button
-                                className="diplomacy-treaty-cancel"
-                                onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'cancel_treaty', { treaty })}
-                                title={t('gm.diplo.cancelTreaty' as TranslationKey)}
-                              >×</button>
+                              {!selectedIsTeammate && (
+                                <button
+                                  className="diplomacy-treaty-cancel"
+                                  onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'cancel_treaty', { treaty })}
+                                  title={t('gm.diplo.cancelTreaty' as TranslationKey)}
+                                >×</button>
+                              )}
                             </span>
                           ))}
                         </div>
@@ -1277,7 +1365,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     {/* The engine's own arithmetic for the demand currently in
                         the box. Same function the AI uses to decide, so this is
                         a forecast rather than a hint. */}
-                    {verdict && selectedStatus !== 'war' && (
+                    {verdict && !selectedIsTeammate && selectedStatus !== 'war' && (
                       <div className={`diplomacy-verdict ${verdict.accepted ? 'likely' : 'unlikely'}`}>
                         <span className="diplomacy-verdict-headline">
                           {verdict.accepted ? t('gm.diplo.verdict.paid' as TranslationKey) : t('gm.diplo.verdict.refused' as TranslationKey)}
@@ -1333,8 +1421,16 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
                     {/* Negotiation buttons — locked until an embassy exists. */}
                     <section className="gm-section">
-                      <div className="gm-section-title">{t('gm.diplo.terms' as TranslationKey)}</div>
-                      {!hasEmbassy ? (
+                      <div className="gm-section-title">
+                        {selectedIsTeammate
+                          ? t('gm.diplo.team.tradeTerms' as TranslationKey)
+                          : t('gm.diplo.terms' as TranslationKey)}
+                      </div>
+                      {selectedIsTeammate ? (
+                        <p className="gm-note diplomacy-team-lock__note">
+                          {t('gm.diplo.team.termsHint' as TranslationKey)}
+                        </p>
+                      ) : !hasEmbassy ? (
                         <div className="diplomacy-embassy-gate">
                           <span className="diplomacy-embassy-gate__badge">
                             🏛️ {t('gm.diplo.embassy.required' as TranslationKey)}
@@ -1457,17 +1553,28 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       </section>
                     )}
 
-                    {/* Advanced treaties toggle */}
+                    {/* Advanced treaties toggle. A locked teammate has no
+                        treaties to negotiate — only trade and knowledge, which
+                        stay open without the toggle. */}
                     {selectedStatus !== 'war' && hasEmbassy && (
                       <>
-                        <button
-                          className="diplomacy-toggle-treaties"
-                          onClick={() => setShowTreatyPanel(!showTreatyPanel)}
-                        >
-                          {showTreatyPanel ? '▾' : '▸'} {t('gm.diplo.advancedTreaties' as TranslationKey)}
-                        </button>
-                        {showTreatyPanel && (
+                        {!selectedIsTeammate && (
+                          <button
+                            className="diplomacy-toggle-treaties"
+                            onClick={() => setShowTreatyPanel(!showTreatyPanel)}
+                          >
+                            {showTreatyPanel ? '▾' : '▸'} {t('gm.diplo.advancedTreaties' as TranslationKey)}
+                          </button>
+                        )}
+                        {(showTreatyPanel || selectedIsTeammate) && (
                           <div className="diplomacy-actions diplomacy-treaty-actions">
+                            {selectedIsTeammate && (
+                              <div className="diplomacy-team-lock__trade-title">
+                                {t('gm.diplo.team.tradeTerms' as TranslationKey)}
+                              </div>
+                            )}
+                            {!selectedIsTeammate && (
+                              <>
                             {!activeTreaties.includes('open_borders') && (
                               <button className="diplomacy-btn btn-treaty" onClick={() => handleDiplomacyAction(selectedDiploCiv!, 'offer_open_borders')}>
                                 {t('gm.diplo.btn.openBorders' as TranslationKey)}
@@ -1518,6 +1625,8 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                                   {t('gm.diplo.btn.embargo' as TranslationKey)}
                                 </button>
                               </span>
+                            )}
+                              </>
                             )}
 
                             {/* Exchange of Knowledge (Civ I): two lists of the

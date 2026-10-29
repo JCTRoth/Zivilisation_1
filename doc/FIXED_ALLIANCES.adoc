@@ -1,0 +1,394 @@
+= Fixed Alliances — Locked Teams
+
+> *Engine:* `src/game/engine/TeamManager.ts`, `src/game/engine/DiplomacyManager.ts`,
+> `src/game/engine/VictoryManager.ts`, `src/game/engine/GameEngine.ts`
+> *Setup UI:* `src/components/ui/GameSetupModal.tsx`
+> *In-game UI:* `src/components/ui/GameModals.tsx`, `TopBar.tsx`, `SidePanel.tsx`,
+> `src/components/ui/gamemodals/StatisticsModal.tsx`, `GameResultOverlay.tsx`
+> *Shared palette:* `src/data/TeamConstants.ts`
+> *Tests:* `tests/teams/`
+
+---
+
+== 1. What a fixed alliance is
+
+A *fixed alliance* is a game mode chosen at setup: the player divides the
+civilizations into permanent teams before the first turn. From then on the team
+is the unit of survival, war and victory:
+
+* Teammates can never fight, spy on, bribe, embargo or betray each other.
+* A war declared by or against one member is a war between the whole teams.
+* Peace and ceasefires are signed between whole teams.
+* Every member wins or loses with the team, including members already
+  eliminated when the result is decided.
+* A human whose own civilization has fallen but whose team still fights keeps
+  watching as a spectator instead of losing immediately.
+
+A team is **not** a new `DiplomaticStatus`. It is a locked layer *above* the
+existing pair-based diplomacy. Ordinary alliances, treaties and opinions still
+exist between civilizations on different teams, and between a team member and
+an outside civilization. This keeps the existing diplomacy model intact and
+makes free-for-all games behave exactly as before.
+
+Fixed alliances are a setup-time mode. They cannot be switched on or off during
+a game, and a team cannot be changed after the first turn.
+
+---
+
+== 2. Setup rules
+
+The toggle lives in the setup modal under *Fixed Alliances*. It is disabled
+below three civilizations, because a two-civ game has no third party to ally
+against and every "team" would be a singleton.
+
+A valid assignment must satisfy all of:
+
+. One team index per civilization *slot* (`0..N-1`), not per `CIVILIZATIONS`
+  entry. Slots are what the engine creates, and hotseat seats map to the first
+  slots.
+. At least two teams.
+. At least one team with two or more civilizations.
+
+Team indices are normalised to a dense `0..teamCount-1` range before they are
+stored, so a hand-written assignment such as `[3, 7, 3, 7, 9]` becomes
+`[0, 1, 0, 1, 2]`. Invalid assignments disable the mode and fall back to
+free-for-all rather than throwing; the setup screen blocks *Start* while the
+assignment is invalid.
+
+The setup screen offers:
+
+* *Humans vs AI* — every human seat on team 1, every AI on team 2.
+* *N even teams* — slots distributed round-robin over 2, 3 or 4 teams.
+* *Auto-balance* — re-spread the current number of teams evenly.
+* A per-slot team selector, with live team sizes and a validation message.
+
+The summary panel shows `teams · civilizations` before the game starts.
+
+---
+
+== 3. Engine model
+
+`TeamManager` is the single source of truth. It owns:
+
+* whether the mode is enabled,
+* the civilization → team map,
+* the team → members map (ascending slot order),
+* validation and normalisation,
+* team names (`Team 1`, `Team 2`, …),
+* team survival (`isTeamAlive`, `getAliveTeamIds`).
+
+`Civilization.teamId` is a *denormalised copy* written by
+`TeamManager.applyToCivilizations()`. It exists for the UI and the save file;
+all engine decisions call `TeamManager` instead of comparing `teamId` directly.
+
+Key methods:
+
+[cols="2,3", options="header"]
+|===
+|Method |Meaning
+
+|`enabled` / `teamCount`
+|Whether this is a team game and how many teams exist.
+
+|`getTeamId(civId)`
+|Team index, or `null` when the civ has no team.
+
+|`getTeamMembers(teamId)`
+|All civilization slots in a team, ascending.
+
+|`getTeamMembersOf(civId)`
+|The civ itself plus its teammates. A lone civ expands to `[civId]`, so the
+same expansion code works in free-for-all games.
+
+|`getTeammates(civId)`
+|Teammates only, never the civ itself.
+
+|`isTeammate(civA, civB)`
+|True only for two *distinct* civs on the same team.
+
+|`isTeamAlive(teamId)` / `getAliveTeamIds()`
+|A team is alive while at least one member has a living unit or a city.
+
+|`getTeamName(teamId)`
+|One-based display name (`Team 1`).
+
+|`applyToCivilizations()`
+|Writes `Civilization.teamId` for UI/save.
+
+|`validateTeamAssignments(assignments, civCount)`
+|Standalone validation shared by the engine and the setup screen.
+|===
+
+`TeamManager.configure()` runs after the civilizations are created and again on
+load. `reset()` clears every map when a new game starts or a save is loaded.
+
+---
+
+== 4. Diplomacy
+
+`DiplomacyManager.applyTeamInvariants()` is called after diplomacy
+initialization and again after a save is restored. It is idempotent and runs
+last on load, so even a hand-edited save containing a teammate war is repaired.
+
+For every teammate pair it forces:
+
+* `status = 'alliance'`,
+* an embassy,
+* contact (teammates always know each other),
+* `open_borders`,
+* no embargo against a teammate,
+* zero war exhaustion,
+* no stale `warWith` entries on either civilization.
+
+=== Team-wide war, peace and ceasefire
+
+`declareWar`, `makePeace` and `signCeasefire` expand to the cross-product of the
+two teams. Attacking one member brings the whole defending team in; the
+aggressor's team joins the attack. The global reputation hit and the
+`WAR_DECLARED` event are emitted once per team war, not once per pair.
+
+`getEnemyTeamCount(civId)` counts *distinct enemy teams*, not enemy
+civilizations, so a three-civ coalition is one war front for the AI's war cap.
+`estimateTeamStrength(civId)` sums the military strength of every teammate, so
+an AI does not attack a three-civ alliance believing it faces one opponent.
+
+=== What teammates may still do
+
+Trade, gold gifts, knowledge exchange, technology sales and requests remain
+available. The lock forbids betrayal, not commerce. The diplomacy screen shows
+a locked-alliance callout and withholds every hostile or redundant term:
+
+* no declare war / break alliance,
+* no demand tribute, bribe, spy, sabotage, steal technology or incite revolt,
+* no propose alliance, peace, ceasefire, open borders, mutual defence,
+  non-aggression, joint war, call for help or embassy — these are already
+  guaranteed by the lock.
+
+Treaties that form part of the lock (`open_borders`, `mutual_defense`,
+`embargo_target`) cannot be cancelled with a teammate.
+
+=== Outside civilizations
+
+Alliances and treaties with civilizations outside the team stay *per civ*.
+There is no team-wide alliance with a third party. A team war overrides an
+ordinary alliance: if a team member is allied with a civilization that the team
+is now at war with, the alliance is broken and the war applies to the whole
+team. Calls for help and offensive calls skip locked teammates, because they
+join automatically through the team-wide war.
+
+=== AI
+
+AI diplomacy is teammate-aware at three layers:
+
+* `AIDiplomacyPolicy` filters hostile and redundant candidates for a teammate.
+* `DiplomatAbilities` offers a teammate only trade, gold and knowledge.
+* `AIManager`, `AIUtility`, `EnemySearcher` and `AIUtility.findNearbyEnemy` treat
+  teammates as friendly when scanning for targets, and use team strength for
+  attack, tribute and bribery estimates.
+
+An AI never starts a war inside its own team, even if a stale relation or a
+future code path tries to.
+
+---
+
+== 5. Combat and movement
+
+Locked teammates are friendly everywhere the engine asks "is this hostile?":
+
+* `combatUnit()` refuses a teammate attacker/defender pair as its last line of
+  defence, even if a stray order reaches it.
+* Attack targeting, stacked-enemy detection, AI target selection and diplomat
+  targeting skip teammates.
+* Splash damage never hits a teammate.
+* City capture and last-city rules never treat a teammate city as foreign.
+* Unloading and city entry accept teammate cities; a teammate army does not
+  project a hostile zone of control against settlers.
+* SDI coverage ignores the firer's own team's batteries, and nuclear targeting
+  refuses a teammate target; the blast also spares teammate units and cities.
+
+Movement through teammate territory is ordinary friendly movement; there is no
+extra shared-vision or shared-map rule in v1 (see § 9).
+
+---
+
+== 6. Victory, defeat and spectating
+
+`VictoryManager` switches to team evaluation when `TeamManager.enabled` is true.
+
+* *Team moonshot:* the first operational member to complete Moonshot wins for
+  the whole team, whichever member built the parts.
+* *Team elimination:* the last team with an operational member wins. A team
+  with one surviving unit or one city is still alive.
+* *Team defeat:* when the primary human's team has no operational member and no
+  other human team is alive, the whole team loses.
+* *Spectating:* if the human's own civilization is eliminated but a teammate
+  survives, the game does not end. The human keeps watching until the team
+  result; the dead civ is skipped by the turn order.
+* *Hotseat:* the first human civilization's team is the primary perspective for
+  the shared result screen. Every member of the winning or losing team is listed
+  in `GameResult.civilizationIds` / `civNames`, with `teamId` and `teamName` set.
+
+Team survival uses a strict operational check that ignores units already marked
+`isDefeated` (they linger only for the death animation). Free-for-all games keep
+their historical operational rule unchanged.
+
+`GameResult` additions:
+
+[cols="1,2", options="header"]
+|===
+|Field |Meaning
+
+|`teamId?: number`
+|The team that won or lost, when this is a team result.
+
+|`teamName?: string`
+|Display name (`Team 1`).
+
+|`civilizationIds` / `civNames`
+|Every member of that team, including members eliminated earlier.
+|===
+
+---
+
+== 7. User interface
+
+=== Setup
+
+The setup modal owns the toggle, team count, presets, per-slot builder, live
+sizes and validation described in § 2. `Start` is disabled while the assignment
+is invalid. The chosen team count and assignments are written into
+`GameSettings` only when the mode is valid.
+
+=== In game
+
+* *Top bar:* the active civilization's team badge, tinted with the shared team
+  palette.
+* *Side panel:* the same badge beside the player name.
+* *Diplomacy modal:* a team roster in the civilization list (with `You` and
+  `Fallen` markers), inline `T1`/`T2` badges on foreign rows, a team badge on the
+  leader panel, and a locked-alliance callout with only trade/gold/knowledge
+  terms. Treaty cancel buttons are hidden for teammates.
+* *Statistics → Players:* a team badge beside each civilization name.
+* *Result overlay:* a team roster section listing every member's cities,
+  population, score and fallen status; the Act I/II titles and ledes use the
+  team name; the final ledger aggregates the team's cities, population, wonders,
+  technologies and score.
+
+The palette and the one-based name helper live in `src/data/TeamConstants.ts`
+(`TEAM_COLORS`, `teamColor`, `teamName`) so setup, badges and results never
+disagree about a team's colour or label.
+
+---
+
+== 8. Save and load
+
+The save format is *version 5*. The team state rides in two places:
+
+* `gameSettings.fixedAlliances` — whether the mode is on,
+* `gameSettings.teamAssignments` — slot-indexed team indices,
+* `civilizations[].teamId` — the denormalised copy used by the UI.
+
+On load the engine validates the version (`1..5`), restores the settings and
+civilizations, rebuilds `TeamManager` from `teamAssignments`, then reapplies the
+team invariants *after* the diplomacy relations are restored. A stale teammate
+war in the save is therefore repaired to an alliance.
+
+Versions 1–4 have no team fields and load as free-for-all. A version-5 save
+with `fixedAlliances: false` (or an invalid assignment) also loads as
+free-for-all.
+
+See link:save-load-system.adoc[Save & Load System] for the full format.
+
+---
+
+== 9. Scope and deferred work
+
+Shipped in v1:
+
+* permanent membership and validation,
+* team-wide diplomacy and war/peace,
+* combat, AI and diplomat guards,
+* team victory/defeat and human spectating,
+* setup and in-game UI,
+* save/load and tests.
+
+Deliberately deferred to v1.1:
+
+* *Shared team vision.* Teammates do **not** share fog of war or explored maps
+  in v1. Each civilization keeps its own visibility and exploration.
+* Team chat, shared research or shared gold.
+* Team-level treaties with outside civilizations (alliances remain per civ).
+* Reassigning teams during a game.
+
+---
+
+== 10. Tests
+
+`tests/teams/` contains the focused suite:
+
+[cols="2,3", options="header"]
+|===
+|File |Coverage
+
+|`TeamManager.test.ts`
+|Validation, normalisation, membership, team survival, reset, fallback.
+
+|`teamDiplomacy.test.ts`
+|Forced teammate alliance, team-wide war/peace/ceasefire, team strength,
+stale-war repair, AI policy and diplomat menus.
+
+|`teamCombat.test.ts`
+|Combat refusal between teammates, enemy-team distinction, teammate SDI.
+
+|`teamVictory.test.ts`
+|Team victory/defeat, spectator behaviour, team moonshot, FFA fallback.
+
+|`teamSaveLoad.test.ts`
+|Version 5 round-trip, stale teammate war repair, v4 → free-for-all.
+|===
+
+The suite runs with the rest of `npm test`; `npm run type-check` covers the
+production sources and the tests.
+
+---
+
+== 11. File map
+
+[cols="2,3", options="header"]
+|===
+|File |Role
+
+|`src/game/engine/TeamManager.ts`
+|Authoritative membership, validation, survival and team names.
+
+|`src/game/engine/DiplomacyManager.ts`
+|Team invariants, team-wide war/peace/ceasefire, teammate guards, team strength.
+
+|`src/game/engine/VictoryManager.ts`
+|Team victory/defeat, spectator handling, team moonshot.
+
+|`src/game/engine/GameEngine.ts`
+|Settings, construction/reset, initialization, save/load, combat/nuke/diplomat
+guards.
+
+|`src/game/engine/AI/*`, `src/game/engine/diplomacy/*`
+|Teammate-aware targeting, strength, policy and diplomat menus.
+
+|`src/data/TeamConstants.ts`
+|Shared team palette and display names.
+
+|`src/components/ui/GameSetupModal.tsx`
+|Toggle, team count, presets, per-slot builder, validation.
+
+|`src/components/ui/GameModals.tsx`
+|Diplomacy roster, badges, locked callout, teammate trade terms.
+
+|`src/components/ui/GameResultOverlay.tsx`
+|Team result titles, roster and aggregated ledger.
+
+|`types/game.ts`
+|`Civilization.teamId`, `GameResult.teamId` / `teamName`.
+
+|`tests/teams/`
+|Focused fixed-alliance suite.
+|===

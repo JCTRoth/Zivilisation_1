@@ -26,6 +26,64 @@ export interface TeamValidationResult {
 
 const EMPTY_VALIDATION: TeamValidationResult = { ok: true, errors: [], teamCount: 0 };
 
+/**
+ * Validate a setup-time team assignment without an engine. Shared by
+ * `TeamManager.configure()` and the setup screen, so the UI cannot offer a
+ * configuration the engine would silently reject.
+ *
+ * The rules are deliberately strict about the two things that would make the
+ * mode meaningless: a team game needs at least two teams, and at least one
+ * team must actually contain an alliance (two or more civs). A 1v1v1 where
+ * every civ is its own team is just a free-for-all.
+ */
+export function validateTeamAssignments(
+  assignments: number[] | undefined,
+  civCount: number,
+): TeamValidationResult {
+  if (!Array.isArray(assignments)) {
+    return { ok: false, errors: ['No team assignment was provided.'], teamCount: 0 };
+  }
+  if (assignments.length !== civCount) {
+    return {
+      ok: false,
+      errors: [`Expected ${civCount} team assignments, got ${assignments.length}.`],
+      teamCount: 0,
+    };
+  }
+  const errors: string[] = [];
+  const used = new Set<number>();
+  for (let i = 0; i < assignments.length; i++) {
+    const value = assignments[i];
+    if (!Number.isInteger(value) || value < 0) {
+      errors.push(`Civilization slot ${i} has an invalid team index.`);
+      continue;
+    }
+    used.add(value);
+  }
+  if (errors.length > 0) return { ok: false, errors, teamCount: 0 };
+  if (used.size < 2) {
+    return { ok: false, errors: ['A fixed-alliance game needs at least two teams.'], teamCount: 0 };
+  }
+
+  // Normalise arbitrary team indices (e.g. 3, 7) to a dense 0..k-1 range.
+  const sorted = [...used].sort((a, b) => a - b);
+  const remap = new Map<number, number>();
+  sorted.forEach((oldId, index) => remap.set(oldId, index));
+  const normalized = assignments.map((value) => remap.get(value)!);
+
+  const sizes = new Array(sorted.length).fill(0) as number[];
+  for (const team of normalized) sizes[team] += 1;
+  if (!sizes.some((size) => size >= 2)) {
+    return {
+      ok: false,
+      errors: ['At least two civilizations must share a team.'],
+      teamCount: 0,
+    };
+  }
+
+  return { ok: true, errors: [], normalized, teamCount: sorted.length };
+}
+
 export class TeamManager {
   private readonly gameEngine: GameEngine;
   private enabledFlag = false;
@@ -57,57 +115,9 @@ export class TeamManager {
     this.teamIds = [];
   }
 
-  /**
-   * Validate a setup-time team assignment.
-   *
-   * The rules are deliberately strict about the two things that would make the
-   * mode meaningless: a team game needs at least two teams, and at least one
-   * team must actually contain an alliance (two or more civs). A 1v1v1 where
-   * every civ is its own team is just a free-for-all.
-   */
+  /** Validate a setup-time team assignment (see {@link validateTeamAssignments}). */
   validate(assignments: number[] | undefined, civCount: number): TeamValidationResult {
-    if (!Array.isArray(assignments)) {
-      return { ok: false, errors: ['No team assignment was provided.'], teamCount: 0 };
-    }
-    if (assignments.length !== civCount) {
-      return {
-        ok: false,
-        errors: [`Expected ${civCount} team assignments, got ${assignments.length}.`],
-        teamCount: 0,
-      };
-    }
-    const errors: string[] = [];
-    const used = new Set<number>();
-    for (let i = 0; i < assignments.length; i++) {
-      const value = assignments[i];
-      if (!Number.isInteger(value) || value < 0) {
-        errors.push(`Civilization slot ${i} has an invalid team index.`);
-        continue;
-      }
-      used.add(value);
-    }
-    if (errors.length > 0) return { ok: false, errors, teamCount: 0 };
-    if (used.size < 2) {
-      return { ok: false, errors: ['A fixed-alliance game needs at least two teams.'], teamCount: 0 };
-    }
-
-    // Normalise arbitrary team indices (e.g. 3, 7) to a dense 0..k-1 range.
-    const sorted = [...used].sort((a, b) => a - b);
-    const remap = new Map<number, number>();
-    sorted.forEach((oldId, index) => remap.set(oldId, index));
-    const normalized = assignments.map((value) => remap.get(value)!);
-
-    const sizes = new Array(sorted.length).fill(0) as number[];
-    for (const team of normalized) sizes[team] += 1;
-    if (!sizes.some((size) => size >= 2)) {
-      return {
-        ok: false,
-        errors: ['At least two civilizations must share a team.'],
-        teamCount: 0,
-      };
-    }
-
-    return { ok: true, errors: [], normalized, teamCount: sorted.length };
+    return validateTeamAssignments(assignments, civCount);
   }
 
   /**

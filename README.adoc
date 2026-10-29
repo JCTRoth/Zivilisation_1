@@ -41,6 +41,8 @@ Gameplay::
 * 54 technologies (8 available at the start) with map-size and difficulty cost scaling
 * Six governments plus Anarchy, revolutions, capital relocation
 * Diplomacy: war, peace, ceasefires, alliances, five treaty types, bribes, tech exchange
+* Fixed alliances — optional permanent teams with locked diplomacy, team-wide
+  war/peace, team victory and human spectating
 * Trade routes, ferries with cargo, Fisher Boats and fishing nets
 * Barbarians, goody huts, tile improvements, pollution
 * Fog of war with per-player visibility and cross-turn scout memory
@@ -48,7 +50,7 @@ Gameplay::
 * 24 world wonders with a data-driven effect model
 
 Systems::
-* Save/load — versioned JSON (v4) with v1–v4 migration
+* Save/load — versioned JSON (v5) with v1–v5 migration
 * Full AI: 6 production profiles, strategy selection, research, government,
   diplomacy, army groups, naval doctrine, city governor, auto-production
 * Headless batch runners and a progression export (JSON + compact CSV)
@@ -345,6 +347,12 @@ paranoid civ 2.5× what it costs a belligerent one, betraying an alliance costs
 more than breaking a peace, and grievance decays at 0.5 per turn. A signed peace
 blocks re-declaration for **8 rounds**. Breaking a ceasefire costs 30 goodwill.
 
+Setup can also lock the civilizations into **fixed alliances** (permanent
+teams). Teammates cannot fight or betray each other; wars, peace and ceasefires
+expand across whole teams; every member wins or loses together; a human whose
+own civ falls while a teammate survives keeps watching. Alliances with outside
+civilizations remain per civ, and shared team vision is deferred to v1.1.
+
 === Barbarians
 
 A phantom horde that acts once per round before everyone else, spawned only by
@@ -463,6 +471,7 @@ the commit message which rule the number encodes.
 * link:doc/TECH_COMPARISON.adoc[Technology Comparison] — all 54 techs vs. original Civ I, with recommendations and clarity notes
 * link:doc/GOVERNMENT.adoc[Government & Revolution] — revolutions, anarchy, capital
 * link:doc/DIPLOMACY_SYSTEM.adoc[Diplomacy System] — opinion ledger, treaties, proposals
+* link:doc/FIXED_ALLIANCES.adoc[Fixed Alliances] — locked teams, team diplomacy, victory and spectating
 * link:doc/CITY_CAPTURE.adoc[City Capture & Destruction] — what happens when a city falls
 * link:doc/WONDERS.adoc[Wonders] — the 24-wonder data format and effect model
 * link:doc/MODALS.adoc[Modals & Dialogs] — every dialog, how it opens, screenshots in `doc/dialogs/`
@@ -471,7 +480,7 @@ the commit message which rule the number encodes.
 
 === Systems
 
-* link:doc/save-load-system.adoc[Save & Load System] — the v4 format and migrations
+* link:doc/save-load-system.adoc[Save & Load System] — the v5 format and migrations
 * link:doc/GOTO_MANAGER_IMPLEMENTATION.adoc[GoTo Manager] — pathfinding orders
 * link:doc/ROUND_MANAGER_IMPLEMENTATION.adoc[Round Manager] — automated path following
 * link:doc/GAME_PROGRESSION_EXPORT.adoc[Game Progression Export] — the analysis JSON/CSV

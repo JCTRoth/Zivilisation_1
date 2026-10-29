@@ -59,6 +59,12 @@ export interface DiplomatAbilityFacts {
   /** Third parties an embargo could be agreed against. */
   embargoCandidates: number[];
   /**
+   * The two civilizations are locked teammates. Trade and gifts remain, but
+   * every hostile, redundant or alliance-changing term disappears from the
+   * menu: the alliance itself is not negotiable.
+   */
+  isTeammate?: boolean;
+  /**
    * Enemies of OUR side the listener has met — the only civs a call to arms
    * can honestly name. Ask an ally to fight a stranger and the ask is
    * nonsense; ask them to join a war they already know is real, and the
@@ -153,5 +159,22 @@ export function diplomatActionsFor(facts: DiplomatAbilityFacts): DiplomatAction[
     actions.push('incite_revolt');
   }
 
+  if (facts.isTeammate) {
+    return actions.filter((action) => TEAMMATE_DIPLOMAT_ACTIONS.has(action));
+  }
   return actions;
 }
+
+/**
+ * The only terms a diplomat may offer a locked teammate: mutually beneficial
+ * trade and gifts. Everything else is either hostile, already guaranteed by
+ * the team lock, or an attempt to renegotiate the alliance itself.
+ */
+const TEAMMATE_DIPLOMAT_ACTIONS: ReadonlySet<DiplomatAction> = new Set<DiplomatAction>([
+  'propose_trade_agreement',
+  'offer_tech_exchange',
+  'offer_tech_for_gold',
+  'gift_technology',
+  'gift_gold',
+  'request_gold',
+]);

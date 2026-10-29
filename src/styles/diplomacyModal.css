@@ -962,3 +962,128 @@
   align-self: flex-start;
   margin-top: 0.15rem;
 }
+
+/* ─── Fixed alliances (locked teams) ─────────────────────────────────── */
+
+.diplomacy-team-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.08rem 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.diplomacy-team-badge--inline {
+  margin-right: 0.45rem;
+  vertical-align: middle;
+}
+
+.diplomacy-team-badge--leader {
+  margin-top: 0.35rem;
+  align-self: flex-start;
+}
+
+.diplomacy-team-roster {
+  margin: 0 0 0.7rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  border-radius: 10px;
+  background: rgba(212, 175, 55, 0.06);
+}
+
+.diplomacy-team-roster__title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-accent-strong, #ffd75e);
+}
+
+.diplomacy-team-roster__row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.18rem 0;
+  font-size: 0.82rem;
+  color: var(--color-text, #e8eef3);
+}
+
+.diplomacy-team-roster__you,
+.diplomacy-team-roster__out {
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.diplomacy-team-roster__you {
+  border: 1px solid rgba(91, 155, 213, 0.55);
+  color: #9cc8ef;
+}
+
+.diplomacy-team-roster__out {
+  border: 1px solid rgba(196, 106, 106, 0.55);
+  color: #e29a9a;
+}
+
+.diplomacy-team-roster__hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--color-text-muted, #9fb2c2);
+}
+
+.diplomacy-team-lock {
+  margin: 0 0 0.9rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(212, 175, 55, 0.38);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(212, 175, 55, 0.12), rgba(212, 175, 55, 0.03));
+}
+
+.diplomacy-team-lock__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--color-accent-strong, #ffd75e);
+}
+
+.diplomacy-team-lock__body,
+.diplomacy-team-lock__hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--color-text, #e8eef3);
+}
+
+.diplomacy-team-lock__hint,
+.diplomacy-team-lock__note {
+  color: var(--color-text-muted, #9fb2c2);
+}
+
+.diplomacy-team-lock__trade-title {
+  flex: 1 1 100%;
+  margin-bottom: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-accent-strong, #ffd75e);
+}

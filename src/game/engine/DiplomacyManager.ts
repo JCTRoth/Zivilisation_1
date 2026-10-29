@@ -739,12 +739,20 @@ export class DiplomacyManager {
 
     if (flags.announce) {
       debugLog(`[DIPLOMACY] Civ ${aggressorId} declared war on Civ ${targetId}`);
+      // The plain free-for-all payload stays exactly as it always was. Team
+      // information is added only when fixed alliances are on, so existing
+      // listeners (and the event contract) are untouched in normal games.
+      const teams = this.gameEngine.teamManager;
       this.emitEvent('WAR_DECLARED', {
         aggressorId,
         targetId,
-        teamWar: this.gameEngine.teamManager?.enabled ?? false,
-        aggressorTeamId: this.gameEngine.teamManager?.getTeamId(aggressorId) ?? null,
-        targetTeamId: this.gameEngine.teamManager?.getTeamId(targetId) ?? null,
+        ...(teams?.enabled
+          ? {
+              teamWar: true,
+              aggressorTeamId: teams.getTeamId(aggressorId),
+              targetTeamId: teams.getTeamId(targetId),
+            }
+          : {}),
       });
     }
     return true;
@@ -2353,14 +2361,14 @@ export class DiplomacyManager {
    * identical question.
    */
   tradeContext(civId: number, otherId: number): TechTradeContext {
-    const rel = this.getRelation(civId, otherId);
-    const own = this.estimateMilitaryStrength(civId);
-    const theirs = this.estimateMilitaryStrength(otherId);
+    // A team bargains with the whole alliance's weight, not one member's.
+    const own = this.estimateTeamStrength(civId);
+    const theirs = this.estimateTeamStrength(otherId);
     return {
       civId,
       otherId,
       weights: this.weightsFor(civId),
-      status: rel?.status ?? 'peace',
+      status: this.getStatus(civId, otherId),
       exhaustion: this.getWarExhaustion(civId),
       ourTechCount: this.gameEngine.civilizations?.[civId]?.technologies?.length ?? 0,
       theirTechCount: this.gameEngine.civilizations?.[otherId]?.technologies?.length ?? 0,
@@ -2399,14 +2407,19 @@ export class DiplomacyManager {
       otherId,
       weights,
       opinion: readOpinion(rel, civId),
-      status: rel.status,
-      treaties: rel.activeTreaties ?? [],
-      ownStrength: this.estimateMilitaryStrength(civId),
-      theirStrength: this.estimateMilitaryStrength(otherId),
+      // Locked teammates are always allied, whatever the stored relation says.
+      status: this.getStatus(civId, otherId),
+      treaties: this.getActiveTreaties(civId, otherId),
+      // Team strength, not one civ's: an AI must not attack a three-civ
+      // alliance believing it faces a single opponent.
+      ownStrength: this.estimateTeamStrength(civId),
+      theirStrength: this.estimateTeamStrength(otherId),
       ownGold: this.gameEngine.civilizations?.[civId]?.resources?.gold ?? 0,
       theirGold: this.gameEngine.civilizations?.[otherId]?.resources?.gold ?? 0,
-      activeWars: this.getEnemies(civId).length,
+      // Distinct enemy teams: a coalition war is one front, not three.
+      activeWars: this.getEnemyTeamCount(civId),
       maxWars: maxConcurrentWars(weights, this.gameEngine.currentYear),
+      teammate: this.isTeammate(civId, otherId),
       exhaustion: this.getWarExhaustion(civId),
       turnsSince: round - statusSince,
       roundsSincePeace,
@@ -2541,8 +2554,11 @@ export class DiplomacyManager {
       const candidates = scoreCandidates(ctx).filter((candidate) => {
         if (!teammate) return true;
         if (candidate.action === 'declare_war' || candidate.action === 'break_alliance') return false;
-        if (TEAM_HOSTILE_ACTIONS.has(candidate.action)) return false;
-        if (TEAM_REDUNDANT_ACTIONS.has(candidate.action)) return false;
+        // `DiplomaticCandidate.action` is a plain string by design (the AI
+        // policy is engine-free); the membership sets are typed.
+        const action = candidate.action as DiplomatAction;
+        if (TEAM_HOSTILE_ACTIONS.has(action)) return false;
+        if (TEAM_REDUNDANT_ACTIONS.has(action)) return false;
         return true;
       });
       const chosen = chooseAction(candidates, ctx);

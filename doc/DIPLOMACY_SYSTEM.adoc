@@ -20,6 +20,7 @@
 . <<ai-diplomacy,AI Diplomacy Logic>>
 . <<counter-proposals,Counter-Proposals>>
 . <<alliance-cascade,Alliance Cascade & Mutual Defense>>
+** <<fixed-alliances,Fixed Alliances (Locked Teams)>>
 . <<trade-economy,Trade & Economy>>
 . <<intelligence-reports,Intelligence Reports>>
 . <<ui-diplomacy-modal,UI — Diplomacy Modal>>
@@ -58,6 +59,8 @@ The diplomacy system implements a full diplomatic relations framework inspired b
 * *Counter-Proposals* — AI rejects an offer but suggests alternative terms
 * *Border Friction* — nearby cities worsen attitude automatically
 * *Alliance Cascade* — attacking an ally drags their allies into the war
+* *Fixed Alliances* — an optional setup-time mode that locks civilizations
+  into permanent teams above the ordinary pair-based diplomacy
 * *Procedural Leader Portraits* — SVG-rendered portraits with mood expressions
 
 ---
@@ -99,7 +102,11 @@ The diplomacy system implements a full diplomatic relations framework inspired b
 |All TypeScript type definitions (`DiplomaticStatus`, `TreatyType`, `DiplomacyProposal`, etc.)
 
 |`DiplomacyManager.ts`
-|Core engine: relation management, proposals, AI decisions, treaty handling
+|Core engine: relation management, proposals, AI decisions, treaty handling,
+team invariants and team-wide war/peace
+
+|`TeamManager.ts`
+|Fixed-alliance membership, validation, survival and team names
 
 |`GameEngine.ts`
 |Integration: initializes DiplomacyManager, diplomacy-aware combat in `moveUnit()`
@@ -581,6 +588,41 @@ Each turn, the `processTurn()` method checks all mutual defense treaties:
 ** If B is at war with Y, and A is NOT at war with Y → A declares war on Y
 
 This creates a web of alliances that can escalate conflicts realistically.
+
+[[fixed-alliances]]
+=== Fixed alliances (locked teams)
+
+Fixed alliances are an optional setup-time game mode. They are *not* a fifth
+diplomatic status: `TeamManager` holds a locked membership layer above the
+ordinary relation table, and every teammate pair is forced to a permanent
+alliance.
+
+* `TeamManager` is the single source of truth; `Civilization.teamId` is only a
+  denormalised copy for the UI and the save file.
+* `DiplomacyManager.applyTeamInvariants()` forces `alliance`, an embassy, open
+  borders and contact for every teammate pair, and clears stale wars/embargoes.
+* `declareWar`, `makePeace` and `signCeasefire` expand across the cross-product
+  of both teams. A war with one member is a war with the whole team; the
+  `WAR_DECLARED` event and the reputation hit are emitted once per team war.
+* `getEnemyTeamCount()` counts distinct enemy teams, and
+  `estimateTeamStrength()` sums every member's military strength, so the AI's
+  war cap and target selection see a coalition as one opponent.
+* Teammates may still trade, gift gold and exchange or sell knowledge. Hostile
+  actions (war, break alliance, tribute, bribe, spy, sabotage, steal tech,
+  incite revolt) and redundant pacts (alliance, peace, ceasefire, open borders,
+  mutual defence, non-aggression, joint war, call for help, embassy) are refused
+  at the proposal and diplomat-action chokepoints.
+* Treaties that are part of the lock (`open_borders`, `mutual_defense`,
+  `embargo_target`) cannot be cancelled with a teammate.
+* Alliances and treaties with civilizations *outside* the team remain per civ.
+  A team war overrides an ordinary alliance with an enemy civilization: the
+  alliance breaks and the whole team is at war.
+* AI policy, diplomat menus, enemy scanning and strength estimates are all
+  teammate-aware.
+
+Team victory, defeat and human spectating are documented in
+link:FIXED_ALLIANCES.adoc[Fixed Alliances]. Shared team vision is deliberately
+deferred to v1.1; teammates keep separate fog of war and explored maps.
 
 ---
 

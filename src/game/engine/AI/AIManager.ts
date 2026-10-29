@@ -1638,7 +1638,10 @@ export class AIManager {
         // The engine's moveUnit handles same-tile combat, but AI target selection
         // only scans neighbouring tiles — detect the stacked enemy here.
         const stackedEnemy = this.gameEngine.units.find(u => u.col === unit.col && u.row === unit.row
-          && u.id !== unit.id && u.civilizationId !== unit.civilizationId && !u.isDefeated);
+          && u.id !== unit.id
+          && u.civilizationId !== unit.civilizationId
+          && !this.isTeammate(unit.civilizationId, u.civilizationId)
+          && !u.isDefeated);
         if (stackedEnemy) {
           // Pre-attack calculation (Civ1 guide: "do not attack without a quick
           // calculation") — stacked or not, a losing fight is still losing.
@@ -1898,7 +1901,8 @@ export class AIManager {
           const adjacentEnemy = AIUtility.findNearbyEnemy(
             unit.col, unit.row, unit.civilizationId,
             (c, r) => this.gameEngine.squareGrid!.getNeighbors(c, r),
-            (c, r) => this.gameEngine.getUnitAt(c, r)
+            (c, r) => this.gameEngine.getUnitAt(c, r),
+            (civId) => this.isTeammate(unit.civilizationId, civId),
           );
           if (adjacentEnemy && adjacentEnemy.civilizationId !== unit.civilizationId) {
             // Look up the full Unit object (findNearbyEnemy returns a lightweight UnitData)
@@ -1943,7 +1947,9 @@ export class AIManager {
         debugLog(`[AI] Target distance: ${dist} for unit ${unit.id} to (${target.col},${target.row})`);
         if (dist === 1) {
           const targetUnit = this.gameEngine.getUnitAt(target.col, target.row);
-          if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
+          if (targetUnit
+            && targetUnit.civilizationId !== unit.civilizationId
+            && !this.isTeammate(unit.civilizationId, targetUnit.civilizationId)) {
             // Pre-attack calculation: odds floor, focus-fire support and the
             // siege field rule (AttackOdds). A unit that must not start this
             // fight digs in instead of charging.
@@ -3108,7 +3114,7 @@ export class AIManager {
     const sdi = (col: number, row: number): boolean => {
       try {
         return typeof this.gameEngine.isCoveredBySDI === 'function'
-          && this.gameEngine.isCoveredBySDI(col, row);
+          && this.gameEngine.isCoveredBySDI(col, row, civId);
       } catch {
         return false;
       }
@@ -3154,7 +3160,7 @@ export class AIManager {
       let targetShielded = false;
       try {
         targetShielded = typeof this.gameEngine.isCoveredBySDI === 'function'
-          && this.gameEngine.isCoveredBySDI(mission.targetCol, mission.targetRow);
+          && this.gameEngine.isCoveredBySDI(mission.targetCol, mission.targetRow, civId);
       } catch { targetShielded = false; }
       if (!nuke || (mission.subId && !sub) || targetLost || targetShielded) {
         // Warhead spent, hull sunk, city taken, or SDI raised over the aim
@@ -3268,7 +3274,7 @@ export class AIManager {
       let shielded = false;
       try {
         shielded = typeof this.gameEngine.isCoveredBySDI === 'function'
-          && this.gameEngine.isCoveredBySDI(target.col, target.row);
+          && this.gameEngine.isCoveredBySDI(target.col, target.row, unit.civilizationId);
       } catch { shielded = false; }
       if (!shielded && grid && grid.chebyshevDistance(unit.col, unit.row, target.col, target.row) <= range) {
         if (this.gameEngine.detonateNuclear(nuke.id, target.col, target.row)) {
@@ -5333,7 +5339,7 @@ export class AIManager {
     const shielded = (at: { col: number; row: number }): boolean => {
       try {
         return typeof this.gameEngine.isCoveredBySDI === 'function'
-          && this.gameEngine.isCoveredBySDI(at.col, at.row);
+          && this.gameEngine.isCoveredBySDI(at.col, at.row, civId);
       } catch {
         return false;
       }
@@ -5349,7 +5355,7 @@ export class AIManager {
       this.gameEngine.units.some(
         (u) =>
           !u.isDefeated &&
-          u.civilizationId === civId &&
+          (u.civilizationId === civId || this.isTeammate(civId, u.civilizationId)) &&
           inBlast(u.col, u.row, at),
       );
 
@@ -5540,7 +5546,8 @@ export class AIManager {
         unit.col, unit.row, unit.civilizationId, 5,
         () => this.gameEngine.units,
         () => this.gameEngine.cities,
-        distFn
+        distFn,
+        (civId) => this.isTeammate(unit.civilizationId, civId),
       );
       for (const e of scannedEnemies) {
         if (typeof this.gameEngine.recordEnemyLocation === 'function') {
@@ -5920,7 +5927,9 @@ export class AIManager {
               return this.gameEngine.getCityAt(col, row);
             },
             isVisible,
-            unit.civilizationId
+            unit.civilizationId,
+            undefined,
+            (civId) => this.isTeammate(unit.civilizationId, civId),
           )
         );
 
@@ -5966,7 +5975,9 @@ export class AIManager {
 
               // Scout rush: if the enemy city is undefended, the AI scout
               // attempts a 30% rush capture instead of running home.
-              if (targetCity && targetCity.civilizationId !== unit.civilizationId) {
+              if (targetCity
+                && targetCity.civilizationId !== unit.civilizationId
+                && !this.isTeammate(unit.civilizationId, targetCity.civilizationId)) {
                 const cityDefenders = this.gameEngine.units.filter(
                   (u: Unit) => u.civilizationId === targetCity.civilizationId
                     && u.col === targetCity.col
@@ -6016,7 +6027,8 @@ export class AIManager {
       unit.row,
       unit.civilizationId,
       (col, row) => this.gameEngine.squareGrid!.getNeighbors(col, row),
-      (col, row) => this.gameEngine.getUnitAt(col, row)
+      (col, row) => this.gameEngine.getUnitAt(col, row),
+      (civId) => this.isTeammate(unit.civilizationId, civId),
     );
     // 1) Nearby hostile unit. Scouts flank it and a SCOUTING CARAVAN routes
     //    around it (it is cargo, not a fighter — charging the enemy would
@@ -6219,8 +6231,8 @@ export class AIManager {
   private chooseDiplomatAction(unit: Unit, targetCivId: number, available: string[]): string {
     const civId = unit.civilizationId;
     const dm = this.gameEngine.diplomacyManager;
-    const ownStrength = dm?.estimateMilitaryStrength?.(civId) ?? 0;
-    const theirStrength = dm?.estimateMilitaryStrength?.(targetCivId) ?? 0;
+    const ownStrength = dm?.estimateTeamStrength?.(civId) ?? dm?.estimateMilitaryStrength?.(civId) ?? 0;
+    const theirStrength = dm?.estimateTeamStrength?.(targetCivId) ?? dm?.estimateMilitaryStrength?.(targetCivId) ?? 0;
     const attitude = dm?.getAttitude?.(civId, targetCivId) ?? 'neutral';
     const status = dm?.getStatus?.(civId, targetCivId) ?? 'peace';
     const personality = this.gameEngine.civilizations?.[civId]?.personality
@@ -6649,7 +6661,8 @@ export class AIManager {
 
     // Only spend on something that meaningfully dents their force: a bribe that
     // buys a single scout is not worth touching the reserve for.
-    const theirStrength = dm.estimateMilitaryStrength?.(targetCivId) ?? 0;
+    const theirStrength = dm.estimateTeamStrength?.(targetCivId)
+      ?? dm.estimateMilitaryStrength?.(targetCivId) ?? 0;
     return bestValue >= 3 && bestValue >= theirStrength * 0.1;
   }
 
@@ -6658,8 +6671,10 @@ export class AIManager {
    */
   private diplomatTributeDemand(unit: Unit, targetCivId: number): number {
     const dm = this.gameEngine.diplomacyManager;
-    const ownStrength = dm?.estimateMilitaryStrength?.(unit.civilizationId) ?? 0;
-    const theirStrength = dm?.estimateMilitaryStrength?.(targetCivId) ?? 0;
+    const ownStrength = dm?.estimateTeamStrength?.(unit.civilizationId)
+      ?? dm?.estimateMilitaryStrength?.(unit.civilizationId) ?? 0;
+    const theirStrength = dm?.estimateTeamStrength?.(targetCivId)
+      ?? dm?.estimateMilitaryStrength?.(targetCivId) ?? 0;
     return Math.max(25, Math.floor((ownStrength / Math.max(theirStrength, 1)) * 20));
   }
 
@@ -9515,7 +9530,8 @@ export class AIManager {
       if (!reachableBy) continue;
       candidates.push({
         civId: other.id,
-        strength: dm.estimateMilitaryStrength?.(other.id) ?? 0,
+        strength: dm.estimateTeamStrength?.(other.id)
+          ?? dm.estimateMilitaryStrength?.(other.id) ?? 0,
         reachableBy,
       });
     }
@@ -9611,6 +9627,11 @@ export class AIManager {
     return (dm.getRelationsForCiv?.(civId) ?? []).some(
       (rel) => typeof rel.peaceSignedAt === 'number',
     );
+  }
+
+  /** Whether two civilizations are locked teammates (fixed alliances). */
+  private isTeammate(civA: number, civB: number): boolean {
+    return this.gameEngine.teamManager?.isTeammate(civA, civB) ?? false;
   }
 
   /** Whether a civ still owns anything on the map. */

@@ -336,12 +336,16 @@ export class AIUtility {
     unitRow: number,
     unitCivilizationId: number,
     getNeighbors: (col: number, row: number) => SquareCoordinate[],
-    getUnitAt: (col: number, row: number) => UnitData | null | undefined
+    getUnitAt: (col: number, row: number) => UnitData | null | undefined,
+    /** Locked teammates are friendly even though they are another civ. */
+    isFriendlyCiv?: (civId: number) => boolean,
   ): UnitData | null {
     const neighbors = getNeighbors(unitCol, unitRow);
     for (const tilePos of neighbors) {
       const enemyUnit = getUnitAt(tilePos.col, tilePos.row);
-      if (enemyUnit && enemyUnit.civilizationId !== unitCivilizationId) {
+      if (enemyUnit
+        && enemyUnit.civilizationId !== unitCivilizationId
+        && !isFriendlyCiv?.(enemyUnit.civilizationId)) {
         return enemyUnit;
       }
     }
@@ -548,12 +552,15 @@ export function scanAreaForEnemies(
   radius: number,
   getUnits: () => Array<{ id: string; col: number; row: number; civilizationId: number; attack?: number; defense?: number; type: string }>,
   getCities: () => Array<{ id: string; col: number; row: number; civilizationId: number }>,
-  distanceFn: (c1: number, r1: number, c2: number, r2: number) => number
+  distanceFn: (c1: number, r1: number, c2: number, r2: number) => number,
+  /** Locked teammates are friendly even though they are another civ. */
+  isFriendlyCiv?: (civId: number) => boolean,
 ): Array<{ col: number; row: number; type: 'unit' | 'city'; distance: number; strength: number; id: string }> {
   const results: Array<{ col: number; row: number; type: 'unit' | 'city'; distance: number; strength: number; id: string }> = [];
 
   for (const unit of getUnits()) {
     if (unit.civilizationId === civilizationId) continue;
+    if (isFriendlyCiv?.(unit.civilizationId)) continue;
     const dist = distanceFn(centerCol, centerRow, unit.col, unit.row);
     if (dist <= radius) {
       results.push({
@@ -569,6 +576,7 @@ export function scanAreaForEnemies(
 
   for (const city of getCities()) {
     if (city.civilizationId === civilizationId) continue;
+    if (isFriendlyCiv?.(city.civilizationId)) continue;
     const dist = distanceFn(centerCol, centerRow, city.col, city.row);
     if (dist <= radius) {
       results.push({

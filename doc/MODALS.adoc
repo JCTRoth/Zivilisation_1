@@ -468,7 +468,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 | B
 | `showGameSetup` starts `true` (`App.tsx` L60); reset to `true` by quit (`App.tsx` L750) and new-game reset (L794). Rendered as a full-screen takeover (`App.tsx` L1264) instead of the app shell.
 | Before any game exists.
-| `GameSetupModal`, `dialogClassName="game-setup-dialog"`, `h2.modal-title` "🏛️ Zivilisation 1" + "Step N of 3"; steps: Choose Your Civilization → Fine-tune Your Challenge → Your Setup summary.
+| `GameSetupModal`, `dialogClassName="game-setup-dialog"`, `h2.modal-title` "🏛️ Zivilisation 1" + "Step N of 3"; steps: Choose Your Civilization → Fine-tune Your Challenge → Your Setup summary. The challenge step also holds the optional *Fixed Alliances* builder (toggle, team count, presets, per-slot team selectors, validation).
 | ← Previous, Next →, "🏛️ Start Game".
 | `h2.modal-title` contains `Zivilisation 1`; `Choose Your Civilization`; `.setup-civ-card`; `.setup-footer__selected-value`; `Fine-tune Your Challenge`; `← Previous`; `Next →`; `.setup-summary-title` = `Your Setup`; `.setup-summary`; `select.setup-setting__control`; button `🏛️ Start Game`
 

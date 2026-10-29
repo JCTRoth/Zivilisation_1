@@ -82,14 +82,25 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
   // Select the raw arrays (stable store references) — filtering inside the
   // selector would return a new array every snapshot and loop forever.
   const allCities = useGameStore((state) => state.cities);
-  const fieldUnits = useGameStore(
-    (state) => state.units.filter((unit) => unit.civilizationId === civId).length
-  );
+  const allUnits = useGameStore((state) => state.units);
   const civilizations = useGameStore((state) => state.civilizations);
 
+  // A fixed-alliance result names every member of the team. The ledger is the
+  // team's ledger: cities, population, wonders, technologies and score are
+  // summed (technologies de-duplicated) so a team victory reads as one empire.
+  const resultCivIds = useMemo(
+    () => (result?.civilizationIds?.length ? result.civilizationIds : [civId]),
+    [result?.civilizationIds, civId]
+  );
+  // A fixed-alliance result carries a team id. A hotseat joint victory also
+  // names several civs but is not a team result; it keeps the joint-victory
+  // wording while still aggregating the ledger across its winners.
+  const isTeamResult = !!result && result.teamId !== undefined;
+
   const ledger = useMemo(() => {
-    const myCities = allCities.filter((city) => city.civilizationId === civId);
-    const me = civilizations.find((civ) => civ.id === civId);
+    const idSet = new Set(resultCivIds);
+    const myCities = allCities.filter((city) => idSet.has(city.civilizationId));
+    const members = civilizations.filter((civ) => idSet.has(civ.id));
     const population = myCities.reduce((sum, city) => sum + (city.population || 0), 0);
     const wonders = myCities.reduce((sum, city) => {
       if (Array.isArray(city.wonders)) return sum + city.wonders.length;
@@ -100,22 +111,39 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
     }, 0);
     const capital = myCities.find((city) => city.isCapital)?.name ?? myCities[0]?.name;
     const rivalsStanding = civilizations.filter(
-      (civ) => civ.isAlive !== false && civ.id !== civId
+      (civ) => civ.isAlive !== false && !idSet.has(civ.id)
     ).length;
     const lastRival =
-      civilizations.find((civ) => civ.isAlive !== false && civ.id !== civId)?.name ?? null;
+      civilizations.find((civ) => civ.isAlive !== false && !idSet.has(civ.id))?.name ?? null;
+    const techs = new Set(
+      members.flatMap((civ) => (Array.isArray(civ.technologies) ? civ.technologies : []))
+    ).size;
+    const memberRows = members.map((civ) => {
+      const civCities = myCities.filter((city) => city.civilizationId === civ.id);
+      return {
+        id: civ.id,
+        name: civ.name,
+        color: civ.color,
+        score: civ.score ?? 0,
+        cities: civCities.length,
+        population: civCities.reduce((sum, city) => sum + (city.population || 0), 0),
+        isAlive: civ.isAlive !== false
+      };
+    });
 
     return {
-      score: me?.score ?? 0,
-      techs: me?.technologies?.length ?? 0,
+      score: members.reduce((sum, civ) => sum + (civ.score ?? 0), 0),
+      techs,
       population,
       cities: myCities.length,
       wonders,
       capital,
       rivalsStanding,
-      lastRival
+      lastRival,
+      unitsInField: allUnits.filter((unit) => idSet.has(unit.civilizationId)).length,
+      memberRows
     };
-  }, [allCities, civilizations, civId]);
+  }, [allCities, allUnits, civilizations, resultCivIds]);
 
   if (!result) {
     return null;
@@ -128,23 +156,42 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
       ? GameUtils.formatYear(currentYear)
       : t('result.yearPlaceholder' as TranslationKey);
 
-  const eyebrow = `${isVictory ? t('result.eyebrow.victory' as TranslationKey) : t('result.eyebrow.defeat' as TranslationKey)} · ${result.civName}`;
+  const teamLabel = result.teamName
+    ?? (result.teamId !== undefined ? `Team ${result.teamId + 1}` : result.civName);
+  const memberNames = result.civNames?.length
+    ? result.civNames
+    : ledger.memberRows.map((member) => member.name);
+  const memberLine = memberNames.join(' · ');
+
+  const eyebrow = `${isVictory ? t('result.eyebrow.victory' as TranslationKey) : t('result.eyebrow.defeat' as TranslationKey)} · ${isTeamResult ? teamLabel : result.civName}`;
 
   const title = !isVictory
-    ? t('result.title.defeat' as TranslationKey)
-    : human
-      ? t('result.title.humanVictory' as TranslationKey)
-      : t('result.title.aiVictory' as TranslationKey, { civ: result.civName });
+    ? isTeamResult
+      ? t('result.title.teamDefeat' as TranslationKey, { team: teamLabel })
+      : t('result.title.defeat' as TranslationKey)
+    : isTeamResult
+      ? human
+        ? t('result.title.teamVictory' as TranslationKey, { team: teamLabel })
+        : t('result.title.aiTeamVictory' as TranslationKey, { team: teamLabel })
+      : human
+        ? t('result.title.humanVictory' as TranslationKey)
+        : t('result.title.aiVictory' as TranslationKey, { civ: result.civName });
 
   const lede = !isVictory
-    ? t('result.lede.defeat' as TranslationKey)
-    : !human
-      ? t('result.lede.aiVictory' as TranslationKey, { civ: result.civName })
-      : result.reason === 'moonshot'
-        ? t('result.lede.moonshot' as TranslationKey)
-        : result.reason === 'domination'
-          ? t('result.lede.domination' as TranslationKey)
-          : t('result.lede.victory' as TranslationKey);
+    ? isTeamResult
+      ? t('result.lede.teamDefeat' as TranslationKey, { team: teamLabel })
+      : t('result.lede.defeat' as TranslationKey)
+    : isTeamResult
+      ? result.reason === 'moonshot'
+        ? t('result.lede.teamMoonshot' as TranslationKey, { team: teamLabel })
+        : t('result.lede.teamVictory' as TranslationKey, { team: teamLabel })
+      : !human
+        ? t('result.lede.aiVictory' as TranslationKey, { civ: result.civName })
+        : result.reason === 'moonshot'
+          ? t('result.lede.moonshot' as TranslationKey)
+          : result.reason === 'domination'
+            ? t('result.lede.domination' as TranslationKey)
+            : t('result.lede.victory' as TranslationKey);
 
   // ---- Act I: cinematic verses -------------------------------------------
   // A few narrative lines, not a stat sheet — the ledger waits in Act II.
@@ -156,7 +203,10 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
           : t('result.verse.defeat2' as TranslationKey),
         ledger.lastRival
           ? t('result.verse.defeat3Rival' as TranslationKey, { rival: ledger.lastRival })
-          : t('result.verse.defeat3' as TranslationKey)
+          : t('result.verse.defeat3' as TranslationKey),
+        ...(isTeamResult
+          ? [t('result.verse.teamMembers' as TranslationKey, { team: teamLabel, members: memberLine })]
+          : [])
       ]
     : [
         t('result.verse.victory1' as TranslationKey, {
@@ -198,7 +248,10 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   ledger.rivalsStanding === 1
                     ? t('result.unit.rival.singular' as TranslationKey)
                     : t('result.unit.rival.plural' as TranslationKey)
-              })
+              }),
+        ...(isTeamResult
+          ? [t('result.verse.teamMembers' as TranslationKey, { team: teamLabel, members: memberLine })]
+          : [])
       ];
 
   // ---- Act II: the chronicle / final ledger --------------------------------
@@ -226,9 +279,11 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
           eyebrow={eyebrow}
           title={isVictory ? t('result.chronicle.title.victory' as TranslationKey) : t('result.chronicle.title.defeat' as TranslationKey)}
           lede={
-            isVictory
-              ? t('result.chronicle.lede.victory' as TranslationKey, { civ: result.civName })
-              : t('result.chronicle.lede.defeat' as TranslationKey, { civ: result.civName })
+            isTeamResult
+              ? t('result.chronicle.lede.team' as TranslationKey, { team: teamLabel })
+              : isVictory
+                ? t('result.chronicle.lede.victory' as TranslationKey, { civ: result.civName })
+                : t('result.chronicle.lede.defeat' as TranslationKey, { civ: result.civName })
           }
           actions={
             <>
@@ -246,6 +301,40 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
             </>
           }
         >
+          {isTeamResult && (
+            <section className="gm-section">
+              <h3 className="gm-section-title">{t('result.team.title' as TranslationKey)}</h3>
+              <p className="gm-note result-team__lede">
+                {t('result.team.lede' as TranslationKey, {
+                  team: teamLabel,
+                  members: memberLine
+                })}
+              </p>
+              <div className="result-team__roster">
+                {ledger.memberRows.map((member) => (
+                  <div key={member.id} className="result-team__member">
+                    <span className="result-team__dot" style={{ background: member.color }} />
+                    <span className="result-team__name">{member.name}</span>
+                    <span className="result-team__stat">
+                      {t('result.team.cities' as TranslationKey, { count: member.cities })}
+                    </span>
+                    <span className="result-team__stat">
+                      {t('result.team.population' as TranslationKey, { count: member.population })}
+                    </span>
+                    <span className="result-team__stat result-team__stat--score">
+                      {t('result.team.score' as TranslationKey, { score: Math.round(member.score).toLocaleString() })}
+                    </span>
+                    {!member.isAlive && (
+                      <span className="result-team__out">
+                        {t('result.team.fallen' as TranslationKey)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="gm-section">
             <h3 className="gm-section-title">{t('result.score.title' as TranslationKey)}</h3>
             <div className="gm-stat-grid">
@@ -305,7 +394,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                   <span className="gm-stat-icon" aria-hidden="true">
                     ⚔️
                   </span>
-                  {fieldUnits}
+                  {ledger.unitsInField}
                 </span>
                 <span className="gm-stat-label">{t('result.stat.unitsInField' as TranslationKey)}</span>
               </div>
@@ -396,7 +485,10 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
           <h1 className="gr-cine__word" data-tone={isVictory ? 'gold' : 'solemn'}>
             {isVictory ? t('result.cine.word.victory' as TranslationKey) : t('result.cine.word.defeat' as TranslationKey)}
           </h1>
-          <p className="gr-cine__civ">{result.civName}</p>
+          <p className="gr-cine__civ">{isTeamResult ? teamLabel : result.civName}</p>
+          {isTeamResult && memberLine && (
+            <p className="gr-cine__team">{memberLine}</p>
+          )}
           <span className="gr-cine__rule" aria-hidden="true" />
           <p className="gr-cine__lede">{lede}</p>
 

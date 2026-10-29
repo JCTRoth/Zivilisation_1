@@ -11,6 +11,8 @@ import { tGovernmentName } from '@/i18n/dataNames';
 import '../../styles/gameModalShell.css';
 import '../../styles/gameSetupModal.css';
 import { isAutoScenario } from '@/data/GameConstants';
+import { validateTeamAssignments } from '@/game/engine/TeamManager';
+import { TEAM_COLORS } from '@/data/TeamConstants';
 import {
   MAP_DIM_MAX_HEIGHT,
   MAP_DIM_MAX_WIDTH,
@@ -155,6 +157,8 @@ type GameSetupModalProps = {
     gameMode?: 'single' | 'hotseat';
     humanPlayerIds?: number[];
     playerCivilizations?: number[];
+    fixedAlliances?: boolean;
+    teamAssignments?: number[];
   }) => void;
 };
 
@@ -569,6 +573,14 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   // start as the same people.
   const [hotseatCivs, setHotseatCivs] = useState<number[]>([selectedCiv, -1, -1, -1]);
 
+  // Fixed alliances (locked teams). Team indices are per civilization SLOT
+  // (0..numCivilizations-1), not per CIVILIZATIONS entry: the AI nations are
+  // chosen randomly at game start, so only the slot is known here.
+  const [fixedAlliances, setFixedAlliances] = useState(false);
+  const [teamCount, setTeamCount] = useState(2);
+  const [teamAssignments, setTeamAssignments] = useState<number[]>([0, 1, 0, 1, 0, 1, 0]);
+  const maxTeams = Math.max(2, Math.min(4, numCivilizations - 1));
+
   // Look-around: the war room is a CSS 3D box; the pointer shifts its
   // perspective origin a few degrees so the table and walls feel solid.
   // Pure transforms — no textures, no images. Skipped for reduced motion.
@@ -638,6 +650,68 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
       return next;
     });
   }, [selectedCiv, hotseatPlayerCount]);
+
+  // A fixed-alliance game needs at least three civs: with two there is no
+  // third party to ally against, and every "team" would be a singleton.
+  useEffect(() => {
+    if (numCivilizations < 3 && fixedAlliances) setFixedAlliances(false);
+  }, [numCivilizations, fixedAlliances]);
+
+  // Keep the team count inside what the current civilization count can
+  // support (at least one team must have two members).
+  useEffect(() => {
+    setTeamCount((count) => Math.min(count, maxTeams));
+  }, [maxTeams]);
+
+  // Rebuild a balanced assignment whenever the team game is switched on or
+  // the number of teams/civilizations changes. Manual per-slot edits are kept
+  // until one of those structural choices changes.
+  useEffect(() => {
+    if (!fixedAlliances) return;
+    setTeamAssignments(
+      Array.from({ length: numCivilizations }, (_, slot) => slot % teamCount),
+    );
+  }, [fixedAlliances, numCivilizations, teamCount]);
+
+  const teamValidation = useMemo(
+    () => validateTeamAssignments(teamAssignments.slice(0, numCivilizations), numCivilizations),
+    [teamAssignments, numCivilizations],
+  );
+  const teamSetupValid = !fixedAlliances || teamValidation.ok;
+
+  /** Spread the slots as evenly as possible across `count` teams. */
+  const balanceTeams = (count: number) => {
+    setTeamCount(count);
+    setTeamAssignments(Array.from({ length: numCivilizations }, (_, slot) => slot % count));
+  };
+
+  /** Humans on one team, every AI on the other. */
+  const humansVersusAi = () => {
+    const humanCount = gameMode === 'hotseat'
+      ? Math.min(hotseatPlayerCount, numCivilizations)
+      : 1;
+    setTeamCount(2);
+    setTeamAssignments(
+      Array.from({ length: numCivilizations }, (_, slot) => (slot < humanCount ? 0 : 1)),
+    );
+  };
+
+  const setSlotTeam = (slot: number, team: number) => {
+    setTeamAssignments((prev) => {
+      const next = [...prev];
+      next[slot] = team;
+      return next;
+    });
+  };
+
+  const teamSizes = useMemo(() => {
+    const sizes = new Array(teamCount).fill(0) as number[];
+    for (let slot = 0; slot < numCivilizations; slot++) {
+      const team = teamAssignments[slot] ?? 0;
+      if (team >= 0 && team < sizes.length) sizes[team] += 1;
+    }
+    return sizes;
+  }, [teamAssignments, teamCount, numCivilizations]);
 
   const totalSteps = 2;
   const isFinalStep = currentStep === totalSteps;
@@ -741,6 +815,10 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
       gameMode,
       humanPlayerIds,
       playerCivilizations,
+      fixedAlliances: fixedAlliances && teamValidation.ok,
+      teamAssignments: fixedAlliances && teamValidation.ok
+        ? teamAssignments.slice(0, numCivilizations)
+        : undefined,
     });
   };
 
@@ -1015,6 +1093,153 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                   )}
                 </div>
 
+                <div className="gm-section setup-teams">
+                  <div className="gm-section-title">{t('setup.teams.title')}</div>
+                  <Form.Check
+                    type="checkbox"
+                    id="fixedAlliancesCheckbox"
+                    label={t('setup.teams.enable')}
+                    checked={fixedAlliances}
+                    disabled={numCivilizations < 3}
+                    onChange={(e) => setFixedAlliances(e.target.checked)}
+                    className="setup-teams__check"
+                  />
+                  <p className="setup-setting__hint">
+                    {numCivilizations < 3
+                      ? t('setup.teams.needThreeCivs')
+                      : t('setup.teams.hint')}
+                  </p>
+
+                  {fixedAlliances && (
+                    <>
+                      <div className="setup-teams__presets">
+                        <button
+                          type="button"
+                          className="touch-btn touch-btn--ghost setup-teams__preset"
+                          onClick={humansVersusAi}
+                        >
+                          {t('setup.teams.presetHumans')}
+                        </button>
+                        <button
+                          type="button"
+                          className="touch-btn touch-btn--ghost setup-teams__preset"
+                          onClick={() => balanceTeams(2)}
+                        >
+                          {t('setup.teams.presetEven', { n: 2 })}
+                        </button>
+                        {maxTeams >= 3 && (
+                          <button
+                            type="button"
+                            className="touch-btn touch-btn--ghost setup-teams__preset"
+                            onClick={() => balanceTeams(3)}
+                          >
+                            {t('setup.teams.presetEven', { n: 3 })}
+                          </button>
+                        )}
+                        {maxTeams >= 4 && (
+                          <button
+                            type="button"
+                            className="touch-btn touch-btn--ghost setup-teams__preset"
+                            onClick={() => balanceTeams(4)}
+                          >
+                            {t('setup.teams.presetEven', { n: 4 })}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="touch-btn touch-btn--ghost setup-teams__preset"
+                          onClick={() => balanceTeams(teamCount)}
+                        >
+                          {t('setup.teams.autoBalance')}
+                        </button>
+                      </div>
+
+                      <div className="setup-teams__toolbar">
+                        <span className="setup-setting__label">{t('setup.teams.count')}</span>
+                        <Form.Select
+                          value={String(teamCount)}
+                          onChange={(e) => balanceTeams(Number(e.target.value))}
+                          className="setup-setting__control setup-teams__count"
+                          aria-label={t('setup.teams.count')}
+                        >
+                          {Array.from({ length: maxTeams - 1 }, (_, i) => i + 2).map((count) => (
+                            <option key={count} value={String(count)}>
+                              {t('setup.teams.countValue', { n: count })}
+                            </option>
+                          ))}
+                        </Form.Select>
+                      </div>
+
+                      <div className="setup-teams__list" role="list">
+                        {Array.from({ length: numCivilizations }, (_, slot) => {
+                          const hotseatNation = gameMode === 'hotseat' && slot < hotseatPlayerCount
+                            ? hotseatCivs[slot]
+                            : -1;
+                          const nationIndex = slot === 0 ? selectedCiv : hotseatNation;
+                          const nation = nationIndex >= 0 ? CIVILIZATIONS[nationIndex] : null;
+                          const isHuman = gameMode === 'hotseat'
+                            ? slot < hotseatPlayerCount
+                            : slot === 0;
+                          const team = teamAssignments[slot] ?? 0;
+                          const teamColor = TEAM_COLORS[team % TEAM_COLORS.length];
+                          return (
+                            <div
+                              key={slot}
+                              className="setup-teams__row"
+                              role="listitem"
+                              style={{ borderLeftColor: teamColor }}
+                            >
+                              <span className="setup-teams__slot">
+                                {t('setup.teams.slot', { n: slot + 1 })}
+                              </span>
+                              <span
+                                className="setup-teams__civ"
+                                style={nation ? { color: nation.color } : undefined}
+                              >
+                                {nation ? nation.name : t('setup.teams.aiSlot', { n: slot + 1 })}
+                              </span>
+                              {isHuman && (
+                                <span className="setup-teams__human">{t('setup.teams.human')}</span>
+                              )}
+                              <Form.Select
+                                value={String(team)}
+                                onChange={(e) => setSlotTeam(slot, Number(e.target.value))}
+                                className="setup-setting__control setup-teams__select"
+                                aria-label={t('setup.teams.slotTeam', { n: slot + 1 })}
+                                style={{ borderColor: teamColor }}
+                              >
+                                {Array.from({ length: teamCount }, (_, teamIndex) => (
+                                  <option key={teamIndex} value={String(teamIndex)}>
+                                    {t('setup.teams.teamN', { n: teamIndex + 1 })}
+                                  </option>
+                                ))}
+                              </Form.Select>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="setup-teams__sizes" aria-live="polite">
+                        {teamSizes.map((size, index) => (
+                          <span
+                            key={index}
+                            className="setup-teams__size"
+                            style={{ borderColor: TEAM_COLORS[index % TEAM_COLORS.length] }}
+                          >
+                            {t('setup.teams.teamN', { n: index + 1 })}: {size}
+                          </span>
+                        ))}
+                      </div>
+
+                      {!teamValidation.ok && (
+                        <p className="setup-teams__error" role="alert">
+                          {t('setup.teams.invalid')}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+
                 <div className="gm-section">
                   <div className="gm-section-title">{t('setup.worldSection')}</div>
                   <div className="setup-settings-grid">
@@ -1192,6 +1417,14 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                       <span className="label">{t('setup.summaryCivilizations')}</span>
                       <span className="value">{numCivilizations}</span>
                     </div>
+                    {fixedAlliances && (
+                      <div className="setup-summary-item">
+                        <span className="label">{t('setup.teams.summary')}</span>
+                        <span className="value">
+                          {t('setup.teams.summaryValue', { teams: teamCount, civs: numCivilizations })}
+                        </span>
+                      </div>
+                    )}
                     <div className="setup-summary-item">
                       <span className="label">{t('setup.mapType')}</span>
                       <span className="value">{mapTypeLabelWithBadge}</span>
@@ -1477,6 +1710,8 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
               <button
                 type="button"
                 onClick={handleStart}
+                disabled={!teamSetupValid}
+                title={!teamSetupValid ? t('setup.teams.invalid') : undefined}
                 className="touch-btn touch-btn--success setup-footer__button setup-footer__button--success"
               >
                 {t('setup.startGame')}

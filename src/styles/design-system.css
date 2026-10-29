@@ -1183,3 +1183,19 @@ div.game-top-bar {
     min-width: 120px;
   }
 }
+
+/* Fixed-alliance badge in the top bar */
+.topbar-team-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.5rem;
+  padding: 0.02rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.22);
+}

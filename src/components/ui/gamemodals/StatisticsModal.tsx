@@ -16,6 +16,7 @@ import { GameUtils } from '@/utils/GameUtils';
 import { useTranslation } from '@/i18n/useTranslation';
 import { tBuildingName, tUnitName, tWonderName } from '@/i18n/dataNames';
 import type { TranslationKey } from '@/i18n';
+import { teamColor, teamName } from '@/data/TeamConstants';
 import GameModal from './ModalShell';
 import type GameEngine from '@/game/engine/GameEngine';
 import type { City, ProductionItem } from '../../../../types/game';
@@ -542,6 +543,18 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide, gameEng
                           <td>
                             <span className="me-2" style={{ color: row.civ.color }}>●</span>
                             {row.civ.name}
+                            {row.civ.teamId !== undefined && row.civ.teamId !== null && (
+                              <span
+                                className="badge ms-2"
+                                style={{
+                                  border: `1px solid ${teamColor(row.civ.teamId)}`,
+                                  color: teamColor(row.civ.teamId),
+                                  background: 'transparent',
+                                }}
+                              >
+                                {teamName(row.civ.teamId)}
+                              </span>
+                            )}
                             {row.civ.id === currentPlayer?.id && <span className="badge bg-primary ms-2">{t('stats.badgeYou' as TranslationKey)}</span>}
                           </td>
                           <td>

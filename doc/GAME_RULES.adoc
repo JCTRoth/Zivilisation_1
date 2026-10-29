@@ -2057,6 +2057,36 @@ link:DIPLOMACY_SYSTEM.adoc[Diplomacy System].
 |Cascades to the defender's allies.
 |===
 
+=== Fixed alliances (locked teams)
+
+An optional setup-time mode divides the civilizations into permanent teams
+(`TeamManager`). It is a locked layer above the four statuses, not a fifth
+status. Full detail in link:FIXED_ALLIANCES.adoc[Fixed Alliances].
+
+* A team game needs at least three civilizations, at least two teams, and at
+  least one team with two or more members.
+* `teamAssignments` is indexed by civilization *slot* (`0..N-1`) and is
+  normalised to a dense range before use.
+* Every teammate pair is forced to `alliance` with an embassy, contact and open
+  borders. `DiplomacyManager.applyTeamInvariants()` is idempotent and runs again
+  after load, repairing a stale teammate war.
+* `declareWar`, `makePeace` and `signCeasefire` expand across the cross-product
+  of both teams. The reputation hit and `WAR_DECLARED` event fire once per team
+  war.
+* `getEnemyTeamCount()` counts distinct enemy teams for the AI war cap;
+  `estimateTeamStrength()` sums every member's strength for AI target selection.
+* Teammates may trade, gift gold and exchange or sell knowledge. War, betrayal,
+  tribute, bribery, espionage, sabotage, tech theft, incitement and redundant
+  pacts are refused at the proposal/diplomat chokepoints. `open_borders`,
+  `mutual_defense` and `embargo_target` cannot be cancelled with a teammate.
+* Alliances with outside civilizations remain per civ. A team war overrides an
+  ordinary alliance with an enemy: the alliance breaks and the whole team is at
+  war.
+* Combat, splash damage, city capture, zone of control, unloading, SDI and
+  nuclear targeting all treat teammates as friendly.
+* `Civilization.teamId` is a denormalised copy for UI/save; engine decisions use
+  `TeamManager`.
+
 === Opinion — a directed ledger, not a reputation score
 
 There is no single reputation number. Each civ holds a directed **Opinion**
@@ -2158,6 +2188,27 @@ the human is still alive.
 On any result the engine sets `isGameOver` and `setPaused(true)`, which freezes
 all AI and turn logic.
 ====
+
+=== Fixed-alliance results
+
+When fixed alliances are enabled, the unit of survival is the *team*, not the
+civilization. `VictoryManager` switches to its team branch:
+
+* The first operational member to complete Moonshot wins for the whole team.
+* The last team with an operational member wins by elimination. A team with one
+  surviving unit or one city is still alive.
+* Every member of the winning or losing team is listed in `GameResult`, with
+  `teamId` and `teamName`; members eliminated earlier still win or lose with
+  the team.
+* If the primary human's civilization is eliminated but a teammate survives,
+  the game does not end. The dead civ is skipped and the human spectates until
+  the team result.
+* Team survival ignores units already marked `isDefeated` (they linger for the
+  death animation). Free-for-all games keep their historical operational rule,
+  including lingering defeated units, so existing games behave exactly as
+  before.
+
+Full rules: link:FIXED_ALLIANCES.adoc[Fixed Alliances].
 
 === Score
 

@@ -133,7 +133,7 @@ toc::[]
   language switcher, browser-language detection, wonder lore in all 6
   languages, enforced by tests. (Engine-composed strings remain English — see
   partial list.)
-* Save/load: versioned JSON v4 with v1–v4 migrations, round-trip tests.
+* Save/load: versioned JSON v5 with v1–v5 migrations, round-trip tests.
 * Command layer exists (`types/commands.ts`, `GameEngine.submit`,
   `GameSession`); 4 commands implemented (move unit, rates, production, found
   city).

@@ -65,10 +65,16 @@ export interface PolicyContext {
   ownGold: number;
   /** The other civ's treasury — what they can afford to give or be asked for. */
   theirGold?: number;
-  /** How many wars the civ is already fighting. */
+  /** How many wars the civ is already fighting (distinct enemy teams). */
   activeWars: number;
   /** Max wars this civ's temperament permits. */
   maxWars: number;
+  /**
+   * These two civilizations are locked teammates. Trade and gifts are still
+   * allowed, but war, betrayal, tribute demands and redundant treaties are
+   * filtered out before the candidate is ever considered.
+   */
+  teammate?: boolean;
   /** 0 (fresh) … 20 (exhausted). */
   exhaustion: number;
   /** Turns since the current status began. */
@@ -471,9 +477,28 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
     }
   }
 
-  out.sort((a, b) => b.score - a.score);
-  return out;
+  // A locked teammate is not a diplomatic rival. Trade, gifts, gold and
+  // knowledge may still change hands, but the alliance itself is not up for
+  // negotiation: no war, no betrayal, no tribute, no redundant pact offers.
+  const filtered = ctx.teammate
+    ? out.filter((candidate) => !TEAMMATE_FORBIDDEN_ACTIONS.has(candidate.action))
+    : out;
+
+  filtered.sort((a, b) => b.score - a.score);
+  return filtered;
 }
+
+/** Actions that make no sense against a locked teammate. */
+const TEAMMATE_FORBIDDEN_ACTIONS: ReadonlySet<string> = new Set([
+  'declare_war',
+  'break_alliance',
+  'demand_tribute',
+  'propose_alliance',
+  'offer_open_borders',
+  'propose_non_aggression',
+  'propose_mutual_defense',
+  'establish_embassy',
+]);
 
 /**
  * Pick the action to take: highest score above the act threshold, with a

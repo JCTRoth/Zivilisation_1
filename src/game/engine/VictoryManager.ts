@@ -49,8 +49,12 @@ export class VictoryManager {
     }
 
     const aliveStatus = new Map<number, boolean>();
+    // Fixed-alliance survival is strict: a corpse left on the board for the
+    // death animation must not keep a team in the game. Free-for-all keeps its
+    // historical behaviour exactly — changing it would end long AI games early.
+    const ignoreDefeatedUnits = this.isTeamGame();
     civilizations.forEach((civ) => {
-      const alive = this.isCivilizationOperational(civ.id);
+      const alive = this.isCivilizationOperational(civ.id, ignoreDefeatedUnits);
       aliveStatus.set(civ.id, alive);
       civ.isAlive = alive;
       // Peace-years tracking for the score bonus: consecutive rounds without
@@ -318,9 +322,10 @@ export class VictoryManager {
     return Array.isArray(techs) && techs.includes('moonshot');
   }
 
-  private isCivilizationOperational(civId: number): boolean {
+  private isCivilizationOperational(civId: number, ignoreDefeatedUnits = false): boolean {
     const hasUnits = this.gameEngine.units.some(
-      (unit) => unit.civilizationId === civId && unit.isDefeated !== true,
+      (unit) => unit.civilizationId === civId
+        && (!ignoreDefeatedUnits || unit.isDefeated !== true),
     );
     const hasCities = this.gameEngine.cities.some((city) => city.civilizationId === civId);
     return hasUnits || hasCities;
