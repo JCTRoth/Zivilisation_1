@@ -351,7 +351,8 @@ Setup can also lock the civilizations into **fixed alliances** (permanent
 teams). Teammates cannot fight or betray each other; wars, peace and ceasefires
 expand across whole teams; every member wins or loses together; a human whose
 own civ falls while a teammate survives keeps watching. Alliances with outside
-civilizations remain per civ, and shared team vision is deferred to v1.1.
+civilizations remain per civ, and teammates share vision, explored ground and
+contact.
 
 === Barbarians
 

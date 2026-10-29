@@ -340,7 +340,18 @@ export class DiplomacyManager {
   hasContacted(civA: number, civB: number): boolean {
     if (civA === civB) return true;
     if (this.isTeammate(civA, civB)) return true;
-    return this.contactedPairs.has(this.key(civA, civB));
+    if (this.contactedPairs.has(this.key(civA, civB))) return true;
+    // Fixed alliances share intelligence: a civ has met everyone its OWN locked
+    // teammates have met, so one scout's contact is the whole team's contact.
+    // Shared within the team only — an outsider does not inherit the team's
+    // contacts. Derived (not stored), so save files keep the per-civ pairs.
+    const teams = this.gameEngine.teamManager;
+    if (teams?.enabled) {
+      for (const mate of teams.getTeammates(civA)) {
+        if (this.contactedPairs.has(this.key(mate, civB))) return true;
+      }
+    }
+    return false;
   }
 
   /** Every counterpart this civilization has already met (teammates always). */

@@ -1650,31 +1650,22 @@ export default class GameEngine {
     const mapWidth = this.map?.width || Constants.MAP_WIDTH;
     const mapHeight = this.map?.height || Constants.MAP_HEIGHT;
 
-    // Static world maps ship hand-placed start positions (the Freeciv Earth map
-    // has 30 balanced grassland spawns) — shuffle them once so each game hands
-    // out a different, far-apart set instead of always the same corners.
-    const staticStarts = [...(staticMapForMapType(mapType)?.startPositions ?? [])];
-    for (let i = staticStarts.length - 1; i > 0; i--) {
-      const j = Math.floor(startRng() * (i + 1));
-      [staticStarts[i], staticStarts[j]] = [staticStarts[j], staticStarts[i]];
-    }
-
+    const fixedPoints = staticMapForMapType(mapType)?.startPositions ?? [];
     const positions: Array<{ col: number; row: number }> = [];
     const farEnough = (col: number, row: number) =>
       positions.every((p) => this.squareGrid.squareDistance(col, row, p.col, p.row) >= minDist);
 
-    // Prefer the static map's hand-placed spawns, skipping any that are
-    // unusable or too close to a spawn already taken.
-    while (positions.length < numCivs && staticStarts.length > 0) {
-      const candidate = staticStarts.shift()!;
-      // Settlers must never spawn on (or beside) water at game start — the one
-      // definition of "dry land" lives in isSpawnableTile.
-      if (!this.isSpawnableTile(candidate.col, candidate.row, navalStart)) continue;
-      if (!farEnough(candidate.col, candidate.row)) continue;
-      positions.push({ col: candidate.col, row: candidate.row });
+    if (fixedPoints.length > 0) {
+      // Fixed map: use the hand-placed start points in their DEFINED order, so
+      // a spawn index always names the same physical point on the board (the
+      // whole point of a fixed spawn). Never shuffled and never re-sorted —
+      // point N is point N.
+      for (const p of fixedPoints) positions.push({ col: p.col, row: p.row });
     }
 
-    // Scatter the rest on spawnable land, keeping the same minimum distance.
+    // Pad with a scatter until every civ has a point. A generated map (no hand
+    // -placed points) reaches here for every seat; a fixed map only when it
+    // ships fewer points than there are players.
     let attempts = 0;
     const maxAttempts = numCivs * 100;
     while (positions.length < numCivs && attempts < maxAttempts) {
@@ -1686,11 +1677,11 @@ export default class GameEngine {
       attempts++;
     }
 
-    // Order the spawn points west → east (then north → south) so a spawn index
-    // has a stable meaning: "spawn 1" is always the westernmost start on the
-    // map, whatever the scatter produced. Without this an explicit spawn pick
-    // would point at a different corner every game and mean nothing.
-    positions.sort((a, b) => (a.col - b.col) || (a.row - b.row));
+    // Generated worlds have no authored order: sort west → east so a spawn index
+    // still has a stable meaning. Fixed maps keep their authored order above.
+    if (fixedPoints.length === 0) {
+      positions.sort((a, b) => (a.col - b.col) || (a.row - b.row));
+    }
     return positions;
   }
 
@@ -1981,9 +1972,17 @@ export default class GameEngine {
    * Reveal map tiles around a position for the active player
    */
   revealArea(centerCol, centerRow, radius) {
-    // Update player storage
-    const storage = this.playerStorage.get(this.activePlayer);
-    if (storage) {
+    // Fixed alliances share sight: the reveal lands in the active player's fog
+    // and in every locked teammate's, so a unit that scouts a tile lights it
+    // for the whole alliance. Free-for-all has no teammates, so this is just
+    // the active player (unchanged behaviour).
+    const viewers = [
+      this.activePlayer,
+      ...(this.teamManager?.getTeammates(this.activePlayer) ?? []),
+    ];
+    for (const viewerId of viewers) {
+      const storage = this.playerStorage.get(viewerId);
+      if (!storage) continue;
       for (let row = centerRow - radius; row <= centerRow + radius; row++) {
         for (let col = centerCol - radius; col <= centerCol + radius; col++) {
           if (this.isValidHex(col, row)) {
@@ -1997,9 +1996,10 @@ export default class GameEngine {
         }
       }
     }
-    
+
     // Only update the store (UI visibility) for the human player.
     // AI exploration is kept in per-player storage and must not leak to the minimap.
+    // (The store's own updateVisibility already widens the fog to teammates.)
     if (this.storeActions && this.activePlayer === 0) {
       this.storeActions.revealArea(centerCol, centerRow, radius);
     }
@@ -2018,6 +2018,52 @@ export default class GameEngine {
     // Update per-player visibility storage for game logic (EnemySearcher, AI decisions, etc.)
     for (const civ of this.civilizations) {
       this.updatePlayerVisibility(civ.id);
+    }
+
+    // Fixed alliances share sight: union every teammate's fog so the AI (and
+    // any logic reading playerStorage) sees the whole team's vision. Contact is
+    // deliberately NOT shared here — `recordContactsFromSight` already ran with
+    // each civ's own vision above, so diplomacy meetings stay per-civilization.
+    this.shareTeamVision();
+  }
+
+  /**
+   * Fixed alliances share vision: every member of a team sees exactly what the
+   * team sees. This unions each member's sight and explored ground so a scout
+   * on one flank lights the map for the whole alliance. Runs once after each
+   * civilization's own visibility has been computed (see `updateVisibility`).
+   */
+  private shareTeamVision(): void {
+    const teams = this.teamManager;
+    if (!teams?.enabled) return;
+    const width = this.map?.width ?? Constants.MAP_WIDTH;
+    const height = this.map?.height ?? Constants.MAP_HEIGHT;
+    const size = width * height;
+
+    for (const teamId of teams.getTeamIds()) {
+      const members = teams.getTeamMembers(teamId);
+      if (members.length < 2) continue;
+      const storages = members
+        .map((id) => this.playerStorage.get(id))
+        .filter((s): s is PlayerTurnStorage => !!s);
+      if (storages.length < 2) continue;
+
+      // Union of the team's sight and explored ground.
+      const visibility = new Array<boolean>(size).fill(false);
+      const explored = new Array<boolean>(size).fill(false);
+      for (const s of storages) {
+        for (let i = 0; i < size; i++) {
+          if (s.visibility[i]) visibility[i] = true;
+          if (s.explored[i]) explored[i] = true;
+        }
+      }
+      // Every member now sees what the team sees.
+      for (const s of storages) {
+        for (let i = 0; i < size; i++) {
+          if (visibility[i]) s.visibility[i] = true;
+          if (explored[i]) s.explored[i] = true;
+        }
+      }
     }
   }
 

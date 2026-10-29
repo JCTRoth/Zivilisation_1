@@ -1985,7 +1985,7 @@ export const fr: PartialTranslationDict = {
   // ── Alliances fixes ──
   'setup.teams.title': 'Alliances fixes',
   'setup.teams.enable': 'Verrouiller les civilisations dans des équipes permanentes',
-  'setup.teams.hint': 'Les coéquipiers ne peuvent ni se combattre ni se trahir, mènent les guerres et les paix ensemble et gagnent ou perdent ensemble. La vision partagée n’est pas incluse dans cette version.',
+  'setup.teams.hint': 'Les coéquipiers ne peuvent ni se combattre ni se trahir, mènent les guerres, les paix et la vision ensemble et gagnent ou perdent ensemble.',
   'setup.teams.needThreeCivs': 'Les alliances fixes nécessitent au moins trois civilisations.',
   'setup.teams.presetHumans': 'Humains contre IA',
   'setup.teams.presetEven': '{{n}} équipes égales',
@@ -2017,6 +2017,8 @@ export const fr: PartialTranslationDict = {
   'setup.lobby.colorReset': 'Rétablir la couleur de la faction',
   'setup.lobby.random': 'Aléatoire',
   'setup.lobby.auto': 'Auto',
+  'setup.lobby.spawnMode': 'Points de départ',
+  'setup.lobby.spawnFixed': 'Fixe',
   'setup.lobby.spawnHint': "Le départ choisit le coin de départ d'ouest en est : 1 est à l'extrême ouest, le plus grand nombre à l'extrême est. Auto laisse le hasard décider.",
 
   // ── Alliances fixes en partie ──

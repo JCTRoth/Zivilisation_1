@@ -1983,7 +1983,7 @@ export const ja: PartialTranslationDict = {
   // ── 固定同盟 ──
   'setup.teams.title': '固定同盟',
   'setup.teams.enable': '文明を永続的なチームに固定する',
-  'setup.teams.hint': 'チームメイト同士は戦ったり裏切ったりできず、戦争と和平を共にし、勝敗も共にします。このバージョンでは視界の共有はありません。',
+  'setup.teams.hint': 'チームメイト同士は戦ったり裏切ったりできず、戦争・和平・視界を共にし、勝敗も共にします。',
   'setup.teams.needThreeCivs': '固定同盟には少なくとも3つの文明が必要です。',
   'setup.teams.presetHumans': '人間 vs AI',
   'setup.teams.presetEven': '{{n}}つの均等チーム',
@@ -2015,6 +2015,8 @@ export const ja: PartialTranslationDict = {
   'setup.lobby.colorReset': '民族の色に戻す',
   'setup.lobby.random': 'ランダム',
   'setup.lobby.auto': '自動',
+  'setup.lobby.spawnMode': '開始地点',
+  'setup.lobby.spawnFixed': '固定',
   'setup.lobby.spawnHint': '開始は開始地点を西から東に選びます：1が最も西、最も大きな数字が最も東。自動は散らばり任せます。',
 
   // ── ゲーム中の固定同盟 ──

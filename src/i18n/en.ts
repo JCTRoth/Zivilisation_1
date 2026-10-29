@@ -2037,7 +2037,7 @@ export const en = {
   // ── Fixed alliances (locked teams) ──
   'setup.teams.title': 'Fixed Alliances',
   'setup.teams.enable': 'Lock civilizations into permanent teams',
-  'setup.teams.hint': 'Teammates cannot fight or betray each other, share wars and peace, and win or lose together. Team vision is not shared in this version.',
+  'setup.teams.hint': 'Teammates cannot fight or betray each other, share wars, peace and vision, and win or lose together.',
   'setup.teams.needThreeCivs': 'Fixed alliances need at least three civilizations.',
   'setup.teams.presetHumans': 'Humans vs AI',
   'setup.teams.presetEven': '{{n}} even teams',
@@ -2069,6 +2069,8 @@ export const en = {
   'setup.lobby.colorReset': 'Reset to the faction colour',
   'setup.lobby.random': 'Random',
   'setup.lobby.auto': 'Auto',
+  'setup.lobby.spawnMode': 'Spawn points',
+  'setup.lobby.spawnFixed': 'Fixed',
   'setup.lobby.spawnHint': 'Spawn picks the starting corner, west to east: 1 is far west, the highest number is far east. Auto leaves it to the scatter.',
 };
 

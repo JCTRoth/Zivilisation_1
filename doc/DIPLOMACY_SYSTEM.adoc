@@ -621,8 +621,8 @@ alliance.
   teammate-aware.
 
 Team victory, defeat and human spectating are documented in
-link:FIXED_ALLIANCES.adoc[Fixed Alliances]. Shared team vision is deliberately
-deferred to v1.1; teammates keep separate fog of war and explored maps.
+link:FIXED_ALLIANCES.adoc[Fixed Alliances]. Teammates share vision, explored
+ground and diplomatic contact within the team.
 
 ---
 

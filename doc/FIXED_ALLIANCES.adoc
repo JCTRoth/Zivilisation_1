@@ -189,6 +189,27 @@ AI diplomacy is teammate-aware at three layers:
 An AI never starts a war inside its own team, even if a stale relation or a
 future code path tries to.
 
+=== Shared vision
+
+Teammates share their sight, so the alliance plays on one map:
+
+* **Fog of war.** A scout on one flank lights the tile for every teammate. The
+  store unions the viewing player's fog with each locked teammate's units and
+  cities (`GameStore.updateVisibility`), and the engine unions each member's
+  `playerStorage` visibility and explored ground (`GameEngine.shareTeamVision`,
+  called from `updateVisibility`). Per-move reveals are handed to teammates too
+  (`revealArea`).
+* **Explored ground.** Once any member has seen a tile, the whole team keeps it
+  explored.
+* **Contact.** A civ has met everyone its own teammates have met
+  (`DiplomacyManager.hasContacted`), derived from the per-civ pairs so save
+  files are unchanged. Shared *within* a team only — an outsider does not
+  inherit the team's contacts, and contact is never leaked by sharing vision
+  alone.
+
+Free-for-all games carry no `teamId`, so every one of these collapses to the
+single civilization and the old behaviour is unchanged.
+
 ---
 
 == 5. Combat and movement
@@ -309,13 +330,13 @@ Shipped in v1:
 * team-wide diplomacy and war/peace,
 * combat, AI and diplomat guards,
 * team victory/defeat and human spectating,
+* *shared team vision* — teammates share fog of war, explored ground and
+  diplomatic contact (see § 4),
 * setup and in-game UI,
 * save/load and tests.
 
-Deliberately deferred to v1.1:
+Deliberately deferred:
 
-* *Shared team vision.* Teammates do **not** share fog of war or explored maps
-  in v1. Each civilization keeps its own visibility and exploration.
 * Team chat, shared research or shared gold.
 * Team-level treaties with outside civilizations (alliances remain per civ).
 * Reassigning teams during a game.

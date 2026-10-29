@@ -13,6 +13,7 @@ import '../../styles/gameSetupModal.css';
 import { isAutoScenario } from '@/data/GameConstants';
 import { validateTeamAssignments } from '@/game/engine/TeamManager';
 import { TEAM_COLORS } from '@/data/TeamConstants';
+import { staticMapForMapType } from '@/data/maps';
 import {
   MAP_DIM_MAX_HEIGHT,
   MAP_DIM_MAX_WIDTH,
@@ -602,6 +603,10 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   // the Team column means anything. Team indices are per civilization SLOT.
   const [fixedAlliances, setFixedAlliances] = useState(false);
   const [teamCount, setTeamCount] = useState(2);
+  // Spawn points: only meaningful on fixed maps that ship hand-placed start
+  // positions. `random` = the engine scatters/shuffles starts; `fixed` = each
+  // seat picks one of the map's numbered points.
+  const [spawnMode, setSpawnMode] = useState<'random' | 'fixed'>('random');
   const maxTeams = Math.max(2, Math.min(4, numCivilizations - 1));
 
   // Look-around: the war room is a CSS 3D box; the pointer shifts its
@@ -717,12 +722,6 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
     setPlayers((prev) => prev.map((p, slot) => ({ ...p, team: slot % count })));
   };
 
-  /** Humans on one team, every AI on the other. */
-  const humansVersusAi = () => {
-    setTeamCount(2);
-    setPlayers((prev) => prev.map((p) => ({ ...p, team: p.isHuman ? 0 : 1 })));
-  };
-
   /**
    * Flip a seat between Human and AI. Seat 0 is "you" — always in the chair so
    * the step-1 banner, the summary and the fog of war agree on who the player
@@ -731,6 +730,27 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   const toggleHuman = (slot: number) => {
     if (slot === 0) return;
     setPlayers((prev) => prev.map((p, i) => (i === slot ? { ...p, isHuman: !p.isHuman } : p)));
+  };
+
+  // ── Spawn points ────────────────────────────────────────────────────
+  // Only fixed maps ship hand-placed start positions; generated worlds scatter
+  // starts, so a numbered spawn would mean nothing there.
+  const spawnPointCount = staticMapForMapType(mapType)?.startPositions?.length ?? 0;
+  const hasFixedSpawns = spawnPointCount > 0;
+  const showSpawnCol = hasFixedSpawns && spawnMode === 'fixed';
+
+  /**
+   * Switch between Random (engine shuffles/scatters starts) and Fixed (each
+   * seat picks a numbered point). Entering Fixed seeds every seat with a
+   * distinct point so the game is immediately valid; Random clears them so the
+   * engine takes over.
+   */
+  const changeSpawnMode = (mode: 'random' | 'fixed') => {
+    setSpawnMode(mode);
+    setPlayers((prev) => prev.map((p, slot) => ({
+      ...p,
+      spawn: mode === 'fixed' && spawnPointCount > 0 ? slot % spawnPointCount : -1,
+    })));
   };
 
   // Faction colour helpers. `<input type="color">` wants #rrggbb, but the
@@ -746,8 +766,10 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   const rowColor = (p: SetupPlayer): string =>
     (p.color || '').trim() ? p.color : factionColor(p.civIndex);
 
-  /** Grid template shared by the lobby header and rows (Player·Color·Faction·Team·Spawn). */
-  const lobbyColumns = '1.15fr 5.4rem 1.95fr 7rem 7rem';
+  /** Grid template for header + rows: Player·Color·Faction·Team (+Spawn). */
+  const lobbyColumns = ['1.15fr', '5.4rem', '1.95fr', '7rem']
+    .concat(showSpawnCol ? ['7rem'] : [])
+    .join(' ');
 
   const totalSteps = 2;
   const isFinalStep = currentStep === totalSteps;
@@ -833,7 +855,12 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
     const humanPlayerIds = humanSeats;
     const playerCivilizations = players.map((p) => (p.civIndex >= 0 ? p.civIndex : null));
     const playerColors = players.map((p) => ((p.color || '').trim() ? p.color : null));
-    const playerSpawns = players.map((p) => (p.spawn >= 0 ? p.spawn : null));
+    // Fixed spawn points are only handed to the engine when the map actually
+    // ships them AND the player chose Fixed mode; otherwise the engine
+    // randomises starts (its original behaviour).
+    const playerSpawns = showSpawnCol
+      ? players.map((p) => (p.spawn >= 0 ? p.spawn : null))
+      : players.map(() => null);
     onStart({
       playerCivilization: selectedCiv,
       difficulty,
@@ -1064,65 +1091,53 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                   </p>
 
                   {fixedAlliances && (
-                    <>
-                      <div className="setup-teams__presets">
-                        <button
-                          type="button"
-                          className="touch-btn touch-btn--ghost setup-teams__preset"
-                          onClick={humansVersusAi}
-                        >
-                          {t('setup.teams.presetHumans')}
-                        </button>
-                        <button
-                          type="button"
-                          className="touch-btn touch-btn--ghost setup-teams__preset"
-                          onClick={() => balanceTeams(2)}
-                        >
-                          {t('setup.teams.presetEven', { n: 2 })}
-                        </button>
-                        {maxTeams >= 3 && (
-                          <button
-                            type="button"
-                            className="touch-btn touch-btn--ghost setup-teams__preset"
-                            onClick={() => balanceTeams(3)}
-                          >
-                            {t('setup.teams.presetEven', { n: 3 })}
-                          </button>
-                        )}
-                        {maxTeams >= 4 && (
-                          <button
-                            type="button"
-                            className="touch-btn touch-btn--ghost setup-teams__preset"
-                            onClick={() => balanceTeams(4)}
-                          >
-                            {t('setup.teams.presetEven', { n: 4 })}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="touch-btn touch-btn--ghost setup-teams__preset"
-                          onClick={() => balanceTeams(teamCount)}
-                        >
-                          {t('setup.teams.autoBalance')}
-                        </button>
-                      </div>
+                    <div className="setup-teams__toolbar">
+                      <span className="setup-setting__label">{t('setup.teams.count')}</span>
+                      <Form.Range
+                        min="2"
+                        max={maxTeams}
+                        value={Math.min(teamCount, maxTeams)}
+                        onChange={(e) => balanceTeams(Number(e.target.value))}
+                        className="setup-setting__control setup-teams__slider"
+                        aria-label={t('setup.teams.count')}
+                      />
+                      <span className="setup-teams__count-value" aria-live="polite">
+                        {t('setup.teams.countValue', { n: teamCount })}
+                      </span>
+                    </div>
+                  )}
 
-                      <div className="setup-teams__toolbar">
-                        <span className="setup-setting__label">{t('setup.teams.count')}</span>
-                        <Form.Select
-                          value={String(teamCount)}
-                          onChange={(e) => balanceTeams(Number(e.target.value))}
-                          className="setup-setting__control setup-teams__count"
-                          aria-label={t('setup.teams.count')}
+                  {/* Spawn points: only fixed maps carry hand-placed start
+                      points, so the choice between random and fixed starts is
+                      offered there and hidden on generated worlds. */}
+                  {hasFixedSpawns && (
+                    <div className="setup-lobby__spawn-mode">
+                      <span className="setup-setting__label">{t('setup.lobby.spawnMode')}</span>
+                      <div
+                        className="setup-lobby__segmented"
+                        role="radiogroup"
+                        aria-label={t('setup.lobby.spawnMode')}
+                      >
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={spawnMode === 'random'}
+                          className={`setup-lobby__seg ${spawnMode === 'random' ? 'is-active' : ''}`}
+                          onClick={() => changeSpawnMode('random')}
                         >
-                          {Array.from({ length: maxTeams - 1 }, (_, i) => i + 2).map((count) => (
-                            <option key={count} value={String(count)}>
-                              {t('setup.teams.countValue', { n: count })}
-                            </option>
-                          ))}
-                        </Form.Select>
+                          {t('setup.lobby.random')}
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={spawnMode === 'fixed'}
+                          className={`setup-lobby__seg ${spawnMode === 'fixed' ? 'is-active' : ''}`}
+                          onClick={() => changeSpawnMode('fixed')}
+                        >
+                          {t('setup.lobby.spawnFixed')}
+                        </button>
                       </div>
-                    </>
+                    </div>
                   )}
 
                   {/* The lobby — every seat, every way the player sets it up.
@@ -1133,7 +1148,9 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                       <span role="columnheader">{t('setup.lobby.colColor')}</span>
                       <span role="columnheader">{t('setup.lobby.colFaction')}</span>
                       <span role="columnheader">{t('setup.lobby.colTeam')}</span>
-                      <span role="columnheader">{t('setup.lobby.colSpawn')}</span>
+                      {showSpawnCol && (
+                        <span role="columnheader">{t('setup.lobby.colSpawn')}</span>
+                      )}
                     </div>
                     {players.map((p, slot) => {
                       const human = p.isHuman;
@@ -1229,25 +1246,29 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                             )}
                           </span>
 
-                          {/* Spawn */}
-                          <span className="setup-lobby__cell" role="cell">
-                            <Form.Select
-                              value={String(p.spawn)}
-                              onChange={(e) => setPlayer(slot, { spawn: Number(e.target.value) })}
-                              className="setup-setting__control setup-lobby__select"
-                              aria-label={t('setup.lobby.colSpawn')}
-                            >
-                              <option value="-1">{t('setup.lobby.auto')}</option>
-                              {Array.from({ length: numCivilizations }, (_, s) => (
-                                <option key={s} value={String(s)}>{s + 1}</option>
-                              ))}
-                            </Form.Select>
-                          </span>
+                          {/* Spawn (fixed maps only, in Fixed mode) */}
+                          {showSpawnCol && (
+                            <span className="setup-lobby__cell" role="cell">
+                              <Form.Select
+                                value={String(p.spawn)}
+                                onChange={(e) => setPlayer(slot, { spawn: Number(e.target.value) })}
+                                className="setup-setting__control setup-lobby__select"
+                                aria-label={t('setup.lobby.colSpawn')}
+                              >
+                                <option value="-1">{t('setup.lobby.random')}</option>
+                                {Array.from({ length: spawnPointCount }, (_, s) => (
+                                  <option key={s} value={String(s)}>{s + 1}</option>
+                                ))}
+                              </Form.Select>
+                            </span>
+                          )}
                         </div>
                       );
                     })}
                   </div>
-                  <p className="setup-setting__hint">{t('setup.lobby.spawnHint')}</p>
+                  {showSpawnCol && (
+                    <p className="setup-setting__hint">{t('setup.lobby.spawnHint')}</p>
+                  )}
 
                   {fixedAlliances && (
                     <div className="setup-teams__sizes" aria-live="polite">

@@ -61,8 +61,8 @@ and the last team with a living unit or city wins by elimination. If your own
 civilization is eliminated while a teammate still fights, you become a spectator
 and the game continues until the team result. Teammates cannot fight or betray
 each other, and wars and peace are signed between whole teams. Alliances with
-civilizations outside the team remain per civilization. Shared team vision is
-not part of this version.
+civilizations outside the team remain per civilization. Teammates share vision,
+explored ground and contact.
 
 *There is no score victory.* The Civ I score is calculated every turn and shown
 on the scoreboard and in the exported CSV, but it does not end the game. See

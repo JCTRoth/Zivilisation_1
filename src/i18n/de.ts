@@ -1987,7 +1987,7 @@ export const de: PartialTranslationDict = {
   // ── Feste Bündnisse ──
   'setup.teams.title': 'Feste Bündnisse',
   'setup.teams.enable': 'Zivilisationen in dauerhafte Teams aufteilen',
-  'setup.teams.hint': 'Teamkollegen können einander nicht bekämpfen oder verraten, führen Kriege und Frieden gemeinsam und gewinnen oder verlieren zusammen. Geteilte Sicht ist in dieser Version nicht enthalten.',
+  'setup.teams.hint': 'Teamkollegen können einander nicht bekämpfen oder verraten, führen Kriege, Frieden und Sicht gemeinsam und gewinnen oder verlieren zusammen.',
   'setup.teams.needThreeCivs': 'Feste Bündnisse benötigen mindestens drei Zivilisationen.',
   'setup.teams.presetHumans': 'Menschen gegen KI',
   'setup.teams.presetEven': '{{n}} gleich große Teams',
@@ -2019,6 +2019,8 @@ export const de: PartialTranslationDict = {
   'setup.lobby.colorReset': 'Auf die Volksfarbe zurücksetzen',
   'setup.lobby.random': 'Zufällig',
   'setup.lobby.auto': 'Auto',
+  'setup.lobby.spawnMode': 'Startpunkte',
+  'setup.lobby.spawnFixed': 'Fest',
   'setup.lobby.spawnHint': 'Start wählt die Startecke von West nach Ost: 1 ist weit im Westen, die höchste Zahl weit im Osten. Auto überlässt es der Verteilung.',
 
   // ── Feste Bündnisse in der Partie ──

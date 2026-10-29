@@ -1985,7 +1985,7 @@ export const es: PartialTranslationDict = {
   // ── Alianzas fijas ──
   'setup.teams.title': 'Alianzas fijas',
   'setup.teams.enable': 'Bloquear civilizaciones en equipos permanentes',
-  'setup.teams.hint': 'Los compañeros no pueden luchar ni traicionarse, comparten guerras y paces, y ganan o pierden juntos. La visión compartida no está incluida en esta versión.',
+  'setup.teams.hint': 'Los compañeros no pueden luchar ni traicionarse, comparten guerras, paces y visión, y ganan o pierden juntos.',
   'setup.teams.needThreeCivs': 'Las alianzas fijas necesitan al menos tres civilizaciones.',
   'setup.teams.presetHumans': 'Humanos contra IA',
   'setup.teams.presetEven': '{{n}} equipos equilibrados',
@@ -2017,6 +2017,8 @@ export const es: PartialTranslationDict = {
   'setup.lobby.colorReset': 'Restablecer al color de la facción',
   'setup.lobby.random': 'Aleatorio',
   'setup.lobby.auto': 'Auto',
+  'setup.lobby.spawnMode': 'Puntos de inicio',
+  'setup.lobby.spawnFixed': 'Fijo',
   'setup.lobby.spawnHint': 'Inicio elige la esquina de salida, de oeste a este: 1 es el lejano oeste, el número más alto el lejano este. Auto lo deja al azar.',
 
   // ── Alianzas fijas en partida ──

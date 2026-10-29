@@ -673,6 +673,18 @@ export class EngineEventRouter {
   }
 
   /**
+   * Whether a civilization fights on the human's side: the human player
+   * themselves, or a locked teammate (fixed alliances). Combat toasts, battle
+   * reports and attack sounds key off this so the player is alerted when their
+   * *team* is attacked, not only when civ 0 is literally in the fight.
+   */
+  private isHumanSide(civId?: number): boolean {
+    if (civId == null) return false;
+    if (civId === HUMAN_PLAYER_ID) return true;
+    return this.gameEngine.teamManager?.isTeammate(HUMAN_PLAYER_ID, civId) ?? false;
+  }
+
+  /**
    * True while the player holds a selection they made by hand (a city they
    * opened, a unit they clicked). Engine-driven selection and camera focus must
    * not steal it — that is what made a unit appear right after a city click.
@@ -803,7 +815,15 @@ export class EngineEventRouter {
     // civ's units — e.g. an AI battle) should be suppressed. The message is
     // built by the same CombatSystem that resolved the round, so the numbers
     // always match what happened.
-    const combatCivId = humanOrFirst(attacker?.civilizationId, defender?.civilizationId);
+    const attackerHumanSide = this.isHumanSide(attacker?.civilizationId);
+    const defenderHumanSide = this.isHumanSide(defender?.civilizationId);
+    // Route the toast to the human whenever their own side (them or a locked
+    // teammate) is in the fight, so an ally's battle is announced too. A fight
+    // between two other civs still falls back to the old "first party" routing
+    // (which addNotification then filters away from the human).
+    const combatCivId = (attackerHumanSide || defenderHumanSide)
+      ? HUMAN_PLAYER_ID
+      : humanOrFirst(attacker?.civilizationId, defender?.civilizationId);
     const combatKind: CombatEventKind = eventType === 'COMBAT_VICTORY'
       ? 'victory'
       : eventType === 'COMBAT_HIT' ? 'hit' : 'defeat';
@@ -824,8 +844,8 @@ export class EngineEventRouter {
     // stay toasts — the modal would be noise there.
     const defenderDestroyed = eventType === 'COMBAT_VICTORY';
     const attackerDestroyed = eventType !== 'COMBAT_VICTORY' && (attacker?.health ?? 1) <= 0;
-    const humanAttacker = attacker?.civilizationId === HUMAN_PLAYER_ID;
-    const humanInvolved = humanAttacker || defender?.civilizationId === HUMAN_PLAYER_ID;
+    const humanAttacker = attackerHumanSide;
+    const humanInvolved = attackerHumanSide || defenderHumanSide;
 
     // The blow, or the death that followed it. Gated on the human being in
     // the fight for the same reason the toasts are: two AI armies clashing
@@ -931,7 +951,7 @@ export class EngineEventRouter {
       // Where should the camera go for this fight? The player's own defender
       // always, or a visible AI attacker. Hidden fights get no camera move (that
       // would reveal fog).
-      const isHumanDefender = defender.civilizationId === HUMAN_PLAYER_ID;
+      const isHumanDefender = this.isHumanSide(defender.civilizationId);
       const isVisibleEnemyAction =
         attacker.civilizationId !== HUMAN_PLAYER_ID
         && this.isUnitVisibleToHuman(attacker)
@@ -977,9 +997,9 @@ export class EngineEventRouter {
     const splashed = (eventData?.splashed as Array<{ unitId: string; damage: number; destroyed: boolean }>) ?? [];
     if (splashed.length === 0) return;
     const byId = new Map((this.gameEngine.units ?? []).map((u) => [u.id, u]));
-    const humanInvolved = attacker?.civilizationId === HUMAN_PLAYER_ID
-      || defender?.civilizationId === HUMAN_PLAYER_ID
-      || splashed.some((s) => byId.get(s.unitId)?.civilizationId === HUMAN_PLAYER_ID);
+    const humanInvolved = this.isHumanSide(attacker?.civilizationId)
+      || this.isHumanSide(defender?.civilizationId)
+      || splashed.some((s) => this.isHumanSide(byId.get(s.unitId)?.civilizationId));
     if (!humanInvolved) return;
     const perVictim = splashed[0]?.damage ?? 0;
     const killed = splashed.filter((s) => s.destroyed).length;
@@ -987,7 +1007,8 @@ export class EngineEventRouter {
     notify(
       'info',
       `💥 Splash damage: ${splashed.length} stacked unit(s) take ${perVictim} each${killedSuffix}`,
-      humanOrFirst(attacker?.civilizationId, defender?.civilizationId),
+      // `humanInvolved` already guarantees the human's side is in the blast.
+      HUMAN_PLAYER_ID,
     );
   }
 
@@ -1297,17 +1318,23 @@ export class EngineEventRouter {
       const defenderDamage = (eventData.defenderDamage as number | undefined) ?? 0;
       // Human-facing toast only (AI-only city fights are filtered by civId).
       const attackerName = attacker?.name || attacker?.type || 'An enemy';
-      const involvedCiv = humanOrFirst(attacker?.civilizationId, city.civilizationId);
+      // Alert the human when their own side (them or a locked teammate) is in
+      // the siege — as attacker or as the city's owner.
+      const cityHumanSide = this.isHumanSide(attacker?.civilizationId)
+        || this.isHumanSide(city.civilizationId);
+      const involvedCiv = cityHumanSide
+        ? HUMAN_PLAYER_ID
+        : humanOrFirst(attacker?.civilizationId, city.civilizationId);
       if (defenderDamage > 0) {
         notify('warning', `${attackerName} defeated a defender in ${city.name}`, involvedCiv);
       } else if (attackerDamage > 0) {
         notify('info', `${city.name} repelled ${attackerName}`, involvedCiv);
       }
-      // The assault itself, for a fight the player is part of — as the
-      // attacking general or as the city's owner. A rival-vs-rival siege stays
-      // silent, for the same reason an off-screen AI battle does.
-      const humanAssault = attacker?.civilizationId === HUMAN_PLAYER_ID
-        || city.civilizationId === HUMAN_PLAYER_ID;
+      // The assault itself, for a fight the player's side is part of — as the
+      // attacking general or as the city's owner (their own or a teammate's).
+      // A rival-vs-rival siege stays silent, for the same reason an off-screen
+      // AI battle does.
+      const humanAssault = cityHumanSide;
       // …and only for an attacker that actually bombards walls. The cue is a
       // gunpowder assault, so it starts at the Musketeer; a tank, an aircraft
       // or a ship plays nothing here and is left to its own weapon cue.

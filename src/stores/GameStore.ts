@@ -1244,11 +1244,24 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       const newVisibility = new Array(map.tiles.length).fill(false);
       const newRevealed = [...(map.revealed || new Array(map.tiles.length).fill(false))];
 
+      // Fixed alliances share vision: the viewing player lights the fog for
+      // their locked teammates too, so a scout on one flank is seen by the
+      // whole alliance. Free-for-all civs carry no teamId, so this collapses to
+      // the viewing player alone and the old behaviour is unchanged.
+      const viewPlayer = state.gameState.viewPlayer;
+      const friendly = new Set<number>([viewPlayer]);
+      const viewerCiv = state.civilizations?.find((c) => c.id === viewPlayer);
+      if (viewerCiv?.teamId !== undefined && viewerCiv?.teamId !== null) {
+        for (const civ of state.civilizations) {
+          if (civ.teamId === viewerCiv.teamId) friendly.add(civ.id);
+        }
+      }
+
       // Clear current visibility (but keep revealed status)
       // Revealed tiles stay permanently visible
-      // Only reveal around the viewing human player's units
+      // Only reveal around the viewing player and their teammates' units
       for (const unit of units) {
-        if (unit.civilizationId !== state.gameState.viewPlayer) {
+        if (!friendly.has(unit.civilizationId)) {
           continue;
         }
 
@@ -1281,9 +1294,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         }
       }
 
-      // Reveal around the viewing human player's cities
+      // Reveal around the viewing player and their teammates' cities
       for (const city of cities) {
-        if (city.civilizationId === state.gameState.viewPlayer) {
+        if (friendly.has(city.civilizationId)) {
           const cityViewRadius = 2; // Cities can see 2 tiles away
           setVisibilityAreaInternal(newVisibility, newRevealed, city.col, city.row, cityViewRadius, map.width, map.height);
         }
