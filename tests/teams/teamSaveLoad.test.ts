@@ -75,6 +75,33 @@ describe('fixed alliances save/load', () => {
     expect(loaded.diplomacyManager.isAtWar(0, 1)).toBe(false);
   });
 
+  it('re-shares team vision on load, even from an old save', async () => {
+    const engine = await newTeamGame();
+    // A tile only civ 0's starting units can see (starts are far apart).
+    const civ0Unit = engine.units.find((u) => u.civilizationId === 0)!;
+    const tile = { col: civ0Unit.col + 1, row: civ0Unit.row };
+    // Shared at init: the teammate already sees it.
+    expect(engine.isVisibleToPlayer(1, tile.col, tile.row)).toBe(true);
+
+    // Simulate an old (pre-shared-vision) save: teammate 1 carries an empty fog.
+    const parsed = JSON.parse(engine.getSaveJSON()!);
+    const stored = parsed.playerStorage['1'];
+    stored.visibility = stored.visibility.map(() => false);
+    stored.explored = stored.explored.map(() => false);
+    localStorage.setItem('civ1_savegame', JSON.stringify(parsed));
+
+    const loaded = new GameEngine(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (loaded as any).sleep = () => Promise.resolve();
+    expect(await loaded.loadGame()).toBe(true);
+
+    // Civ 0 keeps its own sight…
+    expect(loaded.isVisibleToPlayer(0, tile.col, tile.row)).toBe(true);
+    // …and the team vision is re-shared on load, so the teammate sees it even
+    // though the save carried an empty fog for civ 1.
+    expect(loaded.isVisibleToPlayer(1, tile.col, tile.row)).toBe(true);
+  });
+
   it('loads a v4 save as a free-for-all', async () => {
     const engine = await newTeamGame();
     const parsed = JSON.parse(engine.getSaveJSON()!);

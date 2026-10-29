@@ -9250,6 +9250,11 @@ const occupiedLandmasses = new Set(
         }
       }
 
+      // Locked teams share sight: re-union every teammate's fog after the save
+      // is restored. New saves already carry shared vision, but this makes an
+      // older (or hand-edited) save share too — and it is idempotent.
+      this.shareTeamVision();
+
       // ── Restore scout memory discoveries ──
       if (saveData.version >= 2 && saveData.scoutDiscoveries) {
         // Restore round number first
