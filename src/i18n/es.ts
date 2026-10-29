@@ -2001,6 +2001,24 @@ export const es: PartialTranslationDict = {
   'setup.teams.summary': 'Alianzas',
   'setup.teams.summaryValue': '{{teams}} equipos · {{civs}} civilizaciones',
 
+  // ── Sala de jugadores (configuración por asiento) ──
+  'setup.players.title': 'Jugadores',
+  'setup.players.lede': 'Configura cada asiento de la mesa: quién es humano, qué pueblo lidera, el color de su bandera, equipo y posición de inicio.',
+  'setup.lobby.colPlayer': 'Jugador',
+  'setup.lobby.colColor': 'Color',
+  'setup.lobby.colFaction': 'Facción',
+  'setup.lobby.colTeam': 'Equipo',
+  'setup.lobby.colSpawn': 'Inicio',
+  'setup.lobby.you': 'Tú',
+  'setup.lobby.playerN': 'Jugador {{n}}',
+  'setup.lobby.typeHint': 'Alterna este asiento entre Humano e IA.',
+  'setup.lobby.human': 'Humano',
+  'setup.lobby.ai': 'IA',
+  'setup.lobby.colorReset': 'Restablecer al color de la facción',
+  'setup.lobby.random': 'Aleatorio',
+  'setup.lobby.auto': 'Auto',
+  'setup.lobby.spawnHint': 'Inicio elige la esquina de salida, de oeste a este: 1 es el lejano oeste, el número más alto el lejano este. Auto lo deja al azar.',
+
   // ── Alianzas fijas en partida ──
   'topbar.teamBadgeHint': 'Alianza fija: {{team}}',
   'side.teamBadgeHint': 'Alianza fija: {{team}}',

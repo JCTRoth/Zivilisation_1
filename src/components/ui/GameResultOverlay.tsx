@@ -85,17 +85,18 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
   const allUnits = useGameStore((state) => state.units);
   const civilizations = useGameStore((state) => state.civilizations);
 
-  // A fixed-alliance result names every member of the team. The ledger is the
-  // team's ledger: cities, population, wonders, technologies and score are
-  // summed (technologies de-duplicated) so a team victory reads as one empire.
-  const resultCivIds = useMemo(
-    () => (result?.civilizationIds?.length ? result.civilizationIds : [civId]),
-    [result?.civilizationIds, civId]
-  );
-  // A fixed-alliance result carries a team id. A hotseat joint victory also
-  // names several civs but is not a team result; it keeps the joint-victory
-  // wording while still aggregating the ledger across its winners.
+  // A fixed-alliance result carries a team id and names every member of the
+  // team. A hotseat joint victory also names several civs but is NOT a team
+  // result — it keeps the ordinary free-for-all ledger (the first civ's) so
+  // non-team games render exactly as they always have.
   const isTeamResult = !!result && result.teamId !== undefined;
+  // For a team result the ledger is the team's: cities, population, wonders,
+  // technologies and score are summed (technologies de-duplicated) so a team
+  // victory reads as one empire. Everything else stays one civilization.
+  const resultCivIds = useMemo(
+    () => (isTeamResult && result?.civilizationIds?.length ? result.civilizationIds : [civId]),
+    [isTeamResult, result?.civilizationIds, civId]
+  );
 
   const ledger = useMemo(() => {
     const idSet = new Set(resultCivIds);

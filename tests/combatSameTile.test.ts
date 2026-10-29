@@ -29,6 +29,9 @@ describe('Same-tile attacks', () => {
       mapType: 'CLOSEUP_1V1',
       devMode: false,
       startingGold: 100,
+      // Pin the world so the two starting settlers never scatter onto the
+      // tile (10,10) these cases use — an unpinned map made this flaky.
+      mapSeed: 20260101,
     });
     engine = e;
     return e;

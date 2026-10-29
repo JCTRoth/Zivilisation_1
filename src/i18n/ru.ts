@@ -1999,6 +1999,24 @@ export const ru: PartialTranslationDict = {
   'setup.teams.summary': 'Союзы',
   'setup.teams.summaryValue': '{{teams}} команд · {{civs}} цивилизаций',
 
+  // ── Лобби игроков (настройка каждого места) ──
+  'setup.players.title': 'Игроки',
+  'setup.players.lede': 'Настройте каждое место за столом — кто человек, каким народом он управляет, цвет знамени, команда и стартовая позиция.',
+  'setup.lobby.colPlayer': 'Игрок',
+  'setup.lobby.colColor': 'Цвет',
+  'setup.lobby.colFaction': 'Фракция',
+  'setup.lobby.colTeam': 'Команда',
+  'setup.lobby.colSpawn': 'Старт',
+  'setup.lobby.you': 'Вы',
+  'setup.lobby.playerN': 'Игрок {{n}}',
+  'setup.lobby.typeHint': 'Переключить это место между человеком и ИИ.',
+  'setup.lobby.human': 'Человек',
+  'setup.lobby.ai': 'ИИ',
+  'setup.lobby.colorReset': 'Сбросить на цвет фракции',
+  'setup.lobby.random': 'Случайно',
+  'setup.lobby.auto': 'Авто',
+  'setup.lobby.spawnHint': 'Старт выбирает угол старта с запада на восток: 1 — дальний запад, наибольшее число — дальний восток. Авто предоставляет выбор случаю.',
+
   // ── Фиксированные союзы в игре ──
   'topbar.teamBadgeHint': 'Фиксированный союз: {{team}}',
   'side.teamBadgeHint': 'Фиксированный союз: {{team}}',

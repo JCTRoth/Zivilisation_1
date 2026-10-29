@@ -1013,8 +1013,12 @@ export class DiplomacyManager {
   private proposalContext(proposal: DiplomacyProposal): ProposalContext {
     const { fromCivId, toCivId, action } = proposal;
     const rel = this.getRelation(toCivId, fromCivId);
-    const ownStrength = this.estimateMilitaryStrength(toCivId);
-    const theirStrength = this.estimateMilitaryStrength(fromCivId);
+    // Team strength, not one civ's: in a fixed-alliance game a proposal is
+    // answered with the whole team's weight behind the responder, and judged
+    // against the proposer's whole team. In free-for-all a team is one civ, so
+    // this is identical to the per-civ estimate.
+    const ownStrength = this.estimateTeamStrength(toCivId);
+    const theirStrength = this.estimateTeamStrength(fromCivId);
     // "Share an enemy" is what gives an alliance its strategic value, and it is
     // the term the old flat −10 alliance penalty had no room for.
     const ownEnemies = new Set(this.getEnemies(toCivId));
@@ -1037,14 +1041,16 @@ export class DiplomacyManager {
       goldAmount: proposal.goldAmount,
       sharedEnemy,
       // War capacity: a call for help is a request to open another front, and
-      // the responder has to be able to answer it.
-      activeWars: this.getEnemies(toCivId).length,
+      // the responder has to be able to answer it. Distinct enemy *teams*, so
+      // a coalition war is one front, not three.
+      activeWars: this.getEnemyTeamCount(toCivId),
       maxWars: maxConcurrentWars(responderWeights, this.gameEngine.currentYear),
       exhaustion: this.getWarExhaustion(toCivId),
       // The enemy a call to arms names, when the proposal names one: the ally
-      // has to weigh whether it could win that war at all.
+      // has to weigh whether it could win that war at all — against the enemy
+      // team as a whole, not just the named civ.
       targetStrength: proposal.embargoTargetId !== undefined
-        ? this.estimateMilitaryStrength(proposal.embargoTargetId)
+        ? this.estimateTeamStrength(proposal.embargoTargetId)
         : undefined,
       round: this.gameEngine.roundManager?.getRoundNumber?.() ?? 0,
       sequence: this.proposalSequence++,

@@ -2003,6 +2003,24 @@ export const de: PartialTranslationDict = {
   'setup.teams.summary': 'Bündnisse',
   'setup.teams.summaryValue': '{{teams}} Teams · {{civs}} Zivilisationen',
 
+  // ── Spieler-Lobby (Sitzplatz-Einrichtung) ──
+  'setup.players.title': 'Spieler',
+  'setup.players.lede': 'Richtet jeden Platz am Tisch ein — wer menschlich ist, welches Volk sie führen, ihre Bannerfarbe, Team und Startposition.',
+  'setup.lobby.colPlayer': 'Spieler',
+  'setup.lobby.colColor': 'Farbe',
+  'setup.lobby.colFaction': 'Volk',
+  'setup.lobby.colTeam': 'Team',
+  'setup.lobby.colSpawn': 'Start',
+  'setup.lobby.you': 'Ihr',
+  'setup.lobby.playerN': 'Spieler {{n}}',
+  'setup.lobby.typeHint': 'Diesen Platz zwischen Mensch und KI umschalten.',
+  'setup.lobby.human': 'Mensch',
+  'setup.lobby.ai': 'KI',
+  'setup.lobby.colorReset': 'Auf die Volksfarbe zurücksetzen',
+  'setup.lobby.random': 'Zufällig',
+  'setup.lobby.auto': 'Auto',
+  'setup.lobby.spawnHint': 'Start wählt die Startecke von West nach Ost: 1 ist weit im Westen, die höchste Zahl weit im Osten. Auto überlässt es der Verteilung.',
+
   // ── Feste Bündnisse in der Partie ──
   'topbar.teamBadgeHint': 'Festes Bündnis: {{team}}',
   'side.teamBadgeHint': 'Festes Bündnis: {{team}}',

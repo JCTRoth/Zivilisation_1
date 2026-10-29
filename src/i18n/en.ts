@@ -2052,6 +2052,24 @@ export const en = {
   'setup.teams.invalid': 'Each team game needs at least two teams and at least one team with two or more civilizations.',
   'setup.teams.summary': 'Alliances',
   'setup.teams.summaryValue': '{{teams}} teams · {{civs}} civilizations',
+
+  // ── Players lobby (per-seat setup) ──
+  'setup.players.title': 'Players',
+  'setup.players.lede': 'Set up every seat at the table — who is human, what people they lead, their banner colour, team and starting position.',
+  'setup.lobby.colPlayer': 'Player',
+  'setup.lobby.colColor': 'Colour',
+  'setup.lobby.colFaction': 'Faction',
+  'setup.lobby.colTeam': 'Team',
+  'setup.lobby.colSpawn': 'Spawn',
+  'setup.lobby.you': 'You',
+  'setup.lobby.playerN': 'Player {{n}}',
+  'setup.lobby.typeHint': 'Toggle this seat between Human and AI.',
+  'setup.lobby.human': 'Human',
+  'setup.lobby.ai': 'AI',
+  'setup.lobby.colorReset': 'Reset to the faction colour',
+  'setup.lobby.random': 'Random',
+  'setup.lobby.auto': 'Auto',
+  'setup.lobby.spawnHint': 'Spawn picks the starting corner, west to east: 1 is far west, the highest number is far east. Auto leaves it to the scatter.',
 };
 
 /** Every key the game knows. All dictionaries are typed against this. */

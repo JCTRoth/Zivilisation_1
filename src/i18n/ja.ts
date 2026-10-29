@@ -1999,6 +1999,24 @@ export const ja: PartialTranslationDict = {
   'setup.teams.summary': '同盟',
   'setup.teams.summaryValue': '{{teams}}チーム · {{civs}}文明',
 
+  // ── プレイヤーロビー（席ごとの設定） ──
+  'setup.players.title': 'プレイヤー',
+  'setup.players.lede': 'テーブルの各席を設定します — 誰が人間か、どの民族を率いるか、旗の色、チーム、開始位置。',
+  'setup.lobby.colPlayer': 'プレイヤー',
+  'setup.lobby.colColor': '色',
+  'setup.lobby.colFaction': '民族',
+  'setup.lobby.colTeam': 'チーム',
+  'setup.lobby.colSpawn': '開始',
+  'setup.lobby.you': 'あなた',
+  'setup.lobby.playerN': 'プレイヤー {{n}}',
+  'setup.lobby.typeHint': 'この席を人間とAIで切り替えます。',
+  'setup.lobby.human': '人間',
+  'setup.lobby.ai': 'AI',
+  'setup.lobby.colorReset': '民族の色に戻す',
+  'setup.lobby.random': 'ランダム',
+  'setup.lobby.auto': '自動',
+  'setup.lobby.spawnHint': '開始は開始地点を西から東に選びます：1が最も西、最も大きな数字が最も東。自動は散らばり任せます。',
+
   // ── ゲーム中の固定同盟 ──
   'topbar.teamBadgeHint': '固定同盟: {{team}}',
   'side.teamBadgeHint': '固定同盟: {{team}}',

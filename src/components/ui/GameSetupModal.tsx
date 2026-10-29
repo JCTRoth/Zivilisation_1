@@ -156,10 +156,28 @@ type GameSetupModalProps = {
     age: number;
     gameMode?: 'single' | 'hotseat';
     humanPlayerIds?: number[];
-    playerCivilizations?: number[];
+    playerCivilizations?: (number | null)[];
+    playerColors?: (string | null)[];
+    playerSpawns?: (number | null)[];
     fixedAlliances?: boolean;
     teamAssignments?: number[];
   }) => void;
+};
+
+/**
+ * One row of the setup lobby: who this seat is, in every way the player can
+ * set it before the first turn. Slot 0 is "you".
+ */
+type SetupPlayer = {
+  /** CIVILIZATIONS index, or `-1` for a random unused nation. */
+  civIndex: number;
+  isHuman: boolean;
+  /** '' = the faction's own colour; otherwise a per-seat override. */
+  color: string;
+  /** Team index (only meaningful with fixed alliances on). */
+  team: number;
+  /** `-1` = Auto; otherwise the 0-based spawn-point index (west → east). */
+  spawn: number;
 };
 
 /**
@@ -566,19 +584,24 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   const [age, setAge] = useState(1);
   const [mapWidth, setMapWidth] = useState(80);
   const [mapHeight, setMapHeight] = useState(50);
-  const [gameMode, setGameMode] = useState<'single' | 'hotseat'>('single');
-  const [hotseatPlayerCount, setHotseatPlayerCount] = useState(2);
-  // Per-seat nation pick for hotseat. Seat 0 defaults to the player's chosen
-  // civilization; the others default to distinct nations so no two players
-  // start as the same people.
-  const [hotseatCivs, setHotseatCivs] = useState<number[]>([selectedCiv, -1, -1, -1]);
+  // ── Players lobby ────────────────────────────────────────────────────
+  // One row per civilization slot — the single place that decides who is
+  // human, what faction they play, their colour, team and spawn (the C&C-style
+  // lobby). Slot 0 is "you" and mirrors the step-1 banner.
+  const [players, setPlayers] = useState<SetupPlayer[]>(() =>
+    Array.from({ length: numCivilizations }, (_, slot) => ({
+      civIndex: slot === 0 ? selectedCiv : -1,
+      isHuman: slot === 0,
+      color: '',
+      team: slot % 2,
+      spawn: -1,
+    })),
+  );
 
-  // Fixed alliances (locked teams). Team indices are per civilization SLOT
-  // (0..numCivilizations-1), not per CIVILIZATIONS entry: the AI nations are
-  // chosen randomly at game start, so only the slot is known here.
+  // Fixed alliances (locked teams) — the game rule; it only decides whether
+  // the Team column means anything. Team indices are per civilization SLOT.
   const [fixedAlliances, setFixedAlliances] = useState(false);
   const [teamCount, setTeamCount] = useState(2);
-  const [teamAssignments, setTeamAssignments] = useState<number[]>([0, 1, 0, 1, 0, 1, 0]);
   const maxTeams = Math.max(2, Math.min(4, numCivilizations - 1));
 
   // Look-around: the war room is a CSS 3D box; the pointer shifts its
@@ -627,29 +650,31 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
     setMapHeight(next[1]);
   }, [mapType]);
 
-  // Keep the hotseat per-seat nations valid: seat 0 mirrors the single-player
-  // pick, and every active seat gets a distinct nation (auto-filling any seat
-  // the player has not chosen yet).
+  // Resize the roster when the number of civilizations changes. Existing rows
+  // are kept exactly as the player left them; only new seats get defaults.
   useEffect(() => {
-    setHotseatCivs((prev) => {
+    setPlayers((prev) => {
+      if (prev.length === numCivilizations) return prev;
+      return Array.from({ length: numCivilizations }, (_, slot) => prev[slot] ?? {
+        civIndex: slot === 0 ? selectedCiv : -1,
+        isHuman: slot === 0,
+        color: '',
+        team: slot % 2,
+        spawn: -1,
+      });
+    });
+  }, [numCivilizations, selectedCiv]);
+
+  // Seat 0's faction is the step-1 banner pick: mirror it into the roster so
+  // the table and the dossier never disagree.
+  useEffect(() => {
+    setPlayers((prev) => {
+      if (!prev[0] || prev[0].civIndex === selectedCiv) return prev;
       const next = [...prev];
-      // Seat 0 always tracks the civilization chosen in step 1.
-      next[0] = selectedCiv;
-      const used = new Set<number>([selectedCiv]);
-      for (let seat = 1; seat < hotseatPlayerCount; seat++) {
-        const current = next[seat];
-        if (Number.isInteger(current) && current >= 0 && current < CIVILIZATIONS.length && !used.has(current)) {
-          used.add(current);
-          continue;
-        }
-        // Auto-pick the first nation not already taken.
-        const fallback = CIVILIZATIONS.findIndex((_, idx) => !used.has(idx));
-        next[seat] = fallback;
-        used.add(fallback);
-      }
+      next[0] = { ...next[0], civIndex: selectedCiv };
       return next;
     });
-  }, [selectedCiv, hotseatPlayerCount]);
+  }, [selectedCiv]);
 
   // A fixed-alliance game needs at least three civs: with two there is no
   // third party to ally against, and every "team" would be a singleton.
@@ -663,55 +688,66 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
     setTeamCount((count) => Math.min(count, maxTeams));
   }, [maxTeams]);
 
-  // Rebuild a balanced assignment whenever the team game is switched on or
-  // the number of teams/civilizations changes. Manual per-slot edits are kept
-  // until one of those structural choices changes.
-  useEffect(() => {
-    if (!fixedAlliances) return;
-    setTeamAssignments(
-      Array.from({ length: numCivilizations }, (_, slot) => slot % teamCount),
-    );
-  }, [fixedAlliances, numCivilizations, teamCount]);
-
-  const teamValidation = useMemo(
-    () => validateTeamAssignments(teamAssignments.slice(0, numCivilizations), numCivilizations),
-    [teamAssignments, numCivilizations],
+  // ── Derived ─────────────────────────────────────────────────────────
+  const humanSeats = players.map((p, i) => (p.isHuman ? i : -1)).filter((i) => i >= 0);
+  const derivedGameMode: 'single' | 'hotseat' = humanSeats.length > 1 ? 'hotseat' : 'single';
+  const teamAssignments = players.map((p) => p.team);
+  const teamValidation = validateTeamAssignments(
+    teamAssignments.slice(0, numCivilizations),
+    numCivilizations,
   );
   const teamSetupValid = !fixedAlliances || teamValidation.ok;
+  const teamSizes = useMemo(() => {
+    const sizes = new Array(Math.max(2, teamCount)).fill(0) as number[];
+    for (let slot = 0; slot < players.length; slot++) {
+      const team = players[slot]?.team ?? 0;
+      if (team >= 0 && team < sizes.length) sizes[team] += 1;
+    }
+    return sizes;
+  }, [players, teamCount]);
 
-  /** Spread the slots as evenly as possible across `count` teams. */
+  // ── Roster editors ──────────────────────────────────────────────────
+  const setPlayer = (slot: number, patch: Partial<SetupPlayer>) => {
+    setPlayers((prev) => prev.map((p, i) => (i === slot ? { ...p, ...patch } : p)));
+  };
+
+  /** Lay every seat's team out evenly across `count` teams. */
   const balanceTeams = (count: number) => {
     setTeamCount(count);
-    setTeamAssignments(Array.from({ length: numCivilizations }, (_, slot) => slot % count));
+    setPlayers((prev) => prev.map((p, slot) => ({ ...p, team: slot % count })));
   };
 
   /** Humans on one team, every AI on the other. */
   const humansVersusAi = () => {
-    const humanCount = gameMode === 'hotseat'
-      ? Math.min(hotseatPlayerCount, numCivilizations)
-      : 1;
     setTeamCount(2);
-    setTeamAssignments(
-      Array.from({ length: numCivilizations }, (_, slot) => (slot < humanCount ? 0 : 1)),
-    );
+    setPlayers((prev) => prev.map((p) => ({ ...p, team: p.isHuman ? 0 : 1 })));
   };
 
-  const setSlotTeam = (slot: number, team: number) => {
-    setTeamAssignments((prev) => {
-      const next = [...prev];
-      next[slot] = team;
-      return next;
-    });
+  /**
+   * Flip a seat between Human and AI. Seat 0 is "you" — always in the chair so
+   * the step-1 banner, the summary and the fog of war agree on who the player
+   * is. Any other seat may be a second human (hotseat) or an AI.
+   */
+  const toggleHuman = (slot: number) => {
+    if (slot === 0) return;
+    setPlayers((prev) => prev.map((p, i) => (i === slot ? { ...p, isHuman: !p.isHuman } : p)));
   };
 
-  const teamSizes = useMemo(() => {
-    const sizes = new Array(teamCount).fill(0) as number[];
-    for (let slot = 0; slot < numCivilizations; slot++) {
-      const team = teamAssignments[slot] ?? 0;
-      if (team >= 0 && team < sizes.length) sizes[team] += 1;
-    }
-    return sizes;
-  }, [teamAssignments, teamCount, numCivilizations]);
+  // Faction colour helpers. `<input type="color">` wants #rrggbb, but the
+  // nation palette carries 8-digit hex — normalise so the picker opens right.
+  const toColorInput = (color: string): string => {
+    const hex = (color || '').trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+    if (/^#[0-9a-fA-F]{8}$/.test(hex)) return hex.slice(0, 7);
+    return '#888888';
+  };
+  const factionColor = (civIndex: number): string =>
+    (civIndex >= 0 ? CIVILIZATIONS[civIndex]?.color : null) ?? '#888888';
+  const rowColor = (p: SetupPlayer): string =>
+    (p.color || '').trim() ? p.color : factionColor(p.civIndex);
+
+  /** Grid template shared by the lobby header and rows (Player·Color·Faction·Team·Spawn). */
+  const lobbyColumns = '1.15fr 5.4rem 1.95fr 7rem 7rem';
 
   const totalSteps = 2;
   const isFinalStep = currentStep === totalSteps;
@@ -791,15 +827,13 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   };
 
   const handleStart = () => {
-    const isHotseat = gameMode === 'hotseat';
-    const humanPlayerIds = isHotseat
-      ? Array.from({ length: hotseatPlayerCount }, (_, i) => i)
-      : [0];
-    const playerCivilizations = isHotseat
-      ? Array.from({ length: hotseatPlayerCount }, (_, i) =>
-          Number.isInteger(hotseatCivs[i]) && hotseatCivs[i] >= 0 ? hotseatCivs[i] : selectedCiv,
-        )
-      : undefined;
+    // Everything the lobby decides, in slot order. `null` entries mean "the
+    // engine picks" — a random unused faction, the nation's own colour, or an
+    // auto spawn — so an untouched row behaves exactly like a plain game.
+    const humanPlayerIds = humanSeats;
+    const playerCivilizations = players.map((p) => (p.civIndex >= 0 ? p.civIndex : null));
+    const playerColors = players.map((p) => ((p.color || '').trim() ? p.color : null));
+    const playerSpawns = players.map((p) => (p.spawn >= 0 ? p.spawn : null));
     onStart({
       playerCivilization: selectedCiv,
       difficulty,
@@ -812,9 +846,11 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
       temperature,
       climate,
       age,
-      gameMode,
+      gameMode: derivedGameMode,
       humanPlayerIds,
       playerCivilizations,
+      playerColors,
+      playerSpawns,
       fixedAlliances: fixedAlliances && teamValidation.ok,
       teamAssignments: fixedAlliances && teamValidation.ok
         ? teamAssignments.slice(0, numCivilizations)
@@ -995,113 +1031,30 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                         max="7"
                         value={numCivilizations}
                         onChange={(e) => {
-                          const next = Number(e.target.value);
-                          setNumCivilizations(next);
-                          // Hotseat players can never exceed the civilizations in play.
-                          setHotseatPlayerCount((c) => Math.min(c, next));
+                          setNumCivilizations(Number(e.target.value));
                         }}
                         className="setup-setting__control"
                         aria-label={t('setup.civsCount')}
                       />
                       <span className="setup-setting__hint">{t('setup.civsCountHint')}</span>
                     </div>
-
-                    <div className="setup-setting">
-                      <span className="setup-setting__label">{t('setup.gameMode')}</span>
-                      <Form.Select
-                        value={gameMode}
-                        onChange={(e) => {
-                          const mode = e.target.value as 'single' | 'hotseat';
-                          setGameMode(mode);
-                          // Never allow more hotseat players than civilizations.
-                          setHotseatPlayerCount((c) => Math.min(c, numCivilizations));
-                        }}
-                        className="setup-setting__control"
-                        aria-label={t('setup.gameMode')}
-                      >
-                        <option value="single">{t('setup.gameMode.single')}</option>
-                        <option value="hotseat">{t('setup.gameMode.hotseat')}</option>
-                      </Form.Select>
-                      <span className="setup-setting__hint">{t('setup.gameModeHint')}</span>
-                    </div>
-
-                    {gameMode === 'hotseat' && (
-                      <div className="setup-setting">
-                        <span className="setup-setting__label">
-                          {t('setup.hotseat.players')} <span className="setup-setting__value">{hotseatPlayerCount}</span>
-                        </span>
-                        <Form.Range
-                          min="2"
-                          max={Math.min(4, numCivilizations)}
-                          value={Math.min(hotseatPlayerCount, numCivilizations)}
-                          onChange={(e) => setHotseatPlayerCount(Number(e.target.value))}
-                          className="setup-setting__control"
-                          aria-label={t('setup.hotseat.players')}
-                        />
-                        <span className="setup-setting__hint">{t('setup.hotseat.playersHint')}</span>
-                      </div>
-                    )}
                   </div>
-
-                  {gameMode === 'hotseat' && (
-                    <div className="gm-section setup-hotseat-nations">
-                      <div className="gm-section-title">{t('setup.hotseat.nations')}</div>
-                      <p className="setup-setting__hint">{t('setup.hotseat.nationsHint')}</p>
-                      <div className="setup-hotseat-nations__list">
-                        {Array.from({ length: Math.min(hotseatPlayerCount, numCivilizations) }, (_, seat) => {
-                          const civIndex = hotseatCivs[seat] ?? -1;
-                          const civ = CIVILIZATIONS[civIndex] ?? CIVILIZATIONS[0];
-                          return (
-                            <div className="setup-hotseat-nation" key={seat}>
-                              <span className="setup-hotseat-nation__label">
-                                {t('setup.hotseat.playerN', { n: seat + 1 })}
-                              </span>
-                              <Form.Select
-                                value={String(civIndex)}
-                                onChange={(e) => {
-                                  const picked = Number(e.target.value);
-                                  // Seat 0 IS the step-1 banner pick: keep them in sync
-                                  // so the dossier and the summary follow the change.
-                                  if (seat === 0) setSelectedCiv(picked);
-                                  setHotseatCivs((prev) => {
-                                    const next = [...prev];
-                                    next[seat] = picked;
-                                    return next;
-                                  });
-                                }}
-                                className="setup-setting__control setup-hotseat-nation__select"
-                                aria-label={t('setup.hotseat.playerN', { n: seat + 1 })}
-                                style={{ color: civ.color }}
-                              >
-                                {sortedCivilizations.map((c) => {
-                                  const originalIndex = CIVILIZATIONS.findIndex((orig) => orig.name === c.name);
-                                  const takenByOther = hotseatCivs.some(
-                                    (v, i) => i !== seat && i < hotseatPlayerCount && v === originalIndex,
-                                  );
-                                  return (
-                                    <option key={c.name} value={String(originalIndex)} disabled={takenByOther}>
-                                      {civIcons[c.name] ?? ''} {c.name} — {c.leader}
-                                    </option>
-                                  );
-                                })}
-                              </Form.Select>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
-                <div className="gm-section setup-teams">
-                  <div className="gm-section-title">{t('setup.teams.title')}</div>
+                <div className="gm-section setup-lobby">
+                  <div className="gm-section-title">{t('setup.players.title')}</div>
+                  <p className="setup-setting__hint">{t('setup.players.lede')}</p>
                   <Form.Check
                     type="checkbox"
                     id="fixedAlliancesCheckbox"
                     label={t('setup.teams.enable')}
                     checked={fixedAlliances}
                     disabled={numCivilizations < 3}
-                    onChange={(e) => setFixedAlliances(e.target.checked)}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      setFixedAlliances(on);
+                      if (on) balanceTeams(teamCount);
+                    }}
                     className="setup-teams__check"
                   />
                   <p className="setup-setting__hint">
@@ -1169,43 +1122,100 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                           ))}
                         </Form.Select>
                       </div>
+                    </>
+                  )}
 
-                      <div className="setup-teams__list" role="list">
-                        {Array.from({ length: numCivilizations }, (_, slot) => {
-                          const hotseatNation = gameMode === 'hotseat' && slot < hotseatPlayerCount
-                            ? hotseatCivs[slot]
-                            : -1;
-                          const nationIndex = slot === 0 ? selectedCiv : hotseatNation;
-                          const nation = nationIndex >= 0 ? CIVILIZATIONS[nationIndex] : null;
-                          const isHuman = gameMode === 'hotseat'
-                            ? slot < hotseatPlayerCount
-                            : slot === 0;
-                          const team = teamAssignments[slot] ?? 0;
-                          const teamColor = TEAM_COLORS[team % TEAM_COLORS.length];
-                          return (
-                            <div
-                              key={slot}
-                              className="setup-teams__row"
-                              role="listitem"
-                              style={{ borderLeftColor: teamColor }}
+                  {/* The lobby — every seat, every way the player sets it up.
+                      Faction, colour, team and spawn are each live controls. */}
+                  <div className="setup-lobby__table" role="table" aria-label={t('setup.players.title')}>
+                    <div className="setup-lobby__head" role="row" style={{ gridTemplateColumns: lobbyColumns }}>
+                      <span role="columnheader">{t('setup.lobby.colPlayer')}</span>
+                      <span role="columnheader">{t('setup.lobby.colColor')}</span>
+                      <span role="columnheader">{t('setup.lobby.colFaction')}</span>
+                      <span role="columnheader">{t('setup.lobby.colTeam')}</span>
+                      <span role="columnheader">{t('setup.lobby.colSpawn')}</span>
+                    </div>
+                    {players.map((p, slot) => {
+                      const human = p.isHuman;
+                      const teamColor = TEAM_COLORS[(p.team ?? 0) % TEAM_COLORS.length];
+                      return (
+                        <div
+                          key={slot}
+                          className="setup-lobby__row"
+                          role="row"
+                          style={{ gridTemplateColumns: lobbyColumns, borderLeftColor: fixedAlliances ? teamColor : 'transparent' }}
+                        >
+                          {/* Player + Human/AI */}
+                          <span className="setup-lobby__cell setup-lobby__player" role="cell">
+                            <span className="setup-lobby__seat">
+                              {slot === 0 ? t('setup.lobby.you') : t('setup.lobby.playerN', { n: slot + 1 })}
+                            </span>
+                            <button
+                              type="button"
+                              className={`setup-lobby__type ${human ? 'is-human' : 'is-ai'}`}
+                              onClick={() => toggleHuman(slot)}
+                              disabled={slot === 0}
+                              title={t('setup.lobby.typeHint')}
                             >
-                              <span className="setup-teams__slot">
-                                {t('setup.teams.slot', { n: slot + 1 })}
-                              </span>
-                              <span
-                                className="setup-teams__civ"
-                                style={nation ? { color: nation.color } : undefined}
+                              {human ? t('setup.lobby.human') : t('setup.lobby.ai')}
+                            </button>
+                          </span>
+
+                          {/* Colour */}
+                          <span className="setup-lobby__cell setup-lobby__color" role="cell">
+                            <input
+                              type="color"
+                              className="setup-lobby__swatch"
+                              value={toColorInput(rowColor(p))}
+                              onChange={(e) => setPlayer(slot, { color: e.target.value })}
+                              aria-label={t('setup.lobby.colColor')}
+                            />
+                            {p.color && (
+                              <button
+                                type="button"
+                                className="setup-lobby__color-reset"
+                                onClick={() => setPlayer(slot, { color: '' })}
+                                title={t('setup.lobby.colorReset')}
                               >
-                                {nation ? nation.name : t('setup.teams.aiSlot', { n: slot + 1 })}
-                              </span>
-                              {isHuman && (
-                                <span className="setup-teams__human">{t('setup.teams.human')}</span>
-                              )}
+                                ↺
+                              </button>
+                            )}
+                          </span>
+
+                          {/* Faction */}
+                          <span className="setup-lobby__cell" role="cell">
+                            <Form.Select
+                              value={String(p.civIndex)}
+                              onChange={(e) => {
+                                const picked = Number(e.target.value);
+                                if (slot === 0 && picked >= 0) setSelectedCiv(picked);
+                                setPlayer(slot, { civIndex: picked });
+                              }}
+                              className="setup-setting__control setup-lobby__select"
+                              aria-label={t('setup.lobby.colFaction')}
+                              style={{ color: rowColor(p) }}
+                            >
+                              {slot !== 0 && <option value="-1">{t('setup.lobby.random')}</option>}
+                              {sortedCivilizations.map((c) => {
+                                const originalIndex = CIVILIZATIONS.findIndex((orig) => orig.name === c.name);
+                                const takenByOther = players.some((q, i) => i !== slot && q.civIndex === originalIndex);
+                                return (
+                                  <option key={c.name} value={String(originalIndex)} disabled={takenByOther}>
+                                    {civIcons[c.name] ?? ''} {c.name} — {c.leader}
+                                  </option>
+                                );
+                              })}
+                            </Form.Select>
+                          </span>
+
+                          {/* Team */}
+                          <span className="setup-lobby__cell" role="cell">
+                            {fixedAlliances ? (
                               <Form.Select
-                                value={String(team)}
-                                onChange={(e) => setSlotTeam(slot, Number(e.target.value))}
-                                className="setup-setting__control setup-teams__select"
-                                aria-label={t('setup.teams.slotTeam', { n: slot + 1 })}
+                                value={String(p.team ?? 0)}
+                                onChange={(e) => setPlayer(slot, { team: Number(e.target.value) })}
+                                className="setup-setting__control setup-lobby__select"
+                                aria-label={t('setup.lobby.colTeam')}
                                 style={{ borderColor: teamColor }}
                               >
                                 {Array.from({ length: teamCount }, (_, teamIndex) => (
@@ -1214,29 +1224,49 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                                   </option>
                                 ))}
                               </Form.Select>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <div className="setup-teams__sizes" aria-live="polite">
-                        {teamSizes.map((size, index) => (
-                          <span
-                            key={index}
-                            className="setup-teams__size"
-                            style={{ borderColor: TEAM_COLORS[index % TEAM_COLORS.length] }}
-                          >
-                            {t('setup.teams.teamN', { n: index + 1 })}: {size}
+                            ) : (
+                              <span className="setup-lobby__muted">—</span>
+                            )}
                           </span>
-                        ))}
-                      </div>
 
-                      {!teamValidation.ok && (
-                        <p className="setup-teams__error" role="alert">
-                          {t('setup.teams.invalid')}
-                        </p>
-                      )}
-                    </>
+                          {/* Spawn */}
+                          <span className="setup-lobby__cell" role="cell">
+                            <Form.Select
+                              value={String(p.spawn)}
+                              onChange={(e) => setPlayer(slot, { spawn: Number(e.target.value) })}
+                              className="setup-setting__control setup-lobby__select"
+                              aria-label={t('setup.lobby.colSpawn')}
+                            >
+                              <option value="-1">{t('setup.lobby.auto')}</option>
+                              {Array.from({ length: numCivilizations }, (_, s) => (
+                                <option key={s} value={String(s)}>{s + 1}</option>
+                              ))}
+                            </Form.Select>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="setup-setting__hint">{t('setup.lobby.spawnHint')}</p>
+
+                  {fixedAlliances && (
+                    <div className="setup-teams__sizes" aria-live="polite">
+                      {teamSizes.map((size, index) => (
+                        <span
+                          key={index}
+                          className="setup-teams__size"
+                          style={{ borderColor: TEAM_COLORS[index % TEAM_COLORS.length] }}
+                        >
+                          {t('setup.teams.teamN', { n: index + 1 })}: {size}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {fixedAlliances && !teamValidation.ok && (
+                    <p className="setup-teams__error" role="alert">
+                      {t('setup.teams.invalid')}
+                    </p>
                   )}
                 </div>
 

@@ -177,11 +177,26 @@ export interface GameSettings {
    */
   humanPlayerIds?: number[];
   /**
-   * Per-player nation picks for hotseat: `playerCivilizations[seat]` is the
-   * CIVILIZATIONS index that seat plays. When present, the first N slots get
-   * these nations (seat 0 first); remaining slots are filled randomly.
+   * Per-slot nation picks: `playerCivilizations[slot]` is the CIVILIZATIONS
+   * index that slot plays, or `null`/omitted for a random unused nation. When
+   * present it covers every slot in play, so the setup lobby can pin each
+   * player's faction. A missing/invalid entry falls back to a random unused
+   * nation so a slot is never empty and never duplicates a pick.
    */
-  playerCivilizations?: number[];
+  playerCivilizations?: (number | null)[];
+  /**
+   * Per-slot color overrides (`0..numberOfCivilizations-1`), or `null`/omitted
+   * to keep the nation's default colour. Lets the setup lobby recolour a
+   * player without changing its faction.
+   */
+  playerColors?: (string | null)[];
+  /**
+   * Per-slot start-position preference (`0..numberOfCivilizations-1`), or
+   * `null`/omitted for auto. A slot's spawn index is the position it claims in
+   * the generated order of start positions, so it controls where a player
+   * begins relative to the others instead of leaving it to the scatter.
+   */
+  playerSpawns?: (number | null)[];
   /**
    * Fixed alliances (locked teams). When true, `teamAssignments` divides the
    * civilizations into permanent teams that cannot fight each other and win
@@ -1256,10 +1271,21 @@ export default class GameEngine {
     if (perPlayer && perPlayer.length > 0) {
       for (let i = 0; i < numCivs; i++) {
         const picked = perPlayer[i];
-        const pickIdx =
-          Number.isInteger(picked) && picked >= 0 && picked < CIVILIZATIONS.length && !usedCivIndices.has(picked)
-            ? picked
-            : CIVILIZATIONS.findIndex((_, idx) => !usedCivIndices.has(idx));
+        let pickIdx: number;
+        if (
+          typeof picked === 'number' && Number.isInteger(picked)
+          && picked >= 0 && picked < CIVILIZATIONS.length && !usedCivIndices.has(picked)
+        ) {
+          pickIdx = picked;
+        } else {
+          // `null` / omitted / invalid = a random UNUSED nation. Random (not
+          // "first unused") so an unspecified slot behaves like the single-player
+          // fill and two runs do not always hand out the same leftovers.
+          const unused = CIVILIZATIONS.map((_, idx) => idx).filter((idx) => !usedCivIndices.has(idx));
+          pickIdx = unused.length > 0
+            ? unused[Math.floor(startRng() * unused.length)]
+            : i % CIVILIZATIONS.length;
+        }
         usedCivIndices.add(pickIdx);
         selectedCivs.push(CIVILIZATIONS[pickIdx]);
       }
@@ -1288,6 +1314,27 @@ export default class GameEngine {
       const j = Math.floor(startRng() * (i + 1));
       [staticStarts[i], staticStarts[j]] = [staticStarts[j], staticStarts[i]];
     }
+    const mapWidth = this.map?.width || Constants.MAP_WIDTH;
+    const minDist = mapWidth <= 20 ? 5 : 12; // Smaller distance for small maps
+    // Water worlds start their civs ON the water: see `startsOnWater`.
+    const navalStart = this.startsOnWater(mapType);
+
+    // A spawn pick only means anything when someone actually chose one. With no
+    // explicit spawns we keep the original inline generation + assignment (civ i
+    // finds its own start in order) so a seeded game is byte-for-byte what it
+    // always was. When a spawn IS chosen we compute the start points up front
+    // and hand them out by spawn index — see `computeStartPositions` and
+    // `assignStartPositions`.
+    const explicitSpawns = (this.gameSettings.playerSpawns ?? []).some(
+      (s) => typeof s === 'number' && Number.isInteger(s) && s >= 0,
+    );
+    const upFrontPositions = explicitSpawns
+      ? this.assignStartPositions(
+          this.computeStartPositions(numCivs, mapType, navalStart, startRng, minDist),
+          numCivs,
+          startRng,
+        )
+      : null;
 
     // Which strategic personality each AI slot gets. In a normal game slot 0 is
     // the human, so profiles stay pinned to the index (a civ keeps its identity
@@ -1325,7 +1372,9 @@ export default class GameEngine {
         id: i,
         name: civData.name,
         leader: civData.leader,
-        color: civData.color,
+        // Per-slot colour override from the setup lobby; falls back to the
+        // nation's own colour so recolouring never blanks a player out.
+        color: (this.gameSettings.playerColors?.[i] ?? '').trim() || civData.color,
         cityNames: [...civData.cityNames],
         nextCityNameIndex: 0,
         isAlive: true,
@@ -1358,55 +1407,12 @@ export default class GameEngine {
         score: 0
       };
 
-      // Find starting position
-      let startPos = null;
-      let attempts = 0;
-      const mapWidth = this.map?.width || Constants.MAP_WIDTH;
-      const mapHeight = this.map?.height || Constants.MAP_HEIGHT;
-      const minDist = mapWidth <= 20 ? 5 : 12; // Smaller distance for small maps
-      // Water worlds start their civs ON the water: see `startsOnWater`.
-      const navalStart = this.startsOnWater(mapType);
-
-      // Prefer the static map's hand-placed starts (skipping any that are
-      // unusable or too close to a civ that already settled).
-      while (!startPos && staticStarts.length > 0) {
-        const candidate = staticStarts.shift()!;
-        // Settlers must never spawn on (or beside) water at game start — the
-        // one definition of "dry land" lives in isSpawnableTile.
-        if (!this.isSpawnableTile(candidate.col, candidate.row, navalStart)) continue;
-        const tooClose = this.units.some(
-          (u) => this.squareGrid.squareDistance(candidate.col, candidate.row, u.col, u.row) < minDist,
-        );
-        if (!tooClose) startPos = { col: candidate.col, row: candidate.row };
-      }
-
-      while (!startPos && attempts < 100) {
-        // Seeded like everything else in setup, so a pinned mapSeed gives the
-        // same start positions every time. With Math.random here, two runs of
-        // "seed 101" were different games and no before/after comparison was
-        // worth anything.
-        const col = Math.floor(startRng() * (mapWidth - 4)) + 2;
-        const row = Math.floor(startRng() * (mapHeight - 4)) + 2;
-        
-        if (this.isSpawnableTile(col, row, navalStart)) {
-          // Check if position is far enough from other civs
-          let validPosition = true;
-          for (const otherCiv of this.civilizations) {
-            const otherUnits = this.units.filter(u => u.civilizationId === otherCiv.id);
-            for (const unit of otherUnits) {
-              if (this.squareGrid.squareDistance(col, row, unit.col, unit.row) < minDist) {
-                validPosition = false;
-                break;
-              }
-            }
-          }
-          
-          if (validPosition) {
-            startPos = { col, row };
-          }
-        }
-        attempts++;
-      }
+      // Start position. Default: the original inline search (civ i finds its
+      // own start in order, honouring the seeded scatter). With an explicit
+      // spawn pick: the up-front slot this player asked for.
+      const startPos = upFrontPositions
+        ? (upFrontPositions[i] ?? null)
+        : this.findInlineStartPosition(staticStarts, startRng, minDist, navalStart);
 
       if (startPos) {
         // Remember whether this civ begins on an island. The AI needs it from
@@ -1426,7 +1432,7 @@ export default class GameEngine {
           this.createStartingCities(i, civ, startPos, cityCount);
         }
       } else {
-        console.warn(`[INIT] Failed to find valid starting position for civ ${i} (${civData.name}) after ${attempts} attempts`);
+        console.warn(`[INIT] No start position available for civ ${i} (${civData.name}) — map is full or unspawnable`);
       }
 
       this.civilizations.push(civ);
@@ -1569,6 +1575,167 @@ export default class GameEngine {
       console.warn(`[UNITS] ${type} for civ ${civId} has no water within reach of (${col},${row}) — beached`);
     }
     this.createUnit(civId, type, spot.col, spot.row);
+  }
+
+  /**
+   * The original per-civ start search: a static map's hand-placed spawn if one
+   * is usable and clear of the units already on the board, else a seeded
+   * scatter that keeps its distance from them. Called once per civ IN ORDER,
+   * with earlier civs' units already placed, so a seeded game reproduces the
+   * exact same starts it always did. Used when no player picked a spawn.
+   */
+  private findInlineStartPosition(
+    staticStarts: Array<{ col: number; row: number }>,
+    startRng: () => number,
+    minDist: number,
+    navalStart: boolean,
+  ): { col: number; row: number } | null {
+    const mapWidth = this.map?.width || Constants.MAP_WIDTH;
+    const mapHeight = this.map?.height || Constants.MAP_HEIGHT;
+    let startPos: { col: number; row: number } | null = null;
+
+    // Prefer the static map's hand-placed starts (skipping any that are
+    // unusable or too close to a civ that already settled).
+    while (!startPos && staticStarts.length > 0) {
+      const candidate = staticStarts.shift()!;
+      // Settlers must never spawn on (or beside) water at game start — the one
+      // definition of "dry land" lives in isSpawnableTile.
+      if (!this.isSpawnableTile(candidate.col, candidate.row, navalStart)) continue;
+      const tooClose = this.units.some(
+        (u) => this.squareGrid.squareDistance(candidate.col, candidate.row, u.col, u.row) < minDist,
+      );
+      if (!tooClose) startPos = { col: candidate.col, row: candidate.row };
+    }
+
+    let attempts = 0;
+    while (!startPos && attempts < 100) {
+      // Seeded like everything else in setup, so a pinned mapSeed gives the
+      // same start positions every time.
+      const col = Math.floor(startRng() * (mapWidth - 4)) + 2;
+      const row = Math.floor(startRng() * (mapHeight - 4)) + 2;
+
+      if (this.isSpawnableTile(col, row, navalStart)) {
+        let validPosition = true;
+        for (const otherCiv of this.civilizations) {
+          const otherUnits = this.units.filter(u => u.civilizationId === otherCiv.id);
+          for (const unit of otherUnits) {
+            if (this.squareGrid.squareDistance(col, row, unit.col, unit.row) < minDist) {
+              validPosition = false;
+              break;
+            }
+          }
+        }
+        if (validPosition) startPos = { col, row };
+      }
+      attempts++;
+    }
+    return startPos;
+  }
+
+  /**
+   * Build the ordered list of start positions for a fresh game: as many of the
+   * static map's hand-placed spawns as are usable and far enough apart, then a
+   * scatter of spawnable land until every civ has one. Seeded by `startRng` so
+   * a pinned `mapSeed` reproduces the same starts. The returned order is the
+   * "spawn slots" that {@link assignStartPositions} hands out. Only used when a
+   * player actually picked a spawn.
+   */
+  private computeStartPositions(
+    numCivs: number,
+    mapType: string,
+    navalStart: boolean,
+    startRng: () => number,
+    minDist: number,
+  ): Array<{ col: number; row: number }> {
+    const mapWidth = this.map?.width || Constants.MAP_WIDTH;
+    const mapHeight = this.map?.height || Constants.MAP_HEIGHT;
+
+    // Static world maps ship hand-placed start positions (the Freeciv Earth map
+    // has 30 balanced grassland spawns) — shuffle them once so each game hands
+    // out a different, far-apart set instead of always the same corners.
+    const staticStarts = [...(staticMapForMapType(mapType)?.startPositions ?? [])];
+    for (let i = staticStarts.length - 1; i > 0; i--) {
+      const j = Math.floor(startRng() * (i + 1));
+      [staticStarts[i], staticStarts[j]] = [staticStarts[j], staticStarts[i]];
+    }
+
+    const positions: Array<{ col: number; row: number }> = [];
+    const farEnough = (col: number, row: number) =>
+      positions.every((p) => this.squareGrid.squareDistance(col, row, p.col, p.row) >= minDist);
+
+    // Prefer the static map's hand-placed spawns, skipping any that are
+    // unusable or too close to a spawn already taken.
+    while (positions.length < numCivs && staticStarts.length > 0) {
+      const candidate = staticStarts.shift()!;
+      // Settlers must never spawn on (or beside) water at game start — the one
+      // definition of "dry land" lives in isSpawnableTile.
+      if (!this.isSpawnableTile(candidate.col, candidate.row, navalStart)) continue;
+      if (!farEnough(candidate.col, candidate.row)) continue;
+      positions.push({ col: candidate.col, row: candidate.row });
+    }
+
+    // Scatter the rest on spawnable land, keeping the same minimum distance.
+    let attempts = 0;
+    const maxAttempts = numCivs * 100;
+    while (positions.length < numCivs && attempts < maxAttempts) {
+      const col = Math.floor(startRng() * (mapWidth - 4)) + 2;
+      const row = Math.floor(startRng() * (mapHeight - 4)) + 2;
+      if (this.isSpawnableTile(col, row, navalStart) && farEnough(col, row)) {
+        positions.push({ col, row });
+      }
+      attempts++;
+    }
+
+    // Order the spawn points west → east (then north → south) so a spawn index
+    // has a stable meaning: "spawn 1" is always the westernmost start on the
+    // map, whatever the scatter produced. Without this an explicit spawn pick
+    // would point at a different corner every game and mean nothing.
+    positions.sort((a, b) => (a.col - b.col) || (a.row - b.row));
+    return positions;
+  }
+
+  /**
+   * Hand out the computed start positions by spawn preference. A slot may name
+   * the spawn index it wants (`playerSpawns`); it claims that position if it is
+   * still free. Slots on "Auto" take the leftover positions in a SHUFFLED order
+   * (so an unpicked game still varies run to run), never colliding, so a stale
+   * preference can never stack two players on one tile.
+   */
+  private assignStartPositions(
+    positions: Array<{ col: number; row: number }>,
+    numCivs: number,
+    startRng: () => number,
+  ): Array<{ col: number; row: number } | null> {
+    const prefs = this.gameSettings.playerSpawns;
+    const assigned: Array<{ col: number; row: number } | null> = new Array(numCivs).fill(null);
+    const taken = new Set<number>();
+
+    // First honour every explicit spawn preference that resolves to a free slot.
+    for (let i = 0; i < numCivs; i++) {
+      const s = prefs?.[i];
+      if (typeof s === 'number' && Number.isInteger(s) && s >= 0 && s < positions.length && !taken.has(s)) {
+        assigned[i] = positions[s];
+        taken.add(s);
+      }
+    }
+
+    // Then deal the remaining positions to the auto slots in a shuffled order,
+    // so an all-auto game keeps the variety the old scatter gave it.
+    const free: number[] = [];
+    for (let s = 0; s < positions.length; s++) if (!taken.has(s)) free.push(s);
+    for (let i = free.length - 1; i > 0; i--) {
+      const j = Math.floor(startRng() * (i + 1));
+      [free[i], free[j]] = [free[j], free[i]];
+    }
+    let cursor = 0;
+    for (let i = 0; i < numCivs; i++) {
+      if (assigned[i]) continue;
+      if (cursor < free.length) {
+        assigned[i] = positions[free[cursor]];
+        cursor++;
+      }
+    }
+    return assigned;
   }
 
   private createStartingUnits(civId: number, startPos: { col: number; row: number }, mapType: string) {

@@ -2001,6 +2001,24 @@ export const fr: PartialTranslationDict = {
   'setup.teams.summary': 'Alliances',
   'setup.teams.summaryValue': '{{teams}} équipes · {{civs}} civilisations',
 
+  // ── Salon des joueurs (configuration par siège) ──
+  'setup.players.title': 'Joueurs',
+  'setup.players.lede': "Configurez chaque place à la table : qui est humain, quel peuple il mène, la couleur de sa bannière, son équipe et sa position de départ.",
+  'setup.lobby.colPlayer': 'Joueur',
+  'setup.lobby.colColor': 'Couleur',
+  'setup.lobby.colFaction': 'Faction',
+  'setup.lobby.colTeam': 'Équipe',
+  'setup.lobby.colSpawn': 'Départ',
+  'setup.lobby.you': 'Vous',
+  'setup.lobby.playerN': 'Joueur {{n}}',
+  'setup.lobby.typeHint': 'Basculer cette place entre Humain et IA.',
+  'setup.lobby.human': 'Humain',
+  'setup.lobby.ai': 'IA',
+  'setup.lobby.colorReset': 'Rétablir la couleur de la faction',
+  'setup.lobby.random': 'Aléatoire',
+  'setup.lobby.auto': 'Auto',
+  'setup.lobby.spawnHint': "Le départ choisit le coin de départ d'ouest en est : 1 est à l'extrême ouest, le plus grand nombre à l'extrême est. Auto laisse le hasard décider.",
+
   // ── Alliances fixes en partie ──
   'topbar.teamBadgeHint': 'Alliance fixe : {{team}}',
   'side.teamBadgeHint': 'Alliance fixe : {{team}}',
