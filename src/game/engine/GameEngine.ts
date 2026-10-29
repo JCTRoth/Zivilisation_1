@@ -49,6 +49,7 @@ import { AICityManager } from './AI/AICityManager';
 import { BarbarianManager } from './BarbarianManager';
 import { UnitTurnQueue } from './UnitTurnQueue';
 import { DiplomacyManager } from './DiplomacyManager';
+import { TeamManager } from './TeamManager';
 import type {
   DiplomatAction,
   DiplomatActionOptions,
@@ -181,6 +182,18 @@ export interface GameSettings {
    * these nations (seat 0 first); remaining slots are filled randomly.
    */
   playerCivilizations?: number[];
+  /**
+   * Fixed alliances (locked teams). When true, `teamAssignments` divides the
+   * civilizations into permanent teams that cannot fight each other and win
+   * or lose together.
+   */
+  fixedAlliances?: boolean;
+  /**
+   * Team index per civilization slot (`0..numberOfCivilizations-1`). Only
+   * meaningful when `fixedAlliances` is true. Indexed by slot, not by
+   * CIVILIZATIONS index, because AI nations are chosen randomly.
+   */
+  teamAssignments?: number[];
 }
 
 export interface MapTile {
@@ -329,6 +342,8 @@ export default class GameEngine {
    */
   private sdiEngagements = new Map<string, number>();
   diplomacyManager: DiplomacyManager; // Civ I–style diplomacy system
+  /** Fixed alliances (locked teams); disabled in a normal free-for-all game. */
+  teamManager: TeamManager;
 
   // Human-readable recap of the most recent auto-end (what was skipped), used
   // for the post-end summary notification.
@@ -392,6 +407,7 @@ export default class GameEngine {
     this.barbarianManager = new BarbarianManager(this);
     this.unitTurnQueue = new UnitTurnQueue(this); // Initialize unit turn queue
     this.diplomacyManager = new DiplomacyManager(this);
+    this.teamManager = new TeamManager(this);
     this.devMode = false;
     this.victoryManager = new VictoryManager(this);
     this.isGameOver = false;
@@ -1035,8 +1051,9 @@ export default class GameEngine {
     this.scoutMemory.clear();
     this.scoutMemory.setCurrentRound(0);
     
-    // Reset diplomacy
+    // Reset diplomacy and fixed-alliance state
     this.diplomacyManager.reset();
+    this.teamManager.reset();
     
     // Set dev mode from settings
     this.devMode = settings.devMode || false;
@@ -1106,6 +1123,12 @@ export default class GameEngine {
     await this.createCivilizations(mapType);
     await this.initializeTechnologies(mapType);
 
+    // Fixed alliances: resolve the setup assignment against the civilizations
+    // that actually exist (the count is clamped to the nation list), then
+    // write the denormalised teamId used by the UI and save file.
+    this.teamManager.configure(this.gameSettings, this.civilizations.length);
+    this.teamManager.applyToCivilizations();
+
     // Push freshly generated state into the store if available before computing visibility
     if (this.storeActions) {
       this.storeActions.clearGameResult?.();
@@ -1118,6 +1141,9 @@ export default class GameEngine {
 
     // Initialize diplomacy between all civilizations
     this.diplomacyManager.initialize(this.civilizations.map((c: Civilization) => c.id));
+    // Locked teams are applied last so they override the default peace state
+    // and any stale relation data.
+    this.diplomacyManager.applyTeamInvariants();
     console.log('[GameEngine] Diplomacy initialized for', this.civilizations.length, 'civilizations');
 
     // Initialize fog of war visibility
@@ -3030,9 +3056,11 @@ const occupiedLandmasses = new Set(
     // cannot be ordered to attack the garrison that holds it. A friendly city
     // is the normal place a returning transport puts its cargo down.
     const city = this.getCityAt(col, row);
-    if (city && city.civilizationId !== unit.civilizationId) return false;
+    const friendly = (civId: number) =>
+      civId === unit.civilizationId || this.teamManager.isTeammate(unit.civilizationId, civId);
+    if (city && !friendly(city.civilizationId)) return false;
     const occupant = this.getUnitAt(col, row);
-    return !occupant || occupant.civilizationId === unit.civilizationId;
+    return !occupant || friendly(occupant.civilizationId);
   }
 
   /** Put one passenger (or the first) ashore on an adjacent free land tile. */
@@ -4310,6 +4338,8 @@ const occupiedLandmasses = new Set(
     if (unit.type !== 'settler') return false;
     return this.units.some((enemy) => {
       if (enemy.civilizationId === unit.civilizationId || enemy.isDefeated) return false;
+      // A locked teammate's army does not project hostile zone of control.
+      if (this.teamManager.isTeammate(unit.civilizationId, enemy.civilizationId)) return false;
       const enemyAttack = enemy.attack ?? UNIT_PROPS[enemy.type]?.attack ?? 0;
       if (enemyAttack <= 0) return false;
       return this.squareGrid?.squareDistance(col, row, enemy.col, enemy.row) === 1;
@@ -4444,11 +4474,14 @@ const occupiedLandmasses = new Set(
     // `getUnitAt` returns the FIRST unit on a tile, so when the attacker shares
     // its tile with an enemy the attacker itself may come back first and the
     // tile would be treated as "allied". For the same-tile case scan explicitly
-    // for a stacked enemy so a same-tile attack is allowed.
+    // for a stacked enemy so a same-tile attack is allowed. Locked teammates
+    // count as friendly, never as an enemy to attack.
+    const isFriendlyCiv = (civId: number) =>
+      civId === unit.civilizationId || this.teamManager.isTeammate(unit.civilizationId, civId);
     const targetUnit = this.getUnitAt(targetCol, targetRow);
     if (targetCol === unit.col && targetRow === unit.row) {
       const stackedEnemy = this.units.find(u => u.col === targetCol && u.row === targetRow
-        && u.id !== unit.id && u.civilizationId !== unit.civilizationId && !u.isDefeated);
+        && u.id !== unit.id && !isFriendlyCiv(u.civilizationId) && !u.isDefeated);
       if (stackedEnemy) {
         if (unit.type === 'settler') {
           return false;
@@ -4459,7 +4492,7 @@ const occupiedLandmasses = new Set(
       // No enemy on our own tile — a unit cannot "move" onto itself.
       return false;
     }
-    if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
+    if (targetUnit && !isFriendlyCiv(targetUnit.civilizationId)) {
       if (unit.type === 'settler') {
         // Attack 0 settlers cannot enter an enemy unit's square; this is the
         // fatal ZoC/combat outcome represented as a blocked civilian move.
@@ -4476,7 +4509,7 @@ const occupiedLandmasses = new Set(
     // and columns march through the same tile — without this, any attack whose
     // route ran through a friendly unit was impossible. The move cost check
     // below still applies.
-    if (targetUnit && targetUnit.civilizationId === unit.civilizationId) {
+    if (targetUnit && isFriendlyCiv(targetUnit.civilizationId)) {
       debugLog(`[canUnitMoveTo] Target holds a friendly unit — stacking allowed.`);
     }
 
@@ -4534,14 +4567,16 @@ const occupiedLandmasses = new Set(
 
     // Enemy unit on the tile → valid combat move. A friendly unit does NOT
     // block: Civ1 allows stacking, and the move cost was already validated.
+    const isFriendlyCiv = (civId: number) =>
+      civId === unit.civilizationId || this.teamManager.isTeammate(unit.civilizationId, civId);
     const targetUnit = this.getUnitAt(targetCol, targetRow);
-    if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
+    if (targetUnit && !isFriendlyCiv(targetUnit.civilizationId)) {
       return true; // valid combat move
     }
 
     // Check for enemy city (valid attack target)
     const targetCity = this.getCityAt(targetCol, targetRow);
-    if (targetCity && targetCity.civilizationId !== unit.civilizationId) {
+    if (targetCity && !isFriendlyCiv(targetCity.civilizationId)) {
       // Caravans can enter to deliver, Scouts can attempt rush, military can attack
       return true;
     }
@@ -4601,10 +4636,12 @@ const occupiedLandmasses = new Set(
     // `getUnitAt` returns the first unit on a tile — when the attacker shares
     // its tile with an enemy, scan explicitly for the stacked enemy so a
     // same-tile attack triggers combat (getUnitAt could return the attacker).
+    const isFriendlyCiv = (civId: number) =>
+      civId === unit.civilizationId || this.teamManager.isTeammate(unit.civilizationId, civId);
     let targetUnit = this.getUnitAt(targetCol, targetRow);
     if (targetCol === unit.col && targetRow === unit.row) {
       const stackedEnemy = this.units.find(u => u.col === targetCol && u.row === targetRow
-        && u.id !== unit.id && u.civilizationId !== unit.civilizationId && !u.isDefeated);
+        && u.id !== unit.id && !isFriendlyCiv(u.civilizationId) && !u.isDefeated);
       if (stackedEnemy) targetUnit = stackedEnemy;
     }
 
@@ -4612,7 +4649,7 @@ const occupiedLandmasses = new Set(
     if (unit.type === 'caravan' && this.getCityAt(targetCol, targetRow)) {
       targetUnit = null;
     }
-    if (targetUnit && targetUnit.civilizationId !== unit.civilizationId) {
+    if (targetUnit && !isFriendlyCiv(targetUnit.civilizationId)) {
       // A nuclear weapon is FIRED, not marched: moving one onto hostile ground
       // detonates it over everything there instead of resolving a 1v1 round
       // that its 0 defense would lose.
@@ -4656,7 +4693,7 @@ const occupiedLandmasses = new Set(
     // may enter an enemy city to establish a trade route (they deliver and are
     // consumed); they never attack or capture.
     const targetCity = this.getCityAt(targetCol, targetRow);
-    if (targetCity && targetCity.civilizationId !== unit.civilizationId && unit.type !== 'caravan') {
+    if (targetCity && !isFriendlyCiv(targetCity.civilizationId) && unit.type !== 'caravan') {
       // A nuclear weapon fired at a city detonates over it instead of
       // assaulting it like a unit that has to walk in through the gates.
       if (unit.type === UNIT_TYPES.NUCLEAR) {
@@ -5429,13 +5466,15 @@ const occupiedLandmasses = new Set(
    * engagement) and budgeted, but the AI treats coverage as a hard no — a
    * warhead aimed at a shield is a warhead probably lost.
    */
-  isCoveredBySDI(targetCol: number, targetRow: number): boolean {
+  isCoveredBySDI(targetCol: number, targetRow: number, firerId?: number): boolean {
     const grid = this.squareGrid;
     if (!grid) return false;
     // The battery is the declared `missileDefense` effect (SDI Defense), not
-    // its building id: any future interceptor counts the same way.
+    // its building id: any future interceptor counts the same way. A firer's
+    // own team's batteries are not a threat to its warhead.
     return this.cities.some(
       (c) => cityBuildingEffects(c).missileDefense
+        && (firerId === undefined || !this.teamManager.isTeammate(firerId, c.civilizationId))
         && grid.chebyshevDistance(c.col, c.row, targetCol, targetRow) <= SDI_COVERAGE_RADIUS,
     );
   }
@@ -5465,6 +5504,8 @@ const occupiedLandmasses = new Set(
     const batteries: Array<{ city: City; along: number }> = [];
     for (const city of this.cities ?? []) {
       if (city.civilizationId === firerId) continue;
+      // A locked teammate's battery is on our side of the war.
+      if (this.teamManager.isTeammate(firerId, city.civilizationId)) continue;
       if (!cityBuildingEffects(city).missileDefense) continue;
       let closest = Number.POSITIVE_INFINITY;
       let closestT = 0;
@@ -5547,22 +5588,27 @@ const occupiedLandmasses = new Set(
 
     // Something foreign has to be under the blast: an enemy unit or an enemy
     // city. Nuking empty ground would spend the only warhead the civ owns.
+    const isFriendly = (civId: number) =>
+      civId === unit.civilizationId || this.teamManager.isTeammate(unit.civilizationId, civId);
     const targetCity = this.cities.find(
-      (c) => c.civilizationId !== unit.civilizationId && inBlast(c.col, c.row),
+      (c) => !isFriendly(c.civilizationId) && inBlast(c.col, c.row),
     );
     const targetUnit = this.units.find(
-      (u) => !u.isDefeated && u.civilizationId !== unit.civilizationId && inBlast(u.col, u.row),
+      (u) => !u.isDefeated && !isFriendly(u.civilizationId) && inBlast(u.col, u.row),
     );
     if (!targetCity && !targetUnit) return false;
 
     const targetCivId = (targetCity ?? targetUnit)!.civilizationId;
+    // Cannot nuke a locked teammate, even if a blast would also catch an
+    // enemy next to them: the warhead is aimed at the ally, not the enemy.
+    if (this.teamManager.isTeammate(unit.civilizationId, targetCivId)) return false;
 
     // SDI hard refusal: a warhead aimed at anything covered by an umbrella
     // is spent on contact (see `trySdiIntercept`), so the engine refuses to
     // launch at all — no declaration, no consumption — and leaves the warhead
     // in inventory. The AI already vetoes these via `scoreNuclearTarget(...,
     // sdiCovered)`; this is the engine's own last line on the same rule.
-    if (this.isCoveredBySDI(targetCol, targetRow)) return false;
+    if (this.isCoveredBySDI(targetCol, targetRow, unit.civilizationId)) return false;
 
     // Firing is an act of war, exactly like walking into the enemy — so the
     // declaration (and its log/toast) happens on the launch, even on a
@@ -5618,6 +5664,7 @@ const occupiedLandmasses = new Set(
         u.id !== unit.id &&
         !u.isDefeated &&
         u.civilizationId !== unit.civilizationId &&
+        !this.teamManager.isTeammate(unit.civilizationId, u.civilizationId) &&
         inBlast(u.col, u.row),
     );
 
@@ -5627,6 +5674,7 @@ const occupiedLandmasses = new Set(
     const damaged: Array<{ city: City; before: number; after: number }> = [];
     for (const city of this.cities) {
       if (city.civilizationId === unit.civilizationId) continue;
+      if (this.teamManager.isTeammate(unit.civilizationId, city.civilizationId)) continue;
       if (!inBlast(city.col, city.row)) continue;
       const before = Math.max(1, city.population ?? 1);
       city.buildings = stripDefensiveBuildings(city.buildings) as string[];
@@ -5734,8 +5782,9 @@ const occupiedLandmasses = new Set(
       if (other.isDefeated) continue;
       // No friendly fire: the attacker's own mates on a shared tile (same-tile
       // engagements) are never splashed — area fire punishes the enemy's
-      // clustering, not ours.
+      // clustering, not ours. Locked teammates count as ours.
       if (other.civilizationId === attacker.civilizationId) continue;
+      if (this.teamManager.isTeammate(attacker.civilizationId, other.civilizationId)) continue;
       if (other.isFortified === true) continue; // entrenched: immune
       const damage = CombatSystem.splashDamage(primaryDamage);
       other.health = Math.max(0, (other.health ?? 100) - damage);
@@ -5778,6 +5827,13 @@ const occupiedLandmasses = new Set(
     // A unit already killed in combat (it lingers only for the death animation)
     // cannot start or take part in a new fight.
     if (attacker?.isDefeated === true || defender?.isDefeated === true) {
+      return false;
+    }
+
+    // Locked teammates can never fight. This is the last line of defence: the
+    // move/attack code, the AI and the UI all filter teammate targets, but a
+    // stray order must not start a civil war inside an alliance.
+    if (this.teamManager.isTeammate(attacker.civilizationId, defender.civilizationId)) {
       return false;
     }
 
@@ -5908,7 +5964,9 @@ const occupiedLandmasses = new Set(
 
         // Civ1: when the LAST defender inside a city falls, the city is captured
         const cityHere = this.getCityAt(defender.col, defender.row);
-        if (cityHere && cityHere.civilizationId !== attacker.civilizationId) {
+        if (cityHere
+          && cityHere.civilizationId !== attacker.civilizationId
+          && !this.teamManager.isTeammate(attacker.civilizationId, cityHere.civilizationId)) {
           const originalCiv = cityHere.civilizationId;
           const stillDefended = this.units.some(
             (u: Unit) => u.civilizationId === originalCiv
@@ -7442,7 +7500,8 @@ const occupiedLandmasses = new Set(
     // the juiciest-looking target on the board — an unfounded embassy scores
     // highest of anything a diplomat can do — and an AI diplomat would spend
     // every turn founding one with a village.
-    const negotiable = (civId: number) => civId !== BARBARIAN_CIV_ID;
+    const negotiable = (civId: number) =>
+      civId !== BARBARIAN_CIV_ID && !this.teamManager.isTeammate(ourId, civId);
 
     for (const n of this.squareGrid!.getNeighbors(diplomat.col, diplomat.row)) {
       const city = this.getCityAt(n.col, n.row);
@@ -7567,6 +7626,11 @@ const occupiedLandmasses = new Set(
     const diplomat = this.units.find(u => u.id === diplomatId);
     if (!diplomat || diplomat.type !== 'diplomat') return { success: false, reason: 'Not a diplomat' };
     if ((diplomat.movesRemaining || 0) <= 0) return { success: false, reason: 'No moves remaining' };
+    // Locked teammates are not valid diplomat targets at all: the menu never
+    // offers them, and a direct/AI call must not be able to bypass that.
+    if (this.teamManager.isTeammate(diplomat.civilizationId, targetCivId)) {
+      return { success: false, reason: 'Locked allies cannot be targeted by a diplomat' };
+    }
 
     const target = this.findDiplomatTarget(diplomat, targetCivId, options);
     if (!target) {
@@ -8690,10 +8754,10 @@ const occupiedLandmasses = new Set(
       }
 
       const saveData = {
-        // v4: diplomacy moved to a directed opinion ledger (goodwill /
-        // grievance / fear / respect) that replaced the old reputationModifier
-        // + treatiesBroken counters. v3 saves are migrated on load.
-        version: 4,
+        // v5: fixed alliances (locked teams) — gameSettings.fixedAlliances /
+        // teamAssignments and the denormalised Civilization.teamId. v1–v4
+        // saves still load as ordinary free-for-all games.
+        version: 5,
         timestamp: Date.now(),
         gameSettings: this.gameSettings,
         currentTurn: this.currentTurn,
@@ -8767,7 +8831,7 @@ const occupiedLandmasses = new Set(
       }
 
       const saveData = JSON.parse(json);
-      if (!saveData || (saveData.version !== 1 && saveData.version !== 2 && saveData.version !== 3 && saveData.version !== 4)) {
+      if (!saveData || ![1, 2, 3, 4, 5].includes(saveData.version)) {
         console.warn('[GameEngine] Invalid or incompatible save data, version:', saveData?.version);
         return false;
       }
@@ -8789,6 +8853,7 @@ const occupiedLandmasses = new Set(
       this.countedDefeats.clear();
       this.scoutMemory.clear();
       this.diplomacyManager.reset();
+      this.teamManager.reset();
       this.victoryManager.reset();
       this.victoryManager.syncStoreActions(this.storeActions);
 
@@ -8814,6 +8879,12 @@ const occupiedLandmasses = new Set(
       this.cities = saveData.cities;
       this.civilizations = saveData.civilizations;
       this.technologies = saveData.technologies;
+
+      // Fixed alliances are derived from gameSettings, never trusted from the
+      // denormalised `civ.teamId`. A v4 save has neither field, so this simply
+      // disables the mode and leaves the game as a free-for-all.
+      this.teamManager.configure(this.gameSettings, this.civilizations.length);
+      this.teamManager.applyToCivilizations();
 
       // Citizen tile sets are `Set`s, which JSON turns into `{}` — rehydrate
       // them (pins included) or every `.has()` call on a restored city throws
@@ -8888,6 +8959,9 @@ const occupiedLandmasses = new Set(
       if (Array.isArray(saveData.diplomacyEmbassies)) {
         this.diplomacyManager.restoreEmbassyPairs(saveData.diplomacyEmbassies);
       }
+      // Locked teams run last: they override any stale war/peace state in an
+      // older or hand-edited save and restore contact/embassy/open borders.
+      this.diplomacyManager.applyTeamInvariants();
       // Unit-loss tallies for the statistics screen. Absent from saves written
       // before it existed, which simply start at zero rather than failing.
       if (saveData.unitLedger && typeof saveData.unitLedger === 'object') {

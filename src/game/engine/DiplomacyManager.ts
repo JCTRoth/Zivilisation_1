@@ -122,6 +122,45 @@ const SABOTAGE_DETECTION_BASE = 50;
  */
 const GRIEVANCE_DECAY_PER_TURN = 0.5;
 
+/**
+ * Actions that would harm a locked teammate. They are refused at the
+ * `processProposal` / `executeDiplomatAction` chokepoints, so a UI bug or an
+ * over-eager AI cannot bypass the team lock.
+ */
+const TEAM_HOSTILE_ACTIONS: ReadonlySet<DiplomatAction> = new Set<DiplomatAction>([
+  'demand_tribute',
+  'bribe_unit',
+  'gather_intelligence',
+  'investigate_city',
+  'industrial_sabotage',
+  'steal_technology',
+  'incite_revolt',
+]);
+
+/**
+ * Actions that make no sense between locked allies: they are already allied,
+ * already have open borders and an embassy, and automatically join each
+ * other's wars. Refusing them keeps the diplomacy screen honest.
+ */
+const TEAM_REDUNDANT_ACTIONS: ReadonlySet<DiplomatAction> = new Set<DiplomatAction>([
+  'propose_peace',
+  'propose_ceasefire',
+  'propose_alliance',
+  'offer_open_borders',
+  'propose_mutual_defense',
+  'propose_non_aggression',
+  'propose_joint_war',
+  'call_for_help',
+  'establish_embassy',
+]);
+
+/** Treaties a locked teammate may never cancel: they are part of the lock. */
+const TEAM_LOCKED_TREATIES: ReadonlySet<TreatyType> = new Set<TreatyType>([
+  'open_borders',
+  'mutual_defense',
+  'embargo_target',
+]);
+
 /** How an AI proposal is phrased to the human, per action. */
 const AI_OFFER_MESSAGES: Partial<Record<DiplomatAction, (civName: string) => string>> = {
   propose_peace: (n) => `${n} sues for peace.`,
@@ -218,6 +257,64 @@ export class DiplomacyManager {
     this.proposalSequence = 0;
   }
 
+  /**
+   * Force every locked-team invariant onto the relation table.
+   *
+   * Called after `initialize()` on a new game and again after restoring a save.
+   * It is idempotent and deliberately runs LAST on load: an older or
+   * hand-edited save may contain a war between teammates, and the team lock
+   * must win over the saved relation.
+   */
+  applyTeamInvariants(): void {
+    const teams = this.gameEngine.teamManager;
+    if (!teams?.enabled) return;
+
+    for (const teamId of teams.getTeamIds()) {
+      const members = teams.getTeamMembers(teamId);
+      for (let i = 0; i < members.length; i++) {
+        for (let j = i + 1; j < members.length; j++) {
+          const civA = members[i];
+          const civB = members[j];
+          const rel = this.getRelation(civA, civB);
+          if (!rel) continue;
+
+          rel.status = 'alliance';
+          rel.since = 0;
+          rel.peaceSignedAt = undefined;
+          rel.activeTreaties = rel.activeTreaties.filter(
+            (treaty) => treaty !== 'embargo_target' && treaty !== 'mutual_defense',
+          );
+          if (!rel.activeTreaties.includes('open_borders')) {
+            rel.activeTreaties.push('open_borders');
+            rel.treatySince.open_borders = 0;
+          }
+          if (rel.embargoTargetCivId === civA || rel.embargoTargetCivId === civB) {
+            rel.embargoTargetCivId = undefined;
+          }
+          this.contactedPairs.add(this.key(civA, civB));
+          this.embassyPairs.add(this.key(civA, civB));
+          this.warExhaustion.set(civA, 0);
+          this.warExhaustion.set(civB, 0);
+
+          const first = this.gameEngine.civilizations?.find((civ) => civ.id === civA);
+          const second = this.gameEngine.civilizations?.find((civ) => civ.id === civB);
+          first?.warWith?.delete(civB);
+          second?.warWith?.delete(civA);
+        }
+      }
+    }
+  }
+
+  /** Locked allies may never fight, spy on or betray one another. */
+  private isTeammate(civA: number, civB: number): boolean {
+    return this.gameEngine.teamManager?.isTeammate(civA, civB) ?? false;
+  }
+
+  /** The civ itself plus its locked teammates (or just the civ). */
+  private teamMembersOf(civId: number): number[] {
+    return this.gameEngine.teamManager?.getTeamMembersOf(civId) ?? [civId];
+  }
+
   // ─── Contact / first meeting ───────────────────────────────────────
 
   /**
@@ -242,16 +339,17 @@ export class DiplomacyManager {
   /** Whether these two civilizations have met. */
   hasContacted(civA: number, civB: number): boolean {
     if (civA === civB) return true;
+    if (this.isTeammate(civA, civB)) return true;
     return this.contactedPairs.has(this.key(civA, civB));
   }
 
-  /** Every counterpart this civilization has already met. */
+  /** Every counterpart this civilization has already met (teammates always). */
   getMetCivs(civId: number): number[] {
     const met: number[] = [];
     for (const rel of this.relations.values()) {
       const other = rel.civA === civId ? rel.civB : rel.civB === civId ? rel.civA : null;
       if (other === null) continue;
-      if (this.contactedPairs.has(this.key(civId, other))) met.push(other);
+      if (this.hasContacted(civId, other)) met.push(other);
     }
     return met;
   }
@@ -307,14 +405,17 @@ export class DiplomacyManager {
   }
 
   getStatus(civA: number, civB: number): DiplomaticStatus {
+    if (this.isTeammate(civA, civB)) return 'alliance';
     return this.getRelation(civA, civB)?.status ?? 'peace';
   }
 
   isAtWar(civA: number, civB: number): boolean {
+    if (this.isTeammate(civA, civB)) return false;
     return this.getStatus(civA, civB) === 'war';
   }
 
   isAllied(civA: number, civB: number): boolean {
+    if (this.isTeammate(civA, civB)) return true;
     return this.getStatus(civA, civB) === 'alliance';
   }
 
@@ -326,18 +427,43 @@ export class DiplomacyManager {
       if (rel.civA === civId) enemies.push(rel.civB);
       else if (rel.civB === civId) enemies.push(rel.civA);
     }
-    return enemies;
+    return enemies.filter((id) => !this.isTeammate(civId, id));
   }
 
-  /** Get all civilizations allied with the given civ */
+  /**
+   * Number of distinct enemy TEAMS. A three-civ team is one war, not three:
+   * the AI's war-cap must not punish it for fighting a coalition.
+   */
+  getEnemyTeamCount(civId: number): number {
+    const teamIds = new Set<number>();
+    for (const enemy of this.getEnemies(civId)) {
+      const teamId = this.gameEngine.teamManager?.getTeamId(enemy);
+      teamIds.add(teamId ?? enemy);
+    }
+    return teamIds.size;
+  }
+
+  /**
+   * Military strength of a whole team. AI target selection uses this instead
+   * of one civ's strength, otherwise it happily attacks a 3-civ alliance
+   * believing it faces a single opponent.
+   */
+  estimateTeamStrength(civId: number): number {
+    return this.teamMembersOf(civId).reduce(
+      (total, memberId) => total + this.estimateMilitaryStrength(memberId),
+      0,
+    );
+  }
+
+  /** Get all civilizations allied with the given civ (locked teammates included). */
   getAllies(civId: number): number[] {
-    const allies: number[] = [];
+    const allies = new Set<number>(this.teamMembersOf(civId).filter((id) => id !== civId));
     for (const rel of this.relations.values()) {
       if (rel.status !== 'alliance') continue;
-      if (rel.civA === civId) allies.push(rel.civB);
-      else if (rel.civB === civId) allies.push(rel.civA);
+      if (rel.civA === civId) allies.add(rel.civB);
+      else if (rel.civB === civId) allies.add(rel.civA);
     }
-    return allies;
+    return [...allies];
   }
 
   /** Get all relations for a given civ (for UI display) */
@@ -505,15 +631,61 @@ export class DiplomacyManager {
   /**
    * Declare war between two civilizations.
    *
+   * In a fixed-alliance game the declaration expands to the cross-product of
+   * the two teams: attacking one member brings the whole alliance in, on both
+   * sides. `declareWarPair` does the actual relation transition; the
+   * orchestrator ensures the global reputation hit and the UI event happen
+   * once per team war, not once per pair.
+   *
    * `propagateCalls` is false when the war comes from an ally ANSWERING a
    * call for help: the friend joined the war its partner was already in, and
-   * that must not set off another round of calls. Without the guard one war
-   * walks the alliance network until every court on the map is in it — the
-   * continent-wide war the alliance model exists to prevent.
+   * that must not set off another round of calls.
    */
   declareWar(aggressorId: number, targetId: number, options?: { propagateCalls?: boolean }): void {
+    if (this.isTeammate(aggressorId, targetId)) {
+      debugLog(`[DIPLOMACY] Ignored war between locked teammates ${aggressorId} and ${targetId}`);
+      return;
+    }
+
+    const aggressors = this.teamMembersOf(aggressorId);
+    const targets = this.teamMembersOf(targetId);
+    let announced = false;
+    let reputationDone = false;
+    let anyChanged = false;
+
+    for (const a of aggressors) {
+      for (const t of targets) {
+        if (this.isTeammate(a, t)) continue;
+        const changed = this.declareWarPair(a, t, {
+          globalReputation: !reputationDone,
+          announce: !announced,
+        });
+        if (changed) {
+          anyChanged = true;
+          announced = true;
+          reputationDone = true;
+        }
+      }
+    }
+
+    if (anyChanged && options?.propagateCalls !== false) {
+      // Ask outside allies once, for the original defender. Locked teammates
+      // are already in the war and are skipped by `callForHelp`.
+      this.callForHelp(targetId, aggressorId);
+    }
+  }
+
+  /**
+   * The actual war transition for one pair. Returns true when the pair
+   * changed from non-war to war.
+   */
+  private declareWarPair(
+    aggressorId: number,
+    targetId: number,
+    flags: { globalReputation: boolean; announce: boolean },
+  ): boolean {
     const rel = this.getRelation(aggressorId, targetId);
-    if (!rel || rel.status === 'war') return;
+    if (!rel || rel.status === 'war') return false;
     // You cannot declare war on someone you have never met.
     this.markContact(aggressorId, targetId);
 
@@ -537,17 +709,22 @@ export class DiplomacyManager {
     // Everyone else finds out: an attack on a civ they know hardens them
     // against the aggressor. This is how one war cascades into reputational
     // damage across the whole map, and it only touches civs that have met.
-    for (const third of this.gameEngine.civilizations ?? []) {
-      if (third.id === aggressorId || third.id === targetId) continue;
-      if (third.isAlive === false || !this.hasContacted(third.id, aggressorId)) continue;
-      if (!this.hasContacted(third.id, targetId)) continue;
-      const heard = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
-      const fear = this.estimateMilitaryStrength(aggressorId)
-        / Math.max(1, this.estimateMilitaryStrength(third.id));
-      const thirdRel = this.getRelation(third.id, aggressorId);
-      if (!thirdRel) continue;
-      applyImpact(thirdRel, third.id, 'surprise_attack',
-        -Math.round(6 * (fear > 1.5 ? 1.5 : 0.5)), heard, `heard about the war on ${targetId}`);
+    // Locked teammates of either side are not "third parties": they are
+    // already in the war and must not sour on their own ally.
+    if (flags.globalReputation) {
+      for (const third of this.gameEngine.civilizations ?? []) {
+        if (third.id === aggressorId || third.id === targetId) continue;
+        if (this.isTeammate(third.id, aggressorId) || this.isTeammate(third.id, targetId)) continue;
+        if (third.isAlive === false || !this.hasContacted(third.id, aggressorId)) continue;
+        if (!this.hasContacted(third.id, targetId)) continue;
+        const heard = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+        const fear = this.estimateMilitaryStrength(aggressorId)
+          / Math.max(1, this.estimateMilitaryStrength(third.id));
+        const thirdRel = this.getRelation(third.id, aggressorId);
+        if (!thirdRel) continue;
+        applyImpact(thirdRel, third.id, 'surprise_attack',
+          -Math.round(6 * (fear > 1.5 ? 1.5 : 0.5)), heard, `heard about the war on ${targetId}`);
+      }
     }
 
     rel.status = 'war';
@@ -560,20 +737,37 @@ export class DiplomacyManager {
       details: `War declared (was: ${previousStatus})`,
     });
 
-    debugLog(`[DIPLOMACY] Civ ${aggressorId} declared war on Civ ${targetId}`);
-    this.emitEvent('WAR_DECLARED', { aggressorId, targetId });
+    if (flags.announce) {
+      debugLog(`[DIPLOMACY] Civ ${aggressorId} declared war on Civ ${targetId}`);
+      this.emitEvent('WAR_DECLARED', {
+        aggressorId,
+        targetId,
+        teamWar: this.gameEngine.teamManager?.enabled ?? false,
+        aggressorTeamId: this.gameEngine.teamManager?.getTeamId(aggressorId) ?? null,
+        targetTeamId: this.gameEngine.teamManager?.getTeamId(targetId) ?? null,
+      });
+    }
+    return true;
+  }
 
-    // Alliance call for help: if the defender has mutual-defense allies,
-    // notify them so they can choose to join the war or break the alliance.
-    if (options?.propagateCalls !== false) {
-      this.callForHelp(targetId, aggressorId);
+  /**
+   * Establish peace between two civilizations. In a fixed-alliance game every
+   * pair between the two teams signs at once — a peace that left one teammate
+   * still at war would be a contradiction.
+   */
+  makePeace(civA: number, civB: number): void {
+    if (this.isTeammate(civA, civB)) return;
+    for (const a of this.teamMembersOf(civA)) {
+      for (const b of this.teamMembersOf(civB)) {
+        if (this.isTeammate(a, b)) continue;
+        this.makePeacePair(a, b);
+      }
     }
   }
 
-  /** Establish peace between two civilizations */
-  makePeace(civA: number, civB: number): void {
+  private makePeacePair(civA: number, civB: number): boolean {
     const rel = this.getRelation(civA, civB);
-    if (!rel || rel.status === 'peace') return;
+    if (!rel || rel.status === 'peace') return false;
     this.markContact(civA, civB);
 
     const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
@@ -596,12 +790,26 @@ export class DiplomacyManager {
 
     debugLog(`[DIPLOMACY] Peace between Civ ${civA} and Civ ${civB}`);
     this.emitEvent('PEACE_MADE', { civA, civB });
+    return true;
   }
 
-  /** Establish ceasefire */
+  /**
+   * Establish a ceasefire. Like peace, this is team-wide in a fixed-alliance
+   * game: a ceasefire with one member is a ceasefire with the alliance.
+   */
   signCeasefire(civA: number, civB: number): void {
+    if (this.isTeammate(civA, civB)) return;
+    for (const a of this.teamMembersOf(civA)) {
+      for (const b of this.teamMembersOf(civB)) {
+        if (this.isTeammate(a, b)) continue;
+        this.signCeasefirePair(a, b);
+      }
+    }
+  }
+
+  private signCeasefirePair(civA: number, civB: number): boolean {
     const rel = this.getRelation(civA, civB);
-    if (!rel || rel.status !== 'war') return;
+    if (!rel || rel.status !== 'war') return false;
     this.markContact(civA, civB);
 
     const roundNumber = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
@@ -619,10 +827,17 @@ export class DiplomacyManager {
 
     debugLog(`[DIPLOMACY] Ceasefire between Civ ${civA} and Civ ${civB}`);
     this.emitEvent('CEASEFIRE_SIGNED', { civA, civB });
+    return true;
   }
 
   /** Form alliance */
   formAlliance(civA: number, civB: number): void {
+    // Locked teammates are already allied; re-assert the invariants instead of
+    // emitting a redundant alliance event.
+    if (this.isTeammate(civA, civB)) {
+      this.applyTeamInvariants();
+      return;
+    }
     const rel = this.getRelation(civA, civB);
     if (!rel || rel.status === 'war') return;
     this.markContact(civA, civB);
@@ -648,17 +863,37 @@ export class DiplomacyManager {
 
   /** Check if a specific treaty is active between two civs */
   hasTreaty(civA: number, civB: number, treaty: TreatyType): boolean {
+    // Locked allies have open borders by definition, even if an older save
+    // lost the treaty entry.
+    if (this.isTeammate(civA, civB)
+      && (treaty === 'open_borders' || treaty === 'mutual_defense')) {
+      return true;
+    }
     const rel = this.getRelation(civA, civB);
     return rel?.activeTreaties?.includes(treaty) ?? false;
   }
 
   /** Get all active treaties between two civs */
   getActiveTreaties(civA: number, civB: number): TreatyType[] {
-    return this.getRelation(civA, civB)?.activeTreaties ?? [];
+    const treaties = [...(this.getRelation(civA, civB)?.activeTreaties ?? [])];
+    if (this.isTeammate(civA, civB) && !treaties.includes('open_borders')) {
+      treaties.push('open_borders');
+    }
+    return treaties;
   }
 
   /** Sign a treaty between two civs */
   signTreaty(civA: number, civB: number, treaty: TreatyType, extra?: { goldPerTurn?: number; targetCivId?: number; [key: string]: unknown }): void {
+    // A locked teammate may not embargo another teammate; the rest of the
+    // treaties are either already active (open borders/embassy) or harmless
+    // (trade agreement).
+    if (this.isTeammate(civA, civB)) {
+      if (treaty === 'embargo_target') return;
+      if (treaty === 'open_borders' || treaty === 'mutual_defense' || treaty === 'embassy') {
+        this.applyTeamInvariants();
+        return;
+      }
+    }
     const rel = this.getRelation(civA, civB);
     if (!rel) return;
     this.markContact(civA, civB);
@@ -721,6 +956,12 @@ export class DiplomacyManager {
 
   /** Cancel a treaty between two civs */
   cancelTreaty(civId: number, otherId: number, treaty: TreatyType): void {
+    // The team lock includes open borders and the mutual-defence guarantee.
+    // Trade agreements may still be renegotiated between teammates.
+    if (this.isTeammate(civId, otherId) && TEAM_LOCKED_TREATIES.has(treaty)) {
+      debugLog(`[DIPLOMACY] Refused to cancel locked team treaty ${treaty} between ${civId} and ${otherId}`);
+      return;
+    }
     const rel = this.getRelation(civId, otherId);
     if (!rel) return;
 
@@ -748,6 +989,7 @@ export class DiplomacyManager {
 
   /** Check if open borders allow passage */
   hasOpenBorders(civA: number, civB: number): boolean {
+    if (this.isTeammate(civA, civB)) return true;
     return this.hasTreaty(civA, civB, 'open_borders');
   }
 
@@ -821,6 +1063,22 @@ export class DiplomacyManager {
     const { fromCivId, toCivId, action } = proposal;
     // Negotiating with someone is how you meet them, if sight did not.
     this.markContact(fromCivId, toCivId);
+
+    // Locked teammates can trade and share knowledge, but cannot threaten,
+    // spy on or re-negotiate the alliance itself.
+    if (this.isTeammate(fromCivId, toCivId)) {
+      if (TEAM_HOSTILE_ACTIONS.has(action)) {
+        return { accepted: false, reason: 'Locked allies cannot take hostile action against each other.' };
+      }
+      if (TEAM_REDUNDANT_ACTIONS.has(action)) {
+        return { accepted: false, reason: 'You are already locked allies.' };
+      }
+      if (action === 'propose_embargo'
+        && proposal.embargoTargetId !== undefined
+        && this.isTeammate(fromCivId, proposal.embargoTargetId)) {
+        return { accepted: false, reason: 'Locked allies cannot embargo each other.' };
+      }
+    }
 
     // Covert acts are not proposals: the victim is never consulted, so the
     // willingness roll would only produce a refusal nobody asked for. They
@@ -933,6 +1191,23 @@ export class DiplomacyManager {
    */
   private executeAcceptedAction(proposal: DiplomacyProposal): DiplomacyResponse {
     const { fromCivId, toCivId, action, goldAmount } = proposal;
+
+    // `acceptOffer` bypasses the scoring pass, so the team lock has to be
+    // re-checked here as well. This is the last gate before the switch.
+    if (this.isTeammate(fromCivId, toCivId)) {
+      if (TEAM_HOSTILE_ACTIONS.has(action)) {
+        return { accepted: false, reason: 'Locked allies cannot take hostile action against each other.' };
+      }
+      if (TEAM_REDUNDANT_ACTIONS.has(action)) {
+        return { accepted: false, reason: 'You are already locked allies.' };
+      }
+      if (action === 'propose_embargo'
+        && proposal.embargoTargetId !== undefined
+        && this.isTeammate(fromCivId, proposal.embargoTargetId)) {
+        return { accepted: false, reason: 'Locked allies cannot embargo each other.' };
+      }
+    }
+
     switch (action) {
       case 'propose_peace':
         this.makePeace(fromCivId, toCivId);
@@ -1345,6 +1620,9 @@ export class DiplomacyManager {
     const unit = this.gameEngine.units?.find((u: Unit) => u.id === targetUnitId);
     if (!unit) return { accepted: false, reason: 'Unit not found' };
     if (unit.civilizationId === diplomatCivId) return { accepted: false, reason: 'Cannot bribe own unit' };
+    if (this.isTeammate(diplomatCivId, unit.civilizationId)) {
+      return { accepted: false, reason: 'Locked allies cannot bribe each other' };
+    }
 
     const cost = bribeUnitCost(unit);
     const fromCiv = this.gameEngine.civilizations?.[diplomatCivId];
@@ -1451,6 +1729,7 @@ export class DiplomacyManager {
    */
   hasEmbassy(civA: number, civB: number): boolean {
     if (civA === civB) return true;
+    if (this.isTeammate(civA, civB)) return true;
     return this.embassyPairs.has(this.key(civA, civB));
   }
 
@@ -1813,7 +2092,9 @@ export class DiplomacyManager {
       // Cities pressed against the border sour relations slowly and
       // permanently — this used to be recomputed inside every attitude read,
       // which was both expensive and invisible.
-      if (this.hasContacted(rel.civA, rel.civB) && this.minCityDistance(rel.civA, rel.civB) <= 4) {
+      if (!this.isTeammate(rel.civA, rel.civB)
+        && this.hasContacted(rel.civA, rel.civB)
+        && this.minCityDistance(rel.civA, rel.civB) <= 4) {
         this.recordImpactOn(rel, rel.civB, 'border_pressure', undefined, 'cities on the border');
       }
 
@@ -1830,7 +2111,9 @@ export class DiplomacyManager {
       // join it" unconditionally, which turned any single war into a
       // continent-wide one. An ally now weighs it: a beaten ally whose enemy
       // outclasses them both is not worth a second front.
-      if (rel.activeTreaties.includes('mutual_defense') && rel.status !== 'war') {
+      if (!this.isTeammate(rel.civA, rel.civB)
+        && rel.activeTreaties.includes('mutual_defense')
+        && rel.status !== 'war') {
         for (const [ally, partner] of [[rel.civA, rel.civB], [rel.civB, rel.civA]] as const) {
           for (const enemy of this.getEnemies(partner)) {
             if (enemy === ally || this.isAtWar(ally, enemy)) continue;
@@ -2187,6 +2470,9 @@ export class DiplomacyManager {
 
     for (const otherId of this.getAllies(civId)) {
       if (otherId === civId) continue;
+      // Locked teammates are already in the war; asking them to join would
+      // only spam the audience modal.
+      if (this.isTeammate(civId, otherId)) continue;
       const otherCiv = this.gameEngine.civilizations?.[otherId];
       if (!otherCiv || otherCiv.isAlive === false) continue;
       if (!this.hasContacted(civId, otherId)) continue;
@@ -2248,7 +2534,18 @@ export class DiplomacyManager {
       if (!source) continue;
       const ctx = this.policyContext(civId, otherId, source, roundNumber);
       const isPlayerTarget = otherCiv.isHuman === true;
-      const chosen = chooseAction(scoreCandidates(ctx), ctx);
+
+      // Locked teammates may still trade, share knowledge and give gifts, but
+      // never threaten, spy on, embargo or re-negotiate the alliance itself.
+      const teammate = this.isTeammate(civId, otherId);
+      const candidates = scoreCandidates(ctx).filter((candidate) => {
+        if (!teammate) return true;
+        if (candidate.action === 'declare_war' || candidate.action === 'break_alliance') return false;
+        if (TEAM_HOSTILE_ACTIONS.has(candidate.action)) return false;
+        if (TEAM_REDUNDANT_ACTIONS.has(candidate.action)) return false;
+        return true;
+      });
+      const chosen = chooseAction(candidates, ctx);
       if (!chosen) continue;
 
       debugLog(
@@ -2560,6 +2857,9 @@ export class DiplomacyManager {
     const defenderName = defender?.name ?? `Civilization ${defenderId}`;
     for (const rel of this.getRelationsForCiv(defenderId)) {
       const allyId = rel.otherCivId;
+      // Locked teammates are already at war with the aggressor through the
+      // team-wide declaration; they must not be asked to join their own war.
+      if (this.isTeammate(defenderId, allyId)) continue;
       if (!this.isAllyOf(defenderId, allyId)) continue;
       if (this.isAtWar(allyId, aggressorId)) continue;
       const ally = this.gameEngine.civilizations?.[allyId];
@@ -2607,6 +2907,8 @@ export class DiplomacyManager {
     for (const rel of this.getRelationsForCiv(attackerId)) {
       const allyId = rel.otherCivId;
       if (allyId === targetId) continue;
+      // Locked teammates join automatically through team-wide war.
+      if (this.isTeammate(attackerId, allyId)) continue;
       if (!this.isAllyOf(attackerId, allyId)) continue;
       if (this.isAtWar(allyId, targetId)) continue;
       const ally = this.gameEngine.civilizations?.[allyId];

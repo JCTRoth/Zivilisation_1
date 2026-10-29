@@ -71,6 +71,13 @@ export class VictoryManager {
     // Hotseat mode: detect if this is a multi-human game
     const isHotseatMultiHuman = humanCivs.length > 1;
 
+    // Fixed alliances change what "defeat" means: a human whose civ is dead
+    // but whose team still fights is a spectator, not a loser. The whole team
+    // wins or loses together, so the team branch replaces the per-civ checks.
+    if (this.isTeamGame()) {
+      return this.evaluateTeamEndOfTurn(aliveStatus);
+    }
+
     if (onlyHuman && !aliveStatus.get(onlyHuman.id)) {
       return this.triggerDefeat(onlyHuman, 'elimination');
     }
@@ -127,6 +134,103 @@ export class VictoryManager {
       }
     }
 
+    if (defeatedHumans.length > 0) {
+      this.handleAdditionalHumanDefeats(defeatedHumans);
+    }
+
+    return false;
+  }
+
+  /** Whether the current game is a fixed-alliance (locked-team) game. */
+  private isTeamGame(): boolean {
+    return this.gameEngine.teamManager?.enabled === true;
+  }
+
+  /**
+   * Victory and defeat for locked teams.
+   *
+   * The unit of survival is the team, not the civilization: one operational
+   * member keeps the whole team in the game. A human whose own civ has fallen
+   * therefore keeps watching (and their team can still win) until the team
+   * itself is eliminated.
+   */
+  private evaluateTeamEndOfTurn(aliveStatus: Map<number, boolean>): boolean {
+    const teams = this.gameEngine.teamManager;
+    if (!teams) return false;
+
+    const civilizations = this.gameEngine.civilizations || [];
+    const humanCivs = civilizations.filter((civ) => civ.isHuman);
+    const primaryHuman = this.getPrimaryHumanCivilization();
+    const primaryHumanTeam = primaryHuman ? teams.getTeamId(primaryHuman.id) : null;
+
+    // Team moonshot: the first operational member to complete the project
+    // wins the space race for the whole team. It does not matter which
+    // teammate's cities built the parts.
+    const moonshotCiv = civilizations.find(
+      (civ) => aliveStatus.get(civ.id) === true && this.hasMoonshot(civ),
+    );
+    if (moonshotCiv) {
+      const winningTeam = teams.getTeamId(moonshotCiv.id);
+      if (winningTeam !== null) {
+        // The human's own team losing the race is a defeat, even if another
+        // human seat (hotseat) happened to be on the winning team: one shared
+        // screen has to show one perspective, and the first human is the
+        // established primary seat.
+        if (primaryHumanTeam !== null && primaryHumanTeam !== winningTeam) {
+          return this.triggerTeamDefeat(primaryHumanTeam, 'moonshot');
+        }
+        return this.triggerTeamVictory(winningTeam, 'moonshot');
+      }
+    }
+
+    const aliveTeams = teams.getTeamIds().filter((teamId) =>
+      teams.getTeamMembers(teamId).some((civId) => aliveStatus.get(civId) === true),
+    );
+
+    // Last team standing wins. A team with one surviving scout (or one city)
+    // still counts as alive, mirroring the free-for-all rule that a stray unit
+    // keeps a civilization in the game.
+    if (aliveTeams.length <= 1) {
+      if (aliveTeams.length === 1) {
+        const winningTeam = aliveTeams[0];
+        const winningMembers = teams.getTeamMembers(winningTeam);
+        const humanOnWinner = humanCivs.some((civ) => winningMembers.includes(civ.id));
+        if (humanOnWinner) {
+          return this.triggerTeamVictory(winningTeam, 'elimination');
+        }
+        if (primaryHumanTeam !== null) {
+          return this.triggerTeamDefeat(primaryHumanTeam, 'elimination');
+        }
+        return this.triggerTeamVictory(winningTeam, 'elimination');
+      }
+
+      // Mutual annihilation: nobody is left to claim the world. Treat it as a
+      // defeat for the human team, or end quietly in an all-AI game.
+      if (primaryHumanTeam !== null) {
+        return this.triggerTeamDefeat(primaryHumanTeam, 'elimination');
+      }
+      return false;
+    }
+
+    // The primary human's team is gone while other teams (possibly another
+    // hotseat human's team) fight on. In single player this is the team's
+    // final defeat; in hotseat the surviving human seats keep playing, and
+    // the eliminated human simply sits out until the shared result.
+    if (primaryHumanTeam !== null
+      && !teams.getTeamMembers(primaryHumanTeam).some((civId) => aliveStatus.get(civId) === true)) {
+      const anyHumanTeamAlive = humanCivs.some((civ) => {
+        const teamId = teams.getTeamId(civ.id);
+        return teamId !== null
+          && teams.getTeamMembers(teamId).some((civId) => aliveStatus.get(civId) === true);
+      });
+      if (!anyHumanTeamAlive) {
+        return this.triggerTeamDefeat(primaryHumanTeam, 'elimination');
+      }
+    }
+
+    // A defeated human on a still-living team is a spectator: mark the civ
+    // dead (the turn order already skips it) but do not end the game.
+    const defeatedHumans = humanCivs.filter((civ) => !aliveStatus.get(civ.id));
     if (defeatedHumans.length > 0) {
       this.handleAdditionalHumanDefeats(defeatedHumans);
     }
@@ -215,9 +319,70 @@ export class VictoryManager {
   }
 
   private isCivilizationOperational(civId: number): boolean {
-    const hasUnits = this.gameEngine.units.some((unit) => unit.civilizationId === civId);
+    const hasUnits = this.gameEngine.units.some(
+      (unit) => unit.civilizationId === civId && unit.isDefeated !== true,
+    );
     const hasCities = this.gameEngine.cities.some((city) => city.civilizationId === civId);
     return hasUnits || hasCities;
+  }
+
+  /** All civilizations on a team, in slot order. */
+  private getTeamCivilizations(teamId: number): Civilization[] {
+    const teams = this.gameEngine.teamManager;
+    if (!teams) return [];
+    const civilizations = this.gameEngine.civilizations || [];
+    return teams
+      .getTeamMembers(teamId)
+      .map((civId) => civilizations.find((civ) => civ.id === civId))
+      .filter((civ): civ is Civilization => !!civ);
+  }
+
+  /**
+   * A whole team wins. Every member is listed in the result (dead teammates
+   * included — they win together), and the primary civilization is the first
+   * human member so the shared screen speaks to its player.
+   */
+  private triggerTeamVictory(teamId: number, reason: VictoryReason): boolean {
+    const members = this.getTeamCivilizations(teamId);
+    if (members.length === 0) return false;
+    const primary = members.find((civ) => civ.isHuman)
+      ?? members.find((civ) => civ.isAlive !== false)
+      ?? members[0];
+    const outcome = new GameResult({
+      outcome: 'victory',
+      civilizationId: primary.id,
+      civName: primary.name,
+      reason,
+      isHuman: members.some((civ) => civ.isHuman === true),
+      civilizationIds: members.map((civ) => civ.id),
+      civNames: members.map((civ) => civ.name),
+      teamId,
+      teamName: this.gameEngine.teamManager?.getTeamName(teamId),
+    });
+    this.finalizeResult(outcome);
+    return true;
+  }
+
+  /** A whole team loses: the mirror image of {@link triggerTeamVictory}. */
+  private triggerTeamDefeat(teamId: number, reason: VictoryReason): boolean {
+    const members = this.getTeamCivilizations(teamId);
+    if (members.length === 0) return false;
+    const primary = members.find((civ) => civ.isHuman)
+      ?? members.find((civ) => civ.isAlive !== false)
+      ?? members[0];
+    const outcome = new GameResult({
+      outcome: 'defeat',
+      civilizationId: primary.id,
+      civName: primary.name,
+      reason,
+      isHuman: members.some((civ) => civ.isHuman === true),
+      civilizationIds: members.map((civ) => civ.id),
+      civNames: members.map((civ) => civ.name),
+      teamId,
+      teamName: this.gameEngine.teamManager?.getTeamName(teamId),
+    });
+    this.finalizeResult(outcome);
+    return true;
   }
 
   private triggerVictory(civ: Civilization, reason: VictoryReason): boolean;

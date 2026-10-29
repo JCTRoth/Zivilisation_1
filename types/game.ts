@@ -20,6 +20,10 @@ export class GameResult {
   civilizationIds?: number[];
   /** All winning civilization names (hotseat joint victory). Single civ when undefined. */
   civNames?: string[];
+  /** Fixed-alliance team that won or lost, when this result is a team result. */
+  teamId?: number;
+  /** Display name of that team (e.g. "Team 1"). */
+  teamName?: string;
 
   constructor(params: {
     outcome: 'victory' | 'defeat';
@@ -30,6 +34,8 @@ export class GameResult {
     timestamp?: number;
     civilizationIds?: number[];
     civNames?: string[];
+    teamId?: number;
+    teamName?: string;
   }) {
     this.outcome = params.outcome;
     this.civilizationId = params.civilizationId;
@@ -39,6 +45,8 @@ export class GameResult {
     this.timestamp = params.timestamp ?? Date.now();
     this.civilizationIds = params.civilizationIds;
     this.civNames = params.civNames;
+    this.teamId = params.teamId;
+    this.teamName = params.teamName;
   }
 }
 
@@ -689,6 +697,12 @@ export interface Civilization {
   name: string;
   color: string;
   isAlive: boolean;
+  /**
+   * Fixed-alliance team index. Undefined in a normal free-for-all game.
+   * `TeamManager` is authoritative; this field is a denormalised copy for
+   * rendering and save files.
+   */
+  teamId?: number;
   capital?: City | null; // Reference to the capital city
   resources: {
     food: number;
