@@ -800,6 +800,23 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
     []
   );
 
+  // Plain-text glyphs for `<option>` labels. A native `<option>` may only
+  // contain text — never a `<span>` — so the lobby's faction dropdown must not
+  // reuse the span-wrapped `civIcons` above. Rendering a span inside an option
+  // triggers React's validateDOMNesting warning and produces invalid markup that
+  // makes the native popup misbehave.
+  const civIconText = useMemo<Record<string, string>>(
+    () =>
+      CIVILIZATIONS.reduce(
+        (acc, civ) => {
+          acc[civ.name] = typeof civ.icon === 'string' ? civ.icon : '';
+          return acc;
+        },
+        {} as Record<string, string>
+      ),
+    []
+  );
+
   const sortedCivilizations = useMemo(() => [...CIVILIZATIONS].sort((a, b) => a.name.localeCompare(b.name)), []);
 
   const selectedCivData = CIVILIZATIONS[selectedCiv] ?? CIVILIZATIONS[0];
@@ -1218,7 +1235,7 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                                 const takenByOther = players.some((q, i) => i !== slot && q.civIndex === originalIndex);
                                 return (
                                   <option key={c.name} value={String(originalIndex)} disabled={takenByOther}>
-                                    {civIcons[c.name] ?? ''} {c.name} — {c.leader}
+                                    {civIconText[c.name] ? `${civIconText[c.name]} ` : ''}{c.name} — {c.leader}
                                   </option>
                                 );
                               })}
