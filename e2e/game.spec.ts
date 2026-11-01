@@ -1213,8 +1213,15 @@ test.describe('AI Behavior', () => {
       }
       expect(unitPos).not.toBeNull();
 
-      // Close the menu by clicking its backdrop.
-      await page.locator('.unit-context-backdrop').click();
+      // Close the menu by clicking its backdrop. The ORDERS menu docks at the
+      // BOTTOM of the screen (up to 46dvh tall) and can grow past the viewport
+      // centre, so click the backdrop near its TOP edge — that point is always
+      // uncovered, and "clicking the backdrop closes the menu" is the
+      // behaviour under test either way. (Clicking the backdrop's centre made
+      // this test flaky in CI: a taller dock intercepted the click.)
+      await page
+        .locator('.unit-context-backdrop')
+        .click({ position: { x: Math.floor(box.width / 2), y: 24 } });
       await expect(page.getByRole('button', { name: /Skip Turn/i })).not.toBeVisible();
 
       // Select the unit: movement mode is active and the cursor is a crosshair.
