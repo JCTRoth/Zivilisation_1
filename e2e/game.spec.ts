@@ -489,12 +489,19 @@ async function endTurn(page: Page): Promise<void> {
  */
 async function endTurnKeepingModals(page: Page): Promise<void> {
   const modal = page.locator('[role="dialog"]').filter({ hasText: 'End Turn?' });
+  // Under CI load the confirm dialog can still be settling (entrance
+  // animation while the previous AI round churns the store) when we reach
+  // for its button: a plain click waits for Playwright's "stable" probe and
+  // then times out, even though the button's position is already final
+  // (only opacity/box noise moves the probe). The click is forced — the
+  // position it hits is where the button visually sits.
+  const confirm = () => modal.locator('.touch-btn--success').click({ force: true });
   if (await modal.isVisible().catch(() => false)) {
-    await modal.locator('.touch-btn--success').click();
+    await confirm();
   } else {
     await page.locator('.game-top-bar').getByRole('button', { name: 'End Turn' }).click();
     if (await modal.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await modal.locator('.touch-btn--success').click();
+      await confirm();
     }
   }
   await expect(page.locator('.game-top-bar .topbar-endturn')).toBeEnabled({ timeout: 30_000 });
