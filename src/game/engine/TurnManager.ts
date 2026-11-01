@@ -676,6 +676,11 @@ export class TurnManager {
       if (this.gameEngine.diplomacyManager) {
         this.gameEngine.diplomacyManager.processTurn(this.roundNumber);
       }
+
+      // Team coordination (fixed alliances): recompute per-team directives
+      // (scout region claims, POI pruning, later war plans) once per round,
+      // before any member takes its turn. Free-for-all is a no-op inside.
+      this.gameEngine.teamCoordinator?.processRound(this.roundNumber);
     }
     
     // Sync active player to store on every turn change

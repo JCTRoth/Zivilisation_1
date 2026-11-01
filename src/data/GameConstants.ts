@@ -420,6 +420,13 @@ export const FREE_CITY_SUPPORT = 3;
  * treaty pay only where a caravan has actually been delivered.
  */
 export const TREATY_ROUTE_TRADE_MULTIPLIER = 2;
+/**
+ * The treasury floor below which a civilization is considered insolvent and
+ * must reconcile its books (AIEconomicManager RECONCILE behaviour). Also the
+ * line the team-solidarity policy uses: a teammate under this floor gets
+ * bootstrapped with gold from a member that can spare it.
+ */
+export const RECONCILE_GOLD_FLOOR = 80;
 
 // ── Gold ↔ shields ───────────────────────────────────────────────────────
 

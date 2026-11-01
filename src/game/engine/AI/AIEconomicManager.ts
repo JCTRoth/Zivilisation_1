@@ -44,8 +44,10 @@ const AI_MIN_TAX = 35;
  * the controller stops drifting and RECONCILES: rates snap to the position
  * that pays the bills this round, discretionary gold spending freezes, and
  * production pivots to income until the books balance again.
+ *
+ * Lives in GameConstants (shared with the team-solidarity policy).
  */
-const RECONCILE_GOLD_FLOOR = 80;
+import { RECONCILE_GOLD_FLOOR } from '@/data/GameConstants';
 export const AI_RESERVE_TURNS: Record<StrategyProfile, number> = {
   military_expansion: 3,
   defensive_turtle: 3,

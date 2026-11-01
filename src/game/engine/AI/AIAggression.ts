@@ -30,6 +30,14 @@ export const AGGRESSION_TRIGGER_BAND = 15;
  * planBulkAssault) which scales with city defense.
  */
 export const BULK_ATTACK_STRENGTH_RATIO = 1.3;
+/**
+ * Preference a member's bulk planner gives the team's joint primary target
+ * (fixed alliances, TeamCoordinator). Large enough that a reachable team
+ * objective beats every local alternative — pile-on without a hard override:
+ * reachability, strength gating and the defensive-critical-threat veto all
+ * still apply to it exactly as to any other target.
+ */
+export const TEAM_FOCUS_BONUS = 90;
 /** Default defensive strength assumed for an unknown/unbuilt enemy city. */
 export const UNKNOWN_CITY_DEFENSE = 8;
 /** Default defensive strength assumed for an enemy unit. */
@@ -319,6 +327,8 @@ export function planBulkAttack(
   roundNumber: number,
   aggressive: boolean,
   preferredCivId?: number,
+  /** Fixed alliances: the team's joint primary target (Phase 2 focus). */
+  teamFocus?: { col: number; row: number; civId: number },
 ): BulkAttackPlan | null {
   if (!aggressive) return null;
 
@@ -369,6 +379,16 @@ export function planBulkAttack(
     // Retaliation: strongly prefer the civ that just took one of our cities.
     if (preferredCivId != null && target.civId === preferredCivId) {
       score += 80;
+    }
+    // Team focus (fixed alliances): the whole team piles onto its joint
+    // primary so two members never siege two different cities.
+    if (
+      teamFocus &&
+      target.col === teamFocus.col &&
+      target.row === teamFocus.row &&
+      target.civId === teamFocus.civId
+    ) {
+      score += TEAM_FOCUS_BONUS;
     }
 
     if (score > bestScore) {

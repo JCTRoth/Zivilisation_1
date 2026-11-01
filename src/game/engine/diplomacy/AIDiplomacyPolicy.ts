@@ -18,6 +18,7 @@
 
 import type { DiplomaticStatus, TreatyType } from '../DiplomacyTypes';
 import type { DiplomaticWeights } from './DiplomaticWeights';
+import { RECONCILE_GOLD_FLOOR } from '@/data/GameConstants';
 import type { Opinion } from '../DiplomacyTypes';
 import { seededNoise } from './ProposalScoring';
 import { pickFavourableSwap, type TechTradeContext } from './TechTradeEvaluator';
@@ -75,6 +76,13 @@ export interface PolicyContext {
    * filtered out before the candidate is ever considered.
    */
   teammate?: boolean;
+  /**
+   * The game is a fixed-alliance (team) game. Enables team-solidarity
+   * behaviour: knowledge converges inside the team, broke teammates get
+   * bootstrapped, and a member already fighting the team's war does not
+   * open an independent second front.
+   */
+  teamMode?: boolean;
   /** 0 (fresh) … 20 (exhausted). */
   exhaustion: number;
   /** Turns since the current status began. */
@@ -187,6 +195,13 @@ export function lateGameWarPush(currentYear?: number): number {
 export function mayDeclareWar(ctx: PolicyContext): { ok: boolean; why: string } {
   if (ctx.activeWars >= ctx.maxWars) {
     return { ok: false, why: `already fighting ${ctx.activeWars} war(s) (limit ${ctx.maxWars})` };
+  }
+  // War-focus discipline (fixed alliances): a member of a team that is
+  // already at war (team-wide wars put every member in them) does not open
+  // an independent second front — the team finishes one war first. Personal
+  // temperament limits above still apply on top.
+  if (ctx.teamMode && ctx.activeWars > 0) {
+    return { ok: false, why: 'the team is already at war — one front at a time' };
   }
   if (ctx.exhaustion >= 18) {
     return { ok: false, why: 'exhausted from war' };
@@ -480,6 +495,30 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
   // A locked teammate is not a diplomatic rival. Trade, gifts, gold and
   // knowledge may still change hands, but the alliance itself is not up for
   // negotiation: no war, no betrayal, no tribute, no redundant pact offers.
+  //
+  // Team solidarity (fixed alliances): a locked teammate is 'alliance'
+  // status, which SKIPS the courtship block above — so the team's internal
+  // flows are scored here, once, for the pair: knowledge converges from the
+  // leading member to the trailing one (never charged — see the term picker),
+  // broke teammates get bootstrapped, and a trade agreement doubles what
+  // both sides' routes pay.
+  if (ctx.teammate) {
+    const teamCanOffer = (ctx.techsWeCanOffer?.length ?? 0) > 0;
+    const teamAhead = (ctx.ourTechCount ?? 0) > (ctx.theirTechCount ?? 0);
+    if (teamCanOffer && teamAhead) {
+      push(
+        out,
+        'gift_technology',
+        16 + (ctx.ourTechCount ?? 0) - (ctx.theirTechCount ?? 0),
+        'the team learns together — we are ahead of our teammate',
+      );
+    }
+    if (ctx.ownGold > 100 && (ctx.theirGold ?? 0) < RECONCILE_GOLD_FLOOR) {
+      push(out, 'gift_gold', 15 + Math.min(10, ctx.ownGold / 100), 'the team needs its members solvent');
+    }
+    push(out, 'propose_trade_agreement', 12, 'teammate trade routes pay double');
+  }
+
   const filtered = ctx.teammate
     ? out.filter((candidate) => !TEAMMATE_FORBIDDEN_ACTIONS.has(candidate.action))
     : out;

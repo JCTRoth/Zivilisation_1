@@ -50,6 +50,7 @@ import { BarbarianManager } from './BarbarianManager';
 import { UnitTurnQueue } from './UnitTurnQueue';
 import { DiplomacyManager } from './DiplomacyManager';
 import { TeamManager } from './TeamManager';
+import { TeamCoordinator } from './AI/TeamCoordinator';
 import type {
   DiplomatAction,
   DiplomatActionOptions,
@@ -359,6 +360,12 @@ export default class GameEngine {
   diplomacyManager: DiplomacyManager; // Civ I–style diplomacy system
   /** Fixed alliances (locked teams); disabled in a normal free-for-all game. */
   teamManager: TeamManager;
+  /**
+   * Per-round team coordination (fixed alliances only): scout-region claims,
+   * POI registry, and (in later phases) war plans and defense missions. A
+   * pure directive layer — member AIs work without it.
+   */
+  teamCoordinator: TeamCoordinator;
 
   // Human-readable recap of the most recent auto-end (what was skipped), used
   // for the post-end summary notification.
@@ -423,6 +430,7 @@ export default class GameEngine {
     this.unitTurnQueue = new UnitTurnQueue(this); // Initialize unit turn queue
     this.diplomacyManager = new DiplomacyManager(this);
     this.teamManager = new TeamManager(this);
+    this.teamCoordinator = new TeamCoordinator(this);
     this.devMode = false;
     this.victoryManager = new VictoryManager(this);
     this.isGameOver = false;
@@ -1069,6 +1077,7 @@ export default class GameEngine {
     // Reset diplomacy and fixed-alliance state
     this.diplomacyManager.reset();
     this.teamManager.reset();
+    this.teamCoordinator.reset();
     
     // Set dev mode from settings
     this.devMode = settings.devMode || false;
@@ -9103,6 +9112,9 @@ const occupiedLandmasses = new Set(
       // disables the mode and leaves the game as a free-for-all.
       this.teamManager.configure(this.gameSettings, this.civilizations.length);
       this.teamManager.applyToCivilizations();
+      // Session-only directives (claims, POIs) never ride in the save —
+      // drop whatever the previous game left behind.
+      this.teamCoordinator.reset();
 
       // Citizen tile sets are `Set`s, which JSON turns into `{}` — rehydrate
       // them (pins included) or every `.has()` call on a restored city throws

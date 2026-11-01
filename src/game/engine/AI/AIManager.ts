@@ -5186,13 +5186,22 @@ export class AIManager {
     const pool = unknown.length > 0 ? unknown : known;
     if (pool.length === 0) return this.findAnyNavalWater(unit);
 
+    // Team region claim (team coordination): water a teammate's hull has
+    // already claimed is only taken when this hull has no claim of its own
+    // in the scan — deduplicates the fleet without ever stalling a ship.
+    const coordinator = this.gameEngine.teamCoordinator;
+    const ownPool = coordinator
+      ? pool.filter((t) => !coordinator.shouldYield(unit, t.col, t.row))
+      : pool;
+    const finalPool = ownPool.length > 0 ? ownPool : pool;
+
     // Memory ranks the pool: water never patrolled wins, then water patrolled
     // longest ago, and remembered kill zones push a tile down. Everything else
     // about the candidates is unchanged — this only reorders a pool the scan
     // already accepted, so it can never introduce a tile the old code refused.
     // `hullChoiceIndex` stays as the tie-break, so two hulls reading the same
     // memory still pick different tiles.
-    const ranked = [...pool].sort((a, b) => {
+    const ranked = [...finalPool].sort((a, b) => {
       const score = (t: { col: number; row: number }): number =>
         memory.sweepPriority(t.col, t.row) + memory.dangerPressure(t.col, t.row) * 2;
       return score(a) - score(b) || a.col - b.col || a.row - b.row;
@@ -6050,7 +6059,33 @@ export class AIManager {
       return { col: enemy.col, row: enemy.row };
     }
 
-    // 2) Nearby unexplored tile
+    // 2) Nearby unexplored tile.
+    //    Team region preference: frontier tiles claimed by a teammate's
+    //    explorer are skipped FIRST (so two scouts stop sweeping the same
+    //    fog); if that left nothing AND a claim actually filtered a candidate,
+    //    the plain filter runs as fallback — so a scout can never starve
+    //    behind a teammate's region. The `yieldedToTeammate` guard keeps the
+    //    fallback from running in free-for-all games (or when nothing was
+    //    claimed), which would burn extra seeded-RNG draws in
+    //    `findNearbyUnexplored`'s shuffle and shift the whole deterministic
+    //    turn stream for no benefit.
+    let yieldedToTeammate = false;
+    const nearbyFilter = (preferOwnRegion: boolean) => (col: number, row: number) => {
+      if (!(this.gameEngine.isTilePassable?.(col, row) ?? true)) return false;
+      if (!this.areLandConnected(unit.col, unit.row, col, row)) return false;
+      if (unit._blockedScoutTargets instanceof Set && unit._blockedScoutTargets.has(`${col},${row}`)) return false;
+      const occupant = this.gameEngine.getUnitAt?.(col, row);
+      if (occupant && occupant.civilizationId === unit.civilizationId) return false;
+      if (preferOwnRegion && (this.gameEngine.teamCoordinator?.shouldYield(unit, col, row) ?? false)) {
+        yieldedToTeammate = true;
+        return false;
+      }
+      return true;
+    };
+    const unexploredFilter: (col: number, row: number) => boolean =
+      (col, row) => typeof this.gameEngine.isExploredByPlayer === 'function'
+        ? this.gameEngine.isExploredByPlayer(unit.civilizationId, col, row)
+        : !!this.gameEngine.getTileAt(col, row)?.explored;
     const unexplored = AIUtility.findNearbyUnexplored(
       unit.col,
       unit.row,
@@ -6061,19 +6096,19 @@ export class AIManager {
       //    land (across the water needs a ship),
       //  - tiles the scout already failed to enter (blocked-target guard) are
       //    skipped so it stops re-picking the same occupied/blocked tile,
-      //  - tiles held by a friendly unit are skipped (no stacking).
-      (col, row) => {
-        if (!(this.gameEngine.isTilePassable?.(col, row) ?? true)) return false;
-        if (!this.areLandConnected(unit.col, unit.row, col, row)) return false;
-        if (unit._blockedScoutTargets instanceof Set && unit._blockedScoutTargets.has(`${col},${row}`)) return false;
-        const occupant = this.gameEngine.getUnitAt?.(col, row);
-        if (occupant && occupant.civilizationId === unit.civilizationId) return false;
-        return true;
-      },
-      (col, row) => typeof this.gameEngine.isExploredByPlayer === 'function'
-        ? this.gameEngine.isExploredByPlayer(unit.civilizationId, col, row)
-        : !!this.gameEngine.getTileAt(col, row)?.explored
-    );
+      //  - tiles held by a friendly unit are skipped (no stacking),
+      //  - tiles claimed by a teammate's explorer are skipped on the first
+      //    pass (team coordination, see above).
+      nearbyFilter(true),
+      unexploredFilter
+    ) ?? (yieldedToTeammate ? AIUtility.findNearbyUnexplored(
+      unit.col,
+      unit.row,
+      (col, row) => this.gameEngine.squareGrid!.getNeighbors(col, row),
+      (col, row) => this.gameEngine.getTileAt(col, row) as { type: string; explored?: boolean; resource?: string | null; fortress?: boolean; river?: boolean; passable?: boolean } | null | undefined,
+      nearbyFilter(false),
+      unexploredFilter
+    ) : null);
     if (unexplored) {
       debugLog(`[AI] Chose unexplored tile at (${unexplored.col},${unexplored.row})`);
       return { col: unexplored.col, row: unexplored.row };
@@ -8514,6 +8549,9 @@ export class AIManager {
     const searchRadii = [10, 25];
     for (const searchRadius of searchRadii) {
       const candidates: Array<{ col: number; row: number; dist: number }> = [];
+      // Frontier tiles claimed by a teammate's explorer (team coordination).
+      // Only taken when this scout has no claim of its own in the radius.
+      const teamCandidates: Array<{ col: number; row: number; dist: number }> = [];
 
       // Search within zone boundaries (limit search to avoid performance issues)
       const startCol = Math.max(zone.minCol, unit.col - searchRadius);
@@ -8558,19 +8596,29 @@ export class AIManager {
           const occCity = this.gameEngine.getCityAt?.(col, row);
           if (occCity && occCity.civilizationId === unit.civilizationId) continue;
 
+          // Team region claim: prefer tiles nobody on the team has claimed;
+          // a claimed tile is only a fallback (pool below), never a stall.
+          if (this.gameEngine.teamCoordinator?.shouldYield(unit, col, row) ?? false) {
+            teamCandidates.push({ col, row, dist: Math.max(Math.abs(col - unit.col), Math.abs(row - unit.row)) });
+            continue;
+          }
           candidates.push({ col, row, dist: Math.max(Math.abs(col - unit.col), Math.abs(row - unit.row)) });
         }
       }
 
-      if (candidates.length > 0) {
+      // Own claims first; teammate claims only when this radius has nothing
+      // of ours — better a teammate's frontier tile than the zone-center
+      // fallback (the scout still reveals ground the team can use).
+      const pool = candidates.length > 0 ? candidates : teamCandidates;
+      if (pool.length > 0) {
         // Weighted-random pick from the nearest frontier band, biased by the
         // scout's random exploration bearing — scouts fan out in different,
         // random directions instead of all drifting the same way.
         const bearing = this.getExplorationBearing(unit);
-        const pick = AIUtility.pickRandomExplorationTarget(unit, candidates, bearing);
+        const pick = AIUtility.pickRandomExplorationTarget(unit, pool, bearing);
         if (pick) {
           unit._exploreTarget = { col: pick.col, row: pick.row };
-          debugLog(`[AI-SCOUT] Found unexplored tile at (${pick.col},${pick.row}) in zone (of ${candidates.length})`);
+          debugLog(`[AI-SCOUT] Found unexplored tile at (${pick.col},${pick.row}) in zone (of ${pool.length})`);
           return pick;
         }
       }
@@ -9814,7 +9862,20 @@ export class AIManager {
       this.isOffensivePlanTargetValid(existingPlan) &&
       roundNumber - (existingPlan.roundPrepared ?? roundNumber) < OFFENSIVE_PLAN_MAX_AGE_ROUNDS
     ) {
-      return;
+      // Team focus (fixed alliances): a valid personal plan is normally kept,
+      // but NOT when the team's joint primary points somewhere else AND this
+      // member can actually get there — falling through re-plans this turn
+      // and the focus bonus then picks it. An unreachable focus never causes
+      // churn: the member keeps sieging its local target instead.
+      const teamFocus = this.gameEngine.teamCoordinator?.teamFocusFor(civilizationId) ?? null;
+      const sameAsFocus = teamFocus != null
+        && existingPlan.target.col === teamFocus.col
+        && existingPlan.target.row === teamFocus.row;
+      const focusReachable = teamFocus != null && (
+        this.engineTileReachableByLand(civilizationId, teamFocus.col, teamFocus.row)
+        || this.isSeaInvasionTarget(teamFocus, this.buildSeaInvasionContext(civilizationId))
+      );
+      if (!teamFocus || sameAsFocus || !focusReachable) return;
     }
 
     // Situational aggression: how much this civ should push right now. Without
@@ -9838,6 +9899,31 @@ export class AIManager {
     // the AI must not trigger an assault it cannot win, and it withdraws an
     // existing one when the target grows too strong.
     const knownTargets = this.collectKnownTargets(civilizationId, storage, roundNumber);
+    // Team coordination (fixed alliances): the team's primary target is
+    // shared knowledge. A member that never personally saw the city still
+    // gets it as a bulk-attack candidate, reachability checked like any
+    // other sighting (land first, ferry second).
+    const teamFocus = this.gameEngine.teamCoordinator?.teamFocusFor(civilizationId) ?? null;
+    if (teamFocus && !knownTargets.some((t) => t.col === teamFocus.col && t.row === teamFocus.row)) {
+      const reachableByLand = this.engineTileReachableByLand(civilizationId, teamFocus.col, teamFocus.row);
+      let focusReach: 'land' | 'sea' | null = reachableByLand ? 'land' : null;
+      if (!focusReach) {
+        const seaContext = this.buildSeaInvasionContext(civilizationId);
+        if (this.isSeaInvasionTarget(teamFocus, seaContext)) focusReach = 'sea';
+      }
+      if (focusReach) {
+        knownTargets.push({
+          col: teamFocus.col,
+          row: teamFocus.row,
+          type: 'city',
+          id: `team-focus-${teamFocus.civId}-${teamFocus.col}-${teamFocus.row}`,
+          civId: teamFocus.civId,
+          reachableBy: focusReach,
+          lastSeenRound: roundNumber,
+          discoveredRound: roundNumber,
+        });
+      }
+    }
     // Retaliation: within the window, prefer the civ that took our city.
     const lostRound = storage.turnData.lastCityLostRound as number | undefined;
     const lostTo = storage.turnData.lastCityLostTo as number | undefined;
@@ -9855,6 +9941,7 @@ export class AIManager {
       roundNumber,
       aggressive,
       preferredCivId,
+      teamFocus ?? undefined,
     );
 
     if (!bulkPlan) {
@@ -10593,10 +10680,50 @@ export class AIManager {
     return best;
   }
 
+  /**
+   * A teammate's threatened city this unit should help defend (fixed
+   * alliances, Phase 3). The TeamCoordinator assigns each threatened
+   * teammate city to its nearest land-reachable member; here the unit takes
+   * the closest such job it can actually walk to. Land-only on purpose: a
+   * helper separated by water must not churn against the coastline — sea
+   * help rides the existing ferry missions instead.
+   */
+  private findTeammateDefenseAssignment(unit: Unit): { col: number; row: number } | null {
+    const coordinator = this.gameEngine.teamCoordinator;
+    if (!coordinator?.enabled) return null;
+    // The city reserve stays home whatever a teammate needs.
+    if (this.getCityDefenseReserveIds(unit.civilizationId).has(unit.id)) return null;
+
+    const directives = coordinator.defenseDirectivesFor(unit.civilizationId);
+    if (directives.length === 0) return null;
+
+    const grid = this.gameEngine.squareGrid;
+    let best: { col: number; row: number } | null = null;
+    let bestDistance = Infinity;
+    for (const directive of directives) {
+      if (!this.engineTileReachableByLand(unit.civilizationId, directive.col, directive.row)) continue;
+      const distance = grid?.squareDistance?.(unit.col, unit.row, directive.col, directive.row)
+        ?? Math.max(Math.abs(unit.col - directive.col), Math.abs(unit.row - directive.row));
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = { col: directive.col, row: directive.row };
+      }
+    }
+    if (best) {
+      debugLog(`[AI-TEAM] ${unit.id} marches to defend a teammate city at (${best.col},${best.row})`);
+    }
+    return best;
+  }
+
   private findDefensiveAssignment(unit: Unit, storage: PlayerTurnStorage, roundNumber: number): { col: number; row: number } | null {
     const threatenedCities = this.identifyThreatenedCities(unit.civilizationId, storage, roundNumber);
     if (threatenedCities.length === 0) {
-      return null;
+      // Team coordination (fixed alliances): with no own city under pressure,
+      // this member's mobile surplus helps a THREATENED TEAMMATE city. Own
+      // threats, committed offensives and the city reserve all rank above
+      // this in the decision chain, so helper duty never strips the home
+      // front — and a reserve unit never leaves home for it.
+      return this.findTeammateDefenseAssignment(unit);
     }
 
     const ranked = threatenedCities

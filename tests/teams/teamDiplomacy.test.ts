@@ -129,10 +129,18 @@ describe('AI policy and diplomat menus with teammates', () => {
 
   it('never scores a hostile or redundant action against a teammate', () => {
     // An alliance policy normally offers only betrayal. Every one of those
-    // candidates is filtered out for a locked teammate, so nothing is left.
+    // candidates is filtered out for a locked teammate. What remains is the
+    // team-solidarity block (Phase 4): a bootstrap gift to a broke teammate
+    // (theirGold unset = 0 here) and the trade agreement that doubles both
+    // sides' route income — commerce, never hostility.
     const allianceActions = scoreCandidates(context()).map((candidate) => candidate.action);
     expect(allianceActions).not.toContain('break_alliance');
-    expect(allianceActions).toEqual([]);
+    expect(allianceActions).toEqual(
+      expect.arrayContaining(['gift_gold', 'propose_trade_agreement']),
+    );
+    for (const hostile of ['break_alliance', 'declare_war', 'demand_tribute']) {
+      expect(allianceActions).not.toContain(hostile);
+    }
 
     // Trade is still allowed: the lock forbids betrayal, not commerce. A
     // peace-time candidate list keeps its trade offer while every pact that

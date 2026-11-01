@@ -2335,6 +2335,19 @@ export class DiplomacyManager {
       return { kind: 'swap', techOffered: swap.techOffered, techRequested: swap.techRequested };
     }
 
+    // Fixed alliances: a teammate is never CHARGED for knowledge. A thin
+    // treasury is no reason to tax the team's own convergence — hand over
+    // the most valuable secret they lack as a gift instead (the policy
+    // scores this well above any sale). Purchase below stays available for
+    // the trailing court that holds nothing to give.
+    if (this.isTeammate(fromCivId, toCivId) && opts.weHaveTheyLack.length > 0) {
+      const techOffered = opts.weHaveTheyLack.reduce(
+        (best, id) => (this.techCost(id) > this.techCost(best) ? id : best),
+        opts.weHaveTheyLack[0],
+      );
+      return { kind: 'gift', techOffered };
+    }
+
     // 2. Sale: a thin treasury motivates selling a secret they lack.
     if (opts.weHaveTheyLack.length > 0 && ourGold < 100) {
       const techOffered = opts.weHaveTheyLack.reduce(
@@ -2437,6 +2450,7 @@ export class DiplomacyManager {
       activeWars: this.getEnemyTeamCount(civId),
       maxWars: maxConcurrentWars(weights, this.gameEngine.currentYear),
       teammate: this.isTeammate(civId, otherId),
+      teamMode: this.gameEngine.teamManager?.enabled === true,
       exhaustion: this.getWarExhaustion(civId),
       turnsSince: round - statusSince,
       roundsSincePeace,
