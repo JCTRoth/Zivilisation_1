@@ -524,6 +524,12 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   // this state was written and thrown away, so a rejected proposal produced no
   // visible feedback at all.
   const [diplomacyFeed, setDiplomacyLog] = useState<string[]>([]);
+  // Team coordination (fixed alliances): pickers in the locked teammate
+  // panel. The engine validates every directive — the UI only offers
+  // candidates and reports what was accepted.
+  const [teamAttackCityId, setTeamAttackCityId] = useState<string>('');
+  const [teamDefendCityId, setTeamDefendCityId] = useState<string>('');
+  const [teamFeedOnly, setTeamFeedOnly] = useState<boolean>(false);
   const [showTreatyPanel, setShowTreatyPanel] = useState(false);
   const [counterProposal, setCounterProposal] = useState<{ fromCivId: number; toCivId: number; action: string; goldAmount?: number } | null>(null);
   // Advanced-negotiation inputs: how much tribute to demand, which met civ to
@@ -1297,25 +1303,150 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                       </div>
                     </div>
 
-                    {selectedIsTeammate && (
-                      <div className="diplomacy-team-lock" role="note">
-                        <div className="diplomacy-team-lock__title">
-                          <span
-                            className="diplomacy-team-badge"
-                            style={{ background: teamColor(selectedTeamId), borderColor: teamColor(selectedTeamId) }}
-                          >
-                            {teamName(selectedTeamId)}
-                          </span>
-                          {t('gm.diplo.team.lockedTitle' as TranslationKey)}
-                        </div>
-                        <p className="diplomacy-team-lock__body">
-                          {t('gm.diplo.team.lockedBody' as TranslationKey)}
-                        </p>
-                        <p className="diplomacy-team-lock__hint">
-                          {t('gm.diplo.team.lockedHint' as TranslationKey)}
-                        </p>
-                      </div>
-                    )}
+                    {selectedIsTeammate && (() => {
+                      // ── Team commands + war plan (Phase 5) ──────────────
+                      // The lock note stays first; below it the player steers
+                      // the team: pin a joint war target, ask the teammates
+                      // to defend a city, and read what the AI decided.
+                      const playerTeamMembers = teams?.getTeamMembersOf(playerId) ?? [playerId];
+                      const enemyCities = (cities as City[])
+                        .filter((c) => !playerTeamMembers.includes(c.civilizationId))
+                        .sort((a, b) => {
+                          // At-war cities first, then bigger ones.
+                          const warA = dm?.isAtWar(playerId, a.civilizationId) ? 0 : 1;
+                          const warB = dm?.isAtWar(playerId, b.civilizationId) ? 0 : 1;
+                          return warA - warB || (b.population ?? 0) - (a.population ?? 0);
+                        });
+                      const ownCities = (cities as City[]).filter((c) => c.civilizationId === playerId);
+                      const teamId = teams?.getTeamId(playerId) ?? null;
+                      const plan = teamId !== null
+                        ? gameEngine?.teamCoordinator?.getTeamWarPlan(teamId) ?? null
+                        : null;
+                      const missions = teamId !== null
+                        ? gameEngine?.teamCoordinator?.getTeamDefenseDirectives(teamId) ?? []
+                        : [];
+                      const planCity = plan
+                        ? (cities as City[]).find((c) => c.col === plan.primary.col && c.row === plan.primary.row)
+                        : null;
+
+                      const sendAttack = async () => {
+                        const city = enemyCities.find((c) => c.id === teamAttackCityId);
+                        if (!city) return;
+                        const result = await sendCommand({ type: 'TEAM_COORDINATE_ATTACK', col: city.col, row: city.row });
+                        if (isCommandRejection(result)) {
+                          notify('error', t('gm.diplo.team.attackRefused' as TranslationKey));
+                        } else {
+                          notify('success', t('gm.diplo.team.attackSet' as TranslationKey, { city: city.name }));
+                          setTeamAttackCityId('');
+                        }
+                      };
+                      const sendDefend = async () => {
+                        const city = ownCities.find((c) => c.id === teamDefendCityId);
+                        if (!city) return;
+                        const result = await sendCommand({ type: 'TEAM_DEFEND_CITY', cityId: city.id });
+                        if (isCommandRejection(result)) {
+                          notify('error', t('gm.diplo.team.defendRefused' as TranslationKey));
+                        } else {
+                          notify('success', t('gm.diplo.team.defendSet' as TranslationKey, { city: city.name }));
+                          setTeamDefendCityId('');
+                        }
+                      };
+
+                      return (
+                        <>
+                          <div className="diplomacy-team-lock" role="note">
+                            <div className="diplomacy-team-lock__title">
+                              <span
+                                className="diplomacy-team-badge"
+                                style={{ background: teamColor(selectedTeamId), borderColor: teamColor(selectedTeamId) }}
+                              >
+                                {teamName(selectedTeamId)}
+                              </span>
+                              {t('gm.diplo.team.lockedTitle' as TranslationKey)}
+                            </div>
+                            <p className="diplomacy-team-lock__body">
+                              {t('gm.diplo.team.lockedBody' as TranslationKey)}
+                            </p>
+                            <p className="diplomacy-team-lock__hint">
+                              {t('gm.diplo.team.lockedHint' as TranslationKey)}
+                            </p>
+                          </div>
+
+                          <section className="gm-section">
+                            <div className="gm-section-title">{t('gm.diplo.team.commandsTitle' as TranslationKey)}</div>
+                            <div className="gm-kv">
+                              {t('gm.diplo.team.coordinateLabel' as TranslationKey)}
+                              <Form.Select
+                                size="sm"
+                                value={teamAttackCityId}
+                                onChange={(e) => setTeamAttackCityId(e.target.value)}
+                              >
+                                <option value="">{t('gm.diplo.team.pickCity' as TranslationKey)}</option>
+                                {enemyCities.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name} ({c.population ?? 1})
+                                    {dm?.isAtWar(playerId, c.civilizationId) ? ' ⚔' : ''}
+                                  </option>
+                                ))}
+                              </Form.Select>
+                              <Button
+                                size="sm"
+                                variant="outline-danger"
+                                disabled={!teamAttackCityId}
+                                onClick={sendAttack}
+                              >
+                                {t('gm.diplo.team.sendAttack' as TranslationKey)}
+                              </Button>
+                            </div>
+                            <div className="gm-kv">
+                              {t('gm.diplo.team.defendLabel' as TranslationKey)}
+                              <Form.Select
+                                size="sm"
+                                value={teamDefendCityId}
+                                onChange={(e) => setTeamDefendCityId(e.target.value)}
+                              >
+                                <option value="">{t('gm.diplo.team.pickCity' as TranslationKey)}</option>
+                                {ownCities.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name} ({c.population ?? 1})
+                                  </option>
+                                ))}
+                              </Form.Select>
+                              <Button
+                                size="sm"
+                                variant="outline-success"
+                                disabled={!teamDefendCityId}
+                                onClick={sendDefend}
+                              >
+                                {t('gm.diplo.team.sendDefend' as TranslationKey)}
+                              </Button>
+                            </div>
+                          </section>
+
+                          <section className="gm-section">
+                            <div className="gm-section-title">{t('gm.diplo.team.planTitle' as TranslationKey)}</div>
+                            {plan ? (
+                              <div className="gm-kv">
+                                {t('gm.diplo.team.planPrimary' as TranslationKey)}{' '}
+                                <b style={{ color: '#ef5350' }}>
+                                  {planCity?.name ?? `${plan.primary.col},${plan.primary.row}`}
+                                </b>
+                              </div>
+                            ) : (
+                              <div className="gm-kv">{t('gm.diplo.team.planNone' as TranslationKey)}</div>
+                            )}
+                            {missions.map((m) => (
+                              <div key={m.cityId} className="gm-kv">
+                                🛡 {t('gm.diplo.team.planMission' as TranslationKey, {
+                                  city: (cities as City[]).find((c) => c.id === m.cityId)?.name ?? m.cityId,
+                                })}
+                                {m.requested ? ` ${t('gm.diplo.team.planRequested' as TranslationKey)}` : ''}
+                              </div>
+                            ))}
+                          </section>
+                        </>
+                      );
+                    })()}
 
                     {/* Military strength comparison */}
                     {(() => {
@@ -1808,30 +1939,64 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     })()}
 
                     {/* AI Diplomacy Observations — when the player has embassies with
-                        both civs in a pair, they can observe AI-to-AI events between them. */}
+                        both civs in a pair, they can observe AI-to-AI events between them.
+                        The Team chip switches to the player's own team's internal acts
+                        (knowledge gifts, gold transfers, …) — teammates always see those. */}
                     {(() => {
                       if (selectedDiploCiv === null || !dm) return null;
                       const hasEmbassyWithSelected = dm.hasEmbassy(playerId, selectedDiploCiv);
-                      if (!hasEmbassyWithSelected) return null;
+                      if (!hasEmbassyWithSelected && !(teamGame && teamFeedOnly)) return null;
                       // Find all other civs where the player also has an embassy
                       const embassyPartners = otherCivs.filter(
                         (c: Civilization) => c.id !== selectedDiploCiv && dm.hasEmbassy(playerId, c.id),
                       );
-                      if (embassyPartners.length === 0) return null;
-                      // Filter event log for AI-to-AI events between the selected civ and any partner
+                      if (embassyPartners.length === 0 && !(teamGame && teamFeedOnly)) return null;
                       const allEvents = dm.getEventLog() ?? [];
-                      const observations = allEvents.filter((e) => {
-                        const involvesSelected = e.fromCivId === selectedDiploCiv || e.toCivId === selectedDiploCiv;
-                        const involvesPartner = embassyPartners.some(
-                          (p: Civilization) => e.fromCivId === p.id || e.toCivId === p.id,
-                        );
-                        const isAItoAI = e.fromCivId !== playerId && e.toCivId !== playerId;
-                        return involvesSelected && involvesPartner && isAItoAI;
-                      }).slice(0, 8);
-                      if (observations.length === 0) return null;
+                      const observations = (() => {
+                        if (teamGame && teamFeedOnly) {
+                          const teamIds = teams?.getTeamMembersOf(playerId) ?? [playerId];
+                          return allEvents.filter((e) =>
+                            teamIds.includes(e.fromCivId)
+                            && teamIds.includes(e.toCivId)
+                            && e.fromCivId !== e.toCivId,
+                          ).slice(0, 12);
+                        }
+                        // AI-to-AI events between the selected civ and any partner
+                        return allEvents.filter((e) => {
+                          const involvesSelected = e.fromCivId === selectedDiploCiv || e.toCivId === selectedDiploCiv;
+                          const involvesPartner = embassyPartners.some(
+                            (p: Civilization) => e.fromCivId === p.id || e.toCivId === p.id,
+                          );
+                          const isAItoAI = e.fromCivId !== playerId && e.toCivId !== playerId;
+                          return involvesSelected && involvesPartner && isAItoAI;
+                        }).slice(0, 8);
+                      })();
+                      if (observations.length === 0 && !(teamGame && teamFeedOnly)) return null;
                       return (
                         <section className="gm-section">
-                          <div className="gm-section-title">{t('gm.diplo.observations.title' as TranslationKey)}</div>
+                          <div className="gm-section-title">
+                            {t('gm.diplo.observations.title' as TranslationKey)}
+                            {teamGame && (
+                              <button
+                                type="button"
+                                className="gm-chip"
+                                aria-pressed={teamFeedOnly}
+                                style={{
+                                  marginLeft: '8px',
+                                  padding: '1px 8px',
+                                  fontSize: '0.75em',
+                                  borderRadius: '10px',
+                                  cursor: 'pointer',
+                                  border: '1px solid #555',
+                                  background: teamFeedOnly ? '#1976d2' : 'transparent',
+                                  color: teamFeedOnly ? '#fff' : '#aaa',
+                                }}
+                                onClick={() => setTeamFeedOnly((v) => !v)}
+                              >
+                                {t('gm.diplo.observations.team' as TranslationKey)}
+                              </button>
+                            )}
+                          </div>
                           <div className="diplomacy-log">
                             {observations.map((e, i: number) => {
                               const from = civilizations[e.fromCivId]?.name ?? `Civ ${e.fromCivId}`;

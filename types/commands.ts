@@ -56,7 +56,9 @@ export type Command =
       /** Append to the build queue instead of replacing the current item. */
       queue?: boolean;
     }
-  | { type: 'FOUND_CITY'; settlerId: string };
+  | { type: 'FOUND_CITY'; settlerId: string }
+  | { type: 'TEAM_COORDINATE_ATTACK'; col: number; row: number }
+  | { type: 'TEAM_DEFEND_CITY'; cityId: string };
 
 /** Why the authority refused a command. Exhaustive, machine-readable. */
 type CommandRejectionReason =
@@ -87,4 +89,6 @@ export type CommandResult =
   | { ok: true; command: 'SET_RATES' }
   | { ok: true; command: 'SET_CITY_PRODUCTION'; production: ProductionCommandOutcome }
   | { ok: true; command: 'FOUND_CITY'; founded: boolean }
+  | { ok: true; command: 'TEAM_COORDINATE_ATTACK' }
+  | { ok: true; command: 'TEAM_DEFEND_CITY' }
   | CommandRejection;

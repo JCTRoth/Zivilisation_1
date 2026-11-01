@@ -91,7 +91,12 @@ export interface TeamDefenseDirective {
   helperCivId: number;
   /** Threat score from the owner's perspective (diagnostics / UI). */
   netThreat: number;
+  /** True when the OWNER asked for this help explicitly (player request). */
+  requested?: boolean;
 }
+
+/** How long a player defense request stays active without renewal. */
+const PLAYER_DEFENSE_REQUEST_ROUNDS = 10;
 
 /** `"col,row"` cell key. */
 function cellKey(col: number, row: number): string {
@@ -108,6 +113,10 @@ export class TeamCoordinator {
   private warPlanByTeam = new Map<number, TeamWarPlan>();
   /** teamId -> threatened teammate cities and who helps (recomputed). */
   private defenseByTeam = new Map<number, TeamDefenseDirective[]>();
+  /** Player-pinned team primary target ("Coordinate attack on city X"). */
+  private pinnedPrimaryByTeam = new Map<number, { col: number; row: number; civId: number }>();
+  /** Player defense requests ("Defend city X") by city id, round-stamped. */
+  private defenseRequests = new Map<string, { ownerCivId: number; col: number; row: number; round: number }>();
   /** Round stamp of the last {@link processRound} call. */
   private currentRound = 0;
 
@@ -126,6 +135,8 @@ export class TeamCoordinator {
     this.poiByTeam.clear();
     this.warPlanByTeam.clear();
     this.defenseByTeam.clear();
+    this.pinnedPrimaryByTeam.clear();
+    this.defenseRequests.clear();
     this.currentRound = 0;
   }
 
@@ -314,6 +325,48 @@ export class TeamCoordinator {
   }
 
   /**
+   * Player directive ("Coordinate attack on city X"): pin the team's primary
+   * target regardless of what the scoring would pick. The city must be an
+   * enemy city of the acting civ's team — an illegal pin is refused, never
+   * silently applied. Returns whether the directive was accepted.
+   */
+  pinPrimaryTarget(civId: number, col: number, row: number): boolean {
+    if (!this.enabled) return false;
+    const teamId = this.gameEngine.teamManager?.getTeamId(civId) ?? null;
+    if (teamId === null) return false;
+    const city = this.gameEngine.getCityAt?.(col, row);
+    if (!city) return false;
+    // Own and teammate cities are not targets; the owner must be a current
+    // enemy of the team (checked through the acting civ's own war set, which
+    // for a team-wide war is every member's war set).
+    if (this.gameEngine.teamManager?.getTeamMembers(teamId)?.includes(city.civilizationId)) return false;
+    const diplomacy = this.gameEngine.diplomacyManager;
+    if (diplomacy && !diplomacy.getEnemies(civId).includes(city.civilizationId)) return false;
+    this.pinnedPrimaryByTeam.set(teamId, { col, row, civId: city.civilizationId });
+    return true;
+  }
+
+  /**
+   * Player directive ("Defend city X"): ask the teammates to defend one of
+   * the actor's own cities explicitly. Unlike the computed directives this
+   * ignores the threat arithmetic — the player decides — but it still
+   * assigns a land-reachable helper and expires after
+   * {@link PLAYER_DEFENSE_REQUEST_ROUNDS} rounds.
+   */
+  requestDefense(civId: number, cityId: string): boolean {
+    if (!this.enabled) return false;
+    const city = (this.gameEngine.cities ?? []).find((c) => c.id === cityId);
+    if (!city || city.civilizationId !== civId) return false;
+    const teamId = this.gameEngine.teamManager?.getTeamId(civId) ?? null;
+    if (teamId === null) return false;
+    if ((this.gameEngine.teamManager?.getTeamMembers(teamId) ?? []).length < 2) return false;
+    this.defenseRequests.set(cityId, {
+      ownerCivId: civId, col: city.col, row: city.row, round: this.currentRound,
+    });
+    return true;
+  }
+
+  /**
    * Recompute every team's joint primary target.
    *
    * A primary is an enemy city the team *knows* (explored by at least one
@@ -377,7 +430,32 @@ export class TeamCoordinator {
         }
       }
 
-      // 4) Keep a still-valid plan; otherwise adopt the best candidate.
+      // 4) A player-pinned primary ("Coordinate attack on city X") outranks
+      //    everything while it stays valid — the player is the team's
+      //    commander. A dead pin (captured, defected, no longer an enemy)
+      //    retires itself and the computed pick takes over.
+      const pinned = this.pinnedPrimaryByTeam.get(teamId);
+      if (pinned) {
+        const city = this.gameEngine.getCityAt?.(pinned.col, pinned.row);
+        const pinValid = !!city
+          && city.civilizationId === pinned.civId
+          && enemies.has(city.civilizationId)
+          && this.isExploredByTeam(members, city.col, city.row);
+        if (pinValid) {
+          const previous = this.warPlanByTeam.get(teamId);
+          const sameTarget = previous != null
+            && previous.primary.col === pinned.col
+            && previous.primary.row === pinned.row;
+          next.set(teamId, {
+            primary: { ...pinned },
+            assignedRound: sameTarget ? previous.assignedRound : this.currentRound,
+          });
+          continue;
+        }
+        this.pinnedPrimaryByTeam.delete(teamId);
+      }
+
+      // 5) Keep a still-valid plan; otherwise adopt the best candidate.
       const previous = this.warPlanByTeam.get(teamId);
       if (previous && this.isPlanStillValid(previous, members, enemies)) {
         next.set(teamId, previous);
@@ -521,18 +599,7 @@ export class TeamCoordinator {
           // Helper: nearest member (by its closest unit) that is not the
           // owner and stands on the city's landmass — it must be able to
           // walk there or the job would churn against the water.
-          const targetLandmass = this.gameEngine.getLandmassId?.(city.col, city.row) ?? -1;
-          let helperCivId: number | null = null;
-          let bestDistance = Infinity;
-          for (const member of members) {
-            if (member === ownerCivId) continue;
-            if (!this.memberOnLandmass(member, targetLandmass)) continue;
-            const distance = this.distanceToTeamForce([member], city.col, city.row);
-            if (distance < bestDistance) {
-              bestDistance = distance;
-              helperCivId = member;
-            }
-          }
+          const helperCivId = this.assignHelperMember(members, ownerCivId, city.col, city.row);
           if (helperCivId === null) continue; // nobody can reach it this round
 
           directives.push({
@@ -545,8 +612,61 @@ export class TeamCoordinator {
           });
         }
       }
+
+      // Player-directed defense requests ("Defend city X") override the
+      // threat arithmetic: the player asked, so the city gets a helper even
+      // when the numbers say it could hold. Expired requests and dead cities
+      // drop out here; an auto-assigned directive wins over a duplicate
+      // request for the same city.
+      for (const [cityId, request] of this.defenseRequests) {
+        if (!members.includes(request.ownerCivId)) continue; // another team's request
+        if (this.currentRound - request.round > PLAYER_DEFENSE_REQUEST_ROUNDS) {
+          this.defenseRequests.delete(cityId);
+          continue;
+        }
+        const city = (this.gameEngine.cities ?? []).find((c) => c.id === cityId);
+        if (!city || city.civilizationId !== request.ownerCivId) {
+          this.defenseRequests.delete(cityId);
+          continue;
+        }
+        if (directives.some((d) => d.cityId === cityId)) continue;
+        const helperCivId = this.assignHelperMember(members, request.ownerCivId, request.col, request.row);
+        if (helperCivId === null) continue;
+        directives.push({
+          cityId,
+          col: request.col,
+          row: request.row,
+          ownerCivId: request.ownerCivId,
+          helperCivId,
+          netThreat: 0,
+          requested: true,
+        });
+      }
+
       if (directives.length > 0) this.defenseByTeam.set(teamId, directives);
     }
+  }
+
+  /** The nearest member (not the owner) sharing the city's landmass, or null. */
+  private assignHelperMember(
+    members: number[],
+    ownerCivId: number,
+    col: number,
+    row: number,
+  ): number | null {
+    const targetLandmass = this.gameEngine.getLandmassId?.(col, row) ?? -1;
+    let helperCivId: number | null = null;
+    let bestDistance = Infinity;
+    for (const member of members) {
+      if (member === ownerCivId) continue;
+      if (!this.memberOnLandmass(member, targetLandmass)) continue;
+      const distance = this.distanceToTeamForce([member], col, row);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        helperCivId = member;
+      }
+    }
+    return helperCivId;
   }
 
   /** A sample at a teammate's unit position is a friend, not a threat. */

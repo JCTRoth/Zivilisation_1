@@ -7120,6 +7120,27 @@ const occupiedLandmasses = new Set(
         return { ok: true, command: 'FOUND_CITY', founded };
       }
 
+      case 'TEAM_COORDINATE_ATTACK': {
+        if (!this.civilizations[context.actorId]) return { ok: false, reason: 'CIV_NOT_FOUND' };
+        const accepted = this.teamCoordinator.pinPrimaryTarget(context.actorId, command.col, command.row);
+        if (!accepted) {
+          return { ok: false, reason: 'ILLEGAL', details: 'target is not an enemy city of this team' };
+        }
+        return { ok: true, command: 'TEAM_COORDINATE_ATTACK' };
+      }
+
+      case 'TEAM_DEFEND_CITY': {
+        if (!this.civilizations[context.actorId]) return { ok: false, reason: 'CIV_NOT_FOUND' };
+        const city = this.cities.find((c) => c.id === command.cityId);
+        if (!city) return { ok: false, reason: 'CITY_NOT_FOUND' };
+        if (city.civilizationId !== context.actorId) return { ok: false, reason: 'NOT_YOUR_CITY' };
+        const accepted = this.teamCoordinator.requestDefense(context.actorId, command.cityId);
+        if (!accepted) {
+          return { ok: false, reason: 'ILLEGAL', details: 'not a team game or no team to call' };
+        }
+        return { ok: true, command: 'TEAM_DEFEND_CITY' };
+      }
+
       default:
         return { ok: false, reason: 'UNKNOWN_COMMAND' };
     }

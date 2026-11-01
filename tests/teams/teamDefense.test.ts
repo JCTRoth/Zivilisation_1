@@ -216,3 +216,60 @@ describe('TeamCoordinator — mutual defense directives', () => {
     expect(world.coordinator.getTeamDefenseDirectives(0)).toHaveLength(0);
   });
 });
+
+describe('player directives — requestDefense ("Defend city X")', () => {
+  const world = () =>
+    makeDefenseWorld({
+      assignments: [0, 0, 1],
+      cities: [city('home', 10, 10, 0), city('far', 3, 17, 0)],
+      units: [unit('h1', 14, 10, 1, { attack: 2 })],
+    });
+
+  it('helps a perfectly safe city when the player asks for it', () => {
+    const w = world();
+    w.coordinator.processRound(10);
+    // No enemies anywhere → no computed directive.
+    expect(w.coordinator.getTeamDefenseDirectives(0)).toHaveLength(0);
+
+    // The player orders the team to defend the far city anyway.
+    expect(w.coordinator.requestDefense(0, 'far')).toBe(true);
+    w.coordinator.processRound(11);
+    const directives = w.coordinator.getTeamDefenseDirectives(0);
+    expect(directives).toHaveLength(1);
+    expect(directives[0]).toMatchObject({
+      cityId: 'far', ownerCivId: 0, helperCivId: 1, requested: true, netThreat: 0,
+    });
+    expect(w.coordinator.defenseDirectivesFor(1)).toHaveLength(1);
+  });
+
+  it('refuses requests for cities the actor does not own', () => {
+    const w = makeDefenseWorld({
+      assignments: [0, 0, 1],
+      cities: [city('other', 10, 10, 2)],
+      units: [unit('h1', 14, 10, 1)],
+    });
+    w.coordinator.processRound(10);
+    expect(w.coordinator.requestDefense(0, 'other')).toBe(false);
+    expect(w.coordinator.requestDefense(0, 'missing')).toBe(false);
+  });
+
+  it('requests expire after ten rounds', () => {
+    const w = world();
+    w.coordinator.processRound(10);
+    expect(w.coordinator.requestDefense(0, 'far')).toBe(true);
+    w.coordinator.processRound(20); // age 10 → still active
+    expect(w.coordinator.defenseDirectivesFor(1)).toHaveLength(1);
+    w.coordinator.processRound(21); // age 11 → expired
+    expect(w.coordinator.defenseDirectivesFor(1)).toHaveLength(0);
+  });
+
+  it('is impossible in free-for-all games', () => {
+    const ffa = makeDefenseWorld({
+      assignments: undefined as unknown as number[],
+      cities: [city('home', 10, 10, 0)],
+      units: [unit('h1', 14, 10, 1)],
+    });
+    ffa.coordinator.processRound(10);
+    expect(ffa.coordinator.requestDefense(0, 'home')).toBe(false);
+  });
+});

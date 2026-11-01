@@ -161,6 +161,61 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide, gameEng
 
   const playerRows = all.find(d => d.civId === currentPlayer?.id)?.rows;
 
+  // ── Teams tab data (fixed alliances only) ──────────────────────────────
+  const teamsEnabled = gameEngine?.teamManager?.enabled === true;
+  const teamRows = useMemo(() => {
+    if (!teamsEnabled || !gameEngine) return [];
+    return gameEngine.teamManager.getTeamIds().map((teamId) => {
+      const memberIds = gameEngine.teamManager.getTeamMembers(teamId);
+      const members = memberIds.map((id) => civilizations[id]).filter((c) => !!c);
+      const citiesOf = (civId: number) => cities.filter((c) => c.civilizationId === civId);
+      // Exploration: union of the members' explored arrays — vision is
+      // shared, so this is the team's true knowledge of the map.
+      let exploredPct = 0;
+      const width = gameEngine.map?.width;
+      const height = gameEngine.map?.height;
+      if (width && height) {
+        const union = new Uint8Array(width * height);
+        for (const id of memberIds) {
+          const source = gameEngine.playerStorage?.get(id)?.explored;
+          if (!source) continue;
+          const limit = Math.min(source.length, union.length);
+          for (let i = 0; i < limit; i++) if (source[i]) union[i] = 1;
+        }
+        let known = 0;
+        for (let i = 0; i < union.length; i++) if (union[i]) known++;
+        exploredPct = Math.round((known / union.length) * 100);
+      }
+      const techCounts = members.map((c) => c.technologies?.length ?? 0);
+      const plan = gameEngine.teamCoordinator?.getTeamWarPlan(teamId) ?? null;
+      const missions = gameEngine.teamCoordinator?.getTeamDefenseDirectives(teamId) ?? [];
+      const memberRows = members.map((c) => {
+        const own = citiesOf(c.id);
+        return {
+          civ: c,
+          cities: own.length,
+          population: own.reduce((sum, city) => sum + (city.population ?? 0), 0),
+          techs: c.technologies?.length ?? 0,
+          gold: c.resources?.gold ?? 0,
+          score: c.score ?? 0,
+        };
+      });
+      return {
+        teamId,
+        members: memberRows,
+        score: memberRows.reduce((sum, m) => sum + m.score, 0),
+        cityCount: memberRows.reduce((sum, m) => sum + m.cities, 0),
+        population: memberRows.reduce((sum, m) => sum + m.population, 0),
+        techs: memberRows.reduce((sum, m) => sum + m.techs, 0),
+        gold: memberRows.reduce((sum, m) => sum + m.gold, 0),
+        techSpread: techCounts.length > 1 ? Math.max(...techCounts) - Math.min(...techCounts) : 0,
+        exploredPct,
+        planPrimary: plan ? plan.primary : null,
+        missionCount: missions.length,
+      };
+    });
+  }, [teamsEnabled, gameEngine, civilizations, cities]);
+
   // ── Cities tab data ────────────────────────────────────────────────────
   const cityRows = useMemo<CityStatRow[]>(() => {
     if (!currentPlayer) return [];
@@ -421,6 +476,70 @@ const StatisticsModal: React.FC<StatisticsModalProps> = ({ show, onHide, gameEng
               </div>
             )}
           </Tab>
+
+          {/* ── Teams — fixed-alliance standings, knowledge, war plan ─── */}
+          {teamsEnabled && (
+            <Tab eventKey="teams" title={t('stats.tabTeams' as TranslationKey)}>
+              <div className="gm-section gm-section--flush">
+                <div className="gm-section-title">{t('stats.teamsHint' as TranslationKey)}</div>
+                {teamRows.map((row) => (
+                  <div
+                    key={row.teamId}
+                    style={{
+                      borderLeft: `3px solid ${teamColor(row.teamId)}`,
+                      paddingLeft: '8px',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    <div className="gm-kv">
+                      <b style={{ color: teamColor(row.teamId) }}>{teamName(row.teamId)}</b>{' '}
+                      {t('stats.teamsTotals' as TranslationKey, {
+                        score: row.score,
+                        cities: row.cityCount,
+                        pop: row.population,
+                        techs: row.techs,
+                        gold: row.gold,
+                      })}
+                    </div>
+                    {row.members.map((m) => (
+                      <div key={m.civ.id} className="gm-kv" style={{ fontSize: '0.9em' }}>
+                        {m.civ.name}
+                        {m.civ.id === currentPlayer?.id ? ` (${t('gm.diplo.team.you' as TranslationKey)})` : ''}
+                        {m.civ.isAlive === false ? ` (${t('gm.diplo.team.out' as TranslationKey)})` : ''}{' '}
+                        — {t('stats.teamsMember' as TranslationKey, {
+                          score: m.score,
+                          cities: m.cities,
+                          pop: m.population,
+                          techs: m.techs,
+                          gold: m.gold,
+                        })}
+                      </div>
+                    ))}
+                    <div className="gm-kv">
+                      {t('stats.teamsParity' as TranslationKey, { spread: row.techSpread })}
+                    </div>
+                    <div className="gm-kv">
+                      {t('stats.teamsExplored' as TranslationKey, { pct: row.exploredPct })}
+                    </div>
+                    <div className="gm-kv">
+                      {row.planPrimary
+                        ? t('stats.teamsPlan' as TranslationKey, {
+                            city: cities.find(
+                              (c) => c.col === row.planPrimary!.col && c.row === row.planPrimary!.row,
+                            )?.name ?? `${row.planPrimary.col},${row.planPrimary.row}`,
+                          })
+                        : t('stats.teamsNoPlan' as TranslationKey)}
+                    </div>
+                    {row.missionCount > 0 && (
+                      <div className="gm-kv">
+                        {t('stats.teamsMissions' as TranslationKey, { count: row.missionCount })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Tab>
+          )}
 
           {/* NOTE: the Wonders tab used to live here. It now has its own screen
               in the World menu (World → Wonders), so Statistics is only about

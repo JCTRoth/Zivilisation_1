@@ -73,7 +73,7 @@ function makeWarWorld(options: WarWorldOptions): WarWorld {
     playerStorage.set(civId, { explored, turnData: options.turnData?.[civId] ?? {} });
   }
   // Teammates with memory but no explored columns still need storage.
-  for (const civId of options.assignments) {
+  for (const civId of options.assignments ?? []) {
     if (!playerStorage.has(civId)) {
       playerStorage.set(civId, { explored: new Array<boolean>(WIDTH * HEIGHT).fill(false), turnData: options.turnData?.[civId] ?? {} });
     }
@@ -106,8 +106,10 @@ function makeWarWorld(options: WarWorldOptions): WarWorld {
   };
 
   engine.teamManager = new TeamManager(engine);
-  engine.teamManager.configure(teamSettings(options.assignments), options.assignments.length);
-  engine.teamManager.applyToCivilizations();
+  if (options.assignments) {
+    engine.teamManager.configure(teamSettings(options.assignments), options.assignments.length);
+    engine.teamManager.applyToCivilizations();
+  }
   engine.teamCoordinator = new TeamCoordinator(engine);
 
   return { engine, coordinator: engine.teamCoordinator, cities };
@@ -310,5 +312,78 @@ describe('planBulkAttack — team focus bonus', () => {
       { col: 16, row: 16, civId: 2 },
     );
     expect(plan).toBeNull();
+  });
+});
+
+describe('player directives — pinPrimaryTarget ("Coordinate attack")', () => {
+  const world = () =>
+    makeWarWorld({
+      assignments: [0, 0, 1],
+      enemies: { 0: [2], 1: [2] },
+      exploredColumns: { 0: 17, 1: 17 },
+      cities: [
+        city('near', 15, 10, 2, 2),
+        city('far', 16, 1, 2, 4),
+      ],
+      units: [scout('s1', 14, 10, 0), scout('s2', 14, 11, 1)],
+    });
+
+  it('pins the player’s choice over the computed pick', () => {
+    const w = world();
+    w.coordinator.processRound(5);
+    // Without a pin the near city wins on proximity.
+    expect(w.coordinator.getTeamWarPlan(0)?.primary.col).toBe(15);
+
+    // The player orders the attack on the far city — the pin outranks scoring.
+    expect(w.coordinator.pinPrimaryTarget(0, 16, 1)).toBe(true);
+    w.coordinator.processRound(6);
+    expect(w.coordinator.getTeamWarPlan(0)?.primary).toEqual({ col: 16, row: 1, civId: 2 });
+    // The pin is a team directive: every member converges on it.
+    expect(w.coordinator.teamFocusFor(1)).toEqual({ col: 16, row: 1, civId: 2 });
+  });
+
+  it('refuses illegal pins: own cities, teammate cities, peace, empty ground', () => {
+    const w = makeWarWorld({
+      assignments: [0, 0, 1],
+      enemies: { 0: [2], 1: [2] },
+      exploredColumns: { 0: 17, 1: 17 },
+      cities: [
+        city('own', 5, 5, 0, 3),
+        city('ally', 6, 6, 1, 3),
+        city('peaceful', 9, 9, 3, 3), // civ 3 is nobody's enemy
+      ],
+      units: [scout('s1', 14, 10, 0)],
+    });
+    w.coordinator.processRound(5);
+    expect(w.coordinator.pinPrimaryTarget(0, 5, 5)).toBe(false); // own city
+    expect(w.coordinator.pinPrimaryTarget(0, 6, 6)).toBe(false); // teammate
+    expect(w.coordinator.pinPrimaryTarget(0, 9, 9)).toBe(false); // not at war
+    expect(w.coordinator.pinPrimaryTarget(0, 12, 12)).toBe(false); // no city
+  });
+
+  it('a dead pin retires and the computed pick takes over', () => {
+    const w = world();
+    w.coordinator.processRound(5);
+    expect(w.coordinator.pinPrimaryTarget(0, 16, 1)).toBe(true);
+    w.coordinator.processRound(6);
+    expect(w.coordinator.getTeamWarPlan(0)?.primary.col).toBe(16);
+
+    // The pinned city is captured by the team → pin retires itself.
+    const pinned = w.cities.find((c) => c.id === 'far')!;
+    pinned.civilizationId = 0;
+    w.coordinator.processRound(7);
+    expect(w.coordinator.getTeamWarPlan(0)?.primary.col).toBe(15);
+  });
+
+  it('pinning is impossible in free-for-all games', () => {
+    const ffa = makeWarWorld({
+      assignments: undefined as unknown as number[],
+      enemies: { 0: [2] },
+      exploredColumns: { 0: 17 },
+      cities: [city('far', 16, 1, 2, 4)],
+      units: [scout('s1', 14, 10, 0)],
+    });
+    ffa.coordinator.processRound(5);
+    expect(ffa.coordinator.pinPrimaryTarget(0, 16, 1)).toBe(false);
   });
 });
