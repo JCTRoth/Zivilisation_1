@@ -24,8 +24,6 @@ export interface TeamValidationResult {
   teamCount: number;
 }
 
-const EMPTY_VALIDATION: TeamValidationResult = { ok: true, errors: [], teamCount: 0 };
-
 /**
  * Validate a setup-time team assignment without an engine. Shared by
  * `TeamManager.configure()` and the setup screen, so the UI cannot offer a
@@ -220,5 +218,3 @@ export class TeamManager {
     return (this.gameEngine.cities ?? []).some((city) => city.civilizationId === civId);
   }
 }
-
-export { EMPTY_VALIDATION };
