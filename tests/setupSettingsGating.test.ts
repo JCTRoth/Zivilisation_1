@@ -14,7 +14,8 @@
  *                         AEGEAN_CAMPAIGN) — terrain comes from a JSON
  *                         file; only river COUNT varies.
  *
- * Dev Mode is the same story: AI-vs-AI forces it on (`isAutoScenario`), so the
+ * Dev Mode is the same story: AI-vs-AI forces it on (`isAutoScenario`), and
+ * so does a lobby with NO human seat (a spectator game either way), so the
  * checkbox is a switch that cannot be switched.
  */
 import { describe, it, expect } from 'vitest';
@@ -109,8 +110,15 @@ describe('the fixed maps really do ignore the sliders', () => {
 });
 
 describe('Dev Mode is gated too', () => {
-  it('the dialog hides the checkbox for auto scenarios', () => {
-    expect(SOURCE).toContain('devModeSettingHasEffect(mapType)');
-    expect(SOURCE).toContain('return !isAutoScenario(mapType);');
+  it('the dialog hides the checkbox for auto scenarios and all-AI lobbies', () => {
+    // Gated on BOTH reasons a game plays itself: an auto scenario, or a
+    // lobby where every seat is AI.
+    expect(SOURCE).toContain('devModeSettingHasEffect(mapType, humanSeats.length)');
+    expect(SOURCE).toContain('return !isAutoScenario(mapType) && humanSeatCount > 0;');
+    // …and the all-AI lobby forces Dev Mode on, exactly like an AI-vs-AI map.
+    expect(SOURCE).toContain('if (humanSeats.length === 0) setDevMode(true);');
+    // Any seat — including seat 0 — may be flipped to AI.
+    expect(SOURCE).toContain('const toggleHuman = (slot: number) => {');
+    expect(SOURCE).not.toContain('if (slot === 0) return;');
   });
 });

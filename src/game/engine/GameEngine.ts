@@ -1081,6 +1081,13 @@ export default class GameEngine {
     
     // Set dev mode from settings
     this.devMode = settings.devMode || false;
+    // A game nobody sits at is a game somebody watches: an explicitly empty
+    // `humanPlayerIds` (every seat AI) forces Dev Mode so the whole board is
+    // observable. Unset keeps its historical default of human seat 0, so
+    // older callers, saves and tests are untouched.
+    if (Array.isArray(settings.humanPlayerIds) && settings.humanPlayerIds.length === 0) {
+      this.devMode = true;
+    }
     console.log(`[GameEngine] Developer mode: ${this.devMode ? 'ENABLED' : 'DISABLED'}`);
     
     // Validate playerCivilization index

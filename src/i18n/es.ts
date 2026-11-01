@@ -207,7 +207,7 @@ export const es: PartialTranslationDict = {
   'setup.devNote':
     'Levanta la niebla y revela lo que el mapa esconde. Forzado en los escenarios de ordenador contra ordenador, donde alguien tiene que poder mirar.',
   'setup.devForcedNote':
-    'Ordenador contra ordenador es un juego para espectadores: el modo de desarrollo siempre está activado, no hay nada que elegir.',
+    'Esta partida se juega sola (mapa de IA contra IA o ningún asiento humano): el modo de desarrollo siempre está activado, no hay nada que elegir.',
   'setup.fixedWorldNote':
     'Este mundo es fijo: sus costas están hechas a mano, así que la masa terrestre, la temperatura, el clima y la edad no cambian nada aquí. Solo sus ríos se redibujan, y nada más.',
   'setup.summaryTitle': 'Su configuración',

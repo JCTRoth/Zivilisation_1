@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useGameStore } from "./stores/GameStore";
 import { defaultNationIndexForBrowser } from "@/data/CivilizationByLanguage";
-import { AUTO_END_TURN_OFFER_FLAG, isAutoScenario } from "@/data/GameConstants";
+import { AUTO_END_TURN_OFFER_FLAG, isAutoScenario, isSpectatorGame } from "@/data/GameConstants";
 import {
   shouldOfferAutoEndTurn,
   shouldPromptForResearch,
@@ -175,9 +175,10 @@ function App() {
         console.log("Starting new game with settings:", gameSettings);
         setShowGameSetup(false);
 
-        // Start a named game-log session for every game. AI vs AI sessions get
-        // a dedicated timestamped session id; others share a per-run id.
-        const isAIVsAI = isAutoScenario(gameSettings.mapType);
+        // Start a named game-log session for every game. Spectator games
+        // (AI-vs-AI maps or no human seat) get a dedicated timestamped
+        // session id; others share a per-run id.
+        const isAIVsAI = isSpectatorGame(gameSettings);
         const logSessionId = isAIVsAI
           ? `aivsai-${new Date().toISOString().replace(/[:.]/g, "-")}`
           : `game-${Date.now()}`;
@@ -444,7 +445,7 @@ function App() {
       // can still be made once per session.
     }
     if (
-      isAutoScenario(gameEngine?.gameSettings?.mapType) ||
+      isSpectatorGame(gameEngine?.gameSettings) ||
       !shouldOfferAutoEndTurn({
         isGameStarted: gameState.isGameStarted,
         currentTurn: gameState.currentTurn,
@@ -1564,12 +1565,12 @@ function App() {
         />
       )}
 
-      {/* Self-playing scenarios get a speed bar that stays on screen while the
-          game runs: full speed by default, one uniform step per click, and a
-          play/pause that stops and restarts the duel without hiding the board.
-          Hidden while the pause screen or the result overlay is up, since both
-          offer their own resume/restart. */}
-      {isAutoScenario(gameEngine?.gameSettings?.mapType) &&
+      {/* Self-playing games (AI-vs-AI maps or no human seat) get a speed bar
+          that stays on screen while the game runs: full speed by default, one
+          uniform step per click, and a play/pause that stops and restarts
+          without hiding the board. Hidden while the pause screen or the
+          result overlay is up, since both offer their own resume/restart. */}
+      {isSpectatorGame(gameEngine?.gameSettings) &&
         gameState.isGameStarted &&
         !gameResult &&
         !pauseScreenVisible && (

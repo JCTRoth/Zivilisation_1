@@ -139,6 +139,23 @@ export function isAutoScenario(mapType: string | null | undefined): boolean {
 }
 
 /**
+ * Whether a game plays ITSELF: an auto scenario (AI-vs-AI map) or any setup
+ * with no human seat at all. `humanPlayerIds: undefined` means "not
+ * specified" and stays a normal single-player game (seat 0 defaults to the
+ * human) — only an explicitly EMPTY list says "nobody sits at this board".
+ *
+ * Spectator machinery keys off this instead of the map type alone: Dev Mode,
+ * auto-advance, the speed bar, toast silence and the unattended overview.
+ */
+export function isSpectatorGame(
+    settings: { mapType?: string; humanPlayerIds?: number[] | null } | null | undefined,
+): boolean {
+    if (!settings) return false;
+    if (isAutoScenario(settings.mapType)) return true;
+    return Array.isArray(settings.humanPlayerIds) && settings.humanPlayerIds.length === 0;
+}
+
+/**
  * Spectator speed ladder for self-playing scenarios.
  *
  * Step 0 is full speed — the game runs exactly as fast as the event loop

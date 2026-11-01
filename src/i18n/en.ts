@@ -218,7 +218,7 @@ export const en = {
   'setup.devNote':
     'Lifts the fog and reveals what the map hides. Forced on for the computer-versus-computer scenarios, where somebody has to be able to watch.',
   'setup.devForcedNote':
-    'Computer-versus-computer is a spectator game, so Dev Mode is always on — there is nothing to choose.',
+    'This game plays itself (an AI-vs-AI map or no human seat), so Dev Mode is always on — there is nothing to choose.',
   'setup.fixedWorldNote':
     'This world is fixed: its shores are hand-authored, so land mass, temperature, climate and age change nothing here. Only its rivers are drawn fresh, and nothing else.',
   'setup.summaryTitle': 'Your Setup',

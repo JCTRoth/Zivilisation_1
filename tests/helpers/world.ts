@@ -60,6 +60,12 @@ export interface MakeEngineOptions {
   fixedAlliances?: boolean;
   /** Team index per civilization slot, e.g. [0, 1, 0, 1] for 2v2. */
   teamAssignments?: number[];
+  /**
+   * Which seat slots are human. `[]` = no human player at all (all-AI
+   * spectator game, Dev Mode is forced); unset keeps the historical default
+   * of seat 0.
+   */
+  humanPlayerIds?: number[];
 }
 
 export interface TestWorld {
@@ -84,6 +90,7 @@ export async function makeEngine(options: MakeEngineOptions = {}): Promise<TestW
     startingGold = 100,
     fixedAlliances,
     teamAssignments,
+    humanPlayerIds,
   } = options;
 
   const engine = new GameEngine(null);
@@ -114,6 +121,7 @@ export async function makeEngine(options: MakeEngineOptions = {}): Promise<TestW
     startingGold,
     mapSeed: seed,
     ...(fixedAlliances ? { fixedAlliances: true, teamAssignments } : {}),
+    ...(humanPlayerIds !== undefined ? { humanPlayerIds } : {}),
   });
 
   return world(engine);

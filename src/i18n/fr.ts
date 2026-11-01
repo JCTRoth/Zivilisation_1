@@ -207,7 +207,7 @@ export const fr: PartialTranslationDict = {
   'setup.devNote':
     'Lève le brouillard et révèle ce que la carte cache. Forcé pour les scénarios ordinateur contre ordinateur, où quelqu’un doit pouvoir regarder.',
   'setup.devForcedNote':
-    'Ordinateur contre ordinateur est un jeu de spectateur : le mode développeur est toujours actif, il n’y a rien à choisir.',
+    'Cette partie se joue toute seule (carte IA contre IA ou aucune place humaine) : le mode développeur est toujours actif, il n’y a rien à choisir.',
   'setup.fixedWorldNote':
     'Ce monde est fixe : ses rivages sont dessinés à la main, aussi la masse terrestre, la température, le climat et l’âge n’y changent rien. Seuls ses fleuves sont retracés, et rien d’autre.',
   'setup.summaryTitle': 'Votre configuration',

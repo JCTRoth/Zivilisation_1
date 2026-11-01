@@ -208,7 +208,7 @@ export const de: PartialTranslationDict = {
   'setup.devNote':
     'Hebt den Nebel und zeigt, was die Karte verbirgt. Für die Computer-gegen-Computer-Szenarien erzwungen, wo jemand zusehen können muss.',
   'setup.devForcedNote':
-    'Computer gegen Computer ist ein Zuschauerspiel — der Entwicklermodus ist immer an, es gibt nichts zu wählen.',
+    'Dieses Spiel spielt sich selbst (KI-gegen-KI-Karte oder kein menschlicher Platz) — der Entwicklermodus ist immer an, es gibt nichts zu wählen.',
   'setup.fixedWorldNote':
     'Diese Welt ist festgelegt: ihre Küsten sind von Hand gesetzt, daher verändern Landmasse, Temperatur, Klima und Alter hier nichts. Nur die Flüsse werden neu gezeichnet, und sonst nichts.',
   'setup.summaryTitle': 'Ihre Einrichtung',

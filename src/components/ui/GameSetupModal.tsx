@@ -226,11 +226,12 @@ function worldShapingSettingsHaveEffect(mapType: string): boolean {
 
 /**
  * Whether the Dev-Mode toggle has an effect. AI-vs-AI maps force it on (an
- * unwatchable spectator game is not a game), so the checkbox is a switch that
- * cannot be switched.
+ * unwatchable spectator game is not a game), and so does a setup with no
+ * human seat — in both cases the checkbox is a switch that cannot be
+ * switched. `humanSeatCount` is the live count from the lobby.
  */
-function devModeSettingHasEffect(mapType: string): boolean {
-  return !isAutoScenario(mapType);
+function devModeSettingHasEffect(mapType: string, humanSeatCount: number): boolean {
+  return !isAutoScenario(mapType) && humanSeatCount > 0;
 }
 
 /**
@@ -691,6 +692,14 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   // ── Derived ─────────────────────────────────────────────────────────
   const humanSeats = players.map((p, i) => (p.isHuman ? i : -1)).filter((i) => i >= 0);
   const derivedGameMode: 'single' | 'hotseat' = humanSeats.length > 1 ? 'hotseat' : 'single';
+
+  // A game with no human seat is a spectator game: Dev Mode is FORCED on (the
+  // whole map must be observable, and nothing waits for a player), exactly
+  // like an AI-vs-AI scenario. Mirrored in GameEngine.initialize so every
+  // caller gets the same rule.
+  useEffect(() => {
+    if (humanSeats.length === 0) setDevMode(true);
+  }, [humanSeats]);
   const teamAssignments = players.map((p) => p.team);
   const teamValidation = validateTeamAssignments(
     teamAssignments.slice(0, numCivilizations),
@@ -718,12 +727,12 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   };
 
   /**
-   * Flip a seat between Human and AI. Seat 0 is "you" — always in the chair so
-   * the step-1 banner, the summary and the fog of war agree on who the player
-   * is. Any other seat may be a second human (hotseat) or an AI.
+   * Flip a seat between Human and AI. ANY seat may be flipped — including
+   * seat 0 ("you"): a game with no human seat at all is a spectator game the
+   * setup may start (Dev Mode is then forced on, and the engine plays every
+   * civ). With humans present, seat 0 stays the primary perspective.
    */
   const toggleHuman = (slot: number) => {
-    if (slot === 0) return;
     setPlayers((prev) => prev.map((p, i) => (i === slot ? { ...p, isHuman: !p.isHuman } : p)));
   };
 
@@ -1177,13 +1186,14 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                           {/* Player + Human/AI */}
                           <span className="setup-lobby__cell setup-lobby__player" role="cell">
                             <span className="setup-lobby__seat">
-                              {slot === 0 ? t('setup.lobby.you') : t('setup.lobby.playerN', { n: slot + 1 })}
+                              {slot === 0 && human
+                                ? t('setup.lobby.you')
+                                : t('setup.lobby.playerN', { n: slot + 1 })}
                             </span>
                             <button
                               type="button"
                               className={`setup-lobby__type ${human ? 'is-human' : 'is-ai'}`}
                               onClick={() => toggleHuman(slot)}
-                              disabled={slot === 0}
                               title={t('setup.lobby.typeHint')}
                             >
                               {human ? t('setup.lobby.human') : t('setup.lobby.ai')}
@@ -1435,7 +1445,7 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
                   </div>
                 )}
 
-                {devModeSettingHasEffect(mapType) ? (
+                {devModeSettingHasEffect(mapType, humanSeats.length) ? (
                   <div className="gm-section setup-dev">
                     <div className="gm-section-title">{t('setup.devSection')}</div>
                     <Form.Check
