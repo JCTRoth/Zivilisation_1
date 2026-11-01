@@ -13,7 +13,7 @@ import '../../styles/gameSetupModal.css';
 import { isAutoScenario } from '@/data/GameConstants';
 import { validateTeamAssignments } from '@/game/engine/TeamManager';
 import { TEAM_COLORS } from '@/data/TeamConstants';
-import { staticMapForMapType } from '@/data/maps';
+import { SIZE_LOCKED_MAP_TYPES, staticMapForMapType } from '@/data/maps';
 import {
   MAP_DIM_MAX_HEIGHT,
   MAP_DIM_MAX_WIDTH,
@@ -100,17 +100,12 @@ const MAP_TYPE_CATEGORIES: MapTypeCategory[] = [
 ];
 
 /**
- * Fixed (hand-authored) maps: identical shores every game, so the map-size
- * tool is hidden for them and they carry the 🗺️ badge. Keep in sync with the
- * engine's `staticMapType` list in `GameEngine` — a map the engine generates
- * must never wear the badge.
+ * Fixed (hand-authored or size-pinned) maps: identical shores every game, so
+ * the map-size tool is hidden for them and they carry the 🗺️ badge. Shared
+ * with the engine's own size lock (`SIZE_LOCKED_MAP_TYPES` in data/maps) —
+ * one list, both sides.
  */
-const FIXED_MAP_TYPES: ReadonlySet<string> = new Set([
-  'EARTH',
-  'NAVAL_CLOSEUP',
-  'AI_VS_AI_NAVAL',
-  'AEGEAN_CAMPAIGN',
-]);
+const FIXED_MAP_TYPES: ReadonlySet<string> = SIZE_LOCKED_MAP_TYPES;
 
 /**
  * One glanceable glyph per map, prefixed to the option text (native

@@ -3,7 +3,7 @@ import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
 import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND, isAutoScenario, clampGameSpeedStep, SPEED_STEP_MOVE_DELAY_MS, SPEED_STEP_TURN_DELAY_MS, PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
 import { useGameStore } from '../../stores/GameStore';
-import { staticMapForMapType } from '@/data/maps';
+import { staticMapForMapType, SIZE_LOCKED_MAP_TYPES } from '@/data/maps';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
@@ -1099,7 +1099,7 @@ export default class GameEngine {
     const userHeight = Number(this.gameSettings.mapHeight);
     const hasUserSize = Number.isFinite(userWidth) && Number.isFinite(userHeight)
       && userWidth >= 10 && userHeight >= 8;
-    const staticMapType = ['EARTH', 'AI_VS_AI_NAVAL', 'AEGEAN_CAMPAIGN', 'NAVAL_CLOSEUP'].includes(mapType);
+    const staticMapType = SIZE_LOCKED_MAP_TYPES.has(mapType);
 
     if (hasUserSize && !staticMapType) {
       mapWidth = Math.max(10, Math.min(300, Math.round(userWidth)));
@@ -1921,13 +1921,37 @@ export default class GameEngine {
       { col: startPos.col - 5, row: startPos.row }
     ];
     
-    for (let i = 0; i < count && i < cityPositions.length; i++) {
-      const pos = cityPositions[i];
-      
-      // Every kind of water, not just `OCEAN`: a starting city on an inland
-      // lake was reachable only because this check wrote out part of the rule
-      // instead of asking the one place that knows all of it.
-      if (this.isSpawnableTile(pos.col, pos.row)) {
+    // The scenario promises `count` cities — water, mountains, map edges and
+    // another civ's start must not silently shrink that number. Each planned
+    // position that fails falls back to a spiral search around the start, so
+    // "4 cities with infrastructure" is true on every generated world.
+    const isFree = (col: number, row: number): boolean =>
+      this.isSpawnableTile(col, row) && !this.getCityAt(col, row);
+
+    for (let i = 0; i < count; i++) {
+      const wanted = cityPositions[i];
+      let pos: { col: number; row: number } | null = null;
+      if (wanted && isFree(wanted.col, wanted.row)) {
+        pos = wanted;
+      } else {
+        search:
+        for (let r = 1; r <= 10; r++) {
+          for (let dc = -r; dc <= r; dc++) {
+            for (let dr = -r; dr <= r; dr++) {
+              if (Math.max(Math.abs(dc), Math.abs(dr)) !== r) continue;
+              const col = startPos.col + dc;
+              const row = startPos.row + dr;
+              if (isFree(col, row)) {
+                pos = { col, row };
+                break search;
+              }
+            }
+          }
+        }
+      }
+      if (!pos) break; // genuinely no room left near the start
+
+      {
         // City name: sequential from the civ's list (civ may not be in
         // this.civilizations yet at init, so pass it explicitly).
         const cityName = this.getNextCityName(civId, civ);
@@ -2100,10 +2124,19 @@ export default class GameEngine {
    * Initialize technology tree
    */
   async initializeTechnologies(mapType: string = 'NORMAL_SKIRMISH') {
-    // For TECH_LEVEL_10 mode, grant all technologies to all civilizations
+    // For TECH_LEVEL_10 mode, grant all technologies to all civilizations.
+    // The grant walks TECHNOLOGIES_DATA — the real, researchable tree (54
+    // techs). The old code walked the legacy `TECHNOLOGIES` record (22 keys),
+    // so the scenario's "all technologies already researched" was only half
+    // true: half the tree stayed dark and mid-game units/buildings gated on
+    // the missing techs never appeared.
+    //
+    // `moonshot` is excluded: it is not a normal tech but the VICTORY marker
+    // (VictoryManager.hasMoonshot checks `technologies.includes('moonshot')`),
+    // and granting it would end the game on round 0 for the first civ.
     if (mapType === 'TECH_LEVEL_10') {
       console.log('[TECH] Granting all technologies for TECH_LEVEL_10 mode');
-      const allTechs = Object.keys(TECHNOLOGIES);
+      const allTechs = TECHNOLOGIES_DATA.map((t) => t.id).filter((id) => id !== 'moonshot');
       
       for (const civ of this.civilizations) {
         civ.technologies = [...allTechs];

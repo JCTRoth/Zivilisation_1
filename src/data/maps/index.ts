@@ -37,6 +37,19 @@ const STATIC_MAP_FOR_MAP_TYPE: Readonly<Record<string, string>> = {
   AEGEAN_CAMPAIGN: 'naval-aegean-96x60',
 };
 
+/**
+ * Map types whose SIZE the engine pins (GameEngine.initialize) and therefore
+ * never honours a user-chosen map size for. `NAVAL_CLOSEUP` is generated, not
+ * static, but its 20×20 water world is equally fixed. The setup screen hides
+ * the size tool for exactly these — one list, so the two can never drift.
+ */
+export const SIZE_LOCKED_MAP_TYPES: ReadonlySet<string> = new Set([
+  'EARTH',
+  'NAVAL_CLOSEUP',
+  'AI_VS_AI_NAVAL',
+  'AEGEAN_CAMPAIGN',
+]);
+
 /** The static map a map type uses, or undefined when it is generated. */
 export function staticMapForMapType(mapType: string | undefined): StaticMapDefinition | undefined {
   const id = mapType ? STATIC_MAP_FOR_MAP_TYPE[mapType] : undefined;
