@@ -124,7 +124,6 @@ test-results/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
-TODO.txt
 /.tmp-playwright/
 
 # Scratch analysis harnesses (ad-hoc perf/CPU profilers, one-off probes).

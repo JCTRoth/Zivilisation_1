@@ -1,9 +1,18 @@
  * Implement Human and Human (on one computer) against AI vs AI game modes.
 * Implement End of game statistics that show the player how they did, enconmics, military, and science wise.
+  (verified 2026-11-01: GameResultOverlay.tsx:341-427 + Act II chronicle)
 * Implement Civ1 ingame statistics screen that shows the player greatest cities in the worl, and there rank in the world wide demographics.
-* High score system for single player games, including a list of high scores, and the ability to submit high scores to a server.
+  (verified 2026-11-01: DemographicsManager.ts:204 + StatisticsModal demographics tab;
+  the "greatest cities" list is only approximated by the sortable Cities census tab)
+* High score system for single player games — [NOT DONE — moved back to TODO.txt
+  2026-11-01: no highscore code, storage or server exists in the repo; only the
+  live score on the result screen and a CSV scoreboard export
+  (doc/IMPLEMENTATION_AUDIT.adoc:357-359).]
 * Select the civilization on the start screen on initialization by the country the web browser is set to, or by the country the player is in (IP address).
     Therefor create a matrix mapping country codes to civilization ids, and use the country code to select the civilization on the start screen.
+    [PARTIAL — the browser-language half is DONE (src/data/CivilizationByLanguage.ts,
+    GameSetupModal.tsx:577, tests civilizationByLanguage + browserPreferenceOrder);
+    IP-address geolocation was never implemented — the open half moved to TODO.txt.]
 
 * Multi Language support, including the ability to change the language of the game, and the ability to add new languages to the game.
 
@@ -476,3 +485,143 @@ D is the distance to the ship, Pop is the population of the city the sunk ship c
 - when attacking, don't set that as a path that will be done automatically next turn
   -> just because unit can't reach that path (because it is blocked by enemy unit)
   it shouldn't auto attack next turn
+
+=========================================================================
+Moved out of TODO.txt / TOBECHECKED.txt on 2026-11-01 — every point re-checked
+against the code (full suite green: 229 files / 2757 tests, tsc clean)
+=========================================================================
+
+From the old BUGS block (all had "?--Fixed--?" markers on 2026-09-14 that were
+dropped in the 10-18/10-25 cleanups — re-verified present in the code):
+* [DONE] Selected-city tile resource preview: every tile in the radius shows
+  Food/Production/Trade yield icons with the amount (MapRenderer.ts:1501-1529,
+  icons added 7b172f3).
+* [DONE] Toasts only for the related player: NotificationCenter.tsx:35-36 hides
+  notifications tagged for another civ, NotificationUtils.ts humanOrFirst tags
+  them, GameStore.ts:1111-1121 drops AI-vs-AI toasts. (Two toasts still pass no
+  civId — open bug in TODO.txt.)
+* [DONE] Producing caravans works: TurnManager.ts:1122-1149 sets homeCityId,
+  toast on UNIT_PRODUCED (EngineEventHandlers.ts:1398), delivery pipeline
+  GameEngine.ts:4381-4445, AI gate fixed ("0 produced → ~3.3/game",
+  AutoProduction.ts:1944-1965); tests caravanProduction + tradeRoutes; the two
+  turn-killer bugs are documented in doc/CARAVAN_GOVERNOR.adoc §6.
+* [DONE] Cannot research an already-owned tech: GameEngine.ts:7229-7237
+  ("Don't allow researching a tech the civ already owns"), availability filter
+  :7247-7258, owned techs coloured in TechTreeView.tsx:296.
+* [DONE] City founded next to an enemy no longer falls immediately: the
+  settler-rush capture (50% chance an adjacent enemy settler steals a fresh
+  city) was deleted in 06b2b13; foundCityWithSettler (GameEngine.ts:6714-6831)
+  has no capture path.
+* [DONE] City with 1 HP / last garrison dies is captured in the same action:
+  GameEngine.ts:6178-6212 (stillDefeated check, resolveCityCombat with
+  counterDamage: false, CITY_CAPTURED); doc/CITY_CAPTURE.adoc:42-44; tests
+  cityCapture.test.ts:337/:364/:726, defeatedUnitsStayDead.test.ts:259.
+* [DONE] Libraries of other cities do count: science is per city and summed —
+  buildingBonuses (EconomicManager.ts:934-957, library effects.science),
+  cityOutputs :357-366, civ totals :1537/:1544; test economicManager.test.ts:620-623.
+* [DONE] Buying units/buildings is no longer 50% cheaper: one rate for everything,
+  PURCHASE_GOLD_PER_SHIELD = 2 (GameConstants.ts:438, ProductionManager.ts:416-418,
+  GameEngine.ts:8713, CityModal.tsx:346); fixed in 06b2b13.
+* [DONE] Research progress is constant to the end: the min-turns cap
+  (beakers = min(beakers, ceil(remaining/4))) was removed in 0b18b2c
+  (ResearchManager.ts:144-153, used by TurnManager.ts:1532).
+* [DONE] Selling buildings benefit/cost equation: BuildingEconomics.ts:1-31
+  (the cost/usage equation, explicitly covering SDI and Stock Exchange),
+  evaluateBuildingEconomics :201-436, BuildingAnalyzer.ts:224-254 (equity has
+  the casting vote), AIManager.runBuildingAnalysis :2172-2260,
+  AICoordinator.planBuildingFunding:1070; tests buildingEconomics,
+  buildingAnalyzer, buildingSales, armySafetyFunding. (The TODO note claiming
+  this was missing was stale.)
+
+From the old NEXT STEPS / FEATURES sections:
+* [DONE] Economy Buildings Earlier: chooseIncomeProduction (AutoProduction.ts:557-607)
+  builds marketplace → bank → stock_exchange FIRST under upkeep pressure
+  (isReconcilingCiv :722-741 from AIEconomicManager.ts:118-132 net negative +
+  treasury below floor); temple is in CORE_BUILDINGS (AutoProduction.ts:878-905).
+* [DONE] Final war when no enemy is left: AIFinalWar.ts:55-85
+  (shouldDeclareFinalWar / chooseFinalWarTarget), declared in AIManager.ts:9539-9573
+  (action 'final_war', reachableBy 'sea'), navy half via classifyFinalWarReach
+  :9653-9670 + needsNavyForWar (AutoProduction.ts:2061-2077); tests ai/finalWar.
+* [DONE] Scout boat uses pathfinding and avoids explored tiles: AIManager.ts:5174-5186
+  (candidate pool = unexplored water first), sweep memory :5195-5203, movement
+  through pathForUnit :2014-2025.
+* [DONE] Nuclear weapons used regularly against key targets: chooseNuclearStrike
+  (AIManager.ts:5311-5388 — capital +25, garrison bonus, SDI/range/friendly-fire
+  vetoes), NuclearDoctrine.ts:42-85 (scoreNuclearTarget, desiredNuclearArsenal up
+  to 3 warheads + subs), build/deliver/repeat AutoProduction.ts:1226-1232/:2115-2133,
+  nuclear_endgame branch AIStrategyBranches.ts:56-67, sub delivery AIManager.ts:3141-3217.
+  (The "send units to take over the crater" step rides on the normal offensive.)
+* [DONE] "Auto. turn ending" 3-second timeout: App.tsx:528-535
+  (delay = 3000 when automatic && autoEndTurn).
+* [DONE] Trade Treaties pay more: TREATY_ROUTE_TRADE_MULTIPLIER = 2
+  (GameConstants.ts:422) applied in EconomicManager.ts:302-317 ("a route to a civ
+  we hold a trade agreement with is worth double"); tests ai/DiplomacyManager:815,
+  economyRules:115; treaty propose path GameModals.tsx:833-834/:1583-1585.
+* [DONE] Game Modals documented: doc/MODALS.adoc (813 lines) — screenshots table
+  :27-75, dialog list :77, full table :224, ranked list of 14 missing modals
+  :647-729; shared ModalShell.tsx over 25 components (visual polish still
+  TOBECHECKED).
+
+From TOBECHECKED.txt (now proven by unit tests, moved to DONE):
+* [DONE] Air-unit usage + garrison exclusion: AirDoctrine.ts, production pivot
+  AutoProduction.ts:1280-1281/:3296-3338 (bomber vs fighter :2571-2577), strike
+  missions AIManager.ts:8670-8676/:10892-10895, garrison exclusion AIManager.ts:8735;
+  tests ai/airDoctrine.test.ts.
+* [DONE] Space race decision: Moonshot instead of spaceship parts — deliberate,
+  GameEngine.ts:7189-7193 ("this game has no spaceship parts, so the Moonshot is
+  the space race"); tests wonderEffects, hotseatVictory, teams/teamVictory.
+* [DONE] Autosave: autosaves EVERY turn into the separate slot civ1_autosave
+  (App.tsx:485-487) — supersedes the manual's every-50-turns ask.
+* [DONE] No water units in landlocked cities: ProductionManager.ts:85-89 rejects
+  naval units with 'no_water_access' (harbor gated the same way :155-158,
+  cityHasHarborOrCoast :232-252 excludes lakes); tests lakeNaval, aiGameplayFixes,
+  settlerNoSelfDestruct, humanAutoProduction.
+* [DONE] Lake tile type: TerrainConstants.ts:35 LAKE, :68-78 (same yields/defense
+  as a river but NOT passable), generation MapGenerator.ts:1387-1440 classifyLakes
+  ("smaller than 4x6 tiles" → LAKE), engine treats it as never-entered
+  (GameEngine.ts:2366-2370/:2418); tests lakeNaval, terrainCiv1, navalArchipelagoMap.
+* [DONE] AI detects inaccessible areas and builds ships for them: landmass
+  connectivity GameEngine.ts:2447, reachableByLand :3107, unreachable targets
+  excluded until shipbuilding possible AutoProduction.ts:1263 + naval pivot
+  :1272-1278, settler blocking AIManager.ts:2792-2814, founding on connected water
+  planned via colony missions :254-262; tests aiIslandStrategy,
+  navalTransportBehaviour, scoutBlocking.
+* [DONE] Units use GoTo pathfinding and re-check targets en route: AI paths go
+  through the shared pipeline (AIManager.ts:5291-5304 syncAIPath, settler
+  precompute :7941-7960), executed for AI in TurnManager.ts:1620-1660, en-route
+  re-evaluation GoToManager.ts:294 ("Enemy sighted … aborting path"); tests
+  goToManager, scoutBlocking:250.
+* [DONE] AI builds ships when no enemy is reachable by land: naval pivot
+  AutoProduction.ts:1272-1278 ("every known enemy sits on another landmass"),
+  bootstrap-hull fix :2876-2884, emergency sealift AICoordinator.ts:770-785;
+  tests navalDoctrine, navalRelevance, aiNavalInvasion.
+* [DONE] River crossing rules + river fish: RiverRules.ts implements the three
+  TODO examples exactly (MAX_FORDABLE_RIVER_WIDTH = 1, 2-wide impassable),
+  consumed by Pathfinding/GameEngine/AIManager; river fish at half rate
+  RIVER_FISH_CHANCE_MULTIPLIER = 0.5 (TerrainConstants.ts:324/:355); tests
+  riverRules.test.ts.
+* [DONE] AI city management (famine prevention, granary, irrigation, stable
+  surplus, village risk): AICityManager.ts:484-490 isHeadingForFamine, :515/:539
+  granary decision, surplus policies :129-197; InfrastructurePlanner.ts:143-181 +
+  SettlerGovernor.ts:186-192 irrigation; village distance/barbarian probability
+  AIManager.ts:8220-8225 (villageDecisionRoll, villageEarlyGameFactor); tests
+  aiCityManagement (13/13 after fixture rewrite), irrigationAndGovernor.
+* [DONE] AI budget / money handling: AIEconomicManager.ts reserve policy
+  (AI_RESERVE_TURNS :50-58, RECONCILE_GOLD_FLOOR = 80 :45, sustainableUnits :230,
+  rate reconciliation :87-128); tests aiBudgetMaster, aiBudgetParity.
+* [DONE] "Forge" removed from the game and AI strategy: no forge/Forge building
+  in any src/data/*.ts or building/AI list (only prose/i18n mentions remain).
+* [DONE] Harbor/ship priority on small islands: alone on a very small island →
+  escape ship is the highest production priority, small island → Harbor
+  (AutoProduction.ts:744-762); never build if not needed
+  (buildHarborProduction :2850-2866); tests ai/aiIslandStrategy.
+* [DONE] AI sends a settler to a small empty island found by ship: colony mission
+  "ferry a settler to a small, city-free island and found a city"
+  (AIManager.ts:254-262, boarding/landing :1367-1369/:1660+, hull builder
+  AutoProduction.ts:764-770 buildColonyFerryProduction); tests aiIslandStrategy:6.
+* [DONE] AI scout / unit movement on islands: island movement rule
+  AIManager.ts:8550-8553 (a scout explores only its own landmass,
+  areLandConnected check) + island guard posts findIslandGuardPost :8986+
+  (SMALL_ISLAND_MAX_TILES); tests scoutBlocking:250, scoutExploration,
+  ScoutMemory, ScoutDefense.
+

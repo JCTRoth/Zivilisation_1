@@ -1,0 +1,264 @@
+TODO.txt — OPEN work only.
+  finished .................. DONE.txt
+  implemented, needs a run ... TOBECHECKED.txt
+(cleaned up 2026-11-01: EVERY point re-checked against the code. Done items moved
+ to DONE.txt, implemented-but-unproven items to TOBECHECKED.txt — everything
+ removed is still in the git history of this file. Test suite green at the time
+ of the check: 229 files / 2757 tests pass, `tsc --noEmit` clean.)
+
+===================== OPEN BUGS ======================
+
+- Two toasts still pass no civId, so in a hotseat/multi-human game every human
+  sees them (they are not tagged to their owner): the nuclear-strike warning
+  (EngineEventHandlers.ts:1139) and "nothing in production"
+  (EngineEventHandlers.ts:1747). Tag them with the owning civ.
+
+===================== NEXT STEPS (priority order) ====================
+
+### 1. Client/Server Split
+See the "Planing Server Client Splitup" section at the bottom (5 blockers:
+determinism, IDs, storage, timers, command layer). Blocker 5 now has a seam
+(src/utils/session.ts + types/commands.ts, ~13 call sites), the other four are
+untouched.
+
+### 2. Civ1-manual leftovers
+  3. Global warming: implement the sun indicator and climate change effects.
+  6. Advisors: implement the 6 advisor reports and world reports.
+  9. Find City: add the city search feature.
+  (2. Disasters, 5. Diplomacy, 7. Statistics/high score screen, 8. Space race
+  and the tech/gold/gifting parts are DONE — see DONE.txt / TOBECHECKED.txt;
+  the high score SYSTEM is not implemented, see below.)
+
+### 3. Anti-fishing-boat raider mission
+If the AI spots >3 enemy fishing boats (and only minor warships) in a 10x10
+area it should build/send a frigate/galleon/ironclad/destroyer/carrier to
+destroy them and return regularly to destroy more. Only a target-class
+preference exists today (NavalDoctrine.ts:819-821, AIManager.ts:4932-4972) —
+no density scan, no build trigger, no recurring raid station
+(doc/IMPLEMENTATION_AUDIT.adoc:460 still lists it as open).
+
+### 4. Multi-Group Offensives — pincer / >2 fronts
+Two army groups form and a secondary front now opens automatically
+(AIManager.ts:715-765, MAX_SECONDARY_FRONTS = 2), but there is no
+pincer/encirclement scripting and no third group (audit:429).
+
+### 5. AI subsystem overhaul loop (next modules)
+Run the same 3-phase framework (Prompts.txt) against War/Military first, then
+Tech/Research, then Economy/Production. Settler Governor (doc/AI_SETTLER_
+INTEGRATION.adoc + doc/space-bunny-free_ai_gov.adoc) and Naval
+(doc/NAVAL_AI_OVERHAUL.adoc) are DONE — the naval report itself recommends
+War/Military as the next module (NAVAL_AI_OVERHAUL.adoc:233-240).
+
+### 6. Land transportation units
+No land transport unit exists (doc/IMPLEMENTATION_AUDIT.adoc:231-233;
+canLoadFerry hard-requires naval === true, GameEngine.ts:3213).
+
+### 7. Scout/mercenary grants from huts can exceed the corps cap
+Only production is capped: FRIENDLY_MERCENARIES calls createUnit with no cap
+(GameEngine.ts:5335-5346) and such units are immune to the disbander
+(maintenance <= 0 is never disbanded, EconomicManager.ts:1850). Decide whether
+to convert/dismiss the extras.
+
+===================== FEATURES / FUNCTIONAL (open) ====================
+
+Long-term engine/game:
+* Splitting up the game into client and server so that the game can be played over network.
+* Networked multiplayer is not yet implemented, but the game engine is designed to support it.
+* Lobby system for multiplayer games (list of available games, create and join).
+  (the only "lobby" today is the local hotseat per-seat setup screen).
+* Replay to play replays — use the save game, turn log and map download for the replay stuff.
+* Hall of fame for multiplayer games (list of high scores, submit to a server).
+* High score system for single player games (list of high scores + submit to a
+  server) — claimed DONE in DONE.txt but NO highscore code exists in the repo
+  (only the live score on the result screen and a CSV scoreboard export;
+  doc/IMPLEMENTATION_AUDIT.adoc:357-359). Moved back here 2026-11-01.
+* Database backup and restore system, export and import of the database.
+  (no database exists at all — no IndexedDB, nothing).
+
+Gameplay:
+* Add new units for land transportation of units (see Next Step 6).
+* Select the civ on the start screen also by the player's country via IP
+  address — the browser-language half is DONE (src/data/CivilizationByLanguage.ts),
+  IP geolocation was never implemented.
+
+AI strategy:
+* Water-rich map systemic scouting is only half there: scout hulls exist for
+  archipelagos (NavalDoctrine.ts:333-340) but detection is landmass-based, no
+  fisher boats are ever used for scouting (AIManager.ts:5459-5462) and no
+  Galleon unit exists in src/data/UnitConstants.ts.
+* See Next Steps 3 and 7 for the fishing-boat raider and hut-grant cap gaps.
+
+UI:
+- improve building stuff ui in cities — a full Buildings tab exists
+  (CityModal.tsx:604-814, building cards/sell/effects/wonders) but "improve"
+  was re-asserted after it; eyeball it (TOBECHECKED.txt).
+
+REFACTORING / ARCHITECTURE (all open — line counts grew since the last check):
+* Split GameEngine.ts (now 9,371 lines) — extract FogOfWar, TradeRoute, Village managers.
+* Split AIManager.ts (now 11,121 lines) — separate turn orchestration from
+  movement/combat logic.
+* Delete legacy classes (src/game/City.ts, Civilization.ts, Unit.ts, Terrain.ts —
+  dead code, still whitelisted in knip.json).
+* Medium-Term: client/server split for networked multiplayer; replay system.
+* Architectural: introduce a typed event bus (replace the single onStateChange
+  callback — still the only mechanism), add proper log level management (only a
+  boolean debug gate in DevLog.ts exists), consider an ECS pattern for the
+  engine, profile and optimize AI turn performance.
+
+--------------------
+WATER STUFF (Civ1 transport backend design spec)
+--------------------
+
+The mission layer is DONE: the AI loads units into transport ships and ferries
+them (planInvasionMission / tryInvasionFerryAction / loadFerry, AIManager.ts
+:3376/:3743, tests/ai/navalInvasionSequence.test.ts) — moved to TOBECHECKED
+for a game run. The Civ1 backend rules below are the remaining spec to check
+against:
+
+* The AI should load units into transport ships
+Here is the technical breakdown of the Civ 1 transport backend systems, adapted strictly for your game's specific rules (removing stack death and adding the unit selection modal):
+## 1. The Active Container & Array System
+In the Civ 1 engine, units do not possess an "embarked" flag status like in modern games. Instead, the game relies on a strict coordinate alignment :
+* **Tile Sharing Logic:** A land unit is considered "on board" a transport ship if its grid coordinates (X, Y) match the transport's grid coordinates exactly over a water tile.
+* **Capacity Cap Enforcement:** The engine actively checks the transport's data array capacity whenever a land unit moves onto its tile. If a ship already has its maximum number of land units sharing its X,Y coordinate, the engine treats that tile as an impassable barrier, completely blocking movement.
+* **The sleeping Automatic Boarding:** When a transport ship exits a city tile, the code executes a query check for any land units flagged as sleeping (S key) or Sleep inside that city. If found, the engine changes their coordinates to match the moving ship, dragging them along as cargo automatically.
+
+### 🆕 Unit Selection Modal (Cargo Management UI) — DONE (unit stack modal + city Units tab, see DONE.txt)
+Because multiple units can share the exact same transport tile, a **Unit Selection Modal** is required for player interaction.
+* **Trigger:** When a player selects a transport ship and issues an "Unload" or "Activate" command.
+* **Functionality:** A modal popup appears displaying the icons and stats of the land units currently assigned to that ship's coordinates. The player selects the specific unit they wish to wake up or unload, preventing accidental activation of the wrong unit in a crowded tile.
+
+## 2. Deep Ocean Sinking Formula (Trireme Math) — not implemented yet?
+The early-game Trireme uses a specific probability check if it finishes its turn on a deep ocean tile (dark blue) rather than a coastal tile (light blue):
+* **The Cargo Wipe:** If the RNG determines the ship sinks, the engine executes a deletion loop for that tile's coordinates. It deletes the ship unit first, then systematically deletes every single land unit ID sharing those exact coordinates. **If the ship sinks, all units inside the ship are destroyed instantly.**
+* **The Lighthouse Counter:** Building The Lighthouse World Wonder modifies this logic. The wonder acts as a flag modifier that shifts the Trireme’s sinking probability function to 0%, making early-game deep-ocean transport perfectly safe.
+
+## 3. Combat Resolution (Individual Defense)
+*Note: The classic Civ 1 "Death Stack" mechanic does not exist in this game.*
+* **Individual Combat:** When an enemy naval unit attacks a tile containing your transport ship and any escort vessels, combat is resolved strictly on a 1-on-1 basis. The attacker engages the specific unit occupying the defensive slot; escort ships do not automatically absorb hits for the transport.
+* **Destruction Consequence:** If the transport ship is directly attacked and loses the combat resolution calculation, it is destroyed. Because of the Cargo Wipe logic, all land units stored in its coordinate array are instantly destroyed alongside it.
+
+## 4. The Infinite Movement Exploit: "Ship Chaining" — decide whether to replicate
+Because of how the Civ 1 engine resets and checks unit movement points (MP), players can take advantage of a logic loophole:
+* **The Movement Variable Reset:** When a transport ship moves, it consumes its own MP. However, the land units sitting inside the transport do not consume their land-based MP.
+* **The Relay Hand-off:** If you park two transport ships on the exact same tile, you can manually "wake up" (W key) the land units inside Transport A. The engine sees them as standing on a valid transport tile, so they still have full movement points. You can then command them to "Sleep" again, and the engine will register them as occupying Transport B.
+* **The Infinite Loop:** By lining up ships across the entire ocean map—each spaced exactly at the maximum movement range of the previous ship—you can hand off units from ship to ship. The engine allows you to move an army across a massive ocean map in a single turn, bypassing the turn timer mechanics entirely.
+
+
+--------------------
+Planing Server Client Splitup
+--------------------
+
+Five blockers to fix before the split (all cheap, all in shared code)
+1. Determinism — 27 Math.random in src/ (was 48; engine is down to a handful).
+   CombatSystem accepts context.random but GameEngine.ts:6100,6388 never passes
+   it, so combat rolls are unseeded today (CombatSystem.ts:214 falls back to
+   Math.random). Route every gameplay roll through one engine RNG seeded from
+   the lobby seed; tests already prove this works (useSeededRandom).
+2. IDs — 'u_' + Date.now() + '_' + Math.random() (TurnManager.ts:1123). Replace
+   with a deterministic counter; same for AICoordinator army-group ids
+   (AICoordinator.ts:246).
+3. Storage — engine calls localStorage directly (GameEngine.ts:9026,9045).
+   Extract a SaveStore interface; server implements it, browser keeps
+   localStorage. The v4 blob + v1–v4 migrations are already portable.
+4. Timers — DEFEATED_UNIT_REMOVAL_DELAY_MS corpse timer, aiTurnTimeoutMs
+   (TurnManager.ts:477), and the visual sleep() pacing must become simulation
+   ticks/deadlines, not wall clock.
+5. Command layer — the seam now exists (src/utils/session.ts, types/commands.ts,
+   tests/commandLayer.test.ts, ~13 call sites in 4 files) but the UI→engine
+   direct calls (moveUnit, setRates, setCityProduction, foundCityWithSettler…)
+   still have no ownership/turn validation. Introduce submit(command, {civId,
+   turn, seq}) with validation; components call session.send(cmd) instead.
+   This is also the seam that fixes the Zustand question from before
+   — the store becomes a projection of the event stream, whatever the transport.
+
+I surveyed the whole project (70k lines, 154 test files, 52 engine files). The good news: the engine is already a server-shaped program — zero document/window coupling in src/game/engine/, it runs headless in 154 node-env tests and two scripts/*.mjs runners, TurnManager already drives all civs including AI in one phased loop, map gen is seed-pinned, and combat/AI already accept injectable RNG. You are not rewriting a browser app into a server app; you're moving a headless sim out of the browser.
+Proposed layout — 3 packages
+packages/shared/     # engine + rules + data + types, imported by both
+  game/engine/**     # GameEngine, TurnManager, all managers, AI/, MapGenerator
+  data/**, types/**  # balance tables (single source of truth, no drift client/server)
+  GameActions=None   # engine constructor ALREADY takes null (tests do this)
+server/              # new
+  room.ts            # one GameRoom = one GameEngine instance + tick loop
+  commands.ts        # command union + validation (ownership, turn, legality)
+  transport.ts       # WS/HTTP: commands in, classified events out
+  saveStore.ts       # replaces engine's localStorage
+  fog.ts             # per-connection visibility filtering
+  lobby.ts           # room create/join from maptype/seed/civs (today's URL params)
+web/                 # today's src/, minus engine
+  components/, rendering/, stores/, App.tsx, KeyboardHandler.ts
+  session.ts         # client-side transport (same interface as server socket)
+Mapping of what moves vs. stays:
+Package	Contents
+shared	src/game/engine/** (20.3k lines), src/game/** except rendering/, src/data/**, types/**, SquareGrid.ts, save/load code in GameEngine.ts (with storage injected)
+server	nothing today — all new; reuses scripts/run-ai-batch.mjs cadence and tests/helpers/world.ts runTurns() as the tick loop prototype
+web/client	src/components/**, src/game/rendering/** (MapRenderer, MoveAnimator, GlideAnimation), src/stores, src/utils/EngineEventHandlers, KeyboardHandler.ts, App.tsx, UseGameEngine (rewritten to session)
+src/game/City.ts, Civilization.ts, Unit.ts, Terrain.ts (~2,500 dead lines) get deleted in the process, not ported.
+
+--------------------
+REFERENCE — Civ1 city food & starvation rules (spec for the starvation question)
+--------------------
+
+Status: cityFoodBalance() is the single shared math (EconomicManager.ts:1160-1210),
+starvation runs in TurnManager.ts:1363-1385, famine lookahead in
+AICityManager.ts:484-491, and the whole aiCityManagement suite passes 13/13
+after the fixtures were rewritten for the strict fisher-boat rule. What is left
+is proving the numbers in a real game — see TOBECHECKED.txt.
+
+Here is how the starvation logic works written out as structured pseudo-code, followed by an exact breakdown of how the Granary functions in Civilization 1.
+
+// Run once per city at the end of every turn
+FUNCTION UpdateCityFood(city):
+    // 1. Calculate Food Production
+    total_food_produced = CalculateTilesFood(city.worked_tiles)
+
+    // 2. Calculate Food Consumption
+    citizen_consumption = city.population * 2
+
+    settler_consumption = 0
+    IF city.government_type IN [DESPOTISM, ANARCHY, MONARCHY, COMMUNISM]:
+        settler_consumption = city.supported_settlers * 1
+    ELSE IF city.government_type IN [REPUBLIC, DEMOCRACY]:
+        settler_consumption = city.supported_settlers * 2
+
+    total_consumption = citizen_consumption + settler_consumption
+
+    // 3. Determine Net Food Status
+    net_food = total_food_produced - total_consumption
+
+    // 4. Apply Net Food to Storage
+    city.food_storage = city.food_storage + net_food
+
+    // 5. Check for Starvation
+    IF city.food_storage < 0:
+        city.population = city.population - 1
+        city.food_storage = 0
+        TriggerNotification(city.name + " starves! Population reduced.")
+        // Handle city elimination if population hits zero
+        IF city.population <= 0:
+            DestroyCity(city)
+
+    // 6. Check for Growth (For Context)
+    ELSE IF city.food_storage >= city.growth_threshold:
+        city.population = city.population + 1
+        IF city.has_granary == TRUE:
+            city.food_storage = city.growth_threshold / 2 // Granary retains half
+        ELSE:
+            city.food_storage = 0 // Standard reset
+        TriggerNotification(city.name + " grows to size " + city.population)
+
+Granary: in Civilization 1 the Granary (costing 60 shields) has two distinct mechanics.
+It serves as an accelerator for population growth and as a shield against a random event.
+0. It stores food in itself when a city has a food surplus. The size of it is 20. When the
+   city has no food any more it uses the food storage until it is empty.
+1. Growth Retention: without a Granary the food box empties completely on growth
+   (20 food to grow -> resets to 0/20, or 0/30 for the next size); with a Granary 50% of
+   the threshold is retained (20 food -> resets to 10), which halves the time to the next
+   growth step.
+2. Disaster Immunity: Civ 1 has random "Disaster" mechanics that can strike cities at the
+   turn flip. One of them is Famine. Without a Granary a Famine immediately kills 1 citizen
+   and wipes a portion of the stored food even when the city has a food surplus. With a
+   Granary the city is 100% immune to the random Famine disaster.
+Important: the Granary does NOT prevent turn-by-turn starvation caused by mismanagement —
+if the tiles produce less food than the citizens and settlers eat (net_food < 0), the food
+storage eventually drops below zero and a citizen dies regardless of the Granary.

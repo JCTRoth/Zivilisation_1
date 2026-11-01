@@ -5,69 +5,66 @@ Verification runs still needed (implemented, not yet proven in a game):
   and city captures? Watch attacks/round (counted from real COMBAT_* events now)
   and citiesCaptured in the next progression CSV. The AI's own "Attack —" lines
   are intent only and no longer counted as attacks.
+  (Code verified 2026-11-01: AIManager.ts:956-969 reachable-target gate,
+  :9081-9088 garrison mobilisation, AutoProduction.ts:2271-2291 dual unit cap,
+  GameProgression.ts:820 CITY_CAPTURED counting, tests aiWarReachability /
+  aiArmyWar / armyGroupsAttack.)
 * [TOBECHECKED] Verify naval governor emergency evacuation and settler fast transport in AI vs AI
-* [TOBECHECKED] Verify air-unit (fighter/bomber) usage and garrison exclusion in AI vs AI
-* [TOBECHECKED] Space race: Civ1-manual item 8 asked for spaceship construction
-  with parts and flight time. The game deliberately implements the Moonshot
-  instead (GameEngine.ts: "this game has no spaceship parts, so the Moonshot is
-  the space race") — decide whether that satisfies the manual item or whether
-  real spaceship parts are wanted.
-* [TOBECHECKED] Autosave: Civ1-manual item 10 asked for an autosave every 50
-  turns. The game already autosaves on EVERY turn into the separate slot
-  `civ1_autosave` (App.tsx) — decide whether that replaces the item.
+  (implemented: AIManager.ts:1428-1438 + settlerNeedsEmergencyEvacuation :8740-8776,
+  shelter can be a ferry/transport; ferry transport itself is unit-tested
+  tests/ai/aiNavalTransport.test.ts, aiIslandStrategy.test.ts — evacuation is not.)
+* [TOBECHECKED] Verify naval invasion missions land for real: planInvasionMission /
+  tryInvasionFerryAction (AIManager.ts:3376/:3743) board via engine.loadFerry and
+  land via unloadFerry, pinned by tests/ai/navalInvasionSequence.test.ts — but no
+  game run has proven a force actually lands (doc/IMPLEMENTATION_AUDIT.adoc:389-391
+  flagged the old "invasion missing" claim as stale; NAVAL_AI_OVERHAUL.adoc:239-240
+  round-1 diagnostics said "lands nothing" before the Oct-17 fixes).
+* [TOBECHECKED] Verify multi-group coordination in a run: secondaryGroupTargets
+  (AIManager.ts:715-765, MAX_SECONDARY_FRONTS = 2) opens a second front — do the
+  two groups actually pressure the enemy together?
+* [TOBECHECKED] Verify army composition by era in a run: era selection is
+  data-driven (AutoProduction.ts:1715-1786, no hardcoded era ladder; defender spam
+  capped at ~2/city at :1443-1454). Threat changes HOW MANY are built, not which
+  ones (declined deliberately, AutoProduction.ts:1773-1774).
+* [TOBECHECKED] Verify water-rich naval scouting in a run: scout pickets per
+  coastal city while water is dark (NavalDoctrine.ts:333-340, dark-water pressure
+  :368-370, systematic sweep AIManager.ts:5139-5203). Caveats: detection is
+  archipelago-based (landmassCount > 1), no fisher boats used for scouting, no
+  Galleon unit exists.
+* [TOBECHECKED] Bribe unit: the feature and its fixes exist (DiplomacyManager.ts:74
+  bribeUnitCost, :91 bribeOutcomeForRoll, :1644-1741 bribeUnit; commits 06b2b13,
+  0201494, 5461f2b; tests DiplomacyManager.test.ts:269-330, diplomatActions) —
+  the original "bribe unit is bugged?" needs a game run to confirm.
+* [TOBECHECKED] Per-turn projections: ResearchManager.perTurnProgress (ResearchManager.ts:138-154,
+  used by SidePanel.tsx:268, RatesModal.tsx:105) and EconomicManager.previewEconomy
+  (tests/previewEconomy.test.ts) exist — confirm on screen that food/gold/science
+  projections match what actually happens.
+* [TOBECHECKED] City resources / starvation numbers in a real game: cityFoodBalance
+  (EconomicManager.ts:1160-1210), starvation (TurnManager.ts:1363-1385), famine
+  lookahead (AICityManager.ts:484-491). The aiCityManagement suite passes 13/13
+  after the fixtures were rewritten for the strict fisher rule — but the original
+  complaint ("resources in cities don't seem to be calculated correctly, what is
+  starvation doing?") should be confirmed by watching a city in a run.
+* [TOBECHECKED] City building UI eyeball check: the Buildings tab
+  (CityModal.tsx:604-814 — building cards, sell button, effect badges, wonders,
+  fisher-boat card, empty state) was built 2026-09-14/15; "improve building stuff
+  ui in cities" was re-asserted afterwards — judge whether it needs more work.
+* [TOBECHECKED] Game modals visual polish: doc/MODALS.adoc has the screenshots
+  table (27-75), the dialog list (77), the full table (224) and a ranked list of
+  14 missing modals (647-729), shared shell ModalShell.tsx over 25 components —
+  the "make them a joy for the eyes" part is subjective, check in game.
+* [TOBECHECKED] Assets order: doc/RENDERING_ASSETS.adoc:35-46 inventories every
+  folder, third-party audio legally separated (LICENSE-THIRD-PARTY.txt,
+  public/assets/sfx/warzone2100/ with LICENSE+README) — locally still messy:
+  public/assets/_generated_backup/ and 64 Unix-timestamp folders under
+  tools/tile-generator/tile_sets/ (both git-ignored, so not repo content).
+* [TOBECHECKED] AI budget / money handling in a run: AIEconomicManager reserve
+  policy (AI_RESERVE_TURNS, RECONCILE_GOLD_FLOOR = 80, sustainableUnits :230,
+  rate reconciliation :87-128) with tests aiBudgetMaster / aiBudgetParity — watch
+  a long run for the 0-8-gold-with-big-armies symptom.
 
 Note: the former "Still to do (bigger)" block (naval invasion, multi-group
 offensives, army composition by era, economy buildings earlier, scout/mercenary
-grants over the corps cap) is OPEN work and now lives in TODO.txt. The
-trade-ship formula + its [DONE] notes moved to TODO_DONE.txt.
-
-
-?-Working-?
-
-- it should not be possible to build water units on cities that have no water connection
-  -> I can not move water units on water / river if next to it (probably not supposed to be)
-* Introduce new Tile Type Lake if less than 4x6 Tiles than it is NO/NOT ocean but a lake, a lake has the same properties as an river but is NOT passable.
-Integrate it into the map generation, and into the game engine, and into the game logic, and into the game UI, and into the game AI, and into the game diplomacy, and into the game economics, and into the game military, and into the game science, and into the game culture, and into the game religion, and into the game espionage, and into the game trade, and into the game diplomacy, and into the game victory conditions.
-* The AI should detect not accessable areas if the AI descides that it needs to move there it should build ships if possible,
-if not exclude this as target until ship building is possible, to found a city on a connected water should also be planned if not city on a connected water.
-* Units should in general use the GoTo pathfinding to reach there targets, and check on the way the the destination if new target gets set by them.
-* The AI should start to build ships if no enemy is reachable on the land way.
-Rivers are walkable and passable for the Player, AI and pathfinding.
-Exmaple 1 (L: land, R: river, number: index):
-L R L
-L R L
-L R L
-Unit can pass the river from left to right and right to left
-Example 2:
-1 L R R L
-2 L R L L
-3 L R R L
-Unit can pass from left to right and right to left only here on index 2
-Unit can not walk down the river.
-Example 3:
-1 L R R L
-2 L R L L
-3 L R L L
-4 L R R L
-Unit can walk down up,down on 3,4 but and not move from index 3 R down to index 4 R
-Implement it in all of the game, centrlize and use constants where good and possible
-Rivers can contain fish also only 1/2 of % that tile as fish feature than Ocan tile.
-
-Improve the city managemnt of the AI.
-It should get and advanced management of the city.
-The AI should manage Food, Production, Money/Gold fitting the siution and strategy given by the AICoordinator
-The AI should by all means prevent femens therefor it uses city management, if needed granary (long term plan to have
-build a lot of settlers/expansation) or a low surplus of food production over all.
-The AI should use irrigation of settlers around the city.
-Building irrigations requires settler that need food them self so this should be part of an equation but should be done if fitting in strategy and benefitting.
-City growth is important, needs stable surplus of food.
-Also: Ai: the more far away a village from next town and the more towns the civ. hat the higher % that AI takes village instead of ignoring it to not get over runned by babrians.
-
-- TODo -
-* improve the budget keeping / money handling of the AI, not overweight but should better do it use all mesures for it
-* Remove "Forge" from the game and AI strategy also higher prio. to harbor when detects that on smaal island alone,
-harbor should in general get a higher weight in the Auto Build when needed,
-never build if not needed, on very smaal islands even more
-* If Island is very small than highest prio to building ship
-* If AI detects by ship a smaal island with no city on it, send a settler and build a city there
-* Improve the AI scout and in general unit movement on islands
+grants over the corps cap) — the first four were verified implemented on
+2026-11-01 and the first three moved here; the corps-cap gap is still OPEN in
+TODO.txt (Next Step 7).
