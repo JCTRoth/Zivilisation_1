@@ -117,6 +117,14 @@ export class TeamCoordinator {
   private pinnedPrimaryByTeam = new Map<number, { col: number; row: number; civId: number }>();
   /** Player defense requests ("Defend city X") by city id, round-stamped. */
   private defenseRequests = new Map<string, { ownerCivId: number; col: number; row: number; round: number }>();
+  /**
+   * Per-round diagnostics for verification runs (Phase 6): how often the
+   * claim preference actually steered a scout away from a teammate's region
+   * (`claimYields`) and how often the fallback had to rescue one
+   * (`fallbackPicks`). Reset every round with the claims.
+   */
+  private claimYields = 0;
+  private fallbackPicks = 0;
   /** Round stamp of the last {@link processRound} call. */
   private currentRound = 0;
 
@@ -156,9 +164,26 @@ export class TeamCoordinator {
       return;
     }
     this.prunePois();
+    this.claimYields = 0;
+    this.fallbackPicks = 0;
     this.computeScoutClaims();
     this.computeWarPlans();
     this.computeDefenseAssignments();
+  }
+
+  /** Record that a scout yielded a claimed cell to a teammate (per round). */
+  noteClaimYield(): void {
+    this.claimYields += 1;
+  }
+
+  /** Record that the unfiltered fallback had to rescue a target pick. */
+  noteFallbackPick(): void {
+    this.fallbackPicks += 1;
+  }
+
+  /** Diagnostics snapshot for verification runs and tests. */
+  get diagnostics(): { claimYields: number; fallbackPicks: number } {
+    return { claimYields: this.claimYields, fallbackPicks: this.fallbackPicks };
   }
 
   // ──────────────────────────────────────────────────────────────

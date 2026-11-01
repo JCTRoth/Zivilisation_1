@@ -1,0 +1,224 @@
+= Team Coordination — Implementation & Verification
+
+> *Engine:* `src/game/engine/AI/TeamCoordinator.ts` (new),
+> `src/game/engine/AI/AIManager.ts`, `src/game/engine/diplomacy/AIDiplomacyPolicy.ts`,
+> `src/game/engine/DiplomacyManager.ts`, `src/game/engine/AIAggression.ts`
+> *Hooks:* `TurnManager.advanceTurn` (per-round), `GameEngine.submit` (player commands)
+> *UI:* `GameModals.tsx` (team commands, war plan, observations chip),
+> `StatisticsModal.tsx` (Teams tab)
+> *Tests:* `tests/teams/` (91 tests, 12 files)
+> *Verification:* `scripts/run-team-batch.mjs`
+> *Status:* Phases 0–6 shipped 2026-11-01.
+
+---
+
+== 1. What was built
+
+Teams v1 (fixed alliances) made teammates *safe* from each other. This work makes
+them *coordinated* — a stateless `TeamCoordinator` runs once per round (from
+`TurnManager.advanceTurn`'s new-round block, before any member's turn) and
+recomputes soft directives that member AIs consult while deciding:
+
+[cols="1,3", options="header"]
+|===
+|Phase |Behaviour
+
+|0 — Seam
+|`TeamCoordinator`: per-round, stateless, FFA-inert (every query collapses to
+"no directive" when `!teamManager.enabled`), nothing persisted — save format
+stays v5.
+
+|1 — Coordinated scouting
+|Frontier region claims: every unexplored-for-the-team frontier cell is claimed
+by exactly one explorer (nearest land scout for land, nearest hull for water,
+ties by unit id). Three scout choosers consult `shouldYield` as a *preference
+with fallback* — a scout can never starve behind a teammate's region. POI
+registry (publish/get/age-pruning) for later consumers.
+
+|2 — Coordinated attacking
+|One joint primary enemy city per team war, scored by value / proximity to the
+team's forces / team-wide retaliation memory (a member's captured city steers
+the whole team at the capturer for 15 rounds). Stable while marching, rotates
+on capture/owner-change/age. Members receive it as a `teamFocus` in
+`planBulkAttack` (`TEAM_FOCUS_BONUS = 90`), injected into their known targets
+with land-then-ferry reachability. Unreachable focus never causes re-plan churn;
+strength gating and the critical-threat defense veto still override.
+
+|3 — Mutual defense
+|Each member's cities are assessed per round from the OWNER's perspective
+(garrison = owner + stacked teammates; teammate units filtered out of threat
+samples, including stale sightings on their tile). A threatened teammate city
+is assigned to the nearest non-owner member on the same landmass; helpers march
+through the existing defense chain. Hierarchy preserved: own threats > committed
+offense > teammate help; the city reserve never leaves home. Recomputed each
+round, so captured/relieved cities drop out by themselves.
+
+|4 — Solidarity economy
+|Locked teammates are always `'alliance'` status, which SKIPS the courtship
+scoring block — so the team flows live in their own top-level block in
+`AIDiplomacyPolicy.scoreCandidates`: knowledge converges from the leading
+member to the trailing one (score 16+, mood-independent; teammates are never
+*charged* — `aiTechDealTerms` skips the sale branch), broke teammates get
+bootstrapped below `RECONCILE_GOLD_FLOOR` (now shared via `GameConstants`),
+trade agreements are proposed (routes pay double), and `mayDeclareWar` blocks a
+member from opening an independent second front while the team is at war.
+
+|5 — UI
+|Diplomacy modal: Team Commands (attack/defend pickers through the command
+seam — `TEAM_COORDINATE_ATTACK` / `TEAM_DEFEND_CITY` with full turn/ownership/
+team authorization), Team War Plan panel, "Team" chip in the Observations feed.
+Statistics modal: Teams tab (totals, per-member ledgers, knowledge spread,
+exploration %, war plan, defense missions) — FFA-inert. 25 i18n keys × 6
+languages.
+
+|6 — Verification
+|`scripts/run-team-batch.mjs` (see §3).
+|===
+
+== 2. Test coverage
+
+`tests/teams/` — 91 tests across 12 files. The team-coordination additions:
+
+* `teamScouting.test.ts` (11) — claim partition (nearest-Chebyshev, ties by id),
+  land/water mobility split, single-explorer/FFA/dev-mode inertness, POI
+  dedup and age pruning.
+* `teamAttack.test.ts` (13) — primary selection, shared knowledge (a member
+  that never saw the city still gets it), retaliation steering, stability and
+  rotation, peace/FFA/dev inertness, player pin (override, illegal pins, pin
+  retirement), `planBulkAttack` focus bonus and its strength-gate veto.
+* `teamDefense.test.ts` (10) — helper assignment, no directive when safe or
+  unreachable, stacked-teammate garrison/sample filtering, player defense
+  requests (safe city, ownership, 10-round expiry), FFA/dev inertness.
+* `teamEconomy.test.ts` (12) — solidarity scoring (tech gift, gold bootstrap,
+  trade agreement, zero-goodwill), regular-alliance non-regression, forbidden
+  hostile actions, war-focus discipline (`mayDeclareWar`), teammate gift vs
+  non-teammate sale (`aiTechDealTerms`).
+
+Full suite at time of writing: **233 test files / 2803 tests**, `tsc` clean,
+eslint clean, production build OK.
+
+== 3. Verification batch
+
+`node scripts/run-team-batch.mjs [gamesPerConfig] [rounds] [outJson]`
+
+Runs paired seeds (7, 19, 33) through three configurations — free-for-all
+(baseline), 2v2 `[0,1,0,1]`, 3v1 `[0,0,0,1]` — on the 40x40 `AI_VS_AI` map
+via the canonical `makeEngine`/`runTurns` harness (real fog of war, so claims
+and war plans are actually exercised). Sample run (3 games × 150 iterations ≈
+up to ~450 rounds each, or until game over):
+
+[cols="2,1,1,2,2,2,2,2", options="header"]
+|===
+|config |games |captures |plan convergence |claim yields |tech spread (avg) |broke-member rounds (<80g) |defense directives / saved
+
+|FFA  |3 |6  |—            |0            |—      |0*  |—
+|2v2  |3 |13 |**93%**      |~0 (max 2/game) |6.57 |519 |15, 5/8
+|3v1  |3 |5  |45%          |~0 (1 total) |5.90   |253 |6, 1/3
+|===
+
+\* FFA has no teams, so team-scoped counters are zero by construction.
+
+=== Findings
+
+* **Convergence works.** With a joint primary set, 93% of member bulk plans
+  (2v2) hit it — two AIs siege the same city instead of two different ones.
+  3v1 is weaker (45%) because the 3-member team spreads local plans and the
+  solo enemy often dies before the plan stabilises (2/3 games ended by round 55).
+* **Team wars are decisive.** Paired seeds: 13 captures (2v2) + 5 (3v1)
+  versus 6 in free-for-all — team wars break the historical stalemate
+  (the 17-wars-in-465-rounds symptom).
+* **Scout claims are a rarely-needed guard, by design.** Claim yields hover at
+  ~0 and the starvation fallback fired once in nine games. The probe explains
+  why: a scout's local ring is always *its own* claim (distance 0–1 to itself),
+  and per-civ scout zones already separate scouts within a civ — the filter
+  only fires when two scouts physically cluster, which the region system
+  itself prevents. Claims compute correctly (64–247 cells with two scouts on a
+  team; zero once a team drops to one explorer). See §5.
+* **Defense fires under real pressure.** 21 directives across the team games;
+  6 of the 11 tracked cities still stand with their owner at game end — the
+  rest died with wars that ended in elimination (notably the 3v1 solo civ).
+* **No economic collapse.** Zero bankruptcies in all nine games (FFA: also 0);
+  broke-member rounds (519/253) show the pressure exists and the bootstrap has
+  something to do. min gold across all games: 12.
+* **Knowledge converges slowly.** Within-team tech spread stays near 0 early
+  (0 → ~1 at round 50) but grows late (2v2 → 11.5, 3v1 → 30.5 by the last 25
+  samples): one gifted technology per pair per 5-round diplomacy pass cannot
+  keep up with diverging late-game research paths. The mechanism works; the
+  cadence is the knob to turn if tighter parity is wanted.
+
+=== Caveats
+
+* Runs are **seed-pinned for the map but not bit-identical**: unit ids embed
+  `Date.now()`, so tie-breaks (`hullChoiceIndex`, army-group ids) drift between
+  executions. Paired configurations share maps and RNG streams, not full
+  trajectories. (This is server-split blocker #2 — deterministic ids.)
+* Round counters in the runner are `runTurns` iterations (~2–3 game rounds
+  each); "150 rounds" in the runner's header means iterations, actual games ran
+  up to ~450 rounds.
+* `yields` are sampled per iteration, not per round — intermediate rounds'
+  counters reset in `processRound` before the sample; treat them as lower
+  bounds.
+
+== 4. File map
+
+[cols="2,3", options="header"]
+|===
+|File |Role
+
+|`src/game/engine/AI/TeamCoordinator.ts`
+|All directives: scout claims, POI registry, war plan (incl. player pin),
+defense directives (incl. player requests), per-round diagnostics.
+
+|`src/game/engine/TurnManager.ts`
+|One call in the new-round block (`teamCoordinator.processRound`).
+
+|`src/game/engine/AI/AIManager.ts`
+|Claim-preference filters in the three scout choosers (with starvation
+fallbacks), `teamFocus` injection into `collectKnownTargets` / plan keep /
+`planBulkAttack`, `findTeammateDefenseAssignment` in the defense chain.
+
+|`src/game/engine/AIAggression.ts`
+|`TEAM_FOCUS_BONUS` in `planBulkAttack` scoring.
+
+|`src/game/engine/diplomacy/AIDiplomacyPolicy.ts`
+|Team solidarity block, war-focus gate in `mayDeclareWar`, `teamMode` context.
+
+|`src/game/engine/DiplomacyManager.ts`
+|Teammate gift-not-sale term picker, `teamMode` in `policyContext`.
+
+|`src/game/engine/GameEngine.ts`
+|Coordinator wiring + `TEAM_COORDINATE_ATTACK` / `TEAM_DEFEND_CITY` dispatch.
+
+|`types/commands.ts`, `src/utils/session.ts`
+|Command seam (already-present transport; two new command kinds).
+
+|`src/components/ui/GameModals.tsx`
+|Team commands block, war plan panel, Observations "Team" chip.
+
+|`src/components/ui/gamemodals/StatisticsModal.tsx`
+|Teams tab.
+
+|`tests/helpers/world.ts`
+|`makeEngine` gained `fixedAlliances` / `teamAssignments`.
+
+|`scripts/run-team-batch.mjs`
+|The verification batch (this document's §3).
+|===
+
+== 5. Honest gaps / follow-ups
+
+* **Claim yields ≈ 0** — verified correct but rarely triggered in current
+  games (see §3). If scout clustering ever reappears (e.g. after the naval
+  pivot puts more hulls on the water), the guard is in place and its fallback
+  is starvation-proof; the batch will show yields climbing.
+* **Tech-gift cadence** — consider a shorter diplomacy interval for trailing
+  teammates, or gifting on demand when the gap exceeds N.
+* **3v1 convergence (45%)** — the odd-member-out runs local plans; a
+  front-assignment nudge for surplus members is the natural next step (it is
+  also where pincer scripting belongs — TODO Next Step 4).
+* **Defense survival metric** counts cities still owned at game *end*, which
+  conflates "mission failed" with "the whole war was lost"; a per-directive
+  10-round survival check would be sharper.
+* The batch runner's own metrics: war/invasion log keys did not match the
+  current diplomacy log lines (captures are the reliable activity signal);
+  fix the keys when touching the script.

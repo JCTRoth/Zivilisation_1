@@ -56,6 +56,10 @@ export interface MakeEngineOptions {
   startingGold?: number;
   /** Set false to keep the raw engine (used by tests that stub subsystems). */
   realMap?: boolean;
+  /** Fixed-alliance (team) game: pair with `teamAssignments`. */
+  fixedAlliances?: boolean;
+  /** Team index per civilization slot, e.g. [0, 1, 0, 1] for 2v2. */
+  teamAssignments?: number[];
 }
 
 export interface TestWorld {
@@ -78,6 +82,8 @@ export async function makeEngine(options: MakeEngineOptions = {}): Promise<TestW
     mapType = 'CLOSEUP_1V1',
     numberOfCivilizations = 2,
     startingGold = 100,
+    fixedAlliances,
+    teamAssignments,
   } = options;
 
   const engine = new GameEngine(null);
@@ -107,6 +113,7 @@ export async function makeEngine(options: MakeEngineOptions = {}): Promise<TestW
     devMode: false,
     startingGold,
     mapSeed: seed,
+    ...(fixedAlliances ? { fixedAlliances: true, teamAssignments } : {}),
   });
 
   return world(engine);

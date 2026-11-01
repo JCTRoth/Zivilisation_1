@@ -5193,7 +5193,9 @@ export class AIManager {
     const ownPool = coordinator
       ? pool.filter((t) => !coordinator.shouldYield(unit, t.col, t.row))
       : pool;
+    if (ownPool.length < pool.length) coordinator?.noteClaimYield();
     const finalPool = ownPool.length > 0 ? ownPool : pool;
+    if (ownPool.length === 0 && pool.length > 0) coordinator?.noteFallbackPick();
 
     // Memory ranks the pool: water never patrolled wins, then water patrolled
     // longest ago, and remembered kill zones push a tile down. Everything else
@@ -6078,6 +6080,7 @@ export class AIManager {
       if (occupant && occupant.civilizationId === unit.civilizationId) return false;
       if (preferOwnRegion && (this.gameEngine.teamCoordinator?.shouldYield(unit, col, row) ?? false)) {
         yieldedToTeammate = true;
+        this.gameEngine.teamCoordinator?.noteClaimYield();
         return false;
       }
       return true;
@@ -8610,6 +8613,10 @@ export class AIManager {
       // of ours — better a teammate's frontier tile than the zone-center
       // fallback (the scout still reveals ground the team can use).
       const pool = candidates.length > 0 ? candidates : teamCandidates;
+      if (teamCandidates.length > 0) {
+        this.gameEngine.teamCoordinator?.noteClaimYield();
+        if (pool === teamCandidates) this.gameEngine.teamCoordinator?.noteFallbackPick();
+      }
       if (pool.length > 0) {
         // Weighted-random pick from the nearest frontier band, biased by the
         // scout's random exploration bearing — scouts fan out in different,
