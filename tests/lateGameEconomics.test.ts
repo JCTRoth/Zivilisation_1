@@ -162,15 +162,29 @@ describe('no tolerance, and the AI climbs to communism', () => {
       }
     }
 
+    // The seeded game is reproducible but NOT bit-identical (unit ids embed
+    // Date.now, so tie-breaks drift): the turn cap can land with a civ
+    // mid-revolution, or a round before the first communism — neither of
+    // which is the policy this test judges. Give transitions time to finish
+    // (anarchy must END and communism must actually arrive); a revolution
+    // that never completes still fails below.
+    const anyMidRevolution = () => engine.civilizations
+      .filter(c => !c.isHuman)
+      .some(c => (c.government ?? '') === 'anarchy' && (c.revolutionTurns ?? 0) > 0);
+    for (let extra = 0; extra < 30 && (anyMidRevolution() || !seen.has('communism')); extra++) {
+      await world.runTurns(1);
+      for (const civ of engine.civilizations.filter(c => !c.isHuman)) {
+        seen.add(civ.government ?? '');
+      }
+    }
+
     // Republic is never adopted, by anyone, at any point.
     expect([...seen]).not.toContain('republic');
     // And the ladder's destination is actually reached.
     expect([...seen]).toContain('communism');
     // Anarchy is the cost of switching, never a destination: it must not be the
     // state a civ is left sitting in.
-    const stuckInAnarchy = engine.civilizations
-      .filter(c => !c.isHuman)
-      .some(c => (c.government ?? '') === 'anarchy' && (c.revolutionTurns ?? 0) > 0);
+    const stuckInAnarchy = anyMidRevolution();
     expect(stuckInAnarchy).toBe(false);
     vi.restoreAllMocks();
   }, 900_000);
