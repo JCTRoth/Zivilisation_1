@@ -185,6 +185,12 @@ describe('Trade Ship', () => {
     const auto = (engine as unknown as { autoEstablishTradeShipRoute: (id: string) => boolean })
       .autoEstablishTradeShipRoute.bind(engine);
 
+    // First contact is discovered BY SIGHT during init, and this file's world
+    // is unseeded: on ~10% of maps the two starts see each other before the
+    // test begins (a CI flake). The scenario starts "never met" — state it
+    // instead of hoping the map cooperates.
+    engine.diplomacyManager.restoreContactedPairs([]);
+
     // Unmet civ: the foreign harbour is not a routeable partner.
     expect(auto(ship.id)).toBe(false);
     expect(ship.tradeShipRoute).toBeNull();
