@@ -466,6 +466,12 @@ describe('AI captures cities', () => {
   let randomSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
+    // Deterministic world AND rolls: the scenario searches the map for a
+    // usable city, and an unseeded map made the search pick terrain where the
+    // assault plays out differently (capture sometimes never happened, and
+    // sometimes the attacker was lost) — a flake in CI. Same convention as
+    // the capture-rules describe above.
+    useSeededRandom(7);
     engine = new GameEngine(null);
     (engine as any).sleep = () => Promise.resolve();
     await engine.initialize({
@@ -473,6 +479,7 @@ describe('AI captures cities', () => {
       mapType: 'MANY_CITIES',
       devMode: false,
       startingGold: 100,
+      mapSeed: 20260103,
     });
     randomSpy = vi.spyOn(Math, 'random');
   });
@@ -563,11 +570,15 @@ describe('City capture — plundered technology', () => {
     (engine as any).sleep = () => Promise.resolve();
     events = [];
     engine.onStateChange = (type: string, data?: any) => { events.push({ type, data }); };
+    // Same determinism as every other describe in this file: seeded rolls and
+    // a pinned map, so the plunder plays out the same way in CI as locally.
+    useSeededRandom(7);
     await engine.initialize({
       numberOfCivilizations: 2,
       mapType: 'MANY_CITIES',
       devMode: false,
       startingGold: 100,
+      mapSeed: 20260103,
     });
     randomSpy = vi.spyOn(Math, 'random');
   });
