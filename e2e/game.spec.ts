@@ -442,6 +442,29 @@ async function waitForModalClosed(page: Page): Promise<void> {
 }
 
 /**
+ * The nomad envoy's parley is a backdrop modal: once a city stands and the
+ * rounds pass, it opens and intercepts every top-bar click. "Pass in peace"
+ * is state-light (it only sets the camp's departure timer), so the turn
+ * helpers clear it the same way they clear the auto-end offer.
+ */
+async function closeNomadParleyIfOpen(page: Page): Promise<void> {
+  // The audience renders TWO nested role="dialog" elements (the bootstrap
+  // modal and the component's own aria dialog), so the locator must pin the
+  // first — a multi-match isVisible() throws strict-mode and reads as
+  // "not there".
+  const parley = page
+    .locator('[role="dialog"]')
+    .filter({ hasText: 'Wanderers at your gate' })
+    .first();
+  if (await parley.isVisible().catch(() => false)) {
+    await parley
+      .getByRole('button', { name: /Pass in peace/ })
+      .click({ force: true })
+      .catch(() => {});
+  }
+}
+
+/**
  * End the current turn (click End Turn, confirm modal, wait for AI processing).
  * Skips the confirmation modal if `skipEndTurnConfirmation` is enabled.
  */
@@ -449,8 +472,9 @@ async function endTurn(page: Page): Promise<void> {
   // The one-time "Auto. turn ending" offer can be open from the previous turn
   // (it appears at turn AUTO_END_TURN_OFFER_TURN); its backdrop intercepts
   // clicks, so clear it before touching the top bar and again afterwards for
-  // the turn that triggers it.
+  // the turn that triggers it. The nomad parley is a backdrop modal too.
   await closeAutoEndOfferIfOpen(page);
+  await closeNomadParleyIfOpen(page);
 
   const modal = page.locator('[role="dialog"]').filter({ hasText: 'End Turn?' });
 
@@ -475,8 +499,10 @@ async function endTurn(page: Page): Promise<void> {
   await waitForModalClosed(page);
 
   // The offer may have opened during this turn's processing — close it before
-  // returning so the next click is not swallowed.
+  // returning so the next click is not swallowed. The nomad envoy may have
+  // arrived during the same processing for the same reason.
   await closeAutoEndOfferIfOpen(page);
+  await closeNomadParleyIfOpen(page);
 
   // From RESEARCH_UNLOCK_ROUND (5) on, ending a turn with no technology
   // selected pops the "No Research Selected" prompt a beat later. Handle it
@@ -492,6 +518,11 @@ async function endTurn(page: Page): Promise<void> {
  * Confirms the End Turn dialog and waits for control to return to the player.
  */
 async function endTurnKeepingModals(page: Page): Promise<void> {
+  // The nomad parley, if standing from an earlier round, must not block the
+  // top-bar click — it is state-light to dismiss (see
+  // closeNomadParleyIfOpen). The modals THIS helper protects (research
+  // prompt, auto-end offer) stay open.
+  await closeNomadParleyIfOpen(page);
   const modal = page.locator('[role="dialog"]').filter({ hasText: 'End Turn?' });
   // Under CI load the confirm dialog can still be settling (entrance
   // animation while the previous AI round churns the store) when we reach
@@ -510,6 +541,10 @@ async function endTurnKeepingModals(page: Page): Promise<void> {
   }
   await expect(page.locator('.game-top-bar .topbar-endturn')).toBeEnabled({ timeout: 30_000 });
   await waitForModalClosed(page);
+  // The envoy may have arrived during this turn's processing — clear it so
+  // the caller's next click (a prompt button, an assertion target) is not
+  // swallowed by the backdrop.
+  await closeNomadParleyIfOpen(page);
 }
 
 /**
@@ -590,7 +625,9 @@ const BLOCKING_DIALOGS: ReadonlyArray<{ text: string; button: string }> = [
 async function dismissBlockingDialogs(page: Page): Promise<void> {
   const visibleDialog = async (timeout: number) => {
     for (const dialog of BLOCKING_DIALOGS) {
-      const modal = page.locator('[role="dialog"]').filter({ hasText: dialog.text });
+      // .first(): the audience nests two role="dialog" elements, and a
+      // multi-match isVisible() throws strict-mode (read as "not there").
+      const modal = page.locator('[role="dialog"]').filter({ hasText: dialog.text }).first();
       if (await modal.isVisible({ timeout }).catch(() => false)) return { dialog, modal };
     }
     return null;
