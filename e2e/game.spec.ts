@@ -328,21 +328,25 @@ test.describe('Onboarding modals', () => {
     await advanceTurns(page, 3);
 
     const research = page.locator('.research-required-modal');
+    // Hunt the prompt BY ITS TEXT over several turns: its shell can be visible
+    // a beat before the words render, a one-shot prompt can be dismissed
+    // between two visibility checks, and under CI load a turn or two can be
+    // swallowed by a blocking modal — so the loop keeps ending turns (the
+    // prompt re-opens every turn there is no research selected) until the
+    // words are actually on screen. End turns WITHOUT the helper's automatic
+    // prompt dismissal, so the one-shot modal stays open for the assertions.
     let seen = false;
-    for (let turn = 0; turn < 5 && !seen; turn++) {
-      // A late prompt from the previous turn: record it before clicking again.
-      if (await research.isVisible({ timeout: 1_000 }).catch(() => false)) {
-        seen = true;
-        break;
-      }
-      // End turns WITHOUT the helper's automatic prompt dismissal, so the
-      // one-shot modal is still open for the assertion.
+    for (let turn = 0; turn < 8 && !seen; turn++) {
+      seen = await research
+        .filter({ hasText: 'No Research Selected' })
+        .waitFor({ state: 'visible', timeout: 3_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (seen) break;
       await endTurnKeepingModals(page);
-      seen = await research.isVisible({ timeout: 5_000 }).catch(() => false);
     }
 
-    expect(seen).toBe(true);
-    await expect(research).toContainText('No Research Selected');
+    expect(seen, 'the No Research Selected prompt appeared').toBe(true);
     await expect(research).toContainText('technology');
     await expect(research.getByRole('button', { name: /Choose Technology/ })).toBeVisible();
 
