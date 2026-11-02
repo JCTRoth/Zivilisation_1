@@ -321,6 +321,37 @@ export interface AudienceNotice {
   inPerson?: boolean;
   /** The leader's spoken line. */
   message: string;
+  /**
+   * Marks this audience as a NOMAD PARLEY: there is no rival civ behind it,
+   * the choice is resolved through `GameEngine.nomadManager`, and the modal
+   * renders the notice's own speaker and choices instead of accept/reject.
+   */
+  kind?: 'nomad';
+  /**
+   * A non-civ speaker (the nomad envoy): i18n key + icon shown instead of a
+   * leader portrait. `nameKey` is resolved at render time so a language
+   * switch mid-game still works.
+   */
+  speaker?: { nameKey: string; icon: string };
+  /** i18n key of the spoken opening line (the nomads' lead). */
+  leadKey?: string;
+  /**
+   * The parley's doors. Each maps to a stable id `NomadManager.resolveParley`
+   * understands; when absent the audience is an ordinary accept/reject offer.
+   */
+  choices?: AudienceChoice[];
+}
+
+/** One door of a multi-choice audience (the nomad parley). */
+export interface AudienceChoice {
+  /** Stable id the resolver understands (`tech` / `maps` / `hire` / `pass`). */
+  id: string;
+  /** i18n key of the button label. */
+  labelKey: string;
+  /** Interpolation params for the label ({ tech, gold }). */
+  labelParams?: Record<string, string | number>;
+  /** Visual weight: a deal is primary, walking away is the quiet option. */
+  variant?: 'accept' | 'pass';
 }
 
 /**

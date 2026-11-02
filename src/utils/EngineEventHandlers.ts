@@ -6,7 +6,7 @@ import { awaitCameraGlide, isCameraGliding } from '../game/rendering/CameraGlide
 import { HUMAN_PLAYER_ID } from './PlayerConstants';
 import { humanOrFirst, notify } from './NotificationUtils';
 import type GameEngine from '../game/engine/GameEngine';
-import type { Technology, Unit, City, Civilization, VillageOutcome } from '../../types/game';
+import type { Technology, Unit, City, Civilization, VillageOutcome, AudienceNotice, AudienceChoice } from '../../types/game';
 import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
 import { getWonder } from '@/data/WonderData';
 import { debugLog } from './DevLog';
@@ -284,6 +284,32 @@ export class EngineEventRouter {
         break;
       case 'TEAM_PLAN_CHANGED':
         this.onTeamPlanChanged(eventData);
+        break;
+      case 'NOMAD_SIGHTED':
+        // The strangers are on the map and in the store — say so once.
+        if (!this.isAIVsAI) notify('info', t('nomad.sighted'));
+        this.syncState();
+        break;
+      case 'NOMAD_PARLEY':
+        this.onNomadParley(eventData);
+        break;
+      case 'NOMAD_HIRED':
+        if (!this.isAIVsAI) {
+          const civ = this.gameEngine.civilizations.find(
+            (c) => c.id === (eventData?.civId as number),
+          );
+          notify('info', t('nomad.aiHired', { civ: civ?.name ?? '' }));
+        }
+        this.syncState();
+        break;
+      case 'NOMAD_DEPARTED':
+        if (!this.isAIVsAI) notify('info', t('nomad.departed'));
+        this.syncState();
+        break;
+      case 'NOMAD_RESOLVED':
+        // The player answered the parley: gold, techs and (on a hire) unit
+        // owners changed — push it all into the store.
+        this.syncState();
         break;
       case 'EMBASSY_ESTABLISHED':
         this.onEmbassyEstablished(eventData);
@@ -2542,6 +2568,37 @@ export class EngineEventRouter {
       'info',
       t('team.planChanged', { city: city?.name ?? `${col},${row}` }),
     );
+  }
+
+  /**
+   * The nomad envoy stands at the gate: open the audience with the parley's
+   * own speaker and doors. Resolved later through
+   * `GameEngine.nomadManager.resolveParley(choiceId)` (see
+   * GameModals.handleAudienceChoice) — the engine event only PRESENTS it.
+   */
+  private onNomadParley(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const choices = Array.isArray(eventData?.choices)
+      ? (eventData.choices as AudienceChoice[])
+      : [];
+    if (choices.length === 0) return;
+
+    const notice: AudienceNotice = {
+      civId: -1, // no rival civ stands behind this audience
+      mode: 'offer',
+      message: '',
+      kind: 'nomad',
+      speaker: {
+        nameKey: String(eventData.speakerNameKey ?? 'nomad.chieftain'),
+        icon: String(eventData.speakerIcon ?? '🐎'),
+      },
+      leadKey: typeof eventData.leadKey === 'string' ? eventData.leadKey : undefined,
+      choices,
+      techOffered: typeof eventData.techOffered === 'string' ? eventData.techOffered : undefined,
+      goldAmount: typeof eventData.goldAmount === 'number' ? eventData.goldAmount : undefined,
+    };
+    this.actions.openAudience?.(notice);
+    this.syncState();
   }
 
   private syncState() {

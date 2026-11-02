@@ -681,6 +681,10 @@ export class TurnManager {
       // (scout region claims, POI pruning, later war plans) once per round,
       // before any member takes its turn. Free-for-all is a no-op inside.
       this.gameEngine.teamCoordinator?.processRound(this.roundNumber);
+
+      // The nomads: spawn / parley / race / depart, once per round, in
+      // single-human games only (no-op elsewhere).
+      this.gameEngine.nomadManager?.processRound(this.roundNumber);
     }
     
     // Sync active player to store on every turn change

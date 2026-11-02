@@ -19,6 +19,8 @@ interface AudienceModalProps {
   onAccept: () => void;
   onReject: () => void;
   onLeave: () => void;
+  /** A parley door was picked (nomad audiences only). */
+  onChoice?: (id: string) => void;
 }
 
 /** The slice of the engine the audience screen reads. */
@@ -58,6 +60,7 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
   onAccept,
   onReject,
   onLeave,
+  onChoice,
 }) => {
   const { t } = useTranslation();
   const civilizations = useGameStore((state) => state.civilizations);
@@ -121,7 +124,11 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
   // `techOffered` is what THEY hand over (what the player receives) and
   // `techRequested` is what they want back — see DiplomacyManager.pickTechSwap.
   const termLabel = OFFER_LABELS[notice.action ?? ''] ?? '';
-  const message = notice.mode === 'greeting'
+  // A nomad parley speaks its own opening line (an i18n key, so a language
+  // switch mid-game still works); every other audience keeps its sentence.
+  const message = notice.leadKey
+    ? t(notice.leadKey as TranslationKey)
+    : notice.mode === 'greeting'
     ? t('audience.noOffer' as TranslationKey, { leader: leaderName || t('gm.unknown' as TranslationKey) })
     : isTechExchange && notice.techOffered && notice.techRequested
       ? t('audience.offer.techExchange' as TranslationKey, {
@@ -170,7 +177,15 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
         {/* The face across the room. Big, pixel, and lit by their temper. */}
         <div className="audience-modal__stage">
           <div className="audience-modal__portrait" style={{ borderColor: moodColors.border }}>
-            {portraitConfig ? (
+            {notice.speaker ? (
+              // A non-civ speaker (the nomad envoy): the icon IS the portrait.
+              <div
+                className="audience-modal__portrait-placeholder"
+                style={{ color: moodColors.border, fontSize: '84px' }}
+              >
+                <span aria-hidden="true">{notice.speaker.icon}</span>
+              </div>
+            ) : portraitConfig ? (
               <LeaderPortrait
                 config={portraitConfig}
                 mood={attitude}
@@ -186,7 +201,9 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
           </div>
           <div className="audience-modal__ident">
             <div className="audience-modal__leader" id="audience-modal-title">
-              {leaderName || t('gm.unknown' as TranslationKey)}
+              {notice.speaker
+                ? t(notice.speaker.nameKey as TranslationKey)
+                : leaderName || t('gm.unknown' as TranslationKey)}
             </div>
             <div className="audience-modal__civ">
               {portraitConfig?.title
@@ -202,14 +219,18 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
             table, grey for a formal audience with nothing to decide. */}
         <div className="audience-modal__speech" data-mode={notice.mode}>
           <div className="audience-modal__eyebrow">
-            {isTeammateOffer
-              ? t('audience.teammate.eyebrow' as TranslationKey)
-              : isEnvoy
-                ? t('audience.envoy.eyebrow' as TranslationKey)
-                : t('audience.eyebrow' as TranslationKey)}
+            {notice.kind === 'nomad'
+              ? t('nomad.parley.eyebrow' as TranslationKey)
+              : isTeammateOffer
+                ? t('audience.teammate.eyebrow' as TranslationKey)
+                : isEnvoy
+                  ? t('audience.envoy.eyebrow' as TranslationKey)
+                  : t('audience.eyebrow' as TranslationKey)}
           </div>
           <div className="audience-modal__speaker">
-            {leaderName || civ?.name || t('gm.unknown' as TranslationKey)}
+            {notice.speaker
+              ? t(notice.speaker.nameKey as TranslationKey)
+              : leaderName || civ?.name || t('gm.unknown' as TranslationKey)}
             {' '}
             {t('audience.speakerTitle' as TranslationKey)}
           </div>
@@ -223,12 +244,35 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
             </p>
           )}
           {notice.mode === 'offer' && (
-            <p className="audience-modal__hint">{t('audience.termsLocked' as TranslationKey)}</p>
+            <p className="audience-modal__hint">
+              {notice.kind === 'nomad'
+                ? t('nomad.parley.hint' as TranslationKey)
+                : t('audience.termsLocked' as TranslationKey)}
+            </p>
           )}
         </div>
 
         <footer className="audience-modal__choices">
-          {notice.mode === 'offer' ? (
+          {notice.choices?.length ? (
+            // A parley's own doors: the label params carry the promised terms,
+            // and a tech name is localized here (the engine sends the id).
+            notice.choices.map((choice) => {
+              const params = choice.labelParams ? { ...choice.labelParams } : undefined;
+              if (params && typeof params.tech === 'string') {
+                params.tech = techName(String(params.tech));
+              }
+              return (
+                <button
+                  key={choice.id}
+                  type="button"
+                  className={`audience-choice audience-choice--${choice.variant === 'pass' ? 'reject' : 'accept'}`}
+                  onClick={() => onChoice?.(choice.id)}
+                >
+                  {t(choice.labelKey as TranslationKey, params)}
+                </button>
+              );
+            })
+          ) : notice.mode === 'offer' ? (
             <>
               <button type="button" className="audience-choice audience-choice--accept" onClick={onAccept}>
                 {acceptLabel}

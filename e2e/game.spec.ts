@@ -558,16 +558,21 @@ async function forceFirstContact(page: Page): Promise<number> {
  *
  *  - "All Your Units Have Moved!" / "End Turn?" -> Cancel
  *  - "No Research Selected"                     -> Decide Later
+ *  - "Wanderers at your gate" (nomad parley)    -> Pass in peace
  *
  * The second one is not a test artefact: research unlocks at
  * RESEARCH_UNLOCK_ROUND (5), and from then on ending a turn with nothing
  * selected opens a prompt. Left open it swallows every later click with
  * "…intercepts pointer events" — that is how the AI-city-founding test died.
+ * The nomad parley appears the same way: once a city stands and the rounds
+ * pass, the visitors arrive — dismissed here so tests keep their pace (the
+ * engine state is unaffected: passing only sets the camp's departure timer).
  */
 const BLOCKING_DIALOGS: ReadonlyArray<{ text: string; button: string }> = [
   { text: 'End Turn?', button: 'Cancel' },
   { text: 'No Research Selected', button: 'Decide Later' },
   { text: 'Auto. turn ending', button: 'Got it' },
+  { text: 'Wanderers at your gate', button: 'Pass in peace' },
   // The city-event story modal ("Washington is founded") opens the moment a
   // settler founds a city. Escape alone cannot clear it: the following
   // Ctrl+1 stacks the city screen on top, one Escape pops only that top

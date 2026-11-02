@@ -51,6 +51,7 @@ import { UnitTurnQueue } from './UnitTurnQueue';
 import { DiplomacyManager } from './DiplomacyManager';
 import { TeamManager } from './TeamManager';
 import { TeamCoordinator } from './AI/TeamCoordinator';
+import { NomadManager } from './NomadManager';
 import type {
   DiplomatAction,
   DiplomatActionOptions,
@@ -366,6 +367,12 @@ export default class GameEngine {
    * pure directive layer — member AIs work without it.
    */
   teamCoordinator: TeamCoordinator;
+  /**
+   * The opening visitors (single-human games): a neutral horde camps near
+   * the player, parleys once, and can be hired by anyone before it walks off.
+   * Session-only state — v1 nomads never survive a save.
+   */
+  nomadManager: NomadManager;
 
   // Human-readable recap of the most recent auto-end (what was skipped), used
   // for the post-end summary notification.
@@ -431,6 +438,7 @@ export default class GameEngine {
     this.diplomacyManager = new DiplomacyManager(this);
     this.teamManager = new TeamManager(this);
     this.teamCoordinator = new TeamCoordinator(this);
+    this.nomadManager = new NomadManager(this);
     this.devMode = false;
     this.victoryManager = new VictoryManager(this);
     this.isGameOver = false;
@@ -1078,6 +1086,7 @@ export default class GameEngine {
     this.diplomacyManager.reset();
     this.teamManager.reset();
     this.teamCoordinator.reset();
+    this.nomadManager.reset();
     
     // Set dev mode from settings
     this.devMode = settings.devMode || false;
@@ -1867,7 +1876,12 @@ export default class GameEngine {
   /**
    * Create a single unit
    */
-  private createUnit(civId: number, type: string, col: number, row: number) {
+  /**
+   * Create a unit of `type` for `civId` at a tile. Public so neutral
+   * factions (the nomads' horde) can be spawned by their own manager.
+   * Returns the created unit.
+   */
+  public createUnit(civId: number, type: string, col: number, row: number): Unit {
     const unitProps: { movement: number; attack: number; defense: number; icon?: string; hitPoints?: number; name?: string; type?: string; maintenance?: number } = UNIT_PROPS[type] || { movement: 1, attack: 1, defense: 1, icon: '⚔️' };
     const unitId = this.nextUnitId(civId, type);
     // Lighthouse / Magellan: the owner's sea units start with +N movement.
@@ -1906,10 +1920,12 @@ export default class GameEngine {
     this.units.push(unit);
     console.log(`[UNIT] Created ${type} for civ ${civId} at (${col},${row})`);
     
-    // Phase 3.2: If a scout was created, reassign zones
-    if (type === 'scout') {
+    // Phase 3.2: If a scout was created, reassign zones — real civs only:
+    // a neutral scout (the nomads) owns no zones and needs no fog storage.
+    if (type === 'scout' && civId >= 0) {
       this.onScoutCreated(unit);
     }
+    return unit;
   }
 
   /**
@@ -2009,16 +2025,19 @@ export default class GameEngine {
   }
 
   /**
-   * Reveal map tiles around a position for the active player
+   * Reveal map tiles around a position for a viewer (default: the active
+   * player). Callers outside the turn cycle — the nomads' visit — name the
+   * viewer explicitly, because at a round boundary `activePlayer` still
+   * points at the previous seat.
    */
-  revealArea(centerCol, centerRow, radius) {
+  revealArea(centerCol, centerRow, radius, viewerId: number = this.activePlayer) {
     // Fixed alliances share sight: the reveal lands in the active player's fog
     // and in every locked teammate's, so a unit that scouts a tile lights it
     // for the whole alliance. Free-for-all has no teammates, so this is just
     // the active player (unchanged behaviour).
     const viewers = [
-      this.activePlayer,
-      ...(this.teamManager?.getTeammates(this.activePlayer) ?? []),
+      viewerId,
+      ...(this.teamManager?.getTeammates(viewerId) ?? []),
     ];
     for (const viewerId of viewers) {
       const storage = this.playerStorage.get(viewerId);
@@ -2037,10 +2056,13 @@ export default class GameEngine {
       }
     }
 
-    // Only update the store (UI visibility) for the human player.
-    // AI exploration is kept in per-player storage and must not leak to the minimap.
-    // (The store's own updateVisibility already widens the fog to teammates.)
-    if (this.storeActions && this.activePlayer === 0) {
+    // Only update the store (UI visibility) when the VIEWER sits in a human
+    // seat: AI exploration stays in per-player storage and must not leak to
+    // the minimap. (The store's own updateVisibility already widens the fog
+    // to teammates. The old `activePlayer === 0` gate missed reveals by a
+    // human who is not seat 0, and could leak a seat-0 AI's reveal.)
+    const humanSeats = this.gameSettings?.humanPlayerIds ?? [0];
+    if (this.storeActions && humanSeats.includes(viewerId)) {
       this.storeActions.revealArea(centerCol, centerRow, radius);
     }
   }
@@ -5474,7 +5496,8 @@ const occupiedLandmasses = new Set(
    * Random tech the civ can research right now (prerequisites met, not yet
    * owned) — no prerequisite skipping. Null when nothing is available.
    */
-  private pickFreeTech(civId: number): string | null {
+  /** A random technology the civ could research right now, or null. */
+  public pickFreeTech(civId: number): string | null {
     const civ = this.civilizations[civId];
     if (!civ) return null;
     const available = AIResearch.getAvailableTechnologies(civ);
@@ -5482,8 +5505,8 @@ const occupiedLandmasses = new Set(
     return available[Math.floor(Math.random() * available.length)];
   }
 
-  /** Add a researched tech to a civ (free from a village) and refresh the tree. */
-  private grantTech(civId: number, techId: string): void {
+  /** Add a researched tech to a civ (free from a village or the nomads) and refresh the tree. */
+  public grantTech(civId: number, techId: string): void {
     const civ = this.civilizations[civId];
     if (!civ) return;
     if (Array.isArray(civ.technologies) && !civ.technologies.includes(techId)) {
@@ -9176,6 +9199,7 @@ const occupiedLandmasses = new Set(
       // Session-only directives (claims, POIs) never ride in the save —
       // drop whatever the previous game left behind.
       this.teamCoordinator.reset();
+      this.nomadManager.reset();
 
       // Citizen tile sets are `Set`s, which JSON turns into `{}` — rehydrate
       // them (pins included) or every `.has()` call on a restored city throws

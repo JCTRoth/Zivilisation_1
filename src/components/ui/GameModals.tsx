@@ -662,6 +662,29 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   };
 
   /**
+   * A parley door (nomad audience): hand the choice to the engine's
+   * NomadManager — it owns the camp, the promised terms and the outcome —
+   * then close the audience. The result comes back localized from the
+   * outcome code, and the store re-syncs through NOMAD_RESOLVED.
+   */
+  const handleAudienceChoice = (choiceId: string): void => {
+    const notice = useGameStore.getState().audienceNotice;
+    if (!notice) return;
+    playSfx('uiSelect');
+    const outcome = gameEngine?.nomadManager?.resolveParley(choiceId);
+    if (outcome?.ok && outcome.result) {
+      notify('success', t(`nomad.result.${outcome.result}` as TranslationKey, outcome.params ?? {}));
+      if (gameEngine?.civilizations) {
+        actions.updateCivilizations([...gameEngine.civilizations]);
+      }
+    } else if (outcome?.result === 'noGold') {
+      notify('warning', t('nomad.noGold' as TranslationKey));
+    }
+    handleCloseDialog();
+    actions.clearAudience();
+  };
+
+  /**
    * Close the audience without answering: same re-check as any other blocking
    * screen, just without a proposal to resolve.
    */
@@ -2992,6 +3015,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         onAccept={() => handleAudienceDecision(true)}
         onReject={() => handleAudienceDecision(false)}
         onLeave={handleAudienceLeave}
+        onChoice={handleAudienceChoice}
       />
       {renderHelp()}
       <CityModal show={uiState.activeDialog === 'city-details'} onHide={handleCloseDialog} selectedCity={selectedCity} gameEngine={gameEngine} actions={actions} currentPlayer={currentPlayer} isPlayerCity={isPlayerCity} />

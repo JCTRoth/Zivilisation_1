@@ -1,0 +1,100 @@
+= Nomads — The Opening Visitors
+
+> *Engine:* `src/game/engine/NomadManager.ts`, `src/game/engine/GameEngine.ts`,
+> `src/game/engine/TurnManager.ts` (round hook)
+> *Data:* `src/data/NomadConstants.ts`
+> *UI:* `src/components/ui/gamemodals/AudienceModal.tsx`,
+> `src/components/ui/GameModals.tsx`
+> *Tests:* `tests/nomads.test.ts` (13)
+> *i18n:* `nomad.*` keys in all 6 languages
+
+---
+
+== 1. What happens
+
+Once per **single-human** game, shortly after the first city stands (round
+≥ 4, or round ≥ 12 if no city yet), a neutral horde camps 9–13 tiles from
+the player's court: two warriors and a scout, owned by `BARBARIAN_CIV_ID`,
+fortified, revealed to the player on sight (`NOMAD_SIGHTED`).
+
+Two rounds later the envoy stands at the gate and the **parley** opens —
+the audience screen with its own speaker (the Nomad Chieftain) and four
+doors:
+
+[cols="1,3", options="header"]
+|===
+|Door |Effect
+
+|Buy their knowledge
+|One technology the court lacks, for **half its raw research cost**
+(clamped 25–100 gold). A broke court receives it free ("the road gives").
+The price and the technology are whatever the BUTTON promised — never
+re-rolled while the modal is open.
+
+|Accept their maps
+|`revealArea` — a radius-10 swath around the camp is revealed to the
+player. No other game source reveals fog without walking it.
+
+|Hire the horde
+|Pay the units' build cost × 1.1; the three neutral units convert to the
+player's colors (un-fortified, ready next turn).
+
+|Pass in peace
+|They leave after 6 rounds instead of 20.
+|===
+
+Whichever deal was struck (or none), the **camp remains a race**: from 8
+rounds after the parley, every eligible AI court may hire it (chance scales
+with the leader's diplomacy; `NOMAD_HIRED` is announced). If nobody does,
+the camp wanders off into the fog after 20 rounds (`NOMAD_DEPARTED`).
+
+A **second parley** fires when the player's unit stands at the camp after
+the first answer — hire or farewell only.
+
+== 2. Rules and boundaries
+
+* **Single human seat only.** Hotseat would have to pick whose court
+  receives them; all-AI games have nobody to talk to. Both are skipped.
+* **Neutral, not hostile.** Civ id `-1` (with the barbarians): contact
+  recording skips negative ids, no civ is at war with the camp, the AI
+  never targets it — scenery with a contract, not a combatant.
+* **Session-only.** Nothing is persisted; a loaded game simply has no
+  nomads (v1).
+* **Dismissal is not refusal.** Closing the audience without answering
+  leaves the parley open: it re-offers when the player stands at the camp
+  (3-round cooldown), never every round.
+* The parley is a **blocking dialog** — `e2e/game.spec.ts`
+  `BLOCKING_DIALOGS` dismisses it with *Pass in peace* so tests keep pace.
+
+== 3. Integration points
+
+[cols="2,3", options="header"]
+|===
+|Piece |Where
+
+|Round hook
+|`TurnManager.advanceTurn` new-round block, beside the team coordinator
+
+|Audience
+|`AudienceNotice.kind: 'nomad'` + `speaker` + `choices` + `leadKey`;
+resolved through `GameEngine.nomadManager.resolveParley(id)` via
+`GameModals.handleAudienceChoice`
+
+|Events
+|`NOMAD_SIGHTED` / `NOMAD_PARLEY` / `NOMAD_RESOLVED` / `NOMAD_HIRED` /
+`NOMAD_DEPARTED` → `EngineEventHandlers` (localized toasts + store sync)
+
+|Fog
+|`GameEngine.revealArea(col, row, radius, viewerId)` — the viewer
+parameter exists because the round hook runs before `activePlayer` flips;
+the store refresh now follows "viewer is a human seat" instead of the old
+`activePlayer === 0` assumption
+|===
+
+== 4. Tests
+
+`tests/nomads.test.ts` — trigger and spawn (distance, landmass, neutral
+id, fortification, no-city fallback, hotseat/AI skip), the four doors and
+their promised terms, the broken court's free gift, the maps reveal, the
+color swap on hire, the `noGold` refusal, the departure timer, the AI hire
+race (seeded roll), and the dismissal/proximity re-offer.
