@@ -9,6 +9,7 @@ import { useTranslation } from '@/i18n/useTranslation';
 // (no runtime effect) until that merge lands.
 import type { TranslationKey } from '@/i18n';
 import type { GameResult } from '../../../types/game';
+import { teamVictoryLedeKey } from '@/utils/resultNarrative';
 import '@/styles/gameResultOverlay.css';
 
 type GameResultOverlayProps = {
@@ -157,8 +158,13 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
       ? GameUtils.formatYear(currentYear)
       : t('result.yearPlaceholder' as TranslationKey);
 
-  const teamLabel = result.teamName
-    ?? (result.teamId !== undefined ? `Team ${result.teamId + 1}` : result.civName);
+  // A team result names the CIVILIZATIONS that did it — "Germans & Indians"
+  // — not the scaffolding label ("Team 1"). The team name survives only as
+  // a fallback when a result carries no member names.
+  const teamLabel = isTeamResult && result.civNames?.length
+    ? result.civNames.join(' & ')
+    : result.teamName
+      ?? (result.teamId !== undefined ? `Team ${result.teamId + 1}` : result.civName);
   const memberNames = result.civNames?.length
     ? result.civNames
     : ledger.memberRows.map((member) => member.name);
@@ -185,7 +191,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
     : isTeamResult
       ? result.reason === 'moonshot'
         ? t('result.lede.teamMoonshot' as TranslationKey, { team: teamLabel })
-        : t('result.lede.teamVictory' as TranslationKey, { team: teamLabel })
+        : t(teamVictoryLedeKey(result.timestamp), { team: teamLabel })
       : !human
         ? t('result.lede.aiVictory' as TranslationKey, { civ: result.civName })
         : result.reason === 'moonshot'
@@ -206,7 +212,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
           ? t('result.verse.defeat3Rival' as TranslationKey, { rival: ledger.lastRival })
           : t('result.verse.defeat3' as TranslationKey),
         ...(isTeamResult
-          ? [t('result.verse.teamMembers' as TranslationKey, { team: teamLabel, members: memberLine })]
+          ? [t('result.verse.teamMembers' as TranslationKey, { members: memberLine })]
           : [])
       ]
     : [
@@ -251,7 +257,7 @@ const GameResultOverlay: React.FC<GameResultOverlayProps> = ({
                     : t('result.unit.rival.plural' as TranslationKey)
               }),
         ...(isTeamResult
-          ? [t('result.verse.teamMembers' as TranslationKey, { team: teamLabel, members: memberLine })]
+          ? [t('result.verse.teamMembers' as TranslationKey, { members: memberLine })]
           : [])
       ];
 
