@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
+import { EARLY_TECH_EXCHANGE_MAX_ROUND } from '@/data/GameConstants';
 import type { Unit } from '../../types/game';
 
 /**
@@ -779,12 +780,19 @@ describe('AI trade visits (regular units)', () => {
     expect(events.some((e) => e.type === 'AI_DIPLOMACY_OFFER')).toBe(true);
   });
 
-  it('a diplomat is left to its own menu, not this path', async () => {
+  it('a diplomat is left to its own menu — except as the opening-era envoy', async () => {
     const engine = await makeEngine();
     const aiManager = (engine as any).aiManager;
     engine.diplomacyManager.establishEmbassy(1, 0);
     const { unit } = arrangeProfitableTrade(engine, 'diplomat');
+
+    // Outside the opening era the diplomat's own, richer menu owns it.
+    (engine as any).roundManager.getRoundNumber = () => EARLY_TECH_EXCHANGE_MAX_ROUND + 1;
     expect((aiManager as any).considerTradeVisit(unit)).toBe(false);
+
+    // Inside it the diplomat IS the envoy: it tables the exchange in person.
+    (engine as any).roundManager.getRoundNumber = () => 5;
+    expect((aiManager as any).considerTradeVisit(unit)).toBe(true);
   });
 
   it('a settler keeps founding rather than talking', async () => {

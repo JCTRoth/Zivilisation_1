@@ -122,6 +122,36 @@
   font-style: italic;
 }
 
+/* ── The header band and the lines around the speech ──────────────────── */
+
+/* What kind of audience this is: an envoy from the opening era, a dispatch
+   from a teammate, or a formal diplomatic audience. */
+.audience-modal__eyebrow {
+  margin: 0 0 6px;
+  color: var(--color-text-muted, #8fa3b4);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+/* The leader's temperament-flavoured opening, before the terms themselves. */
+.audience-modal__opening {
+  margin: 0 0 8px;
+  color: var(--color-text, #e8eef3);
+  font-size: 15px;
+  font-style: italic;
+  opacity: 0.92;
+}
+
+/* Why they came: the opening-era envoy names its reason. */
+.audience-modal__reason {
+  margin: 8px 0 0;
+  color: var(--color-text-muted, #8fa3b4);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
 /* ── The choice ───────────────────────────────────────────────────────── */
 
 .audience-modal__choices {

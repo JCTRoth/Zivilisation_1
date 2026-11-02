@@ -14,7 +14,7 @@
  *   * peace and free-for-all produce no plan at all,
  *   * the focus bonus makes the team's primary win a member's bulk scoring.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TeamCoordinator } from '@/game/engine/AI/TeamCoordinator';
 import { TeamManager } from '@/game/engine/TeamManager';
 import { planBulkAttack, TEAM_FOCUS_BONUS, type KnownTarget } from '@/game/engine/AI/AIAggression';
@@ -85,6 +85,13 @@ function makeWarWorld(options: WarWorldOptions): WarWorld {
     playerStorage,
     units: (options.units ?? []).map((u) => ({ isDefeated: false, ...u })),
     cities,
+    // Civ 0 is the human on team 0 — plan changes are news for it.
+    civilizations: [
+      { id: 0, name: 'Alpha', isHuman: true, isAlive: true },
+      { id: 1, name: 'Beta', isHuman: false, isAlive: true },
+      { id: 2, name: 'Gamma', isHuman: false, isAlive: true },
+    ],
+    onStateChange: vi.fn(),
     devMode: options.devMode ?? false,
     currentTurn: options.currentTurn ?? 5,
     squareGrid: {
@@ -385,5 +392,50 @@ describe('player directives — pinPrimaryTarget ("Coordinate attack")', () => {
     });
     ffa.coordinator.processRound(5);
     expect(ffa.coordinator.pinPrimaryTarget(0, 16, 1)).toBe(false);
+  });
+});
+
+describe('war plan changes — reported to a human teammate', () => {
+  it('emits TEAM_PLAN_CHANGED when the primary moves, once per change', () => {
+    const w = makeWarWorld({
+      assignments: [0, 0, 1],
+      enemies: { 0: [2], 1: [2] },
+      exploredColumns: { 0: 17, 1: 17 },
+      cities: [
+        city('first', 15, 10, 2, 2),
+        city('second', 5, 18, 2, 1),
+      ],
+      units: [scout('s1', 14, 10, 0), scout('s2', 14, 11, 1)],
+    });
+
+    // The first plan is news.
+    w.coordinator.processRound(5);
+    expect(w.engine.onStateChange).toHaveBeenCalledTimes(1);
+    const [type, data] = w.engine.onStateChange.mock.calls[0];
+    expect(type).toBe('TEAM_PLAN_CHANGED');
+    expect(data).toMatchObject({ col: 15, row: 10, targetCivId: 2, humanId: 0, teamId: 0 });
+
+    // A kept plan is not news.
+    w.coordinator.processRound(6);
+    expect(w.engine.onStateChange).toHaveBeenCalledTimes(1);
+
+    // Capture the primary → the plan rotates → news again.
+    const captured = w.cities.find((c) => c.id === 'first')!;
+    captured.civilizationId = 0;
+    w.coordinator.processRound(7);
+    expect(w.engine.onStateChange).toHaveBeenCalledTimes(2);
+    expect(w.engine.onStateChange.mock.calls[1][1]).toMatchObject({ col: 5, row: 18 });
+  });
+
+  it('stays silent in free-for-all and when no human is on the team', () => {
+    const ffa = makeWarWorld({
+      assignments: undefined as unknown as number[],
+      enemies: { 0: [2] },
+      exploredColumns: { 0: 17 },
+      cities: [city('first', 15, 10, 2, 2)],
+      units: [scout('s1', 14, 10, 0)],
+    });
+    ffa.coordinator.processRound(5);
+    expect(ffa.engine.onStateChange).not.toHaveBeenCalled();
   });
 });

@@ -2451,6 +2451,7 @@ export class DiplomacyManager {
       maxWars: maxConcurrentWars(weights, this.gameEngine.currentYear),
       teammate: this.isTeammate(civId, otherId),
       teamMode: this.gameEngine.teamManager?.enabled === true,
+      targetIsHuman: this.gameEngine.civilizations?.[otherId]?.isHuman === true,
       exhaustion: this.getWarExhaustion(civId),
       turnsSince: round - statusSince,
       roundsSincePeace,
@@ -2670,6 +2671,9 @@ export class DiplomacyManager {
           // Only table it when the two peoples are actually standing
           // together — otherwise the offer would be refused on arrival.
           if (!this.hasUnitContact(civId, otherId)) break;
+          // The contact guard above IS the meeting: the deal travels with the
+          // units standing at each other's doorstep (inPerson), so accepting
+          // it does not additionally demand two diplomats side by side.
           const techName = (id: string): string =>
             TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
           const message = deal.kind === 'sale'
@@ -2683,7 +2687,7 @@ export class DiplomacyManager {
           if (isPlayerTarget) {
             this.emitOffer(
               civId, otherId, 'offer_tech_exchange', deal.goldAmount, message,
-              deal.techOffered, deal.techRequested,
+              deal.techOffered, deal.techRequested, undefined, true,
             );
           } else {
             this.processProposal({
@@ -2693,6 +2697,7 @@ export class DiplomacyManager {
               techOffered: deal.techOffered,
               techRequested: deal.techRequested,
               goldAmount: deal.goldAmount,
+              inPerson: true,
             });
           }
           break;
@@ -2705,6 +2710,7 @@ export class DiplomacyManager {
           const terms = this.pickTechForGoldTerm(civId, otherId);
           if (!terms.techOffered && !terms.techRequested) break;
           if (!this.hasDiplomatContact(civId, otherId)) break;
+          // The diplomats ARE the contact — the deal is made in person.
           const techName = (id: string): string =>
             TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
           const message = terms.techOffered
@@ -2713,7 +2719,7 @@ export class DiplomacyManager {
           if (isPlayerTarget) {
             this.emitOffer(
               civId, otherId, 'offer_tech_for_gold', terms.goldAmount, message,
-              terms.techOffered, terms.techRequested,
+              terms.techOffered, terms.techRequested, undefined, true,
             );
           } else {
             this.processProposal({
@@ -2723,6 +2729,7 @@ export class DiplomacyManager {
               goldAmount: terms.goldAmount,
               techOffered: terms.techOffered,
               techRequested: terms.techRequested,
+              inPerson: true,
             });
           }
           break;
@@ -2734,13 +2741,14 @@ export class DiplomacyManager {
           const terms = this.pickTechGiftTerm(civId, otherId);
           if (!terms.techOffered) break;
           if (!this.hasDiplomatContact(civId, otherId)) break;
+          // The diplomats ARE the contact — the gift travels with them.
           const techName = (id: string): string =>
             TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
           const message = `${civName} offers its knowledge of ${techName(terms.techOffered)} as a gift.`;
           if (isPlayerTarget) {
             this.emitOffer(
               civId, otherId, 'gift_technology', undefined, message,
-              terms.techOffered, undefined,
+              terms.techOffered, undefined, undefined, true,
             );
           } else {
             this.processProposal({
@@ -2748,6 +2756,7 @@ export class DiplomacyManager {
               toCivId: otherId,
               action: 'gift_technology',
               techOffered: terms.techOffered,
+              inPerson: true,
             });
           }
           break;

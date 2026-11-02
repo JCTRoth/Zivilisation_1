@@ -488,7 +488,31 @@ export class TeamCoordinator {
       }
       if (best) next.set(teamId, { primary: best, assignedRound: this.currentRound });
     }
+    const previousPlans = this.warPlanByTeam;
     this.warPlanByTeam = next;
+
+    // Tell the player when their team's war aim moves: the diplomacy panel
+    // shows the plan, but a CHANGE is news — a toast so a redirected war is
+    // never a silent event. Only teams with a human on them have anyone to tell.
+    for (const [teamId, plan] of next) {
+      const previous = previousPlans.get(teamId);
+      if (
+        previous
+        && previous.primary.col === plan.primary.col
+        && previous.primary.row === plan.primary.row
+        && previous.primary.civId === plan.primary.civId
+      ) continue;
+      const members = teamManager.getTeamMembers(teamId);
+      const human = members.find((m) => this.gameEngine.civilizations?.[m]?.isHuman === true);
+      if (human === undefined) continue;
+      this.gameEngine.onStateChange?.('TEAM_PLAN_CHANGED', {
+        teamId,
+        humanId: human,
+        col: plan.primary.col,
+        row: plan.primary.row,
+        targetCivId: plan.primary.civId,
+      });
+    }
   }
 
   /** A kept primary must still be the same enemy's city, known and recent. */

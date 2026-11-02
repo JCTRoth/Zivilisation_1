@@ -5,7 +5,7 @@
  */
 
 import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVAN_TRADE_ROUTES, MAX_CARAVANS_PER_CITY } from '@/utils/Constants';
-import { PURCHASE_GOLD_PER_SHIELD, CARAVAN_THREAT_RADIUS } from '@/data/GameConstants';
+import { PURCHASE_GOLD_PER_SHIELD, CARAVAN_THREAT_RADIUS, EARLY_TECH_EXCHANGE_MAX_ROUND } from '@/data/GameConstants';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { WONDERS, wonderGroupMembers } from '@/data/WonderData';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
@@ -1917,6 +1917,22 @@ export class AutoProduction {
       (u: Unit) => u.civilizationId === civ.id && u.type === 'diplomat'
     ).length;
     if (diplomatCount >= 2) return false;
+
+    // The opening era: once this civ has MET a human court, a diplomat is no
+    // longer a luxury — it is how the AI seeks the player for the Exchange of
+    // Knowledge. Deterministic inside the window (no chance roll): every
+    // early game gets its envoy. After the window the ordinary
+    // personality-scaled chance below decides.
+    if (diplomatCount === 0 && dm) {
+      const round = this.gameEngine.roundManager?.getRoundNumber?.() ?? 0;
+      if (round <= EARLY_TECH_EXCHANGE_MAX_ROUND) {
+        const metAHuman = (this.gameEngine.civilizations ?? []).some(
+          (other) => other.isHuman === true && other.isAlive !== false
+            && other.id !== civ.id && dm.hasContacted(civ.id, other.id),
+        );
+        if (metAHuman) return true;
+      }
+    }
 
     const personality = civ.personality ?? { aggression: 5, diplomacy: 5, military: 5 };
     const chance = personality.diplomacy >= 7 ? 0.30 : personality.diplomacy >= 5 ? 0.15 : 0.05;

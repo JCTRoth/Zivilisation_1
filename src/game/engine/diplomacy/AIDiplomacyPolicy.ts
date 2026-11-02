@@ -18,7 +18,7 @@
 
 import type { DiplomaticStatus, TreatyType } from '../DiplomacyTypes';
 import type { DiplomaticWeights } from './DiplomaticWeights';
-import { RECONCILE_GOLD_FLOOR } from '@/data/GameConstants';
+import { EARLY_TECH_EXCHANGE_MAX_ROUND, RECONCILE_GOLD_FLOOR } from '@/data/GameConstants';
 import type { Opinion } from '../DiplomacyTypes';
 import { seededNoise } from './ProposalScoring';
 import { pickFavourableSwap, type TechTradeContext } from './TechTradeEvaluator';
@@ -94,6 +94,12 @@ export interface PolicyContext {
   /** Round number, for the seeded tiebreak. */
   round: number;
   sequence: number;
+  /**
+   * The other court is a human player. Drives the opening-era Exchange of
+   * Knowledge: inside the window an AI seeks the human player for it
+   * (`EARLY_TECH_EXCHANGE_MAX_ROUND`); afterwards benefit decides.
+   */
+  targetIsHuman?: boolean;
   /**
    * Calendar year, for the late-game push. Optional so a caller with no
    * calendar (and every existing test) keeps the early-game behaviour.
@@ -407,6 +413,35 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
         6 + goodwill / 12,
         'we are friends and we can share what we know',
       );
+    }
+
+    // The opening era, human court: knowledge shared early is worth the most —
+    // there is almost none of it — and a court that has just met the player
+    // SEEKS the exchange rather than waiting for the arithmetic to allow it.
+    // These pushes dominate the round inside the window; when it closes they
+    // vanish and the benefit-based candidates above decide, as they always did.
+    if (
+      ctx.targetIsHuman
+      && ctx.round <= EARLY_TECH_EXCHANGE_MAX_ROUND
+      && (canOffer > 0 || canWant > 0)
+    ) {
+      const remaining = EARLY_TECH_EXCHANGE_MAX_ROUND - ctx.round;
+      if (canOffer > 0 && canWant > 0) {
+        push(
+          out,
+          'offer_tech_exchange',
+          45 + remaining / 4,
+          'the opening era — knowledge shared early serves us both',
+        );
+      }
+      if (canOffer > 0) {
+        push(
+          out,
+          'gift_technology',
+          30 + remaining / 5,
+          'the opening era — a courtesy of shared learning',
+        );
+      }
     }
 
     // Alliance: the strategic case the old flat −10 never had.

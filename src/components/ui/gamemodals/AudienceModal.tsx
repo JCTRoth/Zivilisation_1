@@ -5,6 +5,7 @@ import { useGameStore } from '@/stores/GameStore';
 import LeaderPortrait from '@/components/ui/LeaderPortrait';
 import { LEADER_PORTRAITS, MOOD_COLORS } from '@/data/LeaderPortraits';
 import { attitudeFromScore, type Attitude } from '@/game/engine/DiplomacyTypes';
+import { EARLY_TECH_EXCHANGE_MAX_ROUND } from '@/data/GameConstants';
 import { tTechName } from '@/i18n/dataNames';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import type { AudienceNotice, Civilization } from '../../../../types/game';
@@ -14,10 +15,19 @@ import '../../../styles/audienceModal.css';
 interface AudienceModalProps {
   show: boolean;
   notice: AudienceNotice | null;
-  gameEngine?: { diplomacyManager?: DiplomacyManagerLike } | null;
+  gameEngine?: AudienceEngineLike | null;
   onAccept: () => void;
   onReject: () => void;
   onLeave: () => void;
+}
+
+/** The slice of the engine the audience screen reads. */
+interface AudienceEngineLike {
+  diplomacyManager?: DiplomacyManagerLike;
+  /** The current round — inside the opening era an offer arrives as an envoy. */
+  currentTurn?: number;
+  /** Whether the offering court is one of the player's locked teammates. */
+  teamManager?: { isTeammate?: (a: number, b: number) => boolean };
 }
 
 /** The slice of the diplomacy manager the audience screen reads. */
@@ -70,6 +80,21 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
   const isTechExchange = notice.action === 'offer_tech_exchange';
   const isTechForGold = notice.action === 'offer_tech_for_gold';
   const isTechGift = notice.action === 'gift_technology';
+  const isTechOffer = notice.mode === 'offer' && (isTechExchange || isTechForGold || isTechGift);
+
+  // The opening era (see EARLY_TECH_EXCHANGE_MAX_ROUND): a knowledge offer
+  // inside the window arrives AS AN ENVOY — the AI sought the player out —
+  // and a teammate's offer carries its own header, because a dispatch from
+  // your own team is not a diplomatic audience.
+  const isEnvoy = isTechOffer
+    && (gameEngine?.currentTurn ?? Number.POSITIVE_INFINITY) <= EARLY_TECH_EXCHANGE_MAX_ROUND;
+  const isTeammateOffer = notice.mode === 'offer'
+    && (gameEngine?.teamManager?.isTeammate?.(playerId, notice.civId) ?? false);
+
+  // How the leader feels about YOU tunes both the face and the opening line.
+  const opening = isTechOffer
+    ? t(`audience.opening.${attitude}` as TranslationKey)
+    : null;
 
   // A proposal's own term, in the player's language. The engine composes its
   // message in English, so anything that is not a tech swap is rebuilt from the
@@ -176,12 +201,27 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
         {/* The speech field. Green when they are putting something on the
             table, grey for a formal audience with nothing to decide. */}
         <div className="audience-modal__speech" data-mode={notice.mode}>
+          <div className="audience-modal__eyebrow">
+            {isTeammateOffer
+              ? t('audience.teammate.eyebrow' as TranslationKey)
+              : isEnvoy
+                ? t('audience.envoy.eyebrow' as TranslationKey)
+                : t('audience.eyebrow' as TranslationKey)}
+          </div>
           <div className="audience-modal__speaker">
             {leaderName || civ?.name || t('gm.unknown' as TranslationKey)}
             {' '}
             {t('audience.speakerTitle' as TranslationKey)}
           </div>
+          {opening && <p className="audience-modal__opening">{opening}</p>}
           <p className="audience-modal__text">{message}</p>
+          {isEnvoy && (
+            <p className="audience-modal__reason">
+              {t('audience.envoy.reason' as TranslationKey, {
+                civ: civ?.name ?? t('gm.unknown' as TranslationKey),
+              })}
+            </p>
+          )}
           {notice.mode === 'offer' && (
             <p className="audience-modal__hint">{t('audience.termsLocked' as TranslationKey)}</p>
           )}

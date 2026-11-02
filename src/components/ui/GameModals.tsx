@@ -629,24 +629,30 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         inPerson: notice.inPerson,
       });
       const civName = civilizations[notice.civId]?.name ?? t('gm.unknown' as TranslationKey);
-      notify(
-        result.accepted ? 'success' : 'warning',
-        result.accepted
-          ? t('gm.diplo.feed.offerAccepted' as TranslationKey, {
-            civ: civName,
-            term: (notice.action ?? '').replace(/_/g, ' '),
-          })
-          : result.reason
-            ? t('gm.diplo.feed.offerFailedReason' as TranslationKey, { reason: String(result.reason) })
-            : t('gm.diplo.feed.offerFailed' as TranslationKey),
+      // The leader's temperament scales the reaction: a friend's gratitude
+      // reads differently from a rival's curt nod — and a refusal is
+      // registered with the same scale, so declining on a hostile court
+      // costs more than declining a neutral one.
+      const attitude = attitudeFromScore(
+        gameEngine.diplomacyManager.getAttitudeScore?.(notice.civId, currentPlayer?.id ?? 0) ?? 0,
       );
+      if (result.accepted) {
+        notify('success', t(`audience.reaction.accepted.${attitude}` as TranslationKey, { civ: civName }));
+      } else if (result.reason) {
+        notify('warning', t('gm.diplo.feed.offerFailedReason' as TranslationKey, { reason: String(result.reason) }));
+      } else {
+        notify('warning', t('gm.diplo.feed.offerFailed' as TranslationKey));
+      }
       // A tech swap changes what each civ knows — refresh the store mirror.
       if (gameEngine?.civilizations) {
         actions.updateCivilizations([...gameEngine.civilizations]);
       }
     } else if (!accept && notice.mode === 'offer') {
       const civName = civilizations[notice.civId]?.name ?? t('gm.unknown' as TranslationKey);
-      notify('info', t('gm.diplo.feed.offerDeclined' as TranslationKey, { civ: civName }));
+      const attitude = attitudeFromScore(
+        gameEngine?.diplomacyManager?.getAttitudeScore?.(notice.civId, currentPlayer?.id ?? 0) ?? 0,
+      );
+      notify('info', t(`audience.reaction.declined.${attitude}` as TranslationKey, { civ: civName }));
     }
 
     // The audience defers auto-end like every other decision screen, so
@@ -1334,7 +1340,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         if (!city) return;
                         const result = await sendCommand({ type: 'TEAM_COORDINATE_ATTACK', col: city.col, row: city.row });
                         if (isCommandRejection(result)) {
-                          notify('error', t('gm.diplo.team.attackRefused' as TranslationKey));
+                          // The engine names the reason; the council reports it
+                          // in the player's language.
+                          notify('error', result.details === 'TARGET_NOT_ENEMY_CITY_OF_TEAM'
+                            ? t('team.cmd.targetInvalid' as TranslationKey)
+                            : t('gm.diplo.team.attackRefused' as TranslationKey));
                         } else {
                           notify('success', t('gm.diplo.team.attackSet' as TranslationKey, { city: city.name }));
                           setTeamAttackCityId('');
@@ -1345,7 +1355,9 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                         if (!city) return;
                         const result = await sendCommand({ type: 'TEAM_DEFEND_CITY', cityId: city.id });
                         if (isCommandRejection(result)) {
-                          notify('error', t('gm.diplo.team.defendRefused' as TranslationKey));
+                          notify('error', result.details === 'NO_TEAM_TO_CALL'
+                            ? t('team.cmd.noTeam' as TranslationKey)
+                            : t('gm.diplo.team.defendRefused' as TranslationKey));
                         } else {
                           notify('success', t('gm.diplo.team.defendSet' as TranslationKey, { city: city.name }));
                           setTeamDefendCityId('');

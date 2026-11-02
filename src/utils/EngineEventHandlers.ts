@@ -282,6 +282,9 @@ export class EngineEventRouter {
       case 'AI_DIPLOMACY_OFFER':
         this.onAIDiplomacyOffer(eventData);
         break;
+      case 'TEAM_PLAN_CHANGED':
+        this.onTeamPlanChanged(eventData);
+        break;
       case 'EMBASSY_ESTABLISHED':
         this.onEmbassyEstablished(eventData);
         break;
@@ -2522,6 +2525,23 @@ export class EngineEventRouter {
       message: eventData.message as string,
     });
     this.syncState();
+  }
+
+  /**
+   * The human's team changed its war aim: a toast naming the new target, so
+   * a redirected war is never silent (the diplomacy panel also shows the plan,
+   * but a change is news).
+   */
+  private onTeamPlanChanged(eventData: Record<string, unknown>) {
+    if (this.isAIVsAI) return;
+    const col = eventData?.col as number;
+    const row = eventData?.row as number;
+    if (typeof col !== 'number' || typeof row !== 'number') return;
+    const city = this.gameEngine.cities.find((c) => c.col === col && c.row === row);
+    notify(
+      'info',
+      t('team.planChanged', { city: city?.name ?? `${col},${row}` }),
+    );
   }
 
   private syncState() {

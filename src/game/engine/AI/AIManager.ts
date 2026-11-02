@@ -18,7 +18,7 @@ import {
   villageDecisionRoll,
   villageEarlyGameFactor,
 } from '@/data/VillageConstants';
-import { isAutoScenario, SMALL_ISLAND_MAX_TILES } from '@/data/GameConstants';
+import { EARLY_TECH_EXCHANGE_MAX_ROUND, isAutoScenario, SMALL_ISLAND_MAX_TILES } from '@/data/GameConstants';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { caravanRelevanceForCiv } from './CaravanEconomics';
 import { planCaravansForCiv, type CaravanCoordinatorWorld } from './CaravanCoordinator';
@@ -1288,6 +1288,12 @@ export class AIManager {
         // than attacking (Civ I: diplomacy is initiated on physical contact).
         // The action consumes the diplomat's moves, ending its processing.
         if (unit.type === 'diplomat') {
+          // The opening-era envoy gets first claim on the turn: a diplomat at
+          // the human court tables the Exchange of Knowledge in person (see
+          // considerTradeVisit) before its espionage menu runs.
+          if (this.considerTradeVisit(unit)) {
+            break;
+          }
           const contacts = this.gameEngine.getDiplomatTargets?.(unit.id) ?? [];
           // Between two courts the diplomat opens with whichever one this turn
           // can be spent on most productively, rather than whichever tile the
@@ -5431,6 +5437,15 @@ export class AIManager {
   private chooseAITarget(unit: Unit): { col: number; row: number } | null {
     if (!this.gameEngine.map || !this.gameEngine.squareGrid) return null;
 
+    // The opening-era envoy walks to the human court: nearest known, peaceful
+    // human city, approached to an ADJACENT tile (that is where visits happen —
+    // see considerTradeVisit). Once it arrives the visit tables the exchange;
+    // after the window this returns null and the diplomat resumes its own menu.
+    if (unit.type === 'diplomat') {
+      const envoy = this.earlyEnvoyTarget(unit);
+      if (envoy) return envoy;
+    }
+
     // A unit reserved for a naval invasion ignores everything else: walk to
     // the boarding beach, and once it is ashore, march on the enemy city. It
     // is usually the only way to reach that city at all. Every unit in the
@@ -6470,6 +6485,51 @@ export class AIManager {
   }
 
   /**
+   * The opening-era envoy's destination: a walkable tile ADJACENT to the
+   * nearest known, peaceful human city. Null outside the window, at war, or
+   * when no human court has been met/seen yet — the diplomat then resumes its
+   * ordinary menu. This is the "the AI seeks you" half of the early exchange:
+   * once contact exists, a diplomat walks to the player's door so the visit
+   * (considerTradeVisit) can table the deal in person.
+   */
+  private earlyEnvoyTarget(unit: Unit): { col: number; row: number } | null {
+    if (this.roundOf() > EARLY_TECH_EXCHANGE_MAX_ROUND) return null;
+    const dm = this.gameEngine.diplomacyManager;
+    if (!dm) return null;
+    const civId = unit.civilizationId;
+    const grid = this.gameEngine.squareGrid;
+
+    let target: { col: number; row: number } | null = null;
+    let best = Infinity;
+    for (const city of this.gameEngine.cities ?? []) {
+      const owner = this.gameEngine.civilizations?.[city.civilizationId];
+      if (owner?.isHuman !== true || owner.isAlive === false) continue;
+      if (!dm.hasContacted?.(civId, city.civilizationId)) continue;
+      if (dm.isAtWar?.(civId, city.civilizationId)) continue;
+      // Only courts this civ has actually SEEN: an envoy does not march at a
+      // rumour on the far side of an unexplored map.
+      if (!this.gameEngine.isExploredByPlayer?.(civId, city.col, city.row)) continue;
+      const dist = grid?.squareDistance?.(unit.col, unit.row, city.col, city.row)
+        ?? Math.max(Math.abs(unit.col - city.col), Math.abs(unit.row - city.row));
+      if (dist < best) {
+        best = dist;
+        target = { col: city.col, row: city.row };
+      }
+    }
+    // Already standing at the court (Chebyshev <= 1) — the visit flow tables
+    // the deal itself; a target here would just re-walk the diplomat.
+    if (!target || best <= 1) return null;
+
+    // Approach tile: any passable, unoccupied neighbour of the city.
+    for (const n of grid?.getNeighbors?.(target.col, target.row) ?? []) {
+      if (this.gameEngine.isTilePassable?.(n.col, n.row) && !this.gameEngine.getUnitAt?.(n.col, n.row)) {
+        return { col: n.col, row: n.row };
+      }
+    }
+    return null;
+  }
+
+  /**
    * An ordinary unit, already standing beside a foreign city, pays a visit and
    * proposes an Exchange of Knowledge — if the evaluator says the trade leaves
    * this civ better off.
@@ -6484,10 +6544,17 @@ export class AIManager {
    * the unit: the offer is on its way and the unit has nothing left to do.
    */
   private considerTradeVisit(unit: Unit): boolean {
-    // Diplomats have their own, richer menu — this is for everyone else.
-    if (unit.type === 'diplomat') return false;
-    // Civilians and transports have jobs that are not conversation.
-    if (NON_VISITING_UNIT_TYPES.has(unit.type)) return false;
+    // The opening era gives diplomats a second job: they become the ENVOY and
+    // seek the human court to table the Exchange of Knowledge in person.
+    // Everyone else keeps the ordinary visit rules; outside the window a
+    // diplomat is back to its own, richer menu.
+    const earlyWindow = this.roundOf() <= EARLY_TECH_EXCHANGE_MAX_ROUND;
+    if (unit.type === 'diplomat') {
+      if (!earlyWindow) return false;
+    } else if (NON_VISITING_UNIT_TYPES.has(unit.type)) {
+      // Civilians and transports have jobs that are not conversation.
+      return false;
+    }
 
     const civId = unit.civilizationId;
     const dm = this.gameEngine.diplomacyManager;
@@ -6495,6 +6562,9 @@ export class AIManager {
 
     for (const other of this.gameEngine.civilizations ?? []) {
       if (other.id === civId || other.isAlive === false) continue;
+
+      // An envoy seeks the HUMAN court only; ordinary units may visit anyone.
+      if (unit.type === 'diplomat' && other.isHuman !== true) continue;
 
       // Only a city the unit is standing NEXT TO counts. Standing on the tile
       // itself is combat, and a unit elsewhere is not visiting anything.
@@ -6506,19 +6576,26 @@ export class AIManager {
 
       // Civ I: no Exchange of Knowledge without a channel. The same embassy
       // gate the negotiation screen uses, so a civ cannot skip it by walking
-      // a warrior up to the wall.
-      if (!dm.hasEmbassy?.(civId, other.id)) continue;
+      // a warrior up to the wall. The opening-era envoy IS the channel: the
+      // deal travels with the messenger standing at the human court's door.
+      if (!dm.hasEmbassy?.(civId, other.id) && !(unit.type === 'diplomat' && other.isHuman === true)) continue;
 
       // Do not offer the same court a swap every single turn it stands there.
-      if (this.recentTradeVisit.get(other.id) === this.roundOf()) continue;
+      if ((this.recentTradeVisit.get(other.id) ?? -Infinity) >= this.roundOf()) continue;
 
       const opts = dm.getTechTradeOptions?.(civId, other.id);
       if (!opts) continue;
 
-      const deal = this.pickVisitDeal(civId, other.id, opts);
+      // Inside the window the envoy tablets the guaranteed exchange; after it
+      // (and for ordinary units always) the deal must pay for itself.
+      const deal = unit.type === 'diplomat'
+        ? this.pickEarlyVisitDeal(civId, other.id, opts)
+        : this.pickVisitDeal(civId, other.id, opts);
       if (!deal) continue;
 
-      this.recentTradeVisit.set(other.id, this.roundOf());
+      // An envoy's visit cools the pair down for several rounds — it stands
+      // at the court, it does not re-knock every turn.
+      this.recentTradeVisit.set(other.id, this.roundOf() + (unit.type === 'diplomat' ? 8 : 0));
       const otherName = other.name ?? `Civ ${other.id}`;
       const techName = (id: string): string =>
         TECHNOLOGIES_DATA.find((t) => t.id === id)?.name ?? id;
@@ -6640,6 +6717,74 @@ export class AIManager {
           techOffered: terms.techOffered,
           goldAmount: terms.goldAmount,
           because: 'a secret has a price',
+        };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * What the OPENING ERA puts on the table when its envoy reaches the human
+   * court. Inside the window the exchange itself is the goal — unlike
+   * `pickVisitDeal` no evaluator margin has to clear, because knowledge is
+   * worth the most when there is least of it: a straight swap when both sides
+   * hold something the other lacks, otherwise a free gift of our most
+   * valuable spare secret, and a purchase when the player leads and the
+   * treasury can pay.
+   */
+  private pickEarlyVisitDeal(
+    civId: number,
+    otherId: number,
+    opts: { weHaveTheyLack: string[]; theyHaveWeLack: string[] },
+  ): {
+    action: DiplomatAction;
+    techOffered?: string;
+    techRequested?: string;
+    goldAmount?: number;
+    because: string;
+  } | null {
+    const dm = this.gameEngine.diplomacyManager;
+    if (!dm) return null;
+    const cost = (id: string): number =>
+      TECHNOLOGIES_DATA.find((t) => t.id === id)?.cost ?? 50;
+
+    // 1. Both directions: a straight swap — our cheapest spare for their
+    //    dearest one, the same mechanical shape Civ I used in its first years.
+    if (opts.weHaveTheyLack.length > 0 && opts.theyHaveWeLack.length > 0) {
+      const offered = [...opts.weHaveTheyLack].sort((a, b) => cost(a) - cost(b))[0];
+      const requested = [...opts.theyHaveWeLack].sort((a, b) => cost(b) - cost(a))[0];
+      if (offered && requested) {
+        return {
+          action: 'offer_tech_exchange',
+          techOffered: offered,
+          techRequested: requested,
+          because: 'the opening era — a first exchange',
+        };
+      }
+    }
+
+    // 2. One direction only: hand over our most valuable spare secret. The
+    //    early era has no use for a court that hoards what it cannot use.
+    if (opts.weHaveTheyLack.length > 0) {
+      const gift = dm.pickTechGiftTerm?.(civId, otherId);
+      if (gift?.techOffered) {
+        return {
+          action: 'gift_technology',
+          techOffered: gift.techOffered,
+          because: 'the opening era — shared learning',
+        };
+      }
+    }
+
+    // 3. The player leads in learning: buy what we lack, if we can pay.
+    if (opts.theyHaveWeLack.length > 0) {
+      const terms = dm.pickTechForGoldTerm?.(civId, otherId);
+      if (terms?.techRequested && terms.goldAmount) {
+        return {
+          action: 'offer_tech_for_gold',
+          techRequested: terms.techRequested,
+          goldAmount: terms.goldAmount,
+          because: 'the opening era — they lead and we can pay',
         };
       }
     }
@@ -6792,9 +6937,12 @@ export class AIManager {
                 ? `${civName} offers its knowledge of ${techName(techForGold.techOffered)} for ${techForGold.goldAmount} gold.`
                 : `${civName} offers ${techForGold.goldAmount} gold for its knowledge of ${techName(techForGold.techRequested ?? '')}.`)
               : `${civName}'s diplomat proposes ${action.replace(/_/g, ' ')}.`;
+        // The diplomat is physically standing at that court (this branch only
+        // runs for getDiplomatTargets contacts) — the deal is made in person,
+        // so it travels with the messenger and needs no second diplomat.
         this.gameEngine.diplomacyManager?.presentOffer?.(
           civId, targetCivId, action as DiplomatAction, gold, message,
-          techOffered, techRequested,
+          techOffered, techRequested, undefined, true,
         );
         unit.movesRemaining = 0;
       }

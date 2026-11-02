@@ -139,6 +139,16 @@ export function isAutoScenario(mapType: string | null | undefined): boolean {
 }
 
 /**
+ * The opening era of tech diplomacy: rounds up to and including this one are
+ * "early game" for the Exchange of Knowledge. Inside the window an AI court
+ * that has met a human SEEKS the exchange (an envoy walks to the player's
+ * court and tables it) — knowledge is worth the most when there is least of
+ * it, and a shared start sets the tone for the whole game. After the window
+ * the ordinary benefit arithmetic decides.
+ */
+export const EARLY_TECH_EXCHANGE_MAX_ROUND = 40;
+
+/**
  * Whether a game plays ITSELF: an auto scenario (AI-vs-AI map) or any setup
  * with no human seat at all. `humanPlayerIds: undefined` means "not
  * specified" and stays a normal single-player game (seat 0 defaults to the
