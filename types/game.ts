@@ -125,6 +125,8 @@ interface Tile {
   improvement?: string;
   /** Whether this tile contains a Civ1 village (goody hut). */
   village?: boolean;
+  /** A nomad settlement planted beside a city (drains its food, raises defenders). */
+  nomadSettlement?: boolean;
   visible: boolean;
   explored: boolean;
   col: number;
@@ -330,9 +332,10 @@ export interface AudienceNotice {
   /**
    * A non-civ speaker (the nomad envoy): i18n key + icon shown instead of a
    * leader portrait. `nameKey` is resolved at render time so a language
-   * switch mid-game still works.
+   * switch mid-game still works. `image` is the big art (falls back to the
+   * icon while the art does not exist), `subKey` an epithet line.
    */
-  speaker?: { nameKey: string; icon: string };
+  speaker?: { nameKey: string; icon: string; image?: string; subKey?: string };
   /** i18n key of the spoken opening line (the nomads' lead). */
   leadKey?: string;
   /**

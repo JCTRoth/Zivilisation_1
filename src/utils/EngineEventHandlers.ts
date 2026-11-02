@@ -311,6 +311,24 @@ export class EngineEventRouter {
         // owners changed — push it all into the store.
         this.syncState();
         break;
+      case 'NOMAD_ANGRY':
+        // First blood was drawn: the camp wakes and starts making trouble.
+        if (!this.isAIVsAI) notify('warning', t('nomad.angry'));
+        this.syncState();
+        break;
+      case 'NOMAD_RAID':
+        if (!this.isAIVsAI) {
+          notify('warning', t('nomad.raid', {
+            city: String((eventData as { city?: unknown })?.city ?? ''),
+            gold: Number((eventData as { gold?: unknown })?.gold ?? 0),
+          }));
+        }
+        this.syncState();
+        break;
+      case 'NOMAD_RETURN_GIFT':
+        if (!this.isAIVsAI) notify('success', t('nomad.return.gift'));
+        this.syncState();
+        break;
       case 'EMBASSY_ESTABLISHED':
         this.onEmbassyEstablished(eventData);
         break;

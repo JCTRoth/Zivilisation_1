@@ -1,11 +1,12 @@
 = Nomads — The Opening Visitors
 
 > *Engine:* `src/game/engine/NomadManager.ts`, `src/game/engine/GameEngine.ts`,
-> `src/game/engine/TurnManager.ts` (round hook)
-> *Data:* `src/data/NomadConstants.ts`
+> `src/game/engine/TurnManager.ts` (round hook), `src/game/engine/EconomicManager.ts` (settlement food)
+> *Data:* `src/data/NomadConstants.ts` (constants + the three clans)
 > *UI:* `src/components/ui/gamemodals/AudienceModal.tsx`,
 > `src/components/ui/GameModals.tsx`
-> *Tests:* `tests/nomads.test.ts` (13)
+> *Art prompts:* `doc/NOMAD_ART_PROMPTS.adoc`
+> *Tests:* `tests/nomads.test.ts` (17)
 > *i18n:* `nomad.*` keys in all 6 languages
 
 ---
@@ -17,9 +18,28 @@ Once per **single-human** game, shortly after the first city stands (round
 the player's court: two warriors and a scout, owned by `BARBARIAN_CIV_ID`,
 fortified, revealed to the player on sight (`NOMAD_SIGHTED`).
 
+One clan is rolled per game — the SAME clan returns on a return visit:
+
+[cols="1,3", options="header"]
+|===
+|Clan |Temperament
+
+|**The Sandborne** (trader, 🐫)
+|Bargains: knowledge ×0.8, normal hire, settles beside you often (55%),
+tolerates three refusals.
+
+|**The Ironhoof** (warrior, 🐎)
+|Proud: hire ×1.4, settles rarely (15%), one refusal is tolerated — the
+second ends the meeting as hostility.
+
+|**The Greywind** (mystic, 🐺)
+|Enigmatic: knowledge ×0.9, settles sometimes (30%), two refusals.
+|===
+
 Two rounds later the envoy stands at the gate and the **parley** opens —
-the audience screen with its own speaker (the Nomad Chieftain) and four
-doors:
+the audience screen with the clan's big art (see
+`doc/NOMAD_ART_PROMPTS.adoc`), name, epithet and a lead line in the
+clan's own voice, offering:
 
 [cols="1,3", options="header"]
 |===
@@ -27,46 +47,82 @@ doors:
 
 |Buy their knowledge
 |One technology the court lacks, for **half its raw research cost**
-(clamped 25–100 gold). A broke court receives it free ("the road gives").
-The price and the technology are whatever the BUTTON promised — never
-re-rolled while the modal is open.
+(clamped 25–100, × the clan's factor). A broke court receives it free
+("the road gives"). The price and the technology are whatever the BUTTON
+promised — never re-rolled while the modal is open.
 
-|Accept their maps
+|Accept their maps *(first visit only)*
 |`revealArea` — a radius-10 swath around the camp is revealed to the
 player. No other game source reveals fog without walking it.
 
+|Let them settle *(random, per clan chance)*
+|A settlement is planted beside your city: the settlement TILE drains
+**2 food/turn** from the city's balance (`cityFoodBalance`) and raises
+**defenders** (one warrior per settlement, yours). The wanderers are home —
+the camp is gone.
+
 |Hire the horde
-|Pay the units' build cost × 1.1; the three neutral units convert to the
-player's colors (un-fortified, ready next turn).
+|Pay the units' build cost × 1.1 × the clan's factor; the three neutral
+units convert to the player's colors, un-fortified and usable at once.
 
 |Pass in peace
-|They leave after 6 rounds instead of 20.
+|They leave after 6 rounds instead of 20. Within their patience
+(≥ refusals left) they simply part; beyond it — they turn.
 |===
 
 Whichever deal was struck (or none), the **camp remains a race**: from 8
-rounds after the parley, every eligible AI court may hire it (chance scales
-with the leader's diplomacy; `NOMAD_HIRED` is announced). If nobody does,
-the camp wanders off into the fog after 20 rounds (`NOMAD_DEPARTED`).
+rounds after the parley, every eligible AI court may hire it (chance
+scales with the leader's diplomacy; `NOMAD_HIRED` is announced). If nobody
+does, the camp wanders off into the fog after 20 rounds (`NOMAD_DEPARTED`).
 
 A **second parley** fires when the player's unit stands at the camp after
 the first answer — hire or farewell only.
 
-== 2. Rules and boundaries
+== 2. The relationship (memory)
+
+[cols="1,2,2", options="header"]
+|===
+|Standing |How it is earned |What it buys
+
+|`neutral`
+|The default; a tolerated refusal.
+|Nothing — the camp may still be raced for.
+
+|`friendly`
+|Taking ANY deal (knowledge, maps, hire).
+|**One return visit** 30 rounds after they leave: the same clan comes
+back (`returnLead` line) and, as their gift, charts a **radius-14**
+stretch of the unknown world automatically (`NOMAD_RETURN_GIFT`) — the
+paid doors remain, the maps door does not (the chart WAS the gift).
+
+|`angry`
+|**First blood** (any camp unit injured or missing — combat's signature),
+or refusals beyond the clan's tolerance (Ironhoof: one, Greywind: two,
+Sandborne: three).
+|**Raids** for 12 rounds: the camp wakes, attacks anything adjacent
+(`moveUnit`, `canUnitMoveTo`-gated so a wide river cannot stall the
+march), and at the gates steals **15% of the treasury (5–30 gold)** every
+3 rounds (`NOMAD_ANGRY`, `NOMAD_RAID`). Then the camp is gone — and anger
+never earns a return visit.
+|===
+
+== 3. Rules and boundaries
 
 * **Single human seat only.** Hotseat would have to pick whose court
   receives them; all-AI games have nobody to talk to. Both are skipped.
-* **Neutral, not hostile.** Civ id `-1` (with the barbarians): contact
-  recording skips negative ids, no civ is at war with the camp, the AI
-  never targets it — scenery with a contract, not a combatant.
-* **Session-only.** Nothing is persisted; a loaded game simply has no
-  nomads (v1).
+* **Neutral, not hostile by default.** Civ id `-1` (with the barbarians):
+  contact recording skips it, no civ is at war with the camp, the AI never
+  targets it — scenery with a contract, not a combatant.
+* **Session-only.** Nothing here is persisted; a loaded game simply has no
+  nomads (v1). The settlement TILE flag persists — its food/denfense
+  effects are engine code that reads the map, so they survive saves.
 * **Dismissal is not refusal.** Closing the audience without answering
   leaves the parley open: it re-offers when the player stands at the camp
   (3-round cooldown), never every round.
 * The parley is a **blocking dialog** — `e2e/game.spec.ts`
   `BLOCKING_DIALOGS` dismisses it with *Pass in peace* so tests keep pace.
 
-== 3. Integration points
+== 4. Integration points
 
 [cols="2,3", options="header"]
 |===
@@ -76,25 +132,37 @@ the first answer — hire or farewell only.
 |`TurnManager.advanceTurn` new-round block, beside the team coordinator
 
 |Audience
-|`AudienceNotice.kind: 'nomad'` + `speaker` + `choices` + `leadKey`;
-resolved through `GameEngine.nomadManager.resolveParley(id)` via
-`GameModals.handleAudienceChoice`
+|`AudienceNotice.kind: 'nomad'` + `speaker { nameKey, subKey, icon, image }`
++ `choices` + `leadKey`, resolved through
+`GameEngine.nomadManager.resolveParley(id)` via `GameModals.handleAudienceChoice`
+
+|Art
+|`/assets/nomads/<clan>.png` with an emoji fallback on load error
+(`AudienceModal` art slot, `doc/NOMAD_ART_PROMPTS.adoc`)
 
 |Events
 |`NOMAD_SIGHTED` / `NOMAD_PARLEY` / `NOMAD_RESOLVED` / `NOMAD_HIRED` /
-`NOMAD_DEPARTED` → `EngineEventHandlers` (localized toasts + store sync)
+`NOMAD_DEPARTED` / `NOMAD_ANGRY` / `NOMAD_RAID` / `NOMAD_RETURN_GIFT` →
+`EngineEventHandlers` (localized toasts + store sync)
 
 |Fog
 |`GameEngine.revealArea(col, row, radius, viewerId)` — the viewer
 parameter exists because the round hook runs before `activePlayer` flips;
-the store refresh now follows "viewer is a human seat" instead of the old
-`activePlayer === 0` assumption
+the store refresh follows "viewer is a human seat"
+
+|Food drain
+|`EconomicManager.cityFoodBalance` — `nomadSettlementDrain`, a bounded
+ring scan around the city (the player's projection, the growth pipeline
+and the AI governor all charge the same number)
 |===
 
-== 4. Tests
+== 5. Tests
 
-`tests/nomads.test.ts` — trigger and spawn (distance, landmass, neutral
-id, fortification, no-city fallback, hotseat/AI skip), the four doors and
-their promised terms, the broken court's free gift, the maps reveal, the
-color swap on hire, the `noGold` refusal, the departure timer, the AI hire
-race (seeded roll), and the dismissal/proximity re-offer.
+`tests/nomads.test.ts` (17) — trigger and spawn (distance, landmass,
+neutral id, fortification, no-city fallback, hotseat/AI skip), the doors
+and their promised terms (forced rolls for the settlement door), the
+broken court's free gift, the maps reveal, the color swap on hire, the
+`noGold` refusal, the departure timer, the AI hire race, the
+dismissal/proximity re-offer, first-blood hostility + the raid march and
+stores stolen, the pride-driven second refusal turning a clan hostile, and
+the friendly return visit with its map gift.

@@ -1,10 +1,9 @@
 /**
- * Nomads — the opening visitors. Constants for the whole feature; tuned so
- * the visit lands inside the dead window of turns 4–10 (after the first city,
- * before research unlocks its first choice) and stays a fair deal:
- * the tech price is a real discount on research cost, the hire price is
- * above the units' build cost, and the camp only lingers long enough for the
- * world to race you to it.
+ * Nomads — the opening visitors. Constants for the whole feature: tuned so
+ * the visit lands inside the dead window of turns 4–10, the deal stays fair
+ * (half research cost for knowledge, above-build-cost for spears), and the
+ * relationship has a memory: friendly courts get them back with maps, angry
+ * ones get their stores raided.
  */
 
 /** Earliest round (0-based) the nomads may seek the player. */
@@ -31,6 +30,8 @@ export const NOMAD_TECH_PRICE_MAX = 100;
 
 /** Fog reveal around the camp when their maps are accepted. */
 export const NOMAD_MAP_REVEAL_RADIUS = 10;
+/** The friendly return visit charts MORE of the world — their gift. */
+export const NOMAD_RETURN_MAP_RADIUS = 14;
 
 /**
  * How long the camp stands after a DEAL (tech/maps taken) — the window in
@@ -52,3 +53,100 @@ export const NOMAD_REOFFER_COOLDOWN_ROUNDS = 3;
 
 /** How close (Chebyshev) a player unit must be to re-offer / trigger visit 2. */
 export const NOMAD_PROXIMITY_DISTANCE = 2;
+
+/** A friendly court earns ONE return visit, this many rounds after leaving. */
+export const NOMAD_MAX_VISITS = 2;
+export const NOMAD_RETURN_DELAY_ROUNDS = 30;
+
+/** An angry camp preys on you for this long, then walks away for good. */
+export const NOMAD_RAID_ROUNDS = 12;
+/** Gold stolen per raid when the nomads reach a city's stores (share of treasury). */
+export const NOMAD_RAID_GOLD_SHARE = 0.15;
+export const NOMAD_RAID_GOLD_MIN = 5;
+export const NOMAD_RAID_GOLD_MAX = 30;
+/** Rounds between two raids on the same city. */
+export const NOMAD_RAID_COOLDOWN_ROUNDS = 3;
+
+/** A settlement sits within this of a city and drains its food. */
+export const NOMAD_SETTLEMENT_MAX_DISTANCE = 2;
+export const NOMAD_SETTLEMENT_FOOD_COST = 2;
+/** The city notices a settlement this close (food drain lookup radius). */
+export const NOMAD_SETTLEMENT_DRAIN_RADIUS = 3;
+/** The settlers raise this many defenders for the city that feeds them. */
+export const NOMAD_SETTLEMENT_DEFENDERS = 1;
+
+// ── The three clans ───────────────────────────────────────────────────────
+
+export type NomadPersonality = 'trader' | 'warrior' | 'mystic';
+
+export interface NomadClan {
+  id: 'sandborne' | 'ironhoof' | 'greywind';
+  /** i18n key of the clan name. */
+  nameKey: string;
+  /** i18n key of the epithet shown under the name in the audience. */
+  epithetKey: string;
+  personality: NomadPersonality;
+  /** Root-relative art under public/ — shown big, falls back to `icon`. */
+  image: string;
+  /** Emoji fallback until the art exists. */
+  icon: string;
+  /** i18n keys of the opening and the returning line. */
+  leadKey: string;
+  returnLeadKey: string;
+  /** Price factors: the trader bargains, the proud overcharge. */
+  techPriceFactor: number;
+  hirePriceFactor: number;
+  /** Chance a parley includes the settlement door. */
+  settleChance: number;
+  /** Refusals tolerated before the clan turns hostile. */
+  angerTolerance: number;
+}
+
+/**
+ * Three identities, three temperaments. The roll happens once per game —
+ * the SAME clan returns on a return visit (they are who you met).
+ */
+export const NOMAD_CLANS: readonly NomadClan[] = [
+  {
+    id: 'sandborne',
+    nameKey: 'nomad.clan.sandborne.name',
+    epithetKey: 'nomad.clan.sandborne.epithet',
+    personality: 'trader',
+    image: '/assets/nomads/sandborne.png',
+    icon: '🐫',
+    leadKey: 'nomad.clan.sandborne.lead',
+    returnLeadKey: 'nomad.clan.sandborne.returnLead',
+    techPriceFactor: 0.8,
+    hirePriceFactor: 1.0,
+    settleChance: 0.55,
+    angerTolerance: 3,
+  },
+  {
+    id: 'ironhoof',
+    nameKey: 'nomad.clan.ironhoof.name',
+    epithetKey: 'nomad.clan.ironhoof.epithet',
+    personality: 'warrior',
+    image: '/assets/nomads/ironhoof.png',
+    icon: '🐎',
+    leadKey: 'nomad.clan.ironhoof.lead',
+    returnLeadKey: 'nomad.clan.ironhoof.returnLead',
+    techPriceFactor: 1.0,
+    hirePriceFactor: 1.4,
+    settleChance: 0.15,
+    angerTolerance: 1,
+  },
+  {
+    id: 'greywind',
+    nameKey: 'nomad.clan.greywind.name',
+    epithetKey: 'nomad.clan.greywind.epithet',
+    personality: 'mystic',
+    image: '/assets/nomads/greywind.png',
+    icon: '🐺',
+    leadKey: 'nomad.clan.greywind.lead',
+    returnLeadKey: 'nomad.clan.greywind.returnLead',
+    techPriceFactor: 0.9,
+    hirePriceFactor: 1.0,
+    settleChance: 0.3,
+    angerTolerance: 2,
+  },
+];

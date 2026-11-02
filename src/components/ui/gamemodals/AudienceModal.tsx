@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Modal } from 'react-bootstrap';
 import { useTranslation } from '@/i18n/useTranslation';
 import { useGameStore } from '@/stores/GameStore';
@@ -65,6 +65,9 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
   const { t } = useTranslation();
   const civilizations = useGameStore((state) => state.civilizations);
   const playerId = useGameStore((state) => state.currentPlayer?.id ?? 0);
+  // Big art for a non-civ speaker: a failed load (the art may not exist
+  // yet) falls back to the emoji portrait instead of showing a broken img.
+  const [artFailed, setArtFailed] = useState(false);
 
   if (!notice) return null;
 
@@ -177,8 +180,15 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
         {/* The face across the room. Big, pixel, and lit by their temper. */}
         <div className="audience-modal__stage">
           <div className="audience-modal__portrait" style={{ borderColor: moodColors.border }}>
-            {notice.speaker ? (
-              // A non-civ speaker (the nomad envoy): the icon IS the portrait.
+            {notice.speaker?.image && !artFailed ? (
+              // The clan's own art, big — the centerpiece of the audience.
+              <img
+                className="audience-modal__art"
+                src={notice.speaker.image}
+                alt={t(notice.speaker.nameKey as TranslationKey)}
+                onError={() => setArtFailed(true)}
+              />
+            ) : notice.speaker ? (
               <div
                 className="audience-modal__portrait-placeholder"
                 style={{ color: moodColors.border, fontSize: '84px' }}
@@ -204,6 +214,12 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
               {notice.speaker
                 ? t(notice.speaker.nameKey as TranslationKey)
                 : leaderName || t('gm.unknown' as TranslationKey)}
+            </div>
+            <div className="audience-modal__civ">
+              {notice.speaker?.subKey
+                ? t(notice.speaker.subKey as TranslationKey)
+                : portraitConfig?.title
+                  || t('gm.diplo.leaderTitle' as TranslationKey, { civ: civ?.name ?? t('gm.unknown' as TranslationKey) })}
             </div>
             <div className="audience-modal__civ">
               {portraitConfig?.title

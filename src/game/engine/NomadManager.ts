@@ -1,24 +1,31 @@
 /**
- * Nomads — the opening visitors.
+ * Nomads — a relationship, not an event.
  *
- * Once per single-human game, shortly after the first city stands, a neutral
- * horde camps near the player's borders and sends an envoy to the court. The
- * parley offers four roads — buy a technology, take their maps, hire the
- * horde, or pass in peace — and whichever is taken, the camp remains on the
- * map as a race: any civilization may hire the wanderers before they walk
- * off into the fog.
+ * Three clans (the Sandborne traders, the Ironhoof riders, the Greywind
+ * seers) with three temperaments visit once per single-human game. What
+ * happens after is remembered:
+ *
+ *   * **Dealt with** (tech / maps / hire) → standing `friendly`. They leave
+ *     after the linger window and ONE return visit follows 30 rounds later,
+ *     bringing a bigger chart of the unknown world as their gift.
+ *   * **Refused** → refusals accumulate per clan tolerance; beyond it, or if
+ *     you **attack the camp**, they turn `angry`: the horde wakes and raids
+ *     you (troops bleed in fights, stores stolen at the gates) for 12 rounds,
+ *     then walks away for good.
+ *   * **Settled** (random door, per clan chance) → a settlement beside your
+ *     city: your fields feed it (−2 food/turn in the city balance) and their
+ *     spears stand ready (free defenders raised for you).
  *
  * Design rules (mirroring TeamCoordinator):
- *   * **Neutral, not hostile.** The horde owns id -1 (BARBARIAN_CIV_ID) —
- *     contact recording skips it, no civ is at war with it, the AI never
- *     targets it. It is scenery with a contract, not a combatant.
- *   * **Stateless across loads.** Nothing here is persisted; a loaded game
- *     simply has no nomads (v1).
- *   * **Human games only.** Single human seat — hotseat would need to pick
- *     whose court receives them, AI-only games have nobody to talk to.
- *   * **Fair by construction.** The tech price is half the raw research cost
- *     (clamped), the hire price sits above the units' build cost, and the
- *     camp only lingers long enough for the world to race you to it.
+ *   * **Neutral, not hostile by default.** Civ id -1 (with the barbarians):
+ *     contact recording skips it, no civ is at war with the camp.
+ *   * **Stateless across loads.** Nothing is persisted; a loaded game has no
+ *     nomads (v1). The settlement TILE flag does persist — its food/denfense
+ *     effects live in engine code that reads the map, not in this manager.
+ *   * **Single human seat only.**
+ *   * **Fair by construction.** Half research cost (clan-adjusted), above
+ *     build cost for the horde (clan-adjusted), the promised terms are what
+ *     the BUTTON said.
  */
 import type GameEngine from './GameEngine';
 import type { AudienceChoice, Civilization } from '../../../types/game';
@@ -30,12 +37,23 @@ import {
   NOMAD_AI_HIRE_DIPLOMACY_BONUS,
   NOMAD_AI_HIRE_MIN_ROUND_GAP,
   NOMAD_CAMP_LINGER_ROUNDS,
+  NOMAD_CLANS,
   NOMAD_HIRE_COST_FACTOR,
   NOMAD_MAP_REVEAL_RADIUS,
+  NOMAD_MAX_VISITS,
   NOMAD_PARLEY_DELAY_ROUNDS,
   NOMAD_PASS_DEPART_ROUNDS,
   NOMAD_PROXIMITY_DISTANCE,
+  NOMAD_RAID_COOLDOWN_ROUNDS,
+  NOMAD_RAID_GOLD_MAX,
+  NOMAD_RAID_GOLD_MIN,
+  NOMAD_RAID_GOLD_SHARE,
+  NOMAD_RAID_ROUNDS,
   NOMAD_REOFFER_COOLDOWN_ROUNDS,
+  NOMAD_RETURN_DELAY_ROUNDS,
+  NOMAD_RETURN_MAP_RADIUS,
+  NOMAD_SETTLEMENT_DEFENDERS,
+  NOMAD_SETTLEMENT_MAX_DISTANCE,
   NOMAD_SPAWN_MAX_DISTANCE,
   NOMAD_SPAWN_MIN_DISTANCE,
   NOMAD_SPAWN_UNITS,
@@ -44,13 +62,15 @@ import {
   NOMAD_TECH_PRICE_MIN,
   NOMAD_TRIGGER_FALLBACK_ROUND,
   NOMAD_TRIGGER_ROUND,
+  type NomadClan,
+  type NomadPersonality,
 } from '@/data/NomadConstants';
 
 /** What a resolved parley did — the UI turns this into a localized toast. */
 export interface NomadOutcome {
   ok: boolean;
   /** `noGold`: the treasury cannot meet the hire price (UI shows the hint). */
-  result?: 'tech' | 'techGift' | 'maps' | 'hire' | 'pass' | 'noGold';
+  result?: 'tech' | 'techGift' | 'maps' | 'hire' | 'settle' | 'pass' | 'noGold';
   params?: Record<string, string | number>;
 }
 
@@ -59,50 +79,79 @@ interface NomadPending {
   tech?: string;
   /** The gold the button promised. */
   price?: number;
+  /** The settlement tile the button offered (never re-picked at resolve). */
+  settle?: { col: number; row: number; cityId: string };
 }
+
+export type NomadStanding = 'neutral' | 'friendly' | 'angry';
 
 export class NomadManager {
   private readonly gameEngine: GameEngine;
 
-  private spawned = false;
+  // ── The relationship (one per game) ────────────────────────────────────
+  private clan: NomadClan | null = null;
+  private standing: NomadStanding = 'neutral';
+  private refusals = 0;
+  private visitCount = 0;
+  private settled = false;
   private hired = false;
-  private departed = false;
+  private angrySince = -1;
+  private pendingReturnAt: number | null = null;
+  private readonly raidCooldowns = new Map<string, number>();
+
+  // ── The current camp (per visit) ──────────────────────────────────────
   private camp: { col: number; row: number } | null = null;
   private campUnitIds: string[] = [];
   private hireCost = 0;
+  private departed = false;
 
+  // ── The current parley ────────────────────────────────────────────────
   private firstAudienceAt = -1;
   private parleyEmitted = false;
   private parleyDone = false;
   private secondEmitted = false;
-  /** Which emission is currently on screen (null = none / already resolved). */
   private liveParley: 'first' | 'second' | null = null;
   private lastEmitRound = -1;
   private parleyResolvedRound = -1;
   private departAt: number | null = null;
   private lastRound = 0;
   private pending: NomadPending | null = null;
+  private settleRolled = false;
 
   constructor(gameEngine: GameEngine) {
     this.gameEngine = gameEngine;
   }
 
-  // ── State for the UI / tests ────────────────────────────────────────────
+  // ── State for the UI / tests ───────────────────────────────────────────
 
-  get isSpawned(): boolean { return this.spawned; }
-  get isParleyDone(): boolean { return this.parleyDone; }
+  get isSpawned(): boolean { return this.visitCount > 0; }
+  get isParleyDone(): boolean { return this.parleyDone && this.visitCount > 0 && this.campAlive(); }
   get isHired(): boolean { return this.hired; }
-  get isDeparted(): boolean { return this.departed; }
+  get isDeparted(): boolean { return this.departed && !this.campAlive(); }
+  get isSettled(): boolean { return this.settled; }
+  get isAngry(): boolean { return this.standing === 'angry'; }
+  get currentStanding(): NomadStanding { return this.standing; }
+  get visits(): number { return this.visitCount; }
+  get currentClan(): NomadClan | null { return this.clan ? { ...this.clan } : null; }
+  /** The rolled clan's temperament ('trader' | 'warrior' | 'mystic'). */
+  get currentPersonality(): NomadPersonality | null { return this.clan?.personality ?? null; }
   get campTile(): { col: number; row: number } | null { return this.camp ? { ...this.camp } : null; }
 
   /** Drop all state (new game / load): v1 nomads never survive a save. */
   reset(): void {
-    this.spawned = false;
+    this.clan = null;
+    this.standing = 'neutral';
+    this.refusals = 0;
+    this.visitCount = 0;
+    this.settled = false;
     this.hired = false;
-    this.departed = false;
+    this.angrySince = -1;
+    this.pendingReturnAt = null;
+    this.raidCooldowns.clear();
     this.camp = null;
     this.campUnitIds = [];
     this.hireCost = 0;
+    this.departed = false;
     this.firstAudienceAt = -1;
     this.parleyEmitted = false;
     this.parleyDone = false;
@@ -113,85 +162,102 @@ export class NomadManager {
     this.departAt = null;
     this.lastRound = 0;
     this.pending = null;
+    this.settleRolled = false;
   }
 
-  // ── The per-round state machine ────────────────────────────────────────
+  // ── The per-round state machine ───────────────────────────────────────
 
   processRound(round: number): void {
     this.lastRound = round;
     if (this.gameEngine.isGameOver) return;
-    // Single human seat only: hotseat would have to pick whose court they
-    // visit, and an all-AI game has nobody to send an envoy to.
     const humanId = this.humanCivId();
     if (humanId === null) return;
-    if (this.hired || this.departed) return;
+    if (this.settled || this.hired) return;
 
-    if (!this.spawned) {
+    // Anger from an attack: an injured or missing camp unit means somebody
+    // drew first blood (only combat does either).
+    if (this.campAlive() && this.standing !== 'angry' && this.wasAttacked()) {
+      this.goAngry();
+    }
+
+    // Angry camps prey on the player, then leave for good.
+    if (this.standing === 'angry') {
+      if (!this.campAlive()) return; // wiped out — nothing left to raid with
+      this.raidRound(humanId, round);
+      if (round >= this.angrySince + NOMAD_RAID_ROUNDS) this.depart();
+      return;
+    }
+
+    // The first visit.
+    if (this.visitCount === 0) {
       const hasCity = (this.gameEngine.cities ?? []).some((c) => c.civilizationId === humanId);
       const due = (round >= NOMAD_TRIGGER_ROUND && hasCity)
         || round >= NOMAD_TRIGGER_FALLBACK_ROUND;
-      if (due) this.spawn(round, humanId);
+      if (due) this.spawnVisit(round, humanId);
       return;
     }
 
-    if (!this.campAlive()) {
-      // The player (or a stray battle) wiped the camp — no wanders-off toast,
-      // the story simply ends.
-      this.departed = true;
-      return;
-    }
-
-    if (!this.parleyDone) {
-      if (!this.parleyEmitted && round >= this.firstAudienceAt) {
-        this.emitParley(false, round);
+    // The standing camp: parley, race, departure.
+    if (this.campAlive()) {
+      if (!this.parleyDone) {
+        if (!this.parleyEmitted && round >= this.firstAudienceAt) {
+          this.emitParley(false, round);
+          return;
+        }
+        if (
+          this.parleyEmitted
+          && this.liveParley !== null
+          && round >= this.lastEmitRound + NOMAD_REOFFER_COOLDOWN_ROUNDS
+          && this.playerNearCamp(humanId)
+        ) {
+          this.emitParley(false, round);
+        }
         return;
       }
-      // The player dismissed the envoy: it re-offers when they stand at the
-      // camp — never every round, never while an emission is on screen.
+      if (this.liveParley === null && round >= this.parleyResolvedRound + NOMAD_AI_HIRE_MIN_ROUND_GAP) {
+        this.tryAiHire(humanId);
+        if (this.hired) return;
+      }
       if (
-        this.parleyEmitted
-        && this.liveParley !== null
+        this.liveParley === null
+        && !this.secondEmitted
         && round >= this.lastEmitRound + NOMAD_REOFFER_COOLDOWN_ROUNDS
         && this.playerNearCamp(humanId)
       ) {
-        this.emitParley(false, round);
+        this.emitParley(true, round);
+        return;
+      }
+      if (this.departAt !== null && round >= this.departAt) {
+        this.depart();
       }
       return;
     }
 
-    // The camp outlived its parley: any civilization may hire it (the AI
-    // race), the player may still ask for it, and eventually it walks away.
+    // No camp: a friendly court has earned its return visit.
     if (
-      this.liveParley === null
-      && round >= this.parleyResolvedRound + NOMAD_AI_HIRE_MIN_ROUND_GAP
+      this.pendingReturnAt !== null
+      && round >= this.pendingReturnAt
+      && this.visitCount < NOMAD_MAX_VISITS
     ) {
-      this.tryAiHire(humanId);
-      if (this.hired) return;
-    }
-    if (
-      this.liveParley === null
-      && !this.secondEmitted
-      && round >= this.lastEmitRound + NOMAD_REOFFER_COOLDOWN_ROUNDS
-      && this.playerNearCamp(humanId)
-    ) {
-      this.emitParley(true, round);
-      return;
-    }
-    if (this.departAt !== null && round >= this.departAt) {
-      this.depart();
+      this.pendingReturnAt = null;
+      const spawned = this.spawnVisit(round, humanId);
+      if (spawned && this.standing === 'friendly') {
+        // "If they were friendly before, they show you some part of the map."
+        this.gameEngine.revealArea(this.camp!.col, this.camp!.row, NOMAD_RETURN_MAP_RADIUS, humanId);
+        this.gameEngine.onStateChange?.('NOMAD_RETURN_GIFT', {});
+      }
     }
   }
 
   // ── The parley ─────────────────────────────────────────────────────────
 
   /**
-   * Resolve one of the parley's doors. The tech and price are whatever the
-   * BUTTON promised (`pending`), never re-rolled — a promised deal must not
-   * change while the modal is open. A successful choice emits NOMAD_RESOLVED
-   * so the store re-syncs (gold, techs, converted units).
+   * Resolve one of the parley's doors. The terms are whatever the BUTTON
+   * promised (`pending`), never re-rolled. A successful choice emits
+   * NOMAD_RESOLVED so the store re-syncs (gold, techs, converted units).
    */
   resolveParley(choiceId: string): NomadOutcome {
-    if (this.liveParley === null || !this.spawned || this.departed || this.hired) {
+    if (this.liveParley === null || this.visitCount === 0 || this.departed || this.hired || this.settled) {
       return { ok: false };
     }
     const humanId = this.humanCivId();
@@ -223,9 +289,8 @@ export class NomadManager {
           const free = gold < price;
           if (!free) human.resources.gold = gold - price;
           this.gameEngine.grantTech(humanId, tech);
-          this.parleyDone = true;
-          this.parleyResolvedRound = this.lastRound;
-          this.departAt = this.lastRound + NOMAD_CAMP_LINGER_ROUNDS;
+          this.standing = 'friendly';
+          this.endVisitWithLinger();
           const techName = TECHNOLOGIES_DATA.find((t) => t.id === tech)?.name ?? tech;
           return {
             ok: true,
@@ -233,11 +298,9 @@ export class NomadManager {
             params: { tech: techName, gold: price },
           };
         }
-        // Their maps: a swath of the unknown world, no walking required.
         this.gameEngine.revealArea(this.camp!.col, this.camp!.row, NOMAD_MAP_REVEAL_RADIUS, humanId);
-        this.parleyDone = true;
-        this.parleyResolvedRound = this.lastRound;
-        this.departAt = this.lastRound + NOMAD_CAMP_LINGER_ROUNDS;
+        this.standing = 'friendly';
+        this.endVisitWithLinger();
         return { ok: true, result: 'maps' };
       }
 
@@ -252,10 +315,38 @@ export class NomadManager {
         return { ok: true, result: 'hire', params: { gold: cost } };
       }
 
-      case 'pass':
-      case 'farewell': {
+      case 'settle': {
+        const offer = this.pending?.settle;
+        if (!offer) return { ok: false };
+        const tile = this.gameEngine.getTileAt?.(offer.col, offer.row);
+        if (!tile) return { ok: false };
+        // The settlement outlives the visit: its effects are read from the
+        // map (city food drain, defenders raised here).
+        tile.nomadSettlement = true;
+        for (let i = 0; i < NOMAD_SETTLEMENT_DEFENDERS; i++) {
+          this.gameEngine.createUnit(humanId, 'warriors', offer.col, offer.row);
+        }
+        this.settled = true;
         this.parleyDone = true;
         this.parleyResolvedRound = this.lastRound;
+        this.removeCampUnits(); // the wanderers are home — the camp is gone
+        this.camp = null;
+        this.departed = true;
+        const city = (this.gameEngine.cities ?? []).find((c) => c.id === offer.cityId);
+        return { ok: true, result: 'settle', params: { city: city?.name ?? '' } };
+      }
+
+      case 'pass':
+      case 'farewell': {
+        this.refusals += 1;
+        this.parleyDone = true;
+        this.parleyResolvedRound = this.lastRound;
+        const tolerance = this.clan?.angerTolerance ?? 2;
+        if (this.refusals > tolerance) {
+          // Beyond their patience: the camp does not leave — it turns.
+          this.goAngry();
+          return { ok: true, result: 'pass' };
+        }
         this.departAt = this.lastRound + NOMAD_PASS_DEPART_ROUNDS;
         return { ok: true, result: 'pass' };
       }
@@ -283,6 +374,109 @@ export class NomadManager {
     return this.campUnitIds.some((id) => this.unitById(id) !== undefined);
   }
 
+  /** Dealt-with visit: the camp lingers for the race, then walks away. */
+  private endVisitWithLinger(): void {
+    this.parleyDone = true;
+    this.parleyResolvedRound = this.lastRound;
+    this.departAt = this.lastRound + NOMAD_CAMP_LINGER_ROUNDS;
+  }
+
+  /** Any camp unit hurt or missing = somebody drew first blood. */
+  private wasAttacked(): boolean {
+    for (const id of this.campUnitIds) {
+      const unit = this.unitById(id);
+      if (!unit) return true;
+      if (unit.health < 100) return true;
+    }
+    return false;
+  }
+
+  private goAngry(): void {
+    if (this.standing === 'angry') return;
+    this.standing = 'angry';
+    this.angrySince = this.lastRound;
+    this.liveParley = null;
+    this.departAt = null;
+    this.pendingReturnAt = null;
+    // The camp wakes: no more holding position.
+    for (const id of this.campUnitIds) {
+      const unit = this.unitById(id);
+      if (!unit) continue;
+      unit.isFortified = false;
+      unit.orders = null;
+      unit.movesRemaining = unit.maxMoves ?? unit.movesRemaining;
+    }
+    this.gameEngine.onStateChange?.('NOMAD_ANGRY', {});
+  }
+
+  /**
+   * One round of trouble: attack anything standing next to the horde,
+   * otherwise march on the nearest city — and once at the gates, raid the
+   * stores (with a cooldown, so an untouched camp drains slowly).
+   */
+  private raidRound(humanId: number, round: number): void {
+    const cities = (this.gameEngine.cities ?? []).filter((c) => c.civilizationId === humanId);
+    for (const id of this.campUnitIds) {
+      const unit = this.unitById(id);
+      if (!unit) continue;
+      if ((unit.movesRemaining ?? 0) <= 0) {
+        unit.movesRemaining = unit.maxMoves ?? 1; // a raider fights every round
+      }
+
+      const grid = this.gameEngine.squareGrid;
+      const neighbors = grid?.getNeighbors?.(unit.col, unit.row) ?? [];
+
+      // Next to an enemy AND able to reach it? Fight it. `canUnitMoveTo` is
+      // the authority (rivers, water, range) — a passable-looking tile can
+      // still be uncrossable, and a blocked attack must not stall the raid.
+      const attackTarget = neighbors.find((n) => {
+        const target = this.gameEngine.getUnitAt?.(n.col, n.row);
+        if (!target || target.civilizationId !== humanId || target.isDefeated) return false;
+        return this.gameEngine.canUnitMoveTo?.(unit.id, n.col, n.row) ?? false;
+      });
+      if (attackTarget) {
+        this.gameEngine.moveUnit(unit.id, attackTarget.col, attackTarget.row);
+        continue;
+      }
+
+      // Otherwise march on the nearest city and raid what it stores.
+      const city = cities
+        .map((c) => ({ c, d: Math.max(Math.abs(c.col - unit.col), Math.abs(c.row - unit.row)) }))
+        .sort((a, b) => a.d - b.d)[0];
+      if (!city) continue;
+      if (city.d <= 1) {
+        this.raidCity(city.c, humanId, round);
+        continue;
+      }
+      // The greedy step asks the SAME gate the movement pipeline uses: a
+      // tile that is passable but not enterable (a wide river the unit
+      // cannot ford) would otherwise be picked every round and the horde
+      // would mill against it forever.
+      const step = neighbors
+        .filter((n) => !this.gameEngine.getUnitAt?.(n.col, n.row))
+        .filter((n) => this.gameEngine.canUnitMoveTo?.(unit.id, n.col, n.row) ?? false)
+        .map((n) => ({ n, d: Math.max(Math.abs(n.col - city.c.col), Math.abs(n.row - city.c.row)) }))
+        .sort((a, b) => a.d - b.d || a.n.col - b.n.col || a.n.row - b.n.row)[0];
+      if (step) this.gameEngine.moveUnit(unit.id, step.n.col, step.n.row);
+    }
+  }
+
+  private raidCity(city: { id: string; name?: string; population?: number }, humanId: number, round: number): void {
+    const last = this.raidCooldowns.get(city.id) ?? -Infinity;
+    if (round - last < NOMAD_RAID_COOLDOWN_ROUNDS) return;
+    this.raidCooldowns.set(city.id, round);
+    const human = this.gameEngine.civilizations?.[humanId];
+    const treasury = human?.resources?.gold ?? 0;
+    const stolen = Math.max(
+      NOMAD_RAID_GOLD_MIN,
+      Math.min(NOMAD_RAID_GOLD_MAX, Math.floor(treasury * NOMAD_RAID_GOLD_SHARE)),
+    );
+    if (human) human.resources.gold = Math.max(0, treasury - stolen);
+    this.gameEngine.onStateChange?.('NOMAD_RAID', {
+      city: city.name ?? '', gold: Math.min(stolen, treasury),
+    });
+  }
+
   /** Where they visit from: the human's first city, else their first unit. */
   private anchorFor(humanId: number): { col: number; row: number } | null {
     const city = (this.gameEngine.cities ?? []).find((c) => c.civilizationId === humanId);
@@ -293,19 +487,10 @@ export class NomadManager {
     return unit ?? null;
   }
 
-  /**
-   * A camp tile near the anchor: passable, unoccupied, no village (no free
-   * hut pop on arrival), on the SAME landmass (a camp across the water is a
-   * camp nobody visits). Deterministic ring search — first match wins.
-   */
   private findCampTile(anchor: { col: number; row: number }): { col: number; row: number } | null {
     const grid = this.gameEngine.squareGrid;
     const anchorLandmass = this.gameEngine.getLandmassId?.(anchor.col, anchor.row) ?? -1;
-    for (
-      let r = NOMAD_SPAWN_MIN_DISTANCE;
-      r <= NOMAD_SPAWN_MAX_DISTANCE;
-      r++
-    ) {
+    for (let r = NOMAD_SPAWN_MIN_DISTANCE; r <= NOMAD_SPAWN_MAX_DISTANCE; r++) {
       for (let dc = -r; dc <= r; dc++) {
         for (let dr = -r; dr <= r; dr++) {
           if (Math.max(Math.abs(dc), Math.abs(dr)) !== r) continue;
@@ -316,6 +501,7 @@ export class NomadManager {
           if (this.gameEngine.getUnitAt?.(col, row)) continue;
           if (this.gameEngine.getCityAt?.(col, row)) continue;
           if (this.gameEngine.getTileAt?.(col, row)?.village) continue;
+          if (this.gameEngine.getTileAt?.(col, row)?.nomadSettlement) continue;
           if (
             anchorLandmass >= 0
             && typeof this.gameEngine.getLandmassId === 'function'
@@ -328,11 +514,43 @@ export class NomadManager {
     return null;
   }
 
-  private spawn(round: number, humanId: number): void {
+  /** A tile beside the player's city the wanderers may plant stakes on. */
+  private findSettlementTile(humanId: number): { col: number; row: number; cityId: string } | null {
+    const grid = this.gameEngine.squareGrid;
+    const cities = (this.gameEngine.cities ?? []).filter((c) => c.civilizationId === humanId);
+    for (const city of cities) {
+      for (let dc = -NOMAD_SETTLEMENT_MAX_DISTANCE; dc <= NOMAD_SETTLEMENT_MAX_DISTANCE; dc++) {
+        for (let dr = -NOMAD_SETTLEMENT_MAX_DISTANCE; dr <= NOMAD_SETTLEMENT_MAX_DISTANCE; dr++) {
+          if (dc === 0 && dr === 0) continue;
+          if (Math.max(Math.abs(dc), Math.abs(dr)) > NOMAD_SETTLEMENT_MAX_DISTANCE) continue;
+          const col = city.col + dc;
+          const row = city.row + dr;
+          if (grid && !grid.isValidSquare(col, row)) continue;
+          if (!this.gameEngine.isTilePassable?.(col, row)) continue;
+          if (this.gameEngine.getUnitAt?.(col, row)) continue;
+          if (this.gameEngine.getCityAt?.(col, row)) continue;
+          if (this.gameEngine.getTileAt?.(col, row)?.village) continue;
+          if (this.gameEngine.getTileAt?.(col, row)?.nomadSettlement) continue;
+          return { col, row, cityId: city.id };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Raise the camp. The SAME clan returns on a return visit (they are who
+   * you met); the first visit rolls one. Returns false when there is no
+   * room near the court — the caller retries next round.
+   */
+  private spawnVisit(round: number, humanId: number): boolean {
+    if (!this.clan) {
+      this.clan = NOMAD_CLANS[Math.floor(Math.random() * NOMAD_CLANS.length)];
+    }
     const anchor = this.anchorFor(humanId);
-    if (!anchor) return; // no city and no unit yet — try again next round
+    if (!anchor) return false;
     const tile = this.findCampTile(anchor);
-    if (!tile) return; // no room near the court — try again next round
+    if (!tile) return false;
 
     const ids: string[] = [];
     for (const type of NOMAD_SPAWN_UNITS) {
@@ -346,31 +564,46 @@ export class NomadManager {
         ids.push(unit.id);
       }
     }
-    if (ids.length === 0) return;
+    if (ids.length === 0) return false;
 
-    this.spawned = true;
     this.camp = { ...tile };
     this.campUnitIds = ids;
+    this.departed = false;
+    this.parleyEmitted = false;
+    this.parleyDone = false;
+    this.secondEmitted = false;
+    this.liveParley = null;
+    this.pending = null;
+    this.settleRolled = false;
     this.firstAudienceAt = round + NOMAD_PARLEY_DELAY_ROUNDS;
-    // The price the buttons will promise.
     this.hireCost = Math.ceil(
       ids.reduce((sum, id) => {
         const type = String(this.unitById(id)?.type ?? '');
         return sum + (UNIT_PROPS[type]?.cost ?? 10);
-      }, 0) * NOMAD_HIRE_COST_FACTOR,
+      }, 0) * NOMAD_HIRE_COST_FACTOR * (this.clan?.hirePriceFactor ?? 1),
     );
+    this.visitCount += 1;
     // You SEE the strangers arrive — and so does the story.
     this.gameEngine.revealArea(tile.col, tile.row, 4, humanId);
-    this.gameEngine.onStateChange?.('NOMAD_SIGHTED', { col: tile.col, row: tile.row });
+    this.gameEngine.onStateChange?.('NOMAD_SIGHTED', {
+      col: tile.col,
+      row: tile.row,
+      clan: this.clan?.id,
+      visit: this.visitCount,
+    });
+    return true;
   }
 
   private emitParley(second: boolean, round: number): void {
     const humanId = this.humanCivId();
-    if (humanId === null) return;
+    if (humanId === null || !this.clan) return;
+    const clan = this.clan;
+    const returning = this.visitCount > 1;
     const choices: AudienceChoice[] = [];
     let techOffered: string | undefined;
     let goldAmount: number | undefined;
     this.pending = null;
+    this.settleRolled = false;
 
     if (!second) {
       const tech = this.gameEngine.pickFreeTech(humanId);
@@ -378,7 +611,10 @@ export class NomadManager {
         const raw = TECHNOLOGIES_DATA.find((t) => t.id === tech)?.cost ?? 60;
         const price = Math.max(
           NOMAD_TECH_PRICE_MIN,
-          Math.min(NOMAD_TECH_PRICE_MAX, Math.floor(raw / NOMAD_TECH_PRICE_DIVISOR)),
+          Math.min(
+            NOMAD_TECH_PRICE_MAX,
+            Math.floor((Math.floor(raw / NOMAD_TECH_PRICE_DIVISOR)) * clan.techPriceFactor),
+          ),
         );
         this.pending = { tech, price };
         const gold = this.gameEngine.civilizations?.[humanId]?.resources?.gold ?? 0;
@@ -391,7 +627,28 @@ export class NomadManager {
         techOffered = tech;
         goldAmount = price;
       }
-      choices.push({ id: 'maps', labelKey: 'nomad.choice.maps', variant: 'accept' });
+      // On a return visit the map comes as their GIFT (revealed at spawn),
+      // so the paid doors remain and the door itself is gone.
+      if (!returning) {
+        choices.push({ id: 'maps', labelKey: 'nomad.choice.maps', variant: 'accept' });
+      }
+      // A clan may propose to settle beside your city (their gamble, their
+      // chance) — and the offered tile is remembered for the resolve.
+      const settleTile = this.findSettlementTile(humanId);
+      if (settleTile) {
+        this.settleRolled = Math.random() < clan.settleChance;
+        if (this.settleRolled) {
+          const cityName =
+            (this.gameEngine.cities ?? []).find((c) => c.id === settleTile.cityId)?.name ?? '';
+          choices.push({
+            id: 'settle',
+            labelKey: 'nomad.choice.settle',
+            labelParams: { city: cityName },
+            variant: 'accept',
+          });
+          this.pending = { ...(this.pending ?? {}), settle: settleTile };
+        }
+      }
       choices.push({
         id: 'hire',
         labelKey: 'nomad.choice.hire',
@@ -414,9 +671,15 @@ export class NomadManager {
     this.lastEmitRound = round;
     this.liveParley = second ? 'second' : 'first';
     this.gameEngine.onStateChange?.('NOMAD_PARLEY', {
-      speakerNameKey: 'nomad.chieftain',
-      speakerIcon: '🐎',
-      leadKey: second ? 'nomad.parley.leadSecond' : 'nomad.parley.lead',
+      speaker: {
+        nameKey: clan.nameKey,
+        subKey: clan.epithetKey,
+        icon: clan.icon,
+        image: clan.image,
+      },
+      leadKey: second ? 'nomad.parley.leadSecond'
+        : returning ? clan.returnLeadKey
+          : clan.leadKey,
       choices,
       techOffered,
       goldAmount,
@@ -458,12 +721,24 @@ export class NomadManager {
     }
   }
 
-  private depart(): void {
+  private removeCampUnits(): void {
     const leaving = new Set(this.campUnitIds);
     this.gameEngine.units = (this.gameEngine.units ?? []).filter((u) => !leaving.has(u.id));
     this.campUnitIds = [];
+  }
+
+  /**
+   * The camp walks off. Only a dealt-with (friendly) court earns the return
+   * visit — the door for it opens on this departure.
+   */
+  private depart(): void {
+    this.removeCampUnits();
+    this.camp = null;
     this.departed = true;
     this.gameEngine.onStateChange?.('NOMAD_DEPARTED', {});
+    if (this.standing === 'friendly' && this.visitCount < NOMAD_MAX_VISITS) {
+      this.pendingReturnAt = this.lastRound + NOMAD_RETURN_DELAY_ROUNDS;
+    }
   }
 
   private playerNearCamp(humanId: number): boolean {

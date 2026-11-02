@@ -41,6 +41,18 @@
   display: block;
 }
 
+/* The clan's own art — the centerpiece of a nomad audience. The portrait
+   frame above carries the mood colour; the image carries the room. Sized to
+   dominate the stage but bounded so the doors stay on screen. */
+.audience-modal__art {
+  display: block;
+  width: min(64vw, 320px);
+  max-height: 52vh;
+  object-fit: contain;
+  image-rendering: pixelated;
+  border-radius: 4px;
+}
+
 .audience-modal__portrait-placeholder {
   display: flex;
   align-items: center;

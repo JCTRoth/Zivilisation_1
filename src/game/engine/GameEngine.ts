@@ -219,6 +219,8 @@ export interface MapTile {
   improvement?: string;
   /** Whether this tile contains a Civ1 village (goody hut). */
   village?: boolean;
+  /** A nomad settlement planted beside a city (drains its food, raises defenders). */
+  nomadSettlement?: boolean;
   visible: boolean;
   explored: boolean;
   col: number;

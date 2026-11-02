@@ -21,6 +21,7 @@ import {
   getResourceYields,
 } from '../../data/TerrainConstants';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '../../data/TileImprovementConstants';
+import { NOMAD_SETTLEMENT_DRAIN_RADIUS, NOMAD_SETTLEMENT_FOOD_COST } from '../../data/NomadConstants';
 import { SPECIALIST_YIELDS, CITY_UPKEEP_PER_CITY, FREE_CITY_SUPPORT, TREATY_ROUTE_TRADE_MULTIPLIER } from '../../data/GameConstants';
 import { cityBuildingEffects } from './BuildingEffects';
 import type { City, Civilization, Unit } from '../../../types/game';
@@ -1181,13 +1182,20 @@ export class EconomicManager {
         !unit.isNoneUnit,
     ).length * settlerFoodPerTurn;
 
+    // A nomad settlement eats its keep: every settlement in the city's
+    // neighbourhood costs active food each turn (NOMAD_SETTLEMENT_FOOD_COST)
+    // — the trade-off for the defenders it raised. Charged here so the
+    // player's projection, the growth pipeline and the AI governor all see
+    // the same number.
+    const nomadDrain = this.nomadSettlementDrain(city);
+
     const produced = city?.yields?.food ?? city?.food ?? 0;
     // The appetite ramp: flat 2 a citizen up to size 5, then +0.2 per citizen
     // per further size. `citizenFoodDemand` is the single definition, so the
     // growth pipeline, the AI's planning and the tile assigner all charge the
     // same rate.
     const citizenConsumption = population * citizenFoodDemand(population);
-    const surplus = produced - citizenConsumption - settlerSupport;
+    const surplus = produced - citizenConsumption - settlerSupport - nomadDrain;
     const storage = city?.foodStored ?? 0;
     const growthThreshold = (population + 1) * 10;
     const hasGranary = city?.buildings?.includes?.(BUILDING_TYPES.GRANARY) ?? false;
@@ -1207,6 +1215,23 @@ export class EconomicManager {
       turnsUntilStarvation:
         surplus < 0 ? Math.ceil(storage / Math.abs(surplus)) : -1,
     };
+  }
+
+  /**
+   * Food drained by nomad settlements in the city's neighbourhood — a
+   * bounded ring scan (never a full-map walk: this runs per city per turn
+   * for the projection, the growth pipeline and the AI governor alike).
+   */
+  private nomadSettlementDrain(city: City): number {
+    if (!city) return 0;
+    let drain = 0;
+    for (let dc = -NOMAD_SETTLEMENT_DRAIN_RADIUS; dc <= NOMAD_SETTLEMENT_DRAIN_RADIUS; dc++) {
+      for (let dr = -NOMAD_SETTLEMENT_DRAIN_RADIUS; dr <= NOMAD_SETTLEMENT_DRAIN_RADIUS; dr++) {
+        const tile = this.gameEngine.getTileAt?.(city.col + dc, city.row + dr);
+        if (tile?.nomadSettlement) drain += NOMAD_SETTLEMENT_FOOD_COST;
+      }
+    }
+    return drain;
   }
 
   /**
