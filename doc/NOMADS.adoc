@@ -73,8 +73,9 @@ units convert to the player's colors, un-fortified and usable at once.
 (≥ refusals left) they simply part; beyond it — they turn.
 |===
 
-Whichever deal was struck (or none), the **camp remains a race**: from 8
-rounds after the parley, every eligible AI court may hire it (chance
+Whichever deal was struck (or none), the **camp remains a race**: from 16
+rounds after the parley — late in the linger, a last chance as the camp is
+about to walk — every eligible AI court may hire it (chance
 scales with the leader's diplomacy; `NOMAD_HIRED` is announced). If nobody
 does, the camp wanders off into the fog after 20 rounds (`NOMAD_DEPARTED`).
 
@@ -106,13 +107,15 @@ city market waits, spend on a city and the bribes do.
 INVESTMENT the economy has to pay back. Built ONLY by the camp (gated by an
 impossible tech name in `UNIT_PROPERTIES.requires` and
 `UNIT_TECH_REQUIREMENTS`, so no player or AI production list ever offers
-one), every **10 rounds**, at most **2 in flight**. It walks its full
-movement toward its partner each round (`canUnitMoveTo`-gated steps) and is
+one), every **8 rounds**, at most **2 in flight**. It walks its full
+movement toward its partner each round along a real A* path
+(`findPath`, routing around parked units — a greedy walk gets lost around
+a bay) and is
 **consumed on delivery** (Civ1 rule). A bazaar blocked for 10 rounds or on
 the road for 40 is lost — no route, no refund.
 
 |Trade routes
-|On delivery: **2 + floor(pop/2) gold per turn** per partner, up to
+|On delivery: **3 + floor(pop/2) gold per turn** per partner, up to
 **six routes** (`routes + in-flight ≥ 6` refuses the build — a seventh
 city opens no seventh route). The route dies with its partner city, or the
 moment that city changes hands: conquer a nomad trade partner and you cut
@@ -171,7 +174,7 @@ angry tribe keeps its revenge and stays put.
 |The balance
 |Anger and the city market are mutually exclusive (`standing` gates
 both), routes fund whichever door is open, and every door spends the same
-coins the bazaars earn: 300 start → a bazaar costs 100 and takes 10 rounds
+coins the bazaars earn: 300 start → a bazaar costs 100 and takes 8 rounds
 → routes trickle in → 450 opens the market, or a war opens the purse.
 |===
 

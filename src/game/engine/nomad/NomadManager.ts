@@ -266,14 +266,18 @@ export class NomadManager {
     const humanId = this.humanCivId();
     if (humanId === null) return;
 
-    // The tribe's own economy — an AI player, not scenery. It runs whenever
-    // the tribe is in the game: routes and bought cities outlive the camp,
+    // The tribe's economy (their own AI-player turn): runs whenever the
+    // tribe is in the game — routes and bought cities outlive the camp,
     // and even a hired/settled tribe keeps collecting what it is owed (only
     // building new caravans and tableing offers needs a standing camp that
     // still belongs to them — those guard themselves below).
     if (this.visitCount > 0) this.economyPhase(round, humanId);
 
-    if (this.settled || this.hired) return;
+    // NOTE: no `settled || hired` early return here — the CAMP machinery
+    // below keys off `campAlive()`, and a hire RETIRES the camp identity
+    // (see retireCampForHire), so the sold horde's bones can never be
+    // raided, angered or departed with. A friendly tribe's RETURN visit —
+    // scheduled by departure or by the sale — runs from the block below.
 
     // Anger from an attack: an injured or missing camp unit means somebody
     // drew first blood (only combat does either).
@@ -334,11 +338,14 @@ export class NomadManager {
       return;
     }
 
-    // No camp: a friendly court has earned its return visit.
+    // No camp: a friendly court has earned its return visit — the ENVOY's
+    // return, scheduled by departure or by the horde being sold. (Never for
+    // a settled tribe: they put down roots; the story moved into yours.)
     if (
       this.pendingReturnAt !== null
       && round >= this.pendingReturnAt
       && this.visitCount < NOMAD_MAX_VISITS
+      && !this.settled
     ) {
       this.pendingReturnAt = null;
       const spawned = this.spawnVisit(round, humanId);
@@ -479,10 +486,11 @@ export class NomadManager {
    * six-route ceilings.
    */
   private tryBuildCaravan(round: number, plan: NomadPlan): void {
-    // A hired or settled tribe has no camp crew left to build with, a wiped
-    // camp cannot build at all, and only the investing stances spend here.
+    // Only the investing stances spend here. A HIRED camp still builds —
+    // the bazaar is the MERCHANTS' work, not the horde's (the horde just
+    // changed employers); a settled or wiped camp has no base to build at.
     if (!plan.buildBazaar) return;
-    if (this.hired || this.settled || !this.campAlive() || !this.camp) return;
+    if (this.settled || !this.campAlive() || !this.camp) return;
     if (round - this.lastCaravanBuildRound < NOMAD_CARAVAN_BUILD_ROUNDS) return;
     if (this.caravans.length >= NOMAD_CARAVAN_MAX_IN_FLIGHT) return;
     if (this.routes.length + this.caravans.length >= NOMAD_TRADE_ROUTE_LIMIT) return;
@@ -551,17 +559,9 @@ export class NomadManager {
       for (let stepNo = 0; stepNo < maxSteps; stepNo++) {
         const d = Math.max(Math.abs(unit.col - city.col), Math.abs(unit.row - city.row));
         if (d <= 1 || (unit.movesRemaining ?? 0) <= 0) break;
-        const grid = this.gameEngine.squareGrid;
-        const neighbors = grid?.getNeighbors?.(unit.col, unit.row) ?? [];
-        // The greedy step asks the SAME gate the movement pipeline uses: a
-        // tile that is passable but not enterable must not stall the road.
-        const step = neighbors
-          .filter((n) => !this.gameEngine.getUnitAt?.(n.col, n.row))
-          .filter((n) => this.gameEngine.canUnitMoveTo?.(unit.id, n.col, n.row) ?? false)
-          .map((n) => ({ n, d: Math.max(Math.abs(n.col - city.col), Math.abs(n.row - city.row)) }))
-          .sort((a, b) => a.d - b.d || a.n.col - b.n.col || a.n.row - b.n.row)[0];
-        if (!step) break;
-        if (!this.gameEngine.moveUnit(unit.id, step.n.col, step.n.row).success) break;
+        const next = this.nextBazaarStep(unit, city);
+        if (!next) break;
+        if (!this.gameEngine.moveUnit(unit.id, next.col, next.row).success) break;
         moved = true;
       }
 
@@ -591,6 +591,55 @@ export class NomadManager {
   }
 
   /** Arrival: the caravan is spent (Civ1 rule) and the route starts paying. */
+  /**
+   * The bazaar's next tile — a real A* PATH around everybody's parked
+   * units (a greedy walk gets lost around a bay or a garrison, and the
+   * caravan would die of it), falling back to the nearest step if the grid
+   * has no pathfinder. The partner city's own tile is never an obstacle —
+   * a garrison must not look like an island (we only need to ARRIVE).
+   */
+  private nextBazaarStep(unit: Unit, city: City): { col: number; row: number } | null {
+    const grid = this.gameEngine.squareGrid;
+    const usable = (n: { col: number; row: number }) =>
+      !this.gameEngine.getUnitAt?.(n.col, n.row)
+      && (this.gameEngine.canUnitMoveTo?.(unit.id, n.col, n.row) ?? false);
+
+    if (grid?.findPath) {
+      const obstacles = new Set<string>();
+      for (const other of this.gameEngine.units ?? []) {
+        if (other.isDefeated) continue;
+        if (other.col === city.col && other.row === city.row) continue;
+        obstacles.add(`${other.col},${other.row}`);
+      }
+      const path = grid.findPath(
+        unit.col,
+        unit.row,
+        city.col,
+        city.row,
+        obstacles,
+        this.gameEngine.getPassabilityFilter?.(),
+      );
+      if (path.length > 1) {
+        // path[0] is where they stand; the road says step to path[1] — but
+        // the movement pipeline has the final word on any single step (a
+        // river charge, a quarrel on the road: wait a round instead).
+        const next = path[1];
+        return usable(next) ? next : null;
+      }
+      // No path at all: unreachable for now — the caller counts the round
+      // (a caravan that cannot advance for long is lost, no route no fee).
+      return null;
+    }
+
+    // No pathfinder on this grid: the old nearest-step.
+    const neighbors = grid?.getNeighbors?.(unit.col, unit.row) ?? [];
+    const step = neighbors
+      .filter(usable)
+      .map((n) => ({ n, d: Math.max(Math.abs(n.col - city.col), Math.abs(n.row - city.row)) }))
+      .sort((a, b) => a.d - b.d || a.n.col - b.n.col || a.n.row - b.n.row)[0];
+    return step?.n ?? null;
+  }
+
   private deliverRoute(index: number, unitId: string, city: City): void {
     this.caravans.splice(index, 1);
     this.gameEngine.units = (this.gameEngine.units ?? []).filter((u) => u.id !== unitId);
@@ -609,7 +658,9 @@ export class NomadManager {
    * this is the exception, not the norm.
    */
   private tryMuster(round: number, plan: NomadPlan): void {
-    if (!plan.muster || this.hired || this.settled || !this.campAlive() || !this.camp) return;
+    // (No `hired` gate: a RETURN visit raises a fresh camp of the tribe's
+    // own soldiers — only a settled or wiped camp cannot muster.)
+    if (!plan.muster || this.settled || !this.campAlive() || !this.camp) return;
     if (round - this.lastMusterRound < NOMAD_CAMP_MUSTER_ROUNDS) return;
     const alive = this.musteredIds.filter((id) => this.unitById(id) !== undefined).length;
     if (alive >= NOMAD_CAMP_MUSTER_LIMIT) return;
@@ -737,7 +788,9 @@ export class NomadManager {
    * its revenge where it is — friends can wait.
    */
   onBarbariansTookCity(city: City): void {
-    if (this.visitCount === 0 || this.hired || this.settled) return;
+    // (No `hired` gate: a hired tribe has no camp to move — campUnitIds was
+    // retired with the sale — but its friendship route still opens.)
+    if (this.visitCount === 0 || this.settled) return;
     if (this.standing === 'angry') return;
 
     // The friendship route — capacity permitting, once per city.
@@ -795,9 +848,8 @@ export class NomadManager {
    * (`liveParley = 'city'`), so only ONE audience can ever be open.
    */
   private tryOfferCity(humanId: number, round: number, plan: NomadPlan): void {
-    // A hired or settled tribe's resolutions are refused by resolveParley —
-    // an offer could never be answered, so never table one.
-    if (this.hired || this.settled) return;
+    // The market is the ENVOY's voice — it speaks even after the horde
+    // left, was hired out or settled (resolveParley allows those doors).
 
     if (this.liveParley === 'city') {
       if (!this.openCityOffer(humanId) || !this.campAlive()) {
@@ -900,13 +952,12 @@ export class NomadManager {
    * NOMAD_RESOLVED so the store re-syncs (gold, techs, converted units).
    */
   resolveParley(choiceId: string): NomadOutcome {
-    if (this.liveParley === null || this.visitCount === 0 || this.hired || this.settled) {
-      return { ok: false };
-    }
-    // The camp's own doors die with the camp — but the city market's offer
-    // outlives it (the envoy comes to YOU): it stands on the promised terms
-    // in `pending`, not on a horde that may already have walked away.
-    if (this.departed && this.liveParley !== 'city') return { ok: false };
+    // Everything else is filtered by the LIVE-Parley lifecycle itself:
+    // camp doors ('first'/'second') can only be live while a camp stands
+    // (departure and hire retire `liveParley`), and the tribe's own voice
+    // — the market and the plea — is valid in every state the tribe still
+    // exists (it stands on the promised terms in `pending`).
+    if (this.liveParley === null || this.visitCount === 0) return { ok: false };
     const humanId = this.humanCivId();
     if (humanId === null) return { ok: false };
     const human = this.gameEngine.civilizations?.[humanId];
@@ -955,10 +1006,17 @@ export class NomadManager {
         const cost = this.hireCost;
         if ((human.resources?.gold ?? 0) < cost) return { ok: false, result: 'noGold' };
         human.resources.gold = (human.resources.gold ?? 0) - cost;
+        // The horde is SOLD, not given: the payment lands in the tribe's
+        // chest (the same purse the market and the bazaars draw from), and
+        // being paid by you makes them well-disposed — a friendly court
+        // earns the envoy's return visit even though the horde marched off.
+        this.treasury += cost;
         this.convertUnits(humanId);
         this.hired = true;
         this.parleyDone = true;
         this.parleyResolvedRound = this.lastRound;
+        this.standing = 'friendly';
+        this.retireCampForHire();
         return { ok: true, result: 'hire', params: { gold: cost } };
       }
 
@@ -1269,6 +1327,11 @@ export class NomadManager {
     this.liveParley = null;
     this.pending = null;
     this.settleRolled = false;
+    // The PREVIOUS visit's clocks must not leak into this one — a stale
+    // departAt would send the fresh camp away the moment it arrives.
+    this.departAt = null;
+    this.parleyResolvedRound = -1;
+    this.lastEmitRound = -1;
     this.firstAudienceAt = round + NOMAD_PARLEY_DELAY_ROUNDS;
     // The knowledge counter runs from the visit: their first brokered sale
     // lands NOMAD_KNOWLEDGE_ROUNDS later, not mid-parley.
@@ -1396,8 +1459,11 @@ export class NomadManager {
       );
       if (Math.random() < chance) {
         civ.resources.gold = (civ.resources.gold ?? 0) - cost;
+        // The buyer pays the TRIBE — the chest swells when the horde sells.
+        this.treasury += cost;
         this.convertUnits(civ.id);
         this.hired = true;
+        this.retireCampForHire();
         this.gameEngine.onStateChange?.('NOMAD_HIRED', { civId: civ.id });
         return;
       }
@@ -1443,6 +1509,22 @@ export class NomadManager {
     if (Array.isArray(city.buildQueue)) city.buildQueue.length = 0;
     city.productionStored = 0;
     city.productionProgress = 0;
+  }
+
+  /**
+   * The horde left with its employer: the CAMP ends, the tribe does not.
+   * Retires the camp identity (the units belong to the buyer now — nothing
+   * in the machinery may ever raid, anger, depart or migrate them) and, if
+   * the court was friendly, opens the door for the ENVOY's return visit.
+   */
+  private retireCampForHire(): void {
+    this.camp = null;
+    this.campUnitIds = [];
+    this.departed = true;
+    this.liveParley = null;
+    if (this.standing === 'friendly' && this.visitCount < NOMAD_MAX_VISITS) {
+      this.pendingReturnAt = this.lastRound + NOMAD_RETURN_DELAY_ROUNDS;
+    }
   }
 
   /**

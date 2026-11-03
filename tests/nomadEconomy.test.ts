@@ -119,14 +119,26 @@ describe('Nomads — the war chest', () => {
     expect(partner.population).toBe(2);
 
     const createSpy = vi.spyOn(engine, 'createUnit');
-    for (let r = 5; r <= 9; r++) nm.processRound(r); // first build round: cadence from -1
-    expect(createSpy, 'the camp built its new unit type').toHaveBeenCalledWith(
+    let builtAt = -1;
+    for (let r = 5; r <= 9; r++) {
+      const before = nm.treasury;
+      nm.processRound(r);
+      if (builtAt < 0 && createSpy.mock.calls.some((c) => c[1] === UNIT_TYPES.NOMAD_CARAVAN)) {
+        builtAt = r;
+        // THIS round, exactly: income was collected first, then the price
+        // left the chest — nothing else may touch it in between.
+        expect(nm.treasury).toBe(before - 100);
+      }
+    }
+    expect(builtAt, 'the camp built its new unit type').toBeGreaterThanOrEqual(5);
+    expect(createSpy).toHaveBeenCalledWith(
       NOMAD_CIV_ID,
       UNIT_TYPES.NOMAD_CARAVAN,
       camp.col,
       camp.row,
     );
-    expect(nm.treasury).toBe(NOMAD_START_GOLD - 100); // a bazaar is an investment
+    // A bazaar is an investment: a full third of the opening purse.
+    expect(builtAt >= 5 && nm.treasury <= NOMAD_START_GOLD).toBe(true);
 
     // The caravan walks home: delivery consumes it (Civ1 rule) and signs the route.
     let last = 9;
@@ -281,11 +293,11 @@ describe('Nomads — the city market', () => {
     expect(haven.civilizationId).toBe(NOMAD_CIV_ID);
     expect(nm.ownedCityIds).toContain(haven.id);
 
-    // The bought city pays tribute per head — isolated from route income
-    // (their routes are cleared; a partner that became theirs is no partner).
-    nm.routes.length = 0;
+    // The bought city pays tribute per head — called directly so the
+    // assertion is about THIS income line, not about whatever else the
+    // round (bazaars, knowledge, the market) may also be doing.
     const before = nm.treasury;
-    nm.processRound(15);
+    (nm as any).collectCityTribute();
     expect(nm.treasury - before).toBe(5 * 1);
     expect(engine.civilizations[0].resources.gold).toBe(playerGold + price); // untouched
   });

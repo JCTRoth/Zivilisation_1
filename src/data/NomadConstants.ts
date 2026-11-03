@@ -41,8 +41,13 @@ export const NOMAD_RETURN_MAP_RADIUS = 14;
 export const NOMAD_CAMP_LINGER_ROUNDS = 20;
 export const NOMAD_PASS_DEPART_ROUNDS = 6;
 
-/** The AI may try to hire from this many rounds after the first parley. */
-export const NOMAD_AI_HIRE_MIN_ROUND_GAP = 8;
+/**
+ * The AI may try to hire from this many rounds after the first parley —
+ * late in the linger (a dealt camp stands ~20), so the race fires as the
+ * camp is about to walk: a real last chance, and the tribe keeps ITS
+ * opening build slots (an early hire would end their economy at round 14).
+ */
+export const NOMAD_AI_HIRE_MIN_ROUND_GAP = 16;
 
 /** Per-round chance an eligible AI takes the horde, scaled by diplomacy. */
 export const NOMAD_AI_HIRE_BASE_CHANCE = 0.1;
@@ -74,8 +79,10 @@ export const NOMAD_TRADE_ROUTE_LIMIT = 6;
  * The camp fashions a travelling bazaar every this many rounds — and it is
  * expensive on purpose: a full third of the opening purse, so a route is an
  * INVESTMENT the economy has to pay back (up to this many in transit).
+ * The cadence is tuned against the camp's short life (a dealt camp stands
+ * ~20 rounds): 8 rounds gives two to three bazaars per stint.
  */
-export const NOMAD_CARAVAN_BUILD_ROUNDS = 10;
+export const NOMAD_CARAVAN_BUILD_ROUNDS = 8;
 export const NOMAD_CARAVAN_MAX_IN_FLIGHT = 2;
 /** A caravan that cannot take a single step for this many rounds is lost. */
 export const NOMAD_CARAVAN_BLOCKED_ROUNDS = 10;
@@ -83,7 +90,7 @@ export const NOMAD_CARAVAN_BLOCKED_ROUNDS = 10;
 export const NOMAD_CARAVAN_MAX_AGE_ROUNDS = 40;
 
 /** Route income per turn: base + half the partner city's population. */
-export const NOMAD_ROUTE_INCOME_BASE = 2;
+export const NOMAD_ROUTE_INCOME_BASE = 3;
 /** A bought city pays tribute per population per turn. */
 export const NOMAD_CITY_TRIBUTE_PER_POP = 1;
 
