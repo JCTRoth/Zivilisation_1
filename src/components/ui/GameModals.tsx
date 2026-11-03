@@ -987,6 +987,12 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           setCounterProposal(null);
           break;
       }
+      // A refused term used to be silent — one line in a feed the player
+      // had to find, which read as "the button does nothing". The reason
+      // IS the feedback: say it out loud.
+      if (result && !result.accepted && result.reason) {
+        notify('warning', t('gm.diplo.feed.offerFailedReason' as TranslationKey, { reason: String(result.reason) }));
+      }
       // Force re-render by syncing state
       if (gameEngine?.units) actions.updateUnits?.([...gameEngine.units]);
       if (gameEngine?.civilizations) actions.updateCivilizations?.([...gameEngine.civilizations]);

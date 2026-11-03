@@ -748,6 +748,16 @@ export class DiplomacyManager {
       details: `War declared (was: ${previousStatus})`,
     });
 
+    // One side breaking the peace voids the pacts between them: every
+    // treaty but the embassy falls — a trade agreement must not keep
+    // doubling route trade across a war. `cancelTreaty` records the
+    // goodwill hit on BOTH sides and logs `treaty_cancelled`; locked team
+    // treaties are refused inside it (and teammates cannot be at war).
+    for (const treaty of [...rel.activeTreaties]) {
+      if (treaty === 'embassy') continue;
+      this.cancelTreaty(aggressorId, targetId, treaty);
+    }
+
     if (flags.announce) {
       debugLog(`[DIPLOMACY] Civ ${aggressorId} declared war on Civ ${targetId}`);
       // The plain free-for-all payload stays exactly as it always was. Team
@@ -1073,8 +1083,78 @@ export class DiplomacyManager {
    * negotiation screen can show a player exactly why a deal will or will not
    * land — including which term is doing the most damage.
    */
+  /**
+   * The gates a proposal must pass BEFORE anyone is asked: rules that are
+   * not a matter of opinion — locked teams, war, no channel, both
+   * diplomats standing together, a swap one side already knows.
+   * `processProposal` refuses on them, `previewProposal` shows the same
+   * refusal and `executeAcceptedAction` enforces them again at the moment
+   * of the handshake. One gate, three consumers: the verdict line must
+   * never promise a deal the click cannot deliver (it once promised an
+   * Exchange that died on "No diplomat contact" — and the player was
+   * left staring at a button that did nothing).
+   */
+  private hardGate(proposal: DiplomacyProposal): string | null {
+    const { fromCivId, toCivId, action } = proposal;
+
+    if (this.isTeammate(fromCivId, toCivId)) {
+      if (TEAM_HOSTILE_ACTIONS.has(action)) {
+        return 'Locked allies cannot take hostile action against each other.';
+      }
+      if (TEAM_REDUNDANT_ACTIONS.has(action)) {
+        return 'You are already locked allies.';
+      }
+      if (action === 'propose_embargo'
+        && proposal.embargoTargetId !== undefined
+        && this.isTeammate(fromCivId, proposal.embargoTargetId)) {
+        return 'Locked allies cannot embargo each other.';
+      }
+    }
+
+    // Covert acts are not proposals: the victim is never consulted, so the
+    // willingness roll would only produce a refusal nobody asked for.
+    if (ESPIONAGE_DIPLOMAT_ACTIONS.has(action)) {
+      return 'Not a negotiable proposal';
+    }
+
+    // Civ I: no Exchange of Knowledge while the guns are still firing —
+    // and only with both diplomats physically present (same tile or
+    // adjacent); a deal made in person carries its own messenger.
+    if (action === 'offer_tech_exchange' || action === 'offer_tech_for_gold' || action === 'gift_technology') {
+      const tradeRel = this.getRelation(fromCivId, toCivId);
+      if (tradeRel?.status === 'war') {
+        return 'They will not trade while the two of you are at war';
+      }
+      if (!proposal.inPerson && !this.hasDiplomatContact(fromCivId, toCivId)) {
+        return 'No diplomat contact';
+      }
+      // A swap where either side already knows the tech is not a swap.
+      const { techOffered, techRequested } = proposal;
+      const fromTechs = this.gameEngine.civilizations?.[fromCivId]?.technologies;
+      const toTechs = this.gameEngine.civilizations?.[toCivId]?.technologies;
+      if (techOffered && toTechs?.includes(techOffered)) {
+        return 'They already have this technology';
+      }
+      if (techRequested && fromTechs?.includes(techRequested)) {
+        return 'You already have this technology';
+      }
+    }
+
+    return null;
+  }
+
   previewProposal(proposal: DiplomacyProposal): ProposalEvaluation {
-    return evaluateProposal(this.proposalContext(proposal), proposal, 0);
+    const evaluation = evaluateProposal(this.proposalContext(proposal), proposal, 0);
+    const gate = this.hardGate(proposal);
+    if (gate === null) return evaluation;
+    // The same refusal processProposal would give: the verdict line says
+    // WHY (decisive: …) and flips to "refused" before the player clicks.
+    return {
+      ...evaluation,
+      accepted: false,
+      decisiveFactor: gate,
+      factors: [{ label: gate, value: 0 }, ...evaluation.factors],
+    };
   }
 
   /**
@@ -1089,56 +1169,12 @@ export class DiplomacyManager {
     // Negotiating with someone is how you meet them, if sight did not.
     this.markContact(fromCivId, toCivId);
 
-    // Locked teammates can trade and share knowledge, but cannot threaten,
-    // spy on or re-negotiate the alliance itself.
-    if (this.isTeammate(fromCivId, toCivId)) {
-      if (TEAM_HOSTILE_ACTIONS.has(action)) {
-        return { accepted: false, reason: 'Locked allies cannot take hostile action against each other.' };
-      }
-      if (TEAM_REDUNDANT_ACTIONS.has(action)) {
-        return { accepted: false, reason: 'You are already locked allies.' };
-      }
-      if (action === 'propose_embargo'
-        && proposal.embargoTargetId !== undefined
-        && this.isTeammate(fromCivId, proposal.embargoTargetId)) {
-        return { accepted: false, reason: 'Locked allies cannot embargo each other.' };
-      }
-    }
-
-    // Covert acts are not proposals: the victim is never consulted, so the
-    // willingness roll would only produce a refusal nobody asked for. They
-    // run through the espionage path (`inciteRevolt` and friends), which
-    // resolves on its own seeded terms.
-    if (ESPIONAGE_DIPLOMAT_ACTIONS.has(action)) {
-      return { accepted: false, reason: 'Not a negotiable proposal' };
-    }
-
-    // Civ I: no Exchange of Knowledge while the guns are still firing —
-    // refuse with a plain reason instead of burying it in the score. A gift of
-    // technology is an exchange of the same kind, so it follows the same rule.
-    if (action === 'offer_tech_exchange' || action === 'offer_tech_for_gold' || action === 'gift_technology') {
-      const tradeRel = this.getRelation(fromCivId, toCivId);
-      if (tradeRel?.status === 'war') {
-        return { accepted: false, reason: 'They will not trade while the two of you are at war' };
-      }
-      // Civ I: an Exchange of Knowledge needs both diplomats physically
-      // present — same tile or adjacent — not just a permanent contact flag.
-      // The one exception is a deal made in person: a unit that walked up to
-      // the other court's own doorstep carries the knowledge with it.
-      if (!proposal.inPerson && !this.hasDiplomatContact(fromCivId, toCivId)) {
-        return { accepted: false, reason: 'No diplomat contact' };
-      }
-      // A swap where either side already knows the tech is not a swap.
-      const { techOffered, techRequested } = proposal;
-      const fromTechs = this.gameEngine.civilizations?.[fromCivId]?.technologies;
-      const toTechs = this.gameEngine.civilizations?.[toCivId]?.technologies;
-      if (techOffered && toTechs?.includes(techOffered)) {
-        return { accepted: false, reason: 'You already have this technology' };
-      }
-      if (techRequested && fromTechs?.includes(techRequested)) {
-        return { accepted: false, reason: 'They already have this technology' };
-      }
-    }
+    // The rules before the opinion: locked teams, covert acts, war, both
+    // diplomats standing together, a swap one side already knows. One gate,
+    // shared with previewProposal (so the verdict line tells the truth) and
+    // executeAcceptedAction (so the handshake enforces it).
+    const gate = this.hardGate(proposal);
+    if (gate !== null) return { accepted: false, reason: gate };
 
     const ctx = this.proposalContext(proposal);
     const evaluation = evaluateProposal(ctx, proposal, proposalNoise(ctx, fromCivId));
@@ -1217,21 +1253,12 @@ export class DiplomacyManager {
   private executeAcceptedAction(proposal: DiplomacyProposal): DiplomacyResponse {
     const { fromCivId, toCivId, action, goldAmount } = proposal;
 
-    // `acceptOffer` bypasses the scoring pass, so the team lock has to be
-    // re-checked here as well. This is the last gate before the switch.
-    if (this.isTeammate(fromCivId, toCivId)) {
-      if (TEAM_HOSTILE_ACTIONS.has(action)) {
-        return { accepted: false, reason: 'Locked allies cannot take hostile action against each other.' };
-      }
-      if (TEAM_REDUNDANT_ACTIONS.has(action)) {
-        return { accepted: false, reason: 'You are already locked allies.' };
-      }
-      if (action === 'propose_embargo'
-        && proposal.embargoTargetId !== undefined
-        && this.isTeammate(fromCivId, proposal.embargoTargetId)) {
-        return { accepted: false, reason: 'Locked allies cannot embargo each other.' };
-      }
-    }
+    // `acceptOffer` bypasses the scoring pass, so the same hard gates have
+    // to hold here as at proposal time — the last check before the terms
+    // change hands (locked teams, war, the diplomat standing together, a
+    // swap one side already knows). One gate, three consumers.
+    const gate = this.hardGate(proposal);
+    if (gate !== null) return { accepted: false, reason: gate };
 
     switch (action) {
       case 'propose_peace':

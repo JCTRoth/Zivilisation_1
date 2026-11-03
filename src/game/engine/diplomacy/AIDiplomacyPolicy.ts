@@ -554,12 +554,36 @@ export function scoreCandidates(ctx: PolicyContext): DiplomaticCandidate[] {
     push(out, 'propose_trade_agreement', 12, 'teammate trade routes pay double');
   }
 
-  const filtered = ctx.teammate
-    ? out.filter((candidate) => !TEAMMATE_FORBIDDEN_ACTIONS.has(candidate.action))
-    : out;
+  const filtered = out.filter((candidate) => {
+    if (ctx.teammate && TEAMMATE_FORBIDDEN_ACTIONS.has(candidate.action)) return false;
+    return !alreadyInForce(ctx, candidate.action);
+  });
 
   filtered.sort((a, b) => b.score - a.score);
   return filtered;
+}
+
+/**
+ * A pact already in force is never proposed again: it STAYS in place until
+ * one side breaks it (war voids every pact but the embassy —
+ * `DiplomacyManager.declareWarPair`). The teammate block pushes trade
+ * agreements unconditionally and the courtship block weighs them by
+ * opinion, so without this gate a signed deal kept re-asking the player —
+ * the treaty was on the books, but the game never let it rest.
+ */
+const TREATY_BY_ACTION: Partial<Record<string, TreatyType>> = {
+  offer_open_borders: 'open_borders',
+  propose_trade_agreement: 'trade_agreement',
+  propose_mutual_defense: 'mutual_defense',
+  propose_non_aggression: 'non_aggression',
+  propose_embargo: 'embargo_target',
+};
+
+/** Already settled: a treaty in force — or an embassy that exists. */
+function alreadyInForce(ctx: PolicyContext, action: string): boolean {
+  if (action === 'establish_embassy') return ctx.hasEmbassy === true;
+  const treaty = TREATY_BY_ACTION[action];
+  return treaty !== undefined && ctx.treaties.includes(treaty);
 }
 
 /** Actions that make no sense against a locked teammate. */

@@ -2057,6 +2057,38 @@ link:DIPLOMACY_SYSTEM.adoc[Diplomacy System].
 |Cascades to the defender's allies.
 |===
 
+=== Treaties
+
+Beyond status, a pair can hold written pacts (`activeTreaties`): open
+borders, trade agreement, mutual defence, non-aggression, embargo and
+embassy.
+
+[cols="2,3", options="header"]
+|===
+|Rule |Meaning
+
+|A signed treaty stays|In force indefinitely until one side breaks it.
+The AI never tables a pact that is already active — accepting once settles
+it — so a teammate's "Trade Agreement" dispatch arrives exactly once.
+|Trade agreement|Every trade route with that partner pays ×2
+(`TREATY_ROUTE_TRADE_MULTIPLIER`).
+|War breaks every pact but the embassy|Declaring war cancels open borders,
+trade agreement, mutual defence, non-aggression and the embargo between
+the pair: `treaty_cancelled` in the feed and −6 goodwill on **both**
+ledgers. An embassy survives — addresses outlive wars.
+|Saved|`activeTreaties` and `treatySince` travel with the save file.
+|===
+
+=== Exchange of Knowledge
+
+One technology each way, gated before anyone is asked: **no trade while at
+war**, and only with **both diplomats standing together** (same or
+adjacent tile) — a deal made in person carries its own messenger. A swap
+where either side already knows the tech is not a swap. The negotiation
+screen's verdict line shows the same gate the click enforces (preview and
+resolution share one `hardGate`), and a refusal is announced with its
+reason.
+
 === Fixed alliances (locked teams)
 
 An optional setup-time mode divides the civilizations into permanent teams

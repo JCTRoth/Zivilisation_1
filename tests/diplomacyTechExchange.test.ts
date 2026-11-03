@@ -97,6 +97,52 @@ describe('Exchange of Knowledge — processProposal rules', () => {
     expect(res.reason).toMatch(/war/i);
   });
 
+  it('previewProposal refuses for the SAME reason the click refuses (no diplomat contact)', () => {
+    // The mock's diplomats standing together are what make the swap
+    // possible — remove them and the verdict line must admit it BEFORE the
+    // player clicks. (It used to promise "Likely to be paid" and the click
+    // then died silently on this exact gate.)
+    ge.units.length = 0;
+    const swap = {
+      fromCivId: 0, toCivId: 1, action: 'offer_tech_exchange' as const,
+      techOffered: 'bronze_working', techRequested: 'iron_working',
+    };
+
+    const preview = dm.previewProposal(swap);
+    expect(preview.accepted).toBe(false);
+    expect(preview.decisiveFactor).toBe('No diplomat contact');
+
+    // The click refuses with the IDENTICAL reason — preview === reality.
+    const res = dm.processProposal(swap);
+    expect(res.accepted).toBe(false);
+    expect(res.reason).toBe(preview.decisiveFactor);
+  });
+
+  it('previewProposal agrees with processProposal about war too', () => {
+    dm.declareWar(0, 1);
+    const swap = {
+      fromCivId: 0, toCivId: 1, action: 'offer_tech_exchange' as const,
+      techOffered: 'bronze_working', techRequested: 'iron_working',
+    };
+    const preview = dm.previewProposal(swap);
+    const res = dm.processProposal(swap);
+    expect(preview.accepted).toBe(false);
+    expect(res.accepted).toBe(false);
+    expect(preview.decisiveFactor).toBe(res.reason);
+  });
+
+  it('with both diplomats standing together the gate is open', () => {
+    const swap = {
+      fromCivId: 0, toCivId: 1, action: 'offer_tech_exchange' as const,
+      techOffered: 'bronze_working', techRequested: 'iron_working',
+    };
+    // Neither path is vetoed by a hard gate — whatever happens next is
+    // opinion and noise, not a rule.
+    expect(dm.previewProposal(swap).decisiveFactor).not.toMatch(/diplomat contact|at war/i);
+    const res = dm.processProposal(swap);
+    expect(res.reason ?? '').not.toMatch(/diplomat contact|at war/i);
+  });
+
   it('canTradeTechs reports missing contact for an unmet civ', () => {
     const fresh = new DiplomacyManager(createMockGameEngine());
     fresh.initialize([0, 1]);
