@@ -105,6 +105,7 @@ src/
 │   ├── engine/          # GameEngine + turn/economy/combat/diplomacy/AI
 │   │   ├── AI/          # ~14,500 lines over 17 files
 │   │   ├── diplomacy/   # Opinion ledger, proposal scoring
+│   │   ├── nomad/       # The nomads: contact visit, parley, strategy, economy (README inside)
 │   │   └── MapGenerator/# Procedural world generation
 │   └── rendering/       # Canvas layers, minimap, textures, animation
 ├── hooks/               # useGameEngine: engine ↔ React wiring
@@ -473,6 +474,7 @@ the commit message which rule the number encodes.
 * link:doc/GOVERNMENT.adoc[Government & Revolution] — revolutions, anarchy, capital
 * link:doc/DIPLOMACY_SYSTEM.adoc[Diplomacy System] — opinion ledger, treaties, proposals
 * link:doc/FIXED_ALLIANCES.adoc[Fixed Alliances] — locked teams, team diplomacy, victory and spectating
+* link:doc/NOMADS.adoc[Nomads] — the visiting tribe: contact-based parley, three clans, relationship memory, and their own economy (routes, city market, bribes); folder README: `src/game/engine/nomad/README.md`
 * link:doc/CITY_CAPTURE.adoc[City Capture & Destruction] — what happens when a city falls
 * link:doc/WONDERS.adoc[Wonders] — the 24-wonder data format and effect model
 * link:doc/MODALS.adoc[Modals & Dialogs] — every dialog, how it opens, screenshots in `doc/dialogs/`
@@ -486,6 +488,7 @@ the commit message which rule the number encodes.
 * link:doc/ROUND_MANAGER_IMPLEMENTATION.adoc[Round Manager] — automated path following
 * link:doc/GAME_PROGRESSION_EXPORT.adoc[Game Progression Export] — the analysis JSON/CSV
 * link:doc/auto-end-turn.adoc[Auto Turn Ending] — the automatic end of turn
+* link:doc/STORY.adoc[The Chronicle] — full-screen illustrated story cards: the queue, the moments, the promotion rules
 * link:doc/STATIC_MAPS.adoc[Static Maps] — static map format and registry
 * link:doc/NEW_MAP_GUIDE.adoc[Adding a New Map] — step by step with a checklist
 * link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets] — layers, textures, tile generator
@@ -516,6 +519,14 @@ the commit message which rule the number encodes.
 === UI
 
 * link:doc/MODALS.adoc[Modals] — every dialog, how it opens, and what protects it
+
+=== Art generation prompts
+
+Image prompts for the optional artwork (everything degrades to emoji /
+gradient fallbacks without them — generate one at a time, in any order):
+
+* link:doc/NOMAD_ART_PROMPTS.adoc[Nomad Clan Art] — the three clan portraits for the audience dialog (512×640): shared style block + one prompt per clan
+* link:doc/STORY_ART_PROMPTS.adoc[Story Screen Art] — the chronicle's wide 16:9 scenes: the dawn, a horde conquest, the nomad migration and the four city-chronicle moments
 
 === Working notes
 
