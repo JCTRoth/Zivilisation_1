@@ -7,10 +7,10 @@
  * chronicle (`CityEventModal`) and the wonder completion screen — get the
  * same art treatment through the maps below.
  *
- * Every image lives under `public/assets/story/` and is OPTIONAL: a missing
- * file (not generated yet, renamed, offline) just leaves the card's own
- * gradient — the story never breaks because of art. Generation prompts for
- * all of them: `doc/STORY_ART_PROMPTS.adoc`.
+ * Every image lives under `public/assets/story/` as **WebP** and is OPTIONAL:
+ * a missing file (not generated yet, renamed, offline) just leaves the card's
+ * own gradient — the story never breaks because of art. Generation prompts
+ * for all of them: `doc/STORY_ART_PROMPTS.adoc`.
  *
  * Style contract (see the prompts doc): wide cinematic 16-bit pixel scenes,
  * the same technique as the nomad portraits but landscape, dark edges that
@@ -36,7 +36,7 @@ export type StoryId = StoryDef['id'];
 export const STORY_EVENTS: Record<StoryId, StoryDef> = {
   dawn: {
     id: 'dawn',
-    image: '/assets/story/dawn.png',
+    image: '/assets/story/dawn.webp',
     tone: 'solemn',
     eyebrowKey: 'story.dawn.eyebrow',
     titleKey: 'story.dawn.title',
@@ -44,7 +44,7 @@ export const STORY_EVENTS: Record<StoryId, StoryDef> = {
   },
   hordeConquest: {
     id: 'hordeConquest',
-    image: '/assets/story/horde_conquest.png',
+    image: '/assets/story/horde_conquest.webp',
     tone: 'danger',
     eyebrowKey: 'story.horde.eyebrow',
     titleKey: 'story.horde.title',
@@ -52,7 +52,7 @@ export const STORY_EVENTS: Record<StoryId, StoryDef> = {
   },
   nomadMigration: {
     id: 'nomadMigration',
-    image: '/assets/story/nomad_migration.png',
+    image: '/assets/story/nomad_migration.webp',
     tone: 'gold',
     eyebrowKey: 'story.migration.eyebrow',
     titleKey: 'story.migration.title',
@@ -62,8 +62,8 @@ export const STORY_EVENTS: Record<StoryId, StoryDef> = {
 
 /** Illustration per city-chronicle kind (shown big inside CityEventModal). */
 export const CITY_EVENT_ART: Record<string, string> = {
-  founded: '/assets/story/city_founded.png',
-  captured: '/assets/story/city_triumph.png',
-  razed: '/assets/story/city_flames.png',
-  joined: '/assets/story/city_joined.png',
+  founded: '/assets/story/city_founded.webp',
+  captured: '/assets/story/city_triumph.webp',
+  razed: '/assets/story/city_flames.webp',
+  joined: '/assets/story/city_joined.webp',
 };

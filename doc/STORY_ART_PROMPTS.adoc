@@ -9,40 +9,35 @@
 > glyph stage — generate them one at a time, in any order. The nomad clan
 > portraits are a separate set: `doc/NOMAD_ART_PROMPTS.adoc`.
 >
-> **Deliver as PNG, 16:9 landscape — 1536×864 (or 1024×576) — named exactly
+> **Deliver as WebP, 16:9 landscape — 1536×864 (or 1024×576) — named exactly
 > as the table says, under `public/assets/story/`.**
 
 == Shared style block (prepend to every prompt)
 
 ----
-Pixel art, 16-bit JRPG cinematic scene style, WIDE 16:9 landscape
+Cinematic scene style, WIDE 16:9 landscape
 composition. Chunky readable pixels, limited earthy palette with ONE
-signature accent colour per scene, strong directional light (low sun,
-torchlight or fireglow), dark vignetted edges that melt into a very dark
+signature accent colour per scene, strong directional light,
+dark vignetted edges that melt into a very dark
 blue-black background (#0b0f14). One clear subject in the middle third,
 readable as a thumbnail. Mood over detail. No text, no watermark, no UI
-elements, no modern objects. 1536x864 landscape PNG.
+elements, no modern objects. 1536x864 landscape WebP.
 ----
 
 == The three chronicle cards (StoryModal)
 
 These open as the biggest screens in the game, one Continue button.
 
-=== 1. `dawn.png` — the game's opening card
+=== 1. `dawn.webp` — the game's opening card
 
 Signature accent: pale gold through mist. Mood: solemn, expectant.
 
 ----
 [basic style block]
-First light over a nameless land: a wide valley of rivers and low hills
-seen from a high ridge, mist pooling in the hollows, a handful of tiny
-figures with a single banner silhouetted on the ridge in the foreground,
-the sun breaking the horizon dead centre. A fledgling settlement's first
-campfires glow far below. Pale gold and cool blue-grey; the promise of a
-civilization about to begin.
+DOS art cinematic landscape, wide 16:9 composition, chunky readable pixels, limited earthy palette with pale gold as the single signature accent against cool blue-grey. View from a high ridge over a vast valley of winding rivers and low hills, mist pooling in the hollows. On the ridge in the foreground, a handful of tiny silhouetted figures with a single tall banner. The sun breaks the horizon dead centre, low and pale gold, casting strong directional rim light. Far below, the first tiny campfires of a fledgling settlement glow like embers. Dark vignetted edges melting into near-black blue #0b0f14. Moody, atmospheric, thumbnail-readable silhouette composition, subject centered in the middle third. No text, no watermark, no UI, no modern objects. , warm color grading, green gras
 ----
 
-=== 2. `horde_conquest.png` — the barbarians take a city
+=== 2. `horde_conquest.webp` — the barbarians take a city
 
 Signature accent: ember orange against smoke-grey. Mood: dread.
 
@@ -56,7 +51,7 @@ against smoke-grey; the horde's crimson banner as the single sharp
 accent.
 ----
 
-=== 3. `nomad_migration.png` — the nomads join them
+=== 3. `nomad_migration.webp` — the nomads join them
 
 Signature accent: dusk violet with warm lantern amber. Mood: eerie
 companionship, movement.
@@ -73,7 +68,7 @@ distance. Two banners, one crimson one ochre, moving the same way.
 
 == City chronicle (CityEventModal — same cover treatment)
 
-=== 4. `city_founded.png` — a city is founded
+=== 4. `city_founded.webp` — a city is founded
 
 Signature accent: fresh morning green + gold. Mood: hopeful beginning.
 
@@ -86,7 +81,7 @@ gold; a lone founding banner as the sharp accent. Clean, hopeful, empty
 sky.
 ----
 
-=== 5. `city_triumph.png` — you capture a city
+=== 5. `city_triumph.webp` — you capture a city
 
 Signature accent: cool steel + dust gold. Mood: triumph.
 
@@ -99,7 +94,7 @@ morning light raking across the wall tops. Cool steel blues and dust gold;
 the freshly planted banner the sharpest silhouette in the frame.
 ----
 
-=== 6. `city_flames.png` — a city is razed or lost
+=== 6. `city_flames.webp` — a city is razed or lost
 
 Signature accent: fire red against night. Mood: ruin.
 
@@ -111,7 +106,7 @@ abandoned cart and scattered belongings in the foreground road. Deep night
 blues with fire red and orange as the only warm colours; ash in the air.
 ----
 
-=== 7. `city_joined.png` — a city joins you willingly
+=== 7. `city_joined.webp` — a city joins you willingly
 
 Signature accent: warm amber + open gate. Mood: welcome.
 
@@ -130,13 +125,13 @@ subject.
 |===
 |File |Moment |Where it shows
 
-|`public/assets/story/dawn.png` |Game opening |StoryModal (blocking, Continue)
-|`public/assets/story/horde_conquest.png` |Barbarians take a rival city |StoryModal
-|`public/assets/story/nomad_migration.png` |The nomad camp moves in |StoryModal
-|`public/assets/story/city_founded.png` |City founded |CityEventModal hero
-|`public/assets/story/city_triumph.png` |City captured (yours) |CityEventModal hero
-|`public/assets/story/city_flames.png` |City razed / lost |CityEventModal hero
-|`public/assets/story/city_joined.png` |City joins you |CityEventModal hero
+|`public/assets/story/dawn.webp` |Game opening |StoryModal (blocking, Continue)
+|`public/assets/story/horde_conquest.webp` |Barbarians take a rival city |StoryModal
+|`public/assets/story/nomad_migration.webp` |The nomad camp moves in |StoryModal
+|`public/assets/story/city_founded.webp` |City founded |CityEventModal hero
+|`public/assets/story/city_triumph.webp` |City captured (yours) |CityEventModal hero
+|`public/assets/story/city_flames.webp` |City razed / lost |CityEventModal hero
+|`public/assets/story/city_joined.webp` |City joins you |CityEventModal hero
 |===
 
 Wonders need no prompts of their own: `WonderCompletedModal` shows the

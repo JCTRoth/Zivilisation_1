@@ -1,0 +1,272 @@
+= Missing Assets Audit
+
+A complete inventory of every asset the game references that does not ship on
+disk today, plus the artwork gaps where the loader degrades to a fallback
+(emoji, gradient or synthesized beep). Generated on 3 Nov 2026.
+
+== 1. Snapshot
+
+[cols="2,2,3", options="header"]
+|===
+|Area |State |What you see in game
+
+|*Unit sprites* (`public/assets/units/`)
+|**36 of 36 missing — folder empty**
+|Loader falls through: sprite → SVG → emoji. 15 units still get artwork, **21
+units render as colour emoji**.
+
+|*Story art* (`public/assets/story/`)
+|**5 of 7 missing — WebP, 2 delivered** (`dawn.webp`, `city_founded.webp`)
+|Story/city-chronicle cards show their own gradient stage (optional by design).
+
+|*Nomad clan art* (`public/assets/nomads/`)
+|**3 of 3 missing — folder absent**
+|Audience dialog falls back to the clan emoji (optional by design).
+
+|*Terrain sections* |**2 primary textures missing**
+|Numbered variants cover both, so rendering works — but the named primaries 404.
+
+|*Resource artwork* (`src/assets/resources/`)
+|7 of 9 resources without art
+|Tiles are baked from the colour emoji glyph instead of drawn artwork.
+
+|*Music* |**2 of 3 scenes silent**
+|Menu and game-over play nothing; one gameplay track ships.
+
+|*Sound effects* — 44 cues total
+|**29 cues with a recording, 21 synth-only** (+1 orphaned file)
+|Every missing cue falls back to its synthesized notes; no console errors.
+
+|Leaders (14/14), wonders (24/24), file-backed SFX rows, favicons, emoji font
+|✓ complete
+|—
+|===
+
+== 2. Unit sprites — `public/assets/units/`
+
+The loader probes `/assets/units/unit_<key>.png` for every unit
+(`src/utils/UnitIconLoader.ts`). The folder is currently **empty** — every
+probe 404s and falls through.
+
+`tools/tile-generator/install_generated_assets.mjs` previously moved the full
+sprite set into `public/assets/_generated_backup/units/` (105 files = 35
+units × base + `_2` + `_3`). Only `travelling_bazaar` (a renamed caravan
+clan) was never generated.
+
+.ships no sprite today (files were last in `_generated_backup/units/`)
+|===
+|Sprite missing |Unit keys affected
+
+|All 36
+|warrior, scout, archer, phalanx, chariot, knights, legion, catapult,
+musketeer, riflemen, cavalry, mech_inf, cannon, artillery, tank, sail,
+trireme, caravel, frigate, ironclad, destroyer, cruiser, battleship,
+submarine, carrier, transport, fisher_boat, trade_ship, settler, diplomat,
+caravan, travelling_bazaar, ferry, fighter, bomber, nuclear
+|===
+
+Of these, 15 still have bundled SVG artwork (`src/assets/units/` +
+`UnitIconConfig.ts`): warrior, scout, archer, phalanx, knights, chariot,
+cannon, artillery, submarine, tank, settler, riflemen, musketeer, trireme,
+frigate.
+
+**21 units have no artwork at all and render as their emoji fallback**:
+
+[cols="3,2,3", options="header"]
+|===
+|Unit key |Name layer |Emoji fallback
+
+|legion |— |from `UnitConstants.icon`
+|catapult |— |"
+|cavalry |— |"
+|mech_inf |— |"
+|sail |— |"
+|caravel |— |"
+|ironclad |— |"
+|destroyer |— |"
+|cruiser |— |"
+|battleship |— |"
+|carrier |— |"
+|transport |— |"
+|fisher_boat |— |"
+|trade_ship |— |"
+|diplomat |— |"
+|caravan |— |"
+|travelling_bazaar |— |"
+|ferry |— |"
+|fighter |— |"
+|bomber |— |"
+|nuclear |— |"
+|===
+
+Fix options:
+
+* `node tools/tile-generator/install_generated_assets.mjs <folder>` (or copy
+  the set back from `public/assets/_generated_backup/units/`) restores 35 of 36.
+* Generate one `travelling_bazaar` sprite (or alias it to the caravan art).
+* Long-term: crop per-unit artwork into `src/assets/units/<key>.svg` and add
+  a `UnitIconConfig` row (`tests/unitIconConfig.test.ts` verifies it).
+
+== 3. Terrain textures — `public/assets/tiles/`
+
+Two textures are named as the *primary* file in `TerrainTextureManager.ts`
+but are absent. The generator's variant probe (`_1`, `_2`, …) covers both, so
+this is cosmetic — however each page load still fires a 404 and the
+`flat`-named artwork never shows.
+
+|===
+|Referenced as |Missing file |Covered today by
+
+|`base terrain FOREST`
+|`terrain_forest.png`
+|`terrain_forest_1.png`, `terrain_forest_2.png`
+
+|`feature MOUNTAINS`
+|`terrain_mountains_feature.png`
+|`terrain_mountains_feature_1.png` … `_4.png`
+|===
+
+Fix: copy `terrain_forest_1.png` → `terrain_forest.png` and
+`terrain_mountains_feature_1.png` → `terrain_mountains_feature.png` (or
+regenerate with `BACKEND=local node tools/tile-generator/generate_terrain_v4.mjs`).
+
+== 4. Story art — `public/assets/story/`
+
+The format is **WebP** — `dawn.webp` and `city_founded.webp` are delivered,
+five of the seven remain. All images are optional by design: a missing file
+leaves the card's gradient stage (`StoryModal` / `CityEventModal`). Generation
+prompts ship in `doc/STORY_ART_PROMPTS.adoc` (16:9 landscape WebP, named
+exactly as below).
+
+|===
+|File |Used by
+
+|`dawn.webp` *(delivered)*
+|opening chronicle (StoryEvents.dawn)
+
+|`horde_conquest.webp`
+|barbarian conquest card (StoryEvents.hordeConquest)
+
+|`nomad_migration.webp`
+|nomad migration card (StoryEvents.nomadMigration)
+
+|`city_founded.webp` *(delivered)*
+|city chronicle — founded
+
+|`city_triumph.webp`
+|city chronicle — captured
+
+|`city_flames.webp`
+|city chronicle — razed
+
+|`city_joined.webp`
+|city chronicle — joined
+|===
+
+== 5. Nomad clan art — `public/assets/nomads/`
+
+Whole folder absent. The audience dialog falls back to the clan's emoji until
+each file exists (portrait 512×640 PNG; prompts in
+`doc/NOMAD_ART_PROMPTS.adoc`).
+
+|===
+|File |Clan
+
+|`sandborne.png`
+|The Sandborne — traders
+
+|`ironhoof.png`
+|The Ironhoof — warriors
+
+|`greywind.png`
+|The Greywind — mystics
+|===
+
+== 6. Resource artwork — `src/assets/resources/`
+
+The compose script bakes `emoji-in-colour` glyphs for anything without a
+file here. Only `fish` (5 poses) and `horses` (2 variants) have art; the
+other seven specials are glyph-baked.
+
+|===
+|Resource (tile name) |Present? |Art source today
+
+|`fish` (`fish1..5.png`) |✓ |artwork
+
+|`horses` (`horses.svg`, `horses_2.svg`) |✓ |artwork
+
+|`seal` |✗ |emoji 🦭
+|`gems` |✗ |emoji 💎
+|`gold` |✗ |emoji 💰
+|`coal` |✗ |emoji 🪨
+|`oil` |✗ |emoji 🛢️
+|`game` |✗ |emoji 🦌
+|`oasis` |✗ |emoji 🌴
+|===
+
+Fix: drop `seal.svg/png` etc. into `src/assets/resources/`, then
+`node tools/tile-generator/compose_feature_tiles.mjs --only=<resource>`.
+
+== 7. Music — `public/assets/music/`
+
+`MUSIC_TRACKS` defines three scenes; only `gameplay` has a row (single track:
+`Get_it_going.opus` — plays once, then repeats after a cooldown). Missing:
+
+|===
+|Scene |Track on disk? |Notes
+
+|`menu` |✗ none |Title screen is silent.
+
+|`gameplay` |✓ (1 track) |Single piece, 25 s cooldown-then-repeat.
+
+|`gameOver` |✗ none |Victory/defeat is silent.
+|===
+
+== 8. Sound effects — cues with no recording
+
+All file rows — 10 legacy `.mp3/.opus` rows, 13 Warzone-2100 main rows and the
+3 secondary variants in `SOUND_MANIFEST` — resolve on disk. Nothing in
+`CUE_FILES` is broken. What follows are the cues that play
+their *synthesized* fallback because no row exists. The four commented rows
+are already waiting in `Sfx.ts` under "Still synthesized" — uncomment one
+once its file lands.
+
+*Candidate recordings (example filenames, wire with one row each)*
+
+|===
+|Cue |Suggested file |Notes
+
+|`unitDefeated` |`/assets/sfx/unit-defeated.ogg` |row already commented
+
+|`unitDisbanded` |`/assets/sfx/unit-disbanded.ogg` |row already commented
+
+|`stolenTechnology` |`/assets/sfx/stolen-technology.ogg` |row already commented
+
+|`coverBlown` |`/assets/sfx/cover-blown.ogg` |row already commented
+
+|`warDeclared`, `peaceMade`, `wonderCompleted`, `cityLost`, `civEliminated`,
+`cityStarved`, `cityDisorder`, `cityDisaster`, `unitProduced`,
+`tradeRouteEstablished`, `unitPromoted`, `bribe` |— |synth-only today; the
+news cues are the highest-value recordings left in the game
+
+|`airUnitLaunch`, `unitSelected`, `uiSelect`, `unitReSelected`,
+`impactStrike`
+|— |intentionally synth-only per inline comments *
+|===
+
+\* `airUnitLaunch` is the spiky case: `/assets/sfx/air-unit-launch.mp3` still
+ships on disk but **no row points at it any more** (the file is orphaned, not
+missing). Either re-wire it or delete the file.
+
+== 9. Complete — no action needed
+
+* ✅ 14 leader portraits (`src/assets/leader/`)
+* ✅ 24/24 wonder images referenced ↔ present (`public/assets/wonders/`)
+* ✅ Every file row resolves: 10 legacy SFX + 16 Warzone-2100 oggs cover all
+  23 `CUE_FILES` rows and all 3 `SOUND_MANIFEST` secondary variants. (One
+  file on disk, `air-unit-launch.mp3`, is unused — see §8.)
+* ✅ All resource-on-tile compositions present for every legal pairing
+  (`buildResourceTileFiles()`: 11 pairings ↔ 20 composed + variant files)
+* ✅ `favicon-32/64.png`, `favicon.png`, `apple-touch-icon.png`,
+  `NotoEmoji-Light.ttf`
+* ✅ Variant textures (`_1`…`_5`) resolve for every referenced stem

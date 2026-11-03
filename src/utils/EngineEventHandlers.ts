@@ -336,6 +336,14 @@ export class EngineEventRouter {
         if (!this.isAIVsAI) notify('success', t('nomad.return.gift'));
         this.syncState();
         break;
+      case 'NOMAD_SPLIT':
+        // The camp outgrew its fire and divided: one tribe, two tents — the
+        // world just got busier, so the store re-syncs.
+          notify('info', t('nomad.split', {
+            count: Number((eventData as { count?: unknown })?.count ?? 0),
+          }));
+        this.syncState();
+        break;
       case 'NOMAD_BRIBE':
         // One of the player's troops took the nomads' gold — ownership and
         // the treasury both moved, so push everything into the store.
