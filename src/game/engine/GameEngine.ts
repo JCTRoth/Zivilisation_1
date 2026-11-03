@@ -1199,6 +1199,14 @@ export default class GameEngine {
     // Start the first turn for the active player (human player 0)
     console.log('[GameEngine] Starting first turn for player', this.activePlayer);
     this.roundManager.startTurn(this.activePlayer);
+
+    // The chronicle opens: a huge illustrated card greets the player before
+    // the first turn. This goes through the storeActions channel (wired at
+    // construction) because `onStateChange` is not attached yet at the end
+    // of initialize — and a spectated AI-vs-AI run has nobody to tell.
+    if (this.civilizations.some((c: Civilization) => c.isHuman === true)) {
+      this.storeActions?.queueStory?.({ storyId: 'dawn' });
+    }
   }
 
   /**

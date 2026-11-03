@@ -167,7 +167,8 @@ Nomads Ask*) so the e2e sweep can dismiss it.
 |Nomads and barbarians never fight each other: `BarbarianManager.act()`
 skips every negative-id unit and city (the nomads are friends of the
 horde), and when the barbarians TAKE a city the tribe strikes camp and
-**moves in beside it** (`onBarbariansTookCity` → `NOMAD_MIGRATED`) and a
+**moves in beside it** (`onBarbariansTookCity` → `NOMAD_MIGRATED`, told
+as a full-screen chronicle card) and a
 friendship route opens (it dies with the city, as any route does). An
 angry tribe keeps its revenge and stays put.
 
@@ -302,8 +303,8 @@ capture branch calls `nomadManager.onBarbariansTookCity(city)` (migration
 `NOMAD_DEPARTED` / `NOMAD_ANGRY` / `NOMAD_RAID` / `NOMAD_RETURN_GIFT` /
 `NOMAD_CITY_OFFER` + `NOMAD_MONEY_REQUEST` (same audience machinery as
 `NOMAD_PARLEY`) / `NOMAD_BRIBE` / `NOMAD_ROUTE` / `NOMAD_STRATEGY` /
-`NOMAD_KNOWLEDGE` / `NOMAD_MIGRATED` →
-`EngineEventHandlers` (localized toasts + store sync)
+`NOMAD_KNOWLEDGE` → `EngineEventHandlers` (localized toasts + store sync);
+`NOMAD_MIGRATED` → the chronicle's story card (`doc/STORY.adoc`)
 
 |Fog
 |`GameEngine.revealArea(col, row, radius, viewerId)` — the viewer

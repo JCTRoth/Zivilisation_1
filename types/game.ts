@@ -854,13 +854,24 @@ interface BribeNotice {
   rulerName?: string;
 }
 
+/**
+ * One queued full-screen STORY card (the huge illustrated chronicle
+ * moments: the dawn, a barbarian conquest, the nomad migration…).
+ * Rendered by `StoryModal`, defined in `src/data/StoryEvents.ts`.
+ */
+export interface StoryNotice {
+  storyId: string;
+  /** Interpolation params for the title/body (city name, …). */
+  params?: Record<string, string | number>;
+}
+
 export interface UIState {
   showMinimap: boolean;
   showUnitPanel: boolean;
   showCityPanel: boolean;
   showTechTree: boolean;
   showGameMenu: boolean;
-  activeDialog: 'tech' | 'diplomacy' | 'audience' | 'help' | 'pause' | 'city-production' | 'city-details' | 'rates' | 'government' | 'statistics' | 'wonders' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'bribe-result' | 'research-required' | 'auto-end-offer' | 'wonder-completed' | 'wonder-conflict' | 'combat-report' | 'city-founded' | 'city-lost' | null;
+  activeDialog: 'tech' | 'diplomacy' | 'audience' | 'help' | 'pause' | 'city-production' | 'city-details' | 'rates' | 'government' | 'statistics' | 'wonders' | 'village' | 'upkeep-disbanded' | 'city-starved' | 'city-disorder' | 'trade-route-result' | 'bribe-result' | 'research-required' | 'auto-end-offer' | 'wonder-completed' | 'wonder-conflict' | 'combat-report' | 'city-founded' | 'city-lost' | 'story' | null;
   sidebarCollapsed: boolean;
   notifications: Notification[];
   /** Active citizen pick-up origin ({cityId, col, row}) while reassigning. Null when idle. */
@@ -1046,6 +1057,8 @@ export interface GameStoreState {
   combatReportQueue: CombatReportNotice[];
   /** FIFO queue of city-event notices (founded / captured / razed / joined). */
   cityEventQueue: CityEventNotice[];
+  /** FIFO queue of full-screen story cards (see StoryModal). */
+  storyQueue: StoryNotice[];
   /** FIFO queue of world-wonder dialogs (completion / production conflict). */
   wonderDialogQueue: WonderDialogEntry[];
   /** Civ auto-selected when the diplomacy screen opens (diplomat contact / AI offer). */
@@ -1288,6 +1301,13 @@ export interface GameActions {
   dequeueCityEvent: () => void;
   /** Drop every pending city event. */
   clearCityEvents: () => void;
+  /**
+   * Push a full-screen story card on the queue. Opens immediately unless
+   * another dialog is already showing (it surfaces when that one closes).
+   */
+  queueStory: (notice: StoryNotice) => void;
+  /** Show the next queued story card, or close when the queue runs dry. */
+  dequeueStory: () => void;
   /** Open the Civ I–style negotiation screen, optionally focused on a civ. */
   openDiplomacy: (focusCivId?: number | null) => void;
   /** Consume the diplomacy focus hint without changing the open dialog. */

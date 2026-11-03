@@ -13,6 +13,7 @@ import WondersOverviewModal from './gamemodals/WondersOverview';
 import VillageModal from './gamemodals/VillageModal';
 import CombatReportModal from './gamemodals/CombatReportModal';
 import CityEventModal from './gamemodals/CityEventModal';
+import StoryModal from './gamemodals/StoryModal';
 import AudienceModal from './gamemodals/AudienceModal';
 import ResearchRequiredModal from './ResearchRequiredModal';
 import GameModal from './gamemodals/ModalShell';
@@ -75,6 +76,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const wonderDialogQueue = useGameStore(state => state.wonderDialogQueue);
   const combatReportQueue = useGameStore(state => state.combatReportQueue);
   const cityEventQueue = useGameStore(state => state.cityEventQueue);
+  const storyQueue = useGameStore(state => state.storyQueue);
   const map = useGameStore(state => state.map);
 
   const selectedCity = cities.find(c => c.id === selectedCityId);
@@ -283,6 +285,17 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     }
     handleCloseDialog();
     actions.clearCityEvents();
+  };
+
+  /** Next queued story card, or a clean close on the last one. */
+  const handleStoryContinue = () => {
+    const queue = useGameStore.getState().storyQueue;
+    if (queue.length > 1) {
+      actions.dequeueStory();
+      return;
+    }
+    handleCloseDialog();
+    actions.dequeueStory();
   };
 
   /** "Open City" — close the notice, then select + open the city screen. */
@@ -3063,6 +3076,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
           : null}
         onContinue={handleCityEventContinue}
         onGoToCity={handleCityEventGoToCity}
+      />
+      <StoryModal
+        show={uiState.activeDialog === 'story'}
+        notice={storyQueue[0] ?? null}
+        onContinue={handleStoryContinue}
       />
       {renderUpkeepDisbanded()}
       {renderCityStarved()}

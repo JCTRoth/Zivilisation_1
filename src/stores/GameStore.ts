@@ -236,6 +236,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   // FIFO queues for the decisive-battle and city-event modals
   combatReportQueue: [],
   cityEventQueue: [],
+  // FIFO queue of full-screen story cards (the illustrated chronicle)
+  storyQueue: [],
 
   // FIFO queue of world-wonder dialogs (completion screen / production conflict)
   wonderDialogQueue: [],
@@ -854,21 +856,25 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     hideDialog: () => set(state => {
       const active = state.uiState.activeDialog;
+      const closingStory = active === 'story';
       const closingCityEvent = active === 'city-founded' || active === 'city-lost';
+      const nextStory = !closingStory ? state.storyQueue[0] : undefined;
       const nextCityEvent = !closingCityEvent ? state.cityEventQueue[0] : undefined;
-      const nextDialog = nextCityEvent
-        ? nextCityEvent.kind === 'founded' || nextCityEvent.kind === 'joined'
-          ? 'city-founded'
-          : 'city-lost'
-        : null;
+      const nextDialog = nextStory
+        ? 'story'
+        : nextCityEvent
+          ? nextCityEvent.kind === 'founded' || nextCityEvent.kind === 'joined'
+            ? 'city-founded'
+            : 'city-lost'
+          : null;
 
-      // Closing another screen may unblock a city event that arrived while
-      // that screen was open. Surface it now instead of leaving its queue
-      // stranded until another city event happens to arrive.
+      // Closing another screen may unblock a story card or city event that
+      // arrived while that screen was open. Surface it now instead of
+      // leaving its queue stranded until another notice happens to arrive.
       return {
         uiState: { ...state.uiState, activeDialog: nextDialog },
         // Keep the selection lock while a queued notice replaces the dialog.
-        gameState: nextCityEvent
+        gameState: nextStory || nextCityEvent
           ? state.gameState
           : { ...state.gameState, selectionOrigin: null },
       };
@@ -1049,10 +1055,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           }
         };
       }
+      // A story card that arrived meanwhile surfaces next (and vice versa:
+      // dequeueStory promotes city events the same way).
+      const nextStory = state.storyQueue[0];
       return {
         cityEventQueue: [],
-        uiState: { ...state.uiState, activeDialog: null },
-        gameState: { ...state.gameState, selectionOrigin: null }
+        uiState: { ...state.uiState, activeDialog: nextStory ? 'story' : null },
+        gameState: nextStory
+          ? state.gameState
+          : { ...state.gameState, selectionOrigin: null }
       };
     }),
 
@@ -1066,6 +1077,36 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             : state.uiState.activeDialog
       }
     })),
+
+    queueStory: (notice) => set(state => {
+      const queue = [...state.storyQueue, notice];
+      const showing = state.uiState.activeDialog === 'story';
+      const busy = state.uiState.activeDialog !== null && !showing;
+      return {
+        storyQueue: queue,
+        uiState: busy ? state.uiState : { ...state.uiState, activeDialog: 'story' }
+      };
+    }),
+
+    dequeueStory: () => set(state => {
+      const queue = state.storyQueue.slice(1);
+      if (queue.length > 0) {
+        return { storyQueue: queue, uiState: { ...state.uiState, activeDialog: 'story' } };
+      }
+      const nextCity = state.cityEventQueue[0];
+      return {
+        storyQueue: [],
+        uiState: {
+          ...state.uiState,
+          activeDialog: nextCity
+            ? nextCity.kind === 'founded' || nextCity.kind === 'joined' ? 'city-founded' : 'city-lost'
+            : null
+        },
+        gameState: nextCity
+          ? state.gameState
+          : { ...state.gameState, selectionOrigin: null }
+      };
+    }),
 
     openDiplomacy: (focusCivId = null) => set(state => ({
       uiState: { ...state.uiState, activeDialog: 'diplomacy' },

@@ -4,6 +4,7 @@ import { UNIT_RANK_INFO, getUnitRank } from '../game/engine/UnitRankSystem';
 import { firstUnresearchedInPath } from './ResearchPath';
 import { awaitCameraGlide, isCameraGliding } from '../game/rendering/CameraGlideGate';
 import { HUMAN_PLAYER_ID } from './PlayerConstants';
+import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { humanOrFirst, notify } from './NotificationUtils';
 import type GameEngine from '../game/engine/GameEngine';
 import { isNomadStance } from '../game/engine/nomad/NomadAI';
@@ -379,11 +380,13 @@ export class EngineEventRouter {
         this.syncState();
         break;
       case 'NOMAD_MIGRATED':
-        // The camp packed up and joined the barbarians' new city.
+        // The camp struck tents and joined the barbarians' new city — a
+        // huge illustrated chronicle card, not a passing toast.
         if (!this.isAIVsAI) {
-          notify('warning', t('nomad.migrated', {
-            city: String((eventData as { city?: unknown })?.city ?? ''),
-          }));
+          this.actions.queueStory({
+            storyId: 'nomadMigration',
+            params: { city: String((eventData as { city?: unknown })?.city ?? '') },
+          });
         }
         this.syncState();
         break;
@@ -1573,6 +1576,19 @@ export class EngineEventRouter {
     const fromCivId = (eventData.originalCiv as number | undefined) ?? city.civilizationId;
     const playerInvolved =
       byCivId === HUMAN_PLAYER_ID || fromCivId === HUMAN_PLAYER_ID || city.civilizationId === HUMAN_PLAYER_ID;
+    // A barbarian conquest is world news even when no player is part of it —
+    // the CityEventModal only speaks for the player's own cities, so the
+    // horde taking somebody else's city gets the chronicle's big card.
+    if (
+      eventType === 'CITY_CAPTURED'
+      && byCivId === BARBARIAN_CIV_ID
+      && fromCivId !== HUMAN_PLAYER_ID
+    ) {
+      this.actions.queueStory({
+        storyId: 'hordeConquest',
+        params: { city: city.name },
+      });
+    }
     if (!playerInvolved) return;
 
     // Only a city the player TOOK is a triumph worth the fanfare. Losing one

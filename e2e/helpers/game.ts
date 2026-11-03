@@ -37,6 +37,28 @@ export async function startGame(page: Page): Promise<void> {
   // ("No Research Selected") — dismiss it so tests start on the board. The
   // tech-tree tests open the tree themselves.
   await closeResearchPrompt(page);
+
+  // The chronicle opens on a huge illustrated card at game start ("The
+  // Dawn of Your People") — blocking by design, one Continue. Closing the
+  // research prompt first can surface it (queued dialogs promote on
+  // close), so this runs after.
+  await closeStoryCardIfOpen(page);
+}
+
+/**
+ * Dismiss the chronicle's story card, whichever moment it tells (the dawn
+ * at game start; a horde/migration card mid-game). No-op when nothing is
+ * open — AI-vs-AI runs queue no cards at all.
+ */
+export async function closeStoryCardIfOpen(page: Page): Promise<void> {
+  const card = page.locator('.modal-dialog.story-modal');
+  try {
+    await card.waitFor({ state: 'visible', timeout: 5_000 });
+  } catch {
+    return; // no chronicle card for this game
+  }
+  await card.getByRole('button', { name: 'Continue' }).click();
+  await expect(card).toBeHidden({ timeout: 5_000 });
 }
 
 /**

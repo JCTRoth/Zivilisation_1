@@ -607,6 +607,13 @@ const BLOCKING_DIALOGS: ReadonlyArray<{ text: string; button: string }> = [
   { text: 'End Turn?', button: 'Cancel' },
   { text: 'No Research Selected', button: 'Decide Later' },
   { text: 'Auto. turn ending', button: 'Got it' },
+  // The chronicle's story cards — blocking by design: the dawn at game
+  // start, then the illustrated world events. One Continue each (the first
+  // refusal rule of the nomad entries does not apply here: Continue moves
+  // the story on without any game consequence).
+  { text: 'The Dawn of Your People', button: 'Continue' },
+  { text: 'The Horde Takes', button: 'Continue' },
+  { text: 'The Nomads Join', button: 'Continue' },
   // The nomads' plea for gold ("The Nomads Ask"): a broke tribe asks. The
   // first refusal never angers any clan, so refusing keeps the run clean.
   { text: 'The Nomads Ask', button: 'Refuse — no gold for wanderers' },

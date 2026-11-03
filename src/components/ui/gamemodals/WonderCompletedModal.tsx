@@ -114,6 +114,9 @@ const WonderCompletedModal: React.FC<WonderCompletedModalProps> = ({ show, notic
       artSize="lg"
       artSrc={artSrc}
       artAlt={wonder.name}
+      // The completion screen's whole point is the picture: full-bleed hero,
+      // heading laid over it — the wonder deserves the whole stage.
+      artLayout="cover"
       artLabel={t('wonderDone.artLabel' as TranslationKey)}
       actions={
         <>

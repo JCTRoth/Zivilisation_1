@@ -1,0 +1,146 @@
+= Story Screen Art — Generation Prompts
+
+> Full-screen illustrated moments (the chronicle). Each image is shown as
+> a **full-bleed cover hero** (`GameModal artLayout="cover"`), roughly
+> 64vh tall on the story cards and 52vh inside the city dialog,
+> pixel-scaled (`image-rendering: pixelated`) over a `#0b0f14` stage.
+>
+> **All images are optional.** A missing file degrades to the card's own
+> glyph stage — generate them one at a time, in any order. The nomad clan
+> portraits are a separate set: `doc/NOMAD_ART_PROMPTS.adoc`.
+>
+> **Deliver as PNG, 16:9 landscape — 1536×864 (or 1024×576) — named exactly
+> as the table says, under `public/assets/story/`.**
+
+== Shared style block (prepend to every prompt)
+
+----
+Pixel art, 16-bit JRPG cinematic scene style, WIDE 16:9 landscape
+composition. Chunky readable pixels, limited earthy palette with ONE
+signature accent colour per scene, strong directional light (low sun,
+torchlight or fireglow), dark vignetted edges that melt into a very dark
+blue-black background (#0b0f14). One clear subject in the middle third,
+readable as a thumbnail. Mood over detail. No text, no watermark, no UI
+elements, no modern objects. 1536x864 landscape PNG.
+----
+
+== The three chronicle cards (StoryModal)
+
+These open as the biggest screens in the game, one Continue button.
+
+=== 1. `dawn.png` — the game's opening card
+
+Signature accent: pale gold through mist. Mood: solemn, expectant.
+
+----
+[basic style block]
+First light over a nameless land: a wide valley of rivers and low hills
+seen from a high ridge, mist pooling in the hollows, a handful of tiny
+figures with a single banner silhouetted on the ridge in the foreground,
+the sun breaking the horizon dead centre. A fledgling settlement's first
+campfires glow far below. Pale gold and cool blue-grey; the promise of a
+civilization about to begin.
+----
+
+=== 2. `horde_conquest.png` — the barbarians take a city
+
+Signature accent: ember orange against smoke-grey. Mood: dread.
+
+----
+[basic style block]
+A walled city under storm at dusk: the gate splintered, a barbarian horde
+surging through it with torches and crude banners, thick black smoke
+rolling up past the walls, one tower burning and casting ember light over
+the attackers. Defenders' abandoned shields on the ground. Ember orange
+against smoke-grey; the horde's crimson banner as the single sharp
+accent.
+----
+
+=== 3. `nomad_migration.png` — the nomads join them
+
+Signature accent: dusk violet with warm lantern amber. Mood: eerie
+companionship, movement.
+
+----
+[basic style block]
+A nomad column on the move at dusk: covered wagons and mounted riders
+filed along a road toward a captured walled city on the horizon (its
+smoldering gate still faintly lit), tents and baggage in the foreground
+already half-pitched on the plain. Warm lantern amber on the wagons
+against a dusk-violet sky; the city's ember glow answering in the
+distance. Two banners, one crimson one ochre, moving the same way.
+----
+
+== City chronicle (CityEventModal — same cover treatment)
+
+=== 4. `city_founded.png` — a city is founded
+
+Signature accent: fresh morning green + gold. Mood: hopeful beginning.
+
+----
+[basic style block]
+Settlers raising a first settlement at dawn: palisade stakes going up,
+a banner being planted on a low mound beside a river bend, tents and a
+half-built granary, forest and open plain beyond. Fresh green and morning
+gold; a lone founding banner as the sharp accent. Clean, hopeful, empty
+sky.
+----
+
+=== 5. `city_triumph.png` — you capture a city
+
+Signature accent: cool steel + dust gold. Mood: triumph.
+
+----
+[basic style block]
+The moment of conquest from the victors' side: armour-clad soldiers
+planting a new banner atop a captured gatehouse while the old banner lies
+lowered on the stones below, city walls receding into a dust-hazed plaza,
+morning light raking across the wall tops. Cool steel blues and dust gold;
+the freshly planted banner the sharpest silhouette in the frame.
+----
+
+=== 6. `city_flames.png` — a city is razed or lost
+
+Signature accent: fire red against night. Mood: ruin.
+
+----
+[basic style block]
+A city burning at night, seen from outside the walls: flames licking
+broken towers, a fallen gate, sparks drifting across a black sky, one
+abandoned cart and scattered belongings in the foreground road. Deep night
+blues with fire red and orange as the only warm colours; ash in the air.
+----
+
+=== 7. `city_joined.png` — a city joins you willingly
+
+Signature accent: warm amber + open gate. Mood: welcome.
+
+----
+[basic style block]
+A peaceful city gate standing wide open at golden hour, townsfolk
+gathered before it with an offered banner and bread and salt on a cloth,
+your colours already being raised on the wall beside their own. Warm
+amber light, open composition, no weapons drawn. Hospitality as the
+subject.
+----
+
+== Delivery
+
+[cols="2,1,3", options="header"]
+|===
+|File |Moment |Where it shows
+
+|`public/assets/story/dawn.png` |Game opening |StoryModal (blocking, Continue)
+|`public/assets/story/horde_conquest.png` |Barbarians take a rival city |StoryModal
+|`public/assets/story/nomad_migration.png` |The nomad camp moves in |StoryModal
+|`public/assets/story/city_founded.png` |City founded |CityEventModal hero
+|`public/assets/story/city_triumph.png` |City captured (yours) |CityEventModal hero
+|`public/assets/story/city_flames.png` |City razed / lost |CityEventModal hero
+|`public/assets/story/city_joined.png` |City joins you |CityEventModal hero
+|===
+
+Wonders need no prompts of their own: `WonderCompletedModal` shows the
+wonder's OWN shipped picture (`public/assets/wonders/*.jpg`) through the
+same huge cover treatment. A failed load anywhere is non-fatal — the
+shell falls back to the moment's glyph on the gradient stage, and the
+text tells the story either way.

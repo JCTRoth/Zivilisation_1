@@ -3,6 +3,7 @@ import GameModal from './ModalShell';
 import { useTranslation } from '@/i18n/useTranslation';
 import { playSfx, type SfxCue } from '@/utils/Sfx';
 import type { CityEventNotice } from '../../../../types/game';
+import { CITY_EVENT_ART } from '@/data/StoryEvents';
 import '../../../styles/cityCaptureModal.css';
 
 interface CityEventModalProps {
@@ -136,6 +137,13 @@ const CityEventModal: React.FC<CityEventModalProps> = ({
       tone={ours ? 'success' : 'danger'}
       icon={isFounded ? '🏰' : isJoined ? '🤝' : isRazed ? '🔥' : '🏚️'}
       artLabel={ours ? t('cityEvent.artOurs') : t('cityEvent.artLost')}
+      // The chronicle's huge picture: one scene per moment (see
+      // doc/STORY_ART_PROMPTS.adoc). Missing art keeps the glyph stage —
+      // the story never breaks because of an image that is not generated.
+      artSrc={CITY_EVENT_ART[notice.kind]}
+      artAlt={title}
+      artLayout="cover"
+      artSize="lg"
       dialogClassName="city-event-modal"
       eyebrow={eyebrow}
       title={title}

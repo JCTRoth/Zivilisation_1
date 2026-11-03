@@ -1,0 +1,95 @@
+= The Chronicle — Full-Screen Story Cards
+
+> *Data:* `src/data/StoryEvents.ts`
+> *UI:* `src/components/ui/gamemodals/StoryModal.tsx`,
+> `src/components/ui/GameModals.tsx`, `src/styles/storyModal.css`
+> *Store:* `storyQueue` + `queueStory` / `dequeueStory` (`src/stores/GameStore.ts`)
+> *Art prompts:* `doc/STORY_ART_PROMPTS.adoc`
+> *Tests:* `tests/storyEvents.test.ts` (9)
+> *i18n:* `story.*` keys in all 6 languages
+
+---
+
+== 1. What happens
+
+Certain moments deserve more than a toast: the game **opens on a huge
+illustrated card** before the first turn, and the world's big news — the
+barbarian horde swallowing a city, the nomad camp moving in beside it —
+arrives as full-screen chronicle cards too. Two existing dialogs joined
+the treatment: the **city chronicle** (`CityEventModal`) and the **wonder
+completion screen** now show their picture as a full-bleed hero.
+
+[cols="1,2,2", options="header"]
+|===
+|Card |Fired by |Where
+
+|**The Dawn of Your People**
+|`GameEngine.initialize` → `storeActions.queueStory({ storyId: 'dawn' })`
+(gated: a human seat must exist)
+|StoryModal, blocking, one *Continue*
+
+|**The Horde Takes {{city}}**
+|`EngineEventHandlers.onCityOwnership` on `CITY_CAPTURED` when the
+attacker is `BARBARIAN_CIV_ID` **and the victim is not the player**
+|StoryModal
+
+|**The Nomads Join {{city}}**
+|`NOMAD_MIGRATED` (the nomad camp migrating beside a barbarian conquest)
+|StoryModal — replaces the old toast
+
+|City chronicle heroes
+|`CITY_EVENT_ART[notice.kind]` (founded / captured / razed / joined)
+|CityEventModal, cover hero
+
+|Wonder heroes
+|the wonder's OWN shipped art (`public/assets/wonders/*.jpg`)
+|WonderCompletedModal, cover hero
+|===
+
+All card text is `story.*` i18n (eyebrow / title / body per moment, one
+shared *Continue*), parameterized where the news names a city.
+
+== 2. How it works
+
+* **Queue, not state.** `storyQueue` is FIFO, exactly like the battle
+  reports and city events. `queueStory` opens immediately **unless another
+  dialog is busy** — then the card waits and is *promoted* when that
+  dialog closes (`hideDialog` inspects both queues; a closing story
+  surfaces the queued city event and vice versa).
+* **`activeDialog: 'story'`** is the single source of "is the card
+  showing"; `StoryModal` renders `storyQueue[0]` and *Continue* pops it
+  (`handleStoryContinue` in `GameModals` — last card closes, earlier cards
+  advance the queue).
+* **Huge by CSS**: `storyModal.css` stretches the shell's `artLayout="cover"`
+  hero to `min(64vh, 560px)` with pixel-crisp rendering over the `#0b0f14`
+  stage; the city and wonder heroes get the same art treatment at
+  `min(52vh, 440px)`.
+
+== 3. Rules and boundaries
+
+* **Blocking by design.** One Continue, no other door — the moment waits
+  for the player. `e2e/game.spec.ts` `BLOCKING_DIALOGS` dismisses each
+  card by its title (*The Dawn of Your People* / *The Horde Takes* /
+  *The Nomads Join*) so tests keep pace.
+* **AI-vs-AI sees nothing.** A spectated run has no dialogs: the router
+  handlers gate on `isAIVsAI`, and the dawn is never queued (no human
+  seat to tell).
+* **Never twice.** A player's own city falling stays with the
+  CityEventModal — the horde card only fires for victims that are not the
+  player, so one event never produces two dialogs.
+* **The dawn uses the `storeActions` channel** (wired at construction)
+  rather than `onStateChange`, because the router is attached only when
+  the game screen mounts — after `initialize` has already run.
+* **Art is optional.** Every image degrades to the card's glyph stage on
+  load error; the story tells itself with words alone. Prompts:
+  `doc/STORY_ART_PROMPTS.adoc`.
+
+== 4. Tests
+
+`tests/storyEvents.test.ts` (9) — the dawn queued at engine start of a
+fresh human game (and NOT in a spectated one); the queue → dialog
+plumbing (opens when idle, waits when busy, promotes on close); the
+horde-conquest card for a rival victim; the player's own loss staying
+with the CityEventModal; the migration card; AI-vs-AI suppression; and
+every `StoryEvents` definition complete (art path, tone, three keys —
+the keys themselves are compile-checked against `TranslationKey`).

@@ -1,0 +1,38 @@
+/*
+ * The chronicle card — the biggest picture in the game. The shell's cover
+ * hero does the work (full-bleed image, heading laid over/under it); this
+ * file makes it enormous, keeps the pixels crisp, and lets the lede breathe
+ * under a wide cinematic scene.
+ */
+
+.story-modal {
+  max-width: min(1120px, 94vw);
+  width: 100%;
+  margin: 3vh auto;
+}
+
+/* Huge: the scene owns most of the viewport; the copy sits beneath it. */
+.story-modal .gm-hero--cover {
+  height: min(64vh, 560px);
+}
+
+/* Wide 16-bit scenes: crisp pixels at any scale, same as the clan art. */
+.story-modal .gm-hero--cover .gm-hero-img {
+  image-rendering: pixelated;
+}
+
+.story-modal .gm-heading-band .gm-title {
+  font-size: 26px;
+  letter-spacing: 0.02em;
+}
+
+.story-modal .gm-heading-band .gm-lede {
+  max-width: 74ch;
+  font-size: 1.02rem;
+  line-height: 1.65;
+}
+
+/* The card is a moment, not a report: give the button row some air. */
+.story-modal .gm-actions {
+  padding-top: 6px;
+}
