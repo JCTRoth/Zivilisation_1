@@ -39,8 +39,12 @@ second ends the meeting as hostility.
 |Enigmatic: knowledge ×0.9, settles sometimes (30%), two refusals.
 |===
 
-Two rounds later the envoy stands at the gate and the **parley** opens —
-the audience screen with the clan's big art (see
+The visit is **contact-based**: the camp never sends an envoy on a timer.
+Its units **march toward your court** (nearest city, else nearest unit,
+along a real path) and the parley opens only when their units stand
+beside yours or your city (Chebyshev ≤ 1) — no meeting, no envoy, and
+the step itself never enters a tile (visitors do not storm cities). On
+contact the audience screen opens with the clan's big art (see
 `doc/NOMAD_ART_PROMPTS.adoc`), name, epithet and a lead line in the
 clan's own voice, offering:
 

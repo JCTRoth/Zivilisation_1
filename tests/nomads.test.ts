@@ -2,12 +2,16 @@
  * Nomads — the opening visitors.
  *
  * The parley is a small state machine: a neutral horde camps near the
- * single human's first city, an envoy arrives two rounds later, the player
- * picks one of four doors, and whatever was taken the camp still stands —
- * long enough for any AI court to hire it before it walks off.
+ * single human's first city, THEIR units then march to YOUR units or
+ * cities — the envoy speaks only when the two sides actually meet (never
+ * on a timer) — the player picks one of four doors, and whatever was
+ * taken the camp still stands — long enough for any AI court to hire it
+ * before it walks off.
  *
  * Pinned here:
  *   * trigger and spawn (distance, landmass, neutral id, fortification),
+ *   * THE CONTACT RULE: no meeting, no envoy — and the horde marches to
+ *     close the distance itself,
  *   * the four doors and their promised terms (price/tech are what the
  *     BUTTON said, never re-rolled),
  *   * the AI hire race and the departure timer,
@@ -21,7 +25,6 @@ import {
   NOMAD_AI_HIRE_MIN_ROUND_GAP,
   NOMAD_CIV_ID,
   NOMAD_PASS_DEPART_ROUNDS,
-  NOMAD_PARLEY_DELAY_ROUNDS,
   NOMAD_SPAWN_MAX_DISTANCE,
   NOMAD_SPAWN_MIN_DISTANCE,
   NOMAD_TRIGGER_ROUND,
@@ -63,6 +66,38 @@ const nomadUnits = (engine: Engine) =>
 
 const eventsOf = (events: Array<{ type: string; data: any }>, type: string) =>
   events.filter((e) => e.type === type);
+
+/**
+ * The visit is CONTACT-BASED: the parley opens only when the nomads' units
+ * meet the player's units or cities. These helpers force that meeting — a
+ * player witness at the camp's gate (the player came to them) — so the
+ * envoy lands on a known round: spawn at NOMAD_TRIGGER_ROUND, meeting (and
+ * parley) at +1.
+ *
+ * Remove the witness once the parley is ANSWERED to model the player
+ * walking away — otherwise the proximity re-offer fires later and steals
+ * the stage from whatever the test wants to observe next.
+ */
+function meetCamp(engine: Engine, events: Array<{ type: string; data: any }>): any {
+  const nm = engine.nomadManager;
+  nm.processRound(NOMAD_TRIGGER_ROUND); // the camp appears
+  const camp = nomadUnits(engine)[0];
+  engine.units.push({
+    id: 'witness', type: 'warriors', civilizationId: 0,
+    col: camp.col < 19 ? camp.col + 1 : camp.col - 1, row: camp.row,
+    movesRemaining: 1, maxMoves: 1, health: 100, attack: 1, defense: 1,
+    icon: '⚔️', orders: null, isDefeated: false,
+  });
+  nm.processRound(NOMAD_TRIGGER_ROUND + 1); // their units meet yours → the envoy speaks
+  const parley = eventsOf(events, 'NOMAD_PARLEY').at(-1);
+  expect(parley, 'the envoy must have arrived').toBeDefined();
+  return parley;
+}
+
+/** The player's witness leaves with the answer (they walked away). */
+function leaveGate(engine: Engine): void {
+  engine.units = engine.units.filter((u) => u.id !== 'witness');
+}
 
 describe('Nomads — trigger and spawn', () => {
   it('appears after the first city, near it, as a neutral fortified camp', async () => {
@@ -106,6 +141,41 @@ describe('Nomads — trigger and spawn', () => {
     expect(nomadUnits(w.engine).length).toBe(3);
   });
 
+  it('only visits on contact: no meeting with your units or cities, no envoy', async () => {
+    const { engine, events, settle } = await world();
+    settle();
+    const nm = engine.nomadManager;
+    const campSpawn = (col: number, row: number) =>
+      Math.max(Math.abs(col - engine.cities[0].col), Math.abs(row - engine.cities[0].row));
+
+    nm.processRound(NOMAD_TRIGGER_ROUND); // the camp appears, revealed in the fog
+    const spawnTile = { col: nomadUnits(engine)[0].col, row: nomadUnits(engine)[0].row };
+    expect(campSpawn(spawnTile.col, spawnTile.row)).toBeGreaterThanOrEqual(NOMAD_SPAWN_MIN_DISTANCE);
+
+    // No contact yet (they start ≥9 tiles out; four rounds of marching
+    // cannot cover that) — so NO timer may open the parley.
+    for (let r = NOMAD_TRIGGER_ROUND + 1; r <= 8; r++) nm.processRound(r);
+    expect(eventsOf(events, 'NOMAD_PARLEY')).toHaveLength(0);
+
+    // Their units march to the court — and on contact the envoy speaks.
+    let parleyAt = -1;
+    for (let r = 9; r <= 40; r++) {
+      nm.processRound(r);
+      if (eventsOf(events, 'NOMAD_PARLEY').length > 0) {
+        parleyAt = r;
+        break;
+      }
+    }
+    expect(parleyAt, 'they came and met the court').toBeGreaterThan(0);
+
+    // Face to face: a nomad unit stands beside a player unit or city.
+    const city = engine.cities[0];
+    const met = nomadUnits(engine).some(
+      (u) => Math.max(Math.abs(u.col - city.col), Math.abs(u.row - city.row)) <= 1,
+    );
+    expect(met, 'the meeting happened AT the gate').toBe(true);
+  });
+
   it('never spawns in hotseat or all-AI games', async () => {
     const hot = await makeEngine({
       numberOfCivilizations: 3, seed: 4242, humanPlayerIds: [0, 1],
@@ -126,16 +196,11 @@ describe('Nomads — trigger and spawn', () => {
 });
 
 describe('Nomads — the parley', () => {
-  /** Spawn + advance to the envoy's arrival (spawn round + delay). */
+  /** Spawn + the forced meeting at the camp's gate (the envoy arrives). */
   async function atGate(): Promise<Harness & { parley: any }> {
     const h = await world();
     h.settle();
-    h.engine.nomadManager.processRound(NOMAD_TRIGGER_ROUND);
-    for (let r = NOMAD_TRIGGER_ROUND + 1; r < NOMAD_TRIGGER_ROUND + NOMAD_PARLEY_DELAY_ROUNDS + 1; r++) {
-      h.engine.nomadManager.processRound(r);
-    }
-    const parley = eventsOf(h.events, 'NOMAD_PARLEY').at(-1);
-    expect(parley, 'the envoy must have arrived').toBeDefined();
+    const parley = meetCamp(h.engine, h.events);
     return { ...h, parley };
   }
 
@@ -230,8 +295,11 @@ describe('Nomads — the parley', () => {
     const nm = engine.nomadManager;
     const outcome = nm.resolveParley('pass');
     expect(outcome).toMatchObject({ ok: true, result: 'pass' });
+    // The player answered and walked away from the gate (no lingering
+    // witness — nothing re-offers on the way out).
+    leaveGate(engine);
 
-    nm.processRound(NOMAD_TRIGGER_ROUND + NOMAD_PARLEY_DELAY_ROUNDS + NOMAD_PASS_DEPART_ROUNDS);
+    nm.processRound(NOMAD_TRIGGER_ROUND + 1 + NOMAD_PASS_DEPART_ROUNDS); // parley at +1
     expect(nm.isDeparted).toBe(true);
     expect(nomadUnits(engine)).toHaveLength(0);
     expect(eventsOf(events, 'NOMAD_DEPARTED')).toHaveLength(1);
@@ -248,6 +316,7 @@ describe('Nomads — the parley', () => {
     const camp = nomadUnits(engine)[0];
 
     // Dismissal: the player walks away (no resolve) — no re-offer in place.
+    leaveGate(engine);
     const base = eventsOf(events, 'NOMAD_PARLEY').length;
     for (let r = 20; r < 30; r++) {
       nm.processRound(r);
@@ -274,8 +343,7 @@ describe('Nomads — the race and the departure', () => {
     const { engine, events } = await (async () => {
       const h = await world();
       h.settle();
-      h.engine.nomadManager.processRound(NOMAD_TRIGGER_ROUND);
-      for (let r = 5; r < 7; r++) h.engine.nomadManager.processRound(r);
+      meetCamp(h.engine, h.events);
       return h;
     })();
     const nm = engine.nomadManager;
@@ -284,7 +352,7 @@ describe('Nomads — the race and the departure', () => {
 
     const spy = vi.spyOn(Math, 'random').mockReturnValue(0); // guaranteed win
     try {
-      nm.processRound(7 + NOMAD_AI_HIRE_MIN_ROUND_GAP);
+      nm.processRound(NOMAD_TRIGGER_ROUND + 1 + NOMAD_AI_HIRE_MIN_ROUND_GAP);
     } finally {
       spy.mockRestore();
     }
@@ -299,16 +367,16 @@ describe('Nomads — the race and the departure', () => {
     const { engine, events } = await (async () => {
       const h = await world();
       h.settle();
-      h.engine.nomadManager.processRound(NOMAD_TRIGGER_ROUND);
-      for (let r = 5; r < 7; r++) h.engine.nomadManager.processRound(r);
+      meetCamp(h.engine, h.events);
       return h;
     })();
     const nm = engine.nomadManager;
     nm.resolveParley('maps');
     // AI never wins the roll (Math.random pinned high), no player nearby.
+    leaveGate(engine);
     const spy = vi.spyOn(Math, 'random').mockReturnValue(0.999);
     try {
-      for (let r = 8; r < 40; r++) nm.processRound(r);
+      for (let r = NOMAD_TRIGGER_ROUND + 2; r < 40; r++) nm.processRound(r);
     } finally {
       spy.mockRestore();
     }
@@ -319,7 +387,7 @@ describe('Nomads — the race and the departure', () => {
 });
 
 describe('Nomads — moods, return visits and settlements', () => {
-  /** Spawn + advance to the envoy's arrival (spawn round + delay). */
+  /** Spawn + the forced meeting at the camp's gate (the envoy arrives). */
   async function atGate(): Promise<{
     engine: Awaited<ReturnType<typeof makeEngine>>['engine'];
     events: Array<{ type: string; data: any }>;
@@ -335,12 +403,7 @@ describe('Nomads — moods, return visits and settlements', () => {
       return spot;
     };
     settle();
-    const nm = w.engine.nomadManager;
-    nm.processRound(4);
-    nm.processRound(5);
-    nm.processRound(6);
-    const parley = eventsOf(events, 'NOMAD_PARLEY').at(-1);
-    expect(parley, 'the envoy must have arrived').toBeDefined();
+    const parley = meetCamp(w.engine, events);
     return { engine: w.engine, events, settle, parley };
   }
 
@@ -361,9 +424,7 @@ describe('Nomads — moods, return visits and settlements', () => {
     const spy = vi.spyOn(Math, 'random').mockReturnValue(0);
     let settleChoice: any;
     try {
-      nm.processRound(4); // spawn (clan index floor(0*3) = 0)
-      nm.processRound(5);
-      nm.processRound(6); // the envoy arrives and tables the doors
+      meetCamp(engine, events); // spawn (clan index floor(0*3) = 0) + the meeting
       const parley = eventsOf(events, 'NOMAD_PARLEY').at(-1);
       expect(parley, 'the envoy must have arrived').toBeDefined();
       const choices = (parley.data.choices ?? []).map((c: any) => c.id);
@@ -405,9 +466,13 @@ describe('Nomads — moods, return visits and settlements', () => {
   });
 
   it('drawing first blood turns the camp hostile and they start making trouble', async () => {
-    const { engine, events } = await atGate();
+    const { engine, events, settle } = await world();
+    settle();
     const nm = engine.nomadManager;
+    // The camp appears but has NOT met anyone yet — anger needs no parley.
+    nm.processRound(NOMAD_TRIGGER_ROUND);
     expect(nm.isAngry).toBe(false);
+    expect(nomadUnits(engine).every((u) => u.isFortified)).toBe(true);
 
     // The player shoots one of them: an injury is combat's signature.
     nomadUnits(engine)[0].health = 60;
@@ -446,9 +511,7 @@ describe('Nomads — moods, return visits and settlements', () => {
 
     const spy = vi.spyOn(Math, 'random').mockReturnValue(0.4);
     try {
-      nm.processRound(4);
-      nm.processRound(5);
-      nm.processRound(6);
+      meetCamp(engine, events); // spawn (ironhoof under the spy) + the meeting
       expect(nm.currentClan?.id).toBe('ironhoof');
 
       expect(nm.resolveParley('pass').ok).toBe(true); // refusal #1 — tolerated
@@ -487,18 +550,22 @@ describe('Nomads — moods, return visits and settlements', () => {
 
     expect(nm.resolveParley('maps').ok).toBe(true);
     expect(nm.currentStanding).toBe('friendly');
+    // The witness leaves with the answer: the ONLY parley before the
+    // return's own must be this first one (the loop counts them).
+    leaveGate(engine);
 
-    // Linger (20) → depart → the return visit is scheduled (+30) → arrives.
-    // The AI hire race is held off (rng pinned high): we are testing the
-    // RETURN, and in an open game any court may take the camp first.
+    // Linger (20) → depart → the return visit is scheduled (+30) → arrives
+    // and MARCHES to the gate — the contact-based envoy may take a few
+    // rounds longer than a timer ever did. The AI hire race is held off
+    // (rng pinned high): we are testing the RETURN, and in an open game
+    // any court may take the camp first.
     const spy = vi.spyOn(Math, 'random').mockReturnValue(0.999);
     let returned = false;
     try {
-      for (let r = 7; r <= 62; r++) {
+      for (let r = NOMAD_TRIGGER_ROUND + 2; r <= 80; r++) {
         nm.processRound(r);
-        // Wait for the return visit AND its parley (the visit spawns two
-        // rounds before the envoy arrives — the lead line is what proves
-        // the RETURN spoke, not the first visit).
+        // Wait for the return visit AND its parley (the lead line is what
+        // proves the RETURN spoke, not the first visit).
         if (nm.visits > 1 && eventsOf(events, 'NOMAD_PARLEY').length >= 2) {
           returned = true;
           break;

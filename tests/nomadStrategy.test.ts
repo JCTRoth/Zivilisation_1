@@ -56,14 +56,38 @@ const horde = (engine: Engine) =>
       && u.type !== UNIT_TYPES.NOMAD_CARAVAN,
   );
 
+/**
+ * The visit is CONTACT-BASED: the parley opens only when the nomads' units
+ * meet the player's units or cities. Force that meeting — a witness at the
+ * camp's gate — so the envoy lands on spawn+1; `leaveGate` once answered,
+ * or the proximity re-offer later steals the stage.
+ */
+function meetCamp(engine: Engine, events: Array<{ type: string; data: any }>): void {
+  const nm = engine.nomadManager;
+  nm.processRound(4); // the camp appears
+  const camp = horde(engine)[0];
+  engine.units.push({
+    id: 'witness', type: 'warriors', civilizationId: 0,
+    col: camp.col < 19 ? camp.col + 1 : camp.col - 1, row: camp.row,
+    movesRemaining: 1, maxMoves: 1, health: 100, attack: 1, defense: 1,
+    icon: '⚔️', orders: null, isDefeated: false,
+  });
+  nm.processRound(5); // their units meet yours → the envoy speaks
+  expect(eventsOf(events, 'NOMAD_PARLEY').length).toBeGreaterThan(0);
+}
+
+/** The player's witness leaves with the answer (they walked away). */
+function leaveGate(engine: Engine): void {
+  engine.units = engine.units.filter((u) => u.id !== 'witness');
+}
+
 describe('Nomads — the strategy brain', () => {
   it('varies over time: roads while the world is young, the market once a price is in reach', async () => {
-    const { events, nm } = await world();
+    const { engine, events, nm } = await world();
     vi.spyOn(Math, 'random').mockReturnValue(0.999); // greywind (mystic); jitter pinned high
-    nm.processRound(4); // spawn
-    nm.processRound(5);
-    nm.processRound(6); // the envoy arrives
+    meetCamp(engine, events); // spawn + the meeting (the envoy at +1)
     expect(nm.resolveParley('maps').ok).toBe(true); // friendly, camp lingers
+    leaveGate(engine); // the player answered and walked away
     expect(nm.currentStance).toBe('roads'); // the opening doctrine
 
     // Rich, and by round 40 the board has aged: the market outscores roads.
@@ -86,10 +110,9 @@ describe('Nomads — the strategy brain', () => {
   it('anger overrides every review at once', async () => {
     const { engine, events, nm } = await world();
     vi.spyOn(Math, 'random').mockReturnValue(0.999);
-    nm.processRound(4);
-    nm.processRound(5);
-    nm.processRound(6);
+    meetCamp(engine, events); // spawn + the meeting
     expect(nm.resolveParley('maps').ok).toBe(true);
+    leaveGate(engine); // the player answered and walked away
     expect(eventsOf(events, 'NOMAD_STRATEGY')).toHaveLength(0);
 
     // First blood — and the review does NOT wait for the cadence.
@@ -137,10 +160,10 @@ describe('Nomads — asking for money', () => {
   async function brokeAtTheGate(): Promise<Harness> {
     const h = await world();
     vi.spyOn(Math, 'random').mockReturnValue(0.999);
-    h.nm.processRound(4);
-    h.nm.processRound(5);
-    h.nm.processRound(6);
+    meetCamp(h.engine, h.events); // spawn + the meeting
     expect(h.nm.resolveParley('maps').ok).toBe(true);
+    leaveGate(h.engine); // CRITICAL: a lingering witness would re-offer
+    // the parley at +3 and the plea could never table itself.
     for (let r = 7; r <= 23; r++) h.nm.processRound(r);
     h.nm.treasury = 50; // broke — under NOMAD_MONEY_REQUEST_BELOW
     h.nm.processRound(24); // the plea's cooldown (from -1) expires here

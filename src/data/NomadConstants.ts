@@ -12,9 +12,6 @@ export const NOMAD_TRIGGER_ROUND = 4;
 /** Fallback trigger: with no city by this round, they visit the settlers. */
 export const NOMAD_TRIGGER_FALLBACK_ROUND = 12;
 
-/** The envoy arrives at the court this many rounds after the camp appears. */
-export const NOMAD_PARLEY_DELAY_ROUNDS = 2;
-
 /** Camp spawn distance (Chebyshev) from the visited city/units. */
 export const NOMAD_SPAWN_MIN_DISTANCE = 9;
 export const NOMAD_SPAWN_MAX_DISTANCE = 13;
@@ -119,6 +116,51 @@ export const NOMAD_STRATEGY_REVIEW_ROUNDS = 8;
 export const NOMAD_CAMP_MUSTER_LIMIT = 2;
 /** Rounds between two musters (only while the steel stance holds). */
 export const NOMAD_CAMP_MUSTER_ROUNDS = 8;
+
+// ── The roaming horde — wander, growth and the great split ─────────────────
+
+/**
+ * POST-SPLIT GROWTH — "later with more": once the parley has been ANSWERED
+ * the horde no longer stands as a three-spear curiosity; it gathers its own
+ * riders, one every this many rounds, paid from the chest like everything
+ * else. (The steel stance gathers at the same cadence pre-parley, under the
+ * old v1 garrison cap; post-parley the growth cap below governs both.)
+ */
+export const NOMAD_GROWTH_ROUNDS = 8;
+
+/**
+ * THE SPLIT — when a living group reaches this many wanderers it divides
+ * into two COOPERATING camps (half each): the same tribe, one standing, one
+ * chest — but two tents. No further split while the tribe already holds
+ * `NOMAD_MAX_CAMPS` camps; the groups simply regrow instead.
+ */
+export const NOMAD_GROUP_SPLIT_SIZE = 6;
+/** Splinter tents stand within this Chebyshev distance of the parent camp. */
+export const NOMAD_SPLIT_DISTANCE = 4;
+/** The tribe never forms more than this many camps at once. */
+export const NOMAD_MAX_CAMPS = 2;
+/** A settlement's wanderers never stray further from their stakes than this (tiles). */
+export const NOMAD_ROAM_LEASH = 6;
+/**
+ * How often a wandering step drifts SIDeways instead of closing in (0–1).
+ * The walk is a wander, not a march — but a drifting step is only ever
+ * drawn from the same-distance neighbours, so the visit still lands.
+ */
+export const NOMAD_WANDER_DRIFT_CHANCE = 0.35;
+
+// ── Settled camps — the nomads that live with a city ───────────────────────
+
+/**
+ * A settlement keeps PRODUCING: the camp musters one of its own wanderers
+ * every this many rounds, from the settlement tile, paid from the chest.
+ * The produced wanderers roam the land around their camp again.
+ */
+export const NOMAD_SETTLEMENT_MUSTER_ROUNDS = 12;
+/** Wanderers a settlement may sustain at once (their camps never mass). */
+export const NOMAD_SETTLEMENT_MUSTER_LIMIT = 2;
+/** The deal: a settlement brings trade — the host city earns this much gold
+ *  per turn while it feeds the camp (the settlement's day market). */
+export const NOMAD_SETTLEMENT_TRADE_GOLD = 2;
 
 /** Under this much gold the tribe swallows its pride and asks YOU for help. */
 export const NOMAD_MONEY_REQUEST_BELOW = 80;

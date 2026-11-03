@@ -41,20 +41,19 @@ describe('Nomads — balance', () => {
     w.settle('Rival2', ...(() => { const t = w.landNear(16, 3, 4); return [t.col, t.row] as const; })(), 2, 3);
 
     const nm = w.engine.nomadManager;
-    nm.processRound(4); // spawn
-    nm.processRound(5);
-    nm.processRound(6); // the envoy arrives
-    expect(nm.resolveParley('maps').ok).toBe(true); // friendly: the usual deal
+    nm.processRound(4); // spawn — from here the horde MARCHES to the court
+    // (the visit is contact-based: the envoy speaks when their units meet
+    // the player's units or cities, so the sim answers when it comes.)
 
     const eventsOf = (type: string) => events.filter((e) => e.type === type);
-    let seenParleys = 1; // the r6 envoy was answered above
+    let seenParleys = 0;
     let seenOffers = 0;
     let bought: string | null = null;
     const curve: string[] = [];
     let firstRouteAt = -1;
     let crossed450At = -1;
     let maxTreasury = 0;
-    for (let r = 7; r <= 120; r++) {
+    for (let r = 5; r <= 120; r++) {
       nm.processRound(r);
 
       // A player answers the open audiences as they come: parleys pick the

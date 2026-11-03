@@ -66,6 +66,32 @@ const horde = (engine: Engine) =>
 const caravans = (engine: Engine) =>
   engine.units.filter((u) => u.type === UNIT_TYPES.NOMAD_CARAVAN && !u.isDefeated);
 
+/**
+ * The visit is CONTACT-BASED: the parley opens only when the nomads' units
+ * meet the player's units or cities. Force that meeting — a witness at the
+ * camp's gate — so the envoy lands on spawn+1. Remove it with `leaveGate`
+ * once the parley is ANSWERED, or the proximity re-offer fires later and
+ * steals the stage from the economy under test.
+ */
+function meetCamp(engine: Engine, events: Array<{ type: string; data: any }>): void {
+  const nm = engine.nomadManager;
+  nm.processRound(4); // the camp appears
+  const camp = horde(engine)[0];
+  engine.units.push({
+    id: 'witness', type: 'warriors', civilizationId: 0,
+    col: camp.col < 19 ? camp.col + 1 : camp.col - 1, row: camp.row,
+    movesRemaining: 1, maxMoves: 1, health: 100, attack: 1, defense: 1,
+    icon: '⚔️', orders: null, isDefeated: false,
+  });
+  nm.processRound(5); // their units meet yours → the envoy speaks
+  expect(eventsOf(events, 'NOMAD_PARLEY').length).toBeGreaterThan(0);
+}
+
+/** The player's witness leaves with the answer (they walked away). */
+function leaveGate(engine: Engine): void {
+  engine.units = engine.units.filter((u) => u.id !== 'witness');
+}
+
 /** A passable, free tile on the origin's own landmass, within `maxDist`. */
 function tileNear(engine: Engine, origin: { col: number; row: number }, maxDist: number) {
   const landmass = engine.getLandmassId?.(origin.col, origin.row) ?? -1;
@@ -255,9 +281,9 @@ describe('Nomads — the city market', () => {
     h.w.settle('Second', second.col, second.row, 0, 2);
     const nm = h.engine.nomadManager;
     vi.spyOn(Math, 'random').mockReturnValue(0.999); // greywind; no AI takes the camp
-    nm.processRound(4); // spawn
-    for (let r = 5; r <= 6; r++) nm.processRound(r); // bazaar build (r9 comes later) + envoy
+    meetCamp(h.engine, h.events); // spawn + the meeting (the envoy at +1)
     expect(nm.resolveParley('pass').ok).toBe(true);
+    leaveGate(h.engine); // the player answered and walked away from the gate
     expect(nm.isAngry).toBe(false);
     nm.treasury = 800; // rich enough for Haven (250 + 75×5 = 625), even after a bazaar
     return { ...h, nm };
