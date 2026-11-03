@@ -235,13 +235,18 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
             table, grey for a formal audience with nothing to decide. */}
         <div className="audience-modal__speech" data-mode={notice.mode}>
           <div className="audience-modal__eyebrow">
-            {notice.kind === 'nomad'
-              ? t('nomad.parley.eyebrow' as TranslationKey)
-              : isTeammateOffer
-                ? t('audience.teammate.eyebrow' as TranslationKey)
-                : isEnvoy
-                  ? t('audience.envoy.eyebrow' as TranslationKey)
-                  : t('audience.eyebrow' as TranslationKey)}
+            {notice.eyebrowKey
+              // Payload-driven eyebrow (the nomad city market distinguishes
+              // itself from the parley this way — the e2e dialog sweep keys
+              // on these lines).
+              ? t(notice.eyebrowKey as TranslationKey)
+              : notice.kind === 'nomad'
+                ? t('nomad.parley.eyebrow' as TranslationKey)
+                : isTeammateOffer
+                  ? t('audience.teammate.eyebrow' as TranslationKey)
+                  : isEnvoy
+                    ? t('audience.envoy.eyebrow' as TranslationKey)
+                    : t('audience.eyebrow' as TranslationKey)}
           </div>
           <div className="audience-modal__speaker">
             {notice.speaker

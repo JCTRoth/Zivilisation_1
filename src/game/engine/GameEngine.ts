@@ -51,7 +51,7 @@ import { UnitTurnQueue } from './UnitTurnQueue';
 import { DiplomacyManager } from './DiplomacyManager';
 import { TeamManager } from './TeamManager';
 import { TeamCoordinator } from './AI/TeamCoordinator';
-import { NomadManager } from './NomadManager';
+import { NomadManager } from './nomad/NomadManager';
 import type {
   DiplomatAction,
   DiplomatActionOptions,
@@ -6538,6 +6538,9 @@ const occupiedLandmasses = new Set(
         city.barbarianScoutBuilt = false;
         city.autoProduction = true;
         this.ensureBarbarianCivilization();
+        // Nomads and barbarians are friends: the tribe strikes camp and
+        // moves in beside the new city (and opens a trade route with it).
+        this.nomadManager.onBarbariansTookCity(city);
       }
 
       // --- Civ1 capture aftermath ---

@@ -282,6 +282,10 @@ const UNIT_TECH_REQUIREMENTS: Record<string, string | null> = {
   settler: null,
   diplomat: 'writing',
   caravan: 'trade',
+  // Built only by the nomad camp from their own treasury — the impossible
+  // tech name keeps every player and AI production list from offering it
+  // (mirrors UNIT_PROPERTIES.travelling_bazaar.requires).
+  travelling_bazaar: 'nomad_bazaar_only',
   ferry: 'sailing',
   fisher_boat: null,
   trade_ship: 'trade',

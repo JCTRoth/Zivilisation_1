@@ -111,6 +111,38 @@ describe('Barbarian AI — aggression', () => {
     expect(combatCalls.length).toBe(1);
     expect(combatCalls[0].d.id).toBe('e1');
   });
+
+  it('never attacks the nomads (-2) — they are friends of the horde', () => {
+    const { engine, units, combatCalls, moveCalls } = createMockEngine();
+    units.push(barb('b1', 5, 5));
+    // A nomad camp unit stands right beside the raider, and there is no
+    // city anywhere: with nothing else to do, the old filter would have
+    // made the barbarian attack the one unit it must never touch.
+    units.push({
+      id: 'nomad', type: 'warriors', civilizationId: -2,
+      col: 6, row: 5, movesRemaining: 1, health: 100, attack: 2, defense: 2,
+    });
+
+    new BarbarianManager(engine).processBarbarians();
+
+    expect(combatCalls).toHaveLength(0);
+    expect(moveCalls).toHaveLength(0);
+  });
+
+  it('does not assault a city the nomads own (-2)', () => {
+    const { engine, units, cities, moveCalls } = createMockEngine();
+    units.push(barb('b1', 5, 5));
+    cities.push({
+      id: 'nomadCity', civilizationId: -2, col: 6, row: 5,
+      population: 3, buildings: [], name: 'Bought',
+    });
+
+    new BarbarianManager(engine).processBarbarians();
+
+    // The assault step (step 2) must skip it — and with no positive-civ
+    // city on the map there is no target to march on either.
+    expect(moveCalls).toHaveLength(0);
+  });
 });
 
 describe('Barbarian AI — captured cities', () => {

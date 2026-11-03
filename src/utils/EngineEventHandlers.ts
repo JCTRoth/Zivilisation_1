@@ -6,6 +6,7 @@ import { awaitCameraGlide, isCameraGliding } from '../game/rendering/CameraGlide
 import { HUMAN_PLAYER_ID } from './PlayerConstants';
 import { humanOrFirst, notify } from './NotificationUtils';
 import type GameEngine from '../game/engine/GameEngine';
+import { isNomadStance } from '../game/engine/nomad/NomadAI';
 import type { Technology, Unit, City, Civilization, VillageOutcome, AudienceNotice, AudienceChoice } from '../../types/game';
 import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
 import { getWonder } from '@/data/WonderData';
@@ -293,6 +294,11 @@ export class EngineEventRouter {
       case 'NOMAD_PARLEY':
         this.onNomadParley(eventData);
         break;
+      case 'NOMAD_CITY_OFFER':
+        // The nomad market tables its offer — same audience machinery as the
+        // parley (clan speaker, lead line, doors), so route it identically.
+        this.onNomadParley(eventData);
+        break;
       case 'NOMAD_HIRED':
         if (!this.isAIVsAI) {
           const civ = this.gameEngine.civilizations.find(
@@ -328,6 +334,62 @@ export class EngineEventRouter {
       case 'NOMAD_RETURN_GIFT':
         if (!this.isAIVsAI) notify('success', t('nomad.return.gift'));
         this.syncState();
+        break;
+      case 'NOMAD_BRIBE':
+        // One of the player's troops took the nomads' gold — ownership and
+        // the treasury both moved, so push everything into the store.
+        if (!this.isAIVsAI) {
+          notify('warning', t('nomad.bribe', {
+            gold: Number((eventData as { gold?: unknown })?.gold ?? 0),
+          }));
+        }
+        this.syncState();
+        break;
+      case 'NOMAD_ROUTE':
+        // A bazaar arrived (or the friends opened a route): the unit is
+        // spent and the route starts paying.
+        if (!this.isAIVsAI) {
+          notify('info', t('nomad.route', {
+            city: String((eventData as { city?: unknown })?.city ?? ''),
+            routes: Number((eventData as { routes?: unknown })?.routes ?? 0),
+            limit: Number((eventData as { limit?: unknown })?.limit ?? 0),
+          }));
+        }
+        this.syncState();
+        break;
+      case 'NOMAD_STRATEGY': {
+        // The tribe changed its mind — announce WHICH way it turned, so the
+        // player gets to watch the nomads strategize over time.
+        const stance = String((eventData as { stance?: unknown })?.stance ?? '');
+        if (!this.isAIVsAI && isNomadStance(stance)) {
+          notify('info', t(`nomad.strategy.${stance}`));
+        }
+        this.syncState();
+        break;
+      }
+      case 'NOMAD_KNOWLEDGE':
+        // The brokered sale moved a tech, the buyer's gold and the chest.
+        if (!this.isAIVsAI) {
+          notify('info', t('nomad.knowledge', {
+            tech: String((eventData as { tech?: unknown })?.tech ?? ''),
+            civ: String((eventData as { civ?: unknown })?.civ ?? ''),
+            gold: Number((eventData as { gold?: unknown })?.gold ?? 0),
+          }));
+        }
+        this.syncState();
+        break;
+      case 'NOMAD_MIGRATED':
+        // The camp packed up and joined the barbarians' new city.
+        if (!this.isAIVsAI) {
+          notify('warning', t('nomad.migrated', {
+            city: String((eventData as { city?: unknown })?.city ?? ''),
+          }));
+        }
+        this.syncState();
+        break;
+      case 'NOMAD_MONEY_REQUEST':
+        // A broke tribe's plea — same audience machinery as the parley.
+        this.onNomadParley(eventData);
         break;
       case 'EMBASSY_ESTABLISHED':
         this.onEmbassyEstablished(eventData);
@@ -2601,16 +2663,25 @@ export class EngineEventRouter {
       : [];
     if (choices.length === 0) return;
 
+    // The clan's identity travels as a nested `speaker` object (name,
+    // epithet, icon, big art); the flat legacy keys are still accepted.
+    const raw = (eventData.speaker ?? {}) as Record<string, unknown>;
+    const nameKey = typeof raw.nameKey === 'string'
+      ? raw.nameKey
+      : String(eventData.speakerNameKey ?? 'nomad.chieftain');
     const notice: AudienceNotice = {
       civId: -1, // no rival civ stands behind this audience
       mode: 'offer',
       message: '',
       kind: 'nomad',
       speaker: {
-        nameKey: String(eventData.speakerNameKey ?? 'nomad.chieftain'),
-        icon: String(eventData.speakerIcon ?? '🐎'),
+        nameKey,
+        icon: typeof raw.icon === 'string' ? raw.icon : String(eventData.speakerIcon ?? '🐎'),
+        subKey: typeof raw.subKey === 'string' ? raw.subKey : undefined,
+        image: typeof raw.image === 'string' ? raw.image : undefined,
       },
       leadKey: typeof eventData.leadKey === 'string' ? eventData.leadKey : undefined,
+      eyebrowKey: typeof eventData.eyebrowKey === 'string' ? eventData.eyebrowKey : undefined,
       choices,
       techOffered: typeof eventData.techOffered === 'string' ? eventData.techOffered : undefined,
       goldAmount: typeof eventData.goldAmount === 'number' ? eventData.goldAmount : undefined,

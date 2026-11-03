@@ -16,9 +16,10 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { makeEngine } from './helpers/world';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { UNIT_TYPES } from '@/data/UnitConstants';
 import {
   NOMAD_AI_HIRE_MIN_ROUND_GAP,
+  NOMAD_CIV_ID,
   NOMAD_PASS_DEPART_ROUNDS,
   NOMAD_PARLEY_DELAY_ROUNDS,
   NOMAD_SPAWN_MAX_DISTANCE,
@@ -47,8 +48,18 @@ async function world(): Promise<Harness> {
   return { engine: w.engine, events, settle };
 }
 
+/**
+ * The camp's HORDE (the warriors and the scout). The tribe's caravans wear
+ * the same civ id but are the economy's business, not the camp's — the
+ * relationship tests count the horde, `nomadEconomy.test.ts` counts them.
+ */
 const nomadUnits = (engine: Engine) =>
-  engine.units.filter((u) => u.civilizationId === BARBARIAN_CIV_ID && !u.isDefeated);
+  engine.units.filter(
+    (u) =>
+      u.civilizationId === NOMAD_CIV_ID
+      && !u.isDefeated
+      && u.type !== UNIT_TYPES.NOMAD_CARAVAN,
+  );
 
 const eventsOf = (events: Array<{ type: string; data: any }>, type: string) =>
   events.filter((e) => e.type === type);
@@ -211,7 +222,7 @@ describe('Nomads — the parley', () => {
     engine.civilizations[0].resources.gold = 1;
     const outcome = engine.nomadManager.resolveParley('hire');
     expect(outcome).toMatchObject({ ok: false, result: 'noGold' });
-    expect(nomadUnits(engine).every((u) => u.civilizationId === BARBARIAN_CIV_ID)).toBe(true);
+    expect(nomadUnits(engine).every((u) => u.civilizationId === NOMAD_CIV_ID)).toBe(true);
   });
 
   it('passing in peace sends them off after the short timer', async () => {

@@ -173,10 +173,11 @@ export class BarbarianManager {
     if ((unit.movesRemaining ?? 0) <= 0 || unit.isDefeated) return;
     const neighbors = engine.squareGrid?.getNeighbors?.(unit.col, unit.row) ?? [];
 
-    // 1. Attack an adjacent enemy unit.
+    // 1. Attack an adjacent enemy unit. Real civs only — the nomads (-2)
+    //    are friends of the horde and are never attacked on sight.
     for (const n of neighbors) {
       const enemy = engine.getUnitAt?.(n.col, n.row);
-      if (enemy && enemy.civilizationId !== BARBARIAN_CIV_ID && !enemy.isDefeated) {
+      if (enemy && enemy.civilizationId >= 0 && !enemy.isDefeated) {
         debugLog(`[BARB] ${unit.type} attacks enemy ${enemy.type} at (${n.col},${n.row})`);
         engine.combatUnit?.(unit, enemy);
         return; // spent the move either way
@@ -184,9 +185,10 @@ export class BarbarianManager {
     }
 
     // 2. Assault an adjacent enemy city (moveUnit resolves the capture).
+    //    Same rule: a city at -2 belongs to the nomads — friends, not prey.
     for (const n of neighbors) {
       const city = engine.getCityAt?.(n.col, n.row);
-      if (city && city.civilizationId !== BARBARIAN_CIV_ID) {
+      if (city && city.civilizationId >= 0 && city.civilizationId !== BARBARIAN_CIV_ID) {
         debugLog(`[BARB] ${unit.type} assaults city ${city.name} at (${n.col},${n.row})`);
         engine.moveUnit?.(unit.id, n.col, n.row);
         return;

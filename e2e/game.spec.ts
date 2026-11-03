@@ -607,6 +607,13 @@ const BLOCKING_DIALOGS: ReadonlyArray<{ text: string; button: string }> = [
   { text: 'End Turn?', button: 'Cancel' },
   { text: 'No Research Selected', button: 'Decide Later' },
   { text: 'Auto. turn ending', button: 'Got it' },
+  // The nomads' plea for gold ("The Nomads Ask"): a broke tribe asks. The
+  // first refusal never angers any clan, so refusing keeps the run clean.
+  { text: 'The Nomads Ask', button: 'Refuse — no gold for wanderers' },
+  // The nomad city market ("The Nomad Market" eyebrow): a rich tribe's offer
+  // to buy one of your cities. It has no "Pass in peace" door — refuse it,
+  // which also blacklists that city so the offer cannot return this run.
+  { text: 'The Nomad Market', button: 'Refuse — the city stays yours' },
   { text: 'Wanderers at your gate', button: 'Pass in peace' },
   // The city-event story modal ("Washington is founded") opens the moment a
   // settler founds a city. Escape alone cannot clear it: the following

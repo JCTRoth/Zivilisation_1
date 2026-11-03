@@ -61,6 +61,7 @@ export const UNIT_TYPES = {
     SETTLER: 'settler',
     DIPLOMAT: 'diplomat',
     CARAVAN: 'caravan',
+    NOMAD_CARAVAN: 'travelling_bazaar',
     FERRY: 'ferry',
     
     // Air Units
@@ -512,6 +513,30 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
         naval: false,
         icon: '🐫',
         requires: 'trade',
+        type: 'civilian'
+    },
+    [UNIT_TYPES.NOMAD_CARAVAN]: {
+        name: 'Travelling Bazaar',
+        attack: 0,
+        // Same reasoning as the caravan above: defense 1 or the first
+        // hostile encounter eats it before it can deliver its route.
+        defense: 1,
+        movement: 2,
+        sightRange: 1,
+        // A THIRD of the nomads' opening purse — a bazaar is an investment
+        // the route has to pay back, not a toy the camp spams.
+        cost: 100,
+        maintenance: 0,
+        canSettle: false,
+        canWork: false,
+        naval: false,
+        icon: '🐫',
+        // Built ONLY by the nomad camp (paid from their treasury) — this
+        // "requires" names a technology nobody can research, so no player
+        // city and no AI production list will ever offer to build one.
+        // (`ProductionManager.canBuildItem` reads `requires`; the AI's
+        // `canBuildUnit` reads UNIT_TECH_REQUIREMENTS, which mirrors it.)
+        requires: 'nomad_bazaar_only',
         type: 'civilian'
     },
     [UNIT_TYPES.FISHER_BOAT]: {

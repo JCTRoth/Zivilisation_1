@@ -1,12 +1,15 @@
-= Nomads — The Opening Visitors
+= Nomads — A Tribe at Your Gate
 
-> *Engine:* `src/game/engine/NomadManager.ts`, `src/game/engine/GameEngine.ts`,
-> `src/game/engine/TurnManager.ts` (round hook), `src/game/engine/EconomicManager.ts` (settlement food)
+> *Engine:* `src/game/engine/nomad/NomadManager.ts` (state machine),
+> `src/game/engine/nomad/NomadAI.ts` (strategy brain), `src/game/engine/GameEngine.ts`,
+> `src/game/engine/TurnManager.ts` (round hook), `src/game/engine/EconomicManager.ts` (settlement food),
+> `src/game/engine/BarbarianManager.ts` (the friendship)
 > *Data:* `src/data/NomadConstants.ts` (constants + the three clans)
 > *UI:* `src/components/ui/gamemodals/AudienceModal.tsx`,
 > `src/components/ui/GameModals.tsx`
 > *Art prompts:* `doc/NOMAD_ART_PROMPTS.adoc`
-> *Tests:* `tests/nomads.test.ts` (17)
+> *Tests:* `tests/nomads.test.ts` (17) + `tests/nomadEconomy.test.ts` (7) +
+> `tests/nomadStrategy.test.ts` (8)
 > *i18n:* `nomad.*` keys in all 6 languages
 
 ---
@@ -15,7 +18,7 @@
 
 Once per **single-human** game, shortly after the first city stands (round
 ≥ 4, or round ≥ 12 if no city yet), a neutral horde camps 9–13 tiles from
-the player's court: two warriors and a scout, owned by `BARBARIAN_CIV_ID`,
+the player's court: two warriors and a scout, owned by `NOMAD_CIV_ID` (-2),
 fortified, revealed to the player on sight (`NOMAD_SIGHTED`).
 
 One clan is rolled per game — the SAME clan returns on a return visit:
@@ -78,7 +81,136 @@ does, the camp wanders off into the fog after 20 rounds (`NOMAD_DEPARTED`).
 A **second parley** fires when the player's unit stands at the camp after
 the first answer — hire or farewell only.
 
-== 2. The relationship (memory)
+== 2. Their own books — an AI player's economy
+
+The nomads are a player, not scenery: one treasury funds every door of the
+feature, which is where the balance lives. All of it is session state in
+`src/game/engine/nomad/` — `NomadManager` (the state machine) takes its
+orders from `NomadAI` (the strategy brain, below). There is no
+`civilizations[-2]` entry, so a city lookup for the nomads misses exactly
+the way a barbarian city's indexed lookup does, and rendering falls back to
+the same neutral colour.
+
+[cols="1,3", options="header"]
+|===
+|Piece |Rule
+
+|War chest
+|Opens with **300 gold** (`NOMAD_START_GOLD`). Bazaars, bribes, musters and
+city purchases all draw from this one purse — spend on soldiers and the
+city market waits, spend on a city and the bribes do.
+
+|Travelling Bazaar *(new unit type)*
+|`travelling_bazaar` (`UNIT_TYPES.NOMAD_CARAVAN`) — movement 2, defense 1,
+**cost 100** — a third of the opening purse, on purpose: a route is an
+INVESTMENT the economy has to pay back. Built ONLY by the camp (gated by an
+impossible tech name in `UNIT_PROPERTIES.requires` and
+`UNIT_TECH_REQUIREMENTS`, so no player or AI production list ever offers
+one), every **10 rounds**, at most **2 in flight**. It walks its full
+movement toward its partner each round (`canUnitMoveTo`-gated steps) and is
+**consumed on delivery** (Civ1 rule). A bazaar blocked for 10 rounds or on
+the road for 40 is lost — no route, no refund.
+
+|Trade routes
+|On delivery: **2 + floor(pop/2) gold per turn** per partner, up to
+**six routes** (`routes + in-flight ≥ 6` refuses the build — a seventh
+city opens no seventh route). The route dies with its partner city, or the
+moment that city changes hands: conquer a nomad trade partner and you cut
+their income.
+
+|Bought cities
+|A city the nomads bought pays **1 gold per head per turn** until it is
+retaken or razed (`NOMAD_CITY_TRIBUTE_PER_POP`).
+
+|The city market — *peace*
+|With **450+ gold** in the chest, an answered parley and no anger, the
+tribe table an offer for the player's biggest city: **250 + 75 × pop**,
+one offer per 15 rounds, refused cities are never offered again — and the
+player's LAST city is never offered at all (selling it would end the story
+via `applyLastCityRule`; a market that could take your final city would be
+a trap, not a deal). The sale is peaceful: gold changes hands, the Palace
+cannot travel (stripped, the seller re-seats its capital), production stops
+(the nomads have no governor) and the city begins paying tribute. The
+audience carries its own eyebrow — *The Nomad Market* — so the e2e dialog
+sweep can tell it from the parley.
+
+|Bribes — *anger*
+|While ANGRY, the same purse buys treachery: every 3 rounds the horde pays
+`bribeUnitCost` for the nearest player unit within 4 tiles — the unit
+switches to `-2`, joins the raiding party, and the chest bleeds. Own
+conversion, because `DiplomacyManager.bribeUnit` debits
+`civilizations[civId].gold`, which does not exist for the nomads.
+
+|Camp muster *(the exception)*
+|Under the **steel** stance the camp fashions its own soldiers — paid for
+like everything else, at most **2 alive beyond the spawned horde**
+(`NOMAD_CAMP_MUSTER_LIMIT`), one every 8 rounds. The nomads are TYPICALLY
+money makers: mustering is the exception, not the norm.
+
+|Knowledge brokerage
+|Every 15 rounds the tribe sells a technology to an AI court — half the
+raw research cost, clan-adjusted, clamped 25–100 (`NOMAD_KNOWLEDGE_*`) →
+gold in the chest, knowledge across the world. (The player buys the same
+wares at the parley; this is the other counter of their shop.)
+
+|The plea — *ask for money*
+|Broke (under 80 gold) and peaceful, the tribe tables a plea for **60
+gold**: give it and they remember who filled their chest (standing turns
+`friendly`); refuse and it counts as a refusal — past the clan's tolerance
+the plea becomes a grudge. One plea per 25 rounds, its own eyebrow (*The
+Nomads Ask*) so the e2e sweep can dismiss it.
+
+|Barbarian friendship
+|Nomads and barbarians never fight each other: `BarbarianManager.act()`
+skips every negative-id unit and city (the nomads are friends of the
+horde), and when the barbarians TAKE a city the tribe strikes camp and
+**moves in beside it** (`onBarbariansTookCity` → `NOMAD_MIGRATED`) and a
+friendship route opens (it dies with the city, as any route does). An
+angry tribe keeps its revenge and stays put.
+
+|The balance
+|Anger and the city market are mutually exclusive (`standing` gates
+both), routes fund whichever door is open, and every door spends the same
+coins the bazaars earn: 300 start → a bazaar costs 100 and takes 10 rounds
+→ routes trickle in → 450 opens the market, or a war opens the purse.
+|===
+
+=== The strategy brain (NomadAI)
+
+Every **8 rounds** — and at once the moment anger takes it — the tribe
+re-scores the world and may change doctrine. Each stance is a score over
+routes still open, chest fullness, war-readiness, the clan's temperament
+and WHERE IN HISTORY they are, plus a small random jitter (two identical
+games drift apart). The winner becomes the round's plan, and a change is
+**announced** (`NOMAD_STRATEGY` → toast) — strategy you can watch.
+
+[cols="1,2,3", options="header"]
+|===
+|Stance |Typical round |What the plan does
+
+|`roads`
+|early — and any time cities wait unsigned
+|build travelling bazaars, broker knowledge — the money maker
+
+|`treasury`
+|mid, when the vault is filling
+|build nothing, keep filling the chest (and beg if it runs dry)
+
+|`market`
+|450+ in the chest, world ≥ 40 rounds
+|table city offers — this stance also WAIVES the 450 gate (the price gate
+still holds)
+
+|`steel`
+|warrior clans, world ≥ 60, camp has room
+|muster the camp (up to the limit) while still running the roads
+
+|`bribery`
+|angry — forced, not scored
+|no trade, no cities, no musters: every coin goes to treachery
+|===
+
+== 3. The relationship (memory)
 
 [cols="1,2,2", options="header"]
 |===
@@ -106,43 +238,68 @@ march), and at the gates steals **15% of the treasury (5–30 gold)** every
 never earns a return visit.
 |===
 
-== 3. Rules and boundaries
+== 4. Rules and boundaries
 
 * **Single human seat only.** Hotseat would have to pick whose court
   receives them; all-AI games have nobody to talk to. Both are skipped.
-* **Neutral, not hostile by default.** Civ id `-1` (with the barbarians):
-  contact recording skips it, no civ is at war with the camp, the AI never
-  targets it — scenery with a contract, not a combatant.
+* **Their own player, neutral by default.** Civ id `-2` — deliberately NOT
+  the barbarians' `-1`, which `BarbarianManager` drives (it would
+  commandeer the camp, and would put bought cities under barbarian AI
+  control). Contact recording skips negative ids, no civ is at war with the
+  camp, the AI never targets it.
 * **Session-only.** Nothing here is persisted; a loaded game simply has no
   nomads (v1). The settlement TILE flag persists — its food/denfense
   effects are engine code that reads the map, so they survive saves.
 * **Dismissal is not refusal.** Closing the audience without answering
   leaves the parley open: it re-offers when the player stands at the camp
-  (3-round cooldown), never every round.
-* The parley is a **blocking dialog** — `e2e/game.spec.ts`
-  `BLOCKING_DIALOGS` dismisses it with *Pass in peace* so tests keep pace.
+  (3-round cooldown), never every round. A dismissed city offer (or plea)
+  re-tables the same way, and dies with the camp (or its city) so the
+  serialization slot can never strand.
+* **Friends of the horde.** Nomads and barbarians are allies by default:
+  `BarbarianManager.act()` only ever attacks positive-id units and cities,
+  and a barbarian conquest moves the nomad camp in beside it.
+* Three audiences are **blocking dialogs** — `e2e/game.spec.ts`
+  `BLOCKING_DIALOGS` dismisses the parley with *Pass in peace*, the market
+  with *Refuse — the city stays yours* and the plea with *Refuse — no gold
+  for wanderers* (the first refusal never angers any clan) so tests keep
+  pace.
 
-== 4. Integration points
+== 5. Integration points
 
 [cols="2,3", options="header"]
 |===
 |Piece |Where
 
 |Round hook
-|`TurnManager.advanceTurn` new-round block, beside the team coordinator
+|`TurnManager.advanceTurn` new-round block, beside the team coordinator —
+`NomadManager.processRound` runs the strategy review + economy phase first
 
 |Audience
 |`AudienceNotice.kind: 'nomad'` + `speaker { nameKey, subKey, icon, image }`
-+ `choices` + `leadKey`, resolved through
++ `choices` + `leadKey` (+ optional `eyebrowKey`, which the city market and
+the plea use), resolved through
 `GameEngine.nomadManager.resolveParley(id)` via `GameModals.handleAudienceChoice`
 
 |Art
 |`/assets/nomads/<clan>.png` with an emoji fallback on load error
 (`AudienceModal` art slot, `doc/NOMAD_ART_PROMPTS.adoc`)
 
+|Strategy brain
+|`src/game/engine/nomad/NomadAI.ts` — `review(situation)` every 8 rounds
+(or instantly on anger), `plan(situation)` → the knobs NomadManager
+executes; a change announces `NOMAD_STRATEGY`
+
+|Barbarian friendship
+|`BarbarianManager.act()` skips negative ids; GameEngine's barbarian
+capture branch calls `nomadManager.onBarbariansTookCity(city)` (migration
++ friendship route)
+
 |Events
 |`NOMAD_SIGHTED` / `NOMAD_PARLEY` / `NOMAD_RESOLVED` / `NOMAD_HIRED` /
-`NOMAD_DEPARTED` / `NOMAD_ANGRY` / `NOMAD_RAID` / `NOMAD_RETURN_GIFT` →
+`NOMAD_DEPARTED` / `NOMAD_ANGRY` / `NOMAD_RAID` / `NOMAD_RETURN_GIFT` /
+`NOMAD_CITY_OFFER` + `NOMAD_MONEY_REQUEST` (same audience machinery as
+`NOMAD_PARLEY`) / `NOMAD_BRIBE` / `NOMAD_ROUTE` / `NOMAD_STRATEGY` /
+`NOMAD_KNOWLEDGE` / `NOMAD_MIGRATED` →
 `EngineEventHandlers` (localized toasts + store sync)
 
 |Fog
@@ -156,7 +313,7 @@ ring scan around the city (the player's projection, the growth pipeline
 and the AI governor all charge the same number)
 |===
 
-== 5. Tests
+== 6. Tests
 
 `tests/nomads.test.ts` (17) — trigger and spawn (distance, landmass,
 neutral id, fortification, no-city fallback, hotseat/AI skip), the doors
@@ -166,3 +323,23 @@ broken court's free gift, the maps reveal, the color swap on hire, the
 dismissal/proximity re-offer, first-blood hostility + the raid march and
 stores stolen, the pride-driven second refusal turning a clan hostile, and
 the friendly return visit with its map gift.
+
+`tests/nomadEconomy.test.ts` (7) — the 300 opening purse; travelling
+bazaar build (cost 100, proven at the `createUnit` call) → delivery →
+exact route income → the partner falling ends the route; the six-route
+ceiling against a seventh, perfectly targetable city; the city market's
+offer, purchase (gold, ownership, tribute) and a refused city never asked
+for again; the angry camp's bribe (exact chest debit, colors changed, the
+traitor joins the horde); and the identity regression — the camp and its
+bazaars are `-2`, a wandering barbarian stays `-1`.
+
+`tests/nomadStrategy.test.ts` (8) — the stance VARIATION over time
+(roads early → the market at round 40, announced once) and anger
+overriding every review at once; the muster's hard limit (exactly two
+soldiers beyond the horde, the attempts after that refused); the plea (a
+broke tribe asks, gold changes hands, paying buys friendship, refusing
+costs a friendship point without angering); the brokered knowledge sale
+(the buyer really learns the tech); and the barbarian friendship (the camp
+migrates beside a barbarian conquest and opens the route — but never while
+angry). `tests/ai/barbarianAI.test.ts` guards the other half: the horde
+never attacks a `-2` unit or city.

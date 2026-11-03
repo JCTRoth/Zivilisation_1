@@ -54,6 +54,81 @@ export const NOMAD_REOFFER_COOLDOWN_ROUNDS = 3;
 /** How close (Chebyshev) a player unit must be to re-offer / trigger visit 2. */
 export const NOMAD_PROXIMITY_DISTANCE = 2;
 
+// ── The Nomads as their OWN AI player ─────────────────────────────────────
+
+/**
+ * The nomads' civilization id — deliberately NOT `BARBARIAN_CIV_ID` (-1):
+ * the barbarian AI drives every -1 unit and city, and the nomads are their
+ * own player with their own economy. Negative ids skip contact recording,
+ * render with the neutral fallback colour and never win or lose anything —
+ * exactly like the barbarians, but never confused with them.
+ */
+export const NOMAD_CIV_ID = -2;
+
+/** The camp opens its war chest with this much gold. */
+export const NOMAD_START_GOLD = 300;
+
+/** One tribe trades with at most six cities (routes + in-flight caravans). */
+export const NOMAD_TRADE_ROUTE_LIMIT = 6;
+/**
+ * The camp fashions a travelling bazaar every this many rounds — and it is
+ * expensive on purpose: a full third of the opening purse, so a route is an
+ * INVESTMENT the economy has to pay back (up to this many in transit).
+ */
+export const NOMAD_CARAVAN_BUILD_ROUNDS = 10;
+export const NOMAD_CARAVAN_MAX_IN_FLIGHT = 2;
+/** A caravan that cannot take a single step for this many rounds is lost. */
+export const NOMAD_CARAVAN_BLOCKED_ROUNDS = 10;
+/** Hard transit cap: no delivery in this many rounds and the road is given up. */
+export const NOMAD_CARAVAN_MAX_AGE_ROUNDS = 40;
+
+/** Route income per turn: base + half the partner city's population. */
+export const NOMAD_ROUTE_INCOME_BASE = 2;
+/** A bought city pays tribute per population per turn. */
+export const NOMAD_CITY_TRIBUTE_PER_POP = 1;
+
+/** The city market: they bid when rich, and never for a refused city. */
+export const NOMAD_CITY_OFFER_MIN_GOLD = 450;
+export const NOMAD_CITY_OFFER_COOLDOWN_ROUNDS = 15;
+export const NOMAD_CITY_PRICE_BASE = 250;
+export const NOMAD_CITY_PRICE_PER_POP = 75;
+
+/** When trouble starts, gold buys soldiers: bribes near the camp. */
+export const NOMAD_BRIBE_RADIUS = 4;
+export const NOMAD_BRIBE_COOLDOWN_ROUNDS = 3;
+
+// ── The tribe's strategy brain (NomadAI) ──────────────────────────────────
+
+/**
+ * Every this many rounds the tribe reviews its priorities — and the review
+ * is what makes it VARY over time: roads while the map still holds
+ * unsigned cities, the treasury while saving, the market when a city is
+ * within reach, steel when the clan is warlike (bribery whenever angry
+ * overrides every review).
+ */
+export const NOMAD_STRATEGY_REVIEW_ROUNDS = 8;
+
+/** The camp may muster up to this many EXTRA soldiers beyond the spawned horde. */
+export const NOMAD_CAMP_MUSTER_LIMIT = 2;
+/** Rounds between two musters (only while the steel stance holds). */
+export const NOMAD_CAMP_MUSTER_ROUNDS = 8;
+
+/** Under this much gold the tribe swallows its pride and asks YOU for help. */
+export const NOMAD_MONEY_REQUEST_BELOW = 80;
+export const NOMAD_MONEY_REQUEST_AMOUNT = 60;
+export const NOMAD_MONEY_REQUEST_COOLDOWN_ROUNDS = 25;
+
+/** Knowledge brokerage: a tech sold to an AI court every this many rounds. */
+export const NOMAD_KNOWLEDGE_ROUNDS = 15;
+/** Price of brokered knowledge: half the raw research cost, clamped. */
+export const NOMAD_KNOWLEDGE_PRICE_DIVISOR = 2;
+export const NOMAD_KNOWLEDGE_PRICE_MIN = 25;
+export const NOMAD_KNOWLEDGE_PRICE_MAX = 100;
+
+/** Barbarian friendship: when they take a city, the camp strikes tents
+ *  and moves in beside it (a free spot within this Chebyshev distance). */
+export const NOMAD_MIGRATION_MAX_DISTANCE = 3;
+
 /** A friendly court earns ONE return visit, this many rounds after leaving. */
 export const NOMAD_MAX_VISITS = 2;
 export const NOMAD_RETURN_DELAY_ROUNDS = 30;

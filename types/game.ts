@@ -330,6 +330,12 @@ export interface AudienceNotice {
    */
   kind?: 'nomad';
   /**
+   * i18n key overriding the audience's eyebrow line (the nomad city market
+   * uses it to distinguish itself from the parley — the e2e dialog sweep
+   * keys on these lines).
+   */
+  eyebrowKey?: string;
+  /**
    * A non-civ speaker (the nomad envoy): i18n key + icon shown instead of a
    * leader portrait. `nameKey` is resolved at render time so a language
    * switch mid-game still works. `image` is the big art (falls back to the

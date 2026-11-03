@@ -109,4 +109,47 @@ describe('Audience screen', () => {
 
     expect(useGameStore.getState().uiState.activeDialog).not.toBe('audience');
   });
+
+  it('opens the nomad city market with its own eyebrow, speaker and doors', () => {
+    // The market rides the same audience machinery as the parley but must
+    // stay distinguishable (the e2e dialog sweep keys on the eyebrow) and
+    // must carry the clan's nested speaker through to the notice.
+    engine.onStateChange('NOMAD_CITY_OFFER', {
+      speaker: {
+        nameKey: 'nomad.clan.sandborne.name',
+        subKey: 'nomad.clan.sandborne.epithet',
+        icon: '🐫',
+        image: '/assets/nomads/sandborne.png',
+      },
+      leadKey: 'nomad.cityOffer.lead',
+      eyebrowKey: 'nomad.cityOffer.eyebrow',
+      choices: [
+        {
+          id: 'buy_city',
+          labelKey: 'nomad.choice.buyCity',
+          labelParams: { city: 'Berlin', gold: 475 },
+          variant: 'accept',
+        },
+        { id: 'refuse_city', labelKey: 'nomad.choice.refuseCity', variant: 'pass' },
+      ],
+      goldAmount: 475,
+    });
+
+    const state = useGameStore.getState();
+    expect(state.uiState.activeDialog).toBe('audience');
+    expect(state.audienceNotice).toMatchObject({
+      civId: -1,
+      kind: 'nomad',
+      eyebrowKey: 'nomad.cityOffer.eyebrow',
+      leadKey: 'nomad.cityOffer.lead',
+      goldAmount: 475,
+    });
+    expect(state.audienceNotice?.choices.map((c) => c.id)).toEqual(['buy_city', 'refuse_city']);
+    expect(state.audienceNotice?.speaker).toMatchObject({
+      nameKey: 'nomad.clan.sandborne.name',
+      subKey: 'nomad.clan.sandborne.epithet',
+      icon: '🐫',
+      image: '/assets/nomads/sandborne.png',
+    });
+  });
 });
