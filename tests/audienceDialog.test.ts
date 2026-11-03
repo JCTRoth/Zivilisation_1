@@ -152,4 +152,31 @@ describe('Audience screen', () => {
       image: '/assets/nomads/sandborne.png',
     });
   });
+
+  it('a nomad audience pans the camera to the place it is about', () => {
+    router.handle('NOMAD_PARLEY', {
+      col: 7,
+      row: 9,
+      speaker: { nameKey: 'nomad.clan.sandborne.name', icon: '🐫' },
+      leadKey: 'nomad.clan.sandborne.lead',
+      choices: [{ id: 'pass', labelKey: 'nomad.choice.pass', variant: 'pass' }],
+    });
+
+    expect(useGameStore.getState().uiState.activeDialog).toBe('audience');
+    // The meeting spot travels with the audience — the camera goes there.
+    expect(useGameStore.getState().cameraPanRequest).toMatchObject({ col: 7, row: 9 });
+  });
+
+  it('a nomad audience without coordinates leaves the camera alone', () => {
+    const before = useGameStore.getState().cameraPanRequest;
+
+    router.handle('NOMAD_PARLEY', {
+      speaker: { nameKey: 'nomad.clan.sandborne.name', icon: '🐫' },
+      leadKey: 'nomad.clan.sandborne.lead',
+      choices: [{ id: 'pass', labelKey: 'nomad.choice.pass', variant: 'pass' }],
+    });
+
+    expect(useGameStore.getState().uiState.activeDialog).toBe('audience');
+    expect(useGameStore.getState().cameraPanRequest).toBe(before);
+  });
 });

@@ -2702,6 +2702,15 @@ export class EngineEventRouter {
       techOffered: typeof eventData.techOffered === 'string' ? eventData.techOffered : undefined,
       goldAmount: typeof eventData.goldAmount === 'number' ? eventData.goldAmount : undefined,
     };
+    // The audience is ABOUT a place — take the viewer there (the meeting
+    // at the gate, the camp for the market and the plea). An automated
+    // pan, so it honors the player's autoCamera setting; keepZoom keeps
+    // their zoom. No coordinates in the payload = no pan (nothing to see).
+    const col = Number(eventData.col);
+    const row = Number(eventData.row);
+    if (Number.isFinite(col) && Number.isFinite(row)) {
+      this.actions.focusCameraOnTile?.(col, row);
+    }
     this.actions.openAudience?.(notice);
     this.syncState();
   }

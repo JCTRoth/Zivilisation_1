@@ -174,6 +174,16 @@ describe('Nomads — trigger and spawn', () => {
       (u) => Math.max(Math.abs(u.col - city.col), Math.abs(u.row - city.row)) <= 1,
     );
     expect(met, 'the meeting happened AT the gate').toBe(true);
+
+    // The audience carries where the horde stands — the camera takes the
+    // viewer to the place the dialog is about.
+    const parley = eventsOf(events, 'NOMAD_PARLEY').at(-1)!;
+    expect(typeof parley.data.col).toBe('number');
+    expect(typeof parley.data.row).toBe('number');
+    const standingThere = nomadUnits(engine).some(
+      (u) => u.col === parley.data.col && u.row === parley.data.row,
+    );
+    expect(standingThere, 'the spot is where the horde stands').toBe(true);
   });
 
   it('never spawns in hotseat or all-AI games', async () => {

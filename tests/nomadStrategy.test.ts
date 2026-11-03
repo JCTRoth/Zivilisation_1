@@ -178,6 +178,9 @@ describe('Nomads — asking for money', () => {
     expect(plea.data.eyebrowKey).toBe('nomad.moneyRequest.eyebrow');
     expect(plea.data.leadKey).toBe('nomad.moneyRequest.lead');
     expect(plea.data.goldAmount).toBe(NOMAD_MONEY_REQUEST_AMOUNT);
+    // The plea carries their spot — the camera goes there.
+    expect(typeof plea.data.col).toBe('number');
+    expect(typeof plea.data.row).toBe('number');
     expect(plea.data.choices.map((c: any) => c.id)).toEqual(['give_gold', 'refuse_gold']);
     expect(plea.data.speaker.image).toMatch(/^\/assets\/nomads\//);
 

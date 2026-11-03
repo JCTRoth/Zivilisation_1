@@ -909,6 +909,8 @@ export class NomadManager {
       { id: 'refuse_gold', labelKey: 'nomad.choice.refuseGold', variant: 'pass' },
     ];
     this.gameEngine.onStateChange?.('NOMAD_MONEY_REQUEST', {
+      // Where they stand: the camera takes the viewer to the plea.
+      ...(this.liveSpot() ?? {}),
       speaker: {
         nameKey: clan.nameKey,
         subKey: clan.epithetKey,
@@ -1159,6 +1161,9 @@ export class NomadManager {
       { id: 'refuse_city', labelKey: 'nomad.choice.refuseCity', variant: 'pass' },
     ];
     this.gameEngine.onStateChange?.('NOMAD_CITY_OFFER', {
+      // The offer is ABOUT a city — take the viewer to what is for sale.
+      col: city.col,
+      row: city.row,
       speaker: {
         nameKey: clan.nameKey,
         subKey: clan.epithetKey,
@@ -1694,6 +1699,9 @@ export class NomadManager {
     this.lastEmitRound = round;
     this.liveParley = second ? 'second' : 'first';
     this.gameEngine.onStateChange?.('NOMAD_PARLEY', {
+      // Where they stand — the MEETING spot at the gate: the camera takes
+      // the viewer to the place this audience is about.
+      ...(this.liveSpot() ?? {}),
       speaker: {
         nameKey: clan.nameKey,
         subKey: clan.epithetKey,
@@ -1826,6 +1834,20 @@ export class NomadManager {
   }
 
   // ── The visit (contact-based) ────────────────────────────────────────
+
+  /**
+   * Where the nomads ARE right now — every audience payload carries it so
+   * the camera can take the viewer to the place the dialog is about (the
+   * meeting at the gate, the camp for the market and the plea). Null when
+   * the tribe has no units left to look at: nothing to pan to.
+   */
+  private liveSpot(): { col: number; row: number } | null {
+    for (const id of this.campUnitIds) {
+      const u = this.unitById(id);
+      if (u) return { col: u.col, row: u.row };
+    }
+    return null;
+  }
 
   /**
    * THE VISIT'S TRIGGER: a nomad unit beside a player unit or a player

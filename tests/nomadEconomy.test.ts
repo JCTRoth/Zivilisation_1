@@ -301,6 +301,9 @@ describe('Nomads — the city market', () => {
     expect(offer.data.choices[0].labelParams.city).toBe('Haven'); // the biggest
     const price = NOMAD_CITY_PRICE_BASE + NOMAD_CITY_PRICE_PER_POP * 5;
     expect(offer.data.goldAmount).toBe(price);
+    // The market's audience carries their spot — the camera goes there.
+    expect(typeof offer.data.col).toBe('number');
+    expect(typeof offer.data.row).toBe('number');
     expect(price).toBe(625);
 
     // The sale: their chest pays, your treasury gains, the city changes hands.

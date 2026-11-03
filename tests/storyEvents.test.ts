@@ -162,7 +162,8 @@ describe('The chronicle', () => {
 
   it('every story definition is complete (art, tone, three keys)', () => {
     for (const def of Object.values(STORY_EVENTS)) {
-      expect(def.image).toMatch(/^\/assets\/story\/[a-z_]+\.png$/);
+      // Any raster format — the generated art lands as png/jpg/webp.
+      expect(def.image).toMatch(/^\/assets\/story\/[a-z_]+\.(png|jpg|webp)$/);
       expect(def.tone).toBeTruthy();
       expect(def.eyebrowKey).toMatch(/^story\./);
       expect(def.titleKey).toMatch(/^story\./);
