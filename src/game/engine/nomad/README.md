@@ -28,12 +28,15 @@ Clan portrait prompts: [`doc/NOMAD_ART_PROMPTS.adoc`](../../../../doc/NOMAD_ART_
 1. **Spawn** at round ≥ 4 once the player has a city (fallback: round 12,
    visiting the settler instead), 9–13 tiles away on the same landmass,
    fortified and revealed (`NOMAD_SIGHTED`).
-2. **The march**: until the envoy has spoken, the horde walks toward the
-   player's court — nearest city, else nearest unit — along a real A\*
-   path. Steps never enter a tile: *visitors do not storm cities*.
-3. **The meeting**: the parley opens only when a camp unit stands beside
-   a player unit **or city** (Chebyshev ≤ 1). No meeting, no envoy —
-   there is no timer anymore.
+2. **The wander**: until the envoy has spoken, the group wanders toward the
+   player's court — nearest city, else nearest unit — zig-zagging (most
+   steps close in, some drift sideways, the distance never grows). The
+   final step ONTO the court is *placed*, never moved: `moveUnit` would
+   resolve it as an assault — *visitors do not storm cities*.
+3. **The message binds to the appearance**: the parley opens only when a
+   nomad unit stands **ON your city's tile** — or on the same tile as a
+   player unit (the city-less settler visit). No nomad on the tile, no
+   envoy — and there is no timer.
 4. **After the answer**: they walk home to the tents and wait. A
    *dismissed* parley re-offers when a player unit comes within 2 of the
    camp (3-round cooldown) — dismissal is not refusal.

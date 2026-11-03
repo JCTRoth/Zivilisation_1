@@ -328,15 +328,18 @@ export class NomadManager {
     // The standing camp: the VISIT (contact!), the parley, the race, the
     // departure.
     if (this.campAlive()) {
-      // THE VISIT: their units walk to YOUR units or cities — the envoy
-      // only ever speaks when the two sides actually meet, never on a
-      // timer. Until then the horde WANDERS (never receding from the way
-      // to the court); on contact the parley opens.
+      // THE VISIT: their units walk INTO your court — the envoy only ever
+      // speaks when a nomad unit stands ON your city (or your unit's
+      // tile), never on a timer. Until then the group WANDERS (never
+      // receding from the way to the court); on contact the parley opens.
       if (!this.parleyEmitted) {
         if (this.hasMetPlayer(humanId)) {
           this.emitParley(false, round);
         } else {
           this.roamRound(humanId);
+          // They may have just stepped ONTO the court — the message binds
+          // to appearing on the tile, so speak now, not next round.
+          if (this.hasMetPlayer(humanId)) this.emitParley(false, round);
         }
         return;
       }
@@ -1842,30 +1845,48 @@ export class NomadManager {
    * the tribe has no units left to look at: nothing to pan to.
    */
   private liveSpot(): { col: number; row: number } | null {
-    for (const id of this.campUnitIds) {
-      const u = this.unitById(id);
-      if (u) return { col: u.col, row: u.row };
-    }
-    return null;
+    const alive = this.allCampUnitIds()
+      .map((id) => this.unitById(id))
+      .filter((u): u is Unit => u !== undefined);
+    if (alive.length === 0) return null;
+    // Prefer the unit standing ON a player city — that is the place the
+    // dialog is about ("their units appearing on your city").
+    const humanId = this.humanCivId();
+    const onCourt = humanId === null ? undefined : alive.find((u) =>
+      (this.gameEngine.cities ?? []).some(
+        (c) => c.civilizationId === humanId && c.col === u.col && c.row === u.row,
+      ),
+    );
+    const u = onCourt ?? alive[0];
+    return { col: u.col, row: u.row };
   }
 
   /**
-   * THE VISIT'S TRIGGER: a nomad unit beside a player unit or a player
-   * city — "units from them meeting YOUR units or cities". Face to face
-   * (Chebyshev ≤ 1), never on a timer: no meeting, no envoy.
+   * THE VISIT'S TRIGGER: a nomad unit standing ON a player city's tile —
+   * or within one tile of a player unit (the city-less settler visit).
+   * The message binds to the nomads APPEARING ON YOUR CITY: they walk in,
+   * and only then does the envoy speak. A city holds garrisons, so
+   * standing inside one is how a visitor appears; a FIELD tile is never
+   * shared across civs — the game's oldest invariant — so meeting a unit
+   * means standing beside it. No meeting, no envoy.
    */
   private hasMetPlayer(humanId: number): boolean {
     const camp = this.allCampUnitIds()
       .map((id) => this.unitById(id))
       .filter((u): u is Unit => u !== undefined);
     if (camp.length === 0) return false;
-    const theirs = [
-      ...(this.gameEngine.units ?? []).filter((u) => u.civilizationId === humanId && !u.isDefeated),
-      ...(this.gameEngine.cities ?? []).filter((c) => c.civilizationId === humanId),
-    ];
-    return camp.some((c) =>
-      theirs.some((t) => Math.max(Math.abs(c.col - t.col), Math.abs(c.row - t.row)) <= 1),
-    );
+    const onCity = (c: Unit): boolean =>
+      (this.gameEngine.cities ?? []).some(
+        (city) => city.civilizationId === humanId && city.col === c.col && city.row === c.row,
+      );
+    const besideUnit = (c: Unit): boolean =>
+      (this.gameEngine.units ?? []).some(
+        (u) =>
+          u.civilizationId === humanId
+          && !u.isDefeated
+          && Math.max(Math.abs(u.col - c.col), Math.abs(u.row - c.row)) <= 1,
+      );
+    return camp.some((c) => onCity(c) || besideUnit(c));
   }
 
   /**
@@ -1892,7 +1913,23 @@ export class NomadManager {
         const maxSteps = Math.max(1, unit.maxMoves ?? 1);
         for (let stepNo = 0; stepNo < maxSteps; stepNo++) {
           const d = Math.max(Math.abs(unit.col - target.col), Math.abs(unit.row - target.row));
-          if (d <= 1 || (unit.movesRemaining ?? 0) <= 0) break; // at the gate
+          if (d === 0) break; // already standing ON the court
+          if ((unit.movesRemaining ?? 0) <= 0) break;
+          if (d === 1) {
+            if (this.gameEngine.getCityAt?.(target.col, target.row)) {
+              // The step INTO the city: PLACED, never moved. `moveUnit`
+              // would resolve it as an assault (storming the city) — they
+              // are VISITORS: the message binds to them APPEARING on the
+              // tile, and a city (unlike a field) holds garrisons, so
+              // standing inside one breaks no invariant.
+              unit.col = target.col;
+              unit.row = target.row;
+              unit.movesRemaining = Math.max(0, (unit.movesRemaining ?? 1) - 1);
+            }
+            // A unit target (the city-less visit): stand BESIDE it — two
+            // civs never share a field tile.
+            break;
+          }
           const next = this.wanderStepToward(unit, target);
           if (!next) break;
           if (!this.gameEngine.moveUnit(unit.id, next.col, next.row).success) break;

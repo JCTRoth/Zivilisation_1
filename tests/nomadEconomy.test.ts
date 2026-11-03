@@ -79,7 +79,7 @@ function meetCamp(engine: Engine, events: Array<{ type: string; data: any }>): v
   const camp = horde(engine)[0];
   engine.units.push({
     id: 'witness', type: 'warriors', civilizationId: 0,
-    col: camp.col < 19 ? camp.col + 1 : camp.col - 1, row: camp.row,
+    col: camp.col, row: camp.row, // ON the camp tile — the visit binds to same-tile contact
     movesRemaining: 1, maxMoves: 1, health: 100, attack: 1, defense: 1,
     icon: '⚔️', orders: null, isDefeated: false,
   });

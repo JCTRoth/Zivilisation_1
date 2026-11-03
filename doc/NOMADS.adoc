@@ -8,8 +8,8 @@
 > *UI:* `src/components/ui/gamemodals/AudienceModal.tsx`,
 > `src/components/ui/GameModals.tsx`
 > *Art prompts:* `doc/NOMAD_ART_PROMPTS.adoc`
-> *Tests:* `tests/nomads.test.ts` (17) + `tests/nomadEconomy.test.ts` (7) +
-> `tests/nomadStrategy.test.ts` (8)
+> *Tests:* `tests/nomads.test.ts` (18) + `tests/nomadEconomy.test.ts` (7) +
+> `tests/nomadStrategy.test.ts` (8) + `tests/nomadRoaming.test.ts` (4)
 > *i18n:* `nomad.*` keys in all 6 languages
 
 ---
@@ -40,11 +40,14 @@ second ends the meeting as hostility.
 |===
 
 The visit is **contact-based**: the camp never sends an envoy on a timer.
-Its units **march toward your court** (nearest city, else nearest unit,
-along a real path) and the parley opens only when their units stand
-beside yours or your city (Chebyshev ≤ 1) — no meeting, no envoy, and
-the step itself never enters a tile (visitors do not storm cities). On
-contact the audience screen opens with the clan's big art (see
+Its units **wander the map toward your court** (nearest city, else nearest
+unit) — the walk zig-zags: most steps close in, some drift sideways, and
+the distance to the court never grows. The message binds to the nomads
+**appearing ON your city**: the parley opens only when a nomad unit
+stands on your city's tile (or on the same tile as your unit) — no nomad
+on the tile, no envoy, and the final step onto the court is *placed*
+rather than fought (`moveUnit` would storm it — visitors do not storm
+cities). On contact the audience screen opens with the clan's big art (see
 `doc/NOMAD_ART_PROMPTS.adoc`), name, epithet and a lead line in the
 clan's own voice, offering:
 
@@ -64,12 +67,17 @@ player. No other game source reveals fog without walking it.
 
 |Let them settle *(random, per clan chance)*
 |A settlement is planted beside your city: the settlement TILE drains
-**2 food/turn** from the city's balance (`cityFoodBalance`) and raises
-**defenders** (one warrior per settlement, yours). The wanderers are home —
-the camp is gone.
+**2 food/turn** from the city's balance (`cityFoodBalance`), raises
+**defenders** (one warrior per settlement, yours) — and the camp **keeps
+producing**: one wanderer of its own every 12 rounds (at most 2 alive),
+those roam the land within 6 tiles of the stakes, and the camp's day
+market pays your treasury **2 gold per turn** for the food it eats
+(`NOMAD_SETTLEMENT_TRADE_GOLD`). The wanderers are home — the standing
+camp is gone.
 
 |Hire the horde
-|Pay the units' build cost × 1.1 × the clan's factor; the three neutral
+|Pay the units' build cost × 1.1 × the clan's factor (the horde **as it
+stands** at the meeting — it may have gathered riders since); the neutral
 units convert to the player's colors, un-fortified and usable at once.
 
 |Pass in peace
@@ -85,6 +93,31 @@ does, the camp wanders off into the fog after 20 rounds (`NOMAD_DEPARTED`).
 
 A **second parley** fires when the player's unit stands at the camp after
 the first answer — hire or farewell only.
+
+=== The roaming horde — wander, growth and the split
+
+The camp is a LIVING group on the map, not a scenery piece:
+
+* **Three at the beginning.** The horde starts as the spawned three (two
+  warriors and a scout) and wanders in a group across the map on its way
+  to your court — zig-zagging, never receding from the target, so the
+  contact-based visit always lands.
+* **Later with more.** Once the parley has been **answered**, the group
+  gathers its own riders — one every `NOMAD_GROWTH_ROUNDS` (8), paid from
+  the chest like everything else. (Before the answer the meeting stays the
+  classic three-spear parley; only the steel stance may raise its small
+  v1 garrison.)
+* **At six, the great split.** When a group reaches
+  `NOMAD_GROUP_SPLIT_SIZE` (6) living wanderers it DIVIDES: half keeps
+  the parent camp, half walks to a nearby tile (`NOMAD_SPLIT_DISTANCE`,
+  4) and plants the splinter's tents — announced as `NOMAD_SPLIT`. Both
+  camps are ONE tribe: one chest, one strategy, two cooperating groups —
+  and the tribe never keeps more than `NOMAD_MAX_CAMPS` (2) tents. Both
+  groups regrow to full strength instead of splitting a third time, and
+  no group ever masses past the split size.
+* **Settled camps keep producing** (see the settle door): the mustered
+  wanderers roam the map around the stakes on a `NOMAD_ROAM_LEASH` (6) —
+  the tribe's living texture wherever it put down roots.
 
 == 2. Their own books — an AI player's economy
 
@@ -148,11 +181,25 @@ switches to `-2`, joins the raiding party, and the chest bleeds. Own
 conversion, because `DiplomacyManager.bribeUnit` debits
 `civilizations[civId].gold`, which does not exist for the nomads.
 
-|Camp muster *(the exception)*
-|Under the **steel** stance the camp fashions its own soldiers — paid for
-like everything else, at most **2 alive beyond the spawned horde**
-(`NOMAD_CAMP_MUSTER_LIMIT`), one every 8 rounds. The nomads are TYPICALLY
-money makers: mustering is the exception, not the norm.
+|Camp muster & growth
+|The camp fashions its own soldiers — paid for like everything else.
+**Before the answer** only the steel stance musters, at most **2 alive
+beyond the spawned horde** (`NOMAD_CAMP_MUSTER_LIMIT`, one every 8
+rounds) — the meeting stays the classic three. **After the answer** the
+group simply GROWS: one rider every `NOMAD_GROWTH_ROUNDS` (8),
+stance-blind, until the group is full and divides (see *The roaming
+horde*). The nomads are TYPICALLY money makers: soldiers are the
+exception, not the norm.
+
+|Settled camp production
+|A settlement keeps producing: one wanderer of its own every
+`NOMAD_SETTLEMENT_MUSTER_ROUNDS` (12), at most
+`NOMAD_SETTLEMENT_MUSTER_LIMIT` (2) alive — those wander the land within
+`NOMAD_ROAM_LEASH` (6) tiles of the stakes (never onto a city) and are
+NEVER part of the camp machinery (no parley, no anger, no departing).
+Its day market pays the host **`NOMAD_SETTLEMENT_TRADE_GOLD` (2) gold
+per turn** — the trade half of the deal, against the tile's food drain
+and beside its defenders.
 
 |Knowledge brokerage
 |Every 15 rounds the tribe sells a technology to an AI court — half the
@@ -304,7 +351,8 @@ capture branch calls `nomadManager.onBarbariansTookCity(city)` (migration
 
 |Events
 |`NOMAD_SIGHTED` / `NOMAD_PARLEY` / `NOMAD_RESOLVED` / `NOMAD_HIRED` /
-`NOMAD_DEPARTED` / `NOMAD_ANGRY` / `NOMAD_RAID` / `NOMAD_RETURN_GIFT` /
+`NOMAD_DEPARTED` / `NOMAD_SPLIT` / `NOMAD_ANGRY` / `NOMAD_RAID` /
+`NOMAD_RETURN_GIFT` /
 `NOMAD_CITY_OFFER` + `NOMAD_MONEY_REQUEST` (same audience machinery as
 `NOMAD_PARLEY`) / `NOMAD_BRIBE` / `NOMAD_ROUTE` / `NOMAD_STRATEGY` /
 `NOMAD_KNOWLEDGE` → `EngineEventHandlers` (localized toasts + store sync);
@@ -323,7 +371,7 @@ and the AI governor all charge the same number)
 
 == 6. Tests
 
-`tests/nomads.test.ts` (17) — trigger and spawn (distance, landmass,
+`tests/nomads.test.ts` (18) — trigger and spawn (distance, landmass,
 neutral id, fortification, no-city fallback, hotseat/AI skip), the doors
 and their promised terms (forced rolls for the settlement door), the
 broken court's free gift, the maps reveal, the color swap on hire, the
@@ -351,3 +399,15 @@ costs a friendship point without angering); the brokered knowledge sale
 migrates beside a barbarian conquest and opens the route — but never while
 angry). `tests/ai/barbarianAI.test.ts` guards the other half: the horde
 never attacks a `-2` unit or city.
+
+`tests/nomadRoaming.test.ts` (4) — the roaming horde: the wander itself
+(the group starts as three units, zig-zags sideways yet NEVER recedes from
+the court, and the envoy arrives on contact, never on a timer); growth
+after the answer (three → four → five at the muster cadence, the chest
+pays, no split yet); the great split at six (exactly one `NOMAD_SPLIT`,
+half the horde at the splinter's fire within `NOMAD_SPLIT_DISTANCE`, both
+groups regrow to full strength — and never a third camp); and the settled
+camp's production (one wanderer per `NOMAD_SETTLEMENT_MUSTER_ROUNDS`, the
+`NOMAD_SETTLEMENT_MUSTER_LIMIT` ceiling, the `NOMAD_ROAM_LEASH` around the
+stakes, never on a city — and exactly `NOMAD_SETTLEMENT_TRADE_GOLD` gold
+per round into the host's purse).

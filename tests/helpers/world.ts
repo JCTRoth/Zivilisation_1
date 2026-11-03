@@ -16,6 +16,7 @@
 
 import { vi } from 'vitest';
 import { getGovernment } from '@/data/GovernmentData';
+import { NOMAD_CIV_ID } from '@/data/NomadConstants';
 import GameEngine from '@/game/engine/GameEngine';
 import { SquareGrid } from '@/game/SquareGrid';
 import type { City, Unit } from '../../types/game';
@@ -386,13 +387,23 @@ export function checkInvariants(engine: GameEngine): InvariantViolation[] {
   // Civ1 lets your OWN units stack on one tile (that is what the unit-stack
   // modal is for), so stacking is only a violation when two different
   // civilizations' units end up on the same square.
+  //
+  // ONE deliberate exception: a nomad unit standing IN a city while the
+  // parley is open. A city holds garrisons, so the envoy appearing on the
+  // tile breaks no rule of movement — the visit binds the message to it
+  // (field tiles are never shared across civs, nomads or not).
   const occupied = new Map<string, number>();
   for (const unit of engine.units) {
     if (unit.isDefeated === true) continue;
     const key = `${unit.col},${unit.row}`;
     const otherCiv = occupied.get(key);
     if (otherCiv !== undefined && otherCiv !== unit.civilizationId) {
-      add('no two civs share a tile', `civ ${otherCiv} and civ ${unit.civilizationId} at (${unit.col},${unit.row})`);
+      const nomadVisit =
+        (unit.civilizationId === NOMAD_CIV_ID || otherCiv === NOMAD_CIV_ID)
+        && engine.getCityAt?.(unit.col, unit.row) != null;
+      if (!nomadVisit) {
+        add('no two civs share a tile', `civ ${otherCiv} and civ ${unit.civilizationId} at (${unit.col},${unit.row})`);
+      }
     }
     occupied.set(key, unit.civilizationId);
   }

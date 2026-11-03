@@ -84,7 +84,7 @@ function meetCamp(engine: Engine, events: Array<{ type: string; data: any }>): a
   const camp = nomadUnits(engine)[0];
   engine.units.push({
     id: 'witness', type: 'warriors', civilizationId: 0,
-    col: camp.col < 19 ? camp.col + 1 : camp.col - 1, row: camp.row,
+    col: camp.col, row: camp.row, // ON the camp tile — the visit binds to same-tile contact
     movesRemaining: 1, maxMoves: 1, health: 100, attack: 1, defense: 1,
     icon: '⚔️', orders: null, isDefeated: false,
   });
@@ -168,12 +168,13 @@ describe('Nomads — trigger and spawn', () => {
     }
     expect(parleyAt, 'they came and met the court').toBeGreaterThan(0);
 
-    // Face to face: a nomad unit stands beside a player unit or city.
+    // Face to face — ON the tile: the message binds to the nomads
+    // APPEARING ON your city, not to them standing beside it.
     const city = engine.cities[0];
     const met = nomadUnits(engine).some(
-      (u) => Math.max(Math.abs(u.col - city.col), Math.abs(u.row - city.row)) <= 1,
+      (u) => u.col === city.col && u.row === city.row,
     );
-    expect(met, 'the meeting happened AT the gate').toBe(true);
+    expect(met, 'they are standing ON the city when the envoy speaks').toBe(true);
 
     // The audience carries where the horde stands — the camera takes the
     // viewer to the place the dialog is about.
