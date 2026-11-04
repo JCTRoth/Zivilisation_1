@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Modal } from 'react-bootstrap';
 import { useTranslation } from '@/i18n/useTranslation';
 import { useGameStore } from '@/stores/GameStore';
 import LeaderPortrait from '@/components/ui/LeaderPortrait';
+import ClanPortrait from '@/components/ui/ClanPortrait';
+import { NOMAD_CHOICE_ICONS, NOMAD_STANDING_COLORS } from '@/data/NomadConstants';
+import type { NomadStanding } from '@/game/engine/nomad/NomadManager';
 import { LEADER_PORTRAITS, MOOD_COLORS } from '@/data/LeaderPortraits';
 import { attitudeFromScore, type Attitude } from '@/game/engine/DiplomacyTypes';
 import { EARLY_TECH_EXCHANGE_MAX_ROUND } from '@/data/GameConstants';
@@ -30,6 +33,8 @@ interface AudienceEngineLike {
   currentTurn?: number;
   /** Whether the offering court is one of the player's locked teammates. */
   teamManager?: { isTeammate?: (a: number, b: number) => boolean };
+  /** The nomad tribe behind a `kind: 'nomad'` audience — how they stand now. */
+  nomadManager?: { currentStanding?: NomadStanding };
 }
 
 /** The slice of the diplomacy manager the audience screen reads. */
@@ -65,9 +70,6 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
   const { t } = useTranslation();
   const civilizations = useGameStore((state) => state.civilizations);
   const playerId = useGameStore((state) => state.currentPlayer?.id ?? 0);
-  // Big art for a non-civ speaker: a failed load (the art may not exist
-  // yet) falls back to the emoji portrait instead of showing a broken img.
-  const [artFailed, setArtFailed] = useState(false);
 
   if (!notice) return null;
 
@@ -82,6 +84,13 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
   const attitudeScore = dm?.getAttitudeScore?.(notice.civId, playerId) ?? 0;
   const attitude: Attitude = attitudeFromScore(attitudeScore);
   const moodColors = MOOD_COLORS[attitude] ?? MOOD_COLORS.neutral;
+
+  // A nomad audience has no rival civ behind it: no attitude meter, no
+  // leader portrait. It shows instead the tribe's OWN standing — the same
+  // three words the diplomacy hall uses — and its poster art.
+  const isNomad = notice.kind === 'nomad';
+  const nomadStanding: NomadStanding = gameEngine?.nomadManager?.currentStanding ?? 'neutral';
+  const frameColor = isNomad ? NOMAD_STANDING_COLORS[nomadStanding] : moodColors.border;
 
   const isTechExchange = notice.action === 'offer_tech_exchange';
   const isTechForGold = notice.action === 'offer_tech_for_gold';
@@ -173,28 +182,26 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
       <div
         className="gm-body audience-modal__body"
         data-attitude={attitude}
+        data-kind={isNomad ? 'nomad' : 'civ'}
         role="dialog"
         aria-modal="true"
         aria-labelledby="audience-modal-title"
       >
-        {/* The face across the room. Big, pixel, and lit by their temper. */}
+        {/* The face across the room: a leader's portrait, or the nomads' own
+            poster — big, framed in the colour of their temper. */}
         <div className="audience-modal__stage">
-          <div className="audience-modal__portrait" style={{ borderColor: moodColors.border }}>
-            {notice.speaker?.image && !artFailed ? (
-              // The clan's own art, big — the centerpiece of the audience.
-              <img
+          <div className="audience-modal__portrait" style={{ borderColor: frameColor }}>
+            {notice.speaker ? (
+              // The faction's art, the centerpiece of the audience.
+              // ClanPortrait tries the generated PNG, then the built-in
+              // poster, then the emoji — a missing file is never a broken img.
+              <ClanPortrait
                 className="audience-modal__art"
-                src={notice.speaker.image}
+                clanId={notice.speaker.id ?? null}
+                image={notice.speaker.image}
+                icon={notice.speaker.icon}
                 alt={t(notice.speaker.nameKey as TranslationKey)}
-                onError={() => setArtFailed(true)}
               />
-            ) : notice.speaker ? (
-              <div
-                className="audience-modal__portrait-placeholder"
-                style={{ color: moodColors.border, fontSize: '84px' }}
-              >
-                <span aria-hidden="true">{notice.speaker.icon}</span>
-              </div>
             ) : portraitConfig ? (
               <LeaderPortrait
                 config={portraitConfig}
@@ -215,25 +222,31 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
                 ? t(notice.speaker.nameKey as TranslationKey)
                 : leaderName || t('gm.unknown' as TranslationKey)}
             </div>
+            {/* One line of rank: the envoy's epithet, or the leader's title.
+                (The old second copy of this line spelled "Leader of Unknown"
+                under every nomad audience.) */}
             <div className="audience-modal__civ">
               {notice.speaker?.subKey
                 ? t(notice.speaker.subKey as TranslationKey)
                 : portraitConfig?.title
                   || t('gm.diplo.leaderTitle' as TranslationKey, { civ: civ?.name ?? t('gm.unknown' as TranslationKey) })}
             </div>
-            <div className="audience-modal__civ">
-              {portraitConfig?.title
-                || t('gm.diplo.leaderTitle' as TranslationKey, { civ: civ?.name ?? t('gm.unknown' as TranslationKey) })}
-            </div>
-            <span className="audience-modal__mood" style={{ color: moodColors.border, borderColor: moodColors.border }}>
-              {t(`gm.diplo.attitude.${attitude}` as TranslationKey)}
+            <span
+              className="audience-modal__mood"
+              data-kind={isNomad ? 'nomad' : 'civ'}
+              style={{ color: frameColor, borderColor: frameColor }}
+            >
+              {isNomad
+                ? t(`nomad.standing.${nomadStanding}` as TranslationKey)
+                : t(`gm.diplo.attitude.${attitude}` as TranslationKey)}
             </span>
           </div>
         </div>
 
         {/* The speech field. Green when they are putting something on the
-            table, grey for a formal audience with nothing to decide. */}
-        <div className="audience-modal__speech" data-mode={notice.mode}>
+            table, grey for a formal audience with nothing to decide; warm
+            sand for a parley at the gate. */}
+        <div className="audience-modal__speech" data-mode={notice.mode} data-kind={isNomad ? 'nomad' : 'civ'}>
           <div className="audience-modal__eyebrow">
             {notice.eyebrowKey
               // Payload-driven eyebrow (the nomad city market distinguishes
@@ -282,14 +295,23 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
               if (params && typeof params.tech === 'string') {
                 params.tech = techName(String(params.tech));
               }
+              const isQuiet = choice.variant === 'pass';
               return (
                 <button
                   key={choice.id}
                   type="button"
-                  className={`audience-choice audience-choice--${choice.variant === 'pass' ? 'reject' : 'accept'}`}
+                  className={`audience-choice audience-choice--${isQuiet ? 'reject' : 'accept'}`}
+                  data-nomad={isNomad ? 'true' : undefined}
                   onClick={() => onChoice?.(choice.id)}
                 >
-                  {t(choice.labelKey as TranslationKey, params)}
+                  {isNomad && NOMAD_CHOICE_ICONS[choice.id] && (
+                    <span className="audience-choice__icon" aria-hidden="true">
+                      {NOMAD_CHOICE_ICONS[choice.id]}
+                    </span>
+                  )}
+                  <span className="audience-choice__label">
+                    {t(choice.labelKey as TranslationKey, params)}
+                  </span>
                 </button>
               );
             })

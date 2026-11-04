@@ -1087,3 +1087,84 @@
   text-transform: uppercase;
   color: var(--color-accent-strong, #ffd75e);
 }
+
+/* ============================================================================
+   The nomads — their own row and their own panel in the hall
+   ========================================================================== */
+
+/* Grouped apart from the civ rows: they are a court, but not a civ. */
+.diplomacy-pane-title--nomad {
+  margin-top: 14px;
+}
+
+.diplomacy-civ-row--nomad .diplomacy-civ-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Their standing as a dot — wary grey, friendly green, hostile red: the
+   same three words (and colours) the audience frame uses. */
+.diplomacy-nomad-dot {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.diplomacy-nomad-dot[data-standing='neutral'] {
+  color: #9aa7b4;
+}
+
+.diplomacy-nomad-dot[data-standing='friendly'] {
+  color: #4caf50;
+}
+
+.diplomacy-nomad-dot[data-standing='angry'] {
+  color: #f44336;
+}
+
+.diplomacy-audience--nomad {
+  box-shadow: inset 0 0 40px rgba(232, 163, 61, 0.08);
+}
+
+/* The poster fills the frame (512×640, cropped like a portrait photo). */
+.diplomacy-portrait-slot--nomad {
+  padding: 0;
+}
+
+.diplomacy-nomad-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: auto;
+}
+
+.diplomacy-hero-art--nomad .diplomacy-hero-art__nomad {
+  display: block;
+  height: 56px;
+  width: auto;
+  border-radius: 4px;
+}
+
+.diplomacy-nomad-kv {
+  color: var(--color-text-muted, #b7c3cf);
+  font-size: 13px;
+}
+
+/* The doors: full-width, and LOCKED — not hidden — until your units stand
+   with theirs (the gate rule). */
+.diplomacy-nomad-door {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  text-align: left;
+}
+
+.diplomacy-nomad-door:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.diplomacy-nomad-find {
+  margin-top: 10px;
+}

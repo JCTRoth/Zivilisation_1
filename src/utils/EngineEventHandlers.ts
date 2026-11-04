@@ -2699,6 +2699,7 @@ export class EngineEventRouter {
       message: '',
       kind: 'nomad',
       speaker: {
+        id: typeof raw.id === 'string' ? raw.id : undefined,
         nameKey,
         icon: typeof raw.icon === 'string' ? raw.icon : String(eventData.speakerIcon ?? '🐎'),
         subKey: typeof raw.subKey === 'string' ? raw.subKey : undefined,

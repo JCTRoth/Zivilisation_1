@@ -1,9 +1,9 @@
 /**
  * Nomads — the opening visitors. Constants for the whole feature: tuned so
  * the visit lands inside the dead window of turns 4–10, the deal stays fair
- * (half research cost for knowledge, above-build-cost for spears), and the
- * relationship has a memory: friendly courts get them back with maps, angry
- * ones get their stores raided.
+ * (half research cost for knowledge, a real price for the spears you meet),
+ * and the relationship has a memory: friendly courts get them back with maps,
+ * angry ones get their stores raided.
  */
 
 /** Earliest round (0-based) the nomads may seek the player. */
@@ -18,7 +18,19 @@ export const NOMAD_SPAWN_MAX_DISTANCE = 13;
 
 /** The horde: two spears and a rider — enough to matter, not enough to win. */
 export const NOMAD_SPAWN_UNITS = ['warriors', 'warriors', 'scout'] as const;
-export const NOMAD_HIRE_COST_FACTOR = 1.1;
+/**
+ * Hire price = the MEETED units' build cost × this × the clan's factor.
+ *
+ * ×5, not ×1.1: at 1.1 the whole horde went for ~38 gold, less than a
+ * single round of a city's taxes — mercenaries that cheap were free money.
+ * At ×5 the starting three ask ~175 gold (a lone rider you met: 50), which
+ * is a real decision inside the camp's 20-round linger.
+ *
+ * Only the units that STAND WITH YOU are sold (see
+ * `NomadManager.meetingUnitIds`): the rest of the tribe keeps its tents and
+ * stays neutral — you hire the riders you met, not a horde you never saw.
+ */
+export const NOMAD_HIRE_COST_FACTOR = 5;
 
 /** The tech bargain: half of the raw research cost, clamped. */
 export const NOMAD_TECH_PRICE_DIVISOR = 2;
@@ -204,7 +216,7 @@ export const NOMAD_SETTLEMENT_DEFENDERS = 1;
 export type NomadPersonality = 'trader' | 'warrior' | 'mystic';
 
 export interface NomadClan {
-  id: 'sandborne' | 'ironhoof' | 'greywind';
+  id: 'bedouin' | 'mongol' | 'sami';
   /** i18n key of the clan name. */
   nameKey: string;
   /** i18n key of the epithet shown under the name in the audience. */
@@ -227,47 +239,99 @@ export interface NomadClan {
 }
 
 /**
- * Three identities, three temperaments. The roll happens once per game —
- * the SAME clan returns on a return visit (they are who you met).
+ * How each standing colours the UI — the audience frame and the diplomacy
+ * hall's badge read the same three words in the same three colours.
+ */
+export const NOMAD_STANDING_COLORS: Record<'neutral' | 'friendly' | 'angry', string> = {
+  neutral: '#9aa7b4',
+  friendly: '#4caf50',
+  angry: '#f44336',
+};
+
+/**
+ * The doors of a nomad audience, each with the icon its card leads with —
+ * shared by the audience screen and the diplomacy hall, which both render
+ * the same `AudienceChoice` list.
+ */
+export const NOMAD_CHOICE_ICONS: Record<string, string> = {
+  tech: '📜',
+  techGift: '📜',
+  maps: '🗺️',
+  hire: '🗡️',
+  settle: '⛺',
+  pass: '🚶',
+  farewell: '🚶',
+  buy_city: '🏙️',
+  refuse_city: '🚫',
+  giveGold: '🪙',
+  refuseGold: '🪙',
+};
+
+/**
+ * THREE PEOPLES, THREE TEMPERAMENTS — chosen from the history of the
+ * world's nomads rather than from game archetypes (research notes, lore
+ * and the generation prompts live in
+ * [`FACTIONS_README.md`](../game/engine/nomad/FACTIONS_README.md)):
+ *
+ *   * **The Bedouin** — Arabia's and the Sahara's camel caravans: the
+ *     well, the duty of hospitality (*diyafa*), the incense roads. The
+ *     traders.
+ *   * **The Mongol Horde** — the steppe confederation: horse archers, the
+ *     *yam* relay, the ger camp that moves with the season. The warriors.
+ *   * **The Sámi** — Sápmi's tundra: the reindeer migration, the *noaidi's*
+ *     drum, a sky read like a road. The mystics.
+ *
+ * The roll happens once per game — the SAME people return on a return
+ * visit (they are who you met). The ORDER is load-bearing: tests roll the
+ * clan by index (trader / warrior / mystic).
  */
 export const NOMAD_CLANS: readonly NomadClan[] = [
   {
-    id: 'sandborne',
-    nameKey: 'nomad.clan.sandborne.name',
-    epithetKey: 'nomad.clan.sandborne.epithet',
+    // The Bedouin — the desert's merchants. A well is wealth and hospitality
+    // is law: they bargain, they plant their stakes beside a city often, and
+    // they forgive three refusals before they ride off offended.
+    id: 'bedouin',
+    nameKey: 'nomad.clan.bedouin.name',
+    epithetKey: 'nomad.clan.bedouin.epithet',
     personality: 'trader',
-    image: '/assets/nomads/sandborne.png',
+    image: '/assets/nomads/bedouin.png',
     icon: '🐫',
-    leadKey: 'nomad.clan.sandborne.lead',
-    returnLeadKey: 'nomad.clan.sandborne.returnLead',
+    leadKey: 'nomad.clan.bedouin.lead',
+    returnLeadKey: 'nomad.clan.bedouin.returnLead',
     techPriceFactor: 0.8,
     hirePriceFactor: 1.0,
     settleChance: 0.55,
     angerTolerance: 3,
   },
   {
-    id: 'ironhoof',
-    nameKey: 'nomad.clan.ironhoof.name',
-    epithetKey: 'nomad.clan.ironhoof.epithet',
+    // The Mongol Horde — the steppe's soldiers. They do not beg at gates,
+    // they overcharge for their spears, they rarely settle (the camp moves
+    // with the season) and ONE refusal is their limit.
+    id: 'mongol',
+    nameKey: 'nomad.clan.mongol.name',
+    epithetKey: 'nomad.clan.mongol.epithet',
     personality: 'warrior',
-    image: '/assets/nomads/ironhoof.png',
+    image: '/assets/nomads/mongol.png',
     icon: '🐎',
-    leadKey: 'nomad.clan.ironhoof.lead',
-    returnLeadKey: 'nomad.clan.ironhoof.returnLead',
+    leadKey: 'nomad.clan.mongol.lead',
+    returnLeadKey: 'nomad.clan.mongol.returnLead',
     techPriceFactor: 1.0,
     hirePriceFactor: 1.4,
     settleChance: 0.15,
     angerTolerance: 1,
   },
   {
-    id: 'greywind',
-    nameKey: 'nomad.clan.greywind.name',
-    epithetKey: 'nomad.clan.greywind.epithet',
+    // The Sámi — the tundra's path-finders. The stars already named the
+    // road: they chart what you have not walked, stake their tents sometimes
+    // and keep their own counsel through two refusals.
+    id: 'sami',
+    nameKey: 'nomad.clan.sami.name',
+    epithetKey: 'nomad.clan.sami.epithet',
     personality: 'mystic',
-    image: '/assets/nomads/greywind.png',
-    icon: '🐺',
-    leadKey: 'nomad.clan.greywind.lead',
-    returnLeadKey: 'nomad.clan.greywind.returnLead',
+    image: '/assets/nomads/sami.png',
+    icon: '🦌',
+    leadKey: 'nomad.clan.sami.lead',
+    returnLeadKey: 'nomad.clan.sami.returnLead',
     techPriceFactor: 0.9,
     hirePriceFactor: 1.0,
     settleChance: 0.3,

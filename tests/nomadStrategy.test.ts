@@ -84,7 +84,7 @@ function leaveGate(engine: Engine): void {
 describe('Nomads — the strategy brain', () => {
   it('varies over time: roads while the world is young, the market once a price is in reach', async () => {
     const { engine, events, nm } = await world();
-    vi.spyOn(Math, 'random').mockReturnValue(0.999); // greywind (mystic); jitter pinned high
+    vi.spyOn(Math, 'random').mockReturnValue(0.999); // the Sámi (mystic); jitter pinned high
     meetCamp(engine, events); // spawn + the meeting (the envoy at +1)
     expect(nm.resolveParley('maps').ok).toBe(true); // friendly, camp lingers
     leaveGate(engine); // the player answered and walked away

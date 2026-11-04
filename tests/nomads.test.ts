@@ -509,7 +509,7 @@ describe('Nomads — moods, return visits and settlements', () => {
   });
 
   it('beyond their patience: the proud clan turns hostile on the second refusal', async () => {
-    // Clan index floor(0.4 * 3) = 1 → Ironhoof, tolerance 1: the FIRST pass
+    // Clan index floor(0.4 * 3) = 1 → the Mongols, tolerance 1: the FIRST pass
     // is tolerated, the SECOND ends the parley as hostility — deterministic
     // under the spy whatever the world seed rolled.
     const w = await makeEngine({ numberOfCivilizations: 3, seed: 4242 });
@@ -522,8 +522,8 @@ describe('Nomads — moods, return visits and settlements', () => {
 
     const spy = vi.spyOn(Math, 'random').mockReturnValue(0.4);
     try {
-      meetCamp(engine, events); // spawn (ironhoof under the spy) + the meeting
-      expect(nm.currentClan?.id).toBe('ironhoof');
+      meetCamp(engine, events); // spawn (mongol under the spy) + the meeting
+      expect(nm.currentClan?.id).toBe('mongol');
 
       expect(nm.resolveParley('pass').ok).toBe(true); // refusal #1 — tolerated
       expect(nm.isAngry).toBe(false);

@@ -339,9 +339,11 @@ export interface AudienceNotice {
    * A non-civ speaker (the nomad envoy): i18n key + icon shown instead of a
    * leader portrait. `nameKey` is resolved at render time so a language
    * switch mid-game still works. `image` is the big art (falls back to the
-   * icon while the art does not exist), `subKey` an epithet line.
+   * faction's built-in poster, then the icon, while the art does not exist),
+   * `subKey` an epithet line, `id` the faction id behind the portrait
+   * (`bedouin` / `mongol` / `sami`).
    */
-  speaker?: { nameKey: string; icon: string; image?: string; subKey?: string };
+  speaker?: { id?: string; nameKey: string; icon: string; image?: string; subKey?: string };
   /** i18n key of the spoken opening line (the nomads' lead). */
   leadKey?: string;
   /**

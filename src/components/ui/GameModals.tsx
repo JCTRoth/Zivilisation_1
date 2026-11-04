@@ -39,6 +39,9 @@ import type { TranslationKey } from '@/i18n';
 import { playSfx } from '@/utils/Sfx';
 import { captureCueForYear } from '@/utils/EngineEventHandlers';
 import { teamColor, teamName } from '@/data/TeamConstants';
+import ClanPortrait from './ClanPortrait';
+import { NOMAD_CHOICE_ICONS, NOMAD_STANDING_COLORS } from '@/data/NomadConstants';
+import type { NomadHallState } from '@/game/engine/nomad/NomadManager';
 
 const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
   const { t } = useTranslation();
@@ -533,6 +536,10 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
 
   // Diplomacy Modal — Civ I–style negotiation interface with leader portraits
   const [selectedDiploCiv, setSelectedDiploCiv] = useState<number | null>(null);
+  // The nomads are not a civ: selecting their row opens their OWN panel (see
+  // renderDiplomacy) instead of the negotiation ledger, which would happily
+  // ask the diplomacy manager about a court that has no entry in it.
+  const [showNomadHall, setShowNomadHall] = useState(false);
   // Outcome feed for proposals the player sends from this screen. Previously
   // this state was written and thrown away, so a rejected proposal produced no
   // visible feedback at all.
@@ -568,6 +575,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     if (uiState.activeDialog !== 'diplomacy') return;
     if (diplomacyFocusCivId != null) {
       setSelectedDiploCiv(diplomacyFocusCivId);
+      setShowNomadHall(false);
       setShowTreatyPanel(false);
       setCounterProposal(null);
       actions.clearDiplomacyFocus();
@@ -692,9 +700,38 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       }
     } else if (outcome?.result === 'noGold') {
       notify('warning', t('nomad.noGold' as TranslationKey));
+    } else if (outcome?.result === 'notMeeting') {
+      // The gate rule: nobody stands with you anymore, so nothing is for
+      // sale. The audience stays OPEN — engine-side the parley is still
+      // live, and walking away is not an answer.
+      notify('warning', t('nomad.notMeeting' as TranslationKey));
+      return;
     }
     handleCloseDialog();
     actions.clearAudience();
+  };
+
+  /**
+   * A door picked from the NOMADS' panel in the negotiation hall. The same
+   * contract as `handleAudienceChoice` — the engine owns the camp, the
+   * promised terms and the outcome — but the hall STAYS open: reading about
+   * a tribe and dealing with it are two different screens, and only the
+   * latter is ever available without a meeting.
+   */
+  const handleNomadHallChoice = (choiceId: string): void => {
+    if (!gameEngine) return;
+    playSfx('uiSelect');
+    const outcome = gameEngine.nomadManager.resolveParley(choiceId);
+    if (outcome.ok && outcome.result) {
+      notify('success', t(`nomad.result.${outcome.result}` as TranslationKey, outcome.params ?? {}));
+    } else if (outcome.result === 'noGold') {
+      notify('warning', t('nomad.noGold' as TranslationKey));
+    } else if (outcome.result === 'notMeeting') {
+      notify('warning', t('nomad.notMeeting' as TranslationKey));
+    }
+    // Gold, technologies and (on a hire) unit owners all moved.
+    if (gameEngine.civilizations) actions.updateCivilizations([...gameEngine.civilizations]);
+    if (gameEngine.units) actions.updateUnits([...gameEngine.units]);
   };
 
   /**
@@ -721,6 +758,11 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       c.isAlive !== false &&
       (metCivIds === null || metCivIds.has(c.id)),
     );
+    // THE NOMADS ARE THEIR OWN COURT: they are not in `civilizations` (no
+    // `civilizations[-2]` entry exists), so they get their own row and their
+    // own panel — once sighted, they stay listed, the way a real court does.
+    const nomad: NomadHallState | null = gameEngine?.nomadManager?.hallState ?? null;
+    const nomadKnown = nomad?.known === true;
 
     const STATUS_ICONS: Record<string, string> = {
       peace: '🕊️',
@@ -1078,6 +1120,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     const closeDiplomacy = (): void => {
       handleCloseDialog();
       setSelectedDiploCiv(null);
+      setShowNomadHall(false);
       setDiplomacyLog([]);
       setShowTreatyPanel(false);
       setCounterProposal(null);
@@ -1088,8 +1131,19 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     // The hero artwork is the face across the table: the same procedural
     // portrait the audience panel uses, so the hall shows who you are dealing
     // with before it shows a single number. Nobody selected → the placeholder
-    // slot, captioned for the picture that belongs there.
-    const heroArt = portraitConfig ? (
+    // slot, captioned for the picture that belongs there. The nomads show
+    // their poster instead (they have no leader portrait).
+    const heroArt = showNomadHall && nomad ? (
+      <span className="diplomacy-hero-art diplomacy-hero-art--nomad">
+        <ClanPortrait
+          className="diplomacy-hero-art__nomad"
+          clanId={nomad.clanId}
+          image={nomad.image}
+          icon={nomad.icon}
+          alt={nomad.nameKey ? t(nomad.nameKey as TranslationKey) : t('nomad.diplo.title' as TranslationKey)}
+        />
+      </span>
+    ) : portraitConfig ? (
       <span className="diplomacy-hero-art">
         <LeaderPortrait
           config={portraitConfig}
@@ -1099,6 +1153,114 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
         />
       </span>
     ) : null;
+
+    /**
+     * THE NOMADS' PANEL — their own screen, because they are their own
+     * court (there is no `civilizations[-2]` for the ledger to read). It
+     * answers three questions and deliberately no more: who they are, how
+     * they stand towards you, and — THE GATE RULE — what is on the table.
+     * Without a meeting the doors are still drawn but LOCKED: you may read
+     * about a tribe you have not stood next to; you may not bargain with it.
+     */
+    const renderNomadHall = (state: NomadHallState): React.ReactNode => {
+      const name = state.nameKey
+        ? t(state.nameKey as TranslationKey)
+        : t('nomad.diplo.title' as TranslationKey);
+      const epithet = state.epithetKey ? t(state.epithetKey as TranslationKey) : '';
+      const standingColor = NOMAD_STANDING_COLORS[state.standing];
+      const choices = state.choices ?? [];
+      const canDeal = state.meeting && choices.length > 0;
+      const techLabel = (id: string): string =>
+        tTechName(id, technologies.find((tech) => tech.id === id)?.name ?? id);
+
+      return (
+        <>
+          {/* The face across the hall: their poster, their name, their temper. */}
+          <div className="diplomacy-audience diplomacy-audience--nomad">
+            <div
+              className="diplomacy-portrait-slot diplomacy-portrait-slot--nomad"
+              style={{ borderColor: standingColor }}
+            >
+              <ClanPortrait
+                className="diplomacy-nomad-art"
+                clanId={state.clanId}
+                image={state.image}
+                icon={state.icon}
+                alt={name}
+              />
+            </div>
+            <div className="diplomacy-leader-info">
+              <div className="diplomacy-leader-name">{name}</div>
+              <div className="diplomacy-leader-title">{epithet}</div>
+              <div
+                className="diplomacy-attitude-badge"
+                style={{ color: standingColor, borderColor: standingColor }}
+              >
+                {t(`nomad.standing.${state.standing}` as TranslationKey)}
+              </div>
+              <div className="gm-kv diplomacy-nomad-kv">
+                {t('nomad.diplo.stance' as TranslationKey, {
+                  stance: t(`nomad.stanceName.${state.stance}` as TranslationKey),
+                })}
+              </div>
+            </div>
+          </div>
+
+          <section className="gm-section">
+            <div className="gm-section-title">
+              {t('nomad.diplo.title' as TranslationKey)}
+            </div>
+            <p className="gm-prose">{t('nomad.diplo.about' as TranslationKey)}</p>
+          </section>
+
+          <section className="gm-section">
+            <div className="gm-section-title">
+              {t('nomad.parley.eyebrow' as TranslationKey)}
+            </div>
+            <p className={`gm-prose ${state.meeting ? '' : 'diplomacy-locked-value'}`}>
+              {canDeal
+                ? t('nomad.diplo.meeting' as TranslationKey)
+                : state.meeting
+                  ? t('nomad.diplo.noAudience' as TranslationKey)
+                  : t('nomad.diplo.locked' as TranslationKey)}
+            </p>
+
+            {/* The doors, exactly as the audience tabled them — disabled
+                until your units actually stand with theirs. */}
+            {choices.map((choice) => {
+              const params = choice.labelParams ? { ...choice.labelParams } : undefined;
+              if (params && typeof params.tech === 'string') {
+                params.tech = techLabel(String(params.tech));
+              }
+              const isQuiet = choice.variant === 'pass';
+              return (
+                <button
+                  key={choice.id}
+                  type="button"
+                  className={`diplomacy-btn ${isQuiet ? 'btn-war' : 'btn-peace'} diplomacy-nomad-door`}
+                  disabled={!state.meeting}
+                  title={state.meeting ? undefined : t('nomad.diplo.locked' as TranslationKey)}
+                  onClick={() => handleNomadHallChoice(choice.id)}
+                >
+                  {NOMAD_CHOICE_ICONS[choice.id] ? `${NOMAD_CHOICE_ICONS[choice.id]} ` : ''}
+                  {t(choice.labelKey as TranslationKey, params)}
+                </button>
+              );
+            })}
+
+            {state.campTile && (
+              <button
+                type="button"
+                className="touch-btn touch-btn--ghost diplomacy-nomad-find"
+                onClick={() => actions.focusCameraOnTile(state.campTile!.col, state.campTile!.row)}
+              >
+                🧭 {t('nomad.diplo.find' as TranslationKey)}
+              </button>
+            )}
+          </section>
+        </>
+      );
+    };
 
     return (
       <GameModal
@@ -1166,7 +1328,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               </div>
             </section>
           )}
-          {otherCivs.length === 0 ? (
+          {otherCivs.length === 0 && !nomadKnown ? (
             <section className="gm-section">
               <div className="gm-section-title">{t('gm.diplo.empty.title' as TranslationKey)}</div>
               <p className="gm-prose">{t('gm.diplo.empty.prose' as TranslationKey)}</p>
@@ -1221,7 +1383,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     <button
                       key={civ.id}
                       className={`diplomacy-civ-row ${isSelected ? 'selected' : ''}`}
-                      onClick={() => { setSelectedDiploCiv(civ.id); setShowTreatyPanel(false); setCounterProposal(null); }}
+                      onClick={() => { setSelectedDiploCiv(civ.id); setShowNomadHall(false); setShowTreatyPanel(false); setCounterProposal(null); }}
                     >
 
                       <span className="diplomacy-civ-name">
@@ -1240,11 +1402,52 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                     </button>
                   );
                 })}
+                {/* The nomads are not a civ row: their own entry, grouped
+                    apart, with their standing as the dot. Once sighted they
+                    stay here — the hall keeps its memory like everything else. */}
+                {nomadKnown && nomad && (
+                  <>
+                    <div className="gm-section-title diplomacy-pane-title diplomacy-pane-title--nomad">
+                      {t('nomad.diplo.title' as TranslationKey)}
+                    </div>
+                    <button
+                      type="button"
+                      className={`diplomacy-civ-row diplomacy-civ-row--nomad ${showNomadHall ? 'selected' : ''}`}
+                      onClick={() => { setShowNomadHall(true); setShowTreatyPanel(false); setCounterProposal(null); }}
+                    >
+                      <span className="diplomacy-civ-name">
+                        <span
+                          className="diplomacy-nomad-dot"
+                          data-standing={nomad.standing}
+                          aria-hidden="true"
+                        >
+                          ●
+                        </span>
+                        {nomad.nameKey
+                          ? t(nomad.nameKey as TranslationKey)
+                          : t('nomad.diplo.title' as TranslationKey)}
+                      </span>
+                      <span className="diplomacy-status-icon">{nomad.icon}</span>
+                    </button>
+                  </>
+                )}
               </div>
 
               {/* Right: Negotiation panel with portrait */}
-              <div className="diplomacy-negotiation" style={{ background: moodColors.bg, borderLeft: `2px solid ${moodColors.border}` }}>
-                {selectedCivData ? (
+              <div
+                className="diplomacy-negotiation"
+                style={
+                  showNomadHall && nomad
+                    ? {
+                      background: 'rgba(13, 19, 25, 0.72)',
+                      borderLeft: `2px solid ${NOMAD_STANDING_COLORS[nomad.standing]}`,
+                    }
+                    : { background: moodColors.bg, borderLeft: `2px solid ${moodColors.border}` }
+                }
+              >
+                {showNomadHall && nomad?.known ? (
+                  renderNomadHall(nomad)
+                ) : selectedCivData ? (
                   <>
                     {/* Portrait & leader info section */}
                     <div className="diplomacy-audience" style={{ boxShadow: `inset 0 0 40px ${moodColors.glow}` }}>

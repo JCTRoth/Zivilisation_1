@@ -116,10 +116,10 @@ describe('Audience screen', () => {
     // must carry the clan's nested speaker through to the notice.
     engine.onStateChange('NOMAD_CITY_OFFER', {
       speaker: {
-        nameKey: 'nomad.clan.sandborne.name',
-        subKey: 'nomad.clan.sandborne.epithet',
+        nameKey: 'nomad.clan.bedouin.name',
+        subKey: 'nomad.clan.bedouin.epithet',
         icon: '🐫',
-        image: '/assets/nomads/sandborne.png',
+        image: '/assets/nomads/bedouin.png',
       },
       leadKey: 'nomad.cityOffer.lead',
       eyebrowKey: 'nomad.cityOffer.eyebrow',
@@ -146,10 +146,10 @@ describe('Audience screen', () => {
     });
     expect(state.audienceNotice?.choices.map((c) => c.id)).toEqual(['buy_city', 'refuse_city']);
     expect(state.audienceNotice?.speaker).toMatchObject({
-      nameKey: 'nomad.clan.sandborne.name',
-      subKey: 'nomad.clan.sandborne.epithet',
+      nameKey: 'nomad.clan.bedouin.name',
+      subKey: 'nomad.clan.bedouin.epithet',
       icon: '🐫',
-      image: '/assets/nomads/sandborne.png',
+      image: '/assets/nomads/bedouin.png',
     });
   });
 
@@ -157,8 +157,8 @@ describe('Audience screen', () => {
     router.handle('NOMAD_PARLEY', {
       col: 7,
       row: 9,
-      speaker: { nameKey: 'nomad.clan.sandborne.name', icon: '🐫' },
-      leadKey: 'nomad.clan.sandborne.lead',
+      speaker: { nameKey: 'nomad.clan.bedouin.name', icon: '🐫' },
+      leadKey: 'nomad.clan.bedouin.lead',
       choices: [{ id: 'pass', labelKey: 'nomad.choice.pass', variant: 'pass' }],
     });
 
@@ -171,8 +171,8 @@ describe('Audience screen', () => {
     const before = useGameStore.getState().cameraPanRequest;
 
     router.handle('NOMAD_PARLEY', {
-      speaker: { nameKey: 'nomad.clan.sandborne.name', icon: '🐫' },
-      leadKey: 'nomad.clan.sandborne.lead',
+      speaker: { nameKey: 'nomad.clan.bedouin.name', icon: '🐫' },
+      leadKey: 'nomad.clan.bedouin.lead',
       choices: [{ id: 'pass', labelKey: 'nomad.choice.pass', variant: 'pass' }],
     });
 

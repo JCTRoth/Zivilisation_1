@@ -28,6 +28,7 @@ import { TILE_SIZE, TERRAIN_TYPES } from '@/data/TerrainData';
 import { TERRAIN_RESOURCES, TERRAIN_PROPERTIES, getResourceYields, RESOURCE_GLYPHS } from '@/data/TerrainConstants';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } from '@/data/TileImprovementConstants';
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
+import { NOMAD_CIV_ID } from '@/data/NomadConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import { getUnitIcon } from '@/utils/UnitIconLoader';
 import { TERRAIN_FONT_FAMILY } from '@/utils/TerrainFont';
@@ -2750,13 +2751,19 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
     // stays legible; the "glowing round indicator" (breathing ring) is removed
     // and its emphasis moves to the red tile outline (see renderPulsingUnits).
     const innerRadius = Math.max(8, Math.round(radius * 0.95));
-    ctx.beginPath();
-    ctx.fillStyle = civColor;
-    const backgroundAlpha = ctx.globalAlpha;
-    ctx.globalAlpha = backgroundAlpha * 0.2;
-    ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.globalAlpha = backgroundAlpha;
+    // THE NOMADS OWN NO COLOUR: their riders carry no circle on the map —
+    // the neutral fallback red would read as a barbarian war band. The icon
+    // stands on the terrain alone (a drop shadow keeps it legible below).
+    const wearsColour = civIndex !== NOMAD_CIV_ID;
+    if (wearsColour) {
+      ctx.beginPath();
+      ctx.fillStyle = civColor;
+      const backgroundAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = backgroundAlpha * 0.2;
+      ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.globalAlpha = backgroundAlpha;
+    }
 
     const unitTypeId = unit.type ? String(unit.type) : null;
     
@@ -2775,13 +2782,16 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
       );
     } else {
       // Fallback to emoji from unit data or text icon on colored circle
-      ctx.fillStyle = civColor;
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
-      const backgroundAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = backgroundAlpha * 0.2;
-      ctx.fill();
-      ctx.globalAlpha = backgroundAlpha;
+      // (no circle for the nomads — see `wearsColour` above).
+      if (wearsColour) {
+        ctx.fillStyle = civColor;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+        const backgroundAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = backgroundAlpha * 0.2;
+        ctx.fill();
+        ctx.globalAlpha = backgroundAlpha;
+      }
 
       const iconColor = this.isLightColor(civColor) ? '#111' : '#FFF';
       let emoji = '';
@@ -2798,12 +2808,20 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = iconColor;
+      if (!wearsColour) {
+        // Nothing to sit on: a drop shadow keeps the glyph readable on any
+        // terrain, which is the only reason the disc existed in the first place.
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+        ctx.shadowBlur = 4;
+      }
       try {
         ctx.fillText(emoji, centerX, centerY);
       } catch {
         const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
         ctx.fillText(fallback, centerX, centerY);
       }
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     }
 
     if ((unit as Unit).isSleeping) {
@@ -2914,6 +2932,11 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
 
     const innerRadius = Math.max(8, Math.round(radius * 0.95));
 
+    // THE NOMADS OWN NO COLOUR: their riders carry no circle on the map —
+    // the neutral fallback red would read as a barbarian war band (see the
+    // same rule in drawUnitWithPulse).
+    const wearsColour = civIndex !== NOMAD_CIV_ID;
+
     const unitTypeId = unit.type ? String(unit.type) : null;
     
     // Try to load the image icon first (PNG or SVG)
@@ -2921,13 +2944,15 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
     
     if (iconResource && typeof iconResource !== 'string' && iconResource.complete) {
       // Draw colored circle background for SVG units (same as emoji units)
-      ctx.beginPath();
-      ctx.fillStyle = civColor;
-      ctx.arc(centerX, centerY, innerRadius, 0, 2.7 * Math.PI);
-      const backgroundAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = backgroundAlpha * 0.3;
-      ctx.fill();
-      ctx.globalAlpha = backgroundAlpha;
+      if (wearsColour) {
+        ctx.beginPath();
+        ctx.fillStyle = civColor;
+        ctx.arc(centerX, centerY, innerRadius, 0, 2.7 * Math.PI);
+        const backgroundAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = backgroundAlpha * 0.3;
+        ctx.fill();
+        ctx.globalAlpha = backgroundAlpha;
+      }
       
       // Draw the PNG/SVG image icon on top of the colored circle
       const iconSize = innerRadius * 2;
@@ -2940,13 +2965,16 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
       );
     } else {
       // Fallback to emoji from unit data or text icon on colored circle
-      ctx.beginPath();
-      ctx.fillStyle = civColor;
-      ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
-      const backgroundAlpha = ctx.globalAlpha;
-      ctx.globalAlpha = backgroundAlpha * 0.3;
-      ctx.fill();
-      ctx.globalAlpha = backgroundAlpha;
+      // (no circle for the nomads — see `wearsColour` above).
+      if (wearsColour) {
+        ctx.beginPath();
+        ctx.fillStyle = civColor;
+        ctx.arc(centerX, centerY, innerRadius, 0, 2 * Math.PI);
+        const backgroundAlpha = ctx.globalAlpha;
+        ctx.globalAlpha = backgroundAlpha * 0.3;
+        ctx.fill();
+        ctx.globalAlpha = backgroundAlpha;
+      }
 
       const iconColor = this.isLightColor(civColor) ? '#111' : '#FFF';
       let emoji = '';
@@ -2963,12 +2991,20 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = iconColor;
+      if (!wearsColour) {
+        // Nothing to sit on: a drop shadow keeps the glyph readable on any
+        // terrain, which is the only reason the disc existed in the first place.
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+        ctx.shadowBlur = 4;
+      }
       try {
         ctx.fillText(emoji, centerX, centerY);
       } catch {
         const fallback = (unit.type && unit.type[0]?.toUpperCase()) || 'U';
         ctx.fillText(fallback, centerX, centerY);
       }
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     }
 
     if (unitTypeId === 'settler') {

@@ -1,9 +1,9 @@
 /**
  * Nomads — a relationship, not an event.
  *
- * Three clans (the Sandborne traders, the Ironhoof riders, the Greywind
- * seers) with three temperaments visit once per single-human game. What
- * happens after is remembered:
+ * Three peoples (the Bedouin traders, the Mongol riders, the Sámi seers)
+ * with three temperaments visit once per single-human game. What happens
+ * after is remembered:
  *
  *   * **Dealt with** (tech / maps / hire) → standing `friendly`. They leave
  *     after the linger window and ONE return visit follows 30 rounds later,
@@ -38,9 +38,9 @@
  *     nomads (v1). The settlement TILE flag does persist — its food/denfense
  *     effects live in engine code that reads the map, not in this manager.
  *   * **Single human seat only.**
- *   * **Fair by construction.** Half research cost (clan-adjusted), above
- *     build cost for the horde (clan-adjusted), the promised terms are what
- *     the BUTTON said.
+ *   * **Fair by construction.** Half research cost (clan-adjusted), five
+ *     times build cost for the riders who actually stand with you
+ *     (clan-adjusted), the promised terms are what the BUTTON said.
  */
 import type GameEngine from '../GameEngine';
 import type { AudienceChoice, Civilization, City, Unit } from '../../../../types/game';
@@ -120,12 +120,44 @@ import {
 /** What a resolved parley did — the UI turns this into a localized toast. */
 export interface NomadOutcome {
   ok: boolean;
-  /** `noGold`: the treasury cannot meet the hire price (UI shows the hint). */
+  /**
+   * `noGold`: the treasury cannot meet the hire price (UI shows the hint).
+   * `notMeeting`: a door that sells the riders was answered from afar —
+   * nobody stands with you, so nothing changes (UI shows the hint).
+   */
   result?:
     | 'tech' | 'techGift' | 'maps' | 'hire' | 'settle' | 'pass' | 'noGold'
+    | 'notMeeting'
     | 'cityBought' | 'cityRefused'
     | 'goldGiven' | 'goldRefused';
   params?: Record<string, string | number>;
+}
+
+/**
+ * The tribe as the diplomacy hall needs it: who they are, how they stand
+ * towards you, where they are and what is on the table. Every field is a
+ * snapshot — the hall reads this, `resolveParley` is the only way to act.
+ */
+export interface NomadHallState {
+  /** Sighted at least once — the hall lists them from then on. */
+  known: boolean;
+  clanId: string | null;
+  nameKey: string | null;
+  epithetKey: string | null;
+  /** Emoji fallback while the clan art does not exist. */
+  icon: string;
+  /** The clan's portrait (`/assets/nomads/<clan>.png`). */
+  image: string | null;
+  standing: NomadStanding;
+  /** The tribe's current doctrine: roads / treasury / market / steel / bribery. */
+  stance: NomadStance;
+  /** The player's units stand with them right now — the gate is open. */
+  meeting: boolean;
+  /** The doors on the table right now; null when there is nothing to treat about. */
+  choices: AudienceChoice[] | null;
+  visits: number;
+  /** Where their tents stand; null when no camp is on the map. */
+  campTile: { col: number; row: number } | null;
 }
 
 interface NomadPending {
@@ -186,8 +218,18 @@ export class NomadManager {
   // ── The current camp (per visit) ──────────────────────────────────────
   private camp: { col: number; row: number } | null = null;
   private campUnitIds: string[] = [];
+  /** The door's price: the riders who STAND WITH YOU, never the whole tribe. */
   private hireCost = 0;
   private departed = false;
+  /** The player bought riders at the gate (part of the horde may still be theirs). */
+  private playerHired = false;
+  /**
+   * The doors of the audience currently on the table, as last emitted. Read
+   * through `openChoices`, which only hands them out while `liveParley`
+   * says an audience is actually open — so a stale copy can never sell
+   * anything after the visit ended.
+   */
+  private liveChoices: AudienceChoice[] | null = null;
 
   // ── The splinter camp (the split; same tribe, second tent) ────────────
   private splinter: { col: number; row: number } | null = null;
@@ -225,7 +267,7 @@ export class NomadManager {
 
   get isSpawned(): boolean { return this.visitCount > 0; }
   get isParleyDone(): boolean { return this.parleyDone && this.visitCount > 0 && this.campAlive(); }
-  get isHired(): boolean { return this.hired; }
+  get isHired(): boolean { return this.hired || this.playerHired; }
   get isDeparted(): boolean { return this.departed && !this.campAlive(); }
   get isSettled(): boolean { return this.settled; }
   get isAngry(): boolean { return this.standing === 'angry'; }
@@ -237,6 +279,54 @@ export class NomadManager {
   /** What the tribe is currently about — 'roads' until the first review. */
   get currentStance(): NomadStance { return this.ai.currentStance; }
   get campTile(): { col: number; row: number } | null { return this.camp ? { ...this.camp } : null; }
+
+  /**
+   * The doors of the audience currently on the table — a copy, and only
+   * while an audience is actually open (`liveParley`). The diplomacy hall
+   * renders these; `resolveParley` is the only thing allowed to execute
+   * them, and it re-checks the meeting before it sells anything.
+   */
+  get openChoices(): AudienceChoice[] | null {
+    if (this.liveParley === null || !this.liveChoices) return null;
+    return this.liveChoices.map((choice) => ({
+      ...choice,
+      labelParams: choice.labelParams ? { ...choice.labelParams } : undefined,
+    }));
+  }
+
+  /**
+   * Are the player's units standing with the nomads RIGHT NOW? The gate on
+   * every action the diplomacy hall offers: without a meeting there is
+   * reading about them, not dealing with them.
+   */
+  isDirectlyMeeting(): boolean {
+    const humanId = this.humanCivId();
+    if (humanId === null || this.visitCount === 0) return false;
+    return this.meetingUnitIds(humanId).length > 0;
+  }
+
+  /**
+   * The tribe as the diplomacy hall shows it: who they are, how they feel
+   * about you, where they are and what is on the table. Read-only — the
+   * hall must never be able to nudge the state machine by looking at it.
+   */
+  get hallState(): NomadHallState {
+    const humanId = this.humanCivId();
+    return {
+      known: this.visitCount > 0,
+      clanId: this.clan?.id ?? null,
+      nameKey: this.clan?.nameKey ?? null,
+      epithetKey: this.clan?.epithetKey ?? null,
+      icon: this.clan?.icon ?? '🐎',
+      image: this.clan?.image ?? null,
+      standing: this.standing,
+      stance: this.ai.currentStance,
+      meeting: humanId !== null && this.meetingUnitIds(humanId).length > 0,
+      choices: this.openChoices,
+      visits: this.visitCount,
+      campTile: this.camp ? { ...this.camp } : null,
+    };
+  }
 
   /** Drop all state (new game / load): v1 nomads never survive a save. */
   reset(): void {
@@ -269,6 +359,8 @@ export class NomadManager {
     this.settlementSpots = [];
     this.hireCost = 0;
     this.departed = false;
+    this.playerHired = false;
+    this.liveChoices = null;
     this.parleyEmitted = false;
     this.parleyDone = false;
     this.secondEmitted = false;
@@ -911,10 +1003,12 @@ export class NomadManager {
       },
       { id: 'refuse_gold', labelKey: 'nomad.choice.refuseGold', variant: 'pass' },
     ];
+    this.liveChoices = choices;
     this.gameEngine.onStateChange?.('NOMAD_MONEY_REQUEST', {
       // Where they stand: the camera takes the viewer to the plea.
       ...(this.liveSpot() ?? {}),
       speaker: {
+        id: clan.id,
         nameKey: clan.nameKey,
         subKey: clan.epithetKey,
         icon: clan.icon,
@@ -1163,11 +1257,13 @@ export class NomadManager {
       },
       { id: 'refuse_city', labelKey: 'nomad.choice.refuseCity', variant: 'pass' },
     ];
+    this.liveChoices = choices;
     this.gameEngine.onStateChange?.('NOMAD_CITY_OFFER', {
       // The offer is ABOUT a city — take the viewer to what is for sale.
       col: city.col,
       row: city.row,
       speaker: {
+        id: clan.id,
         nameKey: clan.nameKey,
         subKey: clan.epithetKey,
         icon: clan.icon,
@@ -1198,6 +1294,12 @@ export class NomadManager {
     if (humanId === null) return { ok: false };
     const human = this.gameEngine.civilizations?.[humanId];
     if (!human) return { ok: false };
+    // THE GATE RULE, checked before anything is spent: a door that sells
+    // riders can only be answered while your units stand with theirs. The
+    // audience stays open — walking away is not an answer.
+    if (choiceId === 'hire' && this.meetingUnitIds(humanId).length === 0) {
+      return { ok: false, result: 'notMeeting' };
+    }
     this.liveParley = null;
 
     const outcome = this.applyChoice(choiceId, humanId, human);
@@ -1239,21 +1341,37 @@ export class NomadManager {
       }
 
       case 'hire': {
+        // Only the riders who STAND WITH YOU are for sale — the rest of the
+        // tribe keeps its tents, its chest and its neutrality.
+        const meeting = this.meetingUnitIds(humanId);
+        if (meeting.length === 0) return { ok: false, result: 'notMeeting' };
         const cost = this.hireCost;
         if ((human.resources?.gold ?? 0) < cost) return { ok: false, result: 'noGold' };
         human.resources.gold = (human.resources.gold ?? 0) - cost;
-        // The horde is SOLD, not given: the payment lands in the tribe's
+        // The riders are SOLD, not given: the payment lands in the tribe's
         // chest (the same purse the market and the bazaars draw from), and
         // being paid by you makes them well-disposed — a friendly court
-        // earns the envoy's return visit even though the horde marched off.
+        // earns the envoy's return visit even though the riders marched off.
         this.treasury += cost;
-        this.convertUnits(humanId);
-        this.hired = true;
+        this.convertUnits(humanId, meeting);
+        this.disbandFromCamp(meeting);
+        this.playerHired = true;
         this.parleyDone = true;
         this.parleyResolvedRound = this.lastRound;
         this.standing = 'friendly';
-        this.retireCampForHire();
-        return { ok: true, result: 'hire', params: { gold: cost } };
+        const stillRiding = this.allCampUnitIds().some((id) => this.unitById(id) !== undefined);
+        if (stillRiding) {
+          // Somebody is left at the tents: the tribe lingers on (raced, then
+          // departing as always) and can sell the rest of its riders at a
+          // later meeting.
+          this.endVisitWithLinger();
+        } else {
+          // The whole group came to the gate: the camp identity ends with
+          // the sale (nothing may ever raid, anger or depart these riders).
+          this.hired = true;
+          this.retireCampForHire();
+        }
+        return { ok: true, result: 'hire', params: { gold: cost, count: meeting.length } };
       }
 
       case 'settle': {
@@ -1590,12 +1708,10 @@ export class NomadManager {
     // The knowledge counter runs from the visit: their first brokered sale
     // lands NOMAD_KNOWLEDGE_ROUNDS later, not mid-parley.
     this.lastKnowledgeRound = round;
-    this.hireCost = Math.ceil(
-      ids.reduce((sum, id) => {
-        const type = String(this.unitById(id)?.type ?? '');
-        return sum + (UNIT_PROPS[type]?.cost ?? 10);
-      }, 0) * NOMAD_HIRE_COST_FACTOR * (this.clan?.hirePriceFactor ?? 1),
-    );
+    // Provisional: nobody has met them yet, so there is nothing to sell —
+    // emitParley replaces this with the price of the riders you actually
+    // meet at the gate (see meetingUnitIds).
+    this.hireCost = this.hirePriceFor(ids);
     this.visitCount += 1;
     // You SEE the strangers arrive — and so does the story.
     this.gameEngine.revealArea(tile.col, tile.row, 4, humanId);
@@ -1618,15 +1734,12 @@ export class NomadManager {
     let goldAmount: number | undefined;
     this.pending = null;
     this.settleRolled = false;
-    // The horde is what it IS at the moment of speaking: a camp that has
-    // gathered riders since the first meeting now hires for more — the
-    // price is again the horde's build cost × 1.1 × the clan's factor.
-    this.hireCost = Math.ceil(
-      this.allCampUnitIds().reduce((sum, id) => {
-        const type = String(this.unitById(id)?.type ?? '');
-        return sum + (UNIT_PROPS[type]?.cost ?? 10);
-      }, 0) * NOMAD_HIRE_COST_FACTOR * (this.clan?.hirePriceFactor ?? 1),
-    );
+    // THE HIRE DOOR is priced at the riders who STAND WITH YOU — the ones
+    // this meeting can actually hand over, at five times their build cost
+    // (× the clan's factor). Nobody at the gate means nothing for sale:
+    // the door is not tabled at all (you hire the riders you met).
+    const meeting = this.meetingUnitIds(humanId);
+    this.hireCost = this.hirePriceFor(meeting);
 
     // A returning friendly court's gift: the chart they promised — given
     // the moment they actually stand at your gate (the visit itself), and
@@ -1680,32 +1793,38 @@ export class NomadManager {
           this.pending = { ...(this.pending ?? {}), settle: settleTile };
         }
       }
-      choices.push({
-        id: 'hire',
-        labelKey: 'nomad.choice.hire',
-        labelParams: { gold: this.hireCost },
-        variant: 'accept',
-      });
+      if (meeting.length > 0) {
+        choices.push({
+          id: 'hire',
+          labelKey: 'nomad.choice.hire',
+          labelParams: { gold: this.hireCost, count: meeting.length },
+          variant: 'accept',
+        });
+      }
       choices.push({ id: 'pass', labelKey: 'nomad.choice.pass', variant: 'pass' });
       this.parleyEmitted = true;
     } else {
-      choices.push({
-        id: 'hire',
-        labelKey: 'nomad.choice.hire',
-        labelParams: { gold: this.hireCost },
-        variant: 'accept',
-      });
+      if (meeting.length > 0) {
+        choices.push({
+          id: 'hire',
+          labelKey: 'nomad.choice.hire',
+          labelParams: { gold: this.hireCost, count: meeting.length },
+          variant: 'accept',
+        });
+      }
       choices.push({ id: 'farewell', labelKey: 'nomad.choice.farewell', variant: 'pass' });
       this.secondEmitted = true;
     }
 
     this.lastEmitRound = round;
     this.liveParley = second ? 'second' : 'first';
+    this.liveChoices = choices;
     this.gameEngine.onStateChange?.('NOMAD_PARLEY', {
       // Where they stand — the MEETING spot at the gate: the camera takes
       // the viewer to the place this audience is about.
       ...(this.liveSpot() ?? {}),
       speaker: {
+        id: clan.id,
         nameKey: clan.nameKey,
         subKey: clan.epithetKey,
         icon: clan.icon,
@@ -1720,9 +1839,11 @@ export class NomadManager {
     });
   }
 
-  /** Every eligible AI court may bid for the horde, cheapest chance first. */
+  /** Every eligible AI court may bid for the whole camp, cheapest chance first. */
   private tryAiHire(humanId: number): void {
-    const cost = this.hireCost;
+    // An AI court bargains with the TRIBE, not at a gate: it buys whatever
+    // is still riding (the player may already have hired their share).
+    const cost = this.campSaleCost();
     for (const civ of this.gameEngine.civilizations ?? []) {
       if (!civ.isAlive || civ.id === humanId || civ.isHuman === true) continue;
       if ((civ.resources?.gold ?? 0) < cost) continue;
@@ -1744,9 +1865,9 @@ export class NomadManager {
     }
   }
 
-  /** The horde changes colors: neutral units become the owner's units. */
-  private convertUnits(ownerId: number): void {
-    for (const id of this.allCampUnitIds()) {
+  /** The riders change colors: neutral units become the owner's units. */
+  private convertUnits(ownerId: number, ids: readonly string[] = this.allCampUnitIds()): void {
+    for (const id of ids) {
       const unit = this.unitById(id);
       if (!unit) continue;
       unit.civilizationId = ownerId;
@@ -1756,6 +1877,62 @@ export class NomadManager {
       unit.movesRemaining = unit.maxMoves ?? unit.movesRemaining;
       unit.orders = null;
     }
+  }
+
+  /**
+   * Sold riders leave the tribe's books: they are the buyer's units now, and
+   * nothing in the camp machinery (raids, anger, departure, musters) may ever
+   * touch them again. A tent with nobody around it folds back into the
+   * tribe's remaining fire rather than standing as a ghost camp.
+   */
+  private disbandFromCamp(ids: readonly string[]): void {
+    const gone = new Set(ids);
+    this.campUnitIds = this.campUnitIds.filter((id) => !gone.has(id));
+    this.splinterUnitIds = this.splinterUnitIds.filter((id) => !gone.has(id));
+    if (this.splinterUnitIds.length === 0) this.splinter = null;
+    if (this.campUnitIds.length === 0) this.camp = null;
+  }
+
+  /**
+   * THE HIRE SET — the camp units that STAND WITH the player right now: on
+   * one of their cities' tiles, or within one tile of one of their units.
+   * This is the envoy's contact rule applied per unit, and it is exactly
+   * what the hire door may sell: the riders you met, never a horde scattered
+   * across the map (a splinter camp four tiles away was never yours to buy).
+   */
+  private meetingUnitIds(humanId: number): string[] {
+    const met: string[] = [];
+    for (const id of this.allCampUnitIds()) {
+      const unit = this.unitById(id);
+      if (!unit) continue;
+      const onCity = (this.gameEngine.cities ?? []).some(
+        (c) => c.civilizationId === humanId && c.col === unit.col && c.row === unit.row,
+      );
+      const besideUnit = (this.gameEngine.units ?? []).some(
+        (u) =>
+          u.civilizationId === humanId
+          && !u.isDefeated
+          && Math.max(Math.abs(u.col - unit.col), Math.abs(u.row - unit.row)) <= 1,
+      );
+      if (onCity || besideUnit) met.push(id);
+    }
+    return met;
+  }
+
+  /** The price of THIS group of riders: build cost × 5 × the clan's factor. */
+  private hirePriceFor(unitIds: readonly string[]): number {
+    if (unitIds.length === 0) return 0;
+    return Math.ceil(
+      unitIds.reduce((sum, id) => {
+        const type = String(this.unitById(id)?.type ?? '');
+        return sum + (UNIT_PROPS[type]?.cost ?? 10);
+      }, 0) * NOMAD_HIRE_COST_FACTOR * (this.clan?.hirePriceFactor ?? 1),
+    );
+  }
+
+  /** What the whole remaining camp would cost a court that buys the tribe. */
+  private campSaleCost(): number {
+    return this.hirePriceFor(this.allCampUnitIds());
   }
 
   private removeCampUnits(): void {
@@ -1869,24 +2046,13 @@ export class NomadManager {
    * standing inside one is how a visitor appears; a FIELD tile is never
    * shared across civs — the game's oldest invariant — so meeting a unit
    * means standing beside it. No meeting, no envoy.
+   *
+   * The same predicate, per unit, is what the hire door sells
+   * (`meetingUnitIds`): one rule for "they are here" and for "you may buy
+   * the ones who are".
    */
   private hasMetPlayer(humanId: number): boolean {
-    const camp = this.allCampUnitIds()
-      .map((id) => this.unitById(id))
-      .filter((u): u is Unit => u !== undefined);
-    if (camp.length === 0) return false;
-    const onCity = (c: Unit): boolean =>
-      (this.gameEngine.cities ?? []).some(
-        (city) => city.civilizationId === humanId && city.col === c.col && city.row === c.row,
-      );
-    const besideUnit = (c: Unit): boolean =>
-      (this.gameEngine.units ?? []).some(
-        (u) =>
-          u.civilizationId === humanId
-          && !u.isDefeated
-          && Math.max(Math.abs(u.col - c.col), Math.abs(u.row - c.row)) <= 1,
-      );
-    return camp.some((c) => onCity(c) || besideUnit(c));
+    return this.meetingUnitIds(humanId).length > 0;
   }
 
   /**

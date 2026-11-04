@@ -280,7 +280,7 @@ describe('Nomads — the city market', () => {
     const second = h.w.landNear(16, 16, 4);
     h.w.settle('Second', second.col, second.row, 0, 2);
     const nm = h.engine.nomadManager;
-    vi.spyOn(Math, 'random').mockReturnValue(0.999); // greywind; no AI takes the camp
+    vi.spyOn(Math, 'random').mockReturnValue(0.999); // the Sámi; no AI takes the camp
     meetCamp(h.engine, h.events); // spawn + the meeting (the envoy at +1)
     expect(nm.resolveParley('pass').ok).toBe(true);
     leaveGate(h.engine); // the player answered and walked away from the gate
