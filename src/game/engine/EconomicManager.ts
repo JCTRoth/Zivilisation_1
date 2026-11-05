@@ -21,7 +21,7 @@ import {
   getResourceYields,
 } from '../../data/TerrainConstants';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '../../data/TileImprovementConstants';
-import { NOMAD_SETTLEMENT_DRAIN_RADIUS, NOMAD_SETTLEMENT_FOOD_COST } from '../../data/NomadConstants';
+import { NOMAD_CAMP_FOOD_COST, NOMAD_SETTLEMENT_DRAIN_RADIUS, NOMAD_SETTLEMENT_FOOD_COST } from '../../data/NomadConstants';
 import { SPECIALIST_YIELDS, CITY_UPKEEP_PER_CITY, FREE_CITY_SUPPORT, TREATY_ROUTE_TRADE_MULTIPLIER } from '../../data/GameConstants';
 import { cityBuildingEffects } from './BuildingEffects';
 import type { City, Civilization, Unit } from '../../../types/game';
@@ -1182,12 +1182,14 @@ export class EconomicManager {
         !unit.isNoneUnit,
     ).length * settlerFoodPerTurn;
 
-    // A nomad settlement eats its keep: every settlement in the city's
-    // neighbourhood costs active food each turn (NOMAD_SETTLEMENT_FOOD_COST)
-    // — the trade-off for the defenders it raised. Charged here so the
-    // player's projection, the growth pipeline and the AI governor all see
-    // the same number.
-    const nomadDrain = this.nomadSettlementDrain(city);
+    // Nomads in the neighbourhood eat their keep: a PERMANENT settlement
+    // (NOMAD_SETTLEMENT_FOOD_COST — the trade-off for the defenders it
+    // raised) and any VISITING camp standing within reach
+    // (NOMAD_CAMP_FOOD_COST — a tribe parked on your doorstep costs you
+    // food whether or not you invited them). Charged here so the player's
+    // projection, the growth pipeline and the AI governor all see the
+    // same number.
+    const nomadDrain = this.nomadDrain(city);
 
     const produced = city?.yields?.food ?? city?.food ?? 0;
     // The appetite ramp: flat 2 a citizen up to size 5, then +0.2 per citizen
@@ -1218,11 +1220,14 @@ export class EconomicManager {
   }
 
   /**
-   * Food drained by nomad settlements in the city's neighbourhood — a
-   * bounded ring scan (never a full-map walk: this runs per city per turn
-   * for the projection, the growth pipeline and the AI governor alike).
+   * Food drained by the nomads in the city's neighbourhood — a bounded
+   * ring scan (never a full-map walk: this runs per city per turn for the
+   * projection, the growth pipeline and the AI governor alike): their
+   * PERMANENT settlement tiles, plus every VISITING camp standing there.
+   * A tribe parked on your doorstep costs you food whether or not you
+   * invited them; a settlement costs food forever (and defends you).
    */
-  private nomadSettlementDrain(city: City): number {
+  private nomadDrain(city: City): number {
     if (!city) return 0;
     let drain = 0;
     for (let dc = -NOMAD_SETTLEMENT_DRAIN_RADIUS; dc <= NOMAD_SETTLEMENT_DRAIN_RADIUS; dc++) {
@@ -1231,7 +1236,37 @@ export class EconomicManager {
         if (tile?.nomadSettlement) drain += NOMAD_SETTLEMENT_FOOD_COST;
       }
     }
-    return drain;
+    // No visitors, no bill — and no scan either (this runs per city per
+    // turn, in games where the nomads never even appear).
+    const nomads = this.gameEngine.nomadManager;
+    if (!nomads || drain === 0 && !nomads.isSpawned) return drain;
+
+    // The visiting camp counts per mouth: every rider standing within
+    // reach of the gate eats its keep, for as long as they stand there —
+    // a deal with them ends, the bill with it.
+    const riders = nomads.unitsNear?.(
+      city.col,
+      city.row,
+      NOMAD_SETTLEMENT_DRAIN_RADIUS,
+    ) ?? 0;
+    return drain + riders * NOMAD_CAMP_FOOD_COST;
+  }
+
+  /**
+   * Does a nomad settlement stand in this city's neighbourhood? A settled
+   * camp earns its host city one trade-route slot beyond the cap
+   * (`NOMAD_TRADE_ROUTE_SLOT_BONUS`) — their stakes beside your fields
+   * are worth a fourth road.
+   */
+  hasNomadSettlementNear(city: City): boolean {
+    if (!city) return false;
+    for (let dc = -NOMAD_SETTLEMENT_DRAIN_RADIUS; dc <= NOMAD_SETTLEMENT_DRAIN_RADIUS; dc++) {
+      for (let dr = -NOMAD_SETTLEMENT_DRAIN_RADIUS; dr <= NOMAD_SETTLEMENT_DRAIN_RADIUS; dr++) {
+        const tile = this.gameEngine.getTileAt?.(city.col + dc, city.row + dr);
+        if (tile?.nomadSettlement) return true;
+      }
+    }
+    return false;
   }
 
   /**

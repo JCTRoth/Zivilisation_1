@@ -315,10 +315,14 @@ describe('Nomads — the parley', () => {
     expect(nomadUnits(engine)).toHaveLength(0);
     expect(eventsOf(events, 'NOMAD_DEPARTED')).toHaveLength(1);
 
-    // A neutral refusal earns nothing: no return visit, ever.
+    // A neutral refusal earns nothing: no return visit, ever. The tribe may
+    // well be riding at a RIVAL's court by now (it travels camp by camp) —
+    // what must hold is that it never comes back to YOUR gate.
+    const parleysSoFar = eventsOf(events, 'NOMAD_PARLEY').length;
     for (let r = 13; r < 60; r++) nm.processRound(r);
     expect(nm.visits).toBe(1);
-    expect(nomadUnits(engine)).toHaveLength(0);
+    expect(eventsOf(events, 'NOMAD_PARLEY')).toHaveLength(parleysSoFar);
+    expect(nm.isDeparted, 'they never come back to your court').toBe(true);
   });
 
   it('a dismissed envoy re-offers when the player stands at the camp — not every round', async () => {
@@ -350,7 +354,7 @@ describe('Nomads — the parley', () => {
 });
 
 describe('Nomads — the race and the departure', () => {
-  it('any AI court may hire the camp after the parley; it then belongs to them', async () => {
+  it('a rival court may buy ONE GROUP after the parley — and the player is told', async () => {
     const { engine, events } = await (async () => {
       const h = await world();
       h.settle();
@@ -358,20 +362,48 @@ describe('Nomads — the race and the departure', () => {
       return h;
     })();
     const nm = engine.nomadManager;
-    nm.resolveParley('maps'); // dealt — the camp lingers
+    nm.resolveParley('maps'); // dealt — the camp lingers, grows, splits
+    // The player answered and walks away from the gate: no follow-up
+    // audience may sit open while a rival is bidding (the screen is busy
+    // otherwise — see the dismissal rule).
+    engine.units = engine.units.filter((u) => u.id !== 'witness');
     engine.civilizations[1].resources.gold = 500;
 
-    const spy = vi.spyOn(Math, 'random').mockReturnValue(0); // guaranteed win
+    // Math.random pinned LOW: the wander must keep closing in (a pinned 0
+    // makes every step a sideways drift) and the rider roll must come up as
+    // a purchase the moment there is a SECOND camp to sell — never the last.
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0);
     try {
-      nm.processRound(NOMAD_TRIGGER_ROUND + 1 + NOMAD_AI_HIRE_MIN_ROUND_GAP);
+      // The race only opens NOMAD_AI_HIRE_MIN_ROUND_GAP after the answer,
+      // and the tribe only HAS a second camp to sell once it has grown to
+      // six riders (one every eight rounds) — cover both.
+      const from = NOMAD_TRIGGER_ROUND + 1 + NOMAD_AI_HIRE_MIN_ROUND_GAP;
+      for (let r = NOMAD_TRIGGER_ROUND + 2; r <= from + 8; r++) {
+        nm.processRound(r);
+        if (nm.isHired) break;
+      }
     } finally {
       spy.mockRestore();
     }
-    expect(nm.isHired).toBe(true);
-    expect(nomadUnits(engine).every((u) => u.civilizationId === 1)).toBe(true);
-    const hired = eventsOf(events, 'NOMAD_HIRED');
+
+    expect(nm.isHired, 'a court bought a group off the tribe').toBe(true);
+    // `nomadUnits` only ever lists the TRIBE's (-2) riders, so the sold ones
+    // are counted by their new uniform: military units now wearing civ 1.
+    const sold = engine.units.filter(
+      (u) => u.civilizationId === 1 && !u.isDefeated && u.type !== UNIT_TYPES.NOMAD_CARAVAN
+        && u.type !== 'settler',
+    );
+    const left = nomadUnits(engine);
+    expect(sold.length, 'one group changed hands').toBeGreaterThan(0);
+    expect(left.length, 'the tribe is never sold out entirely').toBeGreaterThan(0);
+    expect(engine.civilizations[1].resources.gold).toBeLessThan(500);
+    // The player is TOLD — an announcement with a clan's face on it, not a
+    // toast that scrolls away (it rides the audience machinery).
+    const hired = eventsOf(events, 'NOMAD_GROUP_HIRED');
     expect(hired).toHaveLength(1);
     expect(hired[0].data.civId).toBe(1);
+    expect(hired[0].data.leadKey).toBe('nomad.groupHired.lead');
+    expect(hired[0].data.speaker.nameKey).toMatch(/^nomad\.clan\.[a-z]+\.name$/);
   });
 
   it('with nobody hiring, the dealt-with camp walks off on the linger timer', async () => {
@@ -393,7 +425,12 @@ describe('Nomads — the race and the departure', () => {
     }
     expect(nm.isDeparted).toBe(true);
     expect(nomadUnits(engine)).toHaveLength(0);
-    expect(eventsOf(events, 'NOMAD_DEPARTED')).toHaveLength(1);
+    // Two groups leave on their own clocks ("one travels, one stays"), so a
+    // grown tribe is announced twice — but never announced twice from a
+    // court that is not yours.
+    const departures = eventsOf(events, 'NOMAD_DEPARTED');
+    expect(departures.length).toBeGreaterThanOrEqual(1);
+    expect(departures.every((d) => d.data.from === 0)).toBe(true);
   });
 });
 

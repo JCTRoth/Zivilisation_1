@@ -621,6 +621,10 @@ const BLOCKING_DIALOGS: ReadonlyArray<{ text: string; button: string }> = [
   // to buy one of your cities. It has no "Pass in peace" door — refuse it,
   // which also blacklists that city so the offer cannot return this run.
   { text: 'The Nomad Market', button: 'Refuse — the city stays yours' },
+  // A rival court bought a GROUP of nomad riders: an announcement with
+  // nothing to decide — one button to read it and move on (its eyebrow is
+  // deliberately NOT the parley's, so this entry cannot match a parley).
+  { text: 'Riders bought', button: 'End the audience' },
   { text: 'Wanderers at your gate', button: 'Pass in peace' },
   // The city-event story modal ("Washington is founded") opens the moment a
   // settler founds a city. Escape alone cannot clear it: the following

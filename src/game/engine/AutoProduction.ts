@@ -9,6 +9,7 @@ import { PURCHASE_GOLD_PER_SHIELD, CARAVAN_THREAT_RADIUS, EARLY_TECH_EXCHANGE_MA
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { WONDERS, wonderGroupMembers } from '@/data/WonderData';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { NOMAD_TRADE_ROUTE_SLOT_BONUS } from '@/data/NomadConstants';
 import {
   assessCityThreat,
   calculateDangerThreshold,
@@ -1960,12 +1961,18 @@ export class AutoProduction {
   private shouldBuildCaravan(civ: Civilization, city: City, plannedTypes: string[]): boolean {
     if (!canBuildUnit(civ, 'caravan')) return false;
 
-    // At least one city has room for more trade routes (max 3 per city).
+    // At least one city has room for more trade routes (max 3 per city —
+    // plus the slot a nomad settlement beside that city buys).
     const civCities = this.gameEngine.cities.filter(
       (c: City) => c.civilizationId === civ.id,
     );
     const hasRoom = civCities.some(
-      (c: City) => (c.tradeRoutes?.length ?? 0) < MAX_CARAVAN_TRADE_ROUTES,
+      (c: City) =>
+        (c.tradeRoutes?.length ?? 0)
+        < MAX_CARAVAN_TRADE_ROUTES
+          + (this.gameEngine.economicManager?.hasNomadSettlementNear?.(c) === true
+            ? NOMAD_TRADE_ROUTE_SLOT_BONUS
+            : 0),
     );
     if (!hasRoom) return false;
 

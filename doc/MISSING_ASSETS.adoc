@@ -19,9 +19,11 @@ units render as colour emoji**.
 |**5 of 7 missing — WebP, 2 delivered** (`dawn.webp`, `city_founded.webp`)
 |Story/city-chronicle cards show their own gradient stage (optional by design).
 
-|*Nomad clan art* (`public/assets/nomads/`)
-|**3 of 3 missing — folder absent**
-|Audience dialog falls back to the clan emoji (optional by design).
+|*Nomad faction art* (`public/assets/nomads/`)
+|**3 of 3 PNGs missing — the built-in SVG posters are shipped**
+|PNG → SVG poster → clan emoji (`ClanPortrait`), so the audience dialog and
+the diplomacy hall always have art (prompts in
+`src/game/engine/nomad/FACTIONS_README.md`).
 
 |*Terrain sections* |**2 primary textures missing**
 |Numbered variants cover both, so rendering works — but the named primaries 404.
@@ -163,23 +165,27 @@ exactly as below).
 |city chronicle — joined
 |===
 
-== 5. Nomad clan art — `public/assets/nomads/`
+== 5. Nomad faction art — `public/assets/nomads/`
 
-Whole folder absent. The audience dialog falls back to the clan's emoji until
-each file exists (portrait 512×640 PNG; prompts in
-`doc/NOMAD_ART_PROMPTS.adoc`).
+Each faction has three layers, tried in order by
+`src/components/ui/ClanPortrait.tsx`: the **PNG** (missing), the shipped
+**SVG poster** (present — the caravan at dusk, the ger camp and its rider,
+the reindeer under the aurora), then the faction emoji. Generating a PNG
+upgrades both the audience dialog and the diplomacy hall at once, with no
+code change (portrait 512×640; prompts in
+`src/game/engine/nomad/FACTIONS_README.md`).
 
 |===
-|File |Clan
+|File |Faction
 
-|`sandborne.png`
-|The Sandborne — traders
+|`bedouin.png` (+ `bedouin.svg`)
+|The Bedouin — traders of the sand sea
 
-|`ironhoof.png`
-|The Ironhoof — warriors
+|`mongol.png` (+ `mongol.svg`)
+|The Mongol Horde — riders of the steppe
 
-|`greywind.png`
-|The Greywind — mystics
+|`sami.png` (+ `sami.svg`)
+|The Sámi — walkers of the star path
 |===
 
 == 6. Resource artwork — `src/assets/resources/`

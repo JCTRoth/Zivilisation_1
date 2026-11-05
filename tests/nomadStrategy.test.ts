@@ -130,7 +130,7 @@ describe('Nomads — the strategy brain', () => {
 
   it('the camp musters soldiers under the steel stance — but never past the limit', async () => {
     const { engine, events, nm } = await world();
-    // Ironhoof (warrior): the steel stance outscores roads from round 64
+    // The Mongols (warrior): the steel stance outscores roads from round 64
     // on (warrior +3, world aged +1, camp has room +1 vs roads' late-game 4).
     vi.spyOn(Math, 'random').mockReturnValue(0.4);
     for (let r = 4; r <= 63; r++) nm.processRound(r);

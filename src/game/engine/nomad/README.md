@@ -1,6 +1,6 @@
 # The Nomads
 
-A neutral tribe that visits the single human: three clans with three
+A neutral tribe that visits the single human: three peoples with three
 tempers, a relationship with a memory, and — since the AI-player work —
 **their own economy** (a war chest, trade routes, a city market and
 bribes). They are their own player: civ id **`-2`**, deliberately not the
@@ -8,20 +8,25 @@ barbarians' `-1` (the `BarbarianManager` drives every `-1` unit and city
 and would commandeer the camp).
 
 Full reference: [`doc/NOMADS.adoc`](../../../../doc/NOMADS.adoc) ·
-Clan portrait prompts: [`doc/NOMAD_ART_PROMPTS.adoc`](../../../../doc/NOMAD_ART_PROMPTS.adoc)
+The three factions (history, temperament, art prompts):
+[`FACTIONS_README.md`](./FACTIONS_README.md) ·
+Clan portrait prompts: [`doc/NOMAD_ART_PROMPTS.adoc`](../../../../doc/NOMAD_ART_PROMPTS.adoc) (art slot notes; the prompts themselves live in `FACTIONS_README.md`)
 
 ## Files
 
 | File | Role |
 |---|---|
-| `NomadManager.ts` | The state machine: spawn → **contact visit** → parley → relationship → departure/return, plus the per-round economy phase |
+| `NomadManager.ts` | The state machine: spawn → **contact visit** → parley → relationship → departure/return, plus the per-round economy phase and the `hallState` snapshot the diplomacy screen reads |
 | `NomadAI.ts` | The strategy brain: five stances, scored every 8 rounds (instantly when angry), handing the round's plan to the manager |
-| [`src/data/NomadConstants.ts`](../../../../src/data/NomadConstants.ts) | **Every balance number** and the three clans (`NOMAD_CLANS`) |
+| [`FACTIONS_README.md`](./FACTIONS_README.md) | **The three peoples** — Bedouin / Mongol / Sámi: where they come from in real history, how they play, and the art prompts that draw them |
+| [`src/data/NomadConstants.ts`](../../../../src/data/NomadConstants.ts) | **Every balance number** and the three factions (`NOMAD_CLANS`) |
 | [`src/data/UnitConstants.ts`](../../../../src/data/UnitConstants.ts) | `travelling_bazaar` — the camp's own unit, gated by the impossible tech `nomad_bazaar_only` so no player or AI production list ever offers it |
 | [`tests/nomads.test.ts`](../../../../tests/nomads.test.ts) | The relationship: trigger, contact rule, doors, race, moods, return |
 | [`tests/nomadEconomy.test.ts`](../../../../tests/nomadEconomy.test.ts) | The chest: routes, ceiling, market, bribe, identity |
 | [`tests/nomadStrategy.test.ts`](../../../../tests/nomadStrategy.test.ts) | The brain: stance variation, muster, plea, brokerage, friendship |
 | [`tests/nomadBalance.test.ts`](../../../../tests/nomadBalance.test.ts) | The 120-round simulation + the pacing invariants |
+| [`tests/nomadHire.test.ts`](../../../../tests/nomadHire.test.ts) | The gate rule: only the riders you meet are sold, at ×5 build cost, no door without a meeting — plus the `hallState` snapshot |
+| [`tests/nomadTravel.test.ts`](../../../../tests/nomadTravel.test.ts) | The route: your court → a rival's (answered in code), **one group rides on while the other stays**, the food a camp at your gate costs, the settlement's fourth trade route, refusal prices |
 
 ## The visit — contact, never a timer
 
@@ -40,6 +45,17 @@ Clan portrait prompts: [`doc/NOMAD_ART_PROMPTS.adoc`](../../../../doc/NOMAD_ART_
 4. **After the answer**: they walk home to the tents and wait. A
    *dismissed* parley re-offers when a player unit comes within 2 of the
    camp (3-round cooldown) — dismissal is not refusal.
+5. **They ride on.** Once the visit is over — deal, refusal, the linger
+   or the 60-round contact window — the tribe strikes camp and rides to
+   the **next court**: every alive court in turn (you first, then the
+   rivals, then round again), `NOMAD_TRAVEL_ROUNDS` (12) between camps.
+   A friendly court keeps its promised return (+30 rounds) and goes to the
+   front of the route. At a **rival** there is no audience: the envoy is
+   answered in code — a court with diplomacy ≥ 3 and the gold buys the
+   knowledge on offer, otherwise they camp, linger and move on — and you
+   hear about it as news (`NOMAD_KNOWLEDGE`) — the ONE exception is a
+   group sale, which opens a modal (`NOMAD_GROUP_HIRED`). Your `visits`
+   counter counts only YOUR court.
 
 ## The parley — the doors
 
@@ -50,13 +66,41 @@ modal is open):
 |---|---|
 | Buy their knowledge | one tech the court lacks, half raw cost (clan factor, clamped 25–100); free if the treasury cannot pay |
 | Accept their maps | radius-10 reveal around the camp (first visit only) |
-| Let them settle *(random, per clan)* | a settlement beside your city: −2 food/turn in the city balance, defenders raised for you |
-| Hire the horde | build cost × 1.1 × clan factor; the payment lands in **their** chest |
+| Let them settle *(random, per clan)* | a settlement beside your city: −2 food/turn in the city balance **forever**, defenders raised for you — **and one extra trade-route slot** for that city (3 → 4) |
+| Refuse the settlement *(same table)* | a closed hand: `refusals += 1`, their prices rise by `NOMAD_REFUSAL_PRICE_PENALTY` (25 %) per refusal, and past the clan's tolerance they turn hostile |
+| Hire the riders you met | **only the units standing with you** (on your city's tile or beside your unit) — build cost × **5** × clan factor × the refusal penalty; the payment lands in **their** chest. The rest of the tribe keeps its tents |
 | Pass in peace | departure after 6 rounds instead of 20 — and refusals accumulate |
 
-**The race**: from 16 rounds after the parley, any AI court may hire the
-camp (diplomacy-scaled chance). The payment fills their chest; the tribe
-itself keeps trading.
+**What a camp costs you while it stands**: every rider of a visiting camp
+within reach of a city eats `NOMAD_CAMP_FOOD_COST` (1) of that city's food
+per turn — a tribe parked on your doorstep costs you grain whether or not
+you invited them. A *settlement* costs `NOMAD_SETTLEMENT_FOOD_COST` (2)
+per turn for as long as it stands (and it defends you).
+
+**Their prices remember closed hands**: every refusal adds 25 % to what
+they ask of you (four refusals double it), and an **angry** tribe tables
+no knowledge and no maps at all — only the spears, or the door.
+
+**The race**: from 16 rounds after the parley, an eligible AI court may buy
+**ONE GROUP** off the tribe (diplomacy-scaled chance, deliberately slim —
+≈18 % per visit) — **never the tribe's last camp**, and always announced
+with a modal (`NOMAD_GROUP_HIRED`), because half your problem just changed
+uniform. The payment fills their chest; the tribe itself keeps trading.
+
+**One travels, one stays**: a grown tribe keeps two camps, and when one
+strikes tents the OTHER keeps standing where it is (its own linger runs from
+that round). Somebody is always left on the map — the tribe never vanishes
+into the fog the way a single camp used to.
+
+**The gate rule**: the hire door is tabled only while your units actually
+stand with theirs, and it sells exactly those units — a splinter camp four
+tiles away was never yours to buy. Walk away and the door disappears
+(`resolveParley('hire')` answers `notMeeting`).
+
+**In the diplomacy hall**: once sighted the tribe gets its own row and its
+own panel (`NomadManager.hallState`) — faction art, standing, doctrine and
+the doors that are on the table. Everything except *locating their camp* is
+locked until you are standing with them.
 
 ## Relationship memory
 
@@ -66,7 +110,7 @@ itself keeps trading.
 | `friendly` | any deal, or a gift from the plea | **one return visit** +30 rounds — same clan, and their promised chart of the world (radius 14) arrives **at the meeting** |
 | `angry` | first blood (a camp unit hurt or missing), or refusals past the clan's tolerance | 12 rounds of raids — attack what they reach, steal 15% of the treasury (5–30) every 3 rounds — plus **bribes**; never a return |
 
-Clan tolerances: Sandborne 3, Greywind 2, Ironhoof 1.
+Faction tolerances: Bedouin 3, Sámi 2, Mongol 1.
 
 ## Their own books — the economy
 
@@ -102,7 +146,8 @@ strikes camp and moves in beside it (`onBarbariansTookCity` → migration
 
 ```bash
 npx vitest run tests/nomads.test.ts tests/nomadEconomy.test.ts \
-  tests/nomadStrategy.test.ts tests/nomadBalance.test.ts
+  tests/nomadStrategy.test.ts tests/nomadBalance.test.ts \
+  tests/nomadRoaming.test.ts tests/nomadHire.test.ts
 ```
 
 * **Balance lives in `NomadConstants.ts`.** Per the root README's rule:
@@ -113,5 +158,6 @@ npx vitest run tests/nomads.test.ts tests/nomadEconomy.test.ts \
 * e2e: the dialogs are entries in `BLOCKING_DIALOGS`
   (`e2e/game.spec.ts`) — *Pass in peace*, *The Nomad Market*,
   *The Nomads Ask*, and the story cards' *Continue*.
-* Art (all optional, emoji/gradient fallbacks): clan portraits
-  [`doc/NOMAD_ART_PROMPTS.adoc`](../../../../doc/NOMAD_ART_PROMPTS.adoc).
+* Art (all optional, emoji/gradient fallbacks): faction portraits —
+  [`FACTIONS_README.md`](./FACTIONS_README.md) holds the history, the
+  prompts and the delivery table.

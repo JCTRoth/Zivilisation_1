@@ -58,15 +58,66 @@ export const NOMAD_PASS_DEPART_ROUNDS = 6;
  */
 export const NOMAD_AI_HIRE_MIN_ROUND_GAP = 16;
 
-/** Per-round chance an eligible AI takes the horde, scaled by diplomacy. */
-export const NOMAD_AI_HIRE_BASE_CHANCE = 0.1;
-export const NOMAD_AI_HIRE_DIPLOMACY_BONUS = 0.04;
+/**
+ * Per-round chance an eligible AI court buys ONE GROUP off the camp,
+ * scaled by diplomacy — **seldom** on purpose: from
+ * `NOMAD_AI_HIRE_MIN_ROUND_GAP` to the end of the linger there are only a
+ * handful of rolls, and a court never buys the tribe's last camp (see
+ * `NomadManager.tryAiHire`). Base0.02 + 0.005 × diplomacy ≈ 18 % per visit.
+ */
+export const NOMAD_AI_HIRE_BASE_CHANCE = 0.02;
+export const NOMAD_AI_HIRE_DIPLOMACY_BONUS = 0.005;
 
 /** The parley re-offers when the player stands at the camp after dismissal. */
 export const NOMAD_REOFFER_COOLDOWN_ROUNDS = 3;
 
 /** How close (Chebyshev) a player unit must be to re-offer / trigger visit 2. */
 export const NOMAD_PROXIMITY_DISTANCE = 2;
+
+// ── Travelling from court to court ────────────────────────────────────────
+
+/**
+ * The tribe does not stay with one court: after a visit ends it strikes
+ * camp and RIDES ON to the next one (every alive court in turn — the human
+ * first, then the AI rivals, then around again). This is the travel spell
+ * between two camps: long enough that a visit reads as an event, short
+ * enough that every court sees them within a game.
+ */
+export const NOMAD_TRAVEL_ROUNDS = 12;
+
+/**
+ * The contact window: how long a camp may wait at a court that never opens
+ * its door (an unreachable island, a city with no room to walk in) before it
+ * strikes tents and rides on. It is also the camp's `departAt` before any
+ * deal is struck — so pinning `departAt` to null (the tests do) holds the
+ * camp indefinitely.
+ */
+export const NOMAD_CONTACT_TIMEOUT_ROUNDS = 60;
+
+// ── What a camp standing at your gate costs you ───────────────────────────
+
+/**
+ * Food per turn a VISITING camp costs the city it camps beside — the
+ * temporary version of the settlement's drain (`NOMAD_SETTLEMENT_FOOD_COST`,
+ * which is permanent). Charged for every camp (tents or splinter) within
+ * the settlement drain radius of the city, for as long as it stands there.
+ */
+export const NOMAD_CAMP_FOOD_COST = 1;
+
+/**
+ * Prices rise by this much per refusal: the tribe remembers a closed hand,
+ * and what they sell you (knowledge, the horde) is priced accordingly. Four
+ * refusals double the price — past the clan's tolerance they stop selling
+ * entirely and turn hostile instead.
+ */
+export const NOMAD_REFUSAL_PRICE_PENALTY = 0.25;
+
+/**
+ * A settled camp earns its host city one trade-route slot beyond the
+ * normal cap (`MAX_TRADE_ROUTES`): their stakes beside your fields are
+ * worth a fourth road.
+ */
+export const NOMAD_TRADE_ROUTE_SLOT_BONUS = 1;
 
 // ── The Nomads as their OWN AI player ─────────────────────────────────────
 

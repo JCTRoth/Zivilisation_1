@@ -173,7 +173,9 @@ describe('Nomads — growth and the great split', () => {
 
     // The linger timer is the departure's business, not the growth's: hold
     // the camp so the muster cadence can run past the split.
-    (nm as unknown as { departAt: number | null }).departAt = null;
+    for (const tents of (nm as unknown as { camps: Array<{ departAt: number | null }> }).camps) {
+      tents.departAt = null; // every group is held, not just the first
+    }
     const spy = vi.spyOn(Math, 'random').mockReturnValue(0.999);
     try {
       for (let r = NOMAD_TRIGGER_ROUND + 2; r <= 75; r++) nm.processRound(r);
@@ -187,7 +189,7 @@ describe('Nomads — growth and the great split', () => {
     expect(splits, 'the camp outgrew its fire and divided').toHaveLength(1);
     expect(splits[0].data.count).toBe(Math.floor(NOMAD_GROUP_SPLIT_SIZE / 2));
 
-    const camp = (nm as unknown as { camp: { col: number; row: number } | null }).camp;
+    const camp = (nm as unknown as { camps: Array<{ col: number; row: number }> }).camps[0];
     expect(camp, 'the parent tents still stand').not.toBeNull();
     const splinter = { col: splits[0].data.col as number, row: splits[0].data.row as number };
     expect(

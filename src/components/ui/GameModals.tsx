@@ -1217,6 +1217,16 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
             <div className="gm-section-title">
               {t('nomad.parley.eyebrow' as TranslationKey)}
             </div>
+            {/* WHERE they are, when it is not here: the doors below are
+                locked because the camp stands at somebody else's gate. */}
+            {state.campCivId !== null && state.campCivId !== playerId && (
+              <div className="gm-kv">
+                {t('nomad.diplo.away' as TranslationKey, {
+                  civ: civilizations[state.campCivId]?.name
+                    ?? t('gm.unknown' as TranslationKey),
+                })}
+              </div>
+            )}
             <p className={`gm-prose ${state.meeting ? '' : 'diplomacy-locked-value'}`}>
               {canDeal
                 ? t('nomad.diplo.meeting' as TranslationKey)
@@ -1252,7 +1262,15 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               <button
                 type="button"
                 className="touch-btn touch-btn--ghost diplomacy-nomad-find"
-                onClick={() => actions.focusCameraOnTile(state.campTile!.col, state.campTile!.row)}
+                onClick={() => {
+                  const tile = state.campTile;
+                  if (!tile || !gameEngine) return;
+                  // They may be camped at a rival's court, deep in your fog:
+                  // asking where they are is what lights it up.
+                  gameEngine.revealArea?.(tile.col, tile.row, 3, playerId);
+                  actions.focusCameraOnTile(tile.col, tile.row);
+                  if (gameEngine.units) actions.updateUnits([...gameEngine.units]);
+                }}
               >
                 🧭 {t('nomad.diplo.find' as TranslationKey)}
               </button>

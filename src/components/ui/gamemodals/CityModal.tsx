@@ -1349,8 +1349,12 @@ const CityModal: React.FC<CityModalProps> = ({
                       <div className="gm-section-title">{t('city.trade.routesInUse')}</div>
                       <div className="gm-kv-grid gm-kv-grid--stack">
                         <div className="gm-kv">
-                          {t('city.trade.routesLabel')} <b>{routes.length}/{MAX_TRADE_ROUTES}</b>
+                          {t('city.trade.routesLabel')}{' '}
+                          <b>{routes.length}/{gameEngine.maxTradeRoutesFor(selectedCity)}</b>
                         </div>
+                        {gameEngine.maxTradeRoutesFor(selectedCity) > MAX_TRADE_ROUTES && (
+                          <div className="gm-kv">{t('city.trade.nomadSlot')}</div>
+                        )}
                         <div className="gm-kv">
                           {t('city.resources.tradeFromRoutes')}{' '}
                           <b className={routeTrade > 0 ? 'city-kv--good' : ''}>{t('city.trade.perTurn', { amount: routeTrade })}</b>

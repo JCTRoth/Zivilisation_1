@@ -9,6 +9,7 @@ import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } f
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
 import { TERRAIN_RESOURCES, TERRAIN_TYPES, WATER_TERRAIN_TYPES } from '@/data/TerrainConstants';
 import { FISHER_BOAT_STORAGE, fisherFoodPerFish, UNIT_TYPES } from '@/data/UnitConstants';
+import { NOMAD_TRADE_ROUTE_SLOT_BONUS } from '@/data/NomadConstants';
 import {
   BARBARIAN_CIV_ID,
   VILLAGE_OUTCOME,
@@ -4533,6 +4534,19 @@ const occupiedLandmasses = new Set(
   }
 
   /**
+   * How many trade routes this city may keep: `MAX_TRADE_ROUTES`, plus the
+   * slot a nomad settlement standing beside it buys
+   * (`NOMAD_TRADE_ROUTE_SLOT_BONUS`) — their stakes in your fields are
+   * worth a fourth road. The bonus comes and goes with the settlement, so
+   * a city that loses its camp keeps the routes it already has (the array
+   * simply starts evicting the oldest again).
+   */
+  maxTradeRoutesFor(city: City): number {
+    const settled = this.economicManager?.hasNomadSettlementNear?.(city) === true;
+    return MAX_TRADE_ROUTES + (settled ? NOMAD_TRADE_ROUTE_SLOT_BONUS : 0);
+  }
+
+  /**
    * Add a trade route to a city, capping at MAX_TRADE_ROUTES.
    *
    * When the city is full, the **oldest** route is replaced — Civ1's rule, and
@@ -4544,7 +4558,7 @@ const occupiedLandmasses = new Set(
   private addTradeRoute(city: City, route: TradeRoute): void {
     if (!Array.isArray(city.tradeRoutes)) city.tradeRoutes = [];
     const existing = city.tradeRoutes;
-    if (existing.length < MAX_TRADE_ROUTES) {
+    if (existing.length < this.maxTradeRoutesFor(city)) {
       existing.push(route);
       return;
     }

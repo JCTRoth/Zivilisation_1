@@ -1,76 +1,25 @@
-= Nomad Clan Art — Generation Prompts
+= Nomad Faction Art — Generation Prompts
 
-> The audience screen shows one big portrait per nomad clan
-> (`public/assets/nomads/<id>.png`, rendered at ~320px wide with
-> `image-rendering: pixelated`, mood-coloured frame around it).
-> Until a file exists, the dialog falls back to the clan's emoji, so images
-> can be added one at a time. **Generate at 512×640 (portrait), PNG,
-> background baked dark** — the stage behind it is `#0d1319`.
+> The prompts now live with the factions themselves, so history, temperament
+> and art are documented in ONE place:
+>
+> → link:../src/game/engine/nomad/FACTIONS_README.md[`src/game/engine/nomad/FACTIONS_README.md`]
+> — the three peoples (Bedouin / Mongol / Sámi), how they play, the shared
+> style block and one prompt per faction.
 
-== Shared style block (prepend to every prompt)
+== Art slot
 
-----
-Pixel art, 32-bit JRPG dialogue-portrait style, bust framing of a nomad
-leader facing the viewer, three-quarter view, head and shoulders filling
-the frame. Chunky readable pixels, limited earthy palette with one
-signature accent colour per clan, strong rim light from the left, plain
-very dark background (#0d1319) with a soft vignette. Weathered face,
-expressive eyes, cloth and leather rendered with visible pixel clusters.
-No text, no watermark, no border, no modern objects. 512x640 portrait.
-----
-
-== 1. The Sandborne — traders (`sandborne.png`)
-
-Signature accent: warm amber/ochre. Mood: friendly, shrewd.
-
-----
-[basic style block]
-A smiling middle-aged desert merchant-chief, sun-weathered grin, ochre
-head cloth pinned with a copper coin, braided beard with small trade
-trinkets woven in, layered road-worn robes in amber and sand tones.
-Behind one shoulder, softly out of focus: the silhouette of a laden
-wagon and a camel's hump against dunes at dusk. Warm amber rim light,
- inviting and sly.
-----
-
-== 2. The Ironhoof — proud warriors (`ironhoof.png`)
-
-Signature accent: iron grey with blood-red. Mood: proud, unyielding.
-
-----
-[basic style block]
-A stern steppe warlord, jaw set, eyes narrowed, no smile. Black iron
-lamellar pauldrons over a red deel, a thin scar across one cheekbone,
-hair in two warrior braids with iron rings. Behind the shoulder: the
-blurred head of a steppe horse and a tasseled lance. Cold iron-grey
-light with a red edge highlight, unyielding and proud.
-----
-
-== 3. The Greywind — mystics / path-finders (`greywind.png`)
-
-Signature accent: cold moonlit blue with silver. Mood: enigmatic,
-serene.
-
-----
-[basic style block]
-An androgynous elderly path-finder seer, hood half-falling, calm
-half-smile, silver-white hair, faint star-map tattoo lines across one
-temple. A folded travel map and a small astrolabe hung at the chest,
-deep blue travelling cloak with silver stitching. Behind the shoulder:
-pale blue fog and a scatter of stars. Moonlit blue rim light with silver
-highlights, serene and uncanny.
-----
-
-== Delivery
-
-[cols="2,1,3", options="header"]
+[cols="2,3", options="header"]
 |===
-|File |Clan |Shown as
+|File |Shown by
 
-|`public/assets/nomads/sandborne.png` |The Sandborne (trader) |`nomad.clan.sandborne.name` + epithet
-|`public/assets/nomads/ironhoof.png` |The Ironhoof (warrior) |`nomad.clan.ironhoof.name` + epithet
-|`public/assets/nomads/greywind.png` |The Greywind (mystic) |`nomad.clan.greywind.name` + epithet
+|`public/assets/nomads/<id>.png` |The generated portrait (512×640, PNG, dark background baked in). Tried first — drop it in and it appears, no code change.
+
+|`public/assets/nomads/<id>.svg` |The built-in poster shipped with the game (see `public/assets/nomads/*.svg`). Shown until a PNG exists.
+
+|the faction emoji (🐫 / 🐎 / 🦌) |Last resort, if neither file loads.
 |===
 
-A failed load (missing/renamed file) is non-fatal: the dialog shows the
-clan emoji (🐫 / 🐎 / 🐺) instead.
+Both the audience dialog and the diplomacy hall render the same slot
+(`src/components/ui/ClanPortrait.tsx`), so one generated file upgrades both
+screens at once. A failed load is non-fatal at every layer.

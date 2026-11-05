@@ -4,12 +4,14 @@
 > `src/game/engine/nomad/NomadAI.ts` (strategy brain), `src/game/engine/GameEngine.ts`,
 > `src/game/engine/TurnManager.ts` (round hook), `src/game/engine/EconomicManager.ts` (settlement food),
 > `src/game/engine/BarbarianManager.ts` (the friendship)
-> *Data:* `src/data/NomadConstants.ts` (constants + the three clans)
+> *Data:* `src/data/NomadConstants.ts` (constants + the three factions)
 > *UI:* `src/components/ui/gamemodals/AudienceModal.tsx`,
-> `src/components/ui/GameModals.tsx`
-> *Art prompts:* `doc/NOMAD_ART_PROMPTS.adoc`
+> `src/components/ui/GameModals.tsx` (the diplomacy hall's nomad panel),
+> `src/components/ui/ClanPortrait.tsx` (portrait: PNG → built-in SVG poster → emoji)
+> *Factions & art prompts:* `src/game/engine/nomad/FACTIONS_README.md`
 > *Tests:* `tests/nomads.test.ts` (18) + `tests/nomadEconomy.test.ts` (7) +
-> `tests/nomadStrategy.test.ts` (8) + `tests/nomadRoaming.test.ts` (4)
+> `tests/nomadStrategy.test.ts` (8) + `tests/nomadRoaming.test.ts` (4) +
+> `tests/nomadHire.test.ts` (3) + `tests/nomadTravel.test.ts` (6)
 > *i18n:* `nomad.*` keys in all 6 languages
 
 ---
@@ -19,24 +21,32 @@
 Once per **single-human** game, shortly after the first city stands (round
 ≥ 4, or round ≥ 12 if no city yet), a neutral horde camps 9–13 tiles from
 the player's court: two warriors and a scout, owned by `NOMAD_CIV_ID` (-2),
-fortified, revealed to the player on sight (`NOMAD_SIGHTED`).
+fortified, revealed to the player on sight (`NOMAD_SIGHTED`). They do not
+stay with you: when the visit is over they strike camp and **ride on to the
+next court** — every alive court in turn (see *The route* below).
 
-One clan is rolled per game — the SAME clan returns on a return visit:
+One faction is rolled per game — the SAME people return on a return visit
+(they are who you met). The three are drawn from real nomadic history, not
+from game archetypes (research notes and art prompts:
+`src/game/engine/nomad/FACTIONS_README.md`):
 
 [cols="1,3", options="header"]
 |===
-|Clan |Temperament
+|Faction |Temperament
 
-|**The Sandborne** (trader, 🐫)
-|Bargains: knowledge ×0.8, normal hire, settles beside you often (55%),
-tolerates three refusals.
+|**The Bedouin** (trader, 🐫)
+|Arabia's camel caravans: the well, the duty of hospitality, the incense
+roads. Bargains: knowledge ×0.8, normal hire, settles beside you often
+(55%), tolerates three refusals.
 
-|**The Ironhoof** (warrior, 🐎)
-|Proud: hire ×1.4, settles rarely (15%), one refusal is tolerated — the
-second ends the meeting as hostility.
+|**The Mongol Horde** (warrior, 🐎)
+|The steppe confederation: horse archers, the *yam* relay, the ger that
+moves with the season. Proud: hire ×1.4, settles rarely (15%), one refusal
+is tolerated — the second ends the meeting as hostility.
 
-|**The Greywind** (mystic, 🐺)
-|Enigmatic: knowledge ×0.9, settles sometimes (30%), two refusals.
+|**The Sámi** (mystic, 🦌)
+|Sápmi's tundra: the reindeer migration, a sky read like a road.
+Enigmatic: knowledge ×0.9, settles sometimes (30%), two refusals.
 |===
 
 The visit is **contact-based**: the camp never sends an envoy on a timer.
@@ -47,8 +57,9 @@ the distance to the court never grows. The message binds to the nomads
 stands on your city's tile (or on the same tile as your unit) — no nomad
 on the tile, no envoy, and the final step onto the court is *placed*
 rather than fought (`moveUnit` would storm it — visitors do not storm
-cities). On contact the audience screen opens with the clan's big art (see
-`doc/NOMAD_ART_PROMPTS.adoc`), name, epithet and a lead line in the
+cities). On contact the audience screen opens with the faction's big art
+(see `src/game/engine/nomad/FACTIONS_README.md`), name, epithet and a lead
+line in the
 clan's own voice, offering:
 
 [cols="1,3", options="header"]
@@ -57,28 +68,46 @@ clan's own voice, offering:
 
 |Buy their knowledge
 |One technology the court lacks, for **half its raw research cost**
-(clamped 25–100, × the clan's factor). A broke court receives it free
+(clamped 25–100, × the clan's factor, × the **refusal penalty**: +25 %
+per closed hand, four of them double it). A broke court receives it free
 ("the road gives"). The price and the technology are whatever the BUTTON
-promised — never re-rolled while the modal is open.
+promised — never re-rolled while the modal is open. An **angry** tribe
+tables no knowledge and no maps at all.
 
 |Accept their maps *(first visit only)*
 |`revealArea` — a radius-10 swath around the camp is revealed to the
-player. No other game source reveals fog without walking it.
+player. No other game source reveals fog without walking it. (Not while
+angry: no trade with a tribe you turned hostile.)
 
 |Let them settle *(random, per clan chance)*
 |A settlement is planted beside your city: the settlement TILE drains
 **2 food/turn** from the city's balance (`cityFoodBalance`), raises
-**defenders** (one warrior per settlement, yours) — and the camp **keeps
-producing**: one wanderer of its own every 12 rounds (at most 2 alive),
-those roam the land within 6 tiles of the stakes, and the camp's day
-market pays your treasury **2 gold per turn** for the food it eats
-(`NOMAD_SETTLEMENT_TRADE_GOLD`). The wanderers are home — the standing
-camp is gone.
+**defenders** (one warrior per settlement, yours) — **and buys that city
+one extra trade-route slot** (`maxTradeRoutesFor`: 3 → 4, for as long as
+the settlement stands). The camp **keeps producing**: one wanderer of its
+own every 12 rounds (at most 2 alive), those roam the land within 6 tiles
+of the stakes, and the camp's day market pays your treasury **2 gold per
+turn** for the food it eats (`NOMAD_SETTLEMENT_TRADE_GOLD`). The wanderers
+are home — the standing camp is gone.
 
-|Hire the horde
-|Pay the units' build cost × 1.1 × the clan's factor (the horde **as it
-stands** at the meeting — it may have gathered riders since); the neutral
-units convert to the player's colors, un-fortified and usable at once.
+|Refuse the settlement *(same table)*
+|They asked to stay and you said no: **a closed hand**. `refusals += 1`,
+their prices rise by `NOMAD_REFUSAL_PRICE_PENALTY` (25 %) for every door
+afterwards, and past the clan's tolerance the refusal turns them hostile.
+(The door only appears when the settlement was rolled — refusing is a
+choice, not taking the other doors by default.)
+
+|Hire the riders you met
+|**Only the camp units that stand with you right now** — on your city's
+tile, or within one tile of one of your units — at build cost × **5** ×
+the faction's factor × the refusal penalty (a lone rider you met: 50 gold
+at peace; the spawned three, if they all came to the gate: 175 — 245 for
+the Mongols). Those units convert
+to your colors, un-fortified and usable at once; **the rest of the tribe
+keeps its tents**, its chest and its neutrality: they linger, an AI court
+may still race for them, and the rest can be hired at a later meeting.
+With nobody at the gate the door is not tabled at all, and answering it
+from afar returns `notMeeting` — walking away is not an answer.
 
 |Pass in peace
 |They leave after 6 rounds instead of 20. Within their patience
@@ -86,10 +115,15 @@ units convert to the player's colors, un-fortified and usable at once.
 |===
 
 Whichever deal was struck (or none), the **camp remains a race**: from 16
-rounds after the parley — late in the linger, a last chance as the camp is
-about to walk — every eligible AI court may hire it (chance
-scales with the leader's diplomacy; `NOMAD_HIRED` is announced). If nobody
-does, the camp wanders off into the fog after 20 rounds (`NOMAD_DEPARTED`).
+rounds after the parley — late in the linger, a last chance as the tents are
+about to strike — an eligible AI court may buy **ONE GROUP** off the tribe
+(chance scales with the leader's diplomacy and is deliberately slim,
+`NOMAD_AI_HIRE_BASE_CHANCE` 0.02 + 0.005 × diplomacy ≈ 18 % per visit).
+Two rules bound it: a court **never buys the tribe's last camp** (the tribe
+stays in the world), and the player is **told with a modal**, not a toast —
+`NOMAD_GROUP_HIRED` opens the audience as a greeting, because half your
+problem just changed uniform. If nobody buys, the group walks off after 20
+rounds (`NOMAD_DEPARTED`).
 
 A **second parley** fires when the player's unit stands at the camp after
 the first answer — hire or farewell only.
@@ -118,6 +152,66 @@ The camp is a LIVING group on the map, not a scenery piece:
 * **Settled camps keep producing** (see the settle door): the mustered
   wanderers roam the map around the stakes on a `NOMAD_ROAM_LEASH` (6) —
   the tribe's living texture wherever it put down roots.
+
+=== The route — from court to court
+
+The tribe does not live at your gate: it travels. When a visit ends — a
+deal, a refusal, the linger, or the 60-round contact window — the camp
+strikes tents and rides to the next court (`NOMAD_TRAVEL_ROUNDS`, 12), in
+a shuffled cycle of every ALIVE court: **you first** (the story opens at
+your gate), then the rivals, then round again. A friendly court keeps its
+promised return (+30 rounds) and goes to the FRONT of the route; an angry
+court is torn off it (they owe you nothing).
+
+At a rival there is no audience — the envoy is answered **in code**:
+
+[cols="1,3", options="header"]
+|===
+|Answer |When
+
+|Buys the knowledge |the rival has diplomacy ≥ 3, the gold, and a technology still to lack → `NOMAD_KNOWLEDGE`: their chest pays, the tech lands in their tree
+
+|Hires ONE GROUP at their gate |(a gamble) there is a second camp to sell, they can afford it and they roll high → `NOMAD_GROUP_HIRED` — a modal for you, never the last camp
+
+|Camps and moves on |otherwise — the same linger as at your gate, then the route continues
+|===
+
+The player hears the DEALS as news, never as a modal: `NOMAD_PARLEY` (and
+the audience screen) is yours alone, and `visits` counts only YOUR court —
+the one exception is a group sale (`NOMAD_GROUP_HIRED`), which is worth
+your screen. A camp that never finds the door (an unreachable island, a
+city with no room) rides on after `NOMAD_CONTACT_TIMEOUT_ROUNDS` (60).
+
+=== One group travels, one stays
+
+A grown tribe keeps **two camps** (`NOMAD_GROUP_SPLIT_SIZE` = 6 riders →
+the group divides, `NOMAD_MAX_CAMPS` = 2), and the two are **independent
+travellers under the one brain**: each carries its own court, its own
+linger and its own answer (`NomadCamp`). When one group strikes tents:
+
+* its riders ride off the map and raise new tents at the next court
+  `NOMAD_TRAVEL_ROUNDS` later (or at the promised return, +30 rounds);
+* **the other group keeps standing where it is** — its own linger runs
+  from that round, so it leaves a travel spell later;
+* and because somebody is always left standing, **the tribe never vanishes
+  from the map** the way a single camp used to wander into the fog.
+
+=== What a camp standing at your gate costs
+
+* **A visiting camp** costs its host city `NOMAD_CAMP_FOOD_COST` (1) of
+  food **per rider per turn** while any of them stands inside the
+  settlement drain radius (3) of the city — they eat your grain whether or
+  not you invited them, and the bill stops the moment they ride off
+  (`EconomicManager.nomadDrain`, read by the projection, the growth
+  pipeline and the AI governor alike).
+* **A settlement** (the settle door) costs `NOMAD_SETTLEMENT_FOOD_COST`
+  (2) per turn for as long as it stands — and buys that city **one extra
+  trade-route slot** (`maxTradeRoutesFor`: `MAX_TRADE_ROUTES` 3 → 4), on
+  top of its defenders and its day market.
+* **They come with caravans**: the moment the envoy first speaks at a
+  court, one of the tribe's travelling bazaars is with the camp (paid from
+  the chest like every other wagon, once per visit), so a visit that opens
+  no door still leaves a merchant on the road.
 
 == 2. Their own books — an AI player's economy
 
@@ -284,8 +378,8 @@ paid doors remain, the maps door does not (the chart WAS the gift).
 
 |`angry`
 |**First blood** (any camp unit injured or missing — combat's signature),
-or refusals beyond the clan's tolerance (Ironhoof: one, Greywind: two,
-Sandborne: three).
+or refusals beyond the clan's tolerance (Mongol: one, Sámi: two,
+Bedouin: three).
 |**Raids** for 12 rounds: the camp wakes, attacks anything adjacent
 (`moveUnit`, `canUnitMoveTo`-gated so a wide river cannot stall the
 march), and at the gates steals **15% of the treasury (5–30 gold)** every
@@ -295,8 +389,12 @@ never earns a return visit.
 
 == 4. Rules and boundaries
 
-* **Single human seat only.** Hotseat would have to pick whose court
-  receives them; all-AI games have nobody to talk to. Both are skipped.
+* **One human seat, every court visited.** The feature only runs in a
+  game with exactly one human (hotseat would have to pick whose screen
+  opens; all-AI has nobody to talk to) — but inside such a game the tribe
+  travels **player to player**: your court first, then every AI rival, in
+  a shuffled cycle. Your court gets the audience; the rivals get the deal
+  struck in code.
 * **Their own player, neutral by default.** Civ id `-2` — deliberately NOT
   the barbarians' `-1`, which `BarbarianManager` drives (it would
   commandeer the camp, and would put bought cities under barbarian AI
@@ -310,6 +408,11 @@ never earns a return visit.
   (3-round cooldown), never every round. A dismissed city offer (or plea)
   re-tables the same way, and dies with the camp (or its city) so the
   serialization slot can never strand.
+* **The hall reads, the gate acts.** Once sighted the tribe is listed in
+  the diplomacy window with its own row and panel (`hallState`), but every
+  door except *locating their camp* stays locked until your units stand
+  with theirs — `resolveParley('hire')` re-checks the meeting and answers
+  `notMeeting` rather than selling riders you never met.
 * **Friends of the horde.** Nomads and barbarians are allies by default:
   `BarbarianManager.act()` only ever attacks positive-id units and cities,
   and a barbarian conquest moves the nomad camp in beside it.
@@ -330,14 +433,24 @@ never earns a return visit.
 `NomadManager.processRound` runs the strategy review + economy phase first
 
 |Audience
-|`AudienceNotice.kind: 'nomad'` + `speaker { nameKey, subKey, icon, image }`
+|`AudienceNotice.kind: 'nomad'` + `speaker { id, nameKey, subKey, icon, image }`
 + `choices` + `leadKey` (+ optional `eyebrowKey`, which the city market and
 the plea use), resolved through
 `GameEngine.nomadManager.resolveParley(id)` via `GameModals.handleAudienceChoice`
 
+|Diplomacy hall
+|`NomadManager.hallState` (known / clan / standing / stance / meeting /
+choices / campTile / campCivId) drives the nomad row and panel in
+`GameModals.renderDiplomacy`: the faction art, the standing, the doctrine,
+**whose gate the camp stands at right now** — and the parley doors drawn
+**disabled until `isDirectlyMeeting()`** (the gate rule). `resolveParley`
+is still the only way to execute one; from afar it answers `notMeeting`.
+"Locate their camp" pans there and lights the fog around it
+
 |Art
-|`/assets/nomads/<clan>.png` with an emoji fallback on load error
-(`AudienceModal` art slot, `doc/NOMAD_ART_PROMPTS.adoc`)
+|`/assets/nomads/<clan>.png` → the shipped `/assets/nomads/<clan>.svg`
+poster → the faction emoji, by `src/components/ui/ClanPortrait.tsx`
+(prompts: `src/game/engine/nomad/FACTIONS_README.md`)
 
 |Strategy brain
 |`src/game/engine/nomad/NomadAI.ts` — `review(situation)` every 8 rounds
@@ -350,7 +463,7 @@ capture branch calls `nomadManager.onBarbariansTookCity(city)` (migration
 + friendship route)
 
 |Events
-|`NOMAD_SIGHTED` / `NOMAD_PARLEY` / `NOMAD_RESOLVED` / `NOMAD_HIRED` /
+|`NOMAD_SIGHTED` / `NOMAD_PARLEY` / `NOMAD_RESOLVED` / `NOMAD_GROUP_HIRED` /
 `NOMAD_DEPARTED` / `NOMAD_SPLIT` / `NOMAD_ANGRY` / `NOMAD_RAID` /
 `NOMAD_RETURN_GIFT` /
 `NOMAD_CITY_OFFER` + `NOMAD_MONEY_REQUEST` (same audience machinery as
@@ -364,9 +477,26 @@ parameter exists because the round hook runs before `activePlayer` flips;
 the store refresh follows "viewer is a human seat"
 
 |Food drain
-|`EconomicManager.cityFoodBalance` — `nomadSettlementDrain`, a bounded
-ring scan around the city (the player's projection, the growth pipeline
-and the AI governor all charge the same number)
+|`EconomicManager.cityFoodBalance` — `nomadDrain`, a bounded ring scan
+around the city: settlement tiles (`NOMAD_SETTLEMENT_FOOD_COST` each) plus
+the visiting camp's riders (`NomadManager.unitsNear`,
+`NOMAD_CAMP_FOOD_COST` each). The player's projection, the growth pipeline
+and the AI governor all charge the same number.
+
+|Trade-route slot
+|`GameEngine.maxTradeRoutesFor(city)` = `MAX_TRADE_ROUTES` **+1** while a
+nomad settlement stands within the drain radius
+(`EconomicManager.hasNomadSettlementNear`) — used by `addTradeRoute`, by
+the AI's caravan gate (`AutoProduction`) and shown in the city screen. The
+settlement's tile flag persists, so the slot survives a save.
+
+|The route
+|`NomadManager.currentTargetCivId` + `travelQueue` + `nextTravelAt`:
+after every visit `scheduleNextVisit` picks the next alive court (a
+friendly human court first), `spawnVisit` raises the camp there, and the
+meeting opens either the audience (your court) or `resolveAiMeeting` (a
+rival's — in code). The camp's `departAt` starts at the contact window, so
+a court that never opens its door cannot stall the route.
 |===
 
 == 6. Tests
@@ -374,8 +504,9 @@ and the AI governor all charge the same number)
 `tests/nomads.test.ts` (18) — trigger and spawn (distance, landmass,
 neutral id, fortification, no-city fallback, hotseat/AI skip), the doors
 and their promised terms (forced rolls for the settlement door), the
-broken court's free gift, the maps reveal, the color swap on hire, the
-`noGold` refusal, the departure timer, the AI hire race, the
+broken court's free gift, the maps reveal, the color swap on hire (the
+riders who stood at the gate — `tests/nomadHire.test.ts` pins the rest),
+the `noGold` refusal, the departure timer, the AI race for ONE GROUP (with its modal), the
 dismissal/proximity re-offer, first-blood hostility + the raid march and
 stores stolen, the pride-driven second refusal turning a clan hostile, and
 the friendly return visit with its map gift.
@@ -411,3 +542,24 @@ camp's production (one wanderer per `NOMAD_SETTLEMENT_MUSTER_ROUNDS`, the
 `NOMAD_SETTLEMENT_MUSTER_LIMIT` ceiling, the `NOMAD_ROAM_LEASH` around the
 stakes, never on a city — and exactly `NOMAD_SETTLEMENT_TRADE_GOLD` gold
 per round into the host's purse).
+
+`tests/nomadHire.test.ts` (3) — THE GATE RULE: the hire door sells only
+the camp units standing with you (one rider on the city converts, the two
+at the tents stay neutral and fortified), priced at five times their build
+cost with the promised `{ gold, count }` on the button; with nobody at the
+gate the door is not tabled and an answer from two tiles away returns
+`notMeeting` without changing a single owner; and `hallState` — the
+read-only snapshot the diplomacy hall renders (unknown before the visit,
+faction identity and no doors after the sighting, `meeting` + the doors at
+the gate, and a copy the caller cannot mutate).
+
+`tests/nomadTravel.test.ts` (6) — THE ROUTE: the camp leaves your court
+and camps at a rival (your audience count never grows, `visits` is yours
+alone); a rival answers the envoy in code with its own gold (the
+knowledge lands in their tree, never in your purse); a camp at your gate
+costs food per mouth (`NOMAD_CAMP_FOOD_COST` × riders); a settlement
+costs food forever and buys its city a fourth trade-route slot
+(`maxTradeRoutesFor` 3 → 4); and refusing their settlement is a closed
+hand — the next audience prices the riders at the refusal penalty; and
+after the split ONE GROUP rides on to the next court while the other keeps
+standing (a nomad group is always on the map).

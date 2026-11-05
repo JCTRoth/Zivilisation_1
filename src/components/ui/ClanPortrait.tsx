@@ -20,7 +20,7 @@ import React, { useState } from 'react';
  * The PNG is the intended final art: it simply wins by being first, so the
  * two layers are swappable at any time without touching the dialogs.
  */
-export interface ClanPortraitProps {
+interface ClanPortraitProps {
   /** The faction id (`bedouin` / `mongol` / `sami`); null → emoji only. */
   clanId: string | null;
   /** The generated portrait path, when the faction has one. */
@@ -32,7 +32,7 @@ export interface ClanPortraitProps {
   className?: string;
 }
 
-export const ClanPortrait: React.FC<ClanPortraitProps> = ({
+const ClanPortrait: React.FC<ClanPortraitProps> = ({
   clanId,
   image,
   icon,

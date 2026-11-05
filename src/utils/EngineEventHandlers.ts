@@ -300,19 +300,24 @@ export class EngineEventRouter {
         // parley (clan speaker, lead line, doors), so route it identically.
         this.onNomadParley(eventData);
         break;
-      case 'NOMAD_HIRED':
-        if (!this.isAIVsAI) {
-          const civ = this.gameEngine.civilizations.find(
-            (c) => c.id === (eventData?.civId as number),
-          );
-          notify('info', t('nomad.aiHired', { civ: civ?.name ?? '' }));
-        }
+      case 'NOMAD_GROUP_HIRED':
+        // A court bought ONE GROUP off the tribe — news worth a MODAL, not
+        // a toast: the player has to see their problem change uniform. It
+        // rides the same audience machinery as the parley, as a greeting:
+        // nothing to decide, one button to read it and close it.
+        this.onNomadParley(eventData);
+        break;
+      case 'NOMAD_DEPARTED': {
+        // Only a departure FROM YOUR COURT is news to you — the tribe
+        // riding on from a rival's gate is their business (the store syncs
+        // either way: the units really did move).
+        const from = Number((eventData as { from?: unknown })?.from);
+        const humanId = this.gameEngine.gameSettings?.humanPlayerIds?.[0];
+        const yours = !Number.isFinite(from) || from === humanId;
+        if (!this.isAIVsAI && yours) notify('info', t('nomad.departed'));
         this.syncState();
         break;
-      case 'NOMAD_DEPARTED':
-        if (!this.isAIVsAI) notify('info', t('nomad.departed'));
-        this.syncState();
-        break;
+      }
       case 'NOMAD_RESOLVED':
         // The player answered the parley: gold, techs and (on a hire) unit
         // owners changed — push it all into the store.
@@ -2685,7 +2690,10 @@ export class EngineEventRouter {
     const choices = Array.isArray(eventData?.choices)
       ? (eventData.choices as AudienceChoice[])
       : [];
-    if (choices.length === 0) return;
+    // No doors at all, but a line to say? Then it is an ANNOUNCEMENT (the
+    // riders a rival court just bought), which is read rather than answered.
+    const greeting = choices.length === 0 && typeof eventData?.leadKey === 'string';
+    if (choices.length === 0 && !greeting) return;
 
     // The clan's identity travels as a nested `speaker` object (name,
     // epithet, icon, big art); the flat legacy keys are still accepted.
@@ -2695,7 +2703,7 @@ export class EngineEventRouter {
       : String(eventData.speakerNameKey ?? 'nomad.chieftain');
     const notice: AudienceNotice = {
       civId: -1, // no rival civ stands behind this audience
-      mode: 'offer',
+      mode: greeting ? 'greeting' : 'offer',
       message: '',
       kind: 'nomad',
       speaker: {

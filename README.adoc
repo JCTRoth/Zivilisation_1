@@ -474,7 +474,7 @@ the commit message which rule the number encodes.
 * link:doc/GOVERNMENT.adoc[Government & Revolution] — revolutions, anarchy, capital
 * link:doc/DIPLOMACY_SYSTEM.adoc[Diplomacy System] — opinion ledger, treaties, proposals
 * link:doc/FIXED_ALLIANCES.adoc[Fixed Alliances] — locked teams, team diplomacy, victory and spectating
-* link:doc/NOMADS.adoc[Nomads] — the visiting tribe: contact-based parley, three clans, relationship memory, and their own economy (routes, city market, bribes); folder README: `src/game/engine/nomad/README.md`
+* link:doc/NOMADS.adoc[Nomads] — the visiting tribe: contact-based parley, three factions drawn from real nomadic history (Bedouin / Mongol / Sámi), they travel from court to court (your audience, their deals with the rivals in code), relationship memory, their own economy (routes, city market, bribes) and their own row in the diplomacy hall; folder README: `src/game/engine/nomad/README.md`, faction book + art prompts: `src/game/engine/nomad/FACTIONS_README.md`
 * link:doc/CITY_CAPTURE.adoc[City Capture & Destruction] — what happens when a city falls
 * link:doc/WONDERS.adoc[Wonders] — the 24-wonder data format and effect model
 * link:doc/MODALS.adoc[Modals & Dialogs] — every dialog, how it opens, screenshots in `doc/dialogs/`
@@ -525,7 +525,7 @@ the commit message which rule the number encodes.
 Image prompts for the optional artwork (everything degrades to emoji /
 gradient fallbacks without them — generate one at a time, in any order):
 
-* link:doc/NOMAD_ART_PROMPTS.adoc[Nomad Clan Art] — the three clan portraits for the audience dialog (512×640): shared style block + one prompt per clan
+* link:src/game/engine/nomad/FACTIONS_README.md[Nomad Factions & Art] — the three peoples who visit you (Bedouin / Mongol / Sámi): where they come from in real history, how they play, and the image prompts for their 512×640 portraits; link:doc/NOMAD_ART_PROMPTS.adoc[art slot notes]
 * link:doc/STORY_ART_PROMPTS.adoc[Story Screen Art] — the chronicle's wide 16:9 scenes: the dawn, a horde conquest, the nomad migration and the four city-chronicle moments
 
 === Working notes

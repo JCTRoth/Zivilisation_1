@@ -1266,6 +1266,13 @@ delivered ZERO routes.
   the **oldest** one — Civ1's rule, and the one `AI/CaravanCoordinator.ts` plans
   against, because it is what makes a new route to a better partner worth the
   walk.
+* A city hosting a **nomad settlement** holds **4**: `maxTradeRoutesFor` adds
+  `NOMAD_TRADE_ROUTE_SLOT_BONUS` (+1) for as long as a `nomadSettlement` tile
+  stands within the drain radius (3) — their stakes beside your fields are
+  worth a fourth road. The tile flag persists, so the slot survives a save;
+  lose the settlement and the cap drops back to 3 (the oldest is evicted
+  again). The city screen shows the real cap, and the AI's caravan gate
+  (`AutoProduction`) counts the same bonus.
 * The caravan is consumed on delivery.
 * A **trade agreement** doubles the trade of every route between the two civs
   (`TREATY_ROUTE_TRADE_MULTIPLIER = 2`). It no longer pays a flat stipend to both
@@ -1998,6 +2005,70 @@ Defined in: `src/game/engine/BarbarianManager.ts`
 * A captured barbarian city has all its buildings sold, switches to
   auto-production, and pumps out raiders once per round.
 
+== The Nomads
+
+Defined in: `src/game/engine/nomad/NomadManager.ts` (state machine) and
+`src/game/engine/nomad/NomadAI.ts` (strategy). Every number lives in
+`src/data/NomadConstants.ts`; the faction book — where the three peoples
+come from, how they play and how they are drawn — is
+`src/game/engine/nomad/FACTIONS_README.md`.
+
+* They are a **phantom civilization** with id `NOMAD_CIV_ID = -2` — never the
+  barbarians' `-1`. They get their own treasury, their own routes and no
+  entry in `civilizations`, so rendering falls back to the neutral colour and
+  their riders carry **no colour circle** on the map.
+* The feature runs only in a game with **exactly one human seat** (hotseat has
+  no one screen to open, all-AI nobody to talk to) — but inside such a game
+  they travel **player to player**: after every visit the tribe strikes camp
+  and rides to the next ALIVE court, your court first, then the rivals, in a
+  shuffled cycle. `NOMAD_TRAVEL_ROUNDS` = 12 between camps; a friendly
+  court's promised return (+30 rounds) goes to the front of the route, an
+  angry court is torn off it.
+* **Contact, never a timer.** The envoy speaks only when a nomad unit stands
+  ON a court's city tile or within 1 tile of one of its units. Your court
+  gets the audience; a rival is answered **in code** — diplomacy ≥ 3 and the
+  gold buys the knowledge on offer (`NOMAD_KNOWLEDGE`), otherwise they camp
+  and ride on. A court that never opens its door loses them after
+  `NOMAD_CONTACT_TIMEOUT_ROUNDS` (60).
+* **One group travels, one stays.** A grown tribe keeps two camps
+  (`NOMAD_GROUP_SPLIT_SIZE` = 6 riders divide, `NOMAD_MAX_CAMPS` = 2) and
+  each camp carries its own court, linger and answer: when one strikes tents
+  its riders ride to the next court (`NOMAD_TRAVEL_ROUNDS` = 12) while the
+  other keeps standing — so somebody is always on the map.
+* **The race for a group.** From `NOMAD_AI_HIRE_MIN_ROUND_GAP` (16) rounds
+  after the answer, an eligible AI court may buy **one group** off a camp at
+  `NOMAD_AI_HIRE_BASE_CHANCE` (0.02) + 0.005 × diplomacy per round (≈18 % per
+  visit — seldom on purpose), **never the tribe's last camp**, and the player
+  is told with a modal (`NOMAD_GROUP_HIRED`), not a toast.
+* **Hire only the riders you met**: the camp units standing with you, at
+  build cost × `NOMAD_HIRE_COST_FACTOR` (5) × the faction's factor × the
+  refusal penalty — 50 gold for a lone rider, 175 for the spawned three
+  (245 for the Mongols). Nobody at the gate, no door at all.
+* **Prices remember closed hands**: `NOMAD_REFUSAL_PRICE_PENALTY` (0.25) per
+  refusal on knowledge and hire prices — four refusals double them — and an
+  **angry** tribe tables no knowledge and no maps: only spears, raids
+  (`NOMAD_RAID_ROUNDS` = 12, 15 % of the treasury every 3 rounds) and
+  bribes. Clan tolerances before they turn: Bedouin 3, Sámi 2, Mongol 1.
+* **What a camp costs you**: `NOMAD_CAMP_FOOD_COST` (1) of food **per rider
+  per turn** while they camp within the drain radius (3) of your city — the
+  tents move to the gate when the envoy first speaks, and the bill stops
+  when they ride on. A **settlement** costs `NOMAD_SETTLEMENT_FOOD_COST` (2)
+  per turn for ever, raises `NOMAD_SETTLEMENT_DEFENDERS` (1) warrior for you
+  and grants that city `NOMAD_TRADE_ROUTE_SLOT_BONUS` (+1) trade route (see
+  *Trade routes*).
+* Their books: opening purse **300** (`NOMAD_START_GOLD`), a travelling
+  bazaar for **100** every **8** rounds (max 2 in flight, one rides in with
+  the envoy), **6** trade routes (`NOMAD_TRADE_ROUTE_LIMIT`), the city market
+  opens at **450+** (`NOMAD_CITY_OFFER_MIN_GOLD`) at 250 + 75 × pop, and a
+  broke tribe (< 80 gold) asks you for 60.
+* Relationship memory: any deal → `friendly` and one return visit (+30
+  rounds) with a radius-14 chart; refusals beyond the clan's tolerance or
+  first blood → `angry`, which never earns a return. Friendly courts get the
+  front of the route; angry ones are removed from it.
+* **Friends of the barbarians**: `BarbarianManager.act()` skips every
+  negative id, and when the barbarians take a city the camp strikes tents
+  and moves in beside it (opening a trade route with it).
+
 == Villages (goody huts)
 
 Defined in: `src/data/VillageConstants.ts`
@@ -2456,6 +2527,9 @@ http://localhost:3000/?maptype=AI_VS_AI_NAVAL&civs=7&seed=123&gold=50&noanim
 
 |Barbarians
 |`src/game/engine/BarbarianManager.ts`
+
+|Nomads (the route, prices, what a camp costs, the settlement slot)
+|`src/data/NomadConstants.ts`
 
 |Fishing
 |`src/game/engine/FisherEconomics.ts`
