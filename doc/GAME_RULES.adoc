@@ -2020,10 +2020,18 @@ come from, how they play and how they are drawn — is
 * The feature runs only in a game with **exactly one human seat** (hotseat has
   no one screen to open, all-AI nobody to talk to) — but inside such a game
   they travel **player to player**: after every visit the tribe strikes camp
-  and rides to the next ALIVE court, your court first, then the rivals, in a
-  shuffled cycle. `NOMAD_TRAVEL_ROUNDS` = 12 between camps; a friendly
-  court's promised return (+30 rounds) goes to the front of the route, an
-  angry court is torn off it.
+  and RIDES to the next ALIVE court — on the map, step by step, visible the
+  whole way (nomad units are drawn through the fog; the ground stays dark),
+  your court first, then the rivals, in a shuffled cycle. They may not raise
+  tents at that court before `NOMAD_TRAVEL_ROUNDS` = 12 (+30 for a friendly
+  court's promised return, which goes to the front of the route and never
+  re-routes away; an angry court is torn off it): a group that arrives early
+  holds a couple of tiles out and mills until its hour, and a camp that
+  STANDS anywhere pitches a tent on the first free tile beside its own —
+  beside your city, when they camp at your gate. Their travelling bazaars
+  likewise refuse the short road (`NOMAD_CARAVAN_MIN_JOURNEY` = 8): a
+  partner a real ride away first, so you watch the caravan cross the map
+  before it reaches anybody's city.
 * **Contact, never a timer.** The envoy speaks only when a nomad unit stands
   ON a court's city tile or within 1 tile of one of its units. Your court
   gets the audience; a rival is answered **in code** — diplomacy ≥ 3 and the
@@ -2035,6 +2043,20 @@ come from, how they play and how they are drawn — is
   each camp carries its own court, linger and answer: when one strikes tents
   its riders ride to the next court (`NOMAD_TRAVEL_ROUNDS` = 12) while the
   other keeps standing — so somebody is always on the map.
+* **Equivalent units, bought not built.** The tribe mirrors the players'
+  progress: as soon as any player has a ground soldier available the
+  equivalent exists for them — `nomad_foot_<base>` (a1:1 copy, own name and
+  picture) and, for foot soldiers, `nomad_camel_<base>` (same numbers, +1
+  movement, ×1.5 gold, the faction's beast for a picture). They muster the
+  strongest soldier any player can build, alternating foot/mounted, paid
+  from the chest — **production points are never involved** — and every one
+  is gated by `nomad_bazaar_only` so no production list offers it.
+* **Never a silent stay.** A camp that stands ON your city is announced
+  (the audience) and keeps being announced: a dismissed parley re-offers on
+  its cooldown while they stand with you or you walk up to their tents, and
+  the city screen carries the same doors — plus a *Speak with them* button
+  (`NomadManager.speakAtGate`) — so a camp at your gate never sits there
+  without a dialog about it.
 * **The race for a group.** From `NOMAD_AI_HIRE_MIN_ROUND_GAP` (16) rounds
   after the answer, an eligible AI court may buy **one group** off a camp at
   `NOMAD_AI_HIRE_BASE_CHANCE` (0.02) + 0.005 × diplomacy per round (≈18 % per

@@ -520,6 +520,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         h = ((h << 5) - h + (t.hasRoad ? 1 : 0)) | 0;
         h = ((h << 5) - h + (t.hasRiver ? 1 : 0)) | 0;
         h = ((h << 5) - h + (t.village ? 1 : 0)) | 0;
+        h = ((h << 5) - h + (t.nomadTent ? 1 : 0)) | 0;
+        h = ((h << 5) - h + (t.nomadSettlement ? 1 : 0)) | 0;
       }
     }
     return String(h);
@@ -723,6 +725,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             hasRoad?: boolean;
             hasRiver?: boolean;
             village?: boolean;
+            nomadTent?: boolean;
+            nomadSettlement?: boolean;
           }>
         | undefined,
       width: number,
@@ -751,6 +755,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             hasRoad: tile.hasRoad ?? false,
             hasRiver: tile.hasRiver ?? false,
             village: tile.village ?? false,
+            nomadTent: tile.nomadTent ?? false,
+            nomadSettlement: tile.nomadSettlement ?? false,
           };
         }
       }

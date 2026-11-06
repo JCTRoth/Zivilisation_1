@@ -15,11 +15,21 @@ import '../../../styles/unitRank.css';
 import GameEngine from '@/game/engine/GameEngine';
 import { useGameStore } from '@/stores/GameStore';
 import { useTranslation } from '@/i18n/useTranslation';
-import { tBuildingName, tSpecialistName, tUnitName, tWonderName } from '@/i18n/dataNames';
+import { tBuildingName, tSpecialistName, tTechName, tUnitName, tWonderName } from '@/i18n/dataNames';
+import type { TranslationKey } from '@/i18n';
+import ClanPortrait from '@/components/ui/ClanPortrait';
+import {
+  NOMAD_CAMP_FOOD_COST,
+  NOMAD_SETTLEMENT_DEFENDERS,
+  NOMAD_SETTLEMENT_DRAIN_RADIUS,
+  NOMAD_SETTLEMENT_FOOD_COST,
+  NOMAD_STANDING_COLORS,
+  NOMAD_TRADE_ROUTE_SLOT_BONUS,
+} from '@/data/NomadConstants';
 import { GameUtils } from '@/utils/GameUtils';
 import GameModal from './ModalShell';
 import { UnitIcon } from '@/components/ui/UnitIcon';
-import type { City, Civilization, GameActions, ProductionItem } from '../../../../types/game';
+import type { AudienceChoice, City, Civilization, GameActions, ProductionItem } from '../../../../types/game';
 import '../../../styles/cityModal.css';
 import '../../../styles/wonders.css';
 
@@ -145,6 +155,56 @@ const CityModal: React.FC<CityModalProps> = ({
   // handleBuyNow removed (unused)
 
   const cityName = selectedCity.name;
+
+  // ── The nomads at THIS city ────────────────────────────────────────────
+  // A camp standing at this court (or their settlement planted beside it)
+  // shows up here: who they are, what it costs you, and the doors they
+  // have on the table right now. A camp at your gate is never silent —
+  // with no audience open there is a button to table one.
+  const nomadHall = gameEngine.nomadManager?.hallState ?? null;
+  const nomadAtThisCourt = nomadHall?.campCivId === selectedCity.civilizationId;
+  const gateRiders = nomadAtThisCourt
+    ? gameEngine.nomadManager?.unitsNear?.(
+      selectedCity.col,
+      selectedCity.row,
+      NOMAD_SETTLEMENT_DRAIN_RADIUS,
+    ) ?? 0
+    : 0;
+  const settlementHere =
+    gameEngine.economicManager?.hasNomadSettlementNear?.(selectedCity) === true;
+  const nomadDoors = gateRiders > 0 ? nomadHall?.choices ?? [] : [];
+  const showNomads = gateRiders > 0 || settlementHere;
+
+  /** Answer a parley door from the city screen — same engine, same terms. */
+  const answerNomadDoor = (choiceId: string): void => {
+    const outcome = gameEngine.nomadManager.resolveParley(choiceId);
+    if (outcome?.ok && outcome.result) {
+      actions.addNotification?.({
+        type: 'success',
+        message: t(`nomad.result.${outcome.result}` as TranslationKey, outcome.params ?? {}),
+      });
+    } else if (outcome?.result === 'noGold') {
+      actions.addNotification?.({ type: 'warning', message: t('nomad.noGold') });
+    } else if (outcome?.result === 'notMeeting') {
+      actions.addNotification?.({ type: 'warning', message: t('nomad.notMeeting') });
+    }
+    // Gold, technologies and (on a hire) unit owners moved — and the doors
+    // on the table changed with them.
+    actions.updateUnits?.([...gameEngine.units]);
+    actions.updateCivilizations?.([...gameEngine.civilizations]);
+  };
+
+  /** Table the audience for the camp standing at this gate. */
+  const speakWithNomads = (): void => {
+    if (!gameEngine.nomadManager.speakAtGate()) {
+      actions.addNotification?.({ type: 'warning', message: t('nomad.notMeeting') });
+      return;
+    }
+    // The doors arrive with the audience — refresh so the section re-reads
+    // them (`hallState` is a getter, the mirror in the store is not).
+    actions.updateUnits?.([...gameEngine.units]);
+  };
+
   const population = selectedCity.population ?? 1;
   const ownerCiv = gameEngine?.civilizations?.find(
     (c: Civilization) => c.id === selectedCity.civilizationId,
@@ -255,6 +315,96 @@ const CityModal: React.FC<CityModalProps> = ({
                   {t('city.overview.note', { city: cityName })}
                 </p>
               </section>
+
+              {/* ── The nomads at this gate ──────────────────────────────
+                  Their camp (or their settlement) is a fact of THIS city:
+                  who they are, what they cost you, and the doors they have
+                  on the table. Never silent: with no audience open there is
+                  a button to table one. */}
+              {showNomads && nomadHall && (
+                <section className="gm-section city-nomad">
+                  <div className="gm-section-title">{t('city.nomad.title')}</div>
+                  <div className="city-nomad-head">
+                    <ClanPortrait
+                      className="city-nomad-art"
+                      clanId={nomadHall.clanId}
+                      image={nomadHall.image}
+                      icon={nomadHall.icon}
+                      alt={nomadHall.nameKey
+                        ? t(nomadHall.nameKey as TranslationKey)
+                        : t('nomad.diplo.title')}
+                    />
+                    <div className="city-nomad-who">
+                      <div className="city-nomad-name">
+                        {nomadHall.nameKey
+                          ? t(nomadHall.nameKey as TranslationKey)
+                          : t('nomad.diplo.title')}
+                      </div>
+                      {nomadHall.epithetKey && (
+                        <div className="city-nomad-epithet">
+                          {t(nomadHall.epithetKey as TranslationKey)}
+                        </div>
+                      )}
+                      <span
+                        className="city-nomad-standing"
+                        style={{
+                          color: NOMAD_STANDING_COLORS[nomadHall.standing],
+                          borderColor: NOMAD_STANDING_COLORS[nomadHall.standing],
+                        }}
+                      >
+                        {t(`nomad.standing.${nomadHall.standing}` as TranslationKey)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {gateRiders > 0 && (
+                    <div className="gm-kv">
+                      {t('city.nomad.riders', {
+                        count: gateRiders,
+                        food: gateRiders * NOMAD_CAMP_FOOD_COST,
+                      })}
+                    </div>
+                  )}
+                  {settlementHere && (
+                    <div className="gm-kv">
+                      {t('city.nomad.settlement', {
+                        food: NOMAD_SETTLEMENT_FOOD_COST,
+                        defenders: NOMAD_SETTLEMENT_DEFENDERS,
+                        routes: NOMAD_TRADE_ROUTE_SLOT_BONUS,
+                      })}
+                    </div>
+                  )}
+
+                  {nomadDoors.length > 0 ? (
+                    <div className="city-nomad-doors">
+                      {nomadDoors.map((choice: AudienceChoice) => {
+                        const params = choice.labelParams ? { ...choice.labelParams } : undefined;
+                        if (params && typeof params.tech === 'string') {
+                          const techId = String(params.tech);
+                          params.tech = tTechName(
+                            techId,
+                            gameEngine.technologies.find((x) => x.id === techId)?.name ?? techId,
+                          );
+                        }
+                        return (
+                          <Button
+                            key={choice.id}
+                            size="sm"
+                            variant={choice.variant === 'pass' ? 'outline-secondary' : 'outline-warning'}
+                            onClick={() => answerNomadDoor(choice.id)}
+                          >
+                            {t(choice.labelKey as TranslationKey, params)}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  ) : gateRiders > 0 ? (
+                    <Button size="sm" variant="outline-warning" onClick={speakWithNomads}>
+                      {t('city.nomad.speak')}
+                    </Button>
+                  ) : null}
+                </section>
+              )}
 
               {isPlayerCity && (
                 <section className="gm-section">

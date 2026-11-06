@@ -21,18 +21,22 @@ Clan portrait prompts: [`doc/NOMAD_ART_PROMPTS.adoc`](../../../../doc/NOMAD_ART_
 | [`FACTIONS_README.md`](./FACTIONS_README.md) | **The three peoples** — Bedouin / Mongol / Sámi: where they come from in real history, how they play, and the art prompts that draw them |
 | [`src/data/NomadConstants.ts`](../../../../src/data/NomadConstants.ts) | **Every balance number** and the three factions (`NOMAD_CLANS`) |
 | [`src/data/UnitConstants.ts`](../../../../src/data/UnitConstants.ts) | `travelling_bazaar` — the camp's own unit, gated by the impossible tech `nomad_bazaar_only` so no player or AI production list ever offers it |
-| [`tests/nomads.test.ts`](../../../../tests/nomads.test.ts) | The relationship: trigger, contact rule, doors, race, moods, return |
-| [`tests/nomadEconomy.test.ts`](../../../../tests/nomadEconomy.test.ts) | The chest: routes, ceiling, market, bribe, identity |
+| [`tests/nomads.test.ts`](../../../../tests/nomads.test.ts) | The relationship: trigger, contact rule, doors, race, moods, return — **and the fog pins**: the spawn lifts no fog, a rider's step never paints the active player's fog |
+| [`tests/nomadEconomy.test.ts`](../../../../tests/nomadEconomy.test.ts) | The chest: routes (and the **journey rule** — a bazaar refuses the short road), ceiling, market, bribe, identity |
 | [`tests/nomadStrategy.test.ts`](../../../../tests/nomadStrategy.test.ts) | The brain: stance variation, muster, plea, brokerage, friendship |
 | [`tests/nomadBalance.test.ts`](../../../../tests/nomadBalance.test.ts) | The 120-round simulation + the pacing invariants |
 | [`tests/nomadHire.test.ts`](../../../../tests/nomadHire.test.ts) | The gate rule: only the riders you meet are sold, at ×5 build cost, no door without a meeting — plus the `hallState` snapshot |
-| [`tests/nomadTravel.test.ts`](../../../../tests/nomadTravel.test.ts) | The route: your court → a rival's (answered in code), **one group rides on while the other stays**, the food a camp at your gate costs, the settlement's fourth trade route, refusal prices |
+| [`tests/nomadTravel.test.ts`](../../../../tests/nomadTravel.test.ts) | The route: your court → a rival's (answered in code), **the real ride** (they cross the map on their own legs and camp where they arrive), the camp's **tent**, one group rides on while the other stays, never a silent stay at your gate (`speakAtGate`), the food a camp costs, the settlement's fourth trade route, refusal prices |
 
 ## The visit — contact, never a timer
 
 1. **Spawn** at round ≥ 4 once the player has a city (fallback: round 12,
    visiting the settler instead), 9–13 tiles away on the same landmass,
-   fortified and revealed (`NOMAD_SIGHTED`).
+   fortified and **announced** (`NOMAD_SIGHTED`) — but never *revealed*:
+   their tents stand outside your sight, and lighting them up would grey
+   ~50 tiles you have never walked. Fog is earned by walking it; you meet
+   them when their riders walk onto your city (or ask the hall's
+   "Locate their camp").
 2. **The wander**: until the envoy has spoken, the group wanders toward the
    player's court — nearest city, else nearest unit — zig-zagging (most
    steps close in, some drift sideways, the distance never grows). The
@@ -42,13 +46,23 @@ Clan portrait prompts: [`doc/NOMAD_ART_PROMPTS.adoc`](../../../../doc/NOMAD_ART_
    nomad unit stands **ON your city's tile** — or on the same tile as a
    player unit (the city-less settler visit). No nomad on the tile, no
    envoy — and there is no timer.
-4. **After the answer**: they walk home to the tents and wait. A
-   *dismissed* parley re-offers when a player unit comes within 2 of the
-   camp (3-round cooldown) — dismissal is not refusal.
-5. **They ride on.** Once the visit is over — deal, refusal, the linger
-   or the 60-round contact window — the tribe strikes camp and rides to
-   the **next court**: every alive court in turn (you first, then the
-   rivals, then round again), `NOMAD_TRAVEL_ROUNDS` (12) between camps.
+4. **They never stay at your gate unannounced.** After the answer the
+   tents move to the tile the envoy stood on (your city pays their food),
+   and a *dismissed* parley comes round again on its 3-round cooldown
+   whenever the camp **stands with you** or you walk up to its tents —
+   dismissal is not refusal, and silence is not an option. The city
+   screen's **Nomads at the gate** section shows the same doors (and a
+   *Speak with them* button when none is tabled: `speakAtGate`).
+5. **They ride on — for real.** Once the visit is over — deal, refusal,
+   the linger or the 60-round contact window — the tribe strikes camp and
+   its RIDERS cross the map step by step to the **next court**
+   (`marchRoad`, no travel spell): every alive court in turn (you first,
+   then the rivals, then round again), and never AT that court before
+   `NOMAD_TRAVEL_ROUNDS` (12; +30 for a promised return) — a group that
+   arrives early holds a couple of tiles out and mills there until its
+   hour. The camp raised at the destination is built around the SAME
+   riders who walked in, and nomad units are drawn through the fog the
+   whole way (you see them coming).
    A friendly court keeps its promised return (+30 rounds) and goes to the
    front of the route. At a **rival** there is no audience: the envoy is
    answered in code — a court with diplomacy ≥ 3 and the gold buys the
@@ -77,6 +91,14 @@ per turn — a tribe parked on your doorstep costs you grain whether or not
 you invited them. A *settlement* costs `NOMAD_SETTLEMENT_FOOD_COST` (2)
 per turn for as long as it stands (and it defends you).
 
+**Equivalent units**: the tribe buys what the players can field — a1:1
+copy (`nomad_foot_<base>`, "Nomad Riflemen") or the same soldier mounted
+(`nomad_camel_<base>`, +1 movement, ×1.5 gold), always the strongest
+soldier any player can build right now, alternating foot/mounted per
+muster. Same numbers, own name and picture; the mounted one wears the
+faction's beast (Bedouin camel / Mongol horse / Sámi reindeer). All of
+them are gated out of every production list — the chest is their currency.
+
 **Their prices remember closed hands**: every refusal adds 25 % to what
 they ask of you (four refusals double it), and an **angry** tribe tables
 no knowledge and no maps at all — only the spears, or the door.
@@ -96,6 +118,10 @@ into the fog the way a single camp used to.
 stand with theirs, and it sells exactly those units — a splinter camp four
 tiles away was never yours to buy. Walk away and the door disappears
 (`resolveParley('hire')` answers `notMeeting`).
+
+**In the city screen**: the city a camp stands at shows a *Nomads at the
+gate* section — poster, standing, what it costs you, and the doors on the
+table (or *Speak with them* to table them).
 
 **In the diplomacy hall**: once sighted the tribe gets its own row and its
 own panel (`NomadManager.hallState`) — faction art, standing, doctrine and
@@ -125,7 +151,7 @@ One chest funds every door (that *is* the balance):
 | City market | offers at **450+** in the chest (the `market` stance waives the gate, not the price), price **250 + 75 × pop**, one per 15 rounds, refused cities never again, **never your last city** |
 | The plea | under **80** gold and peaceful → asks you for **60** (give = they remember; refuse = a refusal) |
 | Knowledge brokerage | a tech sold to an AI court every **15** rounds (half cost, clan factor, 25–100) |
-| Camp muster | `steel` stance only, max **2** soldiers beyond the horde, one per 8 rounds |
+| Camp muster | `steel` stance only, max **2** soldiers beyond the horde, one per 8 rounds — bought as the tribe's **equivalent** of the strongest soldier any player can build (foot copy / mounted, `NOMAD_MIRRORED_UNITS`), from the chest: gold, never production points |
 
 **Strategy** (`NomadAI`): `roads` (early — build bazaars, broker knowledge)
 → `treasury` (hoard) → `market` (buy cities) → `steel` (warrior clans,

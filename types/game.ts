@@ -127,6 +127,8 @@ interface Tile {
   village?: boolean;
   /** A nomad settlement planted beside a city (drains its food, raises defenders). */
   nomadSettlement?: boolean;
+  /** A nomad pitch — their camp's tent, drawn beside the tents (visual only). */
+  nomadTent?: boolean;
   visible: boolean;
   explored: boolean;
   col: number;

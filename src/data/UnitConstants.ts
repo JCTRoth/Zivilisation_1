@@ -654,6 +654,90 @@ export const UNIT_PROPERTIES: Record<string, UnitProperties> = {
     }
 };
 
+// ── The nomads' EQUIVALENT units ─────────────────────────────────────────
+/**
+ * The tribe does not build: it BUYS. Production points are the players'
+ * currency — the nomads' is their chest — and what they buy mirrors what
+ * the players can field: **as soon as one of the players has a ground
+ * soldier available, the equivalent exists for the tribe**, with the SAME
+ * stats and only a different name and icon.
+ *
+ * Two shapes per soldier:
+ *
+ *  * `nomad_foot_<base>` — a 1:1 copy (same numbers, "Nomad <unit>").
+ *  * `nomad_camel_<base>` — the same soldier MOUNTED (+1 movement, ×1.5
+ *    gold; "Mounted <unit>"), for the foot soldiers only: nobody puts a
+ *    tank on a camel.
+ *
+ * Every one of them carries `requires: 'nomad_bazaar_only'` (the trick the
+ * travelling bazaar uses), so no player production list, no AI city and no
+ * auto-production ever offers to build one — they enter the world only
+ * through the tribe's war chest.
+ */
+export const NOMAD_MIRRORED_UNITS: readonly string[] = [
+    'warrior',
+    'scout',
+    'archer',
+    'phalanx',
+    'chariot',
+    'knights',
+    'legion',
+    'catapult',
+    'musketeer',
+    'riflemen',
+    'cavalry',
+    'mech_inf',
+    'cannon',
+    'artillery',
+    'tank',
+];
+
+/** The foot soldiers among them — those also come mounted. */
+export const NOMAD_MOUNTED_UNITS: readonly string[] = [
+    'warrior',
+    'archer',
+    'phalanx',
+    'legion',
+    'musketeer',
+    'riflemen',
+];
+
+/** The tribe's 1:1 copy of a player's ground unit. */
+export const nomadFootType = (base: string): string => `nomad_foot_${base}`;
+
+/** The same soldier mounted — one step faster, half again the gold. */
+export const nomadMountedType = (base: string): string => `nomad_camel_${base}`;
+
+/** Every type the tribe can buy (none of them ever enter a production list). */
+export const NOMAD_EQUIVALENT_TYPES: readonly string[] = [
+    ...NOMAD_MIRRORED_UNITS.map(nomadFootType),
+    ...NOMAD_MOUNTED_UNITS.map(nomadMountedType),
+];
+
+for (const base of NOMAD_MIRRORED_UNITS) {
+    const props = UNIT_PROPERTIES[base];
+    if (!props) continue;
+    UNIT_PROPERTIES[nomadFootType(base)] = {
+        ...props,
+        name: `Nomad ${props.name}`,
+        requires: 'nomad_bazaar_only',
+    };
+}
+
+for (const base of NOMAD_MOUNTED_UNITS) {
+    const props = UNIT_PROPERTIES[base];
+    if (!props) continue;
+    UNIT_PROPERTIES[nomadMountedType(base)] = {
+        ...props,
+        name: `Mounted ${props.name}`,
+        // The beast, not the weapon, is what changes: one step faster and
+        // half again as much gold (the chest is their only currency).
+        movement: (props.movement ?? 1) + 1,
+        cost: Math.round((props.cost ?? 10) * 1.5),
+        requires: 'nomad_bazaar_only',
+    };
+}
+
 /**
  * Leonardo's Workshop upgrade paths: an obsolete unit type automatically
  * becomes `target` once the owner knows the target's required technology.

@@ -95,6 +95,7 @@ describe('transports at sea', () => {
     }
 
     let worstSharing = 0;
+    let worstCivsPerTile = 0;
     // Fraction of the fleet sitting in one corner. A hull whose home shore is
     // the corner may legitimately be there; the bug was the whole fleet.
     let worstCornerShare = 0;
@@ -112,6 +113,17 @@ describe('transports at sea', () => {
         perTile.set(key, (perTile.get(key) ?? 0) + 1);
       }
       worstSharing = Math.max(worstSharing, ...perTile.values());
+      // DIFFERENT civs on one tile — the failure the header describes
+      // ("three civs ended up claiming one rock, all their ferries
+      // converged"): fleets from rival shores meeting on one hull-wide tile.
+      const civsOnTile = new Map<string, Set<number>>();
+      for (const h of hulls) {
+        const k = `${h.col},${h.row}`;
+        const set = civsOnTile.get(k) ?? new Set<number>();
+        set.add(h.civilizationId);
+        civsOnTile.set(k, set);
+      }
+      for (const set of civsOnTile.values()) worstCivsPerTile = Math.max(worstCivsPerTile, set.size);
       // "Corner" = a tenth of the map in each axis: the old bug stacked them
       // against (0,0) because the patrol scan began at the top-left diagonal.
       const corner = hulls.filter(h => h.col < width / 10 && h.row < height / 10).length;
@@ -137,7 +149,16 @@ describe('transports at sea', () => {
     // each time. The per-turn "one civ per island" assertion above is the exact
     // one — it is what makes two civs' ferries converge on one anchorage — and
     // these three only have to catch a mass exodus into one corner.
-    expect(worstSharing).toBeLessThanOrEqual(2);
+    // `worstSharing` counts HULLS on one tile: a civ's own ferries may stack
+    // on their own city (units stack in this game) — with every civ's fog now
+    // honest (a unit reveals to its OWNER, never to whoever's turn is running),
+    // a coastal civ legitimately parks a couple of freshly built hulls on its
+    // quay before they scatter. Half the fleet on one tile is still the
+    // "whole flotilla in one anchorage" the old bug produced.
+    expect(worstSharing).toBeLessThanOrEqual(4);
+    // RIVAL fleets sharing one tile is the header's bug and stays pinned:
+    // never three civs' ferries on the same square.
+    expect(worstCivsPerTile).toBeLessThanOrEqual(2);
     expect(worstCornerShare).toBeLessThan(0.6);
     expect(worstCluster).toBeLessThanOrEqual(4);
   }, 900000);

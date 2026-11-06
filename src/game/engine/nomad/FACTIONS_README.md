@@ -24,6 +24,12 @@ Ids, numbers and image paths live in
 **The array order is load-bearing** — tests roll the faction by index
 (trader / warrior / mystic).
 
+**Their soldiers are the players' soldiers, rebought.** The tribe mirrors
+what the players can field (`NOMAD_MIRRORED_UNITS`): a1:1 copy under a
+nomad name, and a mounted version of the same soldier that wears **this
+faction's beast** — a Bedouin **camel** 🐫, a Mongol **horse** 🏇, a Sámi
+**reindeer** 🦌 (`NOMAD_MOUNT_ICONS`). Same numbers, different pictures.
+
 **They travel.** The tribe never settles at one court: after each visit it
 rides on to the next one (yours first, then every AI rival, then round
 again) — so the people you meet at your gate are the same people dealing

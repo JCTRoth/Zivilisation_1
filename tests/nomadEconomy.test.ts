@@ -23,6 +23,7 @@ import { makeEngine, type TestWorld } from './helpers/world';
 import { UNIT_TYPES } from '@/data/UnitConstants';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import {
+  NOMAD_CARAVAN_MIN_JOURNEY,
   NOMAD_CIV_ID,
   NOMAD_CITY_PRICE_BASE,
   NOMAD_CITY_PRICE_PER_POP,
@@ -93,6 +94,25 @@ function leaveGate(engine: Engine): void {
 }
 
 /** A passable, free tile on the origin's own landmass, within `maxDist`. */
+/** A passable, unoccupied tile at EXACTLY `d` tiles (Chebyshev) of `origin`. */
+function ringTile(engine: Engine, origin: { col: number; row: number }, d: number) {
+  const landmass = engine.getLandmassId?.(origin.col, origin.row) ?? -1;
+  for (let dc = -d; dc <= d; dc++) {
+    for (let dr = -d; dr <= d; dr++) {
+      if (Math.max(Math.abs(dc), Math.abs(dr)) !== d) continue;
+      const col = origin.col + dc;
+      const row = origin.row + dr;
+      if (!engine.squareGrid.isValidSquare(col, row)) continue;
+      if (!engine.isTilePassable(col, row)) continue;
+      if (engine.getUnitAt(col, row)) continue;
+      if (engine.getCityAt(col, row)) continue;
+      if (landmass >= 0 && engine.getLandmassId?.(col, row) !== landmass) continue;
+      return { col, row };
+    }
+  }
+  throw new Error(`no free tile at distance ${d}`);
+}
+
 function tileNear(engine: Engine, origin: { col: number; row: number }, maxDist: number) {
   const landmass = engine.getLandmassId?.(origin.col, origin.row) ?? -1;
   for (let d = 1; d <= maxDist; d++) {
@@ -136,11 +156,13 @@ describe('Nomads — the war chest', () => {
     nm.processRound(4); // spawn
     const camp = nm.campTile!;
 
-    // A partner city near the camp, on the camp's own landmass. (It may sit
-    // close enough that the caravan delivers within the very round it is
-    // built — the build is proven at the createUnit call, the delivery at
-    // the route.)
-    const p = tileNear(engine, camp, 4);
+    // A partner city EIGHT tiles from the camp, on the camp's own landmass
+    // — a real journey. A bazaar refuses the short road when there is a far
+    // one (`NOMAD_CARAVAN_MIN_JOURNEY`): born beside its target it would
+    // deliver in the very round it was built and never be seen crossing the
+    // map. Eight is unambiguous here — the camp stands 9–13 from Haven, so
+    // Partner is the nearest city AT journey distance.
+    const p = ringTile(engine, camp, NOMAD_CARAVAN_MIN_JOURNEY);
     const partner = w.settle('Partner', p.col, p.row, 1, 2);
     expect(partner.population).toBe(2);
 
@@ -180,22 +202,99 @@ describe('Nomads — the war chest', () => {
     expect(routeEvent[0].data.city).toBe('Partner');
     expect(routeEvent[0].data.limit).toBe(NOMAD_TRADE_ROUTE_LIMIT);
 
-    // Income: base + half the partner's heads = 2 + 1 = 3 per turn. The two
-    // rounds after delivery are never build rounds (those fall every 10th
-    // from round 9 — delivery lands at 9 or 10) nor knowledge sales (those
-    // run from spawn + 15).
-    const before = nm.treasury;
-    nm.processRound(last + 1);
-    nm.processRound(last + 2);
-    expect(nm.treasury - before).toBe(2 * (NOMAD_ROUTE_INCOME_BASE + Math.floor(partner.population / 2)));
+    // It RODE there: a bazaar that delivers in the round it was built never
+    // crossed the map — the short road this rule refuses.
+    expect(last).toBeGreaterThan(builtAt + 1);
+
+    // Income: base + half the partner's heads per turn. The chest is NOT
+    // quiet while the tribe lives — the envoy may arrive mid-window and
+    // escort a second bazaar, a knowledge sale may land — so the two rounds
+    // that prove the route's pay are the next two in which NOTHING ELSE
+    // touched the chest: the delta is the route's alone.
+    // Every route on the books pays that turn (the envoy may have signed a
+    // second one on the way — each partner pays base + half its heads).
+    const payOf = (route: { partnerCityId: string }): number => {
+      const city = engine.cities.find((c) => c.id === route.partnerCityId);
+      return NOMAD_ROUTE_INCOME_BASE + Math.floor((city?.population ?? 0) / 2);
+    };
+    const perTurn = nm.routes.reduce((sum, route) => sum + payOf(route), 0);
+    expect(perTurn, 'the route pays').toBeGreaterThan(0);
+    const quietRound = (r: number): boolean => {
+      const unitsBefore = createSpy.mock.calls.length;
+      const eventsBefore = events.length;
+      nm.processRound(r);
+      return (
+        createSpy.mock.calls.length === unitsBefore
+        && !events.slice(eventsBefore).some(
+          (e) => e.type === 'NOMAD_PARLEY' || e.type === 'NOMAD_KNOWLEDGE' || e.type === 'NOMAD_ROUTE',
+        )
+      );
+    };
+
+    let paid = 0;
+    let expected = 0;
+    let quiet = 0;
+    let at = last;
+    while (quiet < 2 && at < last + 25) {
+      at += 1;
+      // The route set is read at the START of each round: the envoy may
+      // have signed another route in an earlier, busier round.
+      const due = nm.routes.reduce((sum, route) => sum + payOf(route), 0);
+      const before = nm.treasury;
+      if (!quietRound(at)) continue;
+      expected += due;
+      paid += nm.treasury - before;
+      quiet += 1;
+    }
+    expect(quiet, 'two rounds where only the routes paid').toBe(2);
+    expect(paid).toBe(expected);
 
     // A partner that fell to somebody else is no longer a partner: the route
-    // dies with it and the income stops that very turn (still no build round).
+    // dies with it — and the pay it brought every turn stops with it.
+    const fullPay = perTurn;
     partner.civilizationId = 2;
-    const afterLoss = nm.treasury;
-    nm.processRound(last + 3);
-    expect(nm.routes).toHaveLength(0);
-    expect(nm.treasury).toBe(afterLoss); // no income, no build, no tribute
+
+    // The partner's route dies with it, and the round after that no quiet
+    // round brings its share of the pay any more.
+    let checked = false;
+    while (!checked && at < last + 40) {
+      at += 1;
+      const before = nm.treasury;
+      const lost = !quietRound(at);
+      if (lost) continue;
+      const partnerRoute = nm.routes.some((r) => r.partnerCityId === partner.id);
+      if (partnerRoute) continue; // not fallen yet — wait for the collection
+      expect(nm.treasury - before, 'the pay stopped with the route').toBeLessThan(fullPay);
+      checked = true;
+    }
+    expect(checked, 'a quiet round after the partner fell').toBe(true);
+  });
+
+  it('a bazaar refuses the short road: the far partner comes first', async () => {
+    const { w, engine } = await world();
+    const spot = w.landNear(10, 10, 8);
+    w.settle('Haven', spot.col, spot.row, 0, 1);
+    const nm = engine.nomadManager;
+    nm.processRound(4); // spawn
+    const camp = nm.campTile!;
+
+    // Two partners on the camp's landmass: one round the corner, one a
+    // real journey away. A bazaar born beside its target would deliver in
+    // the same round it was built and never be seen crossing the map.
+    const nearTile = ringTile(engine, camp, 4);
+    const farTile = ringTile(engine, camp, NOMAD_CARAVAN_MIN_JOURNEY);
+    const near = w.settle('Near', nearTile.col, nearTile.row, 1, 1);
+    const far = w.settle('Far', farTile.col, farTile.row, 2, 1);
+
+    let target: string | null = null;
+    for (let r = 5; r <= 20 && target === null; r++) {
+      nm.processRound(r);
+      const riding = (nm as unknown as { caravans: Array<{ targetCityId: string }> }).caravans;
+      if (riding.length > 0) target = riding[0].targetCityId;
+    }
+    expect(target, 'the camp built a bazaar').not.toBeNull();
+    expect(target, 'it rides to the FAR partner, not the near one').toBe(far.id);
+    expect(target).not.toBe(near.id);
   });
 
   it('never signs more than six routes', async () => {

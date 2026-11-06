@@ -236,6 +236,190 @@ describe('Nomads — the route', () => {
     }
   });
 
+  it('they ride on: the departed group crosses the map on its own legs', async () => {
+    const h = await world();
+    h.settle();
+    const nm = h.engine.nomadManager;
+    const city = h.engine.cities[0];
+
+    // Every rival court needs a CITY at the other end of the road: the
+    // route picks an alive court, and a court with nobody home is one the
+    // riders would only re-route away from.
+    for (const civId of [1, 2]) {
+      let founded = false;
+      for (let d = 6; d <= 24 && !founded; d++) {
+        for (let dc = -d; dc <= d && !founded; dc++) {
+          for (let dr = -d; dr <= d && !founded; dr++) {
+            if (Math.max(Math.abs(dc), Math.abs(dr)) !== d) continue;
+            const col = city.col + dc;
+            const row = city.row + dr;
+            if (!h.engine.isValidHex(col, row)) continue;
+            if (!h.engine.isTilePassable(col, row)) continue;
+            if (h.engine.getUnitAt(col, row) || h.engine.getCityAt(col, row)) continue;
+            h.engine.foundCity(col, row, civId);
+            founded = true;
+          }
+        }
+      }
+      expect(founded, `room for rival court ${civId}`).toBe(true);
+    }
+
+    nm.processRound(NOMAD_TRIGGER_ROUND);
+    for (const rider of nomadUnits(h.engine)) {
+      rider.col = city.col;
+      rider.row = city.row;
+    }
+    nm.processRound(NOMAD_TRIGGER_ROUND + 1);
+    expect(eventsOf(h.events, 'NOMAD_PARLEY').length).toBeGreaterThan(0);
+    expect(nm.resolveParley('pass').ok).toBe(true);
+
+    // The short refusal timer strikes the tents…
+    const road = (nm as unknown as {
+      road: Array<{ unitIds: string[]; targetCivId: number; arriveAt: number }>;
+    }).road;
+    let departedAt = -1;
+    for (let r = NOMAD_TRIGGER_ROUND + 2; r <= NOMAD_TRIGGER_ROUND + 30; r++) {
+      nm.processRound(r);
+      if (nm.isDeparted) { departedAt = r; break; }
+    }
+    expect(departedAt, 'they struck their tents').toBeGreaterThan(0);
+
+    // …and NOBODY vanishes: the riders are still on the map, riding —
+    // the travel spell is gone, the tribe crosses the ground itself.
+    expect(road.length, 'a group took the road').toBeGreaterThan(0);
+    const riderIds = [...nomadUnits(h.engine)].map((u) => u.id);
+    expect(riderIds.length, 'they ride on, in the open').toBeGreaterThan(0);
+    const target = road[0].targetCivId;
+    const front = h.engine.cities.find((c) => c.civilizationId === target)
+      ?? null;
+    expect(front, 'the next court still stands').not.toBeNull();
+    const dist = (u: { col: number; row: number }) =>
+      Math.max(Math.abs(u.col - front!.col), Math.abs(u.row - front!.row));
+    const atDeparture = Math.min(...nomadUnits(h.engine).map(dist));
+
+    // They COVER GROUND toward it — a ride, not a teleport…
+    let best = atDeparture;
+    let arrived = false;
+    for (let r = departedAt + 1; r <= departedAt + 45; r++) {
+      nm.processRound(r);
+      expect(nomadUnits(h.engine).length, 'still on the map while riding').toBeGreaterThan(0);
+      const camp = (nm as unknown as { camps: Array<{ targetCivId: number; unitIds: string[] }> })
+        .camps.find((c) => c.targetCivId === target);
+      if (camp) {
+        arrived = true;
+        // …and the SAME riders raise the tents at the destination.
+        expect([...camp.unitIds].sort()).toEqual([...riderIds].sort());
+        break;
+      }
+      if (nomadUnits(h.engine).length > 0) {
+        best = Math.min(best, Math.min(...nomadUnits(h.engine).map(dist)));
+      }
+    }
+    expect(best, 'they closed the road on foot').toBeLessThan(atDeparture);
+    expect(arrived, 'they rode all the way to the next court').toBe(true);
+  });
+
+  it('a standing camp pitches a tent beside its tents — and takes it up when it leaves', async () => {
+    const h = await world();
+    h.settle();
+    const nm = h.engine.nomadManager;
+    const city = h.engine.cities[0];
+    const tents = () =>
+      (h.engine.map?.tiles ?? []).filter((t) => (t as { nomadTent?: boolean }).nomadTent);
+
+    // Out in the country: the camp's own pitch appears beside its tents.
+    nm.processRound(NOMAD_TRIGGER_ROUND);
+    expect(tents(), 'the camp pitched a tent').toHaveLength(1);
+
+    // At your gate: the tents moved onto your city, so the pitch stands
+    // BESIDE YOUR CITY — the visible "somebody lives here" that says why
+    // their riders are standing still.
+    for (const rider of nomadUnits(h.engine)) {
+      rider.col = city.col;
+      rider.row = city.row;
+    }
+    nm.processRound(NOMAD_TRIGGER_ROUND + 1);
+    const atGate = tents();
+    expect(atGate, 'one pitch at the gate').toHaveLength(1);
+    expect(
+      Math.max(Math.abs(atGate[0].col - city.col), Math.abs(atGate[0].row - city.row)),
+      'the tent stands next to the city',
+    ).toBeLessThanOrEqual(2);
+
+    // Striking the tents pulls the pitch out of the ground with them.
+    expect(nm.resolveParley('pass').ok).toBe(true);
+    for (let r = NOMAD_TRIGGER_ROUND + 2; r <= NOMAD_TRIGGER_ROUND + 30 && !nm.isDeparted; r++) {
+      nm.processRound(r);
+    }
+    expect(nm.isDeparted, 'they left').toBe(true);
+    expect(tents(), 'the pitch went with the tents').toHaveLength(0);
+  });
+
+  it('never camps at your city without a dialog — the envoy comes back', async () => {
+    const h = await world();
+    h.settle();
+    const nm = h.engine.nomadManager;
+    const city = h.engine.cities.find((c) => c.name === 'Haven')!;
+
+    // Math.random pinned high: every wander step closes in.
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.999);
+    try {
+      nm.processRound(NOMAD_TRIGGER_ROUND);
+      // The whole horde stands ON the city — with no player unit in sight:
+      // standing on the city IS the meeting, no garrison required.
+      for (const rider of nomadUnits(h.engine)) {
+        rider.col = city.col;
+        rider.row = city.row;
+      }
+      nm.processRound(NOMAD_TRIGGER_ROUND + 1);
+      expect(eventsOf(h.events, 'NOMAD_PARLEY'), 'the envoy speaks').toHaveLength(1);
+
+      // The player answers and walks away — no witness, no unit anywhere
+      // near — yet the group still stands ON the city: it may not sit there
+      // unannounced, so the farewell audience comes round on its own.
+      expect(nm.resolveParley('pass').ok).toBe(true);
+
+      let reoffered = false;
+      for (let r = NOMAD_TRIGGER_ROUND + 2; r <= NOMAD_TRIGGER_ROUND + 10; r++) {
+        nm.processRound(r);
+        if (eventsOf(h.events, 'NOMAD_PARLEY').length >= 2) {
+          reoffered = true;
+          break;
+        }
+      }
+      expect(reoffered, 'a camp at your gate never stays without a dialog').toBe(true);
+      const second = eventsOf(h.events, 'NOMAD_PARLEY').at(-1)!;
+      expect(second.data.choices.map((c: any) => c.id)).toEqual(['hire', 'farewell']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('the city screen can table the audience itself (speakAtGate)', async () => {
+    const h = await world();
+    h.settle();
+    const nm = h.engine.nomadManager;
+    const city = h.engine.cities.find((c) => c.name === 'Haven')!;
+
+    nm.processRound(NOMAD_TRIGGER_ROUND);
+    // The horde is still out in the country: nothing to say at the gate.
+    expect(nm.speakAtGate()).toBe(false);
+
+    // The moment they stand on the city, the screen can table the parley…
+    for (const rider of nomadUnits(h.engine)) {
+      rider.col = city.col;
+      rider.row = city.row;
+    }
+    expect(nm.speakAtGate()).toBe(true);
+    expect(eventsOf(h.events, 'NOMAD_PARLEY')).toHaveLength(1);
+
+    // …and asking twice does not re-roll the promised terms.
+    const first = eventsOf(h.events, 'NOMAD_PARLEY').at(-1)!;
+    expect(nm.speakAtGate()).toBe(true);
+    expect(eventsOf(h.events, 'NOMAD_PARLEY')).toHaveLength(1);
+    expect(first.data.choices.map((c: any) => c.id)).toContain('tech');
+  });
+
   it('a camp standing at your gate costs you food — per mouth, per turn', async () => {
     const h = await world();
     h.settle();

@@ -16,8 +16,26 @@ export const NOMAD_TRIGGER_FALLBACK_ROUND = 12;
 export const NOMAD_SPAWN_MIN_DISTANCE = 9;
 export const NOMAD_SPAWN_MAX_DISTANCE = 13;
 
-/** The horde: two spears and a rider — enough to matter, not enough to win. */
-export const NOMAD_SPAWN_UNITS = ['warriors', 'warriors', 'scout'] as const;
+/** The horde: two spears and a rider — enough to matter, not enough to win.
+ *  All three are the tribe's own equivalents of the players' soldiers
+ *  (same stats, their name and their picture — see UnitConstants). */
+export const NOMAD_SPAWN_UNITS = [
+  'nomad_foot_warrior',
+  'nomad_foot_warrior',
+  'nomad_foot_scout',
+] as const;
+
+/**
+ * The tribe's BEAST per faction — the picture a mounted equivalent carries
+ * (the foot copies keep their soldier's own picture). Same stats across
+ * factions, different pictures: a Bedouin camel, a Mongol horse, a Sámi
+ * reindeer.
+ */
+export const NOMAD_MOUNT_ICONS: Record<string, string> = {
+  bedouin: '🐫',
+  mongol: '🏇',
+  sami: '🦌',
+};
 /**
  * Hire price = the MEETED units' build cost × this × the clan's factor.
  *
@@ -84,6 +102,11 @@ export const NOMAD_PROXIMITY_DISTANCE = 2;
  * enough that every court sees them within a game.
  */
 export const NOMAD_TRAVEL_ROUNDS = 12;
+/** How far from its next court a group that arrived EARLY holds and mills
+ *  until its appointed round (`arriveAt`): close enough to be seen at the
+ *  gate, far enough that it is not standing ON a court with no tents —
+ *  and never frozen, because a rider who never moves looks broken. */
+export const NOMAD_RIDE_HOLD_DISTANCE = 2;
 
 /**
  * The contact window: how long a camp may wait at a court that never opens
@@ -146,6 +169,12 @@ export const NOMAD_CARAVAN_BUILD_ROUNDS = 8;
 export const NOMAD_CARAVAN_MAX_IN_FLIGHT = 2;
 /** A caravan that cannot take a single step for this many rounds is lost. */
 export const NOMAD_CARAVAN_BLOCKED_ROUNDS = 10;
+/** THE SHORT ROAD A BAZAAR REFUSES: below this distance from its own camp
+ *  a partner city is "next door" — a bazaar born beside its target would
+ *  deliver in the same round and never be seen crossing the map. Prefer a
+ *  target at least this far away; only when nothing is do they take the
+ *  short road (a route still has to be possible on a small island). */
+export const NOMAD_CARAVAN_MIN_JOURNEY = 8;
 /** Hard transit cap: no delivery in this many rounds and the road is given up. */
 export const NOMAD_CARAVAN_MAX_AGE_ROUNDS = 40;
 

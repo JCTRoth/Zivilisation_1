@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import GameEngine from '@/game/engine/GameEngine';
+import { NOMAD_CIV_ID } from '@/data/NomadConstants';
 
 // Minimal localStorage for the node test environment.
 const memory = new Map<string, string>();
@@ -97,5 +98,39 @@ describe('Save/load', () => {
     );
     expect([...restoredCity.userAssignedTiles]).toEqual([pinnedKey]);
     expect(restoredCity.governor).toBe('commerce');
+  });
+
+  it('keeps nothing of the nomads: no pitch, no riders on a loaded map', async () => {
+    const engine = new GameEngine(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (engine as any).sleep = () => Promise.resolve();
+    await engine.initialize({
+      numberOfCivilizations: 2,
+      mapType: 'MANY_CITIES',
+      devMode: false,
+      startingGold: 100,
+    });
+
+    // The tribe camps: riders on the map, a pitch in the ground beside them.
+    engine.nomadManager.processRound(4);
+    const tentsBefore = engine.map!.tiles.filter((t) => t.nomadTent).length;
+    const ridersBefore = engine.units.filter((u) => u.civilizationId === NOMAD_CIV_ID).length;
+    expect(tentsBefore, 'the camp pitched a tent').toBeGreaterThan(0);
+    expect(ridersBefore, 'the riders are on the map').toBeGreaterThan(0);
+
+    localStorage.setItem('civ1_savegame', engine.getSaveJSON()!);
+    const loaded = new GameEngine(null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (loaded as any).sleep = () => Promise.resolve();
+    expect(await loaded.loadGame()).toBe(true);
+
+    // The tribe's state is wiped by the load — so its leftovers must be too:
+    // a pitch with no tents, or riders nothing will ever move again, would
+    // sit on the map for the rest of the game.
+    expect(loaded.map!.tiles.filter((t) => t.nomadTent), 'no stray pitch').toHaveLength(0);
+    expect(
+      loaded.units.filter((u) => u.civilizationId === NOMAD_CIV_ID),
+      'no orphaned riders',
+    ).toHaveLength(0);
   });
 });

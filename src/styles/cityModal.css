@@ -983,3 +983,76 @@
 .city-tabstrip .gm-section .table td .d-flex.gap-1 > * {
   flex: 0 0 auto;
 }
+
+/* ============================================================================
+   The nomads at this gate — the section the city screen shows when their
+   camp (or their settlement) stands beside these walls.
+   ========================================================================== */
+
+.city-nomad {
+  border: 1px solid rgba(232, 163, 61, 0.35);
+  background: rgba(232, 163, 61, 0.06);
+}
+
+.city-nomad-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+/* The faction's poster — the same picture the audience and the diplomacy
+   hall use (PNG when it exists, the built-in SVG poster otherwise). */
+.city-nomad-art {
+  display: block;
+  width: 64px;
+  height: 80px;
+  object-fit: cover;
+  border: 1px solid rgba(232, 163, 61, 0.55);
+  border-radius: 4px;
+  flex: 0 0 auto;
+  image-rendering: auto;
+}
+
+.city-nomad-who {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.city-nomad-name {
+  color: var(--color-accent, #f0c33c);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.city-nomad-epithet {
+  color: var(--color-text-muted, #8fa3b4);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.city-nomad-standing {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.city-nomad-doors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.city-nomad-doors .btn,
+.city-nomad .btn {
+  font-size: 13px;
+}

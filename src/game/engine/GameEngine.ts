@@ -222,6 +222,8 @@ export interface MapTile {
   village?: boolean;
   /** A nomad settlement planted beside a city (drains its food, raises defenders). */
   nomadSettlement?: boolean;
+  /** A nomad pitch — their camp's tent, drawn beside the tents (visual only). */
+  nomadTent?: boolean;
   visible: boolean;
   explored: boolean;
   col: number;
@@ -5299,7 +5301,14 @@ const occupiedLandmasses = new Set(
         if (sightRange < 0) sightRange = 0;
 
         if (this.revealArea) {
-          this.revealArea(unit.col, unit.row, sightRange);
+          // A unit's sight lights ITS OWNER's fog — never the active
+          // player's. The default viewer (`activePlayer`) is whoever's turn
+          // happens to run the move, and the round hook runs BEFORE the turn
+          // flips: a nomad rider or a travelling bazaar stepping across the
+          // map would otherwise paint the HUMAN's explored set with ground
+          // nobody on their side ever walked (the reported "fog is gray where
+          // I have never been").
+          this.revealArea(unit.col, unit.row, sightRange, unit.civilizationId);
         }
       } catch (e) {
         // Non-fatal: continue movement even if reveal fails

@@ -99,6 +99,21 @@ function leaveGate(engine: Engine): void {
   engine.units = engine.units.filter((u) => u.id !== 'witness');
 }
 
+/**
+ * THE REAL RIDE: a departed group does not vanish off the map — its tents
+ * are down and its riders are on the road to the next court (or already
+ * camped there), in the open the whole way. What must never hold is a camp
+ * standing at YOUR gate without a dialog about it.
+ */
+function expectRidersRidingOn(engine: Engine, nm: unknown): void {
+  const camps = (nm as { camps: Array<{ targetCivId: number }> }).camps;
+  expect(
+    camps.filter((c) => c.targetCivId === 0),
+    'nothing stands at your gate',
+  ).toHaveLength(0);
+  expect(nomadUnits(engine).length, 'the riders ride on, in the open').toBeGreaterThan(0);
+}
+
 describe('Nomads — trigger and spawn', () => {
   it('appears after the first city, near it, as a neutral fortified camp', async () => {
     const { engine, events, settle } = await world();
@@ -126,6 +141,62 @@ describe('Nomads — trigger and spawn', () => {
     expect(camp.some((u) => u.col === city.col && u.row === city.row)).toBe(false);
   });
 
+  it('lifts NO fog — the camp in your fog stays unexplored until you walk it', async () => {
+    const { engine, events, settle } = await world();
+    settle();
+    const nm = engine.nomadManager;
+    const storage = engine.getPlayerStorage(0);
+    const before = storage.explored.filter(Boolean).length;
+
+    nm.processRound(NOMAD_TRIGGER_ROUND);
+    const camp = nomadUnits(engine)[0];
+    expect(camp, 'the camp spawned').toBeDefined();
+
+    // THE BUG PIN: the tents stand 9–13 tiles out — ground the player has
+    // never walked. Spawning them must not mark it "explored": that is the
+    // gray shadow of war on a place you have never visited. Fog is earned
+    // by walking it (the maps door and the hall's "find" are the
+    // announced exceptions), and contact — their riders walking ONTO your
+    // city — is what lights the map.
+    expect(engine.isExploredByPlayer(0, camp.col, camp.row)).toBe(false);
+    expect(storage.explored.filter(Boolean).length).toBe(before);
+
+    // The story still speaks: the sighting is announced, just not painted.
+    expect(eventsOf(events, 'NOMAD_SIGHTED')).toHaveLength(1);
+  });
+
+  it('a rider stepping across the map never paints the ACTIVE player’s fog', async () => {
+    const { engine, settle } = await world();
+    settle();
+    const nm = engine.nomadManager;
+    nm.processRound(NOMAD_TRIGGER_ROUND);
+    const rider = nomadUnits(engine)[0];
+    const storage = engine.getPlayerStorage(0);
+    const before = storage.explored.filter(Boolean).length;
+
+    // The round hook runs BEFORE `activePlayer` flips, so a foreign unit's
+    // move regularly executes while some OTHER seat is "active" — here the
+    // human. The reveal must land in the OWNER's fog, not the active
+    // player's: otherwise every nomad and caravan walk grays the human's
+    // map along its whole path.
+    engine.activePlayer = 0;
+    rider.isFortified = false;
+    rider.movesRemaining = rider.maxMoves ?? 2;
+
+    const dirs = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
+    let stepped = false;
+    for (const [dc, dr] of dirs) {
+      const res = engine.moveUnit(rider.id, rider.col + dc, rider.row + dr);
+      if (res?.success) {
+        stepped = true;
+        break;
+      }
+    }
+    expect(stepped, 'the rider actually stepped').toBe(true);
+    expect(storage.explored.filter(Boolean).length).toBe(before);
+    expect(engine.isExploredByPlayer(0, rider.col, rider.row)).toBe(false);
+  });
+
   it('waits for a city — with none by the fallback round it visits the settlers', async () => {
     const w = await makeEngine({ numberOfCivilizations: 3, seed: 4242 });
     const events: Array<{ type: string; data: any }> = [];
@@ -148,7 +219,7 @@ describe('Nomads — trigger and spawn', () => {
     const campSpawn = (col: number, row: number) =>
       Math.max(Math.abs(col - engine.cities[0].col), Math.abs(row - engine.cities[0].row));
 
-    nm.processRound(NOMAD_TRIGGER_ROUND); // the camp appears, revealed in the fog
+    nm.processRound(NOMAD_TRIGGER_ROUND); // the camp appears — deep in the player's fog
     const spawnTile = { col: nomadUnits(engine)[0].col, row: nomadUnits(engine)[0].row };
     expect(campSpawn(spawnTile.col, spawnTile.row)).toBeGreaterThanOrEqual(NOMAD_SPAWN_MIN_DISTANCE);
 
@@ -312,7 +383,7 @@ describe('Nomads — the parley', () => {
 
     nm.processRound(NOMAD_TRIGGER_ROUND + 1 + NOMAD_PASS_DEPART_ROUNDS); // parley at +1
     expect(nm.isDeparted).toBe(true);
-    expect(nomadUnits(engine)).toHaveLength(0);
+    expectRidersRidingOn(engine, nm);
     expect(eventsOf(events, 'NOMAD_DEPARTED')).toHaveLength(1);
 
     // A neutral refusal earns nothing: no return visit, ever. The tribe may
@@ -424,7 +495,7 @@ describe('Nomads — the race and the departure', () => {
       spy.mockRestore();
     }
     expect(nm.isDeparted).toBe(true);
-    expect(nomadUnits(engine)).toHaveLength(0);
+    expectRidersRidingOn(engine, nm);
     // Two groups leave on their own clocks ("one travels, one stays"), so a
     // grown tribe is announced twice — but never announced twice from a
     // court that is not yours.
@@ -584,7 +655,7 @@ describe('Nomads — moods, return visits and settlements', () => {
       // return visit (anger is not a friendship).
       for (let r = 10; r < 45; r++) nm.processRound(r);
       expect(nm.visits).toBe(1);
-      expect(nomadUnits(engine)).toHaveLength(0);
+      expectRidersRidingOn(engine, nm);
     } finally {
       spy.mockRestore();
     }

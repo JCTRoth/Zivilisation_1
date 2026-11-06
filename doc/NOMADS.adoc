@@ -9,9 +9,9 @@
 > `src/components/ui/GameModals.tsx` (the diplomacy hall's nomad panel),
 > `src/components/ui/ClanPortrait.tsx` (portrait: PNG → built-in SVG poster → emoji)
 > *Factions & art prompts:* `src/game/engine/nomad/FACTIONS_README.md`
-> *Tests:* `tests/nomads.test.ts` (18) + `tests/nomadEconomy.test.ts` (7) +
+> *Tests:* `tests/nomads.test.ts` (20) + `tests/nomadEconomy.test.ts` (8) +
 > `tests/nomadStrategy.test.ts` (8) + `tests/nomadRoaming.test.ts` (4) +
-> `tests/nomadHire.test.ts` (3) + `tests/nomadTravel.test.ts` (6)
+> `tests/nomadHire.test.ts` (3) + `tests/nomadTravel.test.ts` (10)
 > *i18n:* `nomad.*` keys in all 6 languages
 
 ---
@@ -21,7 +21,11 @@
 Once per **single-human** game, shortly after the first city stands (round
 ≥ 4, or round ≥ 12 if no city yet), a neutral horde camps 9–13 tiles from
 the player's court: two warriors and a scout, owned by `NOMAD_CIV_ID` (-2),
-fortified, revealed to the player on sight (`NOMAD_SIGHTED`). They do not
+fortified, **announced** to the player (`NOMAD_SIGHTED`) — and NOT revealed:
+the tents stand 9–13 tiles out, beyond your sight, so lighting them up would
+paint ~50 never-walked tiles as explored (gray fog where you have never
+been). Fog is earned by walking it; you meet them the honest way, when their
+riders walk onto your city. They do not
 stay with you: when the visit is over they strike camp and **ride on to the
 next court** — every alive court in turn (see *The route* below).
 
@@ -125,8 +129,13 @@ stays in the world), and the player is **told with a modal**, not a toast —
 problem just changed uniform. If nobody buys, the group walks off after 20
 rounds (`NOMAD_DEPARTED`).
 
-A **second parley** fires when the player's unit stands at the camp after
-the first answer — hire or farewell only.
+A **second parley** fires when the camp stands with you after the first
+answer — hire or farewell only. THE RULE: **a camp may never sit at your
+gate without a dialog** — the tents move to the tile the envoy stood on
+(your city pays their food for as long as they linger) and a dismissed
+audience comes round again on its 3-round cooldown whenever they stand
+with you or you walk up to their tents. The city screen carries the same
+doors, plus a *Speak with them* button for the moments none is tabled.
 
 === The roaming horde — wander, growth and the split
 
@@ -157,11 +166,22 @@ The camp is a LIVING group on the map, not a scenery piece:
 
 The tribe does not live at your gate: it travels. When a visit ends — a
 deal, a refusal, the linger, or the 60-round contact window — the camp
-strikes tents and rides to the next court (`NOMAD_TRAVEL_ROUNDS`, 12), in
-a shuffled cycle of every ALIVE court: **you first** (the story opens at
-your gate), then the rivals, then round again. A friendly court keeps its
-promised return (+30 rounds) and goes to the FRONT of the route; an angry
-court is torn off it (they owe you nothing).
+strikes tents and **rides to the next court**, in a shuffled cycle of every
+ALIVE court: **you first** (the story opens at your gate), then the
+rivals, then round again. A friendly court keeps its promised return
+(+30 rounds) and goes to the FRONT of the route; an angry court is torn
+off it (they owe you nothing).
+
+The ride is a RIDE: the riders stay on the map and walk it step by step
+(`marchRoad`), never a travel spell — you watch them cross the country
+before they reach any gate. `NOMAD_TRAVEL_ROUNDS` (12, or +30 for the
+promised return) is no longer an arrival time but the EARLIEST they may
+raise tents at the next court: a group that arrives early holds a couple
+of tiles out and mills there (never frozen, never standing ON a court
+with no tents), and walks in when its hour comes. A group that cannot
+make progress for `NOMAD_TRAVEL_ROUNDS` re-routes to another court — a
+promised return never re-routes away — and a group wiped on the road
+re-forms at its destination instead, so the tribe never vanishes.
 
 At a rival there is no audience — the envoy is answered **in code**:
 
@@ -189,12 +209,69 @@ the group divides, `NOMAD_MAX_CAMPS` = 2), and the two are **independent
 travellers under the one brain**: each carries its own court, its own
 linger and its own answer (`NomadCamp`). When one group strikes tents:
 
-* its riders ride off the map and raise new tents at the next court
-  `NOMAD_TRAVEL_ROUNDS` later (or at the promised return, +30 rounds);
+* its RIDERS ride on across the map and raise new tents around
+  themselves at the next court — no earlier than `NOMAD_TRAVEL_ROUNDS`
+  later (or at the promised return, +30 rounds), and never by a spell;
 * **the other group keeps standing where it is** — its own linger runs
   from that round, so it leaves a travel spell later;
 * and because somebody is always left standing, **the tribe never vanishes
   from the map** the way a single camp used to wander into the fog.
+
+=== On the map — seen coming, pitched, and riding the long road
+
+* **They are always on show.** Nomad units (`NOMAD_CIV_ID`) are drawn
+  straight through the fog — riders and travelling bazaars alike — so you
+  watch the tribe cross the map long before it reaches your gate, and
+  watch it ride on afterwards. Only the TRAVELLERS show: the terrain
+  underneath stays unexplored and stays black, so looking at them lifts no
+  fog (the grey-on-unvisited-tiles bug this replaced).
+* **A standing camp pitches a tent** on the first free tile beside its
+  tents (`tile.nomadTent`, drawn ⛺): beside YOUR city when the group
+  camps at your gate — the visible "somebody lives here" that says why
+  their riders stand still — and out in the country at the spawn. The
+  pitch is struck with the tents; a settlement keeps one forever (it is
+  drawn from `tile.nomadSettlement`, which also carries the food drain).
+* **A bazaar refuses the short road.** `NOMAD_CARAVAN_MIN_JOURNEY` (8):
+  born beside its target it would deliver in the very round it was built
+  and never be seen crossing the map, so `pickRouteTarget` prefers the
+  nearest partner AT JOURNEY DISTANCE and only takes the short road when
+  nothing is farther away.
+
+=== The city screen knows them
+
+Open the city the camp stands at (or the one their settlement feeds) and
+the overview shows a **Nomads at the gate** section: their poster, name,
+epithet and standing; what the camp costs you (`NOMAD_CAMP_FOOD_COST` per
+rider per turn) and what the settlement costs and buys (food, defender,
+the extra trade route); and the **doors they have on the table right now**
+— answered straight from the city screen, same engine, same promised
+terms. With nothing tabled there is a *Speak with them* button
+(`NomadManager.speakAtGate`), so a camp at your gate is never silent.
+
+=== Equivalent units — their chest, not their shields
+
+The tribe never builds: it **buys**, and what it buys mirrors what the
+players can field. As soon as ANY player has a ground soldier available,
+the equivalent exists for the tribe — **same numbers, only a different name
+and a different picture** (`UnitConstants.NOMAD_MIRRORED_UNITS`):
+
+* `nomad_foot_<base>` — a **1:1 copy** ("Nomad Riflemen"), the picture of
+  the soldier it mirrors;
+* `nomad_camel_<base>` — the same soldier **mounted**: +1 movement,
+  ×1.5 gold ("Mounted Riflemen"), foot soldiers only — nobody puts a tank
+  on a camel.
+
+What the camp recruits is the **strongest soldier any player can build
+right now** (`bestMirroredBase`): archers while nobody has researched
+anything, armour the moment somebody can field it. Alternate musters take
+the mounted shape, so a grown camp carries both kinds. Every one of them
+carries `requires: 'nomad_bazaar_only'`, so **no production list — player,
+AI or auto — ever offers one**: the chest is their only currency
+(production points are the players').
+
+Each faction wears its own beast on the mounted shape
+(`NOMAD_MOUNT_ICONS`): a Bedouin **camel**, a Mongol **horse**, a Sámi
+**reindeer** — same stats, different pictures.
 
 === What a camp standing at your gate costs
 
@@ -282,8 +359,12 @@ beyond the spawned horde** (`NOMAD_CAMP_MUSTER_LIMIT`, one every 8
 rounds) — the meeting stays the classic three. **After the answer** the
 group simply GROWS: one rider every `NOMAD_GROWTH_ROUNDS` (8),
 stance-blind, until the group is full and divides (see *The roaming
-horde*). The nomads are TYPICALLY money makers: soldiers are the
-exception, not the norm.
+horde*). WHAT they buy mirrors the players: the strongest ground soldier
+any player can build, as their own equivalent (see *Equivalent units*) —
+a foot copy, or on alternate musters the same soldier mounted. The nomads
+are TYPICALLY money makers: soldiers are the exception, not the norm, and
+every one of them is **bought from the chest — production points are never
+involved**.
 
 |Settled camp production
 |A settlement keeps producing: one wanderer of its own every
@@ -401,13 +482,22 @@ never earns a return visit.
   control). Contact recording skips negative ids, no civ is at war with the
   camp, the AI never targets it.
 * **Session-only.** Nothing here is persisted; a loaded game simply has no
-  nomads (v1). The settlement TILE flag persists — its food/denfense
-  effects are engine code that reads the map, so they survive saves.
-* **Dismissal is not refusal.** Closing the audience without answering
-  leaves the parley open: it re-offers when the player stands at the camp
-  (3-round cooldown), never every round. A dismissed city offer (or plea)
-  re-tables the same way, and dies with the camp (or its city) so the
-  serialization slot can never strand.
+  nomads (v1). `NomadManager.reset()` puts the rest of them back in the
+  box with the state: the PITCH (`tile.nomadTent`) and every rider or
+  bazaar the save carried are dropped, because with no camp, no road and
+  no settlement spot behind them nothing would ever move them again — and
+  nomad units are drawn through the fog, so an orphan would stand there
+  in plain sight forever. The settlement's DEFENDERS are your own units
+  and stay where you paid for them. The settlement TILE flag persists —
+  its food/defense effects are engine code that reads the map, so they
+  survive saves.
+* **Dismissal is not refusal — and silence is not an option.** Closing
+  the audience without answering leaves the parley open: it re-offers on
+  its 3-round cooldown while the camp **stands with you** (on your city or
+  beside a unit) or you stand within 2 of its tents, never every round and
+  never not at all. A dismissed city offer (or plea) re-tables the same
+  way, and dies with the camp (or its city) so the serialization slot can
+  never strand.
 * **The hall reads, the gate acts.** Once sighted the tribe is listed in
   the diplomacy window with its own row and panel (`hallState`), but every
   door except *locating their camp* stays locked until your units stand
@@ -474,7 +564,14 @@ capture branch calls `nomadManager.onBarbariansTookCity(city)` (migration
 |Fog
 |`GameEngine.revealArea(col, row, radius, viewerId)` — the viewer
 parameter exists because the round hook runs before `activePlayer` flips;
-the store refresh follows "viewer is a human seat"
+the store refresh follows "viewer is a human seat". `moveUnit` now passes
+the **unit's owner**, never the default `activePlayer`: a nomad rider or a
+travelling bazaar stepping across the map may not grey the active seat's
+fog. The spawn itself lifts **no** fog (see *1. What happens*) — only the
+maps door, the return gift and the hall's "Locate their camp" reveal, each
+announced or asked for. The one thing nomads do to the fog is DRAW
+themselves over it: `MapRenderer` paints `NOMAD_CIV_ID` units on
+unexplored tiles too (*On the map* above)
 
 |Food drain
 |`EconomicManager.cityFoodBalance` — `nomadDrain`, a bounded ring scan
@@ -501,8 +598,10 @@ a court that never opens its door cannot stall the route.
 
 == 6. Tests
 
-`tests/nomads.test.ts` (18) — trigger and spawn (distance, landmass,
-neutral id, fortification, no-city fallback, hotseat/AI skip), the doors
+`tests/nomads.test.ts` (20) — trigger and spawn (distance, landmass,
+neutral id, fortification, no-city fallback, hotseat/AI skip) **plus the two
+fog pins**: the spawn lifts no fog (the camp in your fog stays unexplored)
+and a rider's step never paints the *active* player's fog, the doors
 and their promised terms (forced rolls for the settlement door), the
 broken court's free gift, the maps reveal, the color swap on hire (the
 riders who stood at the gate — `tests/nomadHire.test.ts` pins the rest),
@@ -553,7 +652,7 @@ read-only snapshot the diplomacy hall renders (unknown before the visit,
 faction identity and no doors after the sighting, `meeting` + the doors at
 the gate, and a copy the caller cannot mutate).
 
-`tests/nomadTravel.test.ts` (6) — THE ROUTE: the camp leaves your court
+`tests/nomadTravel.test.ts` (10) — THE ROUTE: the camp leaves your court
 and camps at a rival (your audience count never grows, `visits` is yours
 alone); a rival answers the envoy in code with its own gold (the
 knowledge lands in their tree, never in your purse); a camp at your gate
@@ -562,4 +661,6 @@ costs food forever and buys its city a fourth trade-route slot
 (`maxTradeRoutesFor` 3 → 4); and refusing their settlement is a closed
 hand — the next audience prices the riders at the refusal penalty; and
 after the split ONE GROUP rides on to the next court while the other keeps
-standing (a nomad group is always on the map).
+standing (a nomad group is always on the map); a camp on your city never
+stays without a dialog (the farewell audience comes round on its own), and
+the city screen can table the audience itself (`speakAtGate`).

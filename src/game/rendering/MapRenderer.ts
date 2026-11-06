@@ -171,6 +171,10 @@ export interface TerrainTileRenderInfo {
   hasRiver?: boolean;
   /** Whether this tile contains a Civ1 village (goody hut). */
   village?: boolean;
+  /** A nomad pitch — their camp's tent beside the tents. */
+  nomadTent?: boolean;
+  /** A nomad settlement planted beside a city. */
+  nomadSettlement?: boolean;
 }
 
 /**
@@ -723,6 +727,13 @@ export class MapRenderer {
 
     if (tile.village) {
       this.drawVillageMarker(ctx, centerX, centerY, scale);
+    }
+
+    // A nomad pitch: the camp standing beside these walls (or the
+    // settlement they planted) leaves a tent on the ground — the marker
+    // that says why their riders stand still out there.
+    if (tile.nomadTent || tile.nomadSettlement) {
+      this.drawTentMarker(ctx, centerX, centerY, scale);
     }
 
     this.drawTerrainSymbol(ctx, centerX, centerY, tile, { scale });
@@ -1638,7 +1649,36 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
         // Check if tile is explored (either from terrain grid or map data)
         const isExplored = tile?.explored ?? map.revealed?.[tileIndex] ?? false;
         if (!isExplored) {
-          // Villages and all other elements remain hidden under fog of war.
+          // Villages and all other elements remain hidden under fog of war —
+          // THE NOMADS ARE THE EXCEPTION. Their riders and travelling
+          // bazaars are drawn straight through the black: you WATCH the
+          // tribe cross the map long before it reaches your gate (and see
+          // it ride on afterwards). Only the travellers show — the ground
+          // underneath stays unexplored and stays black, so no fog is ever
+          // lifted by looking at them.
+          const travellers = unitsAtTileKey.get(`${col},${row}`);
+          if (travellers) {
+            let drawnOnTile = 0;
+            for (const unit of travellers) {
+              if (unit.civilizationId !== NOMAD_CIV_ID) continue;
+              if (unit.isDefeated && !this.isInCombatAnimation(unit.id, combatAnimations)) continue;
+              if (unit.embarkedOn) continue;
+              const displayTile = this.getUnitDisplayTile(unit, movementAnimations);
+              const unitPos = squareToScreen(displayTile.col, displayTile.row);
+              const stackOffset = drawnOnTile * Math.max(3, cameraZoom * 3);
+              this.drawUnit(
+                ctx,
+                unitPos.x + stackOffset,
+                unitPos.y + stackOffset,
+                unit,
+                1,
+                cameraZoom,
+                civilizations,
+                combatAnimations,
+              );
+              drawnOnTile += 1;
+            }
+          }
           continue;
         }
 
@@ -1679,7 +1719,11 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
           let drawnOnTile = 0;
           for (const unit of stack) {
             const isOwnUnit = (gameState.humanPlayerIds ?? [0]).includes(unit.civilizationId);
-            if (!isOwnUnit && !isVisible) continue;
+            // Same fog exception as the black tiles above: the nomads are
+            // always on show, so a caravan you spotted keeps riding past
+            // your eyes even when the tile under it slips out of sight.
+            const isTraveller = unit.civilizationId === NOMAD_CIV_ID;
+            if (!isOwnUnit && !isVisible && !isTraveller) continue;
             // Killed units are never drawn again — EXCEPT while their combat
             // animation is still running, where the 💥 cloud / death blink
             // replaces the old static "black X" marker (getCombatRenderState
@@ -2272,6 +2316,27 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
       ctx.restore();
     } catch (err) {
       console.warn('[MapRenderer] drawVillageMarker fillText failed', err);
+    }
+  }
+
+  /** The nomads' pitch: a tent on the tile (same emoji trade as villages). */
+  private drawTentMarker(
+    ctx: CanvasRenderingContext2D,
+    centerX: number,
+    centerY: number,
+    scale: number,
+  ): void {
+    try {
+      const iconScale = Math.max(0.5, scale);
+      const size = Math.round(20 * iconScale);
+      ctx.save();
+      ctx.font = `${size}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⛺', centerX, centerY - 4 * iconScale);
+      ctx.restore();
+    } catch (err) {
+      console.warn('[MapRenderer] drawTentMarker fillText failed', err);
     }
   }
 

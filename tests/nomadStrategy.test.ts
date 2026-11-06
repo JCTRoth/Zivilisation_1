@@ -20,6 +20,7 @@ import {
   NOMAD_CIV_ID,
   NOMAD_MONEY_REQUEST_AMOUNT,
   NOMAD_ROUTE_INCOME_BASE,
+  NOMAD_SPAWN_UNITS,
 } from '@/data/NomadConstants';
 
 type Engine = TestWorld['engine'];
@@ -147,9 +148,11 @@ describe('Nomads — the strategy brain', () => {
     // (Once full, steel's room-bonus expires and the stance may rotate
     // back to business — the CAP, not the stance, is what is under test.)
     expect(horde(engine)).toHaveLength(3 + 2);
-    // The two EXTRA soldiers are mustered canonical warriors — the spawned
-    // horde keeps its legacy 'warriors'/'scout' types untouched.
-    expect(horde(engine).filter((u) => u.type === UNIT_TYPES.WARRIOR)).toHaveLength(2);
+    // The two EXTRA soldiers are bought as the tribe's EQUIVALENTS of what
+    // the players can field (the spawned horde keeps its own three types —
+    // see NOMAD_SPAWN_UNITS — so anything else here was mustered).
+    const spawnTypes = new Set<string>(NOMAD_SPAWN_UNITS);
+    expect(horde(engine).filter((u) => !spawnTypes.has(u.type))).toHaveLength(2);
     expect(nm.currentStance).not.toBe('steel'); // full camp: back to business
   });
 });

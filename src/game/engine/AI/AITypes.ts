@@ -6,6 +6,8 @@
  * strategy/coordination types.
  */
 
+import { NOMAD_EQUIVALENT_TYPES } from '../../../data/UnitConstants';
+
 // ---------------------------------------------------------------------------
 // Strategy profiles
 // ---------------------------------------------------------------------------
@@ -303,6 +305,13 @@ const UNIT_TECH_REQUIREMENTS: Record<string, string | null> = {
   bomber: 'flight',
   nuclear: 'nuclear_fission',
 };
+
+// The nomads' equivalents enter the world only through their war chest:
+// no player city and no AI production list may ever offer to build one
+// (mirrors `requires: 'nomad_bazaar_only'` on the unit itself).
+for (const type of NOMAD_EQUIVALENT_TYPES) {
+  UNIT_TECH_REQUIREMENTS[type] = 'nomad_bazaar_only';
+}
 
 // ---------------------------------------------------------------------------
 // Helper - check if a civ has a technology

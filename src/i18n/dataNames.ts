@@ -16,7 +16,17 @@ const tName = (kind: string, id: string, fallback: string): string =>
   translateDynamic(`data.${kind}.${id}`, undefined, fallback);
 
 /** Localized unit name, e.g. `tUnitName('settler', 'Settler')` → 'Siedler' (de). */
-export const tUnitName = (id: string, fallback: string): string => tName('unit', id, fallback);
+const tNomadEquivalentName = (id: string): string | null => {
+  const match = /^nomad_(foot|camel)_(.+)$/.exec(id);
+  if (!match) return null;
+  const base = tName('unit', match[2], match[2]);
+  const template = match[1] === 'camel' ? 'nomad.unit.mountedName' : 'nomad.unit.footName';
+  const fallback = match[1] === 'camel' ? `Mounted ${base}` : `Nomad ${base}`;
+  return translateDynamic(template, { unit: base }, fallback);
+};
+
+export const tUnitName = (id: string, fallback: string): string =>
+  tNomadEquivalentName(id) ?? tName('unit', id, fallback);
 
 /** Localized building name. */
 export const tBuildingName = (id: string, fallback: string): string => tName('building', id, fallback);

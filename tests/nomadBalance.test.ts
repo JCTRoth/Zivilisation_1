@@ -97,7 +97,12 @@ describe('Nomads — balance', () => {
 
     // — the pacing invariants (the design promises, in order) —
     expect(firstRouteAt, 'the first bazaar pays back within the opening phase').toBeLessThanOrEqual(30);
-    expect(crossed450At, 'a dealt-with tribe can reach the market gate in a game').toBeLessThanOrEqual(90);
+    // The gate is reached INSIDE the game — a little later than the old
+    // travel spell put it, because the tribe now spends real rounds on the
+    // road (riding court to court instead of teleporting) and the chest
+    // travels with them. What the promise means is "reachable, not never":
+    // the offer is tabled from it and taken (asserted below).
+    expect(crossed450At, 'a dealt-with tribe can reach the market gate in a game').toBeLessThanOrEqual(110);
     expect(offers, 'the city market tabled its offer in a two-city world').toBeGreaterThanOrEqual(1);
     expect(bought, 'the offer was affordable and was taken').not.toBeNull();
     expect(knowledge, 'the broker keeps deals flowing').toBeGreaterThanOrEqual(3);
