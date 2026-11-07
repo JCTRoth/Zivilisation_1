@@ -1649,36 +1649,6 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
         // Check if tile is explored (either from terrain grid or map data)
         const isExplored = tile?.explored ?? map.revealed?.[tileIndex] ?? false;
         if (!isExplored) {
-          // Villages and all other elements remain hidden under fog of war —
-          // THE NOMADS ARE THE EXCEPTION. Their riders and travelling
-          // bazaars are drawn straight through the black: you WATCH the
-          // tribe cross the map long before it reaches your gate (and see
-          // it ride on afterwards). Only the travellers show — the ground
-          // underneath stays unexplored and stays black, so no fog is ever
-          // lifted by looking at them.
-          const travellers = unitsAtTileKey.get(`${col},${row}`);
-          if (travellers) {
-            let drawnOnTile = 0;
-            for (const unit of travellers) {
-              if (unit.civilizationId !== NOMAD_CIV_ID) continue;
-              if (unit.isDefeated && !this.isInCombatAnimation(unit.id, combatAnimations)) continue;
-              if (unit.embarkedOn) continue;
-              const displayTile = this.getUnitDisplayTile(unit, movementAnimations);
-              const unitPos = squareToScreen(displayTile.col, displayTile.row);
-              const stackOffset = drawnOnTile * Math.max(3, cameraZoom * 3);
-              this.drawUnit(
-                ctx,
-                unitPos.x + stackOffset,
-                unitPos.y + stackOffset,
-                unit,
-                1,
-                cameraZoom,
-                civilizations,
-                combatAnimations,
-              );
-              drawnOnTile += 1;
-            }
-          }
           continue;
         }
 
@@ -1719,11 +1689,7 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
           let drawnOnTile = 0;
           for (const unit of stack) {
             const isOwnUnit = (gameState.humanPlayerIds ?? [0]).includes(unit.civilizationId);
-            // Same fog exception as the black tiles above: the nomads are
-            // always on show, so a caravan you spotted keeps riding past
-            // your eyes even when the tile under it slips out of sight.
-            const isTraveller = unit.civilizationId === NOMAD_CIV_ID;
-            if (!isOwnUnit && !isVisible && !isTraveller) continue;
+            if (!isOwnUnit && !isVisible) continue;
             // Killed units are never drawn again — EXCEPT while their combat
             // animation is still running, where the 💥 cloud / death blink
             // replaces the old static "black X" marker (getCombatRenderState
